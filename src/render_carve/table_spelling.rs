@@ -135,19 +135,6 @@ pub(super) fn render_table(
         );
         return String::new();
     }
-    // carve#4974 ruling A: only an orphan placeholder or a placeholder carrying
-    // an alignment lacks a native spelling that keeps the tree.
-    let needs_delimiter = header_row
-        && node.rows[0]
-            .cells
-            .iter()
-            .enumerate()
-            .any(|(index, cell)| match cell.span {
-                Some(TableCellSpan::Rowspan) => true,
-                Some(TableCellSpan::Colspan) => index == 0 || cell.align.is_some(),
-                None => false,
-            });
-
     // CARVE-P12-069: each `cell_wrap` puts the part after it on its row's
     // continuation line, one slot per cell.
     let mut continuations: Vec<Vec<Vec<String>>> = node
@@ -166,21 +153,8 @@ pub(super) fn render_table(
         let own_width = row_line_width(row);
         for (cell_index, cell) in row.cells.iter().enumerate() {
             ctx.cell_not_last = cell_index + 1 < row.cells.len();
-            // In the delimiter form the promoted row is written as ordinary
-            // data cells - the row after it is what makes them headers.
-            let mark_header = !(needs_delimiter && row_index == 0);
-            // A generated separator carries the column alignment, so the
-            // promoted row does not spell it a second time.
-            let suppress_align = row_index == 0 && needs_delimiter;
-            let rendered = render_table_cell(
-                session,
-                cell,
-                ctx,
-                mark_header,
-                suppress_align,
-                row_index == 0 && header_row && !needs_delimiter,
-                row.continuation_lines.unwrap_or(0) > 0,
-            );
+            let rendered =
+                render_table_cell(session, cell, ctx, row.continuation_lines.unwrap_or(0) > 0);
             match place_cell_wraps(
                 &rendered,
                 cell.span.is_some(),
@@ -234,18 +208,6 @@ pub(super) fn render_table(
             rows.push(format!("+{}|", line.join("|")));
         }
     }
-    let mut separator_index = None;
-    if needs_delimiter {
-        let widths = vec![3; node.rows[0].cells.len()];
-        let sep = match render_table_separator(node, &widths) {
-            Some(separator) => separator,
-            None => return String::new(),
-        };
-        let head_lines = node.rows[0].continuation_lines.unwrap_or(0);
-        let index = 1 + head_lines;
-        rows.insert(index, sep);
-        separator_index = Some(index);
-    }
     if session.align_tables && !row_slots.is_empty() {
         let mut widths = Vec::<usize>::new();
         for (_, cells, _, _) in &row_slots {
@@ -256,22 +218,7 @@ pub(super) fn render_table(
                 widths[index] = widths[index].max(table_written_width(session, cell));
             }
         }
-        let separator_cells = separator_index.map(|index| {
-            rows[index][1..rows[index].len() - 1]
-                .split('|')
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        });
-        if let Some(cells) = &separator_cells {
-            for (index, cell) in cells.iter().enumerate() {
-                if widths.len() <= index {
-                    widths.resize(index + 1, 0);
-                }
-                widths[index] = widths[index].max(table_written_width(session, cell));
-            }
-        }
         for (index, cells, marker, attrs) in row_slots {
-            let index = index + usize::from(separator_index.is_some_and(|sep| index >= sep));
             let padded = cells
                 .iter()
                 .enumerate()
@@ -288,19 +235,6 @@ pub(super) fn render_table(
                 format!("+{}|", padded.join("|"))
             };
         }
-        if let (Some(index), Some(cells)) = (separator_index, separator_cells) {
-            let padded = cells
-                .iter()
-                .enumerate()
-                .map(|(column, cell)| {
-                    format!(
-                        "{cell}{}",
-                        " ".repeat(widths[column] - table_written_width(session, cell))
-                    )
-                })
-                .collect::<Vec<_>>();
-            rows[index] = format!("|{}|", padded.join("|"));
-        }
     }
     if let Some(row) = node
         .caption
@@ -315,6 +249,31 @@ pub(super) fn render_table(
 /// How many cells the row line itself writes. A trailing cell led by a
 /// `cell_wrap` and carrying nothing the row line would spell was appended by a
 /// `+` line (T6, CARVE-P12-069), so it is written there alone.
+/// A cell's alignment symbols, glued, as they lead its attribute block.
+fn cell_alignment_symbols(align: Option<TableAlign>, valign: Option<TableVerticalAlign>) -> String {
+    let vertical = match valign {
+        Some(TableVerticalAlign::Top) => "^",
+        Some(TableVerticalAlign::Middle) => "~",
+        Some(TableVerticalAlign::Bottom) => "v",
+        None => "",
+    };
+    let horizontal = align_marker(align);
+    match (horizontal, vertical) {
+        ("", "") => String::new(),
+        ("", vertical) => format!("?{vertical}"),
+        (horizontal, vertical) => format!("{horizontal}{vertical}"),
+    }
+}
+
+/// The `{...}` block of a cell: alignment symbols first, then its attributes.
+fn cell_attribute_block(symbols: &str, attrs: &str) -> String {
+    match (symbols.is_empty(), attrs.is_empty()) {
+        (true, _) => attrs.to_string(),
+        (false, true) => format!("{{{symbols}}}"),
+        (false, false) => format!("{{{symbols} {}}}", &attrs[1..attrs.len() - 1]),
+    }
+}
+
 fn row_line_width(row: &TableRow) -> usize {
     let header = row.cells.first().is_some_and(|cell| cell.header);
     let appended = row
@@ -429,54 +388,6 @@ pub(super) fn render_table_row(cells: &[String], attrs: &str) -> String {
     format!("|{}|{}", cells.join("|"), attrs)
 }
 
-pub(super) fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
-    let fail = || {
-        crate::render_carve_error::record_unspellable(
-            "table",
-            "separator row exceeds source allocation capacity",
-        );
-        None
-    };
-    let Some(capacity) = widths
-        .iter()
-        .enumerate()
-        .try_fold(2usize, |total, (index, width)| {
-            let dashes = usize::try_from((*width).max(1)).ok()?;
-            let colons = match table.rows[0].cells.get(index).and_then(|cell| cell.align) {
-                Some(TableAlign::Center) => 2,
-                Some(_) => 1,
-                None => 0,
-            };
-            total
-                .checked_add(dashes)?
-                .checked_add(colons)?
-                .checked_add(usize::from(index > 0))
-        })
-    else {
-        return fail();
-    };
-    let mut separator = String::new();
-    if separator.try_reserve_exact(capacity).is_err() {
-        return fail();
-    }
-    separator.push('|');
-    for (index, width) in widths.iter().enumerate() {
-        if index > 0 {
-            separator.push('|');
-        }
-        let align = table.rows[0].cells.get(index).and_then(|cell| cell.align);
-        if matches!(align, Some(TableAlign::Left | TableAlign::Center)) {
-            separator.push(':');
-        }
-        separator.extend(std::iter::repeat('-').take((*width).max(1) as usize));
-        if matches!(align, Some(TableAlign::Right | TableAlign::Center)) {
-            separator.push(':');
-        }
-    }
-    separator.push('|');
-    Some(separator)
-}
-
 pub(super) fn cell_blocks_have_thematic_break(blocks: &[BlockNode]) -> bool {
     fn push_table<'a>(pending: &mut Vec<&'a BlockNode>, table: &'a Table) {
         for row in &table.rows {
@@ -529,9 +440,6 @@ pub(super) fn render_table_cell(
     session: &RenderSession,
     cell: &TableCell,
     ctx: &mut CarveContext,
-    mark_header: bool,
-    suppress_align: bool,
-    header_default_without_delimiter: bool,
     has_continuations: bool,
 ) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
@@ -541,18 +449,21 @@ pub(super) fn render_table_cell(
         );
     }
     let attrs = render_attrs(&cell.attrs);
-    // A lone span marker keeps a space before it. Every padding form has the
-    // same span reading, so the writer uses the padded form for both glyphs.
-    //
-    // A cell attribute stays GLUED to the pipe, where the grammar puts it; the
-    // space goes between it and the marker.
+    let symbols = cell_alignment_symbols(cell.align, cell.valign);
+    let kind = if cell.header { "=" } else { "" };
+    // A span keeps its kind and alignment-only block (`|= ^ |`, `|{<} < |`).
     if let Some(span) = cell.span {
         let marker = if span == TableCellSpan::Rowspan {
             "^"
         } else {
             "<"
         };
-        let own = pad_cell(&attrs, marker);
+        let block = if attrs.is_empty() {
+            cell_attribute_block(&symbols, "")
+        } else {
+            attrs.clone()
+        };
+        let own = pad_cell(&format!("{kind}{block}"), marker);
         if cell.children.is_empty() || !has_continuations {
             return own;
         }
@@ -616,41 +527,10 @@ pub(super) fn render_table_cell(
     {
         content.push('\\');
     }
-    let empty = content.is_empty();
-    // `|=< |` is an empty left-aligned header; only an unmarked `|< |` reads as a span.
-    let marked_header = cell.header && mark_header;
-    if empty && header_default_without_delimiter && cell.valign == Some(TableVerticalAlign::Top) {
-        crate::render_carve_error::record_unspellable(
-            "table_cell",
-            "an empty header alignment default needs a delimiter row",
-        );
-    }
-    let align = if suppress_align || empty && cell.align == Some(TableAlign::Left) && !marked_header
-    {
-        ""
-    } else {
-        align_marker(cell.align)
-    };
-    let valign = match cell.valign {
-        Some(TableVerticalAlign::Top) if !empty || cell.header && !mark_header => "^",
-        Some(TableVerticalAlign::Middle) => "~",
-        Some(TableVerticalAlign::Bottom) => "v",
-        _ => "",
-    };
-    let inherited_horizontal = if align.is_empty() && !valign.is_empty() {
-        "?"
-    } else {
-        ""
-    };
-    let prefix = format!(
-        "{}{}{}{}{}",
-        if marked_header { "=" } else { "" },
-        align,
-        inherited_horizontal,
-        valign,
-        attrs
-    );
-    if prefix.is_empty() && matches!(content.as_str(), "<" | "^") {
+    let prefix = format!("{kind}{}", cell_attribute_block(&symbols, &attrs));
+    // T4: after no prefix, a header `=` or an alignment-only block, a lone `^`
+    // or `<` would read back as a span.
+    if attrs.is_empty() && matches!(content.as_str(), "<" | "^") {
         content.insert(0, '\\');
     }
     if !cell.header && content.starts_with("\\= ") {

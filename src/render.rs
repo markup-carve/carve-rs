@@ -1802,24 +1802,22 @@ fn render_table(
     // The leading run of rows whose cells are ALL header cells forms <thead>.
     // A row that merely contains a header cell (a row header) stays in the body.
     //
-    // A continuation that RESOLVES is transparent here, because it renders
-    // nothing: the cell it continues is what occupies the column, and asking
-    // whether the marker itself is a header asks about a cell that is not
-    // there. Counting it dropped the row under a header rowspan out of the
-    // head, so `|=H|=A|` over `| ^ |=B|` moved B into the body (carve-js skips
-    // it the same way).
+    // A marker that RESOLVES counts as the cell it continues, so `|=H|=A|`
+    // over `| ^ |=B|` keeps B in the head. An orphan placeholder takes its
+    // row's kind when a header owns a cell of that row (T9, carve#4980).
     let derived_header_count = t
         .rows
         .iter()
         .enumerate()
         .take_while(|(r, row)| {
-            let resolved = |i: usize| span_plan.entry(*r, i).skip;
-            (0..row.cells.len()).any(|i| !resolved(i))
-                && row
-                    .cells
-                    .iter()
-                    .enumerate()
-                    .all(|(i, cell)| cell.header || resolved(i))
+            let owns_header =
+                (0..row.cells.len()).any(|c| !span_plan.entry(*r, c).skip && row.cells[c].header);
+            owns_header
+                && (0..row.cells.len()).all(|c| {
+                    let (or, oc) = span_plan.owner(*r, c);
+                    let owner = &t.rows[or].cells[oc];
+                    owner.header || owner.span.is_some()
+                })
         })
         .count();
     let invalid_source_partition = t.row_groups.is_none()
@@ -2258,8 +2256,9 @@ fn table_column_defaults(table: &Table, header_count: usize) -> ColumnDefaults {
     for row in table.rows.iter().take(header_count) {
         for (col, cell) in row.cells.iter().enumerate() {
             // HTML row-group promotion does not widen a plain cell marker
-            // into a column default. Native and GFM header cells do.
-            if !cell.header {
+            // into a column default. Native and GFM header cells do, and so
+            // does a placeholder's alignment-only block (T7).
+            if !cell.header && cell.span.is_none() {
                 continue;
             }
             let Some(slot) = defaults.get_mut(col) else {

@@ -12,7 +12,7 @@ fn fmt(source: &str) -> String {
 fn an_aligned_gfm_header_is_written_natively() {
     assert_eq!(
         fmt("| a | b |\n|:--|--:|\n| 1 | 2 |\n"),
-        "|=< a |=> b |\n| 1 | 2 |\n"
+        "|={<} a |={>} b |\n| 1 | 2 |\n"
     );
 }
 
@@ -20,18 +20,30 @@ fn an_aligned_gfm_header_is_written_natively() {
 fn an_empty_left_aligned_header_keeps_its_marker() {
     let source = "| | b |\n|:--|---|\n| 1 | 2 |\n";
     let written = fmt(source);
-    assert_eq!(written, "|=< |= b |\n| 1 | 2 |\n");
+    assert_eq!(written, "|={<} |= b |\n| 1 | 2 |\n");
     assert_eq!(to_html(&written), to_html(source));
 }
 
 #[test]
-fn an_orphan_or_aligned_placeholder_keeps_the_separator() {
-    for source in [
-        "| ^ | a |\n|---|---|\n| 1 | 2 |\n",
-        "| < | a |\n|---|---|\n| 1 | 2 |\n",
-        "|> Wide|<|~ Last|\n|:--|:--|:--|\n|a|b|c|\n",
+fn an_orphan_or_aligned_placeholder_is_written_natively() {
+    // carve#4980: the canonical writer never writes a separator row; a promoted
+    // placeholder keeps its header kind and its alignment-only block.
+    for (source, written) in [
+        (
+            "| ^ | a |\n|---|---|\n| 1 | 2 |\n",
+            "|= ^ |= a |\n| 1 | 2 |\n",
+        ),
+        (
+            "| < | a |\n|---|---|\n| 1 | 2 |\n",
+            "|= < |= a |\n| 1 | 2 |\n",
+        ),
+        (
+            "|> Wide|<|~ Last|\n|:--|:--|:--|\n|a|b|c|\n",
+            "|={>} Wide |={<} < |={~} Last |\n| a | b | c |\n",
+        ),
     ] {
-        assert!(fmt(source).contains("|---"), "{source}");
+        assert_eq!(fmt(source), written, "{source}");
+        assert_eq!(to_html(written), to_html(source), "{source}");
     }
 }
 

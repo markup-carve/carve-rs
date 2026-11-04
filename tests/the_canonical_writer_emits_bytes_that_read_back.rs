@@ -136,10 +136,10 @@ fn control_a_header_cell_that_already_carries_alignment_is_padded_too() {
     // and the padding follows the whole run.
     // Native markers carry column alignment in either source spelling.
     let src = "|=~ a |\n| ~y~ |\n";
-    assert_eq!(fmt(src), "|=~ a |\n| ~y~ |\n");
+    assert_eq!(fmt(src), "|={~} a |\n| ~y~ |\n");
     assert!(round_trips(src));
     let separated = "| a |\n|:-:|\n| ~y~ |\n";
-    assert_eq!(fmt(separated), "|=~ a |\n| ~y~ |\n");
+    assert_eq!(fmt(separated), "|={~} a |\n| ~y~ |\n");
     assert!(round_trips(separated));
 }
 
@@ -149,8 +149,8 @@ fn a_cell_that_already_carries_alignment_pads_its_sigil_content() {
     // could have been written glued and still round-trip. It is padded anyway:
     // PART 11 §6e is about every cell, and one form per document is the point.
     for (src, want) in [
-        ("|~ ~x~|\n| y |\n", "|~ ~x~ |\n| y |\n"),
-        ("|=~ ~x~|\n| y |\n", "|=~ ~x~ |\n| y |\n"),
+        ("|~ ~x~|\n| y |\n", "|{~} ~x~ |\n| y |\n"),
+        ("|=~ ~x~|\n| y |\n", "|={~} ~x~ |\n| y |\n"),
     ] {
         assert_eq!(fmt(src), want, "for {src:?}");
         assert!(round_trips(src), "for {src:?}");

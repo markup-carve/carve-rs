@@ -78,7 +78,7 @@ fn a_span_survives_the_import_as_a_continuation_cell() {
             // The span is a TRAILING colspan after the real `Group` header, so
             // the row keeps the native `|=` form: `<` absorbs into `|= Group`
             // and the `|=` markers promote the row, no delimiter row needed.
-            "|= Group | < |\n|= a |= b |\n| 1 | 2 |\n",
+            "|= Group |= < |\n|= a |= b |\n| 1 | 2 |\n",
             "<tr><th scope=\"col\" colspan=\"2\">Group</th></tr>",
         ),
         (

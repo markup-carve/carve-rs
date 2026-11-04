@@ -1,9 +1,22 @@
 use carve::{lint_carve, to_carve, to_html};
 
 #[test]
-fn a_header_cell_with_span_glyph_text_is_not_a_span_marker() {
+fn a_header_cell_holding_only_a_span_glyph_is_a_header_placeholder() {
+    // carve#5091 (T4): `|= <|` widens `a`; the blocked `|= ^|` is an empty row header.
     let source = "|a|= <|\n|b|= ^|\n";
     let html = to_html(source);
+    assert!(html.contains("<tr><td colspan=\"2\">a</td></tr>"), "{html}");
+    assert!(
+        html.contains("<tr><td>b</td><th scope=\"row\"></th></tr>"),
+        "{html}"
+    );
+    assert_eq!(to_carve(source), "| a |= < |\n| b |= ^ |\n");
+    let rules: Vec<_> = lint_carve(source).into_iter().map(|w| w.rule).collect();
+    assert_eq!(rules, ["table-span-marker-blocked"]);
+
+    // An escaped glyph is the literal header content.
+    let literal = "|a|= \\<|\n|b|= \\^|\n";
+    let html = to_html(literal);
     assert!(
         html.contains("<tr><td>a</td><th scope=\"row\">&lt;</th></tr>"),
         "{html}"
@@ -12,8 +25,7 @@ fn a_header_cell_with_span_glyph_text_is_not_a_span_marker() {
         html.contains("<tr><td>b</td><th scope=\"row\">^</th></tr>"),
         "{html}"
     );
-    assert!(to_carve(source).contains("|= < |"));
-    assert!(lint_carve(source).is_empty());
+    assert_eq!(to_carve(literal), "| a |= \\< |\n| b |= \\^ |\n");
 }
 
 #[test]

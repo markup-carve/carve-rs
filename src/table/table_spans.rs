@@ -101,14 +101,27 @@ pub(crate) fn resolve_span_grid_absorbing(
 /// The resolved grid of a pipe table, one entry per authored cell.
 pub(crate) struct TableSpanPlan {
     grid: Vec<Vec<SpanEntry>>,
+    /// The origin each absorbed marker was folded into.
+    owners: std::collections::HashMap<(usize, usize), (usize, usize)>,
 }
 
 impl TableSpanPlan {
     pub(crate) fn new(table: &Table) -> Self {
         let widths: Vec<usize> = table.rows.iter().map(|row| row.cells.len()).collect();
-        Self {
-            grid: resolve_span_grid(&widths, |r, c| table.rows[r].cells[c].span),
-        }
+        let mut owners = std::collections::HashMap::new();
+        let grid = resolve_span_grid_absorbing(
+            &widths,
+            |r, c| table.rows[r].cells[c].span,
+            |origin, marker| {
+                owners.insert(marker, origin);
+            },
+        );
+        Self { grid, owners }
+    }
+
+    /// The cell owning a position: its origin when absorbed, else itself.
+    pub(crate) fn owner(&self, row: usize, col: usize) -> (usize, usize) {
+        self.owners.get(&(row, col)).copied().unwrap_or((row, col))
     }
 
     pub(crate) fn entry(&self, row: usize, col: usize) -> SpanEntry {

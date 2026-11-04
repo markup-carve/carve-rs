@@ -10,7 +10,7 @@
 //! on the header markers and does not reappear on body cells.
 
 const GFM: &str = "| Name | Age |\n|:-----|----:|\n| Alice | 28  |\n";
-const NATIVE: &str = "|=< Name |=> Age |\n| Alice | 28 |\n";
+const NATIVE: &str = "|={<} Name |={>} Age |\n| Alice | 28 |\n";
 
 #[test]
 fn formatting_does_not_invent_body_cell_markers() {
@@ -56,6 +56,6 @@ fn a_genuine_per_cell_override_survives() {
     let src = "|= Item |=> Qty |\n| Apple | 12 |\n| Subtotal |< 12 |\n";
     assert_eq!(
         carve::to_carve(src),
-        "|= Item |=> Qty |\n| Apple | 12 |\n| Subtotal |< 12 |\n"
+        "|= Item |={>} Qty |\n| Apple | 12 |\n| Subtotal |{<} 12 |\n"
     );
 }

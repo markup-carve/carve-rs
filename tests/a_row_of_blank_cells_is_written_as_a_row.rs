@@ -68,7 +68,7 @@ fn a_row_attribute_rides_on_a_blank_row() {
 
 #[test]
 fn the_marked_rows_are_written() {
-    let source = "| a | |\n|{.x} |\n|> |\n| < |\n";
+    let source = "| a | |\n|{.x} |\n|{>} |\n| < |\n";
     assert_eq!(render_carve(&parse(source)).unwrap(), source);
 }
 

@@ -107,7 +107,7 @@ fn a_vertical_marker_needs_a_horizontal_partner() {
         "got {spaced}"
     );
     assert!(
-        carve::to_carve("|=>~ Middle |\n| e |\n").contains("|=>~ Middle |"),
+        carve::to_carve("|=>~ Middle |\n| e |\n").contains("|={>~} Middle |"),
         "the valid form is horizontal before vertical"
     );
 }
@@ -121,7 +121,7 @@ fn question_mark_inherits_horizontal_alignment_only() {
         "got {html}"
     );
     assert!(
-        carve::to_carve(source).contains("|?v x |"),
+        carve::to_carve(source).contains("|{?v} x |"),
         "the writer keeps the vertical-only cell explicit"
     );
 

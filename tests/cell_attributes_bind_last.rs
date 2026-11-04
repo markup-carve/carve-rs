@@ -131,7 +131,7 @@ fn an_attributed_cell_is_never_a_bare_span_marker() {
 fn the_writer_emits_the_block_after_the_markers() {
     let src = carve::to_carve("|=~{#score} Score |\n| 9 |");
     assert!(
-        src.contains("~{#score}"),
+        src.contains("{~ #score}"),
         "the block did not follow the alignment marker: {src}"
     );
     assert!(

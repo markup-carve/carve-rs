@@ -3367,6 +3367,53 @@ pub(crate) fn lint_unpadded_cell_runs(line: &str) -> Vec<(usize, usize, Unpadded
         .collect()
 }
 
+/// Cells spelled with the released 0.1.13 alignment prefix (`|=> x |`), as
+/// `(start, end, message)` byte ranges into `line` (carve#5091). The prefix
+/// still reads with the tree of its braced spelling; `carve fmt` rewrites it.
+pub(crate) fn lint_deprecated_cell_alignments(line: &str) -> Vec<(usize, usize, String)> {
+    if !is_table_start(line) {
+        return Vec::new();
+    }
+    let (_, body) = split_row_attrs(line);
+    let content = strip_row_closing_pipe(body.strip_prefix('|').unwrap_or(body));
+    let prefix = content.as_ptr() as usize - line.as_ptr() as usize;
+    let offsets: Vec<_> = content
+        .char_indices()
+        .map(|(at, _)| at)
+        .chain(std::iter::once(content.len()))
+        .collect();
+    split_table_cells_ranged(content)
+        .cells
+        .into_iter()
+        .filter_map(|cell| {
+            let at = offsets[cell.start];
+            let raw = &content[at..offsets[cell.end]];
+            let glyph = raw.strip_prefix("= ").unwrap_or(raw);
+            if matches!(trim_cell_padding(glyph), "^" | "<") {
+                return None;
+            }
+            let run = scan_cell_marker_run(raw);
+            let (start, end) = run.align_run?;
+            if raw.as_bytes().get(run.run_len) != Some(&b' ') {
+                return None;
+            }
+            let symbols = &raw[start..end];
+            let attrs = run
+                .attr_span
+                .map(|(s, e)| format!(" {}", &raw[s + 1..e - 1]))
+                .unwrap_or_default();
+            let kind = if run.header { "=" } else { "" };
+            let message = format!(
+                "The table cell alignment prefix \"{}\" is the deprecated 0.1.13 spelling, \
+                 removed in 0.2.0. Alignment symbols now lead the cell's attribute block: \
+                 write \"{kind}{{{symbols}{attrs}}}\" (carve fmt rewrites it).",
+                &raw[..run.run_len]
+            );
+            Some((prefix + at + start, prefix + at + end, message))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 thread_local! {
     static INNERMOST_CONTENT_SCANS: Cell<usize> = const { Cell::new(0) };

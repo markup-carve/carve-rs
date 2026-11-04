@@ -1102,9 +1102,92 @@ pub(in crate::parse) struct CellMarkerRun {
     pub align_run: Option<(usize, usize)>,
     pub attr_span: Option<(usize, usize)>,
     pub run_len: usize,
+    /// The block holds alignment symbols and nothing else (`{<}`), so a lone
+    /// `^` or `<` after it stays a span placeholder (T4).
+    pub align_only: bool,
+}
+
+/// D3 (carve#5091): one glued symbol run leading a cell attribute block,
+/// `{>^ .num}`, as `(align, valign, symbol bytes)`. A third symbol, a duplicate
+/// axis or a reversed pair is no run.
+fn cell_alignment_symbols(
+    payload: &[u8],
+) -> Option<(Option<TableAlign>, Option<TableVerticalAlign>, usize)> {
+    let horizontal = *payload.first()?;
+    if !matches!(horizontal, b'<' | b'>' | b'~' | b'?') {
+        return None;
+    }
+    let ends = |at: usize| matches!(payload.get(at), Some(b' ' | b'}'));
+    let vertical = payload
+        .get(1)
+        .copied()
+        .filter(|v| matches!(v, b'^' | b'~' | b'v') && ends(2));
+    if vertical.is_none() && !ends(1) {
+        return None;
+    }
+    if horizontal == b'?' && vertical.is_none() {
+        return None;
+    }
+    let align = match horizontal {
+        b'<' => Some(TableAlign::Left),
+        b'>' => Some(TableAlign::Right),
+        b'~' => Some(TableAlign::Center),
+        _ => None,
+    };
+    let valign = vertical.map(|v| match v {
+        b'^' => TableVerticalAlign::Top,
+        b'v' => TableVerticalAlign::Bottom,
+        _ => TableVerticalAlign::Middle,
+    });
+    Some((align, valign, 1 + usize::from(vertical.is_some())))
+}
+
+/// The T10 prefix `=`? `{...}`: alignment symbols, then ordinary attributes.
+/// None when the block is neither, so the 0.1.13 reading can be tried.
+fn scan_braced_cell_prefix(cell: &str, header: bool) -> Option<CellMarkerRun> {
+    let start = usize::from(header);
+    let bytes = cell.as_bytes();
+    if bytes.get(start) != Some(&b'{') {
+        return None;
+    }
+    let run = |align, valign, attrs, end, align_only| CellMarkerRun {
+        header,
+        align,
+        valign,
+        attrs,
+        align_run: None,
+        attr_span: Some((start, end)),
+        run_len: end,
+        align_only,
+    };
+    if let Some((align, valign, len)) = cell_alignment_symbols(&bytes[start + 1..]) {
+        let mut tail = start + 1 + len;
+        while bytes.get(tail) == Some(&b' ') {
+            tail += 1;
+        }
+        if bytes.get(tail) == Some(&b'}') {
+            return Some(run(align, valign, None, tail + 1, true));
+        }
+        let symbol_alone = bytes.get(tail).is_some_and(|b| b"<>~?^v".contains(b))
+            && matches!(bytes.get(tail + 1), Some(b' ' | b'}'));
+        let blank = bytes.get(tail).is_some_and(|b| b.is_ascii_whitespace());
+        if !symbol_alone && !blank {
+            let block = format!("{{{}", &cell[tail..]);
+            let close = block.bytes().rposition(|b| b == b'}');
+            if let Some((attrs, next)) = read_attrs_at(block.as_bytes(), 0, close) {
+                return Some(run(align, valign, Some(attrs), tail - 1 + next, false));
+            }
+        }
+    }
+    let close = bytes.iter().rposition(|&b| b == b'}');
+    let (attrs, next) = read_attrs_at(bytes, start, close)?;
+    Some(run(None, None, Some(attrs), next, false))
 }
 
 pub(in crate::parse) fn scan_cell_marker_run(cell: &str) -> CellMarkerRun {
+    if let Some(run) = scan_braced_cell_prefix(cell, cell.starts_with('=')) {
+        return run;
+    }
     // A leading `=` marks a HEADER cell, but only when GLUED to the `|` (no
     // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
     // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
@@ -1258,6 +1341,40 @@ pub(in crate::parse) fn scan_cell_marker_run(cell: &str) -> CellMarkerRun {
         align_run,
         attr_span,
         run_len: cell.len() - rest.len(),
+        align_only: false,
+    }
+}
+
+fn lone_span_glyph(text: &str) -> Option<TableCellSpan> {
+    match trim_cell_padding(text) {
+        "^" => Some(TableCellSpan::Rowspan),
+        "<" => Some(TableCellSpan::Colspan),
+        _ => None,
+    }
+}
+
+fn span_placeholder(
+    header: bool,
+    span: TableCellSpan,
+    align: Option<TableAlign>,
+    valign: Option<TableVerticalAlign>,
+    options: &Options<'_>,
+    extra: &[CellFragment],
+) -> TableCell {
+    TableCell {
+        colspan: None,
+        rowspan: None,
+        header,
+        span: Some(span),
+        align,
+        valign,
+        attrs: None,
+        // A span cell renders nothing of its own - it widens a neighbour - so
+        // its own content is empty. A continuation still files its fragments
+        // under this column.
+        children: parse_cell_content("", options, None, extra),
+        blocks: None,
+        pos: None,
     }
 }
 
@@ -1267,15 +1384,29 @@ pub(in crate::parse) fn parse_table_cell(
     anchor: Option<(usize, isize)>,
     extra: &[CellFragment],
 ) -> TableCell {
+    // T4: a padded `^` or `<`, also after a header `=` and its space, is a span.
+    let glyph = cell
+        .strip_prefix('=')
+        .filter(|rest| rest.starts_with(' '))
+        .unwrap_or(cell);
+    if let Some(span) = lone_span_glyph(glyph) {
+        return span_placeholder(cell.starts_with('='), span, None, None, options, extra);
+    }
     let CellMarkerRun {
         mut header,
         mut align,
         mut valign,
         mut attrs,
         run_len,
+        align_only,
         ..
     } = scan_cell_marker_run(cell);
     let mut rest = &cell[run_len..];
+    if align_only && rest.starts_with(' ') {
+        if let Some(span) = lone_span_glyph(rest) {
+            return span_placeholder(header, span, align, valign, options, extra);
+        }
+    }
     // A MARKER RUN ENDS AT A SPACE (grammar §20 T11, corpus
     // 390-a-table-cell-s-marker-run-ends-at-a-space). The kind marker, the
     // alignment run and the attribute block are ONE run, and a cell carrying
@@ -1295,37 +1426,18 @@ pub(in crate::parse) fn parse_table_cell(
         attrs = None;
         rest = cell;
     }
-    let text = trim_cell_padding(rest); // PART 7: cell padding is U+0020 only.
-                                        // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix
-                                        // of one, so a cell that already carried an alignment marker cannot also be
-                                        // a span: whatever follows the marker is content. Without this, `|<<|` read
-                                        // its first `<` as alignment and its second as a lone colspan marker and
-                                        // emitted an empty cell (carve-rs#459). A cell carrying attributes is never
-                                        // a bare span marker either -- its content is literal even if it is just
-                                        // `^` or `<`.
-    let span = match text {
-        _ if header || align.is_some() || valign.is_some() || attrs.is_some() => None,
-        "^" => Some(TableCellSpan::Rowspan),
-        "<" => Some(TableCellSpan::Colspan),
-        _ => None,
-    };
+    // PART 7: cell padding is U+0020 only. A lone glyph that survives a prefix
+    // is content: the spans returned above are the only span spellings.
+    let text = trim_cell_padding(rest);
     TableCell {
         colspan: None,
         rowspan: None,
         header,
-        span,
+        span: None,
         align,
         valign,
         attrs,
-        children: if span.is_some() {
-            // A span cell renders nothing of its own - it widens a neighbour -
-            // so its own content is empty. A continuation still files its
-            // fragments under this column, and they stay in the tree where they
-            // always were.
-            parse_cell_content("", options, None, extra)
-        } else {
-            parse_cell_inlines(cell, text, options, anchor, extra)
-        },
+        children: parse_cell_inlines(cell, text, options, anchor, extra),
         blocks: None,
         // The caller places the cell: it knows where the row line sits.
         pos: None,

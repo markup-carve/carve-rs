@@ -3,11 +3,11 @@ fn fmt_uses_native_headers_and_preserves_table_html() {
     let cases = [
         (
             "| Left | Center | Right | Plain |\n|:---|:---:|---:|---|\n| a | b | c | d |\n",
-            "|=< Left |=~ Center |=> Right |= Plain |\n| a | b | c | d |\n",
+            "|={<} Left |={~} Center |={>} Right |= Plain |\n| a | b | c | d |\n",
         ),
         (
             "| Left | Center | Right |\n|:---|:---:|---:|\n",
-            "|=< Left |=~ Center |=> Right |\n",
+            "|={<} Left |={~} Center |={>} Right |\n",
         ),
         (
             "| A | B |\n|---|---|\n| a | b | wider |\n",

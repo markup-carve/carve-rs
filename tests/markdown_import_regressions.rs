@@ -11,8 +11,8 @@ fn empty_aligned_markdown_headers_have_a_source_form() {
         "|   |   |   |\n|---|:--|---|\n| 2 | 3 | 4 |\n",
     ] {
         let written = try_markdown_to_carve(source).unwrap();
-        // carve#4974: an empty left-aligned header is written as a native `|=<` cell.
-        assert!(written.contains("|=< |"), "{written:?}");
+        // carve#5091: an empty left-aligned header is written as a native `|={<}` cell.
+        assert!(written.contains("|={<} |"), "{written:?}");
         assert_eq!(to_carve(&written), written);
         assert!(carve::to_html(&written).contains("text-align: left"));
     }
@@ -58,14 +58,17 @@ fn an_empty_header_with_no_alignment_is_dropped_and_its_body_row_kept() {
 fn an_aligned_blank_row_keeps_its_alignment() {
     let source = "| A | B |\n|:-:|--:|\n|   |   |\n| 1 | 2 |\n";
     let result = migrate_markdown(source);
-    assert_eq!(result.value, "|=~ A |=> B |\n|~ |> |\n|~ 1 |> 2 |\n");
+    assert_eq!(
+        result.value,
+        "|={~} A |={>} B |\n|{~} |{>} |\n|{~} 1 |{>} 2 |\n"
+    );
     assert_eq!(to_carve(&result.value), result.value);
     assert!(carve::to_html(&result.value).contains(
         "<tr><td style=\"text-align: center;\"></td><td style=\"text-align: right;\"></td></tr>"
     ));
 
     let header = migrate_markdown("|   |   |\n|--:|---|\n| x | y |\n");
-    assert_eq!(header.value, "|=> |= |\n|> x | y |\n");
+    assert_eq!(header.value, "|={>} |= |\n|{>} x | y |\n");
     assert!(!header
         .report
         .diagnostics
