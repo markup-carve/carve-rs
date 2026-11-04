@@ -119,7 +119,9 @@ impl Transparent {
                     index,
                     kind,
                     owner,
-                    lead: line[..line.len() - behind_prefix(line).len()].chars().count(),
+                    lead: line[..line.len() - behind_prefix(line).len()]
+                        .chars()
+                        .count(),
                     rest: rest.to_owned(),
                     text: (*line).to_owned(),
                     width: line.chars().count(),
@@ -165,9 +167,13 @@ impl Transparent {
 
     /// Each erased line as 1-based line, authored owner and whether it is a comment.
     pub(in crate::parse) fn erased_lines(&self) -> impl Iterator<Item = (usize, &str, bool)> {
-        self.erased
-            .iter()
-            .map(|line| (line.index + 1, line.owner.as_str(), line.kind == Kind::Comment))
+        self.erased.iter().map(|line| {
+            (
+                line.index + 1,
+                line.owner.as_str(),
+                line.kind == Kind::Comment,
+            )
+        })
     }
 
     /// Visible 1-based line to authored 1-based line.
@@ -287,7 +293,9 @@ impl Transparent {
                     });
                     // The walk names the note that owns the line; its body is a block list of its own.
                     let note_line = line.owner.split('/').find_map(|segment| {
-                        segment.strip_prefix("footnote:").and_then(|n| n.parse::<usize>().ok())
+                        segment
+                            .strip_prefix("footnote:")
+                            .and_then(|n| n.parse::<usize>().ok())
                     });
                     let note = note_line.and_then(|start| {
                         note_pos
@@ -335,16 +343,26 @@ impl SubtreeVisitor for InsideSpan<'_> {
             }
             if let BlockNode::Comment(comment) = block {
                 let at = self.line.index + 1;
-                if let Some(pos) = comment.pos.as_ref().filter(|pos| {
-                    comment.block && pos.start_line < at && at <= pos.end_line
-                }) {
+                if let Some(pos) = comment
+                    .pos
+                    .as_ref()
+                    .filter(|pos| comment.block && pos.start_line < at && at <= pos.end_line)
+                {
                     // Content lines follow the opener; an opener's tail is the first one.
-                    let lead = usize::from(!comment.content.is_empty()
-                        && self.transparent.erased.iter().all(|e| e.index + 1 != pos.start_line + 1)
-                        && comment.content.split('\n').count()
-                            > (pos.start_line + 1..pos.end_line)
-                                .filter(|n| !self.transparent.erased.iter().any(|e| e.index + 1 == *n))
-                                .count());
+                    let lead = usize::from(
+                        !comment.content.is_empty()
+                            && self
+                                .transparent
+                                .erased
+                                .iter()
+                                .all(|e| e.index + 1 != pos.start_line + 1)
+                            && comment.content.split('\n').count()
+                                > (pos.start_line + 1..pos.end_line)
+                                    .filter(|n| {
+                                        !self.transparent.erased.iter().any(|e| e.index + 1 == *n)
+                                    })
+                                    .count(),
+                    );
                     let before = (pos.start_line + 1..at)
                         .filter(|n| !self.transparent.erased.iter().any(|e| e.index + 1 == *n))
                         .count();
@@ -398,7 +416,10 @@ fn candidates(blocks: &[BlockNode], at: (usize, usize)) -> Vec<usize> {
     let mut found = Vec::new();
     for j in (0..position_index(blocks, at)).rev() {
         found.push(j);
-        if !matches!(blocks[j], BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)) {
+        if !matches!(
+            blocks[j],
+            BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)
+        ) {
             break;
         }
     }
@@ -408,7 +429,10 @@ fn candidates(blocks: &[BlockNode], at: (usize, usize)) -> Vec<usize> {
 fn place_comment(blocks: &mut Vec<BlockNode>, node: BlockNode, pos: &Pos, owner: &str) {
     let at = (pos.start_line, pos.start_column);
     let mut node = Some(node);
-    let mut after = AfterParagraph { at, node: &mut node };
+    let mut after = AfterParagraph {
+        at,
+        node: &mut node,
+    };
     after.blocks(blocks);
     let Some(node) = node else {
         return;
@@ -443,7 +467,10 @@ impl SubtreeVisitor for AfterParagraph<'_> {
             if matches!(blocks[i], BlockNode::Paragraph(_)) {
                 let mut j = i + 1;
                 while j < blocks.len()
-                    && matches!(blocks[j], BlockNode::Comment(_) | BlockNode::AbbreviationDef(_))
+                    && matches!(
+                        blocks[j],
+                        BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)
+                    )
                     && crate::ast_json::block_pos(&blocks[j])
                         .is_some_and(|pos| at_or_before(pos, self.at))
                 {
@@ -483,7 +510,15 @@ fn place_in_owner(
     let nth = owner.split('/').filter(|segment| *segment == last).count();
     let mut seen = 0;
     let mut node = Some(node);
-    owner_walk(blocks, kind == "quote", line, nth, &mut seen, &mut node, pos);
+    owner_walk(
+        blocks,
+        kind == "quote",
+        line,
+        nth,
+        &mut seen,
+        &mut node,
+        pos,
+    );
     match node {
         None => Ok(()),
         Some(node) => Err(node),
@@ -594,7 +629,12 @@ fn containing_path(blocks: &[BlockNode], at: (usize, usize), path: &mut Vec<(usi
         },
         BlockNode::DefinitionList(list) => {
             let mut found = None;
-            for (n, definition) in list.items.iter().flat_map(|item| item.definitions.iter()).enumerate() {
+            for (n, definition) in list
+                .items
+                .iter()
+                .flat_map(|item| item.definitions.iter())
+                .enumerate()
+            {
                 if holds(&definition.pos) {
                     found = Some((n, definition.children.as_slice()));
                     break;

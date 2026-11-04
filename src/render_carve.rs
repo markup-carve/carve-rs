@@ -821,8 +821,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
             }
         };
         escape_window::leave(session, recorded);
-        if let (Some((entry, paragraph, spliced)), Some(block)) =
-            (paragraph_entry.as_mut(), block)
+        if let (Some((entry, paragraph, spliced)), Some(block)) = (paragraph_entry.as_mut(), block)
         {
             if splice_crossing_line(&mut rendered[*entry], paragraph, *spliced, block, &text) {
                 *spliced += 1;
@@ -1626,7 +1625,10 @@ fn splice_crossing_line(
     let (Some(erased), Some(host)) = (erased, paragraph.pos.as_ref()) else {
         return false;
     };
-    if line.contains('\n') || erased.start_line <= host.start_line || erased.start_line >= host.end_line {
+    if line.contains('\n')
+        || erased.start_line <= host.start_line
+        || erased.start_line >= host.end_line
+    {
         return false;
     }
     struct Breaks(Vec<usize>);
@@ -1658,7 +1660,11 @@ fn splice_crossing_line(
     let Some(lead @ 0..=1) = lead else {
         return false;
     };
-    let passed = breaks.0.iter().filter(|next| **next <= erased.start_line).count();
+    let passed = breaks
+        .0
+        .iter()
+        .filter(|next| **next <= erased.start_line)
+        .count();
     let at = lead + passed + spliced;
     let Some(offset) = text.match_indices('\n').nth(at).map(|(i, _)| i) else {
         return false;
