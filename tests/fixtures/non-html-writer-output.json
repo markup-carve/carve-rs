@@ -37,47 +37,47 @@
   {
     "slug": "374-a-collected-definition-closes-the-item-paragraph-2",
     "target": "ansi",
-    "expected": "\u001b[33m1.\u001b[0m a\n\n\u001b[2m[r]: /u\u001b[0m\n\nmore tail\n"
+    "expected": "\u001b[33m1.\u001b[0m a more tail\n\n\u001b[2m[r]: /u\u001b[0m\n"
   },
   {
     "slug": "374-a-collected-definition-closes-the-item-paragraph-2",
     "target": "markdown",
-    "expected": "1. a\n\n[r]: /u\n\nmore\ntail\n"
+    "expected": "1. a\n   more\n   tail\n\n[r]: /u\n"
   },
   {
     "slug": "374-a-collected-definition-closes-the-item-paragraph-2",
     "target": "plain",
-    "expected": "1. a\n\n[r]: /u\n\nmore tail\n"
+    "expected": "1. a more tail\n\n[r]: /u\n"
   },
   {
     "slug": "374-a-collected-definition-closes-the-item-paragraph",
     "target": "ansi",
-    "expected": "\u001b[36m•\u001b[0m a\n\n\u001b[2m[r]: /u\u001b[0m\n\nmore tail\n"
+    "expected": "\u001b[36m•\u001b[0m a more tail\n\n\u001b[2m[r]: /u\u001b[0m\n"
   },
   {
     "slug": "374-a-collected-definition-closes-the-item-paragraph",
     "target": "markdown",
-    "expected": "- a\n\n[r]: /u\n\nmore\ntail\n"
+    "expected": "- a\n  more\n  tail\n\n[r]: /u\n"
   },
   {
     "slug": "374-a-collected-definition-closes-the-item-paragraph",
     "target": "plain",
-    "expected": "- a\n\n[r]: /u\n\nmore tail\n"
+    "expected": "- a more tail\n\n[r]: /u\n"
   },
   {
     "slug": "379-a-reference-definition-cannot-take-its-destination-from-the-next-line-3",
     "target": "ansi",
-    "expected": "\u001b[36m•\u001b[0m \n\n\u001b[2m[d]: /u\u001b[0m\n\n:::\n"
+    "expected": "\u001b[36m•\u001b[0m \n\n\u001b[2m[d]: /u\u001b[0m\n"
   },
   {
     "slug": "379-a-reference-definition-cannot-take-its-destination-from-the-next-line-3",
     "target": "markdown",
-    "expected": "*\n\n[d]: /u\n\n:::\n"
+    "expected": "*\n\n[d]: /u\n"
   },
   {
     "slug": "379-a-reference-definition-cannot-take-its-destination-from-the-next-line-3",
     "target": "plain",
-    "expected": "- \n\n[d]: /u\n\n:::\n"
+    "expected": "- \n\n[d]: /u\n"
   },
   {
     "slug": "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-5",
@@ -127,32 +127,32 @@
   {
     "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph-2",
     "target": "ansi",
-    "expected": "\u001b[1m\u001b[33mterm\u001b[0m\n  definition\n\n\u001b[2m[r]: /url\u001b[0m\n\ntail\n"
+    "expected": "\u001b[1m\u001b[33mterm\u001b[0m\n  definition tail\n\n\u001b[2m[r]: /url\u001b[0m\n"
   },
   {
     "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph-2",
     "target": "markdown",
-    "expected": "**term**\n\ndefinition\n\n[r]: /url\n\ntail\n"
+    "expected": "**term**\n\ndefinition\ntail\n\n[r]: /url\n"
   },
   {
     "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph-2",
     "target": "plain",
-    "expected": "term\n  definition\n\n[r]: /url\n\ntail\n"
+    "expected": "term\n  definition tail\n\n[r]: /url\n"
   },
   {
     "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
     "target": "ansi",
-    "expected": "\u001b[1m\u001b[33mterm\u001b[0m\n  definition\n\n\u001b[2m[r]: /url\u001b[0m\n\ntail\n"
+    "expected": "\u001b[1m\u001b[33mterm\u001b[0m\n  definition tail\n\n\u001b[2m[r]: /url\u001b[0m\n"
   },
   {
     "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
     "target": "markdown",
-    "expected": "**term**\n\ndefinition\n\n[r]: /url\n\ntail\n"
+    "expected": "**term**\n\ndefinition\ntail\n\n[r]: /url\n"
   },
   {
     "slug": "444-an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
     "target": "plain",
-    "expected": "term\n  definition\n\n[r]: /url\n\ntail\n"
+    "expected": "term\n  definition tail\n\n[r]: /url\n"
   },
   {
     "slug": "553-a-below-column-line-continues-a-paragraph-only-where-one-is-open-13",
@@ -167,12 +167,12 @@
   {
     "slug": "556-a-closed-block-leaves-no-frame-for-the-line-below-2",
     "target": "markdown",
-    "expected": "- a\n  <code></code>\n  ***\n  ```\n  code\n  ```\n\nafter\n"
+    "expected": "- a\n  ```\n\n  ---\n  ~~~\n  code\n  ~~~\n  ```\n\nafter\n"
   },
   {
     "slug": "556-a-closed-block-leaves-no-frame-for-the-line-below-3",
     "target": "markdown",
-    "expected": "- a\n  <code></code>\n  ```\n  code\n  ```\n  more\n  after\n"
+    "expected": "- a\n  ```\n\n  ~~~\n  code\n  ~~~\n  more\n  ```\n\nafter\n"
   },
   {
     "slug": "75-list-nesting-and-looseness-6",
@@ -227,7 +227,7 @@
   {
     "slug": "566-an-opener-past-a-hosted-container-s-column-opens-there-5",
     "target": "markdown",
-    "expected": "- outer\n  - para\n  ---\n  ```\n  ```\n"
+    "expected": "- outer\n\n  - para\n  ---\n\n  ```\n  ```\n"
   },
   {
     "slug": "108-security-hardening-12",
