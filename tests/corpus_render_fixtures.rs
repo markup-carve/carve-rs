@@ -31,28 +31,78 @@ use std::path::{Path, PathBuf};
 /// The check below is made outside that branch for exactly that reason.
 const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
     (
-        "284-a-ragged-table-keeps-each-row-s-cell-count-2",
+        "228-a-line-at-a-footnote-definition-s-own-column-followed-by-non-blank-text-forms-its-own-tight-block",
         "fmt",
-        "CARVE-P11-066 native headers",
-        "|= |= x |\n| y |\n",
+        "CARVE-P11-079 (a) collects the note out of its item (markup-carve/carve#5115)",
+        "- a\n\nsee[^f]\n\n[^f]: x\n  more\n",
     ),
     (
-        "284-a-ragged-table-keeps-each-row-s-cell-count-3",
+        "436-a-refused-description-plus-folds-a-line-below-column-0-and-a-comment-does-not-2",
         "fmt",
-        "CARVE-P11-066 native headers",
-        "|= h |\n| | x |\n",
+        "PART 11 §7b writes an empty description body as {empty} (markup-carve/carve#5110)",
+        ":: t\n: {empty}\n\nflush\n",
     ),
     (
-        "285-adjacent-block-openers-in-an-attached-run-stay-separate-2",
+        "436-a-refused-description-plus-folds-a-line-below-column-0-and-a-comment-does-not-4",
         "fmt",
-        "CARVE-P11-066 native headers",
-        "- x\n+\n|= a |\n| b |\n+\n|= a |\n| b |\n",
+        "PART 11 §7b writes an empty description body as {empty} (markup-carve/carve#5110)",
+        ":: t\n: {empty}\n\nflush\n",
     ),
     (
-        "99-table-cell-attributes",
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach",
         "fmt",
-        "CARVE-P11-066 native headers",
-        "|={.highlight} Total |= 99 |\n| a | b |\n",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  > q\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-2",
+        "fmt",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  ```\n  x\n  ```\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-3",
+        "fmt",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  # H\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-4",
+        "fmt",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  {.c}\n  > q\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-5",
+        "fmt",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- foo\n  1. {empty}\n   > b\n",
+    ),
+    // Rows this writer is BEHIND or where the fixture is in question,
+    // declared under carve-rs#3524 so every other row stays gated.
+    (
+        "506-comment-columns-and-surviving-list-items-5",
+        "fmt",
+        "carve-rs#3524: lines after an erased comment in a paragraph are not written at their authored column",
+        "- intro\n%% a\n  %% b\n  tail\n",
+    ),
+    (
+        "620-generated-container-documents-23",
+        "fmt",
+        "carve-rs#3524: the fixture keeps the duplicate note in place; carve-js main writes these bytes too",
+        "- a\n\n[^f]: t\n\n[r]: /url\n",
+    ),
+    (
+        "626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-8",
+        "fmt",
+        "carve-rs#3524: the fixture keeps the consumed `+`; this writer closes the fence instead",
+        "- - [ ] ```js\n        x\n\n    ```\n\ntail\n",
+    ),
+    (
+        "84-single-line-headings-10",
+        "md",
+        "carve-rs#3524: stale fixture; carve-js main writes these bytes too",
+        "> - a\n>\n>   ### b \\###\n",
     ),
 ];
 
@@ -71,7 +121,6 @@ fn render(target: &str, source: &str) -> String {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn every_non_html_spec_fixture_matches() {
     let dir = corpus_dir();
     assert!(dir.is_dir(), "spec corpus not found at {}", dir.display());
