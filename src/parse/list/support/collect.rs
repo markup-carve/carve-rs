@@ -688,11 +688,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         // A paragraph below the child fence's column has left that fence.
         // The ownership walk writes a refused `+` as a letter; it is not a
-        // paragraph boundary for this collector.
+        // paragraph boundary for this collector. A consumed `+` there still
+        // missed the fence's item, so it ended the fence (PART 0 S1, carve#5113).
         if active_nested_fence.is_some_and(|open| {
             (indent_columns(line) < open.content_col
-                && line_starts_paragraph(trim_ascii_start(line))
-                && !continuation_marker::is_refused_letter(trim_ascii_start(line)))
+                && ((line_starts_paragraph(trim_ascii_start(line))
+                    && !continuation_marker::is_refused_letter(trim_ascii_start(line)))
+                    || continuation_marker::is_consumed_marker(trim_ascii_start(line))))
                 || (indent_columns(line) >= open.content_col
                     && is_fence_close(trim_ascii_start(line), open))
         }) {
@@ -791,9 +793,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         .find(|line| !is_blank_line(line))
                         .map_or(true, |line| {
                             detect_list_marker_full(trim_ascii_start(line)).is_some()
-                                || (!continuation_marker::is_refused_letter(trim_ascii_start(line))
-                                    && !is_plus_marker(trim_ascii_start(line))
-                                    && indent_columns(line) + strip_cols >= open.content_col)
+                                || indent_columns(line) + strip_cols >= open.content_col
                         })
                 });
                 discarded_outer_blank |= outer_follower && in_fence;

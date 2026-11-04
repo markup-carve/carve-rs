@@ -53,7 +53,7 @@
   },
   {
     "source": "- - ```\n  +\n\n    x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    <p>x</p>\n  </li>\n</ul>"
   },
   {
     "source": "- ~~~\n+\n\ntail\n",
@@ -109,7 +109,7 @@
   },
   {
     "source": "- - ~~~\n  +\n\n    x\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    <p>x</p>\n  </li>\n</ul>"
   },
   {
     "source": "- a\n\n  ```\n+\n\ntail\n",

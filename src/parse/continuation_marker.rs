@@ -153,6 +153,14 @@ pub(super) fn is_refused_letter(line: &str) -> bool {
         .is_some_and(|letter| line.strip_prefix(letter) == Some(""))
 }
 
+/// The whole line is the placeholder of a consumed `+`.
+pub(super) fn is_consumed_marker(line: &str) -> bool {
+    CONSUMED.with(|slot| slot.borrow().1).is_some_and(|mark| {
+        line.strip_prefix("%%")
+            .is_some_and(|rest| rest.trim().strip_prefix(mark) == Some(""))
+    })
+}
+
 /// A reader may keep as payload a `+` the walk read as a letter or consumed.
 pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
     let consumed = CONSUMED
