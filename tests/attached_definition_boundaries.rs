@@ -98,7 +98,7 @@ fn html_tree(html: &str) -> serde_json::Value {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "carve-rs#3858"]
 fn definitions_keep_their_attached_block_ownership() {
     let controls: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/attached-definition-boundaries.json")).unwrap();

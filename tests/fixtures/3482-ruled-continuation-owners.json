@@ -145,52 +145,43 @@
     "source": "- a\n\n  ```\n+\n+\n\ntail\n",
     "html": "<ul>\n  <li><p>a</p>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "list",
-          "ordered": false,
-          "tight": true,
           "items": [
             {
-              "type": "list_item",
               "children": [
                 {
-                  "type": "paragraph",
                   "children": [
                     {
                       "type": "text",
                       "value": "a"
                     }
-                  ]
+                  ],
+                  "type": "paragraph"
                 },
                 {
-                  "type": "code_block",
-                  "content": ""
-                },
-                {
-                  "type": "paragraph",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "+"
-                    }
-                  ]
+                  "content": "",
+                  "type": "code_block"
                 }
-              ]
+              ],
+              "type": "list_item"
             }
-          ]
+          ],
+          "ordered": false,
+          "tight": false,
+          "type": "list"
         },
         {
-          "type": "paragraph",
           "children": [
             {
               "type": "text",
               "value": "tail"
             }
-          ]
+          ],
+          "type": "paragraph"
         }
-      ]
+      ],
+      "type": "document"
     }
   },
   {
@@ -198,85 +189,102 @@
     "source": "- a\n\n  ```\n+\nz\n\ntail\n",
     "html": "<ul>\n  <li><p>a</p>\n    <pre><code></code></pre>\n    <p>z</p>\n  </li>\n</ul>\n<p>tail</p>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "list",
-          "ordered": false,
-          "tight": true,
           "items": [
             {
-              "type": "list_item",
               "children": [
                 {
-                  "type": "paragraph",
                   "children": [
                     {
                       "type": "text",
                       "value": "a"
                     }
-                  ]
+                  ],
+                  "type": "paragraph"
                 },
                 {
-                  "type": "code_block",
-                  "content": ""
+                  "content": "",
+                  "type": "code_block"
                 },
                 {
-                  "type": "paragraph",
                   "children": [
                     {
                       "type": "text",
                       "value": "z"
                     }
-                  ]
+                  ],
+                  "type": "paragraph"
                 }
-              ]
+              ],
+              "type": "list_item"
             }
-          ]
+          ],
+          "ordered": false,
+          "tight": false,
+          "type": "list"
         },
         {
-          "type": "paragraph",
           "children": [
             {
               "type": "text",
               "value": "tail"
             }
-          ]
+          ],
+          "type": "paragraph"
         }
-      ]
+      ],
+      "type": "document"
     }
   },
   {
     "name": "2 one quote",
     "source": " > - a\n >+\n > tail\n",
-    "html": "<p>&gt; - a\n&gt;+\n&gt; tail</p>",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n&gt;+\ntail</li>\n  </ul>\n</blockquote>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "> - a"
-            },
-            {
-              "type": "soft_break"
-            },
-            {
-              "type": "text",
-              "value": ">+"
-            },
-            {
-              "type": "soft_break"
-            },
-            {
-              "type": "text",
-              "value": "> tail"
+              "items": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "a"
+                        },
+                        {
+                          "type": "soft_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": ">+"
+                        },
+                        {
+                          "type": "soft_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": "tail"
+                        }
+                      ],
+                      "type": "paragraph"
+                    }
+                  ],
+                  "type": "list_item"
+                }
+              ],
+              "ordered": false,
+              "tight": true,
+              "type": "list"
             }
-          ]
+          ],
+          "type": "block_quote"
         }
-      ]
+      ],
+      "type": "document"
     }
   },
   {

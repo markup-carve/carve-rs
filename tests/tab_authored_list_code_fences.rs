@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn tab_authored_list_code_fences_preserve_payload_and_closers() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/tab_authored_list_code_fences.json")).unwrap();

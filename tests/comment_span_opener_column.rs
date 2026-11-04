@@ -203,7 +203,6 @@ fn overindented_fences_keep_the_existing_closer_and_payload_rules() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn comment_followups_match_the_current_reference() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/comment_followup_reference.json")).unwrap();

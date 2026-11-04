@@ -27,7 +27,6 @@ fn closed_code_does_not_resume_a_rejected_inline_fence_paragraph() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn canonical_following_code_and_ordinary_code_controls_match_native() {
     for row in fixtures()["exact"].as_array().unwrap() {
         assert_eq!(

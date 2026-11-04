@@ -2,222 +2,230 @@
   {
     "name": "2990 ordered description quote footnote",
     "source": "1. a\n  :: t\n  :  d\n    > q\n    > [^n]: note\n q\n",
-    "html": "<ol>\n  <li>a\n:: t\n:  d\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>\n<p>q</p>",
+    "html": "<ol>\n  <li>a</li>\n</ol>\n<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<blockquote><p>q</p></blockquote>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "list",
-          "ordered": true,
-          "tight": true,
           "items": [
             {
-              "type": "list_item",
               "children": [
                 {
-                  "type": "paragraph",
                   "children": [
                     {
                       "type": "text",
                       "value": "a"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": ":: t"
-                    },
-                    {
-                      "type": "soft_break"
-                    },
-                    {
-                      "type": "text",
-                      "value": ":  d"
                     }
-                  ]
-                },
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "type": "list_item"
+            }
+          ],
+          "ordered": true,
+          "tight": true,
+          "type": "list"
+        },
+        {
+          "items": [
+            {
+              "children": [
                 {
-                  "type": "block_quote",
+                  "type": "text",
+                  "value": "t"
+                }
+              ],
+              "type": "definition_term"
+            },
+            {
+              "children": [
+                {
                   "children": [
                     {
-                      "type": "paragraph",
-                      "children": [
-                        {
-                          "type": "text",
-                          "value": "q"
-                        }
-                      ]
+                      "type": "text",
+                      "value": "d"
                     }
-                  ]
+                  ],
+                  "type": "paragraph"
                 }
-              ]
+              ],
+              "type": "definition_description"
             }
-          ]
+          ],
+          "type": "definition_list"
         },
         {
-          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "q"
+              "children": [
+                {
+                  "type": "text",
+                  "value": "q"
+                }
+              ],
+              "type": "paragraph"
             }
-          ]
+          ],
+          "type": "block_quote"
         },
         {
-          "type": "footnote",
-          "label": "n",
           "children": [
             {
-              "type": "paragraph",
               "children": [
                 {
                   "type": "text",
                   "value": "note"
+                },
+                {
+                  "type": "soft_break"
+                },
+                {
+                  "type": "text",
+                  "value": "q"
                 }
-              ]
+              ],
+              "type": "paragraph"
             }
-          ]
+          ],
+          "label": "n",
+          "type": "footnote"
         }
-      ]
+      ],
+      "type": "document"
     }
   },
   {
     "name": "2990 ordered quote footnote",
     "source": "1. a\n    > q\n    > [^n]: note\n q\n",
-    "html": "<ol>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>\n<p>q</p>",
+    "html": "<ol>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "list",
-          "ordered": true,
-          "tight": true,
           "items": [
             {
-              "type": "list_item",
               "children": [
                 {
-                  "type": "paragraph",
                   "children": [
                     {
                       "type": "text",
                       "value": "a"
                     }
-                  ]
+                  ],
+                  "type": "paragraph"
                 },
                 {
-                  "type": "block_quote",
                   "children": [
                     {
-                      "type": "paragraph",
                       "children": [
                         {
                           "type": "text",
                           "value": "q"
                         }
-                      ]
+                      ],
+                      "type": "paragraph"
                     }
-                  ]
+                  ],
+                  "type": "block_quote"
                 }
-              ]
+              ],
+              "type": "list_item"
             }
-          ]
+          ],
+          "ordered": true,
+          "tight": true,
+          "type": "list"
         },
         {
-          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "q"
-            }
-          ]
-        },
-        {
-          "type": "footnote",
-          "label": "n",
-          "children": [
-            {
-              "type": "paragraph",
               "children": [
                 {
                   "type": "text",
                   "value": "note"
+                },
+                {
+                  "type": "soft_break"
+                },
+                {
+                  "type": "text",
+                  "value": "q"
                 }
-              ]
+              ],
+              "type": "paragraph"
             }
-          ]
+          ],
+          "label": "n",
+          "type": "footnote"
         }
-      ]
+      ],
+      "type": "document"
     }
   },
   {
     "name": "2990 bullet quote footnote",
     "source": "- a\n  > q\n  > [^n]: note\n tail\n",
-    "html": "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>\n<p>tail</p>",
+    "html": "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "list",
-          "ordered": false,
-          "tight": true,
           "items": [
             {
-              "type": "list_item",
               "children": [
                 {
-                  "type": "paragraph",
                   "children": [
                     {
                       "type": "text",
                       "value": "a"
                     }
-                  ]
+                  ],
+                  "type": "paragraph"
                 },
                 {
-                  "type": "block_quote",
                   "children": [
                     {
-                      "type": "paragraph",
                       "children": [
                         {
                           "type": "text",
                           "value": "q"
                         }
-                      ]
+                      ],
+                      "type": "paragraph"
                     }
-                  ]
+                  ],
+                  "type": "block_quote"
                 }
-              ]
+              ],
+              "type": "list_item"
             }
-          ]
+          ],
+          "ordered": false,
+          "tight": true,
+          "type": "list"
         },
         {
-          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "tail"
-            }
-          ]
-        },
-        {
-          "type": "footnote",
-          "label": "n",
-          "children": [
-            {
-              "type": "paragraph",
               "children": [
                 {
                   "type": "text",
                   "value": "note"
+                },
+                {
+                  "type": "soft_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
                 }
-              ]
+              ],
+              "type": "paragraph"
             }
-          ]
+          ],
+          "label": "n",
+          "type": "footnote"
         }
-      ]
+      ],
+      "type": "document"
     }
   },
   {
@@ -282,49 +290,47 @@
   {
     "name": "2990 plain quote control",
     "source": "> q\n> [^n]: note\ntail\n",
-    "html": "<blockquote><p>q</p></blockquote>\n<p>tail</p>",
+    "html": "<blockquote><p>q</p></blockquote>",
     "ast": {
-      "type": "document",
       "children": [
         {
-          "type": "block_quote",
           "children": [
             {
-              "type": "paragraph",
               "children": [
                 {
                   "type": "text",
                   "value": "q"
                 }
-              ]
+              ],
+              "type": "paragraph"
             }
-          ]
+          ],
+          "type": "block_quote"
         },
         {
-          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "tail"
-            }
-          ]
-        },
-        {
-          "type": "footnote",
-          "label": "n",
-          "children": [
-            {
-              "type": "paragraph",
               "children": [
                 {
                   "type": "text",
                   "value": "note"
+                },
+                {
+                  "type": "soft_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
                 }
-              ]
+              ],
+              "type": "paragraph"
             }
-          ]
+          ],
+          "label": "n",
+          "type": "footnote"
         }
-      ]
+      ],
+      "type": "document"
     }
   }
 ]

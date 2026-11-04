@@ -2,22 +2,22 @@
   {
     "id": "term-0",
     "source": "> - :: a\n :: b\n>   : p\n",
-    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a\n:: b</dt>\n        <dd>p</dd>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<dl>\n  <dt>b</dt>\n</dl>\n<blockquote><p>: p</p></blockquote>"
   },
   {
     "id": "term-1",
     "source": "> - :: a\n  :: b\n>   : p\n",
-    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a\n:: b</dt>\n        <dd>p</dd>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<dl>\n  <dt>b</dt>\n</dl>\n<blockquote><p>: p</p></blockquote>"
   },
   {
     "id": "term-2",
     "source": "> - :: a\n   :: b\n>   : p\n",
-    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a\n:: b</dt>\n        <dd>p</dd>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<dl>\n  <dt>b</dt>\n</dl>\n<blockquote><p>: p</p></blockquote>"
   },
   {
     "id": "term-3",
     "source": "> - :: a\n    :: b\n>   : p\n",
-    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a\n:: b</dt>\n        <dd>p</dd>\n      </dl>\n    </li>\n  </ul>\n</blockquote>"
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <dl>\n        <dt>a</dt>\n      </dl>\n    </li>\n  </ul>\n</blockquote>\n<dl>\n  <dt>b</dt>\n</dl>\n<blockquote><p>: p</p></blockquote>"
   },
   {
     "id": "term-4",

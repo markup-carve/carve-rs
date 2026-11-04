@@ -141,24 +141,20 @@ fn a_comment_at_the_container_column_ends_the_term() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
-fn a_definition_past_the_column_is_term_text_and_one_at_it_registers() {
+fn a_definition_under_a_term_registers_past_the_column_and_at_it() {
     assert_eq!(
         flat("[t][r]\n\n:: a\n: b\n  :: c\n    [r]: /u\n"),
         "<p><a href=\"/u\">t</a></p><dl><dt>a</dt><dd><p>b</p><dl><dt>c</dt></dl></dd></dl>"
     );
     assert_eq!(
         flat("x[^n]\n\n- item\n\n  :: c\n    [^n]: y\n"),
-        "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><ul><li>item<dl><dt>c</dt></dl></li></ul><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>y<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p></li></ol></section>"
+        "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><ul><li><p>item</p><dl><dt>c</dt></dl></li></ul><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>y<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p></li></ol></section>"
     );
     assert_eq!(
         flat("[t][r]\n\n:: a\n: b\n  :: c\n  [r]: /u\n"),
         "<p><a href=\"/u\">t</a></p><dl><dt>a</dt><dd><p>b</p><dl><dt>c</dt></dl></dd></dl>"
     );
-    assert_eq!(
-        reports("[t][r]\n\n:: a\n: b\n  :: c\n    [r]: /u\n"),
-        [(6, 5)]
-    );
+    assert!(reports("[t][r]\n\n:: a\n: b\n  :: c\n    [r]: /u\n").is_empty());
     assert!(reports(":: c\n  %%%\n  # H\n  %%%\n  more\n").is_empty());
 }
 
