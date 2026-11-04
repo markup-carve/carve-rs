@@ -31,19 +31,31 @@ fn definition(href: &str, place: &str) -> Value {
         "item" => {
             json!({"type":"list","ordered":false,"tight":true,"items":[{"type":"list_item","children":[{"type":"paragraph","children":[{"type":"text","value":"i"}]},def]}]})
         }
+        "group" => json!({"type":"figure_group","children":[def]}),
+        "cell" => {
+            json!({"type":"table","rows":[{"type":"table_row","cells":[{"type":"table_cell","header":false,"blocks":[def]}]}]})
+        }
         _ => unreachable!(),
     }
 }
 
 #[test]
 fn every_written_reference_reads_back_to_its_own_target() {
-    let places = ["top", "note", "note-later", "quote", "item"];
+    let places = [
+        "top",
+        "note",
+        "note-later",
+        "quote",
+        "item",
+        "group",
+        "cell",
+    ];
     let targets = ["/a", "/b", "/c"];
     let mut written = 0;
     let mut checked = 0;
     for first in places {
         for second in places {
-            for third in [None, Some("top"), Some("note"), Some("item")] {
+            for third in [None, Some("top"), Some("note"), Some("group")] {
                 for href in targets {
                     for link_first in [true, false] {
                         let mut children = vec![definition("/a", first), definition("/b", second)];
@@ -72,7 +84,7 @@ fn every_written_reference_reads_back_to_its_own_target() {
             }
         }
     }
-    assert_eq!(checked, 600);
+    assert_eq!(checked, 1176);
     assert!(written > 0);
 }
 

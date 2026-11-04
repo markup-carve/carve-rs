@@ -699,6 +699,13 @@ fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>,
                         }
                     }
                 }
+                BlockNode::FigureGroup(group) => collect(&group.children, false, targets),
+                BlockNode::Figure(figure) => {
+                    if let FigureTarget::BlockQuote(b) = &*figure.target {
+                        collect(&b.children, false, targets);
+                    }
+                }
+                // Table cells and line blocks register no definition.
                 _ => {}
             }
         }
