@@ -13,6 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Categories added at spec 62b41b27.
+    "a-plus-skips-every-invisible-line-its-host-keeps",
+    "a-quote-plus-after-a-quote-attached-paragraph-is-a-letter",
     // Categories added between spec 5889a6fe and 4577df8f.
     "a-blank-before-only-invisible-lines-loosens-the-list",
     "a-comment-in-a-blank-run-keeps-the-run-for-a-nested-description-list",
@@ -1414,6 +1417,20 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// declares anything.
 ///
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
+    ("266-a-reference-definition-is-anchored-at-end-of-line-14", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<blockquote><p>text</p></blockquote>\n<p>lazy</p>"),
+    ("613-a-definition-or-attribute-line-in-a-nested-container-leaves-no-paragraph-for-an-unmarked-line-11", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<ul>\n  <li>\n    <blockquote>\n      <ul>\n        <li>para</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>\n<p>tail</p>"),
+    ("613-a-definition-or-attribute-line-in-a-nested-container-leaves-no-paragraph-for-an-unmarked-line-15", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<blockquote>\n  <ul>\n    <li>para</li>\n  </ul>\n</blockquote>\n<p>tail</p>"),
+    ("615-a-line-past-a-body-s-column-is-read-in-the-body-and-a-quote-does-not-rebase-11", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<blockquote>\n  <ul>\n    <li>\n      <blockquote><p>para</p></blockquote>\n    </li>\n  </ul>\n</blockquote>\n<p>tail</p>\n<p><a href=\"/u\">r</a></p>"),
+    ("615-a-line-past-a-body-s-column-is-read-in-the-body-and-a-quote-does-not-rebase-12", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>d</dd>\n  </dl>\n</blockquote>\n<p>tail</p>"),
+    ("615-a-line-past-a-body-s-column-is-read-in-the-body-and-a-quote-does-not-rebase-8", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<ul>\n  <li>\n    <blockquote><p>para</p></blockquote>\n  </li>\n</ul>\n<p>tail</p>\n<p><a href=\"/u\">r</a></p>"),
+    ("866-an-abbreviation-definition-after-a-plus-is-skipped-like-a-link-definition-4", "spec pin 62b41b27: carve#5130 ruling not ported yet (carve-js first)", "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <p>text</p>\n</blockquote>\n<p><abbr title=\"b\">A</abbr></p>"),
+    ("881-an-indented-quote-prefix-keeps-an-invisible-plus-follower-in-its-host-2", "spec pin 62b41b27: carve#5130 ruling not ported yet (carve-js first)", "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <p>b</p>\n</blockquote>"),
+    ("881-an-indented-quote-prefix-keeps-an-invisible-plus-follower-in-its-host-3", "spec pin 62b41b27: carve#5130 ruling not ported yet (carve-js first)", "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <p>b</p>\n</blockquote>"),
+    ("945-a-column-0-comment-before-a-sibling-keeps-the-blank-that-loosens-the-list-4", "spec pin 62b41b27: carve#5129 ruling not ported yet (carve-js first)", "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <ul>\n    <li>c</li>\n  </ul>\n</blockquote>"),
+    ("954-a-plus-skips-every-invisible-line-its-host-keeps", "spec pin 62b41b27: carve#5130 ruling not ported yet (carve-js first)", "<ul>\n  <li></li>\n</ul>\n<p>text</p>"),
+    ("954-a-plus-skips-every-invisible-line-its-host-keeps-2", "spec pin 62b41b27: carve#5130 ruling not ported yet (carve-js first)", "<ul>\n  <li></li>\n</ul>\n<p>text</p>"),
+    ("954-a-plus-skips-every-invisible-line-its-host-keeps-3", "spec pin 62b41b27: carve#5130 ruling not ported yet (carve-js first)", "<ul>\n  <li></li>\n</ul>\n<pre><code>z\n</code></pre>\n<p>r<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>x<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
     ("947-a-quote-s-next-is-not-payload-of-an-item-fence-the-last-block-left-open", "spec pin d9d5dea7: carve#5050 row not reached yet", "<blockquote>\n  <p>a</p>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\">x\n\n</code></pre>\n    </li>\n    <li><p>y</p></li>\n  </ul>\n</blockquote>"),
     ("947-a-quote-s-next-is-not-payload-of-an-item-fence-the-last-block-left-open-2", "spec pin d9d5dea7: carve#5050 row not reached yet", "<blockquote>\n  <p>a</p>\n  <ol>\n    <li>\n      <pre><code>x\n\n</code></pre>\n    </li>\n  </ol>\n  <p>y</p>\n</blockquote>"),
