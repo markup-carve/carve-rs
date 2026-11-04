@@ -1492,23 +1492,6 @@ fn opens_with_an_attribute_line(rendered: &str) -> bool {
         .is_some_and(|line| line.starts_with('{') && line.ends_with('}'))
 }
 
-/// Whether a sub-list written at the item's content column needs a blank line
-/// above it to open at all.
-fn needs_a_blank_line_above(
-    previous: Option<&BlockNode>,
-    previous_at_marker_column: bool,
-    a_sub_list_already_opened: bool,
-) -> bool {
-    if previous_at_marker_column {
-        return true;
-    }
-    match previous {
-        None => false,
-        Some(BlockNode::BlockQuote(_)) => true,
-        Some(block) => a_sub_list_already_opened && leaves_a_paragraph_open(block),
-    }
-}
-
 /// Whether a block's rendered text puts NOTHING into the written source.
 fn writes_nothing(text: &str) -> bool {
     trim_non_nbsp(text).is_empty()
@@ -2298,10 +2281,6 @@ fn render_item_blocks(
     let mut prev: Option<&BlockNode> = None;
     let mut prior_definition_list = false;
     let mut prev_at_marker_column = false;
-    // Whether a sub-list has already opened at this item's content column - the
-    // condition under which a later bullet written there joins it instead of
-    // opening below the paragraph above it. See `needs_a_blank_line_above`.
-    let mut a_sub_list_already_opened = false;
     let mut moved_marker: Option<&BlockNode> = None;
     let mut paragraph_tail: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let mut last_shown: Option<&BlockNode> = None;
@@ -2390,12 +2369,8 @@ fn render_item_blocks(
                 && merges_with.is_some_and(|previous| adjacent_blocks_merge(previous, block))
             {
                 out.push_str(&hard_list_boundary_in_a_tight_item(session, &rendered));
-            } else if !separated
-                && needs_a_blank_line_above(prev, prev_at_marker_column, a_sub_list_already_opened)
-            {
-                out.push('\n');
-                out.push_str(&rendered);
             } else {
+                // No blank above it: one would loosen this tight item (carve#5015).
                 out.push_str(&rendered);
             }
             // Back at the content column, so a child below this one is read
@@ -2403,7 +2378,6 @@ fn render_item_blocks(
             // above it.
             prev = Some(block);
             prev_at_marker_column = false;
-            a_sub_list_already_opened = true;
             continue;
         }
         if !separated && follows_definition_list {
@@ -2416,9 +2390,7 @@ fn render_item_blocks(
         // marker column of a sub-list that stands above it, so the re-parse
         // reads the comment into that list's LAST ITEM rather than into this
         // one, and the next pass spells it a level deeper (carve-rs#1592,
-        // carve-js#1676). The gate is the SIBLING'S KIND: `needs_a_blank_line_above`
-        // answers the paragraph-folding question and is reachable only from the
-        // list arm, so it can never see a comment.
+        // carve-js#1676). The gate is the SIBLING'S KIND.
         //
         // A blank line closes the sub-list. It does not loosen the item: a
         // comment spells no paragraph for the blank to part, so the re-parsed
