@@ -16,7 +16,13 @@ let back = carve::from_prosemirror(&editor.json)?;
 Keep positions enabled when source order matters. The bridge stores block
 positions in the non-rendered `carvePos` attribute. The Carve writer uses them
 to restore collected link and footnote definitions to their authored order and
-to emptied container lines.
+to emptied container lines. A footnote whose body places blocks also carries
+`carveDefPos`, the position of its definition line, which orders the notes on
+the way back.
+
+An authored key-value whose key the bridge already uses for a node field
+(`href`, `src`, `level`, `label`, ...) is stored as `carveAttr:<key>`, so
+`[a]{href=x}` keeps its `href` attribute through the editor.
 
 Node and mark names come from the map carve-grammars publishes, vendored under
 `resources/` with the commit it was copied from, rather than restated here - the
@@ -56,8 +62,8 @@ never written. A name the mention grammar cannot hold, such as `Lea Thompson`,
 is written as escaped literal text (`\@Lea Thompson`) and reported under
 `dropped`, never normalized into a different name.
 
-On the shared corpus, 1350 documents report nothing lost and round-trip to
-byte-identical HTML; 345 report what they lost. The spec's
+On the shared corpus, 3435 documents report nothing lost and round-trip to
+byte-identical HTML; 937 report what they lost. The spec's
 [format bridges](https://markup-carve.github.io/carve/format-bridges) page has
 the reasoning behind the arrangement.
 

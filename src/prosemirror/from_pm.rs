@@ -117,7 +117,8 @@ impl Reader {
                         "label".into(),
                         string_json(attrs_obj(child_obj), "label", ""),
                     );
-                    if let Some(pos) = position_value(attrs_obj(child_obj)) {
+                    let ca = attrs_obj(child_obj);
+                    if let Some(pos) = position_value(ca) {
                         match o.get_mut("children") {
                             Some(Json::Array(children)) if !children.is_empty() => {
                                 if let Json::Object(first) = &mut children[0] {
@@ -128,6 +129,9 @@ impl Reader {
                                 o.insert("pos".into(), pos.clone());
                             }
                         }
+                    }
+                    if let Some(def) = position_at(ca, "carveDefPos") {
+                        o.insert("pos".into(), def.clone());
                     }
                 }
                 children.push(n);
@@ -177,25 +181,37 @@ impl Reader {
                 // content and needs its paragraph. Unwrapping it produced a
                 // bare `![moon][gone]` outside any block.
                 let content = array_field(obj, "content");
-                // The paragraph's own attributes are the block image's block
-                // attributes; unwrapping would drop them (corpus 754).
-                let authored = a.keys().any(|key| key != "carvePos");
-                if content.len() == 1 && !authored {
-                    let only = object_ref(&content[0], "paragraph child")?;
-                    if let Some((mapped, _)) = self.resolve(string_field(only, "type")?) {
-                        let ia = attrs_obj(only);
-                        let unresolved = string_opt(ia, "carveRef").is_some()
-                            && string_opt(ia, "src").unwrap_or_default().is_empty();
-                        // A MARKED image is not a lone one. Its marks are what
-                        // wrap it - a link, a span, an emphasis - and a block
-                        // image has nowhere to carry them, so unwrapping
-                        // `[![a](/i)](/u)` returned the image alone and dropped
-                        // the link and the paragraph with it, silently: the
-                        // forward direction reported no loss at all.
-                        let marked = !array_field(only, "marks").is_empty();
-                        if mapped == "image" && !unresolved && !marked {
-                            return self.inline_atom(only, "image");
+                let mut visible = Vec::new();
+                for child in content {
+                    let co = object_ref(child, "paragraph child")?;
+                    let mapped = self.resolve(string_field(co, "type")?).map(|(m, _)| m);
+                    if mapped.as_deref() != Some("comment") {
+                        visible.push((co, mapped));
+                    }
+                }
+                if let [(only, Some(mapped))] = visible.as_slice() {
+                    let ia = attrs_obj(only);
+                    let unresolved = string_opt(ia, "carveRef").is_some()
+                        && string_opt(ia, "src").unwrap_or_default().is_empty();
+                    // A MARKED image is not a lone one. Its marks are what
+                    // wrap it - a link, a span, an emphasis - and a block
+                    // image has nowhere to carry them, so unwrapping
+                    // `[![a](/i)](/u)` returned the image alone and dropped
+                    // the link and the paragraph with it, silently: the
+                    // forward direction reported no loss at all.
+                    let marked = !array_field(only, "marks").is_empty();
+                    if mapped == "image" && !unresolved && !marked {
+                        // A comment on the image's line, or the paragraph's own
+                        // attribute block (merged with the image's on render),
+                        // needs the block-image paragraph to stay.
+                        let mut wrapped = self.container(obj, &ty, "children", true)?;
+                        if content.len() > 1
+                            || matches!(&wrapped, Json::Object(n) if n.contains_key("attrs"))
+                        {
+                            insert(&mut wrapped, "blockImage", Json::Bool(true));
+                            return Ok(wrapped);
                         }
+                        return self.inline_atom(only, "image");
                     }
                 }
                 self.container(obj, &ty, "children", true)
@@ -1298,8 +1314,16 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
     for (k, v) in a {
         match (k.as_str(), v) {
             ("id", Json::String(s)) => id = Some(s.clone()),
+            // `class=""` is an authored empty class token, written as `""` on export.
+            ("class", Json::String(s)) if s.is_empty() => classes = vec![String::new()],
             ("class", Json::String(s)) => {
                 classes = s.split_whitespace().map(str::to_owned).collect()
+            }
+            (_, Json::String(s)) if k.starts_with(KEY_VALUE_ESCAPE) => {
+                kv.insert(
+                    k[KEY_VALUE_ESCAPE.len()..].to_owned(),
+                    Json::String(s.clone()),
+                );
             }
             (_, Json::String(s)) if !is_structural_attr(k) => {
                 kv.insert(k.clone(), Json::String(s.clone()));
@@ -1364,7 +1388,10 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
 }
 
 fn position_value(attrs: &Object) -> Option<&Json> {
-    let value = attrs.get("carvePos")?;
+    position_at(attrs, "carvePos")
+}
+fn position_at<'a>(attrs: &'a Object, key: &str) -> Option<&'a Json> {
+    let value = attrs.get(key)?;
     let Json::Object(pos) = value else {
         return None;
     };
@@ -1461,7 +1488,10 @@ fn separator_widths(a: &Object) -> Json {
     Json::Array(out)
 }
 
-fn is_structural_attr(k: &str) -> bool {
+/// Prefix for an authored key-value whose key a bridge field already uses.
+pub(super) const KEY_VALUE_ESCAPE: &str = "carveAttr:";
+
+pub(super) fn is_structural_attr(k: &str) -> bool {
     matches!(
         k,
         "alt"
@@ -1572,9 +1602,9 @@ fn wire_plain_text(nodes: &[Json]) -> String {
     }
     s
 }
-/// The editor model holds `/*x*/` and `*/x/*` as the same two marks, so an
-/// unattributed `strong` wrapping only an unattributed `emphasis` is read back
-/// as the combined form. The writer still nests it where the content does not
+/// The editor model holds `/*x*/` and `*/x/*` as the same two marks, so a
+/// `strong` wrapping only an unattributed `emphasis` is read back as the
+/// combined form, whose one attribute slot is the outer element's. The writer still nests it where the content does not
 /// hug the delimiters, and the combined spelling keeps `//` inside it as text.
 fn mark_bold_italic(n: &mut Json) {
     let Json::Object(o) = n else {
@@ -1585,7 +1615,6 @@ fn mark_bold_italic(n: &mut Json) {
     };
     children.iter_mut().for_each(mark_bold_italic);
     let combined = o.get("type").and_then(Json::as_str) == Some("strong")
-        && !o.contains_key("attrs")
         && !o.contains_key("boldItalic")
         && matches!(
             o.get("children"),
