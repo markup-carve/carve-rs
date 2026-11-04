@@ -32,18 +32,6 @@ use std::path::{Path, PathBuf};
 const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
     // Rows this writer is BEHIND or where the fixture is in question,
     // declared under the ticket each names so every other row stays gated.
-    (
-        "620-generated-container-documents-23",
-        "fmt",
-        "markup-carve/carve#5160: the fixture keeps the definitions in the item; CARVE-P11-079 (a) collects them",
-        "- a\n\n[^f]: t\n\n[r]: /url\n",
-    ),
-    (
-        "84-single-line-headings-10",
-        "md",
-        "markup-carve/carve#5159: the .md keeps the tight spelling after #5072 made the item loose",
-        "> - a\n>\n>   ### b \\###\n",
-    ),
 ];
 
 fn corpus_dir() -> PathBuf {
