@@ -98,7 +98,6 @@ pub(super) fn html_tree(html: &str) -> serde_json::Value {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn raw_literal_and_math_continuations_keep_their_payload_when_formatted() {
     let controls: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/verbatim-continuation-guards.json")).unwrap();

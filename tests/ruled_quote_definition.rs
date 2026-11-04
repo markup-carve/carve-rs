@@ -21,7 +21,7 @@ fn strip_metadata(value: &mut Value) {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn ruled_quote_definition() {
     let rows: Vec<Value> =
         serde_json::from_str(include_str!("fixtures/2990-quote-definition.json")).unwrap();

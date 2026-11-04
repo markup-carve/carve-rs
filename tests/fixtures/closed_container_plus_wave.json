@@ -7,7 +7,7 @@
   {
     "id": "plus-0-['# h']-+",
     "source": "- ::: box\n  # h\n+\n",
-    "html": "<ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul>"
   },
   {
     "id": "plus-0-['p']- +",
@@ -17,7 +17,7 @@
   {
     "id": "plus-0-['p']-+",
     "source": "- ::: box\n  p\n+\n",
-    "html": "<ul><li><div class=\"box\"><p>p\n+</p></div></li></ul>"
+    "html": "<ul><li><div class=\"box\"><p>p</p></div></li></ul>"
   },
   {
     "id": "plus-0-['p', ':::']- +",
@@ -27,7 +27,7 @@
   {
     "id": "plus-0-['p', ':::']-+",
     "source": "- ::: box\n  p\n  :::\n+\n",
-    "html": "<ul><li><div class=\"box\"><p>p</p></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><p>p</p></div></li></ul>"
   },
   {
     "id": "plus-0-['# h', ':::']- +",
@@ -37,7 +37,7 @@
   {
     "id": "plus-0-['# h', ':::']-+",
     "source": "- ::: box\n  # h\n  :::\n+\n",
-    "html": "<ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul>"
   },
   {
     "id": "plus-0-['| a |']- +",
@@ -47,7 +47,7 @@
   {
     "id": "plus-0-['| a |']-+",
     "source": "- ::: box\n  | a |\n+\n",
-    "html": "<ul><li><div class=\"box\"><table><tbody><tr><td>a</td></tr></tbody></table></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><table><tbody><tr><td>a</td></tr></tbody></table></div></li></ul>"
   },
   {
     "id": "plus-0-['---']- +",
@@ -57,7 +57,7 @@
   {
     "id": "plus-0-['---']-+",
     "source": "- ::: box\n  ---\n+\n",
-    "html": "<ul><li><div class=\"box\"><hr></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><hr></div></li></ul>"
   },
   {
     "id": "plus-1-['# h']- +",
@@ -67,7 +67,7 @@
   {
     "id": "plus-1-['# h']-+",
     "source": "> - ::: box\n>   # h\n> +\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul><p>+</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul></blockquote>"
   },
   {
     "id": "plus-1-['p']- +",
@@ -77,7 +77,7 @@
   {
     "id": "plus-1-['p']-+",
     "source": "> - ::: box\n>   p\n> +\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><p>p\n+</p></div></li></ul></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><p>p</p></div></li></ul></blockquote>"
   },
   {
     "id": "plus-1-['p', ':::']- +",
@@ -87,7 +87,7 @@
   {
     "id": "plus-1-['p', ':::']-+",
     "source": "> - ::: box\n>   p\n>   :::\n> +\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><p>p</p></div></li></ul><p>+</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><p>p</p></div></li></ul></blockquote>"
   },
   {
     "id": "plus-1-['# h', ':::']- +",
@@ -97,7 +97,7 @@
   {
     "id": "plus-1-['# h', ':::']-+",
     "source": "> - ::: box\n>   # h\n>   :::\n> +\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul><p>+</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul></blockquote>"
   },
   {
     "id": "plus-1-['| a |']- +",
@@ -107,7 +107,7 @@
   {
     "id": "plus-1-['| a |']-+",
     "source": "> - ::: box\n>   | a |\n> +\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><table><tbody><tr><td>a</td></tr></tbody></table></div></li></ul><p>+</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><table><tbody><tr><td>a</td></tr></tbody></table></div></li></ul></blockquote>"
   },
   {
     "id": "plus-1-['---']- +",
@@ -117,7 +117,7 @@
   {
     "id": "plus-1-['---']-+",
     "source": "> - ::: box\n>   ---\n> +\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><hr></div></li></ul><p>+</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><hr></div></li></ul></blockquote>"
   },
   {
     "id": "plus-2-['# h']- +",
@@ -127,7 +127,7 @@
   {
     "id": "plus-2-['# h']-+",
     "source": "> > - ::: box\n> >   # h\n> > +\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul><p>+</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "plus-2-['p']- +",
@@ -137,7 +137,7 @@
   {
     "id": "plus-2-['p']-+",
     "source": "> > - ::: box\n> >   p\n> > +\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>p\n+</p></div></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>p</p></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "plus-2-['p', ':::']- +",
@@ -147,7 +147,7 @@
   {
     "id": "plus-2-['p', ':::']-+",
     "source": "> > - ::: box\n> >   p\n> >   :::\n> > +\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>p</p></div></li></ul><p>+</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>p</p></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "plus-2-['# h', ':::']- +",
@@ -157,7 +157,7 @@
   {
     "id": "plus-2-['# h', ':::']-+",
     "source": "> > - ::: box\n> >   # h\n> >   :::\n> > +\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul><p>+</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><h1 id=\"h\">h</h1></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "plus-2-['| a |']- +",
@@ -167,7 +167,7 @@
   {
     "id": "plus-2-['| a |']-+",
     "source": "> > - ::: box\n> >   | a |\n> > +\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><table><tbody><tr><td>a</td></tr></tbody></table></div></li></ul><p>+</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><table><tbody><tr><td>a</td></tr></tbody></table></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "plus-2-['---']- +",
@@ -177,26 +177,26 @@
   {
     "id": "plus-2-['---']-+",
     "source": "> > - ::: box\n> >   ---\n> > +\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><hr></div></li></ul><p>+</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><hr></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "retention-reset",
     "source": "- ::: box\n  p\n %% c\n text\n  # h\n +\n",
-    "html": "<ul><li><div class=\"box\"><p>p</p><p>text</p><h1 id=\"h\">h</h1></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><p>p\ntext</p><h1 id=\"h\">h</h1></div></li></ul><p>+</p>"
   },
   {
     "id": "retention-follow-0",
     "source": "- ::: box\n  p\n %% c\n text\n  > q\n +\n",
-    "html": "<ul><li><div class=\"box\"><p>p</p><p>text</p><blockquote><p>q\n+</p></blockquote></div></li></ul>"
+    "html": "<ul><li><div class=\"box\"><p>p\ntext</p><blockquote><p>q\n+</p></blockquote></div></li></ul>"
   },
   {
     "id": "retention-follow-1",
     "source": "- ::: box\n  p\n %% c\n text\n  {.x}\n +\n",
-    "html": "<ul><li><div class=\"box\"><p>p</p><p>text</p></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><p>p\ntext</p></div></li></ul><p>+</p>"
   },
   {
     "id": "retention-follow-2",
     "source": "- ::: box\n  p\n %% c\n text\n  [^n]: f\n +\n",
-    "html": "<ul><li><div class=\"box\"><p>p</p><p>text</p></div></li></ul><p>+</p>"
+    "html": "<ul><li><div class=\"box\"><p>p\ntext</p></div></li></ul>"
   }
 ]

@@ -2,7 +2,6 @@ use carve::{parse_with_options, to_carve, to_html, Options};
 use serde_json::Value;
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn raised_colon_markers_follow_the_shared_corpus() {
     let rows: Vec<Value> =
         serde_json::from_str(include_str!("fixtures/raised-colon-markers.json")).unwrap();

@@ -2,7 +2,7 @@
   {
     "id": "closed-empty-literal-malformed-run",
     "source": "- ::: |\n  %%%\n  :::\n  :::bad\n c\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\nc\n  </li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c\n- tail</p>"
   },
   {
     "id": "closed-literal-malformed-run",
@@ -67,7 +67,7 @@
   {
     "id": "band-colon-run-is-text",
     "source": "- ::: box\n  a\n  :::\n  b\n :::\n- tail\n",
-    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n:::\n  </li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n  </li></ul><div><ul><li>tail</li></ul></div>"
   },
   {
     "id": "control-closed-box-no-paragraph",
@@ -112,32 +112,32 @@
   {
     "id": "control-band-comment",
     "source": "- ::: box\n  a\n  :::\n  b\n %% c\n d\n- tail\n",
-    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n    d\n  </li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\nd\n  </li><li>tail</li></ul>"
   },
   {
     "id": "control-band-marker",
     "source": "- ::: box\n  a\n  :::\n  b\n - c\n- tail\n",
-    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n- c\n  </li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n  </li><li>c</li><li>tail</li></ul>"
   },
   {
     "id": "control-malformed-run-then-bare-run",
     "source": "- ::: |\n  y\n  :::\n  :::bad\n  :::\n c\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p>y</p></div>\n    :::bad\n:::\nc\n  </li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"><p>y</p></div>\n    :::bad\n    <div></div></li></ul><p>c\n- tail</p>"
   },
   {
     "id": "control-flush-left-tail",
     "source": "- ::: |\n  y\n  :::\n  :::bad\n  :::\nc\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p>y</p></div>\n    :::bad\n:::\nc\n  </li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"><p>y</p></div>\n    :::bad\n    <div></div></li></ul><p>c\n- tail</p>"
   },
   {
     "id": "control-quoted-unprefixed-tail",
     "source": "> - ::: |\n>   y\n>   :::\n>   :::bad\n>   :::\n- tail\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p>y</p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>y</p></div>\n      :::bad\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "control-ordered-literal-code-then-heading",
     "source": "1. ::: |\n   ```\n   x\n   ```\n   :::\n  # c\n1. tail\n",
-    "html": "<ol><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ol><p># c\n1. tail</p>"
+    "html": "<ol><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ol><section id=\"c\"><h1>c</h1><ol><li>tail</li></ol></section>"
   },
   {
     "id": "control-literal-code-no-paragraph",
@@ -162,6 +162,6 @@
   {
     "id": "control-unclosed-literal-code-then-band-heading",
     "source": "1. ::: |\n   ```\n   x\n   ```\n  # c\n1. tail\n",
-    "html": "<ol><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ol><p># c\n1. tail</p>"
+    "html": "<ol><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ol><section id=\"c\"><h1>c</h1><ol><li>tail</li></ol></section>"
   }
 ]

@@ -12,12 +12,12 @@
   {
     "name": "::: column 1",
     "source": "- head\n\n      :::\n      a\n - second\n",
-    "html": "<ul>\n  <li>head\n    <div>\n      <p>a\n- second</p>\n    </div>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li><p>head</p>\n    <div>\n      <p>a</p>\n    </div>\n  </li>\n  <li><p>second</p></li>\n</ul>"
   },
   {
     "name": "::: note column 1",
     "source": "- head\n\n      ::: note\n      a\n - second\n",
-    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\n- second</p>\n    </aside>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li><p>head</p>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n  <li><p>second</p></li>\n</ul>"
   },
   {
     "name": "::: column 2",
@@ -77,6 +77,6 @@
   {
     "name": "blank-exit",
     "source": "- head\n\n      :::\n      a\n\n - second\n",
-    "html": "<ul>\n  <li>head\n    <div>\n      <p>a</p>\n    </div>\n  </li>\n</ul>\n<ul>\n  <li>second</li>\n</ul>"
+    "html": "<ul>\n  <li><p>head</p>\n    <div>\n      <p>a</p>\n    </div>\n  </li>\n  <li><p>second</p></li>\n</ul>"
   }
 ]

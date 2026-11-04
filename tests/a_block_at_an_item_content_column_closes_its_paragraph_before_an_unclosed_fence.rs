@@ -1,9 +1,7 @@
-//! A block at an item's content column ends the item's paragraph
-//! (CARVE-P0-010, CARVE-P0-011), so an unclosed fence below it opens no span
-//! and the container's own closer ends it (A CLOSER IS REQUIRED).
+//! An unclosed fence below a list in a container runs to the end of the
+//! document under rule A (markup-carve/carve#3885), whether or not a block at
+//! the item's content column closed the item's paragraph.
 
-const ENDS_AT_CLOSER: &str =
-    "  <pre><code>code\n::::\n</code></pre>\n</aside>\n<p>after <strong>b</strong></p>";
 const RUNS_ON: &str =
     "more\n    </li>\n  </ul>\n  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
 const RUNS_TO_END: &str = "  <pre><code>code\n::::\n:::\nafter *b*\n</code></pre>\n</aside>";
@@ -64,15 +62,10 @@ fn render(lines: &[&str]) -> String {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
-fn a_block_at_an_item_content_column_closes_its_paragraph() {
+fn a_block_at_an_item_content_column_leaves_the_fence_to_the_outer_closer_search() {
     let failures: Vec<_> = CLOSING
         .iter()
-        .filter(|(_, lines)| {
-            !render(lines)
-                .trim_end_matches('\n')
-                .ends_with(ENDS_AT_CLOSER)
-        })
+        .filter(|(_, lines)| !render(lines).trim_end_matches('\n').ends_with(RUNS_TO_END))
         .map(|(name, lines)| format!("{name}:\n{}", render(lines)))
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n---\n"));

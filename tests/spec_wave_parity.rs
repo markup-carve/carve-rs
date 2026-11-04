@@ -54,7 +54,6 @@ fn a_quote_or_term_at_a_marker_note_body_column_opens_in_the_note() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn marker_note_580_moved_fixture_rows_match_the_checker() {
     let rows: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/marker_note_580_moved.json")).unwrap();

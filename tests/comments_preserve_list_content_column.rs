@@ -1,7 +1,7 @@
 use carve::to_html;
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn comments_preserve_list_content_column() {
     let cases: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/comment-list-content-column.json")).unwrap();

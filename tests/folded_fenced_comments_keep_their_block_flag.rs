@@ -1,19 +1,7 @@
-//! A FENCED COMMENT FOLDED INLINE KEEPS ITS SPELLING over the ProseMirror
-//! bridge (PART 9 §28; markup-carve/carve-rs#2067).
-//!
-//! The two spellings are different documents: `%%` runs to the end of its inline
-//! run, the `%%%` form ends at its closer. So a fenced comment that comes back
-//! spelled `%%` swallows whatever followed it on the line - here the `tail` word
-//! in the term. Only the `block` attribute tells the two apart, and both bridge
-//! arms dropped it.
-//!
-//! `CarveCommentInline` in carve-grammars declares the attribute as of
-//! markup-carve/carve-grammars#572, so the editor schema keeps what this writes.
-//!
-//! The corpus round trip cannot see any of it:
-//! `fully_covered_corpus_documents_round_trip_through_prosemirror` skips every
-//! document that reports a loss, and the folded form reports `soft_break`. The
-//! document is written out here for that reason.
+//! A fenced comment keeps its `block` flag over the ProseMirror bridge
+//! (PART 9 §28; markup-carve/carve-rs#2067). The inline fold this file was
+//! written for is gone under rule A (markup-carve/carve#3885): the fenced
+//! comment under a term is now a block comment, and the round trip keeps it.
 
 use carve::{
     from_prosemirror, parse_with_options, render_html, to_html, to_html_with_options,
@@ -30,56 +18,40 @@ fn both_paths(src: &str) -> String {
     html
 }
 
-/// The comment node inside the term, as both bridge directions spell it.
-fn folded_comment(json: &str) -> serde_json::Value {
+/// The comment node after the term, as both bridge directions spell it.
+fn fenced_comment(json: &str) -> serde_json::Value {
     let payload: serde_json::Value = serde_json::from_str(json).unwrap();
-    payload["content"][0]["content"][0]["content"][2].clone()
+    payload["content"][1].clone()
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
-fn folded_fenced_comment_survives_prosemirror() {
-    // A fenced comment indented under a term folds into the term
-    // (markup-carve/carve#2458), which is the only source spelling that reaches
-    // an inline comment carrying `block`.
+fn a_fenced_comment_under_a_term_survives_prosemirror() {
+    // Under rule A (markup-carve/carve#3885) a term owns nothing, so the fenced
+    // comment no longer folds into it: it is a block comment after the list.
     let source = ":: term\n   %%%\n   hidden\n   %%%\n   tail\n:  description\n";
+    let html = both_paths(source);
     assert_eq!(
-        both_paths(source),
+        html,
         "<dl>\n  <dt>term</dt>\n</dl>\n<p>tail\n:  description</p>"
     );
 
     for positions in [false, true] {
         let original = parse_with_options(source, &Options::default().with_positions(positions));
         let bridge = to_prosemirror(&original);
-        assert_eq!(
-            folded_comment(&bridge.json)["attrs"]["block"],
-            true,
-            "{}",
-            bridge.json
-        );
+        let comment = fenced_comment(&bridge.json);
+        assert_eq!(comment["type"], "carveComment", "{}", bridge.json);
+        assert_eq!(comment["attrs"]["block"], true, "{}", bridge.json);
 
         let returned = from_prosemirror(&bridge.json).unwrap();
         assert_eq!(
-            folded_comment(&to_prosemirror(&returned).json)["attrs"]["block"],
-            true
+            fenced_comment(&to_prosemirror(&returned).json),
+            comment,
+            "{}",
+            bridge.json
         );
-        // The comment still ends at its closer, so the term keeps what followed
-        // it and hides what it contains.
-        let html = render_html(&returned).unwrap();
-        assert!(html.contains("tail"), "{html}");
-        assert!(!html.contains("hidden"), "{html}");
-
-        // A payload without the flag is the `%%` spelling an editor that never
-        // saw a delimited comment would have produced.
-        let mut legacy: serde_json::Value = serde_json::from_str(&bridge.json).unwrap();
-        legacy["content"][0]["content"][0]["content"][2]["attrs"]
-            .as_object_mut()
-            .unwrap()
-            .remove("block");
-        let returned = from_prosemirror(&legacy.to_string()).unwrap();
-        assert_eq!(
-            folded_comment(&to_prosemirror(&returned).json)["attrs"]["block"],
-            false
-        );
+        // The bridge folds the soft break to a space, so only content is compared.
+        let returned_html = render_html(&returned).unwrap();
+        assert!(returned_html.contains("tail"), "{returned_html}");
+        assert!(!returned_html.contains("hidden"), "{returned_html}");
     }
 }

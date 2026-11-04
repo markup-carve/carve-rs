@@ -7,7 +7,7 @@
   {
     "id": "code-1-3",
     "source": "> - a\n>     ::: |\n>     ```\n>     :::\n>    ```\n>   :::\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n      para\nlazy\n    </li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n      para\nlazy\n    </li></ul></blockquote>"
   },
   {
     "id": "code-1-4",
@@ -32,7 +32,7 @@
   {
     "id": "code-2-3",
     "source": "> > - a\n> >     ::: |\n> >     ```\n> >     :::\n> >    ```\n> >   :::\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n        para\nlazy\n      </li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n        para\nlazy\n      </li></ul></blockquote></blockquote>"
   },
   {
     "id": "code-2-4",
@@ -52,227 +52,227 @@
   {
     "id": "dedent-root-3-0",
     "source": "- item\n\n  ::: |\n  %%%\npayload\n  %%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p></p></div></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul><p>payload</p>"
   },
   {
     "id": "dedent-nested-3-0",
     "source": "- a\n  - b\n\n    ::: |\n    %%%\npayload\n    %%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul><p>payload</p>"
   },
   {
     "id": "unquoted-3-0",
     "source": "- ::: |\n  %%%\n  :::\n  :::bad\nc\n  %%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\n  </li></ul><p>c</p><ul><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c</p>"
   },
   {
     "id": "dedent-root-3-1",
     "source": "- item\n\n  ::: |\n  %%%\n payload\n  %%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p></p></div></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul><p>payload</p>"
   },
   {
     "id": "dedent-nested-3-1",
     "source": "- a\n  - b\n\n    ::: |\n    %%%\n payload\n    %%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul><p>payload</p>"
   },
   {
     "id": "unquoted-3-1",
     "source": "- ::: |\n  %%%\n  :::\n  :::bad\n c\n  %%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\n  </li></ul><p>c</p><ul><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c</p>"
   },
   {
     "id": "dedent-root-3-2",
     "source": "- item\n\n  ::: |\n  %%%\n  payload\n  %%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\npayload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-3-2",
     "source": "- a\n  - b\n\n    ::: |\n    %%%\n  payload\n    %%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul>\n    payload\n  </li></ul>"
   },
   {
     "id": "unquoted-3-2",
     "source": "- ::: |\n  %%%\n  :::\n  :::bad\n  c\n  %%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\nc<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-3-3",
     "source": "- item\n\n  ::: |\n  %%%\n   payload\n  %%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\n&nbsp;payload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-3-3",
     "source": "- a\n  - b\n\n    ::: |\n    %%%\n   payload\n    %%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul>\n    payload\n  </li></ul>"
   },
   {
     "id": "unquoted-3-3",
     "source": "- ::: |\n  %%%\n  :::\n  :::bad\n   c\n  %%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\n&nbsp;c<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-3-4",
     "source": "- item\n\n  ::: |\n  %%%\n    payload\n  %%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\n&nbsp;&nbsp;payload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-3-4",
     "source": "- a\n  - b\n\n    ::: |\n    %%%\n    payload\n    %%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p><br>\npayload<br></p></div></li></ul></li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul>"
   },
   {
     "id": "unquoted-3-4",
     "source": "- ::: |\n  %%%\n  :::\n  :::bad\n    c\n  %%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\n&nbsp;&nbsp;c<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-4-0",
     "source": "- item\n\n  ::: |\n  %%%%\npayload\n  %%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p></p></div></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul><p>payload</p>"
   },
   {
     "id": "dedent-nested-4-0",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%\npayload\n    %%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul><p>payload</p>"
   },
   {
     "id": "unquoted-4-0",
     "source": "- ::: |\n  %%%%\n  :::\n  :::bad\nc\n  %%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\n  </li></ul><p>c</p><ul><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c</p>"
   },
   {
     "id": "dedent-root-4-1",
     "source": "- item\n\n  ::: |\n  %%%%\n payload\n  %%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p></p></div></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul><p>payload</p>"
   },
   {
     "id": "dedent-nested-4-1",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%\n payload\n    %%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul><p>payload</p>"
   },
   {
     "id": "unquoted-4-1",
     "source": "- ::: |\n  %%%%\n  :::\n  :::bad\n c\n  %%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\n  </li></ul><p>c</p><ul><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c</p>"
   },
   {
     "id": "dedent-root-4-2",
     "source": "- item\n\n  ::: |\n  %%%%\n  payload\n  %%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\npayload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-4-2",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%\n  payload\n    %%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul>\n    payload\n  </li></ul>"
   },
   {
     "id": "unquoted-4-2",
     "source": "- ::: |\n  %%%%\n  :::\n  :::bad\n  c\n  %%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\nc<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-4-3",
     "source": "- item\n\n  ::: |\n  %%%%\n   payload\n  %%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\n&nbsp;payload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-4-3",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%\n   payload\n    %%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul>\n    payload\n  </li></ul>"
   },
   {
     "id": "unquoted-4-3",
     "source": "- ::: |\n  %%%%\n  :::\n  :::bad\n   c\n  %%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\n&nbsp;c<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-4-4",
     "source": "- item\n\n  ::: |\n  %%%%\n    payload\n  %%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\n&nbsp;&nbsp;payload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-4-4",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%\n    payload\n    %%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p><br>\npayload<br></p></div></li></ul></li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul>"
   },
   {
     "id": "unquoted-4-4",
     "source": "- ::: |\n  %%%%\n  :::\n  :::bad\n    c\n  %%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\n&nbsp;&nbsp;c<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-5-0",
     "source": "- item\n\n  ::: |\n  %%%%%\npayload\n  %%%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p></p></div></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul><p>payload</p>"
   },
   {
     "id": "dedent-nested-5-0",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%%\npayload\n    %%%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul><p>payload</p>"
   },
   {
     "id": "unquoted-5-0",
     "source": "- ::: |\n  %%%%%\n  :::\n  :::bad\nc\n  %%%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\n  </li></ul><p>c</p><ul><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c</p>"
   },
   {
     "id": "dedent-root-5-1",
     "source": "- item\n\n  ::: |\n  %%%%%\n payload\n  %%%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p></p></div></li></ul><p>payload</p><p>:::</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul><p>payload</p>"
   },
   {
     "id": "dedent-nested-5-1",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%%\n payload\n    %%%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul><p>payload</p>"
   },
   {
     "id": "unquoted-5-1",
     "source": "- ::: |\n  %%%%%\n  :::\n  :::bad\n c\n  %%%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\n  </li></ul><p>c</p><ul><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li></ul><p>c</p>"
   },
   {
     "id": "dedent-root-5-2",
     "source": "- item\n\n  ::: |\n  %%%%%\n  payload\n  %%%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\npayload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-5-2",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%%\n  payload\n    %%%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul>\n    payload\n  </li></ul>"
   },
   {
     "id": "unquoted-5-2",
     "source": "- ::: |\n  %%%%%\n  :::\n  :::bad\n  c\n  %%%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\nc<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-5-3",
     "source": "- item\n\n  ::: |\n  %%%%%\n   payload\n  %%%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\n&nbsp;payload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-5-3",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%%\n   payload\n    %%%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p></p></div></li></ul>\n    payload\n    :::\n  </li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul>\n    payload\n  </li></ul>"
   },
   {
     "id": "unquoted-5-3",
     "source": "- ::: |\n  %%%%%\n  :::\n  :::bad\n   c\n  %%%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\n&nbsp;c<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "dedent-root-5-4",
     "source": "- item\n\n  ::: |\n  %%%%%\n    payload\n  %%%%%\n  :::\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p><br>\n&nbsp;&nbsp;payload<br></p></div></li></ul>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"></div></li></ul>"
   },
   {
     "id": "dedent-nested-5-4",
     "source": "- a\n  - b\n\n    ::: |\n    %%%%%\n    payload\n    %%%%%\n    :::\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p><br>\npayload<br></p></div></li></ul></li></ul>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"></div></li></ul></li></ul>"
   },
   {
     "id": "unquoted-5-4",
     "source": "- ::: |\n  %%%%%\n  :::\n  :::bad\n    c\n  %%%%%\n- tail\n",
-    "html": "<ul><li><div class=\"line-block\"><p><br>\n:::<br>\n:::bad<br>\n&nbsp;&nbsp;c<br></p></div></li><li>tail</li></ul>"
+    "html": "<ul><li><div class=\"line-block\"></div></li><li>tail</li></ul>"
   },
   {
     "id": "closed-prose-1-3-5",
@@ -392,257 +392,257 @@
   {
     "id": "closed-hosted-comment",
     "source": "> - ::: box\n>   text\n>   %%%\n>   c\n>   %%%\n> out\n>   :::\n- tail\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><p>text</p></div></li></ul><p>out\n:::\n- tail</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"box\"><p>text</p></div></li></ul><p>out</p><div></div></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "marker-comment-handoff",
     "source": "> - %%%\n>   ::: box\n>   :::\n- tail\n>   %%%\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>tail</li></ul><blockquote></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>tail</li></ul><blockquote></blockquote>"
   },
   {
     "id": "left-item-0-False",
     "source": ">  - ::: box\n>    body\n> - next\n>    :::\n- tail\n",
-    "html": "<blockquote><ul><li><div class=\"box\"><p>body</p></div></li></ul><ul><li>next\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+    "html": "<blockquote><ul><li><div class=\"box\"><p>body</p></div></li><li>next\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "left-item-0-True",
     "source": "> >  - ::: box\n> >    body\n> > - next\n> >    :::\n- tail\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>body</p></div></li></ul><ul><li>next\n        <div></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>body</p></div></li><li>next\n        <div></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "left-item-1-False",
     "source": "> - a\n>    - ::: box\n>      body\n>   - next\n>      :::\n- tail\n",
-    "html": "<blockquote><ul><li>a\n      <ul><li><div class=\"box\"><p>body</p></div></li></ul><ul><li>next\n          <div></div></li></ul></li></ul></blockquote><ul><li>tail</li></ul>"
+    "html": "<blockquote><ul><li>a\n      <ul><li><div class=\"box\"><p>body</p></div></li><li>next\n          <div></div></li></ul></li></ul></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "left-item-1-True",
     "source": "> > - a\n> >    - ::: box\n> >      body\n> >   - next\n> >      :::\n- tail\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li><div class=\"box\"><p>body</p></div></li></ul><ul><li>next\n            <div></div></li></ul></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li><div class=\"box\"><p>body</p></div></li><li>next\n            <div></div></li></ul></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "fresh-code-after-verse-0-2",
     "source": "- item\n  ::: |\n  verse\n  :::\n\n  ```\n  > payload\n  ```\nafter\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-0-3",
     "source": "- item\n  ::: |\n  verse\n  :::\n\n   ```\n   > payload\n   ```\nafter\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-0-4",
     "source": "- item\n  ::: |\n  verse\n  :::\n\n    ```\n    > payload\n    ```\nafter\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-0-6",
     "source": "- item\n  ::: |\n  verse\n  :::\n\n      ```\n      > payload\n      ```\nafter\n",
-    "html": "<ul><li>item\n    <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
+    "html": "<ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul><p>after</p>"
   },
   {
     "id": "nested-literal-floor-0-4",
     "source": "- a\n  - b\n\n    ::: |\n    text\n    :::\n    ```\n    code\n    ```\nafter\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul><p>after</p>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul><p>after</p>"
   },
   {
     "id": "nested-literal-floor-0-5",
     "source": "- a\n  - b\n\n     ::: |\n     text\n    :::\n    ```\n    code\n    ```\nafter\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul><p>after</p>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul><p>after</p>"
   },
   {
     "id": "nested-literal-floor-0-6",
     "source": "- a\n  - b\n\n      ::: |\n      text\n    :::\n    ```\n    code\n    ```\nafter\n",
-    "html": "<ul><li>a\n    <ul><li>b\n        <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul><p>after</p>"
+    "html": "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-1-2",
     "source": "> - item\n>   ::: |\n>   verse\n>   :::\n> \n>   ```\n>   > payload\n>   ```\nafter\n",
-    "html": "<blockquote><ul><li>item\n      <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-1-3",
     "source": "> - item\n>   ::: |\n>   verse\n>   :::\n> \n>    ```\n>    > payload\n>    ```\nafter\n",
-    "html": "<blockquote><ul><li>item\n      <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-1-4",
     "source": "> - item\n>   ::: |\n>   verse\n>   :::\n> \n>     ```\n>     > payload\n>     ```\nafter\n",
-    "html": "<blockquote><ul><li>item\n      <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-1-6",
     "source": "> - item\n>   ::: |\n>   verse\n>   :::\n> \n>       ```\n>       > payload\n>       ```\nafter\n",
-    "html": "<blockquote><ul><li>item\n      <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "nested-literal-floor-1-4",
     "source": "> - a\n>   - b\n> \n>     ::: |\n>     text\n>     :::\n>     ```\n>     code\n>     ```\nafter\n",
-    "html": "<blockquote><ul><li>a\n      <ul><li>b\n          <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li>a\n      <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "nested-literal-floor-1-5",
     "source": "> - a\n>   - b\n> \n>      ::: |\n>      text\n>     :::\n>     ```\n>     code\n>     ```\nafter\n",
-    "html": "<blockquote><ul><li>a\n      <ul><li>b\n          <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li>a\n      <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "nested-literal-floor-1-6",
     "source": "> - a\n>   - b\n> \n>       ::: |\n>       text\n>     :::\n>     ```\n>     code\n>     ```\nafter\n",
-    "html": "<blockquote><ul><li>a\n      <ul><li>b\n          <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote><p>after</p>"
+    "html": "<blockquote><ul><li>a\n      <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-2-2",
     "source": "> > - item\n> >   ::: |\n> >   verse\n> >   :::\n> > \n> >   ```\n> >   > payload\n> >   ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>item\n        <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-2-3",
     "source": "> > - item\n> >   ::: |\n> >   verse\n> >   :::\n> > \n> >    ```\n> >    > payload\n> >    ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>item\n        <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-2-4",
     "source": "> > - item\n> >   ::: |\n> >   verse\n> >   :::\n> > \n> >     ```\n> >     > payload\n> >     ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>item\n        <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "fresh-code-after-verse-2-6",
     "source": "> > - item\n> >   ::: |\n> >   verse\n> >   :::\n> > \n> >       ```\n> >       > payload\n> >       ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>item\n        <div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li><p>item</p><div class=\"line-block\"><p>verse</p></div><pre><code>&gt; payload\n</code></pre></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "nested-literal-floor-2-4",
     "source": "> > - a\n> >   - b\n> > \n> >     ::: |\n> >     text\n> >     :::\n> >     ```\n> >     code\n> >     ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li>b\n            <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "nested-literal-floor-2-5",
     "source": "> > - a\n> >   - b\n> > \n> >      ::: |\n> >      text\n> >     :::\n> >     ```\n> >     code\n> >     ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li>b\n            <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "nested-literal-floor-2-6",
     "source": "> > - a\n> >   - b\n> > \n> >       ::: |\n> >       text\n> >     :::\n> >     ```\n> >     code\n> >     ```\nafter\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li>b\n            <div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote></blockquote><p>after</p>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div><pre><code>code\n</code></pre></li></ul></li></ul></blockquote></blockquote><p>after</p>"
   },
   {
     "id": "provisional-follow-1-- ::: |-1-text",
     "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n- first\n>   %%%\n>  text\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n    </li></ul><p>- first</p><p>text\n- last</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- ::: |-1-```",
     "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n- first\n>   %%%\n>  ```\n>  code\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n    </li></ul><p>- first</p><p><code>\ncode\n- last</code></p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- ::: |-2-text",
     "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n- first\n>   %%%\n>   text\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n    </li></ul><p>- first</p><p>text\n- last</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- ::: |-2-```",
     "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n- first\n>   %%%\n>   ```\n>   code\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n    </li></ul><p>- first</p><p><code>\ncode</code></p></blockquote><ul><li>last</li></ul>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- ::: |-3-text",
     "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n- first\n>   %%%\n>    text\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n    </li></ul><p>- first</p><p>text\n- last</p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- ::: |-3-```",
     "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n- first\n>   %%%\n>    ```\n>    code\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n    </li></ul><p>- first</p><p><code>\ncode</code></p></blockquote><ul><li>last</li></ul>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- %%%-1-text",
     "source": "> - %%%\n>   ::: box\n>   :::\n- first\n>   %%%\n>  text\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote><p>text\n- last</p></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- %%%-1-```",
     "source": "> - %%%\n>   ::: box\n>   :::\n- first\n>   %%%\n>  ```\n>  code\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote><p><code>\ncode\n- last</code></p></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- %%%-2-text",
     "source": "> - %%%\n>   ::: box\n>   :::\n- first\n>   %%%\n>   text\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote><p>text\n- last</p></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- %%%-2-```",
     "source": "> - %%%\n>   ::: box\n>   :::\n- first\n>   %%%\n>   ```\n>   code\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote><p><code>\ncode\n- last</code></p></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- %%%-3-text",
     "source": "> - %%%\n>   ::: box\n>   :::\n- first\n>   %%%\n>    text\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote><p>text\n- last</p></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-1-- %%%-3-```",
     "source": "> - %%%\n>   ::: box\n>   :::\n- first\n>   %%%\n>    ```\n>    code\n- last\n",
-    "html": "<blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote><ul><li>first</li></ul><blockquote><p><code>\ncode\n- last</code></p></blockquote>"
+    "html": "<blockquote><ul><li></li></ul></blockquote><ul><li>first</li></ul><blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- ::: |-1-text",
     "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n- first\n> >   %%%\n> >  text\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n      </li></ul><p>- first</p><p>text\n- last</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- ::: |-1-```",
     "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n- first\n> >   %%%\n> >  ```\n> >  code\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n      </li></ul><p>- first</p><p><code>\ncode\n- last</code></p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- ::: |-2-text",
     "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n- first\n> >   %%%\n> >   text\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n      </li></ul><p>- first</p><p>text\n- last</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- ::: |-2-```",
     "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n- first\n> >   %%%\n> >   ```\n> >   code\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n      </li></ul><p>- first</p><p><code>\ncode</code></p></blockquote></blockquote><ul><li>last</li></ul>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- ::: |-3-text",
     "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n- first\n> >   %%%\n> >    text\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n      </li></ul><p>- first</p><p>text\n- last</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- ::: |-3-```",
     "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n- first\n> >   %%%\n> >    ```\n> >    code\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n      </li></ul><p>- first</p><p><code>\ncode</code></p></blockquote></blockquote><ul><li>last</li></ul>"
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- %%%-1-text",
     "source": "> > - %%%\n> >   ::: box\n> >   :::\n- first\n> >   %%%\n> >  text\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote><p>text\n- last</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- %%%-1-```",
     "source": "> > - %%%\n> >   ::: box\n> >   :::\n- first\n> >   %%%\n> >  ```\n> >  code\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote><p><code>\ncode\n- last</code></p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- %%%-2-text",
     "source": "> > - %%%\n> >   ::: box\n> >   :::\n- first\n> >   %%%\n> >   text\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote><p>text\n- last</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- %%%-2-```",
     "source": "> > - %%%\n> >   ::: box\n> >   :::\n- first\n> >   %%%\n> >   ```\n> >   code\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote><p><code>\ncode\n- last</code></p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- %%%-3-text",
     "source": "> > - %%%\n> >   ::: box\n> >   :::\n- first\n> >   %%%\n> >    text\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote><p>text\n- last</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "provisional-follow-2-- %%%-3-```",
     "source": "> > - %%%\n> >   ::: box\n> >   :::\n- first\n> >   %%%\n> >    ```\n> >    code\n- last\n",
-    "html": "<blockquote><blockquote><ul><li><div class=\"box\"></div></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote><p><code>\ncode\n- last</code></p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li></li></ul></blockquote></blockquote><ul><li>first</li></ul><blockquote><blockquote></blockquote></blockquote><ul><li>last</li></ul>"
   },
   {
     "id": "literal-dedent-sibling-4-1. c",

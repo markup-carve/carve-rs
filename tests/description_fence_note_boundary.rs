@@ -3,12 +3,11 @@ fn html(source: &str) -> String {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
-fn a_note_below_the_description_ends_its_fence_closer_search() {
+fn a_note_below_the_description_closes_the_fence_and_takes_the_rest() {
     let source = ":: term\n: detail\n  ```\n  code\n[^n]: note\npayload\n  ```\nafter\n";
     assert_eq!(
         html(source),
-        "<dl>\n  <dt>term</dt>\n  <dd>detail\n<code>\ncode</code></dd>\n</dl>\n<p>payload\n<code>\nafter</code></p>"
+        "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>detail</p>\n    <pre><code>code\n</code></pre>\n  </dd>\n</dl>\n<p>after</p>"
     );
 }
 

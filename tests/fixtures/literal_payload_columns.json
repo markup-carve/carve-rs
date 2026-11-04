@@ -2,7 +2,7 @@
   {
     "id": "payload-span-0-3-1",
     "source": "- a\n    ::: |\n    ```\n    :::\n ```\n  :::\n  para\nlazy\n",
-    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code></code></p></div></li></ul><p><code>\n:::\npara\nlazy</code></p>"
+    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code></code></p></div></li></ul><pre><code> :::\n para\nlazy\n</code></pre>"
   },
   {
     "id": "payload-span-0-3-2",
@@ -12,7 +12,7 @@
   {
     "id": "payload-span-0-3-3",
     "source": "- a\n    ::: |\n    ```\n    :::\n   ```\n  :::\n  para\nlazy\n",
-    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n    para\nlazy\n  </li></ul>"
+    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n    para\nlazy\n  </li></ul>"
   },
   {
     "id": "payload-span-0-3-4",
@@ -37,7 +37,7 @@
   {
     "id": "payload-span-0-4-1",
     "source": "- a\n    ::: |\n    ````\n    :::\n ````\n  :::\n  para\nlazy\n",
-    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code></code></p></div></li></ul><p><code>\n:::\npara\nlazy</code></p>"
+    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code></code></p></div></li></ul><pre><code> :::\n para\nlazy\n</code></pre>"
   },
   {
     "id": "payload-span-0-4-2",
@@ -47,7 +47,7 @@
   {
     "id": "payload-span-0-4-3",
     "source": "- a\n    ::: |\n    ````\n    :::\n   ````\n  :::\n  para\nlazy\n",
-    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n    para\nlazy\n  </li></ul>"
+    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n    para\nlazy\n  </li></ul>"
   },
   {
     "id": "payload-span-0-4-4",
@@ -72,7 +72,7 @@
   {
     "id": "payload-span-1-3-1",
     "source": "> - a\n>     ::: |\n>     ```\n>     :::\n>  ```\n>   :::\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li></ul><p><code>\n:::\npara\nlazy</code></p></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li></ul><pre><code> :::\n para\n</code></pre></blockquote><p>lazy</p>"
   },
   {
     "id": "payload-span-1-3-2",
@@ -82,7 +82,7 @@
   {
     "id": "payload-span-1-3-3",
     "source": "> - a\n>     ::: |\n>     ```\n>     :::\n>    ```\n>   :::\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n      para\nlazy\n    </li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n      para\nlazy\n    </li></ul></blockquote>"
   },
   {
     "id": "payload-span-1-3-4",
@@ -107,7 +107,7 @@
   {
     "id": "payload-span-1-4-1",
     "source": "> - a\n>     ::: |\n>     ````\n>     :::\n>  ````\n>   :::\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li></ul><p><code>\n:::\npara\nlazy</code></p></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li></ul><pre><code> :::\n para\n</code></pre></blockquote><p>lazy</p>"
   },
   {
     "id": "payload-span-1-4-2",
@@ -117,7 +117,7 @@
   {
     "id": "payload-span-1-4-3",
     "source": "> - a\n>     ::: |\n>     ````\n>     :::\n>    ````\n>   :::\n>   para\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n      para\nlazy\n    </li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n      para\nlazy\n    </li></ul></blockquote>"
   },
   {
     "id": "payload-span-1-4-4",
@@ -142,7 +142,7 @@
   {
     "id": "payload-span-2-3-1",
     "source": "> > - a\n> >     ::: |\n> >     ```\n> >     :::\n> >  ```\n> >   :::\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li></ul><p><code>\n:::\npara\nlazy</code></p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li></ul><pre><code> :::\n para\n</code></pre></blockquote></blockquote><p>lazy</p>"
   },
   {
     "id": "payload-span-2-3-2",
@@ -152,7 +152,7 @@
   {
     "id": "payload-span-2-3-3",
     "source": "> > - a\n> >     ::: |\n> >     ```\n> >     :::\n> >    ```\n> >   :::\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n        para\nlazy\n      </li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n        para\nlazy\n      </li></ul></blockquote></blockquote>"
   },
   {
     "id": "payload-span-2-3-4",
@@ -177,7 +177,7 @@
   {
     "id": "payload-span-2-4-1",
     "source": "> > - a\n> >     ::: |\n> >     ````\n> >     :::\n> >  ````\n> >   :::\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li></ul><p><code>\n:::\npara\nlazy</code></p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li></ul><pre><code> :::\n para\n</code></pre></blockquote></blockquote><p>lazy</p>"
   },
   {
     "id": "payload-span-2-4-2",
@@ -187,7 +187,7 @@
   {
     "id": "payload-span-2-4-3",
     "source": "> > - a\n> >     ::: |\n> >     ````\n> >     :::\n> >    ````\n> >   :::\n> >   para\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code></p></div>\n        para\nlazy\n      </li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n</code></p></div>\n        para\nlazy\n      </li></ul></blockquote></blockquote>"
   },
   {
     "id": "payload-span-2-4-4",
@@ -212,7 +212,7 @@
   {
     "id": "open-verse-0-3",
     "source": "- a\n    ::: |\n    ```\n    :::\n   ```\nlazy\n",
-    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code><br>\nlazy</p></div></li></ul>"
+    "html": "<ul><li>a\n    <div class=\"line-block\"><p><code>\n:::\n</code><br>\nlazy</p></div></li></ul>"
   },
   {
     "id": "open-verse-0-5",
@@ -232,7 +232,7 @@
   {
     "id": "open-verse-1-3",
     "source": "> - a\n>     ::: |\n>     ```\n>     :::\n>    ```\nlazy\n",
-    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code><br>\nlazy</p></div></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code>\n:::\n</code><br>\nlazy</p></div></li></ul></blockquote>"
   },
   {
     "id": "open-verse-1-4",
@@ -257,7 +257,7 @@
   {
     "id": "open-verse-2-3",
     "source": "> > - a\n> >     ::: |\n> >     ```\n> >     :::\n> >    ```\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n&nbsp;</code><br>\nlazy</p></div></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code>\n:::\n</code><br>\nlazy</p></div></li></ul></blockquote></blockquote>"
   },
   {
     "id": "open-verse-2-4",

@@ -37,7 +37,7 @@ pub(crate) fn assert_legacy_model(source: &str, actual: &str) {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "carve-rs#3860, markup-carve/carve#5129 (carve-rs)"]
 fn column_zero_model_rows() {
     let data = std::env::var("CARVE_COL0_ORACLE")
         .map(|path| fs::read_to_string(path).unwrap())
@@ -92,13 +92,12 @@ fn legacy_column_zero_cases_match_model() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn original_2946_shapes_match_model() {
     assert_model_rows(include_str!("fixtures/column_zero_2946_model.json"));
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn task_item_shapes_match_model() {
     assert_model_rows(include_str!("fixtures/column_zero_task_items.json"));
 }

@@ -16,19 +16,19 @@ fn below_column_description_returns_to_its_outer_body() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
-fn a_past_column_quote_remains_term_text() {
+fn a_past_column_quote_leaves_the_term() {
     for (source, expected_quotes) in [
-        (":: outer\n:  detail\n     :: inner\n    > quote", 0),
+        (":: outer\n:  detail\n     :: inner\n    > quote", 1),
         (
             "- a\n  :: outer\n  :  detail\n       :: inner\n      > quote",
-            0,
+            1,
         ),
-        ("> :: outer\n> :  detail\n>      :: inner\n>     > quote", 1),
+        ("> :: outer\n> :  detail\n>      :: inner\n>     > quote", 2),
     ] {
         let html = carve::to_html(source);
         assert!(
-            html.contains("<dt>inner\n &gt; quote</dt>"),
+            html.contains("<dt>inner</dt>\n")
+                && html.contains("<blockquote><p>quote</p></blockquote>"),
             "{source:?}: {html}"
         );
         assert_eq!(

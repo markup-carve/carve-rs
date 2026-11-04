@@ -3,7 +3,7 @@
     "id": "2607-0",
     "source": ":: t\n:  d\n  %% c\n",
     "html": "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>",
-    "carve": ":: t\n: d\n\n  %% c\n",
+    "carve": ":: t\n: d\n\n%% c\n",
     "markdown": "**t**\n\nd\n"
   },
   {

@@ -1,7 +1,7 @@
 use carve::{to_html, to_html_with_options, Options};
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn container_ownership() {
     let cases: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/container-ownership.json")).unwrap();

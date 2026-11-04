@@ -17,12 +17,12 @@
   {
     "id": "invisible-3",
     "source": "- > q\n  [x]: /u\nlazy\n",
-    "html": "<ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li><blockquote><p>q\nlazy</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-4",
     "source": "- > q\n  [x]: /u\n lazy\n",
-    "html": "<ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li><blockquote><p>q\nlazy</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-5",
@@ -32,12 +32,12 @@
   {
     "id": "invisible-6",
     "source": "- > q\n  [^x]: n\nlazy\n",
-    "html": "<ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li><blockquote><p>q</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-7",
     "source": "- > q\n  [^x]: n\n lazy\n",
-    "html": "<ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li><blockquote><p>q</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-8",
@@ -62,12 +62,12 @@
   {
     "id": "invisible-12",
     "source": "- - # h\n    > q\n    [x]: /u\nlazy\n",
-    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p>"
+    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q\nlazy</p></blockquote></li></ul></li></ul>"
   },
   {
     "id": "invisible-13",
     "source": "- - # h\n    > q\n    [x]: /u\n lazy\n",
-    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p>"
+    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q\nlazy</p></blockquote></li></ul></li></ul>"
   },
   {
     "id": "invisible-14",
@@ -77,12 +77,12 @@
   {
     "id": "invisible-15",
     "source": "- - # h\n    > q\n    [^x]: n\nlazy\n",
-    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p>"
+    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul>"
   },
   {
     "id": "invisible-16",
     "source": "- - # h\n    > q\n    [^x]: n\n lazy\n",
-    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p>"
+    "html": "<ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul>"
   },
   {
     "id": "invisible-17",
@@ -107,12 +107,12 @@
   {
     "id": "invisible-21",
     "source": "- a\n  > q\n  [x]: /u\nlazy\n",
-    "html": "<ul><li>a\n    <blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li>a\n    <blockquote><p>q\nlazy</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-22",
     "source": "- a\n  > q\n  [x]: /u\n lazy\n",
-    "html": "<ul><li>a\n    <blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li>a\n    <blockquote><p>q\nlazy</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-23",
@@ -122,12 +122,12 @@
   {
     "id": "invisible-24",
     "source": "- a\n  > q\n  [^x]: n\nlazy\n",
-    "html": "<ul><li>a\n    <blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li>a\n    <blockquote><p>q</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-25",
     "source": "- a\n  > q\n  [^x]: n\n lazy\n",
-    "html": "<ul><li>a\n    <blockquote><p>q</p></blockquote></li></ul><p>lazy</p>"
+    "html": "<ul><li>a\n    <blockquote><p>q</p></blockquote></li></ul>"
   },
   {
     "id": "invisible-26",
@@ -167,12 +167,12 @@
   {
     "id": "invisible-33",
     "source": "> - > q\n>   [^x]: n\n> lazy\n",
-    "html": "<blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote>"
+    "html": "<blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul></blockquote>"
   },
   {
     "id": "invisible-34",
     "source": "> - > q\n>   [^x]: n\n>  lazy\n",
-    "html": "<blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote>"
+    "html": "<blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul></blockquote>"
   },
   {
     "id": "invisible-35",
@@ -212,12 +212,12 @@
   {
     "id": "invisible-42",
     "source": "> - - # h\n>     > q\n>     [^x]: n\n> lazy\n",
-    "html": "<blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p></blockquote>"
+    "html": "<blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul></blockquote>"
   },
   {
     "id": "invisible-43",
     "source": "> - - # h\n>     > q\n>     [^x]: n\n>  lazy\n",
-    "html": "<blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p></blockquote>"
+    "html": "<blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul></blockquote>"
   },
   {
     "id": "invisible-44",
@@ -257,12 +257,12 @@
   {
     "id": "invisible-51",
     "source": "> - a\n>   > q\n>   [^x]: n\n> lazy\n",
-    "html": "<blockquote><ul><li>a\n      <blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <blockquote><p>q</p></blockquote></li></ul></blockquote>"
   },
   {
     "id": "invisible-52",
     "source": "> - a\n>   > q\n>   [^x]: n\n>  lazy\n",
-    "html": "<blockquote><ul><li>a\n      <blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote>"
+    "html": "<blockquote><ul><li>a\n      <blockquote><p>q</p></blockquote></li></ul></blockquote>"
   },
   {
     "id": "invisible-53",
@@ -302,12 +302,12 @@
   {
     "id": "invisible-60",
     "source": "> > - > q\n> >   [^x]: n\n> > lazy\n",
-    "html": "<blockquote><blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul></blockquote></blockquote>"
   },
   {
     "id": "invisible-61",
     "source": "> > - > q\n> >   [^x]: n\n> >  lazy\n",
-    "html": "<blockquote><blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><blockquote><p>q</p></blockquote></li></ul></blockquote></blockquote>"
   },
   {
     "id": "invisible-62",
@@ -347,12 +347,12 @@
   {
     "id": "invisible-69",
     "source": "> > - - # h\n> >     > q\n> >     [^x]: n\n> > lazy\n",
-    "html": "<blockquote><blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul></blockquote></blockquote>"
   },
   {
     "id": "invisible-70",
     "source": "> > - - # h\n> >     > q\n> >     [^x]: n\n> >  lazy\n",
-    "html": "<blockquote><blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul><p>lazy</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li><ul><li><h1 id=\"h\">h</h1><blockquote><p>q</p></blockquote></li></ul></li></ul></blockquote></blockquote>"
   },
   {
     "id": "invisible-71",
@@ -392,12 +392,12 @@
   {
     "id": "invisible-78",
     "source": "> > - a\n> >   > q\n> >   [^x]: n\n> > lazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <blockquote><p>q</p></blockquote></li></ul></blockquote></blockquote>"
   },
   {
     "id": "invisible-79",
     "source": "> > - a\n> >   > q\n> >   [^x]: n\n> >  lazy\n",
-    "html": "<blockquote><blockquote><ul><li>a\n        <blockquote><p>q</p></blockquote></li></ul><p>lazy</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\n        <blockquote><p>q</p></blockquote></li></ul></blockquote></blockquote>"
   },
   {
     "id": "invisible-80",

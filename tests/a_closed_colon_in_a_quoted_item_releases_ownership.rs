@@ -414,7 +414,7 @@ fn off_column_bare_run_keeps_the_hosted_paragraph_open() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn quoted_hosted_colon_followups_match_shared_html() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/quoted_hosted_colon_followups.json")).unwrap();
@@ -431,7 +431,6 @@ fn quoted_hosted_colon_followups_match_shared_html() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn closed_code_inside_descendant_verse_preserves_its_real_closer() {
     let cases: Value = serde_json::from_str(include_str!(
         "fixtures/descendant_literal_code_ownership.json"
@@ -451,7 +450,7 @@ fn closed_code_inside_descendant_verse_preserves_its_real_closer() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn quoted_colon_remaining_controls_match_shared_html() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/quoted_colon_remaining_parity.json")).unwrap();
@@ -476,7 +475,7 @@ fn quoted_colon_remaining_controls_match_shared_html() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "erased quoted line: markup-carve/carve#5129 (carve-rs)"]
 fn quoted_literal_comment_handoff_matches_native() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/quoted_literal_comment_handoff.json")).unwrap();
@@ -517,7 +516,7 @@ fn folded_fence_paragraphs_keep_the_quoted_item_claim() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
+#[ignore = "carve-rs#3859"]
 fn hosted_colon_wave_matches_checker() {
     // Expected HTML: carve checker 8fde0d1934089def40d8205ca15375eeb7d07d53.
     let rows: Value =

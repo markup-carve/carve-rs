@@ -1,18 +1,15 @@
-//! A block-shaped line in the band between a list's base and the item's
-//! content column, under a definition term or description, is retained text
-//! (PART 1 S4: "A retained list marker below the item's content column remains
-//! paragraph text"). The lazy fold kept one column on such a line to say so,
-//! which a list marker ignores: a term ends at a marker at any indent.
+//! A list marker in the band between a list's base and the item's content
+//! column, under a definition term, ends the term and opens an item of the
+//! list it reaches (rule A, markup-carve/carve#3885); it is no longer term text.
 //!
 //! Each `NN.html` under `tests/fixtures/band-line-under-term/` is the
 //! executable spec's output for `NN.crv` (`scripts/spec` at markup-carve/carve
-//! 77e4ce1). The last rows are controls that already matched.
+//! 5401b518). The last rows are controls that already matched.
 
 use carve::{to_html, to_html_with_options, Options};
 use std::path::Path;
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3525"]
 fn the_fixtures_match_the_executable_spec() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/band-line-under-term");
     let mut seen = 0;

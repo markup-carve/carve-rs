@@ -37,51 +37,51 @@
   },
   {
     "source": "- a\n  - b\n%% c\n    ```\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n %% c\n    ```\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n %%%\n hidden\n %%%\n    ```\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n %%%\n hidden\n      %%%\n    ```\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n%% c\n    ~~~\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n %% c\n    ~~~\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n %%%\n hidden\n %%%\n    ~~~\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "- a\n  - b\n %%%\n hidden\n      %%%\n    ~~~\ntail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>tail\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "[^a]: intro\n+\n more\n\nsee[^a]\n",
-    "html": "<p>+\nmore</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+    "html": "<p>more</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
   },
   {
     "source": "[^a]: intro\n%% c\n more\n\nsee[^a]\n",
-    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <p>more<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro\nmore<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
   },
   {
     "source": "[^a]: intro\n+\n  more\n\nsee[^a]\n",
-    "html": "<p>+\nmore</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <p>more<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
   },
   {
     "source": "[^a]: intro\n%% c\n  more\n\nsee[^a]\n",
-    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <p>more<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+    "html": "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro\nmore<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
   },
   {
     "source": ":: term\n:  intro\n+\n  more\n",
@@ -89,7 +89,7 @@
   },
   {
     "source": ":: term\n:  intro\n%% c\n  more\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>intro</p>\n    <p>more</p>\n  </dd>\n</dl>"
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>intro\nmore</dd>\n</dl>"
   },
   {
     "source": ":: term\n:  intro\n+\n more\n",
@@ -97,7 +97,7 @@
   },
   {
     "source": ":: term\n:  intro\n%% c\n more\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>intro</p>\n    <p>more</p>\n  </dd>\n</dl>"
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>intro\nmore</dd>\n</dl>"
   },
   {
     "source": "> intro\n>\n+\n  more\n",
@@ -113,14 +113,14 @@
   },
   {
     "source": "- intro\n%% c\n  more\n",
-    "html": "<ul>\n  <li>intro\n    more\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>intro\nmore</li>\n</ul>"
   },
   {
     "source": "> a\n>  ::: |\nlazy\n",
-    "html": "<blockquote><p>a\n::: |\nlazy</p></blockquote>"
+    "html": "<blockquote>\n  <p>a</p>\n  <div class=\"line-block\">\n\n  </div>\n</blockquote>\n<p>lazy</p>"
   },
   {
     "source": "> a\n>  ::: note\nlazy\n",
-    "html": "<blockquote><p>a\n::: note\nlazy</p></blockquote>"
+    "html": "<blockquote>\n  <p>a</p>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n\n  </aside>\n</blockquote>\n<p>lazy</p>"
   }
 ]
