@@ -17,7 +17,7 @@ fn at_the_document_level() {
     );
     assert_eq!(html(" {.c\n }\npara\n"), "<p>{.c\n}\npara</p>");
     assert_eq!(
-        html("x\n  {.a\n  .b}\ntail\n"),
+        html("x\n  {.a\n   .b}\ntail\n"),
         "<p>x</p>\n<p class=\"a b\">tail</p>"
     );
 }
@@ -63,7 +63,7 @@ fn in_and_below_a_list_item() {
         "<ul>\n  <li>a\n{c\n}\nx</li>\n</ul>"
     );
     assert_eq!(
-        html("- a\n   {.c\n   }\n  para\n"),
+        html("- a\n   {.c\n    }\n  para\n"),
         "<ul>\n  <li>a\n    <p class=\"c\">para</p>\n  </li>\n</ul>"
     );
 }

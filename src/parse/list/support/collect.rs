@@ -1506,9 +1506,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
                         // A refused brace run's paragraph takes the fence as text.
                         let refused = !after_blank && ends_in_refused_brace_run(&lines);
-                        let interrupts = !after_blank
-                            && !refused
-                            && !lead_fence_scan.holds_open(&lines, column);
+                        let interrupts =
+                            !after_blank && !refused && !lead_fence_scan.holds_open(&lines, column);
                         if after_blank || interrupts || refused {
                             if interrupts {
                                 // Preserve the accepted interruption when collection

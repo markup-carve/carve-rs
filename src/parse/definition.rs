@@ -1111,7 +1111,12 @@ pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
     // further back than that.
     let mut start = end;
     loop {
-        if standalone_attrs_block_len(&lines[start..]) == Some(end - start + 1) {
+        if attrs_block_len_at(
+            indent_columns(raw_lines[start]),
+            lines[start],
+            raw_lines[start + 1..].iter().copied(),
+        ) == Some(end - start + 1)
+        {
             // §15 A5: an indented wrapped opener is an attribute line too.
             return true;
         }
@@ -1850,8 +1855,14 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.retained_comment_column = indent;
         }
         cur.consume();
-        let opener_shift = indent.saturating_sub(self.lines.last().map_or(0, |l| indent_columns(l)));
-        self.take_wrapped_attribute_tail(cur, wrapped_attribute, nested_attribute_owner, opener_shift);
+        let opener_shift =
+            indent.saturating_sub(self.lines.last().map_or(0, |l| indent_columns(l)));
+        self.take_wrapped_attribute_tail(
+            cur,
+            wrapped_attribute,
+            nested_attribute_owner,
+            opener_shift,
+        );
         BodyStep::Next
     }
 

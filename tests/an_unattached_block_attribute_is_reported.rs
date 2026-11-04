@@ -68,13 +68,13 @@ fn the_span_covers_the_attribute_block() {
 
 #[test]
 fn a_multi_line_block_is_reported_whole() {
-    let src = "para\n\n{#id\n.foo}\n";
+    let src = "para\n\n{#id\n .foo}\n";
     let found = unattached(src);
 
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(
         &src[found[0].start..found[0].end],
-        "{#id\n.foo}",
+        "{#id\n .foo}",
         "{found:?}"
     );
 }

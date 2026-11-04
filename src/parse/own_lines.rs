@@ -1317,7 +1317,10 @@ impl<'a> Walk<'a> {
     /// The lines an attribute run opening on line `k` takes, its continuations
     /// measured past its brace in the host's coordinates (carve#5080).
     fn attrs_run_len(&self, k: usize, host: usize) -> Option<usize> {
-        let level = |j: usize| self.through_quotes(self.lines[j], host).unwrap_or("\u{e000}");
+        let level = |j: usize| {
+            self.through_quotes(self.lines[j], host)
+                .unwrap_or("\u{e000}")
+        };
         let opener = level(k);
         attrs_block_len_at(
             indent_columns(opener),

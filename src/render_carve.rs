@@ -3704,7 +3704,7 @@ fn render_nodes_with_verbatim(
         if matches!(node, InlineNode::Comment(c) if c.delimited)
             && (out.is_empty() || out.ends_with('\n'))
         {
-            rendered = rendered.replace('\n', "\n ");
+            rendered = indent_wrapped_comment(&rendered);
         }
         out.push_str(&rendered);
         if !rendered.is_empty() {
@@ -3733,7 +3733,17 @@ fn render_nodes_with_verbatim(
 /// A `{% ... %}` comment. A wrapped line sits past the `{`, or the comment
 /// would read as text (carve#5080).
 fn delimited_comment_source(content: &str) -> String {
-    format!("{{%{} %}}", pad_delimited(content).replace('\n', "\n "))
+    indent_wrapped_comment(&format!("{{%{} %}}", pad_delimited(content)))
+}
+
+/// Indent every wrapped line of a written `{% ... %}` but a closer line, which
+/// already starts with a space.
+fn indent_wrapped_comment(written: &str) -> String {
+    let (body, closer) = match written.strip_suffix("\n %}") {
+        Some(body) => (body, "\n %}"),
+        None => (written, ""),
+    };
+    format!("{}{closer}", body.replace('\n', "\n "))
 }
 
 fn inline_hosts_caption(node: &InlineNode) -> bool {

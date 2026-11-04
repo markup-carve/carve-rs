@@ -2072,7 +2072,7 @@ fn a_delimited_inline_comment_keeps_its_delimiters() {
 /// `%%` publishes everything from its second line on.
 #[test]
 fn a_delimited_block_comment_does_not_leak_its_body() {
-    let source = "{%\nhidden\n%}\n\nafter\n";
+    let source = "{%\n hidden\n %}\n\nafter\n";
     let (before, after) = round_trip(source);
 
     assert_eq!(after, before);

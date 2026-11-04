@@ -76,7 +76,7 @@ fn it_stops_before_an_attribute_line_no_child_covers() {
 fn it_stops_before_the_wrapped_spelling_of_the_same_block() {
     // Section 15 A5 lets one attribute block wrap, so the list consumed two
     // lines here rather than one. Neither of them is a child.
-    let source = ":: t\n:  d\n   {.k\n   #x}\ntail\n";
+    let source = ":: t\n:  d\n   {.k\n    #x}\ntail\n";
 
     assert_eq!(nth(source, "definition_list", 0), (0, 9));
 }

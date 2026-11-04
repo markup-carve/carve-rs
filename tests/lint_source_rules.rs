@@ -195,14 +195,14 @@ fn quoted_markup_gets_the_specific_warning_and_marker_span() {
 
 #[test]
 fn speculative_list_parses_do_not_publish_attribute_warnings() {
-    let source = "- {.a\n  .b}\ntail\n";
+    let source = "- {.a\n   .b}\ntail\n";
     let warnings: Vec<_> = lint_carve(source)
         .into_iter()
         .filter(|w| w.rule == "unattached-block-attribute")
         .collect();
     assert_eq!(warnings.len(), 1);
     assert_eq!((warnings[0].line, warnings[0].column), (1, 3));
-    assert_eq!(&source[warnings[0].start..warnings[0].end], "{.a\n  .b}");
+    assert_eq!(&source[warnings[0].start..warnings[0].end], "{.a\n   .b}");
 }
 
 #[test]

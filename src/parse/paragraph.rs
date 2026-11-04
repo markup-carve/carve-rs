@@ -366,7 +366,8 @@ impl InlineSpanScan {
                     let width = bytes[k..].iter().take_while(|&&b| b == b'\\').count();
                     let escaped = matches!(bytes.get(k + width), Some(b'`' | b'{'));
                     k += width - 1 + usize::from(escaped && width % 2 == 1);
-                } else if self.code_run == 0 && bytes[k] == b'{' && bytes.get(k + 1) == Some(&b'%') {
+                } else if self.code_run == 0 && bytes[k] == b'{' && bytes.get(k + 1) == Some(&b'%')
+                {
                     self.comment = true;
                     k += 1;
                 }
@@ -394,7 +395,9 @@ pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
             .collect::<Vec<_>>()
             .join("\n");
         match anchors {
-            Some(anchors) => parse_inline_lines_with_anchor(&text, options, anchors[from..to].to_vec()),
+            Some(anchors) => {
+                parse_inline_lines_with_anchor(&text, options, anchors[from..to].to_vec())
+            }
             None => parse_inline_with_options(&text, options),
         }
     };
@@ -411,19 +414,19 @@ pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
         if nodes.is_empty() {
             return;
         }
-        if let Some(last) = out.last() {
-            let pos = last
-                .pos()
-                .zip(nodes[0].pos())
-                .map(|(before, after)| Pos {
-                    start_line: before.end_line,
-                    start_column: before.end_column,
-                    start_offset: before.end_offset,
-                    end_line: after.start_line,
-                    end_column: after.start_column,
-                    end_offset: after.start_offset,
-                    ..before.clone()
-                });
+        if let Some(last) = out
+            .last()
+            .filter(|last| !matches!(last, InlineNode::HardBreak(_)))
+        {
+            let pos = last.pos().zip(nodes[0].pos()).map(|(before, after)| Pos {
+                start_line: before.end_line,
+                start_column: before.end_column,
+                start_offset: before.end_offset,
+                end_line: after.start_line,
+                end_column: after.start_column,
+                end_offset: after.start_offset,
+                ..before.clone()
+            });
             out.push(InlineNode::SoftBreak(Break { pos }));
         }
         out.extend(nodes);

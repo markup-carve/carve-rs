@@ -33,7 +33,7 @@ fn assert_both_spellings(single: &str, wrapped: &str, expected: &str) {
 fn a_block_after_quoted_content_ends_the_quote() {
     assert_both_spellings(
         "> q\n> {.k #x}\ntail\n",
-        "> q\n> {.k\n> #x}\ntail\n",
+        "> q\n> {.k\n>  #x}\ntail\n",
         "<blockquote><p>q</p></blockquote>\n<p>tail</p>",
     );
 }
@@ -44,7 +44,7 @@ fn a_block_at_the_top_of_a_quote_ends_it_too() {
     // column-0 line reaches no container.
     assert_both_spellings(
         "> {.k #x}\ntail\n",
-        "> {.k\n> #x}\ntail\n",
+        "> {.k\n>  #x}\ntail\n",
         "<blockquote>\n\n</blockquote>\n<p>tail</p>",
     );
 }
@@ -56,7 +56,7 @@ fn a_block_still_attaches_to_the_next_block_inside_the_quote() {
     // that is where they land. Only the escape out of the container was wrong.
     assert_both_spellings(
         "> q\n> {.k #x}\n> after\n",
-        "> q\n> {.k\n> #x}\n> after\n",
+        "> q\n> {.k\n>  #x}\n> after\n",
         "<blockquote>\n  <p>q</p>\n  <p class=\"k\" id=\"x\">after</p>\n</blockquote>",
     );
 }
@@ -68,7 +68,7 @@ fn a_block_at_depth_two_answers_like_one_at_depth_one() {
     // written under two markers ends the paragraph the same way.
     assert_both_spellings(
         "> > q\n> > {.k #x}\ntail\n",
-        "> > q\n> > {.k\n> > #x}\ntail\n",
+        "> > q\n> > {.k\n> >  #x}\ntail\n",
         "<blockquote>\n  <blockquote><p>q</p></blockquote>\n</blockquote>\n<p>tail</p>",
     );
 }
@@ -81,7 +81,7 @@ fn a_second_block_after_a_run_that_opened_nothing() {
     // and therefore proved nothing about the lines it passed.
     assert_both_spellings(
         "> a\n> {.k\n> b\n> {.j #y}\ntail\n",
-        "> a\n> {.k\n> b\n> {.j\n> #y}\ntail\n",
+        "> a\n> {.k\n> b\n> {.j\n>  #y}\ntail\n",
         "<blockquote><p>a\n{.k\nb</p></blockquote>\n<p>tail</p>",
     );
 }
@@ -113,7 +113,7 @@ fn control_an_indented_wrapped_block_is_lazy_text() {
     // wrapped block is an attribute line too, so it ends the quote's paragraph
     // and the unprefixed `tail` is not lazy.
     let expected = "<blockquote><p>q</p></blockquote>\n<p>tail</p>";
-    assert_eq!(html("> q\n>  {.k\n>  #x}\ntail\n"), expected);
+    assert_eq!(html("> q\n>  {.k\n>   #x}\ntail\n"), expected);
 }
 
 #[test]

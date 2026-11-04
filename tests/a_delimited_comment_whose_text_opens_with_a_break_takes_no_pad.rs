@@ -36,9 +36,10 @@ fn an_inline_comment_opening_with_a_break_takes_no_pad() {
 #[test]
 fn a_comment_that_owns_its_block_opening_with_a_break_takes_no_pad() {
     for (source, expected) in [
-        ("{%\nA b\n %}\n", "{%\nA b\n %}\n"),
-        ("{%\nA b\n%}\n", "{%\nA b\n %}\n"),
-        ("{% x\ny %}\n", "{% x\ny %}\n"),
+        // carve#5080: a wrapped line sits past the `{`.
+        ("{%\n A b\n %}\n", "{%\n A b\n %}\n"),
+        ("{%\n A b\n  %}\n", "{%\n A b\n %}\n"),
+        ("{% x\n y %}\n", "{% x\n y %}\n"),
     ] {
         let written = fmt(source);
         assert_eq!(written, expected, "{source:?}");

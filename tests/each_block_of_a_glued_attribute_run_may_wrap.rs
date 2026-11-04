@@ -6,10 +6,11 @@ use carve::to_html;
 #[test]
 fn a_break_inside_any_block_keeps_the_run() {
     for source in [
-        "{.a}{.b\n}\np\n",
-        "{.a\n}{.b}\np\n",
-        "{.a\n}{.b\n}\np\n",
-        " {.a}{.b\n}\np\n",
+        // carve#5080: each wrapped line sits past its block's `{`.
+        "{.a}{.b\n     }\np\n",
+        "{.a\n }{.b}\np\n",
+        "{.a\n }{.b\n   }\np\n",
+        " {.a}{.b\n      }\np\n",
     ] {
         assert_eq!(
             to_html(source).trim(),

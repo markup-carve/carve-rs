@@ -91,7 +91,9 @@ mod brace_runs;
 pub fn djot_to_carve(djot: &str) -> String {
     let protected = brace_runs::protect_block_brace_runs(djot);
     let (recovered, _) = attribute_recovery::recover(&protected.source);
-    protected.restore(djot_to_carve_prepared(&strip_footnote_definition_attributes(&recovered)))
+    protected.restore(djot_to_carve_prepared(
+        &strip_footnote_definition_attributes(&recovered),
+    ))
 }
 
 pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {

@@ -2756,7 +2756,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.fold_lead_line(lead, trim_ascii_start(next));
             return true;
         }
-        if !trim_ascii_start(strip_lazy(next)).starts_with('{') || lead.inline_span.open(&lead.lines) {
+        if !trim_ascii_start(strip_lazy(next)).starts_with('{')
+            || lead.inline_span.open(&lead.lines)
+        {
             return false;
         }
         let RefusedBraceRun::Lines(count) = refused_brace_run(

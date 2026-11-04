@@ -1,6 +1,6 @@
 #[test]
 fn wrapped_marker_attributes_leave_flush_tail_outside_item() {
-    for closer in [".b}", "  .b}"] {
+    for closer in ["   .b}", "    .b}"] {
         let source = format!("- {{.a\n{closer}\ntail");
         assert_eq!(
             carve::to_html(&source),

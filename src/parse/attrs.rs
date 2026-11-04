@@ -228,7 +228,11 @@ pub(in crate::parse) fn refused_brace_run<'a>(
     // because it already refused it.
     let column_of = |raw: &str| {
         let line = strip_lazy(raw);
-        if line.len() == raw.len() { indent_columns(line) } else { 0 }
+        if line.len() == raw.len() {
+            indent_columns(line)
+        } else {
+            0
+        }
     };
     let opener = trim_ascii_start(strip_lazy(first));
     if !opener.starts_with('{') {
@@ -304,7 +308,11 @@ pub(in crate::parse) fn refused_brace_run<'a>(
             let valid = shallow
                 && wrapped_attrs_run(repaired.iter().map(String::as_str))
                     .is_some_and(|(_, count)| count == n + 1);
-            return if valid { RefusedBraceRun::Lines(n + 1) } else { RefusedBraceRun::No(0) };
+            return if valid {
+                RefusedBraceRun::Lines(n + 1)
+            } else {
+                RefusedBraceRun::No(0)
+            };
         }
     }
     RefusedBraceRun::No(if comment { usize::MAX } else { 0 })
@@ -360,7 +368,11 @@ fn last_open_brace_column(line: &str, mut quote: Option<char>) -> Option<usize> 
             (None, '{') => found = Some(column),
             _ => {}
         }
-        column = if ch == '\t' { column + 4 - column % 4 } else { column + 1 };
+        column = if ch == '\t' {
+            column + 4 - column % 4
+        } else {
+            column + 1
+        };
     }
     found
 }
@@ -570,7 +582,10 @@ pub(in crate::parse) fn split_trailing_attrs(
         }
         // A continuation sits past its brace (carve#5080); the last line alone
         // must not be an indented run of its own.
-        if line.starts_with([' ', '\t']) && start == lines.len() - 1 && trim_ascii_start(line).starts_with('{') {
+        if line.starts_with([' ', '\t'])
+            && start == lines.len() - 1
+            && trim_ascii_start(line).starts_with('{')
+        {
             return None;
         }
         if start == 0 {
