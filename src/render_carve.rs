@@ -2193,8 +2193,11 @@ fn guard_literal_plus_after_nested_list(
     }
 }
 
-/// A block whose line is erased before layout (carve#5012).
+/// A block parsed from a line that is erased before layout (carve#5012).
 fn is_erased_line(block: &BlockNode) -> bool {
+    if block_pos(block).is_none() {
+        return false;
+    }
     match block {
         BlockNode::Comment(comment) => !comment.block && !comment.delimited,
         BlockNode::AbbreviationDef(_) | BlockNode::LinkReferenceDefinition(_) => true,

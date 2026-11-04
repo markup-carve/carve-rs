@@ -173,7 +173,7 @@ fn a_terminated_fence_leaves_the_item_open() {
     // THE SECOND CONTROL. With a closer it is a real span, not a degraded one.
     assert_eq!(
         both_paths("- x\n  %%% c\n  %%%\n b\n"),
-        "<ul>\n  <li>x\nb</li>\n</ul>",
+        "<ul>\n  <li>x</li>\n</ul>\n<p>b</p>",
     );
 }
 

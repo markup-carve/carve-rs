@@ -107,7 +107,7 @@ fn a_list_ending_on_its_last_description_is_unchanged() {
     // that already ended on one.
     let source = ":: t\n:  d\n";
 
-    assert_eq!(nth(source, "definition_list", 0), (0, 25));
+    assert_eq!(nth(source, "definition_list", 0), (0, 9));
     assert_eq!(nth(source, "definition_description", 0), (5, 9));
 }
 
