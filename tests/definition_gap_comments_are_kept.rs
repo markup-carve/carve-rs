@@ -7,7 +7,10 @@ fn comments(source: &str) -> Vec<(String, String)> {
             serde_json::Value::Object(fields) => {
                 let kind = fields.get("type").and_then(|v| v.as_str()).unwrap_or(owner);
                 if kind == "comment" {
-                    found.push((owner.to_owned(), fields["content"].as_str().unwrap().to_owned()));
+                    found.push((
+                        owner.to_owned(),
+                        fields["content"].as_str().unwrap().to_owned(),
+                    ));
                 }
                 for (key, value) in fields {
                     if key != "pos" {
