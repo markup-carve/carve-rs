@@ -4,7 +4,8 @@
 
 use carve::to_html;
 
-const EMPTY_ITEM_QUOTE: &str = "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n";
+const EMPTY_ITEM_QUOTE: &str =
+    "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n";
 
 #[test]
 fn a_quote_after_the_document_paragraph_opens() {
@@ -29,7 +30,13 @@ fn other_openers_after_the_document_paragraph_interrupt_it() {
 #[test]
 fn a_nested_quote_and_a_quote_below_item_text_read_the_same() {
     let html = to_html("- > > +\np\n  > q\n");
-    assert!(html.ends_with("</ul>\n<p>p</p>\n<blockquote><p>q</p></blockquote>"), "{html}");
+    assert!(
+        html.ends_with("</ul>\n<p>p</p>\n<blockquote><p>q</p></blockquote>"),
+        "{html}"
+    );
     let html = to_html("- a\n  > +\np\n  > q\n");
-    assert!(html.ends_with("</ul>\n<p>p</p>\n<blockquote><p>q</p></blockquote>"), "{html}");
+    assert!(
+        html.ends_with("</ul>\n<p>p</p>\n<blockquote><p>q</p></blockquote>"),
+        "{html}"
+    );
 }
