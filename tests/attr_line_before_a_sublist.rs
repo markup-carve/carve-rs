@@ -145,16 +145,14 @@ fn they_land_on_the_nested_list_and_nowhere_else() {
 }
 
 #[test]
-fn the_item_stays_tight() {
-    // §17 L2: a blank before an item's sub-block leaves the item tight, so `a`
-    // renders bare. Carrying the attributes must not turn the sub-list into a
-    // second paragraph's worth of looseness.
+fn the_blank_above_the_attributes_loosens_the_item() {
+    // carve#5015: a blank before an item's sub-block loosens the list; the
+    // attribute line between them is invisible and does not change that.
     let html = carve::to_html("- a\n\n  {.x}\n  - b\n");
     assert!(
-        html.contains("<li>a\n"),
-        "the item lost its tight rendering: {html}"
+        html.contains("<li><p>a</p>"),
+        "the item should be loose: {html}"
     );
-    assert!(!html.contains("<p>a</p>"), "the item was loosened: {html}");
 }
 
 #[test]

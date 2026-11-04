@@ -102,7 +102,8 @@ fn an_over_indented_lone_image_matches_the_exact_column_looseness() {
 
 #[test]
 fn a_sub_block_opener_under_the_blank_still_keeps_the_item_tight() {
-    // The near-miss set: §17 L2 is what the predicate must NOT swallow. Each of
+    // Ruled by carve#5015: §17 L2 is withdrawn, so every shape below loosens.
+    // The near-miss set: §17 L2 was what the predicate must NOT swallow. Each of
     // these reaches the same test as a non-`Paragraph` first block, and each is
     // `tight: true` on carve-js and carve-php as well - a predicate that
     // loosened on every non-paragraph block would flip all four.
@@ -120,9 +121,8 @@ fn a_sub_block_opener_under_the_blank_still_keeps_the_item_tight() {
     ] {
         let html = to_html(src);
         assert!(
-            only_list_tight(src),
-            "{label} loosened the item, but a blank before a sub-block opener \
-             keeps it tight (section 17 L2):\n{html}"
+            !only_list_tight(src),
+            "{label}: a blank before a child block loosens the item (carve#5015):\n{html}"
         );
         assert!(
             !html_wraps_the_lead(&html),

@@ -106,10 +106,8 @@ fn ordered_and_nested_containers_take_the_same_key_at_the_same_placement() {
         "the sub-list stayed tight: {html}"
     );
     assert!(!html.contains("loose"), "{html}");
-    assert!(
-        !html.starts_with("<ul>\n  <li><p>a"),
-        "the parent was loosened too: {html}"
-    );
+    // The blank above the sub-list loosens the parent too (carve#5015).
+    assert!(html.starts_with("<ul>\n  <li><p>a"), "{html}");
 }
 
 #[test]
