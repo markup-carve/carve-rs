@@ -224,7 +224,8 @@ fn c2477_quoteitem_col4_base6_close7() {
 #[test]
 fn guard_codefence_close2() {
     let source = "- x\n\n    ```\n    a\n  ```\n\nafter\n";
-    let expected = "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+    let expected =
+        "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -235,7 +236,8 @@ fn guard_codefence_close2() {
 #[test]
 fn guard_codefence_close3() {
     let source = "- x\n\n    ```\n    a\n   ```\n\nafter\n";
-    let expected = "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+    let expected =
+        "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -246,7 +248,8 @@ fn guard_codefence_close3() {
 #[test]
 fn guard_codefence_close4() {
     let source = "- x\n\n    ```\n    a\n    ```\n\nafter\n";
-    let expected = "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+    let expected =
+        "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),

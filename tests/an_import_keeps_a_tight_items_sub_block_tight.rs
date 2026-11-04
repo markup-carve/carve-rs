@@ -19,7 +19,11 @@ fn a_roundtrip_keeps_each_items_looseness() {
         "> i.  outer\n>\n>     - inner\n> ii.  peer\n",
     ] {
         let imported = roundtrip(source);
-        assert_eq!(to_html(&imported), to_html(source), "{source:?} => {imported:?}");
+        assert_eq!(
+            to_html(&imported),
+            to_html(source),
+            "{source:?} => {imported:?}"
+        );
     }
 }
 
@@ -27,9 +31,15 @@ fn a_roundtrip_keeps_each_items_looseness() {
 fn a_djot_sub_list_after_a_blank_stays_in_a_tight_item() {
     for (source, carve) in [
         ("- outer\n\n  - inner\n", "- outer\n  - inner\n"),
-        ("- outer\n\n\n  - inner\n- peer\n", "- outer\n  - inner\n- peer\n"),
+        (
+            "- outer\n\n\n  - inner\n- peer\n",
+            "- outer\n  - inner\n- peer\n",
+        ),
         ("> - outer\n>\n>   - inner\n", "> - outer\n>   - inner\n"),
-        ("> - x\n>\n>   : t\n>\n>     a\n", "> - x\n>   :: t\n>   :  a\n"),
+        (
+            "> - x\n>\n>   : t\n>\n>     a\n",
+            "> - x\n>   :: t\n>   :  a\n",
+        ),
         // A blank above a later block of the item is Djot's too.
         ("- a\n\n  # h\n\n  - c\n", "- a\n\n  # h\n\n  - c\n"),
     ] {
