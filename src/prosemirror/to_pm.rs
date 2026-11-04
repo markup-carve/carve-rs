@@ -46,6 +46,14 @@ pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
                     .then(|| doc.footnote_def_pos.get(label))
                     .flatten()
             });
+        // The definition line, not the body, orders the notes on the way back.
+        if let Some(def) = doc
+            .footnote_def_pos
+            .get(label)
+            .filter(|_| !blocks.is_empty())
+        {
+            attrs.insert("carveDefPos".into(), position(def));
+        }
         if let Some(pos) = pos {
             attrs.insert("carvePos".into(), position(pos));
         }
@@ -625,12 +633,19 @@ impl Renderer {
         let filled = |c: &Vec<InlineNode>| !c.is_empty();
         let name = match (left, right) {
             (InlineNode::Emphasis(a), InlineNode::Emphasis(b))
-                if a.kind == b.kind
-                    && a.attrs == b.attrs
-                    && filled(&a.children)
-                    && filled(&b.children) =>
+                if filled(&a.children) && filled(&b.children) =>
             {
-                self.emphasis_name(a.kind)
+                // A combined token carries a strong and an emphasis mark, so it
+                // merges with a neighbor holding either one.
+                let left = emphasis_marks(a);
+                let Some(kind) = emphasis_marks(b)
+                    .into_iter()
+                    .find(|m| left.contains(m))
+                    .map(|(kind, _)| kind)
+                else {
+                    return;
+                };
+                self.emphasis_name(kind)
             }
             (InlineNode::CriticInsert(a), InlineNode::CriticInsert(b))
                 if a.attrs == b.attrs && filled(&a.children) && filled(&b.children) =>
@@ -709,8 +724,9 @@ impl Renderer {
                     let Some(emphasis) = self.name("emphasis") else {
                         return;
                     };
+                    // The combined token's one attribute slot is the outer element's.
                     next.push(mark(strong, attrs(n.attrs.as_ref())));
-                    next.push(mark(emphasis, attrs(n.attrs.as_ref())));
+                    next.push(mark(emphasis, Object::new()));
                 } else if let Some(name) = self.emphasis_name(n.kind) {
                     // A mark cannot nest inside itself, so a span of a kind
                     // already open (a braced scope makes one spellable,
@@ -1289,6 +1305,15 @@ fn node_marked(name: &str, attrs: Object, content: Vec<Json>, marks: &[Json]) ->
     }
     Json::Object(o)
 }
+fn emphasis_marks(n: &Emphasis) -> Vec<(EmphasisKind, Object)> {
+    match n.kind {
+        EmphasisKind::BoldItalic => vec![
+            (EmphasisKind::Strong, attrs(n.attrs.as_ref())),
+            (EmphasisKind::Italic, Object::new()),
+        ],
+        kind => vec![(kind, attrs(n.attrs.as_ref()))],
+    }
+}
 fn mark(name: &str, attrs: Object) -> Json {
     node_with(name, attrs, Vec::new())
 }
@@ -1314,8 +1339,14 @@ fn attrs(a: Option<&Attrs>) -> Object {
             out.insert("class".into(), Json::String(a.classes.join(" ")));
         }
         for (k, v) in &a.key_values {
-            out.entry(k.clone())
-                .or_insert_with(|| Json::String(v.clone()));
+            let key = if super::from_pm::is_structural_attr(k)
+                || k.starts_with(super::from_pm::KEY_VALUE_ESCAPE)
+            {
+                format!("{}{k}", super::from_pm::KEY_VALUE_ESCAPE)
+            } else {
+                k.clone()
+            };
+            out.entry(key).or_insert_with(|| Json::String(v.clone()));
         }
         if !a.order.is_empty() {
             out.insert(

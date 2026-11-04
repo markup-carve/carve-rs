@@ -71,20 +71,7 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
 // Comparing against the SOURCE instead would report 749 documents whose `.crv`
 // is simply not in canonical form; `tests/corpus_canonical_form.rs` is where
 // that belongs.
-const SOURCE_LOSSY: &[(&str, &[&str])] = &[
-    (
-        "the sanitized-away `href` attribute is not carried, so \
-         `[safe](https://example.com){href=javascript:steal}` comes back without it",
-        &["108-security-hardening-11.crv"],
-    ),
-    (
-        "authored link and image destination overrides are not carried by the editor bridge",
-        &[
-            "737-model-inline-frames-and-html-attributes.crv",
-            "737-model-inline-frames-and-html-attributes-2.crv",
-        ],
-    ),
-];
+const SOURCE_LOSSY: &[(&str, &[&str])] = &[];
 
 /// Every declared source-lossy document, sorted.
 fn source_lossy_names() -> Vec<String> {
@@ -814,7 +801,6 @@ fn adjacent_equal_marks_merge_on_import() {
 /// The canonical source comes from `to_carve` on both sides. The comment beside
 /// that comparison explains what `render_carve(parse(x))` hid.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let declared = source_lossy_names();
@@ -1473,7 +1459,18 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             "41-line-blocks-9.crv",
             "421-a-sigil-fence-takes-its-attribute-line.crv",
             "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
+            "561-a-line-block-payload-span-pairs-past-the-content-column.crv",
             "668-escaped-space-in-inline-text.crv",
+            "812-an-escaped-space-and-a-hard-break-work-inside-a-forced-span.crv",
+            "820-an-escaped-space-before-a-comment-marker-separates-it-2.crv",
+            "820-an-escaped-space-before-a-comment-marker-separates-it-3.crv",
+            "820-an-escaped-space-before-a-comment-marker-separates-it.crv",
+            "867-an-indented-comment-block-in-a-line-block-leaves-nothing-2.crv",
+            "867-an-indented-comment-block-in-a-line-block-leaves-nothing-3.crv",
+            "867-an-indented-comment-block-in-a-line-block-leaves-nothing-4.crv",
+            "867-an-indented-comment-block-in-a-line-block-leaves-nothing.crv",
+            "889-a-comment-in-editorial-markup-ends-at-the-first-raw-closer-4.crv",
+            "914-a-line-block-in-an-item-child-keeps-its-stanza-after-a-comment-or-marker-shaped-payload-3.crv",
         ]
     );
     // The pin moves on to carve 9247883, which adds the ten documents of
@@ -1746,7 +1743,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // round trip strictly. The changed source for row 699 stays in its old bucket.
     // Corpus 352 base moves to reported soft-break loss when a multiline
     // reference label becomes literal text (carve-rs#3422).
-    const STRICT: usize = 2371;
+    // Re-measured at spec 1d0a07b5 (4372 documents) once the rule A ledger
+    // test ran again (carve-rs#3524). 784-2 now reports its merging strong runs.
+    const STRICT: usize = 3435;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1762,9 +1761,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // and 673-3. The bridge already reports these source differences.
     // Four of the new corpus 715 through 735 documents report source loss.
     // Seventeen of the new documents report existing editor losses. Rows 737
-    // and 737-2 also lose authored destination overrides in canonical source;
-    // SOURCE_LOSSY names both above.
-    const LOSSY: usize = 838;
+    // and 737-2 used to lose authored destination overrides in canonical
+    // source; the bridge now carries a key that collides with a node field.
+    // Re-measured at spec 1d0a07b5 with STRICT above.
+    const LOSSY: usize = 937;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
