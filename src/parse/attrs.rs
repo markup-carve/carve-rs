@@ -208,7 +208,7 @@ fn wrapped_attrs_run_at<'a>(
 
 /// What a block-position brace run says when its only fault is a continuation
 /// at or below its `{` column (carve#5080): the run is literal paragraph text.
-pub(in crate::parse) enum RefusedBraceRun {
+pub(crate) enum RefusedBraceRun {
     /// The run is refused and takes this many lines.
     Lines(usize),
     /// Not refused. A comment run scanned this many lines, and none of them
@@ -217,7 +217,7 @@ pub(in crate::parse) enum RefusedBraceRun {
 }
 
 /// `lazy_refuses` is false in a quote, whose lazy line keeps a run inline.
-pub(in crate::parse) fn refused_brace_run<'a>(
+pub(crate) fn refused_brace_run<'a>(
     mut lines: impl Iterator<Item = &'a str>,
     lazy_refuses: bool,
 ) -> RefusedBraceRun {
