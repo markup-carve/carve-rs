@@ -196,3 +196,11 @@ fn a_source_holding_every_control_byte_reads_every_plus_alike() {
     }
     assert!(failed.is_empty(), "{} {failed:#?}", failed.len());
 }
+
+/// A consumed marker leaves no node, also inside a captioned quote (carve#5013).
+#[test]
+fn a_consumed_marker_in_a_captioned_quote_writes_nothing() {
+    let source = "> - +\n> - b\n^ cap\n";
+    assert_eq!(carve::to_carve(source), "> - {empty}\n> - b\n^ cap\n");
+    assert!(!carve::to_json(&carve::parse(source)).contains("comment"));
+}

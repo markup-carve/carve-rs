@@ -201,6 +201,13 @@ pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
                 BlockNode::Section(b) => sweep(&mut b.children, keep),
                 BlockNode::Admonition(b) => sweep(&mut b.children, keep),
                 BlockNode::Directive(b) => sweep(&mut b.children, keep),
+                BlockNode::FigureGroup(b) => sweep(&mut b.children, keep),
+                BlockNode::ExtensionCarrier(b) => sweep(&mut b.children, keep),
+                BlockNode::Figure(figure) => {
+                    if let crate::ast::FigureTarget::BlockQuote(quote) = &mut *figure.target {
+                        sweep(&mut quote.children, keep);
+                    }
+                }
                 BlockNode::List(list) => {
                     for item in &mut list.items {
                         sweep(&mut item.children, keep);
