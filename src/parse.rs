@@ -763,6 +763,7 @@ pub(crate) fn parse_for_carve(source: &str) -> Document {
 }
 
 mod definition_regions;
+mod erased_spans;
 mod frontmatter;
 mod layout;
 mod source_map;
@@ -1086,7 +1087,13 @@ fn parse_with_options_mode_and_index_once(
             }
             (footnote_defs, children)
         });
+    let mut erased = std::collections::BTreeSet::new();
     if let Some((t, _)) = transparent {
+        erased.extend(
+            t.erased_lines()
+                .filter(|(_, _, comment)| *comment)
+                .map(|(line, ..)| line),
+        );
         for (key, def) in &mut link_defs {
             if !erased_link_keys.contains(key) {
                 def.line = def.line.map(|line| t.authored_line(line + 1) - 1);
@@ -1143,9 +1150,17 @@ fn parse_with_options_mode_and_index_once(
         for (label, pos) in &mut footnote_def_pos {
             let last = footnote_defs
                 .get(label)
-                .and_then(|blocks| positions::furthest_block_pos(blocks))
-                .cloned();
+                .and_then(|blocks| positions::furthest_block_pos(blocks));
             end_at_last_placed_child(pos, last);
+        }
+        if !erased.is_empty() {
+            erased_spans::separate_erased_lines(
+                &mut children,
+                &mut footnote_defs,
+                &erased,
+                original,
+                line_starts,
+            );
         }
     }
     let mut doc = Document {

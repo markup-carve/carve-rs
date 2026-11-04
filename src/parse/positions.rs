@@ -228,11 +228,43 @@ pub(in crate::parse) fn span_of(
 /// Fill node and sidecar offsets in codepoints (PART 12 §4).
 /// The child that ends furthest into the source. A comment erased before layout
 /// stands after the paragraph it crossed, so the last child need not end last.
-pub(crate) fn furthest_block_pos(blocks: &[BlockNode]) -> Option<&Pos> {
+/// An unplaced child (a paragraph joined across an erased line, carve#5136)
+/// still reaches as far as its placed descendants do.
+pub(crate) fn furthest_block_pos(blocks: &[BlockNode]) -> Option<Pos> {
     blocks
         .iter()
-        .filter_map(crate::ast_json::block_pos)
+        .filter_map(|block| match crate::ast_json::block_pos(block) {
+            Some(pos) => Some(pos.clone()),
+            None => furthest_descendant_pos(block),
+        })
         .max_by_key(|pos| (pos.end_line, pos.end_column))
+}
+
+fn furthest_descendant_pos(block: &BlockNode) -> Option<Pos> {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Furthest(Option<Pos>);
+    impl SubtreeVisitor for Furthest {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                visit_inline_children(inline, self);
+            }
+        }
+        fn position(&mut self, pos: &mut Pos) {
+            if self.0.as_ref().map_or(true, |far| {
+                (far.end_line, far.end_column) < (pos.end_line, pos.end_column)
+            }) {
+                self.0 = Some(pos.clone());
+            }
+        }
+    }
+    let mut furthest = Furthest(None);
+    visit_block_children(&mut block.clone(), &mut furthest);
+    furthest.0
 }
 
 pub(in crate::parse) fn fill_offsets(blocks: &mut [BlockNode], line_starts: &CodepointLineStarts) {
@@ -300,10 +332,9 @@ pub(in crate::parse) fn fill_offsets(blocks: &mut [BlockNode], line_starts: &Cod
                         apply_offsets(pos, line_starts);
                     }
                     fill_offsets(&mut item.children, line_starts);
-                    if let (Some(pos), Some(last)) = (
-                        item.pos.as_mut(),
-                        furthest_block_pos(&item.children).cloned(),
-                    ) {
+                    if let (Some(pos), Some(last)) =
+                        (item.pos.as_mut(), furthest_block_pos(&item.children))
+                    {
                         pos.end_line = last.end_line;
                         pos.end_column = last.end_column;
                         pos.end_offset = last.end_offset;
@@ -665,7 +696,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
                     // here made the same construct answer one way standalone
                     // and another as a figure target (carve-rs#2165).
                     if !q.fenced {
-                        let last = furthest_block_pos(&q.children).cloned();
+                        let last = furthest_block_pos(&q.children);
                         if let Some(pos) = q.pos.as_mut() {
                             narrow_container_end(pos, last, lines, true);
                         }
@@ -698,7 +729,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
                         // span must not reach over it (carve-rs#1555). The list
                         // that hosts it derives its own end from this, so both
                         // narrow together.
-                        let last = furthest_block_pos(&def.children).cloned();
+                        let last = furthest_block_pos(&def.children);
                         if let Some(pos) = def.pos.as_mut() {
                             // A description whose only content hoisted to the
                             // root has no placed child; its span is then its own
@@ -720,7 +751,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
                 }
                 for item in &mut n.items {
                     narrow_to_last_placed_child(&mut item.children, lines);
-                    let last = furthest_block_pos(&item.children).cloned();
+                    let last = furthest_block_pos(&item.children);
                     if let Some(pos) = item.pos.as_mut() {
                         start_list_at_markup_after_quote(pos, lines);
                         narrow_container_end(pos, last, lines, false);
@@ -745,7 +776,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
             // emptied fenced quote is unaffected: it has no placed child, so the
             // narrowing never reached it.
             BlockNode::BlockQuote(n) if !n.fenced => {
-                let last = furthest_block_pos(&n.children).cloned();
+                let last = furthest_block_pos(&n.children);
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, true);
                 }
