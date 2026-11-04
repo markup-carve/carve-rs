@@ -3039,10 +3039,17 @@ fn item_chunk_tree_looseness(
                         && opaque_blank_lines.binary_search(&line).is_err()
                 })
         };
-        if block_is_paragraph_shaped(child)
+        // Any visible block after a blank loosens (PART 9 §17 L1, carve#5015),
+        // unless the blank is still a descendant fence's payload. A blank a
+        // nested fence run discarded is pending only for a paragraph.
+        let paragraph = block_is_paragraph_shaped(child);
+        let block = !paragraph
+            && !block_renders_nothing(child)
+            && !previous_child.is_some_and(fence_payload_ends_in_blank);
+        if (paragraph || block)
             && (previous_end > 0 || start > 1)
             && item_shown
-            && (trailing_blank || discarded_outer_blank || blank_before_invisible())
+            && (trailing_blank || (paragraph && discarded_outer_blank) || blank_before_invisible())
         {
             return true;
         }
@@ -3091,6 +3098,29 @@ fn trailing_payload_blank_count(mut block: &BlockNode) -> usize {
             }
             _ => return 0,
         };
+    }
+}
+
+/// Whether the last leaf of `block` is a fence whose payload ends in a blank line.
+fn fence_payload_ends_in_blank(block: &BlockNode) -> bool {
+    !matches!(
+        last_leaf(block),
+        BlockNode::Comment(_) | BlockNode::LineBlock(_)
+    ) && trailing_payload_blank_count(block) > 0
+}
+
+fn last_leaf(mut block: &BlockNode) -> &BlockNode {
+    loop {
+        let next = match block {
+            BlockNode::BlockQuote(node) => node.children.last(),
+            BlockNode::Div(node) => node.children.last(),
+            BlockNode::List(node) => node.items.last().and_then(|item| item.children.last()),
+            _ => None,
+        };
+        match next {
+            Some(child) => block = child,
+            None => return block,
+        }
     }
 }
 

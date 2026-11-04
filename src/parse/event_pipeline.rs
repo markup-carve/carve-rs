@@ -1321,12 +1321,13 @@ fn resume_nested_list_after_blank(frames: &mut [UnifiedListFrame<'_>], next: &st
     let frame = frames.last_mut()?;
     if next_indent == frame.content_indent {
         let content = &next[next_indent..];
+        // A blank before a child block loosens the item (PART 9 §17 L1, carve#5015);
+        // the tree parser owns that reading.
         if strip_blockquote_prefix(content).is_some()
             || detect_fence_open(content).is_some()
             || detect_heading(content).is_some()
         {
-            flush_unified_list_paragraph(frame)?;
-            return Some(());
+            return None;
         }
         if !is_list_marker(content) && may_start_plain_paragraph(content) {
             flush_unified_list_paragraph(frame)?;
@@ -1627,7 +1628,7 @@ fn advance_unified_list_blank(
     }
     let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
     if next_indent == frame.content_indent && unified_list_marker(&next[next_indent..]).is_some() {
-        return Some(BlankListStep::Continue(after));
+        return None;
     }
     if is_list_marker(next) {
         if next_indent == frame.indent {
@@ -1649,12 +1650,14 @@ fn advance_unified_list_blank(
         return None;
     }
     if next_indent == frame.content_indent {
-        flush_unified_list_paragraph(frame)?;
-        if strip_blockquote_prefix(&next[next_indent..]).is_none()
-            && detect_fence_open(&next[next_indent..]).is_none()
-            && detect_heading(&next[next_indent..]).is_none()
-            && !trim_ascii_start(&next[next_indent..]).starts_with("%% ")
+        if strip_blockquote_prefix(&next[next_indent..]).is_some()
+            || detect_fence_open(&next[next_indent..]).is_some()
+            || detect_heading(&next[next_indent..]).is_some()
         {
+            return None;
+        }
+        flush_unified_list_paragraph(frame)?;
+        if !trim_ascii_start(&next[next_indent..]).starts_with("%% ") {
             frame.node.tight = false;
         }
         return Some(BlankListStep::Continue(after));
@@ -1705,6 +1708,18 @@ fn consume_unified_list_comment<'a>(
             indent == frame.content_indent && trim_ascii_start(&next[indent..]).starts_with("%% ")
         }) {
             after_comments += 1;
+        }
+        if lines.get(after_comments).is_some_and(|next| {
+            let indent = next.bytes().take_while(|byte| *byte == b' ').count();
+            let content = &next[indent..];
+            indent == frame.content_indent
+                && (detect_heading(content).is_some()
+                    || strip_blockquote_prefix(content).is_some()
+                    || detect_fence_open(content).is_some()
+                    || unified_list_marker(content).is_some())
+        }) {
+            // The tree parser reads a blank before a child block (carve#5015).
+            return None;
         }
         if lines.get(after_comments).is_some_and(|next| {
             let indent = next.bytes().take_while(|byte| *byte == b' ').count();

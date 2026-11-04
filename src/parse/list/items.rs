@@ -653,6 +653,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (content_col, options) = (self.content_col, self.options);
         let last_item = self.items.len() - 1;
         let chunk_floor = self.continuation_chunk_floor(line, indent);
+        let chunk_start = self.cur.pos;
         let mut nested = collect_item_continuation_block_mapped(
             self.cur,
             chunk_floor,
@@ -680,7 +681,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             nested_ends_with_open_paragraph_masked(&probed, below, below, options)
         });
         let (nested_children, carried) =
-            self.parse_continuation_chunk(nested, collected_tail_blank);
+            self.parse_continuation_chunk(chunk_start, nested, collected_tail_blank);
         place_item_chunk(self.deferred, last_item, nested_children, carried);
         if self.cur.peek().is_some_and(|line| {
             let indent = indent_columns(line);
@@ -812,6 +813,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
 
     fn parse_continuation_chunk(
         &mut self,
+        chunk_start: usize,
         mut nested: MappedSource,
         collected_tail_blank: bool,
     ) -> (Vec<BlockNode>, Vec<PendingBody>) {
@@ -823,7 +825,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (mut nested_children, nested_loose) =
             parse_item_chunk(&nested, self.options, &mut carried, self.item_shows);
         self.carry_chunk_attrs(&mut nested_children, split_stack);
-        self.chunk_looseness(&nested_children, nested_loose, collected_tail_blank);
+        self.chunk_looseness(
+            chunk_start,
+            &nested_children,
+            nested_loose,
+            collected_tail_blank,
+        );
         (nested_children, carried)
     }
 
@@ -859,6 +866,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
 
     fn chunk_looseness(
         &mut self,
+        chunk_start: usize,
         nested_children: &[BlockNode],
         nested_loose: bool,
         collected_tail_blank: bool,
@@ -884,7 +892,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if self.pending_blank
             && blank_can_loosen
             && shown_before
-            && first_visible.is_some_and(block_is_paragraph_shaped)
+            && first_visible.is_some_and(|block| {
+                block_is_paragraph_shaped(block)
+                    || (!block_renders_nothing(block)
+                        && self.authored_blank_before(chunk_start)
+                        && !self.last_child_holds_trailing_payload_blank())
+            })
         {
             self.tight = false;
         }
@@ -959,7 +972,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return END;
         }
         let last_item = self.items.len() - 1;
+        // A blank before an item's own sub-list loosens it (PART 9 §17 L1, carve#5015).
+        let blank_loosens = self.item_shows
+            && sub_indent >= self.content_col
+            && self.authored_blank_before(self.cur.pos)
+            && !self.last_child_holds_trailing_payload_blank();
         let chunk = self.collect_sublist_chunk(sub_indent);
+        if blank_loosens {
+            self.tight = false;
+        }
         self.place_sublist_chunk(last_item, sub_indent, chunk)
     }
 
@@ -2549,6 +2570,52 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             },
             |cur| collect_indented_block_mapped(cur, base_indent, content_col, options),
         );
+    }
+
+    /// Whether the blank run above `at` holds a blank the author wrote, not
+    /// only a separator a collector inserted between re-parsed lines.
+    fn authored_blank_before(&self, at: usize) -> bool {
+        // Invisible lines between the blank and the block do not end the run (§17 L1b).
+        let invisible =
+            |line: &str| is_line_comment_any_column(line) || crate::parse::gap_attribute_line(line);
+        let lines = (0..at)
+            .rev()
+            .skip_while(|&k| self.cur.lines.line(k).is_some_and(invisible));
+        lines
+            .take_while(|&k| self.cur.lines.line(k).is_some_and(is_blank_line))
+            .any(|k| {
+                // A collector's separator has no origin, and one that preserves an
+                // interruption is marked as reaching the column.
+                // That separator only stands before a fence (collect.rs).
+                let inserted =
+                    !self
+                        .cur
+                        .line_map
+                        .is_some_and(|map| map.iter().any(Option::is_some))
+                        && self.cur.reached.and_then(|flags| flags.get(k).copied()) == Some(true)
+                        && self.cur.lines.line(k + 1).is_some_and(|next| {
+                            detect_fence_open(trim_ascii_start(next)).is_some()
+                        });
+                !inserted
+                    && (self.cur.source_line(k).is_some()
+                        || !self
+                            .cur
+                            .line_map
+                            .is_some_and(|map| map.iter().any(Option::is_some)))
+            })
+    }
+
+    /// A blank still inside a descendant fence's payload is that fence's.
+    fn last_child_holds_trailing_payload_blank(&self) -> bool {
+        self.items
+            .last()
+            .and_then(|item| {
+                item.children
+                    .iter()
+                    .rev()
+                    .find(|b| !block_renders_nothing(b))
+            })
+            .is_some_and(crate::parse::fence_payload_ends_in_blank)
     }
 
     fn reraise_blank_after(&mut self, item_at: usize) {
