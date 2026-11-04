@@ -54,3 +54,16 @@ fn a_nested_term_span_keeps_its_item_column() {
     assert_eq!(comments(source), [("definition_term".into(), "  x".into())]);
     assert_eq!(carve::to_carve(source), source);
 }
+
+#[test]
+fn the_owner_span_covers_the_kept_comment() {
+    let doc: serde_json::Value = serde_json::from_str(&carve::to_json(&carve::parse_with_options(
+        ":: a\n%%%\nx\n%%%\n: d\n",
+        &carve::Options::new().with_positions(true),
+    )))
+    .unwrap();
+    let term = &doc["children"][0]["items"][0];
+    assert_eq!(term["type"], "definition_term");
+    assert_eq!(term["pos"]["endOffset"], 14);
+    assert_eq!(term["children"][1]["pos"]["endOffset"], 14);
+}
