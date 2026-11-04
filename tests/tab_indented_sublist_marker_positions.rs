@@ -113,7 +113,6 @@ fn an_ordered_tab_indented_sublist_is_placed_too() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn the_space_indented_sublist_keeps_its_container_indentation() {
     // The control: with no tab nothing is synthesized. The nested list keeps
     // the two columns that remain after the parent item consumes its prefix.
