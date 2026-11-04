@@ -48,6 +48,13 @@
       "cases": [
         "lazy-5e5b39627ed0"
       ]
+    },
+    {
+      "ticket": "markup-carve/carve#5156",
+      "cause": "a refused quote plus opens no paragraph, so the line below the document paragraph opens its quote; carve-rs follows carve main's model, the pin's pack predates carve d5ba112b",
+      "cases": [
+        "lazy-408e39e5714b"
+      ]
     }
   ]
 }

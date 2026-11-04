@@ -2733,11 +2733,13 @@ impl<'a> Walk<'a> {
                 c.consume_marker(self.mark, self.lines[at]);
                 self.consumed.push(self.first_line + at);
             }
+            // A refused `+` opens no paragraph; a note body still takes the next
+            // line lazily (§17 L3, corpus 437-2, 838-2).
+            let in_note = self.frames.iter().any(|f| f.kind == Kind::Note);
             let f = &mut self.frames[frame];
-            // A refused item marker leaves the item empty, with no paragraph open.
             let empty_item = refused && f.kind == Kind::Item;
             f.absorbs = absorbs;
-            f.para = !taken && !empty_item;
+            f.para = !taken && (!refused || in_note);
             f.last = if empty_item { Last::None } else { Last::Para };
             if taken {
                 f.plus = Some(at);
