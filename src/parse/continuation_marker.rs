@@ -155,7 +155,9 @@ pub(super) fn is_refused_letter(line: &str) -> bool {
 
 /// A reader may keep as payload a `+` the walk read as a letter or consumed.
 pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
-    let consumed = CONSUMED.with(|slot| slot.borrow().1).map(|mark| format!("%% {mark}"));
+    let consumed = CONSUMED
+        .with(|slot| slot.borrow().1)
+        .map(|mark| format!("%% {mark}"));
     if LETTER.with(|slot| slot.borrow().is_none()) && consumed.is_none() {
         return;
     }

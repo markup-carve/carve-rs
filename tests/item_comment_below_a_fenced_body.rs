@@ -23,7 +23,6 @@ fn and_what_follows_it_parses_at_the_document_level() {
 }
 
 #[test]
-#[ignore = "carve#5015 port pending (carve-rs#3823): a blank before an item block loosens the list"]
 fn a_closer_below_the_column_does_not_bring_the_item_back() {
     assert_eq!(
         carve::to_html("- a\n\n  ```\n%% c\n  ```\n"),
@@ -32,7 +31,6 @@ fn a_closer_below_the_column_does_not_bring_the_item_back() {
 }
 
 #[test]
-#[ignore = "carve#5015 port pending (carve-rs#3823): a blank before an item block loosens the list"]
 fn payload_then_a_comment_then_a_closer() {
     assert_eq!(
         carve::to_html("- a\n\n  ```\n  p\n%% c\n  q\n  ```\n"),

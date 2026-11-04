@@ -67,8 +67,9 @@ fn one_definition_keeps_the_extent() {
 fn a_footnote_definition_keeps_the_extent() {
     assert_html(
         "- a\n+\n[^n]: note\nmore\n\nSee [^n].\n",
-        // The note's body takes `more`; the blank after it refuses the `+` (carve#4449).
-        "<ul><li>a +</li></ul>\
+        // The note's body takes `more`; the blank after it refuses the `+`, and a
+        // refused marker renders nothing (carve#5013).
+        "<ul><li>a</li></ul>\
          <p>See <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\
          <section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\">\
          <p>note more<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\
@@ -83,8 +84,8 @@ fn a_footnote_definition_keeps_the_extent() {
 fn a_sibling_marker_below_them_is_still_a_sibling() {
     assert_html(
         "- a\n+\n[r]: /a\n- z\n\nSee [r][].\n",
-        // A sibling after the definition refuses the `+` (carve#4449).
-        "<ul><li>a +</li><li>z</li></ul><p>See <a href=\"/a\">r</a>.</p>",
+        // A sibling after the definition refuses the `+` (carve#4449, carve#5013).
+        "<ul><li>a</li><li>z</li></ul><p>See <a href=\"/a\">r</a>.</p>",
     );
 }
 
@@ -93,8 +94,8 @@ fn a_sibling_marker_below_them_is_still_a_sibling() {
 fn definitions_alone_attach_nothing() {
     assert_html(
         "- a\n+\n[r]: /a\n\nSee [r][].\n",
-        // A blank after the definition refuses the `+` (carve#4449).
-        "<ul><li>a +</li></ul><p>See <a href=\"/a\">r</a>.</p>",
+        // A blank after the definition refuses the `+` (carve#4449, carve#5013).
+        "<ul><li>a</li></ul><p>See <a href=\"/a\">r</a>.</p>",
     );
 }
 

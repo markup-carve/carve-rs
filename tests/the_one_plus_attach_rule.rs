@@ -25,7 +25,7 @@ fn the_ticket_expecteds() {
         ),
         (
             ":: t\n: - +\np\n",
-            "<dl><dt>t</dt><dd><ul><li>+p</li></ul></dd></dl>",
+            "<dl><dt>t</dt><dd><ul><li></li></ul></dd></dl><p>p</p>",
         ),
         (
             "- a\n  * +\n[r]: /u\n  after\n",
@@ -36,8 +36,8 @@ fn the_ticket_expecteds() {
             "> +\n> x\n",
             "<blockquote><blockquote><p>x</p></blockquote></blockquote>",
         ),
-        ("- +\n- b\n", "<ul><li>+</li><li>b</li></ul>"),
-        ("- +\n  para\n", "<ul><li>+para</li></ul>"),
+        ("- +\n- b\n", "<ul><li></li><li>b</li></ul>"),
+        ("- +\n  para\n", "<ul><li>para</li></ul>"),
         // carve#4408
         (
             ":: t\n: +\nl\n : b\n",
@@ -49,7 +49,7 @@ fn the_ticket_expecteds() {
         ),
         (
             ":: t\n : +\nl\n : b\n",
-            "<dl><dt>t</dt><dd>+l</dd><dd>b</dd></dl>",
+            "<dl><dt>t</dt><dd></dd></dl><p>l: b</p>",
         ),
     ] {
         assert_html(source, want);
