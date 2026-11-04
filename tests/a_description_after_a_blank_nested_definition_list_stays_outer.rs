@@ -21,5 +21,9 @@ fn a_description_at_the_outer_column_is_an_outer_sibling() {
 fn the_canonical_form_of_corpus_813_3_reads_back() {
     let source = "- x\n\n  :: t\n  :  d\n     :: u\n     : v\n    : e\n";
     let written = carve::to_carve(source);
-    assert_eq!(carve::to_html(&written), carve::to_html(source), "{written}");
+    assert_eq!(
+        carve::to_html(&written),
+        carve::to_html(source),
+        "{written}"
+    );
 }
