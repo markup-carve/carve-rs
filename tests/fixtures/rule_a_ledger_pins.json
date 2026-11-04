@@ -918,7 +918,7 @@
     {
       "source": "1. x\n [r]: /u\n[t][r]\n",
       "html": "<ol>\n  <li>x\n<a href=\"/u\">t</a></li>\n</ol>",
-      "carve": "1. x\n\n[t][r]\n\n[r]: /u"
+      "carve": "1. x\n   [t][r]\n\n[r]: /u"
     },
     {
       "source": "1. x\n\n[t][r]\n\n[r]: /u\n",
@@ -1760,7 +1760,7 @@
     {
       "source": "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [r]: /t\n> ```\n",
       "html": "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>x</li>\n    <li>b</li>\n    <li>c</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
-      "carve": "> - a\n> - x\n> - b\n> - c\n> - ```\n>   ```\n>\n> ```\n> ```\n\n[r]: /t"
+      "carve": "> - a\n> - x\n> - b\n> - c\n> - ```\n>\n>   ```\n>\n> ```\n> ```\n\n[r]: /t"
     },
     {
       "source": "> - a\n> - x\n> - b\n> - c\n> - ```\n>   ```\n>\n> ```\n> ```\n\n[r]: /t\n",
@@ -1860,7 +1860,7 @@
     {
       "source": "> > - a\n> >  - x\n> >   - b\n> > - c\n> >  - ```\n> > [r]: /t\n> > ```\n",
       "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n      <li>x</li>\n      <li>b</li>\n      <li>c</li>\n      <li>\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
-      "carve": "> > - a\n> > - x\n> > - b\n> > - c\n> > - ```\n> >   ```\n> >\n> > ```\n> > ```\n\n[r]: /t"
+      "carve": "> > - a\n> > - x\n> > - b\n> > - c\n> > - ```\n> >\n> >   ```\n> >\n> > ```\n> > ```\n\n[r]: /t"
     },
     {
       "source": "> > - a\n> > - x\n> > - b\n> > - c\n> > - ```\n> >   ```\n> >\n> > ```\n> > ```\n\n[r]: /t\n",
@@ -1969,7 +1969,7 @@
     {
       "source": "> - a\n> [r]: /t\n> - b\n",
       "html": "<blockquote>\n  <ul>\n    <li><p>a</p></li>\n    <li><p>b</p></li>\n  </ul>\n</blockquote>",
-      "carve": "> - a\n> - b\n\n[r]: /t"
+      "carve": "> - a\n>\n> - b\n\n[r]: /t"
     },
     {
       "source": "> - a\n> - b\n\n[r]: /t\n",
@@ -2023,7 +2023,7 @@
     {
       "source": "> > - a\n> > [r]: /t\n> > - b\n",
       "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li><p>a</p></li>\n      <li><p>b</p></li>\n    </ul>\n  </blockquote>\n</blockquote>",
-      "carve": "> > - a\n> > - b\n\n[r]: /t"
+      "carve": "> > - a\n> >\n> > - b\n\n[r]: /t"
     },
     {
       "source": "> > - a\n> > - b\n\n[r]: /t\n",

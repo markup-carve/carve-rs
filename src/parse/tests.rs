@@ -15,6 +15,17 @@ fn event_owned_pipeline_matches_public_modes() {
         if walk_moves_lines(&normalize_source(&source)) {
             continue;
         }
+        // carve#5012: a document that erases a line takes the standard parse.
+        if transparent_lines::erases_lines(&source) {
+            let options = Options::default();
+            assert!(
+                event_pipeline::parse_document_with_mode(&source, &options, ParseMode::Html)
+                    .is_none(),
+                "{}",
+                path.display()
+            );
+            continue;
+        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -220,6 +231,17 @@ fn event_owned_modes_preserve_extension_callbacks() {
         if walk_moves_lines(&normalize_source(&source)) {
             continue;
         }
+        // carve#5012: a document that erases a line takes the standard parse.
+        if transparent_lines::erases_lines(&source) {
+            let options = Options::default();
+            assert!(
+                event_pipeline::parse_document_with_mode(&source, &options, ParseMode::Html)
+                    .is_none(),
+                "{}",
+                path.display()
+            );
+            continue;
+        }
         for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
             for positions in [false, true] {
                 let baseline = Hook::default();
@@ -311,6 +333,17 @@ fn event_owned_facade_corpus_render_index_matches() {
         let source = std::fs::read_to_string(&path).unwrap();
         // Rule A: the event route declines a document the ownership walk rewrites.
         if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
+        // carve#5012: a document that erases a line takes the standard parse.
+        if transparent_lines::erases_lines(&source) {
+            let options = Options::default();
+            assert!(
+                event_pipeline::parse_document_with_mode(&source, &options, ParseMode::Html)
+                    .is_none(),
+                "{}",
+                path.display()
+            );
             continue;
         }
         for positions in [false, true] {
@@ -600,11 +633,14 @@ mod container_comment_dedent_steps {
 
         #[cfg(feature = "experimental-event-parser")]
         if small_steps == 0 && large_steps == 0 {
-            // The event route can own both inputs without the counted reader.
-            assert!(crate::parse_experimental_event_blocks(&quoted_openers_over_one_quote(60).0).1);
-            assert!(
-                crate::parse_experimental_event_blocks(&quoted_openers_over_one_quote(120).0).1
-            );
+            // carve#5012: the `[r]: /u` line is erased, so the event route declines;
+            // the same shape without it stays event-owned.
+            for m in [60, 120] {
+                let source = quoted_openers_over_one_quote(m).0;
+                assert!(!crate::parse_experimental_event_blocks(&source).1);
+                let without = source.replace("\n[r]: /u\n\n[r][]\n", "\n");
+                assert!(crate::parse_experimental_event_blocks(&without).1);
+            }
             return;
         }
 

@@ -42,6 +42,15 @@ fn admitted_corpus_preserves_parser_diagnostics() {
         if walk_moves_lines(&normalize_source(&source)) {
             continue;
         }
+        // carve#5012: a document that erases a line takes the standard parse.
+        if crate::parse::transparent_lines::erases_lines(&source) {
+            assert!(
+                parse_document_with_options(&source, &options).is_none(),
+                "{}",
+                path.display()
+            );
+            continue;
+        }
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
             collecting_unattached_block_attrs(|| parse_with_options(&source, &options))
         });
@@ -197,6 +206,15 @@ fn eof_fences_preserve_parser_diagnostics() {
         let source = authored.strip_suffix('\n').unwrap_or(&authored);
         // Rule A: the event route declines a document the ownership walk rewrites.
         if walk_moves_lines(&normalize_source(source)) {
+            continue;
+        }
+        // carve#5012: a document that erases a line takes the standard parse.
+        if crate::parse::transparent_lines::erases_lines(source) {
+            assert!(
+                parse_document_with_options(source, &options).is_none(),
+                "{}",
+                path.display()
+            );
             continue;
         }
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {

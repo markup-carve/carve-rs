@@ -823,7 +823,14 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         escape_window::leave(session, recorded);
         if let (Some((entry, paragraph, spliced)), Some(block)) = (paragraph_entry.as_mut(), block)
         {
-            if splice_crossing_line(session, &mut rendered[*entry], paragraph, *spliced, block, &text) {
+            if splice_crossing_line(
+                session,
+                &mut rendered[*entry],
+                paragraph,
+                *spliced,
+                block,
+                &text,
+            ) {
                 *spliced += 1;
                 continue;
             }
@@ -1529,7 +1536,14 @@ fn render_blocks(
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let mut text = render_block(session, block, ctx);
         if let Some((entry, paragraph, spliced)) = paragraph_entry.as_mut() {
-            if splice_crossing_line(session, &mut rendered[*entry], paragraph, *spliced, block, &text) {
+            if splice_crossing_line(
+                session,
+                &mut rendered[*entry],
+                paragraph,
+                *spliced,
+                block,
+                &text,
+            ) {
                 *spliced += 1;
                 escape_window::leave(session, recorded);
                 continue;
@@ -2263,7 +2277,8 @@ fn render_item_blocks(
         }
         if let Some((start, paragraph, spliced)) = paragraph_tail.as_mut() {
             let mut tail = out.split_off(*start);
-            let placed = splice_crossing_line(session, &mut tail, paragraph, *spliced, block, &rendered);
+            let placed =
+                splice_crossing_line(session, &mut tail, paragraph, *spliced, block, &rendered);
             out.push_str(&tail);
             if placed {
                 *spliced += 1;
@@ -2294,8 +2309,7 @@ fn render_item_blocks(
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
             let gap_guard_start = ctx.footnote_guard_types.len();
-            if let Some((written, separates)) = definition_in_gap(session, prev_block, block, ctx)
-            {
+            if let Some((written, separates)) = definition_in_gap(session, prev_block, block, ctx) {
                 ctx.footnote_guard_types[guard_start..].rotate_left(gap_guard_start - guard_start);
                 out.push_str(&written);
                 out.push('\n');
