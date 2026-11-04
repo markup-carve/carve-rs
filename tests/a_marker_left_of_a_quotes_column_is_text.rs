@@ -19,6 +19,7 @@ fn with_marker_at(column: usize) -> String {
     html(&format!("- x\n  > q\n{}+\n", " ".repeat(column)))
 }
 
+// The refused marker renders nothing (carve#5013).
 const KEPT: &str = "<ul>\n  <li>x\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>";
 
 #[test]

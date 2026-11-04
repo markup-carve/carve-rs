@@ -270,7 +270,7 @@ fn an_indented_footnote_marker_attaches_at_the_notes_marker_column() {
 #[test]
 fn a_below_column_list_line_stays_lazy_after_either_plus_or_prose() {
     let expected =
-        "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>";
+        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n  <li>x</li>\n</ul>";
     for text in ["+", "ordinary"] {
         let source = format!("- - +\n  {text}\n - x\n");
         assert_eq!(carve::to_html(&source).replace(text, "+"), expected);

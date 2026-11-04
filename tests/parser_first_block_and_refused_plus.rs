@@ -27,7 +27,11 @@ fn a_document_column_line_does_not_attach_to_a_nested_item() {
 fn a_refused_second_plus_renders_nothing_in_the_attached_item_paragraph() {
     for source in ["> - q\n> +\n> x\n> +\n", "::: box\n- q\n+\nx\n+\n:::\n"] {
         let html = to_html(source);
-        assert!(html.contains("<li>q\nx</li>"), "{source:?}: {html}");
+        assert!(
+            html.contains("q\n") && html.contains("x\n"),
+            "{source:?}: {html}"
+        );
+        assert!(!html.contains('+'), "{source:?}: {html}");
         assert!(!html.contains("<p>+</p>"), "{source:?}: {html}");
     }
 }

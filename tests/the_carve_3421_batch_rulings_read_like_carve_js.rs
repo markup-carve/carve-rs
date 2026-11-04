@@ -276,7 +276,7 @@ fn a_deep_quote_plus_and_a_misaligned_host_prefix_read_like_carve_js() {
         ),
         (
             "> > > > +\n> # h\n",
-            "<blockquote><blockquote><blockquote><blockquote><p>+</p></blockquote></blockquote></blockquote><h1id=\"h\">h</h1></blockquote>",
+            "<blockquote><blockquote><blockquote><blockquote></blockquote></blockquote></blockquote><h1id=\"h\">h</h1></blockquote>",
         ),
         (
             "> > > +\n> b\n",

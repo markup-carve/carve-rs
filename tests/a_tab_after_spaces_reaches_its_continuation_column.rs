@@ -12,6 +12,6 @@ fn a_tab_after_spaces_reaches_the_child_markers_column() {
 fn a_quote_body_keeps_its_existing_tab_phase() {
     assert_eq!(
         to_html("> - a\n>   - b\n>     - c\n>     +\n>   \t> q\n").trim(),
-        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>c\n+\n              <blockquote><p>q</p></blockquote>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>c\n              <blockquote><p>q</p></blockquote>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>"
     );
 }
