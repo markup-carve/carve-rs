@@ -171,25 +171,32 @@ pub(crate) fn opens_frontmatter(source: &str) -> bool {
     split_frontmatter(normalized.as_ref(), false).1.is_some()
 }
 
+/// A first-line opener's format token, the offset of the line after it, and
+/// the content length and block end within that rest. The block runs through
+/// its first closer or the end of the document (carve#5016).
+pub(crate) fn frontmatter_extent(source: &str) -> Option<(&str, usize, usize, usize)> {
+    if !source.starts_with("---") {
+        return None;
+    }
+    let (opener, rest_start) = match source.find('\n') {
+        Some(nl) => (&source[3..nl], nl + 1),
+        None => (&source[3..], source.len()),
+    };
+    let kind = frontmatter_format_token(opener)?;
+    let rest = &source[rest_start..];
+    // The closer may be the FIRST line of `rest` (an empty frontmatter,
+    // `---\n---`) or follow a newline.
+    let (content_len, after) = find_frontmatter_closer(rest).unwrap_or((rest.len(), rest.len()));
+    Some((kind, rest_start, content_len, after))
+}
+
 pub(super) fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
     // Opening fence: `---` optionally followed by a type token (`---yaml`,
     // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
-    if !source.starts_with("---") {
-        return (BTreeMap::new(), None, source);
-    }
-    let Some(first_nl) = source.find('\n') else {
+    let Some((kind, rest_start, content_len, after)) = frontmatter_extent(source) else {
         return (BTreeMap::new(), None, source);
     };
-    let Some(kind) = frontmatter_format_token(&source[3..first_nl]) else {
-        return (BTreeMap::new(), None, source);
-    };
-    let rest = &source[first_nl + 1..];
-    // The closer is a line of `---` plus an optional trailing run of spaces and
-    // tabs. It may be the FIRST line of `rest` (an empty frontmatter,
-    // `---\n---`) or follow a newline.
-    let Some((content_len, after)) = find_frontmatter_closer(rest) else {
-        return (BTreeMap::new(), None, source);
-    };
+    let rest = &source[rest_start..];
     let frontmatter_src = &rest[..content_len];
     let body = &rest[after..];
     let frontmatter = frontmatter_map(kind, frontmatter_src);
@@ -204,7 +211,7 @@ pub(super) fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatt
         pos: positions.then(|| {
             // `after` runs past the closing fence's newline when it has one;
             // the span stops at the fence, not at the blank after it.
-            let block_end = first_nl + 1 + after;
+            let block_end = rest_start + after;
             frontmatter_pos(source, source[..block_end].trim_end_matches('\n').len())
         }),
     };

@@ -769,7 +769,7 @@ mod source_map;
 use definition_regions::verse_owned_lines;
 use frontmatter::split_frontmatter;
 pub(crate) use frontmatter::{
-    find_frontmatter_closer, frontmatter_format_token, frontmatter_map, has_mapping_shape,
+    frontmatter_extent, frontmatter_format_token, frontmatter_map, has_mapping_shape,
     opens_frontmatter,
 };
 pub(crate) use layout::{try_layout_html, try_layout_stream};

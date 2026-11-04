@@ -84,8 +84,9 @@ fn writing_the_token_holds_the_invariants() {
 #[test]
 fn a_line_that_only_looks_like_an_opener_is_untouched() {
     // A thematic break is not a frontmatter opener, and gains no token. The
-    // writer's byte-0 guard is what keeps it from becoming one.
-    let out = fmt("---\n");
+    // writer's byte-0 guard is what keeps it from becoming one. A first-line
+    // `---` opens frontmatter through the end (carve#5016), so the break is `***`.
+    let out = fmt("***\n");
     assert!(
         !out.contains("yaml"),
         "a document that has no frontmatter grows none\n{out:?}"

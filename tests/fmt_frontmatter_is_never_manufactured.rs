@@ -73,7 +73,8 @@ fn three_lines_are_enough_to_lose_the_whole_document() {
 #[test]
 fn a_leading_break_alone_is_written_canonically() {
     assert_eq!(assert_round_trips("***\n"), "***\n");
-    assert_eq!(assert_round_trips("---\n"), "***\n");
+    // A lone `---` is unclosed frontmatter, written with its closer (carve#5016).
+    assert_eq!(assert_round_trips("---\n"), "---yaml\n\n---\n");
 }
 
 #[test]

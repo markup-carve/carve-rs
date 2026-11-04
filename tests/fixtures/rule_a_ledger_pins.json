@@ -1620,8 +1620,8 @@
     },
     {
       "source": "---\n",
-      "html": "<hr>",
-      "carve": "***"
+      "html": "",
+      "carve": "---yaml\n\n---"
     }
   ],
   "nested_fence_ownership::nested_fence_markers_payload_and_siblings": [

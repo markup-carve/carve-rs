@@ -58,8 +58,8 @@ fn a_promoted_dashed_paragraph_does_not_open_frontmatter() {
         "<p>---yaml\nk: v</p>\n<hr>",
         "the premise: the input has no frontmatter"
     );
-    // With the closer written `***` the head opens nothing and needs no escape.
-    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n[a]: /u\n");
+    // A first-line opener needs no closer (carve#5016), so the head is escaped.
+    assert_eq!(fmt(src), "\\-\\-\\-yaml\nk: v\n\n***\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -72,7 +72,7 @@ fn a_footnote_definition_promotes_the_same_paragraph() {
     assert!(round_trips(src), "{}", fmt(src));
     // The HEAD is what moves (it is escaped), so the closer does not have to:
     // markup-carve/carve#1443 made the promoted run literal text.
-    assert_eq!(fmt(src), "---toml\nx\n\n***\n\n[^a]: n\n");
+    assert_eq!(fmt(src), "\\-\\-\\-toml\nx\n\n***\n\n[^a]: n\n");
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn a_star_break_elsewhere_survives_the_fallback() {
     // smaller still: the escaped head saves this document, so NO break moves -
     // neither the `---` nor the `___` - and every authored marker survives.
     let src = "[a]: /u\n\n---yaml\nk: v\n---\n\n___\n";
-    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n***\n\n[a]: /u\n");
+    assert_eq!(fmt(src), "\\-\\-\\-yaml\nk: v\n\n***\n\n***\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -134,13 +134,11 @@ fn a_relocated_definition_promoting_a_bare_break_still_round_trips() {
 
 #[test]
 fn a_leading_break_with_no_closer_below_keeps_the_canonical_spelling() {
-    // CONTROL. The opener only fires when a CLOSER follows, so a leading `---`
-    // with nothing below it to close a block is not misread and owes no
-    // fallback. Corpus `132-thematic-break-requires-contiguous-markers-4` asks
-    // for exactly this. No mutation of the fallback moves this row - stated as a
-    // control rather than offered as proof.
+    // A leading `---` opens frontmatter through the end of the document
+    // (carve#5016), so the whole document is its content and is written back
+    // with a closer.
     let src = "---\n\na\n";
-    assert_eq!(fmt(src), "***\n\na\n");
+    assert_eq!(fmt(src), "---yaml\n\na\n---\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 

@@ -12,13 +12,11 @@ fn html(source: &str) -> String {
 #[test]
 fn an_indented_delimiter_neither_opens_nor_closes_frontmatter() {
     let expected = "<hr>\n<p>a</p>\n<hr>\n<p>x</p>";
-    for source in [
-        " ---\na\n---\nx\n",
-        "---\na\n ---\nx\n",
-        "   ---\na\n   ---\nx\n",
-    ] {
+    for source in [" ---\na\n---\nx\n", "   ---\na\n   ---\nx\n"] {
         assert_eq!(html(source), expected, "{source:?}");
     }
+    // An indented line closes nothing, so the opener runs to the end (carve#5016).
+    assert_eq!(html("---\na\n ---\nx\n"), "");
     assert_eq!(html("---\na: 1\n---\nx\n"), "<p>x</p>");
     // An indented line inside the block is content, not its closer.
     assert_eq!(html("---\na\n ---\nb: 1\n---\nx\n"), "<p>x</p>");

@@ -117,8 +117,12 @@ fn a_tab_before_a_format_token_still_opens_nothing() {
 fn a_form_feed_closes_nothing() {
     for (label, closer) in [("form feed", "---\u{c}"), ("vertical tab", "---\u{b}")] {
         let source = format!("---yaml\ntitle: Hi\n{closer}\nBody\n");
+        // The opener runs to the end of the document instead (carve#5016).
         assert!(
-            parse(&source).frontmatter_raw.is_none(),
+            parse(&source)
+                .frontmatter_raw
+                .as_ref()
+                .is_some_and(|raw| raw.content.ends_with("Body")),
             "{label}: closed the block"
         );
         assert_ne!(

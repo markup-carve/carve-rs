@@ -6,7 +6,8 @@
 
 #[test]
 fn contiguous_col0_runs_are_breaks() {
-    for src in ["---", "***", "___", "----", "*****", "___", "***\t", "*** "] {
+    // A first-line `---` opens frontmatter (carve#5016), so it is not listed.
+    for src in ["***", "___", "----", "*****", "___", "***\t", "*** "] {
         assert_eq!(
             carve::to_html(src),
             "<hr>",
@@ -17,7 +18,7 @@ fn contiguous_col0_runs_are_breaks() {
 
 #[test]
 fn authored_markers_survive_parse_and_ingest_and_are_written_canonically() {
-    for (marker, source) in [('-', "---"), ('*', "***"), ('_', "___")] {
+    for (marker, source) in [('-', "----"), ('*', "***"), ('_', "___")] {
         let doc = carve::parse(source);
         let json = carve::ast_json::to_json(&doc);
         if marker == '-' {
@@ -71,7 +72,8 @@ fn trailing_content_is_not_a_break() {
     // Still a paragraph rather than a break, which is what this pins. The run
     // itself is now literal too: nothing before it, a non-whitespace character
     // after it, so it is flag-shaped (markup-carve/carve#1443).
-    assert_eq!(carve::to_html("---x"), "<p>---x</p>");
+    // Not on line 1, where `---x` is a typed frontmatter opener (carve#5016).
+    assert_eq!(carve::to_html("a\n\n---x"), "<p>a</p>\n<p>---x</p>");
     assert_eq!(carve::to_html("*** *"), "<p>*** *</p>");
 }
 
