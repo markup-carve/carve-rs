@@ -1706,14 +1706,14 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Whether the line stays in the innermost fence's payload. A comment-shaped
-    /// line below the column inside an open `%%%` span is that span's payload,
-    /// and its exact run the closer (PART 0 S1, PART 9 §28).
+    /// Whether the line stays in the innermost fence's payload. A `%%` line
+    /// below the column inside an open `%%%` span is that span's payload, and
+    /// its exact run the closer (PART 0 S1, PART 9 §28, carve#4994).
     fn in_open_payload(&self, missed: bool, reached: usize, rest: &str) -> bool {
         let inner = self.frames.last().expect("document frame");
         let comment_line = || {
             (inner.family == "comment" || inner.span.is_some_and(|(ch, _)| ch == b'%'))
-                && comment_run(rest).is_some()
+                && rest.starts_with("%%")
                 && self.frames[reached + 1..]
                     .iter()
                     .all(|f| f.kind != Kind::Quote)

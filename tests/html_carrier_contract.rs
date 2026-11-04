@@ -510,13 +510,13 @@ fn manual_ast_references_refuse_invalid_definition_labels_and_flattened_definiti
 }
 
 #[test]
-#[ignore = "carve-rs#3827: carve#5012 makes the last definition win, note bodies included"]
 fn reference_definition_validation_and_note_precedence_match_the_reader() {
     for image in [false, true] {
         for (label, href, definition_label, with_note, refuses) in [
             ("a b", "/u", "a\nb", false, true),
-            ("x", "/outer", "x", true, false),
-            ("x", "/note", "x", true, true),
+            // The note body's definition comes last and wins (carve#5012).
+            ("x", "/outer", "x", true, true),
+            ("x", "/note", "x", true, false),
         ] {
             let node = if image {
                 serde_json::json!({"type":"image","src":href,"alt":"t","ref":label})
@@ -584,7 +584,7 @@ fn references_refuse_literal_definitions_and_unrepresented_inherited_attributes(
 }
 
 #[test]
-fn note_marker_line_definitions_refuse_and_inherited_classes_are_written_once() {
+fn note_marker_line_definitions_register_and_inherited_classes_are_written_once() {
     for image in [false, true] {
         for note in [true, false] {
             let mut node = if image {
@@ -602,20 +602,18 @@ fn note_marker_line_definitions_refuse_and_inherited_classes_are_written_once() 
                 definition["attrs"] = serde_json::json!({"classes":["c"]});
             }
             let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},definition]}).to_string()).unwrap();
-            let result = carve::render_carve(&document);
+            let source = carve::render_carve(&document).unwrap();
+            let value: Value = serde_json::from_str(&to_json(&parse(&source))).unwrap();
+            let mut found = Vec::new();
+            nodes(&value, if image { "image" } else { "link" }, &mut found);
+            if image {
+                nodes(&value, "block_image", &mut found);
+            }
             if note {
-                assert!(matches!(
-                    result,
-                    Err(carve::RenderCarveError::SourceUnspellable(_))
-                ));
+                // A note's marker-line definition registers document-wide (carve#5012).
+                assert_eq!(found[0][if image { "src" } else { "href" }], "/u");
+                assert!(found[0]["ref"].is_string(), "{source}");
             } else {
-                let source = result.unwrap();
-                let value: Value = serde_json::from_str(&to_json(&parse(&source))).unwrap();
-                let mut found = Vec::new();
-                nodes(&value, if image { "image" } else { "link" }, &mut found);
-                if image {
-                    nodes(&value, "block_image", &mut found);
-                }
                 assert_eq!(found[0]["attrs"]["classes"], serde_json::json!(["c"]));
             }
         }

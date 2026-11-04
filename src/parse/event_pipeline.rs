@@ -3613,9 +3613,7 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
                 .or(def.line);
         }
     }
-    for (label, def) in note_links {
-        link_defs.entry(label).or_insert(def);
-    }
+    super::merge_note_link_defs(&mut link_defs, note_links);
     let mapped = remap_source(body_source, &mapped);
     let (parsed, link_defs, needs_late_resolution) = with_active_link_defs(link_defs, || {
         let _depth = DepthGuard::enter()?;
@@ -4131,9 +4129,7 @@ fn parse_document_with_footnotes_options(
                 .or(def.line);
         }
     }
-    for (label, def) in note_links {
-        link_defs.entry(label).or_insert(def);
-    }
+    super::merge_note_link_defs(&mut link_defs, note_links);
     let mapped = remap_source(body_source, &mapped);
     let (parsed, link_defs, needs_late_resolution) = with_active_link_defs(link_defs, || {
         let _depth = DepthGuard::enter()?;

@@ -61,6 +61,71 @@ impl Layout<'_> {
         }
     }
 }
+impl Layout<'_> {
+    /// A `%%` line is erased before layout (carve#5012), so it cannot end a
+    /// description: a paragraph after one is attached with `+` at the item's
+    /// marker column instead, written at that column.
+    fn attach_after_description(
+        &mut self,
+        item: Option<&Pos>,
+        before: &BlockNode,
+        after: &BlockNode,
+    ) -> bool {
+        let (BlockNode::DefinitionList(_), BlockNode::Paragraph(_)) = (before, after) else {
+            return false;
+        };
+        let (Some(item), Some(before), Some(after)) = (item, position(before), position(after))
+        else {
+            return false;
+        };
+        let marker = &self.lines[item.start_line - 1]
+            [..self.offset(item.start_offset) - self.offsets[item.start_line - 1]];
+        let content = &self.lines[after.start_line - 1]
+            [..self.offset(after.start_offset) - self.offsets[after.start_line - 1]];
+        let Some(shift) = content
+            .strip_prefix(marker)
+            .filter(|shift| !shift.is_empty() && shift.bytes().all(|byte| byte == b' '))
+        else {
+            return false;
+        };
+        let gap = before.end_line..after.start_line - 1;
+        if gap.is_empty()
+            || !gap.clone().all(|line| {
+                self.lines[line]
+                    .bytes()
+                    .all(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+            })
+            || !(after.start_line - 1..after.end_line).all(|line| {
+                self.lines[line]
+                    .strip_prefix(marker)
+                    .is_some_and(|rest| rest.starts_with(shift))
+            })
+        {
+            return false;
+        }
+        let (marker, shift) = (marker.to_owned(), shift.len());
+        for (index, line) in gap.enumerate() {
+            self.edits.push(Edit {
+                start: self.offsets[line],
+                end: self.offsets[line] + self.lines[line].len() + 1,
+                value: if index == 0 {
+                    format!("{marker}+\n")
+                } else {
+                    String::new()
+                },
+            });
+        }
+        for line in after.start_line - 1..after.end_line {
+            let at = self.offsets[line] + marker.len();
+            self.edits.push(Edit {
+                start: at,
+                end: at + shift,
+                value: String::new(),
+            });
+        }
+        true
+    }
+}
 struct Pending<'a> {
     nodes: &'a mut Vec<(BlockNode, bool)>,
     tight: bool,
@@ -209,7 +274,9 @@ pub(super) fn normalize(source: &str) -> String {
                 layout.clear_loose(list.pos.as_ref());
                 for item in &list.items {
                     for pair in item.children.windows(2) {
-                        layout.clear_gap(position(&pair[0]), position(&pair[1]), true);
+                        if !layout.attach_after_description(item.pos.as_ref(), &pair[0], &pair[1]) {
+                            layout.clear_gap(position(&pair[0]), position(&pair[1]), true);
+                        }
                     }
                 }
                 for pair in list.items.windows(2) {
