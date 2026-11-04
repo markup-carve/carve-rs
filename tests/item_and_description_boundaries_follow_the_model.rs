@@ -7,7 +7,11 @@ fn assert_rows(rows: &[(&str, &str)]) {
             carve::to_html(source),
             carve::render_html(&carve::parse(source)).unwrap(),
         ] {
-            assert_eq!(whitespace.replace_all(&output, "><").trim(), *html, "{source:?}");
+            assert_eq!(
+                whitespace.replace_all(&output, "><").trim(),
+                *html,
+                "{source:?}"
+            );
         }
     }
 }
