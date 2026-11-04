@@ -77,7 +77,7 @@
   {
     "id": "quote-leaf-1---18",
     "source": "> - a\n>   [x]: /u\ntail\n",
-    "html": "<blockquote><ul><li>a</li></ul></blockquote><p>tail</p>"
+    "html": "<blockquote><ul><li>a\ntail</li></ul></blockquote>"
   },
   {
     "id": "quote-leaf-1---19",
@@ -87,7 +87,7 @@
   {
     "id": "quote-leaf-1---20",
     "source": "> - a\n>   [x]: /u\n> tail\n",
-    "html": "<blockquote><ul><li>a</li></ul><p>tail</p></blockquote>"
+    "html": "<blockquote><ul><li>a\ntail</li></ul></blockquote>"
   },
   {
     "id": "quote-leaf-1---21",
@@ -182,7 +182,7 @@
   {
     "id": "quote-leaf-1-1.-42",
     "source": "> 1. a\n>    [x]: /u\ntail\n",
-    "html": "<blockquote><ol><li>a</li></ol></blockquote><p>tail</p>"
+    "html": "<blockquote><ol><li>a\ntail</li></ol></blockquote>"
   },
   {
     "id": "quote-leaf-1-1.-43",
@@ -192,7 +192,7 @@
   {
     "id": "quote-leaf-1-1.-44",
     "source": "> 1. a\n>    [x]: /u\n> tail\n",
-    "html": "<blockquote><ol><li>a</li></ol><p>tail</p></blockquote>"
+    "html": "<blockquote><ol><li>a\ntail</li></ol></blockquote>"
   },
   {
     "id": "quote-leaf-1-1.-45",
@@ -287,7 +287,7 @@
   {
     "id": "quote-leaf-2---66",
     "source": "> > - a\n> >   [x]: /u\ntail\n",
-    "html": "<blockquote><blockquote><ul><li>a</li></ul></blockquote></blockquote><p>tail</p>"
+    "html": "<blockquote><blockquote><ul><li>a\ntail</li></ul></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-2---67",
@@ -297,7 +297,7 @@
   {
     "id": "quote-leaf-2---68",
     "source": "> > - a\n> >   [x]: /u\n> tail\n",
-    "html": "<blockquote><blockquote><ul><li>a</li></ul></blockquote><p>tail</p></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>a\ntail</li></ul></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-2---69",
@@ -392,7 +392,7 @@
   {
     "id": "quote-leaf-2-1.-90",
     "source": "> > 1. a\n> >    [x]: /u\ntail\n",
-    "html": "<blockquote><blockquote><ol><li>a</li></ol></blockquote></blockquote><p>tail</p>"
+    "html": "<blockquote><blockquote><ol><li>a\ntail</li></ol></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-2-1.-91",
@@ -402,7 +402,7 @@
   {
     "id": "quote-leaf-2-1.-92",
     "source": "> > 1. a\n> >    [x]: /u\n> tail\n",
-    "html": "<blockquote><blockquote><ol><li>a</li></ol></blockquote><p>tail</p></blockquote>"
+    "html": "<blockquote><blockquote><ol><li>a\ntail</li></ol></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-2-1.-93",
@@ -497,7 +497,7 @@
   {
     "id": "quote-leaf-3---114",
     "source": "> > > - a\n> > >   [x]: /u\ntail\n",
-    "html": "<blockquote><blockquote><blockquote><ul><li>a</li></ul></blockquote></blockquote></blockquote><p>tail</p>"
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\ntail</li></ul></blockquote></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-3---115",
@@ -507,7 +507,7 @@
   {
     "id": "quote-leaf-3---116",
     "source": "> > > - a\n> > >   [x]: /u\n> tail\n",
-    "html": "<blockquote><blockquote><blockquote><ul><li>a</li></ul></blockquote></blockquote><p>tail</p></blockquote>"
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\ntail</li></ul></blockquote></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-3---117",
@@ -602,7 +602,7 @@
   {
     "id": "quote-leaf-3-1.-138",
     "source": "> > > 1. a\n> > >    [x]: /u\ntail\n",
-    "html": "<blockquote><blockquote><blockquote><ol><li>a</li></ol></blockquote></blockquote></blockquote><p>tail</p>"
+    "html": "<blockquote><blockquote><blockquote><ol><li>a\ntail</li></ol></blockquote></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-3-1.-139",
@@ -612,7 +612,7 @@
   {
     "id": "quote-leaf-3-1.-140",
     "source": "> > > 1. a\n> > >    [x]: /u\n> tail\n",
-    "html": "<blockquote><blockquote><blockquote><ol><li>a</li></ol></blockquote></blockquote><p>tail</p></blockquote>"
+    "html": "<blockquote><blockquote><blockquote><ol><li>a\ntail</li></ol></blockquote></blockquote></blockquote>"
   },
   {
     "id": "quote-leaf-3-1.-141",

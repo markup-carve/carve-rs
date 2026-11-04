@@ -38,7 +38,8 @@ fn a_comment_at_the_item_column_closes_a_marker_line_note() {
 
 #[test]
 fn a_comment_at_a_quoted_item_column_closes_a_marker_line_note() {
+    // carve#5129: the erased comment goes with its `>`, so `tail` folds into `para`.
     let source = "> [^c]\n>\n> - [^c]: para\n>   %% c\n>     tail\n";
-    let expected = "<blockquote>\n  <p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  <ul>\n    <li></li>\n  </ul>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>para</p>\n      <p>tail<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    let expected = "<blockquote>\n  <p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  <ul>\n    <li></li>\n  </ul>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>para\ntail<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }

@@ -185,7 +185,8 @@ fn lazy_code_between_item_columns_drops_its_placing_indent() {
 fn the_nested_code_fold_survives_explicit_quote_prefixes() {
     assert_html(
         "> - a\n>   - b\n> %% c\n>     ```\n> tail\n",
-        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li><p>b</p>\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <p>tail</p>\n</blockquote>",
+        // The erased line leaves no quote blank, so item `b` stays tight (carve#5129).
+        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <p>tail</p>\n</blockquote>",
     );
 }
 

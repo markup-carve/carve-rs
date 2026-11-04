@@ -68,7 +68,7 @@ fn quote_host_transitions_keep_folding_and_definition_boundaries() {
         ("exit-link", "> p\n```\n\n[r]: /u\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n[r]: /u\n</code></pre>"),
         ("exit-abbr", "> p\n```\n\n*[a]: expansion\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n*[a]: expansion\n</code></pre>"),
         ("nested-exit", "> > p\n> ```\n> [^a]: note\n", "<blockquote>\n  <blockquote><p>p</p></blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
-        ("closed-list-quote", "> - ```\n> [r]: /u\n>   ```\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"),
+        ("closed-list-quote", "> - ```\n> [r]: /u\n>   ```\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n</blockquote>"),
         ("term-blank-quote", ":: t\n\n: > ```\n> [^a]: note\n\n[^outside]: body\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <pre><code></code></pre>\n    </blockquote>\n  </dd>\n</dl>\n<blockquote>\n\n</blockquote>"),
         ("same-list-host", "- > p\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"),
         ("blank-list-host", "- > p\n\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote><p>p</p></blockquote>\n    <blockquote>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"),
@@ -162,8 +162,8 @@ fn folded_inline_fences_admit_lazy_text_and_keep_block_exits() {
 #[test]
 fn partial_quote_prefixes_preserve_definition_and_blank_exits() {
     let cases = [
-        ("> > p\n> > - ```\n> >   x\n> [r]: /u\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
-        ("> > p\n> > - ```\n> >   x\n> [r]: /u\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n> [r]: /u\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n> [r]: /u\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
         ("> > p\n> > - ```\n> >   x\n>\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
         ("> > p\n> > - ```\n> >   x\n>\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
         ("> > p\n> > - ```\n> >   x\n> lazy\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx\nlazy</code></p>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
@@ -488,8 +488,8 @@ fn lazy_item_markers_preserve_the_owned_paragraph_witness() {
 fn folded_markers_preserve_frames_and_real_quote_exits() {
     let cases = [
 ("frame-preservation-0",":: term\n> ```\nlazy\n> - x\n> ```\n> [r]: /t\n","<dl>\n  <dt>term</dt>\n</dl>\n<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <ul>\n    <li>x</li>\n  </ul>\n  <pre><code>[r]: /t\n</code></pre>\n</blockquote>"),
-("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
-("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
 ("frame-preservation-4","> p\n> ```\n> ```a\n> [r]: /t\n","<blockquote>\n  <p>p</p>\n  <pre><code>```a\n[r]: /t\n</code></pre>\n</blockquote>"),
 ];
     for (name, source, expected) in cases {

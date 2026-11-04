@@ -42,7 +42,8 @@ fn a_note_continuation_in_a_quoted_paragraph_on_an_item_marker_line() {
 fn a_definition_in_a_quote_on_a_description_marker_line_registers() {
     assert_eq!(
         html(":: t\n: > - para\n  >   [r]: /u\ntail [r][]\n"),
-        format!("<dl><dt>t</dt><dd>{QUOTED_LIST}</dd></dl><p>tail <a href=\"/u\">r</a></p>")
+        // The erased line goes with its `>`, so `tail` folds into the item (carve#5129).
+        "<dl><dt>t</dt><dd><blockquote><ul><li>para tail <a href=\"/u\">r</a></li></ul></blockquote></dd></dl>"
     );
 }
 
@@ -50,13 +51,11 @@ fn a_definition_in_a_quote_on_a_description_marker_line_registers() {
 fn a_definition_in_a_quote_under_a_description_leaves_no_lazy_paragraph() {
     assert_eq!(
         html(":: t\n: > para\n  > [r]: /u\ntail [r][]\n"),
-        "<dl><dt>t</dt><dd><blockquote><p>para</p></blockquote></dd></dl><p>tail <a href=\"/u\">r</a></p>"
+        "<dl><dt>t</dt><dd><blockquote><p>para tail <a href=\"/u\">r</a></p></blockquote></dd></dl>"
     );
     assert_eq!(
         html(":: t\n: d\n  > - para\n  >   [r]: /u\ntail [r][]\n"),
-        format!(
-            "<dl><dt>t</dt><dd><p>d</p>{QUOTED_LIST}</dd></dl><p>tail <a href=\"/u\">r</a></p>"
-        )
+        "<dl><dt>t</dt><dd><p>d</p><blockquote><ul><li>para tail <a href=\"/u\">r</a></li></ul></blockquote></dd></dl>"
     );
 }
 

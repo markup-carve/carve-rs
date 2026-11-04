@@ -26,6 +26,8 @@ fn a_line_after_a_quoted_definition_in_a_note_leaves_the_note() {
         "[^n]: a\n\n  > prose\n  > [r]: /x\n tail\n",
         "[^n]: > prose\n      > [r]: /x\ntail\n",
     ] {
-        assert_eq!(carve::to_html(source), "<p>tail</p>", "{source:?}");
+        // The erased line goes with its `>`, so `tail` folds into the quoted
+        // paragraph and the unreferenced note renders nothing (carve#5129).
+        assert_eq!(carve::to_html(source), "", "{source:?}");
     }
 }

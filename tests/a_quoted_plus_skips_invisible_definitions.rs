@@ -1,8 +1,8 @@
 use carve::to_html;
 
-// carve#5012: the erased line leaves its quote prefix as a blank.
+// carve#5129: the erased line goes with its quote prefix, so `b` stays in the inner quote.
 const ATTACHED: &str =
-    "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <p>b</p>\n</blockquote>";
+    "<blockquote>\n  <blockquote>\n    <p>a</p>\n    <p>b</p>\n  </blockquote>\n</blockquote>";
 
 #[test]
 fn an_indented_quoted_plus_skips_a_link_definition() {

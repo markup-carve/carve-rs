@@ -27,7 +27,7 @@
   {
     "slug": "266-a-reference-definition-is-anchored-at-end-of-line-14",
     "target": "markdown",
-    "expected": "> text\n\n[a]: /u\n\nlazy\n"
+    "expected": "> text\n> lazy\n\n[a]: /u\n"
   },
   {
     "slug": "361-a-paragraph-opened-after-a-block-in-an-item-is-still-open-for-a-lazy-line-3",
@@ -202,12 +202,12 @@
   {
     "slug": "266-a-reference-definition-is-anchored-at-end-of-line-14",
     "target": "plain",
-    "expected": "\"text\"\n\n[a]: /u {.c}\n\nlazy\n"
+    "expected": "\"text lazy\"\n\n[a]: /u {.c}\n"
   },
   {
     "slug": "266-a-reference-definition-is-anchored-at-end-of-line-14",
     "target": "ansi",
-    "expected": "\u001b[36m\u001b[2m│\u001b[0m text\n\n\u001b[2m[a]: /u {.c}\u001b[0m\n\nlazy\n"
+    "expected": "\u001b[36m\u001b[2m│\u001b[0m text lazy\n\n\u001b[2m[a]: /u {.c}\u001b[0m\n"
   },
   {
     "slug": "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-4",

@@ -40,8 +40,9 @@ fn a_nested_quote_with_a_comment_keeps_the_compact_inner_quote() {
 #[test]
 fn a_comment_beside_two_paragraphs_keeps_the_expanded_quote() {
     assert_eq!(
+        // The erased line goes with its `>`, so one paragraph remains (carve#5129).
         to_html("> para\n> %% c\n> more\n"),
-        "<blockquote>\n  <p>para</p>\n  <p>more</p>\n</blockquote>"
+        "<blockquote><p>para\nmore</p></blockquote>"
     );
 }
 
