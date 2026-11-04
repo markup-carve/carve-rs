@@ -3110,3 +3110,15 @@ fn an_authored_attribute_colliding_with_a_structural_one_is_reported() {
         bridge.degraded
     );
 }
+
+#[test]
+fn a_block_image_keeps_its_block_attributes() {
+    let source = "{.outer k=one}\n![a](b){.inner k=two}\n";
+    let original = parse_with_options(source, &Options::default());
+    let pm = to_prosemirror(&original);
+    let returned = from_prosemirror(&pm.json).unwrap();
+    assert_eq!(
+        render_html(&returned).unwrap(),
+        "<img src=\"b\" alt=\"a\" class=\"outer inner\" k=\"two\">"
+    );
+}
