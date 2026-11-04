@@ -715,8 +715,35 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
             let attribute_line = trimmed.starts_with('{') && trimmed.trim_end().ends_with('}');
             if attribute_line && next.trim_start().starts_with('|') {
                 let columns = next.matches('|').count().saturating_sub(1);
+                let mut marked: Vec<(bool, bool)> = Vec::new();
+                for row in lines[index + 1..]
+                    .iter()
+                    .map(|l| l.trim_start())
+                    .take_while(|l| l.starts_with('|') || l.starts_with('+'))
+                {
+                    let cells = crate::parse::row_cell_alignment_axes(row);
+                    if !cells.iter().any(|cell| cell.0) {
+                        continue;
+                    }
+                    marked.resize(marked.len().max(cells.len()), (false, false));
+                    for (c, cell) in cells.iter().enumerate() {
+                        marked[c].0 |= cell.1;
+                        marked[c].1 |= cell.2;
+                    }
+                }
+                let mut set_aligns: Vec<bool> = Vec::new();
                 for key in ["aligns", "valigns", "widths"] {
-                    let Some(key_at) = line.find(&format!("{key}=")) else {
+                    // `aligns=` also ends `valigns=`; the key starts at a word boundary.
+                    let Some(key_at) = line
+                        .match_indices(&format!("{key}="))
+                        .map(|(at, _)| at)
+                        .find(|&at| {
+                            !line[..at]
+                                .chars()
+                                .next_back()
+                                .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                        })
+                    else {
                         continue;
                     };
                     let value_at = key_at + key.len() + 1;
@@ -764,14 +791,24 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                             "The specified table column widths total more than 100%.".to_owned(),
                         );
                     }
-                    let overlap = (key == "aligns"
-                        && (next.contains("|=<") || next.contains("|=>") || next.contains("|=~")))
-                        || (key == "valigns"
-                            && (next.contains("|=^")
-                                || next.contains("|=v")
-                                || next.contains("|=~")));
-                    if overlap {
-                        push(out, "table-column-overlap", "A column supplies the same alignment axis both in the table and in a table attribute; the in-table marker wins.".to_owned());
+                    // One report per column, under `aligns` when that axis overlaps.
+                    for (c, &(align, valign)) in marked.iter().enumerate() {
+                        let set = values.get(c).is_some_and(|v| !v.trim().is_empty());
+                        let overlap = match key {
+                            "aligns" => align && set,
+                            "valigns" => {
+                                valign
+                                    && set
+                                    && !(align && set_aligns.get(c).copied().unwrap_or(false))
+                            }
+                            _ => false,
+                        };
+                        if overlap {
+                            push(out, "table-column-overlap", format!("Column {} supplies the same alignment axis both in the table and in a table attribute; the in-table marker wins.", c + 1));
+                        }
+                    }
+                    if key == "aligns" {
+                        set_aligns = values.iter().map(|v| !v.trim().is_empty()).collect();
                     }
                 }
             }

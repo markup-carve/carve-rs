@@ -15,7 +15,7 @@ fn positional_attributes_populate_the_table_model() {
 
 #[test]
 fn table_column_rules_are_reported() {
-    let source = "{aligns=left valigns=top widths=60,50}\n|=^ A | B |\n|<tight | x |\n";
+    let source = "{aligns=left valigns=top widths=60,50}\n|={?^} A | B |\n|<tight | x |\n";
     let rules: Vec<_> = lint_carve(source).into_iter().map(|w| w.rule).collect();
     assert!(rules.contains(&"table-column-arity"), "{rules:?}");
     assert!(rules.contains(&"table-column-overlap"), "{rules:?}");
