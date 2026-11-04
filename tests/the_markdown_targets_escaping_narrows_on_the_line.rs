@@ -97,14 +97,13 @@ fn two_adjacent_narrowed_characters_keep_both_escapes() {
 /// one. Adjacency does not reach it: a `#` collides with no delimiter of its
 /// own character (markup-carve/carve#2049).
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_text_hash_is_decided_by_its_position() {
     for (input, want) in [
-        ("a\n   # heading", "a\n\\# heading"),
+        ("a\n   \\# heading", "a\n\\# heading"),
         ("a\n   #", "a\n\\#"),
-        ("a\n   ## b", "a\n\\## b"),
-        ("a\n   ### b ###", "a\n\\### b ###"),
-        ("a\n   ###### b", "a\n\\###### b"),
+        ("a\n   \\## b", "a\n\\## b"),
+        ("a\n   \\### b ###", "a\n\\### b ###"),
+        ("a\n   \\###### b", "a\n\\###### b"),
         ("a\n   ####### b", "a\n####### b"),
         ("a # b", "a # b"),
         ("a\n   #b", "a\n#b"),
@@ -117,9 +116,8 @@ fn a_text_hash_is_decided_by_its_position() {
 /// quote marker stands in front of the content, so the hash is at the line's
 /// content position without being at column 0.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_text_hash_is_measured_past_the_container_prefix() {
-    assert_eq!(md("> a\n>    # b"), "> a\n> \\# b");
+    assert_eq!(md("> a\n>    \\# b"), "> a\n> \\# b");
 }
 
 /// Adjacency is tested on the EMITTED LINE and not on the node. The parser

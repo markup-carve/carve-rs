@@ -41,9 +41,10 @@ fn bullet_ordered_and_task_markers_fold_at_each_column() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn lazy_marker_positions_still_reach_the_authored_end() {
     use carve::ast::BlockNode;
+    // Rule A (carve#3885): at column 1 the marker is past the list's column, so it
+    // opens a sibling item and the paragraph ends at `café`.
     for column in [1, 2, 4, 6, 8] {
         let source = format!(
             "- head\n\n      :::\n      café\n{}- second\n",
@@ -67,6 +68,10 @@ fn lazy_marker_positions_still_reach_the_authored_end() {
         };
         let pos = paragraph.pos.as_ref().unwrap();
         assert_eq!(pos.start_line, 4);
+        if column == 1 {
+            assert_eq!((pos.end_line, pos.end_offset), (4, 28));
+            continue;
+        }
         assert_eq!(pos.end_line, 5);
         assert_eq!(pos.end_offset, source.chars().count() - 1);
     }

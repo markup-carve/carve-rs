@@ -1,5 +1,4 @@
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn breaks_cover_their_original_line_endings() {
     for eol in ["\n", "\r\n", "\r"] {
         let source = ["> :: 😀", ">   %% note", ">   more", ""].join(eol);
@@ -42,6 +41,7 @@ fn breaks_cover_their_original_line_endings() {
                 _ => {}
             }
         }
-        assert_eq!(count, 2);
+        // Rule A (carve#3885): the comment and `more` leave the term.
+        assert_eq!(count, 0);
     }
 }

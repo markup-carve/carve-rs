@@ -32,12 +32,12 @@ fn lazy_lines_below_a_rebased_term_keep_their_existing_reading() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn literal_description_lines_survive_markdown_import() {
+    // Rule A (carve#3885): `  : zq` describes the nested term, so it is not text.
     let source = ":: a\n: b\n\t:: t\n  : zq\n";
     let markdown =
         carve::to_markdown_with_options(source, &carve::Options::default().with_roundtrip(true));
-    assert!(markdown.contains("\\: zq"), "{markdown}");
+    assert!(markdown.contains("<!-- carve:2 : -->\nzq"), "{markdown}");
     assert_eq!(
         carve::to_html(&carve::markdown_to_carve(&markdown)),
         carve::to_html(source)
