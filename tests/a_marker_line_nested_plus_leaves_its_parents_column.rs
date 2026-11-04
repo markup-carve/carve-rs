@@ -6,7 +6,7 @@ fn html(source: &str) -> String {
     carve::to_html(source)
 }
 
-const OUTER_TAKES_IT: &str = "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>";
+const OUTER_TAKES_IT: &str = "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>";
 
 #[test]
 fn a_fence_between_the_nested_marker_and_content_columns_opens_in_the_outer_item() {
@@ -32,6 +32,10 @@ fn a_nested_item_on_its_own_line_still_takes_the_block() {
 
 #[test]
 fn a_task_item_on_its_own_line_still_takes_the_block() {
+    // The refused marker renders nothing and the quote stays in the outer item (carve#5013).
     let out = html("- a\n  - [ ] +\n   > q\n");
-    assert!(out.contains("aria-label=\"+\"> +</li>"), "{out}");
+    assert!(
+        out.contains("<li><input type=\"checkbox\" disabled> </li>\n    </ul>\n    <blockquote>"),
+        "{out}"
+    );
 }

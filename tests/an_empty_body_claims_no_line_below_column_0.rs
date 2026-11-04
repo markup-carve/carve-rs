@@ -46,14 +46,14 @@ fn the_refused_band_leaves_the_payload_outside_the_container() {
         (
             "description",
             1,
-            "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>",
+            "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>flush</p>",
         ),
         (
             "description",
             2,
-            "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>",
+            "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>flush</p>",
         ),
-        ("item", 1, "<ul>\n  <li>+\nflush</li>\n</ul>"),
+        ("item", 1, "<ul>\n  <li></li>\n</ul>\n<p>flush</p>"),
     ] {
         let (marker, _) = marker_and_comment(container, payload_col);
         assert_eq!(
@@ -70,11 +70,12 @@ fn at_the_content_column_the_payload_is_the_container_s_first_block() {
     // its own first block in both spellings. A change that refused everything
     // would pass the rows above and break these.
     let (marker, _) = marker_and_comment("description", 3);
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>+\nflush</dd>\n</dl>";
+    // The refused marker renders nothing (carve#5013).
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>flush</dd>\n</dl>";
     assert_eq!(html(&marker), expected);
 
     let (marker, comment) = marker_and_comment("item", 2);
-    assert_eq!(html(&marker), "<ul>\n  <li>+\nflush</li>\n</ul>");
+    assert_eq!(html(&marker), "<ul>\n  <li>flush</li>\n</ul>");
     assert_eq!(html(&comment), "<ul>\n  <li>flush</li>\n</ul>");
 }
 

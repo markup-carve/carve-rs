@@ -15,7 +15,7 @@ fn a_blank_separated_marker_below_the_item_column_starts_a_sibling_list() {
         ),
         (
             ":: term\n: - a\n\n    - c",
-            "<dl>\n  <dt>term</dt>\n  <dd>\n    <ul>\n      <li>a\n        <ul>\n          <li>c</li>\n        </ul>\n      </li>\n    </ul>\n  </dd>\n</dl>",
+            "<dl>\n  <dt>term</dt>\n  <dd>\n    <ul>\n      <li><p>a</p>\n        <ul>\n          <li>c</li>\n        </ul>\n      </li>\n    </ul>\n  </dd>\n</dl>",
         ),
     ];
     for (source, expected) in cases {

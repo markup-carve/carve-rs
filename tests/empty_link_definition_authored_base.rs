@@ -4,7 +4,7 @@ use carve::to_html;
 fn empty_definition_past_item_column_stays_invisible_before_table() {
     assert_eq!(
         to_html("- a\n    [n]:\n\n     ||\n"),
-        "<ul>\n  <li>a\n    <table>\n      <tbody>\n        <tr><td></td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <table>\n      <tbody>\n        <tr><td></td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>"
     );
 }
 

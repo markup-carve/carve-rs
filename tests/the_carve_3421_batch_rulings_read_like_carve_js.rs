@@ -40,15 +40,15 @@ fn a_quote_follower_at_column_zero_nests_in_the_innermost_quote() {
     check(&[
         (
             "- > > +\n> q\n",
-            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote></li></ul><blockquote><p>q</p></blockquote>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote></li></ul><blockquote><p>q</p></blockquote>",
         ),
         (
             "- > > +\n> q\n> r\n",
-            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote></li></ul><blockquote><p>qr</p></blockquote>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote></li></ul><blockquote><p>qr</p></blockquote>",
         ),
         (
             "- > +\n> q\n",
-            "<ul><li><blockquote><p>+</p></blockquote></li></ul><blockquote><p>q</p></blockquote>",
+            "<ul><li><blockquote></blockquote></li></ul><blockquote><p>q</p></blockquote>",
         ),
         (
             "- > > +\n  > q\n",
@@ -62,19 +62,19 @@ fn a_hosted_stacked_plus_attaches_a_column_zero_block() {
     check(&[
         (
             "> - > +\n# h\n",
-            "<blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+            "<blockquote><ul><li><blockquote></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "> - > +\n| c |\n| d |\n",
-            "<blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote><table><tbody><tr><td>c</td></tr><tr><td>d</td></tr></tbody></table>",
+            "<blockquote><ul><li><blockquote></blockquote></li></ul></blockquote><table><tbody><tr><td>c</td></tr><tr><td>d</td></tr></tbody></table>",
         ),
         (
             "> - > +\n# h\n> more\n",
-            "<blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1><blockquote><p>more</p></blockquote></section>",
+            "<blockquote><ul><li><blockquote></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1><blockquote><p>more</p></blockquote></section>",
         ),
         (
             "> - a\n> # t\n> - > +\n# h\n",
-            "<blockquote><ul><li>a</li></ul><h1id=\"t\">t</h1><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+            "<blockquote><ul><li>a</li></ul><h1id=\"t\">t</h1><ul><li><blockquote></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "> - > +\n  > b\n",
@@ -97,8 +97,9 @@ fn a_hosted_stacked_plus_after_a_closed_block_attaches_and_one_in_text_does_not(
         "> [r]: /u",
     ] {
         let html = flat(&format!("{before}\n> - > +\n# h\n"));
+        // The refused marker renders nothing (carve#5013).
         assert!(
-            html.contains("<li><blockquote><p>+</p></blockquote></li>"),
+            html.contains("<li><blockquote></blockquote></li>"),
             "{before:?}: {html}"
         );
     }
@@ -122,7 +123,7 @@ fn the_owning_quote_column_stays_eligible_and_an_intervening_one_is_refused() {
     check(&[
         (
             "- > > +\n    b\n",
-            "<ul><li><blockquote><blockquote><p>+b</p></blockquote></blockquote></li></ul>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote>b</li></ul>",
         ),
         (
             "- - > +\n    # h\n",
@@ -134,7 +135,7 @@ fn the_owning_quote_column_stays_eligible_and_an_intervening_one_is_refused() {
         ),
         (
             "- > > +\n  # h\n",
-            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote><h1id=\"h\">h</h1></li></ul>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote><h1id=\"h\">h</h1></li></ul>",
         ),
         (
             "- [ ] > +\n      | c |\n",
@@ -142,7 +143,7 @@ fn the_owning_quote_column_stays_eligible_and_an_intervening_one_is_refused() {
         ),
         (
             "> - > > +\n>     b\n",
-            "<blockquote><ul><li><blockquote><blockquote><p>+b</p></blockquote></blockquote></li></ul></blockquote>",
+            "<blockquote><ul><li><blockquote><blockquote></blockquote></blockquote>b</li></ul></blockquote>",
         ),
     ]);
 }
@@ -152,11 +153,11 @@ fn a_stacked_plus_in_a_colon_div_attaches_without_position_tracking() {
     check(&[
         (
             "> ::: a\n> ::: b\n> x\n> :::\n> - > +\n# h\n",
-            "<blockquote><divclass=\"a\"><divclass=\"b\"><p>x</p></div><ul><li><blockquote><p>+</p></blockquote></li></ul></div></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+            "<blockquote><divclass=\"a\"><divclass=\"b\"><p>x</p></div><ul><li><blockquote></blockquote></li></ul></div></blockquote><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "::: a\n- > +\n# h\n:::\n",
-            "<divclass=\"a\"><ul><li><blockquote><p>+</p></blockquote></li></ul><h1id=\"h\">h</h1></div>",
+            "<divclass=\"a\"><ul><li><blockquote></blockquote></li></ul><h1id=\"h\">h</h1></div>",
         ),
     ]);
 }
@@ -166,15 +167,15 @@ fn a_quote_plus_below_an_item_line_attaches_at_depth_and_after_a_sibling() {
     check(&[
         (
             "> > - > +\n# h\n",
-            "<blockquote><blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+            "<blockquote><blockquote><ul><li><blockquote></blockquote></li></ul></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "> > - > +\n| c |\n",
-            "<blockquote><blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote></blockquote><table><tbody><tr><td>c</td></tr></tbody></table>",
+            "<blockquote><blockquote><ul><li><blockquote></blockquote></li></ul></blockquote></blockquote><table><tbody><tr><td>c</td></tr></tbody></table>",
         ),
         (
             "> - a\n> b\n> - > +\n# h\n",
-            "<blockquote><ul><li>ab</li><li><blockquote><p>+</p></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+            "<blockquote><ul><li>ab</li><li><blockquote></blockquote></li></ul></blockquote><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "> > para\n> > - > +\n# h\n",
@@ -182,11 +183,11 @@ fn a_quote_plus_below_an_item_line_attaches_at_depth_and_after_a_sibling() {
         ),
         (
             "- a\n  > +\n# h\n",
-            "<ul><li>a<blockquote><p>+</p></blockquote></li></ul><sectionid=\"h\"><h1>h</h1></section>",
+            "<ul><li>a<blockquote></blockquote></li></ul><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "- a\n  > +\nb\n",
-            "<ul><li>a<blockquote><p>+b</p></blockquote></li></ul>",
+            "<ul><li>a<blockquote></blockquote></li></ul><p>b</p>",
         ),
         (
             "- a\n  > +\n  # h\n",
@@ -234,23 +235,23 @@ fn stacked_quote_plus_readings_shared_by_the_spec_model_and_carve_js() {
     check(&[
         (
             "- > > +\n    # h\n",
-            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote><h1id=\"h\">h</h1></li></ul>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote><h1id=\"h\">h</h1></li></ul>",
         ),
         (
             "- > > +\n    ```\nx\n```\n",
-            "<ul><li><blockquote><blockquote><p>+</p></blockquote></blockquote><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- a\n  > - > +\n# h\n",
-            "<ul><li>a<blockquote><ul><li><blockquote><p>+</p></blockquote></li></ul></blockquote></li></ul><sectionid=\"h\"><h1>h</h1></section>",
+            "<ul><li>a<blockquote><ul><li><blockquote></blockquote></li></ul></blockquote></li></ul><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "- a\n  > - > +\nb\n",
-            "<ul><li>a<blockquote><ul><li><blockquote><p>+b</p></blockquote></li></ul></blockquote></li></ul>",
+            "<ul><li>a<blockquote><ul><li><blockquote></blockquote></li></ul></blockquote></li></ul><p>b</p>",
         ),
         (
             "> > - a\n> > - > +\n# h\n",
-            "<blockquote><blockquote><ul><li>a</li><li><blockquote><p>+</p></blockquote></li></ul></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
+            "<blockquote><blockquote><ul><li>a</li><li><blockquote></blockquote></li></ul></blockquote></blockquote><sectionid=\"h\"><h1>h</h1></section>",
         ),
         (
             "> - a\n> > q\n> - > +\n# h\n",
@@ -272,23 +273,23 @@ fn a_deep_quote_plus_and_a_misaligned_host_prefix_read_like_carve_js() {
     check(&[
         (
             "> > > > +\n> b\n",
-            "<blockquote><blockquote><blockquote><blockquote><p>+b</p></blockquote></blockquote></blockquote></blockquote>",
+            "<blockquote><blockquote><blockquote><blockquote></blockquote></blockquote></blockquote><p>b</p></blockquote>",
         ),
         (
             "> > > > +\n> # h\n",
-            "<blockquote><blockquote><blockquote><blockquote><p>+</p></blockquote></blockquote></blockquote><h1id=\"h\">h</h1></blockquote>",
+            "<blockquote><blockquote><blockquote><blockquote></blockquote></blockquote></blockquote><h1id=\"h\">h</h1></blockquote>",
         ),
         (
             "> > > +\n> b\n",
-            "<blockquote><blockquote><blockquote><p>+b</p></blockquote></blockquote></blockquote>",
+            "<blockquote><blockquote><blockquote></blockquote></blockquote><p>b</p></blockquote>",
         ),
         (
             "> > - > +\n>  > q\n",
-            "<blockquote><blockquote><ul><li><blockquote><p>+q</p></blockquote></li></ul></blockquote></blockquote>",
+            "<blockquote><blockquote><ul><li><blockquote></blockquote></li></ul><p>q</p></blockquote></blockquote>",
         ),
         (
             "> > - > +\n> > q\n",
-            "<blockquote><blockquote><ul><li><blockquote><p>+q</p></blockquote></li></ul></blockquote></blockquote>",
+            "<blockquote><blockquote><ul><li><blockquote></blockquote></li></ul><p>q</p></blockquote></blockquote>",
         ),
     ]);
 }

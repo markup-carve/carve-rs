@@ -70,7 +70,6 @@ fn column_zero_model_rows() {
 }
 
 #[test]
-#[ignore = "carve#5013 port pending (carve-rs#3823): a refused `+` renders nothing"]
 fn legacy_column_zero_cases_match_model() {
     let rows: Vec<Row> =
         serde_json::from_str(include_str!("fixtures/column_zero_legacy_cases.json")).unwrap();
@@ -175,10 +174,10 @@ fn nested_tightness_loss_is_reported() {
         .losses
         .iter()
         .any(|loss| loss.code == "list-tightness-lost"));
-    assert!(report
-        .value
-        .lines()
-        .all(|line| line.trim() != "+" || line.starts_with('+')));
+    // A tight item's separated body is spelled with a `+` at the item's marker
+    // column (carve#5015, CARVE-P11-042), which keeps `second` bare.
+    let html = carve::to_html(&report.value);
+    assert!(!html.contains("<p>second</p>"), "{}\n{html}", report.value);
 }
 
 // A task's checkbox moves its marker-line child right, so a fence there owns
@@ -188,7 +187,7 @@ fn a_marker_line_fence_after_a_checkbox_owns_lines_at_its_own_column() {
     for (source, html) in [
         (
             "- [ ] - ```\n      +\n\ntail",
-            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<p>tail</p>",
+            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>",
         ),
         (
             "- [ ] - [ ] ```\n  x\n",

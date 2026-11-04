@@ -89,7 +89,7 @@ fn nested_verse_keeps_the_same_content_as_top_level_verse() {
 #[test]
 fn the_original_hyphen_case_keeps_one_no_break_space() {
     let source = "- item\n\n  ::: |\n   ---\n  :::\n";
-    assert_eq!(carve::to_html(source), "<ul>\n  <li>item\n    <div class=\"line-block\">\n      <p>&nbsp;—</p>\n    </div>\n  </li>\n</ul>");
+    assert_eq!(carve::to_html(source), "<ul>\n  <li><p>item</p>\n    <div class=\"line-block\">\n      <p>&nbsp;—</p>\n    </div>\n  </li>\n</ul>");
 }
 
 #[test]

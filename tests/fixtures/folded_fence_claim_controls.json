@@ -42,12 +42,12 @@
   {
     "id": "claim-control-1-blank-then-code",
     "source": "> - prose\n>   more\n> \n>   ```\n>   code\nlazy\n",
-    "html": "<blockquote><ul><li>prose\nmore\n      <pre><code>code\n</code></pre></li></ul></blockquote><p>lazy</p>"
+    "html": "<blockquote><ul><li><p>prose\nmore</p><pre><code>code\n</code></pre></li></ul></blockquote><p>lazy</p>"
   },
   {
     "id": "claim-control-2-blank-then-code",
     "source": "> > - prose\n> >   more\n> > \n> >   ```\n> >   code\nlazy\n",
-    "html": "<blockquote><blockquote><ul><li>prose\nmore\n        <pre><code>code\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
+    "html": "<blockquote><blockquote><ul><li><p>prose\nmore</p><pre><code>code\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
   },
   {
     "id": "shifted-unclosed-1-```",

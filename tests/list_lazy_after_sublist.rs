@@ -14,7 +14,7 @@ fn lazy_after_sublist_folds_into_deepest() {
 fn inert_plus_before_indented_text_keeps_the_deepest_item_open() {
     assert_eq!(
         carve::to_html("- x\n  - L\n+\n  p\n"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>L\n+\np</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>L</li>\n    </ul>\n  </li>\n</ul>\n<p>p</p>"
     );
 }
 
@@ -66,7 +66,7 @@ fn blank_then_authored_quote_returns_to_the_outer_item() {
     // the outer item tight.
     assert_eq!(
         carve::to_html("- a\n  - b\n\n   > q\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 
@@ -84,7 +84,7 @@ fn blank_then_outer_blockquote_after_sublist_stays_tight() {
     // after the blank is NOT a paragraph, so the outer item stays tight.
     assert_eq!(
         carve::to_html("- a\n  - b\n\n  > q\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 
@@ -95,7 +95,7 @@ fn blank_then_inner_attached_block_does_not_loosen_outer() {
     // internal blank of its own and stays tight.
     assert_eq!(
         carve::to_html("- a\n  - b\n\n    > q\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <blockquote><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <blockquote><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -149,7 +149,7 @@ fn blank_before_non_paragraph_outer_block_stays_tight() {
     // `<hr>`. Being tight, the trailing text `p` renders BARE. Matches carve-js.
     assert_eq!(
         carve::to_html("- a\n  - b\n\n  ---\n  p\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <hr>\n    p\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>b</li>\n    </ul>\n    <hr>\n    <p>p</p>\n  </li>\n</ul>"
     );
 }
 

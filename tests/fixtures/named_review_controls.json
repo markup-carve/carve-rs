@@ -2,12 +2,12 @@
   {
     "id": 0,
     "source": "- ::: d\n  - x\n\n    ::: d\n    a\n    :::\n  - z\n  :::\n",
-    "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li>x\n          <div class=\"d\">\n            <p>a</p>\n          </div>\n        </li>\n        <li>z</li>\n      </ul>\n    </div>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li><p>x</p>\n          <div class=\"d\">\n            <p>a</p>\n          </div>\n        </li>\n        <li><p>z</p></li>\n      </ul>\n    </div>\n  </li>\n</ul>"
   },
   {
     "id": 1,
     "source": "- ::: d\n  - head\n\n        ::: note\n        a\n  - second\n  :::\n",
-    "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li>head\n          <aside class=\"admonition note\" aria-label=\"Note\">\n            <p>a</p>\n          </aside>\n        </li>\n        <li>second</li>\n      </ul>\n    </div>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li><p>head</p>\n          <aside class=\"admonition note\" aria-label=\"Note\">\n            <p>a</p>\n          </aside>\n        </li>\n        <li><p>second</p></li>\n      </ul>\n    </div>\n  </li>\n</ul>"
   },
   {
     "id": 2,

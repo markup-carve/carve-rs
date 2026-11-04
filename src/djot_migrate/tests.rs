@@ -175,7 +175,7 @@ fn a_blank_run_before_a_sibling_marker_does_not_split_the_list() {
 fn the_run_collapses_inside_an_item_too() {
     assert_eq!(
         djot_to_carve("- outer\n  - inner\n\n\n\n\n  - inner2\n"),
-        "- outer\n  \\- inner\n\n  - inner2\n"
+        "- outer\n  \\- inner\n  - inner2\n"
     );
 }
 

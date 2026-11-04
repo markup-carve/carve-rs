@@ -58,7 +58,7 @@ fn a_table_below_a_nested_list_reaches_the_output() {
 fn an_inert_plus_leaves_plain_text_in_the_deepest_item() {
     // The refused `+` and its follower stay in the nested item's paragraph.
     let source = "- x\n  - L\n+\n  p\n";
-    assert_eq!(carve::to_markdown(source), "- x\n  - L\n    +\n    p\n");
+    assert_eq!(carve::to_markdown(source), "- x\n  - L\n\np\n");
     let blocks = item_blocks(source);
     let nested = blocks
         .iter()
@@ -113,7 +113,7 @@ fn the_absorption_set_is_unchanged() {
     // The quote keeps the refused `+` and the following quoted line together.
     assert_eq!(
         carve::to_markdown("- x\n  > q\n+\n  > r\n"),
-        "- x\n  > q\n  > +\n  > r\n"
+        "- x\n  > q\n\n\\> r\n"
     );
     assert_eq!(carve::to_markdown("- x\n  > q\n"), "- x\n  > q\n");
 }

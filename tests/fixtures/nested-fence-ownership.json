@@ -62,7 +62,7 @@
   {
     "name": "control 12",
     "source": "- a\n  - b\n\n    ```\n    x\n- c\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
   },
   {
     "name": "control 13",
@@ -77,7 +77,7 @@
   {
     "name": "control 15",
     "source": "- a\n  - b\n    - c\n\n      ```\n      p\n   x\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
   },
   {
     "name": "control 16",

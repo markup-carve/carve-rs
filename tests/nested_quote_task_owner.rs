@@ -2,41 +2,26 @@ use carve::to_html;
 
 #[test]
 fn a_lazy_line_keeps_the_second_inner_quotes_literal_plus() {
-    let source = "> > - > +\n> > - > +\n>  s\n";
-    let html = to_html(source);
-    assert!(
-        html.contains("<blockquote><p>+\ns</p></blockquote>"),
-        "{html}"
-    );
+    // The refused first-block markers render nothing (carve#5013).
+    assert_eq!(to_html("> > - > +\n> > - > +\n>  s\n").trim_end(), "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <blockquote>\n\n        </blockquote>\n      </li>\n      <li>\n        <blockquote>\n\n        </blockquote>\n      </li>\n    </ul>\n  </blockquote>\n  <p>s</p>\n</blockquote>");
 }
 
 #[test]
 fn a_zero_shift_later_quote_supplies_the_first_block() {
-    let source = "> > - > +\n> > - > +\n> s\n";
-    let html = to_html(source);
-    assert!(
-        html.contains("<blockquote><p>+\ns</p></blockquote>"),
-        "{html}"
-    );
+    // The refused first-block markers render nothing (carve#5013).
+    assert_eq!(to_html("> > - > +\n> > - > +\n> s\n").trim_end(), "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <blockquote>\n\n        </blockquote>\n      </li>\n      <li>\n        <blockquote>\n\n        </blockquote>\n      </li>\n    </ul>\n  </blockquote>\n  <p>s</p>\n</blockquote>");
 }
 
 #[test]
 fn a_first_block_at_document_column_attaches_to_the_single_quote() {
-    let html = to_html("- a\n  > - > +\nb\n");
-    assert!(
-        html.contains("<blockquote><p>+\nb</p></blockquote>"),
-        "{html}"
-    );
+    // The refused first-block markers render nothing (carve#5013).
+    assert_eq!(to_html("- a\n  > - > +\nb\n").trim_end(), "<ul>\n  <li>a\n    <blockquote>\n      <ul>\n        <li>\n          <blockquote>\n\n          </blockquote>\n        </li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>\n<p>b</p>");
 }
 
 #[test]
 fn a_deeper_quote_keeps_the_literal_plus_under_the_same_ruling() {
-    let source = "> > > - > +\n> > > - > +\n>  s\n";
-    let html = to_html(source);
-    assert!(
-        html.contains("<blockquote><p>+\ns</p></blockquote>"),
-        "{html}"
-    );
+    // The refused first-block markers render nothing (carve#5013).
+    assert_eq!(to_html("> > > - > +\n> > > - > +\n>  s\n").trim_end(), "<blockquote>\n  <blockquote>\n    <blockquote>\n      <ul>\n        <li>\n          <blockquote>\n\n          </blockquote>\n        </li>\n        <li>\n          <blockquote>\n\n          </blockquote>\n        </li>\n      </ul>\n    </blockquote>\n  </blockquote>\n  <p>s</p>\n</blockquote>");
 }
 
 #[test]

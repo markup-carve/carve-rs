@@ -22,7 +22,7 @@ fn lazy_lines_below_a_rebased_term_keep_their_existing_reading() {
     let source = "- x\n\n\t:: t\n : zq\n";
     assert_eq!(
         carve::to_html(source),
-        "<ul>\n  <li>x\n    <dl>\n      <dt>t</dt>\n    </dl>\n  </li>\n</ul>\n<p>: zq</p>"
+        "<ul>\n  <li><p>x</p>\n    <dl>\n      <dt>t</dt>\n    </dl>\n  </li>\n</ul>\n<p>: zq</p>"
     );
 
     let source = ":: a\n: b\n    :: t\n    : d\n : zq\n";

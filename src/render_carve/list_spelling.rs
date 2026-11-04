@@ -450,6 +450,24 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
                     BlockNode::CodeBlock(_) | BlockNode::Figure(_) | BlockNode::BlockQuote(_)
                 )
         }) && item_source.lines().any(|line| line.ends_with(" +"));
+        // A blank line before a tight item's child block would loosen it (PART 9
+        // §17 L1, carve#5015), so a separated body takes the `+` form (CARVE-P11-042).
+        if tight && !capped_boundary && !relative_boundaries.is_empty() {
+            let relative = relative_item_content(session, &raw_content, &relative_boundaries);
+            let relative = trim_list_content(&relative);
+            let relative_source = spell_list_item(session, &prefix, &relative, continuation_width);
+            if list_item_reads_back(
+                session,
+                &relative_source,
+                node,
+                item,
+                ctx.list_depth,
+                ctx.quote_depth,
+            ) {
+                content = relative;
+                item_source = relative_source;
+            }
+        }
         if needs_readback
             && !bare_plus_letter
             && !list_item_reads_back(

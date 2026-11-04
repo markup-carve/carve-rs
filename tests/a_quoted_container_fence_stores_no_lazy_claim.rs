@@ -12,7 +12,7 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
+    <li><p>a</p>
       <pre><code>x
 </code></pre>
     </li>
@@ -76,7 +76,7 @@ flush
   <ul>
     <li>a
       <ul>
-        <li>b
+        <li><p>b</p>
           <pre><code>x
 </code></pre>
         </li>
@@ -98,7 +98,7 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
+    <li><p>a</p>
       <pre><code>x
 </code></pre>
     </li>
@@ -121,7 +121,7 @@ flush
   <ul>
     <li>a
       <ul>
-        <li>b
+        <li><p>b</p>
           <pre><code>x
 </code></pre>
         </li>
@@ -197,7 +197,7 @@ flush
             r####"<blockquote>
   <blockquote>
     <ul>
-      <li>a
+      <li><p>a</p>
         <pre><code>x
 </code></pre>
       </li>
@@ -236,7 +236,7 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
+    <li><p>a</p>
       <pre><code>x
 </code></pre>
     </li>
@@ -256,8 +256,8 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
-b
+    <li><p>a
+b</p>
       <pre><code>x
 </code></pre>
     </li>
@@ -277,8 +277,8 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
-b
+    <li><p>a
+b</p>
       <pre><code>x
 </code></pre>
     </li>
@@ -300,8 +300,8 @@ flush
   <ul>
     <li>a
       <ul>
-        <li>b
-c
+        <li><p>b
+c</p>
           <pre><code>x
 </code></pre>
         </li>
@@ -322,8 +322,8 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
-<code>bad`</code>
+    <li><p>a
+<code>bad`</code></p>
       <pre><code>x
 </code></pre>
     </li>
@@ -344,7 +344,7 @@ flush
 "####,
             r####"<blockquote>
   <ul>
-    <li>a
+    <li><p>a</p>
       <pre><code>x
 </code></pre>
       <pre><code>x

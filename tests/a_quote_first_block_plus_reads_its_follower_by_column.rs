@@ -25,19 +25,19 @@ fn a_refused_plus_folds_a_lazy_line_like_a_letter() {
     for (source, expected) in [
         (
             "- > +\n b\n",
-            "<ul><li><blockquote><p>+b</p></blockquote></li></ul>",
+            "<ul><li><blockquote></blockquote></li></ul><p>b</p>",
         ),
         (
             "- a\n  - > +\n b\n",
-            "<ul><li>a<ul><li><blockquote><p>+b</p></blockquote></li></ul></li></ul>",
+            "<ul><li>a<ul><li><blockquote></blockquote></li></ul></li></ul><p>b</p>",
         ),
         (
             "- a\n  - > +\n   b\n",
-            "<ul><li>a<ul><li><blockquote><p>+b</p></blockquote></li></ul></li></ul>",
+            "<ul><li>a<ul><li><blockquote></blockquote></li></ul>b</li></ul>",
         ),
         (
             "- a\n  - > +\n      b\n",
-            "<ul><li>a<ul><li><blockquote><p>+b</p></blockquote></li></ul></li></ul>",
+            "<ul><li>a<ul><li><blockquote></blockquote>b</li></ul></li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");

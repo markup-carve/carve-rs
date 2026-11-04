@@ -15,7 +15,7 @@
 fn indented_item_heading_after_blank_ends_the_item() {
     assert_eq!(
         carve::to_html("- text\n\n  # N\nlazy\n"),
-        "<ul>\n  <li>text\n    <h1 id=\"N\">N</h1>\n  </li>\n</ul>\n<p>lazy</p>"
+        "<ul>\n  <li><p>text</p>\n    <h1 id=\"N\">N</h1>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 
@@ -115,7 +115,7 @@ fn caption_ends_the_item_rather_than_folding_into_the_heading() {
     // top-level block, matching carve-js / carve-php.
     assert_eq!(
         carve::to_html("- text\n\n  # H\n^ cap\n"),
-        "<ul>\n  <li>text\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>^ cap</p>"
+        "<ul>\n  <li><p>text</p>\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>^ cap</p>"
     );
 }
 

@@ -102,7 +102,8 @@ fn a_nested_list_does_not_loosen_the_item_above_it() {
 
 #[test]
 fn a_nested_quote_does_not_loosen_the_item_above_it() {
-    let source = "- a\n  > - x\n\n  - m\n";
+    // A blank before the sub-list would loosen the item (carve#5015).
+    let source = "- a\n  > - x\n  - m\n";
     assert!(tight_in_source(source));
     assert_eq!(carve::to_markdown(source), "- a\n  > - x\n  - m\n");
     assert!(reads_back_tight(source));
@@ -373,7 +374,7 @@ fn a_labelled_div_keeps_the_separator() {
 fn a_div_wrapped_paragraph_after_a_nested_list_keeps_its_blank_line() {
     // Without the separator, the div's paragraph becomes continuation of `b`.
     let source = "- a\n\n  - b\n  :::\n  p\n  :::\n";
-    assert_eq!(carve::to_markdown(source), "- a\n  - b\n\n  p\n");
+    assert_eq!(carve::to_markdown(source), "- a\n\n  - b\n\n  p\n");
     let children = reads_back_children(source);
     assert_eq!(
         count_paragraphs(&children),

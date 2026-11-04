@@ -105,7 +105,8 @@ fn writes_the_ticket_document_back_as_the_author_wrote_it() {
         shape(source),
         "document(list(list_item(list(list_item),list(list_item))))"
     );
-    assert_eq!(fmt(source), "- outer\n  - a\n\n\n\n  - b\n");
+    // The blank before `- a` loosens the item (carve#5015), so it stays.
+    assert_eq!(fmt(source), "- outer\n\n  - a\n\n\n\n  - b\n");
     round_trips(source);
 }
 
@@ -145,7 +146,7 @@ fn collapses_a_longer_run_to_three_inside_an_item_too() {
     // the boundary is not a decorative run.
     let six = "- outer\n\n  - a\n\n\n\n\n\n\n  - b\n";
 
-    assert_eq!(fmt(six), "- outer\n  - a\n\n\n\n  - b\n");
+    assert_eq!(fmt(six), "- outer\n\n  - a\n\n\n\n  - b\n");
     round_trips(six);
 }
 
@@ -153,7 +154,7 @@ fn collapses_a_longer_run_to_three_inside_an_item_too() {
 fn separates_a_third_and_a_fourth_sub_list_the_same_way() {
     let three = "- outer\n\n  - a\n\n\n\n  - b\n\n\n\n  - c\n";
 
-    assert_eq!(fmt(three), "- outer\n  - a\n\n\n\n  - b\n\n\n\n  - c\n");
+    assert_eq!(fmt(three), "- outer\n\n  - a\n\n\n\n  - b\n\n\n\n  - c\n");
     round_trips(three);
     round_trips("- o\n\n  - a\n\n\n\n  - b\n\n\n\n  - c\n\n\n\n  - d\n");
 }
@@ -174,7 +175,7 @@ fn carries_the_boundary_through_ordered_bullet_and_task_markers() {
 fn separates_sub_lists_two_levels_down() {
     let source = "- L1\n\n  - L2\n\n    - a\n\n\n\n    - b\n";
 
-    assert_eq!(fmt(source), "- L1\n  - L2\n    - a\n\n\n\n    - b\n");
+    assert_eq!(fmt(source), "- L1\n\n  - L2\n\n    - a\n\n\n\n    - b\n");
     round_trips(source);
 }
 
@@ -206,7 +207,7 @@ fn spells_the_boundary_with_the_host_prefix_inside_a_blockquote() {
     // take the second list out of it.
     let source = "> - outer\n>\n>   - a\n>\n>\n>\n>   - b\n";
 
-    assert_eq!(fmt(source), "> - outer\n>   - a\n>\n>\n>\n>   - b\n");
+    assert_eq!(fmt(source), "> - outer\n>\n>   - a\n>\n>\n>\n>   - b\n");
     round_trips(source);
 }
 
@@ -249,7 +250,7 @@ fn writes_one_blank_line_below_a_block_at_the_marker_column() {
     // reads as that paragraph's lazy continuation and never opens.
     let source = "- x\n+\np2\n\n  - b\n";
 
-    assert_eq!(fmt(source), "- x\n+\np2\n\n  - b\n");
+    assert_eq!(fmt(source), "- x\n\n  p2\n\n  - b\n");
     round_trips(source);
 }
 
@@ -260,7 +261,7 @@ fn writes_one_blank_line_below_a_blockquote() {
     // answer, and the spelling now matches carve-js and carve-php.
     let source = "- x\n  > q\n\n  - b\n";
 
-    assert_eq!(fmt(source), "- x\n  > q\n\n  - b\n");
+    assert_eq!(fmt(source), "- x\n\n  > q\n\n  - b\n");
     round_trips(source);
     round_trips("- x\n\n  - a\n\n  > q\n\n  - b\n");
 }
@@ -280,10 +281,13 @@ fn writes_no_separator_where_nothing_above_reaches_down() {
     // The bound on the rule: a heading, fence, table, break, div or admonition
     // closes at its last line, so the sub-list opens on the next one and owes
     // nothing. A blank line here would be a construct the document did not have.
-    assert_eq!(fmt("- x\n\n  # h\n\n  - b\n"), "- x\n  # h\n  - b\n");
-    assert_eq!(fmt("- x\n\n  | a |\n\n  - b\n"), "- x\n  | a |\n  - b\n");
-    assert_eq!(fmt("- x\n\n  ***\n\n  - b\n"), "- x\n  ***\n  - b\n");
-    assert_eq!(fmt("- outer\n\n  - a\n"), "- outer\n  - a\n");
+    assert_eq!(fmt("- x\n\n  # h\n\n  - b\n"), "- x\n\n  # h\n\n  - b\n");
+    assert_eq!(
+        fmt("- x\n\n  | a |\n\n  - b\n"),
+        "- x\n\n  | a |\n\n  - b\n"
+    );
+    assert_eq!(fmt("- x\n\n  ***\n\n  - b\n"), "- x\n\n  ***\n\n  - b\n");
+    assert_eq!(fmt("- outer\n\n  - a\n"), "- outer\n\n  - a\n");
 }
 
 #[test]
@@ -291,10 +295,12 @@ fn leaves_the_marker_column_to_the_kinds_that_still_need_it() {
     // Two sibling blockquotes, tables, line blocks and definition lists merge
     // when written adjacent and CAN be attached at column 0, because none of
     // them opens there in preference to being attached. They keep the `+`.
-    assert!(fmt("- outer\n\n  > a\n\n  > b\n").contains("\n+\n"));
-    assert!(fmt("- outer\n\n  | a |\n\n  | a |\n").contains("\n+\n"));
-    round_trips("- outer\n\n  > a\n\n  > b\n");
-    round_trips("- outer\n\n  | a |\n\n  | a |\n");
+    // A blank before the first one loosens the item (carve#5015), so the
+    // tight item is the one written with markers.
+    assert!(fmt("- outer\n  > a\n+\n> b\n").contains("\n+\n"));
+    assert!(fmt("- outer\n  | a |\n+\n| a |\n").contains("\n+\n"));
+    round_trips("- outer\n  > a\n+\n> b\n");
+    round_trips("- outer\n  | a |\n+\n| a |\n");
 }
 
 #[test]
@@ -303,7 +309,7 @@ fn owes_nothing_to_sub_lists_whose_markers_already_differ() {
     // is written and the author's adjacency survives.
     assert_eq!(
         fmt("- outer\n\n  - a\n\n  * b\n"),
-        "- outer\n  - a\n  * b\n"
+        "- outer\n\n  - a\n\n  * b\n"
     );
     round_trips("- outer\n\n  - a\n\n\n\n  * b\n");
 }

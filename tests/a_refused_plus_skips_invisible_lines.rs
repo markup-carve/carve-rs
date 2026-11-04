@@ -1,6 +1,6 @@
 //! The `+` gates read the first visible line past invisible ones. A blank, the
-//! end of input or a sibling there refuses it, and it stays a letter
-//! (CARVE-P9-067, carve#4449, carve#4870).
+//! end of input or a sibling there refuses it, and the refused marker renders
+//! nothing (CARVE-P9-067, carve#4449, carve#4870, carve#5013).
 
 fn flat(source: &str) -> String {
     carve::to_html(source)
@@ -14,7 +14,7 @@ fn a_comment_fence_crossing_a_quote_end_refuses_the_plus() {
     assert_eq!(
         flat("> - +\n> %%%\n\n> %%%\n> text\n"),
         // carve#4907: the second quote's unclosed span hides `text`.
-        "<blockquote><ul><li>+</li></ul></blockquote><blockquote></blockquote>"
+        "<blockquote><ul><li></li></ul></blockquote><blockquote></blockquote>"
     );
 }
 
@@ -22,8 +22,8 @@ fn a_comment_fence_crossing_a_quote_end_refuses_the_plus() {
 fn nothing_visible_after_the_invisible_lines_refuses_the_plus() {
     for invisible in ["%% c", "%%%\nc\n%%%", "[r]: /u", "[^q]: n", "*[A]: b"] {
         for (tail, expected) in [
-            ("", "<ul><li>+</li></ul>"),
-            ("\ntext\n", "<ul><li>+</li></ul><p>text</p>"),
+            ("", "<ul><li></li></ul>"),
+            ("\ntext\n", "<ul><li></li></ul><p>text</p>"),
         ] {
             let source = format!("- +\n{invisible}\n{tail}");
             assert_eq!(flat(&source), expected, "{source:?}");
@@ -33,7 +33,7 @@ fn nothing_visible_after_the_invisible_lines_refuses_the_plus() {
 
 #[test]
 fn a_sibling_after_the_invisible_line_refuses_the_plus() {
-    assert_eq!(flat("- +\n%% c\n- b\n"), "<ul><li>+</li><li>b</li></ul>");
+    assert_eq!(flat("- +\n%% c\n- b\n"), "<ul><li></li><li>b</li></ul>");
 }
 
 #[test]
@@ -55,8 +55,8 @@ fn a_comment_span_or_comment_paragraph_before_the_block_is_skipped() {
 }
 
 #[test]
-fn a_comment_paragraph_with_nothing_after_it_leaves_the_plus_a_letter() {
-    assert_eq!(flat("- a\n+\n{% c %}\n"), "<ul><li>a+</li></ul>");
+fn a_comment_paragraph_with_nothing_after_it_leaves_the_plus_consumed() {
+    assert_eq!(flat("- a\n+\n{% c %}\n"), "<ul><li>a</li></ul>");
 }
 
 #[test]

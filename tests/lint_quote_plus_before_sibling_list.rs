@@ -11,7 +11,8 @@ fn refusals(source: &str) -> Vec<(usize, usize, String)> {
         .collect()
 }
 
-const MESSAGE: &str = "This + attaches nothing because the next list item is a sibling. It remains text in the block quote.";
+const MESSAGE: &str =
+    "This + attaches nothing because the next list item is a sibling. It renders nothing.";
 
 #[test]
 fn a_nested_quote_plus_before_a_list_item_is_reported() {

@@ -60,7 +60,7 @@ fn a_fence_below_a_task_item_reaches_the_output() {
 #[test]
 fn a_nested_list_below_a_task_item_stays_a_list() {
     let source = "- [ ] a\n  - b\n\n    > q\n";
-    assert_eq!(carve::to_markdown(source), "- [ ] a\n  - b\n    > q\n");
+    assert_eq!(carve::to_markdown(source), "- [ ] a\n  - b\n\n    > q\n");
     let blocks = item_blocks(source);
     let nested = blocks
         .iter()

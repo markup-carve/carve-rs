@@ -66,7 +66,7 @@ fn a_sibling_marker_ends_the_attachment() {
     // sub-list swallowed into a run.
     assert_eq!(
         html("- a\n+\n- x\n- y\n"),
-        "<ul>\n  <li>a\n+</li>\n  <li>x</li>\n  <li>y</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n  <li>x</li>\n  <li>y</li>\n</ul>"
     );
 }
 

@@ -7,7 +7,6 @@ fn closed_fence_after_nested_marker_stays_a_document_block() {
 }
 
 #[test]
-#[ignore = "carve#5013 port pending (carve-rs#3823): a refused `+` renders nothing"]
 fn comment_before_attached_paragraph_keeps_paragraph_in_item() {
     let source = "- - ```\n  +\n%% c\ntail";
     super::a_continuation_marker_is_column_zero_only::assert_legacy_model(source, &to_html(source));

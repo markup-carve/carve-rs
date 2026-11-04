@@ -136,8 +136,7 @@ fn a_wider_separator_moves_the_band() {
 fn the_band_inside_a_list_item() {
     assert_html(
         "- intro\n\n  :: term\n  :  definition\n      # H\n  tail\n",
-        "<ul><li>intro <dl><dt>term</dt><dd><p>definition</p><h1 id=\"H\">H</h1></dd></dl> \
-         tail </li></ul>",
+        "<ul>\n  <li><p>intro</p>\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <p>definition</p>\n        <h1 id=\"H\">H</h1>\n      </dd>\n    </dl>\n    <p>tail</p>\n  </li>\n</ul>",
     );
 }
 

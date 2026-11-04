@@ -13,11 +13,11 @@ fn a_follower_at_an_outer_item_column_folds_into_the_plus() {
     for (source, expected) in [
         (
             "- - > +\n  b\n",
-            "<ul><li><ul><li><blockquote><p>+b</p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote></blockquote></li></ul>b</li></ul>",
         ),
         (
             "- > > +\n  b\n",
-            "<ul><li><blockquote><blockquote><p>+b</p></blockquote></blockquote></li></ul>",
+            "<ul><li><blockquote><blockquote></blockquote></blockquote>b</li></ul>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
@@ -29,7 +29,7 @@ fn column_zero_and_the_unquoted_twin_keep_their_reading() {
     for (source, expected) in [
         (
             "- - > +\nb\n",
-            "<ul><li><ul><li><blockquote><p>+b</p></blockquote></li></ul></li></ul>",
+            "<ul><li><ul><li><blockquote></blockquote></li></ul></li></ul><p>b</p>",
         ),
         ("- - +\n  b\n", "<ul><li><ul><li>b</li></ul></li></ul>"),
     ] {

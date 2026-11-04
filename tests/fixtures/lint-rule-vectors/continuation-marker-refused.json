@@ -386,7 +386,7 @@
             "column": 7,
             "includes": [
               "a list",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -403,7 +403,7 @@
             "column": 7,
             "includes": [
               "a list",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -462,7 +462,7 @@
             "column": 7,
             "includes": [
               "end of the document",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -479,7 +479,7 @@
             "column": 7,
             "includes": [
               "blank line",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -496,7 +496,7 @@
             "column": 7,
             "includes": [
               "+",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -588,7 +588,7 @@
             "column": 3,
             "includes": [
               "end of the document",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -605,7 +605,7 @@
             "column": 3,
             "includes": [
               "blank line",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -622,7 +622,7 @@
             "column": 3,
             "includes": [
               "blank line",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -639,7 +639,7 @@
             "column": 3,
             "includes": [
               "right",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -656,7 +656,7 @@
             "column": 3,
             "includes": [
               "a list",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -673,7 +673,7 @@
             "column": 5,
             "includes": [
               "end of the document",
-              "remains text"
+              "renders nothing"
             ]
           }
         ]
@@ -722,7 +722,7 @@
             "column": 5,
             "includes": [
               "sibling",
-              "block quote"
+              "renders nothing"
             ]
           }
         ]

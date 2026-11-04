@@ -1321,12 +1321,13 @@ fn resume_nested_list_after_blank(frames: &mut [UnifiedListFrame<'_>], next: &st
     let frame = frames.last_mut()?;
     if next_indent == frame.content_indent {
         let content = &next[next_indent..];
+        // A blank before a child block loosens the item (PART 9 §17 L1, carve#5015);
+        // the tree parser owns that reading.
         if strip_blockquote_prefix(content).is_some()
             || detect_fence_open(content).is_some()
             || detect_heading(content).is_some()
         {
-            flush_unified_list_paragraph(frame)?;
-            return Some(());
+            return None;
         }
         if !is_list_marker(content) && may_start_plain_paragraph(content) {
             flush_unified_list_paragraph(frame)?;
@@ -1627,7 +1628,7 @@ fn advance_unified_list_blank(
     }
     let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
     if next_indent == frame.content_indent && unified_list_marker(&next[next_indent..]).is_some() {
-        return Some(BlankListStep::Continue(after));
+        return None;
     }
     if is_list_marker(next) {
         if next_indent == frame.indent {
@@ -1649,12 +1650,14 @@ fn advance_unified_list_blank(
         return None;
     }
     if next_indent == frame.content_indent {
-        flush_unified_list_paragraph(frame)?;
-        if strip_blockquote_prefix(&next[next_indent..]).is_none()
-            && detect_fence_open(&next[next_indent..]).is_none()
-            && detect_heading(&next[next_indent..]).is_none()
-            && !trim_ascii_start(&next[next_indent..]).starts_with("%% ")
+        if strip_blockquote_prefix(&next[next_indent..]).is_some()
+            || detect_fence_open(&next[next_indent..]).is_some()
+            || detect_heading(&next[next_indent..]).is_some()
         {
+            return None;
+        }
+        flush_unified_list_paragraph(frame)?;
+        if !trim_ascii_start(&next[next_indent..]).starts_with("%% ") {
             frame.node.tight = false;
         }
         return Some(BlankListStep::Continue(after));
@@ -1705,6 +1708,18 @@ fn consume_unified_list_comment<'a>(
             indent == frame.content_indent && trim_ascii_start(&next[indent..]).starts_with("%% ")
         }) {
             after_comments += 1;
+        }
+        if lines.get(after_comments).is_some_and(|next| {
+            let indent = next.bytes().take_while(|byte| *byte == b' ').count();
+            let content = &next[indent..];
+            indent == frame.content_indent
+                && (detect_heading(content).is_some()
+                    || strip_blockquote_prefix(content).is_some()
+                    || detect_fence_open(content).is_some()
+                    || unified_list_marker(content).is_some())
+        }) {
+            // The tree parser reads a blank before a child block (carve#5015).
+            return None;
         }
         if lines.get(after_comments).is_some_and(|next| {
             let indent = next.bytes().take_while(|byte| *byte == b' ').count();
@@ -2091,27 +2106,29 @@ mod unified_list_tests {
 
     #[test]
     fn shared_owner_builds_item_headings() {
-        for source in ["- a\n  # H\n", "- a\n\n  # H\n"] {
-            let lines: Vec<&str> = source.lines().collect();
-            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
-            assert_eq!(consumed, lines.len());
-            assert!(list.tight);
-            assert!(matches!(list.items[0].children[1], BlockNode::Heading(_)));
-        }
+        let lines: Vec<&str> = "- a\n  # H\n".lines().collect();
+        let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+        assert_eq!(consumed, lines.len());
+        assert!(list.tight);
+        assert!(matches!(list.items[0].children[1], BlockNode::Heading(_)));
+        // A blank before the heading loosens the item; the tree reader owns it (carve#5015).
+        let lines: Vec<&str> = "- a\n\n  # H\n".lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
     }
 
     #[test]
     fn shared_owner_builds_marked_quote() {
-        for source in ["- one\n  > q\n", "- one\n\n  > q\n"] {
-            let lines: Vec<&str> = source.lines().collect();
-            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
-            assert_eq!(consumed, lines.len());
-            assert!(list.tight);
-            assert!(matches!(
-                list.items[0].children[1],
-                BlockNode::BlockQuote(_)
-            ));
-        }
+        let lines: Vec<&str> = "- one\n  > q\n".lines().collect();
+        let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+        assert_eq!(consumed, lines.len());
+        assert!(list.tight);
+        assert!(matches!(
+            list.items[0].children[1],
+            BlockNode::BlockQuote(_)
+        ));
+        // A blank before the quote loosens the item; the tree reader owns it (carve#5015).
+        let lines: Vec<&str> = "- one\n\n  > q\n".lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
         let lazy = "- one\n  > q\n  lazy continuation\n";
         let lines: Vec<&str> = lazy.lines().collect();
         assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
@@ -2132,8 +2149,6 @@ mod unified_list_tests {
     fn shared_owner_builds_closed_fences() {
         for source in [
             "- a\n  ```rs\n  let x = 1;\n  ```\n",
-            "- a\n\n  ```rs\n  let x = 1;\n  ```\n",
-            "- a\n\n  ```rs\n  let x = 1;\n  ```\n\n- b\n",
             "- a\n  ```rs\n  let x = 1;\n  ```\n\n  following\n",
             "- a\n  ```=latex\n  \\x\n  ```\n",
             "- a\n  ```rs\n  let x = 1;\n  ```\n- b\n",
@@ -2270,11 +2285,15 @@ mod unified_list_tests {
     fn raw_fence_does_not_loosen_nested_list() {
         let source = "- a\n\n  - b\n\n    ```=latex\n    \\x\n    ```\n";
         let lines: Vec<&str> = source.lines().collect();
+        // The blank before the sub-list loosens the item, so the direct reader
+        // declines and the tree reader decides (carve#5015).
         let direct = parse_unified_list(&lines, 0, &Options::default());
-        assert!(direct.is_some());
-        let (candidate, _) = parse_document(source).unwrap();
+        assert!(direct.is_none());
         let standard = parse_with_options(source, &Options::default());
-        assert_eq!(candidate, standard);
+        let BlockNode::List(list) = &standard.children[0] else {
+            panic!("expected a list");
+        };
+        assert!(!list.tight);
     }
 
     #[test]

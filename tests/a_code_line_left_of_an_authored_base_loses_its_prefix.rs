@@ -22,7 +22,7 @@ fn a_definition_body_line_left_of_the_opener_loses_its_prefix() {
 fn a_list_item_line_left_of_the_opener_loses_its_prefix() {
     assert_eq!(
         compact("- x\n\n     ```\n    a\n     b\n     ```\n"),
-        "<ul>|<li>x|<pre><code>a|b|</code></pre>|</li>|</ul>"
+        "<ul>|<li><p>x</p>|<pre><code>a|b|</code></pre>|</li>|</ul>"
     );
 }
 
@@ -30,6 +30,6 @@ fn a_list_item_line_left_of_the_opener_loses_its_prefix() {
 fn a_matching_run_left_of_the_opener_closes_after_losing_its_prefix() {
     assert_eq!(
         compact("- x\n\n     ```\n   ```\n     b\n     ```\n"),
-        "<ul>|<li>x|<pre><code></code></pre>|b|<pre><code></code></pre>|</li>|</ul>"
+        "<ul>|<li><p>x</p>|<pre><code></code></pre>|<p>b</p>|<pre><code></code></pre>|</li>|</ul>"
     );
 }

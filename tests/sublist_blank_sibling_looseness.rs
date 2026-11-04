@@ -1,4 +1,7 @@
-//! §17 L2: a blank line before an item's sub-LIST keeps the item tight, and
+//! Ruled by markup-carve/carve#5015: §17 L2 is withdrawn, so a blank line
+//! before an item's sub-LIST loosens the list, at any sub-list indent.
+//!
+//! Earlier: a blank line before an item's sub-LIST kept the item tight, and
 //! that blank must not survive to loosen a later sibling marker.
 //!
 //! The blank is consumed by the compact sub-block. Before carve-rs#286 the
@@ -16,35 +19,28 @@ fn html(source: &str) -> String {
 }
 
 #[test]
-fn blank_before_a_sublist_keeps_a_following_sibling_tight() {
+fn blank_before_a_sublist_loosens_the_list() {
     let out = html("- fruit\n\n  - apples\n- vegetables\n");
     assert!(
-        out.contains("<li>fruit"),
-        "outer item should be tight: {out}"
+        out.contains("<li><p>fruit</p>"),
+        "outer item should be loose: {out}"
     );
     assert!(
-        out.contains("<li>vegetables</li>"),
-        "sibling after the sub-list should be tight: {out}"
-    );
-    assert!(
-        !out.contains("<p>fruit</p>"),
-        "item must not be wrapped: {out}"
+        out.contains("<li><p>vegetables</p></li>"),
+        "the sibling shares the list's looseness: {out}"
     );
 }
 
 #[test]
 fn the_sublist_indent_does_not_change_the_outcome() {
     // Four-space nesting sits past the content column but is still the item's
-    // sub-block, so L2 applies exactly as at the content column.
+    // sub-block, so the blank above it loosens the list the same way.
     let out = html("- fruit\n\n    - apples\n    - oranges\n- vegetables\n");
     assert!(
-        out.contains("<li>fruit"),
-        "outer item should be tight: {out}"
+        out.contains("<li><p>fruit</p>"),
+        "outer item should be loose: {out}"
     );
-    assert!(
-        !out.contains("<p>vegetables</p>"),
-        "sibling should be tight: {out}"
-    );
+    assert!(out.contains("<p>vegetables</p>"), "{out}");
 }
 
 #[test]

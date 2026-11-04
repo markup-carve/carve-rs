@@ -143,7 +143,7 @@ fn nested_marker_controls() {
         ),
         (
             "> > q\n> +\n\npara\n",
-            "<blockquote>\n  <blockquote><p>q\n+</p></blockquote>\n</blockquote>\n<p>para</p>",
+            "<blockquote>\n  <blockquote><p>q</p></blockquote>\n</blockquote>\n<p>para</p>",
         ),
         (
             "> q\n+\npara\n",
@@ -151,7 +151,7 @@ fn nested_marker_controls() {
         ),
         (
             "> +\n\npara\n",
-            "<blockquote><p>+</p></blockquote>\n<p>para</p>",
+            "<blockquote>\n\n</blockquote>\n<p>para</p>",
         ),
         (
             "> - a\n> +\n> para\n",
@@ -182,7 +182,7 @@ fn nested_marker_with_cli_options() {
     for (source, expected) in [
         ("> > q\n> +\n> para\n> more\n", "<blockquote>\n  <blockquote>\n    <p>q</p>\n    <p>para\nmore</p>\n  </blockquote>\n</blockquote>"),
         ("> > q\n> +\n> - a\n> - b\n", "<blockquote>\n  <blockquote>\n    <p>q</p>\n    <ul>\n      <li>a</li>\n      <li>b</li>\n    </ul>\n  </blockquote>\n</blockquote>"),
-        ("> > q\n> +\npara\n", "<blockquote>\n  <blockquote><p>q\n+\npara</p></blockquote>\n</blockquote>"),
+        ("> > q\n> +\npara\n", "<blockquote>\n  <blockquote><p>q</p></blockquote>\n</blockquote>\n<p>para</p>"),
         ("> > q\n> +\n> > r\n", "<blockquote>\n  <blockquote>\n    <p>q</p>\n    <blockquote><p>r</p></blockquote>\n  </blockquote>\n</blockquote>"),
         ("x[^a]\n\n> [^a]: n\n> +\n> para\n", "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<blockquote>\n\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>n</p>\n      <p>para<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
     ] {

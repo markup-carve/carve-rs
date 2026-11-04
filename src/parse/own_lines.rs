@@ -364,6 +364,43 @@ fn is_sibling_of(kind: Kind, text: &str) -> bool {
     }
 }
 
+/// The text of the line after a refused note marker, when it joins the note body.
+fn note_follower_body<'l>(line: &'l str, lead: &str, item: bool) -> Option<&'l str> {
+    let depth = |text: &str| {
+        let mut rest = text;
+        let mut n = 0;
+        while let Some(len) = quote_marker(trim_ws_start(rest)) {
+            rest = &trim_ws_start(rest)[len..];
+            n += 1;
+        }
+        n
+    };
+    let lead_depth = lead.matches('>').count();
+    if is_blank_line(line) || depth(line) > lead_depth {
+        return None;
+    }
+    let mut body = trim_ws_start(line);
+    if !item {
+        if let Some(len) = quote_marker(body).filter(|_| lead_depth > 0) {
+            body = &body[len..];
+        }
+    }
+    let body = trim_ws_start(body);
+    (!(item && indent_cols(line).0 >= 2)
+        && !is_cont_marker(body)
+        && line_starts_paragraph(body)
+        && detect_list_marker_full(body).is_none())
+    .then_some(body)
+}
+
+/// Whether `rest`, a suffix of `line`, stands behind a tab after the line's first marker.
+fn behind_tab(line: &str, rest: &str) -> bool {
+    line.len()
+        .checked_sub(rest.len())
+        .and_then(|at| line.get(..at))
+        .is_some_and(|before| before.trim_start_matches([' ', '\t']).contains('\t'))
+}
+
 fn is_cont_marker(rest: &str) -> bool {
     rest.strip_prefix('+').is_some_and(is_ws_only)
 }
@@ -622,6 +659,15 @@ struct Walk<'a> {
     attr_rest: Option<(usize, usize)>,
     /// The invisible lines between an accepted `+` and its block (carve#4449).
     skipped: Option<Skipped>,
+    /// Later markers a forward search offered the block an earlier marker took (carve#5013).
+    claimed: std::cell::RefCell<std::collections::BTreeMap<usize, usize>>,
+    /// Lines whose refused marker was written as a `%%` line.
+    consumed: Vec<usize>,
+    /// The comment text of that `%%` line, a letter the source does not hold.
+    mark: Option<char>,
+    /// After a refused first-block marker in a note, its text follower joins
+    /// the note body: the marker line and the body lead to write it at.
+    note_follower: Option<(usize, String, bool)>,
     /// The first visible line past the current invisible run (carve#4862).
     next_visible: usize,
     /// The closer line of a `%%%` span whose opener the walk moved.
@@ -703,6 +749,23 @@ impl<'s> Cursor<'s> {
     fn take(&mut self, count: usize) {
         self.out.push_str(&self.src[..count]);
         self.src = &self.src[count..];
+    }
+
+    /// Write a consumed marker as a `%%` line; its end maps back to the end of
+    /// the `authored` line.
+    fn consume_marker(&mut self, mark: Option<char>, authored: &str) {
+        self.out.push_str("%%");
+        if let Some(mark) = mark {
+            self.out.push(' ');
+            self.out.push(mark);
+        }
+        let written = self.out.chars().count();
+        let applied: isize = self.edits.iter().map(|&(_, delta)| delta).sum();
+        let delta = authored.chars().count() as isize - written as isize - applied;
+        if delta != 0 {
+            self.edits.push((written, delta));
+        }
+        self.src = "";
     }
 
     fn mark_caption_lazy(&mut self, host: &Frame, line: usize, attached: bool) {
@@ -802,6 +865,10 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
     pub(in crate::parse) overindented: Vec<OverindentedOpener>,
+    /// Lines whose refused marker was written as a `%%` line.
+    pub(in crate::parse) consumed: Vec<usize>,
+    /// The comment text those lines carry, so the tree drops them without positions.
+    pub(in crate::parse) consumed_mark: Option<char>,
 }
 
 /// An opener S3 reads past its owner's content column (carve#3992).
@@ -882,6 +949,10 @@ fn walk_traced(
         overindented: Vec::new(),
         attached: None,
         skipped: None,
+        claimed: Default::default(),
+        consumed: Vec::new(),
+        mark: plus_letter(source),
+        note_follower: None,
         next_visible: 0,
         moved_span_end: None,
     };
@@ -927,6 +998,23 @@ fn walk_traced(
         let written = result.len();
         result.push_str(&c.out);
         result.push_str(c.src);
+        if let Some((from, lead, item)) = walk.note_follower.take() {
+            if at == from + 1 {
+                if let Some(body) = note_follower_body(line, &lead, item) {
+                    let authored = line.len() - body.len();
+                    result.truncate(written);
+                    result.push_str(&lead);
+                    result.push_str(body);
+                    c.edits.clear();
+                    c.edits.push((
+                        lead.chars().count(),
+                        line[..authored].chars().count() as isize - lead.chars().count() as isize,
+                    ));
+                }
+            } else {
+                walk.note_follower = Some((from, lead, item));
+            }
+        }
         if std::mem::take(&mut walk.refuse_line) {
             if let (Some(plus), Some(letter)) = (result[written..].rfind('+'), letter) {
                 result.replace_range(
@@ -942,15 +1030,20 @@ fn walk_traced(
             delta,
         }));
     }
-    let owned =
-        (!edits.is_empty() || !walk.accepted.is_empty() || wrote_letter).then(|| OwnedSource {
-            source: result,
-            edits,
-            letter: letter.filter(|_| wrote_letter),
-            accepted: std::mem::take(&mut walk.accepted),
-            refused: std::mem::take(&mut walk.refused),
-            overindented: std::mem::take(&mut walk.overindented),
-        });
+    let owned = (!edits.is_empty()
+        || !walk.accepted.is_empty()
+        || wrote_letter
+        || !walk.consumed.is_empty())
+    .then(|| OwnedSource {
+        source: result,
+        edits,
+        letter: letter.filter(|_| wrote_letter),
+        accepted: std::mem::take(&mut walk.accepted),
+        refused: std::mem::take(&mut walk.refused),
+        overindented: std::mem::take(&mut walk.overindented),
+        consumed: std::mem::take(&mut walk.consumed),
+        consumed_mark: walk.mark,
+    });
     (owned, walk.trace)
 }
 
@@ -1038,9 +1131,25 @@ impl<'a> Walk<'a> {
         column: usize,
         host: usize,
     ) -> Result<(), Refusal> {
+        if self.claimed.borrow().contains_key(&at) {
+            return Err(Refusal::Claimed);
+        }
         // An attribute run has no visible block and no column of its own.
         // Apply the attach gates to the line it leads, not to the attribute.
         let mut next = self.first_visible_line(at + 1, host, column, kind == Kind::Item, None);
+        // A further marker at the same column offers the same block, so the
+        // first marker claims it and the block after the run decides (carve#5013).
+        while let Some(line) = self.lines.get(next) {
+            let Some(level) = self.through_quotes(line, host) else {
+                break;
+            };
+            let text = trim_ws_start(level);
+            if !is_cont_marker(text) || doc_column(line, text) != column {
+                break;
+            }
+            self.claimed.borrow_mut().entry(next).or_insert(at);
+            next = self.first_visible_line(next + 1, host, column, kind == Kind::Item, None);
+        }
         if kind == Kind::Note {
             // A new note definition is invisible to this pending marker. Its
             // foldable body stays with that definition; the next block decides
@@ -1206,11 +1315,22 @@ impl<'a> Walk<'a> {
         } else {
             rest
         };
-        // Off the marker column a skipped note's `+` is a letter of its body, as the gate read it (carve#5034).
-        if is_plus_marker(rest) && doc_column(line, rest) != skipped.column {
-            self.refuse_line = true;
-        }
+        // A second marker at the skipped column cannot claim the block the earlier
+        // marker took: it is consumed and linted (carve#5013). Off the column a
+        // skipped note's `+` is a letter of its body (carve#5034).
         let (host, from, end) = (skipped.host, skipped.at, skipped.end);
+        if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
+            let column = doc_column(line, rest);
+            if column == skipped.column {
+                c.consume_marker(self.mark, self.lines[at]);
+                self.consumed.push(self.first_line + at);
+                let kind = self.frames[host].kind;
+                self.refuse_plus(at, column, Some(kind), Refusal::Claimed, false);
+                self.refuse_line = false;
+            } else {
+                self.refuse_line = true;
+            }
+        }
         if at + 1 == end {
             if self.frames[host].plus == Some(from) {
                 self.frames[host].plus = Some(at);
@@ -1721,11 +1841,60 @@ impl<'a> Walk<'a> {
         inner.kind == Kind::Fence && (!missed || comment_line())
     }
 
+    /// Reports a `+` the ownership walk consumed without attaching it; true when
+    /// the line is written as a `%%` placeholder and the walk is done with it.
+    fn consume_refused_plus(
+        &mut self,
+        at: usize,
+        k: usize,
+        c: &mut Cursor<'a>,
+        plus_refusal: Option<Refusal>,
+        closes_descendant: bool,
+        pad: usize,
+    ) -> bool {
+        // A marker an earlier one claimed is reported, and hands the readers
+        // the block the earlier marker took (carve#5013).
+        let claimer_accepted = self.claimed.borrow().get(&at).is_some_and(|&from| {
+            self.accepted
+                .iter()
+                .any(|(line, _)| *line == self.first_line + from)
+        });
+        let column = doc_column(self.lines[at], c.rest);
+        let host = self.frames[k].kind;
+        if plus_refusal == Some(Refusal::Claimed) && claimer_accepted {
+            self.refuse_plus(at, column, Some(host), Refusal::Claimed, false);
+            self.refuse_line = false;
+            return false;
+        }
+        let Some(reason) = plus_refusal else {
+            return false;
+        };
+        // A refused marker renders nothing; its placeholder stays in the host
+        // so the next line keeps the same owner (carve#5013).
+        self.refuse_plus(at, column, Some(host), reason, false);
+        self.refuse_line = false;
+        self.skip_invisible(k, at, column, Some(c.out.clone()));
+        if !closes_descendant && reason != Refusal::Claimed {
+            c.out.push_str(&" ".repeat(pad));
+        }
+        c.consume_marker(self.mark, self.lines[at]);
+        self.consumed.push(self.first_line + at);
+        if self.trace.is_some() {
+            let line = self.first_line + at;
+            let record = TraceRecord::new(line, "S2", self.deepest(), Some("CARVE-P9-067"), "plus")
+                .cell(Some("B-plus-start".into()));
+            self.emit(at, record);
+        }
+        true
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
         let mut reached = 0;
         let mut plus = None;
+        // An eligible marker the next block does not attach to is still consumed (carve#5013).
+        let mut plus_refusal = None;
         let mut refused_by = None;
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
         self.sibling = None;
@@ -1740,22 +1909,18 @@ impl<'a> Walk<'a> {
                 {
                     let column = doc_column(self.lines[at], c.rest);
                     // A blank line has closed a note to a `+` at its marker.
-                    match if self.decide
+                    if self.decide
                         && f.kind == Kind::Note
                         && at > 0
                         && is_blank_line(self.lines[at - 1])
                     {
-                        Err(Refusal::WrongColumn)
-                    } else if self.decide {
-                        self.plus_attaches(k, at, column)
+                        refused_by = Some((Some(f.kind), Refusal::WrongColumn));
                     } else {
-                        Ok(())
-                    } {
-                        Ok(()) => {
-                            plus = Some(k);
-                            break;
+                        if self.decide {
+                            plus_refusal = self.plus_attaches(k, at, column).err();
                         }
-                        Err(reason) => refused_by = Some((Some(f.kind), reason)),
+                        plus = Some(k);
+                        break;
                     }
                 }
             }
@@ -1790,12 +1955,17 @@ impl<'a> Walk<'a> {
             self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {
+            let closes_descendant = self.frames.len() > k + 1;
             self.frames.truncate(k + 1);
             let f = self.top();
             f.para = false;
             let canon = f.marker.expect("plus frames carry a marker").1;
-            let shift = f.marker_shift;
+            let (frame_canon, shift) = (f.canon, f.marker_shift);
             c.lead_in(canon, shift, false);
+            let pad = frame_canon.saturating_sub(canon);
+            if self.consume_refused_plus(at, k, c, plus_refusal, closes_descendant, pad) {
+                return;
+            }
             if self.decide {
                 self.accept_plus(at, k, false);
                 let column = doc_column(self.lines[at], c.rest);
@@ -2486,6 +2656,7 @@ impl<'a> Walk<'a> {
         let form = self.classify(c.rest, frame, at);
         if matches!(form, Form::Text) {
             let mut taken = false;
+            let mut refused = false;
             if self.decide && is_cont_marker(c.rest) {
                 // Past the one space after a `>` the `+` is the quote's text (corpus 646).
                 let quote_text = self.frames[frame].kind == Kind::Quote && c.col > 0;
@@ -2501,20 +2672,47 @@ impl<'a> Walk<'a> {
                         let end = self.skip_invisible(frame, at, column, None);
                         self.note_attached(frame, end);
                     }
+                    // Past the one space after a `>` the `+` stays the quote's letter.
+                    Err(_) if quote_text => self.refuse_line = true,
+                    // Behind a lead tab the line is text (CARVE-P2-010).
+                    Err(reason) if behind_tab(self.lines[at], c.rest) => {
+                        let plus = doc_column(self.lines[at], c.rest);
+                        let host = self.frames[frame].kind;
+                        self.refuse_plus(at, plus, Some(host), reason, true);
+                    }
+                    // A refused first-block marker is consumed and renders nothing (carve#5013).
                     Err(reason) => {
                         let plus = doc_column(self.lines[at], c.rest);
                         let host = self.frames[frame].kind;
                         self.refuse_plus(at, plus, Some(host), reason, true);
+                        self.refuse_line = false;
+                        refused = true;
+                        let in_note = self.frames[..frame].iter().any(|f| f.kind == Kind::Note);
+                        if host == Kind::Note || (host == Kind::Item && in_note) {
+                            let lead = c.out.rfind("[^").map_or("", |end| &c.out[..end]);
+                            let lead: String = lead
+                                .chars()
+                                .map(|ch| if ch == '>' { ch } else { ' ' })
+                                .collect::<String>()
+                                + if host == Kind::Item { "      " } else { "  " };
+                            self.note_follower = Some((at, lead, host == Kind::Item));
+                        }
                     }
                 }
             }
             let col = c.col;
             let absorbs = false;
             c.lead(col);
+            if refused {
+                c.consume_marker(self.mark, self.lines[at]);
+                self.consumed.push(self.first_line + at);
+            }
             let f = &mut self.frames[frame];
+            // A refused item marker leaves the item empty, with no paragraph open.
+            let empty_item = refused && f.kind == Kind::Item;
             f.absorbs = absorbs;
-            f.para = !taken;
-            f.last = Last::Para;
+            f.para = !taken && !empty_item;
+            f.last = if empty_item { Last::None } else { Last::Para };
             if taken {
                 f.plus = Some(at);
             }

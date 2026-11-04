@@ -50,6 +50,6 @@ fn a_sub_block_behind_an_invisible_line_stays_tight() {
     // must not turn that into a paragraph.
     assert_eq!(
         html("- a\n\n  %% n\n  - b\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }

@@ -25,7 +25,7 @@ fn the_ticket_expecteds() {
         ),
         (
             ":: t\n: - +\np\n",
-            "<dl><dt>t</dt><dd><ul><li>+p</li></ul></dd></dl>",
+            "<dl><dt>t</dt><dd><ul><li></li></ul></dd></dl><p>p</p>",
         ),
         (
             "- a\n  * +\n[r]: /u\n  after\n",
@@ -36,8 +36,8 @@ fn the_ticket_expecteds() {
             "> +\n> x\n",
             "<blockquote><blockquote><p>x</p></blockquote></blockquote>",
         ),
-        ("- +\n- b\n", "<ul><li>+</li><li>b</li></ul>"),
-        ("- +\n  para\n", "<ul><li>+para</li></ul>"),
+        ("- +\n- b\n", "<ul><li></li><li>b</li></ul>"),
+        ("- +\n  para\n", "<ul><li>para</li></ul>"),
         // carve#4408
         (
             ":: t\n: +\nl\n : b\n",
@@ -49,7 +49,7 @@ fn the_ticket_expecteds() {
         ),
         (
             ":: t\n : +\nl\n : b\n",
-            "<dl><dt>t</dt><dd>+l</dd><dd>b</dd></dl>",
+            "<dl><dt>t</dt><dd></dd></dl><p>l: b</p>",
         ),
     ] {
         assert_html(source, want);
@@ -80,9 +80,9 @@ fn every_appendix_a_row_flips_as_the_report_says() {
     assert!(failed.is_empty(), "{failed:#?}");
 }
 
-/// Replacing a refused `+` with a letter changes the output only in that character.
+/// A `+` at a marker column is always a marker, so a refused one renders nothing (carve#5013).
 #[test]
-fn a_refused_plus_is_a_plain_letter() {
+fn a_refused_plus_renders_nothing() {
     let hosts: [&[&str]; 12] = [
         &["- +"],
         &["1. +"],
@@ -129,15 +129,8 @@ fn a_refused_plus_is_a_plain_letter() {
                 lines.push("see[^a]".to_string());
                 let source = lines.join("\n") + "\n";
                 let plain = to_html(&source);
-                if !plain.contains('+') {
-                    continue;
-                }
                 kept += 1;
-                let plus_line = head.last().unwrap();
-                let at = source.find(plus_line).unwrap() + plus_line.rfind('+').unwrap();
-                let mut letter = source.clone();
-                letter.replace_range(at..at + 1, "w");
-                assert_eq!(plain, to_html(&letter).replace('w', "+"), "{source:?}");
+                assert!(!plain.contains('+'), "{source:?}");
             }
         }
     }
@@ -149,7 +142,7 @@ fn a_source_holding_control_bytes_keeps_them() {
     let source = "\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\n\n- +\n- b\n";
     let html = to_html(source);
     assert!(html.contains('\u{1}'), "{html:?}");
-    assert!(html.contains("<li>+</li>"), "{html:?}");
+    assert!(html.contains("<li></li>"), "{html:?}");
 }
 
 #[test]
@@ -202,4 +195,12 @@ fn a_source_holding_every_control_byte_reads_every_plus_alike() {
         }
     }
     assert!(failed.is_empty(), "{} {failed:#?}", failed.len());
+}
+
+/// A consumed marker leaves no node, also inside a captioned quote (carve#5013).
+#[test]
+fn a_consumed_marker_in_a_captioned_quote_writes_nothing() {
+    let source = "> - +\n> - b\n^ cap\n";
+    assert_eq!(carve::to_carve(source), "> - {empty}\n> - b\n^ cap\n");
+    assert!(!carve::to_json(&carve::parse(source)).contains("comment"));
 }

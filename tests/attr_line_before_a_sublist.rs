@@ -25,7 +25,7 @@
 fn attributes_reach_a_nested_list() {
     assert_eq!(
         carve::to_html("- a\n\n  {.x}\n  - b\n"),
-        "<ul>\n  <li>a\n    <ul class=\"x\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul class=\"x\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -47,7 +47,7 @@ fn no_blank_line_is_needed_before_them() {
 fn a_deeper_sublist_takes_them_without_a_blank_too() {
     assert_eq!(
         carve::to_html("- a\n\n  - b\n    {.x}\n    - c\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul class=\"x\">\n          <li>c</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>b\n        <ul class=\"x\">\n          <li>c</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -55,7 +55,7 @@ fn a_deeper_sublist_takes_them_without_a_blank_too() {
 fn a_nested_ordered_list_takes_them_too() {
     assert_eq!(
         carve::to_html("- a\n\n  {.x}\n  1. b\n"),
-        "<ul>\n  <li>a\n    <ol class=\"x\">\n      <li>b</li>\n    </ol>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ol class=\"x\">\n      <li>b</li>\n    </ol>\n  </li>\n</ul>"
     );
 }
 
@@ -81,7 +81,7 @@ fn stacked_attribute_blocks_merge_the_way_they_do_at_top_level() {
     );
     assert_eq!(
         carve::to_html("- a\n\n  {.x}\n  {#i}\n  - b\n"),
-        "<ul>\n  <li>a\n    <ul class=\"x\" id=\"i\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul class=\"x\" id=\"i\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -123,7 +123,7 @@ fn a_blank_line_does_not_break_the_attachment() {
 fn a_deeper_sublist_takes_its_own() {
     assert_eq!(
         carve::to_html("- a\n\n  - b\n\n    {.x}\n    - c\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul class=\"x\">\n          <li>c</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li><p>b</p>\n        <ul class=\"x\">\n          <li>c</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -135,7 +135,7 @@ fn they_land_on_the_nested_list_and_nowhere_else() {
     let html = carve::to_html("- a\n\n  {.x}\n  - b\n- c\n");
     assert_eq!(
         html,
-        "<ul>\n  <li>a\n    <ul class=\"x\">\n      <li>b</li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul class=\"x\">\n      <li>b</li>\n    </ul>\n  </li>\n  <li><p>c</p></li>\n</ul>"
     );
     assert!(
         !html.starts_with("<ul class="),
@@ -145,16 +145,14 @@ fn they_land_on_the_nested_list_and_nowhere_else() {
 }
 
 #[test]
-fn the_item_stays_tight() {
-    // §17 L2: a blank before an item's sub-block leaves the item tight, so `a`
-    // renders bare. Carrying the attributes must not turn the sub-list into a
-    // second paragraph's worth of looseness.
+fn the_blank_above_the_attributes_loosens_the_item() {
+    // carve#5015: a blank before an item's sub-block loosens the list; the
+    // attribute line between them is invisible and does not change that.
     let html = carve::to_html("- a\n\n  {.x}\n  - b\n");
     assert!(
-        html.contains("<li>a\n"),
-        "the item lost its tight rendering: {html}"
+        html.contains("<li><p>a</p>"),
+        "the item should be loose: {html}"
     );
-    assert!(!html.contains("<p>a</p>"), "the item was loosened: {html}");
 }
 
 #[test]
@@ -184,7 +182,7 @@ fn a_later_sublist_does_not_inherit_them() {
 fn a_line_past_the_content_column_attributes_the_list_under_it() {
     assert_eq!(
         carve::to_html("- a\n\n   {.c}\n   - b\n"),
-        "<ul>\n  <li>a\n    <ul class=\"c\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul class=\"c\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -223,7 +221,7 @@ fn the_marker_abutting_form_still_attributes_the_item() {
     );
     assert_eq!(
         carve::to_html("- a\n\n  -{.x} b\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li class=\"x\">b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li class=\"x\">b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -231,7 +229,7 @@ fn the_marker_abutting_form_still_attributes_the_item() {
 fn a_code_fence_in_that_position_attaches() {
     assert_eq!(
         carve::to_html("- a\n\n  {.x}\n  ```\n  code\n  ```\n"),
-        "<ul>\n  <li>a\n    <pre class=\"x\"><code>code\n</code></pre>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <pre class=\"x\"><code>code\n</code></pre>\n  </li>\n</ul>"
     );
 }
 
@@ -239,7 +237,7 @@ fn a_code_fence_in_that_position_attaches() {
 fn a_block_quote_in_that_position_attaches() {
     assert_eq!(
         carve::to_html("- a\n\n  {.x}\n  > q\n"),
-        "<ul>\n  <li>a\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

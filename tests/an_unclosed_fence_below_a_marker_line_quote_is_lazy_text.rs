@@ -17,11 +17,11 @@ fn the_fence_line_folds_into_the_quoted_paragraph() {
         ),
         (
             "- - > +\n   ```\nx\n```\n",
-            "<ul><li><ul><li><blockquote><p>+</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
+            "<ul><li><ul><li><blockquote></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- 1. > +\n    ```\nx\n```\n",
-            "<ul><li><ol><li><blockquote><p>+</p></blockquote></li></ol><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
+            "<ul><li><ol><li><blockquote></blockquote></li></ol><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
@@ -49,7 +49,7 @@ fn a_fence_below_an_indented_quote_plus_and_a_nested_item_quote() {
         ),
         (
             "- a\n  - > +\n   ```\nx\n```\n",
-            "<ul><li>a<ul><li><blockquote><p>+</p></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
+            "<ul><li>a<ul><li><blockquote></blockquote></li></ul><pre><code></code></pre></li></ul><p>x</p><pre><code></code></pre>",
         ),
         (
             "- - > +\n    ```\nx\n```\n",

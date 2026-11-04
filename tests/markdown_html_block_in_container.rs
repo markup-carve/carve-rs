@@ -152,7 +152,7 @@ fn a_quote_holding_only_the_element_still_holds_it() {
 fn a_list_item_keeps_the_element_after_a_blank() {
     assert_eq!(
         carve("- item\n\n  <footer>x</footer>\n\nafter\n"),
-        "{loose}\n- item\n\n  ```=html\n  <footer>x</footer>\n  ```\n\nafter\n",
+        "- item\n\n  ```=html\n  <footer>x</footer>\n  ```\n\nafter\n",
     );
 }
 
@@ -171,7 +171,7 @@ fn a_list_item_keeps_the_element_on_a_continuation_line() {
 fn an_ordered_item_keeps_the_element() {
     assert_eq!(
         carve("1. item\n\n   <footer>x</footer>\n\nafter\n"),
-        "{loose}\n1. item\n\n   ```=html\n   <footer>x</footer>\n   ```\n\nafter\n",
+        "1. item\n\n   ```=html\n   <footer>x</footer>\n   ```\n\nafter\n",
     );
 }
 
@@ -179,7 +179,7 @@ fn an_ordered_item_keeps_the_element() {
 fn a_nested_item_keeps_the_element_at_its_content_column() {
     assert_eq!(
         carve("- outer\n\n  - inner\n\n    <footer>x</footer>\n\nafter\n"),
-        "{loose}\n- outer\n\n  {loose}\n  - inner\n\n    ```=html\n    <footer>x</footer>\n    ```\n\nafter\n",
+        "- outer\n\n  - inner\n\n    ```=html\n    <footer>x</footer>\n    ```\n\nafter\n",
     );
 }
 
@@ -187,7 +187,7 @@ fn a_nested_item_keeps_the_element_at_its_content_column() {
 fn an_item_inside_a_quote_keeps_the_element() {
     assert_eq!(
         carve("> - item\n>\n>   <footer>x</footer>\n\nafter\n"),
-        "> {loose}\n> - item\n>\n>   ```=html\n>   <footer>x</footer>\n>   ```\n\nafter\n",
+        "> - item\n>\n>   ```=html\n>   <footer>x</footer>\n>   ```\n\nafter\n",
     );
 }
 
@@ -195,7 +195,7 @@ fn an_item_inside_a_quote_keeps_the_element() {
 fn a_quote_inside_an_item_keeps_the_element() {
     assert_eq!(
         carve("- item\n\n  > quoted\n  >\n  > <footer>x</footer>\n\nafter\n"),
-        "{loose}\n- item\n\n  > quoted\n  >\n  > ```=html\n  > <footer>x</footer>\n  > ```\n\nafter\n",
+        "- item\n\n  > quoted\n  >\n  > ```=html\n  > <footer>x</footer>\n  > ```\n\nafter\n",
     );
 }
 

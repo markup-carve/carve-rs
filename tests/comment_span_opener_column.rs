@@ -74,7 +74,7 @@ fn a_code_closer_outside_the_item_does_not_change_interruption() {
     );
     assert_html(
         "- item\n %%%\n hidden\n  %%%\n  ```\ntail\n\n- other\n\n      ```\n",
-        "<ul>\n  <li>item\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>\n<ul>\n  <li>other\n    <pre><code></code></pre>\n  </li>\n</ul>",
+        "<ul>\n  <li>item\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>\n<ul>\n  <li><p>other</p>\n    <pre><code></code></pre>\n  </li>\n</ul>",
     );
 }
 
@@ -185,7 +185,7 @@ fn lazy_code_between_item_columns_drops_its_placing_indent() {
 fn the_nested_code_fold_survives_explicit_quote_prefixes() {
     assert_html(
         "> - a\n>   - b\n> %% c\n>     ```\n> tail\n",
-        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <p>tail</p>\n</blockquote>",
+        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li><p>b</p>\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <p>tail</p>\n</blockquote>",
     );
 }
 

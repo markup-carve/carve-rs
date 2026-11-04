@@ -21,7 +21,6 @@ fn the_block_past_the_invisible_lines_joins_the_quote() {
 }
 
 #[test]
-#[ignore = "carve#5013 port pending (carve-rs#3823): a refused `+` renders nothing"]
 fn a_nested_quote_still_refuses() {
     assert_eq!(
         flat("> > +\n%% c\ntext\n"),

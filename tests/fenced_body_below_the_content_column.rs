@@ -155,7 +155,7 @@ fn the_collectors_follow_a_fence_the_marker_line_did_not_open() {
     );
     assert_eq!(
         squash(&to_html("- a\n\n  ```\n  b\n y\n  ```\n")),
-        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y</p> <pre><code></code></pre>"
+        "<ul> <li><p>a</p> <pre><code>b </code></pre> </li> </ul> <p>y</p> <pre><code></code></pre>"
     );
     // And they follow CLOSERS: the item's first fence closes, a second one
     // opens, and it is the second that carries the item to the below-column

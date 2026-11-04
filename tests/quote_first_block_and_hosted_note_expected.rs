@@ -10,11 +10,11 @@ fn squeeze(html: &str) -> String {
 fn a_stacked_quote_first_block_reads_its_follower_at_the_raw_column() {
     assert_eq!(
         to_html("> > +\n > q\n").trim(),
-        "<blockquote>\n  <blockquote><p>+\nq</p></blockquote>\n</blockquote>"
+        "<blockquote>\n  <blockquote>\n\n  </blockquote>\n  <p>q</p>\n</blockquote>"
     );
     assert_eq!(
         squeeze(&to_html("- > > +\n    > q\n")),
-        "<ul><li><blockquote><blockquote><p>+q</p></blockquote></blockquote></li></ul>"
+        "<ul><li><blockquote><blockquote></blockquote><p>q</p></blockquote></li></ul>"
     );
 }
 

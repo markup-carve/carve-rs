@@ -25,12 +25,12 @@ fn a_captioned_quote_or_fence_stays_in_a_tight_item() {
         (
             "618-23",
             "- text\n\n  > q\n\n  ^ cap\n- c\n",
-            "- text\n  > q\n\n  cap\n- c\n",
+            "- text\n\n  > q\n\n  cap\n\n- c\n",
         ),
         (
             "618-26",
             "- text\n\n  > q\n\n  ^ cap\n",
-            "- text\n  > q\n\n  cap\n",
+            "- text\n\n  > q\n\n  cap\n",
         ),
         (
             "622-1",

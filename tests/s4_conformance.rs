@@ -174,7 +174,7 @@ fn quote_continuation_marker_attaches_following_block() {
     // A trailing `+` with no follower remains text in the quote.
     assert_eq!(
         carve::to_html("> a\n+"),
-        "<blockquote><p>a\n+</p></blockquote>"
+        "<blockquote><p>a</p></blockquote>"
     );
 }
 

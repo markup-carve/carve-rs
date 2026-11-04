@@ -51,7 +51,7 @@ fn the_reported_shapes_keep_the_band_run_as_payload() {
         ("- a\n\n    :::\n   p\n   :::\n  \n  tail\n", IN_BAND),
         (
             "- a\n\n    :::\n   p\n :::\n  \n  tail\n",
-            "<ul>\n  <li>a\n    <div>\n      <p>p</p>\n    </div>\n  </li>\n</ul>\n<div>\n  <p>tail</p>\n</div>",
+            "<ul>\n  <li><p>a</p>\n    <div>\n      <p>p</p>\n    </div>\n  </li>\n</ul>\n<div>\n  <p>tail</p>\n</div>",
         ),
     ] {
         assert_eq!(both_paths(src).trim(), expected, "{src:?}");

@@ -21,19 +21,7 @@ fn a_fence_run_that_dedents_out_of_a_child_keeps_the_outer_item_tight() {
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "2",
@@ -46,19 +34,7 @@ tail
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "3",
@@ -71,19 +47,7 @@ tail
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "4",
@@ -96,19 +60,7 @@ tail
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "5",
@@ -121,19 +73,7 @@ tail
 
     tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
- tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n tail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "6",
@@ -147,20 +87,7 @@ tail
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>one</li>
-      <li>two
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>one</p></li>\n      <li><p>two</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "7",
@@ -173,19 +100,7 @@ tail
 
    tail
 "#,
-            r#"<ol>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ol>"#,
+            "<ol>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ol>",
         ),
         (
             "8",
@@ -198,21 +113,7 @@ tail
 >
 >   tail
 "#,
-            r#"<blockquote>
-  <ul>
-    <li>outer
-      <ul>
-        <li>head
-          <pre><code>a
-</code></pre>
-        </li>
-      </ul>
-      <pre><code>
-tail
-</code></pre>
-    </li>
-  </ul>
-</blockquote>"#,
+            "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li><p>head</p>\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n      <pre><code>\ntail\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
         ),
         (
             "9",
@@ -226,20 +127,7 @@ tail
   tail
 - next
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-  <li>next</li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n  <li>next</li>\n</ul>",
         ),
         (
             "10",
@@ -252,19 +140,7 @@ tail
 
 - next
 "#,
-            r#"<ul>
-  <li><p>outer</p>
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-</code></pre>
-  </li>
-  <li><p>next</p></li>
-</ul>"#,
+            "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n</code></pre>\n  </li>\n  <li><p>next</p></li>\n</ul>",
         ),
         (
             "11",
@@ -277,17 +153,7 @@ tail
 
   tail
 "#,
-            r#"<ul>
-  <li><p>outer</p>
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <p>tail</p>
-  </li>
-</ul>"#,
+            "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>",
         ),
         (
             "12",
@@ -302,20 +168,7 @@ tail
 
   c
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>b
-
-c
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>b\n\nc\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "13",
@@ -328,19 +181,7 @@ c
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <pre><code>a
-</code></pre>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
         (
             "14",
@@ -354,23 +195,7 @@ tail
 
   tail
 "#,
-            r#"<ul>
-  <li>outer
-    <ul>
-      <li>head
-        <ul>
-          <li>deep
-            <pre><code>a
-</code></pre>
-          </li>
-        </ul>
-      </li>
-    </ul>
-    <pre><code>
-tail
-</code></pre>
-  </li>
-</ul>"#,
+            "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <ul>\n          <li><p>deep</p>\n            <pre><code>a\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>",
         ),
     ];
     let failures: Vec<_> = rows
@@ -393,8 +218,8 @@ fn a_folded_child_fence_does_not_hide_the_outer_second_paragraph() {
         ("1. outer\n   - head\n     ```\n     a\n    ```\n\n   tail\n", "<ol>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ol>"),
         ("> - outer\n>   - head\n>     ```\n>     a\n>    ```\n>\n>   tail\n", "<blockquote>\n  <ul>\n    <li>outer\n      <ul>\n        <li>head\n          <pre><code>a\n</code></pre>\n        </li>\n      </ul>\n      <pre><code>\ntail\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"),
         ("- outer\n  - head\n     ```\n     a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
-        ("- outer\n  - head\n\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
-        ("- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n\n    ```\n    a\n   ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
+        ("- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n", "<ul>\n  <li>outer\n    <ul>\n      <li><p>head</p>\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\ntail\n</code></pre>\n  </li>\n</ul>"),
         ("- outer\n  - head\n    ```\n    a\n    ```\n\n  tail\n", "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <p>tail</p>\n  </li>\n</ul>"),
         ("- outer\n  - head\n    ```\n    a\n   ```\n- next\n", "<ul>\n  <li>outer\n    <ul>\n      <li>head\n        <pre><code>a\n</code></pre>\n      </li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n  <li>next</li>\n</ul>"),
     ];

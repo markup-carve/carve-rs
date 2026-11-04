@@ -904,7 +904,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             if building_maps {
                 line_map.push(cur.source_line(cur.pos));
             }
-            reached.push(false);
+            // A separator an outer collector inserted before a fence stays marked.
+            reached.push(inserted_separator(cur, cur.pos));
             if building_maps {
                 col_map.push(
                     cur.source_col(cur.pos)
@@ -2368,4 +2369,16 @@ fn marker_line_comment_opener(line: &str) -> Option<(CommentFenceOpen, usize)> {
     let rest = trim_ascii_start(body);
     let col = advance_columns(&lead[..lead.len() - rest.len()], col);
     detect_comment_fence_line(rest).map(|open| (open, col))
+}
+
+/// A blank an outer collector inserted to keep a fence's interruption: it is
+/// marked as reaching the column and has no origin (carve#5015).
+pub(in crate::parse) fn inserted_separator(cur: &LineCursor<'_>, pos: usize) -> bool {
+    cur.lines.line(pos).is_some_and(is_blank_line)
+        && cur.reached.and_then(|flags| flags.get(pos).copied()) == Some(true)
+        && cur.source_line(pos).is_none()
+        && cur
+            .lines
+            .line(pos + 1)
+            .is_some_and(|next| detect_fence_open(trim_ascii_start(next)).is_some())
 }
