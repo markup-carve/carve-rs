@@ -151,11 +151,13 @@ impl Transparent {
             lines.push(index);
         }
         // A document ending in a newline keeps it, whichever line was erased.
-        if normalized.ends_with('\n') && !visible.ends_with('\n') && !lines.is_empty() {
-            if lines.last() != Some(&(authored.len() - 1)) {
-                visible.push('\n');
-                lines.push(authored.len() - 1);
-            }
+        if normalized.ends_with('\n')
+            && !visible.ends_with('\n')
+            && !lines.is_empty()
+            && lines.last() != Some(&(authored.len() - 1))
+        {
+            visible.push('\n');
+            lines.push(authored.len() - 1);
         }
         Some(Transparent {
             visible,
@@ -204,7 +206,7 @@ impl Transparent {
                         self.authored_line(l + 1) - 1
                     }
                 });
-                at.is_none_or(|at| at < line.index)
+                at.map_or(true, |at| at < line.index)
             };
             if defs.get(&key).is_some_and(|existing| !earlier(existing)) {
                 continue;
@@ -405,7 +407,7 @@ fn contains(pos: &Pos, at: (usize, usize)) -> bool {
 /// Where a node starting at `at` goes among `blocks`, by source order.
 fn position_index(blocks: &[BlockNode], at: (usize, usize)) -> usize {
     blocks.partition_point(|block| {
-        crate::ast_json::block_pos(block).is_none_or(|pos| at_or_before(pos, at))
+        crate::ast_json::block_pos(block).map_or(true, |pos| at_or_before(pos, at))
     })
 }
 
@@ -437,9 +439,8 @@ fn place_comment(blocks: &mut Vec<BlockNode>, node: BlockNode, pos: &Pos, owner:
     let Some(node) = node else {
         return;
     };
-    let node = match place_in_owner(blocks, node, pos, owner) {
-        Ok(()) => return,
-        Err(node) => node,
+    let Some(node) = place_in_owner(blocks, node, pos, owner) else {
+        return;
     };
     let siblings = containing_blocks(blocks, at);
     let index = position_index(siblings, at);
@@ -489,23 +490,24 @@ impl SubtreeVisitor for AfterParagraph<'_> {
 }
 
 /// The owner the ownership walk named for the erased line, when it is a quote or an item.
+/// Hands the node back when no such owner holds it.
 fn place_in_owner(
-    blocks: &mut Vec<BlockNode>,
+    blocks: &mut [BlockNode],
     node: BlockNode,
     pos: &Pos,
     owner: &str,
-) -> Result<(), BlockNode> {
+) -> Option<BlockNode> {
     let Some(last) = owner.rsplit('/').next() else {
-        return Err(node);
+        return Some(node);
     };
     let Some((kind, line)) = last.split_once(':') else {
-        return Err(node);
+        return Some(node);
     };
     let Ok(line) = line.parse::<usize>() else {
-        return Err(node);
+        return Some(node);
     };
     if kind != "quote" && kind != "item" {
-        return Err(node);
+        return Some(node);
     }
     let nth = owner.split('/').filter(|segment| *segment == last).count();
     let mut seen = 0;
@@ -519,10 +521,7 @@ fn place_in_owner(
         &mut node,
         pos,
     );
-    match node {
-        None => Ok(()),
-        Some(node) => Err(node),
-    }
+    node
 }
 
 fn extend_end(target: &mut Option<Pos>, pos: &Pos) {
@@ -536,7 +535,7 @@ fn extend_end(target: &mut Option<Pos>, pos: &Pos) {
 
 /// Returns whether the node was placed in this subtree.
 fn owner_walk(
-    blocks: &mut Vec<BlockNode>,
+    blocks: &mut [BlockNode],
     quote: bool,
     line: usize,
     nth: usize,
