@@ -188,7 +188,7 @@ fn a_marker_line_fence_after_a_checkbox_owns_lines_at_its_own_column() {
     for (source, html) in [
         (
             "- [ ] - ```\n      +\n\ntail",
-            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n    +\n  </li>\n</ul>\n<p>tail</p>",
+            "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>",
         ),
         (
             "- [ ] - [ ] ```\n  x\n",

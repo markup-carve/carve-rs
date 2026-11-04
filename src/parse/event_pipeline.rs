@@ -2106,27 +2106,29 @@ mod unified_list_tests {
 
     #[test]
     fn shared_owner_builds_item_headings() {
-        for source in ["- a\n  # H\n", "- a\n\n  # H\n"] {
-            let lines: Vec<&str> = source.lines().collect();
-            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
-            assert_eq!(consumed, lines.len());
-            assert!(list.tight);
-            assert!(matches!(list.items[0].children[1], BlockNode::Heading(_)));
-        }
+        let lines: Vec<&str> = "- a\n  # H\n".lines().collect();
+        let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+        assert_eq!(consumed, lines.len());
+        assert!(list.tight);
+        assert!(matches!(list.items[0].children[1], BlockNode::Heading(_)));
+        // A blank before the heading loosens the item; the tree reader owns it (carve#5015).
+        let lines: Vec<&str> = "- a\n\n  # H\n".lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
     }
 
     #[test]
     fn shared_owner_builds_marked_quote() {
-        for source in ["- one\n  > q\n", "- one\n\n  > q\n"] {
-            let lines: Vec<&str> = source.lines().collect();
-            let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
-            assert_eq!(consumed, lines.len());
-            assert!(list.tight);
-            assert!(matches!(
-                list.items[0].children[1],
-                BlockNode::BlockQuote(_)
-            ));
-        }
+        let lines: Vec<&str> = "- one\n  > q\n".lines().collect();
+        let (list, consumed) = parse_unified_list(&lines, 0, &Options::default()).unwrap();
+        assert_eq!(consumed, lines.len());
+        assert!(list.tight);
+        assert!(matches!(
+            list.items[0].children[1],
+            BlockNode::BlockQuote(_)
+        ));
+        // A blank before the quote loosens the item; the tree reader owns it (carve#5015).
+        let lines: Vec<&str> = "- one\n\n  > q\n".lines().collect();
+        assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
         let lazy = "- one\n  > q\n  lazy continuation\n";
         let lines: Vec<&str> = lazy.lines().collect();
         assert!(parse_unified_list(&lines, 0, &Options::default()).is_none());
@@ -2147,8 +2149,6 @@ mod unified_list_tests {
     fn shared_owner_builds_closed_fences() {
         for source in [
             "- a\n  ```rs\n  let x = 1;\n  ```\n",
-            "- a\n\n  ```rs\n  let x = 1;\n  ```\n",
-            "- a\n\n  ```rs\n  let x = 1;\n  ```\n\n- b\n",
             "- a\n  ```rs\n  let x = 1;\n  ```\n\n  following\n",
             "- a\n  ```=latex\n  \\x\n  ```\n",
             "- a\n  ```rs\n  let x = 1;\n  ```\n- b\n",
@@ -2285,11 +2285,15 @@ mod unified_list_tests {
     fn raw_fence_does_not_loosen_nested_list() {
         let source = "- a\n\n  - b\n\n    ```=latex\n    \\x\n    ```\n";
         let lines: Vec<&str> = source.lines().collect();
+        // The blank before the sub-list loosens the item, so the direct reader
+        // declines and the tree reader decides (carve#5015).
         let direct = parse_unified_list(&lines, 0, &Options::default());
-        assert!(direct.is_some());
-        let (candidate, _) = parse_document(source).unwrap();
+        assert!(direct.is_none());
         let standard = parse_with_options(source, &Options::default());
-        assert_eq!(candidate, standard);
+        let BlockNode::List(list) = &standard.children[0] else {
+            panic!("expected a list");
+        };
+        assert!(!list.tight);
     }
 
     #[test]

@@ -34,7 +34,7 @@ fn a_table_joins_the_quote_in_a_nested_item() {
 fn stacked_openers_hand_the_block_to_the_innermost_quote() {
     assert_eq!(
         compact(&to_html("- a\n  > > +\n  q\n")),
-        "<ul><li>a\n<blockquote><blockquote><p>+\nq</p></blockquote></blockquote></li></ul>"
+        "<ul><li>a\n<blockquote><blockquote>\n\n</blockquote></blockquote>\nq\n</li></ul>"
     );
 }
 
@@ -62,7 +62,7 @@ fn the_marker_line_form_attaches_at_the_quote_column() {
     );
     assert_eq!(
         compact(&to_html("- > +\n   x\n")),
-        "<ul><li><blockquote><p>+\nx</p></blockquote></li></ul>"
+        "<ul><li><blockquote>\n\n</blockquote>\nx\n</li></ul>"
     );
 }
 

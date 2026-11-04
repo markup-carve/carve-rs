@@ -16,14 +16,18 @@ fn refused_first_block_leaves_an_intervening_list_in_the_description() {
 #[test]
 fn a_document_column_line_does_not_attach_to_a_nested_item() {
     let html = to_html(":: t\n: - +\nx\n");
-    assert!(html.contains("<li>+\nx</li>"), "{html}");
+    // The refused marker renders nothing and `x` ends the description (carve#5013).
+    assert!(
+        html.contains("<li></li>") && html.contains("<p>x</p>"),
+        "{html}"
+    );
 }
 
 #[test]
-fn a_refused_second_plus_is_text_in_the_attached_item_paragraph() {
+fn a_refused_second_plus_renders_nothing_in_the_attached_item_paragraph() {
     for source in ["> - q\n> +\n> x\n> +\n", "::: box\n- q\n+\nx\n+\n:::\n"] {
         let html = to_html(source);
-        assert!(html.contains("x\n+"), "{source:?}: {html}");
+        assert!(html.contains("<li>q\nx</li>"), "{source:?}: {html}");
         assert!(!html.contains("<p>+</p>"), "{source:?}: {html}");
     }
 }

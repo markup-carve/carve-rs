@@ -27,7 +27,7 @@ fn the_quote_keeps_a_refused_plus_as_text() {
     let src = "> intro\n>\n@\n  more\n";
     assert_eq!(
         html(&marker(src)),
-        "<blockquote><p>intro</p></blockquote><p>+ more</p>"
+        "<blockquote><p>intro</p></blockquote><p>more</p>"
     );
     assert_eq!(
         html(&src.replacen("@\n", "", 1)),

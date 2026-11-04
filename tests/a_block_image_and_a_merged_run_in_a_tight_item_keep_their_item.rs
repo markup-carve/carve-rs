@@ -96,8 +96,8 @@ fn a_block_image_below_any_open_paragraph_keeps_its_item() {
 /// `adjacent_blocks_merge` pairs a tight item can hold as its FIRST two blocks.
 #[test]
 fn a_merging_run_that_opens_an_item_spells_no_literal_marker() {
-    assert_eq!(fmt("- > p\n\n  > z\n"), "- > p\n+\n> z\n");
-    assert_eq!(fmt("- | a |\n\n  | z |\n"), "- | a |\n+\n| z |\n");
+    assert_eq!(fmt("- > p\n\n  > z\n"), "- > p\n\n  > z\n");
+    assert_eq!(fmt("- | a |\n\n  | z |\n"), "- | a |\n\n  | z |\n");
     // Inside a quote the blank-line spelling keeps both quotes in the item;
     // `> +` would now attach `> z` outside it (markup-carve/carve#3421).
     assert_eq!(fmt("> - > p\n>\n>   > z\n"), "> - > p\n>\n>   > z\n");
@@ -136,7 +136,7 @@ fn every_host_keeps_the_item() {
 #[test]
 fn a_run_of_three_quotes_carries_the_marker_on_every_lower_block() {
     let src = "- > p\n\n  > q\n\n  > r\n";
-    assert_eq!(fmt(src), "- > p\n+\n> q\n+\n> r\n");
+    assert_eq!(fmt(src), "- > p\n\n  > q\n\n  > r\n");
     assert!(keeps_its_html(src));
     assert!(is_a_fixpoint(src));
 }

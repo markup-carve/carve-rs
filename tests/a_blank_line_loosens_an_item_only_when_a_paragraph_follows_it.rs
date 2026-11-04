@@ -1,5 +1,10 @@
-//! A blank line inside a list item loosens it ONLY when a PARAGRAPH follows the
-//! blank (markup-carve/carve#1633, narrowing markup-carve/carve#1622).
+//! RULED AGAIN (markup-carve/carve#5015): PART 9 §17 L2 is withdrawn, and a
+//! blank line before an item's direct child block of ANY kind loosens the list.
+//! The blank-above assertions below follow that ruling; a blank inside a
+//! container or fence that has no blank above it is still the container's own.
+//!
+//! Earlier: a blank line inside a list item loosened it ONLY when a PARAGRAPH
+//! followed the blank (markup-carve/carve#1633, narrowing markup-carve/carve#1622).
 //!
 //! The mechanism is markup-carve/carve#1266's: an attached block CONSUMES the
 //! blank the gap held. A container has an opener to absorb the separation, so
@@ -37,10 +42,10 @@ fn html(source: &str) -> String {
 /// takes the blank, so the item stays TIGHT. This crate published `tight=false`
 /// here and was the only engine that did.
 #[test]
-fn a_blank_line_above_an_attached_container_does_not_loosen() {
+fn a_blank_line_above_an_attached_container_loosens() {
     let source = "- x\n\n  ::: d\n  a\n\n  b\n  :::\n- z\n";
-    assert!(tight(source));
-    assert!(!html(source).contains("<p>x</p>"), "{}", html(source));
+    assert!(!tight(source));
+    assert!(html(source).contains("<p>x</p>"), "{}", html(source));
 }
 
 /// Corpus `362-an-unterminated-container-does-not-extend-the-item-past-a-blank-line-5`.
@@ -64,7 +69,7 @@ fn the_closer_is_a_spelling_and_does_not_move_tightness() {
     let closed = "- x\n\n  ::: d\n  a\n\n  b\n  :::\n";
     let unclosed = "- x\n\n  ::: d\n  a\n\n  b\n";
     assert_eq!(tight(closed), tight(unclosed));
-    assert!(tight(unclosed));
+    assert!(!tight(unclosed));
 }
 
 /// THE CONTRAST, and the one shape that still loosens: a PARAGRAPH after the
@@ -89,21 +94,23 @@ fn an_attached_container_with_no_blank_above_it_stays_tight() {
 /// tight both before and after the narrowing, so it discriminates nothing on its
 /// own and is here to show the change did not reach it.
 #[test]
-fn a_container_holding_one_block_stays_tight_below_a_blank() {
-    assert!(tight("- x\n\n  ::: d\n  a\n  :::\n"));
+fn a_container_holding_one_block_loosens_below_a_blank() {
+    assert!(!tight("- x\n\n  ::: d\n  a\n  :::\n"));
 }
 
 /// A CODE FENCE BODY IS VERBATIM, so a blank inside one is that block's own
 /// content, blank line above it or not.
 #[test]
 fn a_blank_inside_a_code_fence_still_does_not_loosen() {
-    assert!(tight("- x\n\n  ```\n  a\n\n  b\n  ```\n"));
+    assert!(tight("- x\n  ```\n  a\n\n  b\n  ```\n"));
+    // The blank ABOVE the fence is the item's and loosens it (carve#5015).
+    assert!(!tight("- x\n\n  ```\n  a\n\n  b\n  ```\n"));
 }
 
 /// The kinds a blank line has always kept tight, swept so the narrowing is known
 /// not to have reached them. Every one agrees across carve-js and carve-php.
 #[test]
-fn a_blank_line_above_the_other_block_kinds_still_keeps_the_item_tight() {
+fn a_blank_line_above_the_other_block_kinds_loosens_the_item() {
     for source in [
         "- x\n\n  - y\n",
         "- x\n\n  # h\n",
@@ -112,6 +119,6 @@ fn a_blank_line_above_the_other_block_kinds_still_keeps_the_item_tight() {
         "- x\n\n  ---\n",
         "- x\n\n  {.c}\n  > q\n",
     ] {
-        assert!(tight(source), "{source:?} should still be tight");
+        assert!(!tight(source), "{source:?} should be loose (carve#5015)");
     }
 }

@@ -52,11 +52,11 @@ fn first_block_refusals_name_the_quote_and_footnote() {
             .into_iter()
             .find(|warning| warning.rule == "continuation-marker-refused")
             .unwrap();
+        // A refused marker renders nothing in either host (carve#5013).
         assert!(
-            warning.message.contains("remains text in the"),
-            "{warning:?}"
+            warning.message.contains("renders nothing"),
+            "{warning:?} {host}"
         );
-        assert!(warning.message.contains(host), "{warning:?}");
     }
 }
 

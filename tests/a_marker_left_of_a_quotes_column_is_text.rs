@@ -19,7 +19,7 @@ fn with_marker_at(column: usize) -> String {
     html(&format!("- x\n  > q\n{}+\n", " ".repeat(column)))
 }
 
-const KEPT: &str = "<ul>\n  <li>x\n    <blockquote><p>q\n+</p></blockquote>\n  </li>\n</ul>";
+const KEPT: &str = "<ul>\n  <li>x\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>";
 
 #[test]
 fn a_dangling_column_zero_plus_stays_in_the_quote() {

@@ -29,7 +29,7 @@ fn a_term_led_sublist_keeps_its_terms_and_lazy_column() {
 fn a_refused_plus_before_an_attribute_run_stays_text() {
     assert_eq!(
         html(":: t\n: a\n+\n{x}\n: b\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n+</dd>\n</dl>\n<p x=\"\">: b</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p x=\"\">: b</p>"
     );
 }
 

@@ -185,6 +185,9 @@ pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
             match block {
                 BlockNode::BlockQuote(b) => sweep(&mut b.children, keep),
                 BlockNode::Div(b) => sweep(&mut b.children, keep),
+                BlockNode::Section(b) => sweep(&mut b.children, keep),
+                BlockNode::Admonition(b) => sweep(&mut b.children, keep),
+                BlockNode::Directive(b) => sweep(&mut b.children, keep),
                 BlockNode::List(list) => {
                     for item in &mut list.items {
                         sweep(&mut item.children, keep);

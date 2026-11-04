@@ -1,15 +1,15 @@
 [
   {
     "source": "> +\n>\n",
-    "html": "<blockquote><p>+</p></blockquote>"
+    "html": "<blockquote>\n\n</blockquote>"
   },
   {
     "source": "> a\n>\n+\n>\n",
-    "html": "<blockquote><p>a</p></blockquote>\n<p>+</p>\n<blockquote>\n\n</blockquote>"
+    "html": "<blockquote><p>a</p></blockquote>\n<blockquote>\n\n</blockquote>"
   },
   {
     "source": ":: t\n: > 1. +\n>   x\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <ol>\n        <li>+</li>\n      </ol>\n    </blockquote>\n  </dd>\n</dl>\n<blockquote><p>x</p></blockquote>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <ol>\n        <li></li>\n      </ol>\n    </blockquote>\n  </dd>\n</dl>\n<blockquote><p>x</p></blockquote>"
   },
   {
     "source": "> q\n+\n+\ntail\n",
@@ -21,23 +21,23 @@
   },
   {
     "source": "- a\n+\n{x}\n- c\n",
-    "html": "<ul>\n  <li>a\n+</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
+    "html": "<ul>\n  <li>a</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
   },
   {
     "source": "- +\n{x}\n- c\n",
-    "html": "<ul>\n  <li>+</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
+    "html": "<ul>\n  <li></li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
   },
   {
     "source": ":: t\n: +\n{x}\n: b\n",
-    "html": "<dl>\n  <dt>t</dt>\n  <dd>+</dd>\n</dl>\n<p x=\"\">: b</p>"
+    "html": "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p x=\"\">: b</p>"
   },
   {
     "source": "- a\n+\n{x}\n  - c\n",
-    "html": "<ul>\n  <li>a\n+</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
+    "html": "<ul>\n  <li>a</li>\n</ul>\n<ul x=\"\">\n  <li>c</li>\n</ul>"
   },
   {
     "source": "> - a\n> +\n> {x}\n>   - c\n",
-    "html": "<blockquote>\n  <ul>\n    <li>a\n+</li>\n  </ul>\n  <ul x=\"\">\n    <li>c</li>\n  </ul>\n</blockquote>"
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <ul x=\"\">\n    <li>c</li>\n  </ul>\n</blockquote>"
   },
   {
     "source": "> - :: t\n - x\n",
@@ -57,7 +57,7 @@
   },
   {
     "source": "- - - ```\n      x\n    +\ntail\n",
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <pre><code>x\n</code></pre>\n          </li>\n        </ul>\n        +\ntail\n      </li>\n    </ul>\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <pre><code>x\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "source": "> | a |\n> + b |\ntail\n",

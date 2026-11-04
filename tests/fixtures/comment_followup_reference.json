@@ -85,7 +85,7 @@
   },
   {
     "source": ":: term\n:  intro\n+\n  more\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>intro\n+\nmore</dd>\n</dl>"
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>intro</dd>\n</dl>\n<p>more</p>"
   },
   {
     "source": ":: term\n:  intro\n%% c\n  more\n",
@@ -93,7 +93,7 @@
   },
   {
     "source": ":: term\n:  intro\n+\n more\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>intro\n+\nmore</dd>\n</dl>"
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>intro</dd>\n</dl>\n<p>more</p>"
   },
   {
     "source": ":: term\n:  intro\n%% c\n more\n",
@@ -101,7 +101,7 @@
   },
   {
     "source": "> intro\n>\n+\n  more\n",
-    "html": "<blockquote><p>intro</p></blockquote>\n<p>+\nmore</p>"
+    "html": "<blockquote><p>intro</p></blockquote>\n<p>more</p>"
   },
   {
     "source": "> intro\n>\n%% c\n  more\n",
@@ -109,7 +109,7 @@
   },
   {
     "source": "- intro\n+\n  more\n",
-    "html": "<ul>\n  <li>intro\n+\nmore</li>\n</ul>"
+    "html": "<ul>\n  <li>intro\n    more\n  </li>\n</ul>"
   },
   {
     "source": "- intro\n%% c\n  more\n",

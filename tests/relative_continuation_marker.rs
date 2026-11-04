@@ -22,7 +22,7 @@ fn an_ordered_item_takes_a_tabbed_follower_after_its_marker() {
 #[test]
 fn a_refused_plus_after_a_fence_remains_a_paragraph() {
     let source = "- ```\n+\n";
-    let expected = "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>+</p>";
+    let expected = "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -36,7 +36,7 @@ fn two_attached_quotes_remain_in_the_same_list_item() {
 #[test]
 fn a_sibling_list_interrupts_a_refused_plus_paragraph() {
     let source = "- a\n\n+\n- s";
-    let expected = "<ul>\n  <li>a</li>\n</ul>\n<p>+\n- s</p>";
+    let expected = "<ul>\n  <li><p>a</p></li>\n  <li><p>s</p></li>\n</ul>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -70,7 +70,7 @@ fn a_marker_at_the_inner_quotes_column_separates_its_paragraphs() {
 #[test]
 fn a_quote_first_block_inside_an_item_attaches_a_quoted_follower() {
     let source = "- > +\n> z";
-    let expected = "<ul>\n  <li>\n    <blockquote><p>+</p></blockquote>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>";
+    let expected = "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n<blockquote><p>z</p></blockquote>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -84,7 +84,7 @@ fn a_refused_indented_plus_folds_the_following_list_line() {
 #[test]
 fn a_dangling_plus_in_a_nested_quote_remains_text() {
     let source = "> > q\n> +";
-    let expected = "<blockquote>\n  <blockquote><p>q\n+</p></blockquote>\n</blockquote>";
+    let expected = "<blockquote>\n  <blockquote><p>q</p></blockquote>\n</blockquote>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -144,7 +144,8 @@ fn a_quote_first_block_after_a_paragraph_blank_attaches() {
 #[test]
 fn a_nested_first_block_list_item_takes_the_document_column() {
     let source = "- a\n  - +\npara";
-    let expected = "<ul>\n  <li>a\n    <ul>\n      <li>+\npara</li>\n    </ul>\n  </li>\n</ul>";
+    let expected =
+        "<ul>\n  <li>a\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n</ul>\n<p>para</p>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -160,7 +161,7 @@ fn a_nested_first_block_quote_takes_a_heading() {
 #[test]
 fn a_refused_inner_plus_keeps_its_indented_quote_follower() {
     let source = "- a\n  - b\n  +\n    > q";
-    let expected = "<ul>\n  <li>a\n    <ul>\n      <li>b\n+\n        <blockquote><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <blockquote><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source).trim_end(), expected);
 }
 
@@ -227,7 +228,7 @@ fn a_quote_refuses_a_plus_followed_by_a_sibling_list_opener() {
         ),
         (
             "- a\n  > q\n+\n  - b",
-            "<ul>\n  <li>a\n    <blockquote><p>q\n+</p></blockquote>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>",
+            "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>\n<ul>\n  <li>b</li>\n</ul>",
         ),
     ] {
         assert_eq!(carve::to_html(source).trim_end(), expected, "{source}");

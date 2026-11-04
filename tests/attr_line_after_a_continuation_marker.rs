@@ -83,7 +83,7 @@ fn a_sublist_after_the_marker_takes_them() {
     // item's paragraph, so the list was not even built.
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n  - b\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>\n<ul class=\"x\">\n  <li>b</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<ul class=\"x\">\n  <li>b</li>\n</ul>"
     );
 }
 
@@ -184,15 +184,15 @@ fn a_refused_marker_leaves_attributes_for_later_blocks() {
     // floats in its own scope under §15 A2a, and CARVE-P9-085 keeps `+` as text.
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n\n> q\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>\n<blockquote class=\"x\"><p>q</p></blockquote>"
+        "<ul>\n  <li>a</li>\n</ul>\n<blockquote class=\"x\"><p>q</p></blockquote>"
     );
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>"
     );
     assert_eq!(
         carve::to_html("- a\n+\n{.x}\n- b\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>\n<ul class=\"x\">\n  <li>b</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n</ul>\n<ul class=\"x\">\n  <li>b</li>\n</ul>"
     );
 }
 
@@ -206,7 +206,7 @@ fn control_an_indented_line_after_the_marker_refuses_attachment() {
     // stays in the item, while the quote starts outside it.
     assert_eq!(
         carve::to_html("- a\n+\n  {.x}\n> q\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
     );
 }
 
@@ -224,7 +224,7 @@ fn control_the_marker_with_no_attribute_line_is_unchanged() {
     );
     assert_eq!(
         carve::to_html("- a\n+\n  - b\n"),
-        "<ul>\n  <li>a\n+\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

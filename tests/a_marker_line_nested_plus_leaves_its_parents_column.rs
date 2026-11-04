@@ -6,7 +6,7 @@ fn html(source: &str) -> String {
     carve::to_html(source)
 }
 
-const OUTER_TAKES_IT: &str = "<ul>\n  <li>\n    <ul>\n      <li>+</li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>";
+const OUTER_TAKES_IT: &str = "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    <pre><code></code></pre>\n  </li>\n</ul>";
 
 #[test]
 fn a_fence_between_the_nested_marker_and_content_columns_opens_in_the_outer_item() {

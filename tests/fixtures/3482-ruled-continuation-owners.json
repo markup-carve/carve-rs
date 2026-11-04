@@ -143,7 +143,7 @@
   {
     "name": "1b refused second marker",
     "source": "- a\n\n  ```\n+\n+\n\ntail\n",
-    "html": "<ul>\n  <li>a\n    <pre><code></code></pre>\n    +\n  </li>\n</ul>\n<p>tail</p>",
+    "html": "<ul>\n  <li><p>a</p>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>",
     "ast": {
       "type": "document",
       "children": [
@@ -196,7 +196,7 @@
   {
     "name": "1b letter control",
     "source": "- a\n\n  ```\n+\nz\n\ntail\n",
-    "html": "<ul>\n  <li>a\n    <pre><code></code></pre>\n    z\n  </li>\n</ul>\n<p>tail</p>",
+    "html": "<ul>\n  <li><p>a</p>\n    <pre><code></code></pre>\n    <p>z</p>\n  </li>\n</ul>\n<p>tail</p>",
     "ast": {
       "type": "document",
       "children": [

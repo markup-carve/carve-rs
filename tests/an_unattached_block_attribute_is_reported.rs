@@ -150,7 +150,7 @@ fn a_refused_marker_leaves_an_attribute_for_the_later_quote() {
     assert_eq!(found.len(), 0, "{found:?}");
     assert_eq!(
         html("- a\n+\n{.x}\n\n> q\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>\n<blockquote class=\"x\"><p>q</p></blockquote>"
+        "<ul>\n  <li>a</li>\n</ul>\n<blockquote class=\"x\"><p>q</p></blockquote>"
     );
 }
 
@@ -210,7 +210,7 @@ fn an_attribute_line_a_refused_marker_leaves_behind_is_reported() {
     // outside the list.
     assert_eq!(
         html("- a\n+\n  {.x}\n> q\n"),
-        "<ul>\n  <li>a\n+</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
     );
 }
 
@@ -248,7 +248,7 @@ fn a_block_that_takes_no_attributes_is_not_a_block_they_reached() {
 
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].line, 3, "{found:?}");
-    assert_eq!(html("- a\n+\n{.x}\n%% c\n"), "<ul>\n  <li>a\n+</li>\n</ul>");
+    assert_eq!(html("- a\n+\n{.x}\n%% c\n"), "<ul>\n  <li>a</li>\n</ul>");
     // The twin, which always reported.
     assert_eq!(unattached("{.x}\n\n%% c\n").len(), 1);
 }

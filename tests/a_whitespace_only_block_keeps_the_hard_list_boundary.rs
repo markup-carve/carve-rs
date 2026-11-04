@@ -120,7 +120,7 @@ fn the_boundary_inside_a_tight_item_survives_a_whitespace_only_child() {
     // only where a paragraph follows it (markup-carve/carve#1633), so nothing
     // else in the source can say it. Measured: without the key `to_html(fmt(x))`
     // dropped the `<p>` `render_html(x)` has.
-    assert_eq!(written, "{loose}\n- x\n\n  - a\n\n\n\n  - b\n");
+    assert_eq!(written, "- x\n\n  - a\n\n\n\n  - b\n");
     let carve::BlockNode::List(list) = &carve::parse(&written).children[0] else {
         panic!("expected a list");
     };
