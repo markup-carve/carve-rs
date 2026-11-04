@@ -3877,12 +3877,9 @@ fn render_inline_body(
         InlineNode::Comment(c) if c.delimited => {
             format!("{{%{} %}}", pad_delimited(&c.content))
         }
-        // Only the delimiters need padding to stay inside the term.
-        InlineNode::Comment(c) if c.block => {
-            let rendered = render_block_comment(session, &c.content);
-            let (body, closer) = rendered.rsplit_once('\n').unwrap();
-            format!(" {body}\n {closer}")
-        }
+        // Under rule A the description after it keeps the span in the term, so
+        // it is written at the term's column, as carve-js writes it.
+        InlineNode::Comment(c) if c.block => render_block_comment(session, &c.content),
         // An EMPTY comment is the marker and nothing else. The space after the
         // marker separates it from content, and with no content it is line
         // TRAILING whitespace, which PART 2 discards on the way back in and §7

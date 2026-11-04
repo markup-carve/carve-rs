@@ -314,10 +314,27 @@ pub(in crate::parse) fn hoist_abbreviation(def: AbbreviationDef) {
     });
 }
 
-fn consume_invisible_definition_gap(cur: &mut LineCursor<'_>, end: usize, options: &Options<'_>) {
+/// Returns the `%%%` spans in the gap, which the caller keeps in the entry
+/// before it, as carve-js does.
+fn consume_invisible_definition_gap(
+    cur: &mut LineCursor<'_>,
+    end: usize,
+    options: &Options<'_>,
+) -> Vec<Comment> {
+    let mut spans = Vec::new();
     while cur.pos < end {
         let span = cur.peek().and_then(detect_comment_fence_line_any_column);
         if let Some(open) = span {
+            let start = cur.pos;
+            if let CommentBlock::Consumed(Some(block)) = take_comment_block(cur, options) {
+                if let BlockNode::Comment(comment) = *block {
+                    if comment.block && cur.pos <= end {
+                        spans.push(comment);
+                        continue;
+                    }
+                }
+            }
+            cur.pos = start;
             cur.consume();
             while cur.pos < end {
                 let close = cur
@@ -332,6 +349,22 @@ fn consume_invisible_definition_gap(cur: &mut LineCursor<'_>, end: usize, option
             record_skipped_sibling_abbreviation(cur, options);
             cur.consume();
         }
+    }
+    spans
+}
+
+/// Keep gap spans in the description before them, or in the last term.
+fn keep_gap_comments(
+    terms: &mut [DefinitionTerm],
+    defs: &mut [DefinitionDef],
+    spans: Vec<Comment>,
+) {
+    if let Some(def) = defs.last_mut() {
+        def.children
+            .extend(spans.into_iter().map(BlockNode::Comment));
+    } else if let Some(term) = terms.last_mut() {
+        term.children
+            .extend(spans.into_iter().map(InlineNode::Comment));
     }
 }
 
@@ -553,7 +586,8 @@ pub(in crate::parse) fn parse_definition_list(
         while let Some(next_at) =
             definition_sibling_after_invisible(cur, marker_hosted, list_column, false, false)
         {
-            consume_invisible_definition_gap(cur, next_at, options);
+            let spans = consume_invisible_definition_gap(cur, next_at, options);
+            keep_gap_comments(&mut terms, &mut [], spans);
             let Some(next) = cur.peek() else {
                 break;
             };
@@ -587,7 +621,8 @@ pub(in crate::parse) fn parse_definition_list(
         while let Some(next_at) =
             definition_sibling_after_invisible(cur, marker_hosted, list_column, true, true)
         {
-            consume_invisible_definition_gap(cur, next_at, options);
+            let spans = consume_invisible_definition_gap(cur, next_at, options);
+            keep_gap_comments(&mut terms, &mut defs, spans);
             let Some(line) = cur.peek() else {
                 break;
             };
@@ -780,7 +815,10 @@ pub(in crate::parse) fn parse_definition_list(
         else {
             break;
         };
-        consume_invisible_definition_gap(cur, next_at, options);
+        let spans = consume_invisible_definition_gap(cur, next_at, options);
+        if let Some(item) = items.last_mut() {
+            keep_gap_comments(&mut item.terms, &mut item.definitions, spans);
+        }
     }
     BlockNode::DefinitionList(DefinitionList {
         attrs: None,

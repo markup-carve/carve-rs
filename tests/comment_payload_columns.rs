@@ -26,7 +26,6 @@ fn payloads(source: &str) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn comment_payload_columns_survive_formatting() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/comment-payload-columns.json")).unwrap();
