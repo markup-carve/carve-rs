@@ -59,3 +59,10 @@ fn aligns_is_not_read_out_of_valigns() {
     assert_eq!(arity.len(), 1, "{arity:?}");
     assert!(arity[0].starts_with("valigns "), "{arity:?}");
 }
+
+#[test]
+fn an_indented_row_the_table_takes_is_read() {
+    // The parser and carve-js both keep `  |=< b |` as the table's second row.
+    assert_eq!(overlaps("{aligns=\"left\"}\n| a |\n  |=< b |\n").len(), 1);
+    assert_eq!(overlaps("  {aligns=\"left\"}\n  | a |\n  |=< b |\n").len(), 1);
+}
