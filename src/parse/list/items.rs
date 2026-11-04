@@ -157,7 +157,6 @@ struct SublistChunk {
     nested: MappedSource,
     closed_marker_comment_span: bool,
     stopped_fence: bool,
-    descendant_text_after_fence: bool,
     nested_bare_ends_item: bool,
     band_line_ends_the_chunk: bool,
 }
@@ -988,7 +987,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     fn collect_sublist_chunk(&mut self, sub_indent: usize) -> SublistChunk {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
-        let is_ordered = self.is_ordered;
         let cur = &mut *self.cur;
         // Keep the collector's fence boundary when a descendant's body
         // ends below this item's column. A fresh chunk must not reclaim it.
@@ -1014,18 +1012,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             &mut nested_columns,
             options,
         );
-        let descendant_text_after_fence = nested_columns.fence_seen
-            && !is_ordered
-            && cur.pos > 0
-            && cur
-                .peek()
-                .is_some_and(|next| line_starts_paragraph(next) && !item_block_opener(next))
-            && cur.lines.line(cur.pos - 1).is_some_and(|prior| {
-                let indent = indent_columns(prior);
-                indent >= content_col + 2
-                    && line_starts_paragraph(trim_ascii_start(prior))
-                    && !nested_columns.tabbed_marker
-            });
         let nested_bare_ends_item = nested_bare_marker_then_plain(cur, content_col);
         // A flush lazy run keeps folding band lines below it (PART 1 S4).
         let lazy_scope = if lazy_scope == (0, 0)
@@ -1039,7 +1025,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let closed_marker_comment_span = nested_columns.closed_marker_comment_span;
         if stopped_fence.is_none()
-            && !descendant_text_after_fence
             && !nested_bare_ends_item
             && !closed_marker_comment_span
             && !chunk_ends_in_closed_comment_span(&nested)
@@ -1080,7 +1065,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             nested,
             closed_marker_comment_span,
             stopped_fence: stopped_fence.is_some(),
-            descendant_text_after_fence,
             nested_bare_ends_item,
             band_line_ends_the_chunk,
         }
@@ -1098,7 +1082,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             mut nested,
             closed_marker_comment_span,
             stopped_fence,
-            descendant_text_after_fence,
             nested_bare_ends_item,
             band_line_ends_the_chunk,
         } = chunk;
@@ -1177,9 +1160,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .cur
             .peek()
             .is_some_and(|line| !is_blank_line(line) && indent_columns(line) < content_col);
-        if descendant_text_after_fence && below_column {
-            return END;
-        }
         if stopped_fence
             && below_column
             && self

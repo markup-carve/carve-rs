@@ -431,11 +431,14 @@ fn definition_entry_at(line: &str, marker_hosted: bool, column: usize) -> Option
     if (marker_hosted || column > 0) && indent_columns(line) != column {
         return None;
     }
-    Some(if marker_hosted || column > 0 {
-        trim_ascii_start(line)
-    } else {
-        line
-    })
+    // One column of indent is still below any description's content column.
+    Some(
+        if marker_hosted || column > 0 || indent_columns(line) == 1 {
+            trim_ascii_start(line)
+        } else {
+            line
+        },
+    )
 }
 
 /// Parse a term's inline content. A term is one line, like a heading
@@ -1024,10 +1027,13 @@ pub(crate) struct LineBlockTail {
     span: Option<usize>,
     base: usize,
     had_span: bool,
+    item_cols: Vec<usize>,
+    prior_blank: bool,
 }
 
 impl LineBlockTail {
     pub(crate) fn step(&mut self, line: &str) {
+        let prior_blank = std::mem::replace(&mut self.prior_blank, is_blank_line(line));
         let mut local = trim_ascii_start(line);
         let line_quoted = local.starts_with('>');
         let mut lead = indent_columns(line);
@@ -1086,13 +1092,32 @@ impl LineBlockTail {
             // stanza of this body (carve#4748, row 910).
             None => {
                 let (host_quoted, tail) = innermost_host_tail(local);
+                let marked = tail.len() < local.len();
+                // A bare opener is hosted by the item it sits in (PART 0 S1).
+                if !line_quoted && !is_blank_line(line) {
+                    let indent = indent_columns(line);
+                    if marked || prior_blank {
+                        self.item_cols.retain(|&col| col <= indent);
+                    }
+                    if marked && detect_list_marker_full(local).is_some() {
+                        self.item_cols.push(line.len() - tail.len());
+                    }
+                }
                 self.open = detect_line_block_open(tail);
                 self.had_span = false;
                 self.quoted = line_quoted || host_quoted;
-                self.host_col = if tail.len() < local.len() {
+                self.host_col = if marked {
                     line.len() - tail.len()
-                } else {
+                } else if self.quoted {
                     0
+                } else {
+                    let indent = indent_columns(line);
+                    self.item_cols
+                        .iter()
+                        .copied()
+                        .filter(|&col| col <= indent)
+                        .max()
+                        .unwrap_or(0)
                 };
                 // Verse indentation is relative to the opener, so only a `%`
                 // at its column opens a span (`parse_line_block`).
@@ -1299,6 +1324,9 @@ struct DefinitionBodyCollector<'s, 'o> {
     // of extending the body clear this hint because they may open a block.
     folded_a_lazy_line: bool,
     folded_into_quote: bool,
+    /// The line before this one ended a paragraph or quote a `+` attached.
+    after_plus_paragraph: bool,
+    plus_paragraph_ended: bool,
     nested_attribute_closed: bool,
     retained_below_comment: bool,
     /// A lazy run is folding into a line-block stanza that held a `%%%` span.
@@ -1393,6 +1421,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             descendant_block_ended: false,
             folded_a_lazy_line: false,
             folded_into_quote: false,
+            after_plus_paragraph: false,
+            plus_paragraph_ended: false,
             nested_attribute_closed: false,
             retained_below_comment: false,
             stanza_fold: false,
@@ -1467,6 +1497,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         line: &str,
         blank: bool,
     ) -> BodyStep {
+        self.after_plus_paragraph = std::mem::take(&mut self.plus_paragraph_ended);
         let column = indent_columns(line);
         if self.nested_attribute_closed && !blank {
             let attached_plus = is_plus_marker(trim_ascii_start(line))
@@ -1730,6 +1761,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur.consume();
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
+        let content_column = self.content_column;
         let attached_paragraph = cur
             .peek()
             .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
@@ -1746,6 +1778,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     || (attached_paragraph && is_list_marker(trim_ascii_start(a)))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
+                    // Below the body's column a description marker opens a sibling (PART 0 S1).
+                    || (indent_columns(a) < content_column
+                        && strip_definition_marker(trim_ascii_start(a)).is_some())
             },
         );
         while cur.pos < end {
@@ -1757,6 +1792,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             );
             cur.consume();
         }
+        // A quote the `+` attached keeps its lazy text open the same way.
+        self.plus_paragraph_ended = !attached.lines.is_empty()
+            && (attached_paragraph || attached.lines[0].text.starts_with('>'));
         if !attached.lines.is_empty() {
             self.folded_a_lazy_line = false;
             // A `+` block is pulled in FLUSH LEFT, so it has no residual
@@ -2092,6 +2130,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // A list marker that misses a marker body closes it, and a quote in the
         // body takes no unmarked marker (PART 0 S3, carve#4860).
         if !line.starts_with(LAZY) && is_list_marker(trim_ascii_start(line)) {
+            return BodyStep::Stop;
+        }
+        // So does a description marker after a `+` paragraph: it opens a sibling (PART 0 S1).
+        if self.after_plus_paragraph
+            && !line.starts_with(LAZY)
+            && strip_definition_marker(trim_ascii_start(line)).is_some()
+        {
             return BodyStep::Stop;
         }
         // A surviving quote owns this line before the definition column (CARVE-P0-004).
