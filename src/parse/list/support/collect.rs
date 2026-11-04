@@ -774,12 +774,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // (PART 0 S2: a blank reaches every frame).
             if active_nested_fence.is_some() && nested_blank_run.is_none() {
                 let end = container.blank_run_end(cur.lines, cur.pos + 1);
+                // A refused `+` in a deeper item keeps the blank there (§17 L3).
                 let outer_follower = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
+                        && !(indent_columns(next) > strip_cols
+                            && continuation_marker::is_consumed_marker(trim_ascii_start(next)))
                         && indent_columns(next) >= strip_cols
-                        && (!container.owns_continuation(next, cur.continuation_decision(end))
-                            || active_nested_fence
-                                .is_some_and(|open| indent_columns(next) < open.content_col))
+                        // A line at the fence's column is still its payload.
+                        && active_nested_fence
+                            .is_some_and(|open| indent_columns(next) < open.content_col)
                         && !active_nested_fence.is_some_and(|open| {
                             indent_columns(next) == open.content_col
                                 && is_fence_close(trim_ascii_start(next), open)

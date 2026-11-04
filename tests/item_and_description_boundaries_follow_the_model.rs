@@ -22,6 +22,17 @@ fn a_line_after_a_sibling_ends_a_bare_line_block() {
 }
 
 #[test]
+fn a_blank_before_a_refused_plus_stays_in_the_deeper_item() {
+    assert_rows(&[
+        ("- - - ```\n\n    +\n  x\n", "<ul><li><ul><li><ul><li><pre><code></code></pre></li></ul></li></ul>\n    x\n  </li></ul>"),
+        ("- a\n  - b\n    - ```\n\n    +\n  x\n", "<ul><li>a\n    <ul><li>b\n        <ul><li><pre><code></code></pre></li></ul></li></ul>\n    x\n  </li></ul>"),
+        ("- a\n  - b\n    - ```\n     +\ntail\n", "<ul><li>a\n    <ul><li>b\n        <ul><li><pre><code></code></pre></li></ul>\n        +\ntail\n      </li></ul></li></ul>"),
+        ("- a0\n  - ```\n\n    +\n  x\n", "<ul><li>a0\n    <ul><li><pre><code>\n+\n</code></pre></li></ul>\n    x\n  </li></ul>"),
+        ("- a0\n  - ```\n\n  +\n    x\n", "<ul><li><p>a0</p><ul><li><pre><code></code></pre></li></ul><p>x</p></li></ul>"),
+    ]);
+}
+
+#[test]
 fn a_line_after_a_sibling_ends_a_bare_line_block() {
     assert_rows(&[
         ("- a\n  - b\n\n    ::: |\n    text\n  - c\n      ```\n      > payload\n      ```\nafter\n", "<ul><li>a\n    <ul><li><p>b</p><div class=\"line-block\"><p>text</p></div></li><li><p>c</p><pre><code>&gt; payload\n</code></pre></li></ul></li></ul><p>after</p>"),
