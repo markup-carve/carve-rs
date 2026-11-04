@@ -100,7 +100,8 @@ fn a_comment_above_leaves_no_paragraph() {
 
 #[test]
 fn a_thematic_break_above_leaves_no_paragraph() {
-    assert_collected("---\n* [d]: u\n\n[go][d]\n");
+    // `***`: a first-line `---` opens frontmatter through the end (carve#5016).
+    assert_collected("***\n* [d]: u\n\n[go][d]\n");
 }
 
 #[test]

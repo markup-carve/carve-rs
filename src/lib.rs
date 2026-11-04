@@ -531,28 +531,14 @@ pub fn try_to_carve_with_options(
 }
 
 fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
-    if !source.starts_with("---") {
-        return (None, source);
-    }
-    let Some(first_nl) = source.find('\n') else {
-        return (None, source);
-    };
-    // The same opener test the parser applies, from the same helper rather than
-    // a second copy of it: a `fmt` that disagrees with the parser about what a
-    // frontmatter block is would rewrite an ordinary line into one. This copy
-    // read `source[3..first_nl].trim()` and admitted a tab in the padding slot
-    // exactly as the parser's did (carve-rs#725).
-    let Some(kind) = parse::frontmatter_format_token(&source[3..first_nl]) else {
+    // The parser's own extent: a `fmt` that disagrees with the parser about
+    // where a frontmatter block ends would rewrite an ordinary line into one
+    // (carve-rs#725, carve-rs#2407). An unclosed block runs to the end of the
+    // document and is written with a closer (carve#5016).
+    let Some((kind, rest_start, content_len, after)) = parse::frontmatter_extent(source) else {
         return (None, source);
     };
-    let rest = &source[first_nl + 1..];
-    // The closer test comes from the parser's helper for the same reason the
-    // opener test does: a trailing run of spaces or tabs on the closer is not
-    // content, and `fmt` must not disagree with the parse about where the block
-    // ends (carve-rs#2407).
-    let Some((content_len, after)) = parse::find_frontmatter_closer(rest) else {
-        return (None, source);
-    };
+    let rest = &source[rest_start..];
     // The opening delimiter carries the format token for EVERY format, the
     // default one included: PART 11 section 6b says frontmatter in `yaml` comes
     // back as `---yaml` and never as a bare `---`. An untyped opener is the case
@@ -574,6 +560,13 @@ fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
         }
     );
     let content = &rest[..content_len];
+    // An unclosed block's content ends at the end of the document, line ending
+    // included; a closed one's stops before the closer's line.
+    let content = if content_len == after {
+        content.trim_end_matches('\n')
+    } else {
+        content
+    };
     let body = &rest[after..];
     (Some(format!("{open}\n{content}\n---")), body)
 }

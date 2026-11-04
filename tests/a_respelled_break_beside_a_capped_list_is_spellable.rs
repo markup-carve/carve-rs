@@ -20,7 +20,8 @@ fn every_break_spelling_writes_beside_a_list_at_the_parse_cap() {
             .join("\n")
             + &format!("\n{pad}```\n{pad}code\n{pad}```");
         let mut written = Vec::new();
-        for spelling in ["***", "---", "___"] {
+        // `----`: a first-line `---` opens frontmatter (carve#5016).
+        for spelling in ["***", "----", "___"] {
             let source = format!("{spelling}\n\n{ladder}\n");
             let out = carve::render_carve(&carve::parse(&source))
                 .unwrap_or_else(|error| panic!("{spelling:?} refused: {error}"));
