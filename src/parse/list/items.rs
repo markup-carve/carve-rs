@@ -315,12 +315,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         });
     }
 
-    fn place_in_last_item(&mut self, blocks: Vec<BlockNode>) {
-        if let Some(last_item) = self.items.len().checked_sub(1) {
-            place_item_chunk(self.deferred, last_item, blocks, Vec::new());
-        }
-    }
-
     fn place_plus_block(&mut self, block: BlockNode) {
         if let Some(last_item) = self.items.len().checked_sub(1) {
             place_plus_item_chunk(self.deferred, last_item, block);
@@ -403,7 +397,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             self.cur.consume();
         }
-        let attached_comment = self.cur.peek().is_some_and(is_line_comment_any_column);
         let mut leading = Vec::new();
         let attached = parse_continuation_block(
             self.cur,
@@ -458,28 +451,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             if !self.items.is_empty() && !is_empty_paragraph {
                 // Keep the attachment after any deferred item body.
                 self.place_plus_block(block);
-            }
-        }
-        if attached_comment
-            && self.cur.peek().is_some_and(|next| {
-                indent_columns(next) == base_indent
-                    && line_starts_paragraph(next)
-                    && !item_block_opener(next)
-            })
-        {
-            let mut leading = Vec::new();
-            if let Some(block) = parse_continuation_block(
-                self.cur,
-                options,
-                base_indent,
-                Some(content_col),
-                base_indent,
-                &mut leading,
-            ) {
-                leading.push(block);
-            }
-            if !leading.is_empty() {
-                self.place_in_last_item(leading);
             }
         }
         if options.extensions.is_empty()
@@ -1364,7 +1335,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         while first_block_attaches && cur.peek().is_some_and(is_blank_line) {
             cur.consume();
         }
-        let attached_comment = cur.peek().is_some_and(is_line_comment_any_column);
         let pull_indent = cur
             .continuation_decision(item.at)
             .filter(|decision| decision.quote_depth > 0)
@@ -1382,22 +1352,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 BlockNode::Paragraph(p) if p.children.is_empty()
             );
             if !is_empty_paragraph {
-                children.push(block);
-            }
-        }
-        if attached_comment
-            && cur
-                .peek()
-                .is_some_and(|line| indent_columns(line) == 0 && line_starts_paragraph(line))
-        {
-            if let Some(block) = parse_continuation_block(
-                cur,
-                options,
-                base_indent,
-                None,
-                pull_indent,
-                &mut children,
-            ) {
                 children.push(block);
             }
         }
