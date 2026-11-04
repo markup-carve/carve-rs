@@ -683,7 +683,7 @@ struct Skipped {
     end: usize,
     column: usize,
     fenced: Vec<usize>,
-    /// The skipped lines inside a `%%%` span, opener and closer included.
+    /// The skipped lines inside a `%%%` span, opener and closer included, ascending.
     comment: Vec<usize>,
     lead: String,
     /// The brace run open in the skipped lines: its `{` column, whether it is
@@ -1332,7 +1332,7 @@ impl<'a> Walk<'a> {
         // marker took: it is consumed and linted (carve#5013). Off the column a
         // skipped note's `+` is a letter of its body (carve#5034).
         let (host, from, end) = (skipped.host, skipped.at, skipped.end);
-        let in_comment = skipped.comment.contains(&at);
+        let in_comment = skipped.comment.binary_search(&at).is_ok();
         if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
             let column = doc_column(line, rest);
             if column == skipped.column {
