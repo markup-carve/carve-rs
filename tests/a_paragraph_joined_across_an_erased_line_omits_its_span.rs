@@ -64,7 +64,11 @@ fn a_placeholder_comment_is_not_an_erased_line() {
 
 #[test]
 fn fmt_still_writes_the_line_back_inside_the_paragraph() {
-    for source in ["a\n%% x\nb\n", "- - x\n  %% c\n    y\n", ":: t\n: a\n  %% c\n  tail\n"] {
+    for source in [
+        "a\n%% x\nb\n",
+        "- - x\n  %% c\n    y\n",
+        ":: t\n: a\n  %% c\n  tail\n",
+    ] {
         let once = carve::to_carve(source);
         let twice = carve::to_carve(&once);
         assert_eq!(once, twice, "{source:?}");
