@@ -15,8 +15,9 @@ const FOLLOWER: &str = "<p>See [r][] and HTML.</p>";
 fn a_span_a_plus_skips_registers_nothing() {
     for host in ["- a", "1. a", "> a", "- a\n  - b"] {
         for fence in ["%%%", "%%%%"] {
-            let source =
-                format!("{host}\n+\n{fence}\n[r]: /u\n*[HTML]: Hyper\n{fence}\n\nSee [r][] and HTML.\n");
+            let source = format!(
+                "{host}\n+\n{fence}\n[r]: /u\n*[HTML]: Hyper\n{fence}\n\nSee [r][] and HTML.\n"
+            );
             let html = flat(&source);
             assert!(html.ends_with(FOLLOWER), "{source:?}\n{html}");
         }
@@ -50,7 +51,8 @@ fn a_definition_after_the_span_still_registers() {
         flat("- a\n+\n%%%\n[r]: /u\n%%%\n[s]: /v\npara\n\nSee [r][] and [s][].\n"),
         "<ul><li>apara</li></ul><p>See [r][] and <a href=\"/v\">s</a>.</p>"
     );
-    let html = flat("See[^n].\n\n[^n]: x\n  %%%\n  [r]: /u\n  %%%\n  [s]: /v\n\nSee [r][] and [s][].\n");
+    let html =
+        flat("See[^n].\n\n[^n]: x\n  %%%\n  [r]: /u\n  %%%\n  [s]: /v\n\nSee [r][] and [s][].\n");
     assert!(
         html.contains("<p>See [r][] and <a href=\"/v\">s</a>.</p>"),
         "{html}"
