@@ -11,10 +11,11 @@ fn quoted_link_definitions_in_footnotes_register_document_wide() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3523"]
 fn a_quoted_paragraph_keeps_a_definition_shaped_line_as_text() {
+    // A one-line link definition is erased before layout, so beside an open
+    // paragraph it defines (CARVE-P9R-002).
     let source = "[^n]: a\n  > prose\n  > [r]: /x\n[x][r] [^n]\n";
     let html = carve::to_html(source);
-    assert!(html.contains("[x][r]"), "{html}");
-    assert!(html.contains("[r]: /x"), "{html}");
+    assert!(html.contains("<a href=\"/x\">x</a>"), "{html}");
+    assert!(!html.contains("[r]: /x"), "{html}");
 }
