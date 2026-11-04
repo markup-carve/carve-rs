@@ -24,6 +24,7 @@ pub(super) enum Refusal {
     Left,
     Right,
     Sibling,
+    Claimed,
 }
 
 fn refusal_name(reason: Refusal) -> &'static str {
@@ -34,6 +35,7 @@ fn refusal_name(reason: Refusal) -> &'static str {
         Refusal::Left => "left",
         Refusal::Right => "right",
         Refusal::Sibling => "sibling",
+        Refusal::Claimed => "claimed",
     }
 }
 
@@ -81,9 +83,10 @@ pub(super) fn kind_of(kind: super::own_lines::Kind) -> Option<Kind> {
 thread_local! {
     static DECISIONS: RefCell<Option<HashMap<usize, Decision>>> = const { RefCell::new(None) };
     static LETTER: RefCell<Option<char>> = const { RefCell::new(None) };
+    static CONSUMED: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
 }
 
-pub(super) struct Guard(Option<HashMap<usize, Decision>>, Option<char>);
+pub(super) struct Guard(Option<HashMap<usize, Decision>>, Option<char>, Vec<usize>);
 
 impl Guard {
     pub(super) fn install(owned: Option<&OwnedSource>) -> Self {
@@ -102,9 +105,11 @@ impl Guard {
             }
         }
         let letter = owned.and_then(|o| o.letter);
+        let consumed = owned.map(|o| o.consumed.clone()).unwrap_or_default();
         Self(
             DECISIONS.with(|slot| slot.replace(decisions)),
             LETTER.with(|slot| slot.replace(letter)),
+            CONSUMED.with(|slot| slot.replace(consumed)),
         )
     }
 }
@@ -113,6 +118,7 @@ impl Drop for Guard {
     fn drop(&mut self) {
         DECISIONS.with(|slot| slot.replace(self.0.take()));
         LETTER.with(|slot| slot.replace(self.1.take()));
+        CONSUMED.with(|slot| slot.replace(std::mem::take(&mut self.2)));
     }
 }
 
@@ -158,5 +164,45 @@ pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
     crate::includes::walk_blocks_mut(&mut doc.children, &mut restore);
     for body in doc.footnote_defs.values_mut() {
         crate::includes::walk_blocks_mut(body, &mut restore);
+    }
+}
+
+/// A consumed marker renders nothing and is no node of the tree (carve#5013).
+pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
+    use crate::ast::BlockNode;
+    let lines = CONSUMED.with(|slot| slot.borrow().clone());
+    if lines.is_empty() {
+        return;
+    }
+    let keep = |block: &BlockNode| {
+        !matches!(block, BlockNode::Comment(c)
+            if !c.block && !c.delimited && c.content.is_empty()
+                && c.pos.as_ref().is_some_and(|pos| lines.contains(&pos.start_line)))
+    };
+    fn sweep(blocks: &mut Vec<BlockNode>, keep: &impl Fn(&BlockNode) -> bool) {
+        blocks.retain(|block| keep(block));
+        for block in blocks.iter_mut() {
+            match block {
+                BlockNode::BlockQuote(b) => sweep(&mut b.children, keep),
+                BlockNode::Div(b) => sweep(&mut b.children, keep),
+                BlockNode::List(list) => {
+                    for item in &mut list.items {
+                        sweep(&mut item.children, keep);
+                    }
+                }
+                BlockNode::DefinitionList(list) => {
+                    for item in &mut list.items {
+                        for body in &mut item.definitions {
+                            sweep(&mut body.children, keep);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    sweep(&mut doc.children, &keep);
+    for body in doc.footnote_defs.values_mut() {
+        sweep(body, &keep);
     }
 }

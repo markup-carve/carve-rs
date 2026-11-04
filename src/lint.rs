@@ -541,10 +541,10 @@ fn collect_parser_events(
                     }
                     "right" => "the next block starts right of its column",
                     "unclaimed" => "no open container claims it",
+                    "claimed" => "an earlier marker already claims the next block",
                     _ => "its column names no open container",
                 };
-                // PART 9 §17 L4: a refused first-block `+` adds no block to an item or a
-                // description, and stays text in a quote or a note.
+                // PART 9 §17 L4: a refused `+` is consumed and renders nothing (carve#5013).
                 let effect = match (*first_block, *host) {
                     (true, "list item" | "description body") => {
                         let name = if *host == "list item" {
@@ -558,7 +558,7 @@ fn collect_parser_events(
                             format!("The {name} stays empty.")
                         }
                     }
-                    _ => format!("It remains text in the {host}."),
+                    _ => "It renders nothing.".to_string(),
                 };
                 (
                     *line,

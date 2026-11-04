@@ -1233,6 +1233,7 @@ fn parse_with_options_mode_and_index_once(
         }
     }
     continuation_marker::restore_payloads(&mut doc);
+    continuation_marker::drop_consumed_markers(&mut doc);
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
