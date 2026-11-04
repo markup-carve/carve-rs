@@ -66,7 +66,7 @@ fn the_block_quote_collector_keeps_a_comment_fence_whole() {
     assert_eq!(
         flat(&format!("> q\n+\n{COMMENT}")),
         // Nothing visible follows, so the `+` is a letter (carve#4449).
-        "<blockquote><p>q +</p></blockquote>"
+        "<blockquote><p>q</p></blockquote>"
     );
 }
 

@@ -320,17 +320,7 @@
         },
         {
           "type": "block_quote",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "text",
-                  "value": "+"
-                }
-              ]
-            }
-          ]
+          "children": []
         },
         {
           "type": "code_block",

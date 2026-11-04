@@ -60,14 +60,7 @@ fn the_ticket_reproductions() {
 fn a_line_block_in_the_item_body_and_a_comment_block_read_the_same() {
     assert_html(
         "- a\n\n  ::: |\n  %%%\n %%%%\n%% c\nz\n",
-        r#"<ul>
-  <li>a
-    <div class="line-block">
-
-    </div>
-  </li>
-</ul>
-<p>z</p>"#,
+        "<ul>\n  <li><p>a</p>\n    <div class=\"line-block\">\n\n    </div>\n  </li>\n</ul>\n<p>z</p>",
     );
     assert_html(
         "- a\n\n  %%%\n %%%\n\n  %%%\nz\n",

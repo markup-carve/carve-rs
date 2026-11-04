@@ -74,7 +74,7 @@ fn a_code_closer_outside_the_item_does_not_change_interruption() {
     );
     assert_html(
         "- item\n %%%\n hidden\n  %%%\n  ```\ntail\n\n- other\n\n      ```\n",
-        "<ul>\n  <li>item\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>\n<ul>\n  <li>other\n    <pre><code></code></pre>\n  </li>\n</ul>",
+        "<ul>\n  <li>item\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>\n<ul>\n  <li><p>other</p>\n    <pre><code></code></pre>\n  </li>\n</ul>",
     );
 }
 

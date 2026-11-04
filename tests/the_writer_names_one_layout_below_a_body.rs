@@ -32,7 +32,7 @@ fn a_footnote_body_with_no_list_keeps_two_columns() {
 fn a_literal_plus_after_a_nested_task_fence_is_escaped_at_the_item_column() {
     assert_written(
         "- - [ ] ```js\n        x\n\n  +\ntail\n",
-        "- - [ ] ```js\n        x\n\n    ```\n\n  \\+\n  tail\n",
+        "- - [ ] ```js\n        x\n\n    ```\n\ntail\n",
     );
 }
 

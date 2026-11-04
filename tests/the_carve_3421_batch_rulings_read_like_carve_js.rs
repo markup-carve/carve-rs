@@ -97,8 +97,9 @@ fn a_hosted_stacked_plus_after_a_closed_block_attaches_and_one_in_text_does_not(
         "> [r]: /u",
     ] {
         let html = flat(&format!("{before}\n> - > +\n# h\n"));
+        // The refused marker renders nothing (carve#5013).
         assert!(
-            html.contains("<li><blockquote><p>+</p></blockquote></li>"),
+            html.contains("<li><blockquote></blockquote></li>"),
             "{before:?}: {html}"
         );
     }

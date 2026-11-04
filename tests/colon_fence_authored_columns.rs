@@ -92,7 +92,7 @@ fn c2477_footnote_col6_base8_close9() {
 #[test]
 fn c2477_list_col2_base4_close2() {
     let source = "- x\n\n    ::: note\n    a\n  :::\n";
-    let expected = "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -103,7 +103,7 @@ fn c2477_list_col2_base4_close2() {
 #[test]
 fn c2477_list_col2_base4_close3() {
     let source = "- x\n\n    ::: note\n    a\n   :::\n";
-    let expected = "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -114,7 +114,7 @@ fn c2477_list_col2_base4_close3() {
 #[test]
 fn c2477_list_col2_base4_close4() {
     let source = "- x\n\n    ::: note\n    a\n    :::\n";
-    let expected = "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -125,7 +125,7 @@ fn c2477_list_col2_base4_close4() {
 #[test]
 fn c2477_list_col2_base4_close5() {
     let source = "- x\n\n    ::: note\n    a\n     :::\n";
-    let expected = "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -136,7 +136,7 @@ fn c2477_list_col2_base4_close5() {
 #[test]
 fn c2477_nested_col4_base6_close4() {
     let source = "- - x\n\n      ::: note\n      a\n    :::\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>x\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li><p>x</p>\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -147,7 +147,7 @@ fn c2477_nested_col4_base6_close4() {
 #[test]
 fn c2477_nested_col4_base6_close5() {
     let source = "- - x\n\n      ::: note\n      a\n     :::\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>x\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li><p>x</p>\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -158,7 +158,7 @@ fn c2477_nested_col4_base6_close5() {
 #[test]
 fn c2477_nested_col4_base6_close6() {
     let source = "- - x\n\n      ::: note\n      a\n      :::\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>x\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li><p>x</p>\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -169,7 +169,7 @@ fn c2477_nested_col4_base6_close6() {
 #[test]
 fn c2477_nested_col4_base6_close7() {
     let source = "- - x\n\n      ::: note\n      a\n       :::\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>x\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li><p>x</p>\n        <aside class=\"admonition note\" aria-label=\"Note\">\n          <p>a</p>\n        </aside>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -180,7 +180,7 @@ fn c2477_nested_col4_base6_close7() {
 #[test]
 fn c2477_quoteitem_col4_base6_close4() {
     let source = "> - x\n>\n>     ::: note\n>     a\n>   :::\n";
-    let expected = "<blockquote>\n  <ul>\n    <li>x\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
+    let expected = "<blockquote>\n  <ul>\n    <li><p>x</p>\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -191,7 +191,7 @@ fn c2477_quoteitem_col4_base6_close4() {
 #[test]
 fn c2477_quoteitem_col4_base6_close5() {
     let source = "> - x\n>\n>     ::: note\n>     a\n>    :::\n";
-    let expected = "<blockquote>\n  <ul>\n    <li>x\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
+    let expected = "<blockquote>\n  <ul>\n    <li><p>x</p>\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -202,7 +202,7 @@ fn c2477_quoteitem_col4_base6_close5() {
 #[test]
 fn c2477_quoteitem_col4_base6_close6() {
     let source = "> - x\n>\n>     ::: note\n>     a\n>     :::\n";
-    let expected = "<blockquote>\n  <ul>\n    <li>x\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
+    let expected = "<blockquote>\n  <ul>\n    <li><p>x</p>\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -213,7 +213,7 @@ fn c2477_quoteitem_col4_base6_close6() {
 #[test]
 fn c2477_quoteitem_col4_base6_close7() {
     let source = "> - x\n>\n>     ::: note\n>     a\n>      :::\n";
-    let expected = "<blockquote>\n  <ul>\n    <li>x\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
+    let expected = "<blockquote>\n  <ul>\n    <li><p>x</p>\n      <aside class=\"admonition note\" aria-label=\"Note\">\n        <p>a</p>\n      </aside>\n    </li>\n  </ul>\n</blockquote>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -224,7 +224,7 @@ fn c2477_quoteitem_col4_base6_close7() {
 #[test]
 fn guard_codefence_close2() {
     let source = "- x\n\n    ```\n    a\n  ```\n\nafter\n";
-    let expected = "<ul>\n  <li>x\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -235,7 +235,7 @@ fn guard_codefence_close2() {
 #[test]
 fn guard_codefence_close3() {
     let source = "- x\n\n    ```\n    a\n   ```\n\nafter\n";
-    let expected = "<ul>\n  <li>x\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -246,7 +246,7 @@ fn guard_codefence_close3() {
 #[test]
 fn guard_codefence_close4() {
     let source = "- x\n\n    ```\n    a\n    ```\n\nafter\n";
-    let expected = "<ul>\n  <li>x\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+    let expected = "<ul>\n  <li><p>x</p>\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -258,7 +258,7 @@ fn guard_codefence_close4() {
 fn guard_codefence_close5() {
     let source = "- x\n\n    ```\n    a\n     ```\n\nafter\n";
     let expected =
-        "<ul>\n  <li>x\n    <pre><code>a\n ```\n\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
+        "<ul>\n  <li><p>x</p>\n    <pre><code>a\n ```\n\n</code></pre>\n  </li>\n</ul>\n<p>after</p>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),

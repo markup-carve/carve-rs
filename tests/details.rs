@@ -152,7 +152,7 @@ fn details_inside_list_item_nests_with_p_wrappers() {
         h("- item\n\n  ::: details \"T\"\n  x\n  :::"),
         [
             "<ul>",
-            "  <li>item",
+            "  <li><p>item</p>",
             "    <details>",
             "      <summary>T</summary>",
             "      <p>x</p>",

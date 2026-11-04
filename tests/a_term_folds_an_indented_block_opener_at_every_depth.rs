@@ -26,7 +26,7 @@ fn an_indented_opener_folds_into_the_term() {
         ),
         (
             "- item\n\n  :: c\n    # H\n",
-            "<ul><li>item<dl><dt>c</dt></dl><h1 id=\"H\">H</h1></li></ul>",
+            "<ul><li><p>item</p><dl><dt>c</dt></dl><h1 id=\"H\">H</h1></li></ul>",
         ),
         (
             ":: a\n: b\n  :: c\n    # H\n",
@@ -38,7 +38,7 @@ fn an_indented_opener_folds_into_the_term() {
         ),
         (
             "- item\n\n  :: c\n    ::: note\n    body\n    :::\n",
-            "<ul><li>item<dl><dt>c</dt></dl><aside class=\"admonition note\" aria-label=\"Note\"><p>body</p></aside></li></ul>",
+            "<ul><li><p>item</p><dl><dt>c</dt></dl><aside class=\"admonition note\" aria-label=\"Note\"><p>body</p></aside></li></ul>",
         ),
         (
             ":: a\n: b\n  :: c\n    :: d\n",

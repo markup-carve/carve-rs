@@ -52,7 +52,7 @@ fn quoted_host() {
 #[test]
 fn following_table() {
     let src = "- a\n  :: t\n  :  d\n    - a\n      - b\n   q\n\n   | a |\n   | b |\n";
-    let want = "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\nq</li>\n        </ul>\n      </li>\n    </ul>\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>";
+    let want = "<ul>\n  <li><p>a</p>\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\nq</li>\n        </ul>\n      </li>\n    </ul>\n    <table>\n      <tbody>\n        <tr><td>a</td></tr>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(src), want);
 }
 

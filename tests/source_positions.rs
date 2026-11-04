@@ -50,25 +50,17 @@ fn nested_marker_attached_blocks_keep_source_positions() {
         14
     );
 
+    // The `+` is a marker whose block starts left of its column, so it is
+    // refused and renders nothing; `para` follows the quote (carve#5013).
     let source = "> > q\n> +\npara\n";
     let doc = carve::parse_with_options(source, &options);
-    let BlockNode::BlockQuote(outer) = &doc.children[0] else {
-        panic!("outer quote")
-    };
-    let BlockNode::BlockQuote(inner) = &outer.children[0] else {
-        panic!("inner quote")
-    };
-    let BlockNode::Paragraph(para) = &inner.children[0] else {
-        panic!("merged paragraph")
+    let BlockNode::Paragraph(para) = &doc.children[1] else {
+        panic!("paragraph after the quote")
     };
     assert_eq!(
         para.pos.as_ref().expect("paragraph position").start_offset,
-        4
+        10
     );
-    let carve::ast::InlineNode::Text(text) = &para.children[4] else {
-        panic!("paragraph tail")
-    };
-    assert_eq!(text.pos.as_ref().expect("tail position").start_offset, 10);
 
     let source = "x[^a]\n\n> [^a]: n\n> +\n> para\n";
     let doc = carve::parse_with_options(source, &options);

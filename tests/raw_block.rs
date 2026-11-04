@@ -187,7 +187,7 @@ fn an_item_still_drops_a_child_that_renders_nothing() {
     );
     assert_eq!(
         carve::to_html("- a\n\n  ```=latex\n  x\n  ```\n"),
-        "<ul>\n  <li>a</li>\n</ul>"
+        "<ul>\n  <li><p>a</p></li>\n</ul>"
     );
 }
 

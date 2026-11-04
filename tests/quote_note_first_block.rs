@@ -2,9 +2,10 @@
 fn nested_quote_opens_after_outer_content() {
     let html = carve::to_html("> outer\n> > +\n```\nx\n```");
     assert!(html.contains("<p>outer</p>"), "{html}");
+    // The refused marker renders nothing (carve#5013).
     assert!(
         html.contains(
-            "<blockquote><p>+</p></blockquote>\n</blockquote>\n<pre><code>x\n</code></pre>"
+            "<blockquote>\n\n  </blockquote>\n</blockquote>\n<pre><code>x\n</code></pre>"
         ),
         "{html}"
     );

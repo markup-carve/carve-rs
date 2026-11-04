@@ -19,6 +19,6 @@ fn two_notes_on_one_line_keep_their_place_and_order() {
 fn notes_on_two_lines_of_one_gap_both_go_back() {
     let source = "- a\n  [^c]: x\n  [^d]: y\n\n  > more [^c] [^d]\n";
     let written = to_carve(source);
-    assert_eq!(written, "- a\n  [^c]: x\n  [^d]: y\n  > more [^c] [^d]\n");
+    assert_eq!(written, "- a\n\n  > more [^c] [^d]\n\n[^c]: x\n\n[^d]: y\n");
     assert_eq!(to_html(&written), to_html(source));
 }

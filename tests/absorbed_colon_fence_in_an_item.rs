@@ -116,6 +116,6 @@ fn a_blank_line_ends_the_absorption() {
     // so the `:::` below it IS an opener.
     assert_eq!(
         html("- item\n  :::note\n\n  :::\ntail\n"),
-        "<ul>\n  <li>item\n:::note\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li><p>item\n:::note</p>\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }

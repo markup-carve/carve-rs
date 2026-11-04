@@ -27,7 +27,7 @@ fn an_indented_pair_in_an_item_body_reads_as_two_sub_lists() {
     assert_eq!(
         both_paths("- p\n\n   * x\n   - y\n"),
         concat!(
-            "<ul>\n  <li>p\n    <ul>\n      <li>x</li>\n    </ul>\n",
+            "<ul>\n  <li><p>p</p>\n    <ul>\n      <li>x</li>\n    </ul>\n",
             "    <ul>\n      <li>y</li>\n    </ul>\n  </li>\n</ul>"
         )
     );

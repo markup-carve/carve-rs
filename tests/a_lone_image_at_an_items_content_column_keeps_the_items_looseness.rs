@@ -125,8 +125,8 @@ fn a_sub_block_opener_under_the_blank_still_keeps_the_item_tight() {
             "{label}: a blank before a child block loosens the item (carve#5015):\n{html}"
         );
         assert!(
-            !html_wraps_the_lead(&html),
-            "{label}: a tight item does not wrap its lead:\n{html}"
+            html_wraps_the_lead(&html),
+            "{label}: a loose item wraps its lead:\n{html}"
         );
     }
 }

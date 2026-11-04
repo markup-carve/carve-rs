@@ -102,9 +102,10 @@ fn a_nested_list_does_not_loosen_the_item_above_it() {
 
 #[test]
 fn a_nested_quote_does_not_loosen_the_item_above_it() {
-    let source = "- a\n  > - x\n\n  - m\n";
+    // A blank before the sub-list would loosen the item (carve#5015).
+    let source = "- a\n  > - x\n  - m\n";
     assert!(tight_in_source(source));
-    assert_eq!(carve::to_markdown(source), "- a\n\n  > - x\n\n  - m\n");
+    assert_eq!(carve::to_markdown(source), "- a\n  > - x\n  - m\n");
     assert!(reads_back_tight(source));
 }
 

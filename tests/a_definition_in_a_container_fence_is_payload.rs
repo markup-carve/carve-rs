@@ -29,14 +29,14 @@ fn a_fence_at_an_item_content_column_keeps_its_payload() {
     );
     assert_eq!(
         to_html("- o\n\n  ~~~\n  [^d]: u\n\nr[^d]\n"),
-        "<ul>\n  <li>o\n    <pre><code>[^d]: u\n\n</code></pre>\n  </li>\n</ul>\n<p>r[^d]</p>"
+        "<ul>\n  <li><p>o</p>\n    <pre><code>[^d]: u\n\n</code></pre>\n  </li>\n</ul>\n<p>r[^d]</p>"
     );
     assert_eq!(
         to_html("1. o\n\n   ```\n   [^d]: u\n   ```\n\nr[^d]\n"),
-        "<ol>\n  <li>o\n    <pre><code>[^d]: u\n</code></pre>\n  </li>\n</ol>\n<p>r[^d]</p>"
+        "<ol>\n  <li><p>o</p>\n    <pre><code>[^d]: u\n</code></pre>\n  </li>\n</ol>\n<p>r[^d]</p>"
     );
     assert_eq!(
         to_html("- o\n\n  ```x\n  [d]: u\n\n[a][d]\n"),
-        "<ul>\n  <li>o\n    <pre><code class=\"language-x\">[d]: u\n\n</code></pre>\n  </li>\n</ul>\n<p>[a][d]</p>"
+        "<ul>\n  <li><p>o</p>\n    <pre><code class=\"language-x\">[d]: u\n\n</code></pre>\n  </li>\n</ul>\n<p>[a][d]</p>"
     );
 }

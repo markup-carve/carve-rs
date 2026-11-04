@@ -84,7 +84,7 @@ fn blank_before_block_no_trailing_stays_tight() {
     // (the compact-block rule): the item stays tight, `item` is bare.
     assert_eq!(
         carve::to_html("- item\n\n  ```\n  c\n  ```\n"),
-        "<ul>\n  <li>item\n    <pre><code>c\n</code></pre>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>item</p>\n    <pre><code>c\n</code></pre>\n  </li>\n</ul>"
     );
 }
 
@@ -94,7 +94,7 @@ fn blank_before_block_with_direct_trailing_stays_tight() {
     // blank: the item stays tight and the trailing text is bare.
     assert_eq!(
         carve::to_html("- item\n\n  ```\n  c\n  ```\n  tail\n"),
-        "<ul>\n  <li>item\n    <pre><code>c\n</code></pre>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li><p>item</p>\n    <pre><code>c\n</code></pre>\n    <p>tail</p>\n  </li>\n</ul>"
     );
 }
 
@@ -104,7 +104,7 @@ fn blank_before_a_second_sub_block_stays_tight() {
     // item tight -- only a blank followed by plain prose loosens.
     assert_eq!(
         carve::to_html("- item\n  ```\n  c\n  ```\n\n  ```\n  d\n  ```\n"),
-        "<ul>\n  <li>item\n    <pre><code>c\n</code></pre>\n    <pre><code>d\n</code></pre>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>item</p>\n    <pre><code>c\n</code></pre>\n    <pre><code>d\n</code></pre>\n  </li>\n</ul>"
     );
 }
 

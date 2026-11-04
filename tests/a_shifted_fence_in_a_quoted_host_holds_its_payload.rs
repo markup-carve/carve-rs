@@ -21,7 +21,7 @@ fn html(source: &str) -> String {
 fn a_flush_line_after_a_shifted_fence_ends_the_quote() {
     assert_eq!(
         html("> - a\n>\n>     ```\n>     x\nflush\n"),
-        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>flush</p>"
+        "<blockquote>\n  <ul>\n    <li><p>a</p>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>flush</p>"
     );
 }
 
@@ -31,7 +31,7 @@ fn a_flush_line_after_a_shifted_fence_ends_the_quote() {
 fn the_lines_after_the_flush_line_are_outside_the_item() {
     assert_eq!(
         html("> - a\n>\n>     ~~~\n>     x\nz\n>     b\n>     ~~~\n"),
-        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>z</p>\n<blockquote>\n  <p>b</p>\n  <pre><code></code></pre>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li><p>a</p>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>z</p>\n<blockquote>\n  <p>b</p>\n  <pre><code></code></pre>\n</blockquote>"
     );
 }
 
@@ -41,7 +41,7 @@ fn the_lines_after_the_flush_line_are_outside_the_item() {
 fn a_shifted_raw_fence_at_depth_two_reads_the_same_way() {
     assert_eq!(
         html("> > - a\n> >\n> >     ```=html\n> >     x\nflush\n"),
-        "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        x\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>flush</p>"
+        "<blockquote>\n  <blockquote>\n    <ul>\n      <li><p>a</p>\n        x\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>flush</p>"
     );
 }
 
@@ -73,7 +73,7 @@ fn a_closer_at_either_column_ends_the_fence() {
 fn an_opener_at_the_content_column_is_unchanged() {
     assert_eq!(
         html("> - a\n>\n>   ```\n>   x\nflush\n"),
-        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>flush</p>"
+        "<blockquote>\n  <ul>\n    <li><p>a</p>\n      <pre><code>x\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>flush</p>"
     );
 }
 

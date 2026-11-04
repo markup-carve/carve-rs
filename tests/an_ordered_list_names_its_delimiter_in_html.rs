@@ -39,7 +39,7 @@ fn it_leads_the_authored_attributes() {
 fn a_nested_list_derives_its_own() {
     assert_eq!(
         to_html("1. outer\n\n   1) inner\n"),
-        "<ol>\n  <li>outer\n    <ol data-delim=\")\">\n      <li>inner</li>\n    </ol>\n  </li>\n</ol>"
+        "<ol>\n  <li><p>outer</p>\n    <ol data-delim=\")\">\n      <li>inner</li>\n    </ol>\n  </li>\n</ol>"
     );
 }
 

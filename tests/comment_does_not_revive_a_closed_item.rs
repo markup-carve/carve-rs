@@ -23,7 +23,7 @@ fn c0_comment_then_tail() {
 fn chunk_fence_c0comment_lazy() {
     assert_eq!(
         carve::to_html("- a\n\n  ```\n  code\n  ```\n%% c\nmore\n"),
-        "<ul>\n  <li>a\n    <pre><code>code\n</code></pre>\n  </li>\n</ul>\n<p>more</p>"
+        "<ul>\n  <li><p>a</p>\n    <pre><code>code\n</code></pre>\n  </li>\n</ul>\n<p>more</p>"
     );
 }
 
@@ -92,7 +92,7 @@ fn i_comment_then_tail() {
 fn ichunk_heading_c0comment() {
     assert_eq!(
         carve::to_html("- a\n\n  # h\n%% c\ntail\n"),
-        "<ul>\n  <li>a\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li><p>a</p>\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 

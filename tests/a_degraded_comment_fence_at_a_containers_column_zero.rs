@@ -165,7 +165,7 @@ fn a_three_rung_ladder_answers_the_same_way() {
 fn a_blank_separated_sublist_keeps_the_follower_too() {
     assert_html(
         "- a\n\n  - x\n%%% c\ntail\n",
-        "<ul>\n  <li>a\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>",
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>",
     );
     assert_substitutes("- a\n\n  - x\n%%% c\ntail\n", "- a\n\n  - x\n%% c\ntail\n");
 }

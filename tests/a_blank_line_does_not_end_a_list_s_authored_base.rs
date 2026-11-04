@@ -37,8 +37,8 @@ fn footnote(opener: usize, payload: usize) -> String {
     )
 }
 
-/// The quote is the item's own block.
-const INSIDE: &str = "      <ul>\n        <li>item\n          \
+/// The quote is the item's own block; the blank before it loosens the item.
+const INSIDE: &str = "      <ul>\n        <li><p>item</p>\n          \
                       <blockquote><p>quote</p></blockquote>\n        \
                       </li>\n      </ul>";
 
@@ -118,7 +118,7 @@ fn the_rule_is_not_about_quotes() {
     let output = html("[^n]: intro\n\n   - item\n\n     # h\n\nsee[^n]\n");
     assert!(
         output.contains(
-            "      <ul>\n        <li>item\n          \
+            "      <ul>\n        <li><p>item</p>\n          \
              <h1 id=\"h\">h</h1>\n        </li>\n      </ul>"
         ),
         "{output}"
@@ -139,7 +139,7 @@ fn a_definition_body_reads_the_same_ladder() {
             ));
             assert!(
                 output.contains(
-                    "<li>item\n        <blockquote><p>quote</p></blockquote>\n      </li>"
+                    "<li><p>item</p>\n        <blockquote><p>quote</p></blockquote>\n      </li>"
                 ),
                 "opener {opener}, payload {payload}:\n{output}"
             );
@@ -164,9 +164,9 @@ fn a_list_item_host_keeps_its_own_answer_at_every_column() {
     // every column: the whole
     // document is asserted, and any change that moves list-item placement
     // fails this test rather than passing it quietly.
-    let outer_sibling = "<ul>\n  <li>item\n    <ul>\n      <li>inner</li>\n    </ul>\n    \
+    let outer_sibling = "<ul>\n  <li><p>item</p>\n    <ul>\n      <li>inner</li>\n    </ul>\n    \
                          <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>";
-    let inner_own = "<ul>\n  <li>item\n    <ul>\n      <li>inner\n        \
+    let inner_own = "<ul>\n  <li><p>item</p>\n    <ul>\n      <li><p>inner</p>\n        \
                      <blockquote><p>quote</p></blockquote>\n      </li>\n    </ul>\n  \
                      </li>\n</ul>";
     for payload in 0..=8 {
@@ -176,7 +176,7 @@ fn a_list_item_host_keeps_its_own_answer_at_every_column() {
         ));
         let expected = match payload {
             0 | 1 => {
-                "<ul>\n  <li>item\n    <ul>\n      <li>inner</li>\n    </ul>\n  </li>\n</ul>\n\
+                "<ul>\n  <li><p>item</p>\n    <ul>\n      <li>inner</li>\n    </ul>\n  </li>\n</ul>\n\
                       <blockquote><p>quote</p></blockquote>"
                     .to_string()
             }
@@ -190,8 +190,8 @@ fn a_list_item_host_keeps_its_own_answer_at_every_column() {
 #[test]
 fn the_blank_line_makes_no_difference_at_or_past_the_content_column() {
     // The defect stated as its own invariant, over the band it governs. A
-    // blank line loosens the item; it does not move ownership, so at and past
-    // the item's content column the two spellings agree.
+    // blank line loosens the item (carve#5015); it does not move ownership, so
+    // at and past the item's content column the two spellings agree.
     //
     // The band BELOW the content column is deliberately not asserted here: the
     // two spellings genuinely differ there one column past the marker, and
@@ -210,7 +210,7 @@ fn the_blank_line_makes_no_difference_at_or_past_the_content_column() {
             ));
             assert_eq!(
                 blank.contains(INSIDE),
-                tight.contains(INSIDE),
+                tight.contains(&INSIDE.replace("<li><p>item</p>", "<li>item")),
                 "opener {opener}, payload {payload}:\nblank:\n{blank}\ntight:\n{tight}"
             );
         }

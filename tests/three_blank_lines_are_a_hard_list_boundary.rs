@@ -132,7 +132,7 @@ fn the_boundary_applies_inside_a_block_quote() {
 fn the_boundary_applies_to_a_list_nested_in_an_item() {
     assert_eq!(
         carve::to_html("- outer\n\n  - a\n\n\n\n  - b\n"),
-        "<ul>\n  <li>outer\n    <ul>\n      <li>a</li>\n    </ul>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li>a</li>\n    </ul>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

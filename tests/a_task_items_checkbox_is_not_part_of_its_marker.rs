@@ -99,6 +99,7 @@ fn writes_the_corpus_wide_marker_heading_at_the_content_column() {
 
 #[test]
 fn writes_the_corpus_nested_quote_at_the_content_column() {
-    // 144-nested-item-looseness-does-not-propagate-to-the-outer-item-3
-    writes("- [ ] a\n  - b\n    > q\n", "- [ ] a\n  - b\n\n    > q\n");
+    // 144-nested-item-looseness-does-not-propagate-to-the-outer-item-3. The
+    // blank loosens the inner item, so the writer keeps it (carve#5015).
+    holds("- [ ] a\n  - b\n\n    > q\n");
 }

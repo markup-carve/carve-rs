@@ -180,12 +180,12 @@ fn a_list_item_answers_the_same_ladder() {
             " ".repeat(column)
         ));
         let expected = if column >= 6 {
-            "<ul>\n  <li>item\n    <dl>\n      <dt>term</dt>\n      \
+            "<ul>\n  <li><p>item</p>\n    <dl>\n      <dt>term</dt>\n      \
              <dd>\n        <p>definition</p>\n        \
              <blockquote><p>quote</p></blockquote>\n      </dd>\n    \
              </dl>\n  </li>\n</ul>"
         } else {
-            "<ul>\n  <li>item\n    <dl>\n      <dt>term</dt>\n      \
+            "<ul>\n  <li><p>item</p>\n    <dl>\n      <dt>term</dt>\n      \
              <dd>definition</dd>\n    </dl>\n    \
              <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>"
         };
@@ -206,7 +206,7 @@ fn a_nested_list_marker_keeps_the_block_in_its_item() {
         html("[^n]: intro\n\n  - item\n\n    > quote\n\nsee[^n]\n"),
         "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n\
          <section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    \
-         <li id=\"fn1\">\n      <p>intro</p>\n      <ul>\n        <li>item\n          \
+         <li id=\"fn1\">\n      <p>intro</p>\n      <ul>\n        <li><p>item</p>\n          \
          <blockquote><p>quote</p></blockquote>\n        </li>\n      </ul>\n      \
          <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    \
          </li>\n  </ol>\n</section>"
@@ -220,7 +220,7 @@ fn a_nested_definition_writes_back_without_changing_ownership() {
 
     assert_eq!(
         formatted,
-        "- intro\n  :: term\n  : definition\n\n    > quote\n"
+        "- intro\n\n  :: term\n  : definition\n\n    > quote\n"
     );
     assert_eq!(carve::to_html(&formatted), carve::to_html(source));
     assert_eq!(carve::to_carve(&formatted), formatted);

@@ -188,8 +188,8 @@
   "a_block_below_an_empty_nested_item_uses_one_column::a_quote_below_an_empty_nested_item_uses_one_column": [
     {
       "source": "- foo\n  1. +\n    > b\n",
-      "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>",
-      "carve": "- foo\n  1. \\+\n  > b"
+      "html": "<ul>\n  <li>foo\n    <ol>\n      <li></li>\n    </ol>\n    <blockquote><p>b</p></blockquote>\n  </li>\n</ul>",
+      "carve": "- foo\n  1. {empty}\n   > b"
     },
     {
       "source": "- foo\n  1. \\+\n  > b\n",
@@ -206,7 +206,7 @@
     },
     {
       "source": "- 1. +\n",
-      "html": "<ul>\n  <li>\n    <ol>\n      <li>+</li>\n    </ol>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <ol>\n      <li></li>\n    </ol>\n  </li>\n</ul>"
     },
     {
       "source": "- > b\n",
@@ -216,8 +216,8 @@
   "a_block_below_an_empty_nested_item_uses_one_column::a_code_fence_below_an_empty_nested_item_uses_one_column": [
     {
       "source": "- foo\n  1. +\n    ```\n    x\n    ```\n",
-      "html": "<ul>\n  <li>foo\n    <ol>\n      <li>+</li>\n    </ol>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>",
-      "carve": "- foo\n  1. \\+\n  ```\n  x\n  ```"
+      "html": "<ul>\n  <li>foo\n    <ol>\n      <li></li>\n    </ol>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>",
+      "carve": "- foo\n  1. {empty}\n   ```\n   x\n   ```"
     },
     {
       "source": "- foo\n  1. \\+\n  ```\n  x\n  ```\n",
@@ -324,7 +324,7 @@
     },
     {
       "source": "- [^n]: text\n    - child\n\n      ```\n      code\n      ```\nafter [^n]\n",
-      "html": "<ul>\n  <li></li>\n</ul>\n<p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li>child\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+      "html": "<ul>\n  <li></li>\n</ul>\n<p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li><p>child</p>\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     },
     {
       "source": "- [^n]: text\n    - child\n        ```\n        code\n        ```\nafter\n",
@@ -340,7 +340,7 @@
     },
     {
       "source": "- [^n]: text\n    - child\n\n        ```\n        code\n        ```\nafter [^n]\n",
-      "html": "<ul>\n  <li></li>\n</ul>\n<p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li>child\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+      "html": "<ul>\n  <li></li>\n</ul>\n<p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li><p>child</p>\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     },
     {
       "source": "> - [^n]: text\n>     - child\n>     ```\n>     code\n>     ```\n> after\n",
@@ -372,7 +372,7 @@
     },
     {
       "source": "> - [^n]: text\n>     - child\n> \n>       ```\n>       code\n>       ```\n> after [^n]\n",
-      "html": "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li>child\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+      "html": "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li><p>child</p>\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     },
     {
       "source": "> - [^n]: text\n>     - child\n>         ```\n>         code\n>         ```\n> after\n",
@@ -388,7 +388,7 @@
     },
     {
       "source": "> - [^n]: text\n>     - child\n> \n>         ```\n>         code\n>         ```\n> after [^n]\n",
-      "html": "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li>child\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+      "html": "<blockquote>\n  <ul>\n    <li></li>\n  </ul>\n  <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li><p>child</p>\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     },
     {
       "source": "> > - [^n]: text\n> >     - child\n> >     ```\n> >     code\n> >     ```\n> > after\n",
@@ -420,7 +420,7 @@
     },
     {
       "source": "> > - [^n]: text\n> >     - child\n> > \n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
-      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li></li>\n    </ul>\n    <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  </blockquote>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li>child\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li></li>\n    </ul>\n    <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  </blockquote>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li><p>child</p>\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     },
     {
       "source": "> > - [^n]: text\n> >     - child\n> >         ```\n> >         code\n> >         ```\n> > after\n",
@@ -436,7 +436,7 @@
     },
     {
       "source": "> > - [^n]: text\n> >     - child\n> > \n> >         ```\n> >         code\n> >         ```\n> > after [^n]\n",
-      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li></li>\n    </ul>\n    <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  </blockquote>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li>child\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+      "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li></li>\n    </ul>\n    <p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  </blockquote>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>text</p>\n      <ul>\n        <li><p>child</p>\n          <pre><code>code\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     },
     {
       "source": "- [^n]: text\n    %%%\n    ```\n    code\n    ```\n    %%%\nafter [^n]\n",
@@ -991,11 +991,11 @@
   "item_hosted_named_colon::a_body_rebase_does_not_take_a_descendant_items_blocks_or_payload": [
     {
       "source": "- ::: d\n  - x\n\n    ::: d\n    a\n    :::\n  - z\n  :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li>x\n          <div class=\"d\">\n            <p>a</p>\n          </div>\n        </li>\n        <li>z</li>\n      </ul>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li><p>x</p>\n          <div class=\"d\">\n            <p>a</p>\n          </div>\n        </li>\n        <li><p>z</p></li>\n      </ul>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: d\n  - head\n\n        ::: note\n        a\n  - second\n  :::\n",
-      "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li>head\n          <aside class=\"admonition note\" aria-label=\"Note\">\n            <p>a</p>\n          </aside>\n        </li>\n        <li>second</li>\n      </ul>\n    </div>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>\n    <div class=\"d\">\n      <ul>\n        <li><p>head</p>\n          <aside class=\"admonition note\" aria-label=\"Note\">\n            <p>a</p>\n          </aside>\n        </li>\n        <li><p>second</p></li>\n      </ul>\n    </div>\n  </li>\n</ul>"
     },
     {
       "source": "- ::: d\n  - ::: box\n    ```\n     ::: note\n    ```\n    :::\n",
@@ -1675,7 +1675,7 @@
     },
     {
       "source": "- a\n  - b\n\n    ```\n    x\n- c\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
     },
     {
       "source": "- a\n  - b\n    ```\n    :::\n    ```\n tail\n",
@@ -1687,11 +1687,11 @@
     },
     {
       "source": "- a\n  - b\n    - c\n\n      ```\n      p\n   x\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
     },
     {
       "source": "- a\n  - b\n\n\t```\n\tp\n ```\n\n\ttail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
     }
   ],
   "nested_fence_ownership::nested_fence_ownership_matches_spec_509": [
@@ -1709,11 +1709,11 @@
     },
     {
       "source": "- a\n  - b\n\n    ```\n    p\n ```\n\n    tail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
     },
     {
       "source": "- a\n  - b\n\n    ```\n    p\n  ```\n\n    tail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n    <pre><code>\n  tail\n</code></pre>\n  </li>\n</ul>"
     },
     {
       "source": "- a\n  - b\n    ```\n    p\n```\n",
@@ -1725,23 +1725,23 @@
     },
     {
       "source": "- a\n  - b\n    - c\n\n      ```\n      p\n```\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code></code></pre>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code></code></pre>"
     },
     {
       "source": "- a\n  - b\n    - c\n\n      ```\n      p\n  ```\n\n      tail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <pre><code>\n    tail\n</code></pre>\n  </li>\n</ul>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li><p>c</p>\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    <pre><code>\n    tail\n</code></pre>\n  </li>\n</ul>"
     },
     {
       "source": "- a\n  - b\n\n    ~~~\n    p\n ~~~\n\n    tail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n   tail\n</code></pre>"
     },
     {
       "source": "- a\n  - b\n\n    ```=html\n    <b>p</b>\n```\n\n    tail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <b>p</b>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <b>p</b>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
     },
     {
       "source": "- a\n  - b\n\n    ```\n    p\n```\n\n    tail\n",
-      "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
+      "html": "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>\n    tail\n</code></pre>"
     }
   ],
   "opaque_marker_quote_ownership::a_closed_quoted_comment_preserves_lazy_payload_indentation": [

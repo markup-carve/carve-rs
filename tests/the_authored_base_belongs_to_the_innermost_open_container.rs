@@ -65,7 +65,7 @@ fn the_same_document_answers_the_same_way_inside_a_list_item() {
     // the outer container's kind never enters the question.
     assert_eq!(
         html("- intro\n\n   :: term\n   :  definition\n\n      > quote\n"),
-        "<ul>\n  <li>intro\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <p>definition</p>\n        <blockquote><p>quote</p></blockquote>\n      </dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>intro</p>\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <p>definition</p>\n        <blockquote><p>quote</p></blockquote>\n      </dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
 
@@ -107,7 +107,7 @@ fn a_quote_at_a_nested_items_content_column_stays_in_the_item() {
     // does not disturb it.
     assert_eq!(
         html("[^n]: intro\n\n  - item\n\n    > quote\n\nsee[^n]\n"),
-        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <ul>\n        <li>item\n          <blockquote><p>quote</p></blockquote>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <ul>\n        <li><p>item</p>\n          <blockquote><p>quote</p></blockquote>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     );
 }
 

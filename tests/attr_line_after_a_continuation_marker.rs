@@ -142,7 +142,7 @@ fn a_table_attribute_turns_the_attached_csv_fence_into_a_table() {
     // The indented spelling, which always built the table.
     assert_eq!(
         carve::to_html("- a\n\n  {table}\n  ```csv\n  a,b\n  1,2\n  ```\n"),
-        format!("<ul>\n  <li>a\n    {table}\n  </li>\n</ul>")
+        format!("<ul>\n  <li><p>a</p>\n    {table}\n  </li>\n</ul>")
     );
 }
 

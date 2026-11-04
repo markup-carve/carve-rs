@@ -182,7 +182,7 @@ fn a_heading_at_the_bodys_content_column_ends_the_body_too() {
     );
     assert_eq!(
         list_twin("- d\n\n  # H\nlazy\n"),
-        "<ul>\n  <li>d\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>lazy</p>"
+        "<ul>\n  <li><p>d</p>\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 

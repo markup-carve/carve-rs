@@ -19,7 +19,7 @@ fn a_marker_line_definition_after_an_indented_run_is_a_definition() {
         ),
         (
             "- b\n\n  > p\n- [^d]: x\n",
-            "<ul>\n  <li>b\n    <blockquote><p>p</p></blockquote>\n  </li>\n  <li></li>\n</ul>",
+            "<ul>\n  <li><p>b</p>\n    <blockquote><p>p</p></blockquote>\n  </li>\n  <li></li>\n</ul>",
         ),
         (
             "::: d\n- a\n\n  b\n- [d]: /u\n:::\n",

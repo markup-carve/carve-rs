@@ -3,7 +3,9 @@ fn a_literal_plus_after_a_nested_fence_keeps_its_column_for_cross_readers() {
     for tail in ["tail", "second line", "[link](a)"] {
         let source = format!("- - [ ] ```js\n        x\n\n  +\n{tail}\n");
         let formatted = carve::to_carve(&source);
-        assert!(formatted.contains("\n  \\+\n"), "{formatted:?}");
+        // The `+` at the inner marker column is a refused marker, not a
+        // letter, so nothing of it is written back (carve#5013).
+        assert!(!formatted.contains('+'), "{formatted:?}");
         assert_eq!(
             carve::to_html(&formatted),
             carve::to_html(&source),

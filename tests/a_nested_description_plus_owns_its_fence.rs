@@ -35,14 +35,19 @@ fn the_inner_description_owns_the_fence_after_its_plus() {
 
 #[test]
 fn outer_and_wrong_column_markers_do_not_move_a_fence_into_the_inner_description() {
-    for source in [
-        ":: t\n:  d\n   :: term\n   :  detail\n+\n   ```\n   code\n   ```\n",
-        ":: t\n:  d\n   :: term\n   :  detail\n  +\n   ```\n   code\n   ```\n",
+    // The outer `+` is a refused marker at the outer marker column (carve#5013):
+    // it renders nothing and the fence leaves the outer description too.
+    for (source, want) in [
+        (
+            ":: t\n:  d\n   :: term\n   :  detail\n+\n   ```\n   code\n   ```\n",
+            "</dl>\n  </dd>\n</dl>\n<p><code>\ncode\n</code></p>",
+        ),
+        (
+            ":: t\n:  d\n   :: term\n   :  detail\n  +\n   ```\n   code\n   ```\n",
+            "</dl>\n    <pre><code>code\n</code></pre>",
+        ),
     ] {
         let html = carve::to_html(source);
-        assert!(
-            html.contains("</dl>\n    <pre><code>code\n</code></pre>"),
-            "{html}"
-        );
+        assert!(html.contains(want), "{html}");
     }
 }

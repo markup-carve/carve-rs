@@ -80,9 +80,9 @@ fn every_appendix_a_row_flips_as_the_report_says() {
     assert!(failed.is_empty(), "{failed:#?}");
 }
 
-/// Replacing a refused `+` with a letter changes the output only in that character.
+/// A `+` at a marker column is always a marker, so a refused one renders nothing (carve#5013).
 #[test]
-fn a_refused_plus_is_a_plain_letter() {
+fn a_refused_plus_renders_nothing() {
     let hosts: [&[&str]; 12] = [
         &["- +"],
         &["1. +"],
@@ -129,15 +129,8 @@ fn a_refused_plus_is_a_plain_letter() {
                 lines.push("see[^a]".to_string());
                 let source = lines.join("\n") + "\n";
                 let plain = to_html(&source);
-                if !plain.contains('+') {
-                    continue;
-                }
                 kept += 1;
-                let plus_line = head.last().unwrap();
-                let at = source.find(plus_line).unwrap() + plus_line.rfind('+').unwrap();
-                let mut letter = source.clone();
-                letter.replace_range(at..at + 1, "w");
-                assert_eq!(plain, to_html(&letter).replace('w', "+"), "{source:?}");
+                assert!(!plain.contains('+'), "{source:?}");
             }
         }
     }
@@ -149,7 +142,7 @@ fn a_source_holding_control_bytes_keeps_them() {
     let source = "\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\n\n- +\n- b\n";
     let html = to_html(source);
     assert!(html.contains('\u{1}'), "{html:?}");
-    assert!(html.contains("<li>+</li>"), "{html:?}");
+    assert!(html.contains("<li></li>"), "{html:?}");
 }
 
 #[test]

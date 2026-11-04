@@ -40,7 +40,7 @@ fn an_image_or_figure_below_a_nested_list_keeps_its_blank() {
         (
             "table",
             "- - text\n\n  | a |\n  | - |\n  | b |\n- c\n",
-            "- - text\n\n  | a |\n  | --- |\n  | b |\n- c\n",
+            "- - text\n\n  | a |\n  | --- |\n  | b |\n\n- c\n",
         ),
         (
             "paragraph at depth 3",
@@ -56,7 +56,7 @@ fn an_image_or_figure_below_a_nested_list_keeps_its_blank() {
 fn a_block_that_interrupts_a_paragraph_stays_glued() {
     assert_eq!(
         to_markdown("- - text\n\n  # h\n- c\n"),
-        "- - text\n  # h\n- c\n"
+        "- - text\n  # h\n\n- c\n"
     );
 }
 
@@ -65,6 +65,6 @@ fn a_thematic_break_below_a_nested_list_needs_no_blank() {
     // A setext underline cannot be lazy text, matching carve-js and carve-php.
     assert_eq!(
         to_markdown("- - text\n\n  ---\n- c\n"),
-        "- - text\n  ---\n- c\n"
+        "- - text\n  ---\n\n- c\n"
     );
 }

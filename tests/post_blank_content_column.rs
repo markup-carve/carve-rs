@@ -44,7 +44,7 @@ fn ordered_block_opener_at_content_column_nests() {
     // `> q` at column 3 IS `1. `'s content_column, so it nests.
     assert_eq!(
         carve::to_html("1. one\n\n   > q"),
-        "<ol>\n  <li>one\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
+        "<ol>\n  <li><p>one</p>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
     );
 }
 
@@ -54,7 +54,7 @@ fn ordered_block_opener_at_content_column_nests() {
 fn block_opener_above_content_column_uses_its_authored_base() {
     assert_eq!(
         carve::to_html("- one\n\n   # h"),
-        "<ul>\n  <li>one\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>one</p>\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
     );
 }
 

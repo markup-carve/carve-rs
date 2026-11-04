@@ -105,7 +105,8 @@ fn writes_the_ticket_document_back_as_the_author_wrote_it() {
         shape(source),
         "document(list(list_item(list(list_item),list(list_item))))"
     );
-    assert_eq!(fmt(source), "- outer\n  - a\n\n\n\n  - b\n");
+    // The blank before `- a` loosens the item (carve#5015), so it stays.
+    assert_eq!(fmt(source), "- outer\n\n  - a\n\n\n\n  - b\n");
     round_trips(source);
 }
 
@@ -294,10 +295,12 @@ fn leaves_the_marker_column_to_the_kinds_that_still_need_it() {
     // Two sibling blockquotes, tables, line blocks and definition lists merge
     // when written adjacent and CAN be attached at column 0, because none of
     // them opens there in preference to being attached. They keep the `+`.
-    assert!(fmt("- outer\n\n  > a\n\n  > b\n").contains("\n+\n"));
-    assert!(fmt("- outer\n\n  | a |\n\n  | a |\n").contains("\n+\n"));
-    round_trips("- outer\n\n  > a\n\n  > b\n");
-    round_trips("- outer\n\n  | a |\n\n  | a |\n");
+    // A blank before the first one loosens the item (carve#5015), so the
+    // tight item is the one written with markers.
+    assert!(fmt("- outer\n  > a\n+\n> b\n").contains("\n+\n"));
+    assert!(fmt("- outer\n  | a |\n+\n| a |\n").contains("\n+\n"));
+    round_trips("- outer\n  > a\n+\n> b\n");
+    round_trips("- outer\n  | a |\n+\n| a |\n");
 }
 
 #[test]

@@ -175,10 +175,10 @@ fn nested_tightness_loss_is_reported() {
         .losses
         .iter()
         .any(|loss| loss.code == "list-tightness-lost"));
-    assert!(report
-        .value
-        .lines()
-        .all(|line| line.trim() != "+" || line.starts_with('+')));
+    // A tight item's separated body is spelled with a `+` at the item's marker
+    // column (carve#5015, CARVE-P11-042), which keeps `second` bare.
+    let html = carve::to_html(&report.value);
+    assert!(!html.contains("<p>second</p>"), "{}\n{html}", report.value);
 }
 
 // A task's checkbox moves its marker-line child right, so a fence there owns
