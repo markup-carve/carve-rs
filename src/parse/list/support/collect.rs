@@ -1012,8 +1012,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 surviving_definition_body_column = None;
             }
             open_definition_body_column = None;
+            // A deeper term after a blank nests in a description; the outer list stays open.
             definition_list_column = Some(match definition_list_column {
-                Some(column) if !after_definition_blank => column.min(indent),
+                Some(column) if !after_definition_blank || indent > column => column.min(indent),
                 _ => indent,
             });
         } else if description {
