@@ -41,6 +41,13 @@
       "cases": [
         "fences-7b1ba5bdbbb8"
       ]
+    },
+    {
+      "ticket": "markup-carve/carve#5132",
+      "cause": "ruled: a quote plus after a quote-attached paragraph is a letter; the pin's model predates the model fix in carve#5154",
+      "cases": [
+        "lazy-5e5b39627ed0"
+      ]
     }
   ]
 }
