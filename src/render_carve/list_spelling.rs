@@ -692,7 +692,10 @@ pub(super) fn render_definition_list(
             }
             let body = trim_non_nbsp(&at_item_content_column(ctx, |ctx| {
                 ctx.join_trailing_comments = last_description && ctx.item_followed_by_marker;
-                render_blocks(session, def, ctx, None)
+                let outer_body = std::mem::replace(&mut ctx.marker_body, def.as_ptr() as usize);
+                let body = render_blocks(session, def, ctx, None);
+                ctx.marker_body = outer_body;
+                body
             }))
             .to_string();
             if body.is_empty() {

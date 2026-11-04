@@ -1387,3 +1387,22 @@ fn image_alt_block_markers_round_trip() {
         assert_eq!(carve::to_html(source), carve::to_html(&written), "{source}");
     }
 }
+
+#[test]
+fn a_marker_body_list_follows_its_paragraph_without_a_blank() {
+    // carve-rs#3836, corpus 637-3 (PART 0 S3, carve#4860).
+    assert_eq!(
+        carve::to_carve(". d\n   [^n]: e\n     - a\n"),
+        ". d\n\n[^n]: e\n  - a\n"
+    );
+    assert_eq!(
+        carve::to_carve("x[^n]\n\n[^n]: e\n\n  - a\n"),
+        "x[^n]\n\n[^n]: e\n  - a\n"
+    );
+    assert_eq!(carve::to_carve(":: t\n: e\n\n  - a\n"), ":: t\n: e\n  - a\n");
+    // A quote is not a list: it keeps its blank.
+    assert_eq!(
+        carve::to_carve("x[^n]\n\n[^n]: e\n  > q\n"),
+        "x[^n]\n\n[^n]: e\n\n  > q\n"
+    );
+}

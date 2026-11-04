@@ -77,6 +77,8 @@ struct CarveContext {
     /// visible block one newline apart, as a blank there would loosen a list.
     join_trailing_comments: bool,
     in_footnote_body: bool,
+    /// The block slice of the footnote or description body being written.
+    marker_body: usize,
     footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
@@ -750,6 +752,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         item_followed_by_marker: false,
         join_trailing_comments: false,
         in_footnote_body: false,
+        marker_body: 0,
         footnote_guard_types: Vec::new(),
         escape_mode,
         escape_unit: 0,
@@ -1610,7 +1613,12 @@ fn render_blocks(
             let trailing_comment = join_trailing_comments
                 && last_visible.is_some_and(|last| index > last)
                 && matches!(block, BlockNode::Comment(comment) if !comment.delimited);
+            // A marker body's list ends its paragraph with no blank, as an item's does (PART 0 S3, carve#4860).
+            let body_list = list == ctx.marker_body
+                && matches!(block, BlockNode::List(_))
+                && matches!(previous_emitted, Some(BlockNode::Paragraph(_)));
             let adjacent = trailing_comment
+                || body_list
                 || previous_emitted
                     .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
             if !after_empty_nested {
@@ -3041,7 +3049,9 @@ fn render_footnote_def_source(
     let previous_footnote_body = ctx.in_footnote_body;
     let previous_guard_types = std::mem::take(&mut ctx.footnote_guard_types);
     ctx.in_footnote_body = true;
+    let outer_body = std::mem::replace(&mut ctx.marker_body, blocks.as_ptr() as usize);
     let raw_body = render_blocks(session, blocks, ctx, None);
+    ctx.marker_body = outer_body;
     ctx.in_footnote_body = previous_footnote_body;
     let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
     if previous_footnote_body {
