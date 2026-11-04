@@ -48,7 +48,10 @@ fn a_containers_body_may_end_in_a_wrapped_block() {
 #[test]
 fn a_wrapped_block_still_attaches_to_the_block_below_it() {
     // Interrupting is not dropping: with a block after it, the attribute lands.
-    assert_eq!(html("{.k\n #x}\ntail\n"), "<p class=\"k\" id=\"x\">tail</p>");
+    assert_eq!(
+        html("{.k\n #x}\ntail\n"),
+        "<p class=\"k\" id=\"x\">tail</p>"
+    );
 }
 
 // ---------------------------------------------------------------------------
