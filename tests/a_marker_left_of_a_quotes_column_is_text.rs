@@ -19,13 +19,15 @@ fn with_marker_at(column: usize) -> String {
     html(&format!("- x\n  > q\n{}+\n", " ".repeat(column)))
 }
 
-// The refused marker renders nothing (carve#5013).
-const KEPT: &str = "<ul>\n  <li>x\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>";
+const KEPT: &str = "<ul>\n  <li>x\n    <blockquote><p>q\n+</p></blockquote>\n  </li>\n</ul>";
+
+// At a marker column the refused marker renders nothing (carve#5013).
+const CONSUMED: &str = "<ul>\n  <li>x\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>";
 
 #[test]
 fn a_dangling_column_zero_plus_stays_in_the_quote() {
-    assert_eq!(with_marker_at(0), KEPT);
-    assert_eq!(with_marker_at(2), KEPT);
+    assert_eq!(with_marker_at(0), CONSUMED);
+    assert_eq!(with_marker_at(2), CONSUMED);
 }
 
 #[test]

@@ -56,8 +56,10 @@ fn a_plus_inside_the_attached_fence_is_code() {
 
 #[test]
 fn a_plus_with_no_block_stays_text() {
+    // The refused marker renders nothing (carve#5013).
     let html = to_html("- [^m]: x\n  +\n\nr[^m]\n");
-    assert!(html.contains("<p>x\n+"), "{html}");
+    assert!(html.contains("<p>x<a href"), "{html}");
+    assert!(!html.contains('+'), "{html}");
 }
 
 #[test]

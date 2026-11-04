@@ -13,6 +13,7 @@ fn refused_second_plus_starts_a_paragraph_in_quote_and_description() {
 #[test]
 fn refused_second_plus_stays_in_the_footnote_body() {
     let html = carve::to_html("[^a]: q\n+\n+\n\nref [^a]");
-    assert!(html.contains("<p>q</p>\n      <p>+<a"), "{html}");
+    // The claimed second marker renders nothing (carve#5013).
+    assert!(html.contains("<p>q<a"), "{html}");
     assert!(!html.starts_with("<p>+</p>"), "{html}");
 }

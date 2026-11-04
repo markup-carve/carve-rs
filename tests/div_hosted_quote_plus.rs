@@ -10,7 +10,8 @@ fn consecutive_plus_stays_in_div_hosted_quote() {
         let source = format!("::: {host}\n> q\n+\n+\n:::\n");
         let html = compact(&to_html(&source));
         assert!(
-            html.contains("<blockquote><p>q</p><p>+</p></blockquote>"),
+            // The claimed second marker renders nothing (carve#5013).
+            html.contains("<blockquote><p>q</p></blockquote>"),
             "{source:?}: {html}"
         );
 
