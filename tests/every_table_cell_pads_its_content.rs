@@ -35,7 +35,7 @@ fn an_attributed_header_cell_pads_its_content_too() {
 fn an_alignment_marker_stays_in_the_prefix() {
     assert_eq!(
         fmt("|= Item |=> Score |\n| Pen |>{.num} 9 |\n"),
-        "|= Item |=> Score |\n| Pen |>{.num} 9 |\n"
+        "|= Item |={>} Score |\n| Pen |{> .num} 9 |\n"
     );
 }
 

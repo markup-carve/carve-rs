@@ -125,7 +125,7 @@ fn the_closed_schema_refuses_a_width_that_is_not_a_positive_integer() {
 
 #[test]
 fn the_writer_uses_native_headers_after_a_separator_row() {
-    let canonical = "|=< a |=> b |\n| 1 | 2 |\n";
+    let canonical = "|={<} a |={>} b |\n| 1 | 2 |\n";
     assert_eq!(spelled(ALIGNED), canonical);
     assert_eq!(through_json(ALIGNED), canonical);
     let plain = "| a | b |\n|---|-------|\n| 1 | 2 |\n";
@@ -139,7 +139,7 @@ fn absence_still_spells_the_native_header_form() {
         "|= a |= b |\n| 1 | 2 |\n"
     );
     // The alignment has nowhere else to go, so it stays on the cells.
-    assert_eq!(spelled("|=< a |=> b |\n"), "|=< a |=> b |\n");
+    assert_eq!(spelled("|=< a |=> b |\n"), "|={<} a |={>} b |\n");
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn a_width_below_one_does_not_affect_canonical_output() {
     doc.children = vec![BlockNode::Table(table)];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "|=< a |=> b |\n| 1 | 2 |\n"
+        "|={<} a |={>} b |\n| 1 | 2 |\n"
     );
 }
 
@@ -164,13 +164,13 @@ fn an_entry_count_that_disagrees_does_not_affect_canonical_output() {
     doc.children = vec![BlockNode::Table(table.clone())];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "|=< a |=> b |\n| 1 | 2 |\n"
+        "|={<} a |={>} b |\n| 1 | 2 |\n"
     );
     table.separator_widths = Some(vec![1, 1, 1, 1]);
     doc.children = vec![BlockNode::Table(table)];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "|=< a |=> b |\n| 1 | 2 |\n"
+        "|={<} a |={>} b |\n| 1 | 2 |\n"
     );
 }
 
@@ -218,14 +218,14 @@ fn roundtrip_export_carries_the_widths_and_import_writes_native_headers() {
         html.contains(r#"<table data-carve-col-widths="5,3">"#),
         "{html}"
     );
-    assert_eq!(imported(&html), "|=< a |=> b |\n| 1 | 2 |\n");
+    assert_eq!(imported(&html), "|={<} a |={>} b |\n| 1 | 2 |\n");
 }
 
 #[test]
 fn with_the_option_off_the_table_still_comes_back_as_the_native_form() {
     let html = exported(ALIGNED, false);
     assert!(!html.contains("col-widths"), "{html}");
-    assert_eq!(imported(&html), "|=< a |=> b |\n| 1 | 2 |\n");
+    assert_eq!(imported(&html), "|={<} a |={>} b |\n| 1 | 2 |\n");
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn an_entry_past_the_headers_last_cell_takes_no_alignment() {
     // count deciding the row.
     let source = "| a |\n|:---:|---|\n| 1 |\n";
     assert_eq!(table_of(source).separator_widths, Some(vec![3, 3]));
-    assert_eq!(spelled(source), "|=~ a |\n| 1 |\n");
+    assert_eq!(spelled(source), "|={~} a |\n| 1 |\n");
 }
 
 // ------------------------------------------------- the ProseMirror bridge
@@ -375,7 +375,10 @@ fn large_widths_remain_exact_on_the_wire_without_affecting_canonical_output() {
         table.separator_widths = Some(widths);
         let json = to_json(&doc);
         assert_eq!(to_json(&from_json(&json).unwrap()), json);
-        assert_eq!(render_carve(&doc).unwrap(), "|=< a |=> b |\n| 1 | 2 |\n");
+        assert_eq!(
+            render_carve(&doc).unwrap(),
+            "|={<} a |={>} b |\n| 1 | 2 |\n"
+        );
     }
 }
 

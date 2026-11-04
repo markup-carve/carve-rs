@@ -1711,9 +1711,11 @@ mod layout_html_tests {
         // spec 14e66c05 adds one more accepted document; every accepted HTML
         // result is compared with the authoritative path above. The pin to spec
         // c3c2f80f adds one more, compared the same way. Spaced breaks
-        // (carve#4814) add corpus 132 and 132-5, now a lone `<hr>`.
+        // (carve#4814) add corpus 132 and 132-5, now a lone `<hr>`. Spec
+        // a62d876f migrates authored GFM tables to native `|=` headers
+        // (carve#5097), which this path does not take: 83 to 82.
         assert_eq!(
-            accepted, 83,
+            accepted, 82,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

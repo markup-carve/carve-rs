@@ -36,7 +36,10 @@ fn the_writer_spelling_reads_back_as_written() {
 #[test]
 fn a_left_aligned_blank_markdown_row_round_trips() {
     let result = migrate_markdown("| A | B |\n|:--|--:|\n|   |   |\n| 1 | 2 |\n");
-    assert_eq!(result.value, "|=< A |=> B |\n| |> |\n|< 1 |> 2 |\n");
+    assert_eq!(
+        result.value,
+        "|={<} A |={>} B |\n|{<} |{>} |\n|{<} 1 |{>} 2 |\n"
+    );
     assert_eq!(to_carve(&result.value), result.value);
     assert!(rows(&result.value).contains(
         "<tr><td style=\"text-align: left;\"></td><td style=\"text-align: right;\"></td></tr>"

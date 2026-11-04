@@ -38,7 +38,7 @@ fn cell(declaration: &str) -> String {
 fn the_mapping_is_present_in_the_binary_under_test() {
     assert_eq!(
         imported(&cell("text-align:right"), HtmlImportMode::Semantic),
-        "|> a | b |\n",
+        "|{>} a | b |\n",
         "a stale artifact: this binary's importer predates the cell-alignment mapping"
     );
 }
@@ -52,7 +52,7 @@ fn text_align_reaches_the_marker_run_in_every_mode() {
     ] {
         for (value, marker) in [("right", ">"), ("left", "<"), ("center", "~")] {
             let html = cell(&format!("text-align:{value}"));
-            assert_eq!(imported(&html, mode), format!("|{marker} a | b |\n"));
+            assert_eq!(imported(&html, mode), format!("|{{{marker}}} a | b |\n"));
             assert_eq!(codes(&html, mode), Vec::new());
         }
     }
@@ -68,7 +68,7 @@ fn vertical_align_reaches_the_run_behind_an_inherited_horizontal() {
     for mode in [HtmlImportMode::Semantic, HtmlImportMode::Roundtrip] {
         for (value, run) in [("top", "?^"), ("middle", "?~"), ("bottom", "?v")] {
             let html = cell(&format!("vertical-align:{value}"));
-            assert_eq!(imported(&html, mode), format!("|{run} a | b |\n"));
+            assert_eq!(imported(&html, mode), format!("|{{{run}}} a | b |\n"));
             assert_eq!(codes(&html, mode), Vec::new());
         }
     }
@@ -86,7 +86,7 @@ fn both_axes_are_written_as_one_run() {
         let html = cell(declaration);
         assert_eq!(
             imported(&html, HtmlImportMode::Semantic),
-            format!("|{run} a | b |\n")
+            format!("|{{{run}}} a | b |\n")
         );
         assert_eq!(codes(&html, HtmlImportMode::Semantic), Vec::new());
     }
@@ -124,15 +124,15 @@ fn the_re_render_gives_back_the_declaration_the_import_was_handed() {
 #[test]
 fn the_marker_run_is_a_fixed_point_through_html() {
     for source in [
-        "|> a | b |\n",
-        "|?^ a | b |\n",
-        "|<^ a |\n",
-        "|>v a |\n",
-        "|~~ a |\n",
-        "|=> h |\n| a |\n",
-        "|=?^ h |\n| a |\n",
-        "|=> h |= g |\n| a |> b |\n",
-        "| a | b |\n| c |> d |\n",
+        "|{>} a | b |\n",
+        "|{?^} a | b |\n",
+        "|{<^} a |\n",
+        "|{>v} a |\n",
+        "|{~~} a |\n",
+        "|={>} h |\n| a |\n",
+        "|={?^} h |\n| a |\n",
+        "|={>} h |= g |\n| a |{>} b |\n",
+        "| a | b |\n| c |{>} d |\n",
     ] {
         let first = to_html(source);
         let back = imported(&first, HtmlImportMode::Roundtrip);
@@ -216,7 +216,7 @@ fn a_value_outside_the_enum_still_reports() {
 #[test]
 fn a_mapped_declaration_beside_an_unmapped_one_reports_only_the_loss() {
     let html = "<table><tr><td style=\"text-align:right;color:red\">a</td></tr></table>";
-    assert_eq!(imported(html, HtmlImportMode::Semantic), "|> a |\n");
+    assert_eq!(imported(html, HtmlImportMode::Semantic), "|{>} a |\n");
     assert_eq!(
         codes(html, HtmlImportMode::Semantic),
         vec![HtmlImportDiagnosticCode::StyleUnmapped]
@@ -244,7 +244,7 @@ fn the_declaration_is_read_case_insensitively_and_untrimmed() {
         "  text-align:Right  ",
     ] {
         let html = format!("<table><tr><td style=\"{declaration}\">a</td></tr></table>");
-        assert_eq!(imported(&html, HtmlImportMode::Semantic), "|> a |\n");
+        assert_eq!(imported(&html, HtmlImportMode::Semantic), "|{>} a |\n");
     }
 }
 
@@ -252,7 +252,7 @@ fn the_declaration_is_read_case_insensitively_and_untrimmed() {
 #[test]
 fn the_last_declaration_of_an_axis_wins() {
     let html = "<table><tr><td style=\"text-align:right;text-align:left\">a</td></tr></table>";
-    assert_eq!(imported(html, HtmlImportMode::Semantic), "|< a |\n");
+    assert_eq!(imported(html, HtmlImportMode::Semantic), "|{<} a |\n");
 }
 
 /// OFF A CELL there is no marker run, and the answer splits by property.
@@ -310,7 +310,7 @@ fn a_body_cell_the_head_already_covers_writes_no_run() {
                   <tbody><tr><td style=\"text-align:right\">a</td></tr></tbody></table>";
     assert_eq!(
         imported(shared, HtmlImportMode::Semantic),
-        "|=> h |\n| a |\n"
+        "|={>} h |\n| a |\n"
     );
 
     // A cell that DISAGREES keeps its own run: that is the only thing that
@@ -319,7 +319,7 @@ fn a_body_cell_the_head_already_covers_writes_no_run() {
                      <tbody><tr><td style=\"text-align:left\">a</td></tr></tbody></table>";
     assert_eq!(
         imported(differing, HtmlImportMode::Semantic),
-        "|=> h |\n|< a |\n"
+        "|={>} h |\n|{<} a |\n"
     );
 
     // A column with no default at all leaves every cell stating its own.
@@ -327,7 +327,7 @@ fn a_body_cell_the_head_already_covers_writes_no_run() {
                     <tbody><tr><td style=\"text-align:right\">a</td></tr></tbody></table>";
     assert_eq!(
         imported(headless, HtmlImportMode::Semantic),
-        "|= h |\n|> a |\n"
+        "|= h |\n|{>} a |\n"
     );
 
     // PER AXIS. A cell agreeing on the horizontal and stating its own vertical
@@ -336,7 +336,7 @@ fn a_body_cell_the_head_already_covers_writes_no_run() {
                  <tbody><tr><td style=\"text-align:right;vertical-align:top\">a</td></tr></tbody></table>";
     assert_eq!(
         imported(mixed, HtmlImportMode::Semantic),
-        "|=> h |\n|?^ a |\n"
+        "|={>} h |\n|{?^} a |\n"
     );
 
     // And only the column the cell is IN. The second column's head states
@@ -346,7 +346,7 @@ fn a_body_cell_the_head_already_covers_writes_no_run() {
                <td style=\"text-align:right\">b</td></tr></tbody></table>";
     assert_eq!(
         imported(two, HtmlImportMode::Semantic),
-        "|=> h |= g |\n| a |> b |\n"
+        "|={>} h |= g |\n| a |{>} b |\n"
     );
 }
 
@@ -365,7 +365,7 @@ fn a_rowspan_shifts_the_column_a_body_cell_is_compared_against() {
                 <tr><td style=\"text-align:right\">c</td></tr></tbody></table>";
     assert_eq!(
         imported(html, HtmlImportMode::Semantic),
-        "|=> h |= g |\n| x |> a |\n| ^ |> b |\n| ^ |> c |\n"
+        "|={>} h |= g |\n| x |{>} a |\n| ^ |{>} b |\n| ^ |{>} c |\n"
     );
     // The mirror image: the head states the alignment on column 1, so every
     // body cell in it drops its run.
@@ -374,7 +374,7 @@ fn a_rowspan_shifts_the_column_a_body_cell_is_compared_against() {
                   <tr><td style=\"text-align:right\">b</td></tr></tbody></table>";
     assert_eq!(
         imported(mirror, HtmlImportMode::Semantic),
-        "|= h |=> g |\n| x | a |\n| ^ | b |\n"
+        "|= h |={>} g |\n| x | a |\n| ^ | b |\n"
     );
 }
 
@@ -406,7 +406,7 @@ fn a_presentational_attribute_a_declaration_supersedes_is_dropped() {
         "<table><tr><td style=\"text-align:left\" align=\"right\">a</td></tr></table>",
         "<table><tr><td align=\"right\" style=\"text-align:left\">a</td></tr></table>",
     ] {
-        assert_eq!(imported(html, HtmlImportMode::Semantic), "|< a |\n");
+        assert_eq!(imported(html, HtmlImportMode::Semantic), "|{<} a |\n");
         assert_eq!(
             codes(html, HtmlImportMode::Semantic),
             vec![HtmlImportDiagnosticCode::AttributeDropped]
@@ -415,7 +415,7 @@ fn a_presentational_attribute_a_declaration_supersedes_is_dropped() {
 
     let vertical =
         "<table><tr><td style=\"vertical-align:top\" valign=\"bottom\">a</td></tr></table>";
-    assert_eq!(imported(vertical, HtmlImportMode::Semantic), "|?^ a |\n");
+    assert_eq!(imported(vertical, HtmlImportMode::Semantic), "|{?^} a |\n");
     assert_eq!(
         codes(vertical, HtmlImportMode::Semantic),
         vec![HtmlImportDiagnosticCode::AttributeDropped]
@@ -429,14 +429,14 @@ fn a_presentational_attribute_on_the_other_axis_survives() {
     let html = "<table><tr><td style=\"text-align:right\" valign=\"top\">a</td></tr></table>";
     assert_eq!(
         imported(html, HtmlImportMode::Semantic),
-        "|>{valign=top} a |\n"
+        "|{> valign=top} a |\n"
     );
     assert_eq!(codes(html, HtmlImportMode::Semantic), Vec::new());
 
     let mirror = "<table><tr><td style=\"vertical-align:top\" align=\"right\">a</td></tr></table>";
     assert_eq!(
         imported(mirror, HtmlImportMode::Semantic),
-        "|?^{align=right} a |\n"
+        "|{?^ align=right} a |\n"
     );
     assert_eq!(codes(mirror, HtmlImportMode::Semantic), Vec::new());
 }
@@ -462,12 +462,12 @@ fn a_bare_presentational_attribute_is_left_alone() {
 #[test]
 fn the_run_composes_with_the_header_marker_and_an_attribute_block() {
     let html = "<table><tr><td style=\"text-align:right\" id=\"x\" class=\"k\">a</td></tr></table>";
-    assert_eq!(imported(html, HtmlImportMode::Semantic), "|>{#x .k} a |\n");
+    assert_eq!(imported(html, HtmlImportMode::Semantic), "|{> #x .k} a |\n");
 
     let header =
         "<table><tr><th style=\"text-align:center\">h</th></tr><tr><td>a</td></tr></table>";
     assert_eq!(
         imported(header, HtmlImportMode::Semantic),
-        "|=~ h |\n| a |\n"
+        "|={~} h |\n| a |\n"
     );
 }

@@ -20,17 +20,12 @@ fn shared_alignment_fixtures() {
     assert!(cases.len() >= 13, "{} fixtures", cases.len());
     let options = carve::Options::default().with_align_tables(true);
     for case in cases {
-        // The spec d9d5dea7 pin spells D3 alignment in cell attributes
-        // (carve#5091); the carve-rs port is pending.
-        if case.name == "attributes spans and empty cells" {
-            continue;
-        }
-        // These two pinned rows predate the native-header fmt ruling.
+        // Roundtrip rows: the canonical writer spells their head with `|=` cells.
         let (canonical, aligned) = match case.name.as_str() {
             "authored separator" => ("|= A |= B |\n| x | yy |\n", "|= A |= B |\n| x  | yy |\n"),
             "separator colons" => (
-                "|=< A |=> B |\n| x | right |\n",
-                "|=< A |=> B   |\n| x   | right |\n",
+                "|={<} A |={>} B |\n| x | right |\n",
+                "|={<} A |={>} B |\n| x     | right |\n",
             ),
             _ => (case.canonical.as_str(), case.aligned.as_str()),
         };

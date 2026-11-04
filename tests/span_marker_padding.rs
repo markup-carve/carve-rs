@@ -50,8 +50,8 @@ fn empty_header_left_default_survives_a_delimiter_row() {
     let source = "|=< |\n|:--|\n| a |\n";
     let written = to_carve(source);
     assert_eq!(to_html(&written), to_html(source), "{written:?}");
-    // carve#4974: the canonical writer spells it as a native `|=<` cell.
-    assert!(written.contains("|=< |"), "{written:?}");
+    // carve#5091: the canonical writer spells it as a native `|={<}` cell.
+    assert!(written.contains("|={<} |"), "{written:?}");
 }
 
 #[test]
@@ -59,16 +59,17 @@ fn empty_header_top_default_survives_a_delimiter_row() {
     let source = "|=?^ |\n|:--|\n| a |\n";
     let written = to_carve(source);
     assert_eq!(to_html(&written), to_html(source), "{written:?}");
-    assert!(written.contains("?^ "), "{written:?}");
+    // The delimiter colon becomes the horizontal symbol beside the vertical one.
+    assert!(written.contains("|={<^} |"), "{written:?}");
 }
 
 #[test]
 fn empty_header_default_without_delimiter_stays_native() {
     let written =
         carve::try_to_carve_with_options("|=< |\n| a |\n", &carve::Options::default()).unwrap();
-    // carve#4974: `|=< |` needs no separator row.
+    // carve#5091: the deprecated `|=< |` is written `|={<} |`, with no separator row.
     assert!(
-        written.contains("|=< |") && !written.contains("|:"),
+        written.contains("|={<} |") && !written.contains("|:"),
         "{written:?}"
     );
     assert_eq!(to_html(&written), to_html("|=< |\n| a |\n"));

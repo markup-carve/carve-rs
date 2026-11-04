@@ -35,7 +35,7 @@ fn imports_a_colspan_header_as_native_cells() {
         <tbody><tr><td>carve-js</td><td>12ms</td><td>ok</td></tr></tbody></table>";
     assert_eq!(
         imported(html),
-        "|= Engine |= Timing | < |\n| carve-js | 12ms | ok |\n^ Results\n"
+        "|= Engine |= Timing |= < |\n| carve-js | 12ms | ok |\n^ Results\n"
     );
 }
 
@@ -47,20 +47,21 @@ fn the_native_form_is_fmt_idempotent_and_renders_the_colspan() {
 }
 
 #[test]
-fn a_leading_span_keeps_the_delimiter_row() {
-    let src = "| < | b |\n|---|---|\n| c | d |\n";
+fn a_leading_header_span_is_written_natively() {
+    let src = "|= < |= b |\n| c | d |\n";
     assert_eq!(fmt(src), src);
 }
 
 #[test]
 fn a_real_cell_after_a_header_span_is_written_natively() {
-    // carve#4974 ruling A: only an orphan or aligned placeholder keeps a separator row.
+    // carve#4980: a promoted placeholder keeps its header kind, `|= < |`.
     let src = "| H | < | < | K |\n|---|---|---|---|\n| p | q | s | t |\n";
-    assert_eq!(fmt(src), "|= H | < | < |= K |\n| p | q | s | t |\n");
+    assert_eq!(fmt(src), "|= H |= < |= < |= K |\n| p | q | s | t |\n");
 }
 
 #[test]
-fn a_trailing_rowspan_header_keeps_the_delimiter_row() {
+fn a_trailing_rowspan_header_is_written_natively() {
+    // carve#4980: the promoted orphan keeps its header kind, `|= ^ |`.
     let src = "| A | ^ |\n|---|---|\n| x | y |\n";
-    assert!(fmt(src).contains("|---|---|"));
+    assert_eq!(fmt(src), "|= A |= ^ |\n| x | y |\n");
 }

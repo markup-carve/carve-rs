@@ -118,7 +118,7 @@ fn long_regional_indicator_run() {
 fn extra_separator_entry_and_nested_tables() {
     let extra = "| A | B |\n|:--|--:|----|\n| x | long |\n";
     let written = aligned(extra);
-    assert!(written.contains("|=< A |=> B"), "{written}");
+    assert!(written.contains("|={<} A |={>} B"), "{written}");
     assert_eq!(aligned(&written), written);
     for source in [
         "> | a | longer |\n> | x | y |\n",

@@ -1819,6 +1819,17 @@ impl<'s, 'r> LineRules<'s, 'r> {
                 &message,
             );
         }
+        for (start, end, message) in crate::parse::lint_deprecated_cell_alignments(view) {
+            emit(
+                out,
+                rows,
+                ln,
+                at + start,
+                end - start,
+                "deprecated-cell-alignment",
+                &message,
+            );
+        }
         for (start, len) in crate::parse::lint_reversed_cell_markers(view) {
             emit(out, rows, ln, at + start, len, "table-marker-run-padding", "Write the alignment marker before the cell attribute block, and end the marker run with a space.");
         }
