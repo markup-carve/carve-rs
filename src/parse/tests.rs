@@ -1701,9 +1701,9 @@ mod wrapped_attrs_work_tests {
     #[test]
     fn a_valid_three_line_block_attaches_after_a_rejected_opener_in_each_container() {
         for source in [
-            "{abcd\n{#valid\n  .class\nrole=note}\ntext\n",
-            "> {abcd\n> {#valid\n>   .class\n> role=note}\n> text\n",
-            "- {abcd\n  {#valid\n    .class\n  role=note}\n  text\n",
+            "{abcd\n{#valid\n  .class\n role=note}\ntext\n",
+            "> {abcd\n> {#valid\n>   .class\n>  role=note}\n> text\n",
+            "- {abcd\n  {#valid\n    .class\n   role=note}\n  text\n",
         ] {
             let html = crate::to_html(source);
             assert!(
@@ -1716,7 +1716,7 @@ mod wrapped_attrs_work_tests {
 
     #[test]
     fn a_later_wrapped_attribute_block_keeps_its_closer() {
-        let doc = parse("{abcd\n\n{#valid\n.class}\ntext\n");
+        let doc = parse("{abcd\n\n{#valid\n .class}\ntext\n");
         assert_eq!(
             plain_inlines_parse(match &doc.children[0] {
                 BlockNode::Paragraph(p) => &p.children,

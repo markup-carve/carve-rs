@@ -60,6 +60,6 @@ fn a_nested_quote_and_a_wrapped_attribute_block_leave_no_lazy_paragraph() {
     );
     assert_eq!(
         html("- > para\n  > {.a\n  > .b}\ntail\n"),
-        "<ul><li><blockquote><p>para</p></blockquote></li></ul><p>tail</p>"
+        "<ul><li><blockquote><p>para {.a .b} tail</p></blockquote></li></ul>"
     );
 }

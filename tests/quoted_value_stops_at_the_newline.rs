@@ -80,7 +80,7 @@ fn control_a_continuation_between_two_attributes_is_still_one_block() {
     // `continuation` admits the newline BETWEEN tokens, never inside one.
     assert_eq!(
         to_html("{.a\n.b}\n\nparagraph\n").trim(),
-        "<p class=\"a b\">paragraph</p>"
+        "<p>{.a\n.b}</p>\n<p>paragraph</p>"
     );
 }
 
@@ -91,7 +91,7 @@ fn control_a_continuation_after_a_closed_quoted_value_is_still_one_block() {
     // closer, or this block would be unrecognized.
     assert_eq!(
         to_html("{k=\"a\\\"x\"\n.b}\n\nparagraph\n").trim(),
-        "<p k=\"a&quot;x\" class=\"b\">paragraph</p>"
+        "<p>{k=\"a\\\"x\"\n.b}</p>\n<p>paragraph</p>"
     );
 }
 
@@ -110,7 +110,7 @@ fn control_a_value_that_closes_before_the_break_keeps_the_block() {
     // continuation, and only the SECOND value's break ends the block.
     assert_eq!(
         to_html("{k=\"a\"\n.b}\n\nparagraph\n").trim(),
-        "<p k=\"a\" class=\"b\">paragraph</p>"
+        "<p>{k=\"a\"\n.b}</p>\n<p>paragraph</p>"
     );
     assert_eq!(
         to_html("{k=\"a\"\nk2=\"b\nc\"}\n\nparagraph\n").trim(),

@@ -15,13 +15,13 @@ fn unattached(source: &str) -> Vec<(usize, usize)> {
 fn the_wrapped_form_reports_where_the_one_line_form_does() {
     for (wrapped, one_line, at) in [
         (
-            ":: t\n:  d\n   {.k\n   #x}\ntail\n",
+            ":: t\n:  d\n   {.k\n    #x}\ntail\n",
             ":: t\n:  d\n   {.k #x}\ntail\n",
             (3, 4),
         ),
-        ("- a\n  {.c\n}\npara\n", "- a\n  {.c}\npara\n", (2, 3)),
+        ("- a\n  {.c\n   }\npara\n", "- a\n  {.c}\npara\n", (2, 3)),
         (
-            "- a\n  - b\n    {.c\n}\npara\n",
+            "- a\n  - b\n    {.c\n     }\npara\n",
             "- a\n  - b\n    {.c}\npara\n",
             (3, 5),
         ),

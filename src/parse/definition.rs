@@ -1111,7 +1111,12 @@ pub(in crate::parse) fn body_ends_with_an_attribute_line(source: &str) -> bool {
     // further back than that.
     let mut start = end;
     loop {
-        if standalone_attrs_block_len(&lines[start..]) == Some(end - start + 1) {
+        if attrs_block_len_at(
+            indent_columns(raw_lines[start]),
+            lines[start],
+            raw_lines[start + 1..].iter().copied(),
+        ) == Some(end - start + 1)
+        {
             // §15 A5: an indented wrapped opener is an attribute line too.
             return true;
         }
@@ -1743,9 +1748,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             && opener.starts_with('{')
             && parse_standalone_attrs(opener).is_none())
         .then(|| {
-            standalone_attrs_block_len_iter(
-                std::iter::once(opener)
-                    .chain((cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+            attrs_block_len_at(
+                indent_columns(line),
+                opener,
+                (cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i)),
             )
         })
         .flatten();
@@ -1805,6 +1811,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // block. A manufactured blank here would make it attach none.
         if accept_fence_opener
             && paragraph_open
+            && !ends_in_refused_brace_run(&self.lines)
             && !self.last_line_opens_marker_fence()
             && !(self.nested_definition_open
                 && self.lines.last().is_some_and(|line| is_plus_marker(line)))
@@ -1848,7 +1855,14 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             self.retained_comment_column = indent;
         }
         cur.consume();
-        self.take_wrapped_attribute_tail(cur, wrapped_attribute, nested_attribute_owner);
+        let opener_shift =
+            indent.saturating_sub(self.lines.last().map_or(0, |l| indent_columns(l)));
+        self.take_wrapped_attribute_tail(
+            cur,
+            wrapped_attribute,
+            nested_attribute_owner,
+            opener_shift,
+        );
         BodyStep::Next
     }
 
@@ -1959,17 +1973,20 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         cur: &mut LineCursor<'_>,
         wrapped_attribute: Option<usize>,
         nested: bool,
+        opener_shift: usize,
     ) {
         if nested && wrapped_attribute.is_some_and(|len| len > 1) {
             self.nested_attribute_closed = true;
         }
         for _ in 1..wrapped_attribute.unwrap_or(1) {
             let next = cur.lines.at(cur.pos);
+            // Shifted with its opener, so the run still reads past its brace (carve#5080).
+            let pad = indent_columns(next).saturating_sub(opener_shift);
             let col = cur
                 .source_col(cur.pos)
-                .map(|col| col + leading_ws(next) as isize);
+                .map(|col| col + leading_ws(next) as isize - pad as isize);
             self.push(
-                trim_ascii_start(next).to_owned(),
+                format!("{}{}", " ".repeat(pad), trim_ascii_start(next)),
                 cur.source_line(cur.pos),
                 col,
                 true,

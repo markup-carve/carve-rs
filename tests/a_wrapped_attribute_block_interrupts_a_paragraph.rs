@@ -29,7 +29,7 @@ fn html(src: &str) -> String {
 fn a_wrapped_block_interrupts_an_open_paragraph() {
     // The top-level shape, and the one carve-js already answered this way.
     assert_eq!(
-        html("d\n{.k\n#x}\ntail\n"),
+        html("d\n{.k\n #x}\ntail\n"),
         "<p>d</p>\n<p class=\"k\" id=\"x\">tail</p>"
     );
 }
@@ -40,7 +40,7 @@ fn a_containers_body_may_end_in_a_wrapped_block() {
     // line ends the `dl`; having no block to attach to, the attribute is
     // dropped in scope.
     assert_eq!(
-        html(":: t\n:  d\n   {.k\n   #x}\ntail\n"),
+        html(":: t\n:  d\n   {.k\n    #x}\ntail\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n<p>tail</p>"
     );
 }
@@ -48,7 +48,10 @@ fn a_containers_body_may_end_in_a_wrapped_block() {
 #[test]
 fn a_wrapped_block_still_attaches_to_the_block_below_it() {
     // Interrupting is not dropping: with a block after it, the attribute lands.
-    assert_eq!(html("{.k\n#x}\ntail\n"), "<p class=\"k\" id=\"x\">tail</p>");
+    assert_eq!(
+        html("{.k\n #x}\ntail\n"),
+        "<p class=\"k\" id=\"x\">tail</p>"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +72,7 @@ fn control_an_indented_brace_line_is_still_paragraph_text() {
     // §15 A5 (CARVE-P0-024) replaced the flush-left-only reading: an indented
     // wrapped block is an attribute line, so it interrupts `d` and, with no
     // block below it, attaches to nothing.
-    let out = html("d\n  {.k\n  #x}\n");
+    let out = html("d\n  {.k\n   #x}\n");
     assert_eq!(out.trim(), "<p>d</p>");
 }
 

@@ -662,6 +662,12 @@ pub(super) fn read_djot_attributes_with_context(
     read_djot_attributes_with_source_form(source, start, carve, table, paragraph_context, false)
 }
 
+/// The end of a Djot attribute run at `start`, its continuation columns unchecked.
+pub(super) fn read_djot_attributes_unchecked(source: &str, start: usize) -> Option<usize> {
+    read_djot_attributes_checked(source, start, false, false, true, false, false)
+        .map(|(end, _, _)| end)
+}
+
 pub(super) fn read_djot_attributes_with_source_form(
     source: &str,
     start: usize,
@@ -669,6 +675,26 @@ pub(super) fn read_djot_attributes_with_source_form(
     table: bool,
     paragraph_context: bool,
     preserve_shorthand: bool,
+) -> Option<(usize, String, Vec<DjotAttributeToken>)> {
+    read_djot_attributes_checked(
+        source,
+        start,
+        carve,
+        table,
+        paragraph_context,
+        preserve_shorthand,
+        true,
+    )
+}
+
+fn read_djot_attributes_checked(
+    source: &str,
+    start: usize,
+    carve: bool,
+    table: bool,
+    paragraph_context: bool,
+    preserve_shorthand: bool,
+    check_columns: bool,
 ) -> Option<(usize, String, Vec<DjotAttributeToken>)> {
     let bytes = source.as_bytes();
     let quote_prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
@@ -696,7 +722,7 @@ pub(super) fn read_djot_attributes_with_source_form(
                 i += 1;
             }
         }
-        if bytes.get(i) == Some(&b'}') && source[start..=i].contains('\n') {
+        if check_columns && bytes.get(i) == Some(&b'}') && source[start..=i].contains('\n') {
             let (depth, block_indent, minimum) =
                 *context.get_or_insert_with(|| djot_attribute_context(source, start));
             let invalid = source[start..=i].split('\n').skip(1).any(|raw| {

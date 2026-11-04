@@ -15,11 +15,11 @@ fn a_wrapped_attribute_past_a_description_column_is_paragraph_text() {
         (
             // §15 A5: past the column the wrapped block is an attribute line.
             ":: t\n: d\n   {.c\n  }\npara\n",
-            "<dl><dt>t</dt><dd>d</dd></dl><p>para</p>",
+            "<dl><dt>t</dt><dd>d{.c}para</dd></dl>",
         ),
         (
             ":: t\n: d\n\n   {.c\n  }\n- s\n",
-            "<dl><dt>t</dt><dd>d</dd></dl><ul><li>s</li></ul>",
+            "<dl><dt>t</dt><dd><p>d</p><p>{.c}</p></dd></dl><ul><li>s</li></ul>",
         ),
         (
             ":: t\n: d\n   {.c}\npara\n",

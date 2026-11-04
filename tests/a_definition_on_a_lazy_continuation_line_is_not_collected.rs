@@ -281,7 +281,7 @@ fn an_abbreviation_definition_leaves_no_paragraph() {
 /// marker opens - which the rendered `<ul class="x" id="y">` shows.
 #[test]
 fn the_closing_line_of_a_wrapped_attribute_block_leaves_no_paragraph() {
-    let out = html("{.x\n#y}\n- [^f]: t\n\n[^f] ref\n");
+    let out = html("{.x\n #y}\n- [^f]: t\n\n[^f] ref\n");
     assert!(out.contains("doc-endnotes"), "{out}");
     assert!(out.contains("<ul class=\"x\" id=\"y\">"), "{out}");
     assert!(

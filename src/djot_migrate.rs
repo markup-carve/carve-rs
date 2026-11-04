@@ -85,10 +85,15 @@ fn djot_placeholder_prefix(source: &str, base: &str) -> String {
     format!("{base}{serial}\0")
 }
 
+mod brace_runs;
+
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
-    let (recovered, _) = attribute_recovery::recover(djot);
-    djot_to_carve_prepared(&strip_footnote_definition_attributes(&recovered))
+    let protected = brace_runs::protect_block_brace_runs(djot);
+    let (recovered, _) = attribute_recovery::recover(&protected.source);
+    protected.restore(djot_to_carve_prepared(
+        &strip_footnote_definition_attributes(&recovered),
+    ))
 }
 
 pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {
@@ -1003,10 +1008,11 @@ fn convert_djot_document(
 
 pub(crate) fn djot_to_carve_with_losses(source: &str) -> (String, Vec<crate::MigrationDiagnostic>) {
     let _paragraph_cache = ParagraphCacheScope::new(source);
-    let (recovered, dropped) = attribute_recovery::recover(source);
+    let protected = brace_runs::protect_block_brace_runs(source);
+    let (recovered, dropped) = attribute_recovery::recover(&protected.source);
     let mut losses = normalize::losses(source);
     losses.extend(dropped);
-    (djot_to_carve(&recovered), losses)
+    (protected.restore(djot_to_carve(&recovered)), losses)
 }
 
 fn quote_djot_attribute(value: &str, carve: bool) -> String {

@@ -214,6 +214,11 @@ struct LeadParagraph {
     // image's is not, and its unpromoted text is trimmed.
     inline_image_lead: bool,
     literal_colon_opener: Option<usize>,
+    // Refused brace runs among the lines (carve#5080), and whether the next
+    // line joins whatever it opens.
+    literal: Vec<(usize, usize)>,
+    after_refused: bool,
+    inline_span: crate::parse::paragraph::InlineSpanScan,
 }
 
 impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
@@ -2595,7 +2600,19 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .or_else(|| detect_line_block_open(content))
                 .or_else(|| detect_hardbreaks_block_open(content))
                 .or_else(|| detect_quote_block_open(content)),
+            literal: Vec::new(),
+            after_refused: false,
+            inline_span: Default::default(),
         };
+        if let Some(count) = marker_refused_brace_run(self.cur.lines, item.at, paragraph_content) {
+            for _ in 1..count {
+                let Some(line) = self.cur.peek() else { break };
+                self.fold_lead_line(&mut lead, trim_ascii_start(line));
+            }
+            lead.literal.push((0, lead.lines.len()));
+            lead.inline_span.scanned = lead.lines.len();
+            lead.after_refused = true;
+        }
         while let Some(next) = self.cur.peek() {
             if !self.lead_paragraph_line(&mut lead, next) {
                 break;
@@ -2618,6 +2635,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         if is_blank_line(next) {
             return false;
+        }
+        if self.lead_refused_brace_run(lead, next) {
+            return true;
         }
         if let Some(fence_len) = lead.literal_colon_opener {
             if indent_columns(next) <= base_indent && exact_colon_fence_len(next) == Some(fence_len)
@@ -2729,6 +2749,35 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         true
     }
 
+    /// A refused brace run folds into the lead as literal text, and the line
+    /// after it joins whatever it opens unless it leaves the item (carve#5080).
+    fn lead_refused_brace_run(&mut self, lead: &mut LeadParagraph, next: &str) -> bool {
+        if std::mem::take(&mut lead.after_refused) && indent_columns(next) > self.base_indent {
+            self.fold_lead_line(lead, trim_ascii_start(next));
+            return true;
+        }
+        if !trim_ascii_start(strip_lazy(next)).starts_with('{')
+            || lead.inline_span.open(&lead.lines)
+        {
+            return false;
+        }
+        let RefusedBraceRun::Lines(count) = refused_brace_run(
+            (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
+            !self.cur.in_quoted_body,
+        ) else {
+            return false;
+        };
+        let start = lead.lines.len();
+        for _ in 0..count {
+            let Some(line) = self.cur.peek() else { break };
+            self.fold_lead_line(lead, trim_ascii_start(line));
+        }
+        lead.literal.push((start, lead.lines.len()));
+        lead.inline_span.scanned = lead.lines.len();
+        lead.after_refused = true;
+        true
+    }
+
     fn fold_lead_line(&mut self, lead: &mut LeadParagraph, inline_line: &str) {
         if let Some(anchors) = &mut lead.anchors {
             anchors.push(inline_anchor_for_line(self.cur, self.cur.pos, inline_line));
@@ -2823,7 +2872,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         });
         let para_text = normalized_para_lines[..split].join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
-        let children = if let Some(anchors) = anchors.take() {
+        let children = if !lead.literal.is_empty() && split == normalized_para_lines.len() {
+            crate::parse::paragraph::literal_run_children(
+                options,
+                &normalized_para_lines,
+                anchors.take().as_deref(),
+                &lead.literal,
+            )
+        } else if let Some(anchors) = anchors.take() {
             parse_inline_lines_with_anchor(para_text, options, anchors)
         } else {
             parse_inline_with_options(para_text, options)
@@ -3097,6 +3153,7 @@ fn walk_chunk(stream: &mut MappedSource) {
 
 /// Whether the item at `at` opens with a paragraph of only braced comments,
 /// which shows nothing (carve#4799).
+/// A refused comment run still holds this slot for list tightness (carve#5080).
 fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> bool {
     let content = trim_ascii_start(content);
     let view = |k: usize| {
@@ -3107,6 +3164,24 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
         }
     };
     content.starts_with("{%") && comment_only_para_end(lines.len(), at, true, &view).is_some()
+}
+
+/// The lines a refused brace run opening in a marker's content takes (carve#5080).
+fn marker_refused_brace_run(lines: CursorLines<'_>, at: usize, content: &str) -> Option<usize> {
+    let raw = lines.line(at)?;
+    let content = trim_ascii_start(content);
+    if !content.starts_with('{') || !raw.ends_with(content) {
+        return None;
+    }
+    let column = indent_columns(&" ".repeat(raw.chars().count() - content.chars().count()));
+    let opener = format!("{}{content}", " ".repeat(column));
+    match refused_brace_run(
+        std::iter::once(opener.as_str()).chain((at + 1..lines.len()).map_while(|k| lines.line(k))),
+        true,
+    ) {
+        RefusedBraceRun::Lines(count) => Some(count),
+        RefusedBraceRun::No(_) => None,
+    }
 }
 
 fn head_span_run(content: &str) -> Option<usize> {

@@ -2901,7 +2901,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::Comment(comment) => {
             if comment.delimited {
-                format!("{{%{} %}}", pad_delimited(&comment.content))
+                delimited_comment_source(&comment.content)
             } else if comment.block {
                 render_block_comment(session, &comment.content)
             } else {
@@ -3404,6 +3404,43 @@ fn render_nodes(
     render_nodes_with_verbatim(session, nodes, ctx, caption_can_open, &BTreeSet::new())
 }
 
+/// The text lines that open a brace run the reader refuses for its columns
+/// (carve#5080). Written as they are, they read back as the same literal text.
+fn refused_brace_text_nodes(nodes: &[InlineNode]) -> BTreeSet<usize> {
+    let whole_line = |at: usize| {
+        matches!(nodes.get(at), Some(InlineNode::Text(_)))
+            && (at == 0 || matches!(nodes[at - 1], InlineNode::SoftBreak(_)))
+            && matches!(nodes.get(at + 1), None | Some(InlineNode::SoftBreak(_)))
+    };
+    let mut refused = BTreeSet::new();
+    let mut at = 0;
+    while at < nodes.len() {
+        let opens =
+            whole_line(at) && matches!(&nodes[at], InlineNode::Text(t) if t.value.starts_with('{'));
+        if !opens {
+            at += 1;
+            continue;
+        }
+        let mut lines = Vec::new();
+        let mut k = at;
+        while whole_line(k) {
+            let InlineNode::Text(t) = &nodes[k] else {
+                unreachable!()
+            };
+            lines.push((k, t.value.as_str()));
+            k += 2;
+        }
+        match crate::parse::refused_brace_run(lines.iter().map(|&(_, line)| line), true) {
+            crate::parse::RefusedBraceRun::Lines(count) if count <= lines.len() => {
+                refused.extend(lines[..count].iter().map(|&(index, _)| index));
+                at = lines[count - 1].0 + 1;
+            }
+            _ => at += 1,
+        }
+    }
+    refused
+}
+
 fn render_nodes_with_verbatim(
     session: &RenderSession,
     nodes: &[InlineNode],
@@ -3411,6 +3448,14 @@ fn render_nodes_with_verbatim(
     mut caption_can_open: bool,
     verbatim: &BTreeSet<usize>,
 ) -> String {
+    let refused = refused_brace_text_nodes(nodes);
+    let merged: BTreeSet<usize>;
+    let verbatim = if refused.is_empty() {
+        verbatim
+    } else {
+        merged = verbatim.union(&refused).copied().collect();
+        &merged
+    };
     let mut out = String::new();
     let mut verbatim_tail = false;
     let mut first_line = true;
@@ -3699,6 +3744,13 @@ fn render_nodes_with_verbatim(
         {
             out.push_str("{%  %}");
         }
+        // A comment opening a line is a block-position run: its wrapped lines
+        // sit past the `{` (carve#5080).
+        if matches!(node, InlineNode::Comment(c) if c.delimited)
+            && (out.is_empty() || out.ends_with('\n'))
+        {
+            rendered = indent_wrapped_comment(&rendered);
+        }
         out.push_str(&rendered);
         if !rendered.is_empty() {
             verbatim_tail = rendered.ends_with('`')
@@ -3721,6 +3773,22 @@ fn render_nodes_with_verbatim(
     }
     ctx.rendered_verbatim_tail = verbatim_tail;
     out
+}
+
+/// A `{% ... %}` comment. A wrapped line sits past the `{`, or the comment
+/// would read as text (carve#5080).
+fn delimited_comment_source(content: &str) -> String {
+    indent_wrapped_comment(&format!("{{%{} %}}", pad_delimited(content)))
+}
+
+/// Indent every wrapped line of a written `{% ... %}` but a closer line, which
+/// already starts with a space.
+fn indent_wrapped_comment(written: &str) -> String {
+    let (body, closer) = match written.strip_suffix("\n %}") {
+        Some(body) => (body, "\n %}"),
+        None => (written, ""),
+    };
+    format!("{}{closer}", body.replace('\n', "\n "))
 }
 
 fn inline_hosts_caption(node: &InlineNode) -> bool {

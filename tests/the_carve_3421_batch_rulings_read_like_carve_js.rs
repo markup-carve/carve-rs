@@ -15,21 +15,23 @@ fn check(cases: &[(&str, &str)]) {
 
 #[test]
 fn a_wrapped_attribute_at_a_container_column_reads_like_the_one_line_form() {
+    // carve#5080: the wrapped line sits past the `{`.
     for source in [
-        "- a\n  {.c\n}\npara\n",
-        "- a\n  {.c\n .d}\npara\n",
-        "- a\n\n  {.c\n}\npara\n",
-        "- a\n  {.c\n}\n para\n",
-        "1. a\n   {.c\n}\n  para\n",
+        "- a\n  {.c\n   }\npara\n",
+        "- a\n  {.c\n   .d}\npara\n",
+        "- a\n\n  {.c\n   }\npara\n",
+        "- a\n  {.c\n   }\n para\n",
+        "1. a\n   {.c\n    }\n  para\n",
     ] {
-        let one_line = source
-            .replacen("{.c\n}", "{.c}", 1)
-            .replacen("{.c\n .d}", "{.c .d}", 1);
+        let at = source.find("{.c\n").unwrap() + 3;
+        let rest = source[at + 1..].trim_start_matches(' ');
+        let gap = if rest.starts_with('}') { "" } else { " " };
+        let one_line = format!("{}{gap}{rest}", &source[..at]);
         assert_eq!(flat(source), flat(&one_line), "{source:?}");
     }
     check(&[(
         ":: t\n: d\n  {.c\n}\npara\n",
-        "<dl><dt>t</dt><dd>d</dd></dl><p>para</p>",
+        "<dl><dt>t</dt><dd>d{.c}para</dd></dl>",
     )]);
 }
 
@@ -202,27 +204,27 @@ fn a_wrapped_attribute_in_a_nested_item_is_one_construct_for_the_outer_item() {
     check(&[
         (
             "- a\n  - b\n    {.c\n}\npara\n",
-            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+            "<ul><li>a<ul><li>b{.c}para</li></ul></li></ul>",
         ),
         (
             "- a\n  - b\n\n    {.c\n}\npara\n",
-            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+            "<ul><li>a<ul><li><p>b</p><p>{.c}para</p></li></ul></li></ul>",
         ),
         (
             "- a\n  - b\n    {.c\n.d}\npara\n",
-            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+            "<ul><li>a<ul><li>b{.c.d}para</li></ul></li></ul>",
         ),
         (
             "- a\n  - b\n    {.c\n }\npara\n",
-            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+            "<ul><li>a<ul><li>b{.c}para</li></ul></li></ul>",
         ),
         (
             "- a\n  - b\n    {.c\n}\n- s\n",
-            "<ul><li>a<ul><li>b</li></ul></li><li>s</li></ul>",
+            "<ul><li>a<ul><li>b{.c}</li></ul></li><li>s</li></ul>",
         ),
         (
             "- a\n  - b\n    {.c\n}\n    para\n",
-            "<ul><li>a<ul><li>b<pclass=\"c\">para</p></li></ul></li></ul>",
+            "<ul><li>a<ul><li>b{.c}para</li></ul></li></ul>",
         ),
     ]);
 }

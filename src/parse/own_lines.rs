@@ -635,6 +635,9 @@ struct Skipped {
     column: usize,
     fenced: Vec<usize>,
     lead: String,
+    /// The brace run open in the skipped lines: its `{` column, whether it is
+    /// a comment, and its depth. Its lines keep their offset past that column.
+    brace: Option<(usize, bool, usize)>,
 }
 
 struct AttachedBlock {
@@ -1143,23 +1146,59 @@ impl<'a> Walk<'a> {
             column,
             fenced,
             lead,
+            brace: None,
         });
         end
     }
 
     /// Write a held invisible line at its block's lead, or as a `%%` line.
     fn skipped_line(&mut self, at: usize, c: &mut Cursor<'a>) -> bool {
-        let Some(skipped) = self.skipped.as_ref() else {
+        let Some(host) = self.skipped.as_ref().map(|skipped| skipped.host) else {
             return false;
         };
         let line = self.lines[at];
-        let rest = trim_ws_start(self.through_quotes(line, skipped.host).unwrap_or(line));
+        let raw = self.through_quotes(line, host).unwrap_or(line);
+        let skipped = self.skipped.as_mut().expect("held above");
+        let rest = trim_ws_start(raw);
         let authored = &line[..line.len() - rest.len()];
-        c.out.push_str(&skipped.lead);
-        if authored != skipped.lead {
+        // A brace run's lines stay past its `{`, so it reads as one run (carve#5080).
+        let pad = match skipped.brace {
+            Some((column, _, _)) => indent_columns(raw).saturating_sub(column),
+            None => {
+                if rest.starts_with('{') {
+                    skipped.brace = Some((indent_columns(raw), rest.starts_with("{%"), 0));
+                }
+                0
+            }
+        };
+        skipped.brace = skipped.brace.and_then(|(column, comment, depth)| {
+            if comment {
+                return (!rest.contains("%}")).then_some((column, comment, depth));
+            }
+            let mut depth = depth as isize;
+            let mut quote = None;
+            let mut chars = rest.chars();
+            while let Some(ch) = chars.next() {
+                match (quote, ch) {
+                    (Some(_), '\\') => {
+                        chars.next();
+                    }
+                    (Some(q), _) if q == ch => quote = None,
+                    (Some(_), _) => {}
+                    (None, '"' | '\'') => quote = Some(ch),
+                    (None, '{') => depth += 1,
+                    (None, '}') => depth -= 1,
+                    _ => {}
+                }
+            }
+            (depth > 0).then_some((column, comment, depth as usize))
+        });
+        let lead = format!("{}{}", skipped.lead, " ".repeat(pad));
+        c.out.push_str(&lead);
+        if authored != lead {
             c.edits.push((
-                skipped.lead.chars().count(),
-                authored.chars().count() as isize - skipped.lead.chars().count() as isize,
+                lead.chars().count(),
+                authored.chars().count() as isize - lead.chars().count() as isize,
             ));
         }
         c.src = if skipped.fenced.contains(&at) {
@@ -1254,7 +1293,7 @@ impl<'a> Walk<'a> {
                 k += 1;
             } else if let Some(len) = rest
                 .starts_with('{')
-                .then(|| standalone_attrs_block_len_iter((k..self.lines.len()).map(view)))
+                .then(|| self.attrs_run_len(k, host))
                 .flatten()
             {
                 k += len;
@@ -1273,6 +1312,21 @@ impl<'a> Walk<'a> {
             }
         }
         k
+    }
+
+    /// The lines an attribute run opening on line `k` takes, its continuations
+    /// measured past its brace in the host's coordinates (carve#5080).
+    fn attrs_run_len(&self, k: usize, host: usize) -> Option<usize> {
+        let level = |j: usize| {
+            self.through_quotes(self.lines[j], host)
+                .unwrap_or("\u{e000}")
+        };
+        let opener = level(k);
+        attrs_block_len_at(
+            indent_columns(opener),
+            trim_ws_start(opener),
+            (k + 1..self.lines.len()).map(level),
+        )
     }
 
     fn comment_only_para_end(
@@ -1297,9 +1351,7 @@ impl<'a> Walk<'a> {
             if doc_column(self.lines[k], rest) != column {
                 return run.then_some((k, rest));
             }
-            let attr = rest
-                .starts_with('{')
-                .then(|| standalone_attrs_block_len_iter((k..self.lines.len()).map(view)));
+            let attr = rest.starts_with('{').then(|| self.attrs_run_len(k, host));
             if let Some(Some(len)) = attr {
                 run = true;
                 k += len;
@@ -2672,9 +2724,8 @@ impl<'a> Walk<'a> {
                 .count();
             let following = (at + 1..self.lines.len())
                 .map(|line| strip_quote_levels(self.lines[line], depth).unwrap_or(""));
-            if let Some(lines) =
-                standalone_attrs_block_len_iter(std::iter::once(rest).chain(following))
-            {
+            let column = strip_quote_levels(self.lines[at], depth).map_or(0, indent_columns);
+            if let Some(lines) = attrs_block_len_at(column, rest, following) {
                 return Form::Attr(lines);
             }
         }

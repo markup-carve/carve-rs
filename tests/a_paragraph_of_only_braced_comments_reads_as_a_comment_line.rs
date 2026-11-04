@@ -37,7 +37,7 @@ fn lists_skip_it_between_siblings() {
             "- p\n\n  - a\n\n  {% c %}\n  - b\n",
             "<ul>\n  <li>p\n    <ul>\n      <li><p>a</p></li>\n      <li><p>b</p></li>\n    </ul>\n  </li>\n</ul>",
         ),
-        ("- {% c\n  d %}\n\n  Body.\n", "<ul>\n  <li>Body.</li>\n</ul>"),
+        ("- {% c\n  d %}\n\n  Body.\n", "<ul>\n  <li>{% c\nd %}\n    Body.\n  </li>\n</ul>"),
     ];
     for (source, expected) in cases {
         assert_eq!(carve::to_html(source).trim_end(), expected, "{source:?}");

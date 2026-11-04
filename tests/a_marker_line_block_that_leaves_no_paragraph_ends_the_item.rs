@@ -208,7 +208,7 @@ fn a_heading_at_the_content_column_leaves_no_paragraph_open() {
 fn a_wrapped_marker_attribute_leaves_no_paragraph_open() {
     assert_eq!(
         html("- {.a\n  .b}\ntail\n"),
-        "<ul>\n  <li></li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>{.a\n.b}\ntail</li>\n</ul>"
     );
 }
 
@@ -216,7 +216,7 @@ fn a_wrapped_marker_attribute_leaves_no_paragraph_open() {
 fn a_wrapped_body_attribute_leaves_no_paragraph_open() {
     assert_eq!(
         html("- prose\n  {.a\n  .b}\ntail\n"),
-        "<ul>\n  <li>prose</li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>prose\n{.a\n.b}\ntail</li>\n</ul>"
     );
 }
 

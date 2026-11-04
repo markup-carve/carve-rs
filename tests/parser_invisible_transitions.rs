@@ -19,25 +19,27 @@ fn postblank_comment_span_keeps_the_next_sibling_loose() {
 #[test]
 fn reached_wrapped_attribute_closes_nested_claim_across_its_extent() {
     assert_eq!(
+        // carve#5080: a closer at the brace's column refuses the run, so it is lazy item text.
         to_html("- - a\n   {c\n}\nx\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n{c\n}\nx</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
 #[test]
 fn below_column_wrapped_attribute_remains_nested_paragraph_text() {
     assert_eq!(
-        // §15 A5: the wrapped block is an attribute line, so it ends both items.
+        // carve#5080: a closer at the brace's column refuses the run, so it is lazy item text.
         to_html("- - a\n {c\n}\nx\n"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p c=\"\">x</p>"
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n{c\n}\nx</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
 #[test]
 fn task_marker_wrapped_attribute_uses_the_item_column() {
     assert_eq!(
+        // carve#5080: a closer at the brace's column refuses the run, so it is lazy item text.
         to_html("- [x] - a\n  {c\n}\nx\n"),
-        "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled> \n    <ul>\n      <li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>"
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled> \n    <ul>\n      <li>a\n{c\n}\nx</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
