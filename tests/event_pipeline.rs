@@ -31,9 +31,34 @@ fn erases_a_line(source: &str) -> bool {
     })
 }
 
+// Rule A (carve#3885): the ownership walk rewrites these before layout, and the
+// event route, which reads lines in place, leaves them to the tree parser.
+const WALK_REWRITES: &[&str] = &[
+    "alpha\n\n    +\n",
+    "alpha\r\r\t- beta\n",
+    "@@@\n\n  - a +\n",
+    "@@@\n\n- a\n\n+\np\n",
+    "@@@\n\n    +\n",
+    "  {#id}\n",
+    "  - :: term\n    : definition\n\n~~~\ncode\n~~~\n",
+    "- one\n\n > q\n",
+    "- one\n > q\n",
+    "- one\n\n   # h\n",
+    "- one\n\n y\n",
+    ":: t\n:  definition\n\n  after\n",
+    "[^outer]: intro\n\n     [^inner]: note\n\n     see[^inner]\n\nsee[^outer]\n",
+    "- a\n  - b\n\n   > q\n",
+    "x[^c]\n\n:: t\n: [^c]: para\n     > q\ntail\n",
+    "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",
+    "1. :: t\n   : para\n  %%%\n  c\n  %%%\n```\nx\n",
+];
+
+fn event_declines(source: &str) -> bool {
+    erases_a_line(source) || WALK_REWRITES.contains(&source)
+}
+
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn eof_fence_option_route_matches_public_parser() {
     for source in [
         "```x",
@@ -85,13 +110,7 @@ fn eof_fence_option_route_matches_public_parser() {
                 let options = Options::default()
                     .with_positions(positions)
                     .with_source_lines(source_lines);
-                let (candidate, admitted) =
-                    parse_experimental_event_blocks_with_options(source, &options);
-                assert!(
-                    admitted,
-                    "{}; positions={positions}; source_lines={source_lines}",
-                    path.display()
-                );
+                let (candidate, _) = parse_experimental_event_blocks_with_options(source, &options);
                 assert_eq!(
                     candidate,
                     parse_with_options(source, &options),
@@ -106,7 +125,6 @@ fn eof_fence_option_route_matches_public_parser() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn simple_extension_route_preserves_hooks_and_single_invocation() {
     use carve::{
         BlockMatch, BlockNode, CarveExtension, Document, InlineMatch, InlineNode, MatcherContext,
@@ -218,7 +236,7 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
             source,
             &Options::default().with_extension(&hooks),
         );
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         assert_eq!(hooks.blocks.get(), 1, "{source:?}");
         assert_eq!(hooks.after.get(), 1, "{source:?}");
         let standard = Hooks::default();
@@ -301,12 +319,15 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
             path.display()
         );
     }
-    assert_eq!(admitted, total);
+    // Rule A routes about a third of the corpus to the tree parser.
+    assert!(
+        admitted * 3 >= total * 2,
+        "only {admitted} of {total} admitted"
+    );
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn complex_extension_route_keeps_callback_order_and_one_parse() {
     use carve::{
         BlockMatch, BlockNode, CarveExtension, CodeBlock, Document, InlineMatch, InlineNode,
@@ -408,7 +429,7 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
         let event_hooks = HookLog::default();
         let options = Options::default().with_extension(&event_hooks);
         let (actual, admitted) = parse_experimental_event_blocks_with_options(source, &options);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         let standard_hooks = HookLog::default();
         let expected =
             parse_with_options(source, &Options::default().with_extension(&standard_hooks));
@@ -486,9 +507,8 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
                     .with_extension(&event_hooks)
                     .with_positions(positions)
                     .with_source_lines(source_lines);
-                let (actual, admitted) =
+                let (actual, _) =
                     parse_experimental_event_blocks_with_options(&source, &event_options);
-                assert!(admitted, "{} {positions} {source_lines}", path.display());
                 let standard_hooks = HookLog::default();
                 let standard_options = Options::default()
                     .with_extension(&standard_hooks)
@@ -536,6 +556,7 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
         "@@@ +\n",
         "  - a +\n",
     ];
+    let mut admitted_pieces = 0;
     for first in pieces {
         for second in pieces {
             for third in pieces {
@@ -545,7 +566,7 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
                     &source,
                     &Options::default().with_extension(&event_hooks),
                 );
-                assert!(admitted, "{source:?}");
+                admitted_pieces += usize::from(admitted);
                 let standard_hooks = HookLog::default();
                 let expected = parse_with_options(
                     &source,
@@ -570,6 +591,10 @@ fn complex_extension_route_keeps_callback_order_and_one_parse() {
             }
         }
     }
+    assert!(
+        admitted_pieces >= 895,
+        "only {admitted_pieces} grid cases admitted"
+    );
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
@@ -621,13 +646,12 @@ fn abbreviation_definitions_keep_editor_positions_and_source_lines() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_column_colon_line_stays_in_open_list_paragraph() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "161-below-content-column-div-body-in-a-list-item-stays-literal.crv";
     let source = fs::read_to_string(corpus.join(name)).unwrap();
     let (candidate, used) = parse_experimental_event_blocks(&source);
-    assert!(used, "{name}");
+    assert!(!used, "{name}");
     assert_eq!(candidate, parse_standard(&source));
 
     for indent in 0..=4 {
@@ -666,13 +690,12 @@ fn malformed_quote_prefix_stays_literal() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn list_comment_and_lower_column_siblings_match_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "517-a-band-paragraph-after-an-invisible-line-leaves-the-item-loose-5.crv";
     let source = fs::read_to_string(corpus.join(name)).unwrap();
     let (candidate, used) = parse_experimental_event_blocks(&source);
-    assert!(used, "{name}");
+    assert!(!used, "{name}");
     assert_eq!(candidate, parse_standard(&source));
 
     for source in [
@@ -681,7 +704,7 @@ fn list_comment_and_lower_column_siblings_match_full_document() {
         "- a\n\n  %% one\n  %% two\n- end\n",
     ] {
         let (candidate, used) = parse_experimental_event_blocks(source);
-        assert!(used, "{source:?}");
+        assert_eq!(used, !event_declines(source), "{source:?}");
         assert_eq!(candidate, parse_standard(source), "{source:?}");
     }
 
@@ -712,7 +735,6 @@ fn list_comment_and_lower_column_siblings_match_full_document() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_root_list_frames_match_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     for name in [
@@ -727,7 +749,7 @@ fn indented_root_list_frames_match_full_document() {
     ] {
         let source = fs::read_to_string(corpus.join(name)).unwrap();
         let (candidate, used) = parse_experimental_event_blocks(&source);
-        assert!(used, "{name}");
+        assert!(!used, "{name}");
         assert_eq!(candidate, parse_standard(&source), "{name}");
     }
 
@@ -745,7 +767,7 @@ fn indented_root_list_frames_match_full_document() {
                     let source = format!("{prefix}{}{marker}\n{following}", " ".repeat(indent));
                     let (candidate, used) = parse_experimental_event_blocks(&source);
                     if prefix.is_empty() && following.is_empty() && indent <= 4 {
-                        assert!(used, "{source:?}");
+                        assert_eq!(used, indent == 0, "{source:?}");
                     }
                     assert_eq!(candidate, parse_standard(&source), "{source:?}");
                 }
@@ -777,7 +799,7 @@ fn indented_root_list_frames_match_full_document() {
                     );
                     let (candidate, used) = parse_experimental_event_blocks(&source);
                     if follower == "text" || follower == "| x |" && follower_indent >= 2 {
-                        assert!(used, "{source:?}");
+                        assert!(!used, "{source:?}");
                     }
                     assert_eq!(candidate, parse_standard(&source), "{source:?}");
                 }
@@ -812,13 +834,12 @@ fn indented_root_list_frames_match_full_document() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn continuation_owned_quote_stays_inside_list_item() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let name = "632-a-continuation-marker-uses-its-container-column-34.crv";
     let source = fs::read_to_string(corpus.join(name)).unwrap();
     let (candidate, used) = parse_experimental_event_blocks(&source);
-    assert!(used, "{name}");
+    assert!(!used, "{name}");
     assert_eq!(candidate, parse_standard(&source));
 
     for marker in ["- a", "* a", "1. a"] {
@@ -1067,21 +1088,19 @@ fn source_line_footnotes_match_standard_document() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn unsupported_root_literals_preserve_block_ownership() {
     for source in ["--\n", ": stray definition\n", "::: \tnote\n", "  {#id}\n"] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         assert_eq!(candidate, parse_standard(source), "{source:?}");
     }
     let nested = "  - :: term\n    : definition\n\n~~~\ncode\n~~~\n";
     let (candidate, admitted) = parse_experimental_event_blocks(nested);
-    assert!(admitted);
+    assert_eq!(admitted, !event_declines(nested));
     assert_eq!(candidate, parse_standard(nested));
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn post_blank_list_line_returns_to_root_at_authored_column() {
     for source in [
         "- one\n\n > q\n",
@@ -1090,7 +1109,7 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
         "- one\n > q\n",
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         let baseline = parse_standard(source);
         assert_eq!(candidate, baseline, "{source:?}");
         assert_eq!(to_json(&candidate), to_json(&baseline), "{source:?}");
@@ -1122,7 +1141,7 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
             }
         }
     }
-    assert!(admitted_generated >= 150);
+    assert!(admitted_generated >= 91);
     let tab_after_space = "- one\n\n \t> q\n";
     let (candidate, _) = parse_experimental_event_blocks(tab_after_space);
     let baseline = parse_standard(tab_after_space);
@@ -1133,7 +1152,7 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
         .map(|index| format!("- item {index}\n\n > quote {index}\n\n"))
         .collect::<String>();
     let (candidate, admitted) = parse_experimental_event_blocks(&repeated);
-    assert!(admitted);
+    assert!(!admitted);
     let baseline = parse_standard(&repeated);
     assert_eq!(candidate, baseline);
     assert_eq!(to_json(&candidate), to_json(&baseline));
@@ -1141,7 +1160,6 @@ fn post_blank_list_line_returns_to_root_at_authored_column() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn indented_root_text_preserves_the_full_ast() {
     for source in [
         " y\n",
@@ -1150,7 +1168,7 @@ fn indented_root_text_preserves_the_full_ast() {
         ":: t\n:  definition\n\n  after\n",
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         assert_eq!(candidate, parse_standard(source), "{source:?}");
     }
     for source in [" x. x\n", " I. x\n", " iv) x\n"] {
@@ -1316,7 +1334,6 @@ fn shared_crossref_index_preserves_heading_ids_and_hrefs() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn option_aware_event_corpus_matches_full_document() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let options = [
@@ -1364,7 +1381,11 @@ fn option_aware_event_corpus_matches_full_document() {
         }
     }
     assert!(total > 3000);
-    assert_eq!(admitted, [total; 11]);
+    assert!(admitted.iter().all(|&count| count == admitted[0]));
+    assert!(
+        admitted[0] * 3 >= total * 2,
+        "only {admitted:?} of {total} admitted"
+    );
 }
 
 #[test]
@@ -2262,7 +2283,6 @@ fn nested_footnote_definitions_keep_exact_output() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_footnote_definitions_keep_source_lines_and_positions() {
     for source in [
         "Text[^outer]\n\n[^outer]: Inside[^inner].\n[^inner]: Nested.\n",
@@ -2278,7 +2298,7 @@ fn nested_footnote_definitions_keep_source_lines_and_positions() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(admitted, "{source:?}");
+            assert_eq!(admitted, !event_declines(source), "{source:?}");
             assert_eq!(
                 candidate,
                 parse_with_options(source, &options),
@@ -2485,14 +2505,13 @@ fn two_level_tight_lists_keep_exact_ast_and_html() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_list_keeps_indented_blocks_after_a_blank() {
     for source in [
         "- a\n  - b\n\n   > q\n",
         "- outer\n  - head\n\n    ```\n    a\n  ```\n\n  tail\n",
     ] {
         let (actual, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         let expected = parse_standard(source);
         assert_eq!(to_json(&actual), to_json(&expected), "{source:?}");
         assert_eq!(render_html(&actual), render_html(&expected), "{source:?}");
@@ -2823,7 +2842,6 @@ fn quoted_fence_reader_boundaries_match_public_ast_and_html() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn delegated_paragraph_owner_keeps_exact_document() {
     let cases = [
         "Prose\n```js title=\"x\"\ncode\n```\n",
@@ -2844,7 +2862,7 @@ fn delegated_paragraph_owner_keeps_exact_document() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(admitted, "{source:?}");
+            assert_eq!(admitted, !event_declines(source), "{source:?}");
             assert_eq!(
                 candidate,
                 parse_with_options(source, &options),
@@ -2900,7 +2918,6 @@ fn generated_delegated_paragraph_boundaries_keep_exact_document() {
 
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn nested_footnote_markers_survive_link_definition_guard() {
     let nested = [
         "x[^c]\n\n:: t\n: [^c]: para\n    # H\n",
@@ -2910,7 +2927,7 @@ fn nested_footnote_markers_survive_link_definition_guard() {
     ];
     for source in nested {
         let (plain, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         assert_eq!(plain, parse_standard(source), "{source:?}");
         for options in [
             Options::default(),
@@ -2922,7 +2939,7 @@ fn nested_footnote_markers_survive_link_definition_guard() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(admitted, "{source:?}");
+            assert_eq!(admitted, !event_declines(source), "{source:?}");
             assert_eq!(
                 candidate,
                 parse_with_options(source, &options),
@@ -2935,7 +2952,7 @@ fn nested_footnote_markers_survive_link_definition_guard() {
         "x[^n]\n\n[^n]: [x][id]\n  [id]: /x\n",
     ] {
         let (candidate, admitted) = parse_experimental_event_blocks(source);
-        assert!(admitted, "{source:?}");
+        assert_eq!(admitted, !event_declines(source), "{source:?}");
         assert_eq!(candidate, parse_standard(source), "{source:?}");
         for options in [
             Options::default(),
@@ -2947,7 +2964,7 @@ fn nested_footnote_markers_survive_link_definition_guard() {
         ] {
             let (candidate, admitted) =
                 parse_experimental_event_blocks_with_options(source, &options);
-            assert!(admitted, "{source:?}");
+            assert_eq!(admitted, !event_declines(source), "{source:?}");
             assert_eq!(
                 candidate,
                 parse_with_options(source, &options),
@@ -3083,13 +3100,18 @@ fn footnote_like_lines_after_extraction_keep_link_semantics() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_line_descriptions_with_comment_fences_keep_event_owner() {
     for source in [
         "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",
         "1. :: t\n   : para\n  %%%\n  c\n  %%%\n```\nx\n",
     ] {
-        assert!(parse_experimental_event_blocks(source).1);
-        assert!(parse_experimental_event_blocks_with_options(source, &Options::default()).1);
+        assert_eq!(
+            parse_experimental_event_blocks(source).1,
+            !event_declines(source)
+        );
+        assert_eq!(
+            parse_experimental_event_blocks_with_options(source, &Options::default()).1,
+            !event_declines(source)
+        );
     }
 }
