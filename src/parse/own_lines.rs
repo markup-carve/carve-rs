@@ -1632,6 +1632,14 @@ impl<'a> Walk<'a> {
         {
             return false;
         }
+        // An open payload span cannot carry the stanza past a quote the line missed (carve#5062).
+        if block.span.is_some_and(|(ch, _)| ch != b'%')
+            && self.frames[reached + 1..]
+                .iter()
+                .any(|f| f.kind == Kind::Quote)
+        {
+            return false;
+        }
         let next_reaches_block = self
             .lines
             .get(at + 1)
