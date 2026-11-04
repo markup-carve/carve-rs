@@ -660,21 +660,60 @@ fn reference_source_attrs(
     result
 }
 
+/// The definitions a reference may be written against, in written order: the
+/// last one of a label wins, note bodies included (carve#5012). A later nested
+/// definition still wins on reparse, so it leaves its label unspellable.
 fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>, Option<Attrs>)> {
-    doc.children
-        .iter()
-        .filter_map(|node| match node {
-            BlockNode::LinkReferenceDefinition(def)
-                if crate::parse::reference_label_has_definition_spelling(&def.label) =>
-            {
-                Some((
-                    crate::parse::label_key(&def.label),
-                    (def.href.clone(), def.title.clone(), def.attrs.clone()),
-                ))
+    type Targets = HashMap<String, (String, Option<String>, Option<Attrs>)>;
+    fn collect(blocks: &[BlockNode], top: bool, targets: &mut Targets) {
+        for block in blocks {
+            match block {
+                BlockNode::LinkReferenceDefinition(def) if top => {
+                    let key = crate::parse::label_key(&def.label);
+                    if crate::parse::reference_label_has_definition_spelling(&def.label) {
+                        targets.insert(
+                            key,
+                            (def.href.clone(), def.title.clone(), def.attrs.clone()),
+                        );
+                    } else {
+                        targets.remove(&key);
+                    }
+                }
+                BlockNode::LinkReferenceDefinition(def) => {
+                    targets.remove(&crate::parse::label_key(&def.label));
+                }
+                BlockNode::BlockQuote(b) => collect(&b.children, false, targets),
+                BlockNode::Directive(d) => collect(&d.children, false, targets),
+                BlockNode::Div(d) => collect(&d.children, false, targets),
+                BlockNode::Section(d) => collect(&d.children, false, targets),
+                BlockNode::Admonition(a) => collect(&a.children, false, targets),
+                BlockNode::List(l) => {
+                    for item in &l.items {
+                        collect(&item.children, false, targets);
+                    }
+                }
+                BlockNode::DefinitionList(dl) => {
+                    for item in &dl.items {
+                        for def in &item.definitions {
+                            collect(&def.children, false, targets);
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => None,
-        })
-        .collect()
+        }
+    }
+    let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
+    let mut targets = HashMap::new();
+    for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
+        match entry {
+            crate::ast_json::DocEntry::Block(block) => {
+                collect(std::slice::from_ref(block), true, &mut targets)
+            }
+            crate::ast_json::DocEntry::FootnoteDef(_, body, _) => collect(body, true, &mut targets),
+        }
+    }
+    targets
 }
 
 fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: EscapeMode) -> String {

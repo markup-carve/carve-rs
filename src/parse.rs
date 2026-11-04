@@ -897,6 +897,30 @@ fn parse_with_options_mode_and_index(
     (doc, index)
 }
 
+/// A definition written inside a footnote body is document-level metadata:
+/// the last definition of a label wins, note bodies included (carve#5012).
+fn merge_note_link_defs(
+    link_defs: &mut BTreeMap<String, LinkDef>,
+    note_link_defs: BTreeMap<String, LinkDef>,
+) {
+    for (label, def) in note_link_defs {
+        match link_defs.entry(label) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(def);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if def
+                    .line
+                    .zip(entry.get().line)
+                    .is_some_and(|(note, other)| note > other)
+                {
+                    entry.insert(def);
+                }
+            }
+        }
+    }
+}
+
 fn parse_with_options_mode_and_index_once(
     source: &str,
     options: &Options<'_>,
@@ -1018,13 +1042,7 @@ fn parse_with_options_mode_and_index_once(
     let prepass_abbreviations = prepass_abbreviation_nodes(original, options.positions, |line| {
         body.line_map.get(line).and_then(|mapped| *mapped)
     });
-    // A definition written inside a footnote body is document-level metadata,
-    // and a definition at the top level WINS over one of the same label there -
-    // measured on carve-js and carve-php, which both resolve `[t][r]` to the
-    // outer target when both exist.
-    for (label, def) in note_link_defs {
-        link_defs.entry(label).or_insert(def);
-    }
+    merge_note_link_defs(&mut link_defs, note_link_defs);
     let mut body = remap_source(body_source, &body);
     if !options.positions && body.source.contains("%%%") && body.source.contains("::") {
         body.col_map = vec![Some(0); body.source.lines().count()];
