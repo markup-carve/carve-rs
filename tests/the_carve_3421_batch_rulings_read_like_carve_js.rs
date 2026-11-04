@@ -216,15 +216,15 @@ fn a_wrapped_attribute_in_a_nested_item_is_one_construct_for_the_outer_item() {
         ),
         (
             "- a\n  - b\n    {.c\n }\npara\n",
-            "<ul><li>a<ul><li>b</li></ul></li></ul><p>para</p>",
+            "<ul><li>a<ul><li>b{.c}para</li></ul></li></ul>",
         ),
         (
             "- a\n  - b\n    {.c\n}\n- s\n",
-            "<ul><li>a<ul><li>b</li></ul></li><li>s</li></ul>",
+            "<ul><li>a<ul><li>b{.c}</li></ul></li><li>s</li></ul>",
         ),
         (
             "- a\n  - b\n    {.c\n}\n    para\n",
-            "<ul><li>a<ul><li>b<pclass=\"c\">para</p></li></ul></li></ul>",
+            "<ul><li>a<ul><li>b{.c}para</li></ul></li></ul>",
         ),
     ]);
 }
