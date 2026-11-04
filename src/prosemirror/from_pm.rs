@@ -1314,8 +1314,8 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
     for (k, v) in a {
         match (k.as_str(), v) {
             ("id", Json::String(s)) => id = Some(s.clone()),
-            // `class=""` is an authored empty class token, written as `""` on export.
-            ("class", Json::String(s)) if s.is_empty() => classes = vec![String::new()],
+            // A blank `class=""` or `class=" "` is one authored token, as the parser keeps it.
+            ("class", Json::String(s)) if s.trim().is_empty() => classes = vec![s.clone()],
             ("class", Json::String(s)) => {
                 classes = s.split_whitespace().map(str::to_owned).collect()
             }
