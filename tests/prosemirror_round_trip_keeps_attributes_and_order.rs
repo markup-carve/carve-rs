@@ -1,5 +1,6 @@
 use carve::{
-    from_prosemirror, parse_with_options, render_carve, render_html, to_prosemirror, Options,
+    from_json, from_prosemirror, parse_with_options, render_carve, render_html, to_json,
+    to_prosemirror, Options,
 };
 
 fn round_trip(source: &str) -> (String, String, bool) {
@@ -90,5 +91,18 @@ fn notes_come_back_in_definition_order() {
     assert_eq!(
         carve::to_carve(&render_carve(&returned).unwrap()),
         carve::to_carve(source)
+    );
+}
+
+#[test]
+fn a_key_that_already_spells_the_escape_prefix_survives() {
+    let ast = r#"{"type":"document","children":[{"type":"paragraph","children":[{"type":"text","value":"a"}],"attrs":{"keyValues":{"carveAttr:href":"x","href":"y"},"order":["carveAttr:href","href"]}}],"srcByteLength":0}"#;
+    let doc = from_json(ast).expect("the AST payload is valid");
+    let returned = from_prosemirror(&to_prosemirror(&doc).json).unwrap();
+    assert_eq!(render_html(&returned).unwrap(), render_html(&doc).unwrap());
+    let json = to_json(&returned);
+    assert!(
+        json.contains(r#""carveAttr:href":"x""#) && json.contains(r#""href":"y""#),
+        "{json}"
     );
 }

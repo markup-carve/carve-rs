@@ -1339,7 +1339,9 @@ fn attrs(a: Option<&Attrs>) -> Object {
             out.insert("class".into(), Json::String(a.classes.join(" ")));
         }
         for (k, v) in &a.key_values {
-            let key = if super::from_pm::is_structural_attr(k) {
+            let key = if super::from_pm::is_structural_attr(k)
+                || k.starts_with(super::from_pm::KEY_VALUE_ESCAPE)
+            {
                 format!("{}{k}", super::from_pm::KEY_VALUE_ESCAPE)
             } else {
                 k.clone()
