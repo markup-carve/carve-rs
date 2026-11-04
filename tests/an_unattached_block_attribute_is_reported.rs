@@ -204,13 +204,15 @@ fn an_attribute_line_a_refused_marker_leaves_behind_is_reported() {
     // indented line it attaches nothing and the attribute line is left with no
     // block of its own - `> q` is the quote's, not this one's. An attribute
     // that reaches no visible block is exactly what this rule names (§15 A4).
-    assert_eq!(unattached("- a\n+\n  {.x}\n> q\n").len(), 1);
+    // Ruled otherwise by carve#5130: the attribute line at the content column is
+    // skipped, the `+` attaches the quote and the attribute places on it.
+    assert_eq!(unattached("- a\n+\n  {.x}\n> q\n").len(), 0);
     // The tree the report describes, which is the one the executable spec and
     // the other engines produce: the item keeps `a` alone and the quote stands
     // outside the list.
     assert_eq!(
         html("- a\n+\n  {.x}\n> q\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 
