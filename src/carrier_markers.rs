@@ -1414,7 +1414,7 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
     let separated = separate_carrier_lines(&items);
     let continued = restore_container_continuations(&separated);
     let restored = restore_list_styles(&restore_fence_markers(&continued));
-    let restored = restore_definition_lines(&restored).join("\n");
+    let restored = restore_definition_lines(&restored, &spaced_terms(lift)).join("\n");
     if lift.marker_newline_token.is_empty() {
         restored
     } else {
@@ -1454,6 +1454,10 @@ pub(crate) fn restore_nested_list_styles(carve: &str, lift: &CarrierLift) -> Opt
         let mut counter = start;
         for line in lines.iter_mut().skip(at) {
             let Some(rest) = line.strip_prefix(&prefix) else {
+                // A loose list spells a blank line between its items.
+                if line.trim_end() == prefix.trim_end() {
+                    continue;
+                }
                 break;
             };
             if line.contains(&lift.token) {
@@ -1536,6 +1540,10 @@ fn restore_list_styles(lines: &[RestoredLine]) -> Vec<RestoredLine> {
             }
             let spelled = item.spelled();
             let Some(rest) = spelled.strip_prefix(&marker.lead) else {
+                // A loose list spells a blank line between its items.
+                if spelled.trim_end() == marker.lead.trim_end() {
+                    continue;
+                }
                 break;
             };
             let width = rest.bytes().take_while(u8::is_ascii_digit).count();
@@ -1705,10 +1713,34 @@ fn restore_container_continuations(lines: &[RestoredLine]) -> Vec<RestoredLine> 
         .collect()
 }
 
-fn restore_definition_lines(lines: &[RestoredLine]) -> Vec<String> {
+/// Whether each term opener, in order, had a blank line above it in the Markdown.
+fn spaced_terms(lift: &CarrierLift) -> Vec<bool> {
+    let mut spaced = Vec::new();
+    let mut above_blank = false;
+    for line in lift.source.split('\n') {
+        let slot = line.find(&lift.token).and_then(|at| {
+            let rest = &line[at + lift.token.len()..];
+            let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+            (rest.as_bytes().get(digits) == Some(&b'Z'))
+                .then(|| rest[..digits].parse::<usize>().ok())
+                .flatten()
+        });
+        if let Some((payload, false, _, _)) = slot.and_then(|index| lift.slots.get(index)) {
+            if payload.starts_with(":: ") {
+                spaced.push(above_blank);
+            }
+        }
+        above_blank = line.trim_matches([' ', '\t', '>']).is_empty();
+    }
+    spaced
+}
+
+fn restore_definition_lines(lines: &[RestoredLine], spaced_terms: &[bool]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut definition_host: Option<String> = None;
     let mut first = false;
+    let mut in_list = false;
+    let mut terms = 0;
     for (index, line) in lines.iter().enumerate() {
         // The Markdown importer spells an item emptied by a term carrier as
         // `+`. It is not authored content when the next carrier closes that
@@ -1752,9 +1784,18 @@ fn restore_definition_lines(lines: &[RestoredLine]) -> Vec<String> {
             if !nested_term {
                 definition_host = None;
             }
-            if out.last().is_some_and(|line| line.trim().is_empty()) {
+            // A blank the Markdown had above the first term separates it from
+            // the block before (carve#5015); every other one is the writer's.
+            let spaced = spaced_terms.get(terms).copied().unwrap_or(false);
+            terms += 1;
+            if (in_list || !spaced)
+                && out
+                    .last()
+                    .is_some_and(|line| line.trim_matches([' ', '\t', '>']).is_empty())
+            {
                 out.pop();
             }
+            in_list = true;
             if nested_term {
                 out.push(line.spelled());
                 continue;
@@ -1769,6 +1810,7 @@ fn restore_definition_lines(lines: &[RestoredLine]) -> Vec<String> {
             continue;
         }
         if marker && line.text.is_empty() {
+            in_list = false;
             if definition_host.as_ref().map_or(true, |host| {
                 !line.lead.starts_with(host) || line.lead == *host
             }) {
@@ -1962,7 +2004,7 @@ mod detached_term_tests {
                 kind: None,
             });
         }
-        let restored = restore_definition_lines(&lines);
+        let restored = restore_definition_lines(&lines, &[]);
         assert_eq!(
             restored
                 .iter()

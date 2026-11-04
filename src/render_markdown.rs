@@ -1405,6 +1405,11 @@ fn absorbs_below(above_text: &str, below: &BlockNode) -> bool {
 /// Whether this block's Markdown spelling starts a block directly below a
 /// paragraph line, with no blank line between them.
 fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
+    // A roundtrip carrier is an HTML comment block, which interrupts a paragraph
+    // whatever the block it carries opens with.
+    if rendered.starts_with("<!--") {
+        return true;
+    }
     match node {
         // A quote marker always interrupts.
         BlockNode::BlockQuote(_) => true,

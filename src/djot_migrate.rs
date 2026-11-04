@@ -107,12 +107,12 @@ fn djot_to_carve_prepared_with_quotes(
     skip_heading_targets: bool,
 ) -> String {
     if nul_shielded || !stripped_definitions.source.contains('\0') {
-        return loosen_lists_behind_empty_leads(spell_empty_item_placeholders(
-            end_note_tasks_before_text(convert_djot_document(
+        return glue_sub_lists_to_their_items(loosen_lists_behind_empty_leads(
+            spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
                 stripped_definitions,
                 omit_quote_delimiters,
                 skip_heading_targets,
-            )),
+            ))),
         ));
     }
     let token = "\0U\0";
@@ -138,14 +138,166 @@ fn djot_to_carve_prepared_with_quotes(
         losses: stripped_definitions.losses.clone(),
         comments: stripped_definitions.comments.clone(),
     };
-    loosen_lists_behind_empty_leads(
+    glue_sub_lists_to_their_items(loosen_lists_behind_empty_leads(
         spell_empty_item_placeholders(end_note_tasks_before_text(convert_djot_document(
             &protected,
             omit_quote_delimiters,
             skip_heading_targets,
         )))
         .replace(token, "\0"),
-    )
+    ))
+}
+
+/// Djot reads a blank line between an item's first block and its sub-list as no
+/// separation, and Carve reads it as a loose item (carve#5015), so the blank goes.
+/// A blank between sibling items, or below a later block, stays.
+fn glue_sub_lists_to_their_items(carve: String) -> String {
+    let quote = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
+    let marker = cached_regex!(r"^( *)([-*+]|\d+[.)]) ").unwrap();
+    let fence_line = cached_regex!(r"^[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
+    let lines: Vec<&str> = carve.split('\n').collect();
+    let parts: Vec<(usize, &str)> = lines
+        .iter()
+        .map(|line| {
+            let prefix = quote.find(line).map_or(0, |m| m.end());
+            (line[..prefix].matches('>').count(), &line[prefix..])
+        })
+        .collect();
+    let indent = |body: &str| body.len() - body.trim_start_matches(' ').len();
+    let mut in_fence = vec![false; lines.len()];
+    let mut fence: Option<(u8, usize)> = None;
+    for (index, (_, body)) in parts.iter().enumerate() {
+        let run = fence_line.captures(body).map(|caps| {
+            (
+                caps[1].as_bytes()[0],
+                caps[1].len(),
+                caps[2].trim().is_empty(),
+            )
+        });
+        if let Some((open, width)) = fence {
+            in_fence[index] = true;
+            if run.is_some_and(|(ch, len, bare)| ch == open && len >= width && bare) {
+                fence = None;
+            }
+            continue;
+        }
+        fence = run.map(|(ch, len, _)| (ch, len));
+    }
+    let mut drop = vec![false; lines.len()];
+    for index in 1..lines.len().saturating_sub(1) {
+        let (depth, body) = parts[index];
+        if in_fence[index] || !body.trim().is_empty() {
+            continue;
+        }
+        let (above_depth, above) = parts[index - 1];
+        if above_depth != depth || above.trim().is_empty() || in_fence[index - 1] {
+            continue;
+        }
+        let mut last = index;
+        while parts
+            .get(last + 1)
+            .is_some_and(|&(at_depth, line)| at_depth == depth && line.trim().is_empty())
+        {
+            last += 1;
+        }
+        let Some(&(below_depth, mut below)) = parts.get(last + 1) else {
+            continue;
+        };
+        if below_depth != depth || in_fence[last + 1] {
+            continue;
+        }
+        // An attribute line travels with the list it heads.
+        if below.trim_start().starts_with('{') && below.trim_end().ends_with('}') {
+            match parts.get(last + 2) {
+                Some(&(next_depth, next))
+                    if next_depth == depth && indent(next) == indent(below) =>
+                {
+                    below = next;
+                }
+                _ => continue,
+            }
+        }
+        let column = indent(below);
+        if column == 0 || !marker.is_match(below) {
+            continue;
+        }
+        let owner = (0..index).rev().find_map(|at| {
+            let (line_depth, line) = parts[at];
+            // Only the item's first block, unbroken, is glued to the sub-list.
+            if line_depth < depth || line_depth == depth && line.trim().is_empty() {
+                return Some(None);
+            }
+            if line_depth != depth || in_fence[at] {
+                return None;
+            }
+            match indent(line).cmp(&column) {
+                std::cmp::Ordering::Greater => None,
+                std::cmp::Ordering::Equal => marker.is_match(line).then_some(None),
+                std::cmp::Ordering::Less => Some(Some(line)),
+            }
+        });
+        let Some(Some(owner)) = owner else {
+            continue;
+        };
+        let content = marker.captures(owner).map(|caps| caps[0].len());
+        if content.is_some_and(|content| content <= column)
+            && !separated_from_a_sibling(&parts, &in_fence, last, indent(owner))
+        {
+            drop[index..=last].fill(true);
+        }
+    }
+    if !drop.contains(&true) {
+        return carve;
+    }
+    // A list a blank already loosens between two items needs no glue.
+    fn separated_from_a_sibling(
+        parts: &[(usize, &str)],
+        in_fence: &[bool],
+        blank: usize,
+        column: usize,
+    ) -> bool {
+        let depth = parts[blank].0;
+        let indent = |body: &str| body.len() - body.trim_start_matches(' ').len();
+        let mut after_blank = false;
+        for at in blank + 1..parts.len() {
+            let (line_depth, line) = parts[at];
+            if line_depth < depth {
+                return false;
+            }
+            if line_depth > depth || in_fence[at] {
+                after_blank = false;
+                continue;
+            }
+            if line.trim().is_empty() {
+                after_blank = true;
+                continue;
+            }
+            match indent(line).cmp(&column) {
+                std::cmp::Ordering::Less => return false,
+                std::cmp::Ordering::Equal => {
+                    if !cached_regex!(r"^ *([-*+]|\d+[.)]) ")
+                        .unwrap()
+                        .is_match(line)
+                    {
+                        return false;
+                    }
+                    if after_blank {
+                        return true;
+                    }
+                }
+                std::cmp::Ordering::Greater => {}
+            }
+            after_blank = false;
+        }
+        false
+    }
+    lines
+        .iter()
+        .zip(drop)
+        .filter(|(_, dropped)| !dropped)
+        .map(|(line, _)| *line)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The conversion builds an empty item as `- +`, and a bare `+` is a letter unless
