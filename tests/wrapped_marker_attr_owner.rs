@@ -15,6 +15,6 @@ fn wrapped_marker_attributes_take_a_follower_at_the_content_column() {
     let source = "- {.a\n.b}\n  tail";
     assert_eq!(
         carve::to_html(source),
-        "<ul>\n  <li><p class=\"a b\">tail</p></li>\n</ul>"
+        "<ul>\n  <li>{.a\n.b}\ntail</li>\n</ul>"
     );
 }

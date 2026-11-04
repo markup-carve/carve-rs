@@ -13,9 +13,9 @@ fn html(source: &str) -> String {
 fn at_the_document_level() {
     assert_eq!(
         html("a\n {.c\n }\npara\n"),
-        "<p>a</p>\n<p class=\"c\">para</p>"
+        "<p>a\n{.c\n}\npara</p>"
     );
-    assert_eq!(html(" {.c\n }\npara\n"), "<p class=\"c\">para</p>");
+    assert_eq!(html(" {.c\n }\npara\n"), "<p>{.c\n}\npara</p>");
     assert_eq!(
         html("x\n  {.a\n  .b}\ntail\n"),
         "<p>x</p>\n<p class=\"a b\">tail</p>"
@@ -26,11 +26,11 @@ fn at_the_document_level() {
 fn in_a_quote() {
     assert_eq!(
         html("> a\n>  {.c\n> }\n> para\n"),
-        "<blockquote>\n  <p>a</p>\n  <p class=\"c\">para</p>\n</blockquote>"
+        "<blockquote><p>a\n{.c\n}\npara</p></blockquote>"
     );
     assert_eq!(
         html("> - a\n>    {.c\n>   }\npara\n"),
-        "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<p>para</p>"
+        "<blockquote>\n  <ul>\n    <li>a\n{.c\n}\npara</li>\n  </ul>\n</blockquote>"
     );
     // The single-line spelling leaves no paragraph open either.
     assert_eq!(
@@ -48,7 +48,7 @@ fn in_a_quote() {
 fn in_a_description_body() {
     assert_eq!(
         html(":: t\n: a\n   {.c\n}\npara\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>a</dd>\n</dl>\n<p>para</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>a\n{.c\n}\npara</dd>\n</dl>"
     );
 }
 
@@ -56,11 +56,11 @@ fn in_a_description_body() {
 fn in_and_below_a_list_item() {
     assert_eq!(
         html("- a\n   {c\n}\nx\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>x</p>"
+        "<ul>\n  <li>a\n{c\n}\nx</li>\n</ul>"
     );
     assert_eq!(
         html("- a\n {c\n}\nx\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p c=\"\">x</p>"
+        "<ul>\n  <li>a\n{c\n}\nx</li>\n</ul>"
     );
     assert_eq!(
         html("- a\n   {.c\n   }\n  para\n"),

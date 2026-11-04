@@ -248,7 +248,11 @@ fn follows_plus_marker(lines: &[String]) -> bool {
         if indent_columns(&lines[at]) != column {
             return false;
         }
-        match standalone_attrs_block_len(&trimmed[at - plus - 1..]) {
+        match attrs_block_len_at(
+            column,
+            trimmed[at - plus - 1],
+            lines[at + 1..].iter().map(|line| line.as_str()),
+        ) {
             Some(len) if at + len <= lines.len() => at += len,
             _ => return false,
         }
@@ -1333,7 +1337,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && trim_ascii_start(line).starts_with('{')
             && indented_wrapped_attrs_block_len(
-                std::iter::once(trim_ascii_start(line))
+                std::iter::once(line)
                     .chain((cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i))),
             )
             .is_some()
@@ -1500,10 +1504,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         .find(|&&(_, column)| indent == column && column > strip_cols)
                     {
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
-                        let interrupts =
-                            !after_blank && !lead_fence_scan.holds_open(&lines, column);
-                        if after_blank || interrupts {
-                            if !after_blank {
+                        // A refused brace run's paragraph takes the fence as text.
+                        let refused = !after_blank && ends_in_refused_brace_run(&lines);
+                        let interrupts = !after_blank
+                            && !refused
+                            && !lead_fence_scan.holds_open(&lines, column);
+                        if after_blank || interrupts || refused {
+                            if interrupts {
                                 // Preserve the accepted interruption when collection
                                 // ends before the closer reaches the child parser.
                                 lines.push(String::new());
@@ -1533,6 +1540,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && colon_open.is_empty()
             && marker_colon.is_none()
             && detect_fence_open(trim_ascii_start(line)).is_some()
+            && !ends_in_refused_brace_run(&lines)
         {
             break;
         }
@@ -1540,6 +1548,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
+            && !ends_in_refused_brace_run(&lines)
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
@@ -1721,10 +1730,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     || (cur.invisible_arms
                         && indent == strip_cols
                         && trim_ascii_start(line).starts_with('{')
-                        && standalone_attrs_block_len_iter(
-                            std::iter::once(trim_ascii_start(line)).chain(
-                                (cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i)),
-                            ),
+                        && attrs_block_len_at(
+                            indent,
+                            trim_ascii_start(line),
+                            (cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i)),
                         )
                         .is_some_and(|count| {
                             marker_attribute_end = Some(cur.pos + count - 1);
@@ -2053,9 +2062,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && trim_ascii_start(line).starts_with('{')
             && parse_standalone_attrs(trim_ascii_start(line)).is_none())
         .then(|| {
-            standalone_attrs_block_len_iter(
-                std::iter::once(trim_ascii_start(line))
-                    .chain((cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i))),
+            attrs_block_len_at(
+                indent,
+                trim_ascii_start(line),
+                (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
             )
         })
         .flatten();
@@ -2080,22 +2090,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if indent >= attribute_column && wrapped_attribute.is_some_and(|count| count > 1) {
             closed_code_leaf = true;
         }
+        let run_strip = if indent >= strip_cols {
+            strip_cols
+        } else {
+            attribute_column
+        };
         for _ in 1..wrapped_attribute.unwrap_or(1) {
             let next = cur.lines.at(cur.pos);
-            // Kept at the opener's column, so a reparse reads them inside its container.
+            // Kept past the opener's column, so a reparse reads them inside its
+            // container and as the same run (carve#5080).
+            let next_column = indent_columns(next).max(indent + 1) - run_strip;
             lines.push(if indent >= attribute_column {
-                format!(
-                    "{}{}",
-                    " ".repeat(
-                        indent
-                            - if indent >= strip_cols {
-                                strip_cols
-                            } else {
-                                attribute_column
-                            }
-                    ),
-                    trim_ascii_start(next)
-                )
+                format!("{}{}", " ".repeat(next_column), trim_ascii_start(next))
             } else {
                 trim_ascii_start(next).to_string()
             });
@@ -2104,11 +2110,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 line_map.push(cur.source_line(cur.pos));
                 col_map.push(cur.source_col(cur.pos).map(|col| {
                     col + leading_ws(next) as isize
-                        - indent.saturating_sub(if indent >= strip_cols {
-                            strip_cols
+                        - if indent >= attribute_column {
+                            next_column
                         } else {
-                            attribute_column
-                        }) as isize
+                            indent.saturating_sub(run_strip)
+                        } as isize
                 }));
             }
             cur.consume();

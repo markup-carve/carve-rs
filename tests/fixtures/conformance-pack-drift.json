@@ -537,46 +537,6 @@
         "roundtrip-f614bb715162",
         "roundtrip-fae39054ff1c"
       ]
-    },
-    {
-      "ticket": "markup-carve/carve#5080",
-      "cause": "pin move to carve d9d5dea7: ruled block brace continuation columns; the carve-rs port is pending",
-      "cases": [
-        "lazy-2a563a548fec",
-        "lazy-40c0fe50b2b8",
-        "lazy-4bc0393d24b2",
-        "lazy-4dc9a90b779f",
-        "lazy-a32bb8ac7be8",
-        "lazy-c304d7d4a962",
-        "lazy-d019eea71e11",
-        "lazy-d81b827a4d6d",
-        "lazy-ef6c31b458aa",
-        "lazy-f60632f36c87",
-        "ownership-2c66125f9d1c",
-        "ownership-3131824556e7",
-        "ownership-38b1af2d53e6",
-        "ownership-498f1450c332",
-        "ownership-566653ee5ccb",
-        "ownership-743737c78aef",
-        "ownership-8f1e4de9ddc6",
-        "ownership-bd5caf2c0c4d",
-        "ownership-d019eea71e11",
-        "ownership-ec1a27ce330c",
-        "ownership-edfbea8daa50",
-        "roundtrip-0b86f27da459",
-        "roundtrip-11b2678fd5dd",
-        "roundtrip-12c5b3669903",
-        "roundtrip-1be38b086f99",
-        "roundtrip-20d2a979250b",
-        "roundtrip-44b9915e4d40",
-        "roundtrip-4b5a7c67647f",
-        "roundtrip-68d2f6267ea0",
-        "roundtrip-b5005f70c4da",
-        "roundtrip-badadbc5adb9",
-        "roundtrip-d27a8c0b8e38",
-        "roundtrip-e42b81b3600f",
-        "roundtrip-e8ce4a206f85"
-      ]
     }
   ]
 }

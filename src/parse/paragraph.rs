@@ -187,10 +187,46 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     let code_include = cur
         .peek()
         .and_then(|line| crate::includes::code_include_line(strip_lazy(trim_ascii_start(line))));
+    // A refused brace run is literal text, and the line after it joins the
+    // paragraph whatever it opens (carve#5080). A fence there keeps its closer.
+    let mut literal: Vec<(usize, usize)> = Vec::new();
+    let mut forced_through: Option<usize> = None;
+    let mut comment_scanned_through = 0usize;
+    let mut inline_span = InlineSpanScan::default();
     while let Some(line) = cur.peek() {
         if code_include.is_some() && !lines.is_empty() {
             break;
         }
+        let brace_line = trim_ascii_start(strip_lazy(line));
+        if !is_blank_line(line)
+            && brace_line.starts_with('{')
+            && !inline_span.open(&lines)
+            && !(brace_line.starts_with("{%") && cur.pos < comment_scanned_through)
+        {
+            match refused_brace_run(
+                (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+                !cur.in_quoted_body,
+            ) {
+                RefusedBraceRun::Lines(count) => {
+                    let start = lines.len();
+                    for _ in 0..count {
+                        let Some(taken) = cur.peek() else { break };
+                        cur.consume();
+                        line_indices.push(cur.pos - 1);
+                        lines.push(trim_ascii_end(trim_ascii_start(taken)));
+                    }
+                    literal.push((start, lines.len()));
+                    inline_span.scanned = lines.len();
+                    forced_through = Some(cur.pos);
+                    continue;
+                }
+                RefusedBraceRun::No(scanned) if brace_line.starts_with("{%") => {
+                    comment_scanned_through = cur.pos.saturating_add(scanned);
+                }
+                RefusedBraceRun::No(_) => {}
+            }
+        }
+        let forced = forced_through.is_some_and(|through| cur.pos <= through);
         if is_blank_line(line) {
             if image_lead
                 && lines.len() == 1
@@ -207,7 +243,17 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
         let line_owned = line.to_string();
-        if !lines.is_empty()
+        if forced && forced_through == Some(cur.pos) {
+            if let Some(open) = detect_fence_open(line) {
+                if let Some(closer) = (cur.pos + 1..cur.lines.len())
+                    .find(|&k| cur.lines.line(k).is_some_and(|l| is_fence_close(l, open)))
+                {
+                    forced_through = Some(closer);
+                }
+            }
+        }
+        if !forced
+            && !lines.is_empty()
             && ((reference_caption_claimed && caption_content(line).is_some())
                 || interrupts_paragraph(cur, &line_owned)
                 || (cur.colon_view.is_some_and(|view| view.marker_hosted)
@@ -251,7 +297,16 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
             .skip(1)
             .any(|line| line.starts_with(LAZY) && caption_content(strip_lazy(line)).is_some());
     let joined = joined.as_str();
-    let children = if options.positions {
+    let children = if !literal.is_empty() {
+        let anchors: Option<Vec<_>> = options.positions.then(|| {
+            lines
+                .iter()
+                .zip(&line_indices)
+                .map(|(line, &index)| inline_anchor_for_line(cur, index, line))
+                .collect()
+        });
+        literal_run_children(options, &lines, anchors.as_deref(), &literal)
+    } else if options.positions {
         let anchors = lines
             .iter()
             .zip(&line_indices)
@@ -277,6 +332,116 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         block_image: false,
         pos,
     })
+}
+
+/// Whether the paragraph lines read so far leave an inline code span or a
+/// braced comment open, so a line-initial `{` is inline content.
+#[derive(Default)]
+pub(in crate::parse) struct InlineSpanScan {
+    pub(in crate::parse) scanned: usize,
+    code_run: usize,
+    comment: bool,
+}
+
+impl InlineSpanScan {
+    pub(in crate::parse) fn open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
+        for line in &lines[self.scanned.min(lines.len())..] {
+            let bytes = strip_lazy(line.as_ref()).as_bytes();
+            let mut k = 0;
+            while k < bytes.len() {
+                if self.comment {
+                    if bytes[k] == b'%' && bytes.get(k + 1) == Some(&b'}') {
+                        self.comment = false;
+                        k += 1;
+                    }
+                } else if bytes[k] == b'`' {
+                    let width = bytes[k..].iter().take_while(|&&b| b == b'`').count();
+                    if self.code_run == 0 {
+                        self.code_run = width;
+                    } else if self.code_run == width {
+                        self.code_run = 0;
+                    }
+                    k += width - 1;
+                } else if self.code_run == 0 && bytes[k] == b'\\' {
+                    let width = bytes[k..].iter().take_while(|&&b| b == b'\\').count();
+                    let escaped = matches!(bytes.get(k + width), Some(b'`' | b'{'));
+                    k += width - 1 + usize::from(escaped && width % 2 == 1);
+                } else if self.code_run == 0 && bytes[k] == b'{' && bytes.get(k + 1) == Some(&b'%') {
+                    self.comment = true;
+                    k += 1;
+                }
+                k += 1;
+            }
+        }
+        self.scanned = lines.len();
+        self.code_run != 0 || self.comment
+    }
+}
+
+/// Paragraph children when refused brace runs sit among the lines: each line
+/// of a run is one literal text (carve#5080).
+pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
+    options: &Options<'_>,
+    lines: &[S],
+    anchors: Option<&[Option<(usize, isize)>]>,
+    literal: &[(usize, usize)],
+) -> Vec<InlineNode> {
+    let lines: Vec<&str> = lines.iter().map(AsRef::as_ref).collect();
+    let parse_range = |from: usize, to: usize| -> Vec<InlineNode> {
+        let text = lines[from..to]
+            .iter()
+            .map(|l| strip_lazy(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        match anchors {
+            Some(anchors) => parse_inline_lines_with_anchor(&text, options, anchors[from..to].to_vec()),
+            None => parse_inline_with_options(&text, options),
+        }
+    };
+    let literal_range = |from: usize, to: usize| -> Vec<InlineNode> {
+        let text = lines[from..to]
+            .iter()
+            .map(|l| strip_lazy(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        literal_line_children(&parse_range(from, to), &text)
+    };
+    let mut out: Vec<InlineNode> = Vec::new();
+    let mut push = |nodes: Vec<InlineNode>| {
+        if nodes.is_empty() {
+            return;
+        }
+        if let Some(last) = out.last() {
+            let pos = last
+                .pos()
+                .zip(nodes[0].pos())
+                .map(|(before, after)| Pos {
+                    start_line: before.end_line,
+                    start_column: before.end_column,
+                    start_offset: before.end_offset,
+                    end_line: after.start_line,
+                    end_column: after.start_column,
+                    end_offset: after.start_offset,
+                    ..before.clone()
+                });
+            out.push(InlineNode::SoftBreak(Break { pos }));
+        }
+        out.extend(nodes);
+    };
+    let mut at = 0;
+    for &(start, end) in literal {
+        if start > at {
+            push(parse_range(at, start));
+        }
+        for k in start..end {
+            push(literal_range(k, k + 1));
+        }
+        at = end;
+    }
+    if at < lines.len() {
+        push(parse_range(at, lines.len()));
+    }
+    out
 }
 
 /// Whether `line`, seen while accumulating a paragraph, ends it and starts a

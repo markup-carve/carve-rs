@@ -117,7 +117,29 @@ pub(in crate::parse) fn indented_wrapped_attrs_block_len<'a>(
     attrs_block_len_from(first, unframed).filter(|&len| len > 1)
 }
 
-fn attrs_block_len_from<'a>(first: &'a str, lines: impl Iterator<Item = &'a str>) -> Option<usize> {
+/// [`attrs_block_len_from`] for an opener cut from its line: `first` stands at
+/// `column`, in the coordinates the continuation `lines` are written in.
+pub(in crate::parse) fn attrs_block_len_at<'a>(
+    column: usize,
+    first: &'a str,
+    lines: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
+    if !trim_ascii(first).starts_with('{') {
+        return None;
+    }
+    if parse_standalone_attrs(first).is_some() {
+        return Some(1);
+    }
+    if trim_ascii_end(first).ends_with('}') {
+        return None;
+    }
+    wrapped_attrs_run_at(column, std::iter::once(first).chain(lines)).map(|(_, count)| count)
+}
+
+pub(in crate::parse) fn attrs_block_len_from<'a>(
+    first: &'a str,
+    lines: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
     // AN ATTRIBUTE BLOCK OPENS WITH A BRACE, and refusing everything else here
     // is what keeps this cheap. `interrupts_paragraph` asks this question of
     // EVERY continuation line, and without the guard a paragraph whose lines
@@ -139,17 +161,33 @@ fn attrs_block_len_from<'a>(first: &'a str, lines: impl Iterator<Item = &'a str>
 }
 
 /// A wrapped attribute run: contiguous lines joined until every block has
-/// closed. Each block of a glued run may wrap (carve#4078).
+/// closed. Each block of a glued run may wrap (carve#4078), and continues only
+/// on lines indented past its own `{` (carve#5080). A lazy line sits at column 0.
 fn wrapped_attrs_run<'a>(lines: impl Iterator<Item = &'a str>) -> Option<(Attrs, usize)> {
+    wrapped_attrs_run_at(0, lines)
+}
+
+/// [`wrapped_attrs_run`] with the first line's text starting at `base`.
+fn wrapped_attrs_run_at<'a>(
+    base: usize,
+    lines: impl Iterator<Item = &'a str>,
+) -> Option<(Attrs, usize)> {
     let mut joined = String::new();
     let mut quote: Option<char> = None;
+    let mut brace_column = 0;
     for (count, raw) in lines.enumerate() {
         let line = strip_lazy(raw);
         if is_blank_line(line) {
             return None;
         }
+        if count > 0 && (line.len() != raw.len() || indent_columns(line) <= brace_column) {
+            return None;
+        }
         if count > 0 && !valid_wrapped_attr_continuation(line) {
             return None;
+        }
+        if let Some(column) = last_open_brace_column(line, quote) {
+            brace_column = column + if count == 0 { base } else { 0 };
         }
         if !joined.is_empty() {
             if quote.is_some() {
@@ -166,6 +204,165 @@ fn wrapped_attrs_run<'a>(lines: impl Iterator<Item = &'a str>) -> Option<(Attrs,
         }
     }
     None
+}
+
+/// What a block-position brace run says when its only fault is a continuation
+/// at or below its `{` column (carve#5080): the run is literal paragraph text.
+pub(in crate::parse) enum RefusedBraceRun {
+    /// The run is refused and takes this many lines.
+    Lines(usize),
+    /// Not refused. A comment run scanned this many lines, and none of them
+    /// opens a refused comment run either.
+    No(usize),
+}
+
+/// `lazy_refuses` is false in a quote, whose lazy line keeps a run inline.
+pub(in crate::parse) fn refused_brace_run<'a>(
+    mut lines: impl Iterator<Item = &'a str>,
+    lazy_refuses: bool,
+) -> RefusedBraceRun {
+    let Some(first) = lines.next() else {
+        return RefusedBraceRun::No(0);
+    };
+    // A lazily framed line sits at column 0: the collector framed the run
+    // because it already refused it.
+    let column_of = |raw: &str| {
+        let line = strip_lazy(raw);
+        if line.len() == raw.len() { indent_columns(line) } else { 0 }
+    };
+    let opener = trim_ascii_start(strip_lazy(first));
+    if !opener.starts_with('{') {
+        return RefusedBraceRun::No(0);
+    }
+    let opener_column = column_of(first);
+    let comment = opener.starts_with("{%");
+    let mut repaired: Vec<String> = Vec::new();
+    let mut shallow = false;
+    let mut depth = 0usize;
+    let mut brace_column = opener_column;
+    for (n, raw) in std::iter::once(first).chain(lines).enumerate() {
+        if is_blank_line(raw) {
+            break;
+        }
+        let line = strip_lazy(raw);
+        if !lazy_refuses && line.len() != raw.len() {
+            return RefusedBraceRun::No(0);
+        }
+        let column = column_of(raw);
+        let rest = trim_ascii_start(line);
+        if n > 0 && !comment && rest.starts_with('{') {
+            return RefusedBraceRun::No(0);
+        }
+        if n > 0 && column <= brace_column {
+            shallow = true;
+        }
+        if comment {
+            if line.contains("%}") {
+                return if shallow {
+                    RefusedBraceRun::Lines(n + 1)
+                } else {
+                    RefusedBraceRun::No(n + 1)
+                };
+            }
+            continue;
+        }
+        let pad = if n == 0 {
+            0
+        } else {
+            (column.saturating_sub(opener_column))
+                .max(brace_column + 1 - opener_column)
+                .max(1)
+        };
+        repaired.push(format!("{}{}", " ".repeat(pad), trim_ascii_end(rest)));
+        let mut quote = None;
+        let mut source_column = column;
+        let mut chars = rest.chars();
+        while let Some(ch) = chars.next() {
+            match (quote, ch) {
+                (Some(_), '\\') => {
+                    chars.next();
+                    source_column += 1;
+                }
+                (Some(q), _) if q == ch => quote = None,
+                (Some(_), _) => {}
+                (None, '"' | '\'') => quote = Some(ch),
+                (None, '{') if depth == 0 => {
+                    brace_column = source_column;
+                    depth = 1;
+                }
+                (None, '}') if depth == 0 => return RefusedBraceRun::No(0),
+                (None, '}') => depth -= 1,
+                _ => {}
+            }
+            source_column = if ch == '\t' {
+                source_column + 4 - source_column % 4
+            } else {
+                source_column + 1
+            };
+        }
+        if depth == 0 {
+            let valid = shallow
+                && wrapped_attrs_run(repaired.iter().map(String::as_str))
+                    .is_some_and(|(_, count)| count == n + 1);
+            return if valid { RefusedBraceRun::Lines(n + 1) } else { RefusedBraceRun::No(0) };
+        }
+    }
+    RefusedBraceRun::No(if comment { usize::MAX } else { 0 })
+}
+
+/// Whether the collected lines end in a refused brace run, whose paragraph
+/// takes the next line whatever it opens (carve#5080).
+pub(in crate::parse) fn ends_in_refused_brace_run(lines: &[String]) -> bool {
+    let Some(last) = lines.last().filter(|line| line.contains('}')) else {
+        return false;
+    };
+    let mut start = lines.len() - 1;
+    let mut candidates = 0;
+    loop {
+        if is_blank_line(&lines[start]) {
+            return false;
+        }
+        if trim_ascii_start(&lines[start]).starts_with('{') {
+            if matches!(
+                refused_brace_run(lines[start..].iter().map(String::as_str), true),
+                RefusedBraceRun::Lines(count) if start + count == lines.len()
+            ) {
+                return true;
+            }
+            candidates += 1;
+            if candidates == 2 || !last.contains("%}") {
+                return false;
+            }
+        }
+        if start == 0 {
+            return false;
+        }
+        start -= 1;
+    }
+}
+
+/// The source column of the last `{` this line opens outside a quoted value,
+/// with tabs at four-column stops. `quote` is the value left open above it.
+fn last_open_brace_column(line: &str, mut quote: Option<char>) -> Option<usize> {
+    let mut column = 0;
+    let mut found = None;
+    let mut chars = line.chars();
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (Some(_), '\\') => {
+                if chars.next().is_some() {
+                    column += 1;
+                }
+            }
+            (Some(q), _) if q == ch => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(ch),
+            (None, '{') => found = Some(column),
+            _ => {}
+        }
+        column = if ch == '\t' { column + 4 - column % 4 } else { column + 1 };
+    }
+    found
 }
 
 /// Whether the run's last block is still open. A `{` inside an open block or a
@@ -242,9 +439,10 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
         }
         (line, depth)
     }
-    let (first, nested_depth) = innermost(stripped);
-    // §15 A5: the opener's indentation does not change what a wrapped block is.
-    let first = trim_ascii_start(first);
+    let (opener, nested_depth) = innermost(stripped);
+    // §15 A5: the opener's indentation does not change what a wrapped block is,
+    // but its continuations are measured against its column (carve#5080).
+    let first = trim_ascii_start(opener);
     if !first.starts_with('{') {
         return QuotedAttrsBlock::No;
     }
@@ -255,7 +453,7 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
     if trim_ascii_end(first).ends_with('}') {
         return QuotedAttrsBlock::No;
     }
-    let mut block: Vec<&str> = vec![first];
+    let mut block: Vec<&str> = vec![opener];
     let mut met_a_closer = false;
     for line in rest {
         // The block lives INSIDE the quote: an unprefixed line is the lazy
@@ -290,7 +488,7 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
             break;
         }
     }
-    match standalone_attrs_block_len(&block) {
+    match attrs_block_len_from(opener, block[1..].iter().copied()) {
         Some(len) => QuotedAttrsBlock::Block(len),
         // A closer was there and the join was still refused - a later line may
         // open a block that ends on that same closer, so nothing is proved.
@@ -370,7 +568,9 @@ pub(in crate::parse) fn split_trailing_attrs(
         if line.starts_with('{') {
             break;
         }
-        if line.starts_with([' ', '\t']) {
+        // A continuation sits past its brace (carve#5080); the last line alone
+        // must not be an indented run of its own.
+        if line.starts_with([' ', '\t']) && start == lines.len() - 1 && trim_ascii_start(line).starts_with('{') {
             return None;
         }
         if start == 0 {

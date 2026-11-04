@@ -23,17 +23,17 @@ fn a_break_inside_any_block_keeps_the_run() {
 fn the_run_ends_a_paragraph_and_nests() {
     assert_eq!(
         to_html("para\n{.a}{.b\n}\nq\n").trim(),
-        "<p>para</p>\n<p class=\"a b\">q</p>"
+        "<p>para\n{.a}{.b\n}\nq</p>"
     );
     assert_eq!(
         to_html("> {.a\n> }{.b}\n> p\n").trim(),
-        "<blockquote><p class=\"a b\">p</p></blockquote>"
+        "<blockquote><p>{.a\n}{.b}\np</p></blockquote>"
     );
 }
 
 #[test]
 fn a_run_with_nothing_below_renders_nothing() {
-    assert_eq!(to_html("{.a}{.b\n}\n").trim(), "");
+    assert_eq!(to_html("{.a}{.b\n}\n").trim(), "<p>{.a}{.b\n}</p>");
 }
 
 #[test]

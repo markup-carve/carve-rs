@@ -2901,7 +2901,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::Comment(comment) => {
             if comment.delimited {
-                format!("{{%{} %}}", pad_delimited(&comment.content))
+                delimited_comment_source(&comment.content)
             } else if comment.block {
                 render_block_comment(session, &comment.content)
             } else {
@@ -3699,6 +3699,13 @@ fn render_nodes_with_verbatim(
         {
             out.push_str("{%  %}");
         }
+        // A comment opening a line is a block-position run: its wrapped lines
+        // sit past the `{` (carve#5080).
+        if matches!(node, InlineNode::Comment(c) if c.delimited)
+            && (out.is_empty() || out.ends_with('\n'))
+        {
+            rendered = rendered.replace('\n', "\n ");
+        }
         out.push_str(&rendered);
         if !rendered.is_empty() {
             verbatim_tail = rendered.ends_with('`')
@@ -3721,6 +3728,12 @@ fn render_nodes_with_verbatim(
     }
     ctx.rendered_verbatim_tail = verbatim_tail;
     out
+}
+
+/// A `{% ... %}` comment. A wrapped line sits past the `{`, or the comment
+/// would read as text (carve#5080).
+fn delimited_comment_source(content: &str) -> String {
+    format!("{{%{} %}}", pad_delimited(content).replace('\n', "\n "))
 }
 
 fn inline_hosts_caption(node: &InlineNode) -> bool {
