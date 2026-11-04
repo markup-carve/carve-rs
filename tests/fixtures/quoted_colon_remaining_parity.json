@@ -777,7 +777,7 @@
   {
     "id": "future-code-beyond-unquoted-line",
     "source": "> - ::: |\n>   ```\n>   :::\nlazy\n>   ```\n>   :::\n- tail\n",
-    "html": "<blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div></li></ul></blockquote><p>lazy</p><blockquote><p><code>\n:::\n- tail</code></p></blockquote>"
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div></li></ul></blockquote><p>lazy</p><blockquote><pre><code>:::\n</code></pre></blockquote><ul><li>tail</li></ul>"
   },
   {
     "id": "paired-comment-depth1",
