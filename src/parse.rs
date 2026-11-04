@@ -3490,6 +3490,34 @@ pub(crate) fn lint_unpadded_cell_runs(line: &str) -> Vec<(usize, usize, Unpadded
         .collect()
 }
 
+/// Per cell of a row, `(header, align, valign)`: its kind and whether it sets
+/// each alignment axis in the table, in any prefix spelling the parser reads
+/// (braced or 0.1.13). A run without its T11 space is cell content.
+pub(crate) fn row_cell_alignment_axes(line: &str) -> Vec<(bool, bool, bool)> {
+    if !is_table_start(line) {
+        return Vec::new();
+    }
+    let (_, body) = split_row_attrs(line);
+    let content = strip_row_closing_pipe(body.strip_prefix('|').unwrap_or(body));
+    let offsets: Vec<_> = content
+        .char_indices()
+        .map(|(at, _)| at)
+        .chain(std::iter::once(content.len()))
+        .collect();
+    split_table_cells_ranged(content)
+        .cells
+        .into_iter()
+        .map(|cell| {
+            let raw = &content[offsets[cell.start]..offsets[cell.end]];
+            let run = scan_cell_marker_run(raw);
+            if run.run_len == 0 || raw.as_bytes().get(run.run_len) != Some(&b' ') {
+                return (false, false, false);
+            }
+            (run.header, run.align.is_some(), run.valign.is_some())
+        })
+        .collect()
+}
+
 /// Cells spelled with the released 0.1.13 alignment prefix (`|=> x |`), as
 /// `(start, end, message)` byte ranges into `line` (carve#5091). The prefix
 /// still reads with the tree of its braced spelling; `carve fmt` rewrites it.
