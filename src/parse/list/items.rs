@@ -468,7 +468,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         if self.cur.peek().is_some_and(|line| {
             let indent = indent_columns(line);
-            indent > base_indent && indent < content_col
+            !is_blank_line(line) && indent > base_indent && indent < content_col
         }) && !self.item_paragraph_open.get()
         {
             return END;
@@ -683,9 +683,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (nested_children, carried) =
             self.parse_continuation_chunk(chunk_start, nested, collected_tail_blank);
         place_item_chunk(self.deferred, last_item, nested_children, carried);
+        // A whitespace-only line is blank at any width (PART 4 `blank_line`).
         if self.cur.peek().is_some_and(|line| {
             let indent = indent_columns(line);
-            indent > self.base_indent && indent < content_col
+            !is_blank_line(line) && indent > self.base_indent && indent < content_col
         }) && !self.item_paragraph_open.get()
         {
             return END;
@@ -697,7 +698,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if (definition_ended_paragraph || degraded_comment_fence || closed_comment_span)
             && self.cur.peek().is_some_and(|line| {
                 let indent = indent_columns(line);
-                indent > 0 && indent < content_col
+                !is_blank_line(line) && indent > 0 && indent < content_col
             })
         {
             return END;
