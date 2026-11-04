@@ -39,10 +39,11 @@ fn a_footnote_in_a_description_is_written_back_on_that_line() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn a_footnote_in_an_item_gap_is_written_back_on_that_line() {
+    // CARVE-P11-079 (a) collects it: no region marker holds it in the item
+    // (markup-carve/carve#5109 ruling, corpus 228).
     let source = "- a\n  [^f]: x\n  more\n\nsee[^f]\n";
-    assert_eq!(fmt(source), source);
+    assert_eq!(fmt(source), "- a\n\nsee[^f]\n\n[^f]: x\n  more\n");
     assert!(round_trips(source));
 }
 
