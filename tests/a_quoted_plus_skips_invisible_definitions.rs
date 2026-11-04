@@ -1,7 +1,8 @@
 use carve::to_html;
 
 // carve#5012: the erased line leaves its quote prefix as a blank.
-const ATTACHED: &str = "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <p>b</p>\n</blockquote>";
+const ATTACHED: &str =
+    "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <p>b</p>\n</blockquote>";
 
 #[test]
 #[ignore = "carve#5013 port pending (carve-rs#3823): a refused `+` renders nothing"]

@@ -119,7 +119,10 @@ fn a_comment_at_a_live_content_column_still_ends_the_item() {
     // document level.
     for src in ["- - a\n  %% c\ntail\n", "- a\n  - x\n    %% c\ntail\n"] {
         let html = both_paths(src);
-        assert!(html.ends_with("tail</li>\n    </ul>\n  </li>\n</ul>"), "{src:?}: {html}");
+        assert!(
+            html.ends_with("tail</li>\n    </ul>\n  </li>\n</ul>"),
+            "{src:?}: {html}"
+        );
     }
 }
 

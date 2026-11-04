@@ -18,18 +18,12 @@ fn html(src: &str) -> String {
 fn a_column_zero_comment_keeps_the_item_open() {
     // `b` stays in the item, as a SECOND paragraph: the comment ends the
     // paragraph above it (section 10) without ending the item.
-    assert_eq!(
-        html("- a\n%% c\nb\n"),
-        "<ul>\n  <li>a\nb</li>\n</ul>"
-    );
+    assert_eq!(html("- a\n%% c\nb\n"), "<ul>\n  <li>a\nb</li>\n</ul>");
 }
 
 #[test]
 fn a_flush_comment_keeps_an_indented_item_open_to_its_base_column() {
-    assert_eq!(
-        html(" * u\n%%\n :\n"),
-        "<ul>\n  <li>u\n:</li>\n</ul>"
-    );
+    assert_eq!(html(" * u\n%%\n :\n"), "<ul>\n  <li>u\n:</li>\n</ul>");
 }
 
 #[test]

@@ -25,10 +25,16 @@ fn each_kind_uses_its_ownership_rule_at_both_band_columns() {
     // The band is two columns wide under a `:  ` body.
     for indent in [" ", "  "] {
         for (line, expected) in [
-            ("[r]: /u", "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>".to_string()),
+            (
+                "[r]: /u",
+                "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>".to_string(),
+            ),
             ("[^f]: n", ENDS.trim_end_matches('\n').to_string()),
             ("{.k}", format!("{ENDS}<p class=\"k\">tail</p>")),
-            ("*[A]: a", "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>".to_string()),
+            (
+                "*[A]: a",
+                "<dl>\n  <dt>t</dt>\n  <dd>d\ntail</dd>\n</dl>".to_string(),
+            ),
             ("x", folds("x")),
         ] {
             assert_eq!(

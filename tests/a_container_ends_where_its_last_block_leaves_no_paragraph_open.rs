@@ -244,7 +244,10 @@ fn an_abbreviation_definition_at_that_column_leaves_no_paragraph() {
 fn a_comment_at_a_list_items_content_column_ends_the_paragraph_too() {
     for (src, want) in [
         ("- a\n  %% c\ntail\n", "<ul>\n  <li>a\ntail</li>\n</ul>"),
-        ("- a\n  %%% c\n  %%%\ntail\n", "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"),
+        (
+            "- a\n  %%% c\n  %%%\ntail\n",
+            "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>",
+        ),
     ] {
         assert_eq!(html(src), want, "{src}");
     }
@@ -305,10 +308,7 @@ fn a_link_definition_has_no_body_for_an_indented_line_to_join() {
 /// body, where the dedent has already erased it.
 #[test]
 fn a_comment_below_the_content_column_still_lets_the_line_under_it_fold() {
-    assert_eq!(
-        html("- a\n %% c\nb\n"),
-        "<ul>\n  <li>a\nb</li>\n</ul>"
-    );
+    assert_eq!(html("- a\n %% c\nb\n"), "<ul>\n  <li>a\nb</li>\n</ul>");
     let nested = html("- - a\n %%% c\n x\n %%%\n b\n");
     let expected = [
         "<ul>",

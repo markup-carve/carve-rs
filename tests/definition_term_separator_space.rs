@@ -374,10 +374,22 @@ fn a_shallower_fence_after_a_term_host_starts_its_own_payload() {
 #[test]
 fn a_later_closer_does_not_extend_a_term_fence_past_its_host() {
     for (source, payload) in [
-        ("> - :: t\n>   ```\n> [r]: /u\n>   ```\n", "<pre><code>\n</code></pre>"),
-        ("> > :: t\n> > ```\n[r]: /u\n> > ```\n", "<pre><code></code></pre>"),
-        ("> :: t\n> ```\n[r]: /u\n> ```\n", "<pre><code></code></pre>"),
-        ("- :: t\n  ```\n[r]: /u\n  ```\n", "<pre><code></code></pre>"),
+        (
+            "> - :: t\n>   ```\n> [r]: /u\n>   ```\n",
+            "<pre><code>\n</code></pre>",
+        ),
+        (
+            "> > :: t\n> > ```\n[r]: /u\n> > ```\n",
+            "<pre><code></code></pre>",
+        ),
+        (
+            "> :: t\n> ```\n[r]: /u\n> ```\n",
+            "<pre><code></code></pre>",
+        ),
+        (
+            "- :: t\n  ```\n[r]: /u\n  ```\n",
+            "<pre><code></code></pre>",
+        ),
     ] {
         let doc = carve::parse(source);
         assert!(

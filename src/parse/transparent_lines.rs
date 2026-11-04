@@ -82,6 +82,7 @@ thread_local! {
 }
 
 /// Whether any line of `source` is erased before layout.
+#[cfg(any(test, feature = "experimental-event-parser"))]
 pub(in crate::parse) fn erases_lines(source: &str) -> bool {
     if !source.contains("%%") && !source.contains("]:") {
         return false;

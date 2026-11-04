@@ -18,10 +18,7 @@ fn html(src: &str) -> String {
 fn a_comment_below_the_content_column_keeps_the_item_open() {
     // `b` folds into the item's paragraph. Before this, the comment ended the
     // item and `b` became a top-level paragraph.
-    assert_eq!(
-        html("- a\n %% c\nb\n"),
-        "<ul>\n  <li>a\nb</li>\n</ul>"
-    );
+    assert_eq!(html("- a\n %% c\nb\n"), "<ul>\n  <li>a\nb</li>\n</ul>");
 }
 
 #[test]
