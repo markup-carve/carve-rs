@@ -229,32 +229,7 @@ struct AheadOfPin {
 // `]` where the fixture escapes the `[`. Both spellings conform, so the entry
 // died to a canonical-form decision rather than to a fix: the fixture is the
 // cross-engine contract for importer output, and this engine now writes it.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[
-    AheadOfPin {
-        fixture: "cell-text-align-columns",
-        reason: "carve#5091: the writer leads the attribute block with the alignment symbols; the fixture still spells the 0.1.13 prefix (markup-carve/carve#5098)",
-        carve: Some("|={<} V |={>} D |\n| a | b |\n"),
-        ast: None,
-    },
-    AheadOfPin {
-        fixture: "cell-text-align-declarations",
-        reason: "carve#5091: the writer leads the attribute block with the alignment symbols; the fixture still spells the 0.1.13 prefix (markup-carve/carve#5098)",
-        carve: Some("|{>} a |{<} b | c |{~} d |\n"),
-        ast: None,
-    },
-    AheadOfPin {
-        fixture: "cell-text-align-overrides",
-        reason: "carve#5091: the writer leads the attribute block with the alignment symbols; the fixture still spells the 0.1.13 prefix (markup-carve/carve#5098)",
-        carve: Some("|={>} V |\n|{~} a |\n|{<} b |\n"),
-        ast: None,
-    },
-    AheadOfPin {
-        fixture: "cell-text-align-unmapped",
-        reason: "carve#5091: the writer leads the attribute block with the alignment symbols; the fixture still spells the 0.1.13 prefix (markup-carve/carve#5098)",
-        carve: Some("|{~} a | b |\n"),
-        ast: None,
-    },
-];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
