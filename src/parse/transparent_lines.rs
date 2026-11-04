@@ -443,7 +443,13 @@ fn place_comment(blocks: &mut Vec<BlockNode>, node: BlockNode, pos: &Pos, owner:
     let Some(node) = place_in_owner(blocks, node, pos, owner) else {
         return;
     };
-    let siblings = containing_blocks(blocks, at);
+    // A container's span can reach over the blank lines around the erased
+    // line; the walk's `doc` owner still keeps it out of that container.
+    let siblings = if owner == "doc" {
+        blocks
+    } else {
+        containing_blocks(blocks, at)
+    };
     let index = position_index(siblings, at);
     siblings.insert(index, node);
 }

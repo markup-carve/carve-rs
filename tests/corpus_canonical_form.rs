@@ -38,11 +38,65 @@ use std::path::PathBuf;
 ///
 /// `tests/corpus.rs` has recorded the value for the render side since it was
 /// written, and for the same reason. This is that shape, on the writer side.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "659-table-spans-keep-alignment-defaults-in-physical-columns-4",
-    "PART 11 §6h writes a separator-promoted placeholder header-kind (markup-carve/carve#5098)",
-    "|={>} Wide |={<} < |={~} Last |\n| a | b | c |\n",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "228-a-line-at-a-footnote-definition-s-own-column-followed-by-non-blank-text-forms-its-own-tight-block",
+        "CARVE-P11-079 (a) collects the note out of its item (markup-carve/carve#5115)",
+        "- a\n\nsee[^f]\n\n[^f]: x\n  more\n",
+    ),
+    (
+        "436-a-refused-description-plus-folds-a-line-below-column-0-and-a-comment-does-not-2",
+        "PART 11 §7b writes an empty description body as {empty} (markup-carve/carve#5110)",
+        ":: t\n: {empty}\n\nflush\n",
+    ),
+    (
+        "436-a-refused-description-plus-folds-a-line-below-column-0-and-a-comment-does-not-4",
+        "PART 11 §7b writes an empty description body as {empty} (markup-carve/carve#5110)",
+        ":: t\n: {empty}\n\nflush\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  > q\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-2",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  ```\n  x\n  ```\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-3",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  # H\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-4",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- - {empty}\n\n  {.c}\n  > q\n",
+    ),
+    (
+        "929-a-refused-plus-is-escaped-when-the-block-below-would-attach-5",
+        "PART 11 §7b writes an empty nested item as {empty} (markup-carve/carve#5152)",
+        "- foo\n  1. {empty}\n   > b\n",
+    ),
+    // Rows this writer is BEHIND or where the fixture is in question,
+    // declared under carve-rs#3524 so every other row stays gated.
+    (
+        "506-comment-columns-and-surviving-list-items-5",
+        "carve-rs#3524: lines after an erased comment in a paragraph are not written at their authored column",
+        "- intro\n%% a\n  %% b\n  tail\n",
+    ),
+    (
+        "620-generated-container-documents-23",
+        "carve-rs#3524: the fixture keeps the duplicate note in place; carve-js main writes these bytes too",
+        "- a\n\n[^f]: t\n\n[r]: /url\n",
+    ),
+    (
+        "626-an-indented-plus-below-a-nested-fence-stays-content-at-every-depth-8",
+        "carve-rs#3524: the fixture keeps the consumed `+`; this writer closes the fence instead",
+        "- - [ ] ```js\n        x\n\n    ```\n\ntail\n",
+    ),
+];
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
@@ -85,7 +139,6 @@ fn a_pinned_fixture_is_read() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn fmt_matches_every_pinned_canonical_form() {
     let mut wrong = Vec::new();
     let mut observed_ahead = BTreeSet::new();
