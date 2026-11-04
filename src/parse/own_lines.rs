@@ -515,9 +515,12 @@ impl TraceRecord {
 /// record per source line from the ownership walk.
 pub fn decision_trace(source: &str) -> String {
     let source = normalize_source(source);
-    let records = walk_traced(source.as_ref(), true, true, Some(Vec::new()))
-        .1
-        .unwrap_or_default();
+    let records = match super::transparent_lines::Transparent::detect(source.as_ref()) {
+        Some(transparent) => transparent_trace(&transparent),
+        None => walk_traced(source.as_ref(), true, true, Some(Vec::new()))
+            .1
+            .unwrap_or_default(),
+    };
     let mut out = String::from(
         "{\"trace\":\"carve-decision-trace\",\"version\":1,\"engine\":\"carve-rs\"}\n",
     );
@@ -526,6 +529,53 @@ pub fn decision_trace(source: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+/// The visible document's trace on the authored lines; an erased line is an
+/// S1 record (carve#5012, CARVE-P0-005).
+fn transparent_trace(transparent: &super::transparent_lines::Transparent) -> Vec<TraceRecord> {
+    let line = |n: usize| transparent.authored_line(n);
+    let path = |owner: &str| {
+        owner
+            .split('/')
+            .map(|segment| match segment.split_once(':') {
+                Some((kind, n)) => match n.parse::<usize>() {
+                    Ok(n) => format!("{kind}:{}", line(n)),
+                    Err(_) => segment.to_owned(),
+                },
+                None => segment.to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    let mut records = walk_traced(&transparent.visible, true, true, Some(Vec::new()))
+        .1
+        .unwrap_or_default();
+    for record in &mut records {
+        record.line = line(record.line);
+        record.owner = path(&record.owner);
+        record.reached = record.reached.as_deref().map(path);
+        record.plus = record.plus.map(line);
+    }
+    for (at, owner, comment) in transparent.erased_lines() {
+        let form = if comment { "comment" } else { "leaf" };
+        match records.iter_mut().find(|record| record.line == at) {
+            Some(record) => {
+                record.step = "S1";
+                record.rule = Some("CARVE-P0-005");
+                record.form = form;
+            }
+            None => records.push(TraceRecord::new(
+                at,
+                "S1",
+                owner.to_owned(),
+                Some("CARVE-P0-005"),
+                form,
+            )),
+        }
+    }
+    records.sort_by_key(|record| record.line);
+    records
 }
 
 /// The trace name of what a classified line opens or is.
@@ -2655,6 +2705,33 @@ impl Drop for EditsGuard {
         let previous = std::mem::take(&mut self.0);
         ACTIVE_EDITS.with(|cell| *cell.borrow_mut() = previous);
     }
+}
+
+/// Renumber the installed edits' lines, for a parse of a source with lines
+/// erased before layout (carve#5012).
+pub(crate) fn remap_active_edit_lines(map: impl Fn(usize) -> usize) {
+    ACTIVE_EDITS.with(|cell| {
+        for edit in cell.borrow_mut().iter_mut() {
+            edit.line = map(edit.line);
+        }
+    });
+}
+
+/// The ownership walk's single-line leaves, as 0-based line index, owner path
+/// and whether a `+` above skips the line. Line numbers count from the top of
+/// `source`, frontmatter included.
+pub(crate) fn traced_leaves(source: &str) -> Vec<(usize, String, bool)> {
+    walk_traced(source, true, true, Some(Vec::new()))
+        .1
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|record| record.step == "S5" && record.form == "leaf")
+        .map(|record| (record.line - 1, record.owner, record.plus.is_some()))
+        .collect()
+}
+
+pub(crate) fn is_region_marker_text(text: &str) -> bool {
+    is_region_marker(text)
 }
 
 /// Move a span's columns from the walked source back onto the authored lines.

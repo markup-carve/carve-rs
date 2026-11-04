@@ -3361,6 +3361,10 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    // Erased invisible lines (carve#5012) take the tree parser's route.
+    if super::transparent_lines::erases_lines(source) {
+        return None;
+    }
     if source_may_hoist_abbreviation(source) {
         #[cfg(feature = "experimental-event-parser-options")]
         return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
@@ -3737,6 +3741,9 @@ pub(super) fn parse_document_with_custom_options(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    if super::transparent_lines::erases_lines(source) {
+        return None;
+    }
     // Hoisted definitions are placed by source line (CARVE-P12-070).
     if !options.positions
         && !matches!(mode, ParseMode::HtmlFacade)

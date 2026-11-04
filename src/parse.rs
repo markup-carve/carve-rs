@@ -766,6 +766,7 @@ mod definition_regions;
 mod frontmatter;
 mod layout;
 mod source_map;
+mod transparent_lines;
 use definition_regions::verse_owned_lines;
 use frontmatter::split_frontmatter;
 pub(crate) use frontmatter::{
@@ -850,18 +851,31 @@ fn parse_with_options_mode_and_index(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> (Document, CrossrefIndex) {
+    // carve#5012: erased lines are restored by position, so that parse is positioned.
+    let transparent = transparent_lines::Transparent::detect(source);
+    let transparent = transparent.as_ref();
+    let parsed = transparent.map_or(source, |t| t.visible.as_str());
     // A hoisted abbreviation definition stands in document order by its source
     // line (CARVE-P12-070), which only a positioned parse can place.
     if !options.positions
-        && !matches!(mode, ParseMode::HtmlFacade)
-        && source_may_hoist_abbreviation(source)
+        && (transparent.is_some()
+            || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source)))
     {
-        let (mut doc, index) =
-            parse_with_options_mode_and_index_once(source, &options.positioned_parse_copy(), mode);
+        let (mut doc, index) = parse_with_options_mode_and_index_once(
+            parsed,
+            &options.positioned_parse_copy(),
+            mode,
+            transparent.map(|t| (t, source)),
+        );
         crate::render_carve::strip_positions(&mut doc);
         return (doc, index);
     }
-    let (mut doc, index) = parse_with_options_mode_and_index_once(source, options, mode);
+    let (mut doc, index) = parse_with_options_mode_and_index_once(
+        parsed,
+        options,
+        mode,
+        transparent.map(|t| (t, source)),
+    );
     if options.positions {
         // Keep the original columns, but split lone CR and CRLF the same way
         // the parser does. `str::lines` alone misses later lone-CR lines.
@@ -887,9 +901,10 @@ fn parse_with_options_mode_and_index_once(
     source: &str,
     options: &Options<'_>,
     mode: ParseMode,
+    transparent: Option<(&transparent_lines::Transparent, &str)>,
 ) -> (Document, CrossrefIndex) {
     #[cfg(feature = "experimental-event-parser-options")]
-    if event_root_allowed() {
+    if event_root_allowed() && transparent.is_none() {
         if let Some((document, index, _)) =
             event_pipeline::parse_document_with_custom_options(source, options, mode)
         {
@@ -899,6 +914,8 @@ fn parse_with_options_mode_and_index_once(
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
     let original = source;
+    // Positions index the authored file, erased lines included (carve#5012).
+    let authored = transparent.map_or(source, |(_, authored)| authored);
     let normalized = normalize_source(source);
     // Rule A: the readers only meet openers at a content column. The guard maps
     // positions in the walked text back to the authored columns.
@@ -1012,7 +1029,10 @@ fn parse_with_options_mode_and_index_once(
     if !options.positions && body.source.contains("%%%") && body.source.contains("::") {
         body.col_map = vec![Some(0); body.source.lines().count()];
     }
-    let ((mut footnote_defs, mut children), link_defs, needs_late_link_resolution) =
+    let erased_link_keys = transparent
+        .map(|(t, _)| t.register_link_defs(&mut link_defs))
+        .unwrap_or_default();
+    let ((mut footnote_defs, mut children), mut link_defs, needs_late_link_resolution) =
         with_active_link_defs(link_defs, || {
             let (footnote_defs, note_abbreviations) = with_skipped_sibling_abbreviations(|| {
                 footnote_defs_src
@@ -1048,6 +1068,16 @@ fn parse_with_options_mode_and_index_once(
             }
             (footnote_defs, children)
         });
+    if let Some((t, _)) = transparent {
+        for (key, def) in &mut link_defs {
+            if !erased_link_keys.contains(key) {
+                def.line = def.line.map(|line| t.authored_line(line + 1) - 1);
+            }
+        }
+        t.remap_positions(&mut children, &mut footnote_defs, &mut footnote_def_pos);
+        t.restore(&mut children, &mut footnote_defs, &footnote_def_pos);
+    }
+    let original = authored;
     let original_line_starts = options
         .positions
         .then(|| CodepointLineStarts::original(original));
@@ -1095,7 +1125,7 @@ fn parse_with_options_mode_and_index_once(
         for (label, pos) in &mut footnote_def_pos {
             let last = footnote_defs
                 .get(label)
-                .and_then(|blocks| blocks.iter().rev().find_map(crate::ast_json::block_pos))
+                .and_then(|blocks| positions::furthest_block_pos(blocks))
                 .cloned();
             end_at_last_placed_child(pos, last);
         }
@@ -1133,7 +1163,7 @@ fn parse_with_options_mode_and_index_once(
         );
     }
     if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
-        if source.contains("*[") {
+        if source.contains("*[") || authored.contains("*[") {
             apply_abbreviations(&mut doc);
         }
         // Reference images and indented images can become figures only after

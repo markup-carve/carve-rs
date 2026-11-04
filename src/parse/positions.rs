@@ -226,6 +226,15 @@ pub(in crate::parse) fn span_of(
 }
 
 /// Fill node and sidecar offsets in codepoints (PART 12 §4).
+/// The child that ends furthest into the source. A comment erased before layout
+/// stands after the paragraph it crossed, so the last child need not end last.
+pub(crate) fn furthest_block_pos(blocks: &[BlockNode]) -> Option<&Pos> {
+    blocks
+        .iter()
+        .filter_map(crate::ast_json::block_pos)
+        .max_by_key(|pos| (pos.end_line, pos.end_column))
+}
+
 pub(in crate::parse) fn fill_offsets(blocks: &mut [BlockNode], line_starts: &CodepointLineStarts) {
     for block in blocks {
         if let Some(pos) = block_pos_mut(block) {
@@ -293,10 +302,7 @@ pub(in crate::parse) fn fill_offsets(blocks: &mut [BlockNode], line_starts: &Cod
                     fill_offsets(&mut item.children, line_starts);
                     if let (Some(pos), Some(last)) = (
                         item.pos.as_mut(),
-                        item.children
-                            .iter()
-                            .rev()
-                            .find_map(crate::ast_json::block_pos)
+                        furthest_block_pos(&item.children)
                             .cloned(),
                     ) {
                         pos.end_line = last.end_line;
@@ -591,11 +597,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
                     // here made the same construct answer one way standalone
                     // and another as a figure target (carve-rs#2165).
                     if !q.fenced {
-                        let last = q
-                            .children
-                            .iter()
-                            .rev()
-                            .find_map(crate::ast_json::block_pos)
+                        let last = furthest_block_pos(&q.children)
                             .cloned();
                         if let Some(pos) = q.pos.as_mut() {
                             narrow_container_end(pos, last, lines, true);
@@ -629,11 +631,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
                         // span must not reach over it (carve-rs#1555). The list
                         // that hosts it derives its own end from this, so both
                         // narrow together.
-                        let last = def
-                            .children
-                            .iter()
-                            .rev()
-                            .find_map(crate::ast_json::block_pos)
+                        let last = furthest_block_pos(&def.children)
                             .cloned();
                         if let Some(pos) = def.pos.as_mut() {
                             // A description whose only content hoisted to the
@@ -656,11 +654,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
                 }
                 for item in &mut n.items {
                     narrow_to_last_placed_child(&mut item.children, lines);
-                    let last = item
-                        .children
-                        .iter()
-                        .rev()
-                        .find_map(crate::ast_json::block_pos)
+                    let last = furthest_block_pos(&item.children)
                         .cloned();
                     if let Some(pos) = item.pos.as_mut() {
                         start_list_at_markup_after_quote(pos, lines);
@@ -686,11 +680,7 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
             // emptied fenced quote is unaffected: it has no placed child, so the
             // narrowing never reached it.
             BlockNode::BlockQuote(n) if !n.fenced => {
-                let last = n
-                    .children
-                    .iter()
-                    .rev()
-                    .find_map(crate::ast_json::block_pos)
+                let last = furthest_block_pos(&n.children)
                     .cloned();
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, true);

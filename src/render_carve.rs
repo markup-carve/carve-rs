@@ -751,6 +751,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
     let mut adjacent_list_indent = 0;
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
+    let mut paragraph_entry: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let entries = definitions_above_a_marker_in_place(
         crate::ast_json::ordered_document_entries(doc, &footnote_defs),
         last_region_marker_line(doc),
@@ -820,6 +821,14 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
             }
         };
         escape_window::leave(session, recorded);
+        if let (Some((entry, paragraph, spliced)), Some(block)) =
+            (paragraph_entry.as_mut(), block)
+        {
+            if splice_crossing_line(&mut rendered[*entry], paragraph, *spliced, block, &text) {
+                *spliced += 1;
+                continue;
+            }
+        }
         if !writes_nothing(&text) {
             let adjacent = match (previous_emitted, block, footnote_line) {
                 (Some(previous), Some(block), _) => region_marker_adjacent(previous, block, &text),
@@ -849,6 +858,12 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
                     text
                 });
             }
+            paragraph_entry = match block {
+                Some(BlockNode::Paragraph(paragraph)) if !after_empty_nested && !adjacent => {
+                    Some((rendered.len() - 1, paragraph, 0))
+                }
+                _ => None,
+            };
             previous_emitted = block;
         }
     }
@@ -1504,6 +1519,8 @@ fn render_blocks(
     let mut separated_from_previous = false;
     let mut previous_emitted: Option<&BlockNode> = None;
     let mut moved_marker: Option<&BlockNode> = None;
+    // The last entry written by a paragraph alone, and the lines spliced into it.
+    let mut paragraph_entry: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
@@ -1512,6 +1529,13 @@ fn render_blocks(
         };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let mut text = render_block(session, block, ctx);
+        if let Some((entry, paragraph, spliced)) = paragraph_entry.as_mut() {
+            if splice_crossing_line(&mut rendered[*entry], paragraph, *spliced, block, &text) {
+                *spliced += 1;
+                escape_window::leave(session, recorded);
+                continue;
+            }
+        }
         if item.is_some() {
             guard_literal_plus_after_nested_list(previous_emitted, block, &mut text);
         }
@@ -1566,6 +1590,12 @@ fn render_blocks(
                     text
                 });
             }
+            paragraph_entry = match block {
+                BlockNode::Paragraph(paragraph) if !after_empty_nested && !adjacent => {
+                    Some((rendered.len() - 1, paragraph, 0))
+                }
+                _ => None,
+            };
             previous_emitted = Some(block);
             moved_marker = moved.then_some(block);
         }
@@ -1575,6 +1605,66 @@ fn render_blocks(
     ctx.paragraph_starts_after_caption_host = previous_paragraph_start;
     ctx.block_depth -= 1;
     out
+}
+
+/// carve#5012: a line comment or abbreviation definition erased from inside a
+/// paragraph stands after it in the tree. Its line goes back where it crossed
+/// the paragraph, so the comment keeps its place and the next parse its owner.
+fn splice_crossing_line(
+    text: &mut String,
+    paragraph: &crate::ast::Paragraph,
+    spliced: usize,
+    block: &BlockNode,
+    line: &str,
+) -> bool {
+    use crate::include_walk::{visit_inline_children, SubtreeVisitor};
+    let erased = match block {
+        BlockNode::Comment(comment) if !comment.block && !comment.delimited => comment.pos.as_ref(),
+        BlockNode::AbbreviationDef(def) => def.pos.as_ref(),
+        _ => None,
+    };
+    let (Some(erased), Some(host)) = (erased, paragraph.pos.as_ref()) else {
+        return false;
+    };
+    if line.contains('\n') || erased.start_line <= host.start_line || erased.start_line >= host.end_line {
+        return false;
+    }
+    struct Breaks(Vec<usize>);
+    impl SubtreeVisitor for Breaks {
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if let InlineNode::SoftBreak(b) | InlineNode::HardBreak(b) = inline {
+                    let Some(pos) = &b.pos else {
+                        self.0.push(usize::MAX);
+                        continue;
+                    };
+                    self.0.push(if pos.end_line > pos.start_line {
+                        pos.end_line
+                    } else {
+                        pos.start_line + 1
+                    });
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    let mut breaks = Breaks(Vec::new());
+    breaks.inlines(&mut paragraph.children.clone());
+    if breaks.0.contains(&usize::MAX) {
+        return false;
+    }
+    let lines = text.split('\n').count();
+    let lead = lines.checked_sub(breaks.0.len() + 1 + spliced);
+    let Some(lead @ 0..=1) = lead else {
+        return false;
+    };
+    let passed = breaks.0.iter().filter(|next| **next <= erased.start_line).count();
+    let at = lead + passed + spliced;
+    let Some(offset) = text.match_indices('\n').nth(at).map(|(i, _)| i) else {
+        return false;
+    };
+    text.insert_str(offset, &format!("\n{line}"));
+    true
 }
 
 /// CARVE-P11-073: a `%%` line that I1b reads as a region marker.
@@ -2122,6 +2212,7 @@ fn render_item_blocks(
     // opening below the paragraph above it. See `needs_a_blank_line_above`.
     let mut a_sub_list_already_opened = false;
     let mut moved_marker: Option<&BlockNode> = None;
+    let mut paragraph_tail: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let mut last_shown: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
     let last_visible = blocks.iter().rposition(is_visible_block);
@@ -2141,6 +2232,16 @@ fn render_item_blocks(
         if writes_nothing(&rendered) {
             continue;
         }
+        if let Some((start, paragraph, spliced)) = paragraph_tail.as_mut() {
+            let mut tail = out.split_off(*start);
+            let placed = splice_crossing_line(&mut tail, paragraph, *spliced, block, &rendered);
+            out.push_str(&tail);
+            if placed {
+                *spliced += 1;
+                continue;
+            }
+        }
+        paragraph_tail = None;
         // An invisible line between two sub-lists does not keep them apart on
         // re-parse (carve-rs#3774).
         let merges_with = match prev {
@@ -2334,6 +2435,9 @@ fn render_item_blocks(
             out.push_str(&at_marker_column(session, &rendered));
             moved_marker = Some(block);
         } else {
+            if let BlockNode::Paragraph(paragraph) = block {
+                paragraph_tail = Some((out.len(), paragraph, 0));
+            }
             out.push_str(&rendered);
         }
         prev = Some(block);
