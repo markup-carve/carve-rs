@@ -202,11 +202,11 @@ fn a_refused_marker_leaves_attributes_for_later_blocks() {
 
 #[test]
 fn control_an_indented_line_after_the_marker_refuses_attachment() {
-    // The attribute line is right of the marker's column. The refused `+`
-    // stays in the item, while the quote starts outside it.
+    // carve#5130: an attribute line at the item's content column is skipped
+    // too, so the `+` attaches the quote and the attribute places on it.
     assert_eq!(
         carve::to_html("- a\n+\n  {.x}\n> q\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

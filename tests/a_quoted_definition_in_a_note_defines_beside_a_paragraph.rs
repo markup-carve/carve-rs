@@ -9,7 +9,9 @@ fn html(source: &str) -> String {
 
 #[test]
 fn a_quoted_link_definition_after_a_quoted_paragraph_defines() {
-    let out = html("[^n]: a\n  > prose\n  > [r]: /x\n[x][r] [^n]\n");
+    // The erased line goes with its `>`, so an unmarked line folds into the note (carve#5129).
+    assert_eq!(html("[^n]: a\n  > prose\n  > [r]: /x\n[x][r] [^n]\n"), "");
+    let out = html("[^n]: a\n  > prose\n  > [r]: /x\n\n[x][r] [^n]\n");
     assert!(out.contains("<a href=\"/x\">x</a>"), "{out}");
     assert!(
         out.contains("<blockquote><p>prose</p></blockquote>"),

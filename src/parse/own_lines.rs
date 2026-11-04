@@ -1141,7 +1141,9 @@ impl<'a> Walk<'a> {
         }
         // An attribute run has no visible block and no column of its own.
         // Apply the attach gates to the line it leads, not to the attribute.
-        let mut next = self.first_visible_line(at + 1, host, column, kind == Kind::Item, None);
+        let content = self.content_column(host, column, false);
+        let item = kind == Kind::Item;
+        let mut next = self.first_visible_line(at + 1, host, column, content, item, None);
         // A further marker at the same column offers the same block, so the
         // first marker claims it and the block after the run decides (carve#5013).
         while let Some(line) = self.lines.get(next) {
@@ -1153,7 +1155,7 @@ impl<'a> Walk<'a> {
                 break;
             }
             self.claimed.borrow_mut().entry(next).or_insert(at);
-            next = self.first_visible_line(next + 1, host, column, kind == Kind::Item, None);
+            next = self.first_visible_line(next + 1, host, column, content, item, None);
         }
         if kind == Kind::Note {
             // A new note definition is invisible to this pending marker. Its
@@ -1240,14 +1242,17 @@ impl<'a> Walk<'a> {
         at: usize,
         column: usize,
         lead: Option<String>,
+        refused: bool,
     ) -> usize {
         let mut fenced = Vec::new();
         let mut comment = Vec::new();
         let in_item = self.frames[host].kind == Kind::Item;
+        let content = self.content_column(host, column, refused);
         let end = self.first_visible_line(
             at + 1,
             host,
             column,
+            content,
             in_item,
             Some((&mut fenced, &mut comment)),
         );
@@ -1362,15 +1367,29 @@ impl<'a> Walk<'a> {
         true
     }
 
+    /// The doc column of the host's content when a `+` at `column` attaches,
+    /// so invisible lines kept there are skipped too (carve#5130). A refused
+    /// marker moves no line and keeps only its own column.
+    fn content_column(&self, host: usize, column: usize, refused: bool) -> usize {
+        // A host not open yet (a folded marker) has no content column to keep.
+        match self.frames.get(host).map(|f| (f.kind, f.col, f.marker)) {
+            Some((Kind::Item | Kind::Dd | Kind::Note, col, Some((marker_col, _)))) if !refused => {
+                column + col.saturating_sub(marker_col)
+            }
+            _ => usize::MAX,
+        }
+    }
+
     /// The first line past the invisible lines from `from` (CARVE-P9-013,
-    /// carve#4449). Off the marker column an invisible line is that next line.
-    /// `collect` gathers the skipped lines the readers take as `%%` lines, and
-    /// the lines of each `%%%` span.
+    /// carve#4449): those at the marker column, or at or past `content`
+    /// (carve#5130). `collect` gathers the skipped lines the readers take as
+    /// `%%` lines, and the lines of each `%%%` span.
     fn first_visible_line(
         &self,
         from: usize,
         host: usize,
         column: usize,
+        content: usize,
         in_item: bool,
         mut collect: Option<(&mut Vec<usize>, &mut Vec<usize>)>,
     ) -> usize {
@@ -1380,11 +1399,11 @@ impl<'a> Walk<'a> {
                     .unwrap_or("\u{e000}"),
             )
         };
-        let misses = |k: usize| {
+        let misses = |k: usize, bound: usize| {
             self.through_quotes(self.lines[k], host)
                 .map_or(true, |level| {
                     let text = trim_ws_start(level);
-                    !is_ws_only(text) && doc_column(self.lines[k], text) < column
+                    !is_ws_only(text) && doc_column(self.lines[k], text) < bound
                 })
         };
         let mut k = from;
@@ -1393,30 +1412,35 @@ impl<'a> Walk<'a> {
                 return k;
             }
             let rest = view(k);
-            if is_blank_line(self.lines[k]) || doc_column(self.lines[k], rest) != column {
+            let at = doc_column(self.lines[k], rest);
+            if is_blank_line(self.lines[k]) || (at != column && at < content) {
                 return k;
             }
-            let width = comment_run(rest).filter(|width| {
-                let lines = &self.lines;
-                let runs = self.runs.get_or_init(|| closer_runs(lines));
-                runs.last_comment.get(width).is_some_and(|&j| j > k)
-            });
-            if let Some(width) = width {
+            // An unclosed span runs to a line that misses it or to the end, as
+            // S1 reads it.
+            if let Some(width) = comment_run(rest) {
                 // A nonblank line that misses the host ends the span under S1
-                // (CARVE-P0-005, carve#4870).
+                // (CARVE-P0-005, carve#4870); one kept at the content column
+                // is missed below that column.
+                let bound = if at == column { column } else { content };
                 let opener = k;
                 k += 1;
-                while k < self.lines.len() && comment_run(view(k)) != Some(width) && !misses(k) {
+                while k < self.lines.len()
+                    && comment_run(view(k)) != Some(width)
+                    && !misses(k, bound)
+                {
                     k += 1;
                 }
-                if k < self.lines.len() && comment_run(view(k)) == Some(width) {
+                let closed = k < self.lines.len() && comment_run(view(k)) == Some(width);
+                if closed {
                     k += 1;
                 }
                 // The list readers keep the span as one comment; the others
-                // read its lines as `%%` lines.
+                // read its lines as `%%` lines. A kept span the next line missed
+                // is read that way in a list too, so its opener pairs with nothing.
                 if let Some((fenced, comment)) = collect.as_mut() {
                     comment.extend(opener..k.min(self.lines.len()));
-                    if !in_item {
+                    if !in_item || (at != column && !closed) {
                         fenced.extend(opener..k.min(self.lines.len()));
                     }
                 }
@@ -1899,7 +1923,7 @@ impl<'a> Walk<'a> {
         // so the next line keeps the same owner (carve#5013).
         self.refuse_plus(at, column, Some(host), reason, false);
         self.refuse_line = false;
-        self.skip_invisible(k, at, column, Some(c.out.clone()));
+        self.skip_invisible(k, at, column, Some(c.out.clone()), true);
         if !closes_descendant && reason != Refusal::Claimed {
             c.out.push_str(&" ".repeat(pad));
         }
@@ -1995,7 +2019,7 @@ impl<'a> Walk<'a> {
             if self.decide {
                 self.accept_plus(at, k, false);
                 let column = doc_column(self.lines[at], c.rest);
-                let end = self.skip_invisible(k, at, column, Some(c.out.clone()));
+                let end = self.skip_invisible(k, at, column, Some(c.out.clone()), false);
                 self.note_attached(k, end);
             }
             *after_plus = true;
@@ -2695,7 +2719,7 @@ impl<'a> Walk<'a> {
                     Ok(()) => {
                         taken = true;
                         self.accept_plus(at, frame, true);
-                        let end = self.skip_invisible(frame, at, column, None);
+                        let end = self.skip_invisible(frame, at, column, None, false);
                         self.note_attached(frame, end);
                     }
                     // Past the one space after a `>` the `+` stays the quote's letter.

@@ -62,12 +62,12 @@
   {
     "id": "1-0-description-line-0",
     "source": "> :: term\n> :  HEAD\n>    %% c\n>   FOLLOW\n",
-    "html": "<blockquote><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></blockquote>"
+    "html": "<blockquote><dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></blockquote>"
   },
   {
     "id": "1-0-description-line-1",
     "source": "> :: term\n> :  HEAD\n>     %% c\n>   FOLLOW\n",
-    "html": "<blockquote><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></blockquote>"
+    "html": "<blockquote><dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></blockquote>"
   },
   {
     "id": "1-0-description-fenced-0",
@@ -82,12 +82,12 @@
   {
     "id": "1-1-description-line-0",
     "source": "> - outer\n>   :: term\n>   :  HEAD\n>      %% c\n>     FOLLOW\n",
-    "html": "<blockquote><ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>outer\n      <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></blockquote>"
   },
   {
     "id": "1-1-description-line-1",
     "source": "> - outer\n>   :: term\n>   :  HEAD\n>       %% c\n>     FOLLOW\n",
-    "html": "<blockquote><ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>outer\n      <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></blockquote>"
   },
   {
     "id": "1-1-description-fenced-0",
@@ -102,12 +102,12 @@
   {
     "id": "1-2-description-line-0",
     "source": "> - outer\n>   - outer\n>     :: term\n>     :  HEAD\n>        %% c\n>       FOLLOW\n",
-    "html": "<blockquote><ul><li>outer\n      <ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>outer\n      <ul><li>outer\n          <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></li></ul></blockquote>"
   },
   {
     "id": "1-2-description-line-1",
     "source": "> - outer\n>   - outer\n>     :: term\n>     :  HEAD\n>         %% c\n>       FOLLOW\n",
-    "html": "<blockquote><ul><li>outer\n      <ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></li></ul></blockquote>"
+    "html": "<blockquote><ul><li>outer\n      <ul><li>outer\n          <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></li></ul></blockquote>"
   },
   {
     "id": "1-2-description-fenced-0",
@@ -122,12 +122,12 @@
   {
     "id": "2-0-description-line-0",
     "source": "> > :: term\n> > :  HEAD\n> >    %% c\n> >   FOLLOW\n",
-    "html": "<blockquote><blockquote><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></blockquote></blockquote>"
   },
   {
     "id": "2-0-description-line-1",
     "source": "> > :: term\n> > :  HEAD\n> >     %% c\n> >   FOLLOW\n",
-    "html": "<blockquote><blockquote><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></blockquote></blockquote>"
   },
   {
     "id": "2-0-description-fenced-0",
@@ -142,12 +142,12 @@
   {
     "id": "2-1-description-line-0",
     "source": "> > - outer\n> >   :: term\n> >   :  HEAD\n> >      %% c\n> >     FOLLOW\n",
-    "html": "<blockquote><blockquote><ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>outer\n        <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "2-1-description-line-1",
     "source": "> > - outer\n> >   :: term\n> >   :  HEAD\n> >       %% c\n> >     FOLLOW\n",
-    "html": "<blockquote><blockquote><ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>outer\n        <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></blockquote></blockquote>"
   },
   {
     "id": "2-1-description-fenced-0",
@@ -162,12 +162,12 @@
   {
     "id": "2-2-description-line-0",
     "source": "> > - outer\n> >   - outer\n> >     :: term\n> >     :  HEAD\n> >        %% c\n> >       FOLLOW\n",
-    "html": "<blockquote><blockquote><ul><li>outer\n        <ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>outer\n        <ul><li>outer\n            <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></li></ul></blockquote></blockquote>"
   },
   {
     "id": "2-2-description-line-1",
     "source": "> > - outer\n> >   - outer\n> >     :: term\n> >     :  HEAD\n> >         %% c\n> >       FOLLOW\n",
-    "html": "<blockquote><blockquote><ul><li>outer\n        <ul><li><p>outer</p><dl><dt>term</dt><dd>HEAD</dd></dl><p>FOLLOW</p></li></ul></li></ul></blockquote></blockquote>"
+    "html": "<blockquote><blockquote><ul><li>outer\n        <ul><li>outer\n            <dl><dt>term</dt><dd>HEAD\nFOLLOW</dd></dl></li></ul></li></ul></blockquote></blockquote>"
   },
   {
     "id": "2-2-description-fenced-0",

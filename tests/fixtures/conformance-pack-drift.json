@@ -19,29 +19,6 @@
         "ownership-4c0abeacc05c",
         "ownership-94b0c7c5deba"
       ]
-    },
-    {
-      "ticket": "markup-carve/carve#5129",
-      "cause": "pin move to carve 62b41b27: an erased line or definition inside a quote no longer keeps the quote open for the next unmarked line; a feature, carve-js first",
-      "cases": [
-        "fences-4bccccbc1a70",
-        "fences-ab930e610ab7",
-        "lazy-050717d11909",
-        "lazy-098b37df16a7",
-        "lazy-0fcecefb762f",
-        "lazy-0fec2f976edd",
-        "lazy-42f27b5c5173",
-        "lazy-6c126aa870dc",
-        "lazy-75b69a53bb84",
-        "lazy-959426b07db3",
-        "lazy-a25e7b8f38cf",
-        "lazy-a7d620bdf82c",
-        "lazy-b5a201639f52",
-        "lazy-d877b15e233d",
-        "lazy-e34b5c8f9f91",
-        "lazy-f7be6fb648d9",
-        "ownership-6414535f3c3c"
-      ]
     }
   ]
 }

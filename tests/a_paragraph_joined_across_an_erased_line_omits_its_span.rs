@@ -59,7 +59,8 @@ fn a_footnote_body_paragraph_omits_pos_and_the_note_reaches_its_text() {
 #[test]
 fn a_placeholder_comment_is_not_an_erased_line() {
     let doc = tree("> > a\n > +\n > %% c\n > b\n");
-    assert_eq!(span(&doc["children"][0]["children"][0]), Some((2, 19)));
+    // The erased line takes its `>` with it, so the inner quote reaches `b` (carve#5129).
+    assert_eq!(span(&doc["children"][0]["children"][0]), Some((2, 23)));
 }
 
 #[test]

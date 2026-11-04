@@ -22,6 +22,12 @@ fn a_column_zero_line_leaves_the_item() {
             assert!(got.ends_with("</ul><p>tail</p>"), "{line}: {got}");
         } else if line == "[^f]: n" {
             assert_eq!(got, QUOTED_LIST, "{line}");
+        } else if line == "[r]: /u" || line == "%% c" {
+            // An erased line goes with its quote prefixes, so `tail` folds (carve#5129).
+            assert_eq!(
+                got, "<ul><li><blockquote><ul><li>para tail</li></ul></blockquote></li></ul>",
+                "{line}"
+            );
         } else {
             assert_eq!(got, format!("{QUOTED_LIST}<p>tail</p>"), "{line}");
         }
@@ -56,7 +62,7 @@ fn quoted_prose_still_folds() {
 fn a_nested_quote_and_a_wrapped_attribute_block_leave_no_lazy_paragraph() {
     assert_eq!(
         html("- > > - para\n  > >   [r]: /u\ntail\n"),
-        "<ul><li><blockquote><blockquote><ul><li>para</li></ul></blockquote></blockquote></li></ul><p>tail</p>"
+        "<ul><li><blockquote><blockquote><ul><li>para tail</li></ul></blockquote></blockquote></li></ul>"
     );
     assert_eq!(
         html("- > para\n  > {.a\n  > .b}\ntail\n"),

@@ -61,10 +61,11 @@ fn an_outer_quote_keeps_the_document_line_outside_the_inner_item() {
 
 #[test]
 fn an_outer_quote_link_definition_ends_the_inner_quote_paragraph() {
+    // Ruled otherwise by carve#5129: the erased line goes with its `>`, so `q` folds.
     let source = "> - h0\n>   1. h1\n>     :: term\n>     :  detail\n>      > quote\n>      > [n]: /u\n> q\n";
     assert_eq!(
         html(source),
-        "<blockquote>\n  <ul>\n    <li>h0\n      <ol>\n        <li>h1</li>\n      </ol>\n      <dl>\n        <dt>term</dt>\n        <dd>detail</dd>\n      </dl>\n      <blockquote><p>quote</p></blockquote>\n    </li>\n  </ul>\n  <p>q</p>\n</blockquote>"
+        "<blockquote>\n  <ul>\n    <li>h0\n      <ol>\n        <li>h1</li>\n      </ol>\n      <dl>\n        <dt>term</dt>\n        <dd>detail</dd>\n      </dl>\n      <blockquote><p>quote\nq</p></blockquote>\n    </li>\n  </ul>\n</blockquote>"
     );
 }
 

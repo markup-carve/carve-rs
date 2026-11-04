@@ -30,7 +30,7 @@ fn nested_description_fences_keep_definition_shaped_payload() {
 (":: t\n: - ```\n    literal\n    ```\n\n[r]: /u\n[^a]: note\n\n[x][r] [^a]\n","<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code>literal\n</code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<p><a href=\"/u\">x</a> <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
 (": - ```\n[r]: /u\n[^a]: note\n```\n","<p>: - <code></code></p>\n<pre><code></code></pre>"),
 ("p\n: - ```\n[r]: /u\n[^a]: note\n```\n","<p>p\n: - <code></code></p>\n<pre><code></code></pre>"),
-("> :: t\n> : - ```\n> [r]: /u\n> [^a]: note\n> ```\n","<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <ul>\n        <li>\n          <pre><code>\n</code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n  <pre><code></code></pre>\n</blockquote>"),
+("> :: t\n> : - ```\n> [r]: /u\n> [^a]: note\n> ```\n","<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <ul>\n        <li>\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n  <pre><code></code></pre>\n</blockquote>"),
 ];
     for (source, expected) in cases {
         for positions in [false, true] {
@@ -91,10 +91,10 @@ fn a_blank_boundary_distinguishes_payload_from_following_definitions() {
     let cases = [
 (":: t\n: - ```\n[r]: /u\n```\n[z]: /v\n\n[x][z]\n","<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<pre><code>[z]: /v\n\n[x][z]\n</code></pre>"),
 (":: t\n: - ```\n[r]: /u\n```\n\n[z]: /v\n\n[x][z]\n","<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </dd>\n</dl>\n<pre><code>\n[z]: /v\n\n[x][z]\n</code></pre>"),
-("> :: t\n> : - ```\n> [r]: /u\n> ```\n> [z]: /v\n>\n> [x][z]\n","<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <ul>\n        <li>\n          <pre><code>\n</code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n  <pre><code>[z]: /v\n\n[x][z]\n</code></pre>\n</blockquote>"),
-("> :: t\n> : - ```\n> [r]: /u\n> ```\n>\n> [z]: /v\n>\n> [x][z]\n","<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <ul>\n        <li>\n          <pre><code>\n</code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n  <pre><code>\n[z]: /v\n\n[x][z]\n</code></pre>\n</blockquote>"),
-("> > :: t\n> > : - ```\n> > [r]: /u\n> > ```\n> > [z]: /v\n> >\n> > [x][z]\n","<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n      </dd>\n    </dl>\n    <pre><code>[z]: /v\n\n[x][z]\n</code></pre>\n  </blockquote>\n</blockquote>"),
-("> > :: t\n> > : - ```\n> > [r]: /u\n> > ```\n> >\n> > [z]: /v\n> >\n> > [x][z]\n","<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <ul>\n          <li>\n            <pre><code>\n</code></pre>\n          </li>\n        </ul>\n      </dd>\n    </dl>\n    <pre><code>\n[z]: /v\n\n[x][z]\n</code></pre>\n  </blockquote>\n</blockquote>"),
+("> :: t\n> : - ```\n> [r]: /u\n> ```\n> [z]: /v\n>\n> [x][z]\n","<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <ul>\n        <li>\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n  <pre><code>[z]: /v\n\n[x][z]\n</code></pre>\n</blockquote>"),
+("> :: t\n> : - ```\n> [r]: /u\n> ```\n>\n> [z]: /v\n>\n> [x][z]\n","<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <ul>\n        <li>\n          <pre><code></code></pre>\n        </li>\n      </ul>\n    </dd>\n  </dl>\n  <pre><code>\n[z]: /v\n\n[x][z]\n</code></pre>\n</blockquote>"),
+("> > :: t\n> > : - ```\n> > [r]: /u\n> > ```\n> > [z]: /v\n> >\n> > [x][z]\n","<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </dd>\n    </dl>\n    <pre><code>[z]: /v\n\n[x][z]\n</code></pre>\n  </blockquote>\n</blockquote>"),
+("> > :: t\n> > : - ```\n> > [r]: /u\n> > ```\n> >\n> > [z]: /v\n> >\n> > [x][z]\n","<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <ul>\n          <li>\n            <pre><code></code></pre>\n          </li>\n        </ul>\n      </dd>\n    </dl>\n    <pre><code>\n[z]: /v\n\n[x][z]\n</code></pre>\n  </blockquote>\n</blockquote>"),
  ];
     for (source, expected) in cases {
         for positions in [false, true] {

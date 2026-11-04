@@ -45,21 +45,6 @@ fn behind_prefix(line: &str) -> &str {
     }
 }
 
-/// The run of quote prefixes an erased line keeps, so quote ownership around it stays.
-fn quote_scaffold(line: &str) -> Option<&str> {
-    let mut end = 0;
-    let mut rest = line;
-    loop {
-        let trimmed = rest.trim_start_matches([' ', '\t']);
-        let Some(after) = trimmed.strip_prefix('>') else {
-            break;
-        };
-        rest = after.strip_prefix(' ').unwrap_or(after);
-        end = line.len() - rest.len();
-    }
-    (end > 0).then(|| &line[..end])
-}
-
 fn classify(rest: &str) -> Option<Kind> {
     if rest.starts_with("%%") {
         return (!rest.starts_with("%%%") && !own_lines::is_region_marker_text(rest))
@@ -136,15 +121,12 @@ impl Transparent {
         let mut lines = Vec::with_capacity(authored.len());
         let mut next = erased.iter().map(|line| line.index).peekable();
         for (index, line) in authored.iter().enumerate() {
-            let text = if next.peek() == Some(&index) {
+            // An erased line goes with its quote prefixes (carve#5129).
+            if next.peek() == Some(&index) {
                 next.next();
-                match quote_scaffold(line) {
-                    Some(scaffold) => scaffold,
-                    None => continue,
-                }
-            } else {
-                line
-            };
+                continue;
+            }
+            let text = line;
             if !lines.is_empty() {
                 visible.push('\n');
             }
