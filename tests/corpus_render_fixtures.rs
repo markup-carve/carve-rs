@@ -79,17 +79,11 @@ const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
         "- foo\n  1. {empty}\n   > b\n",
     ),
     // Rows this writer is BEHIND or where the fixture is in question,
-    // declared under carve-rs#3524 so every other row stays gated.
-    (
-        "506-comment-columns-and-surviving-list-items-5",
-        "fmt",
-        "carve-rs#3524: lines after an erased comment in a paragraph are not written at their authored column",
-        "- intro\n%% a\n  %% b\n  tail\n",
-    ),
+    // declared under the ticket each names so every other row stays gated.
     (
         "620-generated-container-documents-23",
         "fmt",
-        "carve-rs#3524: the fixture keeps the duplicate note in place; carve-js main writes these bytes too",
+        "markup-carve/carve#5160: the fixture keeps the definitions in the item; CARVE-P11-079 (a) collects them",
         "- a\n\n[^f]: t\n\n[r]: /url\n",
     ),
     (
@@ -101,7 +95,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
     (
         "84-single-line-headings-10",
         "md",
-        "carve-rs#3524: stale fixture; carve-js main writes these bytes too",
+        "markup-carve/carve#5159: the .md keeps the tight spelling after #5072 made the item loose",
         "> - a\n>\n>   ### b \\###\n",
     ),
 ];
