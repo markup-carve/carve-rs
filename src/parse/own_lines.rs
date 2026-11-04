@@ -1555,7 +1555,14 @@ impl<'a> Walk<'a> {
             self.attached = None;
             return;
         };
-        if !is_cont_marker(indent_rest(rest)) {
+        // Behind a quote host's own `>` the `+` continues that quote at its content column (carve#5132).
+        let behind_own_marker = attached
+            .frames
+            .last()
+            .is_some_and(|f| f.kind == Kind::Quote)
+            && strip_quote_levels(src, attached.depth + 1)
+                .is_some_and(|own| is_cont_marker(indent_rest(own)));
+        if !is_cont_marker(indent_rest(rest)) && !behind_own_marker {
             self.attached = None;
             return;
         }
