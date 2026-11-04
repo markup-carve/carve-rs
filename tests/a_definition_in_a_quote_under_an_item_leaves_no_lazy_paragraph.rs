@@ -25,8 +25,7 @@ fn a_column_zero_line_leaves_the_item() {
         } else if line == "[r]: /u" || line == "%% c" {
             // An erased line goes with its quote prefixes, so `tail` folds (carve#5129).
             assert_eq!(
-                got,
-                "<ul><li><blockquote><ul><li>para tail</li></ul></blockquote></li></ul>",
+                got, "<ul><li><blockquote><ul><li>para tail</li></ul></blockquote></li></ul>",
                 "{line}"
             );
         } else {

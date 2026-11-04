@@ -1416,12 +1416,9 @@ impl<'a> Walk<'a> {
             if is_blank_line(self.lines[k]) || (at != column && at < content) {
                 return k;
             }
-            let width = comment_run(rest).filter(|width| {
-                let lines = &self.lines;
-                let runs = self.runs.get_or_init(|| closer_runs(lines));
-                runs.last_comment.get(width).is_some_and(|&j| j > k)
-            });
-            if let Some(width) = width {
+            // An unclosed span runs to a line that misses it or to the end, as
+            // S1 reads it.
+            if let Some(width) = comment_run(rest) {
                 // A nonblank line that misses the host ends the span under S1
                 // (CARVE-P0-005, carve#4870); one kept at the content column
                 // is missed below that column.
@@ -1434,14 +1431,16 @@ impl<'a> Walk<'a> {
                 {
                     k += 1;
                 }
-                if k < self.lines.len() && comment_run(view(k)) == Some(width) {
+                let closed = k < self.lines.len() && comment_run(view(k)) == Some(width);
+                if closed {
                     k += 1;
                 }
                 // The list readers keep the span as one comment; the others
-                // read its lines as `%%` lines.
+                // read its lines as `%%` lines. A kept span the next line missed
+                // is read that way in a list too, so its opener pairs with nothing.
                 if let Some((fenced, comment)) = collect.as_mut() {
                     comment.extend(opener..k.min(self.lines.len()));
-                    if !in_item {
+                    if !in_item || (at != column && !closed) {
                         fenced.extend(opener..k.min(self.lines.len()));
                     }
                 }
