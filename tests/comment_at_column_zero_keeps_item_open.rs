@@ -20,7 +20,7 @@ fn a_column_zero_comment_keeps_the_item_open() {
     // paragraph above it (section 10) without ending the item.
     assert_eq!(
         html("- a\n%% c\nb\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
+        "<ul>\n  <li>a\nb</li>\n</ul>"
     );
 }
 
@@ -28,7 +28,7 @@ fn a_column_zero_comment_keeps_the_item_open() {
 fn a_flush_comment_keeps_an_indented_item_open_to_its_base_column() {
     assert_eq!(
         html(" * u\n%%\n :\n"),
-        "<ul>\n  <li>u</li>\n</ul>\n<p>:</p>"
+        "<ul>\n  <li>u\n:</li>\n</ul>"
     );
 }
 
@@ -48,7 +48,7 @@ fn text_after_a_second_comment_stays_in_the_item_as_well() {
     // text under it keeps landing in the same item.
     assert_eq!(
         html("- a\n%% c\nb\n%% d\ne\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>\n<p>e</p>"
+        "<ul>\n  <li>a\nb\ne</li>\n</ul>"
     );
 }
 

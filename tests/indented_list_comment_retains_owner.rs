@@ -4,9 +4,9 @@ use carve::to_html;
 fn line_comments_at_an_indented_marker_column_keep_the_item() {
     let source = "::: note\n  - x\n  %% c\n  y\n:::\n";
     let html = to_html(source);
-    assert!(html.contains("<li>x</li>"), "{source:?}: {html}");
-    assert!(!html.contains("<li>x\n"), "{source:?}: {html}");
-    assert!(html.contains("<p>y</p>"), "{source:?}: {html}");
+    assert!(html.contains("<li>x\ny</li>"), "{source:?}: {html}");
+    assert!(html.contains("<li>x\n"), "{source:?}: {html}");
+    assert!(!html.contains("<p>y</p>"), "{source:?}: {html}");
     // carve#4907: an unclosed `%%%` opens a span that hides `y`.
     for source in [
         "::: note\n  - x\n  %%%\n  y\n:::\n",

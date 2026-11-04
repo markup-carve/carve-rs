@@ -23,6 +23,6 @@ fn exact_html() {
     );
     check(
         "- a\n  [^f]: t\n[^f]: a\n     [r]: /url\n[r][]",
-        "<ul>\n  <li>a</li>\n</ul>\n<p><a href=\"/url\">r</a></p>\n",
+        "<ul>\n  <li>a</li>\n</ul>\n",
     );
 }

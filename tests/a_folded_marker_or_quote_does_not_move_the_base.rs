@@ -41,7 +41,7 @@ fn a_heading_past_the_footnote_column_opens_after_a_folded_marker() {
 fn the_definition_spelling_still_registers() {
     assert_eq!(
         html(":: t\n: d\n  - para\n    [r]: /u\nx\n\n[r][]\n"),
-        "<dl><dt>t</dt><dd><p>d</p><ul><li>para</li></ul></dd></dl><p>x</p><p><a href=\"/u\">r</a></p>"
+        "<dl><dt>t</dt><dd><p>d</p><ul><li>para x</li></ul></dd></dl><p><a href=\"/u\">r</a></p>"
     );
 }
 

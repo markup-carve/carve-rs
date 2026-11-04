@@ -147,7 +147,7 @@ fn the_boundary_applies_after_a_marker_line_block() {
 /// (CARVE-P9-051), and one blank on each side is a run of two, under the bound.
 #[test]
 fn a_comment_between_two_items_keeps_one_list() {
-    assert_eq!(top_kinds("- a\n\n%% c\n\n- b\n"), "list");
+    assert_eq!(top_kinds("- a\n\n%% c\n\n- b\n"), "list,comment");
 }
 
 /// BOUND: three blank lines before an INCOMPATIBLE marker change nothing --

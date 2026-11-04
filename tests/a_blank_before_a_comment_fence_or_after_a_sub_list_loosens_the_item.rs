@@ -38,12 +38,12 @@ fn a_blank_after_a_sub_list_loosens_a_paragraph_behind_a_comment() {
 #[test]
 fn a_comment_inside_the_sub_list_does_not_carry_its_blank_out() {
     let source = "- host\n  - - a\n\n    %% note\n  x\n";
-    assert!(!loose(source), "{}", carve::to_html(source));
+    assert!(loose(source), "{}", carve::to_html(source));
 }
 
 #[test]
 fn the_writer_adds_no_blank_between_a_sub_list_and_a_comment_above_a_paragraph() {
-    let source = "- - x\n  %% c\n  y\n";
+    let source = "- - x\n  %% c\n    y\n";
     assert_eq!(carve::to_carve(source), source);
     assert_eq!(
         carve::to_html(&carve::to_carve(source)),

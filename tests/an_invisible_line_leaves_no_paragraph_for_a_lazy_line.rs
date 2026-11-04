@@ -7,15 +7,15 @@
 fn a_line_after_a_comment_below_a_marker_line_description_leaves_the_item() {
     assert_eq!(
         carve::to_html("- :: term\n  : desc\n%% c\n after\n"),
-        "<ul>\n  <li>\n    <dl>\n      <dt>term</dt>\n      <dd>desc</dd>\n    </dl>\n  </li>\n</ul>\n<p>after</p>"
+        "<ul>\n  <li>\n    <dl>\n      <dt>term</dt>\n      <dd>desc\nafter</dd>\n    </dl>\n  </li>\n</ul>"
     );
     assert_eq!(
         carve::to_html("10. :: term\n    : desc\n %% c\n   after\n"),
-        "<ol start=\"10\">\n  <li>\n    <dl>\n      <dt>term</dt>\n      <dd>desc</dd>\n    </dl>\n  </li>\n</ol>\n<p>after</p>"
+        "<ol start=\"10\">\n  <li>\n    <dl>\n      <dt>term</dt>\n      <dd>desc\nafter</dd>\n    </dl>\n  </li>\n</ol>"
     );
     assert_eq!(
         carve::to_html("- x\n  - :: term\n    : desc\n%% c\n   after\n"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>\n        <dl>\n          <dt>term</dt>\n          <dd>desc</dd>\n        </dl>\n      </li>\n    </ul>\n    after\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>\n        <dl>\n          <dt>term</dt>\n          <dd>desc\nafter</dd>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

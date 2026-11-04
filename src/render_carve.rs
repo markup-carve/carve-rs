@@ -823,7 +823,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         escape_window::leave(session, recorded);
         if let (Some((entry, paragraph, spliced)), Some(block)) = (paragraph_entry.as_mut(), block)
         {
-            if splice_crossing_line(&mut rendered[*entry], paragraph, *spliced, block, &text) {
+            if splice_crossing_line(session, &mut rendered[*entry], paragraph, *spliced, block, &text) {
                 *spliced += 1;
                 continue;
             }
@@ -1529,7 +1529,7 @@ fn render_blocks(
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let mut text = render_block(session, block, ctx);
         if let Some((entry, paragraph, spliced)) = paragraph_entry.as_mut() {
-            if splice_crossing_line(&mut rendered[*entry], paragraph, *spliced, block, &text) {
+            if splice_crossing_line(session, &mut rendered[*entry], paragraph, *spliced, block, &text) {
                 *spliced += 1;
                 escape_window::leave(session, recorded);
                 continue;
@@ -1610,6 +1610,7 @@ fn render_blocks(
 /// paragraph stands after it in the tree. Its line goes back where it crossed
 /// the paragraph, so the comment keeps its place and the next parse its owner.
 fn splice_crossing_line(
+    session: &RenderSession,
     text: &mut String,
     paragraph: &crate::ast::Paragraph,
     spliced: usize,
@@ -1669,7 +1670,12 @@ fn splice_crossing_line(
     let Some(offset) = text.match_indices('\n').nth(at).map(|(i, _)| i) else {
         return false;
     };
-    text.insert_str(offset, &format!("\n{line}"));
+    // The line crossed the paragraph without a quote prefix, which a scaffold
+    // would have kept, so it goes back at its authored column and nothing else.
+    note_inserted(session, S_AUTHORED_LINE);
+    let column = " ".repeat(erased.start_column.saturating_sub(1));
+    let marker = sentinel(session, S_AUTHORED_LINE);
+    text.insert_str(offset, &format!("\n{marker}{column}{}", line.trim_start()));
     true
 }
 
@@ -2035,7 +2041,7 @@ fn definition_in_gap(
     before: &BlockNode,
     after: &BlockNode,
     ctx: &mut CarveContext,
-) -> Option<String> {
+) -> Option<(String, bool)> {
     let from = block_pos(before)?.end_line;
     let to = block_pos(after)?.start_line;
     let pending: Vec<usize> = ((from + 1)..to)
@@ -2054,13 +2060,20 @@ fn definition_in_gap(
         Some(line) => vec![line],
         None => pending,
     };
+    // A one-line link definition is erased before layout (carve#5012), so only
+    // a note in the gap still separates the blocks around it.
+    let separates = lines.iter().any(|line| {
+        ctx.definitions_by_line[line]
+            .iter()
+            .any(|d| matches!(d, DefinitionAtLine::Footnote(..)))
+    });
     let mut parts = Vec::new();
     for line in lines {
         if let Some(written) = definition_at_line(session, line, ctx) {
             parts.push(written);
         }
     }
-    (!parts.is_empty()).then(|| parts.join("\n"))
+    (!parts.is_empty()).then(|| (parts.join("\n"), separates))
 }
 
 /// Write the hoisted definition whose authored source line is `line`.
@@ -2166,6 +2179,15 @@ fn guard_literal_plus_after_nested_list(
     }
 }
 
+/// A block whose line is erased before layout (carve#5012).
+fn is_erased_line(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::Comment(comment) => !comment.block && !comment.delimited,
+        BlockNode::AbbreviationDef(_) | BlockNode::LinkReferenceDefinition(_) => true,
+        _ => false,
+    }
+}
+
 fn is_visible_block(block: &BlockNode) -> bool {
     !matches!(
         block,
@@ -2220,6 +2242,7 @@ fn render_item_blocks(
     let mut moved_marker: Option<&BlockNode> = None;
     let mut paragraph_tail: Option<(usize, &crate::ast::Paragraph, usize)> = None;
     let mut last_shown: Option<&BlockNode> = None;
+    let mut last_kept: Option<&BlockNode> = None;
     let list = blocks.as_ptr() as usize;
     let last_visible = blocks.iter().rposition(is_visible_block);
     for (index, block) in blocks.iter().enumerate() {
@@ -2240,7 +2263,7 @@ fn render_item_blocks(
         }
         if let Some((start, paragraph, spliced)) = paragraph_tail.as_mut() {
             let mut tail = out.split_off(*start);
-            let placed = splice_crossing_line(&mut tail, paragraph, *spliced, block, &rendered);
+            let placed = splice_crossing_line(session, &mut tail, paragraph, *spliced, block, &rendered);
             out.push_str(&tail);
             if placed {
                 *spliced += 1;
@@ -2271,17 +2294,24 @@ fn render_item_blocks(
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
             let gap_guard_start = ctx.footnote_guard_types.len();
-            if let Some(written) = definition_in_gap(session, prev_block, block, ctx) {
+            if let Some((written, separates)) = definition_in_gap(session, prev_block, block, ctx)
+            {
                 ctx.footnote_guard_types[guard_start..].rotate_left(gap_guard_start - guard_start);
                 out.push_str(&written);
                 out.push('\n');
-                // A definition written back BETWEEN the two blocks already ends
-                // the paragraph above it, so the marker below is not needed -
-                // and emitting it anyway changes the canonical form of corpus
-                // 228, whose point is that a line at the definition's own
-                // column forms its own tight block.
-                separated = true;
+                // A note written back between the two blocks ends the paragraph
+                // above it, so the marker below is not needed.
+                separated = separates;
             }
+        }
+        // An erased line between two blocks leaves them adjacent (carve#5012).
+        let above = if prev.is_some_and(is_erased_line) {
+            last_kept
+        } else {
+            prev
+        };
+        if !is_erased_line(block) {
+            last_kept = Some(block);
         }
         // THE QUESTION IS WHETHER THE BLOCK ABOVE LEAVES A PARAGRAPH OPEN, not
         // whether it IS one. A sub-list, a quote or a definition list ends in an
@@ -2289,7 +2319,7 @@ fn render_item_blocks(
         // content column continues it: the image lands INSIDE the sub-list's
         // last item, not beside it (carve-rs#1595). carve-js settled the same
         // site in carve-js#1682; this engine asked only the bare-paragraph half.
-        let folds_into_the_paragraph_above = prev.is_some_and(an_open_paragraph_reaches_down)
+        let folds_into_the_paragraph_above = above.is_some_and(an_open_paragraph_reaches_down)
             && folds_into_an_open_paragraph(block, &rendered);
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
@@ -2389,7 +2419,7 @@ fn render_item_blocks(
         let opens_a_merging_run_below = prev.is_some()
             && next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block));
         let closes_a_merging_run_above =
-            prev.is_some_and(|previous| adjacent_blocks_merge(previous, block));
+            above.is_some_and(|previous| adjacent_blocks_merge(previous, block));
         if !separated
             && (continues_a_run_at_the_marker_column
                 || opens_a_merging_run_below
@@ -5565,11 +5595,13 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 /// The staging characters an AUTHORED occurrence can be mistaken for.
 const SENTINEL_DEFAULTS: [char; SENTINEL_COUNT] = [
     '\u{e003}', '\u{e004}', '\u{e005}', '\u{e010}', '\u{e011}', '\u{e012}', '\u{e013}', '\u{e014}',
+    '\u{e015}',
 ];
 
-const SENTINEL_COUNT: usize = 8;
+const SENTINEL_COUNT: usize = 9;
 const S_CODE_LINE: usize = 6;
 const S_FOOTNOTE_CODE_LINE: usize = 7;
+const S_AUTHORED_LINE: usize = 8;
 
 const S_BLANK: usize = 0;
 const S_GUARD: usize = 1;
@@ -5974,9 +6006,15 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
     let guard = thematic_guard(session);
     let space = staged_space(session);
     let tab = staged_tab(session);
+    let authored_line = sentinel(session, S_AUTHORED_LINE);
     let text = text
         .split('\n')
         .map(|line| {
+            if let Some((prefix, rest)) = line.split_once(authored_line.as_str()) {
+                if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
+                    return rest.to_owned();
+                }
+            }
             if let Some((prefix, rest)) = line.split_once(footnote_code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) && rest.starts_with('[')
                 {

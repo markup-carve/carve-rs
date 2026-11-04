@@ -1228,7 +1228,13 @@ fn parse_with_options_mode_and_index_once(
     }
     // After every extension has had its say, so a heading an extension added is
     // a crossref target like any other.
-    let crossref_index = if matches!(mode, ParseMode::HtmlFacade) && options.extensions.is_empty() {
+    // A crossref label clones the heading's inlines, so a heading holding a
+    // reference link needs the index rebuilt after the late resolution.
+    let reuse_heading_index = !(needs_late_link_resolution && has_crossrefs);
+    let crossref_index = if matches!(mode, ParseMode::HtmlFacade)
+        && options.extensions.is_empty()
+        && reuse_heading_index
+    {
         // The renderer consumes this exact index. Publishing `href` beside the
         // authored target matters to AST consumers, but would only make the
         // facade traverse and allocate strings that HTML resolves from here.

@@ -41,11 +41,11 @@ fn the_reported_document_keeps_the_line_in_the_innermost_item() {
             "<ul>\n",
             "  <li>a\n",
             "    <ul>\n",
-            "      <li>x</li>\n",
+            "      <li>x\n",
+            "tail</li>\n",
             "    </ul>\n",
             "  </li>\n",
-            "</ul>\n",
-            "<p>tail</p>",
+            "</ul>",
         ),
     );
 }
@@ -62,11 +62,11 @@ fn the_marker_lead_spelling_answers_the_same_way() {
             "<ul>\n",
             "  <li>\n",
             "    <ul>\n",
-            "      <li>a</li>\n",
+            "      <li>a\n",
+            "tail</li>\n",
             "    </ul>\n",
             "  </li>\n",
-            "</ul>\n",
-            "<p>tail</p>",
+            "</ul>",
         ),
     );
 }
@@ -80,12 +80,12 @@ fn both_spellings_agree_at_every_below_column_column() {
         let pad = " ".repeat(column);
         let ladder = both_paths(&format!("- x\n  - a\n{pad}%% c\ntail\n"));
         assert!(
-            ladder.contains("<li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"),
+            ladder.contains("<li>a\ntail</li>\n    </ul>\n  </li>\n</ul>"),
             "column {column} ladder: {ladder}"
         );
         let marker_lead = both_paths(&format!("- - a\n{pad}%% c\ntail\n"));
         assert!(
-            marker_lead.contains("<li>a</li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"),
+            marker_lead.contains("<li>a\ntail</li>\n    </ul>\n  </li>\n</ul>"),
             "column {column} marker-lead: {marker_lead}"
         );
     }
@@ -102,12 +102,11 @@ fn a_deeper_container_under_the_item_keeps_the_line_too() {
             "  <li>x\n",
             "    <ul>\n",
             "      <li>x\n",
-            "        <blockquote><p>a</p></blockquote>\n",
+            "        <blockquote><p>a\ntail</p></blockquote>\n",
             "      </li>\n",
             "    </ul>\n",
             "  </li>\n",
-            "</ul>\n",
-            "<p>tail</p>",
+            "</ul>",
         ),
     );
 }
@@ -120,7 +119,7 @@ fn a_comment_at_a_live_content_column_still_ends_the_item() {
     // document level.
     for src in ["- - a\n  %% c\ntail\n", "- a\n  - x\n    %% c\ntail\n"] {
         let html = both_paths(src);
-        assert!(html.ends_with("<p>tail</p>"), "{src:?}: {html}");
+        assert!(html.ends_with("tail</li>\n    </ul>\n  </li>\n</ul>"), "{src:?}: {html}");
     }
 }
 
@@ -130,7 +129,7 @@ fn a_single_item_was_right_before_and_after() {
     // the engine already folded there.
     assert_eq!(
         both_paths("- a\n%% c\ntail\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>",
+        "<ul>\n  <li>a\ntail</li>\n</ul>",
     );
 }
 
@@ -144,7 +143,7 @@ fn an_unterminated_comment_fence_at_column_zero_answers_as_the_line_form_does() 
     // it.
     // carve#4907 replaced that: the opener now opens a span that hides `tail`.
     let folded = both_paths("- a\n  - x\n%% c\ntail\n");
-    assert!(folded.contains("<li>x</li>"), "{folded}");
+    assert!(folded.contains("<li>x\ntail</li>"), "{folded}");
     assert_eq!(
         both_paths("- a\n  - x\n%%% c\ntail\n"),
         "<ul>\n  <li>a\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"

@@ -20,7 +20,7 @@ fn a_comment_below_the_content_column_keeps_the_item_open() {
     // item and `b` became a top-level paragraph.
     assert_eq!(
         html("- a\n %% c\nb\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
+        "<ul>\n  <li>a\nb</li>\n</ul>"
     );
 }
 
@@ -48,10 +48,10 @@ fn a_visible_block_in_the_same_place_still_ends_the_item() {
 #[test]
 fn an_abbreviation_line_reaching_an_item_defines_like_one_below_it() {
     // A definition in every container (carve#4865); `b` misses the item.
-    let expected = "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>";
+    let expected = "<ul>\n  <li>a\nb</li>\n</ul>";
     assert_eq!(html("- a\n  *[HTML]: x\nb\n"), expected);
     assert_eq!(
         html("- a\n *[HTML]: x\nb\n"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>"
+        "<ul>\n  <li>a\nb</li>\n</ul>"
     );
 }

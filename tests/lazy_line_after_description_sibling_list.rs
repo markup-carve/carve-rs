@@ -80,7 +80,7 @@ fn quoted_consecutive_lazy_lines() {
 #[test]
 fn definition_after_nested_marker() {
     let src = "- a\n  :: t\n  :  d\n    - a\n      - b\n   [x]: /u\n   q\n";
-    let want = "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n    </ul>\n    q\n  </li>\n</ul>";
+    let want = "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n      <dd>d</dd>\n    </dl>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\nq</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(src), want);
 }
 

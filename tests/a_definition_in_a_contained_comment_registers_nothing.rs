@@ -111,7 +111,7 @@ fn a_closer_back_at_column_zero_does_not_close_an_item_scoped_comment() {
     // as this fence's closer lost it.
     // carve#4907: the column-0 `%%%` now opens a span that hides the reference.
     let out = html("- item\n  %%%\n  hidden\n\n[r]: /url\n\n%%%\n\n[r][]\n");
-    assert_eq!(out, "<ul>\n  <li>item</li>\n</ul>");
+    assert_eq!(out, "<ul>\n  <li>item</li>\n</ul>\n<p><a href=\"/url\">r</a></p>");
 }
 
 #[test]

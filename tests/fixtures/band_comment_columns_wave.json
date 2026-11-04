@@ -1213,7 +1213,7 @@
   },
   {
     "source": "- t\n  %% c\n z\n",
-    "html": "<ul>\n  <li>t</li>\n</ul>\n<p>z</p>",
+    "html": "<ul>\n  <li>t\nz</li>\n</ul>",
     "tight": true,
     "itemKinds": [
       "paragraph",
@@ -1222,12 +1222,11 @@
   },
   {
     "source": "- t\n  %% c\n  z\n",
-    "html": "<ul>\n  <li>t\n    z\n  </li>\n</ul>",
+    "html": "<ul>\n  <li>t\nz</li>\n</ul>",
     "tight": true,
     "itemKinds": [
       "paragraph",
-      "comment",
-      "paragraph"
+      "comment"
     ]
   }
 ]

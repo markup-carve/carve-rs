@@ -61,14 +61,14 @@ fn quote_host_transitions_keep_folding_and_definition_boundaries() {
         ("lazy-deep-quote", "> > p\n> lazy\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote>\n    <p>p\nlazy</p>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
         ("lazy-blank-boundary", "> p\nlazy\n\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy</p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("lazy-heading-boundary", "> p\nlazy\n# h\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy</p></blockquote>\n<section id=\"h\">\n  <h1>h</h1>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</section>"),
-        ("lazy-comment-boundary", "> p\nlazy\n%% comment\n> ```\n> [^a]: note\n", "<blockquote><p>p\nlazy</p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("lazy-comment-boundary", "> p\nlazy\n%% comment\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\nlazy</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("lazy-list-boundary", "> p\nlazy\n- next\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\nlazy\n- next</p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("review-description-floor", ":: t\n\n: > p\n  > ```\n  > [^a]: note\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </dd>\n</dl>"),
         ("exit-note", "> p\n```\n\n[^a]: note\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n[^a]: note\n</code></pre>"),
         ("exit-link", "> p\n```\n\n[r]: /u\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n[r]: /u\n</code></pre>"),
         ("exit-abbr", "> p\n```\n\n*[a]: expansion\n", "<blockquote><p>p</p></blockquote>\n<pre><code>\n*[a]: expansion\n</code></pre>"),
         ("nested-exit", "> > p\n> ```\n> [^a]: note\n", "<blockquote>\n  <blockquote><p>p</p></blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
-        ("closed-list-quote", "> - ```\n> [r]: /u\n>   ```\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
+        ("closed-list-quote", "> - ```\n> [r]: /u\n>   ```\n", "<blockquote>\n  <ul>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n</blockquote>"),
         ("term-blank-quote", ":: t\n\n: > ```\n> [^a]: note\n\n[^outside]: body\n", "<dl>\n  <dt>t</dt>\n  <dd>\n    <blockquote>\n      <pre><code></code></pre>\n    </blockquote>\n  </dd>\n</dl>\n<blockquote>\n\n</blockquote>"),
         ("same-list-host", "- > p\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote>\n      <p>p</p>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"),
         ("blank-list-host", "- > p\n\n  > ```\n  > [^a]: note\n", "<ul>\n  <li>\n    <blockquote><p>p</p></blockquote>\n    <blockquote>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"),
@@ -148,11 +148,11 @@ fn folded_inline_fences_admit_lazy_text_and_keep_block_exits() {
         ("> p\n> - ```\n>   x\nlazy\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\n- <code>\nx\nlazy</code></p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("> p\n> - ```\n>   x\n# heading\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<section id=\"heading\">\n  <h1>heading</h1>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</section>"),
         ("> p\n> - ```\n>   x\n\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
-        ("> p\n> - ```\n>   x\n[r]: /u\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("> p\n> - ```\n>   x\n[r]: /u\n> ```\n> [^a]: note\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
         ("> > p\n> > - ```\n> >   x\nlazy\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx\nlazy</code></p>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
         ("> > p\n> > - ```\n> >   x\n# heading\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<section id=\"heading\">\n  <h1>heading</h1>\n  <blockquote>\n    <blockquote>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </blockquote>\n</section>"),
         ("> > p\n> > - ```\n> >   x\n\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
-        ("> > p\n> > - ```\n> >   x\n[r]: /u\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
+        ("> > p\n> > - ```\n> >   x\n[r]: /u\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
     ];
     for (source, expected) in cases {
         assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
@@ -180,7 +180,7 @@ fn folded_inline_fences_keep_neighboring_block_boundaries() {
         ("> p\n> - ```\n>   x\n- y\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote>\n  <p>p\n- <code>\nx\n- y</code></p>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
         ("> p\n> - ```\n>   x\n:: t\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<dl>\n  <dt>t</dt>\n</dl>\n<blockquote>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
         ("> p\n> - ```\n>   x\n: body\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote>\n  <p>p\n- <code>\nx\n: body</code></p>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
-        ("> p\n> - ```\n>   x\n%% comment\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> p\n> - ```\n>   x\n%% comment\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
         ("> p\n> - ```\n>   x\n%%%\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>"),
         ("> p\n> - ```\n>   x\n:::bad\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote>\n  <p>p\n- <code>\nx\n:::bad</code></p>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
         ("> p\n> - ```\n>   x\n:::\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<div>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n  <p>[x][r]</p>\n</div>"),
@@ -190,7 +190,7 @@ fn folded_inline_fences_keep_neighboring_block_boundaries() {
         ("> > p\n> > - ```\n> >   x\n- y\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx\n- y</code></p>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
         ("> > p\n> > - ```\n> >   x\n:: t\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<dl>\n  <dt>t</dt>\n</dl>\n<blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
         ("> > p\n> > - ```\n> >   x\n: body\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx\n: body</code></p>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
-        ("> > p\n> > - ```\n> >   x\n%% comment\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n%% comment\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
         ("> > p\n> > - ```\n> >   x\n%%%\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>"),
         ("> > p\n> > - ```\n> >   x\n:::bad\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx\n:::bad</code></p>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
         ("> > p\n> > - ```\n> >   x\n:::\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<div>\n  <blockquote>\n    <blockquote>\n      <pre><code>[r]: /u\n</code></pre>\n    </blockquote>\n  </blockquote>\n  <p>[x][r]</p>\n</div>"),
@@ -488,8 +488,8 @@ fn lazy_item_markers_preserve_the_owned_paragraph_witness() {
 fn folded_markers_preserve_frames_and_real_quote_exits() {
     let cases = [
 ("frame-preservation-0",":: term\n> ```\nlazy\n> - x\n> ```\n> [r]: /t\n","<dl>\n  <dt>term</dt>\n</dl>\n<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <ul>\n    <li>x</li>\n  </ul>\n  <pre><code>[r]: /t\n</code></pre>\n</blockquote>"),
-("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
-("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n  </blockquote>\n  <ul>\n    <li>b</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code>\n</code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
 ("frame-preservation-4","> p\n> ```\n> ```a\n> [r]: /t\n","<blockquote>\n  <p>p</p>\n  <pre><code>```a\n[r]: /t\n</code></pre>\n</blockquote>"),
 ];
     for (name, source, expected) in cases {

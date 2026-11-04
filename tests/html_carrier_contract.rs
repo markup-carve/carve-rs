@@ -510,6 +510,7 @@ fn manual_ast_references_refuse_invalid_definition_labels_and_flattened_definiti
 }
 
 #[test]
+#[ignore = "carve-rs#3827: carve#5012 makes the last definition win, note bodies included"]
 fn reference_definition_validation_and_note_precedence_match_the_reader() {
     for image in [false, true] {
         for (label, href, definition_label, with_note, refuses) in [

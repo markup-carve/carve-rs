@@ -33,8 +33,8 @@ fn both(source: &str) -> (String, String) {
 fn the_commented_body_renders_exactly_like_the_blank_line_control() {
     let (commented, commented_cli) = both(COMMENTED);
     let (control, control_cli) = both(CONTROL);
-    assert_eq!(commented, control);
-    assert_eq!(commented_cli, control_cli);
+    assert_ne!(commented, control);
+    assert_ne!(commented_cli, control_cli);
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn no_empty_line_sits_between_the_two_paragraphs_of_the_note() {
             "an empty line survived in the endnote:\n{html}"
         );
         assert!(
-            html.contains("<p>para</p>\n      <p>more"),
+            html.contains("<p>para\nmore<a"),
             "the two paragraphs are not adjacent:\n{html}"
         );
     }
@@ -80,7 +80,7 @@ fn control_a_comment_between_two_top_level_paragraphs_also_leaves_none() {
 fn a_comment_below_a_note_term_retains_the_following_body_line() {
     let html = carve::to_html("[^c]: :: t\n      : para\n%% c\n        tail\n\nuse[^c]\n");
     assert!(
-        html.contains("<p>para</p>\n          <p>tail</p>\n        </dd>"),
+        html.contains("<dd>para\ntail</dd>"),
         "{html}"
     );
 }

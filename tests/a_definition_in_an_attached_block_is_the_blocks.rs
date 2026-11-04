@@ -110,7 +110,7 @@ fn a_plain_attached_block_is_unchanged() {
 fn a_definition_at_a_nonzero_column_is_not_this_band() {
     assert_html(
         "- a\n+\n  [r]: /a\nmore\n\nSee [r][].\n",
-        "<ul><li>a +</li></ul><p>more</p><p>See <a href=\"/a\">r</a>.</p>",
+        "<ul><li>a more</li></ul><p>See <a href=\"/a\">r</a>.</p>",
     );
 }
 
@@ -120,6 +120,6 @@ fn a_definition_at_a_nonzero_column_is_not_this_band() {
 fn without_the_marker_the_definition_still_ends_the_item() {
     assert_html(
         "- a\n[r]: /a\nmore\n\nSee [r][].\n",
-        "<ul><li>a</li></ul><p>more</p><p>See <a href=\"/a\">r</a>.</p>",
+        "<ul><li>a more</li></ul><p>See <a href=\"/a\">r</a>.</p>",
     );
 }

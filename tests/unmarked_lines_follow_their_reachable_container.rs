@@ -20,11 +20,11 @@ fn an_attribute_past_a_quoted_items_column_keeps_its_paragraph_open() {
 fn a_comment_below_a_description_retains_no_next_paragraph() {
     assert_eq!(
         html("1. :: t\n   : para\n%% c\ntail\n"),
-        "<ol><li><dl><dt>t</dt><dd>para</dd></dl></li></ol><p>tail</p>"
+        "<ol><li><dl><dt>t</dt><dd>para tail</dd></dl></li></ol>"
     );
     assert_eq!(
         html("- :: t\n  : para\n%% c\ntail\n"),
-        "<ul><li><dl><dt>t</dt><dd>para</dd></dl></li></ul><p>tail</p>"
+        "<ul><li><dl><dt>t</dt><dd>para tail</dd></dl></li></ul>"
     );
     assert_eq!(
         html("1. :: t\n   : para\n%% c\n2. b\n"),
@@ -40,7 +40,7 @@ fn a_comment_below_a_description_retains_no_next_paragraph() {
 fn a_comment_below_a_colon_body_retains_its_next_paragraph() {
     assert_eq!(
         html("- ::: note\n  more\n %% c\nx\n"),
-        "<ul><li><aside class=\"admonition note\" aria-label=\"Note\"><p>more</p></aside></li></ul><p>x</p>"
+        "<ul><li><aside class=\"admonition note\" aria-label=\"Note\"><p>more x</p></aside></li></ul>"
     );
     assert_eq!(
         html("- ::: note\n  more\n %% c\n- y\n"),

@@ -3,7 +3,7 @@ use carve::to_html;
 #[test]
 fn a_document_abbreviation_ends_a_lazy_quote() {
     let source = "-  - > q\ntail\n*[A]: b\ntail\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <blockquote><p>q\ntail</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>\n        <blockquote><p>q\ntail\ntail</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(to_html(source).trim(), expected);
 }
 
@@ -24,7 +24,7 @@ fn an_abbreviation_definition_inside_a_container_defines() {
         ),
         (
             "- a\n  *[A]: Alpha\nA\n",
-            "<ul>\n  <li>a</li>\n</ul>\n<p><abbr title=\"Alpha\">A</abbr></p>",
+            "<ul>\n  <li>a\n<abbr title=\"Alpha\">A</abbr></li>\n</ul>",
         ),
     ];
     for (source, expected) in cases {

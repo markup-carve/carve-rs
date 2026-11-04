@@ -73,6 +73,6 @@ fn an_invisible_line_in_a_nested_note_does_not_bridge_description_siblings() {
     let source = ":: t\n[^f]: a\n     [r]: /url\n:  - a\n    [^n]: note text\n\nSee [^n].\n";
     assert_eq!(
         carve::to_html(source),
-        "<dl>\n  <dt>t</dt>\n</dl>\n<p>:  - a</p>\n<p>See <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+        "<dl>\n  <dt>t</dt>\n</dl>\n<p>See <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     );
 }

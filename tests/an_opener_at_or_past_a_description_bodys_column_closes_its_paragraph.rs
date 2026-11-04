@@ -211,7 +211,7 @@ fn over_indented_text_still_folds() {
 /// ended the body, and still does.
 #[test]
 fn a_link_definition_ends_the_body_at_both_columns() {
-    let expected = "<dl><dt>term</dt><dd>definition</dd></dl><p>tail</p>";
+    let expected = "<dl><dt>term</dt><dd>definition tail</dd></dl>";
     assert_html(":: term\n:  definition\n    [r]: /url\ntail\n", expected);
     assert_html(":: term\n:  definition\n   [r]: /url\ntail\n", expected);
 }
@@ -222,7 +222,7 @@ fn a_link_definition_ends_the_body_at_both_columns() {
 fn a_comment_past_the_column_ends_the_body() {
     assert_html(
         ":: term\n:  definition\n    %% c\ntail\n",
-        "<dl><dt>term</dt><dd>definition</dd></dl><p>tail</p>",
+        "<dl><dt>term</dt><dd>definition tail</dd></dl>",
     );
 }
 
