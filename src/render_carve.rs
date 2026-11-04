@@ -977,6 +977,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
                 *spliced,
                 block,
                 &text,
+                ctx.quote_depth > 0,
             ) {
                 *spliced += 1;
                 continue;
@@ -1686,6 +1687,7 @@ fn render_blocks(
                 *spliced,
                 block,
                 &text,
+                ctx.quote_depth > 0,
             ) {
                 *spliced += 1;
                 escape_window::leave(session, recorded);
@@ -1779,6 +1781,7 @@ fn splice_crossing_line(
     spliced: usize,
     block: &BlockNode,
     line: &str,
+    quoted: bool,
 ) -> bool {
     use crate::include_walk::{visit_inline_children, SubtreeVisitor};
     let erased = match block {
@@ -1793,6 +1796,7 @@ fn splice_crossing_line(
     // (carve#5136); the placed text around them still gives the lines.
     struct Breaks {
         lines: Vec<usize>,
+        columns: Vec<Option<usize>>,
         first: Option<usize>,
         last: usize,
     }
@@ -1805,6 +1809,7 @@ fn splice_crossing_line(
                         Some(pos) => pos.start_line + 1,
                         None => usize::MAX,
                     });
+                    self.columns.push(None);
                     continue;
                 }
                 visit_inline_children(inline, self);
@@ -1814,12 +1819,16 @@ fn splice_crossing_line(
             if self.lines.last() == Some(&usize::MAX) {
                 *self.lines.last_mut().expect("a pending break") = pos.start_line;
             }
+            if let Some(column @ None) = self.columns.last_mut() {
+                *column = Some(pos.start_column);
+            }
             self.first.get_or_insert(pos.start_line);
             self.last = self.last.max(pos.end_line);
         }
     }
     let mut breaks = Breaks {
         lines: Vec::new(),
+        columns: Vec::new(),
         first: None,
         last: 0,
     };
@@ -1854,6 +1863,18 @@ fn splice_crossing_line(
     note_inserted(session, S_AUTHORED_LINE);
     let column = " ".repeat(erased.start_column.saturating_sub(1));
     let marker = sentinel(session, S_AUTHORED_LINE);
+    // The paragraph lines below the erased one keep their authored column too
+    // (506-5). In a quote the column cannot tell a `>` line from a lazy one.
+    if spliced == 0 && !quoted {
+        let mut written: Vec<String> = text.split('\n').map(str::to_owned).collect();
+        let below = breaks.columns.iter().skip(passed);
+        for (row, column) in written.iter_mut().skip(at + 1).zip(below) {
+            if let Some(column) = column {
+                *row = format!("{marker}{}{row}", " ".repeat(column.saturating_sub(1)));
+            }
+        }
+        *text = written.join("\n");
+    }
     text.insert_str(offset, &format!("\n{marker}{column}{}", line.trim_start()));
     true
 }
@@ -2441,8 +2462,15 @@ fn render_item_blocks(
         }
         if let Some((start, paragraph, spliced)) = paragraph_tail.as_mut() {
             let mut tail = out.split_off(*start);
-            let placed =
-                splice_crossing_line(session, &mut tail, paragraph, *spliced, block, &rendered);
+            let placed = splice_crossing_line(
+                session,
+                &mut tail,
+                paragraph,
+                *spliced,
+                block,
+                &rendered,
+                ctx.quote_depth > 0,
+            );
             out.push_str(&tail);
             if placed {
                 *spliced += 1;
