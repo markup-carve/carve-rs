@@ -1024,10 +1024,13 @@ pub(crate) struct LineBlockTail {
     span: Option<usize>,
     base: usize,
     had_span: bool,
+    item_cols: Vec<usize>,
+    prior_blank: bool,
 }
 
 impl LineBlockTail {
     pub(crate) fn step(&mut self, line: &str) {
+        let prior_blank = std::mem::replace(&mut self.prior_blank, is_blank_line(line));
         let mut local = trim_ascii_start(line);
         let line_quoted = local.starts_with('>');
         let mut lead = indent_columns(line);
@@ -1086,13 +1089,32 @@ impl LineBlockTail {
             // stanza of this body (carve#4748, row 910).
             None => {
                 let (host_quoted, tail) = innermost_host_tail(local);
+                let marked = tail.len() < local.len();
+                // A bare opener is hosted by the item it sits in (PART 0 S1).
+                if !line_quoted && !is_blank_line(line) {
+                    let indent = indent_columns(line);
+                    if marked || prior_blank {
+                        self.item_cols.retain(|&col| col <= indent);
+                    }
+                    if marked && detect_list_marker_full(local).is_some() {
+                        self.item_cols.push(line.len() - tail.len());
+                    }
+                }
                 self.open = detect_line_block_open(tail);
                 self.had_span = false;
                 self.quoted = line_quoted || host_quoted;
-                self.host_col = if tail.len() < local.len() {
+                self.host_col = if marked {
                     line.len() - tail.len()
-                } else {
+                } else if self.quoted {
                     0
+                } else {
+                    let indent = indent_columns(line);
+                    self.item_cols
+                        .iter()
+                        .copied()
+                        .filter(|&col| col <= indent)
+                        .max()
+                        .unwrap_or(0)
                 };
                 // Verse indentation is relative to the opener, so only a `%`
                 // at its column opens a span (`parse_line_block`).
