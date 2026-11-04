@@ -1,6 +1,5 @@
-//! A LIST DIRECTLY IN A DEFINITION BODY BEGINS ITS EXTENT ON THE MARKER
-//! (markup-carve/carve#1980, converging with carve-js's
-//! `sublistsCarryAuthoredBase`).
+//! A list directly in a definition body includes placing indentation from its
+//! owner's content column (CARVE-P12-013, markup-carve/carve#5063).
 //!
 //! Corpus doc `461-...-sibling-4` is the "opener one column shy of the note's
 //! floor" case:
@@ -16,18 +15,10 @@
 //! The `[^f]: note` line collects out as a footnote; after the blank line the
 //! `- nested` line sits one column shy of the note's body floor, so it stays a
 //! list inside the description. Without the blank it is a marker under the
-//! note's paragraph and folds into the note as text (carve#4206, corpus 800). A footnote body and a
-//! definition body rebase over-indented blocks with sublists included, so a
-//! marker written past the body's content column carries its own authored base
-//! (PART 9 §24 C3): the list and list item begin ON the marker, and the run of
-//! placing indentation before it is NOT reclaimed into the span.
-//!
-//! This engine reclaimed it unconditionally, so the list and list item started
-//! one leading-indentation column too early (col 4 / offset 22 instead of col 5
-//! / offset 23). carve-js and carve-php both anchor on the marker.
-//!
-//! ORACLE: carve-js main, which gives col 5 / offset 23 for both nodes with the
-//! rest of the tree and the rendered HTML byte-identical.
+//! note's paragraph and folds into the note as text (carve#4206, corpus 800).
+//! The description's content column is 4. The list and list item start there,
+//! one space before the marker at column 5. The merged spec position checker
+//! requires offset 23 and rejects the former marker offset 24.
 
 use carve::ast::BlockNode;
 
@@ -58,7 +49,7 @@ fn description_hosted_list(src: &str) -> carve::ast::List {
 }
 
 #[test]
-fn a_description_hosted_list_and_item_anchor_on_the_marker() {
+fn a_description_hosted_list_and_item_anchor_on_the_owner_column() {
     let list = description_hosted_list(SIBLING_4);
     let list_pos = list.pos.clone().expect("the list carries a position");
     assert_eq!(
@@ -67,12 +58,12 @@ fn a_description_hosted_list_and_item_anchor_on_the_marker() {
             list_pos.start_column,
             list_pos.start_offset
         ),
-        (4, 5, 24),
-        "the list extent must begin on the `-` marker, not the placing indent",
+        (4, 4, 23),
+        "the list extent must begin at the description's content column",
     );
     assert_eq!(
         list_pos.end_offset, 37,
-        "the list extent still ends where it did before the marker anchor",
+        "the list extent still ends at its last owned line",
     );
 
     let item = list.items.first().expect("the list has one item");
@@ -83,14 +74,14 @@ fn a_description_hosted_list_and_item_anchor_on_the_marker() {
             item_pos.start_column,
             item_pos.start_offset
         ),
-        (4, 5, 24),
-        "the list item extent must begin on the `-` marker too",
+        (4, 4, 23),
+        "the list item extent must begin at the description's content column",
     );
     assert_eq!(item_pos.end_offset, 37);
 }
 
 #[test]
-fn the_marker_anchor_leaves_the_rendered_html_unchanged() {
+fn the_owner_anchor_leaves_the_rendered_html_unchanged() {
     // The ruling moved only the span; the tree and HTML are unanimous across
     // engines. Its `<ol>`/`<ul>` body is the proof the node is still a list.
     let html = carve::to_html(SIBLING_4);

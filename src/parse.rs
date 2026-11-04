@@ -861,7 +861,26 @@ fn parse_with_options_mode_and_index(
         crate::render_carve::strip_positions(&mut doc);
         return (doc, index);
     }
-    parse_with_options_mode_and_index_once(source, options, mode)
+    let (mut doc, index) = parse_with_options_mode_and_index_once(source, options, mode);
+    if options.positions {
+        // Keep the original columns, but split lone CR and CRLF the same way
+        // the parser does. `str::lines` alone misses later lone-CR lines.
+        let line_source = if source.contains('\r') {
+            std::borrow::Cow::Owned(source.replace("\r\n", "\n").replace('\r', "\n"))
+        } else {
+            std::borrow::Cow::Borrowed(source)
+        };
+        let lines: Vec<&str> = line_source.lines().collect();
+        positions::anchor_list_starts(&mut doc.children, &lines, 1);
+        for (label, blocks) in &mut doc.footnote_defs {
+            let owner = doc
+                .footnote_def_pos
+                .get(label)
+                .map_or(1, |pos| pos.start_column + 2);
+            positions::anchor_list_starts(blocks, &lines, owner);
+        }
+    }
+    (doc, index)
 }
 
 fn parse_with_options_mode_and_index_once(
