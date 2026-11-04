@@ -10,10 +10,9 @@ fn findings(source: &str) -> Vec<carve::LintWarning> {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn shared_vectors() {
     let data: Value = serde_json::from_str(include_str!(
-        "fixtures/lint-rule-vectors/description-separator-below-content-column.json"
+        "spec/tests/lint-rule-vectors/description-separator-below-content-column.json"
     ))
     .unwrap();
     for vector in data["vectors"].as_array().unwrap() {
@@ -43,7 +42,11 @@ fn shared_vectors() {
                 .map(|warning| warning.rule)
                 .collect();
             assert_eq!(additional, ["markdown-definition-paragraph"]);
-        } else if name != "within-description" && name != "correct-document" {
+        } else if !matches!(
+            name,
+            // `double-colon` opens a new list, which other rules report.
+            "within-description" | "correct-document" | "double-colon"
+        ) {
             assert_eq!(
                 warnings.len(),
                 actual.len(),
@@ -54,7 +57,6 @@ fn shared_vectors() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_ranges() {
     for (name, source, line, column, marker, target) in [
         ("CRLF", "- a\r\n  :: term\r\n : detail\r\n", 3, 2, ":", 2),
@@ -77,14 +79,6 @@ fn marker_ranges() {
             ":",
             4,
         ),
-        (
-            "term-marker-range",
-            "- a\n  :: term\n :: next\n",
-            3,
-            2,
-            "::",
-            2,
-        ),
     ] {
         let actual = findings(source);
         assert_eq!(actual.len(), 1, "{name}");
@@ -97,6 +91,16 @@ fn marker_ranges() {
         assert_eq!(&source[warning.start..warning.end], marker, "{name}");
         assert_eq!(warning.end - warning.start, marker.len(), "{name}");
     }
+}
+
+#[test]
+fn a_term_marker_past_the_closed_item_opens_a_new_list() {
+    // carve#3885: `block-opener-overindented` reports it instead (carve#3992).
+    let source = "- a\n  :: term\n :: next\n";
+    assert!(findings(source).is_empty());
+    assert!(lint_carve(source)
+        .iter()
+        .any(|w| w.rule == "block-opener-overindented" && (w.line, w.column) == (3, 2)));
 }
 
 #[test]

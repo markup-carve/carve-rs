@@ -89,16 +89,18 @@ fn reports(source: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
+// Since carve#3885 a term owns nothing, so an opener under it opens in the
+// enclosing container and the rule is retired (docs/validation.md).
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
-fn the_first_folded_opener_is_reported_once_per_term() {
-    assert_eq!(
-        reports(":: a\n: b\n  :: c\n    ::: note\n    body\n    :::\n"),
-        [(4, 5)]
-    );
-    assert_eq!(reports("- item\n\n  :: c\n    # H\n"), [(4, 5)]);
-    assert_eq!(reports(":: c\n  # H\n"), [(2, 3)]);
-    assert_eq!(reports("> :: c\n>   # H\n"), [(2, 5)]);
+fn an_opener_under_a_term_opens_in_its_container_and_is_not_reported() {
+    for source in [
+        ":: a\n: b\n  :: c\n    ::: note\n    body\n    :::\n",
+        "- item\n\n  :: c\n    # H\n",
+        ":: c\n  # H\n",
+        "> :: c\n>   # H\n",
+    ] {
+        assert!(reports(source).is_empty(), "{source:?}");
+    }
 }
 
 #[test]
@@ -193,30 +195,20 @@ fn a_folded_comment_formats_back_to_itself() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
-fn a_term_in_a_footnote_body_is_linted() {
-    let warnings: Vec<_> = carve::lint_carve("x[^n]\n\n[^n]: text\n\n  :: c\n    # H\n")
-        .into_iter()
-        .filter(|w| w.rule == "definition-term-block-folded")
-        .map(|w| (w.line, w.column))
-        .collect();
-    assert_eq!(warnings, vec![(6, 5)]);
+fn a_term_in_a_footnote_body_is_not_reported_either() {
+    assert!(reports("x[^n]\n\n[^n]: text\n\n  :: c\n    # H\n").is_empty());
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
-fn a_carriage_return_or_byte_order_mark_does_not_hide_the_warning() {
-    let at = |source: &str| -> Vec<(usize, usize)> {
-        carve::lint_carve(source)
-            .into_iter()
-            .filter(|w| w.rule == "definition-term-block-folded")
-            .map(|w| (w.line, w.column))
-            .collect()
-    };
-    assert_eq!(at(":: c\r  # H\r"), vec![(2, 3)]);
-    assert_eq!(at(":: c\r\n  # H\r\n"), vec![(2, 3)]);
-    assert_eq!(at("\u{feff}:: c\n # H\n"), vec![(2, 2)]);
-    assert_eq!(at(":: c\n  ::: |\n  a\n  :::\n"), vec![(2, 3)]);
-    assert_eq!(at(":: a\n  `code\n  # H\n  end`\n"), vec![]);
-    assert_eq!(at(":: *`code\n  # H\n  end`*\n"), vec![]);
+fn line_endings_and_a_byte_order_mark_do_not_bring_the_warning_back() {
+    for source in [
+        ":: c\r  # H\r",
+        ":: c\r\n  # H\r\n",
+        "\u{feff}:: c\n # H\n",
+        ":: c\n  ::: |\n  a\n  :::\n",
+        ":: a\n  `code\n  # H\n  end`\n",
+        ":: *`code\n  # H\n  end`*\n",
+    ] {
+        assert!(reports(source).is_empty(), "{source:?}");
+    }
 }

@@ -61,19 +61,17 @@ fn first_block_refusals_name_the_quote_and_footnote() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn source_rules_report_the_shared_triggers() {
     for (rule, source) in [
         ("bidi-control-in-source", "a\u{202e}b\n"),
         ("heading-trailing-attribute", "# Title {#id}\n"),
-        (
-            "fence-opener-fallback",
-            "``` php extra bad info\ncode\n```\n",
-        ),
+        // A language with invalid metadata recovers as `fence-title-syntax`;
+        // these two triggers are the spec's `lint-default-triggers.json`.
+        ("fence-opener-fallback", "``` {.x}\ncode\n```\n"),
         ("fence-title-syntax", "```raw html\nx\n```\n"),
         ("blockquote-marker-without-space", ">quoted\n"),
         ("blockquote-marker-without-space", ">+\n"),
-        ("block-marker-as-text", "  ::: note\n"),
+        ("block-marker-as-text", ":::note\nbody\n"),
         ("list-item-body-detached", "1. item\n\n  # heading\n"),
         (
             "list-item-block-overindented",

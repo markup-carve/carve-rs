@@ -8,8 +8,12 @@ fn vectors(data: &str) -> Vec<Value> {
         .clone()
 }
 
+// Since carve#3885 a marker below an item's content column opens a list item
+// where it stands instead of folding into the item as text, and
+// `ordered-list-split-by-indent` is retired: both vectors' sources render one
+// list (docs/validation.md). The shared split vectors still carry the old
+// findings.
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn vector_parse_and_render_premises() {
     for (rule, data) in [
         (
@@ -35,18 +39,14 @@ fn vector_parse_and_render_premises() {
             assert!(!html.is_empty(), "{rule} {name}: empty render");
             let expected = vector["expected"]["findings"].as_array().unwrap();
             if !expected.is_empty() && rule == "ordered-list-split-by-indent" {
-                assert!(doc.children.windows(2).any(|pair| matches!((&pair[0], &pair[1]), (BlockNode::List(a), BlockNode::List(b)) if a.ordered && b.ordered)), "{name}: expected sibling ordered lists; {html}");
+                assert!(!doc.children.windows(2).any(|pair| matches!((&pair[0], &pair[1]), (BlockNode::List(a), BlockNode::List(b)) if a.ordered && b.ordered)), "{name}: expected one ordered list; {html}");
             }
             if !expected.is_empty() && rule == "list-marker-below-content-column" {
                 let line = expected[0]["line"].as_u64().unwrap() as usize;
                 let marker = source.lines().nth(line - 1).unwrap().trim();
-                let after_blank = source
-                    .lines()
-                    .nth(line - 2)
-                    .is_some_and(|l| l.trim().is_empty());
                 assert!(
-                    after_blank || html.contains(marker),
-                    "{name}: folded marker absent from render: {html}"
+                    !html.contains(marker),
+                    "{name}: marker folded into the render as text: {html}"
                 );
             }
         }
@@ -91,16 +91,20 @@ fn list_marker_vectors() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
-fn ordered_split_vectors() {
-    check(
-        include_str!("fixtures/lint-rule-vectors/ordered-list-split-by-indent.json"),
-        "ordered-list-split-by-indent",
-    );
+fn ordered_split_vectors_report_nothing() {
+    let data = include_str!("fixtures/lint-rule-vectors/ordered-list-split-by-indent.json");
+    for vector in vectors(data) {
+        let name = vector["name"].as_str().unwrap();
+        assert!(
+            !lint_carve(vector["source"].as_str().unwrap())
+                .iter()
+                .any(|w| w.rule == "ordered-list-split-by-indent"),
+            "{name}"
+        );
+    }
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
 fn marker_positions_and_payloads() {
     for (source, expected) in [
         ("10. c\r\n   - d\r\n", vec![(2, 4)]),
@@ -109,13 +113,16 @@ fn marker_positions_and_payloads() {
         ("10. c\n   - [x] d\n", vec![(2, 4)]),
         ("10. c\n   a. d\n", vec![(2, 4)]),
         ("10. c\n   \\- d\n", vec![]),
-        ("10. c\n   `a\n   - d`\n", vec![]),
+        // The marker opens an item, so the code span cannot reach it (carve#3885).
+        ("10. c\n   `a\n   - d`\n", vec![(3, 4)]),
         ("10. c\r\n\r\n   - d\r\n", vec![(3, 4)]),
         ("> 10. c\n>\n>    - d\n", vec![(3, 6)]),
         ("100. c\n\n\t- d\n", vec![(3, 2)]),
-        ("10. c\n\n   a. d\n", vec![(3, 4)]),
+        // A lone letter marker after a blank is a paragraph, not a list.
+        ("10. c\n\n   a. d\n", vec![]),
         ("10. c\n\n   `a\n   - d`\n", vec![]),
-        ("1. a\n\n 2. b\n", vec![]),
+        // A same-kind sibling below the content column is reported (carve#4835).
+        ("1. a\n\n 2. b\n", vec![(3, 2)]),
     ] {
         let actual: Vec<_> = lint_carve(source)
             .into_iter()
@@ -127,21 +134,20 @@ fn marker_positions_and_payloads() {
 }
 
 #[test]
-#[ignore = "rule A ledger: carve-rs#3524"]
-fn split_positions_in_quotes_and_crlf() {
-    for (source, expected) in [
-        (" 9. nine\r\n10. ten\r\n", vec![(2, 1)]),
-        (">  9. nine\n> 10. ten\n", vec![(2, 3)]),
-        (" 9. nine\n\npara\n\n10. ten\n", vec![]),
-        ("- x\n\n   9. nine\n  10. ten\n", vec![(4, 3)]),
-        ("::: div\n 9. nine\n10. ten\n::: \n", vec![(3, 1)]),
-        ("\t9. nine\n10. ten\n", vec![(2, 1)]),
+fn split_shapes_in_quotes_and_crlf_report_nothing() {
+    for source in [
+        " 9. nine\r\n10. ten\r\n",
+        ">  9. nine\n> 10. ten\n",
+        " 9. nine\n\npara\n\n10. ten\n",
+        "- x\n\n   9. nine\n  10. ten\n",
+        "::: div\n 9. nine\n10. ten\n::: \n",
+        "\t9. nine\n10. ten\n",
     ] {
-        let actual: Vec<_> = lint_carve(source)
-            .into_iter()
-            .filter(|w| w.rule == "ordered-list-split-by-indent")
-            .map(|w| (w.line, w.column))
-            .collect();
-        assert_eq!(actual, expected, "{source:?}");
+        assert!(
+            !lint_carve(source)
+                .iter()
+                .any(|w| w.rule == "ordered-list-split-by-indent"),
+            "{source:?}"
+        );
     }
 }

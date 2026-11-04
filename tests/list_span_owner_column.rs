@@ -137,3 +137,21 @@ fn quote_after_list_marker_owns_its_placing_indent() {
         assert_eq!((pos.start_offset, pos.start_column), (6, 7));
     }
 }
+
+#[test]
+fn a_tab_covering_the_owner_column_is_inside_the_span() {
+    assert_eq!(starts("- a\n\t- b\n"), [(0, 1), (0, 1), (4, 1), (4, 1)]);
+    assert_eq!(starts("\t- a\n\t\t- b\n"), [(0, 1), (0, 1), (6, 2), (6, 2)]);
+}
+
+#[test]
+fn a_task_item_owns_the_column_after_its_marker() {
+    assert_eq!(
+        starts("- [ ] a\n    - b\n"),
+        [(0, 1), (0, 1), (10, 3), (10, 3)]
+    );
+    assert_eq!(
+        starts("    - [ ] a\n        10. b\n"),
+        [(0, 1), (0, 1), (18, 7), (18, 7)]
+    );
+}

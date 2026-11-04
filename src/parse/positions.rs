@@ -407,8 +407,18 @@ fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
                             .map_or(line.len(), |(index, _)| index);
                         let tail = &line[start..];
                         let marker = detect_list_marker_full(tail)?;
-                        let width = marker.content.as_ptr() as usize - tail.as_ptr() as usize;
-                        Some(pos.start_column + tail[..width].chars().count())
+                        // A task's checkbox is content: the item's column follows the marker.
+                        let width = if marker.checked.is_some() {
+                            let end = marker.marker.as_ptr() as usize - tail.as_ptr() as usize
+                                + marker.marker.len();
+                            end + tail[end..].len() - trim_ascii_start(&tail[end..]).len()
+                        } else {
+                            marker.content.as_ptr() as usize - tail.as_ptr() as usize
+                        };
+                        Some(visual_owner(
+                            line,
+                            pos.start_column + tail[..width].chars().count(),
+                        ))
                     });
                     anchor_list_pos(&mut item.pos, lines, owner);
                     anchor_list_blocks(&mut item.children, lines, content.unwrap_or(owner));
@@ -418,12 +428,16 @@ fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
             BlockNode::Div(node) => anchor_list_blocks(
                 &mut node.children,
                 lines,
-                node.pos.as_ref().map_or(owner, |p| p.start_column),
+                node.pos
+                    .as_ref()
+                    .map_or(owner, |p| visual_owner_at(p, lines)),
             ),
             BlockNode::Admonition(node) => anchor_list_blocks(
                 &mut node.children,
                 lines,
-                node.pos.as_ref().map_or(owner, |p| p.start_column),
+                node.pos
+                    .as_ref()
+                    .map_or(owner, |p| visual_owner_at(p, lines)),
             ),
             BlockNode::Directive(node) => anchor_list_blocks(&mut node.children, lines, owner),
             BlockNode::LineBlock(node) => anchor_list_blocks(&mut node.children, lines, owner),
@@ -454,7 +468,7 @@ fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
 fn anchor_quote_children(quote: &mut BlockQuote, lines: &[&str], owner: usize) {
     let fallback = quote.pos.as_ref().map_or(owner, |pos| {
         if quote.fenced {
-            pos.start_column
+            visual_owner_at(pos, lines)
         } else {
             owner_after_prefix(pos, lines, '>', false).unwrap_or(owner)
         }
@@ -465,7 +479,7 @@ fn anchor_quote_children(quote: &mut BlockQuote, lines: &[&str], owner: usize) {
         } else {
             crate::ast_json::block_pos(child)
                 .and_then(|pos| lines.get(pos.start_line.checked_sub(1)?))
-                .and_then(|line| quote_owner_on_line(line))
+                .and_then(|line| quote_owner_on_line(line).map(|at| visual_owner(line, at)))
                 .unwrap_or(fallback)
         };
         anchor_list_blocks(std::slice::from_mut(child), lines, content);
@@ -512,11 +526,58 @@ fn owner_after_prefix(pos: &Pos, lines: &[&str], prefix: char, all_spaces: bool)
     } else {
         usize::from(chars.next() == Some(' '))
     };
-    Some(pos.start_column + 1 + spaces)
+    Some(visual_owner(line, pos.start_column + 1 + spaces))
+}
+
+/// The 1-based visual column (tabs to multiples of 4) of a 1-based character
+/// column on `line`. Owners are carried visually so a tab that straddles one
+/// is found on another line.
+fn visual_owner(line: &str, column: usize) -> usize {
+    1 + line
+        .chars()
+        .take(column.saturating_sub(1))
+        .fold(0, |col, c| {
+            if c == '\t' {
+                col + 4 - col % 4
+            } else {
+                col + 1
+            }
+        })
+}
+
+fn visual_owner_at(pos: &Pos, lines: &[&str]) -> usize {
+    lines
+        .get(pos.start_line.saturating_sub(1))
+        .map_or(pos.start_column, |line| {
+            visual_owner(line, pos.start_column)
+        })
+}
+
+pub(in crate::parse) fn visual_owner_at_column(pos: &Pos, lines: &[&str], past: usize) -> usize {
+    visual_owner_at(pos, lines) + past
+}
+
+/// The 1-based character column whose character covers 1-based visual column
+/// `owner`, or `None` past the end of the line.
+fn character_owner(line: &str, owner: usize) -> Option<usize> {
+    let mut col = 0;
+    for (index, c) in line.chars().enumerate() {
+        col += if c == '\t' { 4 - col % 4 } else { 1 };
+        if col >= owner {
+            return Some(index + 1);
+        }
+    }
+    (col + 1 == owner).then_some(line.chars().count() + 1)
 }
 
 fn anchor_list_pos(pos: &mut Option<Pos>, lines: &[&str], owner: usize) {
     let Some(pos) = pos else { return };
+    let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {
+        return;
+    };
+    let Some(owner) = character_owner(line, owner) else {
+        return;
+    };
     let owner = if owner == 1
         && pos.start_line == 1
         && lines
@@ -527,12 +588,20 @@ fn anchor_list_pos(pos: &mut Option<Pos>, lines: &[&str], owner: usize) {
     } else {
         owner
     };
+    // An owner column past the marker cannot start the span beyond it.
+    let owner = if owner > pos.start_column {
+        let blank = line
+            .chars()
+            .skip(pos.start_column.saturating_sub(1))
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .count();
+        owner.min(pos.start_column + blank)
+    } else {
+        owner
+    };
     if pos.file.is_some() || owner == pos.start_column || owner == 0 {
         return;
     }
-    let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {
-        return;
-    };
     if line.chars().count() < owner.max(pos.start_column) - 1 {
         return;
     }
