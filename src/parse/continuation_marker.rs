@@ -83,10 +83,14 @@ pub(super) fn kind_of(kind: super::own_lines::Kind) -> Option<Kind> {
 thread_local! {
     static DECISIONS: RefCell<Option<HashMap<usize, Decision>>> = const { RefCell::new(None) };
     static LETTER: RefCell<Option<char>> = const { RefCell::new(None) };
-    static CONSUMED: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+    static CONSUMED: RefCell<(Vec<usize>, Option<char>)> = const { RefCell::new((Vec::new(), None)) };
 }
 
-pub(super) struct Guard(Option<HashMap<usize, Decision>>, Option<char>, Vec<usize>);
+pub(super) struct Guard(
+    Option<HashMap<usize, Decision>>,
+    Option<char>,
+    (Vec<usize>, Option<char>),
+);
 
 impl Guard {
     pub(super) fn install(owned: Option<&OwnedSource>) -> Self {
@@ -105,7 +109,9 @@ impl Guard {
             }
         }
         let letter = owned.and_then(|o| o.letter);
-        let consumed = owned.map(|o| o.consumed.clone()).unwrap_or_default();
+        let consumed = owned
+            .map(|o| (o.consumed.clone(), o.consumed_mark))
+            .unwrap_or_default();
         Self(
             DECISIONS.with(|slot| slot.replace(decisions)),
             LETTER.with(|slot| slot.replace(letter)),
@@ -147,15 +153,19 @@ pub(super) fn is_refused_letter(line: &str) -> bool {
         .is_some_and(|letter| line.strip_prefix(letter) == Some(""))
 }
 
-/// A reader may keep as payload a `+` the walk read as a letter.
+/// A reader may keep as payload a `+` the walk read as a letter or consumed.
 pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
-    if LETTER.with(|slot| slot.borrow().is_none()) {
+    let consumed = CONSUMED.with(|slot| slot.borrow().1).map(|mark| format!("%% {mark}"));
+    if LETTER.with(|slot| slot.borrow().is_none()) && consumed.is_none() {
         return;
     }
     let mut restore = |block: &mut crate::ast::BlockNode| {
         if let crate::ast::BlockNode::CodeBlock(crate::ast::CodeBlock { content, .. })
         | crate::ast::BlockNode::RawBlock(crate::ast::RawBlock { content, .. }) = block
         {
+            if let Some(placeholder) = consumed.as_deref().filter(|p| content.contains(p)) {
+                *content = content.replace(placeholder, "+");
+            }
             if let std::borrow::Cow::Owned(restored) = restore_letter(content) {
                 *content = restored;
             }
@@ -170,14 +180,17 @@ pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
 /// A consumed marker renders nothing and is no node of the tree (carve#5013).
 pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
     use crate::ast::BlockNode;
-    let lines = CONSUMED.with(|slot| slot.borrow().clone());
+    let (lines, mark) = CONSUMED.with(|slot| slot.borrow().clone());
     if lines.is_empty() {
         return;
     }
+    let mark = mark.map(String::from);
     let keep = |block: &BlockNode| {
         !matches!(block, BlockNode::Comment(c)
-            if !c.block && !c.delimited && c.content.is_empty()
-                && c.pos.as_ref().is_some_and(|pos| lines.contains(&pos.start_line)))
+            if !c.block && !c.delimited
+                && (mark.as_deref() == Some(c.content.trim())
+                    || (c.content.is_empty()
+                        && c.pos.as_ref().is_some_and(|pos| lines.contains(&pos.start_line)))))
     };
     fn sweep(blocks: &mut Vec<BlockNode>, keep: &impl Fn(&BlockNode) -> bool) {
         blocks.retain(|block| keep(block));
@@ -205,7 +218,16 @@ pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
         }
     }
     sweep(&mut doc.children, &keep);
-    for body in doc.footnote_defs.values_mut() {
+    for (label, body) in doc.footnote_defs.iter_mut() {
         sweep(body, &keep);
+        // A definition's extent ends with its body, not on a dropped marker.
+        let last = body.last().and_then(crate::ast_json::block_pos);
+        if let (Some(pos), Some(last)) = (doc.footnote_def_pos.get_mut(label), last) {
+            if lines.contains(&pos.end_line) {
+                pos.end_line = last.end_line;
+                pos.end_column = last.end_column;
+                pos.end_offset = last.end_offset;
+            }
+        }
     }
 }

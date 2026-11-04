@@ -663,6 +663,8 @@ struct Walk<'a> {
     claimed: std::cell::RefCell<std::collections::BTreeMap<usize, usize>>,
     /// Lines whose refused marker was written as a `%%` line.
     consumed: Vec<usize>,
+    /// The comment text of that `%%` line, a letter the source does not hold.
+    mark: Option<char>,
     /// After a refused first-block marker in a note, its text follower joins
     /// the note body: the marker line and the body lead to write it at.
     note_follower: Option<(usize, String, bool)>,
@@ -747,6 +749,23 @@ impl<'s> Cursor<'s> {
     fn take(&mut self, count: usize) {
         self.out.push_str(&self.src[..count]);
         self.src = &self.src[count..];
+    }
+
+    /// Write a consumed marker as a `%%` line; its end maps back to the end of
+    /// the `authored` line.
+    fn consume_marker(&mut self, mark: Option<char>, authored: &str) {
+        self.out.push_str("%%");
+        if let Some(mark) = mark {
+            self.out.push(' ');
+            self.out.push(mark);
+        }
+        let written = self.out.chars().count();
+        let applied: isize = self.edits.iter().map(|&(_, delta)| delta).sum();
+        let delta = authored.chars().count() as isize - written as isize - applied;
+        if delta != 0 {
+            self.edits.push((written, delta));
+        }
+        self.src = "";
     }
 
     fn mark_caption_lazy(&mut self, host: &Frame, line: usize, attached: bool) {
@@ -848,6 +867,8 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) overindented: Vec<OverindentedOpener>,
     /// Lines whose refused marker was written as a `%%` line.
     pub(in crate::parse) consumed: Vec<usize>,
+    /// The comment text those lines carry, so the tree drops them without positions.
+    pub(in crate::parse) consumed_mark: Option<char>,
 }
 
 /// An opener S3 reads past its owner's content column (carve#3992).
@@ -930,6 +951,7 @@ fn walk_traced(
         skipped: None,
         claimed: Default::default(),
         consumed: Vec::new(),
+        mark: plus_letter(source),
         note_follower: None,
         next_visible: 0,
         moved_span_end: None,
@@ -1020,6 +1042,7 @@ fn walk_traced(
         refused: std::mem::take(&mut walk.refused),
         overindented: std::mem::take(&mut walk.overindented),
         consumed: std::mem::take(&mut walk.consumed),
+        consumed_mark: walk.mark,
     });
     (owned, walk.trace)
 }
@@ -1299,7 +1322,7 @@ impl<'a> Walk<'a> {
         if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
             let column = doc_column(line, rest);
             if column == skipped.column {
-                c.src = "%%";
+                c.consume_marker(self.mark, self.lines[at]);
                 self.consumed.push(self.first_line + at);
                 let kind = self.frames[host].kind;
                 self.refuse_plus(at, column, Some(kind), Refusal::Claimed, false);
@@ -1818,6 +1841,53 @@ impl<'a> Walk<'a> {
         inner.kind == Kind::Fence && (!missed || comment_line())
     }
 
+    /// Reports a `+` the ownership walk consumed without attaching it; true when
+    /// the line is written as a `%%` placeholder and the walk is done with it.
+    fn consume_refused_plus(
+        &mut self,
+        at: usize,
+        k: usize,
+        c: &mut Cursor<'a>,
+        plus_refusal: Option<Refusal>,
+        closes_descendant: bool,
+        pad: usize,
+    ) -> bool {
+        // A marker an earlier one claimed is reported, and hands the readers
+        // the block the earlier marker took (carve#5013).
+        let claimer_accepted = self.claimed.borrow().get(&at).is_some_and(|&from| {
+            self.accepted
+                .iter()
+                .any(|(line, _)| *line == self.first_line + from)
+        });
+        let column = doc_column(self.lines[at], c.rest);
+        let host = self.frames[k].kind;
+        if plus_refusal == Some(Refusal::Claimed) && claimer_accepted {
+            self.refuse_plus(at, column, Some(host), Refusal::Claimed, false);
+            self.refuse_line = false;
+            return false;
+        }
+        let Some(reason) = plus_refusal else {
+            return false;
+        };
+        // A refused marker renders nothing; its placeholder stays in the host
+        // so the next line keeps the same owner (carve#5013).
+        self.refuse_plus(at, column, Some(host), reason, false);
+        self.refuse_line = false;
+        self.skip_invisible(k, at, column, Some(c.out.clone()));
+        if !closes_descendant && reason != Refusal::Claimed {
+            c.out.push_str(&" ".repeat(pad));
+        }
+        c.consume_marker(self.mark, self.lines[at]);
+        self.consumed.push(self.first_line + at);
+        if self.trace.is_some() {
+            let line = self.first_line + at;
+            let record = TraceRecord::new(line, "S2", self.deepest(), Some("CARVE-P9-067"), "plus")
+                .cell(Some("B-plus-start".into()));
+            self.emit(at, record);
+        }
+        true
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         let tracing = self.trace.is_some();
         let line = self.first_line + at;
@@ -1892,38 +1962,8 @@ impl<'a> Walk<'a> {
             let canon = f.marker.expect("plus frames carry a marker").1;
             let (frame_canon, shift) = (f.canon, f.marker_shift);
             c.lead_in(canon, shift, false);
-            // A marker an earlier one claimed is reported, and hands the readers
-            // the block the earlier marker took (carve#5013).
-            let claimer_accepted = self.claimed.borrow().get(&at).is_some_and(|&from| {
-                self.accepted
-                    .iter()
-                    .any(|(line, _)| *line == self.first_line + from)
-            });
-            if plus_refusal == Some(Refusal::Claimed) && claimer_accepted {
-                let column = doc_column(self.lines[at], c.rest);
-                let host = self.frames[k].kind;
-                self.refuse_plus(at, column, Some(host), Refusal::Claimed, false);
-                self.refuse_line = false;
-            } else if let Some(reason) = plus_refusal {
-                // A refused marker renders nothing; its placeholder stays in the host
-                // so the next line keeps the same owner (carve#5013).
-                let column = doc_column(self.lines[at], c.rest);
-                let host = self.frames[k].kind;
-                self.refuse_plus(at, column, Some(host), reason, false);
-                self.refuse_line = false;
-                self.skip_invisible(k, at, column, Some(c.out.clone()));
-                if !closes_descendant && reason != Refusal::Claimed {
-                    c.out
-                        .push_str(&" ".repeat(frame_canon.saturating_sub(canon)));
-                }
-                c.src = "%%";
-                self.consumed.push(self.first_line + at);
-                if tracing {
-                    let record =
-                        TraceRecord::new(line, "S2", self.deepest(), Some("CARVE-P9-067"), "plus")
-                            .cell(Some("B-plus-start".into()));
-                    self.emit(at, record);
-                }
+            let pad = frame_canon.saturating_sub(canon);
+            if self.consume_refused_plus(at, k, c, plus_refusal, closes_descendant, pad) {
                 return;
             }
             if self.decide {
@@ -2664,7 +2704,7 @@ impl<'a> Walk<'a> {
             let absorbs = false;
             c.lead(col);
             if refused {
-                c.src = "%%";
+                c.consume_marker(self.mark, self.lines[at]);
                 self.consumed.push(self.first_line + at);
             }
             let f = &mut self.frames[frame];
