@@ -28,10 +28,7 @@ fn html(src: &str) -> String {
 #[test]
 fn a_wrapped_block_interrupts_an_open_paragraph() {
     // The top-level shape, and the one carve-js already answered this way.
-    assert_eq!(
-        html("d\n{.k\n#x}\ntail\n"),
-        "<p>d\n{.k\n#x}\ntail</p>"
-    );
+    assert_eq!(html("d\n{.k\n#x}\ntail\n"), "<p>d\n{.k\n#x}\ntail</p>");
 }
 
 #[test]
@@ -48,7 +45,10 @@ fn a_containers_body_may_end_in_a_wrapped_block() {
 #[test]
 fn a_wrapped_block_still_attaches_to_the_block_below_it() {
     // Interrupting is not dropping: with a block after it, the attribute lands.
-    assert_eq!(html("{.k\n#x}\ntail\n"), "<p>{.k\n<span class=\"tag\"><strong>#x</strong></span>}\ntail</p>");
+    assert_eq!(
+        html("{.k\n#x}\ntail\n"),
+        "<p>{.k\n<span class=\"tag\"><strong>#x</strong></span>}\ntail</p>"
+    );
 }
 
 // ---------------------------------------------------------------------------

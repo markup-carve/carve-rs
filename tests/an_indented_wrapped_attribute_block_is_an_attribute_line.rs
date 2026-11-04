@@ -11,10 +11,7 @@ fn html(source: &str) -> String {
 
 #[test]
 fn at_the_document_level() {
-    assert_eq!(
-        html("a\n {.c\n }\npara\n"),
-        "<p>a\n{.c\n}\npara</p>"
-    );
+    assert_eq!(html("a\n {.c\n }\npara\n"), "<p>a\n{.c\n}\npara</p>");
     assert_eq!(html(" {.c\n }\npara\n"), "<p>{.c\n}\npara</p>");
     assert_eq!(
         html("x\n  {.a\n   .b}\ntail\n"),
