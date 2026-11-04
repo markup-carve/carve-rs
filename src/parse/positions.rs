@@ -380,6 +380,175 @@ pub(in crate::parse) fn fill_offsets(blocks: &mut [BlockNode], line_starts: &Cod
     }
 }
 
+/// Include the placing indentation in a list container's opening span.
+/// The block walk can remove that indentation before it constructs its mapped
+/// source, so this runs after offsets are filled against the original lines.
+pub(in crate::parse) fn anchor_list_starts(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
+    anchor_list_blocks(blocks, lines, owner);
+}
+
+fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
+    for block in blocks {
+        match block {
+            BlockNode::List(list) => {
+                anchor_list_pos(&mut list.pos, lines, owner);
+                for item in &mut list.items {
+                    let content = item.pos.as_ref().and_then(|pos| {
+                        let line = *lines.get(pos.start_line.checked_sub(1)?)?;
+                        let marker = pos.start_column.checked_sub(1)?;
+                        let start = line
+                            .char_indices()
+                            .nth(marker)
+                            .map_or(line.len(), |(index, _)| index);
+                        let tail = &line[start..];
+                        let marker = detect_list_marker_full(tail)?;
+                        let width = marker.content.as_ptr() as usize - tail.as_ptr() as usize;
+                        Some(pos.start_column + tail[..width].chars().count())
+                    });
+                    anchor_list_pos(&mut item.pos, lines, owner);
+                    anchor_list_blocks(&mut item.children, lines, content.unwrap_or(owner));
+                }
+            }
+            BlockNode::BlockQuote(quote) => anchor_quote_children(quote, lines, owner),
+            BlockNode::Div(node) => anchor_list_blocks(
+                &mut node.children,
+                lines,
+                node.pos.as_ref().map_or(owner, |p| p.start_column),
+            ),
+            BlockNode::Admonition(node) => anchor_list_blocks(
+                &mut node.children,
+                lines,
+                node.pos.as_ref().map_or(owner, |p| p.start_column),
+            ),
+            BlockNode::Directive(node) => anchor_list_blocks(&mut node.children, lines, owner),
+            BlockNode::LineBlock(node) => anchor_list_blocks(&mut node.children, lines, owner),
+            BlockNode::FigureGroup(node) => anchor_list_blocks(&mut node.children, lines, owner),
+            BlockNode::ExtensionCarrier(node) => {
+                anchor_list_blocks(&mut node.children, lines, owner)
+            }
+            BlockNode::DefinitionList(node) => {
+                for item in &mut node.items {
+                    for definition in &mut item.definitions {
+                        let content = definition.pos.as_ref().map_or(owner, |pos| {
+                            owner_after_prefix(pos, lines, ':', true).unwrap_or(owner)
+                        });
+                        anchor_list_blocks(&mut definition.children, lines, content);
+                    }
+                }
+            }
+            BlockNode::Figure(node) => {
+                if let FigureTarget::BlockQuote(quote) = &mut *node.target {
+                    anchor_quote_children(quote, lines, owner);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn anchor_quote_children(quote: &mut BlockQuote, lines: &[&str], owner: usize) {
+    let fallback = quote.pos.as_ref().map_or(owner, |pos| {
+        if quote.fenced {
+            pos.start_column
+        } else {
+            owner_after_prefix(pos, lines, '>', false).unwrap_or(owner)
+        }
+    });
+    for child in &mut quote.children {
+        let content = if quote.fenced {
+            fallback
+        } else {
+            crate::ast_json::block_pos(child)
+                .and_then(|pos| lines.get(pos.start_line.checked_sub(1)?))
+                .and_then(|line| quote_owner_on_line(line))
+                .unwrap_or(fallback)
+        };
+        anchor_list_blocks(std::slice::from_mut(child), lines, content);
+    }
+}
+
+fn quote_owner_on_line(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    let mut owner = None;
+    loop {
+        while matches!(bytes.get(at), Some(b' ' | b'\t')) {
+            at += 1;
+        }
+        if bytes.get(at) == Some(&b'>') {
+            at += 1;
+            if bytes.get(at) == Some(&b' ') {
+                at += 1;
+            }
+            owner = Some(at + 1);
+            continue;
+        }
+        let rest = &line[at..];
+        if let Some(marker) = detect_list_marker_full(rest) {
+            let width = marker.content.as_ptr() as usize - rest.as_ptr() as usize;
+            if width > 0 {
+                at += width;
+                continue;
+            }
+        }
+        break;
+    }
+    owner
+}
+
+fn owner_after_prefix(pos: &Pos, lines: &[&str], prefix: char, all_spaces: bool) -> Option<usize> {
+    let line = lines.get(pos.start_line.checked_sub(1)?)?;
+    let mut chars = line.chars().skip(pos.start_column.checked_sub(1)?);
+    if chars.next()? != prefix {
+        return None;
+    }
+    let spaces = if all_spaces {
+        chars.take_while(|c| *c == ' ').count()
+    } else {
+        usize::from(chars.next() == Some(' '))
+    };
+    Some(pos.start_column + 1 + spaces)
+}
+
+fn anchor_list_pos(pos: &mut Option<Pos>, lines: &[&str], owner: usize) {
+    let Some(pos) = pos else { return };
+    let owner = if owner == 1
+        && pos.start_line == 1
+        && lines
+            .first()
+            .is_some_and(|line| line.starts_with('\u{feff}'))
+    {
+        2
+    } else {
+        owner
+    };
+    if pos.file.is_some() || owner == pos.start_column || owner == 0 {
+        return;
+    }
+    let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {
+        return;
+    };
+    if line.chars().count() < owner.max(pos.start_column) - 1 {
+        return;
+    }
+    if line
+        .chars()
+        .skip(owner.min(pos.start_column) - 1)
+        .take(owner.abs_diff(pos.start_column))
+        .all(|c| c == ' ' || c == '\t')
+    {
+        let start = if owner < pos.start_column {
+            pos.start_offset.checked_sub(pos.start_column - owner)
+        } else {
+            pos.start_offset.checked_add(owner - pos.start_column)
+        };
+        if let Some(start) = start {
+            pos.start_offset = start;
+            pos.start_column = owner;
+        }
+    }
+}
+
 /// Widen a container over the DEFINITION it hosted.
 pub(in crate::parse) fn start_list_at_markup_after_quote(pos: &mut Pos, lines: &[&str]) {
     let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {

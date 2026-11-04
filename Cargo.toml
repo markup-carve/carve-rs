@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "list_span_owner_column"
+path = "tests/list_span_owner_column.rs"
+
+[[test]]
 name = "a_refused_plus_is_escaped_above_an_outer_block"
 path = "tests/a_refused_plus_is_escaped_above_an_outer_block.rs"
 
