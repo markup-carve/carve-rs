@@ -236,7 +236,8 @@ pub(in crate::parse) fn opens_definition_entry_bare(previous: &str) -> bool {
             None => return false,
         },
     };
-    rest.starts_with(' ') || rest.starts_with('\t')
+    rest.strip_prefix(' ')
+        .is_some_and(|content| !content.trim_matches([' ', '\t']).is_empty())
 }
 
 /// The description marker itself: `:` then whitespace, at the start of a line.
