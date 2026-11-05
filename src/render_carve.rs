@@ -73,6 +73,8 @@ struct CarveContext {
     /// The next visible line after the item being written is a sibling list
     /// marker, at this list level or an enclosing one.
     item_followed_by_marker: bool,
+    /// That marker stands on the next line, with no blank line above it.
+    item_followed_by_tight_marker: bool,
     /// Set for one `render_blocks` call: write the comments after its last
     /// visible block one newline apart, as a blank there would loosen a list.
     join_trailing_comments: bool,
@@ -1103,6 +1105,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         marker_line_shift: 0,
         item_paragraph: false,
         item_followed_by_marker: false,
+        item_followed_by_tight_marker: false,
         join_trailing_comments: false,
         in_footnote_body: false,
         marker_body: 0,
@@ -2029,7 +2032,16 @@ fn render_blocks(
             let body_list = list == ctx.marker_body
                 && matches!(block, BlockNode::List(_))
                 && matches!(previous_emitted, Some(BlockNode::Paragraph(_)));
+            // An item's or a description's trailing comments are written as one
+            // run: a blank between two erased lines joins the blanks around them
+            // into a hard boundary above the next marker (CARVE-P9-014) and ends
+            // the list (carve#5192).
+            let comment_run = (item.is_some() || list == ctx.marker_body)
+                && last_visible.map_or(true, |last| index > last)
+                && previous_emitted.is_some_and(is_line_comment_in_run)
+                && is_line_comment_in_run(block);
             let adjacent = trailing_comment
+                || comment_run
                 || body_list
                 || previous_emitted
                     .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
@@ -2196,6 +2208,11 @@ fn is_region_marker(block: &BlockNode) -> bool {
         return false;
     };
     is_region_marker_comment(comment)
+}
+
+fn is_line_comment_in_run(block: &BlockNode) -> bool {
+    matches!(block, BlockNode::Comment(comment)
+        if !comment.block && !comment.delimited && !is_region_marker_comment(comment))
 }
 
 fn is_region_marker_comment(comment: &Comment) -> bool {
@@ -2712,20 +2729,6 @@ fn is_visible_block(block: &BlockNode) -> bool {
     )
 }
 
-fn next_visible_is_paragraph_shaped(blocks: &[BlockNode]) -> bool {
-    blocks
-        .iter()
-        .find(|block| is_visible_block(block))
-        .is_some_and(|block| match block {
-            BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
-            BlockNode::Figure(figure) => matches!(
-                *figure.target,
-                FigureTarget::Image(_) | FigureTarget::Paragraph(_)
-            ),
-            _ => false,
-        })
-}
-
 fn render_item_blocks(
     session: &RenderSession,
     blocks: &[BlockNode],
@@ -2735,10 +2738,16 @@ fn render_item_blocks(
     relative_boundaries: &mut Vec<(usize, usize)>,
 ) -> String {
     let followed_by_marker = ctx.item_followed_by_marker;
+    let followed_by_tight_marker = ctx.item_followed_by_tight_marker;
     if !tight {
         ctx.item_followed_by_marker = false;
+        ctx.item_followed_by_tight_marker = false;
+        // A blank above a trailing comment would stand over the marker below
+        // and loosen its list (carve#4904).
+        ctx.join_trailing_comments = followed_by_tight_marker;
         let out = render_blocks(session, blocks, ctx, item);
         ctx.item_followed_by_marker = followed_by_marker;
+        ctx.item_followed_by_tight_marker = followed_by_tight_marker;
         return out;
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
@@ -2765,8 +2774,10 @@ fn render_item_blocks(
         let guard_start = ctx.footnote_guard_types.len();
         let nothing_visible_below = last_visible.map_or(true, |last| last <= index);
         ctx.item_followed_by_marker = followed_by_marker && nothing_visible_below;
+        ctx.item_followed_by_tight_marker = followed_by_tight_marker && nothing_visible_below;
         let mut rendered = render_block(session, block, ctx);
         ctx.item_followed_by_marker = followed_by_marker;
+        ctx.item_followed_by_tight_marker = followed_by_tight_marker;
         guard_literal_plus_after_nested_list(prev, block, &mut rendered);
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
@@ -2877,14 +2888,18 @@ fn render_item_blocks(
         // The `%% text` and `{% text %}` forms. A `%%%` fence opener already
         // closes the sub-list.
         //
-        // Unless a paragraph follows: the blank then sits above it and loosens
-        // the item (§17 L1b), and the re-parse keeps the comment in this item.
+        // Unless a visible block other than a list follows: the blank then
+        // sits above it and loosens the item (§17 L1b), and the re-parse keeps
+        // the comment in this item. A list below takes its own boundary.
         // Nor when a sibling marker comes next: a blank in front of an
         // invisible line loosens the list at that marker (carve#4904).
         let blank_loosens = if nothing_visible_below {
             followed_by_marker
         } else {
-            next_visible_is_paragraph_shaped(&blocks[index + 1..])
+            blocks[index + 1..]
+                .iter()
+                .find(|block| is_visible_block(block))
+                .is_some_and(|block| !matches!(block, BlockNode::List(_)))
         };
         if !separated
             && matches!(prev, Some(BlockNode::List(_)))
