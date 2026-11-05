@@ -1301,6 +1301,10 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
     }
     let item_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|(?:[ivxlcdm]+|[IVXLCDM]+))[.)]|\((?:[0-9]+|[A-Za-z]|(?:[ivxlcdm]+|[IVXLCDM]+))\))[ \t]+").unwrap();
     let quote_pattern = cached_regex!(r"^[ \t]*(?:>[ \t]*)+").unwrap();
+    let item_quote_pattern = cached_regex!(
+        r"^([ \t]*(?:[-*+]|[0-9]+[.)]|[A-Za-z][.)]|\((?:[0-9]+|[A-Za-z])\))[ \t]+)((?:>[ \t]*)+)"
+    )
+    .unwrap();
     let leading_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
     let heading_pattern = cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap();
     let fence_pattern = cached_regex!(r"^(`{3,}|~{3,})").unwrap();
@@ -1322,6 +1326,18 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
         let from = source[..end].rfind('\n').map_or(0, |at| at + 1);
         let raw = &source[from..end];
         let quotes = quote_pattern.find(raw).map_or("", |m| m.as_str());
+        // A quote opened on an item's marker line (`- > a`) holds the lines
+        // whose `>` stands in the same column.
+        let quotes = if quotes.is_empty() {
+            item_quote_pattern
+                .captures(raw)
+                .filter(|held| {
+                    held[1].len() == prefix.len() - prefix.trim_start_matches([' ', '\t']).len()
+                })
+                .map_or("", |held| held.get(2).unwrap().as_str())
+        } else {
+            quotes
+        };
         if quotes.bytes().filter(|b| *b == b'>').count() != context.0 {
             return false;
         }

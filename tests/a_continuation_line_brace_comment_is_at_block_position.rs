@@ -1,7 +1,7 @@
 //! carve#5189: a `{%` run that starts a paragraph continuation line is at block
 //! position and follows CARVE-P2-035 in every host.
 
-use carve::to_html;
+use carve::{djot_to_carve, to_html};
 
 #[test]
 fn an_unindented_continuation_keeps_the_run_literal_in_each_host() {
@@ -44,5 +44,17 @@ fn a_lazy_line_in_a_quote_does_not_continue_the_run() {
     assert_eq!(
         to_html("> - pre\n>   {% a\nb %}\n"),
         "<blockquote>\n  <ul>\n    <li>pre\n{% a\nb %}</li>\n  </ul>\n</blockquote>"
+    );
+}
+
+#[test]
+fn the_djot_importer_keeps_a_comment_in_a_quote_an_item_opens() {
+    assert_eq!(
+        djot_to_carve("- > pre\n  > {% a\n  > b %} c\n"),
+        "- > pre\n  > {%%} c\n"
+    );
+    assert_eq!(
+        djot_to_carve("- > pre\n  > {}\n  > more\n"),
+        "- > pre\n  > {%%}\n  > more\n"
     );
 }
