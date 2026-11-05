@@ -190,3 +190,91 @@ fn generated_context_variants() {
         );
     }
 }
+#[test]
+fn marker_line_refusal_survives_an_unchanged_ownership_walk() {
+    let warnings = lint_carve("- +\n  x\n");
+    assert!(warnings.iter().any(|warning| {
+        warning.rule == "continuation-marker-refused" && (warning.line, warning.column) == (1, 3)
+    }));
+}
+
+#[test]
+fn an_unclosed_code_fence_in_a_note_reports_its_authored_column() {
+    let source = "- [^n]: text\n    more\n\n    %% c\n    ~~~\n    code\nafter [^n]\n";
+    let warnings = lint_carve(source);
+    assert!(
+        warnings.iter().any(|warning| {
+            warning.rule == "unclosed-code-fence" && (warning.line, warning.column) == (5, 5)
+        }),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn a_quoted_note_fence_survives_an_erased_comment() {
+    let source = "> [^n]: text\n>   more\n\n>   %% c\n>   ~~~\n>   code\nafter [^n]\n";
+    assert!(findings(source, "unclosed-code-fence").contains(&(5, 5)));
+}
+
+#[test]
+fn an_unclosed_comment_fence_reports_its_opener() {
+    let source = "before\n\n%%%\nsecret\n\nafter\n";
+    let warnings = lint_carve(source);
+    assert!(
+        warnings.iter().any(|warning| {
+            warning.rule == "unclosed-comment-fence" && (warning.line, warning.column) == (3, 1)
+        }),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn comment_fence_lint_respects_owners_and_payloads() {
+    for (source, expected) in [
+        ("%%%\nsecret\n%%%\n", None),
+        ("```\n%%%\n```\n", None),
+        ("- item\n  %%%\n  secret\nnext\n", Some((2, 3))),
+        ("> %%%\n> secret\nnext\n", Some((1, 3))),
+    ] {
+        let warnings: Vec<_> = lint_carve(source)
+            .into_iter()
+            .filter(|warning| warning.rule == "unclosed-comment-fence")
+            .map(|warning| (warning.line, warning.column))
+            .collect();
+        assert_eq!(
+            warnings,
+            expected.into_iter().collect::<Vec<_>>(),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn lint_reproduction_families_survive_generated_variants() {
+    for n in 0..1000 {
+        let lead = if n % 2 == 0 { "intro\n\n" } else { "" };
+        let marker = "%".repeat(3 + n % 4);
+        let comment = format!("{lead}{marker}\nsecret {n}\n");
+        let comment_line = if lead.is_empty() { 1 } else { 3 };
+        assert!(
+            findings(&comment, "unclosed-comment-fence").contains(&(comment_line, 1)),
+            "comment {n}: {comment:?}"
+        );
+
+        let spacer = "\n".repeat(n % 3 + 1);
+        let note = format!(
+            "- [^n]: text\n    more\n{spacer}    %% c\n    ~~~\n    code {n}\nafter [^n]\n"
+        );
+        let fence_line = 4 + n % 3 + 1;
+        assert!(
+            findings(&note, "unclosed-code-fence").contains(&(fence_line, 5)),
+            "code {n}: {note:?}"
+        );
+
+        let plus = format!("{lead}- +\n  x{n}\n");
+        assert!(
+            findings(&plus, "continuation-marker-refused").contains(&(comment_line, 3)),
+            "plus {n}: {plus:?}"
+        );
+    }
+}

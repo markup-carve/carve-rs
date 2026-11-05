@@ -155,6 +155,12 @@ pub(crate) enum LintEvent {
         reason: &'static str,
         first_block: bool,
     },
+    CommentFence {
+        line: usize,
+        column: usize,
+        width: usize,
+        end_of_document: bool,
+    },
     Opener(own_lines::OverindentedOpener),
 }
 

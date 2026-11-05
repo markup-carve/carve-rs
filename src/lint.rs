@@ -458,7 +458,9 @@ fn collect_parser_events(
                         item.pos.as_ref(),
                         item.children.first().and_then(crate::ast_json::block_pos),
                     ) {
-                        if child.start_line == marker.start_line + 1 {
+                        if child.start_line == marker.start_line + 1
+                            && child.start_column == marker.start_column
+                        {
                             attached_first_block_items.insert(marker.start_line);
                         }
                     }
@@ -494,21 +496,30 @@ fn collect_parser_events(
                 marker,
                 end_line,
             } => {
-                // A top-level opener is read from a dedented line, so take its
-                // column from the code block the parse placed there.
-                let column = if fences.contains(&(pos.start_line, pos.start_column)) {
-                    pos.start_column
-                } else if pos.start_column == 1 {
-                    let indented = lines
-                        .get(pos.start_line.saturating_sub(1))
-                        .map_or(0, |line| line.len() - line.trim_start_matches(' ').len());
-                    if indented > 0 && fences.contains(&(pos.start_line, indented + 1)) {
-                        indented + 1
-                    } else {
-                        continue;
-                    }
+                // Reader events can be measured in a dedented quote or note,
+                // or before definition collection erases an invisible line.
+                // The AST fence gives the authored opener; require its marker
+                // on that source line so speculative reader events stay silent.
+                let (line, column) = if fences.contains(&(pos.start_line, pos.start_column)) {
+                    (pos.start_line, pos.start_column)
                 } else {
-                    continue;
+                    let Some(&(line, column)) = fences
+                        .iter()
+                        .filter(|&&(line, column)| {
+                            line >= pos.start_line
+                                && line <= *end_line
+                                && lines.get(line - 1).is_some_and(|text| {
+                                    text.chars()
+                                        .skip(column - 1)
+                                        .collect::<String>()
+                                        .starts_with(marker)
+                                })
+                        })
+                        .min()
+                    else {
+                        continue;
+                    };
+                    (line, column)
                 };
                 let ending = if *end_line > lines.len()
                     || (*end_line == lines.len() && lines.last() == Some(&""))
@@ -522,7 +533,7 @@ fn collect_parser_events(
                 } else {
                     format!("it ends at the end of its container on line {end_line}")
                 };
-                (pos.start_line, column, "unclosed-code-fence", format!("The {marker} fence opened here has no closing fence; {ending}. Add a closing {marker} where the code should stop."), marker.len())
+                (line, column, "unclosed-code-fence", format!("The {marker} fence opened here has no closing fence; {ending}. Add a closing {marker} where the code should stop."), marker.len())
             }
             LintEvent::Marker {
                 line,
@@ -573,6 +584,26 @@ fn collect_parser_events(
                     "continuation-marker-refused",
                     format!("This + attaches nothing because {explanation}. {effect}"),
                     1,
+                )
+            }
+            LintEvent::CommentFence {
+                line,
+                column,
+                width,
+                end_of_document,
+            } => {
+                let marker = "%".repeat(*width);
+                let ending = if *end_of_document {
+                    "the end of the document"
+                } else {
+                    "the end of its container"
+                };
+                (
+                    *line,
+                    *column,
+                    "unclosed-comment-fence",
+                    format!("The {marker} comment fence opened here has no closing fence and hides everything to {ending}. Add a closing {marker} where the comment should stop."),
+                    *width,
                 )
             }
             LintEvent::Opener(opener) => {

@@ -654,6 +654,8 @@ struct Walk<'a> {
     refuse_line: bool,
     accepted: Vec<(usize, continuation_marker::Decision)>,
     refused: Vec<continuation_marker::Refused>,
+    unclosed_comments: Vec<(usize, usize, usize, bool)>,
+    closed_comments: HashSet<usize>,
     overindented: Vec<OverindentedOpener>,
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
@@ -902,6 +904,7 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) letter: Option<char>,
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
+    pub(in crate::parse) unclosed_comments: Vec<(usize, usize, usize, bool)>,
     pub(in crate::parse) overindented: Vec<OverindentedOpener>,
     /// Lines whose refused marker was written as a `%%` line.
     pub(in crate::parse) consumed: Vec<usize>,
@@ -995,6 +998,8 @@ fn walk_traced(
         refuse_line: false,
         accepted: Vec::new(),
         refused: Vec::new(),
+        unclosed_comments: Vec::new(),
+        closed_comments: HashSet::new(),
         overindented: Vec::new(),
         attached: None,
         skipped: None,
@@ -1041,8 +1046,31 @@ fn walk_traced(
             edits: Vec::new(),
         };
         c.measure();
+        let open_comments: Vec<_> = walk
+            .frames
+            .iter()
+            .filter_map(|frame| match frame.closer {
+                Some(Closer::Comment(run)) => Some((frame.line, run)),
+                _ => None,
+            })
+            .collect();
         if !walk.skipped_line(at, &mut c) {
             walk.line(at, &mut c, &mut after_plus);
+        }
+        for (line, run) in open_comments {
+            if !walk
+                .frames
+                .iter()
+                .any(|frame| frame.line == line && matches!(frame.closer, Some(Closer::Comment(_))))
+                && !walk.closed_comments.contains(&line)
+            {
+                let column = walk.lines[line - first_line]
+                    .chars()
+                    .position(|ch| ch == '%')
+                    .unwrap_or(0)
+                    + 1;
+                walk.unclosed_comments.push((line, column, run, false));
+            }
         }
         let written = result.len();
         result.push_str(&c.out);
@@ -1079,8 +1107,20 @@ fn walk_traced(
             delta,
         }));
     }
+    for frame in &walk.frames {
+        if let Some(Closer::Comment(run)) = frame.closer {
+            let column = walk.lines[frame.line - first_line]
+                .chars()
+                .position(|ch| ch == '%')
+                .unwrap_or(0)
+                + 1;
+            walk.unclosed_comments.push((frame.line, column, run, true));
+        }
+    }
     let owned = (!edits.is_empty()
         || !walk.accepted.is_empty()
+        || !walk.refused.is_empty()
+        || !walk.unclosed_comments.is_empty()
         || wrote_letter
         || !walk.consumed.is_empty())
     .then(|| OwnedSource {
@@ -1089,6 +1129,7 @@ fn walk_traced(
         letter: letter.filter(|_| wrote_letter),
         accepted: std::mem::take(&mut walk.accepted),
         refused: std::mem::take(&mut walk.refused),
+        unclosed_comments: std::mem::take(&mut walk.unclosed_comments),
         overindented: std::mem::take(&mut walk.overindented),
         consumed: std::mem::take(&mut walk.consumed),
         consumed_mark: walk.mark,
@@ -2161,6 +2202,11 @@ impl<'a> Walk<'a> {
                 }
             } else if closer.is_some_and(|cl| cl.closes(c.rest, col, open_col)) {
                 let inner = self.frames.pop();
+                if let Some(frame) = inner.as_ref() {
+                    if matches!(frame.closer, Some(Closer::Comment(_))) {
+                        self.closed_comments.insert(frame.line);
+                    }
+                }
                 self.top().last = last_after_closer(inner.as_ref());
             } else if line_block {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).
@@ -2394,6 +2440,9 @@ impl<'a> Walk<'a> {
             return false;
         }
         let inner = self.frames.pop();
+        if let Some(frame) = inner.as_ref() {
+            self.closed_comments.insert(frame.line);
+        }
         self.top().last = last_after_closer(inner.as_ref());
         let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
         c.lead_in(canon, shift, false);
