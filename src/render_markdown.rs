@@ -2710,11 +2710,10 @@ fn render_attributed_emphasis(
     ctx: &mut MarkdownContext,
     depth: usize,
 ) -> Option<String> {
-    let (open, close, extra) = match emphasis.kind {
-        EmphasisKind::Italic => ("<em", "</em>", ""),
-        EmphasisKind::Strong => ("<strong", "</strong>", ""),
-        EmphasisKind::Strike => ("<del", "</del>", ""),
-        EmphasisKind::BoldItalic => ("<strong", "</em></strong>", "<em>"),
+    let (open, close) = match emphasis.kind {
+        EmphasisKind::Italic => ("<em", "</em>"),
+        EmphasisKind::Strong | EmphasisKind::BoldItalic => ("<strong", "</strong>"),
+        EmphasisKind::Strike => ("<del", "</del>"),
         _ => return None,
     };
     emphasis.attrs.as_ref()?;
@@ -2722,8 +2721,20 @@ fn render_attributed_emphasis(
     if attrs.is_empty() {
         return None;
     }
-    let inner = render_inlines(&emphasis.children, ctx, depth + 1);
-    Some(format!("{open}{attrs}>{extra}{inner}{close}"))
+    // The attributes sit on the outer `<strong>`, so the inner emphasis is an
+    // ordinary child and takes the `*` spelling where it reads back (CARVE-P11-045).
+    let inner = if emphasis.kind == EmphasisKind::BoldItalic {
+        let italic = InlineNode::Emphasis(Emphasis {
+            attrs: None,
+            kind: EmphasisKind::Italic,
+            children: emphasis.children.clone(),
+            pos: None,
+        });
+        render_inlines(std::slice::from_ref(&italic), ctx, depth + 1)
+    } else {
+        render_inlines(&emphasis.children, ctx, depth + 1)
+    };
+    Some(format!("{open}{attrs}>{inner}{close}"))
 }
 
 thread_local! {

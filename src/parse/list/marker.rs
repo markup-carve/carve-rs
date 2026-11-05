@@ -880,6 +880,7 @@ pub(crate) fn parse_continuation_block(
     if let Some(content_col) = content_col
         .filter(|_| options.extensions.is_empty() && sub.peek().is_some_and(line_starts_paragraph))
     {
+        let forced = lines_after_refused_brace_runs(&slice, block_start, !cur.in_quoted_body);
         let paragraph_end = attached_block_end(
             sub.lines,
             block_start,
@@ -892,7 +893,8 @@ pub(crate) fn parse_continuation_block(
                         // only stands left of it (§17 L3).
                         || (indent_columns(line) >= content_col
                             && !is_blank_line(line)
-                            && !line_starts_paragraph(trim_ascii_start(line))))
+                            && !line_starts_paragraph(trim_ascii_start(line))
+                            && !forced.get(at).copied().unwrap_or(false)))
             },
         );
         sub.lines = CursorLines::Slice(&slice[..paragraph_end]);
@@ -950,6 +952,35 @@ pub(crate) fn parse_continuation_block(
     }
     cur.pos += sub.pos;
     block.map(|block| *block)
+}
+
+/// The lines a refused brace run forces into its paragraph: the line after the
+/// run, and through its closer when that line opens a fence (CARVE-P2-035).
+fn lines_after_refused_brace_runs(slice: &[&str], from: usize, lazy_refuses: bool) -> Vec<bool> {
+    let mut forced = vec![false; slice.len()];
+    let mut at = from;
+    while at < slice.len() {
+        if !trim_ascii_start(slice[at]).starts_with('{') {
+            at += 1;
+            continue;
+        }
+        let RefusedBraceRun::Lines(count) =
+            refused_brace_run(slice[at..].iter().copied(), lazy_refuses)
+        else {
+            at += 1;
+            continue;
+        };
+        let next = at + count.max(1);
+        let Some(line) = slice.get(next) else { break };
+        let through = detect_fence_open(trim_ascii_start(line))
+            .and_then(|open| {
+                (next + 1..slice.len()).find(|&k| is_fence_close(trim_ascii_start(slice[k]), open))
+            })
+            .unwrap_or(next);
+        forced[next..=through].fill(true);
+        at = next;
+    }
+    forced
 }
 
 pub(crate) fn below_item_definition(line: &str, base_indent: usize, content_col: usize) -> bool {
