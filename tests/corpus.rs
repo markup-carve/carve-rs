@@ -1428,7 +1428,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("948-a-blank-inside-a-attached-description-keeps-the-list-tight-3", "spec pin d9d5dea7: carve#5058 row not reached yet", "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <p>d</p>\n        <p>x</p>\n      </dd>\n    </dl>\n  </li>\n</ul>"),
     ("948-a-fence-a-quote-s-attached-block-opens-ends-with-its-container-3", "spec pin d9d5dea7: carve#5060 row not reached yet", "<blockquote>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\"></code></pre>\n    </li>\n    <li>x\nq</li>\n  </ul>\n</blockquote>"),
     ("948-a-fence-a-quote-s-attached-block-opens-ends-with-its-container-4", "spec pin d9d5dea7: carve#5060 row not reached yet", "<blockquote>\n  <p>a</p>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\"></code></pre>\n    </li>\n    <li>x\nq</li>\n  </ul>\n</blockquote>"),
-    ("821-an-attribute-run-after-a-lone-plus-leads-a-sublist-at-the-content-column-2", "spec pin d9d5dea7: carve#5013 marker plus port pending", "<ul>\n  <li>a\n    {x\ny}\n    <ul>\n      <li>c</li>\n    </ul>\n  </li>\n</ul>"),
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.
     ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-4", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;%%%<br>\nx</p>\n</div>"),
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
