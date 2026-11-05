@@ -18,6 +18,43 @@ fn trailing_comments_keep_the_next_list_item() {
 }
 
 #[test]
+fn a_comment_fence_closer_keeps_the_blank_that_makes_the_list_loose() {
+    let source = "- %%%\n  x\n  %%%\n\n- b\n";
+    assert_eq!(
+        carve::to_html(source),
+        carve::to_html(&carve::to_carve(source))
+    );
+}
+
+#[test]
+fn comment_fence_closer_variant_sweep() {
+    let mut checked = 0;
+    for marker in ["-", "*", "1.", "."] {
+        for width in 3..8 {
+            let fence = "%".repeat(width);
+            for payload in ["x", "two", "tag", "0", "inner"] {
+                for tail in ["b", "other", "x1", "word", "é"] {
+                    for prefix in ["", "a\n\n  "] {
+                        let source = format!(
+                            "{marker} {prefix}{fence}\n  {payload}\n  {fence}\n\n{marker} {tail}\n"
+                        );
+                        let written = carve::to_carve(&source);
+                        assert_eq!(
+                            carve::to_html(&written),
+                            carve::to_html(&source),
+                            "{source:?}"
+                        );
+                        assert_eq!(carve::to_carve(&written), written, "{source:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1000);
+}
+
+#[test]
 fn tight_item_keeps_a_delimited_comment_beside_a_block() {
     let source = "- ```\n  a\n  ```\n  {% n %}\n  > q\n- b\n";
     assert_stable(source, source);

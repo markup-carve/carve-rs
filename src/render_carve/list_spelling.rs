@@ -628,10 +628,10 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         });
         // A blank after the last erased comment can combine with the blanks
         // inside the item into a boundary that ends this list.
-        let ends_with_line_comment = item_source
-            .lines()
-            .last()
-            .is_some_and(|line| line.trim_start().starts_with("%%"));
+        let ends_with_line_comment = item_source.lines().last().is_some_and(|line| {
+            let line = line.trim_start();
+            line.starts_with("%%") && !line.starts_with("%%%")
+        });
         if !tight && idx < node.items.len() - 1 && !ends_with_nested_list && !ends_with_line_comment
         {
             out.push('\n');
