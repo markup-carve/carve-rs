@@ -209,12 +209,11 @@ fn a_list_item_keeps_an_html_comment() {
 
 #[test]
 fn an_item_holding_only_the_element_still_holds_it() {
-    // A block-level element that is a tight item's sole content, inline with the
-    // marker, is an inline raw span in carve-js - not a block. A block element on
-    // its own continuation line (see the tests above) still opens a block.
+    // A block-level element stays a block even when it is the only content
+    // of a tight item and starts on the marker line.
     assert_eq!(
         carve("- <footer>x</footer>\n\nafter\n"),
-        "- `<footer>x</footer>`{=html}\n\nafter\n",
+        "- ```=html\n  <footer>x</footer>\n  ```\n\nafter\n",
     );
 }
 
