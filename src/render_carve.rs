@@ -217,6 +217,8 @@ pub fn render_carve_with_options(
     // Reject excessive depth before recursive preparation reads the tree.
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
     crate::render_loss::record_ruby_in_document(doc);
+    let folded = comments_beside_crossed_paragraphs(doc, &mut session.moved_comments.borrow_mut());
+    let doc = folded.as_ref().unwrap_or(doc);
     let one_run = text_as_one_run(doc);
     let doc = one_run.as_ref().unwrap_or(doc);
     *session.crossref_targets.borrow_mut() =
@@ -244,6 +246,246 @@ pub fn render_carve_with_options(
 /// PART 11 §2: adjacent text is one run, so where a tree splits text cannot
 /// decide which character carries an escape (`x (r` beside `) y` is
 /// `x \(r) y`, as the single node is).
+/// An erased `%%` line belongs to the container its column reaches
+/// (carve#5178), which can be an ancestor of a paragraph that crosses the line.
+/// The writer splices such a line back from the paragraph's next sibling, so a
+/// copy moves it there; `None` when no comment needs it.
+fn comments_beside_crossed_paragraphs(
+    doc: &Document,
+    moved: &mut std::collections::BTreeSet<(usize, usize)>,
+) -> Option<Document> {
+    fn erased_line(block: &BlockNode) -> Option<usize> {
+        match block {
+            BlockNode::Comment(c) if !c.block && !c.delimited => {
+                c.pos.as_ref().map(|pos| pos.start_line)
+            }
+            _ => None,
+        }
+    }
+    fn lists(block: &BlockNode) -> Vec<&Vec<BlockNode>> {
+        match block {
+            BlockNode::BlockQuote(b) => vec![&b.children],
+            BlockNode::Admonition(a) => vec![&a.children],
+            BlockNode::Directive(d) => vec![&d.children],
+            BlockNode::Div(d) => vec![&d.children],
+            BlockNode::FigureGroup(g) => vec![&g.children],
+            BlockNode::List(l) => l.items.iter().map(|i| &i.children).collect(),
+            BlockNode::DefinitionList(d) => d
+                .items
+                .iter()
+                .flat_map(|i| i.definitions.iter().map(|d| &d.children))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+    /// Each child list with the column its container's marker stands at, or
+    /// `usize::MAX` when the container has no span.
+    fn lists_mut(block: &mut BlockNode) -> Vec<(usize, &mut Vec<BlockNode>)> {
+        let column = |pos: &Option<Pos>| pos.as_ref().map_or(usize::MAX, |pos| pos.start_column);
+        match block {
+            BlockNode::BlockQuote(b) => vec![(column(&b.pos), &mut b.children)],
+            BlockNode::Admonition(a) => vec![(column(&a.pos), &mut a.children)],
+            BlockNode::Directive(d) => vec![(column(&d.pos), &mut d.children)],
+            BlockNode::Div(d) => vec![(column(&d.pos), &mut d.children)],
+            BlockNode::FigureGroup(g) => vec![(column(&g.pos), &mut g.children)],
+            BlockNode::List(l) => l
+                .items
+                .iter_mut()
+                .map(|i| (column(&i.pos), &mut i.children))
+                .collect(),
+            // A description without a span stands at its term's column.
+            BlockNode::DefinitionList(d) => d
+                .items
+                .iter_mut()
+                .flat_map(|i| {
+                    let term = i.terms.first().map_or(usize::MAX, |t| column(&t.pos));
+                    i.definitions
+                        .iter_mut()
+                        .map(move |d| (column(&d.pos).min(term), &mut d.children))
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+    /// A comment that follows a container, the only place an ancestor holds one.
+    fn candidate(blocks: &[BlockNode]) -> bool {
+        blocks
+            .windows(2)
+            .any(|pair| !lists(&pair[0]).is_empty() && erased_line(&pair[1]).is_some())
+            || blocks
+                .iter()
+                .any(|block| lists(block).into_iter().any(|list| candidate(list)))
+    }
+    /// The first and last line the paragraph's inlines were placed on; a
+    /// paragraph joined across an erased line carries no span (carve#5136).
+    fn crosses(paragraph: &mut BlockNode, line: usize) -> bool {
+        use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+        struct Lines(Option<(usize, usize)>);
+        impl SubtreeVisitor for Lines {
+            fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+                for inline in inlines {
+                    visit_inline_children(inline, self);
+                }
+            }
+            fn position(&mut self, pos: &mut Pos) {
+                let (first, last) = self.0.get_or_insert((pos.start_line, pos.end_line));
+                *first = (*first).min(pos.start_line);
+                *last = (*last).max(pos.end_line);
+            }
+        }
+        let mut lines = Lines(None);
+        visit_block_children(paragraph, &mut lines);
+        lines
+            .0
+            .is_some_and(|(first, last)| first < line && line < last)
+    }
+    /// A paragraph line below the comment that was lazy (left of the
+    /// paragraph's first column) is written no deeper than one column past its
+    /// container's marker, so it stays lazy once the writer narrows the
+    /// marker's padding and leaves the comment with its owner.
+    fn lazy_below(paragraph: &mut BlockNode, line: usize, marker: usize) {
+        use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+        struct Clamp {
+            line: usize,
+            first: Option<usize>,
+            limit: usize,
+            at_break: bool,
+        }
+        impl SubtreeVisitor for Clamp {
+            fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+                for inline in inlines {
+                    if let InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) = inline {
+                        self.at_break = true;
+                        continue;
+                    }
+                    visit_inline_children(inline, self);
+                }
+            }
+            fn position(&mut self, pos: &mut Pos) {
+                let first = *self.first.get_or_insert(pos.start_column);
+                if std::mem::take(&mut self.at_break)
+                    && pos.start_line > self.line
+                    && pos.start_column < first
+                {
+                    pos.start_column = pos.start_column.min(self.limit);
+                }
+            }
+        }
+        let mut clamp = Clamp {
+            line,
+            first: None,
+            limit: marker.saturating_add(1),
+            at_break: false,
+        };
+        visit_block_children(paragraph, &mut clamp);
+    }
+    /// Put the comment after the deepest paragraph of `blocks` that crosses it.
+    /// `path` is whether a quote, and whether another container, lie between
+    /// the comment's owner and `blocks`: with both, a quoted line below cannot
+    /// be written lazy, so the comment stays after the container.
+    fn beside_paragraph(
+        blocks: &mut Vec<BlockNode>,
+        node: &mut Option<BlockNode>,
+        line: usize,
+        moved: &mut std::collections::BTreeSet<(usize, usize)>,
+        path: (bool, bool),
+        marker: usize,
+    ) {
+        let starts_after = |block: &BlockNode| {
+            crate::ast_json::block_pos(block).is_some_and(|pos| pos.start_line > line)
+        };
+        // Only the last block starting at or before the line can cross it.
+        let Some(i) = (0..blocks.len())
+            .rev()
+            .find(|&i| erased_line(&blocks[i]).is_none() && !starts_after(&blocks[i]))
+        else {
+            return;
+        };
+        if matches!(blocks[i], BlockNode::Paragraph(_)) {
+            if path.0 && path.1 || !crosses(&mut blocks[i], line) {
+                return;
+            }
+            if let Some(BlockNode::Comment(c)) = node.as_ref() {
+                let column = c.pos.as_ref().map_or(1, |pos| pos.start_column);
+                lazy_below(&mut blocks[i], line, marker);
+                moved.insert((line, column));
+            }
+            let mut at = i + 1;
+            while at < blocks.len() && erased_line(&blocks[at]).is_some_and(|l| l < line) {
+                at += 1;
+            }
+            blocks.insert(at, node.take().expect("node"));
+            return;
+        }
+        let quote = matches!(blocks[i], BlockNode::BlockQuote(_));
+        let inner = (path.0 || quote, path.1 || !quote);
+        if let Some((marker, list)) = list_at(&mut blocks[i], line) {
+            beside_paragraph(list, node, line, moved, inner, marker);
+        }
+    }
+    /// The child list of `block` that can hold `line`: the last item or
+    /// description starting at or before it.
+    fn list_at(block: &mut BlockNode, line: usize) -> Option<(usize, &mut Vec<BlockNode>)> {
+        let column = |pos: &Option<Pos>| pos.as_ref().map(|pos| pos.start_column);
+        match block {
+            BlockNode::List(l) => {
+                let at = l
+                    .items
+                    .partition_point(|i| i.pos.as_ref().map_or(true, |p| p.start_line <= line))
+                    .checked_sub(1)?;
+                // Items share their list's marker column.
+                let marker = column(&l.items[at].pos)
+                    .or_else(|| l.items.iter().find_map(|i| column(&i.pos)))
+                    .unwrap_or(usize::MAX);
+                Some((marker, &mut l.items[at].children))
+            }
+            _ => lists_mut(block).into_iter().last(),
+        }
+    }
+    /// A comment whose owner is inside a quote would need part of the quote
+    /// prefixes back, so in a quote it stays after the container.
+    fn fold(
+        blocks: &mut Vec<BlockNode>,
+        moved: &mut std::collections::BTreeSet<(usize, usize)>,
+        quoted: bool,
+    ) {
+        for block in blocks.iter_mut() {
+            let quote = quoted || matches!(block, BlockNode::BlockQuote(_));
+            for (_, list) in lists_mut(block) {
+                fold(list, moved, quote);
+            }
+        }
+        if quoted {
+            return;
+        }
+        let mut host = None;
+        for block in std::mem::take(blocks) {
+            let Some(line) = erased_line(&block) else {
+                host = (!lists(&block).is_empty()).then_some(blocks.len());
+                blocks.push(block);
+                continue;
+            };
+            let mut node = Some(block);
+            if let Some(host) = host {
+                let quote = matches!(blocks[host], BlockNode::BlockQuote(_));
+                if let Some((marker, list)) = list_at(&mut blocks[host], line) {
+                    beside_paragraph(list, &mut node, line, moved, (quote, !quote), marker);
+                }
+            }
+            blocks.extend(node);
+        }
+    }
+    if !candidate(&doc.children) && !doc.footnote_defs.values().any(|blocks| candidate(blocks)) {
+        return None;
+    }
+    let mut doc = doc.clone();
+    fold(&mut doc.children, moved, false);
+    for blocks in doc.footnote_defs.values_mut() {
+        fold(blocks, moved, false);
+    }
+    Some(doc)
+}
+
 fn text_as_one_run(doc: &Document) -> Option<Document> {
     use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
 
@@ -1860,6 +2102,16 @@ fn splice_crossing_line(
     };
     // The line crossed the paragraph without a quote prefix, which a scaffold
     // would have kept, so it goes back at its authored column and nothing else.
+    let moved = matches!(block, BlockNode::Comment(_))
+        && session
+            .moved_comments
+            .borrow()
+            .contains(&(erased.start_line, erased.start_column));
+    // A comment the quote owns goes back inside it (carve#5178).
+    if quoted && !moved && matches!(block, BlockNode::Comment(_)) {
+        text.insert_str(offset, &format!("\n{}", line.trim_start()));
+        return true;
+    }
     note_inserted(session, S_AUTHORED_LINE);
     let column = " ".repeat(erased.start_column.saturating_sub(1));
     let marker = sentinel(session, S_AUTHORED_LINE);
@@ -1869,10 +2121,11 @@ fn splice_crossing_line(
         let mut written: Vec<String> = text.split('\n').map(str::to_owned).collect();
         let below = breaks.columns.iter().skip(passed);
         for (row, column) in written.iter_mut().skip(at + 1).zip(below) {
-            if let Some(column) = column {
-                note_inserted(session, S_AUTHORED_LINE);
-                *row = format!("{marker}{}{row}", " ".repeat(column.saturating_sub(1)));
-            }
+            let Some(column) = column else {
+                continue;
+            };
+            note_inserted(session, S_AUTHORED_LINE);
+            *row = format!("{marker}{}{row}", " ".repeat(column.saturating_sub(1)));
         }
         *text = written.join("\n");
     }
