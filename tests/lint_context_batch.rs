@@ -26,6 +26,36 @@ fn findings(source: &str, rule: &str) -> Vec<(usize, usize)> {
 }
 
 #[test]
+fn a_child_fence_closed_before_a_dedent_is_not_reported_unclosed() {
+    let source = "- outer\n  - head\n\n    ```\n    a\n    ```\n  ```\n  b\n\n  c\n";
+    assert_eq!(findings(source, "unclosed-code-fence"), vec![(7, 3)]);
+}
+
+#[test]
+fn a_fence_after_a_quote_ends_is_a_separate_opener() {
+    let source = "> ```\n> code\noutside\n  ```\n";
+    assert_eq!(
+        findings(source, "unclosed-code-fence"),
+        vec![(1, 3), (4, 3)]
+    );
+}
+
+#[test]
+fn dedented_child_fence_variants_keep_only_the_open_outer_fence() {
+    for n in 0..1000 {
+        let indent = " ".repeat(n % 3);
+        let marker = if n % 2 == 0 { "```" } else { "~~~" };
+        let sibling = if n % 5 == 0 { "- next\n" } else { "" };
+        let source = format!(
+            "{indent}- outer\n{indent}  - head\n\n{indent}    {marker}\n{indent}    a{n}\n{indent}    {marker}\n{indent}  {marker}\n{indent}  b\n\n{indent}  c\n{sibling}"
+        );
+        let warnings = findings(&source, "unclosed-code-fence");
+        assert_eq!(warnings.len(), 1, "variant {n}: {source:?}: {warnings:?}");
+        assert_eq!(warnings[0].0, 7, "variant {n}: {source:?}");
+    }
+}
+
+#[test]
 fn heading_jump_honors_same_line_directive() {
     assert!(findings(
         "# One\n\n### Three %% carve-lint-disable-line heading-level-skip\n",
