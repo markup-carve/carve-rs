@@ -2451,8 +2451,8 @@ impl<'a> QuoteBody<'a> {
         } else if !nested_item_closes
             && !self.closed_div
             && !is_blank_line(stripped)
-            && !self.para_open.get()
             && self.follows_refused_brace_run()
+            && !self.para_open.get()
         {
             // The line after a refused brace run continues its paragraph
             // whatever it opens (CARVE-P2-035), so a lazy line can follow it.
