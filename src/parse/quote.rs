@@ -1525,6 +1525,8 @@ struct QuoteBody<'a> {
     para_open: ParaOpen<'a>,
     // The two latest quoted lines opening with `{`, where a refused brace run can start.
     brace_starts: [Option<usize>; 2],
+    // `follows_refused_brace_run`'s answer for the line count it was asked at.
+    kept_answer: Option<(usize, bool)>,
     // Depth of the paragraph receiving the last line, even when that line
     // reached it lazily through a shallower quote prefix.
     paragraph_depth: Option<usize>,
@@ -1637,6 +1639,7 @@ impl<'a> QuoteBody<'a> {
             inner: LineBuffer::default(),
             para_open: ParaOpen::Closed,
             brace_starts: [None; 2],
+            kept_answer: None,
             paragraph_depth: None,
             absorption_depth: None,
             open_divs: Vec::new(),
@@ -2268,6 +2271,7 @@ impl<'a> QuoteBody<'a> {
 
     fn fence_line(&mut self, cur: &LineCursor<'_>, open: FenceOpen, after_nested: bool) {
         self.table = TableRun::default();
+        self.brace_starts = [None; 2];
         // A fence opens closer or not (carve#4018). The nested replay still
         // advances with the cursor here.
         if after_nested {
@@ -2329,9 +2333,17 @@ impl<'a> QuoteBody<'a> {
             false
         };
         let mut inherited_absorption = inherited_absorption;
-        let after_refused_run = self.follows_refused_brace_run();
-        if after_refused_run {
-            self.nested_replay.kept_lines.insert(self.inner.lines.len());
+        // Only an opener-shaped line can need the kept-line reading, and one that
+        // is not kept ends any run, so each run is scanned a bounded number of times.
+        if self.brace_starts[0].is_some() {
+            let content = trim_ascii_start(strip_all_quotes(stripped).0);
+            if is_blank_line(content) {
+                self.brace_starts = [None; 2];
+            } else if !ParaOpen::from_line(content, false).get()
+                && !self.follows_refused_brace_run()
+            {
+                self.brace_starts = [None; 2];
+            }
         }
         // CARVE-P9-016: absorption is a paragraph rule. A div's own closer ends the div.
         self.closed_div = false;
@@ -2353,8 +2365,9 @@ impl<'a> QuoteBody<'a> {
                 inherited_absorption = false;
             } else if inherited_absorption && is_suppressed_colon_fence_line(local) {
                 // Text of the open paragraph.
-            } else if let Some(open) =
-                detect_container_open(local).filter(|_| !self.list_open && !after_refused_run)
+            } else if let Some(open) = detect_container_open(local)
+                .filter(|_| !self.list_open)
+                .filter(|_| !self.follows_refused_brace_run())
             {
                 self.open_divs.push(open.fence_len);
                 self.closed_div = true;
@@ -2430,12 +2443,17 @@ impl<'a> QuoteBody<'a> {
             self.para_open = ParaOpen::Closed;
         } else if !nested_item_closes
             && !self.closed_div
-            && after_refused_run
+            && !is_blank_line(stripped)
             && !self.para_open.get()
+            && self.follows_refused_brace_run()
         {
             // The line after a refused brace run continues its paragraph
             // whatever it opens (CARVE-P2-035), so a lazy line can follow it.
             self.para_open = ParaOpen::from_line("x", inherited_absorption);
+        }
+        // A run lies inside one paragraph, so a line that closes it ends the run.
+        if self.brace_starts[0].is_some() && !self.para_open.get() {
+            self.brace_starts = [None; 2];
         }
         if trim_ascii_start(strip_all_quotes(stripped).0).starts_with('{') {
             self.brace_starts = [Some(self.inner.lines.len()), self.brace_starts[0]];
@@ -2689,6 +2707,7 @@ impl<'a> QuoteBody<'a> {
             if self.in_fence.take().is_some() {
                 self.parts.push(std::mem::take(&mut self.inner));
                 self.brace_starts = [None; 2];
+                self.kept_answer = None;
                 self.comment_run = None;
                 self.comment_lazy_lines.clear();
             }
@@ -2925,20 +2944,26 @@ impl<'a> QuoteBody<'a> {
 
     /// Whether the quoted lines so far end in a refused brace run. A run ends at
     /// its first closing line, so each check scans one run, not the quote.
-    fn follows_refused_brace_run(&self) -> bool {
+    fn follows_refused_brace_run(&mut self) -> bool {
         let lines = &self.inner.lines;
-        if !lines.last().is_some_and(|line| line.text.contains('}')) {
-            return false;
+        if let Some((_, kept)) = self.kept_answer.filter(|&(at, _)| at == lines.len()) {
+            return kept;
         }
-        self.brace_starts.iter().flatten().any(|&start| {
-            let run = lines[start..]
-                .iter()
-                .map(|line| strip_all_quotes(&line.text).0);
-            matches!(
-                refused_brace_run(run, false),
-                RefusedBraceRun::Lines(count) if start + count == lines.len()
-            )
-        })
+        let kept = lines.last().is_some_and(|line| line.text.contains('}'))
+            && self.brace_starts.iter().flatten().any(|&start| {
+                let run = lines[start..]
+                    .iter()
+                    .map(|line| strip_all_quotes(&line.text).0);
+                matches!(
+                    refused_brace_run(run, false),
+                    RefusedBraceRun::Lines(count) if start + count == lines.len()
+                )
+            });
+        self.kept_answer = Some((lines.len(), kept));
+        if kept {
+            self.nested_replay.kept_lines.insert(lines.len());
+        }
+        kept
     }
 
     /// A `%%%` span inside a line block leaves nothing, so a missed line ends it

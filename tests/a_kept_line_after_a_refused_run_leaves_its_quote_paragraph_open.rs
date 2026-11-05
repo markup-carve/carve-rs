@@ -24,6 +24,10 @@ fn a_line_missing_the_quote_folds_after_a_kept_line() {
             "<blockquote><p>a\n{x\ny}\n~~~ js\nz\nmore</p></blockquote>",
         ),
         (
+            "> a\n> {x\n> y}\n>\nmore\n",
+            "<blockquote><p>a\n{x\ny}</p></blockquote>\n<p>more</p>",
+        ),
+        (
             "- a\n  {x\n  y}\n  # c\nmore\n",
             "<ul>\n  <li>a\n{x\ny}\n# c\nmore</li>\n</ul>",
         ),
