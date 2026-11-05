@@ -1,5 +1,41 @@
 use super::*;
 
+#[test]
+fn line_block_break_starts_after_a_paired_comment() {
+    let source = "::: |\na\n%%%\nq\n%%%\nb\n:::";
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let BlockNode::LineBlock(line_block) = &doc.children[0] else {
+        panic!("expected line block");
+    };
+    let BlockNode::Paragraph(stanza) = &line_block.children[0] else {
+        panic!("expected stanza");
+    };
+    let comment = stanza
+        .children
+        .iter()
+        .find_map(|node| match node {
+            InlineNode::Comment(c) => c.pos.as_ref(),
+            _ => None,
+        })
+        .expect("paired comment position");
+    let following_break = stanza
+        .children
+        .iter()
+        .find_map(|node| match node {
+            InlineNode::HardBreak(b) if b.pos.as_ref().is_some_and(|p| p.start_line == 5) => {
+                b.pos.as_ref()
+            }
+            _ => None,
+        })
+        .expect("following break position");
+    assert_eq!(comment.end_offset, 17);
+    assert_eq!(following_break.start_offset, comment.end_offset);
+    assert_eq!(
+        (following_break.start_line, following_break.start_column),
+        (5, 4)
+    );
+}
+
 #[cfg(feature = "experimental-event-parser-options")]
 #[test]
 fn event_owned_pipeline_matches_public_modes() {

@@ -496,13 +496,28 @@ pub(in crate::parse) fn place_line_block_breaks(
     end_cols: &[Option<isize>],
     start_cols: &[Option<isize>],
     emptied: &[usize],
+    pairs: &[(usize, Comment)],
     options: &Options<'_>,
 ) -> Vec<InlineNode> {
     if !options.positions {
         return inlines;
     }
+    let mut paired_ends = vec![None; lines.lines.len()];
+    for (after, comment) in pairs {
+        if let Some(slot) = paired_ends.get_mut(*after) {
+            *slot = comment.pos.as_ref();
+        }
+    }
     let mut line = 0usize;
-    place_line_block_breaks_into(inlines, lines, end_cols, start_cols, emptied, &mut line)
+    place_line_block_breaks_into(
+        inlines,
+        lines,
+        end_cols,
+        start_cols,
+        emptied,
+        &paired_ends,
+        &mut line,
+    )
 }
 
 /// One level of [`place_line_block_breaks`], sharing the caller's line counter
@@ -513,6 +528,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
     end_cols: &[Option<isize>],
     start_cols: &[Option<isize>],
     emptied: &[usize],
+    paired_ends: &[Option<&Pos>],
     line: &mut usize,
 ) -> Vec<InlineNode> {
     let mut out = Vec::with_capacity(inlines.len());
@@ -525,12 +541,16 @@ pub(in crate::parse) fn place_line_block_breaks_into(
             InlineNode::HardBreak(brk) => {
                 let k = *line;
                 *line += 1;
+                let preceding_pair = paired_ends.get(k).copied().flatten();
                 // A break ending a line the block layer EMPTIED is recomputed
                 // even when the inline parser gave it one: what that parser
                 // measured is the emptied line, which ends at column 1, and the
                 // newline the author wrote is at the end of the comment they
                 // wrote (grammar PART 9 §23).
-                if brk.pos.is_none() || emptied.binary_search(&k).is_ok() {
+                if brk.pos.is_none()
+                    || emptied.binary_search(&k).is_ok()
+                    || preceding_pair.is_some()
+                {
                     // Start: just past the last character of line k. End: the
                     // first column of line k+1, which is where the next line's
                     // content begins. Both are 1-based, matching every other
@@ -552,8 +572,12 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                         }
                         _ => None,
                     };
-                    if pos.is_some() {
-                        brk.pos = pos;
+                    if let Some(mut pos) = pos {
+                        if let Some(comment) = preceding_pair {
+                            pos.start_line = comment.end_line;
+                            pos.start_column = comment.end_column;
+                        }
+                        brk.pos = Some(pos);
                     }
                 }
             }
@@ -573,6 +597,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                     end_cols,
                     start_cols,
                     emptied,
+                    paired_ends,
                     line,
                 )
             }
@@ -583,6 +608,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                     end_cols,
                     start_cols,
                     emptied,
+                    paired_ends,
                     line,
                 )
             }
@@ -593,6 +619,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                     end_cols,
                     start_cols,
                     emptied,
+                    paired_ends,
                     line,
                 )
             }
@@ -603,6 +630,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                     end_cols,
                     start_cols,
                     emptied,
+                    paired_ends,
                     line,
                 )
             }
@@ -613,6 +641,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                     end_cols,
                     start_cols,
                     emptied,
+                    paired_ends,
                     line,
                 )
             }
@@ -623,6 +652,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                     end_cols,
                     start_cols,
                     emptied,
+                    paired_ends,
                     line,
                 )
             }
@@ -634,6 +664,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                         end_cols,
                         start_cols,
                         emptied,
+                        paired_ends,
                         line,
                     );
                 }
@@ -650,6 +681,7 @@ pub(in crate::parse) fn place_line_block_breaks_into(
                             end_cols,
                             start_cols,
                             emptied,
+                            paired_ends,
                             line,
                         );
                     }
@@ -954,6 +986,7 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                     &end_cols,
                     &start_cols,
                     &emptied,
+                    &pairs,
                     options,
                 );
                 let mut inlines =
