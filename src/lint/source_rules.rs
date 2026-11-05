@@ -706,9 +706,15 @@ fn collect_authoring(
             }
         }
         if row.text.trim_start().starts_with('>') {
-            if let Some(m) = alert.find(view) {
+            for m in alert.find_iter(view) {
                 let start = prefix + m.start();
-                if source_visible(row, start, m.len(), scan) {
+                if source_visible(row, start, m.len(), scan)
+                    && !overlaps(
+                        &scan.link_runs,
+                        row.start + start,
+                        row.start + start + m.len(),
+                    )
+                {
                     emit(out, rows, line, start, m.len(), "github-alert-marker", "This github alert marker stays literal in a Carve quote; use an admonition fence.");
                 }
             }
@@ -814,6 +820,7 @@ struct BlockScan<'d> {
     attached: BTreeSet<usize>,
     payload: BTreeSet<usize>,
     text_runs: Vec<(usize, usize)>,
+    link_runs: Vec<(usize, usize)>,
     emphasis_runs: Vec<(usize, usize)>,
     // Emphasis and strong spans shaped like a C comment or a file glob (carve#4815).
     shaped_spans: Vec<(usize, &'static str)>,
@@ -873,6 +880,7 @@ impl<'d> BlockScan<'d> {
         to_byte: &dyn Fn(usize) -> usize,
     ) {
         let mut text_spans = Vec::new();
+        let mut link_spans = Vec::new();
         let mut emphasis_spans = Vec::new();
         let mut opaque_spans = Vec::new();
         while let Some((node, depth)) = inlines.pop() {
@@ -895,6 +903,7 @@ impl<'d> BlockScan<'d> {
             }
             if let InlineNode::Link(link) = node {
                 if let Some(pos) = &link.pos {
+                    link_spans.push((to_byte(pos.start_offset), to_byte(pos.end_offset)));
                     let end = to_byte(pos.end_offset);
                     let after_label = link
                         .children
@@ -933,6 +942,7 @@ impl<'d> BlockScan<'d> {
             push_inline_children(node, depth, &mut inlines);
         }
         self.text_runs = merged_spans(text_spans);
+        self.link_runs = merged_spans(link_spans);
         self.emphasis_runs = merged_spans(emphasis_spans);
         self.opaque_runs = merged_spans(opaque_spans);
     }
