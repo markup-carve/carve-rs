@@ -1337,11 +1337,18 @@ impl<'a> Walk<'a> {
                 authored.chars().count() as isize - lead.chars().count() as isize,
             ));
         }
+        let erased_paragraph = skipped.fenced.contains(&at) && !in_span;
         c.src = if skipped.fenced.contains(&at) {
             "%%"
         } else {
             rest
         };
+        // A paragraph of only comments is no node of the tree: it is written
+        // as a consumed marker's placeholder, which is dropped.
+        if erased_paragraph {
+            c.consume_marker(self.mark, self.lines[at]);
+            self.consumed.push(self.first_line + at);
+        }
         // A second marker at the skipped column cannot claim the block the earlier
         // marker took: it is consumed and linted (carve#5013). Off the column a
         // skipped note's `+` is a letter of its body (carve#5034).
