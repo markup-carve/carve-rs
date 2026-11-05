@@ -48,7 +48,7 @@ fn a_comment_run_with_no_marker_below_keeps_its_blank_lines() {
     assert_fmt("%% a\n%% b\n", "%% a\n\n%% b\n");
     assert_fmt("> a\n> %% b\n>\n> %% c\n", "> a\n>\n> %% b\n>\n> %% c\n");
     let source = "- a\n\n  b\n\n  %% n\n\n  %% t\n\n  c\n";
-    assert_fmt(source, source);
+    assert_fmt(source, "- a\n\n  b\n\n  %% n\n  %% t\n\n  c\n");
 }
 
 #[test]

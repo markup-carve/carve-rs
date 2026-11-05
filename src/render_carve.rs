@@ -2036,11 +2036,11 @@ fn render_blocks(
             let body_list = list == ctx.marker_body
                 && matches!(block, BlockNode::List(_))
                 && matches!(previous_emitted, Some(BlockNode::Paragraph(_)));
-            // A trailing run of erased comments keeps its surrounding blank
-            // lines together when that spelling preserves the next marker.
+            // Consecutive line comments owned by a loose container are one
+            // block. A blank between them can become a hard boundary after the
+            // comments are erased and change the containing list (carve#5206).
             let comment_run = ((item.is_some() && last_visible.is_some())
                 || (list == ctx.marker_body && ctx.list_depth == 0))
-                && last_visible.map_or(true, |last| index > last)
                 && previous_emitted.is_some_and(is_line_comment_in_run)
                 && is_line_comment_in_run(block);
             let adjacent = trailing_comment
