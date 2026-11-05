@@ -14,7 +14,10 @@ fn imported(html: &str) -> String {
 fn the_recorded_break_character_is_written() {
     assert_eq!(imported("<hr data-char=\"_\">"), "___\n");
     assert_eq!(imported("<hr data-char=\"*\">"), "***\n");
-    assert_eq!(imported("<p>a</p><hr data-char=\"_\"><p>b</p>"), "a\n\n___\n\nb\n");
+    assert_eq!(
+        imported("<p>a</p><hr data-char=\"_\"><p>b</p>"),
+        "a\n\n___\n\nb\n"
+    );
     assert_eq!(
         imported("<ul><li><p>a</p><hr data-char=\"_\"></li></ul>"),
         imported("<ul><li><p>a</p><hr></li></ul>").replace("***", "___"),
