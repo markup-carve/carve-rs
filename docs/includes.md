@@ -31,6 +31,9 @@ same.
                                       block whose {#setup} id matches
 {{ notes.crv @lines:10-25 }}          include a physical line range
 {{ notes.crv @region:demo }}          include lines between named region markers
+{{ plans.csv @code:csv @rows:2-4 }}   on a {table} line: include CSV records 2-4
+{{ plans.csv @code:csv @cols:"Seats,Plan" }}
+                                      on a {table} line: project named columns
 {{ src/main.rs @code:rust }}          include a file as one code block
 {{ src/main.rs @region:demo @code }}  include a region as a code block, no language
 {{ chapters/intro.crv @shift:2 }}     shift included heading levels by +2
@@ -43,7 +46,7 @@ which ends with its container when the heading sits inside one. Otherwise the
 first block with that explicit id is included alone, at any depth. Ids on list
 items, table cells, inline elements and footnotes select nothing.
 
-`#section`, `@lines` and `@region` are selection options; a directive uses at
+`#section`, `@lines`, `@region` and `@rows` are selection options; a directive uses at
 most one. A region is the lines between a `#region name` marker line and its
 matching `#endregion name` line; the marker lines are excluded. Which marker
 lines count depends on the include mode. A Carve include recognizes only the
@@ -66,6 +69,16 @@ directive applies to the code block as it would to an authored fence, so a
 class, a `title` or a callout-reading extension works the same. `@code` cannot
 combine with `#section` (`include-selection-conflict`), `@shift` has no effect
 on it, and a code include inside a paragraph is `include-block-in-inline`.
+
+A `{table}` attribute line above a CSV or TSV code include makes it a table.
+`@rows:N-M` selects parsed records, so a quoted newline stays inside its record;
+the header still comes from the top of the file and is not repeated. `@cols`
+picks header names in the order given (escape a comma or double quote in a name
+with a backslash); with `{table header-rows=0}` it takes numeric columns such
+as `@cols:1-3`. `@rows` is a selection option like `#section`, `@lines` and
+`@region`, while `@cols` combines with any one of them. `@lines` still selects
+physical lines; on a table include, `carve lint --include-root DIR` hints
+`include-lines-table-rows-hint`. A region marker line is never a record.
 
 `select_include_region(source, name, mode)` resolves `@region:name` in a file's
 text with the expander's own scanner and returns the 1-based content lines, so
