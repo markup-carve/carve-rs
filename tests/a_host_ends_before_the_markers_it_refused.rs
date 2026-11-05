@@ -52,7 +52,11 @@ fn an_item_ends_on_the_first_refused_plus_below_its_content() {
         ("- q\n+\n\n+\n\n- r\n", "list_item", (0, 5)),
         ("- q\n+\n\n- r\n", "list_item", (0, 5)),
         ("> - q\n> +\n> +\n>\n> - r\n", "list_item", (2, 9)),
-        (":: t\n: q\n+\n+\n\n:: u\n: v\n", "definition_description", (5, 10)),
+        (
+            ":: t\n: q\n+\n+\n\n:: u\n: v\n",
+            "definition_description",
+            (5, 10),
+        ),
     ] {
         assert_eq!(first(source, ty), span, "{source:?}");
     }

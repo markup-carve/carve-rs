@@ -29,11 +29,20 @@ fn the_host_holds_only_the_attached_block() {
     for (source, host) in [
         ("- +\n{% c %}\n# H\n", "/children/0/items/0/children"),
         ("1. +\n{%c%}\n# H\n", "/children/0/items/0/children"),
-        ("- +\n{% c %}\n{% d %}\n# H\n", "/children/0/items/0/children"),
-        ("- +\n{% c %} {% d %}\n# H\n", "/children/0/items/0/children"),
+        (
+            "- +\n{% c %}\n{% d %}\n# H\n",
+            "/children/0/items/0/children",
+        ),
+        (
+            "- +\n{% c %} {% d %}\n# H\n",
+            "/children/0/items/0/children",
+        ),
         ("> +\n{% c %}\n# H\n", "/children/0/children"),
         (":: t\n: +\n{% c %}\n# H\n", "/children/0/items/1/children"),
-        ("> - +\n> {% c %}\n> # H\n", "/children/0/children/0/items/0/children"),
+        (
+            "> - +\n> {% c %}\n> # H\n",
+            "/children/0/children/0/items/0/children",
+        ),
     ] {
         let doc = ast(source);
         assert_eq!(types(doc.pointer(host).unwrap()), ["heading"], "{source:?}");

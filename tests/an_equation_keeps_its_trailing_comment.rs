@@ -34,7 +34,10 @@ fn the_comment_stays_beside_the_math() {
     ] {
         let paragraph = paragraph(source);
         let children = paragraph["children"].as_array().unwrap();
-        let types: Vec<&str> = children.iter().map(|c| c["type"].as_str().unwrap()).collect();
+        let types: Vec<&str> = children
+            .iter()
+            .map(|c| c["type"].as_str().unwrap())
+            .collect();
         assert_eq!(types, ["math", "comment"], "{source:?}");
         assert_eq!(paragraph["pos"]["endOffset"], end, "{source:?}");
         assert_eq!(children[1]["pos"]["endOffset"], end, "{source:?}");
