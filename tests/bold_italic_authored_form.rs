@@ -14,6 +14,48 @@ const COMBINED: &str = "/*x*/\n";
 const NESTED: &str = "*/x/*\n";
 
 #[test]
+fn attributed_combined_form_places_its_synthetic_inner_emphasis() {
+    let source = "*x {/a /*b*/{k=\"v w\"} c/}";
+    let json: serde_json::Value = serde_json::from_str(&carve::to_json_with_options(
+        source,
+        &carve::Options::default().with_positions(true),
+    ))
+    .unwrap();
+    let pos = &json["children"][0]["children"][1]["children"][1]["children"][0]["pos"];
+    assert_eq!(pos["startOffset"], 9);
+    assert_eq!(pos["endOffset"], 10);
+}
+
+#[test]
+fn attributed_combined_form_places_generated_inner_spans() {
+    for prefix_width in 0..10 {
+        for word_width in 1..=10 {
+            for suffix_width in 0..10 {
+                let prefix = "x".repeat(prefix_width);
+                let word = "b".repeat(word_width);
+                let suffix = "z".repeat(suffix_width);
+                let source = format!("{prefix} /*{word}*/{{k=\"v w\"}} {suffix}");
+                let json: serde_json::Value = serde_json::from_str(&carve::to_json_with_options(
+                    &source,
+                    &carve::Options::default().with_positions(true),
+                ))
+                .unwrap();
+                let strong = json["children"][0]["children"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|node| node["boldItalic"] == true)
+                    .unwrap();
+                let pos = &strong["children"][0]["pos"];
+                let start = prefix_width + 3;
+                assert_eq!(pos["startOffset"], start, "{source}");
+                assert_eq!(pos["endOffset"], start + word_width, "{source}");
+            }
+        }
+    }
+}
+
+#[test]
 fn each_spelling_is_reproduced_byte_exactly() {
     assert_eq!(carve::to_carve(COMBINED), COMBINED);
     assert_eq!(carve::to_carve(NESTED), NESTED);
