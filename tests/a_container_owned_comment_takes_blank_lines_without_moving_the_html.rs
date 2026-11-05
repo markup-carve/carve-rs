@@ -6,7 +6,11 @@
 fn assert_fmt(source: &str, expected: &str) {
     let written = carve::to_carve(source);
     assert_eq!(written, expected, "fmt of {source:?}");
-    assert_eq!(carve::to_carve(&written), written, "second fmt of {source:?}");
+    assert_eq!(
+        carve::to_carve(&written),
+        written,
+        "second fmt of {source:?}"
+    );
     assert_eq!(
         carve::to_html(&written),
         carve::to_html(source),
@@ -16,7 +20,10 @@ fn assert_fmt(source: &str, expected: &str) {
 
 #[test]
 fn the_ruled_shapes() {
-    assert_fmt("- a\n\n  %% just a note\n- b\n", "- a\n\n  %% just a note\n\n- b\n");
+    assert_fmt(
+        "- a\n\n  %% just a note\n- b\n",
+        "- a\n\n  %% just a note\n\n- b\n",
+    );
     assert_fmt("> a\n> %% b\n", "> a\n>\n> %% b\n");
 }
 
