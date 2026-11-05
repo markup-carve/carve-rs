@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn footnote_joined_across_document_comment_has_no_wire_position() {
+    let source = "[^a]: intro\n%% c\n more\n\nsee[^a]\n";
+    let mut doc = parse_with_options(source, &Options::default().with_positions(true));
+    let wire: serde_json::Value = serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+    let children = wire["children"].as_array().unwrap();
+    assert_eq!(children[0]["type"], "comment");
+    assert_eq!(children[0]["pos"]["startOffset"], 12);
+    assert_eq!(children[2]["type"], "footnote");
+    assert!(children[2].get("pos").is_none());
+    assert!(!doc.footnote_def_pos.contains_key("a"));
+    let ingested = crate::ast_json::from_json(&wire.to_string()).unwrap();
+    let republished: serde_json::Value =
+        serde_json::from_str(&crate::ast_json::to_json(&ingested)).unwrap();
+    assert_eq!(republished, wire);
+    if let BlockNode::Comment(comment) = &mut doc.children[0] {
+        comment.pos.as_mut().unwrap().file = Some("included.crv".into());
+    } else {
+        panic!("expected document comment");
+    }
+    doc.footnote_def_pos.insert(
+        "a".into(),
+        Pos {
+            start_line: 1,
+            end_line: 3,
+            start_column: 1,
+            end_column: 6,
+            start_offset: 0,
+            end_offset: 22,
+            file: None,
+        },
+    );
+    let other_file: serde_json::Value =
+        serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+    assert_eq!(other_file["children"][2]["pos"]["startOffset"], 0);
+}
+
+#[test]
 fn line_block_break_starts_after_a_paired_comment() {
     let source = "::: |\na\n%%%\nq\n%%%\nb\n:::";
     let doc = parse_with_options(source, &Options::default().with_positions(true));
