@@ -290,7 +290,8 @@ pub(super) fn escape_text(
             && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode);
         let colon_cannot_open =
             ch == ':' && !at_line_start && !symbol_opens_at(text, offset, previous);
-        at_line_start = ch == '\n';
+        // Indentation does not stop a colon opener (carve-rs#3887).
+        at_line_start = ch == '\n' || (at_line_start && matches!(ch, ' ' | '\t'));
         let opens_a_verbatim_construct = verbatim_sigil_at.is_some_and(|start| offset >= start);
         let role = if matches!(ch, '[' | ']') {
             bracket_ordinal += 1;

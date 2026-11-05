@@ -3124,9 +3124,31 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         BlockNode::Paragraph(paragraph) => {
             let caption_can_open = render_attrs(&paragraph.attrs).is_empty()
                 && ctx.paragraph_starts_after_caption_host;
+            // A top-level paragraph's leading whitespace never reads back
+            // (carve-rs#3887); after a list marker a tab is content (corpus 684).
+            let at_top_level = ctx.list_depth == 0
+                && ctx.quote_depth == 0
+                && ctx.line_block_depth == 0
+                && ctx.table_cell_depth == 0
+                && !ctx.at_item_content_column
+                && !ctx.in_footnote_body;
+            let trimmed;
+            let children = match paragraph.children.first() {
+                Some(InlineNode::Text(text))
+                    if at_top_level && text.value.starts_with([' ', '\t']) =>
+                {
+                    let mut children = paragraph.children.clone();
+                    if let Some(InlineNode::Text(text)) = children.first_mut() {
+                        text.value = text.value.trim_start_matches([' ', '\t']).to_string();
+                    }
+                    trimmed = children;
+                    &trimmed
+                }
+                _ => &paragraph.children,
+            };
             let body = guard_thematic_break_lines(
                 session,
-                &render_inlines_with_caption(session, &paragraph.children, ctx, caption_can_open),
+                &render_inlines_with_caption(session, children, ctx, caption_can_open),
                 ctx.line_block_depth > 0,
             );
             with_block_attrs(&paragraph.attrs, &body)
