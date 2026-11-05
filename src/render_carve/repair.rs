@@ -206,10 +206,10 @@ struct Probe<'a> {
     extra_cap: std::cell::Cell<usize>,
 }
 
-/// How many documents' worth of source one narrowing search may re-parse
-/// beyond its probe count. Windowed probes are cheap, so this lets a large
-/// document with many independent failing units finish the search, while the
-/// total stays linear in the document.
+/// How many documents' worth of source one narrowing search may re-parse.
+/// Windowed probes are cheap, so this lets a large document with many
+/// independent failing units finish the search, while the total stays linear in
+/// the document.
 const ESCAPE_SEARCH_PARSE_FACTOR: usize = 16;
 
 /// How many times its probe count a search may probe at most. A probe still
@@ -229,12 +229,13 @@ impl Probe<'_> {
         self.extra_cap.set((ESCAPE_SEARCH_PROBE_FACTOR - 1) * count);
     }
 
-    /// Whether a search may not probe again: its count is spent, and so is
-    /// either its parse allowance or its cap on extra probes.
+    /// Whether a search may not probe again: its probes have re-parsed its
+    /// allowance, or its count is spent and so is its cap on extra probes.
     fn exhausted(&self, budget: usize) -> bool {
-        budget == 0
-            && (self.charged.get() - self.search_start.get() >= self.parse_allowance
-                || self.extra_probes.get() >= self.extra_cap.get())
+        // The parse allowance binds within the count too: whole-document probes
+        // would otherwise cost the count times the document.
+        self.charged.get() - self.search_start.get() >= self.parse_allowance
+            || (budget == 0 && self.extra_probes.get() >= self.extra_cap.get())
     }
 
     /// Spend one probe of `budget`, counting it as extra once that is empty.
