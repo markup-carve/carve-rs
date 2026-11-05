@@ -169,6 +169,8 @@ fn narrow_escalation(
     };
     let mut best = search(true);
     if comparable_tree(&best).as_ref() != Some(&conservative_tree) {
+        #[cfg(test)]
+        tests::WHOLE_DOCUMENT_SEARCHES.with(|n| n.set(n.get() + 1));
         best = search(false);
     }
     // PART 11 §2 TAKES THE DECISION PER OPENER OCCURRENCE, and a unit is still
@@ -251,7 +253,11 @@ impl Probe<'_> {
         self.charged.set(self.charged.get() + bytes);
     }
 
-    fn render_window(&self, session: &RenderSession, window: &escape_window::Window) -> String {
+    fn render_window(
+        &self,
+        session: &RenderSession,
+        window: &escape_window::Window,
+    ) -> Option<String> {
         escape_window::render_pruned(session, window, || {
             render_with_escapes(session, self.doc, EscapeMode::Conservative)
         })
@@ -273,7 +279,7 @@ impl Probe<'_> {
             .filter(|_| local)
             .and_then(|layout| layout.window_for(units));
         let before = window.as_ref().and_then(|window| {
-            let before = self.render_window(session, window);
+            let before = self.render_window(session, window)?;
             (before.len() <= self.window_limit)
                 .then(|| comparable_tree(&before))
                 .flatten()
@@ -283,13 +289,17 @@ impl Probe<'_> {
         if let Some((window, before, before_len)) = before {
             #[cfg(test)]
             tests::WINDOW_PROBES.with(|n| n.set(n.get() + 1));
-            let after = self.render_window(session, window);
-            self.charge(before_len + after.len());
-            if comparable_tree(&after).as_ref() == Some(&before) {
-                return Verdict::Holds;
+            // An unfaithful window after the change falls through to the
+            // whole-document probe with the change still applied.
+            if let Some(after) = self.render_window(session, window) {
+                self.charge(before_len + after.len());
+                if comparable_tree(&after).as_ref() == Some(&before) {
+                    return Verdict::Holds;
+                }
+                undo();
+                return Verdict::Fails(None);
             }
-            undo();
-            return Verdict::Fails(None);
+            self.charge(before_len);
         }
         let candidate = render_with_escapes(session, self.doc, EscapeMode::Conservative);
         self.charge(candidate.len());
@@ -386,6 +396,8 @@ fn narrow_occurrences(session: &RenderSession, probe: &Probe, best: &mut String)
     };
     let mut narrowed = search(true);
     if comparable_tree(&narrowed).as_ref() != Some(probe.tree) {
+        #[cfg(test)]
+        tests::WHOLE_DOCUMENT_SEARCHES.with(|n| n.set(n.get() + 1));
         narrowed = search(false);
     }
     *best = narrowed;

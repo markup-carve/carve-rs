@@ -10,7 +10,8 @@
 //! the units it would have claimed, as recorded in the control render.
 
 use super::session::{RefCellScope, RenderSession};
-use std::collections::HashMap;
+use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 /// The key of the document-level entry list, which is not a slice of blocks.
@@ -30,6 +31,10 @@ pub(super) struct Layout {
     elements: Vec<Element>,
     /// How many units each slot's element claims, itself included.
     spans: Rc<HashMap<Slot, usize>>,
+    /// The ordinal each slot's element starts after.
+    starts: Rc<HashMap<Slot, usize>>,
+    /// Slots the render visited more than once, at different ordinals.
+    repeated: Rc<HashSet<Slot>>,
     /// The innermost element each unit was claimed in, by ordinal.
     owner: Vec<Option<usize>>,
     /// Every unit the render claimed.
@@ -39,6 +44,8 @@ pub(super) struct Layout {
 pub(super) struct Recording {
     layout: Layout,
     spans: HashMap<Slot, usize>,
+    starts: HashMap<Slot, usize>,
+    repeated: HashSet<Slot>,
     stack: Vec<(usize, usize)>,
 }
 
@@ -47,6 +54,13 @@ pub(super) struct Recording {
 pub(super) struct Window {
     ranges: HashMap<usize, (usize, usize)>,
     spans: Rc<HashMap<Slot, usize>>,
+    starts: Rc<HashMap<Slot, usize>>,
+    repeated: Rc<HashSet<Slot>>,
+    total: usize,
+    /// Cleared when the pruned render's ordinals leave the control's: slot ids
+    /// are addresses and a kept block can render differently without its
+    /// neighbors, so a window can claim another block's units.
+    faithful: Rc<Cell<bool>>,
 }
 
 impl Window {
@@ -79,11 +93,25 @@ pub(super) fn visit(session: &RenderSession, list: usize, index: usize) -> Visit
     let skipped = session.active.with(|cell| {
         let active = cell.borrow();
         let window = active.as_ref()?;
-        let &(lo, hi) = window.ranges.get(&list)?;
+        let slot = (list, index);
+        let pruned = window.ranges.get(&list);
+        if window.repeated.contains(&slot) {
+            if pruned.is_some() {
+                window.faithful.set(false);
+            }
+        } else {
+            let at = session.pass.unit_counter.with(|c| c.get());
+            match window.starts.get(&slot) {
+                Some(&start) if start != at => window.faithful.set(false),
+                None if pruned.is_some() => window.faithful.set(false),
+                _ => {}
+            }
+        }
+        let &(lo, hi) = pruned?;
         if (lo..=hi).contains(&index) {
             return None;
         }
-        Some(window.spans.get(&(list, index)).copied().unwrap_or(0))
+        Some(window.spans.get(&slot).copied().unwrap_or(0))
     });
     if let Some(units) = skipped {
         session.pass.unit_counter.with(|c| c.set(c.get() + units));
@@ -100,9 +128,11 @@ pub(super) fn visit(session: &RenderSession, list: usize, index: usize) -> Visit
             slot: (list, index),
             parent,
         });
-        recording
-            .stack
-            .push((id, session.pass.unit_counter.with(|c| c.get())));
+        let start = session.pass.unit_counter.with(|c| c.get());
+        if *recording.starts.entry((list, index)).or_insert(start) != start {
+            recording.repeated.insert((list, index));
+        }
+        recording.stack.push((id, start));
         true
     });
     Visit::Render(recorded)
@@ -144,6 +174,8 @@ pub(super) fn record<T>(session: &RenderSession, render: impl FnOnce() -> T) -> 
         Some(Recording {
             layout: Layout::default(),
             spans: HashMap::new(),
+            starts: HashMap::new(),
+            repeated: HashSet::new(),
             stack: Vec::new(),
         }),
     );
@@ -154,6 +186,8 @@ pub(super) fn record<T>(session: &RenderSession, render: impl FnOnce() -> T) -> 
         .expect("recording");
     let mut layout = recording.layout;
     layout.spans = Rc::new(recording.spans);
+    layout.starts = Rc::new(recording.starts);
+    layout.repeated = Rc::new(recording.repeated);
     layout.total = session.pass.unit_counter.with(|c| c.get());
     (out, layout)
 }
@@ -189,19 +223,27 @@ impl Layout {
         let window = Window {
             ranges,
             spans: Rc::clone(&self.spans),
+            starts: Rc::clone(&self.starts),
+            repeated: Rc::clone(&self.repeated),
+            total: self.total,
+            faithful: Rc::new(Cell::new(true)),
         };
         (window.kept_units(self.total) * 2 <= self.total).then_some(window)
     }
 }
 
-/// Run `render` with only `window` written.
+/// Run `render` with only `window` written. `None` when the render did not
+/// claim the control's ordinals, so its bytes predict nothing.
 pub(super) fn render_pruned<T>(
     session: &RenderSession,
     window: &Window,
     render: impl FnOnce() -> T,
-) -> T {
+) -> Option<T> {
+    window.faithful.set(true);
     let _scope = RefCellScope::replace(&session.active, Some(window.clone()));
-    render()
+    let out = render();
+    let claimed = session.pass.unit_counter.with(|c| c.get());
+    (window.faithful.get() && claimed == window.total).then_some(out)
 }
 
 #[cfg(test)]
@@ -212,14 +254,15 @@ mod tests {
     #[test]
     fn nested_pruning_restores_the_outer_window_after_unwinding() {
         let session = &RenderSession::new(false);
-        let outer = Window {
-            ranges: HashMap::from([(ROOT, (0, 0))]),
+        let window = |range| Window {
+            ranges: HashMap::from([(ROOT, range)]),
             spans: Rc::default(),
+            starts: Rc::default(),
+            repeated: Rc::default(),
+            total: 0,
+            faithful: Rc::new(Cell::new(true)),
         };
-        let inner = Window {
-            ranges: HashMap::from([(ROOT, (1, 1))]),
-            spans: Rc::default(),
-        };
+        let (outer, inner) = (window((0, 0)), window((1, 1)));
         render_pruned(session, &outer, || {
             assert!(matches!(visit(session, ROOT, 1), Visit::Skip));
             let result = catch_unwind(AssertUnwindSafe(|| {
@@ -232,6 +275,37 @@ mod tests {
             assert!(matches!(visit(session, ROOT, 1), Visit::Skip));
         });
         assert!(matches!(visit(session, ROOT, 1), Visit::Render(false)));
+    }
+
+    /// Element `index` claims `units[index]` ordinals.
+    fn walk(session: &RenderSession, units: &[usize]) {
+        session.begin_pass();
+        for (index, &count) in units.iter().enumerate() {
+            let Visit::Render(recorded) = visit(session, ROOT, index) else {
+                continue;
+            };
+            for _ in 0..count {
+                let next = session.pass.unit_counter.get() + 1;
+                session.pass.unit_counter.set(next);
+                claimed(session, next);
+            }
+            leave(session, recorded);
+        }
+    }
+
+    #[test]
+    fn a_pruned_render_that_claims_other_ordinals_is_unfaithful() {
+        let session = &RenderSession::new(false);
+        let (_, layout) = record(session, || walk(session, &[1; 6]));
+        let window = layout.window_for([2]).expect("window");
+        assert!(render_pruned(session, &window, || walk(session, &[1; 6])).is_some());
+        // Element 2 claims one more ordinal than the control: element 3 starts
+        // past its recorded start.
+        assert!(render_pruned(session, &window, || walk(session, &[1, 1, 2, 1, 1, 1])).is_none());
+        // The last element drifts, so only the total shows it.
+        let last = layout.window_for([6]).expect("window");
+        assert!(render_pruned(session, &last, || walk(session, &[1; 6])).is_some());
+        assert!(render_pruned(session, &last, || walk(session, &[1, 1, 1, 1, 1, 2])).is_none());
     }
 
     #[test]
