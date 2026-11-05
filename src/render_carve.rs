@@ -1258,7 +1258,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
                 let mut text = render_block(session, child, &mut ctx);
                 if matches!(child, BlockNode::Comment(comment)
                     if comment.pos.as_ref().is_some_and(|pos|
-                        ctx.inter_item_comment_offsets.contains(&pos.start_offset)))
+                        pos.file.is_none() && ctx.inter_item_comment_offsets.contains(&pos.start_offset)))
                 {
                     text.clear();
                 }

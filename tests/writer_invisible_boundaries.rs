@@ -15,6 +15,29 @@ fn document_comments_keep_their_source_gap_between_list_items() {
 }
 
 #[test]
+fn an_included_comment_with_the_same_offset_is_not_suppressed() {
+    let mut doc = carve::parse_with_options(
+        "- a\n%% one\n\n- b\n\n%% two\n",
+        &carve::Options::new().with_positions(true),
+    );
+    let mut comments: Vec<_> = doc
+        .children
+        .iter_mut()
+        .filter_map(|block| match block {
+            carve::ast::BlockNode::Comment(comment) => Some(comment),
+            _ => None,
+        })
+        .collect();
+    let first_offset = comments[0].pos.as_ref().unwrap().start_offset;
+    let other = comments[1].pos.as_mut().unwrap();
+    other.start_offset = first_offset;
+    other.file = Some("included.crv".into());
+    let written = carve::render_carve(&doc).unwrap();
+    assert!(written.contains("%% one"), "{written:?}");
+    assert!(written.contains("%% two"), "{written:?}");
+}
+
+#[test]
 fn document_comment_gap_variants_keep_html_and_reach_a_fixed_point() {
     let mut checked = 0;
     for marker in ["-", "*", "1.", "."] {
