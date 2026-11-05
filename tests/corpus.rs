@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // The three row 961 variants at spec 204ba739 (carve#5206).
+    "a-container-owned-comment-run-is-one-writer-block",
     // Category added between spec 0e8c456d and b1362b59.
     "a-braced-comment-that-starts-a-continuation-line-is-at-block-position",
     // Categories added at spec 0e8c456d.
