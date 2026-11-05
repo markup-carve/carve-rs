@@ -2460,7 +2460,14 @@ impl<'a> QuoteBody<'a> {
         }
         if stripped.contains('{') && trim_ascii_start(strip_all_quotes(stripped).0).starts_with('{')
         {
-            self.brace_starts = [Some(self.inner.lines.len()), self.brace_starts[0]];
+            let comment_start = self.brace_starts.iter().flatten().copied().find(|&start| {
+                trim_ascii_start(strip_all_quotes(&self.inner.lines[start].text).0)
+                    .starts_with("{%")
+            });
+            self.brace_starts = [
+                Some(self.inner.lines.len()),
+                comment_start.or(self.brace_starts[0]),
+            ];
         }
         self.scan_attrs_block(cur, at, stripped, prior_paragraph);
         // An attribute line leaves no paragraph open, so the next line is not lazy.
