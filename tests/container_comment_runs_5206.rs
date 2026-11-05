@@ -29,6 +29,16 @@ fn document_owned_lines_remain_separate() {
 }
 
 #[test]
+fn nested_list_and_quoted_description_keep_their_owners() {
+    check(
+        "- outer\n\n  - a\n\n    %% c\n    %% d\n\n    b\n  - next\n",
+        "- outer\n\n  - a\n\n    %% c\n    %% d\n\n    b\n\n  - next\n",
+    );
+    let quoted = "> :: t\n> : a\n>\n>   %% c\n>   %% d\n>\n>   b\n";
+    check(quoted, quoted);
+}
+
+#[test]
 fn one_thousand_container_run_variants_read_back() {
     let words = ["a", "bold", "[link](url)", "one two", "x /em/ y"];
     let tails = [
