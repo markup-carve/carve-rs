@@ -847,15 +847,17 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
             }
             BlockNode::DefinitionList(n) => {
                 let last = n.items.iter().rev().find_map(|item| {
-                    item.definitions
-                        .iter()
-                        .rev()
-                        .find_map(|def| {
-                            def.pos
-                                .clone()
-                                .or_else(|| furthest_block_pos(&def.children))
-                        })
-                        .or_else(|| item.terms.iter().rev().find_map(|term| term.pos.clone()))
+                    let def = item.definitions.iter().rev().find_map(|def| {
+                        def.pos
+                            .clone()
+                            .or_else(|| furthest_block_pos(&def.children))
+                    });
+                    let term = item.terms.iter().rev().find_map(|term| term.pos.clone());
+                    // A pos-less description may end on a comment above its last term.
+                    [def, term]
+                        .into_iter()
+                        .flatten()
+                        .max_by_key(|pos| (pos.end_line, pos.end_column))
                 });
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, false);

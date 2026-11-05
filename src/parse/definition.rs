@@ -356,41 +356,69 @@ fn consume_invisible_definition_gap(
 /// Spans read after a term are the first blocks of the description that
 /// follows (CARVE-P12-027, carve#5167). The parse keeps them in the term
 /// before them until that description exists; a term only holds a block
-/// comment that way. The description starts at them unless a term stands
-/// between, when no contiguous span holds both (CARVE-P12-022).
+/// comment that way. [`start_descriptions_at_their_comments`] places the span.
 pub(in crate::parse) fn move_term_gap_comments(
     terms: &mut [DefinitionTerm],
     def: &mut DefinitionDef,
 ) {
-    let last = terms.len().saturating_sub(1);
     let mut moved = Vec::new();
-    let mut term_between = false;
-    for (index, term) in terms.iter_mut().enumerate() {
+    for term in terms.iter_mut() {
         let (gap, text): (Vec<_>, Vec<_>) = std::mem::take(&mut term.children)
             .into_iter()
             .partition(|child| matches!(child, InlineNode::Comment(c) if c.block));
         term.children = text;
-        term_between |= index < last && !gap.is_empty();
         moved.extend(gap.into_iter().filter_map(|child| match child {
             InlineNode::Comment(comment) => Some(BlockNode::Comment(comment)),
             _ => None,
         }));
     }
-    let Some(first) = moved.first().and_then(crate::ast_json::block_pos) else {
-        if !moved.is_empty() {
-            def.pos = None;
-        }
-        def.children.splice(0..0, moved);
-        return;
-    };
-    if term_between {
-        def.pos = None;
-    } else if let Some(pos) = def.pos.as_mut() {
-        pos.start_line = first.start_line;
-        pos.start_column = first.start_column;
-        pos.start_offset = first.start_offset;
-    }
     def.children.splice(0..0, moved);
+}
+
+/// A description holding comments written above its `:` starts at the first
+/// of them, or omits `pos` when a term stands between (CARVE-P12-022). Runs
+/// once every comment is in place, so each placement still sees the marker.
+pub(in crate::parse) fn start_descriptions_at_their_comments(blocks: &mut [BlockNode]) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+    struct Walk;
+    impl SubtreeVisitor for Walk {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            start_descriptions_at_their_comments(blocks);
+        }
+    }
+    let starts = |pos: &Pos| (pos.start_line, pos.start_column);
+    for block in blocks.iter_mut() {
+        if let BlockNode::DefinitionList(list) = block {
+            for item in &mut list.items {
+                let Some(def) = item.definitions.first_mut() else {
+                    continue;
+                };
+                let Some(marker) = def.pos.as_ref().map(starts) else {
+                    continue;
+                };
+                let first = def
+                    .children
+                    .iter()
+                    .take_while(|child| matches!(child, BlockNode::Comment(_)))
+                    .filter_map(crate::ast_json::block_pos)
+                    .map(starts)
+                    .find(|&at| at < marker);
+                let Some(first) = first else {
+                    continue;
+                };
+                let term_between = item
+                    .terms
+                    .iter()
+                    .any(|term| term.pos.as_ref().is_some_and(|pos| first < starts(pos)));
+                if term_between {
+                    def.pos = None;
+                } else if let Some(pos) = def.pos.as_mut() {
+                    (pos.start_line, pos.start_column) = first;
+                }
+            }
+        }
+        visit_block_children(block, &mut Walk);
+    }
 }
 
 /// Keep gap spans in the description before them, or in the last term.

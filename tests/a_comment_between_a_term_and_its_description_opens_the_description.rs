@@ -19,7 +19,10 @@ fn comments(source: &str) -> Vec<(String, String)> {
             Value::Object(fields) => {
                 let kind = fields.get("type").and_then(Value::as_str).unwrap_or(owner);
                 if kind == "comment" {
-                    found.push((owner.to_owned(), fields["content"].as_str().unwrap().to_owned()));
+                    found.push((
+                        owner.to_owned(),
+                        fields["content"].as_str().unwrap().to_owned(),
+                    ));
                 }
                 for (key, value) in fields {
                     if key != "pos" {
@@ -82,7 +85,10 @@ fn comment_lines_after_the_first_still_open_the_description() {
 #[test]
 fn a_list_in_the_description_is_measured_from_its_marker_line() {
     let doc = ast(":: t\n%% c\n: d\n  - x\n");
-    assert_eq!(doc["children"][0]["items"][1]["children"][2]["pos"]["startOffset"], 16);
+    assert_eq!(
+        doc["children"][0]["items"][1]["children"][2]["pos"]["startOffset"],
+        16
+    );
     let doc = ast("> :: t0\n> %% c\n> :: t1\n> : d\n>   - x\n");
     let list = &doc["children"][0]["children"][0]["items"][2]["children"][2];
     assert_eq!(list["pos"]["startOffset"], 33);
@@ -91,7 +97,10 @@ fn a_list_in_the_description_is_measured_from_its_marker_line() {
 #[test]
 fn fmt_writes_the_comment_on_the_description_line() {
     for (source, written) in [
-        (":: t\n%% c\n:: u\n: body\n", ":: t\n:: u\n: %% c\n\n  body\n"),
+        (
+            ":: t\n%% c\n:: u\n: body\n",
+            ":: t\n:: u\n: %% c\n\n  body\n",
+        ),
         (
             "- i\n  :: t\n  %%%\n  a\n  %%%\n  : body\n",
             "- i\n  :: t\n  : %%%\n    a\n    %%%\n\n    body\n",
@@ -100,7 +109,11 @@ fn fmt_writes_the_comment_on_the_description_line() {
         let formatted = carve::to_carve(source);
         assert_eq!(formatted, written, "{source:?}");
         assert_eq!(carve::to_carve(&formatted), formatted, "{source:?}");
-        assert_eq!(carve::to_html(&formatted), carve::to_html(source), "{source:?}");
+        assert_eq!(
+            carve::to_html(&formatted),
+            carve::to_html(source),
+            "{source:?}"
+        );
     }
 }
 
@@ -128,4 +141,16 @@ fn a_description_in_an_item_keeps_its_blocks_past_an_opener_or_a_closed_span() {
     ] {
         assert_eq!(carve::to_html(source), html, "{source:?}");
     }
+}
+
+#[test]
+fn an_empty_description_takes_every_comment_above_it() {
+    assert_eq!(
+        comments(":: t\n%% a\n%% b\n: {empty}\n"),
+        [in_description("a"), in_description("b")]
+    );
+    let doc = ast(":: t\n%% c\n:: u\n: {empty}\n");
+    let list = &doc["children"][0];
+    assert!(list["items"][2].get("pos").is_none());
+    assert_eq!(list["pos"]["endOffset"], 14);
 }

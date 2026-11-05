@@ -1102,6 +1102,10 @@ fn parse_with_options_mode_and_index_once(
         t.remap_positions(&mut children, &mut footnote_defs, &mut footnote_def_pos);
         t.restore(&mut children, &mut footnote_defs, &footnote_def_pos);
     }
+    definition::start_descriptions_at_their_comments(&mut children);
+    for blocks in footnote_defs.values_mut() {
+        definition::start_descriptions_at_their_comments(blocks);
+    }
     let original = authored;
     let original_line_starts = options
         .positions

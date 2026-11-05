@@ -34,7 +34,10 @@ fn comments(source: &str) -> Vec<(String, String)> {
 fn a_span_after_a_term_opens_the_description() {
     // carve#5167, ruled option 1: the description's first block.
     let source = ":: a\n%%%\nx\n%%%\n: d\n";
-    assert_eq!(comments(source), [("definition_description".into(), "x".into())]);
+    assert_eq!(
+        comments(source),
+        [("definition_description".into(), "x".into())]
+    );
     assert_eq!(carve::to_carve(source), ":: a\n: %%%\n  x\n  %%%\n\n  d\n");
 }
 
@@ -56,10 +59,19 @@ fn a_span_after_a_description_stays_in_the_description() {
 #[test]
 fn a_nested_term_span_keeps_its_item_column() {
     let source = "- a\n  :: term\n  %%%\n    x\n  %%%\n  : def\n";
-    assert_eq!(comments(source), [("definition_description".into(), "  x".into())]);
+    assert_eq!(
+        comments(source),
+        [("definition_description".into(), "  x".into())]
+    );
     let formatted = carve::to_carve(source);
-    assert_eq!(formatted, "- a\n  :: term\n  : %%%\n      x\n    %%%\n\n    def\n");
-    assert_eq!(comments(&formatted), [("definition_description".into(), "  x".into())]);
+    assert_eq!(
+        formatted,
+        "- a\n  :: term\n  : %%%\n      x\n    %%%\n\n    def\n"
+    );
+    assert_eq!(
+        comments(&formatted),
+        [("definition_description".into(), "  x".into())]
+    );
 }
 
 #[test]

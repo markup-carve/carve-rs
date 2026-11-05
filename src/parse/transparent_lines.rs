@@ -324,9 +324,7 @@ impl Transparent {
 }
 
 /// A comment between an entry's terms and its first description is that
-/// description's first block (CARVE-P12-027, carve#5167). The description
-/// starts at it unless a term stands between, then it omits `pos`
-/// (CARVE-P12-022).
+/// description's first block (CARVE-P12-027, carve#5167).
 struct TermGap<'a> {
     at: (usize, usize),
     node: &'a mut Option<BlockNode>,
@@ -354,19 +352,9 @@ impl SubtreeVisitor for TermGap<'_> {
                         .and_then(description_marker)
                         .is_some_and(|marker| self.at < marker);
                 if in_gap {
-                    let term_between = item
-                        .terms
-                        .iter()
-                        .any(|term| term.pos.as_ref().is_some_and(|pos| self.at < starts(pos)));
                     let def = &mut item.definitions[0];
                     let node = self.node.take().expect("node");
                     let at = self.at;
-                    if term_between {
-                        def.pos = None;
-                    } else if let Some(pos) = def.pos.as_mut().filter(|pos| at < starts(pos)) {
-                        pos.start_line = at.0;
-                        pos.start_column = at.1;
-                    }
                     let index = position_index(&def.children, at);
                     def.children.insert(index, node);
                     return;
@@ -382,28 +370,12 @@ impl SubtreeVisitor for TermGap<'_> {
     }
 }
 
-/// Where a description's `:` stands, before or after it took the comments
-/// written above it.
+/// Where a description's `:` stands; its start moves to the comments it
+/// holds only after every comment is placed.
 fn description_marker(def: &DefinitionDef) -> Option<(usize, usize)> {
-    let starts = |pos: &Pos| (pos.start_line, pos.start_column);
-    let leading = def
-        .children
-        .iter()
-        .take_while(|child| matches!(child, BlockNode::Comment(_)))
-        .filter_map(crate::ast_json::block_pos)
-        .next();
-    let body = || {
-        def.children
-            .iter()
-            .filter(|child| !matches!(child, BlockNode::Comment(_)))
-            .find_map(crate::ast_json::block_pos)
-            .map(starts)
-    };
-    match (def.pos.as_ref(), leading) {
-        (Some(pos), Some(comment)) if starts(pos) == starts(comment) => body(),
-        (Some(pos), _) => Some(starts(pos)),
-        (None, _) => body(),
-    }
+    def.pos
+        .as_ref()
+        .map(|pos| (pos.start_line, pos.start_column))
 }
 
 /// An erased line the visible parse reads inside a `%%%` span is payload of
