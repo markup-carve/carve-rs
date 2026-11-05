@@ -169,6 +169,7 @@ pub struct CarveWriterOptions {
     /// Align table columns in the written source.
     pub align_tables: bool,
     flatten_terminal_cell_breaks: bool,
+    preserve_break_markers: bool,
 }
 
 impl CarveWriterOptions {
@@ -201,6 +202,7 @@ pub(crate) fn render_carve_for_html_import(
         doc,
         &CarveWriterOptions {
             flatten_terminal_cell_breaks: true,
+            preserve_break_markers: true,
             ..CarveWriterOptions::default()
         },
     )
@@ -211,8 +213,35 @@ pub fn render_carve_with_options(
     doc: &Document,
     options: &CarveWriterOptions,
 ) -> Result<String, crate::RenderCarveError> {
+    let output = render_carve_with_break_markers(doc, options)?;
+    // A kept `---` at byte 0 opens frontmatter; PART 11 §1a respells every
+    // break in the document instead.
+    if options.preserve_break_markers
+        && doc.frontmatter_raw.is_none()
+        && doc.frontmatter.is_empty()
+        && crate::parse::opens_frontmatter(&output)
+    {
+        let fallback = render_carve_with_break_markers(
+            doc,
+            &CarveWriterOptions {
+                preserve_break_markers: false,
+                ..*options
+            },
+        )?;
+        if !crate::parse::opens_frontmatter(&fallback) {
+            return Ok(fallback);
+        }
+    }
+    Ok(output)
+}
+
+fn render_carve_with_break_markers(
+    doc: &Document,
+    options: &CarveWriterOptions,
+) -> Result<String, crate::RenderCarveError> {
     let mut session = RenderSession::new(options.align_tables);
     session.flatten_terminal_cell_breaks = options.flatten_terminal_cell_breaks;
+    session.preserve_break_markers = options.preserve_break_markers;
     let session = &session;
     // Reject excessive depth before recursive preparation reads the tree.
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
@@ -3167,8 +3196,16 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             )
         }
         // PART 11 §6 (carve#4973): every break is written `***`; the recorded
-        // marker is interchange only, and `***` never opens frontmatter.
-        BlockNode::ThematicBreak(rule) => with_block_attrs(&rule.attrs, "***"),
+        // marker is interchange only, and `***` never opens frontmatter. HTML
+        // import keeps a `data-char` marker (PART 10, carve-rs#3883).
+        BlockNode::ThematicBreak(rule) => with_block_attrs(
+            &rule.attrs,
+            match rule.marker {
+                Some('_') if session.preserve_break_markers => "___",
+                Some('-') if session.preserve_break_markers => "---",
+                _ => "***",
+            },
+        ),
         BlockNode::Table(table) => {
             if let Some(source) = render_delimited_table(table, session, ctx) {
                 return with_block_attrs(&table.attrs, &format!("{{table}}\n{source}"));

@@ -2041,12 +2041,11 @@ impl<'a> Importer<'a> {
             .filter(|c| *c == '*')
     }
 
-    /// The `<hr data-char>` break character, where it names one PART 2 admits
-    /// and is not the default `-`.
+    /// The `<hr data-char>` break character, where it names one PART 2 admits.
     fn reads_break_char(hr: &Handle) -> Option<char> {
         Self::carrier(hr, crate::roundtrip::CHAR)
             .and_then(|v| single_char(&v))
-            .filter(|c| matches!(c, '*' | '_'))
+            .filter(|c| matches!(c, '-' | '*' | '_'))
     }
 
     /// Presence distinguishes an authored ID from a generated heading slug.

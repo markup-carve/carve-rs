@@ -29,6 +29,7 @@ pub(super) struct PassState {
 pub(super) struct RenderSession {
     pub(super) align_tables: bool,
     pub(super) flatten_terminal_cell_breaks: bool,
+    pub(super) preserve_break_markers: bool,
     pub(super) pass: PassState,
     pub(super) crossref_targets: Slot<RefCell<BTreeSet<String>>>,
     pub(super) footnote_labels: Slot<RefCell<BTreeSet<String>>>,
@@ -57,6 +58,7 @@ impl RenderSession {
         Self {
             align_tables,
             flatten_terminal_cell_breaks: false,
+            preserve_break_markers: false,
             pass: PassState {
                 unit_counter: Slot(Cell::new(0)),
                 escape_call_indexes: Slot(RefCell::new(HashMap::new())),
