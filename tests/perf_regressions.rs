@@ -149,6 +149,25 @@ fn erased_lines_between_paragraphs_scale_near_linearly() {
     );
 }
 
+/// Candidate-only ownership also covers inline and fenced comments on flat
+/// documents without paying for a second complete block trace (carve#5184).
+#[test]
+fn mixed_flat_comments_scale_near_linearly() {
+    let scaling = measure_scaling_at(
+        &|lines| {
+            "Text before {% inline comment %} after. %% trailing\n%% line comment\n\n%%%\nblock comment\n%%%\n\n"
+                .repeat(lines / 7)
+        },
+        8_000,
+        16_000,
+    );
+    assert!(
+        scaling.large_secs / scaling.small_secs < 3.6,
+        "mixed flat comments took {:.2}x longer on double the lines",
+        scaling.large_secs / scaling.small_secs
+    );
+}
+
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
 /// cascade into every other one reporting a lock error instead of its result.
 fn perf_guard() -> std::sync::MutexGuard<'static, ()> {

@@ -557,7 +557,7 @@ pub fn decision_trace(source: &str) -> String {
     let source = normalize_source(source);
     let records = match super::transparent_lines::Transparent::detect(source.as_ref()) {
         Some(transparent) => transparent_trace(&transparent),
-        None => walk_traced(source.as_ref(), true, true, Some(Vec::new()))
+        None => walk_traced(source.as_ref(), true, true, Some(Vec::new()), None)
             .1
             .unwrap_or_default(),
     };
@@ -588,7 +588,7 @@ fn transparent_trace(transparent: &super::transparent_lines::Transparent) -> Vec
             .collect::<Vec<_>>()
             .join("/")
     };
-    let mut records = walk_traced(&transparent.visible, true, true, Some(Vec::new()))
+    let mut records = walk_traced(&transparent.visible, true, true, Some(Vec::new()), None)
         .1
         .unwrap_or_default();
     for record in &mut records {
@@ -644,6 +644,8 @@ struct Walk<'a> {
     runs: std::cell::OnceCell<Runs>,
     /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
     trace: Option<Vec<TraceRecord>>,
+    /// When collecting erased-line owners, only these authored lines need records.
+    trace_filter: Option<Vec<bool>>,
     /// 1-based line of `lines[0]`, past any frontmatter.
     first_line: usize,
     /// A collector's body holds only `+` lines the document walk accepted.
@@ -948,7 +950,7 @@ pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
 }
 
 fn walk_from(source: &str, frontmatter: bool, decide: bool) -> Option<OwnedSource> {
-    walk_traced(source, frontmatter, decide, None).0
+    walk_traced(source, frontmatter, decide, None, None).0
 }
 
 fn walk_traced(
@@ -956,6 +958,7 @@ fn walk_traced(
     frontmatter: bool,
     decide: bool,
     trace: Option<Vec<TraceRecord>>,
+    candidate_lines: Option<&[usize]>,
 ) -> (Option<OwnedSource>, Option<Vec<TraceRecord>>) {
     let (_, fm, body) = if frontmatter {
         split_frontmatter(source, false)
@@ -969,6 +972,15 @@ fn walk_traced(
     };
     let first_line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
     let body = if fm.is_some() { body } else { source };
+    let trace_filter = candidate_lines.map(|indexes| {
+        let mut filter = vec![false; source.lines().count() + 1];
+        for &index in indexes {
+            if let Some(slot) = filter.get_mut(index) {
+                *slot = true;
+            }
+        }
+        filter
+    });
     let mut walk = Walk {
         lines: body.split('\n').collect(),
         frames: vec![Frame::new(Kind::Doc)],
@@ -977,6 +989,7 @@ fn walk_traced(
         sibling: None,
         attr_rest: None,
         trace,
+        trace_filter,
         first_line,
         decide: decide && source.contains('+'),
         refuse_line: false,
@@ -1149,9 +1162,22 @@ impl<'a> Walk<'a> {
         if at + 1 == self.lines.len() && self.lines[at].is_empty() {
             return;
         }
+        if !self.trace_wants(at) {
+            return;
+        }
         if let Some(trace) = self.trace.as_mut() {
             trace.push(record);
         }
+    }
+
+    fn trace_wants(&self, at: usize) -> bool {
+        self.trace.is_some()
+            && self.trace_filter.as_ref().map_or(true, |filter| {
+                filter
+                    .get(self.first_line + at - 1)
+                    .copied()
+                    .unwrap_or(false)
+            })
     }
 
     /// The one attach rule (PART 9 §17 L3, carve#4409): the host gives its marker
@@ -1400,7 +1426,7 @@ impl<'a> Walk<'a> {
             }
             self.skipped = None;
         }
-        if self.trace.is_some() {
+        if self.trace_wants(at) {
             let line = self.first_line + at;
             let mut record =
                 TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "leaf");
@@ -1871,7 +1897,7 @@ impl<'a> Walk<'a> {
         // A stanza's final lazy line is read at the frame's reader column,
         // not with its authored indentation preserved as inline hard space.
         c.lead(if next_reaches_block { c.col } else { 0 });
-        if self.trace.is_some() {
+        if self.trace_wants(at) {
             let line = self.first_line + at;
             let mut record =
                 TraceRecord::new(line, "S4", self.deepest(), Some("CARVE-P0-006"), "lazy");
@@ -1984,7 +2010,7 @@ impl<'a> Walk<'a> {
         c.out.push_str(&pad);
         c.consume_marker(self.mark, self.lines[at]);
         self.consumed.push(self.first_line + at);
-        if self.trace.is_some() {
+        if self.trace_wants(at) {
             let line = self.first_line + at;
             let record = TraceRecord::new(line, "S2", self.deepest(), Some("CARVE-P9-067"), "plus")
                 .cell(Some("B-plus-start".into()));
@@ -1994,7 +2020,7 @@ impl<'a> Walk<'a> {
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
-        let tracing = self.trace.is_some();
+        let tracing = self.trace_wants(at);
         let line = self.first_line + at;
         let mut reached = 0;
         let mut plus = None;
@@ -2524,7 +2550,7 @@ impl<'a> Walk<'a> {
             f.absorbs = absorbs;
             f.para = true;
             f.last = Last::Para;
-            if self.trace.is_some() {
+            if self.trace_wants(at) {
                 let line = self.first_line + at;
                 let mut record =
                     TraceRecord::new(line, "S5", self.deepest(), Some("CARVE-P0-024"), "text");
@@ -3084,8 +3110,8 @@ pub(crate) fn remap_active_edit_lines(map: impl Fn(usize) -> usize) {
 /// The ownership walk's single-line leaves, as 0-based line index, owner path
 /// and whether a `+` above skips the line. Line numbers count from the top of
 /// `source`, frontmatter included.
-pub(crate) fn traced_leaves(source: &str) -> Vec<(usize, String, bool)> {
-    walk_traced(source, true, true, Some(Vec::new()))
+pub(crate) fn traced_leaves(source: &str, candidate_lines: &[usize]) -> Vec<(usize, String, bool)> {
+    walk_traced(source, true, true, Some(Vec::new()), Some(candidate_lines))
         .1
         .unwrap_or_default()
         .into_iter()
