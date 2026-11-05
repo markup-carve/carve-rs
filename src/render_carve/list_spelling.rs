@@ -77,11 +77,22 @@ pub(super) fn list_needs_loose_key(
         return true;
     }
     let restored = restore_verbatim(session, body);
-    let probe = if nested {
-        format!("- {}", restored.replace('\n', "\n  "))
-    } else {
-        restored
+    let wrap = |source: &str| {
+        if nested {
+            format!("- {}", source.replace('\n', "\n  "))
+        } else {
+            source.to_string()
+        }
     };
+    // Re-parsing the whole body at every level of a nested ladder is
+    // superlinear in depth (carve#5193). A last sub-list's interior cannot
+    // undo a blank above it, so a pruned probe that reads loose answers alone.
+    if let Some(pruned) = above_last_sub_list_interior(list, &restored) {
+        if reads_loose_as(comparable_tree(&wrap(pruned)).as_ref(), list, nested) {
+            return false;
+        }
+    }
+    let probe = wrap(&restored);
     let tree = comparable_tree(&probe);
     let first = tree.as_ref().and_then(|doc| doc.children.first());
     let candidate = if nested {
@@ -106,6 +117,68 @@ pub(super) fn list_needs_loose_key(
         // the looseness certainly did not survive.
         _ => true,
     }
+}
+
+/// The written item up to the first line of its last child, when that child is
+/// a sub-list whose remaining lines all sit past the item's content column.
+fn above_last_sub_list_interior<'a>(list: &List, restored: &'a str) -> Option<&'a str> {
+    let item = list.items.first()?;
+    if !matches!(item.children.last(), Some(BlockNode::List(_))) {
+        return None;
+    }
+    let (_, width) = item_prefix(list, item, list.start.unwrap_or(1));
+    let indent = |line: &str| line.len() - line.trim_start_matches(' ').len();
+    let lines: Vec<&str> = restored.split('\n').collect();
+    let start = (1..lines.len())
+        .rev()
+        .find(|&at| !lines[at].trim().is_empty() && indent(lines[at]) <= width)?;
+    if indent(lines[start]) != width
+        || !lines[start - 1].trim().is_empty()
+        || start + 1 == lines.len()
+    {
+        return None;
+    }
+    let end: usize = lines[..=start]
+        .iter()
+        .map(|line| line.len() + 1)
+        .sum::<usize>()
+        - 1;
+    Some(&restored[..end])
+}
+
+/// Whether `tree` reads back the probed list loose, its item holding the same
+/// kinds of child the tree's item holds.
+fn reads_loose_as(tree: Option<&Document>, list: &List, nested: bool) -> bool {
+    let visible = |blocks: &[BlockNode]| -> Vec<std::mem::Discriminant<BlockNode>> {
+        blocks
+            .iter()
+            .filter(|child| !matches!(child, BlockNode::Comment(_)))
+            .map(std::mem::discriminant)
+            .collect()
+    };
+    let Some(doc) = tree else {
+        return false;
+    };
+    let mut blocks = doc.children.as_slice();
+    if nested {
+        let Some(BlockNode::List(wrapper)) = blocks.first() else {
+            return false;
+        };
+        let Some(parent) = wrapper.items.first() else {
+            return false;
+        };
+        blocks = &parent.children;
+    }
+    let found = blocks
+        .iter()
+        .find(|child| !matches!(child, BlockNode::Comment(_)));
+    let Some(BlockNode::List(reparsed)) = found else {
+        return false;
+    };
+    let ([read], [item]) = (reparsed.items.as_slice(), list.items.as_slice()) else {
+        return false;
+    };
+    !reparsed.tight && visible(&read.children) == visible(&item.children)
 }
 
 /// A blank line INSIDE `body`, which is the only place one can loosen it.
@@ -720,4 +793,47 @@ pub(super) fn render_definition_list(
         escape_window::leave(session, recorded);
     }
     out.join("\n")
+}
+
+#[cfg(test)]
+mod loose_key_probe_tests {
+    use super::super::tests::PARSED_BYTES;
+
+    /// `depth` one-item lists, each a blank line and one step below the last.
+    fn loose_ladder(depth: usize) -> String {
+        (0..depth)
+            .map(|level| format!("{}- x", "  ".repeat(level)))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+            + "\n"
+    }
+
+    /// Source bytes the writer re-parses per byte of the ladder it writes.
+    fn reparsed_per_byte(depth: usize) -> f64 {
+        let source = loose_ladder(depth);
+        let doc = crate::parse::parse(&source);
+        PARSED_BYTES.with(|n| n.set(0));
+        let written = crate::render_carve(&doc).expect("written");
+        assert_eq!(written.trim_end(), source.trim_end());
+        PARSED_BYTES.with(std::cell::Cell::get) as f64 / source.len() as f64
+    }
+
+    /// COUNTED, so it holds under any load: deciding `{loose}` for each level
+    /// must not re-parse the levels below it (carve#5193).
+    #[test]
+    fn a_loose_ladder_is_written_without_reparsing_each_subtree() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let shallow = reparsed_per_byte(20);
+                let deep = reparsed_per_byte(80);
+                assert!(
+                    deep < shallow * 1.5 && deep < 8.0,
+                    "re-parsed {shallow:.1} bytes per byte at depth 20, {deep:.1} at depth 80"
+                );
+            })
+            .expect("spawn worker")
+            .join()
+            .expect("worker must return");
+    }
 }
