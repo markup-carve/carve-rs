@@ -100,6 +100,9 @@ struct CarveContext {
     escape_unit: usize,
     /// Definitions written on a description line, keyed by that line.
     definitions_by_line: HashMap<usize, Vec<DefinitionAtLine>>,
+    /// A definition is written in its source gap only when a later region
+    /// marker fixes its position (CARVE-P11-079 (a)).
+    last_region_marker: Option<usize>,
     /// The lines a description has already written back.
     ///
     /// PER PASS, because `render_carve_once` renders the document up to three
@@ -1115,6 +1118,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         escape_mode,
         escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
+        last_region_marker: last_region_marker_line(doc),
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
         open_kinds: Vec::new(),
@@ -2560,7 +2564,9 @@ fn definition_in_gap(
     let to = block_pos(after)?.start_line;
     let pending: Vec<usize> = ((from + 1)..to)
         .filter(|line| {
-            !ctx.written_in_place.contains(line) && ctx.definitions_by_line.contains_key(line)
+            !ctx.written_in_place.contains(line)
+                && ctx.definitions_by_line.contains_key(line)
+                && above_a_marker(Some(*line), ctx.last_region_marker)
         })
         .collect();
     // A link definition goes back alone. Every note in the gap goes back, in

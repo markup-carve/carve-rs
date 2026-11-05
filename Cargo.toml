@@ -84,6 +84,14 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "writer_invisible_boundaries"
+path = "tests/writer_invisible_boundaries.rs"
+
+[[test]]
+name = "parser_nested_description_fence"
+path = "tests/parser_nested_description_fence.rs"
+
+[[test]]
 name = "list_span_owner_column"
 path = "tests/list_span_owner_column.rs"
 
