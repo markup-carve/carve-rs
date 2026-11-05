@@ -50,7 +50,10 @@ fn reads_a_pipe_led_or_brace_led_paragraph_as_a_paragraph() {
         let source = format!("- one\n\n  - two\n\n  {line}\n");
         let html = carve::to_html(&djot_to_carve(&source));
         let compact: String = html.split_whitespace().collect();
-        assert!(compact.contains("</ul>") && !compact.contains("<li><p>"), "{source:?} -> {html}");
+        assert!(
+            compact.contains("</ul>") && !compact.contains("<li><p>"),
+            "{source:?} -> {html}"
+        );
     }
 }
 
