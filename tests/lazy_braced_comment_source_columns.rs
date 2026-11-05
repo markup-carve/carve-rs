@@ -19,6 +19,26 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_quote() {
             "> pre\n{% b\n>  b %}\n",
             "<blockquote><p>pre\n</p></blockquote>",
         ),
+        (
+            "- > pre\n{% b\n b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n {% b\n b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nb %}</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n {% b\n  b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n{% b\n c\n d %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n {% b\n  c\n b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nc\nb %}</p></blockquote>\n  </li>\n</ul>",
+        ),
     ];
     for (source, expected) in cases {
         assert_eq!(to_html(source).trim(), expected, "{source:?}");

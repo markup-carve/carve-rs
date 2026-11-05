@@ -3031,6 +3031,8 @@ impl<'a> QuoteBody<'a> {
         }
         let brace_line = trim_ascii_start(strip_lazy(line));
         let in_brace_run = self.lazy_brace_open || brace_line.starts_with("{%");
+        let written_column =
+            (cur.source_col(cur.pos).unwrap_or(0).max(0) as usize).max(indent_columns(line));
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.
@@ -3119,7 +3121,7 @@ impl<'a> QuoteBody<'a> {
             };
             (
                 if in_brace_run {
-                    frame_lazy_at_column(frame, indent_columns(line), trimmed)
+                    frame_lazy_at_column(frame, written_column, trimmed)
                 } else {
                     format!("{frame}{trimmed}")
                 },
