@@ -686,6 +686,9 @@ struct Skipped {
     /// The skipped lines inside a `%%%` span, opener and closer included, ascending.
     comment: Vec<usize>,
     lead: String,
+    /// The lead of the `%%%` span lines a refused `+` holds: its host's content
+    /// column, since a span closes no item (carve#5170).
+    span_lead: Option<String>,
     /// The brace run open in the skipped lines: its `{` column, whether it is
     /// a comment, and its depth. Its lines keep their offset past that column.
     brace: Option<(usize, bool, usize)>,
@@ -1273,6 +1276,7 @@ impl<'a> Walk<'a> {
             fenced,
             comment,
             lead,
+            span_lead: None,
             brace: None,
         });
         end
@@ -1320,7 +1324,12 @@ impl<'a> Walk<'a> {
             }
             (depth > 0).then_some((column, comment, depth as usize))
         });
-        let lead = format!("{}{}", skipped.lead, " ".repeat(pad));
+        let in_span = skipped.comment.binary_search(&at).is_ok();
+        let base = match &skipped.span_lead {
+            Some(span_lead) if in_span => span_lead,
+            _ => &skipped.lead,
+        };
+        let lead = format!("{}{}", base, " ".repeat(pad));
         c.out.push_str(&lead);
         if authored != lead {
             c.edits.push((
@@ -1337,7 +1346,7 @@ impl<'a> Walk<'a> {
         // marker took: it is consumed and linted (carve#5013). Off the column a
         // skipped note's `+` is a letter of its body (carve#5034).
         let (host, from, end) = (skipped.host, skipped.at, skipped.end);
-        let in_comment = skipped.comment.binary_search(&at).is_ok();
+        let in_comment = in_span;
         if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
             let column = doc_column(line, rest);
             if column == skipped.column {
@@ -1923,10 +1932,16 @@ impl<'a> Walk<'a> {
         // so the next line keeps the same owner (carve#5013).
         self.refuse_plus(at, column, Some(host), reason, false);
         self.refuse_line = false;
+        let pad = if !closes_descendant && reason != Refusal::Claimed {
+            " ".repeat(pad)
+        } else {
+            String::new()
+        };
         self.skip_invisible(k, at, column, Some(c.out.clone()), true);
-        if !closes_descendant && reason != Refusal::Claimed {
-            c.out.push_str(&" ".repeat(pad));
+        if let Some(skipped) = self.skipped.as_mut().filter(|skipped| skipped.at == at) {
+            skipped.span_lead = Some(c.out.clone() + &pad);
         }
+        c.out.push_str(&pad);
         c.consume_marker(self.mark, self.lines[at]);
         self.consumed.push(self.first_line + at);
         if self.trace.is_some() {
