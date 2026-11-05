@@ -140,6 +140,10 @@ name = "authoring_lint_port"
 path = "tests/authoring_lint_port.rs"
 
 [[test]]
+name = "github_alert_link_label"
+path = "tests/github_alert_link_label.rs"
+
+[[test]]
 name = "quoted_link_definition_in_footnote"
 path = "tests/quoted_link_definition_in_footnote.rs"
 
