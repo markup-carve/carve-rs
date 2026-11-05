@@ -1751,7 +1751,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // paragraph, so 266-14, 613-11, 615-8, 615-11 and 615-12 report a soft break.
     // Spec 0947cae0 adds corpus 956 (five rows); all five round trip strictly.
     // Spec 0e8c456d adds 957 and 958; 958 round trips strictly.
-    const STRICT: usize = 3443;
+    // carve#5195 makes the refused run in 928-3 a visible paragraph, whose
+    // soft break reports a loss.
+    const STRICT: usize = 3442;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1773,7 +1775,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 62b41b27 adds 955-2, which reports a loss.
     // carve#5129 moves five rows here, named with STRICT above.
     // Spec 0e8c456d adds 957, which reports a loss.
-    const LOSSY: usize = 944;
+    // carve#5195 moves 928-3 here, named with STRICT above.
+    const LOSSY: usize = 945;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

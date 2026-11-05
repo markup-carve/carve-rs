@@ -517,6 +517,13 @@ fn direct_quote_allowed(direct_owner: bool, options: &Options<'_>, line: &str) -
         && !line.contains("![")
 }
 
+/// A code include line, or a brace run continued onto the next line, which may
+/// be refused (CARVE-P2-035): only the paragraph reader handles them.
+fn needs_paragraph_reader(line: &str, invalid_brace_line: bool, next: Option<&str>) -> bool {
+    (invalid_brace_line && next.is_some_and(|next| !is_blank_line(next)))
+        || crate::includes::code_include_line(line).is_some()
+}
+
 fn use_standard_event_paragraph(
     options: &Options<'_>,
     recording_extents: bool,
@@ -1073,7 +1080,7 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             continue;
         }
         if use_standard_event_paragraph(options, extents.is_some(), defer_pending)
-            || crate::includes::code_include_line(line).is_some()
+            || needs_paragraph_reader(line, invalid_brace_line, lines.get(cur.pos + 1).copied())
         {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
