@@ -538,6 +538,19 @@ fn collect_parser_events(
                     };
                     (line, column)
                 };
+                // A temporary container view can stop immediately before a
+                // source-owned closer. The final AST still has the opener,
+                // but that view's unclosed event is no longer authoritative.
+                if lines.get(*end_line).is_some_and(|text| {
+                    let suffix = text.chars().skip(column - 1).collect::<String>();
+                    let run = suffix
+                        .bytes()
+                        .take_while(|byte| *byte == marker.as_bytes()[0])
+                        .count();
+                    run >= marker.len() && suffix[run..].trim_matches([' ', '\t']).is_empty()
+                }) {
+                    continue;
+                }
                 let ending = if *end_line > lines.len()
                     || (*end_line == lines.len() && lines.last() == Some(&""))
                 {
