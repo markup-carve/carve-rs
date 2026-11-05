@@ -831,11 +831,13 @@ fn braced_comments_only(text: &str) -> bool {
 /// The end of the paragraph of only braced comments that starts at line `k`
 /// of `len`, where `view` gives each line's text past its indentation.
 /// In an item a list marker interrupts it; elsewhere the marker is its text.
+/// `measured` keeps the indentation `view` drops (CARVE-P2-035).
 pub(crate) fn comment_only_para_end<'a>(
     len: usize,
     k: usize,
     in_item: bool,
     view: &dyn Fn(usize) -> &'a str,
+    measured: &dyn Fn(usize) -> &'a str,
 ) -> Option<usize> {
     let mut end = k + 1;
     while end < len && !is_blank_line(view(end)) {
@@ -857,6 +859,32 @@ pub(crate) fn comment_only_para_end<'a>(
             break;
         }
         end += 1;
+    }
+    let mut open = false;
+    for j in k..end {
+        let rest = view(j);
+        // A run whose continuation fails CARVE-P2-035 is paragraph text, so the paragraph shows.
+        if !open
+            && rest.starts_with('{')
+            && matches!(
+                super::attrs::refused_brace_run((j..end).map(measured), true),
+                super::attrs::RefusedBraceRun::Lines(_)
+            )
+        {
+            return None;
+        }
+        let bytes = rest.as_bytes();
+        let mut c = 0;
+        while c + 1 < bytes.len() {
+            if !open && bytes[c] == b'{' && bytes[c + 1] == b'%' {
+                open = true;
+                c += 1;
+            } else if open && bytes[c] == b'%' && bytes[c + 1] == b'}' {
+                open = false;
+                c += 1;
+            }
+            c += 1;
+        }
     }
     let para: Vec<&str> = (k..end).map(view).collect();
     braced_comments_only(&para.join("\n")).then_some(end)
@@ -1478,7 +1506,7 @@ impl<'a> Walk<'a> {
                 k += len;
             } else if let Some(end) = rest
                 .starts_with("{%")
-                .then(|| self.comment_only_para_end(k, in_item, &view))
+                .then(|| self.comment_only_para_end(k, in_item, &view, host))
                 .flatten()
             {
                 // A paragraph of only comments is skipped as a `%%` line is (carve#4799).
@@ -1513,8 +1541,13 @@ impl<'a> Walk<'a> {
         k: usize,
         in_item: bool,
         view: &dyn Fn(usize) -> &'a str,
+        host: usize,
     ) -> Option<usize> {
-        comment_only_para_end(self.lines.len(), k, in_item, view)
+        let measured = |j: usize| -> &'a str {
+            self.through_quotes(self.lines[j], host)
+                .unwrap_or("\u{e000}")
+        };
+        comment_only_para_end(self.lines.len(), k, in_item, view, &measured)
     }
 
     /// The first line past the attribute and invisible lines from `from`, or

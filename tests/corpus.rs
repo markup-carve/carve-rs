@@ -1402,7 +1402,18 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line-2",
+        "carve#5195 (carve#5196): a refused `{%` run is visible paragraph text",
+        "<ul>\n  <li><p>{% c\nd %}</p>\n    <p>Body.</p>\n  </li>\n</ul>",
+    ),
+    (
+        "928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line-3",
+        "carve#5195 (carve#5196): a refused `{%` run is visible paragraph text",
+        "<ul>\n  <li>a</li>\n</ul>\n<p>{% c\nd %}</p>\n<ul>\n  <li>b</li>\n</ul>",
+    ),
+];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

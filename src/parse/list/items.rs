@@ -574,7 +574,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let view = |k: usize| trim_ascii_start(lines.line(k).unwrap_or(""));
         trim_ascii_start(line)
             .starts_with("{%")
-            .then(|| comment_only_para_end(lines.len(), at, self.cur.in_item_body, &view))
+            .then(|| {
+                let measured = |k: usize| lines.line(k).unwrap_or("");
+                comment_only_para_end(lines.len(), at, self.cur.in_item_body, &view, &measured)
+            })
             .flatten()
             .map(|end| end - at)
     }
@@ -3211,7 +3214,22 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
             trim_ascii_start(lines.line(k).unwrap_or(""))
         }
     };
-    content.starts_with("{%") && comment_only_para_end(lines.len(), at, true, &view).is_some()
+    let Some(raw) = lines.line(at) else {
+        return false;
+    };
+    // The marker line keeps the content's column, as `marker_refused_brace_run` measures it.
+    let column =
+        indent_columns(&" ".repeat(raw.chars().count().saturating_sub(content.chars().count())));
+    let opener = format!("{}{content}", " ".repeat(column));
+    let measured = |k: usize| {
+        if k == at {
+            opener.as_str()
+        } else {
+            lines.line(k).unwrap_or("")
+        }
+    };
+    content.starts_with("{%")
+        && comment_only_para_end(lines.len(), at, true, &view, &measured).is_some()
 }
 
 /// The lines a refused brace run opening in a marker's content takes (carve#5080).

@@ -30,14 +30,22 @@ fn lists_skip_it_between_siblings() {
             "<ul>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>",
         ),
         (
-            "- a\n\n{% c\nd %}\n\n- b\n",
+            "- a\n\n{% c\n d %}\n\n- b\n",
             "<ul>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>",
+        ),
+        // A run not continued past its `{` is paragraph text (CARVE-P2-035, carve#5080).
+        (
+            "- a\n\n{% c\nd %}\n\n- b\n",
+            "<ul>\n  <li>a</li>\n</ul>\n<p>{% c\nd %}</p>\n<ul>\n  <li>b</li>\n</ul>",
         ),
         (
             "- p\n\n  - a\n\n  {% c %}\n  - b\n",
             "<ul>\n  <li><p>p</p>\n    <ul>\n      <li><p>a</p></li>\n      <li><p>b</p></li>\n    </ul>\n  </li>\n</ul>",
         ),
-        ("- {% c\n  d %}\n\n  Body.\n", "<ul>\n  <li>{% c\nd %}\n    Body.\n  </li>\n</ul>"),
+        (
+            "- {% c\n  d %}\n\n  Body.\n",
+            "<ul>\n  <li><p>{% c\nd %}</p>\n    <p>Body.</p>\n  </li>\n</ul>",
+        ),
     ];
     for (source, expected) in cases {
         assert_eq!(carve::to_html(source).trim_end(), expected, "{source:?}");
@@ -54,7 +62,7 @@ fn a_following_text_line_keeps_the_paragraph() {
 #[test]
 fn a_comment_between_siblings_keeps_its_position() {
     let json = carve::to_json_with_options(
-        "- x\n\n{% a\nb %}\n\n- y\n",
+        "- x\n\n{% a\n b %}\n\n- y\n",
         &carve::Options::default().with_positions(true),
     );
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
