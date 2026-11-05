@@ -1539,6 +1539,7 @@ struct QuoteBody<'a> {
     // The content column of the item whose marker line opened `comment_run`.
     comment_host: Option<usize>,
     comment_lazy_lines: Vec<(usize, String, Option<isize>)>,
+    lazy_brace_open: bool,
     /// The line-block scan over `inner.lines`, advanced only by new lines.
     stanza_scan: (crate::parse::definition::LineBlockTail, usize),
     lead_span_scan: DescriptionLeadSpanScan,
@@ -1648,6 +1649,7 @@ impl<'a> QuoteBody<'a> {
             comment_run: None,
             comment_host: None,
             comment_lazy_lines: Vec::new(),
+            lazy_brace_open: false,
             stanza_scan: Default::default(),
             lead_span_scan: Default::default(),
             shallower_lines: Default::default(),
@@ -3019,6 +3021,16 @@ impl<'a> QuoteBody<'a> {
     }
 
     fn fold_lazy_line(&mut self, cur: &mut LineCursor<'a>, line: &str) {
+        if self
+            .inner
+            .lines
+            .last()
+            .is_some_and(|last| last.text.contains("%}"))
+        {
+            self.lazy_brace_open = false;
+        }
+        let brace_line = trim_ascii_start(strip_lazy(line));
+        let in_brace_run = self.lazy_brace_open || brace_line.starts_with("{%");
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.
@@ -3105,8 +3117,16 @@ impl<'a> QuoteBody<'a> {
             } else {
                 LAZY
             };
-            (format!("{frame}{trimmed}"), leading_ws(line))
+            (
+                if in_brace_run {
+                    frame_lazy_at_column(frame, indent_columns(line), trimmed)
+                } else {
+                    format!("{frame}{trimmed}")
+                },
+                leading_ws(line),
+            )
         };
+        self.lazy_brace_open = in_brace_run && !line.contains("%}");
         self.opaque_tail = false;
         cur.consume();
         self.inner.push_at(

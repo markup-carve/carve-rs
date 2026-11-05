@@ -218,27 +218,38 @@ pub(crate) enum RefusedBraceRun {
 
 /// `lazy_refuses` is false in a quote, whose lazy line keeps an attribute run inline.
 pub(crate) fn refused_brace_run<'a>(
+    lines: impl Iterator<Item = &'a str>,
+    lazy_refuses: bool,
+) -> RefusedBraceRun {
+    refused_brace_run_with_columns(lines, lazy_refuses, |_, _| None)
+}
+
+/// A framed lazy line has lost its written indentation. Its cursor still
+/// carries the source column, so callers with that map supply it here.
+pub(crate) fn refused_brace_run_with_columns<'a>(
     mut lines: impl Iterator<Item = &'a str>,
     lazy_refuses: bool,
+    mut source_column: impl FnMut(usize, &str) -> Option<usize>,
 ) -> RefusedBraceRun {
     let Some(first) = lines.next() else {
         return RefusedBraceRun::No(0);
     };
-    // A lazily framed line sits at column 0: the collector framed the run
-    // because it already refused it.
-    let column_of = |raw: &str| {
-        let line = strip_lazy(raw);
-        if line.len() == raw.len() {
-            indent_columns(line)
-        } else {
-            0
-        }
-    };
+    let column_of =
+        |at: usize, raw: &str, source_column: &mut dyn FnMut(usize, &str) -> Option<usize>| {
+            let line = strip_lazy(raw);
+            if line.len() == raw.len() {
+                indent_columns(line)
+            } else {
+                lazy_source_column(raw)
+                    .or_else(|| source_column(at, raw))
+                    .unwrap_or_else(|| indent_columns(line))
+            }
+        };
     let opener = trim_ascii_start(strip_lazy(first));
     if !opener.starts_with('{') {
         return RefusedBraceRun::No(0);
     }
-    let opener_column = column_of(first);
+    let opener_column = column_of(0, first, &mut source_column);
     let comment = opener.starts_with("{%");
     let mut repaired: Vec<String> = Vec::new();
     let mut shallow = false;
@@ -253,7 +264,7 @@ pub(crate) fn refused_brace_run<'a>(
         if !lazy_refuses && !comment && line.len() != raw.len() {
             return RefusedBraceRun::No(0);
         }
-        let column = column_of(raw);
+        let column = column_of(n, raw, &mut source_column);
         let rest = trim_ascii_start(line);
         if n > 0 && !comment && rest.starts_with('{') {
             return RefusedBraceRun::No(0);

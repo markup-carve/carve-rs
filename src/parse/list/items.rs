@@ -2812,9 +2812,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             return false;
         }
-        let RefusedBraceRun::Lines(count) = refused_brace_run(
+        let RefusedBraceRun::Lines(count) = refused_brace_run_with_columns(
             (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
-            !self.cur.in_quoted_body,
+            !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
+            |offset, raw| {
+                raw.starts_with(LAZY).then(|| {
+                    self.cur
+                        .source_col(self.cur.pos + offset)
+                        .unwrap_or(0)
+                        .max(0) as usize
+                })
+            },
         ) else {
             return false;
         };
