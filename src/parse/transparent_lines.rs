@@ -536,6 +536,11 @@ fn candidates(blocks: &[BlockNode], at: (usize, usize)) -> Vec<usize> {
 fn place_comment(blocks: &mut Vec<BlockNode>, node: BlockNode, pos: &Pos, owner: &str) {
     let at = (pos.start_line, pos.start_column);
     let mut node = Some(node);
+    if let Some(path) = owner_path(owner) {
+        if place_on_path(blocks, &path, &mut node, pos) {
+            return;
+        }
+    }
     let mut after = AfterParagraph {
         at,
         node: &mut node,
@@ -556,6 +561,111 @@ fn place_comment(blocks: &mut Vec<BlockNode>, node: BlockNode, pos: &Pos, owner:
     };
     let index = position_index(siblings, at);
     siblings.insert(index, node);
+}
+
+/// The walk's owner path below the document (and below a note, whose body is
+/// placed on its own), as (kind, line) steps.
+fn owner_path(owner: &str) -> Option<Vec<(&str, usize)>> {
+    let segments: Vec<&str> = owner.split('/').collect();
+    let from = segments
+        .iter()
+        .rposition(|segment| segment.starts_with("footnote:"))
+        .map_or(1, |i| i + 1);
+    segments
+        .get(from..)?
+        .iter()
+        .map(|segment| {
+            let (kind, line) = segment.split_once(':')?;
+            Some((kind, line.parse().ok()?))
+        })
+        .collect()
+}
+
+/// An erased comment is a child of the container the walk names for its
+/// column, whatever follows it (CARVE-P0-005, carve#5178). Returns whether
+/// every step resolved and the node was placed.
+fn place_on_path(
+    blocks: &mut Vec<BlockNode>,
+    path: &[(&str, usize)],
+    node: &mut Option<BlockNode>,
+    pos: &Pos,
+) -> bool {
+    let at = (pos.start_line, pos.start_column);
+    let Some(&(kind, line)) = path.first() else {
+        if let Some(node) = node.take() {
+            let index = position_index(blocks, at);
+            blocks.insert(index, node);
+        }
+        return true;
+    };
+    let rest = &path[1..];
+    let starts = |pos: &Option<Pos>| pos.as_ref().is_some_and(|p| p.start_line == line);
+    for i in candidates(blocks, (line, usize::MAX)) {
+        let placed = match (kind, &mut blocks[i]) {
+            ("item", BlockNode::List(list)) => {
+                let at = list
+                    .items
+                    .partition_point(|item| item.pos.as_ref().is_some_and(|p| p.start_line < line));
+                let Some(item) = list.items.get_mut(at).filter(|item| starts(&item.pos)) else {
+                    continue;
+                };
+                let placed = place_on_path(&mut item.children, rest, node, pos);
+                if placed {
+                    extend_end(&mut item.pos, pos);
+                    extend_end(&mut list.pos, pos);
+                }
+                placed
+            }
+            ("dd", BlockNode::DefinitionList(list)) => {
+                let near = near_entries(&list.items, (line, usize::MAX), entry_start);
+                let Some(definition) = list.items[near]
+                    .iter_mut()
+                    .flat_map(|item| item.definitions.iter_mut())
+                    .find(|definition| starts(&definition.pos))
+                else {
+                    continue;
+                };
+                let placed = place_on_path(&mut definition.children, rest, node, pos);
+                if placed {
+                    extend_end(&mut definition.pos, pos);
+                    extend_end(&mut list.pos, pos);
+                }
+                placed
+            }
+            ("div", BlockNode::Div(d)) if starts(&d.pos) => {
+                place_in_container(&mut d.children, &mut d.pos, rest, node, pos)
+            }
+            ("div", BlockNode::Admonition(a)) if starts(&a.pos) => {
+                place_in_container(&mut a.children, &mut a.pos, rest, node, pos)
+            }
+            ("div", BlockNode::Directive(d)) if starts(&d.pos) => {
+                place_in_container(&mut d.children, &mut d.pos, rest, node, pos)
+            }
+            ("div", BlockNode::FigureGroup(g)) if starts(&g.pos) => {
+                place_in_container(&mut g.children, &mut g.pos, rest, node, pos)
+            }
+            ("quote", BlockNode::BlockQuote(q)) if starts(&q.pos) => {
+                place_in_container(&mut q.children, &mut q.pos, rest, node, pos)
+            }
+            _ => continue,
+        };
+        return placed;
+    }
+    false
+}
+
+fn place_in_container(
+    children: &mut Vec<BlockNode>,
+    span: &mut Option<Pos>,
+    rest: &[(&str, usize)],
+    node: &mut Option<BlockNode>,
+    pos: &Pos,
+) -> bool {
+    let placed = place_on_path(children, rest, node, pos);
+    if placed {
+        extend_end(span, pos);
+    }
+    placed
 }
 
 /// A paragraph crossing the erased line keeps it beside itself, after the paragraph.

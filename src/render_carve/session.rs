@@ -32,6 +32,10 @@ pub(super) struct RenderSession {
     pub(super) pass: PassState,
     pub(super) crossref_targets: Slot<RefCell<BTreeSet<String>>>,
     pub(super) footnote_labels: Slot<RefCell<BTreeSet<String>>>,
+    /// Erased comments the writer moved beside a paragraph that crosses them,
+    /// by authored (line, column): their owner is outside that paragraph's
+    /// containers.
+    pub(super) moved_comments: Slot<RefCell<BTreeSet<(usize, usize)>>>,
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
     pub(super) quoted_marker_lines: Slot<Cell<bool>>,
     pub(super) lazy_marker_lines: Slot<Cell<bool>>,
@@ -59,6 +63,7 @@ impl RenderSession {
             },
             crossref_targets: Slot(RefCell::new(BTreeSet::new())),
             footnote_labels: Slot(RefCell::new(BTreeSet::new())),
+            moved_comments: Slot(RefCell::new(BTreeSet::new())),
             redundant_ids: Slot(RefCell::new(BTreeSet::new())),
             quoted_marker_lines: Slot(Cell::new(false)),
             lazy_marker_lines: Slot(Cell::new(false)),

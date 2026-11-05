@@ -13,6 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Categories added at spec 0e8c456d.
+    "an-indented-quoted-item-keeps-a-lazy-line-at-its-base",
+    "a-below-item-marker-continues-the-list-in-a-description",
     // Categories added at spec 0947cae0.
     "a-comment-between-a-term-and-its-description-is-the-description-s-first-block",
     // Categories added at spec 62b41b27.

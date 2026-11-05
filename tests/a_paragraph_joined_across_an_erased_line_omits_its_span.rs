@@ -43,7 +43,11 @@ fn an_item_keeps_its_span_over_its_own_comment() {
 
 #[test]
 fn a_container_the_line_only_trails_ends_at_its_last_child() {
+    // carve#5178: the comment at the description column is the description's,
+    // so the item reaches it; one at column 0 trails the item.
     let doc = tree("- :: term\n  : payload\n\n    %% c\n- sub\n");
+    assert_eq!(span(&doc["children"][0]["items"][0]), Some((0, 31)));
+    let doc = tree("- :: term\n  : payload\n\n%% c\n- sub\n");
     assert_eq!(span(&doc["children"][0]["items"][0]), Some((0, 21)));
 }
 
