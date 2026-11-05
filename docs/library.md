@@ -71,6 +71,11 @@ Source-aware tools can prepare canonical formatting with `to_carve_patch` and
 apply it with `apply_source_patch`; see
 [source-preserving patches](https://github.com/markup-carve/carve-rs/blob/main/docs/source-patches.md).
 
+`carve::decision_trace(source)` returns the block decision trace that
+`carve trace` prints: JSON lines in the
+[decision trace format](https://github.com/markup-carve/carve/blob/main/docs/decision-trace.md),
+one record per source line.
+
 ## AST JSON errors
 
 `AstJsonError::kind()` distinguishes syntax, depth, unknown-field, and other AST refusals. `path()` identifies an unknown field; syntax errors expose `line()`, `column()`, and the original serde error through `std::error::Error::source()`. The compatibility `to_json` and `markdown_to_carve` functions panic on refusal.
