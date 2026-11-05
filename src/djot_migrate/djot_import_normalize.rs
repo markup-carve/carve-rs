@@ -3106,9 +3106,12 @@ fn blocks_with_slot_inner(
             previous_blank = item_div;
             continue;
         }
+        // djot.js charges a blank read while a sub-list is open to the sub-list (carve#5197).
+        let mut blank_closed_a_sub_list = false;
         if previous_blank {
             while lists.last().is_some_and(|list| indent <= list.source) {
                 lists.pop();
+                blank_closed_a_sub_list = true;
             }
         }
         let width = text.bytes().take_while(|b| *b == b':').count();
@@ -3242,6 +3245,7 @@ fn blocks_with_slot_inner(
                                     );
                             if !attribute_prefix.is_empty()
                                 && previous_blank
+                                && !blank_closed_a_sub_list
                                 && !held_loose
                                 && !result[list.start].contains(&format!("{attribute_prefix}B"))
                             {
