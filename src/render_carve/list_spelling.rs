@@ -623,6 +623,25 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
             content.matches(marker_column(session).as_str()).count(),
         );
         out.push_str(&item_source);
+        if let Some(gap) = ctx
+            .inter_item_comments
+            .get(&(node as *const List as usize))
+            .and_then(|gaps| gaps.get(idx))
+            .filter(|gap| !gap.is_empty())
+        {
+            let ends_in_comment = item_source
+                .trim_end()
+                .lines()
+                .last()
+                .is_some_and(|line| line.trim_start().starts_with("%%"));
+            if !tight && !ends_in_comment {
+                out.push('\n');
+            }
+            for comment in gap {
+                out.push_str(comment);
+                out.push('\n');
+            }
+        }
         let ends_with_nested_list = content.lines().last().is_some_and(|line| {
             line.starts_with(' ') && is_rendered_list_marker(line.trim_start())
         });

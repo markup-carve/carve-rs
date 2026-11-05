@@ -6,6 +6,42 @@ fn assert_stable(source: &str, expected: &str) {
 }
 
 #[test]
+fn document_comments_keep_their_source_gap_between_list_items() {
+    assert_stable(
+        "- a\n%% c1\n\n- b\n%% c2\n\n- c\n%% c3\n",
+        "- a\n\n%% c1\n\n- b\n\n%% c2\n\n- c\n\n%% c3\n",
+    );
+    assert_stable("- a\n\n  %% y\n%% z\n- c\n", "- a\n\n  %% y\n%% z\n\n- c\n");
+}
+
+#[test]
+fn document_comment_gap_variants_keep_html_and_reach_a_fixed_point() {
+    let mut checked = 0;
+    for marker in ["-", "*", "1.", "."] {
+        for first in ["a", "word", "two words", "é", "x1"] {
+            for second in ["b", "next", "two words", "é", "x2"] {
+                for comment in ["c", "note", "two words", "é", "x3"] {
+                    for blank in ["", "\n"] {
+                        let source = format!(
+                            "{marker} {first}\n{blank}%% {comment}\n{blank}{marker} {second}\n"
+                        );
+                        let written = carve::to_carve(&source);
+                        assert_eq!(
+                            carve::to_html(&written),
+                            carve::to_html(&source),
+                            "{source:?}"
+                        );
+                        assert_eq!(carve::to_carve(&written), written, "{source:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1000);
+}
+
+#[test]
 fn trailing_comments_keep_the_next_list_item() {
     assert_stable(
         "1. :: t\n   : # h\n\n     %% note\n\n     %% c2\n2. b\n",

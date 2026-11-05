@@ -86,6 +86,9 @@ struct CarveContext {
     list_note_limit: usize,
     /// Notes a list may write back into its last item: (line, column, label, body).
     item_notes: Vec<(usize, usize, String, Vec<BlockNode>)>,
+    /// Document comments placed between source list items, keyed by list address.
+    inter_item_comments: HashMap<usize, Vec<Vec<String>>>,
+    inter_item_comment_offsets: HashSet<usize>,
     footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
@@ -1083,8 +1086,63 @@ fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>,
     targets
 }
 
+fn inter_item_comments(doc: &Document) -> (HashMap<usize, Vec<Vec<String>>>, HashSet<usize>) {
+    let mut by_list = HashMap::new();
+    let mut moved = HashSet::new();
+    for block in &doc.children {
+        let BlockNode::List(list) = block else {
+            continue;
+        };
+        if list.items.len() < 2 {
+            continue;
+        }
+        let mut gaps = vec![Vec::new(); list.items.len()];
+        for candidate in &doc.children {
+            let BlockNode::Comment(comment) = candidate else {
+                continue;
+            };
+            let Some(pos) = comment.pos.as_ref() else {
+                continue;
+            };
+            if comment.block
+                || comment.delimited
+                || is_region_marker_comment(comment)
+                || pos.start_column != 1
+                || pos.file.is_some()
+            {
+                continue;
+            }
+            let after_index = list.items.partition_point(|item| {
+                item.pos.as_ref().is_some_and(|item_pos| {
+                    item_pos.file == pos.file && item_pos.end_offset <= pos.start_offset
+                })
+            });
+            if after_index == 0 || after_index == list.items.len() {
+                continue;
+            }
+            let Some(after) = list.items[after_index].pos.as_ref() else {
+                continue;
+            };
+            if after.file == pos.file && pos.end_offset <= after.start_offset {
+                let content = comment.content.trim_end_matches([' ', '\t']);
+                gaps[after_index - 1].push(if content.is_empty() {
+                    "%%".to_string()
+                } else {
+                    format!("%% {content}")
+                });
+                moved.insert(pos.start_offset);
+            }
+        }
+        if gaps.iter().any(|gap| !gap.is_empty()) {
+            by_list.insert(list as *const List as usize, gaps);
+        }
+    }
+    (by_list, moved)
+}
+
 fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: EscapeMode) -> String {
     session.begin_pass();
+    let (inter_item_comments, inter_item_comment_offsets) = inter_item_comments(doc);
     let mut ctx = CarveContext {
         reference_targets: reference_targets(doc),
         block_depth: 0,
@@ -1114,6 +1172,8 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         marker_body: 0,
         list_note_limit: usize::MAX,
         item_notes: item_notes(doc),
+        inter_item_comments,
+        inter_item_comment_offsets,
         footnote_guard_types: Vec::new(),
         escape_mode,
         escape_unit: 0,
@@ -1196,6 +1256,12 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
                 ctx.list_note_limit = next_lines[index].unwrap_or(usize::MAX);
                 let mut text = render_block(session, child, &mut ctx);
+                if matches!(child, BlockNode::Comment(comment)
+                    if comment.pos.as_ref().is_some_and(|pos|
+                        ctx.inter_item_comment_offsets.contains(&pos.start_offset)))
+                {
+                    text.clear();
+                }
                 if let Some(notes) = list_notes_after(session, child, next_lines[index], &mut ctx) {
                     text.push('\n');
                     text.push_str(&notes);
