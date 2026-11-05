@@ -349,11 +349,28 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     // NOTHING behind - no node, no attrs on a neighbour - which is precisely why
     // §15 A4 needs a diagnostic, and why the parser has to say where it dropped
     // one rather than the linter guessing from the source.
-    let ((doc, unattached), lint_events) = crate::parse::collecting_lint_events(|| {
+    let ((doc, unattached), mut lint_events) = crate::parse::collecting_lint_events(|| {
         crate::parse::collecting_unattached_block_attrs(|| {
             parse_with_options(source, &parse_options)
         })
     });
+    // The event parser can handle a line block without entering the legacy
+    // reader that publishes lint events. Read the ownership verdict directly
+    // for comment spans; the cached walk avoids a second layout pass.
+    if source.contains("%%%") {
+        if let Some(owned) =
+            crate::parse::own_lines(crate::parse::normalize_source(source).as_ref())
+        {
+            lint_events.extend(owned.unclosed_comments.iter().map(
+                |&(line, column, width, end_of_document)| crate::parse::LintEvent::CommentFence {
+                    line,
+                    column,
+                    width,
+                    end_of_document,
+                },
+            ));
+        }
+    }
 
     let element_names = semantic_span_order(options);
     let byte_at = codepoint_to_byte_map(source);

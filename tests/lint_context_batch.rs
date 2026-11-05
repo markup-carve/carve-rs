@@ -250,6 +250,26 @@ fn comment_fence_lint_respects_owners_and_payloads() {
 }
 
 #[test]
+fn line_block_comment_spans_and_percent_in_a_label_report_the_opener() {
+    assert_eq!(
+        findings("::: |\na\n%%%\nc\n:::\n", "unclosed-comment-fence"),
+        vec![(3, 1)]
+    );
+    assert_eq!(
+        findings(
+            "[^%n]: %%%\n  hidden\nend [^%n]\n",
+            "unclosed-comment-fence"
+        ),
+        vec![(1, 8)]
+    );
+    assert!(findings(
+        "::: |\na\n%%%\nhidden\n%%%\n:::\n",
+        "unclosed-comment-fence"
+    )
+    .is_empty());
+}
+
+#[test]
 fn lint_reproduction_families_survive_generated_variants() {
     for n in 0..1000 {
         let lead = if n % 2 == 0 { "intro\n\n" } else { "" };

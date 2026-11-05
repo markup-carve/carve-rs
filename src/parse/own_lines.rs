@@ -82,6 +82,8 @@ struct Frame {
     line_block: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
+    /// Authored position of a comment span inside a line-block payload.
+    span_origin: Option<(usize, usize)>,
     /// The line block's stanza holds a verse line; a `%%%` span leaves it as
     /// it stood (CARVE-P9-047, carve#4956).
     verse: bool,
@@ -117,6 +119,16 @@ struct Frame {
 }
 
 impl Frame {
+    fn open_comment(&self) -> Option<(usize, usize, usize)> {
+        match self.closer {
+            Some(Closer::Comment(run)) => Some((self.line, self.doc_marker + 1, run)),
+            _ => match (self.span, self.span_origin) {
+                (Some((b'%', run)), Some((line, column))) => Some((line, column, run)),
+                _ => None,
+            },
+        }
+    }
+
     fn new(kind: Kind) -> Self {
         Frame {
             kind,
@@ -134,6 +146,7 @@ impl Frame {
             absorbs: false,
             line_block: false,
             span: None,
+            span_origin: None,
             verse: false,
             shift: 0,
             marker_shift: 0,
@@ -904,12 +917,21 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) letter: Option<char>,
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
-    pub(in crate::parse) unclosed_comments: Vec<(usize, usize, usize, bool)>,
+    pub(crate) unclosed_comments: Vec<(usize, usize, usize, bool)>,
     pub(in crate::parse) overindented: Vec<OverindentedOpener>,
     /// Lines whose refused marker was written as a `%%` line.
     pub(in crate::parse) consumed: Vec<usize>,
     /// The comment text those lines carry, so the tree drops them without positions.
     pub(in crate::parse) consumed_mark: Option<char>,
+}
+
+impl OwnedSource {
+    fn affects_layout(&self) -> bool {
+        !self.edits.is_empty()
+            || !self.accepted.is_empty()
+            || self.letter.is_some()
+            || !self.consumed.is_empty()
+    }
 }
 
 /// An opener S3 reads past its owner's content column (carve#3992).
@@ -1046,29 +1068,17 @@ fn walk_traced(
             edits: Vec::new(),
         };
         c.measure();
-        let open_comments: Vec<_> = walk
-            .frames
-            .iter()
-            .filter_map(|frame| match frame.closer {
-                Some(Closer::Comment(run)) => Some((frame.line, run)),
-                _ => None,
-            })
-            .collect();
+        let open_comments: Vec<_> = walk.frames.iter().filter_map(Frame::open_comment).collect();
         if !walk.skipped_line(at, &mut c) {
             walk.line(at, &mut c, &mut after_plus);
         }
-        for (line, run) in open_comments {
+        for (line, column, run) in open_comments {
             if !walk
                 .frames
                 .iter()
-                .any(|frame| frame.line == line && matches!(frame.closer, Some(Closer::Comment(_))))
+                .any(|frame| frame.open_comment() == Some((line, column, run)))
                 && !walk.closed_comments.contains(&line)
             {
-                let column = walk.lines[line - first_line]
-                    .chars()
-                    .position(|ch| ch == '%')
-                    .unwrap_or(0)
-                    + 1;
                 walk.unclosed_comments.push((line, column, run, false));
             }
         }
@@ -1108,13 +1118,8 @@ fn walk_traced(
         }));
     }
     for frame in &walk.frames {
-        if let Some(Closer::Comment(run)) = frame.closer {
-            let column = walk.lines[frame.line - first_line]
-                .chars()
-                .position(|ch| ch == '%')
-                .unwrap_or(0)
-                + 1;
-            walk.unclosed_comments.push((frame.line, column, run, true));
+        if let Some((line, column, run)) = frame.open_comment() {
+            walk.unclosed_comments.push((line, column, run, true));
         }
     }
     let owned = (!edits.is_empty()
@@ -1140,10 +1145,16 @@ fn walk_traced(
 /// Whether the walk moves any line of `source`.
 pub(crate) fn walk_moves_lines(source: &str) -> bool {
     let cached = LAST_WALK.with(|cell| match &*cell.borrow() {
-        Some((text, owned)) if text == source => Some(owned.is_some()),
+        Some((text, owned)) if text == source => {
+            Some(owned.as_ref().is_some_and(OwnedSource::affects_layout))
+        }
         _ => None,
     });
-    cached.unwrap_or_else(|| own_lines(source).is_some())
+    cached.unwrap_or_else(|| {
+        own_lines(source)
+            .as_ref()
+            .is_some_and(OwnedSource::affects_layout)
+    })
 }
 
 thread_local! {
@@ -1933,6 +1944,7 @@ impl<'a> Walk<'a> {
         // The line misses the span's owner and ends it (PART 0 S1).
         if block.span.is_some_and(|(ch, _)| ch == b'%') {
             block.span = None;
+            block.span_origin = None;
         }
         self.frames.push(block);
         // A stanza's final lazy line is read at the frame's reader column,
@@ -2198,7 +2210,14 @@ impl<'a> Walk<'a> {
                     pure_fence(c.rest).is_some_and(|(c2, n)| c2 == ch && n >= len)
                 };
                 if closes {
-                    self.top().span = None;
+                    if ch == b'%' {
+                        if let Some((line, _)) = self.top().span_origin {
+                            self.closed_comments.insert(line);
+                        }
+                    }
+                    let top = self.top();
+                    top.span = None;
+                    top.span_origin = None;
                 }
             } else if closer.is_some_and(|cl| cl.closes(c.rest, col, open_col)) {
                 let inner = self.frames.pop();
@@ -2229,7 +2248,13 @@ impl<'a> Walk<'a> {
                     None => comment_run(rest).map(|run| (b'%', run)),
                 };
                 if new_span.is_some() {
-                    self.top().span = new_span;
+                    let origin = new_span.and_then(|(ch, _)| {
+                        (ch == b'%')
+                            .then(|| (self.first_line + at, doc_column(self.lines[at], c.rest) + 1))
+                    });
+                    let top = self.top();
+                    top.span = new_span;
+                    top.span_origin = origin;
                 }
             }
             self.track_verse(line_block, span, true);
@@ -2682,6 +2707,7 @@ impl<'a> Walk<'a> {
                 f.line_block = line_block;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
+                f.doc_marker = doc_column(self.lines[at], c.src);
                 f.entry_last = entry_last;
                 f.family = match closer {
                     Closer::Fence(..) => "code",

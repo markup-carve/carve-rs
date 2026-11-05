@@ -52,6 +52,14 @@ fn unclosed_code_fence_vectors() {
 }
 
 #[test]
+fn unclosed_comment_fence_vectors() {
+    check(
+        include_str!("spec/tests/lint-rule-vectors/unclosed-comment-fence.json"),
+        21,
+    );
+}
+
+#[test]
 fn continuation_marker_refused_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/continuation-marker-refused.json"),
