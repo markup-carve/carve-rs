@@ -19,6 +19,26 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_quote() {
             "> pre\n{% b\n>  b %}\n",
             "<blockquote><p>pre\n</p></blockquote>",
         ),
+        (
+            "- > pre\n{% b\n b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n {% b\n b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nb %}</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n {% b\n  b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n{% b\n c\n d %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+        ),
+        (
+            "- > pre\n {% b\n  c\n b %}\n",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nc\nb %}</p></blockquote>\n  </li>\n</ul>",
+        ),
     ];
     for (source, expected) in cases {
         assert_eq!(to_html(source).trim(), expected, "{source:?}");
@@ -35,6 +55,14 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_list() {
         ("- pre\n{% b\n b %}\n", "<ul>\n  <li>pre\n</li>\n</ul>"),
     ];
     for (source, expected) in cases {
+        assert_eq!(to_html(source).trim(), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn a_lazy_brace_run_does_not_move_a_sibling_list_marker() {
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>pre\n{% a</li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>";
+    for source in ["- - pre\n {% a\n  - x\n", "- - pre\n{% a\n  - x\n"] {
         assert_eq!(to_html(source).trim(), expected, "{source:?}");
     }
 }

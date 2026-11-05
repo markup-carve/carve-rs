@@ -150,6 +150,16 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     // A stanza line keeps its lazy frame, so a `%%%` span it misses ends there (carve#4956).
     let stanza_tail = crate::parse::definition::body_ends_in_line_block_payload(&nested.source);
+    let mut lazy_brace_open = false;
+    if ancestor_quote_column.is_some() {
+        for prior in nested.source.lines() {
+            if is_blank_line(prior) || prior.contains("%}") {
+                lazy_brace_open = false;
+            } else if trim_ascii_start(strip_lazy(prior)).starts_with("{%") {
+                lazy_brace_open = true;
+            }
+        }
+    }
     if cur.peek().is_some_and(|line| {
         matches!(line.as_bytes().first(), Some(b'`' | b'~')) && detect_fence_open(line).is_some()
     }) {
@@ -181,6 +191,13 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                     && !item_block_opener(trim_ascii_start(line))))
             || ancestor_quote_column
                 .is_some_and(|column| marked_quote_at_ancestor_column(line, column, content_col))
+            || ancestor_quote_column.is_some_and(|column| {
+                lazy_brace_open
+                    && indent >= column
+                    && indent < content_col
+                    && (is_list_marker(trim_ascii_start(line))
+                        || item_block_opener(trim_ascii_start(line)))
+            })
             || (is_list_marker(line) && indent_columns(line) <= list_base)
             || (is_plus_marker(trim_ascii_start(line))
                 && cur
@@ -238,6 +255,11 @@ pub(crate) fn collect_trailing_lazy_through_framed(
             buffered.push_at(sliced, source_line, source_col);
         } else {
             nested.push_newline_at(sliced, source_line, source_col);
+        }
+        if is_blank_line(line) || line.contains("%}") {
+            lazy_brace_open = false;
+        } else if trim_ascii_start(strip_lazy(line)).starts_with("{%") {
+            lazy_brace_open = true;
         }
         cur.consume();
     }

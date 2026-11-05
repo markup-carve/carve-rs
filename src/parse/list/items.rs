@@ -2215,6 +2215,20 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }) {
             return Some(false);
         }
+        if cur.peek().is_some_and(|line| {
+            let indent = indent_columns(line);
+            indent >= content_col
+                && indent < nested_content_col
+                && is_list_marker(trim_ascii_start(line))
+        }) {
+            stream.append(collect_indented_block_mapped(
+                cur,
+                content_col.saturating_sub(1),
+                content_col,
+                options,
+            ));
+            return Some(false);
+        }
         Some(resume_marker_sublist(
             cur,
             stream,

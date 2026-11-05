@@ -325,6 +325,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // instead, which the parallel-to-`lines` invariant below forbids.
     let building_maps = cur.line_map.is_some();
     let mut lines: Vec<String> = Vec::new();
+    // A lazy brace opener may already have been claimed by a nested quote.
+    // Its continuation still needs the source indent after this list rebase.
+    let mut lazy_brace_source_open = cur.pos.checked_sub(1).is_some_and(|at| {
+        let previous = cur.lines.at(at);
+        indent_columns(previous) < strip_cols
+            && trim_ascii_start(strip_lazy(previous)).starts_with("{%")
+            && !previous.contains("%}")
+    });
     let mut held_comment_span = HeldCommentSpan::new();
     let mut body_code_fence = OpenCodeFenceScan::default();
     let mut line_map = Vec::new();
@@ -2044,6 +2052,24 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && indent < strip_cols
             && is_line_comment_any_column(line)
             && !is_definition_placeholder(line);
+        if (lazy_brace_source_open
+            || (indent < strip_cols && trim_ascii_start(strip_lazy(line)).starts_with("{%")))
+            && !sliced.starts_with(LAZY)
+            && (trim_ascii_start(strip_lazy(line)).starts_with("{%")
+                || (!item_block_opener(trim_ascii_start(line))
+                    && !is_list_marker(trim_ascii_start(line))))
+            && indent_columns(&sliced) < indent
+        {
+            sliced = format!("{}{}", " ".repeat(indent), trim_ascii_start(&sliced));
+        }
+        if line.contains("%}") || is_blank_line(line) {
+            lazy_brace_source_open = false;
+        } else if !lazy_brace_source_open
+            && indent < strip_cols
+            && trim_ascii_start(strip_lazy(line)).starts_with("{%")
+        {
+            lazy_brace_source_open = true;
+        }
         lines.push(if term_comment_below_column {
             format!(" {sliced}")
         } else {
