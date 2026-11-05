@@ -32,10 +32,7 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_list() {
             "- pre\n{% b\nb %}\n",
             "<ul>\n  <li>pre\n{% b\nb %}</li>\n</ul>",
         ),
-        (
-            "- pre\n{% b\n b %}\n",
-            "<ul>\n  <li>pre\n</li>\n</ul>",
-        ),
+        ("- pre\n{% b\n b %}\n", "<ul>\n  <li>pre\n</li>\n</ul>"),
     ];
     for (source, expected) in cases {
         assert_eq!(to_html(source).trim(), expected, "{source:?}");
