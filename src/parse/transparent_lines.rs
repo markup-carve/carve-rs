@@ -704,6 +704,7 @@ fn containing_path(blocks: &[BlockNode], at: (usize, usize), path: &mut Vec<(usi
         BlockNode::Div(d) => (0, &d.children),
         BlockNode::Admonition(a) => (0, &a.children),
         BlockNode::Directive(d) => (0, &d.children),
+        BlockNode::FigureGroup(g) => (0, &g.children),
         _ => return,
     };
     path.push((index, child));
@@ -730,6 +731,7 @@ fn containing_blocks(blocks: &mut Vec<BlockNode>, at: (usize, usize)) -> &mut Ve
             BlockNode::Div(d) => &mut d.children,
             BlockNode::Admonition(a) => &mut a.children,
             BlockNode::Directive(d) => &mut d.children,
+            BlockNode::FigureGroup(g) => &mut g.children,
             _ => unreachable!("containing_path steps into containers only"),
         };
     }
