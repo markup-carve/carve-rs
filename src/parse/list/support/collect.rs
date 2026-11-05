@@ -2055,6 +2055,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if (lazy_brace_source_open
             || (indent < strip_cols && trim_ascii_start(strip_lazy(line)).starts_with("{%")))
             && !sliced.starts_with(LAZY)
+            && (trim_ascii_start(strip_lazy(line)).starts_with("{%")
+                || (!item_block_opener(trim_ascii_start(line))
+                    && !is_list_marker(trim_ascii_start(line))))
             && indent_columns(&sliced) < indent
         {
             sliced = format!("{}{}", " ".repeat(indent), trim_ascii_start(&sliced));

@@ -60,6 +60,13 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_list() {
 }
 
 #[test]
+fn a_lazy_brace_run_does_not_move_a_sibling_list_marker() {
+    let source = "- - pre\n {% a\n  - x\n";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>pre\n{% a</li>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>";
+    assert_eq!(to_html(source).trim(), expected);
+}
+
+#[test]
 fn a_lazy_braced_comment_uses_written_columns_in_a_footnote_and_div() {
     let cases = [
         ("[^n]: pre\n{% b\nb %}\n\nx[^n]\n", true),
