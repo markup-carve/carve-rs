@@ -2337,10 +2337,8 @@ impl<'a> QuoteBody<'a> {
         // is not kept ends any run, so each run is scanned a bounded number of times.
         if self.brace_starts[0].is_some() {
             let content = trim_ascii_start(strip_all_quotes(stripped).0);
-            if is_blank_line(content) {
-                self.brace_starts = [None; 2];
-            } else if !ParaOpen::from_line(content, false).get()
-                && !self.follows_refused_brace_run()
+            if is_blank_line(content)
+                || (!ParaOpen::from_line(content, false).get() && !self.follows_refused_brace_run())
             {
                 self.brace_starts = [None; 2];
             }
