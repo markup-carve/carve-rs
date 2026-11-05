@@ -3715,8 +3715,10 @@ fn render_inlines_with_caption(
         crate::render_depth::record("carve");
         return String::new();
     }
-    if ctx.inline_depth + ctx.block_depth + 1 >= crate::parse::MAX_NESTING_DEPTH && nodes.len() == 1
-    {
+    // The parser reads a paragraph's inlines on their own budget, so block depth
+    // alone does not make text raw: a `:::` 200 containers deep still needs
+    // its escape (carve-rs#3895).
+    if ctx.inline_depth + 1 >= crate::parse::MAX_NESTING_DEPTH && nodes.len() == 1 {
         if let InlineNode::Text(text) = &nodes[0] {
             return text.value.clone();
         }
