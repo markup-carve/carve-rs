@@ -48,7 +48,7 @@ pub(super) fn write_document(out: &mut String, doc: &Document) {
             match entry {
                 DocEntry::Block(child) => write_block(out, child),
                 DocEntry::FootnoteDef(label, children, pos) => {
-                    write_footnote_def(out, label, children, pos)
+                    write_footnote_def(out, label, children, pos, &doc.children)
                 }
             }
         }
@@ -278,6 +278,7 @@ pub(super) fn write_footnote_def(
     label: &str,
     children: &[BlockNode],
     def_pos: Option<&Pos>,
+    document_children: &[BlockNode],
 ) {
     let mut w = Writer::new(out);
     w.field("type", |out| write_string(out, "footnote"));
@@ -299,6 +300,19 @@ pub(super) fn write_footnote_def(
         }
         None => None,
     };
+    // A note joined across a document-owned comment has no contiguous source
+    // span (CARVE-P12-022). The comment is not the note's child, so publishing
+    // the candidate extent would overlap a sibling on the wire.
+    let pos = pos.filter(|span| {
+        !document_children.iter().any(|node| {
+            matches!(node, BlockNode::Comment(comment)
+            if comment.pos.as_ref().is_some_and(|owned| {
+                    span.file == owned.file
+                        && span.start_offset < owned.start_offset
+                    && owned.end_offset <= span.end_offset
+            }))
+        })
+    });
     write_pos_field(&mut w, &pos);
     w.finish();
 }

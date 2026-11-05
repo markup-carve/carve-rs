@@ -1215,6 +1215,20 @@ fn parse_with_options_mode_and_index_once(
                 original,
                 line_starts,
             );
+            // A collected note joined across a root-owned erased comment has
+            // no contiguous source span (CARVE-P12-022). Drop the parser's
+            // cached extent too, so AST JSON ingest reconstructs the same
+            // document instead of retaining an unpublishable private position.
+            footnote_def_pos.retain(|_, span| {
+                !children.iter().any(|node| {
+                    matches!(node, BlockNode::Comment(comment)
+                    if comment.pos.as_ref().is_some_and(|owned| {
+                        span.file == owned.file
+                            && span.start_offset < owned.start_offset
+                            && owned.end_offset <= span.end_offset
+                    }))
+                })
+            });
         }
     }
     let mut doc = Document {
