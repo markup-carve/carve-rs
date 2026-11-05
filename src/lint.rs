@@ -459,9 +459,9 @@ fn collect_parser_events(
     out: &mut Vec<LintWarning>,
 ) {
     use crate::parse::LintEvent;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     let lines: Vec<&str> = source.split('\n').collect();
-    let mut fences = HashSet::new();
+    let mut fences = HashMap::new();
     let mut attached_first_block_items = HashSet::new();
     let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
     for body in doc.footnote_defs.values() {
@@ -485,18 +485,18 @@ fn collect_parser_events(
             }
             BlockNode::CodeBlock(code) => {
                 if let Some(pos) = &code.pos {
-                    fences.insert((pos.start_line, pos.start_column));
+                    fences.insert((pos.start_line, pos.start_column), pos.end_line);
                 }
             }
             BlockNode::RawBlock(raw) => {
                 if let Some(pos) = &raw.pos {
-                    fences.insert((pos.start_line, pos.start_column));
+                    fences.insert((pos.start_line, pos.start_column), pos.end_line);
                 }
             }
             BlockNode::Figure(figure) => {
                 if let FigureTarget::CodeBlock(code) = &*figure.target {
                     if let Some(pos) = &code.pos {
-                        fences.insert((pos.start_line, pos.start_column));
+                        fences.insert((pos.start_line, pos.start_column), pos.end_line);
                     }
                 }
             }
@@ -517,11 +517,11 @@ fn collect_parser_events(
                 // or before definition collection erases an invisible line.
                 // The AST fence gives the authored opener; require its marker
                 // on that source line so speculative reader events stay silent.
-                let (line, column) = if fences.contains(&(pos.start_line, pos.start_column)) {
+                let (line, column) = if fences.contains_key(&(pos.start_line, pos.start_column)) {
                     (pos.start_line, pos.start_column)
                 } else {
                     let Some(&(line, column)) = fences
-                        .iter()
+                        .keys()
                         .filter(|&&(line, column)| {
                             line >= pos.start_line
                                 && line <= *end_line
@@ -541,14 +541,16 @@ fn collect_parser_events(
                 // A temporary container view can stop immediately before a
                 // source-owned closer. The final AST still has the opener,
                 // but that view's unclosed event is no longer authoritative.
-                if lines.get(*end_line).is_some_and(|text| {
-                    let suffix = text.chars().skip(column - 1).collect::<String>();
-                    let run = suffix
-                        .bytes()
-                        .take_while(|byte| *byte == marker.as_bytes()[0])
-                        .count();
-                    run >= marker.len() && suffix[run..].trim_matches([' ', '\t']).is_empty()
-                }) {
+                if fences[&(line, column)] > *end_line
+                    && lines.get(*end_line).is_some_and(|text| {
+                        let suffix = text.chars().skip(column - 1).collect::<String>();
+                        let run = suffix
+                            .bytes()
+                            .take_while(|byte| *byte == marker.as_bytes()[0])
+                            .count();
+                        run >= marker.len() && suffix[run..].trim_matches([' ', '\t']).is_empty()
+                    })
+                {
                     continue;
                 }
                 let ending = if *end_line > lines.len()

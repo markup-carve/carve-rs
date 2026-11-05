@@ -32,6 +32,15 @@ fn a_child_fence_closed_before_a_dedent_is_not_reported_unclosed() {
 }
 
 #[test]
+fn a_fence_after_a_quote_ends_is_a_separate_opener() {
+    let source = "> ```\n> code\noutside\n  ```\n";
+    assert_eq!(
+        findings(source, "unclosed-code-fence"),
+        vec![(1, 3), (4, 3)]
+    );
+}
+
+#[test]
 fn dedented_child_fence_variants_keep_only_the_open_outer_fence() {
     for n in 0..1000 {
         let indent = " ".repeat(n % 3);
