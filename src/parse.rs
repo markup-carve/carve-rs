@@ -877,6 +877,25 @@ fn parse_with_options_mode_and_index(
     let transparent = transparent_lines::Transparent::detect(source);
     let transparent = transparent.as_ref();
     let parsed = transparent.map_or(source, |t| t.visible.as_str());
+    if !options.positions && transparent.is_some_and(|t| t.flat) {
+        let result = parse_with_options_mode_and_index_once(
+            parsed,
+            options,
+            mode,
+            transparent.map(|t| (t, source)),
+        );
+        if transparent.is_some_and(|t| t.flat_mismatch.get()) {
+            let (mut doc, index) = parse_with_options_mode_and_index_once(
+                parsed,
+                &options.positioned_parse_copy(),
+                mode,
+                transparent.map(|t| (t, source)),
+            );
+            crate::render_carve::strip_positions(&mut doc);
+            return (doc, index);
+        }
+        return result;
+    }
     // A hoisted abbreviation definition stands in document order by its source
     // line (CARVE-P12-070), which only a positioned parse can place.
     if !options.positions
@@ -1120,8 +1139,12 @@ fn parse_with_options_mode_and_index_once(
                 def.line = def.line.map(|line| t.authored_line(line + 1) - 1);
             }
         }
-        t.remap_positions(&mut children, &mut footnote_defs, &mut footnote_def_pos);
-        t.restore(&mut children, &mut footnote_defs, &footnote_def_pos);
+        if t.flat && !options.positions {
+            t.restore_flat_comments(&mut children);
+        } else {
+            t.remap_positions(&mut children, &mut footnote_defs, &mut footnote_def_pos);
+            t.restore(&mut children, &mut footnote_defs, &footnote_def_pos);
+        }
     }
     definition::start_descriptions_at_their_comments(&mut children);
     for blocks in footnote_defs.values_mut() {

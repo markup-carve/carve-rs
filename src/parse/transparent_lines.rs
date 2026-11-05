@@ -27,6 +27,8 @@ struct ErasedLine {
 
 pub(in crate::parse) struct Transparent {
     pub(in crate::parse) visible: String,
+    pub(in crate::parse) flat: bool,
+    pub(in crate::parse) flat_mismatch: std::cell::Cell<bool>,
     /// Visible 0-based line to authored 0-based line.
     lines: Vec<usize>,
     authored_lines: usize,
@@ -59,10 +61,42 @@ fn classify(rest: &str) -> Option<Kind> {
     detect_abbreviation_def(rest).map(|_| Kind::Abbreviation)
 }
 
+/// A document made only of unindented paragraphs, blank lines and comments
+/// has no container owner to trace. A fenced comment still hides its payload.
+/// Any structural opener leaves this narrow path for the ownership walk.
+fn flat_comment_owners(lines: &[&str], candidates: &[usize]) -> Option<Vec<(usize, String, bool)>> {
+    let mut in_comment = false;
+    let mut owners = Vec::with_capacity(candidates.len());
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_end_matches([' ', '\t']);
+        if trimmed == "%%%" {
+            in_comment = !in_comment;
+            continue;
+        }
+        if in_comment || trimmed.is_empty() {
+            continue;
+        }
+        if candidates.binary_search(&index).is_ok() {
+            if classify(trimmed) != Some(Kind::Comment) {
+                return None;
+            }
+            owners.push((index, "doc".to_owned(), false));
+        } else if !trimmed.starts_with(char::is_alphabetic)
+            || !trimmed
+                .split_whitespace()
+                .next()
+                .is_some_and(|word| word.chars().all(char::is_alphabetic))
+        {
+            return None;
+        }
+    }
+    (!in_comment).then_some(owners)
+}
+
 thread_local! {
-    /// The last source asked about and whether it erases a line; the event
-    /// route and the tree parser ask in turn about the same document.
-    static LAST_ANSWER: std::cell::RefCell<Option<(String, bool)>> =
+    /// The event route probes before the tree parser. Hand the already found
+    /// erased lines to that parser instead of detecting them a second time.
+    static LAST_DETECTION: std::cell::RefCell<Option<(String, Option<Transparent>)>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -72,13 +106,16 @@ pub(in crate::parse) fn erases_lines(source: &str) -> bool {
     if !source.contains("%%") && !source.contains("]:") {
         return false;
     }
-    if let Some(answer) = LAST_ANSWER.with(|cell| match &*cell.borrow() {
-        Some((text, answer)) if text == source => Some(*answer),
+    if let Some(answer) = LAST_DETECTION.with(|cell| match &*cell.borrow() {
+        Some((text, found)) if text == source => Some(found.is_some()),
         _ => None,
     }) {
         return answer;
     }
-    Transparent::detect(source).is_some()
+    let found = Transparent::detect_lines(source);
+    let answer = found.is_some();
+    LAST_DETECTION.with(|cell| *cell.borrow_mut() = Some((source.to_owned(), found)));
+    answer
 }
 
 impl Transparent {
@@ -86,16 +123,38 @@ impl Transparent {
         if !source.contains("%%") && !source.contains("]:") {
             return None;
         }
-        let found = Self::detect_lines(source);
-        LAST_ANSWER.with(|cell| *cell.borrow_mut() = Some((source.to_owned(), found.is_some())));
-        found
+        if let Some(found) = LAST_DETECTION.with(|cell| {
+            let mut cached = cell.borrow_mut();
+            if cached.as_ref().is_some_and(|(text, _)| text == source) {
+                cached.take().map(|(_, found)| found)
+            } else {
+                None
+            }
+        }) {
+            return found;
+        }
+        Self::detect_lines(source)
     }
 
     fn detect_lines(source: &str) -> Option<Self> {
         let normalized = normalize_source(source);
         let authored: Vec<&str> = normalized.split('\n').collect();
+        let candidates: Vec<usize> = authored
+            .iter()
+            .enumerate()
+            .filter_map(|(index, line)| {
+                classify(behind_prefix(line).trim_end_matches([' ', '\t'])).map(|_| index)
+            })
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
         let mut erased = Vec::new();
-        for (index, owner, _) in own_lines::traced_leaves(normalized.as_ref()) {
+        let flat_owners = flat_comment_owners(&authored, &candidates);
+        let flat = flat_owners.is_some();
+        let owners = flat_owners
+            .unwrap_or_else(|| own_lines::traced_leaves(normalized.as_ref(), &candidates));
+        for (index, owner, _) in owners {
             let Some(line) = authored.get(index) else {
                 continue;
             };
@@ -144,6 +203,8 @@ impl Transparent {
         }
         Some(Transparent {
             visible,
+            flat,
+            flat_mismatch: std::cell::Cell::new(false),
             lines,
             authored_lines: authored.len(),
             erased,
@@ -167,6 +228,70 @@ impl Transparent {
             Some(index) => index + 1,
             None => self.authored_lines + line.saturating_sub(self.lines.len()),
         }
+    }
+
+    /// The flat path's visible blocks are paragraphs and fenced comments.
+    /// Interleave erased document comments without asking the parser to build
+    /// positions for every inline node first.
+    pub(in crate::parse) fn restore_flat_comments(&self, children: &mut Vec<BlockNode>) {
+        let visible: Vec<&str> = self.visible.split('\n').collect();
+        let mut spans = Vec::new();
+        let mut at = 0;
+        while at < visible.len() {
+            if visible[at].trim_end_matches([' ', '\t']).is_empty() {
+                at += 1;
+                continue;
+            }
+            let start = at;
+            if visible[at].trim_end_matches([' ', '\t']) == "%%%" {
+                at += 1;
+                while at < visible.len() {
+                    let closer = visible[at].trim_end_matches([' ', '\t']) == "%%%";
+                    at += 1;
+                    if closer {
+                        break;
+                    }
+                }
+            } else {
+                at += 1;
+                while at < visible.len()
+                    && !visible[at].trim_end_matches([' ', '\t']).is_empty()
+                    && visible[at].trim_end_matches([' ', '\t']) != "%%%"
+                {
+                    at += 1;
+                }
+            }
+            spans.push((self.lines[start], self.lines[at - 1]));
+        }
+        if spans.len() != children.len() {
+            self.flat_mismatch.set(true);
+            return;
+        }
+        let mut erased = self.erased.iter().peekable();
+        let mut merged = Vec::with_capacity(children.len() + self.erased.len());
+        let comment = |line: &ErasedLine| {
+            BlockNode::Comment(Comment {
+                block: false,
+                delimited: false,
+                content: line.rest[2..]
+                    .strip_prefix(' ')
+                    .unwrap_or(&line.rest[2..])
+                    .trim_end_matches([' ', '\t'])
+                    .to_owned(),
+                pos: None,
+            })
+        };
+        for ((start, end), block) in spans.into_iter().zip(std::mem::take(children)) {
+            while erased.peek().is_some_and(|line| line.index < start) {
+                merged.push(comment(erased.next().unwrap()));
+            }
+            merged.push(block);
+            while erased.peek().is_some_and(|line| line.index <= end) {
+                merged.push(comment(erased.next().unwrap()));
+            }
+        }
+        merged.extend(erased.map(comment));
+        *children = merged;
     }
 
     /// Register erased link definitions. The last definition of a label wins,
