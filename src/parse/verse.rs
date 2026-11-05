@@ -718,9 +718,14 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             break;
         }
         let opener = strip_leading_columns(line, base_indent);
-        let run = opener
-            .starts_with('%')
-            .then(|| verse_comment_run(&opener))
+        let comment_opener = opener.trim_start_matches(' ');
+        let run = (opener.len() - comment_opener.len() <= 3)
+            .then(|| {
+                comment_opener
+                    .starts_with('%')
+                    .then(|| verse_comment_run(comment_opener))
+                    .flatten()
+            })
             .flatten();
         if let Some(run) = run {
             // An unclosed span runs to the block's own closer (carve#4907).
@@ -754,7 +759,7 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
                 close_at += 1;
             }
             let closed = close_at < limit;
-            let tail = opener[run..].trim_matches([' ', '\t']);
+            let tail = comment_opener[run..].trim_matches([' ', '\t']);
             let content = std::iter::once(tail)
                 .filter(|tail| !tail.is_empty())
                 .map(str::to_string)
