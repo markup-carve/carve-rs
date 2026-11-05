@@ -338,11 +338,12 @@ impl SubtreeVisitor for TermGap<'_> {
             }
             let BlockNode::DefinitionList(list) = &mut blocks[i] else {
                 if !matches!(blocks[i], BlockNode::Paragraph(_) | BlockNode::Heading(_)) {
-                    visit_block_children(&mut blocks[i], self);
+                    visit_near(&mut blocks[i], self.at, self);
                 }
                 continue;
             };
-            for item in &mut list.items {
+            let near = near_entries(&list.items, self.at, entry_start);
+            for item in &mut list.items[near] {
                 let first = item.terms.first().and_then(|term| term.pos.as_ref());
                 let starts = |pos: &Pos| (pos.start_line, pos.start_column);
                 let in_gap = first.is_some_and(|term| starts(term) < self.at)
@@ -440,7 +441,7 @@ impl SubtreeVisitor for InsideSpan<'_> {
                 }
             }
             if !matches!(block, BlockNode::Paragraph(_) | BlockNode::Heading(_)) {
-                visit_block_children(block, self);
+                visit_near(block, (self.line.index + 1, 0), self);
             }
         }
     }
@@ -452,6 +453,60 @@ fn at_or_before(pos: &Pos, at: (usize, usize)) -> bool {
 
 fn contains(pos: &Pos, at: (usize, usize)) -> bool {
     at_or_before(pos, at) && at < (pos.end_line, pos.end_column)
+}
+
+/// The entries of a list or description list that can hold `at`: the last one
+/// starting at or before it, and any unplaced ones just above it. Entries stand
+/// in source order, as `position_index` reads blocks, so a lookup per erased
+/// line stays logarithmic.
+fn near_entries<T>(
+    entries: &[T],
+    at: (usize, usize),
+    start: impl Fn(&T) -> Option<(usize, usize)>,
+) -> std::ops::Range<usize> {
+    let end = entries.partition_point(|entry| start(entry).map_or(true, |s| s <= at));
+    let mut from = end.saturating_sub(1);
+    while from > 0 && start(&entries[from]).is_none() {
+        from -= 1;
+    }
+    from..end
+}
+
+fn entry_start(item: &DefinitionItem) -> Option<(usize, usize)> {
+    item.terms
+        .first()
+        .and_then(|term| term.pos.as_ref())
+        .or(item.pos.as_ref())
+        .map(|pos| (pos.start_line, pos.start_column))
+}
+
+/// The children of `block` that can hold `at`, as `visit_block_children`
+/// walks them, without every entry of a long list.
+fn visit_near<V: SubtreeVisitor>(block: &mut BlockNode, at: (usize, usize), v: &mut V) {
+    match block {
+        BlockNode::List(list) => {
+            let near = near_entries(&list.items, at, |item| {
+                item.pos
+                    .as_ref()
+                    .map(|pos| (pos.start_line, pos.start_column))
+            });
+            for item in &mut list.items[near] {
+                v.blocks(&mut item.children);
+            }
+        }
+        BlockNode::DefinitionList(list) => {
+            let near = near_entries(&list.items, at, entry_start);
+            for item in &mut list.items[near] {
+                for term in &mut item.terms {
+                    v.inlines(&mut term.children);
+                }
+                for def in &mut item.definitions {
+                    v.blocks(&mut def.children);
+                }
+            }
+        }
+        _ => visit_block_children(block, v),
+    }
 }
 
 /// Where a node starting at `at` goes among `blocks`, by source order.
@@ -539,7 +594,7 @@ impl SubtreeVisitor for AfterParagraph<'_> {
                 return;
             }
             if !matches!(blocks[i], BlockNode::Heading(_)) {
-                visit_block_children(&mut blocks[i], self);
+                visit_near(&mut blocks[i], self.at, self);
             }
         }
     }

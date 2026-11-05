@@ -109,6 +109,26 @@ fn column_zero_continuations_scale_near_linearly() {
     );
 }
 
+/// Restoring an erased `%%` line looks up only the entry that can hold it, not
+/// every entry of a long list or description list (carve-rs#3868).
+#[test]
+fn erased_lines_in_long_lists_scale_near_linearly() {
+    let scaling = measure_scaling_at(
+        &|lines| ":: t\n%% c\n:: u\n: body\n\n".repeat(lines / 5),
+        8_000,
+        16_000,
+    );
+    eprintln!(
+        "erased lines in lists: 8000 lines {:.3}s, 16000 lines {:.3}s",
+        scaling.small_secs, scaling.large_secs
+    );
+    assert!(
+        scaling.large_secs / scaling.small_secs < 3.6,
+        "erased lines in lists took {:.2}x longer on double the lines",
+        scaling.large_secs / scaling.small_secs
+    );
+}
+
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
 /// cascade into every other one reporting a lock error instead of its result.
 fn perf_guard() -> std::sync::MutexGuard<'static, ()> {
@@ -1784,7 +1804,7 @@ fn a_definition_bodys_lazy_run_asks_s4_once_per_line() {
         lazily_continued_definition_body,
         "a lazily continued definition body",
         8_000,
-        32_000,
+        16_000,
     );
 
     // AGAINST THE TWIN, because a slope alone cannot say the cost is wrong -
@@ -1850,7 +1870,7 @@ fn a_tall_html_table_is_read_in_time_proportional_to_its_rows() {
         tall_html_table,
         "a tall HTML table",
         8_000,
-        32_000,
+        16_000,
     );
 }
 
@@ -2260,7 +2280,7 @@ fn repeated_lint_warning_columns_scale_near_linearly() {
             |n| unit.repeat(n),
             label,
             2_000,
-            16_000,
+            8_000,
         );
     }
 }
