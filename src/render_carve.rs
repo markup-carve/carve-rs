@@ -7278,6 +7278,7 @@ mod tests {
         pub(super) static PARSED_BYTES: Cell<usize> = const { Cell::new(0) };
         pub(super) static WHOLE_DOCUMENT_PROBES: Cell<bool> = const { Cell::new(false) };
         pub(super) static PROBE_PARSES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static WHOLE_DOCUMENT_SEARCHES: Cell<usize> = const { Cell::new(0) };
     }
 
     /// Probes and parses of the escalation search while `html` is imported.
@@ -7396,6 +7397,109 @@ mod tests {
             let doc = crate::from_json(&json).expect("decode AST");
             let minimal = super::render_with_escapes(session, &doc, super::EscapeMode::Minimal);
             assert!(minimal.contains(escaped), "{inline}: {minimal}");
+        }
+    }
+
+    /// Cut from the carve-bench corpus: a block here writes differently once
+    /// its neighbors are pruned and claims more unit ordinals than in the
+    /// control render, so later units in the window are other blocks'.
+    const DRIFTING_WINDOW: &str = r#"- item
+  ::: note
+  body
+  :::
+tail
+
+- item
+  ::: note
+  body
+tail
+
+> quote
+> ::: note
+>
+> :::
+tail
+
+> quote
+> ::: note
+> body
+> :::
+tail
+
+# a :smile: b
+
+# *bold* heading
+
+[*bold* heading][]
+
+- ```
+ x
+ ```
+
+> ```
+x
+```
+
+- ~~~
+x
+~~~
+
+:: t
+: - ~~~ x
+code
+~~~
+
+~{/x/}{/y~/}
+
+- +
+> p
++
+> z
+
+> - | a |
+>   | b |
+> +
+> | c |
+> | d |
+
+/x/_y_ in company_id and a_b_c and a _ b _ c
+
+/*x*/
+"#;
+
+    /// A window whose ordinals drift predicts nothing, so its probe falls back
+    /// to the whole document instead of keeping a relaxation the document
+    /// rejects and repeating the whole search with whole-document probes.
+    #[test]
+    fn a_window_whose_ordinals_drift_is_not_trusted() {
+        let doc = crate::parse::parse(DRIFTING_WINDOW);
+        WHOLE_DOCUMENT_SEARCHES.with(|n| n.set(0));
+        let written = super::render_carve(&doc).expect("written");
+        assert_eq!(WHOLE_DOCUMENT_SEARCHES.with(Cell::get), 0);
+        assert_eq!(
+            super::comparable_tree(&written),
+            Some(super::comparable_document(doc))
+        );
+    }
+
+    /// The cost of the narrowing stays linear as the drifting shape repeats.
+    #[test]
+    fn the_escape_narrowing_stays_linear_over_drifting_windows() {
+        for copies in [1, 4, 16] {
+            let source = DRIFTING_WINDOW.repeat(copies);
+            PARSED_BYTES.with(|n| n.set(0));
+            WHOLE_DOCUMENT_SEARCHES.with(|n| n.set(0));
+            let written = crate::to_carve(&source);
+            let documents = PARSED_BYTES.with(Cell::get) as f64 / written.len() as f64;
+            assert_eq!(
+                WHOLE_DOCUMENT_SEARCHES.with(Cell::get),
+                0,
+                "{copies} copies"
+            );
+            assert!(
+                documents < 48.0,
+                "{copies} copies: {documents:.1} documents re-parsed"
+            );
         }
     }
 
