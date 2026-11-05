@@ -2,7 +2,11 @@ fn writes(source: &str, expected: &str) {
     let out = carve::render_carve(&carve::parse(source)).unwrap();
     assert_eq!(out, expected, "{source:?}");
     assert_eq!(carve::to_html(&out), carve::to_html(source), "{source:?}");
-    assert_eq!(carve::render_carve(&carve::parse(&out)).unwrap(), out, "{source:?}");
+    assert_eq!(
+        carve::render_carve(&carve::parse(&out)).unwrap(),
+        out,
+        "{source:?}"
+    );
 }
 
 // markup-carve/carve#5177: a `+` below a caption is refused, so the block
