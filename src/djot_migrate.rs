@@ -50,6 +50,8 @@ mod normalize;
 
 #[path = "djot_migrate/attribute_recovery.rs"]
 mod attribute_recovery;
+#[path = "djot_migrate/djot_blanks_after_sub_lists.rs"]
+mod blanks_after_sub_lists;
 #[path = "djot_migrate/djot_div_classes.rs"]
 mod div_classes;
 #[path = "djot_migrate/djot_heading_ids.rs"]
@@ -152,8 +154,16 @@ fn djot_to_carve_prepared_with_quotes(
 /// separation, and Carve reads it as a loose item (carve#5015), so the blank goes.
 /// A blank between sibling items, or below a later block, stays.
 fn glue_sub_lists_to_their_items(carve: String) -> String {
+    blanks_after_sub_lists::drop_blanks_after_sub_lists(glue_sub_lists_to_their_leads(carve))
+}
+
+fn sub_list_marker() -> &'static regex::Regex {
+    cached_regex!(r"^( *)([-*+]|\(?(?:[0-9]+|[a-zA-Z]|[ivxlcdmIVXLCDM]+)[.)]) ").unwrap()
+}
+
+fn glue_sub_lists_to_their_leads(carve: String) -> String {
     let quote = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
-    let marker = cached_regex!(r"^( *)([-*+]|\d+[.)]) ").unwrap();
+    let marker = sub_list_marker();
     let fence_line = cached_regex!(r"^[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
     let lines: Vec<&str> = carve.split('\n').collect();
     let parts: Vec<(usize, &str)> = lines
@@ -249,48 +259,6 @@ fn glue_sub_lists_to_their_items(carve: String) -> String {
     if !drop.contains(&true) {
         return carve;
     }
-    // A list a blank already loosens between two items needs no glue.
-    fn separated_from_a_sibling(
-        parts: &[(usize, &str)],
-        in_fence: &[bool],
-        blank: usize,
-        column: usize,
-    ) -> bool {
-        let depth = parts[blank].0;
-        let indent = |body: &str| body.len() - body.trim_start_matches(' ').len();
-        let mut after_blank = false;
-        for at in blank + 1..parts.len() {
-            let (line_depth, line) = parts[at];
-            if line_depth < depth {
-                return false;
-            }
-            if line_depth > depth || in_fence[at] {
-                after_blank = false;
-                continue;
-            }
-            if line.trim().is_empty() {
-                after_blank = true;
-                continue;
-            }
-            match indent(line).cmp(&column) {
-                std::cmp::Ordering::Less => return false,
-                std::cmp::Ordering::Equal => {
-                    if !cached_regex!(r"^ *([-*+]|\d+[.)]) ")
-                        .unwrap()
-                        .is_match(line)
-                    {
-                        return false;
-                    }
-                    if after_blank {
-                        return true;
-                    }
-                }
-                std::cmp::Ordering::Greater => {}
-            }
-            after_blank = false;
-        }
-        false
-    }
     lines
         .iter()
         .zip(drop)
@@ -298,6 +266,46 @@ fn glue_sub_lists_to_their_items(carve: String) -> String {
         .map(|(line, _)| *line)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+// A list a blank already loosens between two items needs no glue.
+fn separated_from_a_sibling(
+    parts: &[(usize, &str)],
+    in_fence: &[bool],
+    blank: usize,
+    column: usize,
+) -> bool {
+    let depth = parts[blank].0;
+    let indent = |body: &str| body.len() - body.trim_start_matches(' ').len();
+    let mut after_blank = false;
+    for at in blank + 1..parts.len() {
+        let (line_depth, line) = parts[at];
+        if line_depth < depth {
+            return false;
+        }
+        if line_depth > depth || in_fence[at] {
+            after_blank = false;
+            continue;
+        }
+        if line.trim().is_empty() {
+            after_blank = true;
+            continue;
+        }
+        match indent(line).cmp(&column) {
+            std::cmp::Ordering::Less => return false,
+            std::cmp::Ordering::Equal => {
+                if !sub_list_marker().is_match(line) {
+                    return false;
+                }
+                if after_blank {
+                    return true;
+                }
+            }
+            std::cmp::Ordering::Greater => {}
+        }
+        after_blank = false;
+    }
+    false
 }
 
 /// The conversion builds an empty item as `- +`, and a bare `+` is a letter unless
