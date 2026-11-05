@@ -263,6 +263,18 @@ impl<'a> AttributeLine<'a> {
             self.line_prefix = prefix;
             self.previous_content =
                 &self.previous_line[quote_prefix.find(self.previous_line).unwrap().end()..];
+            // A line in a quote an item's marker line opened (`- > a`, the `>`
+            // in one column) reads that quote's content, not the item.
+            if let Some(item) = previous_item.find(self.previous_content) {
+                let quoted = &self.previous_content[item.end()..];
+                let column = prefix.len() - prefix.trim_start_matches([' ', '\t']).len();
+                if quoted.starts_with('>')
+                    && prefix[column..].starts_with('>')
+                    && column == self.previous_line.len() - self.previous_content.len() + item.end()
+                {
+                    self.previous_content = &quoted[quote_prefix.find(quoted).unwrap().end()..];
+                }
+            }
             self.previous_item_width = previous_item
                 .find(self.previous_content)
                 .map_or(0, |value| value.len());
@@ -281,7 +293,11 @@ impl<'a> AttributeLine<'a> {
                 }
             }
             if self.list_attribute {
-                self.active_list_column = Some(self.attribute_indent);
+                // An item whose content opens a quote (`- > a`) has no column
+                // the quote's own lines are measured against.
+                self.active_list_column = (!source[self.prefix_end..self.line_end]
+                    .starts_with('>'))
+                .then_some(self.attribute_indent);
             }
             if self.line_end == source.len() {
                 break;

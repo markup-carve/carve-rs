@@ -1776,7 +1776,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve#5129 moves five rows here, named with STRICT above.
     // Spec 0e8c456d adds 957, which reports a loss.
     // carve#5195 moves 928-3 here, named with STRICT above.
-    const LOSSY: usize = 945;
+    // Spec b1362b59 adds the four 959 rows (carve#5189), which report a loss.
+    const LOSSY: usize = 949;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

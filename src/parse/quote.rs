@@ -2528,7 +2528,9 @@ impl<'a> QuoteBody<'a> {
             // nothing linear instead of scanned once per line.
             QuotedAttrsBlock::NoneWithin(window) => {
                 self.attrs_scan_floor = at + window;
+                // A `{%` run is a comment, which CARVE-P2-035 decides in the item (carve#5189).
                 self.unclosed_nested_attribute = trim_ascii_start(stripped).starts_with('{')
+                    && !trim_ascii_start(stripped).starts_with("{%")
                     && (nested && prior_paragraph
                         || !nested
                             && cur
