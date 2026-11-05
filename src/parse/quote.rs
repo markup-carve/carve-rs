@@ -2335,7 +2335,16 @@ impl<'a> QuoteBody<'a> {
         let mut inherited_absorption = inherited_absorption;
         // Only an opener-shaped line can need the kept-line reading, and one that
         // is not kept ends any run, so each run is scanned a bounded number of times.
-        if self.brace_starts[0].is_some() {
+        if self.brace_starts[0].is_some() && is_blank_line(stripped) {
+            self.brace_starts = [None; 2];
+        }
+        if self.brace_starts[0].is_some()
+            && self
+                .inner
+                .lines
+                .last()
+                .is_some_and(|line| line.text.contains('}'))
+        {
             let content = trim_ascii_start(strip_all_quotes(stripped).0);
             if is_blank_line(content)
                 || (!ParaOpen::from_line(content, false).get() && !self.follows_refused_brace_run())
@@ -2449,11 +2458,8 @@ impl<'a> QuoteBody<'a> {
             // whatever it opens (CARVE-P2-035), so a lazy line can follow it.
             self.para_open = ParaOpen::from_line("x", inherited_absorption);
         }
-        // A run lies inside one paragraph, so a line that closes it ends the run.
-        if self.brace_starts[0].is_some() && !self.para_open.get() {
-            self.brace_starts = [None; 2];
-        }
-        if trim_ascii_start(strip_all_quotes(stripped).0).starts_with('{') {
+        if stripped.contains('{') && trim_ascii_start(strip_all_quotes(stripped).0).starts_with('{')
+        {
             self.brace_starts = [Some(self.inner.lines.len()), self.brace_starts[0]];
         }
         self.scan_attrs_block(cur, at, stripped, prior_paragraph);
