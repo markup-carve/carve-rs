@@ -6,6 +6,65 @@ fn assert_stable(source: &str, expected: &str) {
 }
 
 #[test]
+fn document_comments_keep_their_source_gap_between_list_items() {
+    assert_stable(
+        "- a\n%% c1\n\n- b\n%% c2\n\n- c\n%% c3\n",
+        "- a\n\n%% c1\n\n- b\n\n%% c2\n\n- c\n\n%% c3\n",
+    );
+    assert_stable("- a\n\n  %% y\n%% z\n- c\n", "- a\n\n  %% y\n%% z\n\n- c\n");
+}
+
+#[test]
+fn an_included_comment_with_the_same_offset_is_not_suppressed() {
+    let mut doc = carve::parse_with_options(
+        "- a\n%% one\n\n- b\n\n%% two\n",
+        &carve::Options::new().with_positions(true),
+    );
+    let mut comments: Vec<_> = doc
+        .children
+        .iter_mut()
+        .filter_map(|block| match block {
+            carve::ast::BlockNode::Comment(comment) => Some(comment),
+            _ => None,
+        })
+        .collect();
+    let first_offset = comments[0].pos.as_ref().unwrap().start_offset;
+    let other = comments[1].pos.as_mut().unwrap();
+    other.start_offset = first_offset;
+    other.file = Some("included.crv".into());
+    let written = carve::render_carve(&doc).unwrap();
+    assert!(written.contains("%% one"), "{written:?}");
+    assert!(written.contains("%% two"), "{written:?}");
+}
+
+#[test]
+fn document_comment_gap_variants_keep_html_and_reach_a_fixed_point() {
+    let mut checked = 0;
+    for marker in ["-", "*", "1.", "."] {
+        for first in ["a", "word", "two words", "é", "x1"] {
+            for second in ["b", "next", "two words", "é", "x2"] {
+                for comment in ["c", "note", "two words", "é", "x3"] {
+                    for blank in ["", "\n"] {
+                        let source = format!(
+                            "{marker} {first}\n{blank}%% {comment}\n{blank}{marker} {second}\n"
+                        );
+                        let written = carve::to_carve(&source);
+                        assert_eq!(
+                            carve::to_html(&written),
+                            carve::to_html(&source),
+                            "{source:?}"
+                        );
+                        assert_eq!(carve::to_carve(&written), written, "{source:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1000);
+}
+
+#[test]
 fn trailing_comments_keep_the_next_list_item() {
     assert_stable(
         "1. :: t\n   : # h\n\n     %% note\n\n     %% c2\n2. b\n",
