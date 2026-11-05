@@ -403,6 +403,19 @@ fn an_html_block_becomes_a_raw_block() {
 }
 
 #[test]
+fn html_blocks_at_the_start_of_tight_items_stay_blocks() {
+    for (source, expected) in [
+        ("- <div>\n- foo\n", "- ```=html\n  <div>\n  ```\n- foo\n"),
+        (
+            "> - <section>\n> - foo\n",
+            "> - ```=html\n>   <section>\n>   ```\n> - foo\n",
+        ),
+    ] {
+        assert_eq!(markdown_to_carve(source), expected, "{source:?}");
+    }
+}
+
+#[test]
 fn consecutive_html_lines_are_one_raw_block() {
     // The parser hands block HTML a chunk at a time; two raw blocks here
     // would be two `=html` fences where the author wrote one element.
