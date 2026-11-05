@@ -795,6 +795,8 @@ pub(crate) const LAZY: &str = "\u{0000}L\u{0000}";
 pub(crate) const LAZY_OWNER: &str = "\u{0000}L\u{0000}\u{0000}O\u{0000}";
 /// A lazy term line with indentation past its host column still has literal spaces.
 pub(crate) const LAZY_INDENT: &str = "\u{0000}L\u{0000}\u{0000}I\u{0000}";
+/// Internal source-column metadata on a framed lazy continuation.
+const LAZY_SOURCE_COLUMN: &str = "\u{0000}C";
 /// Marks a separator line that ends a definition list and starts item paragraph text.
 pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 
@@ -806,11 +808,30 @@ pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 /// as a visible sentinel. `tests/lazy_framing_never_leaks.rs` generates the
 /// shapes that tell the two apart rather than listing them.
 pub(crate) fn strip_lazy(line: &str) -> &str {
-    line.strip_prefix(LAZY_OWNER)
+    let rest = line
+        .strip_prefix(LAZY_OWNER)
         .or_else(|| line.strip_prefix(LAZY_INDENT))
         .or_else(|| line.strip_prefix(LAZY))
-        .or_else(|| line.strip_prefix(ITEM_PARAGRAPH))
-        .unwrap_or(line)
+        .or_else(|| line.strip_prefix(ITEM_PARAGRAPH));
+    let Some(rest) = rest else { return line };
+    if let Some(encoded) = rest.strip_prefix(LAZY_SOURCE_COLUMN) {
+        if let Some((_, content)) = encoded.split_once('\u{0000}') {
+            return content;
+        }
+    }
+    rest
+}
+
+pub(crate) fn lazy_source_column(line: &str) -> Option<usize> {
+    let rest = line
+        .strip_prefix(LAZY_OWNER)
+        .or_else(|| line.strip_prefix(LAZY))?;
+    let encoded = rest.strip_prefix(LAZY_SOURCE_COLUMN)?;
+    encoded.split_once('\u{0000}')?.0.parse().ok()
+}
+
+pub(crate) fn frame_lazy_at_column(frame: &str, source_column: usize, content: &str) -> String {
+    format!("{frame}{LAZY_SOURCE_COLUMN}{source_column}\u{0000}{content}")
 }
 
 /// Join collected lines with a terminal newline so a trailing empty line

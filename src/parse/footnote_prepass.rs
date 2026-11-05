@@ -374,15 +374,32 @@ struct NoteBody {
     open_paragraph_at: Cell<Option<usize>>,
     /// The code fence the trailing quoted run leaves open, with its quote depth.
     quoted_fence: Option<(FenceOpen, usize)>,
+    /// A brace run opened on a lazy line keeps source columns when a later
+    /// line reaches the note's content column.
+    lazy_brace_open: bool,
 }
 
 impl NoteBody {
+    fn frame_lazy(&self, column: usize, text: &str) -> String {
+        if self.lazy_brace_open || trim_ascii_start(text).starts_with("{%") {
+            frame_lazy_at_column(LAZY, column, text)
+        } else {
+            format!("{LAZY}{text}")
+        }
+    }
+
     fn push_with(
         &mut self,
         line: String,
         source_line: Option<usize>,
         col: impl FnOnce(&str) -> Option<isize>,
     ) {
+        let body = trim_ascii_start(strip_lazy(&line));
+        if is_blank_line(&line) || self.lazy_brace_open && line.contains("%}") {
+            self.lazy_brace_open = false;
+        } else if line.starts_with(LAZY) && body.starts_with("{%") {
+            self.lazy_brace_open = !line.contains("%}");
+        }
         let opaque = self.comment_state.code.is_some() || self.comment_state.comment.is_some();
         self.comment_state.observe(&line);
         if !opaque && self.comment_state.code.is_none() && self.comment_state.comment.is_none() {
@@ -1043,6 +1060,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             positions: self.positions,
             open_paragraph_at: Cell::new(None),
             quoted_fence: next_quoted_fence(None, def.first),
+            lazy_brace_open: false,
         };
         let body_indent = footnote_body_floor(raw_def_line);
         let container = IndentContainer {
@@ -1395,7 +1413,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 };
                 visible |= !is_line_comment_any_column(&line);
                 let kept = if in_skipped_note {
-                    format!("{LAZY}{}", trim_ascii_start(&line))
+                    note.frame_lazy(indent_columns(&line), trim_ascii_start(&line))
                 } else {
                     line
                 };
@@ -1524,7 +1542,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
             let text = strip_lazy(rest);
-            let kept = format!("{LAZY}{text}");
+            let kept = note.frame_lazy(
+                lazy_source_column(line).unwrap_or_else(|| indent_columns(line)),
+                text,
+            );
             note.push_with(kept, Some(self.first_source_line + *i), |_| {
                 stripped_col(Some(0), line, text)
             });
@@ -1903,7 +1924,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // (#611). Every other container strips its own prefix
         // and leaves the rest, which is why the same two lines
         // nest in a quote, a div and a list item.
-        let dedented = strip_leading_columns(line, state.body_indent);
+        let dedented = if note.lazy_brace_open {
+            line.to_string()
+        } else {
+            strip_leading_columns(line, state.body_indent)
+        };
         let trimmed: &str = &dedented;
         // A CODE FENCE inside the body is opaque, so a
         // definition-shaped line in it is content. Every engine
@@ -2389,7 +2414,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if !lazy {
             return false;
         }
-        let kept = format!("{LAZY}{rest}");
+        let local = inside.unwrap_or_else(|| without_blockquote_prefixes(raw));
+        let kept = note.frame_lazy(indent_columns(local), rest);
         note.push_with(kept, Some(self.first_source_line + *i), |_| {
             stripped_col(Some(0), raw, rest)
         });
@@ -2504,7 +2530,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return self.hosted_lazy_flow(host, walk, note, i);
         }
         walk.lazy_open = false;
-        let dedented = strip_leading_columns(line, host.note_floor);
+        let dedented = if note.lazy_brace_open {
+            line.to_string()
+        } else {
+            strip_leading_columns(line, host.note_floor)
+        };
         if trim_ascii(line) == "+"
             && self
                 .decision_at(self.first_source_line + *i)
@@ -2603,7 +2633,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             walk.nested_note = None;
         }
         let kept = if lazy_in_nested {
-            format!("{LAZY}{text}")
+            note.frame_lazy(column, text)
         } else {
             dedented
         };

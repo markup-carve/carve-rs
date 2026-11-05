@@ -1347,6 +1347,8 @@ const IMPLEMENTED: &[&str] = &[
     "an-unclosed-fence-in-a-marker-line-note-cannot-retain-the-following-line",
     "an-unresolved-reference-in-a-heading-cross-reference-clone",
     "native-head-rows-with-span-placeholders",
+    "a-braced-comment-that-starts-a-continuation-line-is-at-block-position",
+    "a-lazy-braced-comment-uses-source-columns-in-every-host",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
