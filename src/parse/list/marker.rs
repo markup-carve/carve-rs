@@ -959,16 +959,23 @@ pub(crate) fn parse_continuation_block(
 fn lines_after_refused_brace_runs(slice: &[&str], from: usize, lazy_refuses: bool) -> Vec<bool> {
     let mut forced = vec![false; slice.len()];
     let mut at = from;
+    // An unclosed comment run scans ahead; the `{%` lines it passed open none either.
+    let mut comment_scanned_through = 0;
     while at < slice.len() {
-        if !trim_ascii_start(slice[at]).starts_with('{') {
+        let brace = trim_ascii_start(slice[at]);
+        if !brace.starts_with('{') || (brace.starts_with("{%") && at < comment_scanned_through) {
             at += 1;
             continue;
         }
-        let RefusedBraceRun::Lines(count) =
-            refused_brace_run(slice[at..].iter().copied(), lazy_refuses)
-        else {
-            at += 1;
-            continue;
+        let count = match refused_brace_run(slice[at..].iter().copied(), lazy_refuses) {
+            RefusedBraceRun::Lines(count) => count,
+            RefusedBraceRun::No(scanned) => {
+                if brace.starts_with("{%") {
+                    comment_scanned_through = at.saturating_add(scanned);
+                }
+                at += 1;
+                continue;
+            }
         };
         let next = at + count.max(1);
         let Some(line) = slice.get(next) else { break };
