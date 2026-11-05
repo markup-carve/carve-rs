@@ -1577,11 +1577,39 @@ fn an_open_paragraph_reaches_down(previous: &BlockNode) -> bool {
 /// Whether a block FOLDS INTO an open paragraph written above it at the same
 /// column - the other half of `leaves_a_paragraph_open`'s question. The three
 /// kinds whose canonical source IS a bare inline run on its own line.
-fn folds_into_an_open_paragraph(block: &BlockNode, rendered: &str) -> bool {
-    matches!(
-        block,
-        BlockNode::Paragraph(_) | BlockNode::BlockImage(_) | BlockNode::Figure(_)
-    ) && !opens_with_an_attribute_line(rendered)
+///
+/// A figure folds when its target does. Any other figure is written behind a
+/// `+` only where its one-line caption ends the item: no line below a caption
+/// at the marker column stays in the item (carve#5177).
+fn folds_into_an_open_paragraph(
+    block: &BlockNode,
+    rendered: &str,
+    previous: &BlockNode,
+    next: Option<&BlockNode>,
+) -> bool {
+    let folds = match block {
+        BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
+        BlockNode::Figure(figure) => {
+            matches!(
+                *figure.target,
+                FigureTarget::Image(_) | FigureTarget::Paragraph(_)
+            ) || (next.is_none()
+                && rendered
+                    .rsplit('\n')
+                    .next()
+                    .is_some_and(|line| line.trim_start().starts_with('^'))
+                && !matches!(deepest_tail(previous), BlockNode::Figure(_)))
+        }
+        _ => false,
+    };
+    folds && !opens_with_an_attribute_line(rendered)
+}
+
+fn deepest_tail(node: &BlockNode) -> &BlockNode {
+    match the_last_block_inside(node) {
+        Some(inner) => deepest_tail(inner),
+        None => node,
+    }
 }
 
 /// Whether a block's written form OPENS with a block-attributes line (PART 2) -
@@ -2343,8 +2371,9 @@ fn at_marker_column(session: &RenderSession, text: &str) -> String {
 
 fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
     match (left, right) {
+        // A caption line closes its table, so the next row opens a new one.
+        (BlockNode::Table(left), BlockNode::Table(_)) => left.caption.is_none(),
         (BlockNode::BlockQuote(_), BlockNode::BlockQuote(_))
-        | (BlockNode::Table(_), BlockNode::Table(_))
         | (BlockNode::LineBlock(_), BlockNode::LineBlock(_))
         | (BlockNode::DefinitionList(_), BlockNode::DefinitionList(_)) => true,
         (BlockNode::List(left), BlockNode::List(right)) => {
@@ -2526,8 +2555,10 @@ fn render_item_blocks(
         // content column continues it: the image lands INSIDE the sub-list's
         // last item, not beside it (carve-rs#1595). carve-js settled the same
         // site in carve-js#1682; this engine asked only the bare-paragraph half.
-        let folds_into_the_paragraph_above = above.is_some_and(an_open_paragraph_reaches_down)
-            && folds_into_an_open_paragraph(block, &rendered);
+        let folds_into_the_paragraph_above = above.is_some_and(|above| {
+            an_open_paragraph_reaches_down(above)
+                && folds_into_an_open_paragraph(block, &rendered, above, next)
+        });
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
             if !separated
