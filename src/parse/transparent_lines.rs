@@ -300,6 +300,18 @@ impl Transparent {
                     if inside.placed {
                         continue;
                     }
+                    let mut node = Some(node);
+                    let mut gap = TermGap {
+                        at: (pos.start_line, pos.start_column),
+                        node: &mut node,
+                    };
+                    gap.blocks(children);
+                    for blocks in notes.values_mut() {
+                        gap.blocks(blocks);
+                    }
+                    let Some(node) = node else {
+                        continue;
+                    };
                     let blocks = match note.and_then(|label| notes.get_mut(&label)) {
                         Some(blocks) => blocks,
                         None => &mut *children,
@@ -309,6 +321,61 @@ impl Transparent {
             }
         }
     }
+}
+
+/// A comment between an entry's terms and its first description is that
+/// description's first block (CARVE-P12-027, carve#5167).
+struct TermGap<'a> {
+    at: (usize, usize),
+    node: &'a mut Option<BlockNode>,
+}
+
+impl SubtreeVisitor for TermGap<'_> {
+    fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+        for i in candidates(blocks, self.at) {
+            if self.node.is_none() {
+                return;
+            }
+            let BlockNode::DefinitionList(list) = &mut blocks[i] else {
+                if !matches!(blocks[i], BlockNode::Paragraph(_) | BlockNode::Heading(_)) {
+                    visit_block_children(&mut blocks[i], self);
+                }
+                continue;
+            };
+            for item in &mut list.items {
+                let first = item.terms.first().and_then(|term| term.pos.as_ref());
+                let starts = |pos: &Pos| (pos.start_line, pos.start_column);
+                let in_gap = first.is_some_and(|term| starts(term) < self.at)
+                    && item
+                        .definitions
+                        .first()
+                        .and_then(description_marker)
+                        .is_some_and(|marker| self.at < marker);
+                if in_gap {
+                    let def = &mut item.definitions[0];
+                    let node = self.node.take().expect("node");
+                    let at = self.at;
+                    let index = position_index(&def.children, at);
+                    def.children.insert(index, node);
+                    return;
+                }
+                for def in &mut item.definitions {
+                    self.blocks(&mut def.children);
+                    if self.node.is_none() {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Where a description's `:` stands; its start moves to the comments it
+/// holds only after every comment is placed.
+fn description_marker(def: &DefinitionDef) -> Option<(usize, usize)> {
+    def.pos
+        .as_ref()
+        .map(|pos| (pos.start_line, pos.start_column))
 }
 
 /// An erased line the visible parse reads inside a `%%%` span is payload of

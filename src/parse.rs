@@ -1102,6 +1102,10 @@ fn parse_with_options_mode_and_index_once(
         t.remap_positions(&mut children, &mut footnote_defs, &mut footnote_def_pos);
         t.restore(&mut children, &mut footnote_defs, &footnote_def_pos);
     }
+    definition::start_descriptions_at_their_comments(&mut children);
+    for blocks in footnote_defs.values_mut() {
+        definition::start_descriptions_at_their_comments(blocks);
+    }
     let original = authored;
     let original_line_starts = options
         .positions
@@ -2882,6 +2886,15 @@ fn append_item_children(
             (Some(BlockNode::DefinitionList(existing)), BlockNode::DefinitionList(mut next))
                 if existing.attrs.is_none() && next.attrs.is_none() =>
             {
+                if let (Some(open), Some(first)) =
+                    (existing.items.last_mut(), next.items.first_mut())
+                {
+                    if open.definitions.is_empty() && first.terms.is_empty() {
+                        if let Some(def) = first.definitions.first_mut() {
+                            definition::move_term_gap_comments(&mut open.terms, def);
+                        }
+                    }
+                }
                 existing.items.append(&mut next.items);
                 existing.loose |= next.loose;
                 if let (Some(old), Some(new)) = (&mut existing.pos, next.pos) {

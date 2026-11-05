@@ -478,10 +478,20 @@ fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
             }
             BlockNode::DefinitionList(node) => {
                 for item in &mut node.items {
+                    let column = item
+                        .terms
+                        .first()
+                        .and_then(|term| term.pos.as_ref())
+                        .map(|pos| pos.start_column);
                     for definition in &mut item.definitions {
-                        let content = definition.pos.as_ref().map_or(owner, |pos| {
-                            owner_after_prefix(pos, lines, ':', true).unwrap_or(owner)
-                        });
+                        let content = definition
+                            .pos
+                            .as_ref()
+                            .and_then(|pos| owner_after_prefix(pos, lines, ':', true))
+                            .or_else(|| {
+                                marker_after_leading_comments(&definition.children, column?, lines)
+                            })
+                            .unwrap_or(owner);
                         anchor_list_blocks(&mut definition.children, lines, content);
                     }
                 }
@@ -544,6 +554,38 @@ fn quote_owner_on_line(line: &str) -> Option<usize> {
         break;
     }
     owner
+}
+
+/// A description holding the comments written above its marker (carve#5167)
+/// is measured from the `:` line after them, at its entry's column.
+fn marker_after_leading_comments(
+    children: &[BlockNode],
+    column: usize,
+    lines: &[&str],
+) -> Option<usize> {
+    let last = children
+        .iter()
+        .take_while(|child| matches!(child, BlockNode::Comment(_)))
+        .last()
+        .and_then(crate::ast_json::block_pos)?;
+    // A term may stand between the comments and the marker.
+    let body = children
+        .iter()
+        .filter(|child| !matches!(child, BlockNode::Comment(_)))
+        .find_map(crate::ast_json::block_pos)
+        .map_or(last.end_line + 1, |pos| pos.start_line);
+    (last.end_line + 1..=body).find_map(|line| {
+        let text = lines.get(line.checked_sub(1)?)?;
+        if text.chars().skip(column - 1).take(2).eq("::".chars()) {
+            return None;
+        }
+        let marker = Pos {
+            start_line: line,
+            start_column: column,
+            ..last.clone()
+        };
+        owner_after_prefix(&marker, lines, ':', true)
+    })
 }
 
 fn owner_after_prefix(pos: &Pos, lines: &[&str], prefix: char, all_spaces: bool) -> Option<usize> {
@@ -805,11 +847,17 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
             }
             BlockNode::DefinitionList(n) => {
                 let last = n.items.iter().rev().find_map(|item| {
-                    item.definitions
-                        .iter()
-                        .rev()
-                        .find_map(|def| def.pos.clone())
-                        .or_else(|| item.terms.iter().rev().find_map(|term| term.pos.clone()))
+                    let def = item.definitions.iter().rev().find_map(|def| {
+                        def.pos
+                            .clone()
+                            .or_else(|| furthest_block_pos(&def.children))
+                    });
+                    let term = item.terms.iter().rev().find_map(|term| term.pos.clone());
+                    // A pos-less description may end on a comment above its last term.
+                    [def, term]
+                        .into_iter()
+                        .flatten()
+                        .max_by_key(|pos| (pos.end_line, pos.end_column))
                 });
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, false);

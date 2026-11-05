@@ -1,5 +1,6 @@
 //! A `%%%` span between definition entries stays in the entry before it, as
-//! carve-js reads it, and `fmt` writes it back (carve-rs#3524).
+//! carve-js reads it, and `fmt` writes it back (carve-rs#3524). One between a
+//! term and its description opens that description (carve#5167).
 
 fn comments(source: &str) -> Vec<(String, String)> {
     fn walk(node: &serde_json::Value, owner: &str, found: &mut Vec<(String, String)>) {
@@ -30,10 +31,14 @@ fn comments(source: &str) -> Vec<(String, String)> {
 }
 
 #[test]
-fn a_span_after_a_term_stays_in_the_term() {
+fn a_span_after_a_term_opens_the_description() {
+    // carve#5167, ruled option 1: the description's first block.
     let source = ":: a\n%%%\nx\n%%%\n: d\n";
-    assert_eq!(comments(source), [("definition_term".into(), "x".into())]);
-    assert_eq!(carve::to_carve(source), source);
+    assert_eq!(
+        comments(source),
+        [("definition_description".into(), "x".into())]
+    );
+    assert_eq!(carve::to_carve(source), ":: a\n: %%%\n  x\n  %%%\n\n  d\n");
 }
 
 #[test]
@@ -54,12 +59,23 @@ fn a_span_after_a_description_stays_in_the_description() {
 #[test]
 fn a_nested_term_span_keeps_its_item_column() {
     let source = "- a\n  :: term\n  %%%\n    x\n  %%%\n  : def\n";
-    assert_eq!(comments(source), [("definition_term".into(), "  x".into())]);
-    assert_eq!(carve::to_carve(source), source);
+    assert_eq!(
+        comments(source),
+        [("definition_description".into(), "  x".into())]
+    );
+    let formatted = carve::to_carve(source);
+    assert_eq!(
+        formatted,
+        "- a\n  :: term\n  : %%%\n      x\n    %%%\n\n    def\n"
+    );
+    assert_eq!(
+        comments(&formatted),
+        [("definition_description".into(), "  x".into())]
+    );
 }
 
 #[test]
-fn the_owner_span_covers_the_kept_comment() {
+fn the_description_span_starts_at_the_comment() {
     let doc: serde_json::Value = serde_json::from_str(&carve::to_json(&carve::parse_with_options(
         ":: a\n%%%\nx\n%%%\n: d\n",
         &carve::Options::new().with_positions(true),
@@ -67,6 +83,8 @@ fn the_owner_span_covers_the_kept_comment() {
     .unwrap();
     let term = &doc["children"][0]["items"][0];
     assert_eq!(term["type"], "definition_term");
-    assert_eq!(term["pos"]["endOffset"], 14);
-    assert_eq!(term["children"][1]["pos"]["endOffset"], 14);
+    assert_eq!(term["pos"]["endOffset"], 4);
+    let description = &doc["children"][0]["items"][1];
+    assert_eq!(description["pos"]["startOffset"], 5);
+    assert_eq!(description["children"][0]["pos"]["endOffset"], 14);
 }

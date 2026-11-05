@@ -3985,6 +3985,7 @@ fn parse_document_with_custom_options_once(
         }
     };
     if options.positions {
+        definition::start_descriptions_at_their_comments(&mut children);
         let line_starts = CodepointLineStarts::original(original_source);
         fill_offsets(&mut children, &line_starts);
         narrow_to_last_placed_child(&mut children, &original_source.lines().collect::<Vec<_>>());
@@ -4218,11 +4219,13 @@ fn parse_document_with_footnotes_options(
         ingest_payload_len: 0,
     };
     if options.positions {
+        definition::start_descriptions_at_their_comments(&mut doc.children);
         let starts = CodepointLineStarts::original(original_source);
         fill_offsets(&mut doc.children, &starts);
         let source_lines: Vec<&str> = original_source.lines().collect();
         narrow_to_last_placed_child(&mut doc.children, &source_lines);
         for blocks in doc.footnote_defs.values_mut() {
+            definition::start_descriptions_at_their_comments(blocks);
             fill_offsets(blocks, &starts);
             narrow_to_last_placed_child(blocks, &source_lines);
         }

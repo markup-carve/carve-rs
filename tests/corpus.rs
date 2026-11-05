@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Categories added at spec 0947cae0.
+    "a-comment-between-a-term-and-its-description-is-the-description-s-first-block",
     // Categories added at spec 62b41b27.
     "a-plus-skips-every-invisible-line-its-host-keeps",
     "a-quote-plus-after-a-quote-attached-paragraph-is-a-letter",
