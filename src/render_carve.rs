@@ -2036,7 +2036,15 @@ fn render_blocks(
             let body_list = list == ctx.marker_body
                 && matches!(block, BlockNode::List(_))
                 && matches!(previous_emitted, Some(BlockNode::Paragraph(_)));
+            // A trailing run of erased comments keeps its surrounding blank
+            // lines together when that spelling preserves the next marker.
+            let comment_run = ((item.is_some() && last_visible.is_some())
+                || (list == ctx.marker_body && ctx.list_depth == 0))
+                && last_visible.map_or(true, |last| index > last)
+                && previous_emitted.is_some_and(is_line_comment_in_run)
+                && is_line_comment_in_run(block);
             let adjacent = trailing_comment
+                || comment_run
                 || body_list
                 || previous_emitted
                     .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
@@ -2203,6 +2211,11 @@ fn is_region_marker(block: &BlockNode) -> bool {
         return false;
     };
     is_region_marker_comment(comment)
+}
+
+fn is_line_comment_in_run(block: &BlockNode) -> bool {
+    matches!(block, BlockNode::Comment(comment)
+        if !comment.block && !comment.delimited && !is_region_marker_comment(comment))
 }
 
 fn is_region_marker_comment(comment: &Comment) -> bool {
@@ -2566,7 +2579,11 @@ fn definition_in_gap(
         .filter(|line| {
             !ctx.written_in_place.contains(line)
                 && ctx.definitions_by_line.contains_key(line)
-                && above_a_marker(Some(*line), ctx.last_region_marker)
+                && (above_a_marker(Some(*line), ctx.last_region_marker)
+                    || ctx.quote_depth > 0
+                    || ctx.definitions_by_line[line]
+                        .iter()
+                        .any(|entry| matches!(entry, DefinitionAtLine::Footnote(..))))
         })
         .collect();
     // A link definition goes back alone. Every note in the gap goes back, in

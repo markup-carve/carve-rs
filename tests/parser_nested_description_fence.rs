@@ -7,6 +7,13 @@ fn a_blank_after_a_below_column_fence_does_not_reach_the_ended_inner_fence() {
 }
 
 #[test]
+fn a_blank_authored_before_the_outer_opener_remains_inner_payload() {
+    let source = ":: t\n: - - ```%%%\n      ```\n\n```\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("<pre><code>\n</code></pre>"), "{html}");
+}
+
+#[test]
 fn below_column_fence_variant_sweep() {
     let mut checked = 0;
     for term in ["t", "term", "x1", "long", "é"] {

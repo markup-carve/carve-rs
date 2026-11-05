@@ -1,15 +1,16 @@
-//! CARVE-P11-079 (a) collects footnote definitions from a container to the
-//! document tail, preserving their source order even when two share a line.
+//! Every footnote definition written in a gap between two blocks goes back
+//! into that gap in source order, also when two notes share a line
+//! (carve-js#3992, corpus 763).
 
 use carve::{to_carve, to_html};
 
 #[test]
-fn two_notes_on_one_line_are_collected_in_order() {
+fn two_notes_on_one_line_keep_their_place_and_order() {
     let source = "- item\n  [^c]: [^d]: para\n          more\n   ~~~\n\n  See[^c][^d]\n";
     let written = to_carve(source);
     assert_eq!(
         written,
-        "- item\n  ```\n\n  See[^c][^d]\n  ```\n\n[^c]: {empty}\n\n[^d]: para\n  more\n"
+        "- item\n  [^c]: {empty}\n  [^d]: para\n    more\n  ```\n\n  See[^c][^d]\n  ```\n"
     );
     assert_eq!(to_html(&written), to_html(source));
 }

@@ -1656,13 +1656,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             return self.take_below_column_line(cur, fence, line, column);
         }
         if fence.open.is_some() {
-            // A fence opener below this description's column belongs to the
-            // outer body. Leave the blank beside it for that new fence rather
-            // than appending it to this body's unclosed fence.
+            // A marker-line fence ends before a lower-column opener in the
+            // outer body. The rebased stream puts that opener after its own
+            // blank; leave the blank with the outer fence. A body-line fence
+            // still owns a blank authored before the lower opener.
             let look = self.container.blank_run_end(cur.lines, cur.pos);
             if cur.lines.line(look).is_some_and(|after| {
                 indent_columns(after) < self.content_column
                     && detect_fence_open(trim_ascii_start(after)).is_some()
+                    && detect_fence_open(trim_ascii_start(self.seed)).is_some()
             }) {
                 return BodyStep::Stop;
             }
