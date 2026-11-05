@@ -6979,13 +6979,19 @@ mod tests {
         assert!(parses < probes, "{parses} parses for {probes} probes");
     }
 
-    /// Documents' worth of source the escape narrowing re-parses for `html`.
-    fn reparsed_documents(html: &str) -> f64 {
+    /// Documents' worth of source the escape narrowing re-parses for `html`,
+    /// and how many probes it made.
+    fn reparsed_documents(html: &str) -> (f64, usize) {
         PARSED_BYTES.with(|n| n.set(0));
+        PROBES.with(|n| n.set(0));
+        WINDOW_PROBES.with(|n| n.set(0));
         let written = crate::html_import::html_to_carve(html, &Default::default())
             .expect("imports")
             .value;
-        PARSED_BYTES.with(Cell::get) as f64 / written.len() as f64
+        (
+            PARSED_BYTES.with(Cell::get) as f64 / written.len() as f64,
+            PROBES.with(Cell::get) + WINDOW_PROBES.with(Cell::get),
+        )
     }
 
     /// A page nested in containers, as imported web pages are, with a failing
@@ -7002,12 +7008,22 @@ mod tests {
             format!("<dl>{entries}</dl>"),
         ] {
             let html = format!("<div class=a><div class=b><div class=c>{body}</div></div></div>");
-            let windowed = reparsed_documents(&html);
+            let (windowed, windowed_probes) = reparsed_documents(&html);
             WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(true));
-            let whole = reparsed_documents(&html);
+            let (whole, whole_probes) = reparsed_documents(&html);
             WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(false));
-            assert!(whole > 100.0, "the search did not run: {whole:.1}");
+            // The parse allowance bounds both totals (carve-rs#3882), so the
+            // whole-document control is told apart per probe.
+            let per_probe = |documents: f64, probes: usize| documents / probes.max(1) as f64;
+            assert!(
+                per_probe(whole, whole_probes) > 0.75,
+                "the search did not run: {whole:.1} documents in {whole_probes} probes"
+            );
             assert!(windowed < 48.0, "{windowed:.1} documents re-parsed");
+            assert!(
+                per_probe(windowed, windowed_probes) < 0.25,
+                "{windowed:.1} documents in {windowed_probes} probes"
+            );
         }
     }
 
