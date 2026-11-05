@@ -71,8 +71,12 @@ impl LineBuffer {
     }
 
     pub(super) fn push_synthetic_blank(&mut self) {
+        self.push_synthetic(String::new());
+    }
+
+    pub(super) fn push_synthetic(&mut self, text: String) {
         self.lines.push(SourceLine {
-            text: String::new(),
+            text,
             origin: LineOrigin::Synthetic,
             stripped: None,
             reached: false,

@@ -154,7 +154,9 @@ impl SubtreeVisitor for Walk<'_> {
         for block in blocks.iter_mut() {
             visit_block_children(block, self);
         }
-        let comments = line_comments(blocks, self.ctx.comments);
+        let comments: BTreeSet<usize> = line_comments(blocks, self.ctx.comments)
+            .into_iter()
+            .collect();
         if !comments.is_empty() {
             for block in blocks.iter_mut() {
                 if matches!(block, BlockNode::Comment(_)) {
@@ -164,10 +166,12 @@ impl SubtreeVisitor for Walk<'_> {
                 let Some(pos) = crate::ast_json::block_pos(block) else {
                     continue;
                 };
+                if pos.start_offset >= pos.end_offset {
+                    continue;
+                }
                 let inside: BTreeSet<usize> = comments
-                    .iter()
+                    .range(pos.start_offset + 1..pos.end_offset)
                     .copied()
-                    .filter(|at| pos.start_offset < *at && *at < pos.end_offset)
                     .collect();
                 if !inside.is_empty() {
                     let mut fix = Fix {

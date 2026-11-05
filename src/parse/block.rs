@@ -733,7 +733,7 @@ fn parse_multiline_equation(cur: &mut LineCursor, options: &Options<'_>) -> Opti
         .map(|line| strip_lazy(line))
         .collect::<Vec<_>>()
         .join("\n");
-    let mut inline = if options.positions {
+    let inline = if options.positions {
         let anchors = lines
             .iter()
             .enumerate()
@@ -743,8 +743,7 @@ fn parse_multiline_equation(cur: &mut LineCursor, options: &Options<'_>) -> Opti
     } else {
         parse_inline_with_options(&joined, options)
     };
-    retain_caption_content(&mut inline);
-    if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
+    if !only_display_math(&inline) {
         return None;
     }
     cur.pos = caption_at;
@@ -768,6 +767,15 @@ fn parse_multiline_equation(cur: &mut LineCursor, options: &Options<'_>) -> Opti
     }))
 }
 
+/// The inline content is one display math node; a comment beside it holds no
+/// content but stays the paragraph's child.
+fn only_display_math(inline: &[InlineNode]) -> bool {
+    let mut content = inline
+        .iter()
+        .filter(|node| !matches!(node, InlineNode::Comment(_)));
+    matches!(content.next(), Some(InlineNode::Math(m)) if m.display) && content.next().is_none()
+}
+
 /// Parse a standalone display-math line, wrapping it in a figure when a caption
 /// follows (a numbered equation). Returns `None` when the line is not solely
 /// display math, or when non-blank prose follows with no blank line (so the
@@ -778,7 +786,7 @@ pub(in crate::parse) fn parse_equation_block(
 ) -> Option<BlockNode> {
     let line = cur.peek()?;
     let inline_text = trim_ascii_start(line);
-    let mut inline = if options.positions {
+    let inline = if options.positions {
         parse_inline_lines_with_anchor(
             inline_text,
             options,
@@ -787,8 +795,7 @@ pub(in crate::parse) fn parse_equation_block(
     } else {
         parse_inline_with_options(inline_text, options)
     };
-    retain_caption_content(&mut inline);
-    if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
+    if !only_display_math(&inline) {
         return None;
     }
     // Non-blank, non-caption prose on the very next line: let parse_paragraph

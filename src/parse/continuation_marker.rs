@@ -189,7 +189,7 @@ pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
 
 /// A consumed marker renders nothing and is no node of the tree (carve#5013).
 pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
-    use crate::ast::BlockNode;
+    use crate::ast::{BlockNode, Pos};
     let (lines, mark) = CONSUMED.with(|slot| slot.borrow().clone());
     if lines.is_empty() {
         return;
@@ -206,7 +206,14 @@ pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
         blocks.retain(|block| keep(block));
         for block in blocks.iter_mut() {
             match block {
-                BlockNode::BlockQuote(b) => sweep(&mut b.children, keep),
+                BlockNode::BlockQuote(b) => {
+                    let ends_at_child = !b.fenced;
+                    sweep_container(
+                        &mut b.children,
+                        b.pos.as_mut().filter(|_| ends_at_child),
+                        keep,
+                    );
+                }
                 BlockNode::Div(b) => sweep(&mut b.children, keep),
                 BlockNode::Section(b) => sweep(&mut b.children, keep),
                 BlockNode::Admonition(b) => sweep(&mut b.children, keep),
@@ -215,24 +222,74 @@ pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
                 BlockNode::ExtensionCarrier(b) => sweep(&mut b.children, keep),
                 BlockNode::Figure(figure) => {
                     if let crate::ast::FigureTarget::BlockQuote(quote) = &mut *figure.target {
-                        sweep(&mut quote.children, keep);
+                        let ends_at_child = !quote.fenced;
+                        let pos = quote.pos.as_mut().filter(|_| ends_at_child);
+                        sweep_container(&mut quote.children, pos, keep);
                     }
                 }
                 BlockNode::List(list) => {
+                    let old = list.items.iter().rev().find_map(|item| item.pos.clone());
                     for item in &mut list.items {
-                        sweep(&mut item.children, keep);
+                        sweep_container(&mut item.children, item.pos.as_mut(), keep);
                     }
+                    let new = list.items.iter().rev().find_map(|item| item.pos.clone());
+                    reend(list.pos.as_mut(), old, new);
                 }
                 BlockNode::DefinitionList(list) => {
+                    let old = definition_list_end(list);
                     for item in &mut list.items {
                         for body in &mut item.definitions {
-                            sweep(&mut body.children, keep);
+                            sweep_container(&mut body.children, body.pos.as_mut(), keep);
                         }
                     }
+                    let new = definition_list_end(list);
+                    reend(list.pos.as_mut(), old, new);
                 }
                 _ => {}
             }
         }
+    }
+    /// Sweep a container that ends at its last placed child (CARVE-P12-014).
+    /// Its end was taken with the markers still in place, so a container that
+    /// ended on one now ends at its last kept child, or on the one marker
+    /// written right below it, which the item consumed.
+    fn sweep_container(
+        children: &mut Vec<BlockNode>,
+        pos: Option<&mut Pos>,
+        keep: &impl Fn(&BlockNode) -> bool,
+    ) {
+        let old = super::positions::furthest_block_pos(children);
+        let last_kept = children
+            .iter()
+            .rposition(|block| keep(block) && crate::ast_json::block_pos(block).is_some());
+        let consumed = last_kept
+            .and_then(|at| children.get(at + 1))
+            .filter(|block| !keep(block))
+            .and_then(crate::ast_json::block_pos)
+            .cloned();
+        sweep(children, keep);
+        let new = super::positions::furthest_block_pos(children).map(|kept| match consumed {
+            Some(marker) if marker.end_offset > kept.end_offset => marker,
+            _ => kept,
+        });
+        reend(pos, old, new);
+    }
+    /// Move `pos`'s end from `old` to `new` where `old` was what it ended on.
+    fn reend(pos: Option<&mut Pos>, old: Option<Pos>, new: Option<Pos>) {
+        let (Some(pos), Some(old), Some(new)) = (pos, old, new) else {
+            return;
+        };
+        if pos.end_offset == old.end_offset && new.end_offset < old.end_offset {
+            pos.end_line = new.end_line;
+            pos.end_column = new.end_column;
+            pos.end_offset = new.end_offset;
+        }
+    }
+    fn definition_list_end(list: &crate::ast::DefinitionList) -> Option<Pos> {
+        list.items
+            .iter()
+            .flat_map(|item| item.definitions.iter().filter_map(|def| def.pos.clone()))
+            .max_by_key(|pos| pos.end_offset)
     }
     sweep(&mut doc.children, &keep);
     for (label, body) in doc.footnote_defs.iter_mut() {
