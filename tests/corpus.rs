@@ -1432,7 +1432,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("948-a-fence-a-quote-s-attached-block-opens-ends-with-its-container-3", "spec pin d9d5dea7: carve#5060 row not reached yet", "<blockquote>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\"></code></pre>\n    </li>\n    <li>x\nq</li>\n  </ul>\n</blockquote>"),
     ("948-a-fence-a-quote-s-attached-block-opens-ends-with-its-container-4", "spec pin d9d5dea7: carve#5060 row not reached yet", "<blockquote>\n  <p>a</p>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\"></code></pre>\n    </li>\n    <li>x\nq</li>\n  </ul>\n</blockquote>"),
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.
-    ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-4", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;%%%<br>\nx</p>\n</div>"),
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
@@ -1450,8 +1449,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("855-a-refused-plus-after-an-attached-block-ends-nothing-2", "ruling at the 5643d59c pin not ported yet; the consumed marker shows in the payload (carve-rs#3821)", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>+\n</code></pre>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-3", "ruling at the 5643d59c pin not ported yet", "<p><strong id=\"\">x</strong></p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-4", "ruling at the 5643d59c pin not ported yet", "<table>\n  <tbody>\n    <tr><td id=\"\">x</td></tr>\n  </tbody>\n</table>"),
-    ("867-an-indented-comment-block-in-a-line-block-leaves-nothing", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>&nbsp;&nbsp;%%%<br>\n&nbsp;&nbsp;secret<br>\n&nbsp;&nbsp;%%%</p>\n</div>"),
-    ("867-an-indented-comment-block-in-a-line-block-leaves-nothing-2", "ruling at the 5643d59c pin not ported yet", "<div class=\"line-block\">\n  <p>a<br>\n&nbsp;&nbsp;&nbsp;%%%<br>\nsecret</p>\n</div>"),
     ("222-a-tab-as-the-first-character-of-a-definition-term", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>x</dt>\n</dl>"),
     ("439-a-colon-followed-by-only-whitespace-is-not-a-description-8", "new corpus pair at the 19f78369 spec pin, engine port pending", "<dl>\n  <dt>t</dt>\n  <dd>text</dd>\n</dl>\n<p>flush</p>"),
     ("873-a-plus-after-an-attached-block-reaches-its-host-through-quote-prefixes-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li>a\n      <h1 id=\"h\">h</h1>\n    </li>\n  </ul>\n  <p>+</p>\n  <h1 id=\"h-2\">h</h1>\n</blockquote>"),
