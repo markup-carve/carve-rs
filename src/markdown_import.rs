@@ -4022,19 +4022,7 @@ impl Builder {
                     return;
                 }
                 let content = content.trim_end_matches('\n').to_string();
-                // carve-js renders a block-level HTML element inline only when it
-                // is a tight item's SOLE content (right after the marker, nothing
-                // before it); a block element on a continuation line, after the
-                // item's own text, stays a block. Match that: the item must have
-                // collected neither a block nor any pending inline run yet.
-                let inline_in_tight_item = matches!(
-                    self.frames.last(),
-                    Some(Frame::ListItem { loose: false, children, pending, .. })
-                        if children.is_empty() && pending.is_empty()
-                );
-                if inline_in_tight_item {
-                    self.raw_inline(content);
-                } else if let Some(comment) = html_comment_block(&content) {
+                if let Some(comment) = html_comment_block(&content) {
                     self.losses.push(MarkdownImportLoss {
                         message: "Imported a Markdown HTML comment as a Carve comment.".into(),
                         line: Some(self.current_line),
