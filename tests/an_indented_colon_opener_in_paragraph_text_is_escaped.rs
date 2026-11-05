@@ -10,7 +10,10 @@ fn text(value: &str) -> String {
 }
 
 fn paragraph(children: &[String]) -> String {
-    format!(r#"{{"type":"paragraph","children":[{}]}}"#, children.join(","))
+    format!(
+        r#"{{"type":"paragraph","children":[{}]}}"#,
+        children.join(",")
+    )
 }
 
 fn write(blocks: &[String]) -> String {
@@ -32,7 +35,11 @@ fn a_colon_opener_after_leading_whitespace_is_escaped() {
         (" \t::: note", "\\::: note"),
     ] {
         let after = write(&[paragraph(&[text("x")]), paragraph(&[text(value)])]);
-        assert_eq!(after, format!("x\n\n{expected}\n"), "after a paragraph: {value:?}");
+        assert_eq!(
+            after,
+            format!("x\n\n{expected}\n"),
+            "after a paragraph: {value:?}"
+        );
         let first = write(&[paragraph(&[text(value)])]);
         assert_eq!(first, format!("{expected}\n"), "first block: {value:?}");
     }
