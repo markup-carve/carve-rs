@@ -2167,33 +2167,23 @@ pub(in crate::parse) fn collect_indexed_colon_body(
             continue;
         }
         if !line.starts_with([' ', '\t']) {
-            if stack.len() < MAX_NESTING_DEPTH {
-                if let Some(len) = detect_container_open(line)
-                    .map(|open| open.fence_len)
-                    .or_else(|| detect_line_block_open(line))
-                    .or_else(|| detect_hardbreaks_block_open(line))
-                    .or_else(|| detect_quote_block_open(line))
-                {
-                    let origin = inner.lines.len();
-                    boundaries.resize(origin + 1, None);
-                    origins.push(Some(origin));
-                    stack.push(len);
-                    push_current_line(&mut inner, cur);
-                    cur.consume();
-                    continue;
-                }
-            } else if detect_container_open(line).is_some()
-                || detect_line_block_open(line).is_some()
-                || detect_hardbreaks_block_open(line).is_some()
-                || detect_quote_block_open(line).is_some()
+            if let Some(len) = detect_container_open(line)
+                .map(|open| open.fence_len)
+                .or_else(|| detect_line_block_open(line))
+                .or_else(|| detect_hardbreaks_block_open(line))
+                .or_else(|| detect_quote_block_open(line))
             {
-                cacheable = false;
-                // Past the cap an opener DEGRADES to literal paragraph text
-                // (§25) - it does not vanish. Consuming the line without
-                // pushing it dropped every over-cap opener that had a closer
-                // somewhere after it: 203 openers plus three closers published
-                // 200 titles and no trace of the other three, while the same
-                // input without the closers kept them (carve-rs#530).
+                // Past the cap an opener is paragraph text (§25), but it still
+                // pairs with its closer, as in the spec model's closer walk:
+                // capping this stack let a walk started deeper pair the same
+                // closers differently (carve-rs#530, carve-rs#3891).
+                if stack.len() >= MAX_NESTING_DEPTH {
+                    cacheable = false;
+                }
+                let origin = inner.lines.len();
+                boundaries.resize(origin + 1, None);
+                origins.push(Some(origin));
+                stack.push(len);
                 push_current_line(&mut inner, cur);
                 cur.consume();
                 continue;
@@ -2440,7 +2430,7 @@ fn find_colon_fence_end_with<'a>(
                 }
             }
         }
-        if !literal && !line.starts_with([' ', '\t']) && stack.len() < MAX_NESTING_DEPTH {
+        if !literal && !line.starts_with([' ', '\t']) {
             if let Some(len) = detect_container_open(line)
                 .map(|open| open.fence_len)
                 .or_else(|| detect_line_block_open(line))
