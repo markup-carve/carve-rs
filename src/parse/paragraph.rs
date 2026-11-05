@@ -203,13 +203,13 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
             && !inline_span.open(&lines)
             && !(brace_line.starts_with("{%") && cur.pos < comment_scanned_through)
         {
-            // A line-starting comment is block-position even in a quote's
-            // lazy paragraph; wrapped attributes keep their prior quote rule.
+            // A line-starting run remains at block position in a quote's lazy
+            // paragraph. Its source column decides whether it is refused.
             match refused_brace_run_with_columns(
                 (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
-                !cur.in_quoted_body || brace_line.starts_with("{%"),
+                true,
                 |offset, raw| {
-                    raw.starts_with(LAZY)
+                    (raw.starts_with(LAZY) && !cur.in_quoted_body)
                         .then(|| cur.source_col(cur.pos + offset).unwrap_or(0).max(0) as usize)
                 },
             ) {

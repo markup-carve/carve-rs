@@ -1751,7 +1751,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve#5195 makes the refused run in 928-3 a visible paragraph, whose
     // soft break reports a loss.
     // The verse comment fix for carve#5213 makes three 867 rows strictly reversible.
-    const STRICT: usize = 3445;
+    // Spec 204ba739 adds the three row 961 comment-run documents. All three
+    // round trip strictly through the bridge.
+    const STRICT: usize = 3448;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.

@@ -373,3 +373,11 @@ path = "tests/a_first_block_quote_keeps_its_item_column.rs"
 [[test]]
 name = "unresolved_reference_attribute_followed_by_link"
 path = "tests/unresolved_reference_attribute_followed_by_link.rs"
+
+[[test]]
+name = "container_comment_runs_5206"
+path = "tests/container_comment_runs_5206.rs"
+
+[[test]]
+name = "quoted_lazy_attribute_5223"
+path = "tests/quoted_lazy_attribute_5223.rs"

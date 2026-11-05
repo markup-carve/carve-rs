@@ -2830,7 +2830,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
             !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
             |offset, raw| {
-                raw.starts_with(LAZY).then(|| {
+                (raw.starts_with(LAZY) && !self.cur.in_quoted_body).then(|| {
                     self.cur
                         .source_col(self.cur.pos + offset)
                         .unwrap_or(0)

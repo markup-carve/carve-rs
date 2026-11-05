@@ -2200,7 +2200,7 @@ impl<'a> QuoteBody<'a> {
             cur,
             quoted.at,
             if self.unclosed_nested_attribute {
-                format!("{LAZY}{}", trim_ascii_start(stripped))
+                frame_lazy_at_column(LAZY, indent_columns(stripped), trim_ascii_start(stripped))
             } else {
                 stripped.to_string()
             },
@@ -2970,7 +2970,7 @@ impl<'a> QuoteBody<'a> {
                     .iter()
                     .map(|line| strip_all_quotes(&line.text).0);
                 matches!(
-                    refused_brace_run(run, false),
+                    refused_brace_run(run, true),
                     RefusedBraceRun::Lines(count) if start + count == lines.len()
                 )
             });
@@ -3030,7 +3030,11 @@ impl<'a> QuoteBody<'a> {
             self.lazy_brace_open = false;
         }
         let brace_line = trim_ascii_start(strip_lazy(line));
-        let in_brace_run = self.lazy_brace_open || brace_line.starts_with("{%");
+        let in_comment_run = self.lazy_brace_open || brace_line.starts_with("{%");
+        // Attribute runs need the same authored column on a lazy line. Without
+        // it the paragraph reader sees every such line at column zero and
+        // refuses runs whose continuation was actually deeper (carve#5223).
+        let in_brace_run = in_comment_run || self.brace_starts[0].is_some();
         let written_column =
             (cur.source_col(cur.pos).unwrap_or(0).max(0) as usize).max(indent_columns(line));
         let source_line = cur.source_line(cur.pos);
@@ -3121,14 +3125,22 @@ impl<'a> QuoteBody<'a> {
             };
             (
                 if in_brace_run {
-                    frame_lazy_at_column(frame, written_column, trimmed)
+                    frame_lazy_at_column(
+                        frame,
+                        if in_comment_run {
+                            written_column
+                        } else {
+                            indent_columns(line)
+                        },
+                        trimmed,
+                    )
                 } else {
                     format!("{frame}{trimmed}")
                 },
                 leading_ws(line),
             )
         };
-        self.lazy_brace_open = in_brace_run && !line.contains("%}");
+        self.lazy_brace_open = in_comment_run && !line.contains("%}");
         self.opaque_tail = false;
         cur.consume();
         self.inner.push_at(
