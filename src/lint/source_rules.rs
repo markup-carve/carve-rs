@@ -121,13 +121,9 @@ fn quoted_view(text: &str, quotes: usize) -> (&str, usize) {
 }
 
 fn container_view(text: &str) -> &str {
-    static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = PREFIX.get_or_init(|| {
-        regex::Regex::new(
-            r"^(?:[ \t]*> ?|[ \t]*(?:[-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(?:\{[^{}\r\n]*\})? +(?:\[[ xX_?>/!-]\] +)?|[ \t]*(?:: |\[\^[^\]\r\n]+\]: +))",
-        )
-        .unwrap()
-    });
+    let re = lint_regex!(
+        r"^(?:[ \t]*> ?|[ \t]*(?:[-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(?:\{[^{}\r\n]*\})? +(?:\[[ xX_?>/!-]\] +)?|[ \t]*(?:: |\[\^[^\]\r\n]+\]: +))"
+    );
     let mut rest = text;
     while let Some(m) = re.find(rest) {
         rest = &rest[m.end()..];
@@ -591,16 +587,16 @@ fn collect_authoring(
             emit(out, rows, line, at, 1, "table-row-cell-count", &format!("This table row has {count} cells; the header has {width}. Add or remove a cell to match the table."));
         }
     }
-    let gap = regex::Regex::new(r"\[[^\]]+\][ \t]+\([ \t]*[^)\s][^)]*\)").unwrap();
-    let underline =
-        regex::Regex::new(r"(^|[^[:alnum:]])_([[:alpha:]][[:alnum:]_ -]*?)_($|[^[:alnum:]])")
-            .unwrap();
-    let tag = regex::Regex::new(r"</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?/?>").unwrap();
-    let alert = regex::Regex::new(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]").unwrap();
-    let list = regex::Regex::new(r"^(?:[ \t]*> ?)*[ \t]*(?:[-*]|[0-9]+[.)])[ \t]+\S").unwrap();
-    let definition = regex::Regex::new(r"^[ \t]*:[ \t]+\S").unwrap();
-    let caption = regex::Regex::new(r"(?i)^(?:\*?[ \t]*(?:Caption|Table|Tabelle|Figure|Image)(?:[ \t]+[0-9]+)?[ \t]*:|:[ \t]+\S)").unwrap();
-    let opener = regex::Regex::new(r"(^|[\s(\[{])([*/])\w").unwrap();
+    let gap = lint_regex!(r"\[[^\]]+\][ \t]+\([ \t]*[^)\s][^)]*\)");
+    let underline = lint_regex!(r"(^|[^[:alnum:]])_([[:alpha:]][[:alnum:]_ -]*?)_($|[^[:alnum:]])");
+    let tag = lint_regex!(r"</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?/?>");
+    let alert = lint_regex!(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]");
+    let list = lint_regex!(r"^(?:[ \t]*> ?)*[ \t]*(?:[-*]|[0-9]+[.)])[ \t]+\S");
+    let definition = lint_regex!(r"^[ \t]*:[ \t]+\S");
+    let caption = lint_regex!(
+        r"(?i)^(?:\*?[ \t]*(?:Caption|Table|Tabelle|Figure|Image)(?:[ \t]+[0-9]+)?[ \t]*:|:[ \t]+\S)"
+    );
+    let opener = lint_regex!(r"(^|[\s(\[{])([*/])\w");
     for (index, row) in rows.iter().enumerate() {
         let line = index + 1;
         if scan.ignored.contains(&line) {
@@ -826,9 +822,9 @@ struct BlockScan<'d> {
 
 struct BlockWalker<'d, 'r> {
     rows: &'r [Line<'r>],
-    marker: regex::Regex,
-    colon: regex::Regex,
-    note_marker: regex::Regex,
+    marker: &'static regex::Regex,
+    colon: &'static regex::Regex,
+    note_marker: &'static regex::Regex,
     scan: BlockScan<'d>,
 }
 
@@ -847,12 +843,11 @@ impl<'d> BlockScan<'d> {
         let mut inlines = Vec::new();
         let mut walker = BlockWalker {
             rows,
-            marker: regex::Regex::new(
-                r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>/!-]\] +)?",
-            )
-            .unwrap(),
-            colon: regex::Regex::new(r"^(:{3,})(?:[ \t]|$)").unwrap(),
-            note_marker: regex::Regex::new(r"^\[\^[^\]\r\n]+\]:").unwrap(),
+            marker: lint_regex!(
+                r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>/!-]\] +)?"
+            ),
+            colon: lint_regex!(r"^(:{3,})(?:[ \t]|$)"),
+            note_marker: lint_regex!(r"^\[\^[^\]\r\n]+\]:"),
             scan: BlockScan::default(),
         };
         if let Some(pos) = doc
@@ -1284,26 +1279,26 @@ fn collect_habits(
     let habits = [
         (
             "markdown-strong-double-star",
-            regex::Regex::new(r"\*\*([^*\s](?:[^*]*[^*\s])?)\*\*").unwrap(),
+            lint_regex!(r"\*\*([^*\s](?:[^*]*[^*\s])?)\*\*"),
             "Djot/Markdown `**strong**` is not Carve bold — Carve bold is a single `*`, so this renders with literal asterisks.",
         ),
         (
             "markdown-strikethrough-double-tilde",
-            regex::Regex::new(r"~~([^~\s](?:[^~]*[^~\s])?)~~").unwrap(),
+            lint_regex!(r"~~([^~\s](?:[^~]*[^~\s])?)~~"),
             "Use single tildes for Carve strikethrough.",
         ),
         (
             "djot-superscript-caret",
-            regex::Regex::new(r"\^([^^\s](?:[^^]*[^^\s])?)\^").unwrap(),
+            lint_regex!(r"\^([^^\s](?:[^^]*[^^\s])?)\^"),
             "Use {^text^} for Carve superscript.",
         ),
         (
             "djot-plus-bullet",
-            regex::Regex::new(r"(?m)^[ \t]*(\+)[ \t]+\S").unwrap(),
+            lint_regex!(r"(?m)^[ \t]*(\+)[ \t]+\S"),
             "Use a dash for a Carve list item.",
         ),
     ];
-    let blank_line = regex::Regex::new(r"\n[ \t]*\r?\n").unwrap();
+    let blank_line = lint_regex!(r"\n[ \t]*\r?\n");
     for (rule, pattern, message) in &habits {
         let mut search = 0;
         let mut column_byte = 0;
@@ -1374,8 +1369,8 @@ fn collect_habits(
 struct ListScan<'s, 'r> {
     rows: &'s [Line<'r>],
     scan: &'s BlockScan<'s>,
-    marker_shaped: regex::Regex,
-    block_opener: regex::Regex,
+    marker_shaped: &'static regex::Regex,
+    block_opener: &'static regex::Regex,
     folded: BTreeSet<usize>,
     list_lines: BTreeSet<usize>,
     open_fence: Option<(usize, char, usize)>,
@@ -1406,11 +1401,12 @@ impl<'s, 'r> ListScan<'s, 'r> {
         Self {
             rows,
             scan,
-            marker_shaped: regex::Regex::new(
-                r"^(?:[-+*](?: +\[[ xX\-_>?/!]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]",
-            )
-            .unwrap(),
-            block_opener: regex::Regex::new(r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)").unwrap(),
+            marker_shaped: lint_regex!(
+                r"^(?:[-+*](?: +\[[ xX\-_>?/!]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]"
+            ),
+            block_opener: lint_regex!(
+                r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)"
+            ),
             list_lines: folded.clone(),
             folded,
             open_fence: None,
@@ -1715,9 +1711,9 @@ impl<'s, 'r> ListScan<'s, 'r> {
 struct LineRules<'s, 'r> {
     rows: &'s [Line<'r>],
     scan: &'s BlockScan<'s>,
-    trailing: regex::Regex,
-    fence_run: regex::Regex,
-    include: regex::Regex,
+    trailing: &'static regex::Regex,
+    fence_run: &'static regex::Regex,
+    include: &'static regex::Regex,
 }
 
 impl<'s, 'r> LineRules<'s, 'r> {
@@ -1725,9 +1721,9 @@ impl<'s, 'r> LineRules<'s, 'r> {
         Self {
             rows,
             scan,
-            trailing: regex::Regex::new(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$").unwrap(),
-            fence_run: regex::Regex::new(r"^(`{3,}|~{3,})").unwrap(),
-            include: regex::Regex::new(r"\{\{([^{}]*)\}\}").unwrap(),
+            trailing: lint_regex!(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$"),
+            fence_run: lint_regex!(r"^(`{3,}|~{3,})"),
+            include: lint_regex!(r"\{\{([^{}]*)\}\}"),
         }
     }
 
@@ -1934,7 +1930,7 @@ fn collect_marker_text(
     to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
 ) {
-    let title = regex::Regex::new(r#"^:{3,}[ \t]+[A-Za-z_][\w-]*[ \t]+([^"\[ \t].*)$"#).unwrap();
+    let title = lint_regex!(r#"^:{3,}[ \t]+[A-Za-z_][\w-]*[ \t]+([^"\[ \t].*)$"#);
     for (pos, text) in starts {
         if list_lines.contains(&pos.start_line) {
             continue;
@@ -2051,7 +2047,7 @@ fn collect_container_fences(
 }
 
 fn collect_version(source: &str, doc: &Document, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
-    let version = regex::Regex::new(r"^[ \t]*carve-version[ \t]*:[ \t]*(\S+)[ \t]*$").unwrap();
+    let version = lint_regex!(r"^[ \t]*carve-version[ \t]*:[ \t]*(\S+)[ \t]*$");
     let declared = doc
         .frontmatter_raw
         .as_ref()
@@ -2105,8 +2101,7 @@ fn collect_version(source: &str, doc: &Document, rows: &[Line<'_>], out: &mut Ve
 
 fn collect_ordered_splits(doc: &Document, rows: &[Line<'_>], out: &mut Vec<LintWarning>) {
     let ordered_marker =
-        regex::Regex::new(r"^(?:[ \t]*> ?)*[ \t]*(\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]")
-            .unwrap();
+        lint_regex!(r"^(?:[ \t]*> ?)*[ \t]*(\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]");
     let first_marker = |list: &List| {
         let line = list.items.first()?.pos.as_ref()?.start_line;
         let row = rows.get(line - 1)?;

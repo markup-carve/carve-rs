@@ -429,11 +429,11 @@
   },
   {
     "source": "- a\n+\n%%%\n[r]: /opaque\n%%%\n  [r\\]]: /url\n\nSee [r][], [r\\]][], and [^n].\n",
-    "html": "<ul>\n  <li>a</li>\n</ul>\n<p>[r]]: /url</p>\n<p>See [r][], [r\\]][], and [^n].</p>"
+    "html": "<ul>\n  <li>a\n    [r]]: /url\n  </li>\n</ul>\n<p>See [r][], [r\\]][], and [^n].</p>"
   },
   {
     "source": "- a\n+\n%%%\n[r]: /opaque\n%%%\n   [r\\]]: /url\n\nSee [r][], [r\\]][], and [^n].\n",
-    "html": "<ul>\n  <li>a</li>\n</ul>\n<p>[r]]: /url</p>\n<p>See [r][], [r\\]][], and [^n].</p>"
+    "html": "<ul>\n  <li>a\n    [r]]: /url\n  </li>\n</ul>\n<p>See [r][], [r\\]][], and [^n].</p>"
   },
   {
     "source": "- a\n+\n%%%\n[r]: /opaque\n%%%\n[r]: /url\n [r]: /again\n\nSee [r][], [r\\]][], and [^n].\n",
@@ -1897,11 +1897,11 @@
   },
   {
     "source": "- +\nfirst\n+\n%%%\n[r]: /opaque\n%%%\n  [r\\]]: /url\n\nSee [r][], [r\\]][], and [^n].\n",
-    "html": "<ul>\n  <li>first</li>\n</ul>\n<p>[r]]: /url</p>\n<p>See [r][], [r\\]][], and [^n].</p>"
+    "html": "<ul>\n  <li>first\n    [r]]: /url\n  </li>\n</ul>\n<p>See [r][], [r\\]][], and [^n].</p>"
   },
   {
     "source": "- +\nfirst\n+\n%%%\n[r]: /opaque\n%%%\n   [r\\]]: /url\n\nSee [r][], [r\\]][], and [^n].\n",
-    "html": "<ul>\n  <li>first</li>\n</ul>\n<p>[r]]: /url</p>\n<p>See [r][], [r\\]][], and [^n].</p>"
+    "html": "<ul>\n  <li>first\n    [r]]: /url\n  </li>\n</ul>\n<p>See [r][], [r\\]][], and [^n].</p>"
   },
   {
     "source": "- +\nfirst\n+\n%%%\n[r]: /opaque\n%%%\n[r]: /url\n [r]: /again\n\nSee [r][], [r\\]][], and [^n].\n",
@@ -4329,11 +4329,11 @@
   },
   {
     "source": ":: term\n: body\n+\n%%%\n[r]: /opaque\n%%%\n  [r\\]]: /url\n\nSee [r][], [r\\]][], and [^n].\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>body</dd>\n</dl>\n<p>[r]]: /url</p>\n<p>See [r][], [r\\]][], and [^n].</p>"
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>body</p>\n    <p>[r]]: /url</p>\n  </dd>\n</dl>\n<p>See [r][], [r\\]][], and [^n].</p>"
   },
   {
     "source": ":: term\n: body\n+\n%%%\n[r]: /opaque\n%%%\n   [r\\]]: /url\n\nSee [r][], [r\\]][], and [^n].\n",
-    "html": "<dl>\n  <dt>term</dt>\n  <dd>body</dd>\n</dl>\n<p>[r]]: /url</p>\n<p>See [r][], [r\\]][], and [^n].</p>"
+    "html": "<dl>\n  <dt>term</dt>\n  <dd>\n    <p>body</p>\n    <p>[r]]: /url</p>\n  </dd>\n</dl>\n<p>See [r][], [r\\]][], and [^n].</p>"
   },
   {
     "source": ":: term\n: body\n+\n%%%\n[r]: /opaque\n%%%\n[r]: /url\n [r]: /again\n\nSee [r][], [r\\]][], and [^n].\n",
