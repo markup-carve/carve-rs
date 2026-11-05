@@ -150,6 +150,44 @@ fn djot_to_carve_prepared_with_quotes(
     ))
 }
 
+/// Tracks fenced code across the import passes' line scans. A fence ends with
+/// the quote that holds it, as djot.js and Carve both read an unclosed one.
+#[derive(Default)]
+struct QuotedFence(Option<(u8, usize, usize)>);
+
+impl QuotedFence {
+    /// True for a line inside a fence, its closer included.
+    fn inside(&mut self, line: &str) -> bool {
+        let quote = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
+        let fence_line = cached_regex!(r"^[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
+        let prefix = quote.find(line).map_or(0, |m| m.end());
+        let depth = line[..prefix].matches('>').count();
+        let run = fence_line.captures(&line[prefix..]).map(|caps| {
+            (
+                caps[1].as_bytes()[0],
+                caps[1].len(),
+                caps[2].trim().is_empty(),
+            )
+        });
+        if self.0.is_some_and(|(_, _, open_depth)| depth < open_depth) {
+            self.0 = None;
+        }
+        if let Some((open, width, _)) = self.0 {
+            if run.is_some_and(|(ch, len, bare)| ch == open && len >= width && bare) {
+                self.0 = None;
+            }
+            return true;
+        }
+        self.0 = run.map(|(ch, len, _)| (ch, len, depth));
+        false
+    }
+
+    fn mask(lines: &[&str]) -> Vec<bool> {
+        let mut fence = Self::default();
+        lines.iter().map(|line| fence.inside(line)).collect()
+    }
+}
+
 /// Djot reads a blank line between an item's first block and its sub-list as no
 /// separation, and Carve reads it as a loose item (carve#5015), so the blank goes.
 /// A blank between sibling items, or below a later block, stays.
@@ -164,7 +202,6 @@ fn sub_list_marker() -> &'static regex::Regex {
 fn glue_sub_lists_to_their_leads(carve: String) -> String {
     let quote = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
     let marker = sub_list_marker();
-    let fence_line = cached_regex!(r"^[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
     let lines: Vec<&str> = carve.split('\n').collect();
     let parts: Vec<(usize, &str)> = lines
         .iter()
@@ -174,25 +211,7 @@ fn glue_sub_lists_to_their_leads(carve: String) -> String {
         })
         .collect();
     let indent = |body: &str| body.len() - body.trim_start_matches(' ').len();
-    let mut in_fence = vec![false; lines.len()];
-    let mut fence: Option<(u8, usize)> = None;
-    for (index, (_, body)) in parts.iter().enumerate() {
-        let run = fence_line.captures(body).map(|caps| {
-            (
-                caps[1].as_bytes()[0],
-                caps[1].len(),
-                caps[2].trim().is_empty(),
-            )
-        });
-        if let Some((open, width)) = fence {
-            in_fence[index] = true;
-            if run.is_some_and(|(ch, len, bare)| ch == open && len >= width && bare) {
-                fence = None;
-            }
-            continue;
-        }
-        fence = run.map(|(ch, len, _)| (ch, len));
-    }
+    let in_fence = QuotedFence::mask(&lines);
     let mut drop = vec![false; lines.len()];
     for index in 1..lines.len().saturating_sub(1) {
         let (depth, body) = parts[index];
@@ -320,27 +339,8 @@ fn loosen_lists_behind_empty_leads(carve: String) -> String {
     }
     let empty_lead = cached_regex!(r"^( *)([-*]|\d+[.)]) (?:\[[ xX]\] )?%%$").unwrap();
     let indent = |line: &str| line.len() - line.trim_start_matches(' ').len();
-    let fence_line = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})(.*)$").unwrap();
     let lines: Vec<&str> = carve.split('\n').collect();
-    let mut in_fence = vec![false; lines.len()];
-    let mut fence: Option<(u8, usize)> = None;
-    for (index, line) in lines.iter().enumerate() {
-        let run = fence_line.captures(line).map(|caps| {
-            (
-                caps[1].as_bytes()[0],
-                caps[1].len(),
-                caps[2].trim().is_empty(),
-            )
-        });
-        if let Some((open, width)) = fence {
-            in_fence[index] = true;
-            if run.is_some_and(|(ch, len, bare)| ch == open && len >= width && bare) {
-                fence = None;
-            }
-            continue;
-        }
-        fence = run.map(|(ch, len, _)| (ch, len));
-    }
+    let in_fence = QuotedFence::mask(&lines);
     let mut starts: Vec<(usize, usize)> = Vec::new();
     let mut index = lines.len();
     while index > 0 {
@@ -410,21 +410,13 @@ fn spell_empty_item_placeholders(carve: String) -> String {
     .unwrap();
     let task_box = cached_regex!(r"\[[ xX_>/!?-]\] +$").unwrap();
     let note_marker = cached_regex!(r"\[\^[^\]\n]+\]: +").unwrap();
-    let fence_line = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})").unwrap();
     let mut lines: Vec<String> = carve.split('\n').map(str::to_owned).collect();
     let mut moved_up = vec![false; lines.len()];
-    let mut fence: Option<(u8, usize)> = None;
+    let mut fence = QuotedFence::default();
     for index in 0..lines.len() {
-        let run = fence_line
-            .captures(&lines[index])
-            .map(|caps| (caps[1].as_bytes()[0], caps[1].len()));
-        if let Some((open, width)) = fence {
-            if run.is_some_and(|(ch, len)| ch == open && len >= width) {
-                fence = None;
-            }
+        if fence.inside(&lines[index]) {
             continue;
         }
-        fence = run;
         let Some(prefix) = placeholder
             .captures(&lines[index])
             .map(|caps| caps[1].to_owned())
@@ -480,27 +472,13 @@ fn end_note_tasks_before_text(carve: String) -> String {
     }
     let lines: Vec<&str> = carve.split('\n').collect();
     let mut out = String::with_capacity(carve.len());
-    let mut fence: Option<(u8, usize)> = None;
+    let mut fence = QuotedFence::default();
     for (index, line) in lines.iter().enumerate() {
         out.push_str(line);
         if index + 1 < lines.len() {
             out.push('\n');
         }
-        let content = line.trim_start_matches(['>', ' ', '\t']);
-        let run = content
-            .bytes()
-            .take_while(|&b| b == b'`' || b == b'~')
-            .count();
-        if run >= 3 {
-            let ch = content.as_bytes()[0];
-            match fence {
-                Some((open, len)) if open == ch && run >= len => fence = None,
-                None => fence = Some((ch, run)),
-                _ => {}
-            }
-            continue;
-        }
-        if fence.is_none() {
+        if !fence.inside(line) {
             if let (Some(caps), Some(next)) = (empty_note_task.captures(line), lines.get(index + 1))
             {
                 let prefix = &caps[1];

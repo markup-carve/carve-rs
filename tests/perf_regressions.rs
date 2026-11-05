@@ -129,6 +129,26 @@ fn erased_lines_in_long_lists_scale_near_linearly() {
     );
 }
 
+/// Erased `%%` lines between document paragraphs are merged back in one pass,
+/// not inserted one by one (carve#5184).
+#[test]
+fn erased_lines_between_paragraphs_scale_near_linearly() {
+    let scaling = measure_scaling_at(
+        &|lines| "Text 0 before after.\n%% line comment 0\n\n%% alone\n\n".repeat(lines / 5),
+        20_000,
+        40_000,
+    );
+    eprintln!(
+        "erased document lines: 20000 lines {:.3}s, 40000 lines {:.3}s",
+        scaling.small_secs, scaling.large_secs
+    );
+    assert!(
+        scaling.large_secs / scaling.small_secs < 3.6,
+        "erased document lines took {:.2}x longer on double the lines",
+        scaling.large_secs / scaling.small_secs
+    );
+}
+
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
 /// cascade into every other one reporting a lock error instead of its result.
 fn perf_guard() -> std::sync::MutexGuard<'static, ()> {
@@ -2684,4 +2704,24 @@ fn fmt_of_colon_fences_nested_past_the_cap_reparses_a_bounded_number_of_document
     let ratio = fmt_secs / parse_secs;
     eprintln!("fmt {fmt_secs:.3}s, parse {parse_secs:.4}s, ratio {ratio:.0}");
     assert!(ratio < 500.0, "fmt took {ratio:.0} parses");
+}
+
+/// A quoted brace line that never closes is scanned once per opener-shaped line,
+/// not on every line below it (carve#5191).
+#[test]
+fn an_unclosed_quoted_brace_run_scales_near_linearly() {
+    let scaling = measure_scaling_at(
+        &|lines| format!("> {{\n{}", "> \"}\"\n> # h\n".repeat(lines / 2)),
+        20_000,
+        40_000,
+    );
+    eprintln!(
+        "unclosed quoted brace run: 20000 lines {:.3}s, 40000 lines {:.3}s",
+        scaling.small_secs, scaling.large_secs
+    );
+    assert!(
+        scaling.large_secs / scaling.small_secs < 3.6,
+        "an unclosed quoted brace run took {:.2}x longer on double the lines",
+        scaling.large_secs / scaling.small_secs
+    );
 }
