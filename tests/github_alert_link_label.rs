@@ -27,6 +27,16 @@ fn a_literal_alert_label_is_still_reported() {
 }
 
 #[test]
+fn a_literal_label_after_a_linked_label_is_reported() {
+    let warnings: Vec<_> = lint_carve("> [!NOTE](/u) [!TIP]\n")
+        .into_iter()
+        .filter(|warning| warning.rule == "github-alert-marker")
+        .collect();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!((warnings[0].line, warnings[0].column), (1, 15));
+}
+
+#[test]
 fn linked_alert_labels_stay_quiet_across_hosts_and_siblings() {
     let mut count = 0;
     for label in ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"] {

@@ -706,7 +706,7 @@ fn collect_authoring(
             }
         }
         if row.text.trim_start().starts_with('>') {
-            if let Some(m) = alert.find(view) {
+            for m in alert.find_iter(view) {
                 let start = prefix + m.start();
                 if source_visible(row, start, m.len(), scan)
                     && !overlaps(
