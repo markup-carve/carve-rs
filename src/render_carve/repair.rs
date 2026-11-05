@@ -9,12 +9,16 @@ pub(super) fn render_carve_once(session: &RenderSession, doc: &Document) -> Stri
     session.inserted.with(|c| c.set([0; SENTINEL_COUNT]));
     session.seen.with(|c| c.set([0; SENTINEL_COUNT]));
     session.staged.with(|c| c.borrow_mut().clear());
+    session.deep_inline.with(|c| c.set(false));
     let minimal = render_with_escapes(session, doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(session, doc, EscapeMode::Conservative);
+    let deep_inline = session.deep_inline.with(std::cell::Cell::get);
     if minimal == conservative {
         // Equal spellings can still lose an over-cap list marker on readback.
         if crate::render_depth::reaches_list_nesting_cap(doc) {
             refuse_unless_it_reads_back(comparable_tree(&minimal).as_ref(), doc);
+        } else if deep_inline {
+            refuse_deep_inline_unless_it_reads_back(comparable_tree(&minimal).as_ref(), doc);
         }
         return minimal;
     }
@@ -50,6 +54,9 @@ pub(super) fn render_carve_once(session: &RenderSession, doc: &Document) -> Stri
     {
         return conservative;
     }
+    if deep_inline && !refuse_deep_inline_unless_it_reads_back(conservative_tree.as_ref(), doc) {
+        return conservative;
+    }
     if escaping_is_redundant(minimal_tree.as_ref(), conservative_tree.as_ref()) {
         return minimal;
     }
@@ -68,6 +75,14 @@ fn refuse_unless_it_reads_back(output_tree: Option<&Document>, doc: &Document) -
         return true;
     }
     note_unspellable_list_nesting();
+    false
+}
+
+fn refuse_deep_inline_unless_it_reads_back(output_tree: Option<&Document>, doc: &Document) -> bool {
+    if output_tree.is_some_and(|tree| *tree == comparable_document(doc.clone())) {
+        return true;
+    }
+    crate::render_carve_error::record_unspellable("inline", DEEP_INLINE_REASON);
     false
 }
 

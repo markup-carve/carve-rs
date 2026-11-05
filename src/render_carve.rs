@@ -3124,9 +3124,31 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         BlockNode::Paragraph(paragraph) => {
             let caption_can_open = render_attrs(&paragraph.attrs).is_empty()
                 && ctx.paragraph_starts_after_caption_host;
+            // A top-level paragraph's leading whitespace never reads back
+            // (carve-rs#3887); after a list marker a tab is content (corpus 684).
+            let at_top_level = ctx.list_depth == 0
+                && ctx.quote_depth == 0
+                && ctx.line_block_depth == 0
+                && ctx.table_cell_depth == 0
+                && !ctx.at_item_content_column
+                && !ctx.in_footnote_body;
+            let trimmed;
+            let children = match paragraph.children.first() {
+                Some(InlineNode::Text(text))
+                    if at_top_level && text.value.starts_with([' ', '\t']) =>
+                {
+                    let mut children = paragraph.children.clone();
+                    if let Some(InlineNode::Text(text)) = children.first_mut() {
+                        text.value = text.value.trim_start_matches([' ', '\t']).to_string();
+                    }
+                    trimmed = children;
+                    &trimmed
+                }
+                _ => &paragraph.children,
+            };
             let body = guard_thematic_break_lines(
                 session,
-                &render_inlines_with_caption(session, &paragraph.children, ctx, caption_can_open),
+                &render_inlines_with_caption(session, children, ctx, caption_can_open),
                 ctx.line_block_depth > 0,
             );
             with_block_attrs(&paragraph.attrs, &body)
@@ -3676,6 +3698,9 @@ fn isolate_directives(nodes: &[InlineNode]) -> Option<PreparedInlines> {
     })
 }
 
+pub(super) const DEEP_INLINE_REASON: &str =
+    "inline content exceeds the native parser nesting limit";
+
 fn render_inlines(session: &RenderSession, nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
     render_inlines_with_caption(session, nodes, ctx, false)
 }
@@ -3701,11 +3726,14 @@ fn render_inlines_with_caption(
             .iter()
             .any(|node| matches!(node, InlineNode::Emphasis(_)))
     {
-        crate::render_carve_error::record_unspellable(
-            "inline",
-            "inline content exceeds the native parser nesting limit",
-        );
-        return String::new();
+        // Past the inline budget of a top-level paragraph nothing reads back.
+        // Under deep blocks the parser can still read the emphasis, so the
+        // whole-document readback decides (CARVE-P9-078, carve-rs#3892).
+        if ctx.inline_depth + 2 >= crate::parse::MAX_NESTING_DEPTH - 1 {
+            crate::render_carve_error::record_unspellable("inline", DEEP_INLINE_REASON);
+            return String::new();
+        }
+        session.deep_inline.with(|cell| cell.set(true));
     }
     // Flatten before the writer checks neighboring nodes. A ruby base can
     // start with `[` or a code fence, which changes how preceding text escapes.
@@ -4468,10 +4496,7 @@ fn render_inline_body(
                 let split_peak = content_peak + 1;
                 ctx.emphasis_depth_peak = ctx.emphasis_depth_peak.max(split_peak);
                 if split_peak >= crate::parse::MAX_NESTING_DEPTH - 1 {
-                    crate::render_carve_error::record_unspellable(
-                        "inline",
-                        "inline content exceeds the native parser nesting limit",
-                    );
+                    crate::render_carve_error::record_unspellable("inline", DEEP_INLINE_REASON);
                     return String::new();
                 }
             }

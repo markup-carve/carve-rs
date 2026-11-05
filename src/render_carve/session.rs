@@ -40,6 +40,9 @@ pub(super) struct RenderSession {
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
     pub(super) quoted_marker_lines: Slot<Cell<bool>>,
     pub(super) lazy_marker_lines: Slot<Cell<bool>>,
+    /// Emphasis was written under blocks deep enough that only a readback can
+    /// tell whether the parser reads it.
+    pub(super) deep_inline: Slot<Cell<bool>>,
     pub(super) sentinels: Slot<RefCell<[Rc<String>; SENTINEL_COUNT]>>,
     pub(super) inserted: Slot<Cell<[usize; SENTINEL_COUNT]>>,
     pub(super) seen: Slot<Cell<[usize; SENTINEL_COUNT]>>,
@@ -69,6 +72,7 @@ impl RenderSession {
             redundant_ids: Slot(RefCell::new(BTreeSet::new())),
             quoted_marker_lines: Slot(Cell::new(false)),
             lazy_marker_lines: Slot(Cell::new(false)),
+            deep_inline: Slot(Cell::new(false)),
             sentinels: Slot(RefCell::new(
                 SENTINEL_DEFAULTS.map(|marker| Rc::new(marker.to_string())),
             )),
