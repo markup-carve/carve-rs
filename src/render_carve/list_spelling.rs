@@ -440,8 +440,14 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
     // adjacent sibling lists on re-parse (carve issue 286).
     let items = node.items.as_ptr() as usize;
     let list_followed_by_marker = ctx.item_followed_by_marker;
+    let list_followed_by_tight_marker = ctx.item_followed_by_tight_marker;
     for (idx, item) in node.items.iter().enumerate() {
         ctx.item_followed_by_marker = list_followed_by_marker || idx + 1 < node.items.len();
+        ctx.item_followed_by_tight_marker = if idx + 1 < node.items.len() {
+            tight
+        } else {
+            list_followed_by_tight_marker
+        };
         let escape_window::Visit::Render(recorded) = escape_window::visit(session, items, idx)
         else {
             if node.ordered {
@@ -626,6 +632,7 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         escape_window::leave(session, recorded);
     }
     ctx.item_followed_by_marker = list_followed_by_marker;
+    ctx.item_followed_by_tight_marker = list_followed_by_tight_marker;
     ctx.list_depth -= 1;
     trim_end_non_nbsp(&out).to_string()
 }
