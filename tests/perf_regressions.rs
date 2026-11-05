@@ -2656,3 +2656,32 @@ fn a_ladder_of_items_holding_quotes_or_containers_parses_bounded() {
         }
     });
 }
+
+/// Colon fences nested past the cap leave every later opener as paragraph text
+/// that must stay escaped, so the escape-narrowing search fails at every probe
+/// and each probe re-parses the whole document. Its parse allowance binds within
+/// the probe count, so fmt costs a bounded number of parses (carve-rs#3882).
+/// Debug build: reads about 300 with the bound, about 750 without it.
+#[test]
+fn fmt_of_colon_fences_nested_past_the_cap_reparses_a_bounded_number_of_documents() {
+    let _guard = perf_guard();
+    let source = ":::: note\ntext\n".repeat(220);
+    let fmt = || carve::render_carve(&carve::parse(&source)).unwrap();
+    let written = fmt();
+    assert!(written.contains("\n\\:::: note\n"), "{written}");
+    let parse_secs = {
+        let start = Instant::now();
+        for _ in 0..5 {
+            drop(carve::parse(&source));
+        }
+        start.elapsed().as_secs_f64() / 5.0
+    };
+    let fmt_secs = {
+        let start = Instant::now();
+        drop(fmt());
+        start.elapsed().as_secs_f64()
+    };
+    let ratio = fmt_secs / parse_secs;
+    eprintln!("fmt {fmt_secs:.3}s, parse {parse_secs:.4}s, ratio {ratio:.0}");
+    assert!(ratio < 500.0, "fmt took {ratio:.0} parses");
+}
