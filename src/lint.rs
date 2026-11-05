@@ -9,6 +9,13 @@
 //! Unattached attributes follow PART 9 §15 A4.
 //! See `docs/linting.md` for rule ids and examples.
 
+macro_rules! lint_regex {
+    ($pattern:literal) => {{
+        static COMPILED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        COMPILED.get_or_init(|| regex::Regex::new($pattern).unwrap())
+    }};
+}
+
 mod consumed_key;
 mod delimited_table;
 mod marker_before_attributes;

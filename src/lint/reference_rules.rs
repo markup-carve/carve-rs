@@ -230,13 +230,12 @@ pub(super) fn collect(
     let mut sites = BTreeMap::<String, Pos>::new();
     let mut first_keys = BTreeMap::<String, String>::new();
     let definition =
-        regex::Regex::new(r"^(?:[ \t]*>[ ]?)*[ \t]*(?:[-+*] |[0-9]+[.)] |: )*\[\^([^]\r\n]+)\]:")
-            .unwrap();
+        lint_regex!(r"^(?:[ \t]*>[ ]?)*[ \t]*(?:[-+*] |[0-9]+[.)] |: )*\[\^([^]\r\n]+)\]:");
     inline_spans.sort_unstable();
     let mut span_index = 0;
     let mut byte = 0;
     let mut codepoints = 0;
-    let endings = regex::Regex::new(r"\r\n|\r|\n").unwrap();
+    let endings = lint_regex!(r"\r\n|\r|\n");
     let ends: Vec<_> = endings
         .find_iter(source)
         .map(|m| (m.start(), m.end()))
