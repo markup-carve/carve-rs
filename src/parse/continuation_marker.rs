@@ -98,6 +98,14 @@ impl Guard {
             .filter(|o| !o.accepted.is_empty())
             .map(|o| o.accepted.iter().copied().collect());
         if let Some(owned) = owned {
+            for &(line, column, width, end_of_document) in &owned.unclosed_comments {
+                note_lint_event(LintEvent::CommentFence {
+                    line,
+                    column,
+                    width,
+                    end_of_document,
+                });
+            }
             for refused in &owned.refused {
                 note_lint_event(LintEvent::Marker {
                     line: refused.line,
