@@ -1199,13 +1199,21 @@ fn parse_with_options_mode_and_index_once(
         ingest_payload_len: 0,
     };
     let has_crossrefs = source.contains("</#");
-    let (mut heading_index, _assigned_heading_ids) = heading_index(
-        &doc.children,
-        &doc.footnote_defs,
-        options.heading_id_options(),
-        has_crossrefs,
-        needs_late_link_resolution,
-    );
+    // The published parse builds its cross-reference index after generated
+    // heading IDs have been stamped. An earlier index is only consumed by
+    // late reference-link resolution or by the HTML facade renderer.
+    let mut heading_index = if needs_late_link_resolution || matches!(mode, ParseMode::HtmlFacade) {
+        heading_index(
+            &doc.children,
+            &doc.footnote_defs,
+            options.heading_id_options(),
+            has_crossrefs,
+            needs_late_link_resolution,
+        )
+        .0
+    } else {
+        CrossrefIndex::default()
+    };
     if needs_late_link_resolution {
         resolve_reference_links(&mut doc, &link_defs, &heading_index);
     }
@@ -1254,7 +1262,12 @@ fn parse_with_options_mode_and_index_once(
         // Keep the document-id seeder authoritative. Unlike the heading index,
         // it reserves explicit ids carried by inline nodes as well as blocks.
         stamp_generated_heading_ids(&mut doc, options.heading_id_options());
-        if !matches!(mode, ParseMode::HtmlFacade) {
+        if !matches!(mode, ParseMode::HtmlFacade)
+            && (!doc.footnote_defs.is_empty()
+                || authored.contains("[^")
+                || authored.contains("^[")
+                || !options.extensions.is_empty())
+        {
             let _ = crate::render::collect_footnotes(&mut doc, false);
         }
     } else {
