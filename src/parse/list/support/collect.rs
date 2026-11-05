@@ -574,7 +574,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         // Handle this before the special lazy and marker-line branches below:
         // the span left no paragraph for any of them to continue.
-        if nested_item_columns.closed_marker_comment_span && indent_columns(line) < strip_cols {
+        if nested_item_columns.closed_marker_comment_span
+            && !admission.blank
+            && indent_columns(line) < strip_cols
+        {
             break;
         }
         if indent_columns(line) < strip_cols
@@ -1033,6 +1036,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else if !description
             && definition_list_column.is_some()
             && item_block_opener(trim_ascii_start(line))
+            // An opener inside the description's body keeps it open.
+            && !surviving_definition_body_column.is_some_and(|column| indent >= column)
         {
             definition_list_column = None;
             surviving_definition_body_column = None;
