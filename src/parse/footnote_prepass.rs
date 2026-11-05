@@ -994,13 +994,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // two are one condition here - the fallback is conservative, so it may
         // decline a definition an affordable probe would have taken.
         let mut unaffordable = false;
-        let quoted_note_paragraph = self.nested
-            && stripped.structural.contains('>')
-            && self.body.last().is_some_and(|previous: &String| {
-                strip_blockquote_prefix(trim_ascii_start(previous)).is_some_and(|content| {
-                    !is_blank_line(content) && !item_block_opener(trim_ascii_start(content))
-                })
-            });
         let folds = marker_line_may_be_lazy(line)
             && line_folds_into_an_open_paragraph(
                 &self.body,
@@ -1009,11 +1002,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut self.probe_budget,
                 &mut unaffordable,
             );
-        if folds
-            || quoted_note_paragraph
-            || unaffordable
-            || self.folded_into_term.folded.contains(&i)
-        {
+        if folds || unaffordable || self.folded_into_term.folded.contains(&i) {
             return None;
         }
         Some(DefinitionLine {
@@ -1104,7 +1093,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 marker_line_note: i == 1,
             };
             i = self.collect_indented_body(&mut note, i, state);
-        } else if !self.nested {
+        } else {
             let structural_len = if def.authored_quote_def {
                 raw_def_line.len() - def.def_line.len()
             } else {
