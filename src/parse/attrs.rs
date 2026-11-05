@@ -216,7 +216,7 @@ pub(crate) enum RefusedBraceRun {
     No(usize),
 }
 
-/// `lazy_refuses` is false in a quote, whose lazy line keeps a run inline.
+/// `lazy_refuses` is false in a quote, whose lazy line keeps an attribute run inline.
 pub(crate) fn refused_brace_run<'a>(
     mut lines: impl Iterator<Item = &'a str>,
     lazy_refuses: bool,
@@ -249,7 +249,8 @@ pub(crate) fn refused_brace_run<'a>(
             break;
         }
         let line = strip_lazy(raw);
-        if !lazy_refuses && line.len() != raw.len() {
+        // A lazy line has no column, so it never continues a comment run (carve#5189).
+        if !lazy_refuses && !comment && line.len() != raw.len() {
             return RefusedBraceRun::No(0);
         }
         let column = column_of(raw);
