@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Category added between spec 0e8c456d and b1362b59.
+    "a-braced-comment-that-starts-a-continuation-line-is-at-block-position",
     // Categories added at spec 0e8c456d.
     "an-indented-quoted-item-keeps-a-lazy-line-at-its-base",
     "a-below-item-marker-continues-the-list-in-a-description",
@@ -1403,16 +1405,6 @@ fn expected_corpus_size() -> usize {
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line-2",
-        "carve#5195 (carve#5196): a refused `{%` run is visible paragraph text",
-        "<ul>\n  <li><p>{% c\nd %}</p>\n    <p>Body.</p>\n  </li>\n</ul>",
-    ),
-    (
-        "928-a-multi-line-paragraph-of-only-braced-comments-is-an-invisible-line-3",
-        "carve#5195 (carve#5196): a refused `{%` run is visible paragraph text",
-        "<ul>\n  <li>a</li>\n</ul>\n<p>{% c\nd %}</p>\n<ul>\n  <li>b</li>\n</ul>",
-    ),
 ];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
