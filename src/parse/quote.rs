@@ -1578,8 +1578,9 @@ struct QuoteBody<'a> {
     // No replay without a fence to find: every level of a quote ladder would
     // otherwise walk its whole body once.
     may_hold_fence: bool,
-    // `inner`'s length when a `+` block left a code fence open as its last line.
-    attached_fence_end: Option<usize>,
+    // `inner`'s length when a `+` block left a code fence open as its last
+    // line, and the closer that ends that fence.
+    attached_fence_end: Option<(usize, String)>,
     // The last quoted line was read on a description body's base.
     description_line: bool,
     literal_quote_body: Option<usize>,
@@ -2532,11 +2533,24 @@ impl<'a> QuoteBody<'a> {
             .map(|line| line.text.as_str())
             .find(|text| !is_blank_line(text));
         let attached = || lines[first..].iter().map(|line| line.text.as_str());
-        if fence_left_open(above, attached()) {
-            self.attached_fence_end = Some(self.inner.lines.len());
+        if let Some((fence, column)) = fence_left_open(above, attached()) {
+            let closer = " ".repeat(column)
+                + &char::from(fence.fence_char)
+                    .to_string()
+                    .repeat(fence.fence_len);
+            self.attached_fence_end = Some((self.inner.lines.len(), closer));
         } else if !body_lines_hold_open_code_fence(&attached().collect::<Vec<_>>()) {
             self.inner.push_synthetic_blank();
         }
+    }
+
+    /// The closer of the fence the last `+` block left open, while nothing
+    /// has followed it.
+    fn left_open_fence(&self) -> Option<String> {
+        self.attached_fence_end
+            .as_ref()
+            .filter(|(at, _)| *at == self.inner.lines.len())
+            .map(|(_, closer)| closer.clone())
     }
 
     // An accepted physical marker attaches one block to the surviving quote.
@@ -2646,7 +2660,12 @@ impl<'a> QuoteBody<'a> {
                 self.comment_lazy_lines.clear();
             }
             // `inner` always holds the quote's first content line, so a
-            // leading blank separates the attached block from it.
+            // leading blank separates the attached block from it. A fence the
+            // last block left open ends at the marker first, or the blank
+            // would be its payload (PART 0 S1, carve#5046).
+            if let Some(closer) = self.left_open_fence() {
+                self.inner.push_synthetic(closer);
+            }
             self.inner.push_synthetic_blank();
             let first = self.inner.lines.len();
             self.inner.lines.extend(attached.lines);
@@ -2759,7 +2778,7 @@ impl<'a> QuoteBody<'a> {
         }
         // A line the `+` block did not take ends the fence it left open, and
         // no paragraph is open for it (PART 9 §17 L3).
-        if !is_blank_line(line) && self.attached_fence_end == Some(self.inner.lines.len()) {
+        if !is_blank_line(line) && self.left_open_fence().is_some() {
             return true;
         }
         // A description-lead span leaves no paragraph for the line that ends it (carve#4998).
@@ -3079,7 +3098,10 @@ pub(in crate::parse) fn boxed_blockquote_node(
 /// and description markers. A nested fence ends at a line below its column.
 /// `above` is the line before them; a `: ` line is a description only after a
 /// term or another description.
-fn fence_left_open<'l>(above: Option<&str>, lines: impl Iterator<Item = &'l str>) -> bool {
+fn fence_left_open<'l>(
+    above: Option<&str>,
+    lines: impl Iterator<Item = &'l str>,
+) -> Option<(FenceOpen, usize)> {
     let mut open: Option<(FenceOpen, usize)> = None;
     let mut described = above.is_some_and(|line| {
         let line = trim_ascii_start(line);
@@ -3104,7 +3126,7 @@ fn fence_left_open<'l>(above: Option<&str>, lines: impl Iterator<Item = &'l str>
         }
         open = hosted_fence_open(text, described);
     }
-    open.is_some()
+    open
 }
 
 /// The code fence `line` opens behind its list and description markers, with

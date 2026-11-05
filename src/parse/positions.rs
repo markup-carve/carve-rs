@@ -182,7 +182,12 @@ pub(in crate::parse) fn span_of(
     }
     let start_line = cur.source_line(start)?;
     let stripped = cur.source_col(start)?;
-    let last = end.saturating_sub(1).max(start);
+    let mut last = end.saturating_sub(1).max(start);
+    // A blank a container inserted (an attached block's separator) holds no
+    // source, so a block that ran onto it ends on the line above.
+    while last > start && cur.source_line(last).is_none() {
+        last -= 1;
+    }
     let end_line = cur.source_line(last).unwrap_or(start_line);
     // The parser sees the line with its container prefix removed, so the
     // document column is what the container took plus the indent that remains.
