@@ -7,8 +7,14 @@ use carve::{djot_to_carve, to_html};
 fn an_unindented_continuation_keeps_the_run_literal_in_each_host() {
     for (source, expected) in [
         ("pre\n{% a\nb %}\n", "<p>pre\n{% a\nb %}</p>"),
-        ("- pre\n  {% a\n  b %}\n", "<ul>\n  <li>pre\n{% a\nb %}</li>\n</ul>"),
-        ("> pre\n> {% a\n> b %}\n", "<blockquote><p>pre\n{% a\nb %}</p></blockquote>"),
+        (
+            "- pre\n  {% a\n  b %}\n",
+            "<ul>\n  <li>pre\n{% a\nb %}</li>\n</ul>",
+        ),
+        (
+            "> pre\n> {% a\n> b %}\n",
+            "<blockquote><p>pre\n{% a\nb %}</p></blockquote>",
+        ),
         (
             "> - pre\n>   {% a\n>   b %}\n",
             "<blockquote>\n  <ul>\n    <li>pre\n{% a\nb %}</li>\n  </ul>\n</blockquote>",
