@@ -49,19 +49,28 @@ fn unchanged(source: &str) {
 #[test]
 fn the_simple_case_is_the_items() {
     let source = "- a\n\n  %% n\n- b\n";
-    assert_eq!(parent(source), ("$.children[0].items[0]".into(), Some((0, 11))));
+    assert_eq!(
+        parent(source),
+        ("$.children[0].items[0]".into(), Some((0, 11)))
+    );
 }
 
 #[test]
 fn corpus_620_14_is_the_outer_items() {
     let source = "- - a\n\n  %% just a note\n- b\n";
-    assert_eq!(parent(source), ("$.children[0].items[0]".into(), Some((0, 23))));
+    assert_eq!(
+        parent(source),
+        ("$.children[0].items[0]".into(), Some((0, 23)))
+    );
 }
 
 #[test]
 fn corpus_504_18_is_the_descriptions() {
     let source = ":: a\n: b\n  :: c\n  %% note\n  more\n";
-    assert_eq!(parent(source), ("$.children[0].items[1]".into(), Some((5, 32))));
+    assert_eq!(
+        parent(source),
+        ("$.children[0].items[1]".into(), Some((5, 32)))
+    );
 }
 
 #[test]
@@ -69,7 +78,10 @@ fn corpus_937_is_the_descriptions_and_every_ancestor_reaches_it() {
     let source = "- :: term\n  : payload\n\n    %% c\n- sub\n";
     assert_eq!(
         parent(source),
-        ("$.children[0].items[0].children[0].items[1]".into(), Some((12, 31)))
+        (
+            "$.children[0].items[0].children[0].items[1]".into(),
+            Some((12, 31))
+        )
     );
     let doc = tree(source);
     let list = &doc["children"][0];
@@ -93,12 +105,18 @@ fn a_line_below_every_column_is_the_documents_whatever_follows() {
 
 #[test]
 fn a_line_at_an_outer_column_skips_the_inner_container_it_misses() {
-    assert_eq!(parent("- x0\n  - x1\n  %% n\n  more\n").0, "$.children[0].items[0]");
+    assert_eq!(
+        parent("- x0\n  - x1\n  %% n\n  more\n").0,
+        "$.children[0].items[0]"
+    );
     assert_eq!(
         parent("::: note\n- x1\n  1. x2\n %% n\n\n:::\n").0,
         "$.children[0]"
     );
-    assert_eq!(parent("1. x0\n   - x1\n    %% n\n    more\n").0, "$.children[0].items[0]");
+    assert_eq!(
+        parent("1. x0\n   - x1\n    %% n\n    more\n").0,
+        "$.children[0].items[0]"
+    );
 }
 
 #[test]
