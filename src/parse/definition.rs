@@ -353,6 +353,46 @@ fn consume_invisible_definition_gap(
     spans
 }
 
+/// Spans read after a term are the first blocks of the description that
+/// follows (CARVE-P12-027, carve#5167). The parse keeps them in the term
+/// before them until that description exists; a term only holds a block
+/// comment that way. The description starts at them unless a term stands
+/// between, when no contiguous span holds both (CARVE-P12-022).
+pub(in crate::parse) fn move_term_gap_comments(
+    terms: &mut [DefinitionTerm],
+    def: &mut DefinitionDef,
+) {
+    let last = terms.len().saturating_sub(1);
+    let mut moved = Vec::new();
+    let mut term_between = false;
+    for (index, term) in terms.iter_mut().enumerate() {
+        let (gap, text): (Vec<_>, Vec<_>) = std::mem::take(&mut term.children)
+            .into_iter()
+            .partition(|child| matches!(child, InlineNode::Comment(c) if c.block));
+        term.children = text;
+        term_between |= index < last && !gap.is_empty();
+        moved.extend(gap.into_iter().filter_map(|child| match child {
+            InlineNode::Comment(comment) => Some(BlockNode::Comment(comment)),
+            _ => None,
+        }));
+    }
+    let Some(first) = moved.first().and_then(crate::ast_json::block_pos) else {
+        if !moved.is_empty() {
+            def.pos = None;
+        }
+        def.children.splice(0..0, moved);
+        return;
+    };
+    if term_between {
+        def.pos = None;
+    } else if let Some(pos) = def.pos.as_mut() {
+        pos.start_line = first.start_line;
+        pos.start_column = first.start_column;
+        pos.start_offset = first.start_offset;
+    }
+    def.children.splice(0..0, moved);
+}
+
 /// Keep gap spans in the description before them, or in the last term.
 fn keep_gap_comments(
     terms: &mut [DefinitionTerm],
@@ -801,6 +841,9 @@ pub(in crate::parse) fn parse_definition_list(
             });
         }
 
+        if let Some(def) = defs.first_mut() {
+            move_term_gap_comments(&mut terms, def);
+        }
         items.push(DefinitionItem {
             // NOT placed, though the cursor could say where it is. The wire
             // format flattens items into a flat run of definition_term and

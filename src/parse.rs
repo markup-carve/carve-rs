@@ -2882,6 +2882,15 @@ fn append_item_children(
             (Some(BlockNode::DefinitionList(existing)), BlockNode::DefinitionList(mut next))
                 if existing.attrs.is_none() && next.attrs.is_none() =>
             {
+                if let (Some(open), Some(first)) =
+                    (existing.items.last_mut(), next.items.first_mut())
+                {
+                    if open.definitions.is_empty() && first.terms.is_empty() {
+                        if let Some(def) = first.definitions.first_mut() {
+                            definition::move_term_gap_comments(&mut open.terms, def);
+                        }
+                    }
+                }
                 existing.items.append(&mut next.items);
                 existing.loose |= next.loose;
                 if let (Some(old), Some(new)) = (&mut existing.pos, next.pos) {

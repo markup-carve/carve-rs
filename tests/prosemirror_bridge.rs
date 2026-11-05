@@ -1749,7 +1749,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 954 and rows 1 and 3 of 955 round trip strictly.
     // carve#5129 folds the line after an erased quoted line into the quoted
     // paragraph, so 266-14, 613-11, 615-8, 615-11 and 615-12 report a soft break.
-    const STRICT: usize = 3437;
+    // Spec 0947cae0 adds corpus 956 (five rows); all five round trip strictly.
+    const STRICT: usize = 3442;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
