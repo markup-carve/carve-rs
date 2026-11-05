@@ -652,10 +652,28 @@ fn collect_parser_events(
         let Some(text) = lines.get(line.saturating_sub(1)) else {
             continue;
         };
-        let before = text
-            .char_indices()
-            .nth(column.saturating_sub(1))
-            .map_or(text.len(), |(offset, _)| offset);
+        let before = if rule == "unclosed-comment-fence" {
+            let bom = if line == 1 && text.starts_with('\u{feff}') {
+                3
+            } else {
+                0
+            };
+            let authored = &text[bom..];
+            let mut visual = 0;
+            let mut offset = authored.len();
+            for (at, ch) in authored.char_indices() {
+                if visual >= column.saturating_sub(1) {
+                    offset = at;
+                    break;
+                }
+                visual += if ch == '\t' { 4 - visual % 4 } else { 1 };
+            }
+            bom + offset
+        } else {
+            text.char_indices()
+                .nth(column.saturating_sub(1))
+                .map_or(text.len(), |(offset, _)| offset)
+        };
         let start = lines
             .iter()
             .take(line.saturating_sub(1))

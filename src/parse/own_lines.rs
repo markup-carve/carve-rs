@@ -1995,6 +1995,25 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn close_payload_span(&mut self, (ch, len): (u8, usize), rest: &str) {
+        let closes = if ch == b'%' {
+            comment_run(rest) == Some(len)
+        } else {
+            pure_fence(rest).is_some_and(|(other, width)| other == ch && width >= len)
+        };
+        if !closes {
+            return;
+        }
+        if ch == b'%' {
+            if let Some((line, _)) = self.top().span_origin {
+                self.closed_comments.insert(line);
+            }
+        }
+        let top = self.top();
+        top.span = None;
+        top.span_origin = None;
+    }
+
     /// A line-block payload line sets whether the stanza holds verse; a `%%%`
     /// span open before or on it leaves the stanza as it stood (CARVE-P9-047).
     fn track_verse(&mut self, line_block: bool, before: Option<(u8, usize)>, verse: bool) {
@@ -2203,22 +2222,8 @@ impl<'a> Walk<'a> {
                 self.track_verse(line_block, span, false);
                 return;
             }
-            if let Some((ch, len)) = span {
-                let closes = if ch == b'%' {
-                    comment_run(c.rest) == Some(len)
-                } else {
-                    pure_fence(c.rest).is_some_and(|(c2, n)| c2 == ch && n >= len)
-                };
-                if closes {
-                    if ch == b'%' {
-                        if let Some((line, _)) = self.top().span_origin {
-                            self.closed_comments.insert(line);
-                        }
-                    }
-                    let top = self.top();
-                    top.span = None;
-                    top.span_origin = None;
-                }
+            if let Some(span) = span {
+                self.close_payload_span(span, c.rest);
             } else if closer.is_some_and(|cl| cl.closes(c.rest, col, open_col)) {
                 let inner = self.frames.pop();
                 if let Some(frame) = inner.as_ref() {

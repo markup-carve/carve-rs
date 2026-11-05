@@ -270,6 +270,18 @@ fn line_block_comment_spans_and_percent_in_a_label_report_the_opener() {
 }
 
 #[test]
+fn comment_fence_ranges_skip_tabs_and_a_bom() {
+    for (source, column) in [("\t%%%\nsecret\n", 5), ("\u{feff}%%%\nsecret\n", 1)] {
+        let warning = lint_carve(source)
+            .into_iter()
+            .find(|warning| warning.rule == "unclosed-comment-fence")
+            .expect("an unclosed comment warning");
+        assert_eq!(warning.column, column);
+        assert_eq!(&source[warning.start..warning.end], "%%%", "{source:?}");
+    }
+}
+
+#[test]
 fn lint_reproduction_families_survive_generated_variants() {
     for n in 0..1000 {
         let lead = if n % 2 == 0 { "intro\n\n" } else { "" };
