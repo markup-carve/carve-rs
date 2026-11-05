@@ -4561,7 +4561,16 @@ fn render_inline_body(
             // The bare span would not form around its own word-flanked
             // delimiter, so the braced form beats escaping it (carve#4810).
             if let Some(delim) = bare_delimiter(emphasis.kind) {
-                if holds_word_flanked_delimiter(&emphasis.children, delim) {
+                if holds_word_flanked_delimiter(&emphasis.children, delim)
+                    || (emphasis.children.last().is_some_and(
+                        |child| matches!(child, InlineNode::Comment(comment) if comment.delimited),
+                    ) && content.rfind("{%").is_some_and(|start| {
+                        content[..start]
+                            .chars()
+                            .next_back()
+                            .is_some_and(|ch| matches!(ch, ' ' | '\t' | '\r' | '\n'))
+                    }))
+                {
                     return format!(
                         "{}{}",
                         render_forced_emphasis(delim, &content),
