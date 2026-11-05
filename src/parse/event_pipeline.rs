@@ -1072,7 +1072,13 @@ fn parse_mixed_blocks_cursor<const DEFINITIONS: bool, const ABBREVIATIONS: bool>
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
             continue;
         }
+        // A brace run continued onto the next line may be refused, which only
+        // the paragraph reader recognizes (CARVE-P2-035).
         if use_standard_event_paragraph(options, extents.is_some(), defer_pending)
+            || (invalid_brace_line
+                && lines
+                    .get(cur.pos + 1)
+                    .is_some_and(|next| !is_blank_line(next)))
             || crate::includes::code_include_line(line).is_some()
         {
             emit!(_block_source_line, parse_paragraph(&mut cur, options));
