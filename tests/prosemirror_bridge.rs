@@ -1465,10 +1465,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             "820-an-escaped-space-before-a-comment-marker-separates-it-2.crv",
             "820-an-escaped-space-before-a-comment-marker-separates-it-3.crv",
             "820-an-escaped-space-before-a-comment-marker-separates-it.crv",
-            "867-an-indented-comment-block-in-a-line-block-leaves-nothing-2.crv",
             "867-an-indented-comment-block-in-a-line-block-leaves-nothing-3.crv",
-            "867-an-indented-comment-block-in-a-line-block-leaves-nothing-4.crv",
-            "867-an-indented-comment-block-in-a-line-block-leaves-nothing.crv",
             "889-a-comment-in-editorial-markup-ends-at-the-first-raw-closer-4.crv",
             "914-a-line-block-in-an-item-child-keeps-its-stanza-after-a-comment-or-marker-shaped-payload-3.crv",
         ]
@@ -1753,7 +1750,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 0e8c456d adds 957 and 958; 958 round trips strictly.
     // carve#5195 makes the refused run in 928-3 a visible paragraph, whose
     // soft break reports a loss.
-    const STRICT: usize = 3442;
+    // The verse comment fix for carve#5213 makes three 867 rows strictly reversible.
+    const STRICT: usize = 3445;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1779,7 +1777,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec b1362b59 adds the four 959 rows (carve#5189), which report a loss.
     // Spec a9df31e4 adds the eight 960 rows (carve#5203), which report the
     // same existing source loss for lazy braced comments.
-    const LOSSY: usize = 957;
+    // The verse comment fix for carve#5213 moves three 867 rows into the strict set.
+    const LOSSY: usize = 954;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

@@ -1112,6 +1112,22 @@ pub(crate) fn nested_ends_with_open_paragraph(
     {
         return false;
     }
+    // A marker whose first block is a comment still opens a new, empty
+    // item. The block probe can absorb its synthetic comment placeholder into
+    // a preceding quote paragraph after the collector has removed indentation.
+    // The authored marker remains the deepest leaf and offers no lazy paragraph.
+    if nested
+        .lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .and_then(detect_list_marker_full)
+        .is_some_and(|marker| {
+            is_line_comment_any_column(marker.content)
+                || detect_comment_fence_line_any_column(marker.content).is_some()
+        })
+    {
+        return false;
+    }
     let blocks = probe_blocks(nested, options);
     // Rule A (carve#3885): a comment interrupts the paragraph above it.
     let Some(last) = blocks.last() else {

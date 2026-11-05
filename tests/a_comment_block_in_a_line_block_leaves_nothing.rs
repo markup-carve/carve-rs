@@ -39,7 +39,7 @@ fn a_closed_pair_leaves_nothing() {
         ),
         (
             "::: |\n %%%\nx\n%%%\n:::\n",
-            "<div class=\"line-block\">\n  <p>&nbsp;%%%<br>\nx</p>\n</div>",
+            "<div class=\"line-block\">\n\n</div>",
         ),
         (
             "::: |\na\n\n%%%\nx\n%%%\n\nb\n:::\n",
