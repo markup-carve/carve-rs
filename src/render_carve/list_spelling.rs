@@ -626,7 +626,27 @@ pub(super) fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveC
         let ends_with_nested_list = content.lines().last().is_some_and(|line| {
             line.starts_with(' ') && is_rendered_list_marker(line.trim_start())
         });
-        if !tight && idx < node.items.len() - 1 && !ends_with_nested_list {
+        // A blank after the last erased comment can combine with the blanks
+        // inside the item into a boundary that ends this list.
+        let mut trailing_comments = 0;
+        let mut blank_between_comments = false;
+        let mut crossed_blank = false;
+        for line in item_source.lines().rev() {
+            let line = line.trim();
+            if line.starts_with("%%") && !line.starts_with("%%%") {
+                trailing_comments += 1;
+                if trailing_comments > 1 && crossed_blank {
+                    blank_between_comments = true;
+                }
+                crossed_blank = false;
+            } else if line.is_empty() {
+                crossed_blank = true;
+            } else {
+                break;
+            }
+        }
+        if !tight && idx < node.items.len() - 1 && !ends_with_nested_list && !blank_between_comments
+        {
             out.push('\n');
         }
         escape_window::leave(session, recorded);

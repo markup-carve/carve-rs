@@ -100,6 +100,9 @@ struct CarveContext {
     escape_unit: usize,
     /// Definitions written on a description line, keyed by that line.
     definitions_by_line: HashMap<usize, Vec<DefinitionAtLine>>,
+    /// A definition is written in its source gap only when a later region
+    /// marker fixes its position (CARVE-P11-079 (a)).
+    last_region_marker: Option<usize>,
     /// The lines a description has already written back.
     ///
     /// PER PASS, because `render_carve_once` renders the document up to three
@@ -1115,6 +1118,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
         escape_mode,
         escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
+        last_region_marker: last_region_marker_line(doc),
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
         open_kinds: Vec::new(),
@@ -2032,11 +2036,10 @@ fn render_blocks(
             let body_list = list == ctx.marker_body
                 && matches!(block, BlockNode::List(_))
                 && matches!(previous_emitted, Some(BlockNode::Paragraph(_)));
-            // An item's or a description's trailing comments are written as one
-            // run: a blank between two erased lines joins the blanks around them
-            // into a hard boundary above the next marker (CARVE-P9-014) and ends
-            // the list (carve#5192).
-            let comment_run = (item.is_some() || list == ctx.marker_body)
+            // A trailing run of erased comments keeps its surrounding blank
+            // lines together when that spelling preserves the next marker.
+            let comment_run = ((item.is_some() && last_visible.is_some())
+                || (list == ctx.marker_body && ctx.list_depth == 0))
                 && last_visible.map_or(true, |last| index > last)
                 && previous_emitted.is_some_and(is_line_comment_in_run)
                 && is_line_comment_in_run(block);
@@ -2574,7 +2577,13 @@ fn definition_in_gap(
     let to = block_pos(after)?.start_line;
     let pending: Vec<usize> = ((from + 1)..to)
         .filter(|line| {
-            !ctx.written_in_place.contains(line) && ctx.definitions_by_line.contains_key(line)
+            !ctx.written_in_place.contains(line)
+                && ctx.definitions_by_line.contains_key(line)
+                && (above_a_marker(Some(*line), ctx.last_region_marker)
+                    || ctx.quote_depth > 0
+                    || ctx.definitions_by_line[line]
+                        .iter()
+                        .any(|entry| matches!(entry, DefinitionAtLine::Footnote(..))))
         })
         .collect();
     // A link definition goes back alone. Every note in the gap goes back, in
@@ -2912,7 +2921,9 @@ fn render_item_blocks(
         // above it or the block below it (carve#4799); a blank keeps it apart.
         let delimited = |block: Option<&BlockNode>| matches!(block, Some(BlockNode::Comment(comment)) if comment.delimited);
         if !separated
-            && ((delimited(prev) && !matches!(block, BlockNode::Comment(_)))
+            && ((delimited(prev)
+                && !matches!(block, BlockNode::Comment(_))
+                && !(followed_by_tight_marker && nothing_visible_below))
                 || (delimited(Some(block)) && prev.is_some_and(an_open_paragraph_reaches_down)))
         {
             out.push('\n');
@@ -4573,7 +4584,16 @@ fn render_inline_body(
             // The bare span would not form around its own word-flanked
             // delimiter, so the braced form beats escaping it (carve#4810).
             if let Some(delim) = bare_delimiter(emphasis.kind) {
-                if holds_word_flanked_delimiter(&emphasis.children, delim) {
+                if holds_word_flanked_delimiter(&emphasis.children, delim)
+                    || (emphasis.children.last().is_some_and(
+                        |child| matches!(child, InlineNode::Comment(comment) if comment.delimited),
+                    ) && content.rfind("{%").is_some_and(|start| {
+                        content[..start]
+                            .chars()
+                            .next_back()
+                            .is_some_and(|ch| matches!(ch, ' ' | '\t' | '\r' | '\n'))
+                    }))
+                {
                     return format!(
                         "{}{}",
                         render_forced_emphasis(delim, &content),
