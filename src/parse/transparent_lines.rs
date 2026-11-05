@@ -244,6 +244,9 @@ impl Transparent {
         notes: &mut BTreeMap<String, Vec<BlockNode>>,
         note_pos: &BTreeMap<String, Pos>,
     ) {
+        // A document comment no block around it can take is placed by position in
+        // one merge at the end, not by an insert per comment.
+        let mut loose: Vec<((usize, usize), BlockNode)> = Vec::new();
         for line in &self.erased {
             let pos = Pos {
                 start_line: line.index + 1,
@@ -288,12 +291,20 @@ impl Transparent {
                             .find(|(_, at)| at.start_line == start)
                             .map(|(label, _)| label.clone())
                     });
+                    let at = (pos.start_line, pos.start_column);
+                    let loose_in_doc = line.owner == "doc"
+                        && candidates(children, at).into_iter().all(|i| {
+                            crate::ast_json::block_pos(&children[i])
+                                .is_some_and(|block| (block.end_line, block.end_column) < at)
+                        });
                     let mut inside = InsideSpan {
                         transparent: self,
                         line,
                         placed: false,
                     };
-                    inside.blocks(children);
+                    if !loose_in_doc {
+                        inside.blocks(children);
+                    }
                     for blocks in notes.values_mut() {
                         inside.blocks(blocks);
                     }
@@ -305,13 +316,19 @@ impl Transparent {
                         at: (pos.start_line, pos.start_column),
                         node: &mut node,
                     };
-                    gap.blocks(children);
+                    if !loose_in_doc {
+                        gap.blocks(children);
+                    }
                     for blocks in notes.values_mut() {
                         gap.blocks(blocks);
                     }
                     let Some(node) = node else {
                         continue;
                     };
+                    if loose_in_doc {
+                        loose.push((at, node));
+                        continue;
+                    }
                     let blocks = match note.and_then(|label| notes.get_mut(&label)) {
                         Some(blocks) => blocks,
                         None => &mut *children,
@@ -320,6 +337,25 @@ impl Transparent {
                 }
             }
         }
+        if loose.is_empty() {
+            return;
+        }
+        let mut at_index: Vec<usize> = loose
+            .iter()
+            .map(|(at, _)| position_index(children, *at))
+            .collect();
+        at_index.reverse();
+        let mut loose = loose.into_iter().map(|(_, node)| node);
+        let mut merged = Vec::with_capacity(children.len() + at_index.len());
+        for (index, block) in std::mem::take(children).into_iter().enumerate() {
+            while at_index.last() == Some(&index) {
+                at_index.pop();
+                merged.extend(loose.next());
+            }
+            merged.push(block);
+        }
+        merged.extend(loose);
+        *children = merged;
     }
 }
 
