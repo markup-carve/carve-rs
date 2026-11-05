@@ -2032,16 +2032,7 @@ fn render_blocks(
             let body_list = list == ctx.marker_body
                 && matches!(block, BlockNode::List(_))
                 && matches!(previous_emitted, Some(BlockNode::Paragraph(_)));
-            // An item's or a description's trailing comments are written as one
-            // run: a blank between two erased lines joins the blanks around them
-            // into a hard boundary above the next marker (CARVE-P9-014) and ends
-            // the list (carve#5192).
-            let comment_run = (item.is_some() || list == ctx.marker_body)
-                && last_visible.map_or(true, |last| index > last)
-                && previous_emitted.is_some_and(is_line_comment_in_run)
-                && is_line_comment_in_run(block);
             let adjacent = trailing_comment
-                || comment_run
                 || body_list
                 || previous_emitted
                     .is_some_and(|previous| region_marker_adjacent(previous, block, &text));
@@ -2208,11 +2199,6 @@ fn is_region_marker(block: &BlockNode) -> bool {
         return false;
     };
     is_region_marker_comment(comment)
-}
-
-fn is_line_comment_in_run(block: &BlockNode) -> bool {
-    matches!(block, BlockNode::Comment(comment)
-        if !comment.block && !comment.delimited && !is_region_marker_comment(comment))
 }
 
 fn is_region_marker_comment(comment: &Comment) -> bool {
@@ -2912,7 +2898,9 @@ fn render_item_blocks(
         // above it or the block below it (carve#4799); a blank keeps it apart.
         let delimited = |block: Option<&BlockNode>| matches!(block, Some(BlockNode::Comment(comment)) if comment.delimited);
         if !separated
-            && ((delimited(prev) && !matches!(block, BlockNode::Comment(_)))
+            && ((delimited(prev)
+                && !matches!(block, BlockNode::Comment(_))
+                && !(followed_by_tight_marker && nothing_visible_below))
                 || (delimited(Some(block)) && prev.is_some_and(an_open_paragraph_reaches_down)))
         {
             out.push('\n');
