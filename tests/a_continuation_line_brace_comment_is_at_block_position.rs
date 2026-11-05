@@ -54,6 +54,10 @@ fn the_djot_importer_keeps_a_comment_in_a_quote_an_item_opens() {
         "- > pre\n  > {%%} c\n"
     );
     assert_eq!(
+        djot_to_carve("ii. > pre\n    > {% a\n    > b %} c\n"),
+        "ii.  > pre\n     > {%%} c\n"
+    );
+    assert_eq!(
         djot_to_carve("- > pre\n  > {}\n  > more\n"),
         "- > pre\n  > {%%}\n  > more\n"
     );

@@ -1302,7 +1302,7 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
     let item_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|(?:[ivxlcdm]+|[IVXLCDM]+))[.)]|\((?:[0-9]+|[A-Za-z]|(?:[ivxlcdm]+|[IVXLCDM]+))\))[ \t]+").unwrap();
     let quote_pattern = cached_regex!(r"^[ \t]*(?:>[ \t]*)+").unwrap();
     let item_quote_pattern = cached_regex!(
-        r"^([ \t]*(?:[-*+]|[0-9]+[.)]|[A-Za-z][.)]|\((?:[0-9]+|[A-Za-z])\))[ \t]+)((?:>[ \t]*)+)"
+        r"^([ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)((?:>[ \t]*)+)"
     )
     .unwrap();
     let leading_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
