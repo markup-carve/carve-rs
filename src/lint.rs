@@ -436,6 +436,15 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
         options.lint_caption_looking_paragraph,
         &mut out,
     );
+    let item_overindent_lines: std::collections::HashSet<_> = out
+        .iter()
+        .filter(|warning| warning.rule == "list-item-block-overindented")
+        .map(|warning| warning.line)
+        .collect();
+    out.retain(|warning| {
+        warning.rule != "block-opener-overindented"
+            || !item_overindent_lines.contains(&warning.line)
+    });
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);

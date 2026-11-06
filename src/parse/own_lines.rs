@@ -1727,9 +1727,6 @@ impl<'a> Walk<'a> {
                 .attaches_at(Kind::Item, at, column, owner + 1)
                 .err()
                 .map(|reason| (Some(Kind::Quote), reason)),
-            Kind::Item | Kind::Note if col == frame.col => {
-                Some((Some(frame.kind), Refusal::WrongColumn))
-            }
             _ => None,
         }
     }
