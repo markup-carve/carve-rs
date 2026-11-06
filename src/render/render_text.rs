@@ -316,10 +316,203 @@ pub(crate) fn strip_high_controls(input: &str) -> String {
     input.chars().filter(|c| !is_not_emitted(*c)).collect()
 }
 
-/// A stored unresolved reference is source text, but its line feeds still
-/// represent ordinary soft breaks in text targets.
+thread_local! {
+    static LINE_BLOCK_BREAKS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(crate) fn with_line_block_breaks<T>(render: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            LINE_BLOCK_BREAKS.with(|flag| flag.set(self.0));
+        }
+    }
+    let previous = LINE_BLOCK_BREAKS.with(|flag| flag.replace(true));
+    let _restore = Restore(previous);
+    render()
+}
+
+/// Render the visible source of an unresolved reference for text targets.
+/// Only the first bracketed run is inline content; its trailing identifier
+/// is a label, and nested reference identifiers are labels too.
 pub(crate) fn unresolved_reference_text(input: &str) -> String {
-    input.replace('\n', " ")
+    let bytes = input.as_bytes();
+    if !bytes.contains(&b'\n') {
+        return input.to_string();
+    }
+    let open = usize::from(bytes.starts_with(b"!["));
+    let (brackets, _) = crate::parse::compute_bracket_matches(bytes);
+    let visible_end = brackets
+        .get(open)
+        .copied()
+        .filter(|&end| end < bytes.len())
+        .unwrap_or(bytes.len());
+
+    let mut identifiers = Vec::new();
+    let mut at = open + 1;
+    while at < visible_end {
+        if bytes[at] == b'[' {
+            let close = brackets[at];
+            if close < visible_end && bytes.get(close + 1) == Some(&b'[') {
+                let tail = brackets[close + 1];
+                if tail < visible_end {
+                    identifiers.push((close + 1, tail + 1));
+                }
+            }
+        }
+        at += 1;
+    }
+
+    let mut code = Vec::new();
+    let final_ticks = if bytes[..visible_end].contains(&b'`') {
+        crate::parse::last_backtick_run_starts(&bytes[..visible_end])
+    } else {
+        Default::default()
+    };
+    let mut identifier = 0;
+    at = open + 1;
+    while at < visible_end {
+        while identifiers.get(identifier).is_some_and(|r| r.1 <= at) {
+            identifier += 1;
+        }
+        if let Some(&(start, end)) = identifiers.get(identifier) {
+            if start <= at {
+                at = end;
+                continue;
+            }
+        }
+        if bytes[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if bytes[at] == b'`' {
+            let open_len = bytes[at..visible_end]
+                .iter()
+                .take_while(|&&b| b == b'`')
+                .count();
+            if let Some(end) = final_ticks
+                .get(&open_len)
+                .filter(|&&last| last >= at + open_len)
+                .and_then(|_| crate::parse::skip_code_span(&bytes[..visible_end], at))
+            {
+                code.push((at, end));
+                at = end;
+                continue;
+            }
+            at += open_len;
+            continue;
+        }
+        at += 1;
+    }
+
+    let mut result = String::with_capacity(input.len());
+    let mut cursor = 0;
+    let mut code_index = 0;
+    let mut identifier_index = 0;
+    for (at, _) in input.match_indices('\n') {
+        result.push_str(&input[cursor..at]);
+        while code.get(code_index).is_some_and(|r| r.1 <= at) {
+            code_index += 1;
+        }
+        while identifiers.get(identifier_index).is_some_and(|r| r.1 <= at) {
+            identifier_index += 1;
+        }
+        let in_identifier = identifiers.get(identifier_index).is_some_and(|r| r.0 <= at);
+        let in_code = code.get(code_index).is_some_and(|r| r.0 <= at);
+        let mut slashes = 0;
+        let mut previous = at;
+        while previous > cursor && bytes[previous - 1] == b'\\' {
+            slashes += 1;
+            previous -= 1;
+        }
+        let promoted = LINE_BLOCK_BREAKS.with(std::cell::Cell::get);
+        result.push(
+            if at < visible_end && !in_identifier && (promoted || in_code || slashes % 2 == 1) {
+                '\n'
+            } else {
+                ' '
+            },
+        );
+        cursor = at + 1;
+    }
+    result.push_str(&input[cursor..]);
+    result
+}
+
+#[cfg(test)]
+mod unresolved_reference_break_tests {
+    use super::unresolved_reference_text;
+
+    #[test]
+    fn keeps_authored_breaks_in_visible_source_only() {
+        assert_eq!(
+            unresolved_reference_text("[a\\\nb][missing]"),
+            "[a\\\nb][missing]"
+        );
+        assert_eq!(
+            unresolved_reference_text("![a\\\nb][missing]"),
+            "![a\\\nb][missing]"
+        );
+        assert_eq!(
+            unresolved_reference_text("[a `x\ny`][missing]"),
+            "[a `x\ny`][missing]"
+        );
+        assert_eq!(
+            unresolved_reference_text("[a\nb][missing]"),
+            "[a b][missing]"
+        );
+        assert_eq!(
+            unresolved_reference_text("[a][missing\nid]"),
+            "[a][missing id]"
+        );
+        assert_eq!(
+            unresolved_reference_text("[[a][nested\nid]\\\nb][missing]"),
+            "[[a][nested id]\\\nb][missing]"
+        );
+    }
+
+    #[test]
+    fn generated_authored_break_variants() {
+        let mut checked = 0;
+        for i in 0..1_000 {
+            let image = if i % 2 == 1 { "!" } else { "" };
+            let label = match i % 5 {
+                0 | 1 => format!("x{i}\\\ny{i}"),
+                2 | 3 => format!("x{i} `a{i}\nb{i}`"),
+                _ => format!("x{i}\ny{i}"),
+            };
+            let visible = format!("{image}[{label}][missing]");
+            let (source, expected) = if i % 5 == 4 {
+                (format!("::: |\n{visible}\n:::\n"), format!("{visible}\n"))
+            } else {
+                (format!("{visible}\n"), format!("{visible}\n"))
+            };
+            assert_eq!(crate::to_plain_text(&source), expected, "plain variant {i}");
+            assert_eq!(crate::to_ansi(&source), expected, "ansi variant {i}");
+            checked += 1;
+        }
+        assert_eq!(checked, 1_000);
+    }
+
+    #[test]
+    fn plain_and_ansi_keep_authored_reference_breaks() {
+        for source in [
+            "[a\\\nb][missing]\n",
+            "![a\\\nb][missing]\n",
+            "[a `x\ny`][missing]\n",
+            "![a `x\ny`][missing]\n",
+        ] {
+            assert_eq!(crate::to_plain_text(source), source, "plain: {source:?}");
+            assert_eq!(crate::to_ansi(source), source, "ansi: {source:?}");
+        }
+        for (source, expected) in [
+            ("::: |\n[a\nb][missing]\n:::\n", "[a\nb][missing]\n"),
+            ("::: |\n![a\nb][missing]\n:::\n", "![a\nb][missing]\n"),
+        ] {
+            assert_eq!(crate::to_plain_text(source), expected, "plain: {source:?}");
+            assert_eq!(crate::to_ansi(source), expected, "ansi: {source:?}");
+        }
+    }
 }
 
 /// DEL (U+007F), the C1 controls (U+0080..U+009F), the carriage return, and
