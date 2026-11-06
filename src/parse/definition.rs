@@ -1862,7 +1862,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let Some(open) = detect_comment_fence_line_any_column(line) else {
             return false;
         };
-        if self.comment_state.comment.is_some() {
+        if self.comment_state.held_span().is_some() {
             return false;
         }
         let authored_opener_comment = || {
@@ -1890,7 +1890,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     fn take_below_column_comment(&mut self, cur: &mut LineCursor<'_>, line: &str) -> BodyStep {
         // Inside a held span a `%%` line is payload, not a line that misses
         // the body (carve#4907).
-        let payload = self.comment_state.comment.is_some();
+        let payload = self.comment_state.held_span().is_some();
         if !payload {
             return BodyStep::Stop;
         }
@@ -2246,7 +2246,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if detect_comment_fence_line_any_column(line).is_some() {
             let mut probe: Vec<&str> = self.seed.lines().collect();
             probe.extend(self.lines.iter().map(String::as_str));
-            if closes_a_held_comment_span(&probe, line) {
+            if closes_a_held_span(&probe, line) {
                 let col = cur.source_col(cur.pos);
                 self.push(
                     kept_comment_delimiter(line),

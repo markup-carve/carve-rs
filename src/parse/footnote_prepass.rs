@@ -1523,7 +1523,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // already at a delimiter REACHING the body's floor; the band
         // below it is what this covers.
         if detect_comment_fence_line_any_column(line).is_some()
-            && closes_a_held_comment_span(&note.lines, line)
+            && closes_a_held_span(&note.lines, line)
         {
             note.push_with(
                 kept_comment_delimiter(line),
@@ -1627,9 +1627,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && trim_ascii_start(line).starts_with("%%")
             && !is_definition_placeholder(line);
         // Rule A (carve#3885): a comment below the body's column closes the note.
-        let held_payload = below_comment
-            && body_open_comment_run(&note.lines).is_some()
-            && !closes_a_held_comment_span(&note.lines, line);
+        let held_run = below_comment
+            .then(|| body_held_span_run(&note.lines))
+            .flatten();
+        let held_payload =
+            held_run.is_some_and(|run| !is_comment_fence_close_any_column(line, run));
         if held_payload {
             note.push_with(line.to_owned(), Some(self.first_source_line + *i), |kept| {
                 stripped_col(Some(0), line, kept)
@@ -1650,7 +1652,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && column == 0
             && state.below_comment_span.is_none()
             && detect_comment_fence_line_any_column(line).is_some()
-            && !closes_a_held_comment_span(&note.lines, line)
+            && !held_run.is_some_and(|run| is_comment_fence_close_any_column(line, run))
         {
             return Some(Flow::Stop);
         }
@@ -1693,7 +1695,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         column: usize,
         i: &mut usize,
     ) -> Flow {
-        let closes_held_span = closes_a_held_comment_span(&note.lines, line);
+        let closes_held_span = closes_a_held_span(&note.lines, line);
         if let Some(width) = state.below_comment_span {
             if !is_blank_line(line)
                 && state.span_floor.is_some_and(|floor| column < floor)
@@ -2418,7 +2420,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &self.columns,
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
-            && (verse_text || !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..]))
+            && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
             && !is_colon_fence_opener_shape(rest)
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
