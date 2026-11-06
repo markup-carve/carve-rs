@@ -2018,6 +2018,16 @@ impl<'a> Walk<'a> {
         // A stanza's final lazy line is read at the frame's reader column,
         // not with its authored indentation preserved as inline hard space.
         c.lead(if next_reaches_block { c.col } else { 0 });
+        // A colon-shaped lazy line authored inside the surviving item must
+        // remain verse text rather than start a description during parsing.
+        // At column zero the item ends (CARVE-P0-006).
+        if c.authored_col > 0
+            && c.rest.starts_with(':')
+            && self.frames.iter().any(|f| f.kind == Kind::Item)
+        {
+            c.out.push_str(LAZY);
+            c.edits.push((c.out.chars().count(), 0));
+        }
         if self.trace_wants(at) {
             let line = self.first_line + at;
             let mut record =
@@ -2567,8 +2577,30 @@ impl<'a> Walk<'a> {
             self.closed_comments.insert(frame.line);
         }
         self.top().last = last_after_closer(inner.as_ref());
-        let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
-        c.lead_in(canon, shift, false);
+        if self.frames.iter().any(|f| f.kind == Kind::Note) {
+            // A footnote body is hoisted out of its item. Its physical closer
+            // must leave the intervening blank visible to the list.
+            let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
+            c.lead_in(canon, shift, false);
+        } else {
+            for k in reached + 1..self.frames.len() {
+                if self.frames[k].kind == Kind::Quote {
+                    let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
+                    c.lead_at(canon + shift + c.attachment_shift, false);
+                    c.out.push_str("> ");
+                    c.edits.push((c.out.chars().count(), -2));
+                    c.measure();
+                }
+            }
+            // The closer is part of the span even when authored below its host.
+            // Rewriting it at the reached frame's column would hand it to a
+            // shallower container on the later parse.
+            let (canon, shift) = (
+                inner.as_ref().map_or(0, |f| f.canon),
+                inner.as_ref().map_or(0, |f| f.shift),
+            );
+            c.lead_at(canon + shift + c.attachment_shift, false);
+        }
         if tracing {
             let record =
                 TraceRecord::new(line, "S1", self.deepest(), Some("CARVE-P0-005"), "closer")

@@ -735,7 +735,11 @@ pub(crate) fn parse_continuation_block(
     // Definitions belong to the attached block. Nested lists manage their own markers.
     let mut next_visible = cur.pos;
     while let Some(line) = cur.lines.line(next_visible) {
-        if is_document_definition_placeholder(line)
+        if let Some(len) =
+            standalone_attrs_block_len_iter(cur.lines.range(next_visible..cur.lines.len()))
+        {
+            next_visible += len;
+        } else if is_document_definition_placeholder(line)
             || is_document_abbreviation(line)
             || is_line_comment_any_column(line)
         {
@@ -753,9 +757,20 @@ pub(crate) fn parse_continuation_block(
     let comments_precede_block = cur.lines.line(next_visible).is_some_and(|line| {
         !is_blank_line(line) && !(trim_ascii(line) == "+" && indent_columns(line) == base_indent)
     });
+    let mut leading_attrs: Option<Attrs> = None;
+    let mut leading_attr_slots = None;
+    let mut leading_attrs_pos: Option<Pos> = None;
     while cur.pos < next_visible {
         let line = cur.lines.at(cur.pos);
-        if is_document_definition_placeholder(line) {
+        if standalone_attrs_block_len_iter(cur.lines.range(cur.pos..cur.lines.len())).is_some() {
+            let start = cur.pos;
+            if let Some(attrs) = parse_standalone_attrs_block(cur) {
+                merge_attrs_indexed(&mut leading_attrs, attrs, &mut leading_attr_slots);
+                if leading_attrs_pos.is_none() {
+                    leading_attrs_pos = span_of(cur, start, cur.pos, options);
+                }
+            }
+        } else if is_document_definition_placeholder(line) {
             cur.consume();
         } else if is_document_abbreviation(line) {
             hoist_document_abbreviation(cur, options);
@@ -855,9 +870,9 @@ pub(crate) fn parse_continuation_block(
     // The attached block is the item's content, a marker body (PART 0 S3: an
     // unmarked list marker below the content column ends a quote there).
     sub.in_note_or_description = true;
-    let mut floating_attrs: Option<Attrs> = None;
-    let mut floating_attr_slots = None;
-    let mut floating_attrs_pos: Option<Pos> = None;
+    let mut floating_attrs = leading_attrs;
+    let mut floating_attr_slots = leading_attr_slots;
+    let mut floating_attrs_pos = leading_attrs_pos;
     while let Some(line) = sub.peek() {
         if indent_columns(line) != 0 || !trim_ascii_start(line).starts_with('{') {
             break;

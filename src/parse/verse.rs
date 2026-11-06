@@ -845,6 +845,7 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
+        let stripped = strip_lazy(&stripped);
         // A COMMENT-ONLY BODY LINE IS DECIDED HERE, with the other block-layer
         // decisions and BEFORE any inline content exists (grammar PART 9 §23, IT
         // IS REMOVED AT THE BLOCK LAYER). Leaving it to the inline parser let
@@ -856,13 +857,13 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
         // shape and the boundary below it still hardens into the `<br>` the
         // author wrote. The comment itself is put back after the inline run, by
         // `splice_verse_comments`.
-        let comment = verse_comment_line(&stripped);
+        let comment = verse_comment_line(stripped);
         let mut columns = Vec::new();
-        let expanded = expand_line_block_ws(&stripped, options.positions.then_some(&mut columns));
+        let expanded = expand_line_block_ws(stripped, options.positions.then_some(&mut columns));
         if options.positions {
             source_columns.push(columns);
         }
-        let stripped_columns = stripped_col(cur.source_col(line_at), line, &stripped);
+        let stripped_columns = stripped_col(cur.source_col(line_at), strip_lazy(line), stripped);
         // Where this line ENDS in the source, recorded whatever the indent
         // check decided. A hard break is the newline ENDING a line, not content
         // on it, and tab expansion does not move a line ending -- so the break's
