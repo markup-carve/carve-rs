@@ -17,7 +17,10 @@ fn row(line: usize, column: usize, rule: &str) -> (usize, usize, String) {
 fn a_closer_inside_unclosed_child_code_closes_nothing() {
     assert_eq!(
         findings("::: note\n```\nx\n\n:::\n"),
-        vec![row(1, 1, "unclosed-container-fence"), row(2, 1, "unclosed-code-fence")]
+        vec![
+            row(1, 1, "unclosed-container-fence"),
+            row(2, 1, "unclosed-code-fence")
+        ]
     );
 }
 
@@ -25,7 +28,10 @@ fn a_closer_inside_unclosed_child_code_closes_nothing() {
 fn a_closer_inside_an_unclosed_verse_comment_closes_nothing() {
     assert_eq!(
         findings("::: |\na\n%%%\nc\n:::\n"),
-        vec![row(1, 1, "unclosed-container-fence"), row(3, 1, "unclosed-comment-fence")]
+        vec![
+            row(1, 1, "unclosed-container-fence"),
+            row(3, 1, "unclosed-comment-fence")
+        ]
     );
 }
 
