@@ -1480,7 +1480,25 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             false
         };
         let after_blank = self.previous_line_blank();
-        if quote_holds_a_paragraph || continuation_has_content {
+        // A `: ` line at the marker column ends an item whose unquoted `+` block
+        // is a definition list (PART 0 S4, carve#5317). A quoted one takes it lazily.
+        let marker_column_description = first_block_quote_attaches
+            && self
+                .cur
+                .lines
+                .line(crate::parse::quote::first_visible_after_invisible(
+                    self.cur,
+                    item.at + 1,
+                ))
+                .is_some_and(|follower| {
+                    strip_blockquote_prefix(trim_ascii_start(follower)).is_none()
+                })
+            && self.cur.peek().is_some_and(|line| {
+                indent_columns(line) <= base_indent
+                    && strip_description_prefix(trim_ascii_start(line)).is_some()
+            })
+            && body_ends_in_quoted_definition_list(&stream.source, options);
+        if (quote_holds_a_paragraph || continuation_has_content) && !marker_column_description {
             // The collector stopped short of a band line only for a quote that holds no
             // paragraph; a paragraph written after that quote still takes it lazily.
             let lazy_column = if quote_holds_a_paragraph {
@@ -1566,27 +1584,50 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let cur = &mut *self.cur;
         let start = cur.pos;
+        // A comment is invisible, so the block it leads is attached with it (CARVE-P0-004).
+        let block = crate::parse::quote::first_visible_after_invisible(cur, start);
         // An attached fence with no closer ends with the item (carve#4018).
-        let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(start))).is_some();
-        let end = attached_indented_block_end(cur.lines, start, content_col, options)
+        let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(block))).is_some();
+        let lines = cur.lines;
+        let block_column = lines.line(block).map_or(0, indent_columns);
+        let mut paragraph_open = None;
+        let end = attached_indented_block_end(cur.lines, block, content_col, options)
             .unwrap_or_else(|| {
                 attached_block_lines_classified(
                     cur.lines,
-                    start,
+                    block,
                     &mut cur.comment_closer_last_index,
                     &mut cur.code_closer_last_index,
                     options,
                     &mut |line, at| {
-                        at > start
+                        at > block
                             && (detect_list_marker_full(line)
                                 .is_some_and(|marker| marker.indent <= base_indent)
                                 || attached_fence
                                     && !is_blank_line(line)
-                                    && indent_columns(line) < content_col)
+                                    && indent_columns(line) < content_col
+                                // Left of the item's column a line only continues an
+                                // open paragraph, and a `: ` line there ends the item
+                                // (PART 0 S4, carve#5317).
+                                || !is_blank_line(line)
+                                    && indent_columns(line) < content_col
+                                    && (strip_definition_marker(trim_ascii_start(line)).is_some()
+                                        || !*paragraph_open.get_or_insert_with(|| {
+                                            body_ends_with_open_paragraph(
+                                                &lines
+                                                    .range(block..at)
+                                                    .map(|line| {
+                                                        slice_columns_mapped(line, block_column, true).0
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                                    .join("\n"),
+                                                options,
+                                            )
+                                        })))
                     },
                 )
             });
-        let end = attached_block_at_own_column(cur.lines, start, end, options);
+        let end = attached_block_at_own_column(cur.lines, block, end, options);
         // A quote follower at an eligible raw column opens a block in the
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
