@@ -11,6 +11,47 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-11-06
+
+Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes layout, inline and import behavior.
+
+### Fixes
+
+- Block ownership follows the spec's single rule A walk, and the `+` attach rule, list looseness, forward-only `+` markers and the October/November rulings are ported (#3389, #3404, #3464, #3493, #3589, #3605, #3628, #3633, #3669, #3739, #3748, #3775).
+- Comment lines, `%%%` spans and erased one-line comments and definitions stay invisible to layout: spans end at their host's boundary, keep their payload columns and no longer split or loosen lists (#3337, #3343, #3344, #3497, #3546, #3593, #3620, #3624, #3634, #3639, #3640, #3644, #3657, #3663, #3670, #3672, #3677, #3685, #3694, #3718, #3735, #3738, #3741, #3745, #3751, #3753, #3756, #3760, #3773, #3782, #3784, #3792, #3795, #3797, #3799, #3800, #3801, #3803, #3813, #3829, #3830, #3837, #3850, #3851, #3852, #3862).
+- A `+` attaches to the block its ruling names, skips invisible lines, and a refused `+` stays paragraph text or is escaped (#3339, #3352, #3360, #3558, #3584, #3653, #3689, #3707, #3742, #3746, #3755, #3777, #3796, #3806, #3807, #3808, #3812, #3823, #3839, #3853).
+- Lists, descriptions and fences keep their owner across marker columns, tabs, lazy lines, colon bodies and blank runs; list spans start at the owner column (#3215, #3218, #3220, #3221, #3226, #3229, #3230, #3241, #3275, #3279, #3348, #3350, #3356, #3375, #3396, #3401, #3408, #3436, #3466, #3597, #3618, #3623, #3625, #3630, #3631, #3635, #3641, #3645, #3646, #3649, #3650, #3652, #3679, #3682, #3683, #3684, #3688, #3690, #3692, #3695, #3701, #3712, #3716, #3717, #3724, #3727, #3763, #3780, #3819, #3832, #3848, #3863).
+- Task items measure their content column from the separator run, including marker-line sub-lists (#3195, #3553, #3678).
+- Footnotes, notes, reference and abbreviation definitions keep their columns, lazy lines and fences, and register only where the clause allows (#3217, #3248, #3274, #3394, #3492, #3503, #3508, #3516, #3614, #3622, #3629, #3636, #3643, #3647, #3648, #3654, #3658, #3659, #3661, #3662, #3664, #3698, #3721, #3725, #3728, #3732, #3747, #3790, #3802, #3834, #3841).
+- Quotes keep lazy text, stacked first blocks, fences and attribute continuations at their depth (#3216, #3270, #3276, #3280, #3284, #3302, #3331, #3345, #3347, #3398, #3409, #3533, #3587, #3655, #3674, #3686, #3715, #3719, #3805, #3811).
+- Line block stanzas stay open across lazy lines, list markers and host columns (#3651, #3680, #3697, #3736, #3743).
+- Inline parsing follows the rulings on guards, combined closers, bare pairs, brackets, arrows, literal directives, smart quotes and Unicode boundaries; link and image metadata drop bidi controls (#3210, #3211, #3212, #3214, #3239, #3261, #3272, #3273, #3299, #3303, #3334, #3338, #3340, #3349, #3361, #3387, #3457, #3484, #3514, #3529, #3542, #3567, #3575, #3578, #3579, #3592, #3595, #3596, #3604, #3611, #3619, #3637, #3638, #3656, #3673, #3687, #3691, #3700, #3713, #3726, #3754, #3783, #3815, #3833).
+- Tables: continuation and indented rows, cell pipe escapes, delimited header counts, cell span attributes and table captions (#3225, #3250, #3251, #3267, #3341, #3377, #3432, #3511, #3594, #3599, #3603, #3613, #3660, #3696, #3699, #3704, #3706, #3720, #3817, #3843).
+- Captions and images: multiline labels, lazy and flush captions, figure-group definitions and promoted image attributes on the AST (#3243, #3288, #3301, #3310, #3332, #3386, #3461, #3463, #3590, #3617, #3702, #3703, #3705, #3709, #3729, #3818, #3835).
+- Includes: invalid line ranges stay literal and report, unresolved code includes stay literal, region markers are no records, and render losses name the included file (#3329, #3364, #3527, #3563, #3608, #3609).
+- First-line frontmatter opens through the end of the document when it has no closer (#3820).
+- Import and ingest: Markdown (pulldown-cmark readings, link labels, references, fence info, HTML comments), HTML (depth limit, ruby), ProseMirror (attributes, note order) and AST JSON readback (#3219, #3235, #3236, #3242, #3300, #3304, #3305, #3307, #3314, #3600, #3602, #3642, #3749, #3762, #3769, #3778, #3781, #3787, #3846, #3847).
+- The canonical writer: spans holding their delimiter, empty comment spans, marker-body lists, blocks below footnote lists, and erased-comment columns (#3365, #3581, #3765, #3767, #3771, #3810, #3838, #3854).
+- Lint: authoring lint ported and aligned with the other engines; new checks for Markdown habits, overindented openers, sibling markers, glued cell attributes and folded marker lines; the fence indentation rule retired (#3246, #3254, #3357, #3367, #3378, #3452, #3460, #3479, #3541, #3598, #3722, #3737, #3770, #3794, #3840).
+- Performance: linear-time HTML attribute folding, cheaper flank tests and comment scans, and a smaller block-quote stack (#3222, #3500, #3610, #3616, #3710, #3733, #3740, #3786).
+- Comment ownership and erased lines keep their containers through definitions, figure groups, spans and lists; quoted continuations, nested fences and `+` paragraphs preserve the authored boundary (#3865, #3867, #3869, #3878, #3880, #3885, #3897, #3905, #3907, #3909, #3910, #3911, #3913, #3915, #3923).
+- Nested lists, definitions and fences keep their content columns and lazy lines, including leading tabs in terms and footnote definitions (#3889, #3908, #3933, #3937, #3926).
+- Inline and AST positions stay correct across combined emphasis, comments and deep delimiters; formatter escapes preserve a fixed point (#3877, #3890, #3894, #3904, #3896, #3903, #3935).
+- Djot and Markdown import retain quote and list ownership; imported thematic breaks retain their character; GitHub alert labels avoid a false lint warning (#3888, #3903, #3904, #3917, #3930).
+- Lint reports source-owned fence and refused marker positions (#3922).
+- Parser scans and AST walks use less CPU on comment-heavy and small documents, with bounded escape probes and fewer repeated subtree parses (#3880, #3884, #3886, #3889, #3914, #3915).
+
+### Improvements
+
+- `carve trace <file>` and `carve::decision_trace(source)` print the block decision trace (format version 1) from the ownership walk (#3562).
+- Table includes select records with `@rows` and project columns with `@cols` for marked CSV and TSV files; `@lines` on a table include gets a lint hint (#3433).
+- Markdown import reads GitHub alert blockquotes (`> [!NOTE]` and the rest) as admonitions (#3532).
+- The event parser is on by default for public parsing, the HTML facade and the Carve writer, through the new default feature `experimental-event-parser-options`; documents it declines use the established parser, and the public `Document` and option APIs are unchanged (#3171, #3197, #3346, #3449, #3456, #3459, #3465, #3472, #3476, #3480, #3481, #3483).
+- The canonical writer writes every thematic break as `***`; the reader still accepts every spelling, and lint hints on the others (#3766, #3779).
+- The canonical writer writes native `|=` table header cells, including spanned head rows, and reads braced cell alignment (#3448, #3788, #3825).
+
+**Full Changelog**: https://github.com/markup-carve/carve-rs/compare/0.1.13...0.1.14
+
 ## [0.1.13] - 2026-10-25
 
 Task lists gain progress and blocked states. This release also follows import, link destination, table and comment rulings.
