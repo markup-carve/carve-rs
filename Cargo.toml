@@ -92,6 +92,10 @@ name = "caption_abbreviation_expansion"
 path = "tests/caption_abbreviation_expansion.rs"
 
 [[test]]
+name = "literal_include_apostrophe"
+path = "tests/literal_include_apostrophe.rs"
+
+[[test]]
 name = "writer_invisible_boundaries"
 path = "tests/writer_invisible_boundaries.rs"
 
