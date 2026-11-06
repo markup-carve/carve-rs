@@ -44,3 +44,52 @@ fn a_task_items_ended_term_entry_has_the_same_marker_boundary() {
     let html = carve::to_html(input);
     assert!(html.ends_with("  </li>\n</ul>\n<p>: z</p>"), "{html}");
 }
+
+#[test]
+fn a_marker_column_separator_ends_an_item_with_an_earlier_definition_list() {
+    let input = "- a\n  :: t\n\n  filler\n: b\n: c\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: b\n: c</p>"), "{html}");
+}
+
+#[test]
+fn a_quoted_definition_list_does_not_end_its_items_open_quote_paragraph() {
+    let input = "- a\n  > :: t\n  > prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
+}
+
+#[test]
+fn an_earlier_definition_list_does_not_end_a_later_open_quote_paragraph() {
+    let input = "- a\n  :: t\n\n  > prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
+}
+
+#[test]
+fn an_earlier_definition_list_still_ends_a_later_div() {
+    let input = "- a\n  :: t\n\n  ::: box\n  prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: z</p>"), "{html}");
+}
+
+#[test]
+fn an_earlier_definition_list_ends_a_later_stanza_at_the_item_marker_column() {
+    let input = "- a\n  :: t\n\n  ::: |\n    prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: z</p>"), "{html}");
+}
+
+#[test]
+fn a_later_div_quote_keeps_its_open_paragraph() {
+    let input = "- a\n  :: t\n\n  ::: box\n  > prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
+}
+
+#[test]
+fn a_closed_div_definition_list_still_ends_a_later_item_paragraph() {
+    let input = "- a\n  ::: box\n  :: t\n  :::\n\n  prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: z</p>"), "{html}");
+}

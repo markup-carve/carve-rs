@@ -707,19 +707,52 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
-/// Whether the body's last block chain ends in a definition list, or the last
-/// separator already left one. Probe once so the second marker need not parse
-/// the entire prefix again (PART 0 B-term-keep).
-pub(crate) fn body_chain_ends_in_definition_list(
-    body: &str,
-    options: &Options<'_>,
-    last_separator: bool,
-) -> bool {
+/// A marker-column separator ends an item whose current item chain held a
+/// definition list, even after a later paragraph. A quote owns its own list
+/// and lazy paragraph, so neither lends that boundary to the item
+/// (PART 0 S4, carve#5317).
+pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
     let blocks = probe_blocks(body, options);
-    ends_in_definition_list(blocks.last(), true)
-        || (last_separator
-            && matches!(blocks.last(), Some(BlockNode::Paragraph(_)))
-            && ends_in_definition_list(blocks.get(blocks.len().saturating_sub(2)), true))
+    if blocks.last().is_some_and(trailing_container) && body_ends_with_open_paragraph(body, options)
+    {
+        return false;
+    }
+    blocks.iter().any(block_holds_definition_list)
+}
+
+fn trailing_container(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::BlockQuote(_) => true,
+        BlockNode::List(list) => list
+            .items
+            .last()
+            .and_then(|item| item.children.last())
+            .is_some_and(trailing_container),
+        BlockNode::Div(div) => div.children.last().is_some_and(trailing_container),
+        BlockNode::Admonition(boxed) => boxed.children.last().is_some_and(trailing_container),
+        BlockNode::Directive(directive) => {
+            directive.children.last().is_some_and(trailing_container)
+        }
+        BlockNode::Section(section) => section.children.last().is_some_and(trailing_container),
+        _ => false,
+    }
+}
+
+fn block_holds_definition_list(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::DefinitionList(_) => true,
+        BlockNode::List(list) => list
+            .items
+            .last()
+            .is_some_and(|item| item.children.iter().any(block_holds_definition_list)),
+        BlockNode::Div(div) => div.children.iter().any(block_holds_definition_list),
+        BlockNode::Admonition(boxed) => boxed.children.iter().any(block_holds_definition_list),
+        BlockNode::Directive(directive) => {
+            directive.children.iter().any(block_holds_definition_list)
+        }
+        BlockNode::Section(section) => section.children.iter().any(block_holds_definition_list),
+        _ => false,
+    }
 }
 
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
