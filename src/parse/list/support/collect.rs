@@ -1788,6 +1788,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 indent
             }
             _ if lazy_list_marker => indent,
+            // A marker-line line block owns the source line as verse payload.
+            // Below-column indentation is text there, even when this frame
+            // did not separately recognize a nested comment span.
+            _ if marker_line_block && literal_colon.is_some() && indent < strip_cols => 0,
             (true, Some(_))
                 if comment_payload
                     && marker_is_definition_term
@@ -1801,7 +1805,16 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     }
                 })
             }
-            (true, Some(_)) if comment_payload => strip_cols.min(indent_columns(payload_line)),
+            // A comment body line below its opener's column is still payload.
+            // The enclosing frame has already removed its own prefix; taking
+            // the remaining indent here erases authored leading spaces.
+            (true, Some(_)) if comment_payload => {
+                if comment_fence.is_some_and(|(_, opener)| indent < opener) {
+                    0
+                } else {
+                    strip_cols.min(indent_columns(payload_line))
+                }
+            }
             (true, Some(span_strip)) => span_strip.min(indent),
             _ => dedent_for_collection(line, indent, strip_cols),
         };

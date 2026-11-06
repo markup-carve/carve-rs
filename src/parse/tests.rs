@@ -1,6 +1,76 @@
 use super::*;
 
 #[test]
+fn empty_outer_note_ends_at_its_marker_after_nested_hoist() {
+    let source = "[^c0]: [^d0]: p\n            more\n\n";
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let wire: serde_json::Value = serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+    let outer = &wire["children"][0];
+    assert_eq!(outer["type"], "footnote");
+    assert_eq!(outer["pos"]["endLine"], 1);
+    assert_eq!(outer["pos"]["endColumn"], 16);
+    assert_eq!(outer["pos"]["endOffset"], 15);
+}
+
+#[test]
+fn comment_payload_keeps_spaces_beyond_its_owning_item_prefix() {
+    for (source, expected) in [
+        ("- - ::: |\n    %%%\n   %%%%\n    %%%\n    b\nz\n", " %%%%"),
+        ("- +\n   %%%\n   c\n   %%%\ntext\n", " c"),
+    ] {
+        let doc = parse_with_options(source, &Options::default().with_positions(true));
+        let wire: serde_json::Value =
+            serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+        fn comment_content(value: &serde_json::Value) -> Option<&str> {
+            match value {
+                serde_json::Value::Object(fields) => {
+                    if fields.get("type").and_then(|v| v.as_str()) == Some("comment") {
+                        return fields.get("content").and_then(|v| v.as_str());
+                    }
+                    fields.values().find_map(comment_content)
+                }
+                serde_json::Value::Array(items) => items.iter().find_map(comment_content),
+                _ => None,
+            }
+        }
+        assert_eq!(comment_content(&wire), Some(expected), "{source}");
+    }
+}
+
+#[test]
+fn unused_footnote_heading_has_no_generated_ast_id() {
+    for reference in ["[H][]", "</#H>"] {
+        let source = format!("[^n]: # H\n\n{reference}\n");
+        let doc = parse_with_options(&source, &Options::default().with_positions(true));
+        let wire: serde_json::Value =
+            serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+        let heading = &wire["children"].as_array().unwrap().last().unwrap()["children"][0];
+        assert_eq!(heading["type"], "heading");
+        assert!(heading
+            .get("attrs")
+            .and_then(|attrs| attrs.get("id"))
+            .is_none());
+    }
+    let source = "[^n]: # H\n\n[^n]\n";
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let wire: serde_json::Value = serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+    let heading = &wire["children"].as_array().unwrap().last().unwrap()["children"][0];
+    assert_eq!(heading["attrs"]["id"], "H");
+
+    let source = "[^u]: # H\n[^v]: # H\n\nuse[^v]\n";
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let wire: serde_json::Value = serde_json::from_str(&crate::ast_json::to_json(&doc)).unwrap();
+    let notes: Vec<_> = wire["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["type"] == "footnote")
+        .collect();
+    assert!(notes[0]["children"][0].get("attrs").is_none());
+    assert_eq!(notes[1]["children"][0]["attrs"]["id"], "H");
+}
+
+#[test]
 fn footnote_joined_across_document_comment_has_no_wire_position() {
     let source = "[^a]: intro\n%% c\n more\n\nsee[^a]\n";
     let mut doc = parse_with_options(source, &Options::default().with_positions(true));
