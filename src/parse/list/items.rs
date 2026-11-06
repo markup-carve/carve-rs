@@ -1586,6 +1586,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     },
                 )
             });
+        let end = attached_block_at_own_column(cur.lines, start, end, options);
         // A quote follower at an eligible raw column opens a block in the
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
