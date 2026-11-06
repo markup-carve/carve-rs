@@ -760,17 +760,10 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             })
             .flatten();
         if let Some(run) = run {
-            // An unclosed span runs to the block's own closer (carve#4907).
-            let limit = if end > 0
-                && cur
-                    .lines
-                    .line(end - 1)
-                    .is_some_and(|line| exact_colon_fence_len(line) == Some(fence_len))
-            {
-                end - 1
-            } else {
-                end
-            };
+            // An unclosed span owns the line block's closer as payload.
+            // PART 9 §23 says the `:::` cannot close the host while its
+            // comment span remains open.
+            let limit = end;
             let open_at = cur.pos;
             // A lazy line missed the span's owner, so it ends the span (S1, carve#4956).
             let limit = (open_at + 1..limit)
