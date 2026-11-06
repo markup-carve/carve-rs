@@ -41,6 +41,16 @@ fn definition_term_content_tab_variant_sweep() {
             html.contains(&format!("<dt>{term}</dt>")),
             "{source:?}: {html}"
         );
+        let markdown = carve::to_markdown_with_options(
+            &source,
+            &carve::Options::default().with_roundtrip(true),
+        );
+        let imported = carve::migrate_markdown(&markdown);
+        assert!(
+            carve::to_html(&imported.value).contains(&format!("<dt>{term}</dt>")),
+            "{source:?}: {markdown}: {}",
+            imported.value
+        );
     }
 }
 
