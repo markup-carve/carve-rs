@@ -1428,6 +1428,11 @@ impl<'a> Walk<'a> {
         let Some(host) = self.skipped.as_ref().map(|skipped| skipped.host) else {
             return false;
         };
+        let host_content = self.content_column(
+            host,
+            self.skipped.as_ref().expect("held above").column,
+            false,
+        );
         let line = self.lines[at];
         let raw = self.through_quotes(line, host).unwrap_or(line);
         let skipped = self.skipped.as_mut().expect("held above");
@@ -1470,7 +1475,14 @@ impl<'a> Walk<'a> {
             Some(span_lead) if in_span => span_lead,
             _ => &skipped.lead,
         };
-        let lead = format!("{}{}", base, " ".repeat(pad));
+        // The `+` moves the span to the host, but only the host prefix is
+        // structural. Keep body indentation beyond its content column.
+        let payload_pad = if in_span && comment_run(rest).is_none() {
+            doc_column(line, rest).saturating_sub(host_content)
+        } else {
+            0
+        };
+        let lead = format!("{}{}", base, " ".repeat(pad + payload_pad));
         c.out.push_str(&lead);
         if authored != lead {
             c.edits.push((
