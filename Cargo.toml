@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "outer_attached_fence_4003"
+path = "tests/outer_attached_fence_4003.rs"
+
+[[test]]
 name = "lint_consumed_closers_tabs_and_erased_lines"
 path = "tests/lint_consumed_closers_tabs_and_erased_lines.rs"
 
