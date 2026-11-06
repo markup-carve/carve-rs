@@ -1762,6 +1762,15 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
+        // A fence that the previous attachment left at document level owns a
+        // marker-column `+` in its payload before any older host may reopen.
+        if self
+            .frames
+            .last()
+            .is_some_and(|frame| frame.kind == Kind::Fence && indent_cols(src).0 >= frame.open_col)
+        {
+            return;
+        }
         if !is_cont_marker(quoted_rest(src)) {
             return;
         }
@@ -1776,14 +1785,16 @@ impl<'a> Walk<'a> {
             .is_some_and(|f| f.kind == Kind::Quote)
             && strip_quote_levels(src, attached.depth + 1)
                 .is_some_and(|own| is_cont_marker(indent_rest(own)));
-        if !is_cont_marker(indent_rest(rest)) && !behind_own_marker {
+        let reaches_marker =
+            is_cont_marker(indent_rest(rest)) && indent_cols(rest).0 == attached.marker;
+        if !reaches_marker && !behind_own_marker {
             self.attached = None;
             return;
         }
         let mut last = at;
         while attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
             && last > attached.from
-            && is_blank_line(self.lines[last - 1])
+            && strip_quote_levels(self.lines[last - 1], attached.depth).is_some_and(is_blank_line)
         {
             last -= 1;
         }
@@ -1795,7 +1806,20 @@ impl<'a> Walk<'a> {
             })
             .collect();
         let one_block = own.is_some_and(|own| {
-            let refs: Vec<&str> = own.iter().map(String::as_str).collect();
+            // Table rows remain part of one attached block at any indent.
+            // The standalone probe needs them at its local row column.
+            let table = own.first().is_some_and(|line| is_table_start(line));
+            let refs: Vec<&str> = own
+                .iter()
+                .map(|line| {
+                    let trimmed = line.trim_start_matches([' ', '\t']);
+                    if table && (is_table_start(trimmed) || is_table_continuation(trimmed)) {
+                        trimmed
+                    } else {
+                        line.as_str()
+                    }
+                })
+                .collect();
             !refs.is_empty()
                 && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
                     >= refs.len()
@@ -2009,10 +2033,15 @@ impl<'a> Walk<'a> {
             return reached;
         };
         let host = attached.frames.len() - 1;
-        let indented_prefix = self.lines[at].starts_with(' ') || self.lines[at].starts_with('\t');
+        let source_indent = indent_cols(self.lines[at]).0;
+        let host_indent = self.frames[host]
+            .line
+            .checked_sub(self.first_line)
+            .and_then(|line| self.lines.get(line))
+            .map_or(0, |line| indent_cols(line).0);
         if reached < host
             && self.frames[host].kind == Kind::Item
-            && indented_prefix
+            && source_indent > host_indent
             && c.out.contains('>')
         {
             c.attachment_shift = self.frames[host].canon.saturating_sub(c.col);
@@ -2135,6 +2164,13 @@ impl<'a> Walk<'a> {
         true
     }
 
+    fn marker_reaches_descendant_quote(&self, at: usize, frame: usize, rest: &str) -> bool {
+        is_cont_marker(rest)
+            && self.frames[frame + 1..].iter().any(|child| {
+                child.kind == Kind::Quote && child.doc_marker == doc_column(self.lines[at], rest)
+            })
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         let tracing = self.trace_wants(at);
@@ -2173,6 +2209,17 @@ impl<'a> Walk<'a> {
                 }
             }
             if f.kind == Kind::Quote {
+                // A marker at a descendant quote's authored column can reach
+                // that quote without repeating this outer quote's prefix.
+                if self.marker_reaches_descendant_quote(at, k, c.rest) {
+                    let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
+                    c.lead_in(canon, shift, false);
+                    c.out.push_str("> ");
+                    c.edits.push((c.out.chars().count(), -2));
+                    c.measure();
+                    reached = k;
+                    continue;
+                }
                 let Some(_) = quote_marker(c.rest) else { break };
                 let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
                 c.lead_in(canon, shift, false);
