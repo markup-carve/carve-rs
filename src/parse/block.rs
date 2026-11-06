@@ -2478,7 +2478,18 @@ fn find_colon_fence_end_with<'a>(
                 continue;
             }
         }
-        if let Some(open) = detect_comment_fence_line(line) {
+        // A verse span opener may sit up to three spaces in, as `parse_line_block` reads it.
+        let comment_line = if literal {
+            let rest = line.trim_start_matches(' ');
+            if line.len() - rest.len() <= 3 {
+                rest
+            } else {
+                line
+            }
+        } else {
+            line
+        };
+        if let Some(open) = detect_comment_fence_line(comment_line) {
             match (idx + 1..lines.len())
                 .find(|&j| is_comment_fence_close_any_column(&measured(j), open.fence_len))
             {
