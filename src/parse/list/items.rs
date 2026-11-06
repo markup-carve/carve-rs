@@ -350,17 +350,26 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             )
             .filter(|open| matches!(open.fence_char, b'`' | b'~'))
         };
-        let mut code = code_open(lines.at(from));
+        let verse_open = |line: &str| {
+            crate::parse::verse::detect_line_block_open(
+                crate::parse::definition::innermost_host_tail(trim_ascii_start(line)).1,
+            )
+            .is_some()
+        };
+        // Verse text is never a fence opener (CARVE-P9-047).
+        let mut verse = verse_open(lines.at(from));
+        let mut code = code_open(lines.at(from)).filter(|_| !verse);
         for at in from + 1..k {
             // A nested host's marker line can open the span (`- %%%`, `: %%%`).
             let line = lines.at(at);
+            verse = verse || (code.is_none() && verse_open(line));
             if let Some(open) = code {
                 if is_fence_close(trim_ascii_start(line), open) {
                     code = None;
                 }
                 continue;
             }
-            if open_span.is_none() {
+            if open_span.is_none() && !verse {
                 code = code_open(line);
                 if code.is_some() {
                     continue;

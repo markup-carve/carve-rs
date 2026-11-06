@@ -133,6 +133,15 @@ fn an_unquoted_description_marker_after_an_item_span_opens_a_sibling() {
 
 /// carve#5266
 #[test]
+fn a_fence_shaped_verse_line_does_not_hide_the_span() {
+    assert_eq!(
+        html("- ::: |\n  ```\n  \n  %%%\n  hidden\n- b\n"),
+        "<ul>\n  <li>\n    <div class=\"line-block\">\n      <p><code></code></p>\n    </div>\n  </li>\n  <li><p>b</p></li>\n</ul>"
+    );
+}
+
+/// carve#5266
+#[test]
 fn an_empty_stanza_under_an_unclosed_span_takes_no_description_lazy_line() {
     assert_eq!(
         html(":: t\n: - ::: |\n    x\n\n    %%%\n    hidden\nb\n"),
