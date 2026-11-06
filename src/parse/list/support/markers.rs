@@ -708,8 +708,8 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
 }
 
 /// A marker-column separator ends an item whose current item chain held a
-/// definition list, even after a later paragraph. A quote or div owns its
-/// own list and lazy paragraph, so neither lends that boundary to the item
+/// definition list, even after a later paragraph. A quote owns its own list
+/// and lazy paragraph, so neither lends that boundary to the item
 /// (PART 0 S4, carve#5317).
 pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
     let blocks = probe_blocks(body, options);
@@ -722,10 +722,7 @@ pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> b
 
 fn trailing_container(block: &BlockNode) -> bool {
     match block {
-        BlockNode::BlockQuote(_)
-        | BlockNode::Div(_)
-        | BlockNode::Admonition(_)
-        | BlockNode::Directive(_) => true,
+        BlockNode::BlockQuote(_) => true,
         BlockNode::List(list) => list
             .items
             .last()

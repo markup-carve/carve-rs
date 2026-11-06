@@ -65,3 +65,10 @@ fn an_earlier_definition_list_does_not_end_a_later_open_quote_paragraph() {
     let html = carve::to_html(input);
     assert!(html.contains("<p>prose\n: z</p>"), "{html}");
 }
+
+#[test]
+fn an_earlier_definition_list_still_ends_a_later_div() {
+    let input = "- a\n  :: t\n\n  ::: box\n  prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: z</p>"), "{html}");
+}
