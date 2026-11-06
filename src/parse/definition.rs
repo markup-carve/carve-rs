@@ -796,7 +796,12 @@ pub(in crate::parse) fn parse_definition_list(
                 }
                 fb.into_source()
             } else {
-                MappedSource::new_line_at(def_trimmed.to_string(), def_source_line, def_source_col)
+                let seed = if def_trimmed.starts_with('\t') {
+                    format!("{ITEM_PARAGRAPH}{def_trimmed}")
+                } else {
+                    def_trimmed.to_string()
+                };
+                MappedSource::new_line_at(seed, def_source_line, def_source_col)
             };
             // A FENCED BODY IS NOT A PARAGRAPH, and a definition body is such a
             // container (PART 0 S4, markup-carve/carve#956). The guard is on the
