@@ -607,9 +607,10 @@ fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool, depth:
             out.push_str(&format!("{}\n", render_inlines(term)));
         }
         for definition in &item.definitions {
+            let body = render_blocks(definition, depth + 1);
             out.push_str(&format!(
                 "  {}\n",
-                trim_block_output(&render_blocks(definition, depth + 1))
+                trim_block_output(&body).trim_start_matches([' ', '\t'])
             ));
         }
     }

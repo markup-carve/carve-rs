@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "description_text_targets_3983"
+path = "tests/description_text_targets_3983.rs"
+
+[[test]]
 name = "attach_rule_5250"
 path = "tests/attach_rule_5250.rs"
 
