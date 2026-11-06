@@ -1892,7 +1892,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let mut sliced = sliced;
         // A line that misses the span's owner ends it under S1. Keep that
         // boundary when the marker line opened the verse block itself.
-        if marker_line_block && spanned_stanza_lazy && !sliced.starts_with(LAZY) {
+        if marker_line_block
+            && spanned_stanza_lazy
+            && !trim_ascii_start(strip_lazy(line)).starts_with("%%")
+            && !sliced.starts_with(LAZY)
+        {
             sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
         }
         let mut trimmed_after_slice = 0usize;
