@@ -551,7 +551,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let spanned_stanza_lazy = !admission.blank
             && indent_columns(line) < strip_cols
             && line_starts_paragraph(line)
-            && collected_spanned_stanza_open(&mut collected_stanza_scan, &lines);
+            && (collected_spanned_stanza_open(&mut collected_stanza_scan, &lines)
+                || (marker_line_block
+                    && marker_line_block_stanza_open(
+                        &mut marker_line_block_scan,
+                        marker_content.unwrap_or_default(),
+                        &lines,
+                    )
+                    && marker_line_block_scan.0.held_span()));
         if held_span.is_some_and(|run| !is_comment_fence_close_any_column(line, run))
             && !spanned_stanza_lazy
             && !admission.blank
@@ -854,6 +861,17 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // block's own level. A shallower line (e.g. a dedent landing below a
             // sublist) ends the block and is left for the caller, so it can close
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
+            let descendant_span_blank =
+                collected_spanned_stanza_open(&mut collected_stanza_scan, &lines)
+                    && collected_stanza_scan.0.open_span_with_stanza();
+            let marker_span_blank = marker_line_block
+                && marker_line_block_stanza_open(
+                    &mut marker_line_block_scan,
+                    marker_content.unwrap_or_default(),
+                    &lines,
+                )
+                && marker_line_block_scan.0.open_span_with_stanza();
+            let verse_span_blank = descendant_span_blank || marker_span_blank;
             {
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines.at(k)) {
@@ -874,6 +892,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 // closes a span this frame opened at its own column (PART 9 §28).
                 let continues = k < cur.lines.len()
                     && (indent_columns(cur.lines.at(k)) >= threshold
+                        // A marked blank inside a verse span leaves the prior
+                        // stanza open for a lazy follower (CARVE-P9-047).
+                        || verse_span_blank
                         || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY))
                         // A `%%` line misses no owner, so it stays span payload (S1).
                         || (comment_fence.is_some()
@@ -911,7 +932,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // The residue stays for a descendant's open fence, which this
             // frame does not track; a blank line reads as blank either way.
             let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
-            if active_nested_fence.is_some() || nested_fence.is_some() || comment_fence.is_some() {
+            if active_nested_fence.is_some()
+                || nested_fence.is_some()
+                || comment_fence.is_some()
+                || verse_span_blank
+            {
                 opaque_blank_lines.push(lines.len());
             }
             lines.push(residue);
@@ -1391,7 +1416,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // corpus 446). One frame in, the carried flag says the line reached an
         // ancestor and not this container, and the frame still ends there.
         // Under F1 that opener still holds its span, so a comment line stays its payload.
-        if degraded_comment_fence && indent < strip_cols && !in_held_span {
+        if degraded_comment_fence && indent < strip_cols && !in_held_span && !spanned_stanza_lazy {
             break;
         }
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
@@ -1865,6 +1890,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             (sliced, consumed, synthetic)
         };
         let mut sliced = sliced;
+        // A line that misses the span's owner ends it under S1. Keep that
+        // boundary when the marker line opened the verse block itself.
+        if marker_line_block
+            && spanned_stanza_lazy
+            && !trim_ascii_start(strip_lazy(line)).starts_with("%%")
+            && !sliced.starts_with(LAZY)
+        {
+            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
+        }
         let mut trimmed_after_slice = 0usize;
         // PART 9 §10 I2 carries the deepest open paragraph across plain lazy lines.
         let marker_paragraph_owner = (nested_paragraph_column.is_none() && plain_nested_lazy)

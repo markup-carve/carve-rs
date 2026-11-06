@@ -1100,8 +1100,6 @@ pub(crate) struct LineBlockTail {
     span: Option<usize>,
     base: usize,
     had_span: bool,
-    closed_span: bool,
-    span_blank: bool,
     item_cols: Vec<usize>,
     prior_blank: bool,
 }
@@ -1170,10 +1168,8 @@ impl LineBlockTail {
                 if missed {
                     self.span = None;
                 } else {
-                    self.span_blank |= is_blank_line(line);
                     if crate::parse::verse::verse_comment_run(local) == Some(run) {
                         self.span = None;
-                        self.closed_span = true;
                     }
                     self.last_is_payload = stanza_open;
                     return;
@@ -1210,8 +1206,6 @@ impl LineBlockTail {
                 }
                 self.open = detect_line_block_open(tail);
                 self.had_span = false;
-                self.closed_span = false;
-                self.span_blank = false;
                 self.quoted = line_quoted || host_quoted;
                 self.host_col = if marked {
                     local.len() - tail.len()
@@ -1242,12 +1236,8 @@ impl LineBlockTail {
         self.had_span
     }
 
-    pub(crate) fn closed_span(&self) -> bool {
-        self.closed_span
-    }
-
-    pub(crate) fn span_blank(&self) -> bool {
-        self.span_blank
+    pub(crate) fn open_span_with_stanza(&self) -> bool {
+        self.span.is_some() && self.open.is_some() && self.last_is_payload
     }
 
     /// `Some(stanza open)` while the scanned body is still inside a line block.
@@ -2524,6 +2514,21 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     fn take_blank_run(&mut self, cur: &mut LineCursor<'_>) -> BodyStep {
         let container = self.container;
         let look = container.blank_run_end(cur.lines, cur.pos) - cur.pos;
+        // A verse span leaves its prior stanza unchanged, including across a
+        // blank whose next line misses this description (CARVE-P9-047).
+        if self.in_line_block()
+            && self
+                .stanza_scan
+                .as_ref()
+                .is_some_and(|(scan, _)| scan.open_span_with_stanza())
+        {
+            for _ in 0..look {
+                let blank = cur.lines.at(cur.pos);
+                self.push_sliced(cur, blank, self.content_column);
+                cur.consume();
+            }
+            return BodyStep::Next;
+        }
         match cur.lines.line(cur.pos + look) {
             Some(after)
                 if container.classify(after, || cur.continuation_decision(cur.pos + look))
