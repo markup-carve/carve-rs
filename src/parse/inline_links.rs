@@ -742,7 +742,7 @@ fn observe_non_bracket_attribute_host(
 pub(in crate::parse) const BRACKET_RESCAN_BUDGET: usize = 8;
 
 /// The start of the last maximal backtick run of each length.
-pub(in crate::parse) fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
+pub(crate) fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
     let mut last = HashMap::new();
     let mut i = 0;
     while i < bytes.len() {
@@ -870,7 +870,7 @@ pub(in crate::parse) fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(us
 ///
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
-pub(in crate::parse) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
+pub(crate) fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     compute_bracket_runs(bytes, true)
 }
 
@@ -1254,7 +1254,7 @@ pub(in crate::parse) fn compute_bracket_openers(matches: &[usize]) -> Vec<usize>
 /// Skip a verbatim (code) span opening at `start` (a backtick run). Returns the
 /// index just past the equal-length closing run, or `None` when the span is
 /// unclosed (opaque to end of text) — mirroring the reference bracket scanner.
-pub(in crate::parse) fn skip_code_span(bytes: &[u8], start: usize) -> Option<usize> {
+pub(crate) fn skip_code_span(bytes: &[u8], start: usize) -> Option<usize> {
     let mut i = start;
     while i < bytes.len() && bytes[i] == b'`' {
         i += 1;

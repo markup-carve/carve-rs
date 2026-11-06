@@ -257,7 +257,9 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
                 None => body,
             }
         }
-        BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
+        BlockNode::LineBlock(lb) => crate::render_text::with_line_block_breaks(|| {
+            render_blocks(&lb.children, ctx, depth + 1)
+        }),
         BlockNode::Directive(d) => {
             let body = render_blocks(&d.children, ctx, depth + 1);
             let body = prepend_label(body, d.label.as_deref());
