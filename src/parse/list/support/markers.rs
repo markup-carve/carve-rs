@@ -712,9 +712,27 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
 /// own list and lazy paragraph, so neither lends that boundary to the item
 /// (PART 0 S4, carve#5317).
 pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
-    probe_blocks(body, options)
-        .iter()
-        .any(block_holds_definition_list)
+    let blocks = probe_blocks(body, options);
+    if blocks.last().is_some_and(trailing_container) && body_ends_with_open_paragraph(body, options)
+    {
+        return false;
+    }
+    blocks.iter().any(block_holds_definition_list)
+}
+
+fn trailing_container(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::BlockQuote(_)
+        | BlockNode::Div(_)
+        | BlockNode::Admonition(_)
+        | BlockNode::Directive(_) => true,
+        BlockNode::List(list) => list
+            .items
+            .last()
+            .and_then(|item| item.children.last())
+            .is_some_and(trailing_container),
+        _ => false,
+    }
 }
 
 fn block_holds_definition_list(block: &BlockNode) -> bool {
