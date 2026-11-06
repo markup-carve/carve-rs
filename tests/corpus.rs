@@ -1441,7 +1441,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Newly reached corpus pairs at spec b426bf87. Each actual HTML is measured.
     ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <div class=\"line-block\">\n        <p>x</p>\n      </div>\n    </dd>\n  </dl>\n</blockquote>\n<p>b</p>"),
     ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open-2", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <div class=\"line-block\">\n          <p>x</p>\n        </div>\n      </dd>\n    </dl>\n  </blockquote>\n</blockquote>\n<p>b</p>"),
-    ("854-a-quote-in-a-bare-include-token-opens-no-run", "ruling at the 5643d59c pin not ported yet", "<p>{{ it’s_x <span class=\"mention\"><strong>@lines</strong></span>:0-1 }} it’s_y }}</p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-3", "ruling at the 5643d59c pin not ported yet", "<p><strong id=\"\">x</strong></p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-4", "ruling at the 5643d59c pin not ported yet", "<table>\n  <tbody>\n    <tr><td id=\"\">x</td></tr>\n  </tbody>\n</table>"),
 ];
