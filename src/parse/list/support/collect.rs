@@ -1970,6 +1970,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             sliced = trimmed.to_string();
         }
         if (framed_comment_payload
+            || (spanned_stanza_lazy && line.starts_with(LAZY))
             || lazy_list_marker
             || below_definition_separator
                 && !separator_at_nested_marker

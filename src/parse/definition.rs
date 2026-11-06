@@ -1157,9 +1157,12 @@ impl LineBlockTail {
         }
         // A `%%%` span leaves nothing: the stanza reads as it stood before the
         // span opened, and a line that missed the host ended it (carve#4956).
+        // A lazy frame has no column, so it misses the host too.
         let missed = !is_blank_line(line)
             && !span_comment
-            && if self.quoted {
+            && if line.starts_with(LAZY) {
+                true
+            } else if self.quoted {
                 !line_quoted
             } else {
                 indent_columns(line) < self.host_col
@@ -1189,7 +1192,13 @@ impl LineBlockTail {
                 self.open = None;
                 self.span = None;
             }
-            Some(_) => self.last_is_payload = !is_blank_line(local),
+            Some(_) => {
+                self.last_is_payload = !is_blank_line(local);
+                // Verse after a closed span is the stanza's own tail again.
+                if self.last_is_payload {
+                    self.had_span = false;
+                }
+            }
             // A line block opened past list or description markers is still a
             // stanza of this body (carve#4748, row 910).
             None => {
@@ -1237,7 +1246,7 @@ impl LineBlockTail {
         }
     }
 
-    /// Whether a `%%%` span has opened in the current line block.
+    /// Whether a `%%%` span has opened since the line block's last verse line.
     pub(crate) fn held_span(&self) -> bool {
         self.had_span
     }
@@ -2223,10 +2232,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             return BodyStep::Stop;
         }
         // A span leaves an existing verse stanza unchanged. Its first lazy
-        // follower is stanza text even when it resembles a new separator.
+        // follower is stanza text even when it resembles a new separator; an
+        // unquoted line at the list's own column is still a sibling.
         if self.ends_below_column(line)
-            && !((line.starts_with(LAZY) || cur.in_quoted_body)
-                && self.folds_into_a_spanned_stanza())
+            && !(line.starts_with(LAZY) && self.folds_into_a_spanned_stanza())
         {
             return BodyStep::Stop;
         }
