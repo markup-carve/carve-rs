@@ -887,7 +887,20 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         || (trim_ascii_start(strip_lazy(cur.lines.at(k))).starts_with("%%")
                             && body_open_comment_run(&lines).is_some())
                         || marker_comment_span
-                            .is_some_and(|run| is_comment_fence_close_any_column(cur.lines.at(k), run)));
+                            .is_some_and(|run| is_comment_fence_close_any_column(cur.lines.at(k), run))
+                        // A blank inside an open verse span leaves the stanza
+                        // available to a missed lazy line (CARVE-P9-047).
+                        || (collected_spanned_stanza_open(&mut collected_stanza_scan, &lines)
+                            && collected_stanza_scan.0.span_open()
+                            && line_starts_paragraph(trim_ascii_start(strip_lazy(cur.lines.at(k)))))
+                        || (marker_line_block
+                            && marker_line_block_stanza_open(
+                                &mut marker_line_block_scan,
+                                marker_content.unwrap_or_default(),
+                                &lines,
+                            )
+                            && marker_line_block_scan.0.span_open()
+                            && line_starts_paragraph(trim_ascii_start(strip_lazy(cur.lines.at(k))))));
                 if !continues {
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.
@@ -1391,7 +1404,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // corpus 446). One frame in, the carried flag says the line reached an
         // ancestor and not this container, and the frame still ends there.
         // Under F1 that opener still holds its span, so a comment line stays its payload.
-        if degraded_comment_fence && indent < strip_cols && !in_held_span {
+        if degraded_comment_fence
+            && indent < strip_cols
+            && !in_held_span
+            && !(lines.last().is_some_and(|prior| is_blank_line(prior))
+                && (stanza_lazy || spanned_stanza_lazy))
+        {
             break;
         }
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {

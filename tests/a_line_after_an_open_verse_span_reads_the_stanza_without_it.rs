@@ -131,3 +131,20 @@ fn an_item_in_a_description_keeps_the_body_line_after_a_blank_ended_stanza() {
     let html = carve::to_html(":: t\n: - ::: |\n    x\n\n    %%%\n    y\n  b\n");
     assert!(html.contains("</ul>\n    <p>b</p>\n  </dd>"), "{html}");
 }
+
+#[test]
+fn a_blank_inside_an_unclosed_quoted_span_preserves_the_stanza() {
+    let source = "> :: t\n> : ::: |\n>   x\n>   %%%\n>\nb\n";
+    assert_eq!(
+        carve::to_html(source).trim_end(),
+        "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <div class=\"line-block\">\n        <p>x<br>\nb</p>\n      </div>\n    </dd>\n  </dl>\n</blockquote>"
+    );
+}
+
+#[test]
+fn a_blank_inside_a_quoted_list_span_preserves_the_stanza() {
+    assert_eq!(
+        carve::to_html("> - ::: |\n>   x\n>   %%%\n>\nb\n").trim_end(),
+        "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p>x<br>\nb</p>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+    );
+}
