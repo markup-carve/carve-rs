@@ -178,12 +178,19 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                 && strip_description_prefix(trim_ascii_start(line)).is_some()
                 && body_ends_in_definition_list(&nested.source, options)
         });
-        // A separator at the list marker's column leaves the term. One
-        // column inside the marker remains lazy term text.
+        // A separator at the list marker's column ends a descendant
+        // definition list. The previous separator may already have left that
+        // list and become item text, so probe the prefix before that line too.
         if indent <= list_base
             && strip_description_prefix(trim_ascii_start(line)).is_some()
-            && term_options
-                .is_some_and(|options| body_chain_ends_in_definition_list(&nested.source, options))
+            && term_options.is_some_and(|options| {
+                let last_separator = nested
+                    .source
+                    .lines()
+                    .next_back()
+                    .is_some_and(|last| strip_description_prefix(last).is_some());
+                body_chain_ends_in_definition_list(&nested.source, options, last_separator)
+            })
         {
             break;
         }
