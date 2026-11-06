@@ -2164,6 +2164,13 @@ impl<'a> Walk<'a> {
         true
     }
 
+    fn marker_reaches_descendant_quote(&self, at: usize, frame: usize, rest: &str) -> bool {
+        is_cont_marker(rest)
+            && self.frames[frame + 1..].iter().any(|child| {
+                child.kind == Kind::Quote && child.doc_marker == doc_column(self.lines[at], rest)
+            })
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         let tracing = self.trace_wants(at);
@@ -2204,12 +2211,7 @@ impl<'a> Walk<'a> {
             if f.kind == Kind::Quote {
                 // A marker at a descendant quote's authored column can reach
                 // that quote without repeating this outer quote's prefix.
-                if is_cont_marker(c.rest)
-                    && self.frames[k + 1..].iter().any(|child| {
-                        child.kind == Kind::Quote
-                            && child.doc_marker == doc_column(self.lines[at], c.rest)
-                    })
-                {
+                if self.marker_reaches_descendant_quote(at, k, c.rest) {
                     let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
                     c.lead_in(canon, shift, false);
                     c.out.push_str("> ");
