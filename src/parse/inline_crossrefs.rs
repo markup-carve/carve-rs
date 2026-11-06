@@ -54,7 +54,7 @@ pub(crate) fn crossref_index_for_document(
         &explicit_ids,
         false,
     );
-    for (label, blocks) in &doc.footnote_defs {
+    for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         if !used_notes.contains(label) {
             continue;
         }
@@ -102,14 +102,8 @@ pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
             .chain(doc.footnote_defs.values().map(Vec::as_slice)),
         Some(doc.footnote_defs.keys().cloned().collect()),
     );
-    let (mut index, ids) = heading_index_with_explicit_ids(
-        &doc.children,
-        &doc.footnote_defs,
-        id_opts,
-        true,
-        false,
-        &explicit_ids,
-    );
+    let (mut index, ids) =
+        heading_index_with_explicit_ids(doc, id_opts, true, false, &explicit_ids);
     let mut captions = CaptionIndex {
         titles: &mut index.titles,
         labels: &mut index.labels,
@@ -128,27 +122,25 @@ pub(crate) fn heading_reference_index_for_document(
     doc: &Document,
     id_opts: HeadingIdOptions,
 ) -> CrossrefIndex {
-    heading_index(&doc.children, &doc.footnote_defs, id_opts, true, true).0
+    heading_index(doc, id_opts, true, true).0
 }
 
 pub(in crate::parse) fn heading_index(
-    children: &[BlockNode],
-    footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
+    doc: &Document,
     id_opts: HeadingIdOptions,
     collect_crossrefs: bool,
     collect_heading_refs: bool,
 ) -> (CrossrefIndex, Vec<String>) {
-    let used_notes = crate::render::used_footnote_labels(children, footnote_defs);
+    let used_notes = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let mut explicit_ids = std::collections::BTreeSet::new();
-    collect_explicit_ids(children, &mut explicit_ids);
-    for (label, blocks) in footnote_defs {
+    collect_explicit_ids(&doc.children, &mut explicit_ids);
+    for (label, blocks) in &doc.footnote_defs {
         if used_notes.contains(label) {
             collect_explicit_ids(blocks, &mut explicit_ids);
         }
     }
     let (mut index, ids) = heading_index_with_explicit_ids(
-        children,
-        footnote_defs,
+        doc,
         id_opts,
         collect_crossrefs,
         collect_heading_refs,
@@ -159,14 +151,13 @@ pub(in crate::parse) fn heading_index(
 }
 
 fn heading_index_with_explicit_ids(
-    children: &[BlockNode],
-    footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
+    doc: &Document,
     id_opts: HeadingIdOptions,
     collect_crossrefs: bool,
     collect_heading_refs: bool,
     explicit_ids: &std::collections::BTreeSet<String>,
 ) -> (CrossrefIndex, Vec<String>) {
-    let used_notes = crate::render::used_footnote_labels(children, footnote_defs);
+    let used_notes = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut labels = BTreeMap::new();
@@ -174,7 +165,7 @@ fn heading_index_with_explicit_ids(
     let mut by_text = BTreeMap::new();
     let mut assigned = Vec::new();
     collect_heading_titles(
-        children,
+        &doc.children,
         &mut HeadingScan {
             counts: &mut counts,
             titles: &mut titles,
@@ -189,7 +180,9 @@ fn heading_index_with_explicit_ids(
         explicit_ids,
         false,
     );
-    for (label, blocks) in footnote_defs {
+    let body_assigned = std::mem::take(&mut assigned);
+    let mut per_definition = BTreeMap::new();
+    for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         if !used_notes.contains(label) {
             continue;
         }
@@ -209,6 +202,11 @@ fn heading_index_with_explicit_ids(
             explicit_ids,
             false,
         );
+        per_definition.insert(label, std::mem::take(&mut assigned));
+    }
+    assigned = body_assigned;
+    for (_, ids) in per_definition {
+        assigned.extend(ids);
     }
     let mut index = crossref_index(titles, labels);
     index.quoted = quoted;

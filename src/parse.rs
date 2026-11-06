@@ -1031,7 +1031,7 @@ fn parse_with_options_mode_and_index_once(
             extract_footnote_defs(
                 body,
                 body_start_line,
-                options.positions,
+                true, // Keep definition order until generated heading IDs are stamped.
                 false,
                 None,
                 options,
@@ -1166,6 +1166,12 @@ fn parse_with_options_mode_and_index_once(
     let original_line_starts = options
         .positions
         .then(|| CodepointLineStarts::original(original));
+    if !options.positions && !footnote_def_pos.is_empty() {
+        let starts = CodepointLineStarts::original(original);
+        for pos in footnote_def_pos.values_mut() {
+            apply_offsets(pos, &starts);
+        }
+    }
     if let Some(line_starts) = original_line_starts.as_ref() {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
@@ -1257,8 +1263,7 @@ fn parse_with_options_mode_and_index_once(
     // late reference-link resolution or by the HTML facade renderer.
     let mut heading_index = if needs_late_link_resolution || matches!(mode, ParseMode::HtmlFacade) {
         heading_index(
-            &doc.children,
-            &doc.footnote_defs,
+            &doc,
             options.heading_id_options(),
             has_crossrefs,
             needs_late_link_resolution,
@@ -1337,6 +1342,9 @@ fn parse_with_options_mode_and_index_once(
                 promote_block_images(blocks, true, true);
             }
         }
+    }
+    if !options.positions {
+        doc.footnote_def_pos.clear();
     }
     continuation_marker::restore_payloads(&mut doc);
     continuation_marker::drop_consumed_markers(&mut doc);

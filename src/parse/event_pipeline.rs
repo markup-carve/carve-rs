@@ -3611,7 +3611,13 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         .count()
         + 1;
     let (mapped, mut footnote_sources, mut footnote_def_pos, mut note_links) =
-        extract_footnote_defs(body, body_start_line, false, false, None, &options);
+        extract_footnote_defs(body, body_start_line, true, false, None, &options);
+    if !options.positions {
+        let starts = CodepointLineStarts::original(source);
+        for pos in footnote_def_pos.values_mut() {
+            apply_offsets(pos, &starts);
+        }
+    }
     if footnote_sources
         .values()
         .any(|note| note.source.contains("[^"))
@@ -3705,6 +3711,9 @@ fn parse_document_with_footnotes(source: &str, source_len: usize) -> Option<(Doc
         number_crossref_captions(&mut doc);
     }
     stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+    if !options.positions {
+        doc.footnote_def_pos.clear();
+    }
     let _ = crate::render::collect_footnotes(&mut doc, false);
     coalesce_text_runs(&mut doc);
     if source.contains("</#") {
@@ -4036,8 +4045,7 @@ fn parse_document_with_custom_options_once(
         };
         let index = if matches!(mode, ParseMode::HtmlFacade) {
             let (mut index, _) = heading_index(
-                &doc.children,
-                &doc.footnote_defs,
+                &doc,
                 options.heading_id_options(),
                 source.contains("</#"),
                 false,
@@ -4066,6 +4074,9 @@ fn parse_document_with_custom_options_once(
         }
         None
     };
+    if !options.positions {
+        doc.footnote_def_pos.clear();
+    }
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
@@ -4121,7 +4132,7 @@ fn parse_document_with_footnotes_options(
         extract_footnote_defs(
             body,
             body_start_line,
-            options.positions,
+            true, // Retain definition order until heading IDs are stamped.
             false,
             None,
             options,
@@ -4225,6 +4236,12 @@ fn parse_document_with_footnotes_options(
         source_len,
         ingest_payload_len: 0,
     };
+    if !options.positions {
+        let starts = CodepointLineStarts::original(original_source);
+        for pos in doc.footnote_def_pos.values_mut() {
+            apply_offsets(pos, &starts);
+        }
+    }
     if options.positions {
         definition::start_descriptions_at_their_comments(&mut doc.children);
         let starts = CodepointLineStarts::original(original_source);
@@ -4283,8 +4300,7 @@ fn parse_document_with_footnotes_options(
     }
     let mut crossref_index = if matches!(mode, ParseMode::HtmlFacade) {
         let (mut index, _) = heading_index(
-            &doc.children,
-            &doc.footnote_defs,
+            &doc,
             options.heading_id_options(),
             source.contains("</#"),
             false,
@@ -4299,6 +4315,9 @@ fn parse_document_with_footnotes_options(
         }
         None
     };
+    if !options.positions {
+        doc.footnote_def_pos.clear();
+    }
     if matches!(mode, ParseMode::Html) {
         let _ = crate::render::collect_footnotes(&mut doc, false);
     }
