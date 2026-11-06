@@ -211,6 +211,41 @@ fn indent_cols(s: &str) -> (usize, usize) {
     (col, len)
 }
 
+/// Re-measure a tab after a list owner's literal indentation in that owner's
+/// frame. The prefix has already established the frame; a tab in the remainder
+/// starts at its column zero rather than continuing the document's tab phase.
+fn indent_in_item_frame(line: &str, frame_col: usize) -> Option<usize> {
+    let mut col = 0;
+    for (at, byte) in line.bytes().enumerate() {
+        if col == frame_col {
+            let rest = &line[at..];
+            return rest[..indent_cols(rest).1]
+                .contains('\t')
+                .then(|| frame_col + indent_cols(rest).0);
+        }
+        match byte {
+            b' ' => col += 1,
+            b'\t' => col += 4 - col % 4,
+            _ => return None,
+        }
+        if col > frame_col {
+            return None;
+        }
+    }
+    None
+}
+
+fn marker_ladder_tab_col(frames: &[Frame], line: &str, measured: usize) -> usize {
+    frames
+        .windows(2)
+        .filter(|pair| {
+            pair[0].kind == Kind::Item && pair[1].kind == Kind::Item && pair[0].line == pair[1].line
+        })
+        .filter_map(|pair| indent_in_item_frame(line, pair[0].col))
+        .max()
+        .unwrap_or(measured)
+}
+
 /// The owner's state once a fence or span frame closes.
 fn last_after_closer(inner: Option<&Frame>) -> Last {
     match inner {
@@ -2092,6 +2127,7 @@ impl<'a> Walk<'a> {
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         let tracing = self.trace_wants(at);
         let line = self.first_line + at;
         let mut reached = 0;
@@ -2107,8 +2143,8 @@ impl<'a> Walk<'a> {
             if let Some((marker_col, _)) = f.marker {
                 // A lone `+` reaches the marker column of an open marker container.
                 if is_cont_marker(c.rest)
-                    && c.col == marker_col
-                    && (f.kind == Kind::Quote || c.col < f.col)
+                    && c.authored_col == marker_col
+                    && (f.kind == Kind::Quote || c.authored_col < f.col)
                 {
                     let column = doc_column(self.lines[at], c.rest);
                     // A blank line has closed a note to a `+` at its marker.
@@ -2134,6 +2170,7 @@ impl<'a> Walk<'a> {
                 let n = quote_marker(c.src).expect("measured above");
                 c.take(n);
                 c.measure();
+                c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
                 reached = k;
                 continue;
             }

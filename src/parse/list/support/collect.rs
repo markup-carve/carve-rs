@@ -1817,7 +1817,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let fence_closer = fence.is_some_and(|open| {
             indent <= open.content_col && is_fence_close(trim_ascii_start(payload_line), open)
         });
-        let visible = !cur.in_quoted_body
+        // A quote collector rebases ordinary child lines already. A marker
+        // ladder on one quote line instead keeps its descendant columns here;
+        // preserve the authored visual remainder when the child frame reparses it.
+        let visible = (!cur.in_quoted_body || !marker_line_columns.is_empty())
             && fence.is_none()
             && active_nested_fence.is_none()
             && nested_fence.is_none()
