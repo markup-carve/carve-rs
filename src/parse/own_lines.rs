@@ -2389,7 +2389,16 @@ impl<'a> Walk<'a> {
             return;
         }
         let top_para = self.frames.last().expect("frame").para;
-        let lazy_refused = self.lazy_refused(reached, c.col, c.rest);
+        let marker_ends_unquoted_description = strip_description_prefix(c.rest).is_some()
+            && self.frames.iter().any(|frame| {
+                frame.kind == Kind::Item && frame.marker.is_some_and(|(column, _)| column == c.col)
+            })
+            && self.frames.iter().any(|frame| frame.kind == Kind::Dd)
+            && self.frames.iter().all(|frame| frame.kind != Kind::Quote);
+        // A separator at a surviving item's marker column cannot be the lazy
+        // text of an unquoted description held by that item (PART 0 S4).
+        let lazy_refused =
+            marker_ends_unquoted_description || self.lazy_refused(reached, c.col, c.rest);
         if missed
             && !c.rest.is_empty()
             && top_para
