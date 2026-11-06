@@ -238,6 +238,7 @@ fn assigned_heading_ids_with_policy(
     id_opts: HeadingIdOptions,
     ignore_generated: bool,
 ) -> Seeder {
+    let used_notes = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
         heading_counts: BTreeMap::new(),
@@ -248,6 +249,7 @@ fn assigned_heading_ids_with_policy(
         had_generated: false,
         collect_explicit_only: true,
         ignore_generated,
+        skip_generated_ids: false,
         defined_notes: Some(doc.footnote_defs.keys().cloned().collect()),
     };
     seeder.walk_blocks(&doc.children);
@@ -256,7 +258,8 @@ fn assigned_heading_ids_with_policy(
     }
     seeder.collect_explicit_only = false;
     seeder.walk_blocks(&doc.children);
-    for blocks in doc.footnote_defs.values() {
+    for (label, blocks) in &doc.footnote_defs {
+        seeder.skip_generated_ids = !used_notes.contains(label);
         seeder.walk_blocks(blocks);
     }
 
@@ -279,6 +282,7 @@ pub(crate) fn authored_ids<'a>(
         had_generated: false,
         collect_explicit_only: true,
         ignore_generated: true,
+        skip_generated_ids: false,
         defined_notes,
     };
     for seq in blocks {
@@ -288,6 +292,7 @@ pub(crate) fn authored_ids<'a>(
 }
 
 fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistry {
+    let used_notes = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
         heading_counts: BTreeMap::new(),
@@ -298,6 +303,7 @@ fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistr
         had_generated: false,
         collect_explicit_only: true,
         ignore_generated: false,
+        skip_generated_ids: false,
         defined_notes: Some(doc.footnote_defs.keys().cloned().collect()),
     };
     // Pass A: reserve every explicit id across the whole document (body then
@@ -311,8 +317,10 @@ fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistr
     // ids. Footnote definitions render after the body, so they join last.
     seeder.collect_explicit_only = false;
     seeder.walk_blocks(&doc.children);
-    for blocks in doc.footnote_defs.values() {
-        seeder.walk_blocks(blocks);
+    for (label, blocks) in &doc.footnote_defs {
+        if used_notes.contains(label) {
+            seeder.walk_blocks(blocks);
+        }
     }
     seeder.registry
 }
@@ -337,6 +345,9 @@ struct Seeder {
     /// pass B.
     collect_explicit_only: bool,
     ignore_generated: bool,
+    /// Keep one iterator slot for each retained heading without allocating an
+    /// id to a definition that was never reached by a footnote reference.
+    skip_generated_ids: bool,
     /// The labels a footnote reference resolves against; `None` when they are
     /// not known yet, and every reference counts as resolved.
     defined_notes: Option<BTreeSet<String>>,
@@ -360,6 +371,14 @@ impl Seeder {
     /// attribute id or the text slug, numbered by the shared document-order
     /// counter (mirrors `render::next_heading_id`).
     fn reserve_heading_id(&mut self, h: &Heading) {
+        if self.skip_generated_ids {
+            if self.ignore_generated {
+                self.original_ids
+                    .push(h.attrs.as_ref().and_then(|attrs| attrs.id.clone()));
+            }
+            self.assigned.push(String::new());
+            return;
+        }
         if self.ignore_generated {
             self.original_ids
                 .push(h.attrs.as_ref().and_then(|attrs| attrs.id.clone()));

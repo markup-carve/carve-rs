@@ -1342,11 +1342,12 @@ pub(in crate::parse) fn stamp_generated_heading_ids_from(doc: &mut Document, ids
         return;
     }
     let mut next = ids.into_iter();
-    stamp_heading_ids_in(&mut doc.children, &mut next);
+    stamp_heading_ids_in(&mut doc.children, &mut next, true);
+    let used = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let keys: Vec<String> = doc.footnote_defs.keys().cloned().collect();
     for key in keys {
         if let Some(blocks) = doc.footnote_defs.get_mut(&key) {
-            stamp_heading_ids_in(blocks, &mut next);
+            stamp_heading_ids_in(blocks, &mut next, used.contains(&key));
         }
     }
 }
@@ -1354,6 +1355,7 @@ pub(in crate::parse) fn stamp_generated_heading_ids_from(doc: &mut Document, ids
 pub(in crate::parse) fn stamp_heading_ids_in(
     blocks: &mut [BlockNode],
     next: &mut impl Iterator<Item = String>,
+    used: bool,
 ) {
     for block in blocks.iter_mut() {
         match block {
@@ -1361,29 +1363,29 @@ pub(in crate::parse) fn stamp_heading_ids_in(
                 let Some(id) = next.next() else {
                     return;
                 };
-                if h.attrs.as_ref().and_then(|a| a.id.as_ref()).is_none() {
+                if used && h.attrs.as_ref().and_then(|a| a.id.as_ref()).is_none() {
                     h.attrs.get_or_insert_with(Attrs::default).id = Some(id);
                 }
             }
-            BlockNode::BlockQuote(b) => stamp_heading_ids_in(&mut b.children, next),
-            BlockNode::Directive(d) => stamp_heading_ids_in(&mut d.children, next),
-            BlockNode::Div(d) => stamp_heading_ids_in(&mut d.children, next),
-            BlockNode::Admonition(a) => stamp_heading_ids_in(&mut a.children, next),
-            BlockNode::FigureGroup(g) => stamp_heading_ids_in(&mut g.children, next),
+            BlockNode::BlockQuote(b) => stamp_heading_ids_in(&mut b.children, next, used),
+            BlockNode::Directive(d) => stamp_heading_ids_in(&mut d.children, next, used),
+            BlockNode::Div(d) => stamp_heading_ids_in(&mut d.children, next, used),
+            BlockNode::Admonition(a) => stamp_heading_ids_in(&mut a.children, next, used),
+            BlockNode::FigureGroup(g) => stamp_heading_ids_in(&mut g.children, next, used),
             BlockNode::List(l) => {
                 for item in l.items.iter_mut() {
-                    stamp_heading_ids_in(&mut item.children, next);
+                    stamp_heading_ids_in(&mut item.children, next, used);
                 }
             }
             BlockNode::Figure(f) => {
                 if let FigureTarget::BlockQuote(b) = &mut *f.target {
-                    stamp_heading_ids_in(&mut b.children, next);
+                    stamp_heading_ids_in(&mut b.children, next, used);
                 }
             }
             BlockNode::DefinitionList(dl) => {
                 for entry in dl.items.iter_mut() {
                     for definition in entry.definitions.iter_mut() {
-                        stamp_heading_ids_in(&mut definition.children, next);
+                        stamp_heading_ids_in(&mut definition.children, next, used);
                     }
                 }
             }
