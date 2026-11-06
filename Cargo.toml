@@ -385,3 +385,7 @@ path = "tests/container_comment_runs_5206.rs"
 [[test]]
 name = "quoted_lazy_attribute_5223"
 path = "tests/quoted_lazy_attribute_5223.rs"
+
+[[test]]
+name = "tab_in_marker_ladder_frame"
+path = "tests/tab_in_marker_ladder_frame.rs"
