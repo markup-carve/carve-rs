@@ -3108,7 +3108,13 @@ impl<'a> QuoteBody<'a> {
         let trimmed = trim_ascii_start(line);
         let is_term = is_definition_list_start(trimmed);
         let is_desc = strip_definition_marker(trimmed).is_some();
-        let (frame, dedent) = if is_term || is_desc {
+        // A lazy follower of an open verse stanza remains stanza text even if
+        // its spelling resembles a definition marker. The erased span has
+        // not opened a new entry or closed the stanza.
+        let stanza_open = (is_term || is_desc) && self.stanza_state();
+        let (frame, dedent) = if stanza_open {
+            (true, false)
+        } else if is_term || is_desc {
             self.open_entry.advance(&self.inner.lines);
             lazy_marker_frame(&self.open_entry, line, is_desc)
         } else {

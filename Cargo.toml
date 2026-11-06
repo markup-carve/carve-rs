@@ -401,3 +401,7 @@ path = "tests/quoted_lazy_attribute_5223.rs"
 [[test]]
 name = "tab_in_marker_ladder_frame"
 path = "tests/tab_in_marker_ladder_frame.rs"
+
+[[test]]
+name = "a_quoted_description_stanza_takes_lazy_marker_text"
+path = "tests/a_quoted_description_stanza_takes_lazy_marker_text.rs"
