@@ -5702,20 +5702,54 @@ fn render_line_block(session: &RenderSession, lb: &LineBlock, ctx: &mut CarveCon
     ctx.verse_comment_fence = verse_comment_fence(&lb.children);
     let minimum_fence = colon_fence_for(ctx).len();
     let body = render_inside_colon_container(session, &lb.children, ctx);
-    // An unclosed verse comment can own the line block's authored `:::`
-    // closer as payload. Choose a different outer fence so writing that
-    // payload cannot close the line block before the comment is complete.
-    let longest_body_closer = body
-        .lines()
-        .map(|line| line.trim_matches([' ', '\t']))
-        .filter(|line| line.len() >= 3 && line.bytes().all(|byte| byte == b':'))
-        .map(str::len)
-        .max()
-        .unwrap_or(0);
-    let fence = ":".repeat(minimum_fence.max(longest_body_closer + 1));
+    // Only a bare colon run of the chosen width can close a line block.
+    // A longer run is harmless, as is a run inside a code fence. An unclosed
+    // verse comment may still carry a same-width run that needs clearing.
+    let visible_body = body
+        .replace(sentinel(session, S_STAGED_SPACE).as_str(), " ")
+        .replace(sentinel(session, S_STAGED_TAB).as_str(), "\t");
+    let body_closers = bare_colon_runs_outside_code(&visible_body);
+    let mut width = minimum_fence;
+    while body_closers.contains(&width) {
+        width += 1;
+    }
+    let fence = ":".repeat(width);
     ctx.verse_comment_fence = outer_fence;
     ctx.line_block_depth -= 1;
     with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))
+}
+
+fn bare_colon_runs_outside_code(body: &str) -> std::collections::HashSet<usize> {
+    let mut runs = std::collections::HashSet::new();
+    let mut code_fence: Option<(u8, usize)> = None;
+    for line in body.lines() {
+        let line = line.trim_matches([' ', '\t']);
+        if let Some((marker, width)) = code_fence {
+            if line
+                .as_bytes()
+                .iter()
+                .take_while(|&&byte| byte == marker)
+                .count()
+                >= width
+                && line.bytes().all(|byte| byte == marker)
+            {
+                code_fence = None;
+            }
+            continue;
+        }
+        let marker = line.as_bytes().first().copied().unwrap_or_default();
+        if marker == b'`' || marker == b'~' {
+            let width = line.bytes().take_while(|&byte| byte == marker).count();
+            if width >= 3 {
+                code_fence = Some((marker, width));
+                continue;
+            }
+        }
+        if line.len() >= 3 && line.bytes().all(|byte| byte == b':') {
+            runs.insert(line.len());
+        }
+    }
+    runs
 }
 
 /// The fence a `%%%` pair in this line block needs so that no comment line

@@ -38,6 +38,61 @@ fn round_trips(src: &str) {
     );
 }
 
+#[test]
+fn colon_fence_width_follows_only_effective_closers() {
+    for (source, expected) in [
+        (
+            "- m\n  ::: |\n  ::::\nl\n",
+            "- m\n  ::: |\n  ::::\n  l\n  :::\n",
+        ),
+        (
+            "- ::: |\n    ```\n  :::\n    ```\n  :::\n  para\ntail\n",
+            "- ::: |\n    ```\n  :::\n    ```\n  :::\n  para\n  tail\n",
+        ),
+    ] {
+        assert_eq!(fmt(source), expected);
+        round_trips(source);
+    }
+}
+
+#[test]
+fn colon_fence_width_generated_round_trips() {
+    let mut checked = 0;
+    for fence_width in 3..=7 {
+        for payload_width in 2..=9 {
+            for nesting in 0..5 {
+                for variant in 0..5 {
+                    let fence = ":".repeat(fence_width);
+                    let payload = ":".repeat(payload_width);
+                    let code = payload_width == fence_width || variant % 2 == 0;
+                    let body = if code {
+                        format!("```\n{payload}\n```")
+                    } else {
+                        payload
+                    };
+                    let inner = format!("{fence} |\n{body}\n{fence}\ntail\n");
+                    let prefix = "- ".repeat(nesting);
+                    let indent = "  ".repeat(nesting);
+                    let source = if nesting == 0 {
+                        inner
+                    } else {
+                        format!("{prefix}{}", inner.replace('\n', &format!("\n{indent}")))
+                    };
+                    let formatted = fmt(&source);
+                    assert_eq!(fmt(&formatted), formatted, "case {checked}: {source:?}");
+                    assert_eq!(
+                        carve::parse(&formatted).children,
+                        carve::parse(&source).children,
+                        "case {checked}: {source:?} => {formatted:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1000);
+}
+
 /// The shape the ticket is about, at every inline position that reaches it.
 #[test]
 fn a_percent_leading_content_joins_the_inline_marker() {
