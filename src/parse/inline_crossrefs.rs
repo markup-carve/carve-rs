@@ -451,6 +451,27 @@ fn resolve_nested_crossrefs(nodes: &mut Vec<InlineNode>, raw: &BTreeMap<String, 
     *nodes = result;
 }
 
+/// Whether `resolve_nested_crossrefs` would change `nodes`; it walks the same containers.
+fn has_nested_crossref(nodes: &[InlineNode]) -> bool {
+    nodes.iter().any(|node| match node {
+        InlineNode::CrossRef(_) => true,
+        InlineNode::Emphasis(e) => has_nested_crossref(&e.children),
+        InlineNode::Span(s) => has_nested_crossref(&s.children),
+        InlineNode::Link(l) => has_nested_crossref(&l.children),
+        InlineNode::Ruby(r) => r
+            .pairs
+            .iter()
+            .any(|pair| has_nested_crossref(&pair.base) || has_nested_crossref(&pair.annotation)),
+        InlineNode::Extension(e) => has_nested_crossref(&e.children),
+        InlineNode::CriticInsert(c) => has_nested_crossref(&c.children),
+        InlineNode::CriticDelete(c) => has_nested_crossref(&c.children),
+        InlineNode::CriticSubstitute(c) => {
+            has_nested_crossref(&c.old) || has_nested_crossref(&c.new)
+        }
+        _ => false,
+    })
+}
+
 #[cfg(test)]
 mod nested_reference_tests {
     use super::*;
@@ -470,6 +491,32 @@ mod nested_reference_tests {
         })];
         resolve_nested_crossrefs(&mut nodes, &raw);
         assert_eq!(nodes, vec![InlineNode::text("target")]);
+    }
+
+    #[test]
+    fn a_label_resolves_a_crossref_nested_in_a_container() {
+        let raw = BTreeMap::new();
+        let mut nodes = vec![InlineNode::Emphasis(Emphasis {
+            children: vec![InlineNode::CrossRef(CrossRef {
+                target: "x".to_string(),
+                href: Some("#x".to_string()),
+                pos: None,
+            })],
+            attrs: None,
+            kind: crate::ast::EmphasisKind::Italic,
+            pos: None,
+        })];
+        assert!(has_nested_crossref(&nodes));
+        resolve_nested_crossrefs(&mut nodes, &raw);
+        assert!(!has_nested_crossref(&nodes));
+        assert!(!has_nested_crossref(&[InlineNode::text("plain")]));
+    }
+
+    #[test]
+    fn labels_with_and_without_nested_crossrefs_render_one_level() {
+        let html = crate::to_html("{#a}\n# A /</#b>/\n\n{#b}\n# B\n\n</#a> </#b>\n");
+        assert!(html.contains("<a href=\"#a\">A <em>B</em></a>"), "{html}");
+        assert!(html.contains("<a href=\"#b\">B</a>"), "{html}");
     }
 }
 
@@ -518,6 +565,18 @@ impl CrossrefIndex {
     /// Finish labels only after all headings have been collected, so forward
     /// references and cycles use the same one-level expansion as backward ones.
     fn finalize_labels(&mut self) {
+        let nested = self
+            .labels
+            .iter()
+            .any(|(id, label)| has_nested_crossref(self.raw_labels.get(id).unwrap_or(label)));
+        if !nested {
+            for (id, label) in &mut self.labels {
+                if let Some(raw) = self.raw_labels.get(id) {
+                    *label = raw.clone();
+                }
+            }
+            return;
+        }
         let mut raw = self.raw_labels.clone();
         for (id, label) in &self.labels {
             raw.entry(id.clone()).or_insert_with(|| label.clone());
