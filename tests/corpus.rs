@@ -1439,7 +1439,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
-    ("915-abbreviations-skip-caption-cross-reference-text-and-an-unresolved-cross-reference-2", "spec pin d4c64561: engine port pending", "<table id=\"t\">\n  <caption>A 1: c</caption>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n</table>\n<p>See <a href=\"#t\">A 1</a>.</p>"),
     ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>~~~</p>\n      <p>~~~<br>\nb</p>\n    </div>\n  </dd>\n</dl>"),
     ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run-2", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p><code></code></p>\n      <p><code>\nb</code></p>\n    </div>\n  </dd>\n</dl>"),
     // Newly reached corpus pairs at spec b426bf87. Each actual HTML is measured.
