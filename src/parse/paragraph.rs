@@ -248,7 +248,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
-        let line_owned = line.to_string();
         if forced && forced_through == Some(cur.pos) {
             if let Some(open) = detect_fence_open(line) {
                 if let Some(closer) = (cur.pos + 1..cur.lines.len())
@@ -261,7 +260,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         if !forced
             && !lines.is_empty()
             && ((reference_caption_claimed && caption_content(line).is_some())
-                || interrupts_paragraph(cur, &line_owned)
+                || interrupts_paragraph(cur, line)
                 || (cur.colon_view.is_some_and(|view| view.marker_hosted)
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
         {
@@ -292,11 +291,13 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     // not end in whitespace at all and nothing is dropped in front of it. Carve
     // has no two-space hard break to lose - `a<SP><SP>` + newline + `b` is one
     // paragraph with a soft break in the executable spec.
-    let joined = lines
-        .iter()
-        .map(|l| strip_lazy(l))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut joined = String::with_capacity(lines.iter().map(|l| l.len() + 1).sum());
+    for (k, line) in lines.iter().enumerate() {
+        if k > 0 {
+            joined.push('\n');
+        }
+        joined.push_str(strip_lazy(line));
+    }
     let at_content_column = at_content_column
         && !lines
             .iter()
