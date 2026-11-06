@@ -864,8 +864,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             let descendant_stanza_span =
                 collected_spanned_stanza_open(&mut collected_stanza_scan, &lines)
                     && collected_stanza_scan.0.open_span_with_stanza();
-            // A blank in a nested item's verse span ends that item (carve#5269).
-            let item_span_blank = descendant_stanza_span && collected_stanza_scan.0.item_hosted();
+            // A blank in a nested item's or description's verse span ends that host (carve#5269).
+            let item_span_blank = descendant_stanza_span
+                && (collected_stanza_scan.0.item_hosted() || collected_stanza_scan.0.nested_host());
             let descendant_span_blank = descendant_stanza_span && !item_span_blank;
             let marker_span_blank = marker_line_block
                 && marker_line_block_stanza_open(

@@ -1209,7 +1209,7 @@ impl LineBlockTail {
                 self.had_span = false;
                 self.quoted = line_quoted || host_quoted;
                 self.host_col = if marked {
-                    local.len() - tail.len()
+                    lead + local.len() - tail.len()
                 } else if self.quoted {
                     0
                 } else {
@@ -1244,6 +1244,16 @@ impl LineBlockTail {
 
     pub(crate) fn open_span_with_stanza(&self) -> bool {
         self.span.is_some() && self.open.is_some() && self.last_is_payload
+    }
+
+    /// A `%%%` span open over a stanza that held no verse before it.
+    pub(crate) fn open_span_without_stanza(&self) -> bool {
+        self.span.is_some() && self.open.is_some() && !self.last_is_payload
+    }
+
+    /// Whether the open line block sits behind a nested marker or quote.
+    pub(crate) fn nested_host(&self) -> bool {
+        self.host_col > 0 || self.quoted
     }
 
     /// Whether a list item inside the scanned body hosts the line block.
@@ -2214,7 +2224,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         // A span leaves an existing verse stanza unchanged. Its first lazy
         // follower is stanza text even when it resembles a new separator.
-        if self.ends_below_column(line) && !self.folds_into_a_spanned_stanza() {
+        if self.ends_below_column(line)
+            && !((line.starts_with(LAZY) || cur.in_quoted_body)
+                && self.folds_into_a_spanned_stanza())
+        {
             return BodyStep::Stop;
         }
         // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
@@ -2243,6 +2256,17 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             .last()
             .is_some_and(|line| caption_content(trim_ascii_start(line)).is_some());
         if fence.holds_no_paragraph() && !self.folded_a_lazy_line && !caption_open {
+            return BodyStep::Stop;
+        }
+        // A line that ends a verse span reads the stanza as it stood before the
+        // span; an empty one takes no lazy line (CARVE-P9-047, carve#4956).
+        if !trim_ascii_start(strip_lazy(line)).starts_with("%%")
+            && self.in_line_block()
+            && self
+                .stanza_scan
+                .as_ref()
+                .is_some_and(|(scan, _)| scan.open_span_without_stanza())
+        {
             return BodyStep::Stop;
         }
         if !self.body_takes_fold() {
