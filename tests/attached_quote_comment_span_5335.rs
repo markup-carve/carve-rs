@@ -30,3 +30,10 @@ fn a_deeper_span_and_a_closed_span_keep_their_existing_owners() {
     assert!(!to_html(deeper).contains("    after\n"));
     assert_eq!(to_html(closed).matches("<blockquote>").count(), 1);
 }
+
+#[test]
+fn a_closer_below_the_quote_column_does_not_open_another_quote() {
+    let source = "- > +\n  %%%\n  a\n%%%\n";
+    let expected = "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>";
+    assert_eq!(to_html(source), expected);
+}

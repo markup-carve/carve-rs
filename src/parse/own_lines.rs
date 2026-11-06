@@ -2270,7 +2270,7 @@ impl<'a> Walk<'a> {
             && self.frames.last().is_some_and(|f| f.kind == Kind::Quote)
             && reached + 1 == self.frames.len() - 1
             && comment_run(c.rest).is_some_and(|run| {
-                c.col == self.frames[reached + 1].doc_marker
+                indent_cols(self.lines[at]).0 == self.frames[reached + 1].doc_marker
                     && !self.lines[at + 1..]
                         .iter()
                         .take_while(|line| {
@@ -2654,8 +2654,18 @@ impl<'a> Walk<'a> {
             let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
             c.lead_in(canon, shift, false);
         } else {
+            let attached_comment = inner.as_ref().is_some_and(|frame| {
+                frame.family == "comment"
+                    && frame.line > self.first_line
+                    && trim_line_end(trim_ascii_start(
+                        self.lines[frame.line - self.first_line - 1],
+                    ))
+                    .ends_with("> +")
+            });
             for k in reached + 1..self.frames.len() {
-                if self.frames[k].kind == Kind::Quote {
+                if self.frames[k].kind == Kind::Quote
+                    && !(attached_comment && c.col < self.frames[k].doc_marker)
+                {
                     let (canon, shift) = (self.frames[k - 1].canon, self.frames[k - 1].shift);
                     c.lead_at(canon + shift + c.attachment_shift, false);
                     c.out.push_str("> ");

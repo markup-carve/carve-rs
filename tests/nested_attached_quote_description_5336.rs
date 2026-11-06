@@ -14,3 +14,10 @@ fn a_quoted_definition_keeps_the_marker_column_line_lazy() {
     assert!(html.contains("<dd>d\n: d</dd>"), "{html}");
     assert!(!html.contains("<p>: d</p>"), "{html}");
 }
+
+#[test]
+fn a_description_shaped_line_without_a_term_is_quote_text() {
+    let source = "- > +\n  : d\n: d\n";
+    let expected = "<ul>\n  <li>\n    <blockquote><p>: d\n: d</p></blockquote>\n  </li>\n</ul>";
+    assert_eq!(to_html(source), expected);
+}

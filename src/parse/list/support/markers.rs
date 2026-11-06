@@ -717,6 +717,9 @@ pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> b
         .any(|line| trim_ascii_start(line).ends_with("> +"))
         && body
             .lines()
+            .any(|line| is_definition_list_start(trim_ascii_start(line)))
+        && body
+            .lines()
             .rev()
             .find(|line| !is_blank_line(line))
             .map(trim_ascii_start)
