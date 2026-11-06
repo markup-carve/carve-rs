@@ -10,7 +10,8 @@ fn flat(source: &str) -> String {
 
 #[test]
 fn a_closed_attached_block_leaves_the_flush_line_to_the_document() {
-    let nested_empty = "<ul><li><blockquote><blockquote></blockquote></blockquote></li></ul><p>after</p>";
+    let nested_empty =
+        "<ul><li><blockquote><blockquote></blockquote></blockquote></li></ul><p>after</p>";
     for (source, expected) in [
         ("- > +\n  > %%%\n  > k\nafter\n", nested_empty),
         ("- > +\n  > %%%\nafter\n", nested_empty),
