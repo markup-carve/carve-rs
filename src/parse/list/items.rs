@@ -2835,8 +2835,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                         let at = self.cur.pos + offset;
                         let line = self.cur.source_line(at)?;
                         let stripped = self.cur.source_col(at)?;
-                        let walked = stripped.max(0) as usize + indent_columns(strip_lazy(raw));
-                        Some(crate::parse::own_lines::authored_source_column(line, walked + 1) - 1)
+                        let walked =
+                            (stripped + indent_columns(strip_lazy(raw)) as isize).max(0) as usize;
+                        Some(crate::parse::own_lines::authored_visual_column(
+                            line,
+                            walked + 1,
+                        ))
                     })
                     .flatten()
             },
