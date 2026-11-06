@@ -707,6 +707,13 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
+/// Whether the body's last block chain, through containers and items, ends in
+/// a definition list. A separator line is no plain text, so it never continues
+/// such a term lazily (PART 0 B-term-keep).
+pub(crate) fn body_chain_ends_in_definition_list(body: &str, options: &Options<'_>) -> bool {
+    ends_in_definition_list(probe_blocks(body, options).pop().as_ref(), true)
+}
+
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     match block {
         Some(BlockNode::DefinitionList(_)) => true,

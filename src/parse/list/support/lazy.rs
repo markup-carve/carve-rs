@@ -155,14 +155,6 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     // A stanza line keeps its lazy frame, so a `%%%` span it misses ends there (carve#4956).
     let stanza_tail = crate::parse::definition::body_ends_in_line_block_payload(&nested.source);
-    let ended_description_stanza = nested
-        .source
-        .lines()
-        .rev()
-        .find(|line| !is_blank_line(line))
-        .is_some_and(|line| {
-            indent_columns(line) <= list_base && strip_description_prefix(line).is_some()
-        });
     let mut lazy_brace_open = false;
     if ancestor_quote_column.is_some() {
         for prior in nested.source.lines() {
@@ -186,12 +178,22 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                 && strip_description_prefix(trim_ascii_start(line)).is_some()
                 && body_ends_in_definition_list(&nested.source, options)
         });
-        // A separator at the list marker's column ends that item after a
-        // prior separator ended the descendant stanza. A bare stanza still
-        // owns its description-shaped lazy text (carve#5308).
+        // A separator at the list marker's column ends a descendant
+        // definition list. The previous separator may already have left that
+        // list and become item text, so probe the prefix before that line too.
         if indent <= list_base
             && strip_description_prefix(trim_ascii_start(line)).is_some()
-            && (!stanza_tail || ended_description_stanza)
+            && term_options.is_some_and(|options| {
+                body_chain_ends_in_definition_list(&nested.source, options)
+                    || nested
+                        .source
+                        .rsplit_once('\n')
+                        .is_some_and(|(before, last)| {
+                            indent_columns(last) <= list_base
+                                && strip_description_prefix(last).is_some()
+                                && body_chain_ends_in_definition_list(before, options)
+                        })
+            })
         {
             break;
         }
