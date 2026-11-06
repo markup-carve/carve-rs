@@ -3223,6 +3223,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 && ctx.line_block_depth == 0
                 && ctx.table_cell_depth == 0
                 && !ctx.at_item_content_column
+                && !ctx.item_paragraph
                 && !ctx.in_footnote_body;
             let trimmed;
             let children = match paragraph.children.first() {
