@@ -550,7 +550,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // into the stanza open before it (carve#4956).
         let spanned_stanza_lazy = !admission.blank
             && indent_columns(line) < strip_cols
-            && line_starts_paragraph(line)
+            && line_starts_paragraph(strip_lazy(line))
             && (collected_spanned_stanza_open(&mut collected_stanza_scan, &lines)
                 || (marker_line_block
                     && marker_line_block_stanza_open(

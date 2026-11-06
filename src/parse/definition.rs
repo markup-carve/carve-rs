@@ -2212,7 +2212,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }) {
             return BodyStep::Stop;
         }
-        if self.ends_below_column(line) {
+        // A span leaves an existing verse stanza unchanged. Its first lazy
+        // follower is stanza text even when it resembles a new separator.
+        if self.ends_below_column(line) && !self.folds_into_a_spanned_stanza() {
             return BodyStep::Stop;
         }
         // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
