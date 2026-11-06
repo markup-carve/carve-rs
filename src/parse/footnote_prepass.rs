@@ -2547,6 +2547,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let raw = self.lines[*i];
+        // S1 pairs a held span's exact closer before checking whether this
+        // line still carries the quote prefix of the note's host.
+        if note
+            .comment_state
+            .held_span()
+            .is_some_and(|run| is_comment_fence_close_any_column(raw, run))
+        {
+            note.push_with(
+                kept_comment_delimiter(raw),
+                Some(self.first_source_line + *i),
+                |_| Some(0),
+            );
+            *i += 1;
+            walk.opacity.comment = None;
+            return Flow::Next;
+        }
         let Some(line) = host.content(raw) else {
             return self.hosted_lazy_flow(host, walk, note, i);
         };
