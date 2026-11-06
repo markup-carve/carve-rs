@@ -1429,6 +1429,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// that fixes the rule rather than left behind as a declaration that no longer
 /// declares anything.
 ///
+#[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
