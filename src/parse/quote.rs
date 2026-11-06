@@ -2829,8 +2829,8 @@ impl<'a> QuoteBody<'a> {
     ) -> bool {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
-        let stanza_fold =
-            line_starts_paragraph(trim_ascii_start(line)) && self.span_in_open_stanza();
+        let stanza_open = self.may_hold_fence && self.span_in_open_stanza();
+        let stanza_fold = line_starts_paragraph(trim_ascii_start(line)) && stanza_open;
         // A heading is a finished quoted block. Earlier code payload must
         // not manufacture a stanza that lets the next unmarked line fold.
         if self
@@ -2838,7 +2838,8 @@ impl<'a> QuoteBody<'a> {
             .lines
             .last()
             .is_some_and(|last| detect_heading(trim_ascii_start(&last.text)).is_some())
-            && !self.span_in_open_stanza()
+            && !stanza_open
+            && self.nested_replay.verdict(&self.inner.lines, cur) != Some(true)
         {
             return true;
         }
