@@ -755,6 +755,18 @@ fn block_holds_definition_list(block: &BlockNode) -> bool {
     }
 }
 
+/// Whether the body's last block is a quote whose last block chain ends in a
+/// definition list. A line without the quote's marker leaves that list.
+pub(crate) fn body_ends_in_quoted_definition_list(body: &str, options: &Options<'_>) -> bool {
+    let mut last = probe_blocks(body, options).pop();
+    let mut quoted = false;
+    while let Some(BlockNode::BlockQuote(quote)) = last {
+        last = quote.children.into_iter().last();
+        quoted = true;
+    }
+    quoted && ends_in_definition_list(last.as_ref(), true)
+}
+
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {
     match block {
         Some(BlockNode::DefinitionList(_)) => true,
