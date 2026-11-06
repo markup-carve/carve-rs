@@ -1102,6 +1102,7 @@ pub(crate) struct LineBlockTail {
     had_span: bool,
     item_cols: Vec<usize>,
     prior_blank: bool,
+    item_host: bool,
 }
 
 impl LineBlockTail {
@@ -1220,6 +1221,11 @@ impl LineBlockTail {
                         .max()
                         .unwrap_or(0)
                 };
+                self.item_host = if marked {
+                    detect_list_marker_full(local).is_some()
+                } else {
+                    !self.quoted && self.host_col > 0
+                };
                 // Verse indentation is relative to the opener, so only a `%`
                 // at its column opens a span (`parse_line_block`).
                 self.base = if self.host_col > 0 {
@@ -1238,6 +1244,11 @@ impl LineBlockTail {
 
     pub(crate) fn open_span_with_stanza(&self) -> bool {
         self.span.is_some() && self.open.is_some() && self.last_is_payload
+    }
+
+    /// Whether a list item inside the scanned body hosts the line block.
+    pub(crate) fn item_hosted(&self) -> bool {
+        self.item_host
     }
 
     /// `Some(stanza open)` while the scanned body is still inside a line block.

@@ -861,9 +861,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // block's own level. A shallower line (e.g. a dedent landing below a
             // sublist) ends the block and is left for the caller, so it can close
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
-            let descendant_span_blank =
+            let descendant_stanza_span =
                 collected_spanned_stanza_open(&mut collected_stanza_scan, &lines)
                     && collected_stanza_scan.0.open_span_with_stanza();
+            // A blank in a nested item's verse span ends that item (carve#5269).
+            let item_span_blank = descendant_stanza_span && collected_stanza_scan.0.item_hosted();
+            let descendant_span_blank = descendant_stanza_span && !item_span_blank;
             let marker_span_blank = marker_line_block
                 && marker_line_block_stanza_open(
                     &mut marker_line_block_scan,
@@ -894,8 +897,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && (indent_columns(cur.lines.at(k)) >= threshold
                         // A marked blank inside a verse span leaves the prior
                         // stanza open for a lazy follower (CARVE-P9-047).
-                        || verse_span_blank
-                        || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY))
+                        || (verse_span_blank && cur.lines.at(k).starts_with(LAZY))
+                        || (comment_fence.is_some()
+                            && !item_span_blank
+                            && cur.lines.at(k).starts_with(LAZY))
                         // A `%%` line misses no owner, so it stays span payload (S1).
                         || (comment_fence.is_some()
                             && trim_ascii_start(cur.lines.at(k)).starts_with("%%"))
