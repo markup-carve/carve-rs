@@ -439,6 +439,22 @@ pub(crate) fn unresolved_reference_text(input: &str) -> String {
     result
 }
 
+/// DEL (U+007F), the C1 controls (U+0080..U+009F), the carriage return, and
+/// §26's bidi override/isolate controls on every presentation target.
+fn is_not_emitted(c: char) -> bool {
+    matches!(c, '\u{7f}'..='\u{9f}' | '\r') || is_bidi_control(c)
+}
+
+/// A renderer's whitespace terminal: U+0020 and U+0009, and NOTHING ELSE.
+pub(crate) fn trim_non_nbsp(text: &str) -> &str {
+    text.trim_matches([' ', '\t', '\n', '\r'])
+}
+
+/// `trim_non_nbsp`, at the end only.
+pub(crate) fn trim_end_non_nbsp(text: &str) -> &str {
+    text.trim_end_matches([' ', '\t', '\n', '\r'])
+}
+
 #[cfg(test)]
 mod unresolved_reference_break_tests {
     use super::unresolved_reference_text;
@@ -513,20 +529,4 @@ mod unresolved_reference_break_tests {
             assert_eq!(crate::to_ansi(source), expected, "ansi: {source:?}");
         }
     }
-}
-
-/// DEL (U+007F), the C1 controls (U+0080..U+009F), the carriage return, and
-/// §26's bidi override/isolate controls on every presentation target.
-fn is_not_emitted(c: char) -> bool {
-    matches!(c, '\u{7f}'..='\u{9f}' | '\r') || is_bidi_control(c)
-}
-
-/// A renderer's whitespace terminal: U+0020 and U+0009, and NOTHING ELSE.
-pub(crate) fn trim_non_nbsp(text: &str) -> &str {
-    text.trim_matches([' ', '\t', '\n', '\r'])
-}
-
-/// `trim_non_nbsp`, at the end only.
-pub(crate) fn trim_end_non_nbsp(text: &str) -> &str {
-    text.trim_end_matches([' ', '\t', '\n', '\r'])
 }
