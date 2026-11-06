@@ -27,6 +27,14 @@ fn a_span_after_a_blank_opens_no_stanza() {
 }
 
 #[test]
+fn a_matched_span_before_any_verse_opens_no_stanza() {
+    assert_eq!(
+        carve::to_html(":: u\n: ::: |\n   %%%\n   %%%\nz\n").trim_end(),
+        "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n\n    </div>\n  </dd>\n</dl>\n<p>z</p>"
+    );
+}
+
+#[test]
 fn a_note_body_span_ends_at_the_missed_line() {
     let html = carve::to_html("[^a]: ::: |\n  x\n  %%%\n  y\nb\n\n[^a]\n");
     assert!(html.contains("<p>x<br>\nb</p>"), "{html}");

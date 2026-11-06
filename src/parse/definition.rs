@@ -1178,8 +1178,8 @@ impl LineBlockTail {
                     self.last_is_payload = stanza_open;
                     return;
                 }
-            } else if let Some(run) =
-                crate::parse::verse::verse_comment_run(local).filter(|_| lead == self.base)
+            } else if let Some(run) = crate::parse::verse::verse_comment_run(local)
+                .filter(|_| lead >= self.base && lead - self.base <= 3)
             {
                 self.span = Some(run);
                 self.had_span = true;
@@ -2432,7 +2432,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             && self
                 .stanza_scan
                 .as_ref()
-                .is_some_and(|(scan, _)| scan.held_span())
+                .is_some_and(|(scan, _)| scan.held_span() && scan.in_block() == Some(true))
     }
 
     fn in_line_block(&mut self) -> bool {
