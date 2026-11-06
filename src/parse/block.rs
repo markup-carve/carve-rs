@@ -2158,6 +2158,10 @@ pub(in crate::parse) fn collect_indexed_colon_body(
     let mut boundaries = Vec::new();
     let mut cacheable = true;
     let mut paragraph_open = None;
+    // A span opened past column 0 (`  %%%`): its closer may sit at any
+    // column, so a column-0 closer is payload, not a new span (PART 0 S1).
+    let mut indented_span: Option<(usize, usize)> = None;
+    let mut indented_code: Option<FenceOpen> = None;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
@@ -2181,7 +2185,38 @@ pub(in crate::parse) fn collect_indexed_colon_body(
             stack.pop();
             continue;
         }
-        if skip_opaque_span_into(&mut inner, cur) {
+        let line = cur.peek().unwrap();
+        if let Some(open) = indented_code {
+            if is_fence_close(trim_ascii_start(line), open) {
+                indented_code = None;
+            }
+        } else if let Some((run, column)) = indented_span {
+            if is_comment_fence_close_any_column(line, run) {
+                indented_span = None;
+                push_current_line(&mut inner, cur);
+                cur.consume();
+                paragraph_open = None;
+                continue;
+            }
+            if !is_blank_line(line)
+                && indent_columns(line) < column
+                && !trim_ascii_start(line).starts_with("%%")
+            {
+                indented_span = None;
+            }
+        } else if line.starts_with([' ', '\t']) {
+            let rest = trim_ascii_start(line);
+            if let Some(open) = detect_fence_open(rest) {
+                indented_code = Some(open);
+            } else if let Some(open) = detect_comment_fence_line(rest) {
+                indented_span = Some((open.fence_len, indent_columns(line)));
+                push_current_line(&mut inner, cur);
+                cur.consume();
+                paragraph_open = None;
+                continue;
+            }
+        }
+        if indented_span.is_none() && skip_opaque_span_into(&mut inner, cur) {
             paragraph_open = None;
             continue;
         }

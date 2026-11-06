@@ -100,6 +100,10 @@ name = "quoted_description_note_3984"
 path = "tests/quoted_description_note_3984.rs"
 
 [[test]]
+name = "comment_span_owner_3990"
+path = "tests/comment_span_owner_3990.rs"
+
+[[test]]
 name = "attach_rule_5250"
 path = "tests/attach_rule_5250.rs"
 
