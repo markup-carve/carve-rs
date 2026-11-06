@@ -1100,6 +1100,8 @@ pub(crate) struct LineBlockTail {
     span: Option<usize>,
     base: usize,
     had_span: bool,
+    closed_span: bool,
+    span_blank: bool,
     item_cols: Vec<usize>,
     prior_blank: bool,
 }
@@ -1158,14 +1160,20 @@ impl LineBlockTail {
         // span opened, and a line that missed the host ended it (carve#4956).
         let missed = !is_blank_line(line)
             && !span_comment
-            && (indent_columns(line) < self.host_col || (self.quoted && !line_quoted));
+            && if self.quoted {
+                !line_quoted
+            } else {
+                indent_columns(line) < self.host_col
+            };
         if self.open.is_some() && exact_colon_fence_len(local) != self.open {
             if let Some(run) = self.span {
                 if missed {
                     self.span = None;
                 } else {
+                    self.span_blank |= is_blank_line(line);
                     if crate::parse::verse::verse_comment_run(local) == Some(run) {
                         self.span = None;
+                        self.closed_span = true;
                     }
                     self.last_is_payload = stanza_open;
                     return;
@@ -1202,9 +1210,11 @@ impl LineBlockTail {
                 }
                 self.open = detect_line_block_open(tail);
                 self.had_span = false;
+                self.closed_span = false;
+                self.span_blank = false;
                 self.quoted = line_quoted || host_quoted;
                 self.host_col = if marked {
-                    line.len() - tail.len()
+                    local.len() - tail.len()
                 } else if self.quoted {
                     0
                 } else {
@@ -1230,6 +1240,14 @@ impl LineBlockTail {
     /// Whether a `%%%` span has opened in the current line block.
     pub(crate) fn held_span(&self) -> bool {
         self.had_span
+    }
+
+    pub(crate) fn closed_span(&self) -> bool {
+        self.closed_span
+    }
+
+    pub(crate) fn span_blank(&self) -> bool {
+        self.span_blank
     }
 
     /// `Some(stanza open)` while the scanned body is still inside a line block.
