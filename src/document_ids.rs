@@ -253,14 +253,30 @@ fn assigned_heading_ids_with_policy(
         defined_notes: Some(doc.footnote_defs.keys().cloned().collect()),
     };
     seeder.walk_blocks(&doc.children);
-    for blocks in doc.footnote_defs.values() {
+    for (_, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         seeder.walk_blocks(blocks);
     }
     seeder.collect_explicit_only = false;
     seeder.walk_blocks(&doc.children);
-    for (label, blocks) in &doc.footnote_defs {
+    let body_assigned = std::mem::take(&mut seeder.assigned);
+    let body_original = std::mem::take(&mut seeder.original_ids);
+    let mut per_definition = BTreeMap::new();
+    for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         seeder.skip_generated_ids = !used_notes.contains(label);
         seeder.walk_blocks(blocks);
+        per_definition.insert(
+            label,
+            (
+                std::mem::take(&mut seeder.assigned),
+                std::mem::take(&mut seeder.original_ids),
+            ),
+        );
+    }
+    seeder.assigned = body_assigned;
+    seeder.original_ids = body_original;
+    for (_, (assigned, original)) in per_definition {
+        seeder.assigned.extend(assigned);
+        seeder.original_ids.extend(original);
     }
 
     seeder
@@ -310,14 +326,14 @@ fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistr
     // footnote defs), so heading auto-slugs in pass B can skip them regardless
     // of document order.
     seeder.walk_blocks(&doc.children);
-    for blocks in doc.footnote_defs.values() {
+    for (_, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         seeder.walk_blocks(blocks);
     }
     // Pass B: number headings (skipping the explicit ids) and reserve citation
     // ids. Footnote definitions render after the body, so they join last.
     seeder.collect_explicit_only = false;
     seeder.walk_blocks(&doc.children);
-    for (label, blocks) in &doc.footnote_defs {
+    for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         if used_notes.contains(label) {
             seeder.walk_blocks(blocks);
         }

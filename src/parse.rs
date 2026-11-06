@@ -1031,7 +1031,7 @@ fn parse_with_options_mode_and_index_once(
             extract_footnote_defs(
                 body,
                 body_start_line,
-                options.positions,
+                true, // Keep definition order until generated heading IDs are stamped.
                 false,
                 None,
                 options,
@@ -1166,6 +1166,12 @@ fn parse_with_options_mode_and_index_once(
     let original_line_starts = options
         .positions
         .then(|| CodepointLineStarts::original(original));
+    if !options.positions && !footnote_def_pos.is_empty() {
+        let starts = CodepointLineStarts::original(original);
+        for pos in footnote_def_pos.values_mut() {
+            apply_offsets(pos, &starts);
+        }
+    }
     if let Some(line_starts) = original_line_starts.as_ref() {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
@@ -1315,6 +1321,9 @@ fn parse_with_options_mode_and_index_once(
         // Keep the document-id seeder authoritative. Unlike the heading index,
         // it reserves explicit ids carried by inline nodes as well as blocks.
         stamp_generated_heading_ids(&mut doc, options.heading_id_options());
+        if !options.positions {
+            doc.footnote_def_pos.clear();
+        }
         if !matches!(mode, ParseMode::HtmlFacade)
             && (!doc.footnote_defs.is_empty()
                 || authored.contains("[^")

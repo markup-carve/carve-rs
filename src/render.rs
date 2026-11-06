@@ -1073,6 +1073,13 @@ fn heading_id_is_authored(h: &Heading) -> bool {
 }
 
 fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
+    // Parsing resolves generated IDs in definition order. Endnotes render in
+    // reference order, so use that resolved ID instead of numbering them here.
+    if !heading_id_is_authored(h) {
+        if let Some(id) = h.attrs.as_ref().and_then(|attrs| attrs.id.as_ref()) {
+            return id.clone();
+        }
+    }
     let explicit = h.attrs.as_ref().and_then(|attrs| attrs.id.clone());
     let has_explicit = explicit.is_some();
     let base =
