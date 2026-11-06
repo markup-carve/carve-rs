@@ -1932,9 +1932,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                                 })
                         });
                 let child_block = column >= lead.ladder_columns[0]
-                    && column < lead.nested_content_col
+                    && column <= lead.nested_content_col
                     && !is_list_marker(trim_ascii_start(line))
-                    && (!is_definition_list_start(trim_ascii_start(line))
+                    && (column == lead.nested_content_col
+                        || !is_definition_list_start(trim_ascii_start(line))
                         || trailing_plus_owner.is_some_and(|owner| {
                             owner == authored_column || unmapped && owner > column
                         }))
