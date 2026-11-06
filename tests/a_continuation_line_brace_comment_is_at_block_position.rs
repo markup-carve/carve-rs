@@ -34,6 +34,22 @@ fn an_indented_continuation_is_a_comment() {
 }
 
 #[test]
+fn a_nested_items_comment_uses_authored_columns_after_collection() {
+    assert_eq!(
+        to_html("- a\n  - b\n{% c\n d %}\n  - z\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n</li>\n      <li>z</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        to_html("- a\n  - b\n{% c\nd %}\n  - z\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n{% c\nd %}</li>\n      <li>z</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        to_html("1. a\n  1. b\n  {% c\n    d %}\n  1. z\n"),
+        "<ol>\n  <li>a</li>\n  <li>b\n</li>\n  <li>z</li>\n</ol>"
+    );
+}
+
+#[test]
 fn text_after_the_closer_keeps_an_item_run_in_a_quote_literal() {
     assert_eq!(
         to_html("> - pre\n>   {% a\n>   b %} c\n"),
