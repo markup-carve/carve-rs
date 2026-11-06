@@ -2133,6 +2133,7 @@ impl<'a> Walk<'a> {
     fn attached_quote_comment_payload(&self, reached: usize, col: usize, inner: &Frame) -> bool {
         inner.family == "comment"
             && inner.line > self.first_line
+            && comment_run(trim_ascii_start(self.lines[inner.line - self.first_line])).is_some()
             && self.frames[reached + 1..].iter().any(|frame| {
                 frame.kind == Kind::Quote
                     && col >= frame.doc_marker
@@ -2153,6 +2154,7 @@ impl<'a> Walk<'a> {
         c: &mut Cursor<'_>,
     ) -> usize {
         let attaches = at > 0
+            && comment_run(trim_ascii_start(self.lines[at])).is_some()
             && self
                 .frames
                 .last()
@@ -2682,6 +2684,8 @@ impl<'a> Walk<'a> {
             let attached_comment = inner.as_ref().is_some_and(|frame| {
                 frame.family == "comment"
                     && frame.line > self.first_line
+                    && comment_run(trim_ascii_start(self.lines[frame.line - self.first_line]))
+                        .is_some()
                     && trim_line_end(trim_ascii_start(
                         self.lines[frame.line - self.first_line - 1],
                     ))
