@@ -625,6 +625,27 @@ pub(crate) fn attached_block_lines_classified(
     start + attached_one_block_lines(lines.window(start..end, &materialized), options)
 }
 
+/// Narrows `start..end` to the one block a `+` attached, read at that block's
+/// own column: with its indent kept, a quote or heading reads as a paragraph
+/// that takes the next unmarked line lazily (carve#5330).
+pub(crate) fn attached_block_at_own_column(
+    lines: CursorLines<'_>,
+    start: usize,
+    end: usize,
+    options: &Options<'_>,
+) -> usize {
+    let column = lines.line(start).map_or(0, indent_columns);
+    if column == 0 || end <= start + 1 || measuring_attached_block() {
+        return end;
+    }
+    let owned: Vec<String> = lines
+        .range(start..end)
+        .map(|line| slice_columns_mapped(line, column, true).0)
+        .collect();
+    let owned: Vec<&str> = owned.iter().map(String::as_str).collect();
+    start + attached_one_block_lines(CursorLines::Slice(&owned), options)
+}
+
 /// Whether `from..to` is a column-0 note definition and its folded body lines,
 /// which belong to the note (CARVE-P9-067, carve#5034).
 fn note_definition_with_body(lines: CursorLines<'_>, from: usize, to: usize) -> bool {

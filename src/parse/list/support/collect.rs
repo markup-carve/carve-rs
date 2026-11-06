@@ -678,6 +678,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     )
                 })
                 .max(start + 1);
+            let end = attached_block_at_own_column(cur.lines, start, end, options);
             // A fence attached below an indented `+` line closes only at its own column; a
             // line below it has left the item and is payload, never its closer (carve#3421).
             let fence_column = detect_fence_open(trim_ascii_start(cur.lines.at(start)))
