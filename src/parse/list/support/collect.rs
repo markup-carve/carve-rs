@@ -1890,6 +1890,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             (sliced, consumed, synthetic)
         };
         let mut sliced = sliced;
+        // A line that misses the span's owner ends it under S1. Keep that
+        // boundary when the marker line opened the verse block itself.
+        if marker_line_block && spanned_stanza_lazy && !sliced.starts_with(LAZY) {
+            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
+        }
         let mut trimmed_after_slice = 0usize;
         // PART 9 §10 I2 carries the deepest open paragraph across plain lazy lines.
         let marker_paragraph_owner = (nested_paragraph_column.is_none() && plain_nested_lazy)
