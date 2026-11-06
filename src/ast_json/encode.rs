@@ -26,6 +26,70 @@ impl<'a> Writer<'a> {
     }
 }
 
+fn inline_node_pos(node: &InlineNode) -> Option<&Pos> {
+    match node {
+        InlineNode::Text(n) => n.pos.as_ref(),
+        InlineNode::EscapedText(n) => n.pos.as_ref(),
+        InlineNode::SmartPunctuation(n) => n.pos.as_ref(),
+        InlineNode::Emphasis(n) => n.pos.as_ref(),
+        InlineNode::Code(n) => n.pos.as_ref(),
+        InlineNode::Link(n) => n.pos.as_ref(),
+        InlineNode::Image(n) => n.pos.as_ref(),
+        InlineNode::Span(n) => n.pos.as_ref(),
+        InlineNode::Ruby(n) => n.pos.as_ref(),
+        InlineNode::Math(n) => n.pos.as_ref(),
+        InlineNode::RawInline(n) => n.pos.as_ref(),
+        InlineNode::LiteralInline(n) => n.pos.as_ref(),
+        InlineNode::Symbol(n) => n.pos.as_ref(),
+        InlineNode::AutoLink(n) => n.pos.as_ref(),
+        InlineNode::CrossRef(n) => n.pos.as_ref(),
+        InlineNode::CaptionNumber(n) => n.pos.as_ref(),
+        InlineNode::Mention(n) => n.pos.as_ref(),
+        InlineNode::Tag(n) => n.pos.as_ref(),
+        InlineNode::CitationGroup(n) => n.pos.as_ref(),
+        InlineNode::Extension(n) => n.pos.as_ref(),
+        InlineNode::Abbreviation(n) => n.pos.as_ref(),
+        InlineNode::Footnote(n) => n.pos.as_ref(),
+        InlineNode::NonBreakingSpace(n) => n.pos.as_ref(),
+        InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos.as_ref(),
+        InlineNode::CellWrap(n) => n.pos.as_ref(),
+        InlineNode::CriticInsert(n) => n.pos.as_ref(),
+        InlineNode::CriticDelete(n) => n.pos.as_ref(),
+        InlineNode::CriticSubstitute(n) => n.pos.as_ref(),
+        InlineNode::Comment(n) => n.pos.as_ref(),
+        InlineNode::CriticComment(n) => n.pos.as_ref(),
+    }
+}
+
+fn combined_inner_pos(n: &Emphasis) -> Option<Pos> {
+    let outer = n.pos.as_ref()?;
+    if n.attrs.is_none() {
+        return Some(Pos {
+            start_line: outer.start_line,
+            end_line: outer.end_line,
+            start_column: outer.start_column + 2,
+            end_column: outer.end_column.saturating_sub(2),
+            start_offset: outer.start_offset + 2,
+            end_offset: outer.end_offset.saturating_sub(2),
+            file: None,
+        });
+    }
+    let first = inline_node_pos(n.children.first()?)?;
+    let last = inline_node_pos(n.children.last()?)?;
+    if first.file != last.file || first.start_offset > last.end_offset {
+        return None;
+    }
+    Some(Pos {
+        start_line: first.start_line,
+        end_line: last.end_line,
+        start_column: first.start_column,
+        end_column: last.end_column,
+        start_offset: first.start_offset,
+        end_offset: last.end_offset,
+        file: first.file.clone(),
+    })
+}
+
 pub(super) fn write_document(out: &mut String, doc: &Document) {
     let mut w = Writer::new(out);
     w.field("type", |out| write_string(out, "document"));
@@ -974,15 +1038,7 @@ pub(super) fn encode_inline_task<'a>(
                     let mut inner = typed(out, "emphasis");
                     inner.field("children", |out| out.push('['));
                 });
-                let inner_pos = n.pos.as_ref().filter(|_| n.attrs.is_none()).map(|p| Pos {
-                    start_line: p.start_line,
-                    end_line: p.end_line,
-                    start_column: p.start_column + 2,
-                    end_column: p.end_column.saturating_sub(2),
-                    start_offset: p.start_offset + 2,
-                    end_offset: p.end_offset.saturating_sub(2),
-                    file: None,
-                });
+                let inner_pos = combined_inner_pos(n);
                 tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                     let mut inner = Writer { out, first: false };
                     write_pos_field(&mut inner, &inner_pos);
@@ -1722,15 +1778,7 @@ pub(super) fn write_inline_leaf(out: &mut String, node: &InlineNode) {
         InlineNode::Emphasis(n) => {
             let mut w = typed(out, emphasis_type(n.kind));
             if n.kind == EmphasisKind::BoldItalic {
-                let inner_pos = n.pos.as_ref().filter(|_| n.attrs.is_none()).map(|p| Pos {
-                    start_line: p.start_line,
-                    end_line: p.end_line,
-                    start_column: p.start_column + 2,
-                    end_column: p.end_column.saturating_sub(2),
-                    start_offset: p.start_offset + 2,
-                    end_offset: p.end_offset.saturating_sub(2),
-                    file: None,
-                });
+                let inner_pos = combined_inner_pos(n);
                 w.field("children", |out| {
                     out.push('[');
                     let mut inner = typed(out, "emphasis");
