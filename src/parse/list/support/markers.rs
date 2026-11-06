@@ -712,6 +712,23 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
 /// and lazy paragraph, so neither lends that boundary to the item
 /// (PART 0 S4, carve#5317).
 pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
+    let attached_unquoted = body
+        .lines()
+        .any(|line| trim_ascii_start(line).ends_with("> +"))
+        && body
+            .lines()
+            .any(|line| is_definition_list_start(trim_ascii_start(line)))
+        && body
+            .lines()
+            .rev()
+            .find(|line| !is_blank_line(line))
+            .map(trim_ascii_start)
+            .is_some_and(|line| {
+                is_definition_list_start(line) || strip_description_prefix(line).is_some()
+            });
+    if attached_unquoted {
+        return true;
+    }
     let blocks = probe_blocks(body, options);
     if blocks.last().is_some_and(trailing_container) && body_ends_with_open_paragraph(body, options)
     {
