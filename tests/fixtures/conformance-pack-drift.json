@@ -2,13 +2,6 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
-      "ticket": "carve-rs#4019",
-      "cause": "an unclosed inline code span is cut by a later indented fence line after the attached fence ends at its first blank",
-      "cases": [
-        "fences-12ba255d2b80"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
