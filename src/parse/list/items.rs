@@ -3080,7 +3080,9 @@ fn finish_list(
                     at += 1;
                 }
                 let line = (cur.source_line(at) == Some(pos.start_line)).then_some(at);
-                reclaim_placing_indent(pos, cur, line, base_indent);
+                if !(at == span_start && cur.marker_tail.is_some()) {
+                    reclaim_placing_indent(pos, cur, line, base_indent);
+                }
             }
         }
     }
@@ -3111,7 +3113,9 @@ fn finish_list(
     if base_indent > 0 && !cur.sublists_carry_authored_base {
         if let Some(pos) = &mut list_pos {
             let line = (cur.source_line(span_start) == Some(pos.start_line)).then_some(span_start);
-            reclaim_placing_indent(pos, cur, line, base_indent);
+            if cur.marker_tail.is_none() {
+                reclaim_placing_indent(pos, cur, line, base_indent);
+            }
         }
     }
     boxed_list_node(List {
