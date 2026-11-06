@@ -1092,6 +1092,8 @@ pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
 #[derive(Default)]
 pub(crate) struct LineBlockTail {
     open: Option<usize>,
+    code: Option<FenceOpen>,
+    comment: Option<usize>,
     quoted: bool,
     host_col: usize,
     last_is_payload: bool,
@@ -1111,6 +1113,30 @@ impl LineBlockTail {
         while let Some(rest) = strip_blockquote_prefix(local) {
             lead = indent_columns(rest);
             local = trim_ascii_start(rest);
+        }
+        if let Some(run) = self.comment {
+            if crate::parse::verse::verse_comment_run(local) == Some(run) {
+                self.comment = None;
+            }
+            return;
+        }
+        // Fence payload can contain a literal `::: |`. It is not an opener
+        // for the stanza scan used by the quote's lazy-line decision.
+        if let Some(code) = self.code {
+            if is_fence_close(local, code) {
+                self.code = None;
+            }
+            return;
+        }
+        if self.open.is_none() {
+            if let Some(run) = crate::parse::verse::verse_comment_run(local) {
+                self.comment = Some(run);
+                return;
+            }
+            if let Some(code) = detect_fence_open(local) {
+                self.code = Some(code);
+                return;
+            }
         }
         let stanza_open = self.last_is_payload;
         self.last_is_payload = false;
@@ -1964,7 +1990,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         let paragraph_open = self.paragraph_open();
-        let accept_fence_opener = fence.open.is_none() && detect_fence_open(&sliced).is_some();
+        let accept_fence_opener =
+            fence.open.is_none() && !self.in_line_block() && detect_fence_open(&sliced).is_some();
         // The nested description's `+`, or a quote's `> +`, already separates its next
         // block. A manufactured blank here would make it attach none.
         if accept_fence_opener
@@ -2383,6 +2410,14 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if self.stanza_fold {
             return true;
         }
+        self.in_line_block()
+            && self
+                .stanza_scan
+                .as_ref()
+                .is_some_and(|(scan, _)| scan.held_span())
+    }
+
+    fn in_line_block(&mut self) -> bool {
         let seed = self.seed;
         let (scan, seen) = self.stanza_scan.get_or_insert_with(|| {
             let mut scan = LineBlockTail::default();
@@ -2395,7 +2430,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             scan.step(line);
         }
         *seen = self.lines.len();
-        scan.in_block() == Some(true) && scan.held_span()
+        scan.in_block().is_some()
     }
 
     /// A structural opener in the band below the body's column that still

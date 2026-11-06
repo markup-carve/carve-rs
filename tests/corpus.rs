@@ -1429,6 +1429,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// that fixes the rule rather than left behind as a declaration that no longer
 /// declares anything.
 ///
+#[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
@@ -1436,11 +1437,7 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
-    ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p>~~~</p>\n      <p>~~~<br>\nb</p>\n    </div>\n  </dd>\n</dl>"),
-    ("923-a-line-block-stanza-remains-open-after-a-paired-payload-run-2", "spec pin d4c64561: engine port pending", "<dl>\n  <dt>u</dt>\n  <dd>\n    <div class=\"line-block\">\n      <p><code></code></p>\n      <p><code>\nb</code></p>\n    </div>\n  </dd>\n</dl>"),
     // Newly reached corpus pairs at spec b426bf87. Each actual HTML is measured.
-    ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <div class=\"line-block\">\n        <p>x</p>\n      </div>\n    </dd>\n  </dl>\n</blockquote>\n<p>b</p>"),
-    ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open-2", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <div class=\"line-block\">\n          <p>x</p>\n        </div>\n      </dd>\n    </dl>\n  </blockquote>\n</blockquote>\n<p>b</p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-3", "ruling at the 5643d59c pin not ported yet", "<p><strong id=\"\">x</strong></p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-4", "ruling at the 5643d59c pin not ported yet", "<table>\n  <tbody>\n    <tr><td id=\"\">x</td></tr>\n  </tbody>\n</table>"),
 ];
