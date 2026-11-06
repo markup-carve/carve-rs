@@ -1485,7 +1485,7 @@ fn strip_all_quotes(text: &str) -> (&str, usize) {
 
 /// The first line after a run of `%%` lines, closed `%%%` spans and definition
 /// placeholders, or `from` when no visible, non-blank, non-`+` line follows.
-fn first_visible_after_invisible(cur: &LineCursor<'_>, from: usize) -> usize {
+pub(in crate::parse) fn first_visible_after_invisible(cur: &LineCursor<'_>, from: usize) -> usize {
     let mut at = from;
     while let Some(line) = cur.lines.line(at) {
         if is_document_definition_placeholder(line)

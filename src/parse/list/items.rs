@@ -1566,18 +1566,20 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.base_indent, self.content_col, self.options);
         let cur = &mut *self.cur;
         let start = cur.pos;
+        // A comment is invisible, so the block it leads is attached with it (CARVE-P0-004).
+        let block = crate::parse::quote::first_visible_after_invisible(cur, start);
         // An attached fence with no closer ends with the item (carve#4018).
-        let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(start))).is_some();
-        let end = attached_indented_block_end(cur.lines, start, content_col, options)
+        let attached_fence = detect_fence_open(trim_ascii_start(cur.lines.at(block))).is_some();
+        let end = attached_indented_block_end(cur.lines, block, content_col, options)
             .unwrap_or_else(|| {
                 attached_block_lines_classified(
                     cur.lines,
-                    start,
+                    block,
                     &mut cur.comment_closer_last_index,
                     &mut cur.code_closer_last_index,
                     options,
                     &mut |line, at| {
-                        at > start
+                        at > block
                             && (detect_list_marker_full(line)
                                 .is_some_and(|marker| marker.indent <= base_indent)
                                 || attached_fence
@@ -1586,7 +1588,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     },
                 )
             });
-        let end = attached_block_at_own_column(cur.lines, start, end, options);
+        let end = attached_block_at_own_column(cur.lines, block, end, options);
         // A quote follower at an eligible raw column opens a block in the
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
