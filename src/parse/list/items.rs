@@ -343,9 +343,29 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let mut skipped = false;
         // A span the sibling marker leaves unclosed hides its payload too (carve#5266).
         let mut open_span = self.item_head_span.map(|len| (from, len));
+        // A `%%%` line in code fence payload is code, not an opener.
+        let code_open = |line: &str| {
+            detect_fence_open(
+                crate::parse::definition::innermost_host_tail(trim_ascii_start(line)).1,
+            )
+            .filter(|open| matches!(open.fence_char, b'`' | b'~'))
+        };
+        let mut code = code_open(lines.at(from));
         for at in from + 1..k {
             // A nested host's marker line can open the span (`- %%%`, `: %%%`).
             let line = lines.at(at);
+            if let Some(open) = code {
+                if is_fence_close(trim_ascii_start(line), open) {
+                    code = None;
+                }
+                continue;
+            }
+            if open_span.is_none() {
+                code = code_open(line);
+                if code.is_some() {
+                    continue;
+                }
+            }
             let line = match open_span {
                 None => crate::parse::definition::innermost_host_tail(trim_ascii_start(line)).1,
                 Some(_) => line,
