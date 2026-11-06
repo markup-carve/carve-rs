@@ -88,6 +88,10 @@ name = "outer_attached_fence_4003"
 path = "tests/outer_attached_fence_4003.rs"
 
 [[test]]
+name = "quoted_note_comment_closer"
+path = "tests/quoted_note_comment_closer.rs"
+
+[[test]]
 name = "lint_consumed_closers_tabs_and_erased_lines"
 path = "tests/lint_consumed_closers_tabs_and_erased_lines.rs"
 
