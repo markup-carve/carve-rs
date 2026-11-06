@@ -509,17 +509,86 @@ struct Runs {
     backtick: Vec<usize>,
     tilde: Vec<usize>,
     last_comment: std::collections::HashMap<usize, usize>,
+    code_by_column: CodeCloserIndex,
+}
+
+/// Suffix maximum fence widths by source column. A prefix query answers
+/// whether a later run can close an opener without rescanning its tail.
+struct CodeCloserIndex {
+    columns: Vec<usize>,
+    backtick: Vec<Vec<(usize, usize)>>,
+    tilde: Vec<Vec<(usize, usize)>>,
+}
+
+impl CodeCloserIndex {
+    fn new(fences: &[(usize, u8, usize, usize)]) -> Self {
+        let mut columns: Vec<usize> = fences.iter().map(|entry| entry.3).collect();
+        columns.sort_unstable();
+        columns.dedup();
+        let mut index = Self {
+            backtick: vec![Vec::new(); columns.len() + 1],
+            tilde: vec![Vec::new(); columns.len() + 1],
+            columns,
+        };
+        for &(line, ch, width, column) in fences.iter().rev() {
+            let mut at = index.columns.binary_search(&column).expect("fence column") + 1;
+            let nodes = if ch == b'`' {
+                &mut index.backtick
+            } else {
+                &mut index.tilde
+            };
+            while at < nodes.len() {
+                nodes[at].push((line, width));
+                at += at & at.wrapping_neg();
+            }
+        }
+        for nodes in [&mut index.backtick, &mut index.tilde] {
+            for entries in nodes.iter_mut() {
+                let mut largest = 0;
+                for (_, width) in entries.iter_mut().rev() {
+                    largest = largest.max(*width);
+                    *width = largest;
+                }
+            }
+        }
+        index
+    }
+
+    fn has_later(&self, ch: u8, line: usize, column: usize, width: usize) -> bool {
+        let nodes = if ch == b'`' {
+            &self.backtick
+        } else {
+            &self.tilde
+        };
+        let mut at = self
+            .columns
+            .partition_point(|&candidate| candidate <= column);
+        while at > 0 {
+            let entries = &nodes[at];
+            let first = entries.partition_point(|&(candidate, _)| candidate <= line);
+            if entries
+                .get(first)
+                .is_some_and(|&(_, largest)| largest >= width)
+            {
+                return true;
+            }
+            at -= at & at.wrapping_neg();
+        }
+        false
+    }
 }
 
 fn closer_runs(lines: &[&str]) -> Runs {
     let mut backtick = vec![0; lines.len() + 1];
     let mut tilde = vec![0; lines.len() + 1];
     let mut last_comment = std::collections::HashMap::new();
+    let mut fences = Vec::new();
     for j in (0..lines.len()).rev() {
         let rest = quoted_rest(lines[j]);
         backtick[j] = backtick[j + 1];
         tilde[j] = tilde[j + 1];
         if let Some((ch, n)) = pure_fence(rest) {
+            fences.push((j, ch, n, doc_column(lines[j], rest)));
             let slot = if ch == b'`' {
                 &mut backtick[j]
             } else {
@@ -535,6 +604,7 @@ fn closer_runs(lines: &[&str]) -> Runs {
         backtick,
         tilde,
         last_comment,
+        code_by_column: CodeCloserIndex::new(&fences),
     }
 }
 
@@ -3005,17 +3075,7 @@ impl<'a> Walk<'a> {
                             .find(|&line| is_blank_line(self.lines[line]));
                         if let Some(blank) = first_blank {
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
-                            let widest = if ch == b'`' {
-                                &runs.backtick
-                            } else {
-                                &runs.tilde
-                            };
-                            let has_closer = widest.get(at + 1).is_some_and(|&n| n >= len)
-                                && (at + 1..self.lines.len()).any(|line| {
-                                    let raw = self.lines[line];
-                                    let rest = quoted_rest(raw);
-                                    closer.closes(rest, doc_column(raw, rest), col)
-                                });
+                            let has_closer = runs.code_by_column.has_later(ch, at, col, len);
                             if !has_closer {
                                 f.attached_blank_end = Some(blank);
                             }
