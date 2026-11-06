@@ -1483,9 +1483,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A `: ` line at the marker column ends an item whose unquoted `+` block
         // is a definition list (PART 0 S4, carve#5317). A quoted one takes it lazily.
         let marker_column_description = first_block_quote_attaches
-            && self.cur.lines.line(item.at + 1).is_some_and(|follower| {
-                strip_blockquote_prefix(trim_ascii_start(follower)).is_none()
-            })
+            && self
+                .cur
+                .lines
+                .line(crate::parse::quote::first_visible_after_invisible(
+                    self.cur,
+                    item.at + 1,
+                ))
+                .is_some_and(|follower| {
+                    strip_blockquote_prefix(trim_ascii_start(follower)).is_none()
+                })
             && self.cur.peek().is_some_and(|line| {
                 indent_columns(line) <= base_indent
                     && strip_description_prefix(trim_ascii_start(line)).is_some()

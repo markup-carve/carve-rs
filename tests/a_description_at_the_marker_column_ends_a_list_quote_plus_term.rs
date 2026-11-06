@@ -30,10 +30,13 @@ fn the_flush_description_line_ends_the_item() {
 
 #[test]
 fn a_quoted_term_takes_the_line_lazily() {
-    assert_eq!(
-        flat("- > +\n  > :: t\n  > : d\n: d\n"),
-        "<ul><li><blockquote><blockquote><dl><dt>t</dt><dd>d:d</dd></dl></blockquote></blockquote></li></ul>"
-    );
+    let lazy = "<ul><li><blockquote><blockquote><dl><dt>t</dt><dd>d:d</dd></dl></blockquote></blockquote></li></ul>";
+    for source in [
+        "- > +\n  > :: t\n  > : d\n: d\n",
+        "- > +\n  %%%\n  %%%\n  > :: t\n  > : d\n: d\n",
+    ] {
+        assert_eq!(flat(source), lazy, "{source:?}");
+    }
 }
 
 #[test]
