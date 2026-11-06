@@ -79,3 +79,17 @@ fn an_earlier_definition_list_ends_a_later_stanza_at_the_item_marker_column() {
     let html = carve::to_html(input);
     assert!(html.ends_with("<p>: z</p>"), "{html}");
 }
+
+#[test]
+fn a_later_div_quote_keeps_its_open_paragraph() {
+    let input = "- a\n  :: t\n\n  ::: box\n  > prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
+}
+
+#[test]
+fn a_closed_div_definition_list_still_ends_a_later_item_paragraph() {
+    let input = "- a\n  ::: box\n  :: t\n  :::\n\n  prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: z</p>"), "{html}");
+}

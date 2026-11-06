@@ -728,6 +728,12 @@ fn trailing_container(block: &BlockNode) -> bool {
             .last()
             .and_then(|item| item.children.last())
             .is_some_and(trailing_container),
+        BlockNode::Div(div) => div.children.last().is_some_and(trailing_container),
+        BlockNode::Admonition(boxed) => boxed.children.last().is_some_and(trailing_container),
+        BlockNode::Directive(directive) => {
+            directive.children.last().is_some_and(trailing_container)
+        }
+        BlockNode::Section(section) => section.children.last().is_some_and(trailing_container),
         _ => false,
     }
 }
@@ -739,6 +745,12 @@ fn block_holds_definition_list(block: &BlockNode) -> bool {
             .items
             .last()
             .is_some_and(|item| item.children.iter().any(block_holds_definition_list)),
+        BlockNode::Div(div) => div.children.iter().any(block_holds_definition_list),
+        BlockNode::Admonition(boxed) => boxed.children.iter().any(block_holds_definition_list),
+        BlockNode::Directive(directive) => {
+            directive.children.iter().any(block_holds_definition_list)
+        }
+        BlockNode::Section(section) => section.children.iter().any(block_holds_definition_list),
         _ => false,
     }
 }
