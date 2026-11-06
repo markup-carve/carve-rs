@@ -1044,7 +1044,7 @@ pub(in crate::parse) fn body_ends_with_an_unnoded_interrupter(source: &str) -> b
 
 /// Does the body end on a payload line of a line block no closer has ended?
 /// That line is stanza text whatever it looks like (PART 2 `line_block`).
-fn innermost_host_tail(mut line: &str) -> (bool, &str) {
+pub(crate) fn innermost_host_tail(mut line: &str) -> (bool, &str) {
     let mut quoted = false;
     loop {
         let tail = innermost_marker_tail(line).1;

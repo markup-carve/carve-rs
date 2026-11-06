@@ -341,6 +341,27 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let from = self.item_head;
         let mut k = self.cur.pos;
         let mut skipped = false;
+        // A span the sibling marker leaves unclosed hides its payload too (carve#5266).
+        let mut open_span = self.item_head_span.map(|len| (from, len));
+        for at in from + 1..k {
+            // A nested host's marker line can open the span (`- %%%`, `: %%%`).
+            let line = lines.at(at);
+            let line = match open_span {
+                None => crate::parse::definition::innermost_host_tail(trim_ascii_start(line)).1,
+                Some(_) => line,
+            };
+            if let Some(fence) = detect_comment_fence_line_any_column(line) {
+                open_span = match open_span {
+                    Some((_, len)) if len == fence.fence_len => None,
+                    Some(open) => Some(open),
+                    None => Some((at, fence.fence_len)),
+                };
+            }
+        }
+        if let Some((opener, _)) = open_span {
+            k = opener;
+            skipped = true;
+        }
         while k > from + 1 {
             k -= 1;
             let line = lines.at(k);
