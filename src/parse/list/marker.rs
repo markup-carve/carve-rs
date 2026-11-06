@@ -282,7 +282,9 @@ pub(crate) fn detect_task(line: &str) -> Option<TaskMarker<'_>> {
     Some(TaskMarker {
         checked,
         task_state,
-        content: trim_ascii_end(&after[4..]),
+        // The gap after the box is the item's authored gap (CARVE-P9-083), so
+        // content starts past all of it, as the paragraph path already read it.
+        content: trim_ascii_end(after[4..].trim_start_matches(' ')),
         attrs,
         marker: &line[i..i + 1],
     })
