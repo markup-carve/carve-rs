@@ -1211,7 +1211,11 @@ fn parse_with_options_mode_and_index_once(
             let last = footnote_defs
                 .get(label)
                 .and_then(|blocks| positions::furthest_block_pos(blocks));
-            end_at_last_placed_child(pos, last);
+            if !end_at_last_placed_child(pos, last) {
+                // A nested definition hoisted out of this body is a sibling,
+                // not content that extends the empty outer definition.
+                positions::end_at_marker_line(pos, &source_lines);
+            }
         }
         if !erased.is_empty() {
             erased_spans::separate_erased_lines(
