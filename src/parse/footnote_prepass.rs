@@ -2549,7 +2549,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let raw = self.lines[*i];
         // S1 pairs a held span's exact closer before checking whether this
         // line still carries the quote prefix of the note's host.
-        if closes_a_held_span(&note.lines, raw) {
+        if note
+            .comment_state
+            .held_span()
+            .is_some_and(|run| is_comment_fence_close_any_column(raw, run))
+        {
             note.push_with(
                 kept_comment_delimiter(raw),
                 Some(self.first_source_line + *i),
