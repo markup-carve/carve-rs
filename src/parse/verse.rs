@@ -745,6 +745,9 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
     let mut leading: Vec<Comment> = Vec::new();
     let mut stanza_leading: Vec<Comment> = Vec::new();
     while let Some(line) = cur.peek() {
+        if cur.pos >= end {
+            break;
+        }
         if cur.pos + 1 == end && exact_colon_fence_len(line) == Some(fence_len) {
             cur.consume();
             break;

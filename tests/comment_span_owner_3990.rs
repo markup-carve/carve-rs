@@ -50,3 +50,22 @@ fn a_column_zero_closer_of_an_indented_span_does_not_swallow_the_container_close
     assert!(!html.contains("<div>"), "{html}");
     assert!(html.trim_end().ends_with("</aside>"), "{html}");
 }
+
+#[test]
+fn a_nested_div_closer_inside_an_indented_span_is_payload() {
+    // `::::` reaches the inner div that owns the span, so it is payload and the
+    // column-0 `%%%` closes the span; `:::` then opens a div in the inner note.
+    let html = carve::to_html("::: note\n:::: note\n  %%%\n::::\n%%%\n:::\nhidden\n%%%\n:::\n");
+    assert!(
+        html.contains("<div>\n      <p>hidden</p>\n    </div>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn an_indented_verse_span_opener_hides_the_line_block_closer() {
+    let html = carve::to_html("::: |\n %%%\n:::\n%%%\n");
+    assert_eq!(html.trim_end(), "<div class=\"line-block\">\n\n</div>");
+    let html = carve::to_html("::: |\n %%%\n:::\nzz\n");
+    assert!(!html.contains("zz"), "{html}");
+}
