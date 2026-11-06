@@ -4,6 +4,42 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 #[test]
+fn definition_term_content_tab_survives_ast_json_roundtrip() {
+    for source in [":: \tx\n", ":: first\n::  \tx\n", "> :: \tx\n"] {
+        let parsed = carve::parse(source);
+        let json = carve::to_json(&parsed);
+        assert!(json.contains("\"value\":\"\\tx\""), "{source:?}: {json}");
+        let decoded = carve::from_json(&json).unwrap();
+        assert_eq!(carve::to_json(&decoded), json, "{source:?}");
+        assert!(
+            carve::render_html(&decoded).unwrap().contains("<dt>\tx</dt>"),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn definition_term_content_tab_variant_sweep() {
+    for index in 0..1000 {
+        let padding = " ".repeat(index % 4);
+        let word = "x".repeat(1 + (index / 4) % 5);
+        let tail = "y".repeat((index / 20) % 5);
+        let term = format!("\t{word}{tail}");
+        let lead = if (index / 100) % 2 == 0 {
+            String::new()
+        } else {
+            ":: first\n".to_string()
+        };
+        let quote = if (index / 200) % 2 == 0 { "" } else { "> " };
+        let source = format!("{quote}{lead}{quote}:: {padding}{term}\n");
+        let json = carve::to_json(&carve::parse(&source));
+        let decoded = carve::from_json(&json).unwrap();
+        let html = carve::render_html(&decoded).unwrap();
+        assert!(html.contains(&format!("<dt>{term}</dt>")), "{source:?}: {html}");
+    }
+}
+
+#[test]
 fn empty_reference_resolution_survives_json_ingest() {
     for (source, resolved) in [
         ("[t][r]\n\n[r]:\n", true),
