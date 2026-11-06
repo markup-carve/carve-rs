@@ -66,3 +66,12 @@ fn footnote_heading_ids_hold_across_source_and_reference_orders() {
         }
     }
 }
+
+#[test]
+fn crossref_label_uses_the_heading_that_owns_the_source_order_id() {
+    let source = "[^b]: # A-B\n\n[^a]: # A B\n\n[^a] and [^b] and </#A-B>\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("<h1 id=\"A-B-2\">A B</h1>"), "{html}");
+    assert!(html.contains("<h1 id=\"A-B\">A-B</h1>"), "{html}");
+    assert!(html.contains("href=\"#A-B\">A-B</a>"), "{html}");
+}

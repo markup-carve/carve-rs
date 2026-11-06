@@ -4045,8 +4045,7 @@ fn parse_document_with_custom_options_once(
         };
         let index = if matches!(mode, ParseMode::HtmlFacade) {
             let (mut index, _) = heading_index(
-                &doc.children,
-                &doc.footnote_defs,
+                &doc,
                 options.heading_id_options(),
                 source.contains("</#"),
                 false,
@@ -4298,8 +4297,7 @@ fn parse_document_with_footnotes_options(
     }
     let mut crossref_index = if matches!(mode, ParseMode::HtmlFacade) {
         let (mut index, _) = heading_index(
-            &doc.children,
-            &doc.footnote_defs,
+            &doc,
             options.heading_id_options(),
             source.contains("</#"),
             false,

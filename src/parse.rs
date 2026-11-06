@@ -1263,8 +1263,7 @@ fn parse_with_options_mode_and_index_once(
     // late reference-link resolution or by the HTML facade renderer.
     let mut heading_index = if needs_late_link_resolution || matches!(mode, ParseMode::HtmlFacade) {
         heading_index(
-            &doc.children,
-            &doc.footnote_defs,
+            &doc,
             options.heading_id_options(),
             has_crossrefs,
             needs_late_link_resolution,
