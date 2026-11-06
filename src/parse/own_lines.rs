@@ -2216,10 +2216,19 @@ impl<'a> Walk<'a> {
     }
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
-        self.frames
+        let ended = self
+            .frames
             .last()
             .and_then(|frame| frame.attached_blank_end)
-            .is_some_and(|end| at >= end)
+            .is_some_and(|end| at >= end);
+        ended
+            && self.attached.as_ref().is_some_and(|block| {
+                let host_col = block.frames.last().expect("attached host").col;
+                self.lines[at + 1..]
+                    .iter()
+                    .find(|line| !is_blank_line(line))
+                    .is_some_and(|line| doc_column(line, quoted_rest(line)) >= host_col)
+            })
     }
 
     fn reach_after_attached_fence_end(&self, reached: usize, ended: bool) -> usize {
@@ -2230,7 +2239,14 @@ impl<'a> Walk<'a> {
         }
     }
 
-    fn leave_finished_fence(&mut self, kind: Kind, line: usize, ended: bool, reached: &mut usize) {
+    fn leave_finished_fence(
+        &mut self,
+        kind: Kind,
+        line: usize,
+        at: usize,
+        ended: bool,
+        reached: &mut usize,
+    ) {
         let resume = ended
             .then(|| {
                 self.attached
@@ -2238,7 +2254,16 @@ impl<'a> Walk<'a> {
                     .filter(|block| block.from + self.first_line == line)
                     .map(|block| block.frames.clone())
             })
-            .flatten();
+            .flatten()
+            .filter(|frames| {
+                let next = self.lines[at + 1..]
+                    .iter()
+                    .find(|line| !is_blank_line(line));
+                next.is_some_and(|line| {
+                    let rest = quoted_rest(line);
+                    doc_column(line, rest) >= frames.last().expect("attached host").col
+                })
+            });
         if kind == Kind::Fence {
             self.frames.pop();
         }
@@ -2585,7 +2610,13 @@ impl<'a> Walk<'a> {
         }
         let missed_line_block =
             (inner.kind == Kind::Fence && inner.line_block && missed).then(|| inner.clone());
-        self.leave_finished_fence(inner.kind, inner.line, attached_fence_ended, &mut reached);
+        self.leave_finished_fence(
+            inner.kind,
+            inner.line,
+            at,
+            attached_fence_ended,
+            &mut reached,
+        );
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
         // A plain line can continue a line block's open stanza lazily. Restore
