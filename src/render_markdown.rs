@@ -620,11 +620,25 @@ fn inline_carrier(prefix: &str, nodes: &[InlineNode]) -> String {
 
 fn inline_carrier_at(prefix: &str, nodes: &[InlineNode], depth: usize) -> String {
     let mut doc = crate::parse::parse("");
+    // A synthetic top-level paragraph drops leading layout. A definition
+    // term's tab is content after `:: `, so keep it behind a temporary text
+    // byte while the inline writer spells the carrier payload.
+    let protect_term_tab = prefix == "::"
+        && matches!(nodes.first(), Some(InlineNode::Text(text)) if text.value.starts_with('\t'));
+    let mut children = nodes.to_vec();
+    if protect_term_tab {
+        children.insert(0, InlineNode::Text(Text::from("a")));
+    }
     doc.children.push(BlockNode::Paragraph(Paragraph {
-        children: nodes.to_vec(),
+        children,
         ..Paragraph::default()
     }));
     let text = crate::render_carve::render_carve(&doc).expect("carrier inline source");
+    let text = if protect_term_tab {
+        text.strip_prefix('a').expect("temporary carrier prefix")
+    } else {
+        &text
+    };
     carrier_line_at(&format!("{prefix} {}", text.trim_end()), depth)
 }
 

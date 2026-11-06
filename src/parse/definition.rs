@@ -625,13 +625,9 @@ pub(in crate::parse) fn parse_definition_list(
         if is_blank_line(term) {
             break;
         }
-        // The SEPARATOR is the space, and whitespace past it is not content -
-        // the same rule `#`, `>` and `-` already follow, and the one carve#513
-        // and carve#530 restated twice as a property of the separator rather
-        // than of any one marker. `stripped_col` locates the column by matching
-        // this slice as a suffix of the raw line, so trimming here moves the
-        // term's own position with it instead of leaving it on the marker.
-        let term = trim_ascii_start(term);
+        // Separator padding is spaces only. A tab after it begins the term's
+        // content (PART 2 CARVE-P2-010), including its source position.
+        let term = term.trim_start_matches(' ');
         let term_source_line = cur.source_line(cur.pos);
         let term_start = cur.pos;
         cur.consume();
@@ -670,9 +666,8 @@ pub(in crate::parse) fn parse_definition_list(
             if is_blank_line(next_term) {
                 break;
             }
-            // Same separator rule as the item's first term above. A list can
-            // hold several terms and each one strips its own padding.
-            let next_term = trim_ascii_start(next_term);
+            // Every term keeps a content tab, not just the first in a run.
+            let next_term = next_term.trim_start_matches(' ');
             let next_source_line = cur.source_line(cur.pos);
             let next_start = cur.pos;
             cur.consume();
