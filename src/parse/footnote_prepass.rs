@@ -695,10 +695,37 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         self.body_line_map.push(Some(self.first_source_line + i));
     }
 
+    /// A definition left of its line block's fence is lazy, and a footnote
+    /// definition interrupts the stanza rather than joining it.
+    fn lazy_definition_in_verse(&self, i: usize) -> bool {
+        let line = self.lines[i];
+        if !self.verse_lines[i].is_body()
+            || trim_ascii_start(line).starts_with('>')
+            || parse_footnote_def_line(trim_ascii_start(line)).is_none()
+        {
+            return false;
+        }
+        let Some(opener) = (0..i).rev().find(|&at| !self.verse_lines[at].is_body()) else {
+            return false;
+        };
+        let opener = self.lines[opener];
+        let Some(fence) = opener.find(":::") else {
+            return false;
+        };
+        let column = opener[..fence].chars().fold(0, |col, ch| {
+            if ch == '\t' {
+                col + 4 - col % 4
+            } else {
+                col + 1
+            }
+        });
+        indent_columns(line) < column
+    }
+
     /// Handles line `i` and returns the index of the next unhandled line.
     fn step(&mut self, i: usize) -> usize {
         let scan = self.observe_line(i);
-        if self.verse_lines[i].is_owned() {
+        if self.verse_lines[i].is_owned() && !self.lazy_definition_in_verse(i) {
             self.keep_line(i);
             return i + 1;
         }

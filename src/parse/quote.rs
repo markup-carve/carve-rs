@@ -324,6 +324,14 @@ impl NestedFenceReplay {
                 .any(|level| !level.hosts.is_empty() || level.description_body.is_some())
     }
 
+    /// Whether any level is inside a list item's, a description's or a note's body.
+    fn in_body(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
+        self.advance(lines, cur);
+        self.chain
+            .iter()
+            .any(|level| !level.hosts.is_empty() || level.description_body.is_some())
+    }
+
     /// Whether the deepest level holds an open paragraph and no open item.
     fn paragraph_outside_items(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> bool {
         self.advance(lines, cur);
@@ -354,11 +362,13 @@ impl NestedFenceReplay {
             cur,
         };
         loop {
-            // A line left of a description body ends it, lazy or not.
+            // A line left of a description body ends it, lazy or not. A blank
+            // line has no column and leaves the body open.
             if let Some(level) = self.chain.get_mut(pos.level) {
-                if level
-                    .description_body
-                    .is_some_and(|body| indent_columns(text) < body)
+                if !is_blank_line(text)
+                    && level
+                        .description_body
+                        .is_some_and(|body| indent_columns(text) < body)
                 {
                     level.description_body = None;
                 }
@@ -2834,7 +2844,15 @@ impl<'a> QuoteBody<'a> {
         } else {
             false
         };
-        let stanza_fold = line_starts_paragraph(trim_ascii_start(line)) && stanza_open;
+        // A list marker opens nothing inside a verse stanza (carve#4956), unless
+        // the stanza sits in a marker body the marker closes (PART 0 S3).
+        let stanza_fold = stanza_open && {
+            let body = trim_ascii_start(line);
+            line_starts_paragraph(body)
+                || (detect_list_marker_full(body).is_some()
+                    && !cur.in_marker_body()
+                    && !self.nested_replay.in_body(&self.inner.lines, cur))
+        };
         // A heading is a finished quoted block. Earlier code payload must
         // not manufacture a stanza that lets the next unmarked line fold.
         if self
@@ -3091,7 +3109,16 @@ impl<'a> QuoteBody<'a> {
         //
         // Every line that is NOT a definition marker is framed so its
         // indentation cannot re-open a block on re-parse (carve-rs#1538).
+        let trimmed = trim_ascii_start(line);
+        let is_term = is_definition_list_start(trimmed);
+        let is_desc = strip_definition_marker(trimmed).is_some();
+        // A lazy follower of an open verse stanza remains stanza text even if
+        // its spelling resembles a definition marker. The erased span has
+        // not opened a new entry or closed the stanza.
+        let stanza_open = (is_term || is_desc) && self.stanza_state();
+        // A stanza line keeps its frame when a later quoted line ends the span.
         if self.comment_run.is_some()
+            && !stanza_open
             && (!self
                 .comment_run
                 .is_some_and(|(_, _, at)| self.nested_replay.literal_comment_openers.contains(&at))
@@ -3105,13 +3132,6 @@ impl<'a> QuoteBody<'a> {
             self.comment_lazy_lines
                 .push((self.inner.lines.len(), line.to_string(), source_col));
         }
-        let trimmed = trim_ascii_start(line);
-        let is_term = is_definition_list_start(trimmed);
-        let is_desc = strip_definition_marker(trimmed).is_some();
-        // A lazy follower of an open verse stanza remains stanza text even if
-        // its spelling resembles a definition marker. The erased span has
-        // not opened a new entry or closed the stanza.
-        let stanza_open = (is_term || is_desc) && self.stanza_state();
         let (frame, dedent) = if stanza_open {
             (true, false)
         } else if is_term || is_desc {
