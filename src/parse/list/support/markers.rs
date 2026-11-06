@@ -707,19 +707,31 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
-/// Whether the body's last block chain ends in a definition list, or the last
-/// separator already left one. Probe once so the second marker need not parse
-/// the entire prefix again (PART 0 B-term-keep).
-pub(crate) fn body_chain_ends_in_definition_list(
-    body: &str,
-    options: &Options<'_>,
-    last_separator: bool,
-) -> bool {
-    let blocks = probe_blocks(body, options);
-    ends_in_definition_list(blocks.last(), true)
-        || (last_separator
-            && matches!(blocks.last(), Some(BlockNode::Paragraph(_)))
-            && ends_in_definition_list(blocks.get(blocks.len().saturating_sub(2)), true))
+/// A marker-column separator ends an item that has held an actual definition
+/// list, even after its later paragraph. Text resembling a term in code or a
+/// stanza supplies no definition list (PART 0 S4, carve#5317).
+pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
+    probe_blocks(body, options)
+        .iter()
+        .any(block_holds_definition_list)
+}
+
+fn block_holds_definition_list(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::DefinitionList(_) => true,
+        BlockNode::List(list) => list
+            .items
+            .iter()
+            .any(|item| item.children.iter().any(block_holds_definition_list)),
+        BlockNode::BlockQuote(quote) => quote.children.iter().any(block_holds_definition_list),
+        BlockNode::Div(div) => div.children.iter().any(block_holds_definition_list),
+        BlockNode::Admonition(boxed) => boxed.children.iter().any(block_holds_definition_list),
+        BlockNode::Directive(directive) => {
+            directive.children.iter().any(block_holds_definition_list)
+        }
+        BlockNode::Section(section) => section.children.iter().any(block_holds_definition_list),
+        _ => false,
+    }
 }
 
 fn ends_in_definition_list(block: Option<&BlockNode>, nested: bool) -> bool {

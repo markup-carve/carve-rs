@@ -44,3 +44,10 @@ fn a_task_items_ended_term_entry_has_the_same_marker_boundary() {
     let html = carve::to_html(input);
     assert!(html.ends_with("  </li>\n</ul>\n<p>: z</p>"), "{html}");
 }
+
+#[test]
+fn a_marker_column_separator_ends_an_item_with_an_earlier_definition_list() {
+    let input = "- a\n  :: t\n\n  filler\n: b\n: c\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("<p>: b\n: c</p>"), "{html}");
+}

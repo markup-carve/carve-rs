@@ -65,7 +65,7 @@ fn quoted_separator_below_the_item_column_ends_the_item() {
 fn closed_definition_list_does_not_claim_a_later_paragraph() {
     assert_eq!(
         html("- a\n  :: m\n  : d\n\n  para\n: l\n"),
-        "<ul>\n  <li><p>a</p>\n    <dl>\n      <dt>m</dt>\n      <dd>d</dd>\n    </dl>\n    <p>para\n: l</p>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <dl>\n      <dt>m</dt>\n      <dd>d</dd>\n    </dl>\n    <p>para</p>\n  </li>\n</ul>\n<p>: l</p>"
     );
 }
 
