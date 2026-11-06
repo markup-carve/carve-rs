@@ -181,13 +181,20 @@ impl DescriptionLeadSpanScan {
             };
             let lead = rest.len() - after.len();
             // The entry above: the nearest line at or left of this column is its term.
+            let mut paragraph_after_term = false;
             for above in (0..self.at - 1).rev().map(&line_at) {
                 let (above_col, above_rest, _) = quote_free_measure(above);
-                if above_rest.is_empty() || above_col > col {
+                if above_rest.is_empty() {
+                    continue;
+                }
+                if above_col > col {
+                    paragraph_after_term |= line_starts_paragraph(above_rest)
+                        && !is_line_comment_any_column(above_rest);
                     continue;
                 }
                 if above_col == col
-                    && (above_rest.starts_with(": ") || above_rest.starts_with(":: "))
+                    && (above_rest.starts_with(": ")
+                        || above_rest.starts_with(":: ") && !paragraph_after_term)
                 {
                     self.span = Some(LeadSpan {
                         run,
