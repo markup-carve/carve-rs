@@ -184,15 +184,12 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         if indent <= list_base
             && strip_description_prefix(trim_ascii_start(line)).is_some()
             && term_options.is_some_and(|options| {
-                body_chain_ends_in_definition_list(&nested.source, options)
-                    || nested
-                        .source
-                        .rsplit_once('\n')
-                        .is_some_and(|(before, last)| {
-                            indent_columns(last) <= list_base
-                                && strip_description_prefix(last).is_some()
-                                && body_chain_ends_in_definition_list(before, options)
-                        })
+                let last_separator_at_base =
+                    nested.source.lines().next_back().is_some_and(|last| {
+                        indent_columns(last) <= list_base
+                            && strip_description_prefix(last).is_some()
+                    });
+                body_chain_ends_in_definition_list(&nested.source, options, last_separator_at_base)
             })
         {
             break;
