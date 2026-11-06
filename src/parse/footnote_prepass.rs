@@ -2418,7 +2418,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &self.columns,
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
-            && (verse_text || !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..]))
+            && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
             && !is_colon_fence_opener_shape(rest)
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
