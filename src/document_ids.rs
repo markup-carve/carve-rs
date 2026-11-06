@@ -748,7 +748,7 @@ mod redundant_heading_id_tests {
     }
 
     #[test]
-    fn generated_ids_follow_line_block_and_footnote_headings() {
+    fn generated_ids_follow_line_block_but_skip_unused_footnote_headings() {
         let mut doc = crate::parse("");
         doc.children.push(BlockNode::LineBlock(LineBlock {
             attrs: None,
@@ -761,7 +761,7 @@ mod redundant_heading_id_tests {
             .insert("n".into(), vec![heading("Note", "Note", false)]);
         assert_eq!(
             redundant_heading_ids(&doc),
-            BTreeSet::from(["Later".into(), "Note".into()])
+            BTreeSet::from(["Later".into()])
         );
     }
 
