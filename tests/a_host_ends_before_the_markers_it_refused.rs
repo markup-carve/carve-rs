@@ -1,6 +1,6 @@
 //! A refused `+` renders nothing and is no node, so the container that held its
-//! placeholder ends at its last placed child, or on the one marker right below
-//! it (CARVE-P12-014, markup-carve/carve-rs#3870).
+//! placeholder ends at its last placed child. Only an empty host may span its
+//! sole consumed marker (CARVE-P12-014, carve#5246).
 
 use serde_json::Value;
 
@@ -44,18 +44,18 @@ fn first(source: &str, ty: &str) -> (u64, u64) {
 }
 
 #[test]
-fn an_item_ends_on_the_first_refused_plus_below_its_content() {
+fn a_nonempty_item_ends_before_the_first_refused_plus() {
     for (source, ty, span) in [
-        ("- q\n+\n+\n\n- r\n", "list_item", (0, 5)),
-        ("- q\n+\n+\n- r\n", "list_item", (0, 5)),
-        ("- q\n+\n+\n+\n\n- r\n", "list_item", (0, 5)),
-        ("- q\n+\n\n+\n\n- r\n", "list_item", (0, 5)),
-        ("- q\n+\n\n- r\n", "list_item", (0, 5)),
-        ("> - q\n> +\n> +\n>\n> - r\n", "list_item", (2, 9)),
+        ("- q\n+\n+\n\n- r\n", "list_item", (0, 3)),
+        ("- q\n+\n+\n- r\n", "list_item", (0, 3)),
+        ("- q\n+\n+\n+\n\n- r\n", "list_item", (0, 3)),
+        ("- q\n+\n\n+\n\n- r\n", "list_item", (0, 3)),
+        ("- q\n+\n\n- r\n", "list_item", (0, 3)),
+        ("> - q\n> +\n> +\n>\n> - r\n", "list_item", (2, 5)),
         (
             ":: t\n: q\n+\n+\n\n:: u\n: v\n",
             "definition_description",
-            (5, 10),
+            (5, 8),
         ),
     ] {
         assert_eq!(first(source, ty), span, "{source:?}");
@@ -64,8 +64,8 @@ fn an_item_ends_on_the_first_refused_plus_below_its_content() {
 
 #[test]
 fn the_list_follows_its_last_item() {
-    assert_eq!(first("- q\n+\n+\n", "list"), (0, 5));
+    assert_eq!(first("- q\n+\n+\n", "list"), (0, 3));
     let mut lists = Vec::new();
     spans(&ast("- a\n  - q\n  +\n  +\n"), "list", &mut lists);
-    assert_eq!(lists, [(0, 17), (6, 13)]);
+    assert_eq!(lists, [(0, 9), (6, 9)]);
 }

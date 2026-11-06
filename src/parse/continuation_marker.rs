@@ -259,27 +259,16 @@ pub(super) fn drop_consumed_markers(doc: &mut crate::ast::Document) {
     }
     /// Sweep a container that ends at its last placed child (CARVE-P12-014).
     /// Its end was taken with the markers still in place, so a container that
-    /// ended on one now ends at its last kept child, or on the one marker
-    /// written right below it, which the item consumed.
+    /// ended on one now ends at its last kept child. An empty host retains
+    /// its sole consumed-marker extent (CARVE-P12-014, carve#5246).
     fn sweep_container(
         children: &mut Vec<BlockNode>,
         pos: Option<&mut Pos>,
         keep: &impl Fn(&BlockNode) -> bool,
     ) {
         let old = super::positions::furthest_block_pos(children);
-        let last_kept = children
-            .iter()
-            .rposition(|block| keep(block) && crate::ast_json::block_pos(block).is_some());
-        let consumed = last_kept
-            .and_then(|at| children.get(at + 1))
-            .filter(|block| !keep(block))
-            .and_then(crate::ast_json::block_pos)
-            .cloned();
         sweep(children, keep);
-        let new = super::positions::furthest_block_pos(children).map(|kept| match consumed {
-            Some(marker) if marker.end_offset > kept.end_offset => marker,
-            _ => kept,
-        });
+        let new = super::positions::furthest_block_pos(children);
         reend(pos, old, new);
     }
     /// Move `pos`'s end from `old` to `new` where `old` was what it ended on.
