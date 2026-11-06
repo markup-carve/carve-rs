@@ -92,6 +92,10 @@ name = "comment_span_sibling_3982"
 path = "tests/comment_span_sibling_3982.rs"
 
 [[test]]
+name = "quoted_description_note_3984"
+path = "tests/quoted_description_note_3984.rs"
+
+[[test]]
 name = "attach_rule_5250"
 path = "tests/attach_rule_5250.rs"
 

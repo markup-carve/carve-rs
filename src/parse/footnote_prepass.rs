@@ -366,6 +366,7 @@ impl PrepassFenceState {
 struct NoteBody {
     lines: Vec<String>,
     comment_state: BodyCommentState,
+    stanza: crate::parse::definition::LineBlockTail,
     open_colons: OpenBodyColons,
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
@@ -407,6 +408,7 @@ impl NoteBody {
         }
         let opaque = self.comment_state.code.is_some() || self.comment_state.comment.is_some();
         self.comment_state.observe(&line);
+        self.stanza.step(&line);
         if !opaque && self.comment_state.code.is_none() && self.comment_state.comment.is_none() {
             self.open_colons.observe(&line);
         }
@@ -1037,9 +1039,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let mut i = i + 1;
         let mut comment_state = BodyCommentState::new();
         comment_state.observe(def.first);
+        let mut stanza = crate::parse::definition::LineBlockTail::default();
+        stanza.step(def.first);
         let mut note = NoteBody {
             lines: vec![def.first.to_string()],
             comment_state,
+            stanza,
             open_colons: OpenBodyColons::from_source(def.first),
             line_map: vec![Some(def_start_line)],
             col_map: if self.positions {
@@ -2242,6 +2247,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
         note.lines[0].clear();
         note.comment_state = BodyCommentState::new();
+        note.stanza = crate::parse::definition::LineBlockTail::default();
         note.open_colons = OpenBodyColons::default();
         note.line_map[0] = None;
         if self.positions {
@@ -2375,6 +2381,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let rest = trim_ascii_start(
             inside.unwrap_or_else(|| without_blockquote_prefixes(trim_ascii_start(raw))),
         );
+        let verse_text = note.stanza.in_block() == Some(true) && !is_list_marker(rest);
         let lazy = !is_blank_line(rest)
             && walk.admitted_fence.is_none()
             && walk.opacity.comment.is_none()
@@ -2384,7 +2391,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &self.columns,
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
-            && !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..])
+            && (verse_text || !interrupts_paragraph_with_rest(rest, &self.lines[*i + 1..]))
             && !is_colon_fence_opener_shape(rest)
             && !exact_colon_fence_len(rest).is_some_and(|run| run >= 3)
             && parse_link_def_line(rest).is_none()
@@ -2402,9 +2409,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     || strip_blockquote_prefix(trim_ascii_start(raw)).is_some()))
             // The next entry of the hosting list stays out of the note.
             && !(host.description_host
+                && !verse_text
                 && (rest.starts_with(":: ") || strip_definition_marker(rest).is_some()))
             && !opens_code_fence(rest)
-            && (walk.lazy_open || note_paragraph_open(note, rest, self.options));
+            && (verse_text || walk.lazy_open || note_paragraph_open(note, rest, self.options));
         if !lazy {
             return false;
         }
