@@ -1013,7 +1013,12 @@ fn parse_with_options_mode_and_index_once(
         .map_or(normalized.as_ref(), |o| o.source.as_str());
     let _continuation_markers = continuation_marker::Guard::install(owned.as_ref());
     for opener in owned.iter().flat_map(|o| &o.overindented) {
-        note_lint_event(LintEvent::Opener(opener.clone()));
+        let mut opener = opener.clone();
+        // The walk numbers the comment-erased lines; findings name authored ones.
+        if let Some((t, _)) = transparent {
+            opener.line = t.authored_line(opener.line);
+        }
+        note_lint_event(LintEvent::Opener(opener));
     }
     let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads

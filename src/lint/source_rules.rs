@@ -280,7 +280,7 @@ pub(super) fn collect(
     LineRules::new(&rows, &scan).run(out);
     collect_marker_text(&rows, &scan.starts, &list_lines, to_byte, out);
     collect_recovered_code_fences(&rows, &scan.code_openers, out);
-    let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, out);
+    let recovered_metadata = collect_container_fences(&rows, &mut scan.fences, &scan.consumed, out);
     collect_version(source, doc, &rows, out);
     collect_markdown_habits(doc, &rows, out);
     recovered_metadata
@@ -806,6 +806,8 @@ fn source_visible(row: &Line<'_>, start: usize, len: usize, scan: &BlockScan<'_>
 #[derive(Default)]
 struct BlockScan<'d> {
     ignored: BTreeSet<usize>,
+    // Lines whose text code, raw or comment content holds, a closer included.
+    consumed: BTreeSet<usize>,
     code_openers: BTreeSet<usize>,
     // `%%` line comments: the one hidden place a mis-cased `%% #Region` is checked.
     line_comments: BTreeSet<usize>,
@@ -873,6 +875,16 @@ impl<'d> BlockScan<'d> {
         scan
     }
 
+    /// A block ending at column 1 of its last line holds none of that line.
+    fn consume(&mut self, pos: &Pos) {
+        let end = if pos.end_column <= 1 && pos.end_line > pos.start_line {
+            pos.end_line - 1
+        } else {
+            pos.end_line
+        };
+        self.consumed.extend(pos.start_line..=end);
+    }
+
     fn scan_inlines(
         &mut self,
         mut inlines: Vec<(&InlineNode, usize)>,
@@ -884,6 +896,14 @@ impl<'d> BlockScan<'d> {
         let mut emphasis_spans = Vec::new();
         let mut opaque_spans = Vec::new();
         while let Some((node, depth)) = inlines.pop() {
+            if let InlineNode::Comment(Comment {
+                block: true,
+                pos: Some(pos),
+                ..
+            }) = node
+            {
+                self.consume(pos);
+            }
             let opaque = matches!(
                 node,
                 InlineNode::Code(_)
@@ -1102,6 +1122,13 @@ impl<'d> BlockWalker<'d, '_> {
 
     fn record_lines(&mut self, block: &'d BlockNode, pos: &Pos) {
         let scan = &mut self.scan;
+        if matches!(
+            block,
+            BlockNode::CodeBlock(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_)
+        ) || matches!(block, BlockNode::Figure(f) if matches!(&*f.target, FigureTarget::CodeBlock(_)))
+        {
+            scan.consume(pos);
+        }
         match block {
             BlockNode::Comment(c) if !c.block => {
                 scan.ignored.extend(pos.start_line..=pos.end_line);
@@ -1983,6 +2010,7 @@ fn collect_marker_text(
 fn collect_container_fences(
     rows: &[Line<'_>],
     fences: &mut [Fence],
+    consumed: &BTreeSet<usize>,
     out: &mut Vec<LintWarning>,
 ) -> bool {
     let mut recovered_metadata = false;
@@ -1994,7 +2022,8 @@ fn collect_container_fences(
             let v = container_view(rows[i].text).trim();
             !v.is_empty() && !v.starts_with("^ ")
         });
-        if let Some(i) = last {
+        // A closer that child code or comment content consumed closes nothing.
+        if let Some(i) = last.filter(|&i| !consumed.contains(&(i + 1))) {
             let view = container_view(rows[i].text).trim_start_matches([' ', '\t']);
             if view.trim_end() == ":".repeat(fence.width)
                 && rows[i].text.len() - view.len() == fence.column
