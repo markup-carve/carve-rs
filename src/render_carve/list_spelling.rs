@@ -818,13 +818,22 @@ pub(super) fn render_definition_list(
                     continue;
                 }
             }
-            let body = trim_non_nbsp(&at_item_content_column(ctx, |ctx| {
+            let rendered = at_item_content_column(ctx, |ctx| {
                 ctx.join_trailing_comments = last_description && ctx.item_followed_by_marker;
                 let outer_body = std::mem::replace(&mut ctx.marker_body, def.as_ptr() as usize);
                 let body = render_blocks(session, def, ctx, None);
                 ctx.marker_body = outer_body;
                 body
-            }))
+            });
+            // An authored tab after the description marker belongs to its
+            // paragraph text. Trimming it changes the rendered description.
+            let starts_with_tab = matches!(def.children.first(), Some(BlockNode::Paragraph(p))
+                if matches!(p.children.first(), Some(InlineNode::Text(t)) if t.value.starts_with('\t')));
+            let body = if starts_with_tab {
+                trim_end_non_nbsp(&rendered)
+            } else {
+                trim_non_nbsp(&rendered)
+            }
             .to_string();
             if body.is_empty() {
                 out.push(": {empty}".to_string());

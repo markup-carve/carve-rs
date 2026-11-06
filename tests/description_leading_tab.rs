@@ -13,6 +13,9 @@ fn description_keeps_tab_after_marker_space() {
         ast["children"][0]["items"][1]["children"][0]["children"][0]["value"],
         "\ttext"
     );
+    let formatted = carve::to_carve(source);
+    assert!(formatted.contains(": \ttext"), "{formatted:?}");
+    assert_eq!(to_html(&formatted), to_html(source));
 }
 
 #[test]
