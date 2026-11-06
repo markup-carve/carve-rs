@@ -21,5 +21,8 @@ fn a_quoted_item_stanza_takes_the_unmarked_follower() {
 fn an_empty_stanza_still_releases_the_unmarked_follower() {
     let source = "> :: t\n> : ::: |\n>   %%%\n>\nb\n";
     let html = carve::to_html(source);
-    assert!(html.trim_end().ends_with("</blockquote>\n<p>b</p>"), "{html}");
+    assert!(
+        html.trim_end().ends_with("</blockquote>\n<p>b</p>"),
+        "{html}"
+    );
 }
