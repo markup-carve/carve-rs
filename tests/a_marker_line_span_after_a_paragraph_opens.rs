@@ -16,5 +16,8 @@ fn a_note_bullet_marker_line_span_closed_at_column_0_leaves_the_document() {
 #[test]
 fn an_item_marker_line_span_closed_at_column_0_ends_the_list() {
     let html = carve::to_html("- i\n  . %%%\n    n\n%%%\nzz\n");
-    assert_eq!(html, "<ul>\n  <li>i\n    <ol>\n      <li></li>\n    </ol>\n  </li>\n</ul>\n<p>zz</p>");
+    assert_eq!(
+        html,
+        "<ul>\n  <li>i\n    <ol>\n      <li></li>\n    </ol>\n  </li>\n</ul>\n<p>zz</p>"
+    );
 }
