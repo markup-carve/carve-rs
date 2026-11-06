@@ -70,6 +70,8 @@ struct Frame {
     cut: usize,
     para: bool,
     last: Last,
+    /// A definition term opened in this item's own body.
+    definition_seen: bool,
     marker: Option<(usize, usize)>,
     axes: String,
     /// An item's marker line from its marker on, for the §11 N1 sibling test.
@@ -137,6 +139,7 @@ impl Frame {
             cut: 0,
             para: false,
             last: Last::None,
+            definition_seen: false,
             marker: None,
             axes: String::new(),
             marker_src: String::new(),
@@ -2014,6 +2017,15 @@ impl<'a> Walk<'a> {
             block.span = None;
             block.span_origin = None;
         }
+        let at_item_definition_boundary = strip_description_prefix(c.rest).is_some()
+            && self.frames.last().is_some_and(|item| {
+                item.kind == Kind::Item
+                    && item.definition_seen
+                    && item.marker.is_some_and(|(col, _)| col == c.col)
+            });
+        if at_item_definition_boundary {
+            return false;
+        }
         self.frames.push(block);
         // A stanza's final lazy line is read at the frame's reader column,
         // not with its authored indentation preserved as inline hard space.
@@ -2917,6 +2929,9 @@ impl<'a> Walk<'a> {
             if invisible && matches!(o.last, Last::Term | Last::Dd) {
                 entry_last = Some(o.last);
             } else {
+                if o.kind == Kind::Item && matches!(form, Form::Term) {
+                    o.definition_seen = true;
+                }
                 // A caption folds its following lines like a paragraph (CARVE-P2-021).
                 o.para = matches!(form, Form::Leaf(false));
                 o.last = match form {
