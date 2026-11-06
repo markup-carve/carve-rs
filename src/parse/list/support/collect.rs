@@ -977,10 +977,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && comment_fence.is_none()
             && literal_colon.is_none()
             && is_definition_list_start(trim_ascii_start(line));
+        let nested_plus_attaches = cur.pos.checked_sub(1).is_some_and(|previous| {
+            is_plus_marker(trim_ascii_start(cur.lines.at(previous)))
+                && cur
+                    .continuation_decision(previous)
+                    .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::List))
+                && nested_item_columns.iter().any(|&(base, _)| base == indent)
+        });
         // A term that reaches this item below its open child's content column
         // belongs to the item. Let the child chunk finish before parsing it.
         if term
             && !lines.is_empty()
+            && !nested_plus_attaches
             && !surviving_definition_body_column.is_some_and(|column| indent >= column)
             && definition_list_column != Some(indent)
             && (nested_item_columns

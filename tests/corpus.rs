@@ -1432,9 +1432,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
-    ("948-a-blank-inside-a-attached-description-keeps-the-list-tight-3", "spec pin d9d5dea7: carve#5058 row not reached yet", "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <p>d</p>\n        <p>x</p>\n      </dd>\n    </dl>\n  </li>\n</ul>"),
-    ("948-a-fence-a-quote-s-attached-block-opens-ends-with-its-container-3", "spec pin d9d5dea7: carve#5060 row not reached yet", "<blockquote>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\"></code></pre>\n    </li>\n    <li>x\nq</li>\n  </ul>\n</blockquote>"),
-    ("948-a-fence-a-quote-s-attached-block-opens-ends-with-its-container-4", "spec pin d9d5dea7: carve#5060 row not reached yet", "<blockquote>\n  <p>a</p>\n  <ul>\n    <li>\n      <pre><code class=\"language-js\"></code></pre>\n    </li>\n    <li>x\nq</li>\n  </ul>\n</blockquote>"),
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.
     // Corpus pairs the spec 4577df8f pin moved past this engine. Each actual HTML is measured.
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
@@ -1445,13 +1442,8 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <div class=\"line-block\">\n        <p>x</p>\n      </div>\n    </dd>\n  </dl>\n</blockquote>\n<p>b</p>"),
     ("941-a-marked-blank-inside-a-quoted-verse-span-leaves-the-stanza-open-2", "spec pin b426bf87: carve#5002 quoted verse span not ported yet", "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <div class=\"line-block\">\n          <p>x</p>\n        </div>\n      </dd>\n    </dl>\n  </blockquote>\n</blockquote>\n<p>b</p>"),
     ("854-a-quote-in-a-bare-include-token-opens-no-run", "ruling at the 5643d59c pin not ported yet", "<p>{{ it’s_x <span class=\"mention\"><strong>@lines</strong></span>:0-1 }} it’s_y }}</p>"),
-    ("855-a-plus-after-a-table-with-an-indented-row-attaches", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>a\n    <table>\n      <tbody>\n        <tr><td>x</td></tr>\n        <tr><td>y</td></tr>\n      </tbody>\n    </table>\n  </li>\n</ul>\n<p>+\nH</p>"),
-    ("855-a-refused-plus-after-an-attached-block-ends-nothing", "ruling at the 5643d59c pin not ported yet", "<ul>\n  <li>o\n    <blockquote><p>q\n+\n&gt; r</p></blockquote>\n  </li>\n</ul>"),
-    ("855-a-refused-plus-after-an-attached-block-ends-nothing-2", "ruling at the 5643d59c pin not ported yet; the consumed marker shows in the payload (carve-rs#3821)", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<pre><code>+\n</code></pre>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-3", "ruling at the 5643d59c pin not ported yet", "<p><strong id=\"\">x</strong></p>"),
     ("860-an-id-key-is-a-spelling-of-the-id-slot-4", "ruling at the 5643d59c pin not ported yet", "<table>\n  <tbody>\n    <tr><td id=\"\">x</td></tr>\n  </tbody>\n</table>"),
-    ("873-a-plus-after-an-attached-block-reaches-its-host-through-quote-prefixes-2", "new corpus pair at the 19f78369 spec pin, engine port pending", "<blockquote>\n  <ul>\n    <li>a\n      <h1 id=\"h\">h</h1>\n    </li>\n  </ul>\n  <p>+</p>\n  <h1 id=\"h-2\">h</h1>\n</blockquote>"),
-    ("880-an-own-line-plus-reaches-a-marker-line-quote-at-its-authored-column-3", "new corpus pair at the 7840b697 spec pin, engine port pending (markup-carve/carve#4697)", "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <blockquote>\n        <blockquote><p>a\n+\nb</p></blockquote>\n      </blockquote>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
 ];
 
 fn check_pair(slug: &str) {

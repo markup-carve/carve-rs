@@ -2075,11 +2075,10 @@ impl<'a> QuoteBody<'a> {
         let quoted_follower = cur
             .peek()
             .is_some_and(|next| strip_blockquote_prefix(next).is_some());
-        // A follower carrying just this quote's own marker joins the innermost quote
-        // behind every level (`> > > > +` / `> b`, carve#3421).
-        let own_marker_follower =
-            prior_levels == 0 && quoted_follower && follower_nested_levels == 0 && levels > 2;
-        let strip_follower_marker = prior_levels > 0 || own_marker_follower;
+        // A follower carrying only this quote's marker joins the quote that
+        // accepted the attachment, even when an outer quote wraps that host.
+        let strip_follower_marker =
+            prior_levels > 0 || (levels > 0 && quoted_follower && follower_nested_levels == 0);
         let keep_levels = if strip_follower_marker {
             levels
         } else if quoted_follower {
@@ -2604,7 +2603,7 @@ impl<'a> QuoteBody<'a> {
                     .to_string()
                     .repeat(fence.fence_len);
             self.attached_fence_end = Some((self.inner.lines.len(), closer));
-        } else if !body_lines_hold_open_code_fence(&attached().collect::<Vec<_>>()) {
+        } else {
             self.inner.push_synthetic_blank();
         }
     }
