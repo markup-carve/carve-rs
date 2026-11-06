@@ -1004,25 +1004,6 @@ fn quoted_run_end(bytes: &[u8], from: usize) -> Option<usize> {
     None
 }
 
-/// THE CLOSER: the first `}}` at or after `from` outside a terminated quoted run.
-fn closer_at(bytes: &[u8], from: usize) -> Option<usize> {
-    let mut i = from;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\n' => return None,
-            b'"' | b'\'' => {
-                if let Some(end) = quoted_run_end(bytes, i) {
-                    i = end;
-                }
-            }
-            b'}' if bytes.get(i + 1) == Some(&b'}') => return Some(i),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
 fn ident_end(bytes: &[u8], from: usize, digit_start: bool) -> Option<usize> {
     let first = *bytes.get(from)?;
     if !(first.is_ascii_alphabetic() || first == b'_' || digit_start && first.is_ascii_digit()) {
@@ -1112,8 +1093,9 @@ pub(crate) fn directive_shape(text: &str, open: usize) -> Option<DirectiveShape>
         }
     }
     let close = skip_spaces(bytes, i);
-    if close == i || !bytes[close..].starts_with(b"}}") || closer_at(bytes, open + 2) != Some(close)
-    {
+    // The slot parser above already consumes the only places where quotes can
+    // shield a closer. A quote in a bare path is an ordinary path byte.
+    if close == i || !bytes[close..].starts_with(b"}}") {
         return None;
     }
     Some(DirectiveShape {
