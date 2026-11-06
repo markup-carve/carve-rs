@@ -178,6 +178,14 @@ impl QuotedEntryScan {
                 self.description_col =
                     definition_body_content_col(content).map(|body_col| column + ladder + body_col);
                 self.closed_by_block = false;
+            } else if self.half == Some(DefHalf::Term)
+                && line_starts_paragraph(content)
+                && !is_line_comment_any_column(content)
+            {
+                // A term has no body. A later visible paragraph ends its
+                // entry, so a following colon-shaped line is paragraph text.
+                self.half = None;
+                self.description_col = None;
             } else if item_block_opener(content)
                 || is_definition_placeholder(content)
                 || parse_link_def_line(content).is_some()
@@ -1869,7 +1877,11 @@ impl<'a> QuoteBody<'a> {
 
     /// A `: ` line opens a description after a term or an entry, never inside a paragraph.
     fn description_opens(&mut self) -> bool {
-        self.may_have_term && (self.entry_last || !self.para_open.get())
+        if !self.may_have_term || !(self.entry_last || !self.para_open.get()) {
+            return false;
+        }
+        self.open_entry.advance(&self.inner.lines);
+        self.open_entry.half.is_some()
     }
 
     /// The content column and body of the item or description lead `text` opens.
