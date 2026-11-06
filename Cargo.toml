@@ -84,10 +84,6 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
-name = "caption_abbreviation_expansion"
-path = "tests/caption_abbreviation_expansion.rs"
-
-[[test]]
 name = "writer_invisible_boundaries"
 path = "tests/writer_invisible_boundaries.rs"
 

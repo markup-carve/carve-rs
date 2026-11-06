@@ -71,9 +71,6 @@ pub(in crate::parse) fn apply_abbreviations_block(
             }
         }
         BlockNode::Table(t) => {
-            if let Some(caption) = &mut t.caption {
-                apply_abbreviations_inline(caption, index);
-            }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     apply_abbreviations_inline(&mut cell.children, index);
@@ -132,9 +129,6 @@ pub(in crate::parse) fn apply_abbreviations_block(
                     }
                 }
                 FigureTarget::Table(t) => {
-                    if let Some(caption) = &mut t.caption {
-                        apply_abbreviations_inline(caption, index);
-                    }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
                             apply_abbreviations_inline(&mut cell.children, index);
