@@ -5,7 +5,10 @@ fn ast(source: &str) -> Value {
         positions: true,
         ..Default::default()
     };
-    serde_json::from_str(&carve::to_json(&carve::parse_with_options(source, &options))).unwrap()
+    serde_json::from_str(&carve::to_json(&carve::parse_with_options(
+        source, &options,
+    )))
+    .unwrap()
 }
 
 #[test]
