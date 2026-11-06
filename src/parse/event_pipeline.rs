@@ -3461,7 +3461,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
         .count()
         + 1;
     let root_line_map: Option<Vec<Option<usize>>> = continuation_marker::active().then(|| {
-        (body_start_line..body_start_line + body_source.lines().count())
+        (body_start_line..body_start_line + crate::parse::line_count(body_source))
             .map(Some)
             .collect()
     });
@@ -3530,7 +3530,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
             .filter(|byte| *byte == b'\n')
             .count()
             + 1;
-        let line_count = body.lines().count();
+        let line_count = crate::parse::line_count(body);
         let joined = joined_source(&body.lines().collect::<Vec<_>>());
         let mapped = MappedSource {
             newlines_counted: (0, 0),
@@ -3743,7 +3743,11 @@ pub(super) fn parse_document_with_mode(
 }
 
 fn has_deep_quote_chain(source: &str) -> bool {
-    if !source.contains("> ") && !source.contains(">>") && !source.contains(">\t") {
+    // A 64-deep chain needs 64 `>` bytes on one line.
+    if memchr::memchr_iter(b'>', source.as_bytes())
+        .nth(63)
+        .is_none()
+    {
         return false;
     }
     source.lines().any(|line| {
@@ -3872,7 +3876,7 @@ fn parse_document_with_custom_options_once(
         || options.positions
         || !source.ends_with('\n'))
     .then(|| {
-        (body_start_line..body_start_line + body_source.lines().count())
+        (body_start_line..body_start_line + crate::parse::line_count(body_source))
             .map(Some)
             .collect()
     });
@@ -3979,7 +3983,7 @@ fn parse_document_with_custom_options_once(
                 .filter(|byte| *byte == b'\n')
                 .count()
                 + 1;
-            let line_count = body.lines().count();
+            let line_count = crate::parse::line_count(body);
             let joined = joined_source(&body.lines().collect::<Vec<_>>());
             let mapped = MappedSource {
                 newlines_counted: (0, 0),

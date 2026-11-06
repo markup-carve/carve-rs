@@ -1033,7 +1033,7 @@ fn walk_traced(
     let first_line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
     let body = if fm.is_some() { body } else { source };
     let trace_filter = candidate_lines.map(|indexes| {
-        let mut filter = vec![false; source.lines().count() + 1];
+        let mut filter = vec![false; crate::parse::line_count(source) + 1];
         for &index in indexes {
             if let Some(slot) = filter.get_mut(index) {
                 *slot = true;

@@ -191,7 +191,7 @@ struct SourceEndingGuard(Option<usize>, Option<usize>);
 
 impl SourceEndingGuard {
     fn install(source: &str) -> Self {
-        let last = (!source.is_empty() && !source.ends_with('\n')).then(|| source.lines().count());
+        let last = (!source.is_empty() && !source.ends_with('\n')).then(|| line_count(source));
         let nonblank = source
             .lines()
             .enumerate()
@@ -840,6 +840,12 @@ pub(crate) fn frame_lazy_at_column(frame: &str, source_column: usize, content: &
     format!("{frame}{LAZY_SOURCE_COLUMN}{source_column}\u{0000}{content}")
 }
 
+/// `text.lines().count()` without a per-line search.
+pub(crate) fn line_count(text: &str) -> usize {
+    let newlines = text.bytes().filter(|&byte| byte == b'\n').count();
+    newlines + usize::from(!text.is_empty() && !text.ends_with('\n'))
+}
+
 /// Join collected lines with a terminal newline so a trailing empty line
 /// survives a later `str::lines()` pass.
 fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
@@ -1041,7 +1047,7 @@ fn parse_with_options_mode_and_index_once(
                 options,
             )
         } else {
-            let body_line_count = body.lines().count();
+            let body_line_count = line_count(body);
             (
                 MappedSource {
                     newlines_counted: (0, 0),
@@ -1102,7 +1108,7 @@ fn parse_with_options_mode_and_index_once(
     merge_note_link_defs(&mut link_defs, note_link_defs);
     let mut body = remap_source(body_source, &body);
     if !options.positions && body.source.contains("%%%") && body.source.contains("::") {
-        body.col_map = vec![Some(0); body.source.lines().count()];
+        body.col_map = vec![Some(0); line_count(&body.source)];
     }
     let erased_link_keys = transparent
         .map(|(t, _)| t.register_link_defs(&mut link_defs))
@@ -1855,7 +1861,7 @@ fn parse_unpositioned_mapped_source(
     if !at_document_level && !options.extensions.is_empty() {
         if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
             if let Some(extents) = extents {
-                extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
+                extents.extend(blocks.iter().map(|_| (0, line_count(&source.source))));
             }
             return blocks;
         }
@@ -1883,7 +1889,7 @@ fn parse_unpositioned_mapped_source(
     // WRAPS the blocks it parsed, which would move any index recorded in them.
     if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
         if let Some(extents) = extents {
-            extents.extend(blocks.iter().map(|_| (0, source.source.lines().count())));
+            extents.extend(blocks.iter().map(|_| (0, line_count(&source.source))));
         }
         return blocks;
     }

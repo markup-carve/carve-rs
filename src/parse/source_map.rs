@@ -365,7 +365,7 @@ pub(super) fn map_pos_through_source(pos: &mut Pos, parent: &MappedSource) {
 }
 
 pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSource {
-    let source_line_count = source.lines().count();
+    let source_line_count = crate::parse::line_count(&source);
     if source_line_count <= original.line_map.len() {
         return MappedSource {
             newlines_counted: (0, 0),

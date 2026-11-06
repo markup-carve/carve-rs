@@ -544,7 +544,7 @@ pub(in crate::parse) fn parse_inline_context_with_pairs(
         caption_number_allowed,
         has_link_trigger,
         wraps_live: CELL_WRAPS.with(|wraps| !wraps.borrow().is_empty()),
-        last_delimited_comment_close: bytes.windows(2).rposition(|w| w == b"%}"),
+        last_delimited_comment_close: memchr::memmem::rfind(bytes, b"%}"),
         bounds: inline_bounds(
             text,
             has_brackets,
