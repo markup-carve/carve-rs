@@ -2145,6 +2145,39 @@ impl<'a> Walk<'a> {
         inner.kind == Kind::Fence && (!missed || comment_line() || attached_quote_comment)
     }
 
+    fn attached_fence_ends_at(&self, at: usize) -> bool {
+        self.frames
+            .last()
+            .and_then(|frame| frame.attached_blank_end)
+            .is_some_and(|end| at >= end)
+    }
+
+    fn reach_after_attached_fence_end(&self, reached: usize, ended: bool) -> usize {
+        if ended && reached == self.frames.len() - 1 {
+            reached - 1
+        } else {
+            reached
+        }
+    }
+
+    fn leave_finished_fence(&mut self, kind: Kind, line: usize, ended: bool, reached: &mut usize) {
+        let resume = ended
+            .then(|| {
+                self.attached
+                    .as_ref()
+                    .filter(|block| block.from + self.first_line == line)
+                    .map(|block| block.frames.clone())
+            })
+            .flatten();
+        if kind == Kind::Fence {
+            self.frames.pop();
+        }
+        if let Some(frames) = resume.filter(|frames| frames.len() > self.frames.len()) {
+            self.frames = frames;
+            *reached = self.frames.len() - 1;
+        }
+    }
+
     fn attached_quote_comment_payload(&self, reached: usize, col: usize, inner: &Frame) -> bool {
         inner.family == "comment"
             && inner.line > self.first_line
@@ -2398,14 +2431,8 @@ impl<'a> Walk<'a> {
         }
         let plus_follower = *after_plus || follows_marker_line;
         *after_plus = false;
-        let attached_fence_ended = self
-            .frames
-            .last()
-            .and_then(|frame| frame.attached_blank_end)
-            .is_some_and(|end| at >= end);
-        if attached_fence_ended && reached == self.frames.len() - 1 {
-            reached -= 1;
-        }
+        let attached_fence_ended = self.attached_fence_ends_at(at);
+        reached = self.reach_after_attached_fence_end(reached, attached_fence_ended);
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
@@ -2488,21 +2515,7 @@ impl<'a> Walk<'a> {
         }
         let missed_line_block =
             (inner.kind == Kind::Fence && inner.line_block && missed).then(|| inner.clone());
-        let resume_attached = attached_fence_ended
-            .then(|| {
-                self.attached
-                    .as_ref()
-                    .filter(|block| block.from + self.first_line == inner.line)
-                    .map(|block| block.frames.clone())
-            })
-            .flatten();
-        if inner.kind == Kind::Fence {
-            self.frames.pop();
-        }
-        if let Some(frames) = resume_attached.filter(|frames| frames.len() > self.frames.len()) {
-            self.frames = frames;
-            reached = self.frames.len() - 1;
-        }
+        self.leave_finished_fence(inner.kind, inner.line, attached_fence_ended, &mut reached);
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
         // A plain line can continue a line block's open stanza lazily. Restore
