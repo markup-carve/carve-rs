@@ -181,16 +181,14 @@ fn the_materialised_emphasis_is_inside_its_strong() {
 }
 
 #[test]
-fn an_attributed_bold_italic_omits_the_inner_span_rather_than_inventing_one() {
-    // This engine's span for an attributed inline covers the attribute block,
-    // so `/*x*/{#id}` ends at the `}`. Trimming two off that lands inside the
-    // attributes - the inner node would claim `x*/{#`. PART 12 §4 allows
-    // omission where there is no honest span, and a wrong span is worse than
-    // none. The outer span is the real defect (carve-rs#521), and it is not
-    // specific to the combined form: `*x*{#i}` has it too.
+fn an_attributed_bold_italic_places_the_inner_span_on_authored_text() {
+    // PART 12 §4 and the ruling on carve-rs#3934 require the exact authored
+    // span of the inner node, even when attributes extend the outer span.
     let json = positioned("/*x*/{#id}\n");
-    assert_eq!(try_pos_of(&json, "emphasis"), None, "{json}");
-    // The unattributed form still gets one, so this is a guard and not a
-    // silent loss of the fix.
+    assert_eq!(
+        pos_of(&json, "emphasis"),
+        "{\"startLine\":1,\"endLine\":1,\"startColumn\":3,\"endColumn\":4,\"startOffset\":2,\"endOffset\":3}",
+        "{json}"
+    );
     assert!(try_pos_of(&positioned("/*x*/\n"), "emphasis").is_some());
 }
