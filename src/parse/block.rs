@@ -2161,7 +2161,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
     // A span opened past column 0 (`  %%%`): its closer may sit at any
     // column, so a column-0 closer is payload, not a new span (PART 0 S1).
     let mut indented_span: Option<(usize, usize)> = None;
-    let mut indented_code: Option<FenceOpen> = None;
+    let mut indented_code: Option<(FenceOpen, usize)> = None;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
         let paragraph_was_open = paragraph_open;
@@ -2171,6 +2171,8 @@ pub(in crate::parse) fn collect_indexed_colon_body(
         // line closes was opened BEFORE the malformed fence was ever read, so
         // no absorption can take its closer away (carve-rs#719).
         if exact_colon_fence_len(cur.peek().unwrap()) == Some(top) {
+            indented_span = None;
+            indented_code = None;
             if stack.len() == 1 {
                 cur.consume();
                 closed = true;
@@ -2186,8 +2188,10 @@ pub(in crate::parse) fn collect_indexed_colon_body(
             continue;
         }
         let line = cur.peek().unwrap();
-        if let Some(open) = indented_code {
-            if is_fence_close(trim_ascii_start(line), open) {
+        if let Some((open, column)) = indented_code {
+            if is_fence_close(trim_ascii_start(line), open)
+                || !is_blank_line(line) && indent_columns(line) < column
+            {
                 indented_code = None;
             }
         } else if let Some((run, column)) = indented_span {
@@ -2207,7 +2211,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
         } else if line.starts_with([' ', '\t']) {
             let rest = trim_ascii_start(line);
             if let Some(open) = detect_fence_open(rest) {
-                indented_code = Some(open);
+                indented_code = Some((open, indent_columns(line)));
             } else if let Some(open) = detect_comment_fence_line(rest) {
                 indented_span = Some((open.fence_len, indent_columns(line)));
                 push_current_line(&mut inner, cur);
