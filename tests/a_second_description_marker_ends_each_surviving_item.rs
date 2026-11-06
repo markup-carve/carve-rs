@@ -51,3 +51,10 @@ fn a_marker_column_separator_ends_an_item_with_an_earlier_definition_list() {
     let html = carve::to_html(input);
     assert!(html.ends_with("<p>: b\n: c</p>"), "{html}");
 }
+
+#[test]
+fn a_quoted_definition_list_does_not_end_its_items_open_quote_paragraph() {
+    let input = "- a\n  > :: t\n  > prose\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
+}

@@ -707,9 +707,10 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
-/// A marker-column separator ends an item that has held an actual definition
-/// list, even after its later paragraph. Text resembling a term in code or a
-/// stanza supplies no definition list (PART 0 S4, carve#5317).
+/// A marker-column separator ends an item whose current item chain held a
+/// definition list, even after a later paragraph. A quote or div owns its
+/// own list and lazy paragraph, so neither lends that boundary to the item
+/// (PART 0 S4, carve#5317).
 pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
     probe_blocks(body, options)
         .iter()
@@ -721,15 +722,8 @@ fn block_holds_definition_list(block: &BlockNode) -> bool {
         BlockNode::DefinitionList(_) => true,
         BlockNode::List(list) => list
             .items
-            .iter()
-            .any(|item| item.children.iter().any(block_holds_definition_list)),
-        BlockNode::BlockQuote(quote) => quote.children.iter().any(block_holds_definition_list),
-        BlockNode::Div(div) => div.children.iter().any(block_holds_definition_list),
-        BlockNode::Admonition(boxed) => boxed.children.iter().any(block_holds_definition_list),
-        BlockNode::Directive(directive) => {
-            directive.children.iter().any(block_holds_definition_list)
-        }
-        BlockNode::Section(section) => section.children.iter().any(block_holds_definition_list),
+            .last()
+            .is_some_and(|item| item.children.iter().any(block_holds_definition_list)),
         _ => false,
     }
 }
