@@ -12,7 +12,9 @@ fn definition_term_content_tab_survives_ast_json_roundtrip() {
         let decoded = carve::from_json(&json).unwrap();
         assert_eq!(carve::to_json(&decoded), json, "{source:?}");
         assert!(
-            carve::render_html(&decoded).unwrap().contains("<dt>\tx</dt>"),
+            carve::render_html(&decoded)
+                .unwrap()
+                .contains("<dt>\tx</dt>"),
             "{source:?}"
         );
     }
@@ -35,7 +37,10 @@ fn definition_term_content_tab_variant_sweep() {
         let json = carve::to_json(&carve::parse(&source));
         let decoded = carve::from_json(&json).unwrap();
         let html = carve::render_html(&decoded).unwrap();
-        assert!(html.contains(&format!("<dt>{term}</dt>")), "{source:?}: {html}");
+        assert!(
+            html.contains(&format!("<dt>{term}</dt>")),
+            "{source:?}: {html}"
+        );
     }
 }
 
