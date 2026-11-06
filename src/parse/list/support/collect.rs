@@ -1239,6 +1239,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if indent < strip_cols
             && cur.carried_reach(cur.pos) == Some(true)
             && item_block_opener(trim_ascii_start(line))
+            // The open span's closer is part of it, not an opener (PART 0 S1).
+            && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
             && (cur
                 .closed_comment_location
                 .is_some_and(|(at, column)| at + 1 == cur.pos && column < strip_cols)
@@ -1324,6 +1326,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !body_code_fence.holds_open_fence(&lines));
         if nested_fence.is_some() && indent < strip_cols {
             *fence = nested_fence;
+            break;
+        }
+        // A `: ` line at a surviving item's marker column ends it (01-layout.ebnf
+        // `markers`); own_lines frames one right of that column as lazy stanza text.
+        if !colon_open.is_empty()
+            && fence.is_none()
+            && indent <= marker_base
+            && strip_description_prefix(line).is_some()
+        {
             break;
         }
         let prior_comment = cur
