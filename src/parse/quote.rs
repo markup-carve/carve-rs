@@ -2829,9 +2829,8 @@ impl<'a> QuoteBody<'a> {
     ) -> bool {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
-        let stanza_fold = self.comment_run.is_some()
-            && line_starts_paragraph(trim_ascii_start(line))
-            && self.span_in_open_stanza();
+        let stanza_fold =
+            line_starts_paragraph(trim_ascii_start(line)) && self.span_in_open_stanza();
         if let Some((run, depth, _)) = self.comment_run.filter(|_| !stanza_fold) {
             if future_quoted_comment_closes(cur, depth + 1, 0, run)
                 || (!is_blank_line(line)
@@ -2905,7 +2904,9 @@ impl<'a> QuoteBody<'a> {
         }
         // The replay reads a description body as quoted text; its own base
         // closes the paragraph too.
-        let quoted_open = if self.closed_div {
+        let quoted_open = if stanza_fold {
+            true
+        } else if self.closed_div {
             false
         } else if self.description_line {
             fenced_below.unwrap_or(true) && self.para_open.get()

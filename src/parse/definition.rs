@@ -1964,7 +1964,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
         }
         let paragraph_open = self.paragraph_open();
-        let accept_fence_opener = fence.open.is_none() && detect_fence_open(&sliced).is_some();
+        let accept_fence_opener =
+            fence.open.is_none() && !self.in_line_block() && detect_fence_open(&sliced).is_some();
         // The nested description's `+`, or a quote's `> +`, already separates its next
         // block. A manufactured blank here would make it attach none.
         if accept_fence_opener
@@ -2383,6 +2384,14 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if self.stanza_fold {
             return true;
         }
+        self.in_line_block()
+            && self
+                .stanza_scan
+                .as_ref()
+                .is_some_and(|(scan, _)| scan.held_span())
+    }
+
+    fn in_line_block(&mut self) -> bool {
         let seed = self.seed;
         let (scan, seen) = self.stanza_scan.get_or_insert_with(|| {
             let mut scan = LineBlockTail::default();
@@ -2395,7 +2404,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             scan.step(line);
         }
         *seen = self.lines.len();
-        scan.in_block() == Some(true) && scan.held_span()
+        scan.in_block().is_some()
     }
 
     /// A structural opener in the band below the body's column that still
