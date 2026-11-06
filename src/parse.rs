@@ -902,10 +902,15 @@ fn parse_with_options_mode_and_index(
         }
         return result;
     }
-    // A hoisted abbreviation definition stands in document order by its source
-    // line (CARVE-P12-070), which only a positioned parse can place.
+    // A hoisted abbreviation needs source lines (CARVE-P12-070). A multiline
+    // block comment needs authored columns after nested collection (CARVE-P2-035).
     if !options.positions
-        && (transparent.is_some()
+        && (source.contains("{%")
+            && source.lines().any(|line| {
+                let line = trim_ascii_start(line);
+                line.starts_with("{%") && !line.contains("%}")
+            })
+            || transparent.is_some()
             || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source)))
     {
         let (mut doc, index) = parse_with_options_mode_and_index_once(

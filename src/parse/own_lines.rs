@@ -3216,6 +3216,11 @@ pub(crate) fn restore_authored_columns(pos: &mut Pos) {
     });
 }
 
+/// Map a walked 1-based column back to the authored source for layout checks.
+pub(crate) fn authored_source_column(line: usize, column: usize) -> usize {
+    ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column))
+}
+
 /// Map a 1-based `column` on 1-based `line` of the walked source to the
 /// column the same character has in the authored line.
 fn authored_column(edits: &[LineEdit], line: usize, column: usize) -> usize {

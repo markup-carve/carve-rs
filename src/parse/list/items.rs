@@ -2830,12 +2830,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
             !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
             |offset, raw| {
-                (raw.starts_with(LAZY) && !self.cur.in_quoted_body).then(|| {
-                    self.cur
-                        .source_col(self.cur.pos + offset)
-                        .unwrap_or(0)
-                        .max(0) as usize
-                })
+                (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
+                    .then(|| {
+                        let at = self.cur.pos + offset;
+                        let line = self.cur.source_line(at)?;
+                        let stripped = self.cur.source_col(at)?;
+                        let walked = stripped.max(0) as usize + indent_columns(strip_lazy(raw));
+                        Some(crate::parse::own_lines::authored_source_column(line, walked + 1) - 1)
+                    })
+                    .flatten()
             },
         ) else {
             return false;

@@ -224,8 +224,8 @@ pub(crate) fn refused_brace_run<'a>(
     refused_brace_run_with_columns(lines, lazy_refuses, |_, _| None)
 }
 
-/// A framed lazy line has lost its written indentation. Its cursor still
-/// carries the source column, so callers with that map supply it here.
+/// Collection may rebase ordinary and framed lazy lines. Callers with an
+/// authored-column map supply each line's original brace-continuation column.
 pub(crate) fn refused_brace_run_with_columns<'a>(
     mut lines: impl Iterator<Item = &'a str>,
     lazy_refuses: bool,
@@ -238,7 +238,7 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
         |at: usize, raw: &str, source_column: &mut dyn FnMut(usize, &str) -> Option<usize>| {
             let line = strip_lazy(raw);
             if line.len() == raw.len() {
-                indent_columns(line)
+                source_column(at, raw).unwrap_or_else(|| indent_columns(line))
             } else {
                 lazy_source_column(raw)
                     .or_else(|| source_column(at, raw))
