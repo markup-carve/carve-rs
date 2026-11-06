@@ -160,7 +160,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
         .lines()
         .rev()
         .find(|line| !is_blank_line(line))
-        .is_some_and(|line| strip_description_prefix(line).is_some());
+        .is_some_and(|line| {
+            indent_columns(line) <= list_base && strip_description_prefix(line).is_some()
+        });
     let mut lazy_brace_open = false;
     if ancestor_quote_column.is_some() {
         for prior in nested.source.lines() {
