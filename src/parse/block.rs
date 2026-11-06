@@ -1049,9 +1049,13 @@ impl BodyCommentState {
             }
             return;
         }
+        // A marker at the body's column opens a sublist mid-paragraph (§24 C3).
+        let sublist = strip_lazy(raw).len() == raw.len()
+            && !raw.starts_with([' ', '\t'])
+            && detect_list_marker_full(line).is_some();
         let opener = if let Some(text) = lead {
             trim_ascii_start(innermost_marker_content(text))
-        } else if self.at_block_start {
+        } else if self.at_block_start || sublist {
             trim_ascii_start(innermost_marker_content(line))
         } else {
             line
