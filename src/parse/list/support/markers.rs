@@ -666,10 +666,44 @@ pub(crate) fn collected_body_takes_the_lazy_line(
     trailing_below_column: bool,
     options: &Options<'_>,
 ) -> bool {
+    if paragraph_after_attached_unclosed_fence(src, options) {
+        return true;
+    }
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
     nested_ends_with_open_paragraph(src, trailing_below_column, trailing_below_column, options)
+}
+
+/// The paragraph after an attached, unclosed fence's first blank remains open.
+/// A plain block probe cannot recover the accepted `+` from a rebased item body.
+fn paragraph_after_attached_unclosed_fence(src: &str, options: &Options<'_>) -> bool {
+    let lines: Vec<&str> = src.lines().collect();
+    for at in 0..lines.len().saturating_sub(2) {
+        let marker = detect_list_marker_full(trim_ascii_start(lines[at]));
+        let plus = is_plus_marker(trim_ascii_start(lines[at]))
+            || marker.is_some_and(|marker| is_plus_marker(marker.content));
+        if !plus {
+            continue;
+        }
+        let Some(open) = detect_fence_open(trim_ascii_start(lines[at + 1])) else {
+            continue;
+        };
+        if lines[at + 2..]
+            .iter()
+            .any(|line| is_fence_close(line, open))
+        {
+            continue;
+        }
+        let Some(blank) = (at + 2..lines.len()).find(|&line| is_blank_line(lines[line])) else {
+            continue;
+        };
+        let tail = lines[blank + 1..].join("\n");
+        if !tail.is_empty() && body_ends_with_open_paragraph(&tail, options) {
+            return true;
+        }
+    }
+    false
 }
 
 /// A wrapped attribute that reached this collector's item column applies one

@@ -756,6 +756,11 @@ pub(in crate::parse) fn parse_definition_list(
                         || detect_hardbreaks_block_open(line).is_some()
                         || detect_quote_block_open(line).is_some()
                 });
+                let attached_paragraph = cur
+                    .lines
+                    .line(first_visible)
+                    .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+                let content_column = list_column + definition_column;
                 let mut boundary = |a: &str, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
@@ -763,6 +768,9 @@ pub(in crate::parse) fn parse_definition_list(
                         || (!attached_list && is_list_marker(trim_ascii_start(a)))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
+                        || (attached_paragraph
+                            && indent_columns(a) >= content_column
+                            && item_block_opener(trim_ascii_start(a)))
                 };
                 let classified = cur.continuation_decision(def_start);
                 let end = match classified {
@@ -1922,6 +1930,11 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     || is_plus_marker(a)
                     // A list marker ends an attached paragraph (PART 0 S3, carve#4860).
                     || (attached_paragraph && is_list_marker(trim_ascii_start(a)))
+                    // Once a pulled paragraph reaches this body's own column,
+                    // a block opener is read by the description (CARVE-P0-011).
+                    || (attached_paragraph
+                        && indent_columns(a) >= content_column
+                        && item_block_opener(trim_ascii_start(a)))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
                     // Below the body's column a description marker opens a sibling (PART 0 S1).

@@ -77,6 +77,8 @@ struct Frame {
     /// An item's marker line from its marker on, for the §11 N1 sibling test.
     marker_src: String,
     closer: Option<Closer>,
+    /// First blank that ends an attached code fence with no closer.
+    attached_blank_end: Option<usize>,
     open_col: usize,
     run: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
@@ -144,6 +146,7 @@ impl Frame {
             axes: String::new(),
             marker_src: String::new(),
             closer: None,
+            attached_blank_end: None,
             open_col: 0,
             run: 0,
             absorbs: false,
@@ -506,17 +509,86 @@ struct Runs {
     backtick: Vec<usize>,
     tilde: Vec<usize>,
     last_comment: std::collections::HashMap<usize, usize>,
+    code_by_column: CodeCloserIndex,
+}
+
+/// Suffix maximum fence widths by source column. A prefix query answers
+/// whether a later run can close an opener without rescanning its tail.
+struct CodeCloserIndex {
+    columns: Vec<usize>,
+    backtick: Vec<Vec<(usize, usize)>>,
+    tilde: Vec<Vec<(usize, usize)>>,
+}
+
+impl CodeCloserIndex {
+    fn new(fences: &[(usize, u8, usize, usize)]) -> Self {
+        let mut columns: Vec<usize> = fences.iter().map(|entry| entry.3).collect();
+        columns.sort_unstable();
+        columns.dedup();
+        let mut index = Self {
+            backtick: vec![Vec::new(); columns.len() + 1],
+            tilde: vec![Vec::new(); columns.len() + 1],
+            columns,
+        };
+        for &(line, ch, width, column) in fences.iter().rev() {
+            let mut at = index.columns.binary_search(&column).expect("fence column") + 1;
+            let nodes = if ch == b'`' {
+                &mut index.backtick
+            } else {
+                &mut index.tilde
+            };
+            while at < nodes.len() {
+                nodes[at].push((line, width));
+                at += at & at.wrapping_neg();
+            }
+        }
+        for nodes in [&mut index.backtick, &mut index.tilde] {
+            for entries in nodes.iter_mut() {
+                let mut largest = 0;
+                for (_, width) in entries.iter_mut().rev() {
+                    largest = largest.max(*width);
+                    *width = largest;
+                }
+            }
+        }
+        index
+    }
+
+    fn has_later(&self, ch: u8, line: usize, column: usize, width: usize) -> bool {
+        let nodes = if ch == b'`' {
+            &self.backtick
+        } else {
+            &self.tilde
+        };
+        let mut at = self
+            .columns
+            .partition_point(|&candidate| candidate <= column);
+        while at > 0 {
+            let entries = &nodes[at];
+            let first = entries.partition_point(|&(candidate, _)| candidate <= line);
+            if entries
+                .get(first)
+                .is_some_and(|&(_, largest)| largest >= width)
+            {
+                return true;
+            }
+            at -= at & at.wrapping_neg();
+        }
+        false
+    }
 }
 
 fn closer_runs(lines: &[&str]) -> Runs {
     let mut backtick = vec![0; lines.len() + 1];
     let mut tilde = vec![0; lines.len() + 1];
     let mut last_comment = std::collections::HashMap::new();
+    let mut fences = Vec::new();
     for j in (0..lines.len()).rev() {
         let rest = quoted_rest(lines[j]);
         backtick[j] = backtick[j + 1];
         tilde[j] = tilde[j + 1];
         if let Some((ch, n)) = pure_fence(rest) {
+            fences.push((j, ch, n, doc_column(lines[j], rest)));
             let slot = if ch == b'`' {
                 &mut backtick[j]
             } else {
@@ -532,6 +604,7 @@ fn closer_runs(lines: &[&str]) -> Runs {
         backtick,
         tilde,
         last_comment,
+        code_by_column: CodeCloserIndex::new(&fences),
     }
 }
 
@@ -2142,6 +2215,64 @@ impl<'a> Walk<'a> {
         inner.kind == Kind::Fence && (!missed || comment_line() || attached_quote_comment)
     }
 
+    fn attached_fence_ends_at(&self, at: usize) -> bool {
+        let ended = self
+            .frames
+            .last()
+            .and_then(|frame| frame.attached_blank_end)
+            .is_some_and(|end| at >= end);
+        ended
+            && self.attached.as_ref().is_some_and(|block| {
+                let host_col = block.frames.last().expect("attached host").col;
+                self.lines[at + 1..]
+                    .iter()
+                    .find(|line| !is_blank_line(line))
+                    .is_some_and(|line| doc_column(line, quoted_rest(line)) >= host_col)
+            })
+    }
+
+    fn reach_after_attached_fence_end(&self, reached: usize, ended: bool) -> usize {
+        if ended && reached == self.frames.len() - 1 {
+            reached - 1
+        } else {
+            reached
+        }
+    }
+
+    fn leave_finished_fence(
+        &mut self,
+        kind: Kind,
+        line: usize,
+        at: usize,
+        ended: bool,
+        reached: &mut usize,
+    ) {
+        let resume = ended
+            .then(|| {
+                self.attached
+                    .as_ref()
+                    .filter(|block| block.from + self.first_line == line)
+                    .map(|block| block.frames.clone())
+            })
+            .flatten()
+            .filter(|frames| {
+                let next = self.lines[at + 1..]
+                    .iter()
+                    .find(|line| !is_blank_line(line));
+                next.is_some_and(|line| {
+                    let rest = quoted_rest(line);
+                    doc_column(line, rest) >= frames.last().expect("attached host").col
+                })
+            });
+        if kind == Kind::Fence {
+            self.frames.pop();
+        }
+        if let Some(frames) = resume.filter(|frames| frames.len() > self.frames.len()) {
+            self.frames = frames;
+            *reached = self.frames.len() - 1;
+        }
+    }
+
     fn attached_quote_comment_payload(&self, reached: usize, col: usize, inner: &Frame) -> bool {
         inner.family == "comment"
             && inner.line > self.first_line
@@ -2395,6 +2526,8 @@ impl<'a> Walk<'a> {
         }
         let plus_follower = *after_plus || follows_marker_line;
         *after_plus = false;
+        let attached_fence_ended = self.attached_fence_ends_at(at);
+        reached = self.reach_after_attached_fence_end(reached, attached_fence_ended);
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
@@ -2403,7 +2536,8 @@ impl<'a> Walk<'a> {
         if missed && self.close_comment_below_host(at, line, reached, c, tracing) {
             return;
         }
-        let in_payload = self.in_open_payload(missed, reached, c.col, c.rest);
+        let in_payload =
+            !attached_fence_ended && self.in_open_payload(missed, reached, c.col, c.rest);
         let inner = self.frames.last().expect("document frame");
         if in_payload {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
@@ -2476,9 +2610,13 @@ impl<'a> Walk<'a> {
         }
         let missed_line_block =
             (inner.kind == Kind::Fence && inner.line_block && missed).then(|| inner.clone());
-        if inner.kind == Kind::Fence {
-            self.frames.pop();
-        }
+        self.leave_finished_fence(
+            inner.kind,
+            inner.line,
+            at,
+            attached_fence_ended,
+            &mut reached,
+        );
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
         // A plain line can continue a line block's open stanza lazily. Restore
@@ -2958,6 +3096,23 @@ impl<'a> Walk<'a> {
                     col.saturating_sub(canon)
                 };
                 f.closer = Some(closer);
+                if let Closer::Fence(ch, len) = closer {
+                    let attached = at
+                        .checked_sub(1)
+                        .is_some_and(|previous| self.frames[owner].plus == Some(previous))
+                        || self.attached.as_ref().is_some_and(|block| block.from == at);
+                    if attached {
+                        let first_blank = (at + 1..self.lines.len())
+                            .find(|&line| is_blank_line(self.lines[line]));
+                        if let Some(blank) = first_blank {
+                            let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
+                            let has_closer = runs.code_by_column.has_later(ch, at, col, len);
+                            if !has_closer {
+                                f.attached_blank_end = Some(blank);
+                            }
+                        }
+                    }
+                }
                 f.open_col = col;
                 f.line_block = line_block;
                 f.shift = o_shift;

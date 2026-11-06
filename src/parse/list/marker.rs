@@ -511,6 +511,11 @@ pub(crate) fn attached_block_end(
             end += 1;
             continue;
         }
+        // A new block at the host's boundary is not part of the block the
+        // marker attached, even when that new block is itself a fence.
+        if end > start && is_boundary(line, end) {
+            break;
+        }
         if let Some(open) = detect_fence_open(line) {
             // An unclosed attached fence takes the rest of its container only when no
             // blank line follows; otherwise it ends with the attached block (carve#3421).
