@@ -32,3 +32,9 @@ fn a_line_block_spelling_inside_quoted_code_opens_no_stanza() {
     let html = to_html("> ~~~\n> ::: |\n> ~~~\n> # heading\nb\n");
     assert!(html.ends_with("</blockquote>\n<p>b</p>"), "{html}");
 }
+
+#[test]
+fn a_code_spelling_inside_a_matched_comment_hides_no_later_stanza() {
+    let html = to_html("> %%%\n> ~~~\n> %%%\n> ::: |\n> x\n> # h\nb\n");
+    assert!(html.contains("<p>x<br>\n# h<br>\nb</p>"), "{html}");
+}
