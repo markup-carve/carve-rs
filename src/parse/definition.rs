@@ -1092,6 +1092,7 @@ pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
 #[derive(Default)]
 pub(crate) struct LineBlockTail {
     open: Option<usize>,
+    code: Option<FenceOpen>,
     quoted: bool,
     host_col: usize,
     last_is_payload: bool,
@@ -1111,6 +1112,20 @@ impl LineBlockTail {
         while let Some(rest) = strip_blockquote_prefix(local) {
             lead = indent_columns(rest);
             local = trim_ascii_start(rest);
+        }
+        // Fence payload can contain a literal `::: |`. It is not an opener
+        // for the stanza scan used by the quote's lazy-line decision.
+        if let Some(code) = self.code {
+            if is_fence_close(local, code) {
+                self.code = None;
+            }
+            return;
+        }
+        if self.open.is_none() {
+            if let Some(code) = detect_fence_open(local) {
+                self.code = Some(code);
+                return;
+            }
         }
         let stanza_open = self.last_is_payload;
         self.last_is_payload = false;

@@ -2831,6 +2831,17 @@ impl<'a> QuoteBody<'a> {
         // owner. Without a later closer the opener is only a line comment.
         let stanza_fold =
             line_starts_paragraph(trim_ascii_start(line)) && self.span_in_open_stanza();
+        // A heading is a finished quoted block. Earlier code payload must
+        // not manufacture a stanza that lets the next unmarked line fold.
+        if self
+            .inner
+            .lines
+            .last()
+            .is_some_and(|last| detect_heading(trim_ascii_start(&last.text)).is_some())
+            && !self.span_in_open_stanza()
+        {
+            return true;
+        }
         if let Some((run, depth, _)) = self.comment_run.filter(|_| !stanza_fold) {
             if future_quoted_comment_closes(cur, depth + 1, 0, run)
                 || (!is_blank_line(line)

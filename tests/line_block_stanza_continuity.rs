@@ -26,3 +26,9 @@ fn a_quoted_description_span_preserves_the_prior_stanza() {
         "{ended_stanza}"
     );
 }
+
+#[test]
+fn a_line_block_spelling_inside_quoted_code_opens_no_stanza() {
+    let html = to_html("> ~~~\n> ::: |\n> ~~~\n> # heading\nb\n");
+    assert!(html.ends_with("</blockquote>\n<p>b</p>"), "{html}");
+}
