@@ -2829,13 +2829,12 @@ impl<'a> QuoteBody<'a> {
     ) -> bool {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
-        let (stanza_open, span_can_fold) = if self.may_hold_fence {
+        let stanza_open = if self.may_hold_fence {
             self.stanza_state()
         } else {
-            (false, false)
+            false
         };
-        let stanza_fold =
-            line_starts_paragraph(trim_ascii_start(line)) && stanza_open && span_can_fold;
+        let stanza_fold = line_starts_paragraph(trim_ascii_start(line)) && stanza_open;
         // A heading is a finished quoted block. Earlier code payload must
         // not manufacture a stanza that lets the next unmarked line fold.
         if self
@@ -3000,7 +2999,7 @@ impl<'a> QuoteBody<'a> {
 
     /// A `%%%` span inside a line block leaves nothing, so a missed line ends it
     /// and folds into the stanza that was open before it (carve#4956).
-    fn stanza_state(&mut self) -> (bool, bool) {
+    fn stanza_state(&mut self) -> bool {
         let (scan, seen) = &mut self.stanza_scan;
         if self.inner.lines.len() < *seen {
             (*scan, *seen) = Default::default();
@@ -3009,10 +3008,7 @@ impl<'a> QuoteBody<'a> {
             scan.step(&line.text);
         }
         *seen = self.inner.lines.len();
-        (
-            scan.in_block() == Some(true),
-            scan.closed_span() || !scan.span_blank(),
-        )
+        scan.in_block() == Some(true)
     }
 
     /// A lone `+` since the last blank attaches the block after it to the
