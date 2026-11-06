@@ -155,6 +155,12 @@ pub(crate) fn collect_trailing_lazy_through_framed(
     let mut buffered = frame_band_lines.then(LineBuffer::default);
     // A stanza line keeps its lazy frame, so a `%%%` span it misses ends there (carve#4956).
     let stanza_tail = crate::parse::definition::body_ends_in_line_block_payload(&nested.source);
+    let ended_description_stanza = nested
+        .source
+        .lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|line| strip_description_prefix(line).is_some());
     let mut lazy_brace_open = false;
     if ancestor_quote_column.is_some() {
         for prior in nested.source.lines() {
@@ -178,12 +184,12 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                 && strip_description_prefix(trim_ascii_start(line)).is_some()
                 && body_ends_in_definition_list(&nested.source, options)
         });
-        // A separator at the list marker's column leaves the term. One
-        // column inside the marker remains lazy term text.
+        // A separator at the list marker's column ends that item after a
+        // prior separator ended the descendant stanza. A bare stanza still
+        // owns its description-shaped lazy text (carve#5308).
         if indent <= list_base
             && strip_description_prefix(trim_ascii_start(line)).is_some()
-            && term_options
-                .is_some_and(|options| body_chain_ends_in_definition_list(&nested.source, options))
+            && (!stanza_tail || ended_description_stanza)
         {
             break;
         }
