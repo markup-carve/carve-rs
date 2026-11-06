@@ -278,18 +278,10 @@
     },
     {
       "name": "nested-task-checkbox-column",
-      "description": "The refused plus is reported at its source column.",
+      "description": "A plus at a task item's content column is a letter under PART 0 S2 and is quiet (carve#4648).",
       "source": "- foo\n  - [ ] task\n    +\n  - x\n",
       "expected": {
-        "findings": [
-          {
-            "line": 3,
-            "column": 5,
-            "includes": [
-              "+"
-            ]
-          }
-        ]
+        "findings": []
       }
     },
     {
