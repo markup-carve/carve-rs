@@ -2126,7 +2126,12 @@ impl<'a> Walk<'a> {
                     .iter()
                     .all(|f| f.kind != Kind::Quote)
         };
-        let attached_quote_comment = inner.family == "comment"
+        let attached_quote_comment = self.attached_quote_comment_payload(reached, col, inner);
+        inner.kind == Kind::Fence && (!missed || comment_line() || attached_quote_comment)
+    }
+
+    fn attached_quote_comment_payload(&self, reached: usize, col: usize, inner: &Frame) -> bool {
+        inner.family == "comment"
             && inner.line > self.first_line
             && self.frames[reached + 1..].iter().any(|frame| {
                 frame.kind == Kind::Quote
@@ -2136,8 +2141,74 @@ impl<'a> Walk<'a> {
             && trim_line_end(trim_ascii_start(
                 self.lines[inner.line - self.first_line - 1],
             ))
-            .ends_with("> +");
-        inner.kind == Kind::Fence && (!missed || comment_line() || attached_quote_comment)
+            .ends_with("> +")
+    }
+
+    /// A marker-line quote's `+` takes an unquoted span at its own column.
+    /// A span that closes before leaving that column already has its owner.
+    fn attach_unclosed_quote_comment(
+        &self,
+        at: usize,
+        reached: usize,
+        c: &mut Cursor<'_>,
+    ) -> usize {
+        let attaches = at > 0
+            && self
+                .frames
+                .last()
+                .is_some_and(|frame| frame.kind == Kind::Quote)
+            && reached + 1 == self.frames.len() - 1
+            && comment_run(c.rest).is_some_and(|run| {
+                indent_cols(self.lines[at]).0 == self.frames[reached + 1].doc_marker
+                    && !self.lines[at + 1..]
+                        .iter()
+                        .take_while(|line| {
+                            indent_cols(line).0 >= self.frames[reached + 1].doc_marker
+                        })
+                        .any(|line| comment_run(trim_ascii_start(line)) == Some(run))
+            })
+            && trim_line_end(trim_ascii_start(self.lines[at - 1])).ends_with("> +");
+        if !attaches {
+            return reached;
+        }
+        let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
+        c.lead_in(canon, shift, false);
+        c.out.push_str("> ");
+        c.edits.push((c.out.chars().count(), -2));
+        c.measure();
+        reached + 1
+    }
+
+    /// The following payload is invisible in the attached quote's source.
+    fn write_attached_quote_comment_payload(
+        &self,
+        at: usize,
+        reached: usize,
+        missed: bool,
+        c: &mut Cursor<'_>,
+        inner: &Frame,
+    ) {
+        if missed && self.attached_quote_comment_payload(reached, c.col, inner) {
+            if inner
+                .closer
+                .is_some_and(|closer| closer.closes(c.rest, c.col, inner.open_col))
+            {
+                c.out.push_str("> ");
+                c.edits.push((c.out.chars().count(), -2));
+                c.measure();
+            } else {
+                c.consume_marker(self.mark, self.lines[at]);
+            }
+        }
+    }
+
+    fn marker_ends_unquoted_description(&self, col: usize, rest: &str) -> bool {
+        strip_description_prefix(rest).is_some()
+            && self.frames.iter().any(|frame| {
+                frame.kind == Kind::Item && frame.marker.is_some_and(|(column, _)| column == col)
+            })
+            && self.frames.iter().any(|frame| frame.kind == Kind::Dd)
+            && self.frames.iter().all(|frame| frame.kind != Kind::Quote)
     }
 
     /// Reports a `+` the ownership walk consumed without attaching it; true when
@@ -2266,27 +2337,7 @@ impl<'a> Walk<'a> {
         }
         // The attachment test measured through quote prefixes. Keep that owner.
         reached = self.attached_item_after_quote(at, c, reached);
-        if at > 0
-            && self.frames.last().is_some_and(|f| f.kind == Kind::Quote)
-            && reached + 1 == self.frames.len() - 1
-            && comment_run(c.rest).is_some_and(|run| {
-                indent_cols(self.lines[at]).0 == self.frames[reached + 1].doc_marker
-                    && !self.lines[at + 1..]
-                        .iter()
-                        .take_while(|line| {
-                            indent_cols(line).0 >= self.frames[reached + 1].doc_marker
-                        })
-                        .any(|line| comment_run(trim_ascii_start(line)) == Some(run))
-            })
-            && trim_line_end(trim_ascii_start(self.lines[at - 1])).ends_with("> +")
-        {
-            let (canon, shift) = (self.frames[reached].canon, self.frames[reached].shift);
-            c.lead_in(canon, shift, false);
-            c.out.push_str("> ");
-            c.edits.push((c.out.chars().count(), -2));
-            c.measure();
-            reached += 1;
-        }
+        reached = self.attach_unclosed_quote_comment(at, reached, c);
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
@@ -2347,28 +2398,7 @@ impl<'a> Walk<'a> {
             let (col, open_col) = (c.col, inner.open_col);
             let family = inner.family;
             c.lead_in(target, inner.shift, false);
-            if missed
-                && inner.family == "comment"
-                && self.frames[reached + 1..]
-                    .iter()
-                    .any(|frame| frame.kind == Kind::Quote && c.col >= frame.doc_marker)
-                && inner.line > self.first_line
-                && trim_line_end(trim_ascii_start(
-                    self.lines[inner.line - self.first_line - 1],
-                ))
-                .ends_with("> +")
-            {
-                if inner
-                    .closer
-                    .is_some_and(|closer| closer.closes(c.rest, c.col, inner.open_col))
-                {
-                    c.out.push_str("> ");
-                    c.edits.push((c.out.chars().count(), -2));
-                    c.measure();
-                } else {
-                    c.consume_marker(self.mark, self.lines[at]);
-                }
-            }
+            self.write_attached_quote_comment_payload(at, reached, missed, c, inner);
             if tracing {
                 let payload = self.deepest();
                 let closes = !c.rest.is_empty()
@@ -2443,12 +2473,7 @@ impl<'a> Walk<'a> {
             return;
         }
         let top_para = self.frames.last().expect("frame").para;
-        let marker_ends_unquoted_description = strip_description_prefix(c.rest).is_some()
-            && self.frames.iter().any(|frame| {
-                frame.kind == Kind::Item && frame.marker.is_some_and(|(column, _)| column == c.col)
-            })
-            && self.frames.iter().any(|frame| frame.kind == Kind::Dd)
-            && self.frames.iter().all(|frame| frame.kind != Kind::Quote);
+        let marker_ends_unquoted_description = self.marker_ends_unquoted_description(c.col, c.rest);
         // A separator at a surviving item's marker column cannot be the lazy
         // text of an unquoted description held by that item (PART 0 S4).
         let lazy_refused =
