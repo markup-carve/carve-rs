@@ -421,7 +421,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut literal_colon = marker_content
         .and_then(detect_line_block_open)
         .map(|width| (width, strip_cols, strip_cols));
-    let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
+    let mut comment_fence = marker_comment.map(|open| {
+        let descendant = marker_content.map_or(0, innermost_marker_content_col);
+        (open.fence_len, strip_cols + descendant)
+    });
     let mut comment_fence_strip = comment_fence.map(|_| strip_cols);
     // A colon opener on this item's own marker line is a line the walk never
     // sees, so its closer would read as an anonymous opener below.
@@ -471,6 +474,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     // consumes its opacity, but this collector still needs the span boundary
     // to decide whether the line after its closer can be lazy in this item.
     let mut marker_comment_span = None;
+    let mut marker_comment_owner = 0;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     // A marker-line ladder opens descendants before collection begins.
@@ -1346,6 +1350,16 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     .is_some_and(|(at, _)| at + 1 == cur.pos));
         // A comment line inside a span the body holds is payload, never past a paragraph.
         let in_held_span = held_comment_span.holds(&lines, line);
+        // The prior marker's span ended at its sibling. A lower-column fence
+        // therefore opens in the ancestor, even if the old raw lines look paired.
+        if marker_comment_owner > 0
+            && marker_comment_span.is_none()
+            && indent < strip_cols
+            && detect_comment_fence_line_any_column(line).is_some()
+            && !in_held_span
+        {
+            break;
+        }
         let paragraph_before_comment = !in_held_span
             && (comment_boundary || after_retaining_comment)
             && (lines[..lines.len() - trailing_comment_lines]
@@ -1610,6 +1624,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         let is_marker = detect_list_marker_full_at(line, indent).is_some();
+        // A sibling marker misses a span opened on the preceding marker line.
+        // The delimiter after that sibling begins a new span at its own host.
+        if marker_comment_span.is_some() && is_marker && indent <= marker_comment_owner {
+            marker_comment_span = None;
+            held_comment_span.reset_at(lines.len());
+        }
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
@@ -1643,6 +1663,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
                 {
                     marker_comment_span = Some(open.fence_len);
+                    marker_comment_owner = indent;
                 }
             }
         }

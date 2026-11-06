@@ -1095,6 +1095,11 @@ impl HeldCommentSpan {
         }
     }
 
+    pub(in crate::parse) fn reset_at(&mut self, seen: usize) {
+        self.seen = seen;
+        self.state = BodyCommentState::new();
+    }
+
     pub(in crate::parse) fn holds<S: AsRef<str>>(&mut self, body_lines: &[S], line: &str) -> bool {
         if detect_comment_fence_line_any_column(line).is_none() {
             return false;
