@@ -4074,6 +4074,9 @@ fn parse_document_with_custom_options_once(
         }
         None
     };
+    if !options.positions {
+        doc.footnote_def_pos.clear();
+    }
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
