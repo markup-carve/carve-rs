@@ -24,5 +24,8 @@ fn a_plus_quote_after_a_wide_task_gap_takes_its_body() {
 #[test]
 fn text_after_a_wide_task_gap_stays_text() {
     let html = to_html("- [x]   two  words\n");
-    assert!(html.contains("checked disabled aria-label=\"two words\"> two  words</li>"), "{html}");
+    assert!(
+        html.contains("checked disabled aria-label=\"two words\"> two  words</li>"),
+        "{html}"
+    );
 }
