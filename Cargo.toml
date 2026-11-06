@@ -92,6 +92,10 @@ name = "attached_unclosed_fence_paragraph_lazy"
 path = "tests/attached_unclosed_fence_paragraph_lazy.rs"
 
 [[test]]
+name = "attached_unclosed_colon_4016"
+path = "tests/attached_unclosed_colon_4016.rs"
+
+[[test]]
 name = "outer_attached_fence_4003"
 path = "tests/outer_attached_fence_4003.rs"
 
