@@ -15,8 +15,13 @@ pub(crate) fn fold_lazy_run_and_resume_in_band(
     let mut staged = LineBuffer::default().into_source();
     let mut flush_separator_follows_other_block = false;
     loop {
-        // The line ended the item's comment span and the item (carve#4770).
-        if cur.comment_span_missed_at == Some(cur.pos) {
+        // A missed descendant span closes that descendant. A later band line
+        // can open a paragraph in this outer item; only that new paragraph
+        // allows the lazy run to resume. The `open` probe below then checks
+        // whether this particular follower can join it.
+        if cur.comment_span_missed_at == Some(cur.pos)
+            && !body_ends_with_open_paragraph(&nested.source, options)
+        {
             break;
         }
         if cur
