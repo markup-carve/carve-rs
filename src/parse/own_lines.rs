@@ -2978,12 +2978,9 @@ impl<'a> Walk<'a> {
                     }
                     // Past the one space after a `>` the `+` stays the quote's letter.
                     Err(_) if quote_text => self.refuse_line = true,
-                    // Behind a lead tab the line is text (CARVE-P2-010).
-                    Err(reason) if behind_tab(self.lines[at], c.rest) => {
-                        let plus = doc_column(self.lines[at], c.rest);
-                        let host = self.frames[frame].kind;
-                        self.refuse_plus(at, plus, Some(host), reason, true);
-                    }
+                    // Behind a lead tab the line is text (CARVE-P2-010), so
+                    // the `+` is ordinary and not a refused marker.
+                    Err(_) if behind_tab(self.lines[at], c.rest) => self.refuse_line = true,
                     // A refused first-block marker is consumed and renders nothing (carve#5013).
                     Err(reason) => {
                         let plus = doc_column(self.lines[at], c.rest);
