@@ -77,6 +77,8 @@ struct Frame {
     /// An item's marker line from its marker on, for the §11 N1 sibling test.
     marker_src: String,
     closer: Option<Closer>,
+    /// First blank that ends an attached code fence with no closer.
+    attached_blank_end: Option<usize>,
     open_col: usize,
     run: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
@@ -144,6 +146,7 @@ impl Frame {
             axes: String::new(),
             marker_src: String::new(),
             closer: None,
+            attached_blank_end: None,
             open_col: 0,
             run: 0,
             absorbs: false,
@@ -2395,6 +2398,14 @@ impl<'a> Walk<'a> {
         }
         let plus_follower = *after_plus || follows_marker_line;
         *after_plus = false;
+        let attached_fence_ended = self
+            .frames
+            .last()
+            .and_then(|frame| frame.attached_blank_end)
+            .is_some_and(|end| at >= end);
+        if attached_fence_ended && reached == self.frames.len() - 1 {
+            reached -= 1;
+        }
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
@@ -2403,7 +2414,8 @@ impl<'a> Walk<'a> {
         if missed && self.close_comment_below_host(at, line, reached, c, tracing) {
             return;
         }
-        let in_payload = self.in_open_payload(missed, reached, c.col, c.rest);
+        let in_payload =
+            !attached_fence_ended && self.in_open_payload(missed, reached, c.col, c.rest);
         let inner = self.frames.last().expect("document frame");
         if in_payload {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
@@ -2476,8 +2488,20 @@ impl<'a> Walk<'a> {
         }
         let missed_line_block =
             (inner.kind == Kind::Fence && inner.line_block && missed).then(|| inner.clone());
+        let resume_attached = attached_fence_ended
+            .then(|| {
+                self.attached
+                    .as_ref()
+                    .filter(|block| block.from + self.first_line == inner.line)
+                    .map(|block| block.frames.clone())
+            })
+            .flatten();
         if inner.kind == Kind::Fence {
             self.frames.pop();
+        }
+        if let Some(frames) = resume_attached.filter(|frames| frames.len() > self.frames.len()) {
+            self.frames = frames;
+            reached = self.frames.len() - 1;
         }
         self.end_closed_lists(c);
         let form = self.classify(c.rest, reached, at);
@@ -2958,6 +2982,33 @@ impl<'a> Walk<'a> {
                     col.saturating_sub(canon)
                 };
                 f.closer = Some(closer);
+                if let Closer::Fence(ch, len) = closer {
+                    let attached = at
+                        .checked_sub(1)
+                        .is_some_and(|previous| self.frames[owner].plus == Some(previous))
+                        || self.attached.as_ref().is_some_and(|block| block.from == at);
+                    if attached {
+                        let first_blank = (at + 1..self.lines.len())
+                            .find(|&line| is_blank_line(self.lines[line]));
+                        if let Some(blank) = first_blank {
+                            let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
+                            let widest = if ch == b'`' {
+                                &runs.backtick
+                            } else {
+                                &runs.tilde
+                            };
+                            let has_closer = widest.get(at + 1).is_some_and(|&n| n >= len)
+                                && (at + 1..self.lines.len()).any(|line| {
+                                    let raw = self.lines[line];
+                                    let rest = quoted_rest(raw);
+                                    closer.closes(rest, doc_column(raw, rest), col)
+                                });
+                            if !has_closer {
+                                f.attached_blank_end = Some(blank);
+                            }
+                        }
+                    }
+                }
                 f.open_col = col;
                 f.line_block = line_block;
                 f.shift = o_shift;
