@@ -687,6 +687,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 });
             while cur.pos < end {
                 let raw = cur.lines.at(cur.pos);
+                if cur.pos > start
+                    && fence_column.is_some_and(|column| {
+                        indent_columns(raw) < column && indent_columns(raw) >= strip_cols
+                    })
+                    && detect_fence_open(trim_ascii_start(raw)).is_some()
+                {
+                    break;
+                }
                 let (body, consumed, synthetic) = slice_columns_mapped(raw, strip_cols, true);
                 let body = if cur.pos > start
                     && fence_column
