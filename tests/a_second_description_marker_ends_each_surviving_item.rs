@@ -30,3 +30,17 @@ fn a_description_shaped_stanza_line_does_not_end_an_item() {
     let html = carve::to_html(input);
     assert!(html.contains(": x<br>\n: d</p>"), "{html}");
 }
+
+#[test]
+fn an_ended_term_entry_keeps_no_claim_at_the_item_marker() {
+    let input = "- :: t\n   a\n  : x\n: z\n";
+    let expected = "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n    a\n: x\n  </li>\n</ul>\n<p>: z</p>";
+    assert_eq!(carve::to_html(input), expected);
+}
+
+#[test]
+fn a_task_items_ended_term_entry_has_the_same_marker_boundary() {
+    let input = "- [ ] :: t\n       a\n      : x\n: z\n";
+    let html = carve::to_html(input);
+    assert!(html.ends_with("  </li>\n</ul>\n<p>: z</p>"), "{html}");
+}

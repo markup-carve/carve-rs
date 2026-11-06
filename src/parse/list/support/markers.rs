@@ -713,11 +713,11 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
 pub(crate) fn body_chain_ends_in_definition_list(
     body: &str,
     options: &Options<'_>,
-    last_separator_at_base: bool,
+    last_separator: bool,
 ) -> bool {
     let blocks = probe_blocks(body, options);
     ends_in_definition_list(blocks.last(), true)
-        || (last_separator_at_base
+        || (last_separator
             && matches!(blocks.last(), Some(BlockNode::Paragraph(_)))
             && ends_in_definition_list(blocks.get(blocks.len().saturating_sub(2)), true))
 }
