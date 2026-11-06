@@ -879,6 +879,7 @@ fn parse_with_options_mode_and_index(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> (Document, CrossrefIndex) {
+    let _authored_tabs = own_lines::AuthoredTabsGuard::install(source);
     // carve#5012: erased lines are restored by position, so that parse is positioned.
     let transparent = transparent_lines::Transparent::detect(source);
     let transparent = transparent.as_ref();

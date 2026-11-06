@@ -3194,6 +3194,42 @@ impl<'a> Walk<'a> {
 
 thread_local! {
     static ACTIVE_EDITS: std::cell::RefCell<Vec<LineEdit>> = const { std::cell::RefCell::new(Vec::new()) };
+    static AUTHORED_TABS: std::cell::RefCell<Option<std::collections::HashMap<usize, String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Keep authored lines when tabs can affect brace-column comparisons. The
+/// ownership walk and nested collectors may replace the tab with spaces.
+pub(crate) struct AuthoredTabsGuard {
+    installed: bool,
+    previous: Option<std::collections::HashMap<usize, String>>,
+}
+
+impl AuthoredTabsGuard {
+    pub(crate) fn install(source: &str) -> Self {
+        if !source.contains('\t') || !source.contains("{%") {
+            return Self {
+                installed: false,
+                previous: None,
+            };
+        }
+        let lines = super::prepass_links::original_lines(source)
+            .into_iter()
+            .enumerate()
+            .map(|(at, line)| (at + 1, line.to_owned()))
+            .collect();
+        Self {
+            installed: true,
+            previous: AUTHORED_TABS.with(|slot| slot.replace(Some(lines))),
+        }
+    }
+}
+
+impl Drop for AuthoredTabsGuard {
+    fn drop(&mut self) {
+        if self.installed {
+            AUTHORED_TABS.with(|slot| *slot.borrow_mut() = self.previous.take());
+        }
+    }
 }
 
 /// Installs the walk's column edits for the offset pass of one parse and
@@ -3253,9 +3289,30 @@ pub(crate) fn restore_authored_columns(pos: &mut Pos) {
     });
 }
 
-/// Map a walked 1-based column back to the authored source for layout checks.
-pub(crate) fn authored_source_column(line: usize, column: usize) -> usize {
-    ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column))
+/// Map a walked 1-based codepoint column to the authored visual column.
+pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
+    let authored = ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column));
+    AUTHORED_TABS.with(|slot| {
+        let tabs = slot.borrow();
+        let Some(text) = tabs.as_ref().and_then(|lines| lines.get(&line)) else {
+            return authored - 1;
+        };
+        let mut content = text.as_str();
+        let mut prefix = 0;
+        while let Some(after) = super::prepass_links::strip_blockquote_prefix(content) {
+            prefix += content.len() - after.len();
+            content = after;
+        }
+        let mut visual = 0;
+        for ch in content.chars().take((authored - 1).saturating_sub(prefix)) {
+            visual = if ch == '\t' {
+                visual + 4 - visual % 4
+            } else {
+                visual + 1
+            };
+        }
+        visual
+    })
 }
 
 /// Map a 1-based `column` on 1-based `line` of the walked source to the
