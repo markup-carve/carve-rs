@@ -460,11 +460,11 @@ fn shape(html: &str, list_marker: Option<&str>) -> Vec<Shape> {
                 }
                 if tag == "li" {
                     for index in 0..children.len().saturating_sub(1) {
-                        let nested_list = matches!(
+                        let nested_block = matches!(
                             &children[index + 1],
-                            Shape::Element(tag, _, _) if matches!(tag.as_str(), "ul" | "ol")
+                            Shape::Element(tag, _, _) if matches!(tag.as_str(), "ul" | "ol" | "blockquote" | "aside" | "pre" | "table")
                         );
-                        if nested_list {
+                        if nested_block {
                             if let Shape::Text(value) = &mut children[index] {
                                 if let Some(newline) = value.rfind('\n') {
                                     if value[newline + 1..]
@@ -1509,6 +1509,45 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assesses_nested_block_under_tight_list_item() {
+        let result = crate::migrate_markdown("- Item.\n  > x\n");
+        let actual: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|row| (row.code.as_str(), row.path.as_deref()))
+            .collect();
+        assert_eq!(
+            actual,
+            vec![
+                ("markdown-bullet-list", Some("line:1")),
+                ("markdown-list-item", Some("line:1")),
+                ("markdown-block-quote", Some("line:2")),
+                ("markdown-paragraph", Some("line:2")),
+            ]
+        );
+    }
+
+    #[test]
+    fn assesses_tight_item_quote_variants() {
+        for marker in ["-", "*", "+", "1."] {
+            for index in 0..250 {
+                let indent = " ".repeat(marker.len() + 1);
+                let source = format!("{marker} Item {index}.\n{indent}> Quote {index}.\n");
+                let report = crate::migrate_markdown(&source).report;
+                assert!(
+                    report
+                        .diagnostics
+                        .iter()
+                        .all(|row| row.code != "fidelity-unverified"),
+                    "{source}: {:?}",
+                    report.diagnostics
+                );
+            }
+        }
+    }
 
     #[test]
     fn table_pipe_shapes_are_assessed_completely() {
