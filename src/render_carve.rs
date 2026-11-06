@@ -5700,8 +5700,19 @@ fn render_line_block(session: &RenderSession, lb: &LineBlock, ctx: &mut CarveCon
     ctx.line_block_depth += 1;
     let outer_fence = ctx.verse_comment_fence;
     ctx.verse_comment_fence = verse_comment_fence(&lb.children);
-    let fence = colon_fence_for(ctx);
+    let minimum_fence = colon_fence_for(ctx).len();
     let body = render_inside_colon_container(session, &lb.children, ctx);
+    // An unclosed verse comment can own the line block's authored `:::`
+    // closer as payload. Choose a different outer fence so writing that
+    // payload cannot close the line block before the comment is complete.
+    let longest_body_closer = body
+        .lines()
+        .map(|line| line.trim_matches([' ', '\t']))
+        .filter(|line| line.len() >= 3 && line.bytes().all(|byte| byte == b':'))
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = ":".repeat(minimum_fence.max(longest_body_closer + 1));
     ctx.verse_comment_fence = outer_fence;
     ctx.line_block_depth -= 1;
     with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))

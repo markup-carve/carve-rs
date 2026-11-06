@@ -2259,8 +2259,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             self.cur.lines.line(item_at + 1).is_some_and(is_blank_line)
                 && self.cur.lines.line(item_at + 2).is_some_and(|line| {
                     indent_columns(line) == content_col
-                        && (is_plus_marker(trim_ascii_start(line))
-                            || line_starts_paragraph(trim_ascii_start(line)))
+                        && !is_plus_marker(trim_ascii_start(line))
+                        && line_starts_paragraph(trim_ascii_start(line))
                 });
         if blank_after_nested_first_block {
             self.tight = false;

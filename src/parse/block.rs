@@ -240,10 +240,19 @@ pub(in crate::parse) fn resolve_pending_bodies(
         let mut children = std::mem::take(&mut arena[link.child_slot]);
         let mut loose_inside_chunk = link.loose_inside_chunk;
         if let Some(layout) = link.layout {
+            // A `+` after a blank below a paragraph-only sublist attaches
+            // inside that sublist. The blank is not between this item's
+            // visible blocks. An opaque first block can leave the `+` for
+            // this item instead, so retain that case here.
             loose_inside_chunk |= layout.outer_plus_after_blank
-                && children
-                    .iter()
-                    .any(|child| matches!(child, BlockNode::List(_)));
+                && children.iter().any(|child| match child {
+                    BlockNode::List(list) => list.items.iter().any(|item| {
+                        item.children
+                            .iter()
+                            .any(|block| !matches!(block, BlockNode::Paragraph(_)))
+                    }),
+                    _ => false,
+                });
             loose_inside_chunk |= item_chunk_tree_looseness(
                 &layout.source,
                 &layout.opaque_blank_lines,

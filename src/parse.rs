@@ -946,6 +946,10 @@ fn parse_with_options_mode_and_index(
                 .map_or(1, |pos| positions::visual_owner_at_column(pos, &lines, 2));
             positions::anchor_list_starts(blocks, &lines, owner);
         }
+        positions::bound_positions_to_lines(&mut doc.children, &lines, source);
+        for blocks in doc.footnote_defs.values_mut() {
+            positions::bound_positions_to_lines(blocks, &lines, source);
+        }
     }
     (doc, index)
 }

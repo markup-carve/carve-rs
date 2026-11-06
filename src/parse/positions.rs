@@ -428,6 +428,94 @@ pub(in crate::parse) fn anchor_list_starts(blocks: &mut [BlockNode], lines: &[&s
     anchor_list_blocks(blocks, lines, owner);
 }
 
+/// A mapped container can count stripped indentation twice on the last line
+/// of an inline span. A source position cannot extend beyond that line's
+/// authored codepoints, so enforce the boundary after all owner rewrites.
+pub(in crate::parse) fn bound_positions_to_lines(
+    blocks: &mut [BlockNode],
+    lines: &[&str],
+    source: &str,
+) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Bound<'a> {
+        widths: Vec<usize>,
+        bytes: Vec<usize>,
+        source: &'a str,
+    }
+    impl SubtreeVisitor for Bound<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if let InlineNode::Comment(comment) = inline {
+                    if comment.delimited {
+                        if let Some(pos) = comment.pos.as_mut() {
+                            let start = self.bytes.get(pos.start_offset).copied();
+                            if let Some(start) =
+                                start.filter(|&at| self.source[at..].starts_with("{%"))
+                            {
+                                if let Some(close) = self.source[start + 2..].find("%}") {
+                                    let through = &self.source[start..start + 2 + close + 2];
+                                    let mut line = pos.start_line;
+                                    let mut column = pos.start_column;
+                                    let mut chars = through.chars().peekable();
+                                    while let Some(ch) = chars.next() {
+                                        if ch == '\n' || ch == '\r' && chars.peek() != Some(&'\n') {
+                                            line += 1;
+                                            column = 1;
+                                        } else if ch != '\r' {
+                                            column += 1;
+                                        }
+                                    }
+                                    pos.end_line = line;
+                                    pos.end_column = column;
+                                    pos.end_offset = pos.start_offset + through.chars().count();
+                                }
+                            }
+                        }
+                    }
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+        fn position(&mut self, pos: &mut Pos) {
+            if let Some(&max) = self.widths.get(pos.start_line.saturating_sub(1)) {
+                if pos.start_column > max {
+                    let excess = pos.start_column - max;
+                    pos.start_column = max;
+                    pos.start_offset = pos.start_offset.saturating_sub(excess);
+                }
+            }
+            if let Some(&max) = self.widths.get(pos.end_line.saturating_sub(1)) {
+                if pos.end_column > max {
+                    let excess = pos.end_column - max;
+                    pos.end_column = max;
+                    pos.end_offset = pos.end_offset.saturating_sub(excess);
+                }
+            }
+        }
+    }
+    let mut bound = Bound {
+        widths: lines.iter().map(|line| line.chars().count() + 1).collect(),
+        bytes: if source.contains("{%") {
+            source
+                .char_indices()
+                .map(|(at, _)| at)
+                .chain(std::iter::once(source.len()))
+                .collect()
+        } else {
+            Vec::new()
+        },
+        source,
+    };
+    for block in blocks {
+        visit_block_children(block, &mut bound);
+    }
+}
+
 fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
     for block in blocks {
         match block {
@@ -526,7 +614,10 @@ fn anchor_quote_children(quote: &mut BlockQuote, lines: &[&str], owner: usize) {
             crate::ast_json::block_pos(child)
                 .and_then(|pos| lines.get(pos.start_line.checked_sub(1)?))
                 .and_then(|line| quote_owner_on_line(line).map(|at| visual_owner(line, at)))
-                .unwrap_or(fallback)
+                // A lazy unprefixed line has no quote prefix to advance its
+                // column. Its list starts at the quote's owner's content
+                // column, including the indentation that places the marker.
+                .unwrap_or(owner)
         };
         anchor_list_blocks(std::slice::from_mut(child), lines, content);
     }
@@ -728,6 +819,8 @@ pub(in crate::parse) fn start_list_at_markup_after_quote(pos: &mut Pos, lines: &
 pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
     for block in blocks.iter_mut() {
         match block {
+            BlockNode::CodeBlock(node) => finish_fence_closer(&mut node.pos, lines),
+            BlockNode::RawBlock(node) => finish_fence_closer(&mut node.pos, lines),
             BlockNode::BlockQuote(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::Directive(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::Div(n) => narrow_to_last_placed_child(&mut n.children, lines),
@@ -870,6 +963,29 @@ pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], li
             }
             _ => {}
         }
+    }
+}
+
+/// A collected container may strip the indentation from a closing fence
+/// before `span_of` measures its width. Restore the authored closer's end.
+fn finish_fence_closer(pos: &mut Option<Pos>, lines: &[&str]) {
+    let Some(pos) = pos else { return };
+    let Some(open_line) = lines.get(pos.start_line.saturating_sub(1)) else {
+        return;
+    };
+    let Some(end_line) = lines.get(pos.end_line.saturating_sub(1)) else {
+        return;
+    };
+    let Some(open) = detect_fence_open(trim_ascii_start(open_line)) else {
+        return;
+    };
+    if !is_fence_close(trim_ascii_start(end_line), open) {
+        return;
+    }
+    let end_column = trim_ascii_end(end_line).chars().count() + 1;
+    if end_column > pos.end_column {
+        pos.end_offset += end_column - pos.end_column;
+        pos.end_column = end_column;
     }
 }
 
