@@ -20,7 +20,7 @@ impl VerseLine {
 }
 
 pub(super) fn verse_owned_lines(source: &str, options: &Options<'_>) -> Vec<VerseLine> {
-    let owned = vec![VerseLine::Outside; source.lines().count()];
+    let owned = vec![VerseLine::Outside; crate::parse::line_count(source)];
     if !source.contains("]:") {
         return owned;
     }

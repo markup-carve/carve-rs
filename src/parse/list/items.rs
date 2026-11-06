@@ -3261,6 +3261,9 @@ fn walk_chunk(stream: &mut MappedSource) {
 /// A refused comment run still holds this slot for list tightness (carve#5080).
 fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> bool {
     let content = trim_ascii_start(content);
+    if !content.starts_with("{%") {
+        return false;
+    }
     let view = |k: usize| {
         if k == at {
             content
@@ -3282,8 +3285,7 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
             lines.line(k).unwrap_or("")
         }
     };
-    content.starts_with("{%")
-        && comment_only_para_end(lines.len(), at, true, &view, &measured).is_some()
+    comment_only_para_end(lines.len(), at, true, &view, &measured).is_some()
 }
 
 /// The lines a refused brace run opening in a marker's content takes (carve#5080).
