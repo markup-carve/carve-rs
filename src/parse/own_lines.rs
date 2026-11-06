@@ -2017,14 +2017,22 @@ impl<'a> Walk<'a> {
         self.frames.push(block);
         // A stanza's final lazy line is read at the frame's reader column,
         // not with its authored indentation preserved as inline hard space.
-        c.lead(if next_reaches_block { c.col } else { 0 });
-        // A colon-shaped lazy line authored inside the surviving item must
-        // remain verse text rather than start a description during parsing.
-        // At column zero the item ends (CARVE-P0-006).
-        if c.authored_col > 0
-            && c.rest.starts_with(':')
-            && self.frames.iter().any(|f| f.kind == Kind::Item)
-        {
+        // A colon-shaped lazy line right of the outermost item's marker column
+        // stays verse text. A `: ` line at an item's marker column keeps that
+        // column and ends the item (CARVE-P0-006, 01-layout.ebnf `markers`).
+        let mut item_markers = self.frames[1..]
+            .iter()
+            .filter(|f| f.kind == Kind::Item)
+            .filter_map(|f| f.marker.map(|(col, _)| col));
+        let outermost = item_markers.clone().next();
+        let at_marker =
+            strip_description_prefix(c.rest).is_some() && item_markers.any(|col| col == c.col);
+        c.lead(if next_reaches_block || at_marker {
+            c.col
+        } else {
+            0
+        });
+        if c.rest.starts_with(':') && !at_marker && outermost.is_some_and(|col| c.col > col) {
             c.out.push_str(LAZY);
             c.edits.push((c.out.chars().count(), 0));
         }

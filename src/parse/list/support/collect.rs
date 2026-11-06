@@ -1326,6 +1326,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             *fence = nested_fence;
             break;
         }
+        // A `: ` line at a surviving item's marker column ends it (01-layout.ebnf
+        // `markers`); own_lines frames one right of that column as lazy stanza text.
+        if !colon_open.is_empty()
+            && fence.is_none()
+            && indent <= marker_base
+            && strip_description_prefix(line).is_some()
+        {
+            break;
+        }
         let prior_comment = cur
             .pos
             .checked_sub(1)
