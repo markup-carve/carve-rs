@@ -35,9 +35,8 @@ fn a_thousand_variants_follow_the_model() {
         let marker = ["- ", "* ", "1. "][n % 3];
         let sibling = ["- ", "* ", "2. "][n % 3];
         let pad = " ".repeat(marker.len());
-        let source = format!(
-            "{marker}::: |\n{pad}x{n}\n{pad}\n{pad}%%%\n{pad}h{n}\n{sibling}b{n}\n"
-        );
+        let source =
+            format!("{marker}::: |\n{pad}x{n}\n{pad}\n{pad}%%%\n{pad}h{n}\n{sibling}b{n}\n");
         let html = html(&source);
         assert!(html.contains(&format!("<li><p>b{n}</p></li>")), "{html}");
     }
