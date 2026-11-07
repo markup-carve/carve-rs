@@ -32,7 +32,7 @@ fn a_description_shaped_stanza_line_does_not_end_an_item() {
 #[test]
 fn an_ended_term_entry_keeps_no_claim_at_the_item_marker() {
     let input = "- :: t\n   a\n  : x\n: z\n";
-    let expected = "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n    a\n: x\n  </li>\n</ul>\n<p>: z</p>";
+    let expected = "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n    </dl>\n    a\n: x\n: z\n  </li>\n</ul>";
     assert_eq!(carve::to_html(input), expected);
 }
 
@@ -40,14 +40,14 @@ fn an_ended_term_entry_keeps_no_claim_at_the_item_marker() {
 fn a_task_items_ended_term_entry_has_the_same_marker_boundary() {
     let input = "- [ ] :: t\n       a\n      : x\n: z\n";
     let html = carve::to_html(input);
-    assert!(html.ends_with("  </li>\n</ul>\n<p>: z</p>"), "{html}");
+    assert!(html.ends_with("a\n: x\n: z\n  </li>\n</ul>"), "{html}");
 }
 
 #[test]
-fn a_marker_column_separator_ends_an_item_with_an_earlier_definition_list() {
+fn a_later_paragraph_releases_an_earlier_definition_boundary() {
     let input = "- a\n  :: t\n\n  filler\n: b\n: c\n";
     let html = carve::to_html(input);
-    assert!(html.ends_with("<p>: b\n: c</p>"), "{html}");
+    assert!(html.contains("<p>filler\n: b\n: c</p>"), "{html}");
 }
 
 #[test]
@@ -65,17 +65,17 @@ fn an_earlier_definition_list_does_not_end_a_later_open_quote_paragraph() {
 }
 
 #[test]
-fn an_earlier_definition_list_still_ends_a_later_div() {
+fn an_earlier_definition_list_releases_a_later_div_paragraph() {
     let input = "- a\n  :: t\n\n  ::: box\n  prose\n: z\n";
     let html = carve::to_html(input);
-    assert!(html.ends_with("<p>: z</p>"), "{html}");
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
 }
 
 #[test]
-fn an_earlier_definition_list_ends_a_later_stanza_at_the_item_marker_column() {
+fn an_earlier_definition_list_releases_a_later_stanza_line() {
     let input = "- a\n  :: t\n\n  ::: |\n    prose\n: z\n";
     let html = carve::to_html(input);
-    assert!(html.ends_with("<p>: z</p>"), "{html}");
+    assert!(html.contains("prose<br>\n: z</p>"), "{html}");
 }
 
 #[test]
@@ -86,8 +86,23 @@ fn a_later_div_quote_keeps_its_open_paragraph() {
 }
 
 #[test]
-fn a_closed_div_definition_list_still_ends_a_later_item_paragraph() {
+fn a_closed_div_definition_list_releases_a_later_item_paragraph() {
     let input = "- a\n  ::: box\n  :: t\n  :::\n\n  prose\n: z\n";
     let html = carve::to_html(input);
-    assert!(html.ends_with("<p>: z</p>"), "{html}");
+    assert!(html.contains("<p>prose\n: z</p>"), "{html}");
+}
+
+#[test]
+fn a_later_block_releases_a_term_only_marker_boundary() {
+    for (input, tail) in [
+        ("- a\n  :: t\n  # H\n  w\n: z\n", "    w\n: z\n  </li>\n</ul>"),
+        ("- a\n  :: t\n  x\n: d\n", "    x\n: d\n  </li>\n</ul>"),
+        ("- a\n  > +\n  :: t\n  x\n: d\n", "    x\n: d\n  </li>\n</ul>"),
+        ("- a\n  > +\n  :: t\n  x\n: d\n: e\n", "    x\n: d\n: e\n  </li>\n</ul>"),
+        ("- a\n  :: m\n  - i\n: l\n", "      <li>i\n: l</li>\n    </ul>\n  </li>\n</ul>"),
+        ("- a\n  :: m\n  : d\n\n  p\n\n  : x\n: l\n", "    <p>: x\n: l</p>\n  </li>\n</ul>"),
+    ] {
+        let html = carve::to_html(input);
+        assert!(html.ends_with(tail), "input: {input:?}\n{html}");
+    }
 }
