@@ -1976,7 +1976,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // The enclosing frame has already removed its own prefix; taking
             // the remaining indent here erases authored leading spaces.
             (true, Some(_)) if comment_payload => {
-                if comment_fence.is_some_and(|(_, opener)| indent < opener) {
+                if comment_fence.is_some_and(|(_, opener)| indent < opener && indent < strip_cols) {
                     0
                 } else {
                     strip_cols.min(indent_columns(payload_line))
@@ -2024,10 +2024,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             (sliced, consumed, synthetic)
         };
         let mut sliced = sliced;
-        // A line that misses the span's owner ends it under S1. Keep that
-        // boundary when the marker line opened the verse block itself.
-        if marker_line_block
-            && spanned_stanza_lazy
+        // A line that misses the span's owner ends it under S1 (carve-rs#4028).
+        if spanned_stanza_lazy
             && !trim_ascii_start(strip_lazy(line)).starts_with("%%")
             && !sliced.starts_with(LAZY)
         {
