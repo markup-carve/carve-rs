@@ -1331,7 +1331,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .iter()
             .take_while(|line| is_line_comment_any_column(line))
             .count();
-        let pulled_closer = pulled_fence_closer(lines, lead, container.content_column);
+        let pulled_closer = pulled_fence_closer(lines, lead, container.content_column, marker_col);
         let window_end = if let Some(closer) = pulled_closer {
             closer + 1
         } else if let Some(end) = fenced_block_end(lead) {
@@ -1943,7 +1943,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
-        let pulled_closer = pulled_fence_closer(lines, *i, state.body_indent);
+        let pulled_closer = pulled_fence_closer(lines, *i, state.body_indent, state.body_indent);
         let end = pulled_closer.map_or_else(
             || {
                 attached_block_past_invisible(
@@ -2919,10 +2919,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
 /// say whether the line is that fence's payload or closer. The fence ends with
 /// its item, at a line below the item's content column, and a marker folded into
 /// a paragraph opens none.
-/// The closer of a fence a `+` attached from left of the note's body. A blank
-/// line ends the flush payload, so past it only the body column reaches the
-/// fence, and a closer there closes it (PART 0 S3 and S4, carve#4392).
-fn pulled_fence_closer(lines: &[&str], opener: usize, body_column: usize) -> Option<usize> {
+/// Find the closer at the column the host reads: the marker column for a
+/// marker-line `+`, or the note body column for a later standalone `+`.
+fn pulled_fence_closer(
+    lines: &[&str],
+    opener: usize,
+    body_column: usize,
+    closer_column: usize,
+) -> Option<usize> {
     let text = lines.get(opener)?;
     if indent_columns(text) >= body_column {
         return None;
@@ -2939,9 +2943,7 @@ fn pulled_fence_closer(lines: &[&str], opener: usize, body_column: usize) -> Opt
             ) {
                 return None;
             }
-        } else if indent_columns(line) < body_column {
-            return None;
-        } else if indent_columns(line) == body_column
+        } else if indent_columns(line) == closer_column
             && is_fence_close(trim_ascii_start(line), open)
         {
             return Some(at);

@@ -1,5 +1,5 @@
-//! An attached fence past a blank line reaches its closer at the host's body
-//! column (carve#4392). An attached div ends at a sibling of its description
+//! A fence attached at the marker column does not close at the host's body
+//! column (carve#5410). An attached div ends at a sibling of its description
 //! (carve#4798). A fence on a note's marker-line item reads its payload at the
 //! item's content column (carve#4755), and a definition-shaped payload keeps a
 //! line block's stanza open under nested items (carve#4757).
@@ -11,21 +11,53 @@ fn squeeze(html: &str) -> String {
 }
 
 #[test]
-fn an_attached_fence_past_a_blank_closes_at_the_note_body_column() {
-    for host in ["[^f]: +\n", "[^f]: t\n+\n"] {
-        let html = to_html(&format!("{host}```\na\n\n  ```\n  c\nsee\n\nx[^f]\n"));
-        assert!(html.contains("<p>c\nsee"), "{host:?}: {html}");
-        assert!(html.contains("<code>a\n\n</code>"), "{host:?}: {html}");
-    }
+fn an_indented_fence_after_a_blank_opens_in_the_note_body() {
+    let html = to_html("[^f]: +\n```\na\n\n  ```\n  c\nsee\n\nx[^f]\n");
+    assert!(html.contains("<code>a\n</code>"), "{html}");
+    assert!(html.contains("<code>c\n</code>"), "{html}");
 }
 
 #[test]
-fn an_attached_fence_past_a_blank_closes_at_the_description_body_column() {
+fn a_later_note_plus_keeps_its_body_column_closer() {
+    let html = to_html("[^f]: t\n+\n```\na\n\n  ```\n  c\nsee\n\nx[^f]\n");
+    assert!(html.contains("<code>a\n\n</code>"), "{html}");
+    assert!(html.contains("<p>c\nsee"), "{html}");
+}
+
+#[test]
+fn an_indented_fence_after_a_blank_opens_in_the_description_body() {
     let html = to_html(":: t\n: +\n```\na\n\n  ```\n  c\nsee\n");
-    assert!(
-        html.contains("<p>c\nsee</p>") || html.contains("c\nsee"),
-        "{html}"
-    );
+    assert!(html.contains("<code>a\n</code>"), "{html}");
+    assert!(html.contains("<code>c\n</code>"), "{html}");
+}
+
+#[test]
+fn an_attached_fence_closes_only_at_its_opener_column() {
+    for (source, first, second) in [
+        ("- +\n```\na\n\n  ```\n  c\n", "<li>", "<code>c\n</code>"),
+        (
+            ":: t\n: +\n```\na\n\n  ```\n  c\n",
+            "<dd>",
+            "<code>c\n</code>",
+        ),
+        (
+            "[^1]: +\n```\na\n\n  ```\n  c\n\n[^1]\n",
+            "<li id=\"fn1\">",
+            "<code>c\n\n</code>",
+        ),
+    ] {
+        let html = to_html(source);
+        assert!(html.contains(first), "{source:?}: {html}");
+        assert!(html.contains("<code>a\n</code>"), "{source:?}: {html}");
+        assert!(html.contains(second), "{source:?}: {html}");
+    }
+    for source in [
+        "- +\n```\na\n\n```\n",
+        ":: t\n: +\n```\na\n\n```\n",
+        "[^1]: +\n```\na\n\n```\n\n[^1]\n",
+    ] {
+        assert!(to_html(source).contains("<code>a\n\n</code>"), "{source:?}");
+    }
 }
 
 #[test]

@@ -55,16 +55,15 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
             && !is_line_comment_any_column(line)
             && !is_document_definition_placeholder(line)
     });
-    let Some(opener) = opener.map(trim_ascii_start) else {
+    let Some(opener) = opener else {
         return Vec::new();
     };
+    let opener_column = indent_columns(opener);
+    let opener = trim_ascii_start(opener);
     if let Some(open) = detect_fence_open(opener) {
-        if !block
-            .iter()
-            .skip(1)
-            .chain(remaining.iter())
-            .any(|line| is_fence_close(trim_ascii_start(line), open))
-        {
+        if !block.iter().skip(1).chain(remaining.iter()).any(|line| {
+            indent_columns(line) == opener_column && is_fence_close(trim_ascii_start(line), open)
+        }) {
             return vec![char::from(open.fence_char)
                 .to_string()
                 .repeat(open.fence_len)];
