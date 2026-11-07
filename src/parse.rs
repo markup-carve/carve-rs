@@ -46,6 +46,46 @@ pub(crate) use table::table_run_open_after;
 #[path = "parse/tests.rs"]
 mod tests;
 mod verse;
+
+/// Close an unclosed block a marker-line `+` attached before the host's first
+/// blank. The closer has no authored position; the host resumes after it.
+fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<String> {
+    let opener = block.iter().copied().find(|line| {
+        !is_blank_line(line)
+            && !is_line_comment_any_column(line)
+            && !is_document_definition_placeholder(line)
+    });
+    let Some(opener) = opener.map(trim_ascii_start) else {
+        return Vec::new();
+    };
+    if let Some(open) = detect_fence_open(opener) {
+        if !block
+            .iter()
+            .skip(1)
+            .chain(remaining.iter())
+            .any(|line| is_fence_close(trim_ascii_start(line), open))
+        {
+            return vec![char::from(open.fence_char)
+                .to_string()
+                .repeat(open.fence_len)];
+        }
+        return Vec::new();
+    }
+    let Some(open) = detect_container_open(opener) else {
+        return Vec::new();
+    };
+    if remaining
+        .iter()
+        .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(open.fence_len))
+    {
+        return Vec::new();
+    }
+    let source = block.join("\n");
+    definition::OpenBodyColons::from_source(&source)
+        .closing_widths()
+        .map(|width| ":".repeat(width))
+        .collect()
+}
 pub(crate) use attrs::*;
 pub(crate) use block::*;
 use columns::*;

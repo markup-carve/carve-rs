@@ -2304,7 +2304,7 @@ impl<'a> Walk<'a> {
                     let host_col = block.frames.last().expect("attached host").col;
                     self.lines[at + 1..]
                         .iter()
-                        .find(|line| !is_blank_line(line))
+                        .find(|line| !is_blank_line(quoted_rest(line)))
                         .is_some_and(|line| {
                             doc_column(line, quoted_rest(line)) >= host_col
                                 || self.frames.last().is_some_and(|frame| {
@@ -2350,7 +2350,7 @@ impl<'a> Walk<'a> {
             .filter(|frames| {
                 let next = self.lines[at + 1..]
                     .iter()
-                    .find(|line| !is_blank_line(line));
+                    .find(|line| !is_blank_line(quoted_rest(line)));
                 next.is_some_and(|line| {
                     let rest = quoted_rest(line);
                     doc_column(line, rest) >= frames.last().expect("attached host").col

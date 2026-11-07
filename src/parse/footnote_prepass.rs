@@ -1473,6 +1473,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 });
                 i += 1;
             }
+            if lines.get(i).is_some_and(|line| is_blank_line(line)) {
+                let remaining = &lines[i + 1..];
+                for closer in attached_first_blank_closers(&attached_refs[..end - start], remaining)
+                {
+                    note.push_with(closer, None, |_| None);
+                }
+            }
             note.push_blank();
         }
         i
@@ -2306,6 +2313,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
+        let closers = if lines
+            .get(i + count)
+            .and_then(|raw| host.content(raw))
+            .is_some_and(is_blank_line)
+        {
+            let remaining: Vec<&str> = lines[i + count + 1..]
+                .iter()
+                .map_while(|raw| host.content(raw))
+                .collect();
+            attached_first_blank_closers(&attached_refs[..count], &remaining)
+        } else {
+            Vec::new()
+        };
         note.lines[0].clear();
         note.comment_state = BodyCommentState::new();
         note.stanza = crate::parse::definition::LineBlockTail::default();
@@ -2319,6 +2339,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             note.push_with(line, Some(self.first_source_line + i + offset), |_| {
                 Some(col)
             });
+        }
+        for closer in closers {
+            note.push_with(closer, None, |_| None);
         }
         note.push_blank();
         i + count

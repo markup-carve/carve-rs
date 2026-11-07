@@ -942,7 +942,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .is_some_and(|base| base <= self.content_col);
         let shown_before = self.item_shows;
         self.item_shows |= !nested_children.iter().all(block_renders_nothing);
-        if self.pending_blank
+        // A child list can consume the separator before this direct child.
+        // The source map still records the authored blank at the boundary.
+        if (self.pending_blank || self.authored_blank_before(chunk_start))
             && blank_can_loosen
             && shown_before
             && first_visible.is_some_and(|block| {
