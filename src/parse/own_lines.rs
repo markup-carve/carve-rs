@@ -1905,7 +1905,9 @@ impl<'a> Walk<'a> {
             return false;
         };
         let mut last = at;
-        while last > attached.from
+        while (attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
+            || self.marker_line_attachment_host(attached))
+            && last > attached.from
             && strip_quote_levels(self.lines[last - 1], attached.depth).is_some_and(is_blank_line)
         {
             last -= 1;
@@ -1941,6 +1943,24 @@ impl<'a> Walk<'a> {
                 && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
                     >= refs.len()
         })
+    }
+
+    fn marker_line_attachment_host(&self, attached: &AttachedBlock) -> bool {
+        let host = attached.frames.last().expect("attached host");
+        // A definition term is an invisible lead for the attachment prepass;
+        // its following definition lines still belong to that prepass.
+        if self
+            .lines
+            .get(attached.from)
+            .is_some_and(|line| is_definition_list_start(trim_ascii_start(line)))
+        {
+            return false;
+        }
+        host.line
+            .checked_sub(self.first_line)
+            .and_then(|at| at.checked_add(1))
+            == Some(attached.from)
+            && (host.kind == Kind::Item || attached.frames.len() == 2)
     }
 
     /// A `+` right after the one block a `+` attached reaches the same host, whose
@@ -1989,7 +2009,8 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
-        if self.frames.len() >= attached.frames.len()
+        if !self.marker_line_attachment_host(attached)
+            || self.frames.len() >= attached.frames.len()
             || !self.attached_ends_at(at)
             || strip_quote_levels(src, attached.depth).map_or(true, |rest| {
                 doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
@@ -2004,7 +2025,8 @@ impl<'a> Walk<'a> {
         // The attached block has ended, but its marker host is still open for
         // a later line at the host's content column.
         if let Some(host) = self.attached.as_ref().filter(|block| {
-            inner.is_some_and(|frame| block.from + self.first_line == frame.line)
+            self.marker_line_attachment_host(block)
+                && inner.is_some_and(|frame| block.from + self.first_line == frame.line)
                 && block.frames.len() > self.frames.len()
         }) {
             self.frames = host.frames.clone();
