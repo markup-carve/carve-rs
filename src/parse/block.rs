@@ -2347,6 +2347,29 @@ pub(in crate::parse) fn find_colon_fence_end_bounded(
     )
 }
 
+pub(in crate::parse) fn find_measured_colon_fence_end_bounded(
+    lines: CursorLines<'_>,
+    start: usize,
+    fence_len: usize,
+    column: usize,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    boundary: &mut dyn FnMut(&str, usize) -> bool,
+) -> usize {
+    find_colon_fence_end_with(
+        lines,
+        start,
+        fence_len,
+        ColonScanMode {
+            literal: false,
+            boundary: Some(boundary),
+        },
+        closer_index,
+        comment_closers,
+        |at| std::borrow::Cow::Owned(slice_columns(lines.at(at), column, true)),
+    )
+}
+
 /// Scan a line block after removing its host's structural indentation. Lines
 /// are measured only as the scan reaches them, so short blocks do not copy the
 /// rest of a large item for each opener.
