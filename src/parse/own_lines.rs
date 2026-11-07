@@ -3412,6 +3412,26 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
+                if let Closer::Colon(run) = closer {
+                    let attached = at
+                        .checked_sub(1)
+                        .is_some_and(|previous| self.frames[owner].plus == Some(previous))
+                        || self.attached.as_ref().is_some_and(|block| block.from == at);
+                    if attached {
+                        let first_blank = (at + 1..self.lines.len())
+                            .find(|&line| is_blank_line(self.lines[line]));
+                        if let Some(blank) = first_blank {
+                            let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
+                            let has_closer = runs
+                                .colon_by_width
+                                .get(&run)
+                                .is_some_and(|index| index.has_later(b'~', at, usize::MAX, run));
+                            if !has_closer {
+                                f.attached_blank_end = Some(blank);
+                            }
+                        }
+                    }
+                }
                 f.open_col = col;
                 f.line_block = line_block;
                 f.shift = o_shift;
