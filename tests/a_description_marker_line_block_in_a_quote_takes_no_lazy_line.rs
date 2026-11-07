@@ -25,6 +25,6 @@ fn a_description_paragraph_still_takes_the_lazy_line() {
 }
 
 #[test]
-fn a_comment_body_keeps_the_old_reading() {
-    assert!(html("> :: t\n> : %% c\np\n").ends_with("<p>p</p>\n</blockquote>"));
+fn a_comment_body_leaves_no_lazy_paragraph() {
+    assert!(html("> :: t\n> : %% c\np\n").ends_with("</blockquote>\n<p>p</p>"));
 }
