@@ -393,6 +393,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut surviving_definition_body_column = open_definition_body_column;
     let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
+    let mut saw_description = false;
     let mut marker_description_is_paragraph = false;
     let mut nested_paragraph_column = None;
     let mut carried_lazy_owner = nested_item_columns.lazy_paragraph_owner.take();
@@ -1067,6 +1068,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && literal_colon.is_none();
+        if description && indent >= strip_cols && definition_list_column.is_some() {
+            saw_description = true;
+        }
         // The marker line's innermost term began before this collector ran.
         if description
             && indent == strip_cols
@@ -1425,8 +1429,17 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && line_starts_paragraph(line)
             && !item_block_opener(line)
             && !interrupts_lazy_continuation_as_container(cur, line);
+        let closed_description_lazy = description
+            && definition_list_column.is_none()
+            && saw_description
+            && indent == marker_base
+            && lines.last().is_some_and(|prior| {
+                line_starts_paragraph(prior)
+                    && strip_description_prefix(trim_ascii_start(prior)).is_none()
+            });
         if indent <= parent_indent
             && !(plain_nested_lazy && carried_lazy_owner.is_some_and(|owner| indent < owner))
+            && !closed_description_lazy
             && !comment_retains_owner
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
