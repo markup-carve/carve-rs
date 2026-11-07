@@ -962,7 +962,9 @@ pub(crate) fn parse_continuation_block(
         .map(|end| (end, attached_end, content_col))
     });
     let end = host_closed.map_or(attached_end, |(end, _, _)| end);
+    // The closer the host test found closes at whatever column it stands.
     let column_at = |pos: usize| match host_closed {
+        Some((end, _, _)) if pos + 1 == end => indent_columns(lines.at(pos)),
         Some((_, blank, content_col)) if pos >= blank => content_col,
         _ => pull_indent,
     };
