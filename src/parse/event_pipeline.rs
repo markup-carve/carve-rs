@@ -3826,7 +3826,6 @@ fn parse_document_with_custom_options_once(
     }
     // A walk that only re-indents lines hands both parsers the same text.
     let owned = if walk_moves_lines(source) {
-        let owned = own_lines(source)?;
         // Only the HTML facade reads the walked text here; extension callbacks
         // keep their established order on the standard parse. Comment runs and
         // quoted note grants read authored columns the event readers lack.
@@ -3834,10 +3833,13 @@ fn parse_document_with_custom_options_once(
             || options.positions
             || options.source_lines
             || !options.extensions.is_empty()
-            || !owned.only_moves_columns()
             || source.contains('%')
             || source.contains("[^")
         {
+            return None;
+        }
+        let owned = own_lines(source)?;
+        if !owned.only_moves_columns() {
             return None;
         }
         // Frontmatter is read from the authored lines, as the standard parse does.
