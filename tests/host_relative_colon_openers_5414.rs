@@ -33,3 +33,13 @@ fn a_colon_opener_at_a_descendant_item_column_stays_in_that_item() {
     );
     assert!(!html.contains("<p>body\n:::</p>"), "{html}");
 }
+
+#[test]
+fn an_existing_marker_line_item_colon_closer_is_not_rebased() {
+    let description = to_html(":: t\n: - :::\n\n    :::\n\nq\n");
+    assert_eq!(description.matches("<div>").count(), 1, "{description}");
+    assert!(description.contains("<p>q</p>"), "{description}");
+
+    let footnote = to_html("[^f]\n\n[^f]: - :::\n\n        :::\n");
+    assert_eq!(footnote.matches("<div>").count(), 1, "{footnote}");
+}

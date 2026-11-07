@@ -2031,6 +2031,14 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .item_content_columns
                 .iter()
                 .any(|&column| column <= indent)
+            && !exact_colon_fence_len(trim_ascii_start(&sliced))
+                .is_some_and(|run| self.open_colons.closing_widths().any(|width| width == run))
+            && !exact_colon_fence_len(trim_ascii_start(&sliced)).is_some_and(|run| {
+                self.seed.lines().last().is_some_and(|seed| {
+                    is_list_marker(trim_ascii_start(seed))
+                        && exact_colon_fence_len(innermost_marker_content(seed)) == Some(run)
+                })
+            })
             && is_colon_fence_opener_shape(trim_ascii_start(&sliced))
         {
             sliced = trim_ascii_start(&sliced).to_owned();

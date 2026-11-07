@@ -2140,6 +2140,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && note.lines.last().is_some_and(|prior| is_blank_line(prior))
             && state.note_fence.is_none()
             && note.comment_state.line_block.is_none()
+            && !exact_colon_fence_len(flush)
+                .is_some_and(|run| note.open_colons.closing_widths().any(|width| width == run))
+            && !exact_colon_fence_len(flush).is_some_and(|run| {
+                is_list_marker(trim_ascii_start(state.first))
+                    && exact_colon_fence_len(innermost_marker_content(state.first)) == Some(run)
+            })
             && is_colon_fence_opener_shape(flush);
         let trimmed: &str = if host_colon_opener
             || state.body_open_below && is_note_def && state.note_fence.is_none() && residual < 2
