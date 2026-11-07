@@ -2100,6 +2100,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !separator_at_nested_marker
                 && !separator_in_own_item
                 && !separator_for_nested_item
+            || description
+                && indent > marker_base
+                && indent < strip_cols
+                && lines
+                    .last()
+                    .is_some_and(|prior| line_starts_paragraph(prior))
             || (marker_colon_retained_para && indent < strip_cols))
             && !sliced.starts_with(LAZY)
         {
