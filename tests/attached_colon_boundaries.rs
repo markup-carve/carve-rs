@@ -55,3 +55,17 @@ fn unmarked_blank_ends_attached_item_and_quote_before_a_new_quote() {
         "{trace}"
     );
 }
+
+#[test]
+fn below_column_sibling_after_attached_colon_stays_in_its_list() {
+    let source = "- +\n::: note\n\n - q\n  tail\n";
+    assert_eq!(
+        html(source),
+        "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n\n    </aside>\n  </li>\n  <li><p>q\ntail</p></li>\n</ul>"
+    );
+    let trace = decision_trace(source);
+    assert!(
+        trace.contains("\"line\":4,\"step\":\"S5\",\"owner\":\"doc/item:4\""),
+        "{trace}"
+    );
+}
