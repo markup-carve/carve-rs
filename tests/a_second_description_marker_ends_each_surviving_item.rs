@@ -1,9 +1,10 @@
-// carve#5320: each `: ` line at a surviving item's marker column ends it.
+// carve#5320: each `: ` line at a surviving item's marker column ends it while
+// its description is open; once closed, the line folds (ruling on carve#5323).
 
 #[test]
 fn nested_description_markers_end_each_item_in_turn() {
     let input = "- - a\n    :: t\n    : u\n      ::: |\n        x\n  : b\n: c\n";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>a\n        <dl>\n          <dt>t</dt>\n          <dd>\n            <p>u</p>\n            <div class=\"line-block\">\n              <p>&nbsp;&nbsp;x</p>\n            </div>\n          </dd>\n        </dl>\n      </li>\n    </ul>\n    : b\n  </li>\n</ul>\n<p>: c</p>";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li>a\n        <dl>\n          <dt>t</dt>\n          <dd>\n            <p>u</p>\n            <div class=\"line-block\">\n              <p>&nbsp;&nbsp;x</p>\n            </div>\n          </dd>\n        </dl>\n      </li>\n    </ul>\n    : b\n: c\n  </li>\n</ul>";
     assert_eq!(carve::to_html(input), expected);
 }
 
@@ -11,10 +12,7 @@ fn nested_description_markers_end_each_item_in_turn() {
 fn ordered_outer_item_ends_at_its_own_marker_column() {
     let input = "1. - a\n     :: t\n     : u\n       ::: |\n         x\n   : b\n: c\n";
     let html = carve::to_html(input);
-    assert!(
-        html.contains("    : b\n  </li>\n</ol>\n<p>: c</p>"),
-        "{html}"
-    );
+    assert!(html.contains("    : b\n: c\n  </li>\n</ol>"), "{html}");
 }
 
 #[test]

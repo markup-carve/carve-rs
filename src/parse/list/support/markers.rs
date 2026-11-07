@@ -754,8 +754,9 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
-/// A marker-column separator ends an item whose current item chain held a
-/// definition list, even after a later paragraph. A quote owns its own list
+/// A marker-column separator ends an item whose description is still open, or
+/// whose item chain held a term-only definition list, even after a later
+/// paragraph. A quote owns its own list
 /// and lazy paragraph, so neither lends that boundary to the item
 /// (PART 0 S4, carve#5317).
 pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
@@ -781,7 +782,21 @@ pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> b
     {
         return false;
     }
-    blocks.iter().any(block_holds_definition_list)
+    // An open description holds the boundary; a closed one only as a term-only list (carve#5323).
+    if ends_in_definition_list(blocks.last(), true) {
+        return true;
+    }
+    // The probe reads a `> +` alone, so the quote it attached shows as a quote then a list.
+    let quote_attaches_term = body.lines().zip(body.lines().skip(1)).any(|(plus, term)| {
+        trim_ascii_start(plus).ends_with("> +") && is_definition_list_start(trim_ascii_start(term))
+    });
+    blocks.iter().enumerate().any(|(at, block)| {
+        !(quote_attaches_term
+            && matches!(block, BlockNode::DefinitionList(_))
+            && at > 0
+            && matches!(blocks[at - 1], BlockNode::BlockQuote(_)))
+            && block_holds_definition_list(block)
+    })
 }
 
 fn trailing_container(block: &BlockNode) -> bool {
@@ -804,7 +819,10 @@ fn trailing_container(block: &BlockNode) -> bool {
 
 fn block_holds_definition_list(block: &BlockNode) -> bool {
     match block {
-        BlockNode::DefinitionList(_) => true,
+        BlockNode::DefinitionList(list) => list
+            .items
+            .last()
+            .is_some_and(|item| item.definitions.is_empty()),
         BlockNode::List(list) => list
             .items
             .last()

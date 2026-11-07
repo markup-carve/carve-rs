@@ -1218,7 +1218,11 @@ impl LineBlockTail {
                     if marked || prior_blank {
                         self.item_cols.retain(|&col| col <= indent);
                     }
-                    if marked && detect_list_marker_full(local).is_some() {
+                    // A description body hosts a bare opener below it too (PART 0 S1).
+                    if marked
+                        && (detect_list_marker_full(local).is_some()
+                            || strip_description_prefix(local).is_some())
+                    {
                         self.item_cols.push(line.len() - tail.len());
                     }
                 }
