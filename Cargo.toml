@@ -449,3 +449,15 @@ path = "tests/a_quoted_description_stanza_takes_lazy_marker_text.rs"
 [[test]]
 name = "a_band_paragraph_after_a_descendant_span_takes_lazy_text"
 path = "tests/a_band_paragraph_after_a_descendant_span_takes_lazy_text.rs"
+
+[[test]]
+name = "quote_plus_blank_5383"
+path = "tests/quote_plus_blank_5383.rs"
+
+[[test]]
+name = "quote_attached_fence_looseness_4032"
+path = "tests/quote_attached_fence_looseness_4032.rs"
+
+[[test]]
+name = "nested_quote_fence_payload_4033"
+path = "tests/nested_quote_fence_payload_4033.rs"
