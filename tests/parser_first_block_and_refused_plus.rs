@@ -1,6 +1,26 @@
 use carve::to_html;
 
 #[test]
+fn a_refused_quoted_description_plus_closes_the_quote() {
+    assert_eq!(
+        to_html("> :: t\n> : +\npara\n").trim_end(),
+        "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd></dd>\n  </dl>\n</blockquote>\n<p>para</p>"
+    );
+    for prefix in ["> ", "> > ", "> > > "] {
+        let source = format!("{prefix}:: t\n{prefix}: +\npara\n");
+        let html = to_html(&source);
+        assert!(
+            html.trim_end().ends_with("</blockquote>\n<p>para</p>"),
+            "{source:?}: {html}"
+        );
+        assert!(
+            !html.contains("<blockquote><p>para</p>"),
+            "{source:?}: {html}"
+        );
+    }
+}
+
+#[test]
 fn refused_first_block_leaves_an_intervening_list_in_the_description() {
     for marker in ["-", "*", "1.", "- [x]"] {
         let source = format!(":: t\n: {marker} +\n   - z\n");
