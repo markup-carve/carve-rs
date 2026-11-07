@@ -772,6 +772,7 @@ fn host_closed_colon_end(
     start: usize,
     end: usize,
     content_col: usize,
+    index: &mut Option<HostColonClosers>,
 ) -> Option<usize> {
     if !lines.line(end).is_some_and(is_blank_line) {
         return None;
@@ -782,12 +783,39 @@ fn host_closed_colon_end(
         .or_else(|| detect_hardbreaks_block_open(opener).map(|fence_len| (fence_len, false)))
         .or_else(|| detect_quote_block_open(opener).map(|fence_len| (fence_len, false)))
         .or_else(|| detect_container_open(opener).map(|open| (open.fence_len, false)))?;
-    let last = (end..lines.len())
-        .find(|&at| {
+    // The index keeps repeated unclosed openers in one item linear.
+    if index
+        .as_ref()
+        .map_or(true, |index| index.content_col != content_col)
+    {
+        let mut next_below = vec![lines.len(); lines.len() + 1];
+        let mut closers: HashMap<usize, Vec<usize>> = HashMap::new();
+        for at in (0..lines.len()).rev() {
             let line = lines.at(at);
-            !is_blank_line(line) && indent_columns(line) < content_col
-        })
-        .unwrap_or(lines.len());
+            next_below[at] = if !is_blank_line(line) && indent_columns(line) < content_col {
+                at
+            } else {
+                next_below[at + 1]
+            };
+        }
+        for at in 0..lines.len() {
+            if let Some(width) = exact_colon_fence_len(trim_ascii_start(lines.at(at))) {
+                closers.entry(width).or_default().push(at);
+            }
+        }
+        *index = Some(HostColonClosers {
+            content_col,
+            next_below,
+            closers,
+        });
+    }
+    let index = index.as_ref()?;
+    let last = index.next_below[end];
+    let candidates = index.closers.get(&fence_len)?;
+    let first = candidates.partition_point(|&at| at <= end);
+    if candidates.get(first).map_or(true, |&at| at >= last) {
+        return None;
+    }
     // The scan reports an unclosed body at its end too, so a text line and a
     // boundary past the host tell it apart from a closer on the host's last line.
     let host_len = last - start;
@@ -924,8 +952,14 @@ pub(crate) fn parse_continuation_block(
     // A closer the host holds keeps the colon body open past its first blank;
     // the lines from that blank on are item content (carve#5405).
     let host_closed = content_col.and_then(|content_col| {
-        host_closed_colon_end(lines, start, attached_end, content_col)
-            .map(|end| (end, attached_end, content_col))
+        host_closed_colon_end(
+            lines,
+            start,
+            attached_end,
+            content_col,
+            &mut cur.host_colon_closers,
+        )
+        .map(|end| (end, attached_end, content_col))
     });
     let end = host_closed.map_or(attached_end, |(end, _, _)| end);
     let column_at = |pos: usize| match host_closed {

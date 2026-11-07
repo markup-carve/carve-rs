@@ -258,6 +258,17 @@ pub(in crate::parse) struct LineCursor<'a> {
     /// The last collected item body closed its marker-line colon container.
     pub(in crate::parse) marker_colon_closed: bool,
     pub(in crate::parse) code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
+    /// Bare colon runs at any indent, by width, for one content column; see
+    /// `host_closed_colon_end`.
+    pub(in crate::parse) host_colon_closers: Option<HostColonClosers>,
+}
+
+/// For one content column: the first line below it at or after each line, and
+/// the lines holding a bare colon run once trimmed, by run width.
+pub(in crate::parse) struct HostColonClosers {
+    pub(in crate::parse) content_col: usize,
+    pub(in crate::parse) next_below: Vec<usize>,
+    pub(in crate::parse) closers: HashMap<usize, Vec<usize>>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -307,6 +318,7 @@ impl<'a> LineCursor<'a> {
             comment_span_missed_at: None,
             marker_colon_closed: false,
             code_closer_last_index: None,
+            host_colon_closers: None,
         }
     }
 

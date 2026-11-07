@@ -71,16 +71,54 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
         }
         return Vec::new();
     }
-    let Some(open) = detect_container_open(opener) else {
-        return Vec::new();
+    // A line block or hardbreaks block nests nothing: any later run of its
+    // width in the host closes it.
+    if let Some(fence_len) =
+        detect_line_block_open(opener).or_else(|| detect_hardbreaks_block_open(opener))
+    {
+        let host = remaining
+            .iter()
+            .take_while(|line| is_blank_line(line) || indent_columns(line) > 0);
+        let closed = block
+            .iter()
+            .skip_while(|line| trim_ascii_start(line) != opener)
+            .skip(1)
+            .chain(host)
+            .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len));
+        return if closed {
+            Vec::new()
+        } else {
+            vec![":".repeat(fence_len)]
+        };
+    }
+    // A quote block's body nests like a div's; read its opener as one.
+    let (fence_len, opener) = match detect_quote_block_open(opener) {
+        Some(fence_len) => (fence_len, Some(format!("{} q", ":".repeat(fence_len)))),
+        None => match detect_container_open(opener) {
+            Some(open) => (open.fence_len, None),
+            None => return Vec::new(),
+        },
     };
     if remaining
         .iter()
-        .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(open.fence_len))
+        .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len))
     {
         return Vec::new();
     }
-    let source = block.join("\n");
+    let mut replaced = false;
+    let source = block
+        .iter()
+        .map(|&line| match &opener {
+            Some(opener)
+                if !replaced && detect_quote_block_open(trim_ascii_start(line)).is_some() =>
+            {
+                replaced = true;
+                opener.as_str()
+            }
+            _ => line,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     definition::OpenBodyColons::from_source(&source)
         .closing_widths()
         .map(|width| ":".repeat(width))
