@@ -2525,10 +2525,14 @@ impl<'a> QuoteBody<'a> {
             });
         self.description_line |= marker_body.is_some();
         let marker_content = trim_ascii_start(strip_all_quotes(trim_ascii_start(stripped)).0);
-        let consumed_description_marker = strip_description_prefix(marker_content)
-            .is_some_and(|body| continuation_marker::is_consumed_marker(trim_ascii_start(body)));
-        self.description_line |= consumed_description_marker;
-        self.para_open = if nested_item_closes || self.closed_div || consumed_description_marker {
+        let description_without_paragraph =
+            strip_description_prefix(marker_content).is_some_and(|body| {
+                let body = trim_ascii_start(body);
+                continuation_marker::is_consumed_marker(body)
+                    || self.may_have_term && !ParaOpen::from_line(body, inherited_absorption).get()
+            });
+        self.description_line |= description_without_paragraph;
+        self.para_open = if nested_item_closes || self.closed_div || description_without_paragraph {
             ParaOpen::Closed
         } else if let Some(body) = marker_body {
             ParaOpen::from_line(body, inherited_absorption)
