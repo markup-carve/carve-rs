@@ -819,6 +819,9 @@ struct Walk<'a> {
     next_visible: usize,
     /// The closer line of a `%%%` span whose opener the walk moved.
     moved_span_end: Option<usize>,
+    /// Plain lines folded into a quote-granted footnote definition.
+    quote_note_body: bool,
+    quote_note_plus_line: bool,
 }
 
 struct Skipped {
@@ -1158,6 +1161,8 @@ fn walk_traced(
         note_follower: None,
         next_visible: 0,
         moved_span_end: None,
+        quote_note_body: false,
+        quote_note_plus_line: false,
     };
     if let Some(trace) = walk.trace.as_mut() {
         // INPUT: frontmatter lines are read before ownership.
@@ -1706,6 +1711,11 @@ impl<'a> Walk<'a> {
                     }
                 }
             } else if parse_footnote_def_line(rest).is_some() {
+                // A quote's `+` grants this definition as its one invisible
+                // leaf. It does not skip past it to grant the following block.
+                if self.frames[host].kind == Kind::Quote {
+                    return k;
+                }
                 k += 1;
                 while k < self.lines.len() && foldable_plain_line(view(k)) {
                     k += 1;
@@ -2467,7 +2477,50 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn classify_granted_note(
+        &mut self,
+        rest: &str,
+        after_plus: bool,
+        follows_marker_line: bool,
+        form: &mut Form,
+        reached: &mut usize,
+    ) -> bool {
+        if self.quote_note_body && foldable_plain_line(rest) {
+            *form = Form::Leaf(true);
+        } else {
+            self.quote_note_body = false;
+        }
+        let granted = (after_plus || follows_marker_line)
+            && matches!(form, Form::Note(_))
+            && self
+                .attached
+                .as_ref()
+                .is_some_and(|grant| grant.frames.last().is_some_and(|f| f.kind == Kind::Quote));
+        if granted {
+            // The definition registers in the prepass; in layout it is one
+            // invisible leaf, so no footnote-body frame outlives the grant.
+            *reached = self.frames.len() - 1;
+            *form = Form::Leaf(true);
+            self.quote_note_body = true;
+        }
+        granted
+    }
+
+    fn finish_granted_note(&mut self, granted: bool, reached: usize) {
+        if granted {
+            self.attached = None;
+            self.frames.truncate(reached);
+        }
+    }
+
+    fn mark_quote_note_plus_line(&mut self, rest: &str) {
+        self.quote_note_plus_line = self.quote_note_body
+            && strip_blockquote_prefix(rest)
+                .is_some_and(|rest| is_cont_marker(trim_ascii_start(rest)));
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         self.end_attached_quote_at_blank(at, c.src);
         let tracing = self.trace_wants(at);
@@ -2670,7 +2723,14 @@ impl<'a> Walk<'a> {
             &mut reached,
         );
         self.end_closed_lists(c);
-        let form = self.classify(c.rest, reached, at);
+        let mut form = self.classify(c.rest, reached, at);
+        let quote_granted_note = self.classify_granted_note(
+            c.rest,
+            *after_plus,
+            follows_marker_line,
+            &mut form,
+            &mut reached,
+        );
         // A plain line can continue a line block's open stanza lazily. Restore
         // its frame for this line; the next line gets its own owner decision.
         if self.retain_lazy_line_block(at, c, reached, &form, missed_line_block) {
@@ -2853,6 +2913,7 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+        self.finish_granted_note(quote_granted_note, reached);
     }
 
     /// A comment closer below its host's column still closes the span (PART 9 §28).
@@ -3370,7 +3431,8 @@ impl<'a> Walk<'a> {
             let mut refused = false;
             if self.decide && is_cont_marker(c.rest) {
                 // Past the one space after a `>` the `+` is the quote's text (corpus 646).
-                let quote_text = self.frames[frame].kind == Kind::Quote && c.col > 0;
+                let quote_text = self.quote_note_plus_line
+                    || self.frames[frame].kind == Kind::Quote && c.col > 0;
                 let column = self.frames[frame].doc_marker;
                 match if quote_text {
                     Err(Refusal::Right)

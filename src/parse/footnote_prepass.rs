@@ -465,6 +465,8 @@ struct IndentedNote<'a> {
     first: &'a str,
     container: IndentContainer,
     body_indent: usize,
+    /// A quote's `+` granted the definition's current paragraph only.
+    quote_granted: bool,
     def_column: usize,
     span_note_end: Option<(usize, bool)>,
     note_fence: Option<FenceOpen>,
@@ -1089,6 +1091,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             lazy_brace_open: false,
         };
         let body_indent = footnote_body_floor(raw_def_line);
+        let quote_granted = def_start_line > self.first_source_line
+            && self
+                .decision_at(def_start_line - 1)
+                .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
         let container = IndentContainer {
             marker_column: indent_columns(def.first),
             content_column: body_indent,
@@ -1105,6 +1111,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 first: def.first,
                 container,
                 body_indent,
+                quote_granted,
                 def_column: indent_columns(raw_def_line),
                 span_note_end: None,
                 // A marker starts the body, so a fence on it opens (PART 0 O1).
@@ -1501,6 +1508,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let column = indent_columns(line);
+        if state.quote_granted
+            && (blank
+                || item_block_opener(trim_ascii_start(line))
+                || is_list_marker(trim_ascii_start(line)))
+        {
+            return Flow::Stop;
+        }
         let lazy_open = std::mem::take(&mut state.lazy_open);
         if let Some(flow) = self.retained_fence_line(state, note, line, column, i) {
             return flow;
