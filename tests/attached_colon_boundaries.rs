@@ -41,3 +41,17 @@ fn quoted_host_resumes_after_attached_colon_blank() {
         "{trace}"
     );
 }
+
+#[test]
+fn unmarked_blank_ends_attached_item_and_quote_before_a_new_quote() {
+    let source = "> - +\n> ::: note\n\n>   # q\n";
+    assert_eq!(
+        html(source),
+        "<blockquote>\n  <ul>\n    <li>\n      <aside class=\"admonition note\" aria-label=\"Note\">\n\n      </aside>\n    </li>\n  </ul>\n</blockquote>\n<blockquote>\n  <h1 id=\"q\">q</h1>\n</blockquote>"
+    );
+    let trace = decision_trace(source);
+    assert!(
+        trace.contains("\"line\":4,\"step\":\"S5\",\"owner\":\"doc/quote:4"),
+        "{trace}"
+    );
+}

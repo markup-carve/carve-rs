@@ -2326,6 +2326,10 @@ impl<'a> Walk<'a> {
                 self.attached
                     .as_ref()
                     .filter(|block| block.from + self.first_line == line)
+                    .filter(|block| {
+                        block.depth == 0
+                            || strip_quote_levels(self.lines[at], block.depth).is_some()
+                    })
                     .map(|block| block.frames.clone())
             })
             .flatten()
