@@ -617,6 +617,7 @@ struct FootnoteScan<'a, 'o> {
     container_closers: Option<ContainerCommentClosers>,
     comment_closers: Option<HashMap<usize, usize>>,
     closer_index: Option<HashMap<u8, Vec<usize>>>,
+    line_block_closers: Option<HashMap<usize, Vec<usize>>>,
     // See ContentColumns: a definition on an item's CONTINUATION line carries no
     // marker, so without this the line kept its indentation, stopped looking
     // like a definition, and was neither collected nor rendered - the author's
@@ -675,6 +676,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             container_closers: None,
             comment_closers: None,
             closer_index: None,
+            line_block_closers: None,
             columns: ContentColumns::new(),
             previous_line: PreviousLine::default(),
             last_folded_marker: false,
@@ -1499,11 +1501,58 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 });
                 i += 1;
             }
-            if lines.get(i).is_some_and(|line| is_blank_line(line)) {
+            let later_line_block_closer = attached_refs
+                .get(first_visible_at)
+                .and_then(|line| detect_line_block_open(trim_ascii_start(line)))
+                .filter(|run| {
+                    lines.get(i).is_some_and(|line| is_blank_line(line))
+                        && !attached_refs
+                            .get(first_visible_at + 1..end - start)
+                            .unwrap_or(&[])
+                            .iter()
+                            .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(*run))
+                })
+                .and_then(|run| {
+                    let closers = self.line_block_closers.get_or_insert_with(|| {
+                        let mut index: HashMap<usize, Vec<usize>> = HashMap::new();
+                        for (at, line) in lines.iter().enumerate() {
+                            if let Some(width) = exact_colon_fence_len(trim_ascii_start(line)) {
+                                index.entry(width).or_default().push(at);
+                            }
+                        }
+                        index
+                    });
+                    let positions = closers.get(&run)?;
+                    positions
+                        .get(positions.partition_point(|&at| at < i))
+                        .copied()
+                });
+            if later_line_block_closer.is_none()
+                && lines.get(i).is_some_and(|line| is_blank_line(line))
+            {
                 let remaining = &lines[i + 1..];
                 for closer in attached_first_blank_closers(&attached_refs[..end - start], remaining)
                 {
                     note.push_with(closer, None, |_| None);
+                }
+            }
+            // A closed attached line block owns the blank and its exact
+            // closer, even when that closer misses the note's content column.
+            if let Some(close) = later_line_block_closer {
+                let closer_reaches_note = indent_columns(lines[close]) >= container.content_column;
+                while i <= close {
+                    let kept = if i == close {
+                        trim_ascii_start(lines[i]).to_owned()
+                    } else if is_line_comment_any_column(lines[i]) {
+                        String::new()
+                    } else if closer_reaches_note {
+                        strip_leading_columns(lines[i], container.content_column)
+                    } else {
+                        strip_leading_columns(lines[i], marker_col)
+                    };
+                    let column = stripped_col(Some(0), lines[i], &kept);
+                    note.push_with(kept, Some(self.first_source_line + i), |_| column);
+                    i += 1;
                 }
             }
             let caption_after_one_blank = lead_is_quote
