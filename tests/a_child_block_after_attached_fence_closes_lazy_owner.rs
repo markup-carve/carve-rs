@@ -18,3 +18,14 @@ fn a_paragraph_after_the_fence_keeps_its_lazy_tail() {
     assert!(html.contains("<p>p\ntail</p>"), "{html}");
     assert!(!html.ends_with("<p>tail</p>"), "{html}");
 }
+
+#[test]
+fn a_quote_paragraph_after_the_fence_keeps_its_lazy_tail() {
+    let source = "- a\n  - +\n  ```\n\n    > p\ntail\n";
+    let html = to_html(source);
+    assert!(
+        html.contains("<blockquote><p>p\ntail</p></blockquote>"),
+        "{html}"
+    );
+    assert!(!html.ends_with("<p>tail</p>"), "{html}");
+}
