@@ -18,3 +18,10 @@ fn a_quote_containing_a_description_leaves_the_later_item_paragraph_open() {
     assert!(html.contains("<p>q\n: d</p>"), "{html}");
     assert!(!html.contains("</ul>\n<p>: d</p>"), "{html}");
 }
+
+#[test]
+fn a_quote_before_a_term_leaves_the_later_item_paragraph_open() {
+    let source = "- a\n  > q\n  :: t\n\n  w\n: z\n";
+    let html = to_html(source);
+    assert!(html.contains("<p>w\n: z</p>"), "{html}");
+}

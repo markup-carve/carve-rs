@@ -1480,11 +1480,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 line_starts_paragraph(prior)
                     && strip_description_prefix(trim_ascii_start(prior)).is_none()
             });
+        let retained_definition_lazy =
+            closed_description_lazy || closed_term_quote_lazy || closed_quoted_definition_lazy;
         if indent <= parent_indent
             && !(plain_nested_lazy && carried_lazy_owner.is_some_and(|owner| indent < owner))
-            && !closed_description_lazy
-            && !closed_term_quote_lazy
-            && !closed_quoted_definition_lazy
+            && !retained_definition_lazy
             && !comment_retains_owner
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
@@ -1528,6 +1528,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if (definition_ended_paragraph || closed_code_leaf)
             && indent < strip_cols
+            && !retained_definition_lazy
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
