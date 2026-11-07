@@ -1075,8 +1075,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && literal_colon.is_none();
-        if strip_blockquote_prefix(trim_ascii_start(line)).is_some()
-            || detect_quote_block_open(trim_ascii_start(line)).is_some()
+        if fence.is_none()
+            && comment_fence.is_none()
+            && literal_colon.is_none()
+            && (strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+                || detect_quote_block_open(trim_ascii_start(line)).is_some())
         {
             quote_seen = true;
         }
