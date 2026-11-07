@@ -985,12 +985,16 @@ pub(crate) fn parse_continuation_block(
     let mut end = host_closed.map_or(attached_end, |(end, _, _)| end);
     let attached_quote = strip_blockquote_prefix(trim_ascii_start(lines.at(start))).is_some();
     let caption_at_host = content_col.is_some_and(|column| {
-        (start + 1..end).any(|pos| {
+        let first_blank = (start + 1..=end)
+            .find(|&pos| lines.line(pos).is_some_and(is_blank_line))
+            .unwrap_or(end + 1);
+        (start + 1..end.min(first_blank)).any(|pos| {
             let line = lines.at(pos);
             indent_columns(line) == column && caption_content(trim_ascii_start(line)).is_some()
-        }) || lines.line(end).is_some_and(|line| {
-            indent_columns(line) == column && caption_content(trim_ascii_start(line)).is_some()
-        })
+        }) || end < first_blank
+            && lines.line(end).is_some_and(|line| {
+                indent_columns(line) == column && caption_content(trim_ascii_start(line)).is_some()
+            })
     });
     if attached_quote
         && caption_at_host
@@ -1001,7 +1005,9 @@ pub(crate) fn parse_continuation_block(
     {
         end += 1;
     }
-    let caption_column = attached_quote.then_some(content_col).flatten();
+    let caption_column = (attached_quote && caption_at_host)
+        .then_some(content_col)
+        .flatten();
     // The closer the host test found closes at whatever column it stands.
     let column_at = |pos: usize| match host_closed {
         Some((end, _, _)) if pos + 1 == end => indent_columns(lines.at(pos)),

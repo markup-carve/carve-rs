@@ -2034,9 +2034,11 @@ impl<'a> Walk<'a> {
             return;
         };
         let quoted_follower = self.frames.len() >= attached.frames.len()
-            && self.frames[attached.frames.len() - 1..]
-                .iter()
-                .all(|frame| frame.kind == Kind::Quote)
+            && self.lines.get(attached.from).is_some_and(|line| {
+                strip_quote_levels(line, attached.depth)
+                    .is_some_and(|rest| quote_marker(trim_ascii_start(rest)).is_some())
+            })
+            && strip_quote_levels(src, attached.depth + 1).is_none()
             && !foldable_plain_line(trim_ascii_start(rest));
         if !self.marker_line_attachment_host(attached)
             || (self.frames.len() >= attached.frames.len() && !quoted_follower)
@@ -2589,7 +2591,11 @@ impl<'a> Walk<'a> {
     }
 
     fn end_attached_quote_at_blank(&mut self, at: usize, src: &str) {
-        if is_blank_line(src) && !self.enclosing_attachments.is_empty() && self.attached_ends_at(at)
+        if !self.enclosing_attachments.is_empty()
+            && self.attached.as_ref().is_some_and(|attached| {
+                is_blank_line(src) || strip_quote_levels(src, attached.depth).is_none()
+            })
+            && self.attached_ends_at(at)
         {
             self.attached = self.enclosing_attachments.pop();
         }

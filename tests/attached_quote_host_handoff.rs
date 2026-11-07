@@ -32,21 +32,31 @@ fn a_caption_at_the_host_column_captions_an_attached_quote() {
     }
     let below = to_html("- +\n> q\n   ^ cap\n");
     assert!(below.contains("^ cap</p></blockquote>"), "{below}");
+    let separated = to_html("- +\n> q\n\n  ^ cap\n");
+    assert!(separated.contains("</blockquote>\n    <p>^ cap</p>"), "{separated}");
+    let note_separated = to_html("[^1]: +\n> q\n\n  ^ cap\n\n[^1]\n");
+    assert!(note_separated.contains("<figcaption>cap</figcaption>"), "{note_separated}");
+    let note_beyond = to_html("[^1]: +\n> q\n   ^ cap\n\n[^1]\n");
+    assert!(note_beyond.contains("^ cap</p></blockquote>"), "{note_beyond}");
 }
 
 #[test]
 fn an_outer_host_resumes_after_a_nested_attachment_ends() {
-    for (host, tail, close) in [
-        ("- +", "", "</li>"),
-        ("[^1]: +", "\n[^1]\n", "</li>"),
-        (":: t\n: +", "", "</dd>"),
-    ] {
-        let source = format!("{host}\n> - +\n> ```\n> ```\n\n  # outer\n{tail}");
-        let html = to_html(&source);
-        let quote = html.find("</blockquote>").unwrap();
-        let heading = html.find("<h1 id=\"outer\">outer</h1>").unwrap();
-        assert!(quote < heading && heading < html[quote..].find(close).unwrap() + quote, "{host}: {html}");
+    for blank in ["", "\n"] {
+        for (host, tail, close) in [
+            ("- +", "", "</li>"),
+            ("[^1]: +", "\n[^1]\n", "</li>"),
+            (":: t\n: +", "", "</dd>"),
+        ] {
+            let source = format!("{host}\n> - +\n> ```\n> ```\n{blank}  # outer\n{tail}");
+            let html = to_html(&source);
+            let quote = html.find("</blockquote>").unwrap();
+            let heading = html.find("<h1 id=\"outer\">outer</h1>").unwrap_or_else(|| panic!("{source}: {html}"));
+            assert!(quote < heading && heading < html[quote..].find(close).unwrap() + quote, "{host}: {html}");
+        }
     }
-    let html = to_html("- +\n> - +\n> ```\n> ```\n\n  - y\n");
-    assert!(html.contains("</blockquote>\n    <ul>\n      <li>y</li>"), "{html}");
+    for blank in ["", "\n"] {
+        let html = to_html(&format!("- +\n> - +\n> ```\n> ```\n{blank}  - y\n"));
+        assert!(html.contains("</blockquote>\n    <ul>\n      <li>y</li>"), "{html}");
+    }
 }
