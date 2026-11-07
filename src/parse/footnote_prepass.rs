@@ -1300,7 +1300,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .position(|line| is_blank_line(line) || is_plus_marker(line))
                 .unwrap_or(lines.len() - from)
         };
-        let fenced_block_end = |from: usize| {
+        let mut fenced_block_end = |from: usize| {
             let text = trim_ascii_start(lines.get(from)?);
             if let Some(open) = detect_fence_open(text) {
                 return Some(
@@ -1314,17 +1314,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
                 );
             }
-            let fence_len = detect_line_block_open(text)
+            detect_line_block_open(text)
                 .or_else(|| detect_hardbreaks_block_open(text))
                 .or_else(|| detect_quote_block_open(text))
                 .or_else(|| detect_container_open(text).map(|open| open.fence_len))?;
-            Some(
-                (from + 1..lines.len())
-                    .find(|&at| {
-                        exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(fence_len)
-                    })
-                    .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
-            )
+            Some(attached_block_past_invisible(
+                CursorLines::Slice(lines),
+                from,
+                &mut self.comment_closers,
+                &mut self.closer_index,
+                self.options,
+                &mut |line, _| {
+                    is_blank_line(line)
+                        || is_plus_marker(line)
+                        || (indent_columns(line) < container.content_column
+                            && item_block_opener(trim_ascii_start(line)))
+                },
+            ))
         };
         // Erased comment spans are invisible: the block they lead is the attached one (CARVE-P9-067).
         let lead = i + lines[i..]

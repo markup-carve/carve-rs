@@ -761,13 +761,19 @@ pub(in crate::parse) fn parse_definition_list(
                     .line(first_visible)
                     .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
                 let content_column = list_column + definition_column;
-                let mut boundary = |a: &str, _| {
+                let mut boundary = |a: &str, at| {
                     is_blank_line(a)
                         || is_plus_marker(a)
                         // A list marker ends an attached block that is no list (PART 0 S3, carve#4860).
                         || (!attached_list && is_list_marker(trim_ascii_start(a)))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
+                    || (at > first_visible
+                        && lines
+                            .line(first_visible)
+                            .is_some_and(|line| detect_container_open(line).is_some())
+                        && indent_columns(a) < content_column
+                        && item_block_opener(trim_ascii_start(a)))
                         || (attached_paragraph
                             && indent_columns(a) >= content_column
                             && item_block_opener(trim_ascii_start(a)))

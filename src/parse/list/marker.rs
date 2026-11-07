@@ -583,6 +583,7 @@ pub(crate) fn attached_block_end(
                     .is_some_and(|&last| last > opener)
             });
             if may_close {
+                let mut past_blank = false;
                 let candidate = find_colon_fence_end_bounded(
                     lines,
                     opener,
@@ -593,9 +594,14 @@ pub(crate) fn attached_block_end(
                     // A sibling of the host ends the frame, whatever closer follows
                     // (CARVE-P9-084, carve#4798).
                     &mut |line, at| {
+                        if is_blank_line(line) {
+                            past_blank = true;
+                            return false;
+                        }
                         (detect_list_marker_full(line).is_some()
                             || strip_lazy(line).strip_prefix(":: ").is_some()
-                            || strip_definition_marker(strip_lazy(line)).is_some())
+                            || strip_definition_marker(strip_lazy(line)).is_some()
+                            || (past_blank && item_block_opener(trim_ascii_start(line))))
                             && is_boundary(line, at)
                     },
                 );
@@ -945,8 +951,12 @@ pub(crate) fn parse_continuation_block(
             }
             // A sibling item ends the attachment before lazy continuation can claim it.
             end > start
-                && indent_columns(line) <= base_indent
-                && detect_list_marker_full(line).is_some()
+                && ((indent_columns(line) <= base_indent
+                    && detect_list_marker_full(line).is_some())
+                    || (detect_container_open(lines.at(start)).is_some()
+                        && content_col.is_some_and(|col| {
+                            indent_columns(line) < col && item_block_opener(trim_ascii_start(line))
+                        })))
         },
     );
     // A closer the host holds keeps the colon body open past its first blank;

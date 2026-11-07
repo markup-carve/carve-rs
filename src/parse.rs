@@ -91,19 +91,13 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
         };
     }
     // A quote block's body nests like a div's; read its opener as one.
-    let (fence_len, opener) = match detect_quote_block_open(opener) {
-        Some(fence_len) => (fence_len, Some(format!("{} q", ":".repeat(fence_len)))),
+    let opener = match detect_quote_block_open(opener) {
+        Some(fence_len) => Some(format!("{} q", ":".repeat(fence_len))),
         None => match detect_container_open(opener) {
-            Some(open) => (open.fence_len, None),
+            Some(_) => None,
             None => return Vec::new(),
         },
     };
-    if remaining
-        .iter()
-        .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len))
-    {
-        return Vec::new();
-    }
     let mut replaced = false;
     let source = block
         .iter()
@@ -118,10 +112,17 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
         })
         .collect::<Vec<_>>()
         .join("\n");
-    definition::OpenBodyColons::from_source(&source)
-        .closing_widths()
-        .map(|width| ":".repeat(width))
-        .collect()
+    let mut open = definition::OpenBodyColons::from_source(&source);
+    let widths = open.closing_widths().collect::<Vec<_>>();
+    // A later closer can belong to a nested frame. Only one that closes the
+    // attached frame itself keeps the block open across its first blank.
+    for line in remaining {
+        open.observe(line);
+        if open.closing_widths().next().is_none() {
+            return Vec::new();
+        }
+    }
+    widths.into_iter().map(|width| ":".repeat(width)).collect()
 }
 pub(crate) use attrs::*;
 pub(crate) use block::*;
