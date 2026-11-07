@@ -1318,8 +1318,12 @@ fn colon_opener(rest: &str) -> bool {
 impl<'a> Walk<'a> {
     /// The owner path of frames `1..=depth`: `doc/item:1/quote:2`.
     fn path(&self, depth: usize) -> String {
+        Self::path_frames(&self.frames[..=depth])
+    }
+
+    fn path_frames(frames: &[Frame]) -> String {
         let mut path = String::from("doc");
-        for f in &self.frames[1..=depth] {
+        for f in &frames[1..] {
             let kind = match f.kind {
                 Kind::Quote => "quote",
                 Kind::Item => "item",
@@ -1339,6 +1343,36 @@ impl<'a> Walk<'a> {
 
     fn deepest(&self) -> String {
         self.path(self.frames.len() - 1)
+    }
+
+    fn attached_trace_host(&self, at: usize, tracing: bool, plus_follower: bool) -> Option<String> {
+        if !tracing || !plus_follower {
+            return None;
+        }
+        let block = self.attached.as_ref()?;
+        if block.from != at
+            || block.frames.last()?.kind != Kind::Item
+            || at == 0
+            || detect_list_marker_full(trim_ascii_start(quoted_rest(self.lines[at - 1]))).is_none()
+            || !is_cont_marker(trim_ascii_start(innermost_marker_content(quoted_rest(
+                self.lines[at - 1],
+            ))))
+        {
+            return None;
+        }
+        Some(Self::path_frames(&block.frames))
+    }
+
+    fn apply_attached_trace_owner(&self, host: Option<String>, record: &mut Option<TraceRecord>) {
+        let (Some(host), Some(row)) = (host, record.as_mut()) else {
+            return;
+        };
+        let actual = self.deepest();
+        if let Some(opener) = actual.rsplit('/').next().filter(|part| *part != "doc") {
+            row.owner = format!("{host}/{opener}");
+            row.closed = None;
+            row.reached = None;
+        }
     }
 
     fn emit(&mut self, at: usize, record: TraceRecord) {
@@ -2262,13 +2296,17 @@ impl<'a> Walk<'a> {
             .and_then(|frame| frame.attached_blank_end)
             .is_some_and(|end| at >= end);
         ended
-            && self.attached.as_ref().is_some_and(|block| {
-                let host_col = block.frames.last().expect("attached host").col;
-                self.lines[at + 1..]
-                    .iter()
-                    .find(|line| !is_blank_line(line))
-                    .is_some_and(|line| doc_column(line, quoted_rest(line)) >= host_col)
-            })
+            && (self
+                .frames
+                .last()
+                .is_some_and(|frame| frame.kind == Kind::Colon)
+                || self.attached.as_ref().is_some_and(|block| {
+                    let host_col = block.frames.last().expect("attached host").col;
+                    self.lines[at + 1..]
+                        .iter()
+                        .find(|line| !is_blank_line(line))
+                        .is_some_and(|line| doc_column(line, quoted_rest(line)) >= host_col)
+                }))
     }
 
     fn reach_after_attached_fence_end(&self, reached: usize, ended: bool) -> usize {
@@ -2292,6 +2330,10 @@ impl<'a> Walk<'a> {
                 self.attached
                     .as_ref()
                     .filter(|block| block.from + self.first_line == line)
+                    .filter(|block| {
+                        block.depth == 0
+                            || strip_quote_levels(self.lines[at], block.depth).is_some()
+                    })
                     .map(|block| block.frames.clone())
             })
             .flatten()
@@ -2826,6 +2868,7 @@ impl<'a> Walk<'a> {
             .is_some_and(|f| f.kind == Kind::Dd && at > 0 && f.plus == Some(at - 1))
             && reached == self.frames.len() - 2;
         // S5: apply the boundary table to everything else.
+        let attached_trace_host = self.attached_trace_host(at, tracing, plus_follower);
         let closed = self.frames.len() - 1 - reached;
         let mut record = tracing.then(|| {
             let name = trace_form(&form);
@@ -2912,6 +2955,7 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        self.apply_attached_trace_owner(attached_trace_host, &mut record);
         self.emit_applied(at, record, None);
         self.finish_granted_note(quote_granted_note, reached);
     }
@@ -3142,7 +3186,9 @@ impl<'a> Walk<'a> {
     /// Emit an S5 record owned by the frames up to `depth`, or the deepest open one.
     fn emit_applied(&mut self, at: usize, record: Option<TraceRecord>, depth: Option<usize>) {
         if let Some(mut record) = record {
-            record.owner = depth.map_or_else(|| self.deepest(), |k| self.path(k));
+            if record.owner.is_empty() {
+                record.owner = depth.map_or_else(|| self.deepest(), |k| self.path(k));
+            }
             self.emit(at, record);
         }
     }
@@ -3215,8 +3261,15 @@ impl<'a> Walk<'a> {
                         .is_some_and(|previous| self.frames[owner].plus == Some(previous))
                         || self.attached.as_ref().is_some_and(|block| block.from == at);
                     if attached {
-                        let first_blank = (at + 1..self.lines.len())
-                            .find(|&line| is_blank_line(self.lines[line]));
+                        let quote_depth = self.frames[1..=owner]
+                            .iter()
+                            .filter(|frame| frame.kind == Kind::Quote)
+                            .count();
+                        let first_blank = (at + 1..self.lines.len()).find(|&line| {
+                            is_blank_line(self.lines[line])
+                                || strip_quote_levels(self.lines[line], quote_depth)
+                                    .is_some_and(is_blank_line)
+                        });
                         if let Some(blank) = first_blank {
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
                             let has_closer = runs.code_by_column.has_later(ch, at, col, len);
@@ -3252,8 +3305,15 @@ impl<'a> Walk<'a> {
                     .is_some_and(|previous| self.frames[owner].plus == Some(previous))
                     || self.attached.as_ref().is_some_and(|block| block.from == at);
                 if attached {
-                    let first_blank =
-                        (at + 1..self.lines.len()).find(|&line| is_blank_line(self.lines[line]));
+                    let quote_depth = self.frames[1..=owner]
+                        .iter()
+                        .filter(|frame| frame.kind == Kind::Quote)
+                        .count();
+                    let first_blank = (at + 1..self.lines.len()).find(|&line| {
+                        is_blank_line(self.lines[line])
+                            || strip_quote_levels(self.lines[line], quote_depth)
+                                .is_some_and(is_blank_line)
+                    });
                     if let Some(blank) = first_blank {
                         let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
                         let has_closer = runs

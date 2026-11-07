@@ -335,6 +335,10 @@ name = "parser_owner_batch"
 path = "tests/parser_owner_batch.rs"
 
 [[test]]
+name = "attached_colon_boundaries"
+path = "tests/attached_colon_boundaries.rs"
+
+[[test]]
 name = "parser_first_block_and_refused_plus"
 path = "tests/parser_first_block_and_refused_plus.rs"
 
