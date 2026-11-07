@@ -26,6 +26,14 @@ fn a_following_quote_is_a_separate_block() {
 }
 
 #[test]
+fn an_explicit_quote_marker_continues_the_quote() {
+    assert_eq!(
+        carve::to_html("> +\n[^n]: x\n> a\n"),
+        "<blockquote>\n  <blockquote><p>a</p></blockquote>\n</blockquote>"
+    );
+}
+
+#[test]
 fn a_note_body_line_does_not_split_later_list_siblings() {
     assert_eq!(
         carve::to_html("> +\n[^n]: x\n  y\n  - a\n- end\n"),

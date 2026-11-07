@@ -2475,6 +2475,42 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn classify_granted_note(
+        &mut self,
+        rest: &str,
+        after_plus: bool,
+        follows_marker_line: bool,
+        form: &mut Form,
+        reached: &mut usize,
+    ) -> bool {
+        if self.quote_note_body && foldable_plain_line(rest) {
+            *form = Form::Leaf(true);
+        } else {
+            self.quote_note_body = false;
+        }
+        let granted = (after_plus || follows_marker_line)
+            && matches!(form, Form::Note(_))
+            && self
+                .attached
+                .as_ref()
+                .is_some_and(|grant| grant.frames.last().is_some_and(|f| f.kind == Kind::Quote));
+        if granted {
+            // The definition registers in the prepass; in layout it is one
+            // invisible leaf, so no footnote-body frame outlives the grant.
+            *reached = self.frames.len() - 1;
+            *form = Form::Leaf(true);
+            self.quote_note_body = true;
+        }
+        granted
+    }
+
+    fn finish_granted_note(&mut self, granted: bool, reached: usize) {
+        if granted {
+            self.attached = None;
+            self.frames.truncate(reached);
+        }
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         self.end_attached_quote_at_blank(at, c.src);
@@ -2679,25 +2715,13 @@ impl<'a> Walk<'a> {
         );
         self.end_closed_lists(c);
         let mut form = self.classify(c.rest, reached, at);
-        let folded_quote_note = self.quote_note_body && foldable_plain_line(c.rest);
-        if folded_quote_note {
-            form = Form::Leaf(true);
-        } else {
-            self.quote_note_body = false;
-        }
-        let quote_granted_note = (*after_plus || follows_marker_line)
-            && matches!(form, Form::Note(_))
-            && self
-                .attached
-                .as_ref()
-                .is_some_and(|grant| grant.frames.last().is_some_and(|f| f.kind == Kind::Quote));
-        if quote_granted_note {
-            // The definition registers in the prepass; in layout it is one
-            // invisible leaf, so no footnote-body frame outlives the grant.
-            reached = self.frames.len() - 1;
-            form = Form::Leaf(true);
-            self.quote_note_body = true;
-        }
+        let quote_granted_note = self.classify_granted_note(
+            c.rest,
+            *after_plus,
+            follows_marker_line,
+            &mut form,
+            &mut reached,
+        );
         // A plain line can continue a line block's open stanza lazily. Restore
         // its frame for this line; the next line gets its own owner decision.
         if self.retain_lazy_line_block(at, c, reached, &form, missed_line_block) {
@@ -2880,10 +2904,7 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
-        if quote_granted_note {
-            self.attached = None;
-            self.frames.truncate(reached);
-        }
+        self.finish_granted_note(quote_granted_note, reached);
     }
 
     /// A comment closer below its host's column still closes the span (PART 9 §28).

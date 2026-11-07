@@ -1447,7 +1447,19 @@ pub(in crate::parse) fn collect_blockquote_body(
     let mut body = QuoteBody::new(cur.pos);
     while let Some(line) = cur.peek() {
         if body.granted_note {
-            break;
+            let authored_column = cur
+                .source_line(cur.pos)
+                .map(|line| own_lines::authored_visual_column(line, 1));
+            if authored_column != Some(0) || strip_blockquote_prefix(line).is_none() {
+                break;
+            }
+            body.granted_note = false;
+            let at = cur.pos;
+            body.inner
+                .push_at(line.to_string(), cur.source_line(at), cur.source_col(at));
+            body.last_quoted_at = Some(at);
+            cur.consume();
+            continue;
         }
         let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
             trim_ascii_start(line)
