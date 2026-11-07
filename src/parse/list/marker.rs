@@ -800,7 +800,10 @@ fn host_closed_colon_end(
         let mut closers: HashMap<usize, Vec<usize>> = HashMap::new();
         for at in (0..lines.len()).rev() {
             let line = lines.at(at);
-            next_below[at] = if !is_blank_line(line) && indent_columns(line) < content_col {
+            next_below[at] = if !is_blank_line(line)
+                && indent_columns(line) < content_col
+                && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+            {
                 at
             } else {
                 next_below[at + 1]
@@ -938,16 +941,15 @@ pub(crate) fn parse_continuation_block(
         !is_blank_line(line)
             && !detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
     });
-    let mut past_blank = false;
-    let mut checked_through = start;
+    let first_blank = (start + 1..lines.len())
+        .find(|&at| is_blank_line(lines.at(at)))
+        .unwrap_or(lines.len());
     let attached_end = attached_block_end(
         lines,
         start,
         &mut cur.comment_closer_last_index,
         &mut cur.code_closer_last_index,
         &mut |line, end| {
-            past_blank |= (checked_through..end).any(|at| is_blank_line(lines.at(at)));
-            checked_through = end;
             if (end > start || following_plus_attaches)
                 && trim_ascii(line) == "+"
                 && indent_columns(line) == base_indent
@@ -959,8 +961,8 @@ pub(crate) fn parse_continuation_block(
             end > start
                 && ((indent_columns(line) <= base_indent
                     && detect_list_marker_full(line).is_some())
-                    || (past_blank
-                        && detect_container_open(lines.at(start)).is_some()
+                    || (detect_container_open(lines.at(start)).is_some()
+                        && end > first_blank
                         && content_col.is_some_and(|col| {
                             indent_columns(line) < col
                                 && exact_colon_fence_len(trim_ascii_start(line)).is_none()

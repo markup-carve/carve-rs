@@ -1306,10 +1306,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 return Some(
                     (from + 1..lines.len())
                         .find(|&at| {
-                            is_fence_close(
-                                strip_leading_columns(lines[at], marker_col).as_str(),
-                                open,
-                            )
+                            indent_columns(lines[at]) == marker_col
+                                && is_fence_close(
+                                    strip_leading_columns(lines[at], marker_col).as_str(),
+                                    open,
+                                )
                         })
                         .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
                 );
@@ -1318,16 +1319,20 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .or_else(|| detect_hardbreaks_block_open(text))
                 .or_else(|| detect_quote_block_open(text))
                 .or_else(|| detect_container_open(text).map(|open| open.fence_len))?;
+            let first_blank = (from + 1..lines.len())
+                .find(|&at| is_blank_line(lines[at]))
+                .unwrap_or(lines.len());
             Some(attached_block_past_invisible(
                 CursorLines::Slice(lines),
                 from,
                 &mut self.comment_closers,
                 &mut self.closer_index,
                 self.options,
-                &mut |line, _| {
+                &mut |line, at| {
                     is_blank_line(line)
                         || is_plus_marker(line)
-                        || (indent_columns(line) < container.content_column
+                        || (at > first_blank
+                            && indent_columns(line) < container.content_column
                             && exact_colon_fence_len(trim_ascii_start(line)).is_none()
                             && item_block_opener(trim_ascii_start(line)))
                 },
@@ -2950,6 +2955,8 @@ fn pulled_fence_closer(
             ) {
                 return None;
             }
+        } else if closer_column == body_column && indent_columns(line) < body_column {
+            return None;
         } else if indent_columns(line) == closer_column
             && is_fence_close(trim_ascii_start(line), open)
         {

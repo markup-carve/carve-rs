@@ -44,3 +44,23 @@ fn a_later_div_below_the_content_column_leaves_the_host() {
         }
     }
 }
+
+#[test]
+fn a_nested_div_before_the_first_blank_stays_in_each_host() {
+    for (source, outer, close) in [
+        ("- +\n::: x\n::: y\na\n\nref\n", "<ul>", "</ul>"),
+        (":: t\n: +\n::: x\n::: y\na\n\nref\n", "<dl>", "</dl>"),
+        (
+            "[^f]: +\n::: x\n::: y\na\n\nref[^f]\n",
+            "<section role=\"doc-endnotes\"",
+            "</section>",
+        ),
+    ] {
+        let html = to_html(source);
+        let host = html.find(outer).expect("host");
+        let nested = html.find("<div class=\"y\">").expect("nested div");
+        let host_end = html[host..].find(close).expect("host close") + host;
+        assert!(nested > host && nested < host_end, "{source:?}: {html}");
+        assert!(html.contains("<p>ref"), "{source:?}: {html}");
+    }
+}

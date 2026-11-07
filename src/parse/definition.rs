@@ -761,6 +761,9 @@ pub(in crate::parse) fn parse_definition_list(
                     .line(first_visible)
                     .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
                 let content_column = list_column + definition_column;
+                let first_blank = (first_visible + 1..lines.len())
+                    .find(|&at| lines.line(at).is_some_and(is_blank_line))
+                    .unwrap_or(lines.len());
                 let mut boundary = |a: &str, at| {
                     is_blank_line(a)
                         || is_plus_marker(a)
@@ -768,7 +771,7 @@ pub(in crate::parse) fn parse_definition_list(
                         || (!attached_list && is_list_marker(trim_ascii_start(a)))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
-                    || (at > first_visible
+                    || (at > first_blank
                         && lines
                             .line(first_visible)
                             .is_some_and(|line| detect_container_open(line).is_some())
