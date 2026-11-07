@@ -66,6 +66,10 @@ impl Closer {
 struct Frame {
     kind: Kind,
     col: usize,
+    /// First frame in the contiguous colon suffix ending here.
+    colon_suffix_start: usize,
+    /// Highest content column in that suffix.
+    colon_suffix_max_col: usize,
     canon: usize,
     cut: usize,
     para: bool,
@@ -137,6 +141,8 @@ impl Frame {
         Frame {
             kind,
             col: 0,
+            colon_suffix_start: 0,
+            colon_suffix_max_col: 0,
             canon: 0,
             cut: 0,
             para: false,
@@ -242,6 +248,10 @@ fn indent_in_item_frame(line: &str, frame_col: usize) -> Option<usize> {
 }
 
 fn marker_ladder_tab_col(frames: &[Frame], line: &str, measured: usize) -> usize {
+    let indent_len = indent_cols(line).1;
+    if !line.as_bytes()[..indent_len].contains(&b'\t') {
+        return measured;
+    }
     frames
         .windows(2)
         .filter(|pair| {
@@ -796,6 +806,8 @@ struct Walk<'a> {
     refused: Vec<continuation_marker::Refused>,
     unclosed_comments: Vec<(usize, usize, usize, bool)>,
     closed_comments: HashSet<usize>,
+    /// Whether any frame may retain a closed list's output shift.
+    has_closed_list: bool,
     overindented: Vec<OverindentedOpener>,
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
@@ -1162,6 +1174,7 @@ fn walk_traced(
         refused: Vec::new(),
         unclosed_comments: Vec::new(),
         closed_comments: HashSet::new(),
+        has_closed_list: false,
         overindented: Vec::new(),
         attached: None,
         enclosing_attachments: Vec::new(),
@@ -1196,6 +1209,7 @@ fn walk_traced(
     let mut edits = Vec::new();
     let mut after_plus = false;
     let letter = plus_letter(source);
+    let has_comment_opener = source.contains("%%");
     let mut wrote_letter = false;
     for at in 0..walk.lines.len() {
         if at > 0 {
@@ -1212,7 +1226,11 @@ fn walk_traced(
             edits: Vec::new(),
         };
         c.measure();
-        let open_comments: Vec<_> = walk.frames.iter().filter_map(Frame::open_comment).collect();
+        let open_comments: Vec<_> = if has_comment_opener {
+            walk.frames.iter().filter_map(Frame::open_comment).collect()
+        } else {
+            Vec::new()
+        };
         if !walk.skipped_line(at, &mut c) {
             walk.line(at, &mut c, &mut after_plus);
         }
@@ -2023,7 +2041,7 @@ impl<'a> Walk<'a> {
         let one_block = self.attached_ends_at(at);
         let attached = self.attached.take().expect("checked above");
         if one_block {
-            self.frames = attached.frames;
+            self.replace_frames(attached.frames);
         }
     }
 
@@ -2052,7 +2070,7 @@ impl<'a> Walk<'a> {
         {
             return;
         }
-        self.frames = attached.frames.clone();
+        self.replace_frames(attached.frames.clone());
     }
 
     fn restore_host_after_attached_closer(&mut self, inner: Option<&Frame>) {
@@ -2063,7 +2081,7 @@ impl<'a> Walk<'a> {
                 && inner.is_some_and(|frame| block.from + self.first_line == frame.line)
                 && block.frames.len() > self.frames.len()
         }) {
-            self.frames = host.frames.clone();
+            self.replace_frames(host.frames.clone());
         }
     }
 
@@ -2114,16 +2132,24 @@ impl<'a> Walk<'a> {
         });
     }
 
+    fn replace_frames(&mut self, frames: Vec<Frame>) {
+        self.has_closed_list = frames.iter().any(|frame| frame.closed_list.is_some());
+        self.frames = frames;
+    }
+
     /// A line left of a closed list's column ends that list's shift.
     fn end_closed_lists(&mut self, c: &Cursor<'_>) {
-        if c.rest.is_empty() {
+        if c.rest.is_empty() || !self.has_closed_list {
             return;
         }
+        let mut has_closed_list = false;
         for f in &mut self.frames {
             if f.closed_list.is_some_and(|(col, _)| c.col < col) {
                 f.closed_list = None;
             }
+            has_closed_list |= f.closed_list.is_some();
         }
+        self.has_closed_list = has_closed_list;
     }
 
     /// The shift a lazy line takes from the list it missed: a line at or past
@@ -2158,6 +2184,7 @@ impl<'a> Walk<'a> {
         self.frames.truncate(reached + 1);
         if let Some((_, _, list_col, list_shift)) = self.sibling {
             if !c.rest.is_empty() && list_shift > 0 && c.col >= list_col {
+                self.has_closed_list = true;
                 self.top().closed_list = Some((list_col, list_shift));
             }
         }
@@ -2447,7 +2474,7 @@ impl<'a> Walk<'a> {
             self.frames.pop();
         }
         if let Some(frames) = resume.filter(|frames| frames.len() > self.frames.len()) {
-            self.frames = frames;
+            self.replace_frames(frames);
             *reached = self.frames.len() - 1;
         }
     }
@@ -2620,7 +2647,7 @@ impl<'a> Walk<'a> {
         }) && self.attached_ends_at(at)
         {
             let attached = self.attached.take().expect("checked above");
-            self.frames = attached.frames[..attached.frames.len() - 1].to_vec();
+            self.replace_frames(attached.frames[..attached.frames.len() - 1].to_vec());
         }
     }
 
@@ -2687,6 +2714,22 @@ impl<'a> Walk<'a> {
         col.saturating_sub(self.top().col)
     }
 
+    fn reaches_colon_suffix(&self, index: usize, column: usize) -> bool {
+        self.frames.last().is_some_and(|last| {
+            last.kind == Kind::Colon
+                && last.colon_suffix_start == index
+                && column >= last.colon_suffix_max_col
+        })
+    }
+
+    fn unattached_plus_is_letter(&self, plus: Option<usize>, rest: &str, reached: usize) -> bool {
+        self.decide
+            && plus.is_none()
+            && is_cont_marker(rest)
+            && !(self.frames.last().expect("frame").kind == Kind::Fence
+                && reached == self.frames.len() - 1)
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
@@ -2703,6 +2746,10 @@ impl<'a> Walk<'a> {
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
         for k in 1..self.frames.len() {
+            if self.reaches_colon_suffix(k, c.col) {
+                reached = self.frames.len() - 1;
+                break;
+            }
             let f = &self.frames[k];
             if let Some((marker_col, _)) = f.marker {
                 // A lone `+` reaches the marker column of an open marker container.
@@ -2760,12 +2807,7 @@ impl<'a> Walk<'a> {
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
-        if self.decide
-            && plus.is_none()
-            && is_cont_marker(c.rest)
-            && !(self.frames.last().expect("frame").kind == Kind::Fence
-                && reached == self.frames.len() - 1)
-        {
+        if self.unattached_plus_is_letter(plus, c.rest, reached) {
             let column = doc_column(self.lines[at], c.rest);
             let refusal = refused_by.or_else(|| self.stray_plus(at, reached, c.col, column));
             self.refuse_letter(at, column, refusal);
@@ -3448,6 +3490,18 @@ impl<'a> Walk<'a> {
             Form::Colon(run, _) => {
                 let mut f = Frame::new(Kind::Colon);
                 f.col = o_col;
+                let (start, max_col) = self
+                    .frames
+                    .last()
+                    .filter(|previous| previous.kind == Kind::Colon)
+                    .map_or((self.frames.len(), f.col), |previous| {
+                        (
+                            previous.colon_suffix_start,
+                            previous.colon_suffix_max_col.max(f.col),
+                        )
+                    });
+                f.colon_suffix_start = start;
+                f.colon_suffix_max_col = max_col;
                 f.canon = o_canon;
                 f.cut = col.saturating_sub(canon);
                 f.run = run;
