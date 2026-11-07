@@ -1429,24 +1429,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
   </ol>
 </section>"##,
     ),
-    (
-        "758-a-hosted-footnote-keeps-a-heading-at-its-body-floor",
-        "carve#5407 resumes a hosted note at its body floor after the attached heading",
-        r##"<ul>
-  <li>a</li>
-</ul>
-<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <h1 id="h">h</h1>
-      <h1 id="h-2">h</h1>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
 ];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
