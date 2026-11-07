@@ -2097,13 +2097,20 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             trimmed_after_slice += sliced.len() - trimmed.len();
             sliced = trimmed.to_string();
         }
+        let lazy_separator = below_definition_separator
+            && !separator_at_nested_marker
+            && !separator_in_own_item
+            && !separator_for_nested_item;
+        // A lazy line has no column, so its indentation is not text (PART 0 S4).
+        if lazy_separator && !sliced.starts_with(LAZY) {
+            let trimmed = trim_ascii_start(&sliced);
+            trimmed_after_slice += sliced.len() - trimmed.len();
+            sliced = trimmed.to_string();
+        }
         if (framed_comment_payload
             || (spanned_stanza_lazy && line.starts_with(LAZY))
             || lazy_list_marker
-            || below_definition_separator
-                && !separator_at_nested_marker
-                && !separator_in_own_item
-                && !separator_for_nested_item
+            || lazy_separator
             || description
                 && indent > marker_base
                 && indent < strip_cols
