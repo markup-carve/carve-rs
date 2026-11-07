@@ -1,7 +1,7 @@
 #[test]
-fn a_description_at_a_shifted_items_marker_column_ends_its_stanza() {
+fn a_later_stanza_releases_a_shifted_items_definition_boundary() {
     let source = " - a\n   :: t\n   ::: |\n     prose\n : z\n";
-    let expected = "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n    </dl>\n    <div class=\"line-block\">\n      <p>&nbsp;&nbsp;prose</p>\n    </div>\n  </li>\n</ul>\n<p>: z</p>";
+    let expected = "<ul>\n  <li>a\n    <dl>\n      <dt>t</dt>\n    </dl>\n    <div class=\"line-block\">\n      <p>&nbsp;&nbsp;prose<br>\n: z</p>\n    </div>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source), expected);
 }
 

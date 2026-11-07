@@ -178,13 +178,13 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                 && strip_description_prefix(trim_ascii_start(line)).is_some()
                 && body_ends_in_definition_list(&nested.source, options)
         });
-        // A separator at the list marker's column ends an item that holds a
-        // definition list, even after a later paragraph (carve#5317 ruling).
-        if indent <= list_base
-            && strip_description_prefix(trim_ascii_start(line)).is_some()
+        // Only an active definition list holds the marker-column boundary.
+        let marker_colon =
+            indent <= list_base && strip_description_prefix(trim_ascii_start(line)).is_some();
+        let active_definition = marker_colon
             && term_options
-                .is_some_and(|options| body_holds_definition_list(&nested.source, options))
-        {
+                .is_some_and(|options| body_holds_definition_list(&nested.source, options));
+        if active_definition {
             break;
         }
         if is_blank_line(line)
@@ -216,7 +216,9 @@ pub(crate) fn collect_trailing_lazy_through_framed(
                 // / `*[A]: b` dropped the author's line and defined an
                 // abbreviation where the sibling paths fold it (carve-rs#2096).
                 let line_owned = line.to_string();
-                !band_separator && interrupts_lazy_continuation_as_container(cur, &line_owned)
+                !band_separator
+                    && !marker_colon
+                    && interrupts_lazy_continuation_as_container(cur, &line_owned)
             }
         {
             break;

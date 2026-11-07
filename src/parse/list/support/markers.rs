@@ -754,12 +754,10 @@ pub(crate) fn body_ends_in_definition_list(body: &str, options: &Options<'_>) ->
     ends_in_definition_list(last.as_ref(), nested_tail)
 }
 
-/// A marker-column separator ends an item whose description is still open, or
-/// whose item chain held a term-only definition list, even after a later
-/// paragraph. A quote owns its own list
-/// and lazy paragraph, so neither lends that boundary to the item
-/// (PART 0 S4, carve#5317).
+/// A marker-column separator ends an item only while its definition list is
+/// still the active block. A later block releases that boundary (PART 0 S4).
 pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> bool {
+    let blocks = probe_blocks(body, options);
     let attached_unquoted = body
         .lines()
         .any(|line| trim_ascii_start(line).ends_with("> +"))
@@ -773,16 +771,16 @@ pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> b
             .map(trim_ascii_start)
             .is_some_and(|line| {
                 is_definition_list_start(line) || strip_description_prefix(line).is_some()
-            });
+            })
+        && matches!(blocks.last(), Some(BlockNode::DefinitionList(_)));
     if attached_unquoted {
         return true;
     }
-    let blocks = probe_blocks(body, options);
     if blocks.last().is_some_and(trailing_container) && body_ends_with_open_paragraph(body, options)
     {
         return false;
     }
-    // An open description holds the boundary; a closed one only as a term-only list (carve#5323).
+    // The final block alone can hold an open term or description.
     if ends_in_definition_list(blocks.last(), true) {
         return true;
     }
@@ -790,13 +788,17 @@ pub(crate) fn body_holds_definition_list(body: &str, options: &Options<'_>) -> b
     let quote_attaches_term = body.lines().zip(body.lines().skip(1)).any(|(plus, term)| {
         trim_ascii_start(plus).ends_with("> +") && is_definition_list_start(trim_ascii_start(term))
     });
-    blocks.iter().enumerate().any(|(at, block)| {
-        !(quote_attaches_term
-            && matches!(block, BlockNode::DefinitionList(_))
-            && at > 0
-            && matches!(blocks[at - 1], BlockNode::BlockQuote(_)))
-            && block_holds_definition_list(block)
-    })
+    blocks
+        .iter()
+        .enumerate()
+        .next_back()
+        .is_some_and(|(at, block)| {
+            !(quote_attaches_term
+                && matches!(block, BlockNode::DefinitionList(_))
+                && at > 0
+                && matches!(blocks[at - 1], BlockNode::BlockQuote(_)))
+                && block_holds_definition_list(block)
+        })
 }
 
 fn trailing_container(block: &BlockNode) -> bool {
@@ -823,16 +825,24 @@ fn block_holds_definition_list(block: &BlockNode) -> bool {
             .items
             .last()
             .is_some_and(|item| item.definitions.is_empty()),
-        BlockNode::List(list) => list
-            .items
+        BlockNode::List(list) => list.items.last().is_some_and(|item| {
+            item.children
+                .last()
+                .is_some_and(block_holds_definition_list)
+        }),
+        BlockNode::Div(div) => div.children.last().is_some_and(block_holds_definition_list),
+        BlockNode::Admonition(boxed) => boxed
+            .children
             .last()
-            .is_some_and(|item| item.children.iter().any(block_holds_definition_list)),
-        BlockNode::Div(div) => div.children.iter().any(block_holds_definition_list),
-        BlockNode::Admonition(boxed) => boxed.children.iter().any(block_holds_definition_list),
-        BlockNode::Directive(directive) => {
-            directive.children.iter().any(block_holds_definition_list)
-        }
-        BlockNode::Section(section) => section.children.iter().any(block_holds_definition_list),
+            .is_some_and(block_holds_definition_list),
+        BlockNode::Directive(directive) => directive
+            .children
+            .last()
+            .is_some_and(block_holds_definition_list),
+        BlockNode::Section(section) => section
+            .children
+            .last()
+            .is_some_and(block_holds_definition_list),
         _ => false,
     }
 }
