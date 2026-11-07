@@ -1074,7 +1074,7 @@ thread_local! {
 fn force_link_prepass() -> bool {
     #[cfg(test)]
     {
-        return FORCE_LINK_PREPASS.with(Cell::get);
+        FORCE_LINK_PREPASS.with(Cell::get)
     }
     #[cfg(not(test))]
     {
