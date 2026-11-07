@@ -2056,17 +2056,31 @@ impl<'a> Walk<'a> {
             .frames
             .last()
             .is_some_and(|host| host.kind.is_marker_body())
-            && self.frames.len() >= attached.frames.len()
+            && (self.frames.len() >= attached.frames.len()
+                || attached
+                    .frames
+                    .last()
+                    .is_some_and(|host| host.kind == Kind::Note))
             && self.lines.get(attached.from).is_some_and(|line| {
                 strip_quote_levels(line, attached.depth)
                     .is_some_and(|rest| quote_marker(trim_ascii_start(rest)).is_some())
             })
-            && strip_quote_levels(src, attached.depth + 1).is_none()
-            && !foldable_plain_line(trim_ascii_start(rest));
+            && (strip_quote_levels(src, attached.depth + 1).is_none()
+                && !foldable_plain_line(trim_ascii_start(rest))
+                || attached
+                    .frames
+                    .last()
+                    .is_some_and(|host| host.kind == Kind::Note)
+                    && quote_marker(trim_ascii_start(rest)).is_some());
         if !self.marker_line_attachment_host(attached)
             || (self.frames.len() >= attached.frames.len() && !quoted_follower)
             || doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
-            || !self.attached_ends_at(at)
+                && !(quoted_follower
+                    && self.lines.get(attached.from).is_some_and(|line| {
+                        doc_column(line, trim_ascii_start(line))
+                            < doc_column(src, indent_rest(rest))
+                    }))
+            || !self.attached_ends_at(at) && !quoted_follower
         {
             return;
         }
