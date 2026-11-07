@@ -1976,7 +1976,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // The enclosing frame has already removed its own prefix; taking
             // the remaining indent here erases authored leading spaces.
             (true, Some(_)) if comment_payload => {
-                if comment_fence.is_some_and(|(_, opener)| indent < opener) {
+                if comment_fence.is_some_and(|(_, opener)| indent < opener && indent < strip_cols) {
                     0
                 } else {
                     strip_cols.min(indent_columns(payload_line))
