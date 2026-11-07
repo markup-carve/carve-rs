@@ -465,3 +465,7 @@ path = "tests/quote_attached_fence_looseness_4032.rs"
 [[test]]
 name = "nested_quote_fence_payload_4033"
 path = "tests/nested_quote_fence_payload_4033.rs"
+
+[[test]]
+name = "ended_attached_fence_follower"
+path = "tests/ended_attached_fence_follower.rs"

@@ -2305,7 +2305,17 @@ impl<'a> Walk<'a> {
                     self.lines[at + 1..]
                         .iter()
                         .find(|line| !is_blank_line(line))
-                        .is_some_and(|line| doc_column(line, quoted_rest(line)) >= host_col)
+                        .is_some_and(|line| {
+                            doc_column(line, quoted_rest(line)) >= host_col
+                                || self.frames.last().is_some_and(|frame| {
+                                    frame.kind == Kind::Fence
+                                        && (item_block_opener(trim_ascii_start(quoted_rest(line)))
+                                            || detect_list_marker_full(trim_ascii_start(
+                                                quoted_rest(line),
+                                            ))
+                                            .is_some())
+                                })
+                        })
                 }))
     }
 
