@@ -698,6 +698,16 @@ fn paragraph_after_attached_unclosed_fence(src: &str, options: &Options<'_>) -> 
         let Some(blank) = (at + 2..lines.len()).find(|&line| is_blank_line(lines[line])) else {
             continue;
         };
+        // This source was rebased from a child item, so an indented heading
+        // can look like paragraph text to the plain body probe below.
+        if lines[blank + 1..]
+            .iter()
+            .rev()
+            .find(|line| !is_blank_line(line))
+            .is_some_and(|line| item_block_opener(trim_ascii_start(line)))
+        {
+            continue;
+        }
         let tail = lines[blank + 1..].join("\n");
         if !tail.is_empty() && body_ends_with_open_paragraph(&tail, options) {
             return true;
