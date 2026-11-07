@@ -3301,3 +3301,18 @@ fn event_list_reader_tests_the_thematic_break_first() {
         "- x\n  * * * x\n",
     ]);
 }
+
+// The HTML facade reads a column-only ownership walk's text on the event route.
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_root_matches_standard_on_reindented_walks() {
+    assert_event_root_matches_standard(&[
+        "1. one\n\n  > q\n",
+        "1. one\n\n    > q\n",
+        "x\n\n  - a\n  - b\n",
+        " ---\na\n---\nx\n",
+        "- x\n    * * * *\n",
+        "1. :: t\n   : para\n  %%%\n  %%%\ntail\n",
+        "- a\n\n   [^n]\n\n[^n]: note\n",
+    ]);
+}

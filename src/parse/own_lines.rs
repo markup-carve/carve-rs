@@ -1062,6 +1062,12 @@ impl OwnedSource {
             || self.letter.is_some()
             || !self.consumed.is_empty()
     }
+
+    /// Whether the walk changed nothing but line indentation.
+    #[cfg(feature = "experimental-event-parser-options")]
+    pub(crate) fn only_moves_columns(&self) -> bool {
+        self.accepted.is_empty() && self.letter.is_none() && self.consumed.is_empty()
+    }
 }
 
 /// An opener S3 reads past its owner's content column (carve#3992).
