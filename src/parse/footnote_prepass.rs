@@ -2140,6 +2140,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && note.lines.last().is_some_and(|prior| is_blank_line(prior))
             && state.note_fence.is_none()
             && note.comment_state.line_block.is_none()
+            && !is_list_marker(trim_ascii_start(state.first))
             && !exact_colon_fence_len(flush)
                 .is_some_and(|run| note.open_colons.closing_widths().any(|width| width == run))
             && !exact_colon_fence_len(flush).is_some_and(|run| {

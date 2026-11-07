@@ -43,3 +43,14 @@ fn an_existing_marker_line_item_colon_closer_is_not_rebased() {
     let footnote = to_html("[^f]\n\n[^f]: - :::\n\n        :::\n");
     assert_eq!(footnote.matches("<div>").count(), 1, "{footnote}");
 }
+
+#[test]
+fn a_footnote_marker_line_item_keeps_its_descendant_colon_block() {
+    let source = "[^f]\n\n[^f]: - item\n\n        ::: note\n        body\n        :::\n";
+    let html = to_html(source);
+    assert!(
+        html.contains("<li><p>item</p>\n          <aside class=\"admonition note\""),
+        "{html}"
+    );
+    assert!(!html.contains("<p>body\n:::</p>"), "{html}");
+}
