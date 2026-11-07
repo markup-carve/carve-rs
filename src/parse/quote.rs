@@ -1445,6 +1445,9 @@ pub(in crate::parse) fn collect_blockquote_body(
     options: &Options<'_>,
 ) -> (usize, Vec<LineBuffer>, bool) {
     let mut body = QuoteBody::new(cur.pos);
+    let attached_host_col = cur
+        .source_line(cur.pos)
+        .and_then(continuation_marker::attached_quote_host_column);
     while let Some(line) = cur.peek() {
         let authored_column = || {
             cur.source_line(cur.pos)
@@ -1484,7 +1487,7 @@ pub(in crate::parse) fn collect_blockquote_body(
         {
             continue;
         }
-        if body.lazy_ends_quote(cur, options, line) {
+        if body.lazy_ends_quote(cur, options, line, attached_host_col) {
             break;
         }
         body.fold_lazy_line(cur, line);
@@ -2911,6 +2914,7 @@ impl<'a> QuoteBody<'a> {
         cur: &mut LineCursor<'a>,
         options: &Options<'_>,
         line: &str,
+        attached_host_col: Option<usize>,
     ) -> bool {
         // A matched comment span cannot hide a line that misses its quote
         // owner. Without a later closer the opener is only a line comment.
@@ -3043,9 +3047,24 @@ impl<'a> QuoteBody<'a> {
                 let (leaf, levels) = strip_all_quotes(innermost_marker_content(&source.text));
                 levels > 0 && (is_blank_line(leaf) || detect_fence_open(leaf).is_some())
             });
+        // The enclosing marker collector retains whether this line reached
+        // its host before it stripped the host column. An opener at that
+        // column ends the attached quote even if the stripped source still
+        // carries indentation from the quote's local cursor.
+        let at_attached_host = attached_host_col.is_some_and(|col| indent_columns(line) >= col);
+        let caption = caption_content(trim_ascii_start(line)).is_some();
+        let host_opener = (cur.carried_reach(cur.pos) == Some(true) || at_attached_host)
+            && !line.starts_with(LAZY)
+            && if caption {
+                attached_host_col.is_some_and(|col| indent_columns(line) == col)
+                    || attached_host_col.is_none() && indent_columns(line) == 0
+            } else {
+                interrupts_lazy_continuation(cur, trim_ascii_start(line))
+            };
         if !quoted_open
             || empty_marker_leaf
             || is_blank_line(line)
+            || host_opener
             || (caption_content(line).is_some() && cur.carried_reach(cur.pos) != Some(false))
             || {
                 let line_owned = line.to_string();

@@ -1383,6 +1383,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lead_is_paragraph = attached_refs
             .get(first_visible_at)
             .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+        let lead_is_quote = attached_refs
+            .get(first_visible_at)
+            .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
         let ends_at_marker = |at: usize, raw: &str| {
             at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
         };
@@ -1399,6 +1402,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 is_blank_line(line)
                     || is_plus_marker(line)
                     || ends_at_marker(at, raw)
+                    || (at > first_visible_at
+                        && lead_is_quote
+                        && indent_columns(raw) >= container.content_column
+                        && (item_block_opener(trim_ascii_start(raw))
+                            || caption_content(trim_ascii_start(raw)).is_some()))
                     || (at > first_visible_at
                         && marker_col > 0
                         && indent_columns(raw) <= marker_col

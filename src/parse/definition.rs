@@ -760,6 +760,10 @@ pub(in crate::parse) fn parse_definition_list(
                     .lines
                     .line(first_visible)
                     .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+                let attached_quote = cur
+                    .lines
+                    .line(first_visible)
+                    .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
                 let content_column = list_column + definition_column;
                 let first_blank = (first_visible + 1..lines.len())
                     .find(|&at| lines.line(at).is_some_and(is_blank_line))
@@ -781,6 +785,10 @@ pub(in crate::parse) fn parse_definition_list(
                         || (attached_paragraph
                             && indent_columns(a) >= content_column
                             && item_block_opener(trim_ascii_start(a)))
+                        || (attached_quote
+                            && indent_columns(a) >= content_column
+                            && (item_block_opener(trim_ascii_start(a))
+                                || caption_content(trim_ascii_start(a)).is_some()))
                 };
                 let classified = cur.continuation_decision(def_start);
                 let end = match classified {
@@ -1940,6 +1948,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let attached_paragraph = cur
             .peek()
             .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+        let attached_quote = cur
+            .peek()
+            .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
         let end = attached_block_past_invisible(
             cursor_lines,
             cur.pos,
@@ -1956,6 +1967,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     || (attached_paragraph
                         && indent_columns(a) >= content_column
                         && item_block_opener(trim_ascii_start(a)))
+                    || (attached_quote
+                        && indent_columns(a) >= content_column
+                        && (item_block_opener(trim_ascii_start(a))
+                            || caption_content(trim_ascii_start(a)).is_some()))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
                     // Below the body's column a description marker opens a sibling (PART 0 S1).
