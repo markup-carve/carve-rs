@@ -819,6 +819,8 @@ struct Walk<'a> {
     next_visible: usize,
     /// The closer line of a `%%%` span whose opener the walk moved.
     moved_span_end: Option<usize>,
+    /// Plain lines folded into a quote-granted footnote definition.
+    quote_note_body: bool,
 }
 
 struct Skipped {
@@ -1158,6 +1160,7 @@ fn walk_traced(
         note_follower: None,
         next_visible: 0,
         moved_span_end: None,
+        quote_note_body: false,
     };
     if let Some(trace) = walk.trace.as_mut() {
         // INPUT: frontmatter lines are read before ownership.
@@ -1706,6 +1709,11 @@ impl<'a> Walk<'a> {
                     }
                 }
             } else if parse_footnote_def_line(rest).is_some() {
+                // A quote's `+` grants this definition as its one invisible
+                // leaf. It does not skip past it to grant the following block.
+                if self.frames[host].kind == Kind::Quote {
+                    return k;
+                }
                 k += 1;
                 while k < self.lines.len() && foldable_plain_line(view(k)) {
                     k += 1;
@@ -2670,7 +2678,26 @@ impl<'a> Walk<'a> {
             &mut reached,
         );
         self.end_closed_lists(c);
-        let form = self.classify(c.rest, reached, at);
+        let mut form = self.classify(c.rest, reached, at);
+        let folded_quote_note = self.quote_note_body && foldable_plain_line(c.rest);
+        if folded_quote_note {
+            form = Form::Leaf(true);
+        } else {
+            self.quote_note_body = false;
+        }
+        let quote_granted_note = (*after_plus || follows_marker_line)
+            && matches!(form, Form::Note(_))
+            && self
+                .attached
+                .as_ref()
+                .is_some_and(|grant| grant.frames.last().is_some_and(|f| f.kind == Kind::Quote));
+        if quote_granted_note {
+            // The definition registers in the prepass; in layout it is one
+            // invisible leaf, so no footnote-body frame outlives the grant.
+            reached = self.frames.len() - 1;
+            form = Form::Leaf(true);
+            self.quote_note_body = true;
+        }
         // A plain line can continue a line block's open stanza lazily. Restore
         // its frame for this line; the next line gets its own owner decision.
         if self.retain_lazy_line_block(at, c, reached, &form, missed_line_block) {
@@ -2853,6 +2880,10 @@ impl<'a> Walk<'a> {
             }
         }
         self.emit_applied(at, record, None);
+        if quote_granted_note {
+            self.attached = None;
+            self.frames.truncate(reached);
+        }
     }
 
     /// A comment closer below its host's column still closes the span (PART 9 §28).

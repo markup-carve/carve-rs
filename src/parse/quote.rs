@@ -1446,6 +1446,9 @@ pub(in crate::parse) fn collect_blockquote_body(
 ) -> (usize, Vec<LineBuffer>, bool) {
     let mut body = QuoteBody::new(cur.pos);
     while let Some(line) = cur.peek() {
+        if body.granted_note {
+            break;
+        }
         let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
             trim_ascii_start(line)
         } else {
@@ -1614,6 +1617,7 @@ struct QuoteBody<'a> {
     // `inner`'s length when a `+` block left a code fence open as its last
     // line, and the closer that ends that fence.
     attached_fence_end: Option<(usize, String)>,
+    granted_note: bool,
     // The last quoted line was read on a description body's base.
     description_line: bool,
     literal_quote_body: Option<usize>,
@@ -1690,6 +1694,7 @@ impl<'a> QuoteBody<'a> {
             plus_scan: (0, false),
             may_hold_fence: false,
             attached_fence_end: None,
+            granted_note: false,
             description_line: false,
             literal_quote_body: None,
             last_quoted_at: None,
@@ -2130,19 +2135,34 @@ impl<'a> QuoteBody<'a> {
         let attached_start = cur.pos;
         // Invisible lines before the block stay in the quote; the block is the
         // first visible line after them (carve#4449).
-        let block_start = first_visible_after_invisible(cur, attached_start);
-        let mut end = attached_block_lines_classified(
-            cur.lines,
-            block_start,
-            &mut cur.comment_closer_last_index,
-            &mut cur.code_closer_last_index,
-            options,
-            &mut |next, at| is_blank_line(next) || (at > attached_start && is_plus_marker(next)),
-        );
+        let granted_note = cur
+            .lines
+            .line(attached_start)
+            .is_some_and(|line| is_footnote_definition_placeholder(trim_ascii_start(line)));
+        let block_start = if granted_note {
+            attached_start
+        } else {
+            first_visible_after_invisible(cur, attached_start)
+        };
+        let mut end = if granted_note {
+            attached_start + 1
+        } else {
+            attached_block_lines_classified(
+                cur.lines,
+                block_start,
+                &mut cur.comment_closer_last_index,
+                &mut cur.code_closer_last_index,
+                options,
+                &mut |next, at| {
+                    is_blank_line(next) || (at > attached_start && is_plus_marker(next))
+                },
+            )
+        };
         // Hoisted definitions leave invisible placeholders at the authored
         // quote level. An accepted marker attaches the first visible block
         // after that run, with the placeholders still inside the quote.
-        while end > attached_start
+        while !granted_note
+            && end > attached_start
             && cur.lines.line(end - 1).is_some_and(|last| {
                 is_definition_placeholder(without_blockquote_prefixes(trim_ascii_start(last)))
             })
@@ -2182,6 +2202,7 @@ impl<'a> QuoteBody<'a> {
             cur.pos += 1;
         }
         self.separate_attached_block(first_pushed);
+        self.granted_note = granted_note;
         self.para_open = ParaOpen::Closed;
     }
 
