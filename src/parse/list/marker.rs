@@ -583,7 +583,7 @@ pub(crate) fn attached_block_end(
                     .is_some_and(|&last| last > opener)
             });
             if may_close {
-                end = find_colon_fence_end_bounded(
+                let candidate = find_colon_fence_end_bounded(
                     lines,
                     opener,
                     fence_len,
@@ -599,7 +599,19 @@ pub(crate) fn attached_block_end(
                             && is_boundary(line, at)
                     },
                 );
-                continue;
+                if candidate > opener
+                    && exact_colon_fence_len(lines.at(candidate - 1)) == Some(fence_len)
+                {
+                    end = candidate;
+                    continue;
+                }
+                // The bounded scan still knows which marker-shaped lines were
+                // inside a code fence. Keep its boundary when no blank ended
+                // the unclosed attachment before that boundary.
+                if (opener + 1..candidate).all(|at| !is_blank_line(lines.at(at))) {
+                    end = candidate;
+                    continue;
+                }
             }
             // An unclosed colon block has no later closer to carry its
             // attachment past the first blank or host boundary.
@@ -757,7 +769,6 @@ pub(crate) fn parse_continuation_block(
     options: &Options<'_>,
     base_indent: usize,
     content_col: Option<usize>,
-    host_content_col: usize,
     pull_indent: usize,
     leading: &mut Vec<BlockNode>,
 ) -> Option<BlockNode> {
@@ -860,49 +871,11 @@ pub(crate) fn parse_continuation_block(
                 && detect_list_marker_full(line).is_some()
         },
     );
-    // An unclosed colon container remains open after its attachment ends at
-    // the first blank. Read its later lines at the host content column.
-    let unclosed_colon_blank = lines
-        .line(attached_end)
-        .filter(|line| is_blank_line(line))
-        .filter(|_| {
-            let opener = trim_ascii_start(lines.at(start));
-            detect_container_open(opener).is_some()
-                || detect_line_block_open(opener).is_some()
-                || detect_hardbreaks_block_open(opener).is_some()
-                || detect_quote_block_open(opener).is_some()
-        })
-        .map(|_| attached_end);
-    let end = unclosed_colon_blank.map_or(attached_end, |blank| {
-        let mut lazy_paragraph = false;
-        (blank + 1..lines.len())
-            .find(|&at| {
-                let line = lines.at(at);
-                if is_blank_line(line) {
-                    lazy_paragraph = false;
-                    return false;
-                }
-                let plain = line_starts_paragraph(trim_ascii_start(line));
-                if indent_columns(line) < host_content_col && !(lazy_paragraph && plain) {
-                    return true;
-                }
-                lazy_paragraph = plain;
-                false
-            })
-            .unwrap_or(lines.len())
-    });
-    let strip_at = |at: usize| {
-        if unclosed_colon_blank.is_some_and(|blank| at > blank) {
-            host_content_col
-        } else {
-            pull_indent
-        }
-    };
-    let stripped = (pull_indent > 0 || unclosed_colon_blank.is_some()).then(|| {
+    let end = attached_end;
+    let stripped = (pull_indent > 0).then(|| {
         cur.lines
             .range(cur.pos..end)
-            .enumerate()
-            .map(|(offset, line)| slice_columns_mapped(line, strip_at(start + offset), false).0)
+            .map(|line| slice_columns_mapped(line, pull_indent, false).0)
             .collect::<Vec<_>>()
     });
     let slice: Vec<&str> = stripped.as_ref().map_or_else(
@@ -919,8 +892,8 @@ pub(crate) fn parse_continuation_block(
     let col_map: Vec<Option<isize>> = if cur.col_map.is_some() {
         (cur.pos..end)
             .map(|pos| {
-                let consumed = if pull_indent > 0 || unclosed_colon_blank.is_some() {
-                    slice_columns_mapped(cur.lines.at(pos), strip_at(pos), false).1
+                let consumed = if pull_indent > 0 {
+                    slice_columns_mapped(cur.lines.at(pos), pull_indent, false).1
                 } else {
                     0
                 };
