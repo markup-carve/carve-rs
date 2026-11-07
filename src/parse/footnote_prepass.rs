@@ -1314,11 +1314,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
                 );
             }
-            let open = detect_container_open(text)?;
+            let fence_len = detect_line_block_open(text)
+                .or_else(|| detect_hardbreaks_block_open(text))
+                .or_else(|| detect_quote_block_open(text))
+                .or_else(|| detect_container_open(text).map(|open| open.fence_len))?;
             Some(
                 (from + 1..lines.len())
                     .find(|&at| {
-                        exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(open.fence_len)
+                        exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(fence_len)
                     })
                     .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
             )

@@ -69,3 +69,13 @@ fn below_column_sibling_after_attached_colon_stays_in_its_list() {
         "{trace}"
     );
 }
+#[test]
+fn a_later_closer_keeps_each_attached_colon_kind_in_the_footnote() {
+    for variant in 0..1_002 {
+        let opener = ["::: >", "::: |", r"::: \"][variant % 3];
+        let indent = " ".repeat(2 + variant % 3);
+        let word = format!("word{variant}");
+        let source = format!("[^1]: +\n{opener}\n{indent}{word}\n\n{indent}b\n\n[^1]\n\n:::\n");
+        assert_eq!(html(&source), "", "variant {variant}");
+    }
+}
