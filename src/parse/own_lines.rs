@@ -2661,6 +2661,27 @@ impl<'a> Walk<'a> {
                 .is_some_and(|rest| is_cont_marker(trim_ascii_start(rest)));
     }
 
+    fn attached_quote_caption_residual(&mut self, form: &Form, rest: &str, col: usize) -> usize {
+        if !matches!(form, Form::Leaf(false)) || !is_caption(rest) {
+            return 0;
+        }
+        let Some(attached) = self.attached.as_ref() else {
+            return 0;
+        };
+        if !attached
+            .frames
+            .last()
+            .is_some_and(|host| host.kind.is_marker_body())
+            || !self.lines.get(attached.from).is_some_and(|line| {
+                strip_quote_levels(line, attached.depth)
+                    .is_some_and(|rest| quote_marker(trim_ascii_start(rest)).is_some())
+            })
+        {
+            return 0;
+        }
+        col.saturating_sub(self.top().col)
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
@@ -3040,23 +3061,7 @@ impl<'a> Walk<'a> {
             form => {
                 let (canon, shift) = (self.top().canon, self.top().shift);
                 let col = c.col;
-                let caption_residual = if matches!(form, Form::Leaf(false))
-                    && is_caption(c.rest)
-                    && self.attached.as_ref().is_some_and(|attached| {
-                        attached
-                            .frames
-                            .last()
-                            .is_some_and(|host| host.kind.is_marker_body())
-                            && self.lines.get(attached.from).is_some_and(|line| {
-                                strip_quote_levels(line, attached.depth).is_some_and(|rest| {
-                                    quote_marker(trim_ascii_start(rest)).is_some()
-                                })
-                            })
-                    }) {
-                    col.saturating_sub(self.top().col)
-                } else {
-                    0
-                };
+                let caption_residual = self.attached_quote_caption_residual(&form, c.rest, col);
                 if !plus_follower {
                     let owner = self.frames.len() - 1;
                     let content = self.frames[owner].col;
