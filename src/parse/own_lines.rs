@@ -77,7 +77,7 @@ struct Frame {
     /// An item's marker line from its marker on, for the §11 N1 sibling test.
     marker_src: String,
     closer: Option<Closer>,
-    /// First blank that ends an attached code fence with no closer.
+    /// First blank that ends an attached, unclosed fence or colon container.
     attached_blank_end: Option<usize>,
     open_col: usize,
     run: usize,
@@ -510,6 +510,7 @@ struct Runs {
     tilde: Vec<usize>,
     last_comment: std::collections::HashMap<usize, usize>,
     code_by_column: CodeCloserIndex,
+    colon_by_width: std::collections::HashMap<usize, CodeCloserIndex>,
 }
 
 /// Suffix maximum fence widths by source column. A prefix query answers
@@ -583,6 +584,8 @@ fn closer_runs(lines: &[&str]) -> Runs {
     let mut tilde = vec![0; lines.len() + 1];
     let mut last_comment = std::collections::HashMap::new();
     let mut fences = Vec::new();
+    let mut colons: std::collections::HashMap<usize, Vec<(usize, u8, usize, usize)>> =
+        std::collections::HashMap::new();
     for j in (0..lines.len()).rev() {
         let rest = quoted_rest(lines[j]);
         backtick[j] = backtick[j + 1];
@@ -599,12 +602,25 @@ fn closer_runs(lines: &[&str]) -> Runs {
         if let Some(n) = comment_run(rest) {
             last_comment.entry(n).or_insert(j);
         }
+        let colon_rest = trim_ascii_start(rest);
+        if let Some(width) = colon_closer(colon_rest) {
+            colons.entry(width).or_default().push((
+                j,
+                b'~',
+                width,
+                doc_column(lines[j], colon_rest),
+            ));
+        }
     }
     Runs {
         backtick,
         tilde,
         last_comment,
         code_by_column: CodeCloserIndex::new(&fences),
+        colon_by_width: colons
+            .into_iter()
+            .map(|(width, entries)| (width, CodeCloserIndex::new(&entries)))
+            .collect(),
     }
 }
 
@@ -2278,7 +2294,7 @@ impl<'a> Walk<'a> {
                     doc_column(line, rest) >= frames.last().expect("attached host").col
                 })
             });
-        if kind == Kind::Fence {
+        if kind == Kind::Fence || (kind == Kind::Colon && ended) {
             self.frames.pop();
         }
         if let Some(frames) = resume.filter(|frames| frames.len() > self.frames.len()) {
@@ -3170,6 +3186,24 @@ impl<'a> Walk<'a> {
                 f.run = run;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
+                let attached = at
+                    .checked_sub(1)
+                    .is_some_and(|previous| self.frames[owner].plus == Some(previous))
+                    || self.attached.as_ref().is_some_and(|block| block.from == at);
+                if attached {
+                    let first_blank =
+                        (at + 1..self.lines.len()).find(|&line| is_blank_line(self.lines[line]));
+                    if let Some(blank) = first_blank {
+                        let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
+                        let has_closer = runs
+                            .colon_by_width
+                            .get(&run)
+                            .is_some_and(|index| index.has_later(b'~', at, col, run));
+                        if !has_closer {
+                            f.attached_blank_end = Some(blank);
+                        }
+                    }
+                }
                 self.frames.push(f);
             }
             Form::Quote => {

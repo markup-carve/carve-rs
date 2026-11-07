@@ -457,7 +457,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             options,
             base_indent,
             Some(content_col),
-            content_col,
             marker_column,
             &mut leading,
         );
@@ -1408,7 +1407,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     options,
                     base_indent,
                     Some(content_col),
-                    content_col,
                     pull_indent,
                     &mut leading,
                 )
