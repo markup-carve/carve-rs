@@ -95,3 +95,13 @@ fn a_description_quote_block_ends_at_its_first_blank() {
         )),
     );
 }
+
+#[test]
+fn a_run_after_the_footnote_ends_closes_nothing_in_it() {
+    // The host ends at the column-0 reference, so the later `:::` is not its closer.
+    let html = both_paths("[^1]: +\n::: >\n  a\n\n  b\n\n[^1]\n\n:::\n");
+    assert!(
+        note_item(&html).contains("<blockquote><p>a</p></blockquote>\n      <p>b<a"),
+        "{html}"
+    );
+}

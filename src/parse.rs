@@ -47,6 +47,14 @@ pub(crate) use table::table_run_open_after;
 mod tests;
 mod verse;
 
+/// The host's lines after its first blank: blank or indented, up to the first
+/// line back at column 0.
+fn host_lines<'a>(remaining: &'a [&'a str]) -> impl Iterator<Item = &'a &'a str> {
+    remaining
+        .iter()
+        .take_while(|line| is_blank_line(line) || indent_columns(line) > 0)
+}
+
 /// Close an unclosed block a marker-line `+` attached before the host's first
 /// blank. The closer has no authored position; the host resumes after it.
 fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<String> {
@@ -71,8 +79,8 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
         }
         return Vec::new();
     }
-    // A line block or hardbreaks block nests nothing: any later run of its
-    // width closes it, as a later closer does for a div below.
+    // A line block or hardbreaks block nests nothing: a later run of its width
+    // in the host closes it (carve#5405).
     if let Some(fence_len) =
         detect_line_block_open(opener).or_else(|| detect_hardbreaks_block_open(opener))
     {
@@ -80,7 +88,7 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
             .iter()
             .skip_while(|line| trim_ascii_start(line) != opener)
             .skip(1)
-            .chain(remaining)
+            .chain(host_lines(remaining))
             .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len));
         return if closed {
             Vec::new()
@@ -96,10 +104,12 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
             None => return Vec::new(),
         },
     };
-    if remaining
-        .iter()
-        .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len))
-    {
+    let mut later: Box<dyn Iterator<Item = &&str>> = if opener.is_some() {
+        Box::new(host_lines(remaining))
+    } else {
+        Box::new(remaining.iter())
+    };
+    if later.any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len)) {
         return Vec::new();
     }
     let mut replaced = false;
