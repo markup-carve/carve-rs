@@ -3141,7 +3141,7 @@ fn item_chunk_tree_looseness(
             if separator_lines.binary_search(&line).is_ok() {
                 continue;
             }
-            if opaque_blank_lines.binary_search(&line).is_ok() {
+            if line < previous_end && opaque_blank_lines.binary_search(&line).is_ok() {
                 opaque_trailing += 1;
             } else {
                 visible_trailing += 1;
@@ -3185,7 +3185,8 @@ fn item_chunk_tree_looseness(
                 })
                 .is_some_and(|line| {
                     lines.get(line).is_some_and(|text| is_blank_line(text))
-                        && opaque_blank_lines.binary_search(&line).is_err()
+                        && (line >= previous_end
+                            || opaque_blank_lines.binary_search(&line).is_err())
                 })
         };
         // Any visible block after a blank loosens (PART 9 §17 L1, carve#5015),
@@ -3194,7 +3195,6 @@ fn item_chunk_tree_looseness(
         let paragraph = block_is_paragraph_shaped(child);
         let blank_past_previous = (previous_end..start).any(|line| {
             lines.get(line).is_some_and(|text| is_blank_line(text))
-                && opaque_blank_lines.binary_search(&line).is_err()
                 && separator_lines.binary_search(&line).is_err()
         });
         let block = !paragraph
