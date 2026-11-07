@@ -2524,10 +2524,11 @@ impl<'a> QuoteBody<'a> {
                 self.open_entry.half.is_some()
             });
         self.description_line |= marker_body.is_some();
-        let consumed_description_marker = self.may_have_term
-            && strip_description_prefix(description_content).is_some_and(|body| {
+        let consumed_description_marker =
+            strip_description_prefix(trim_ascii_start(description_content)).is_some_and(|body| {
                 continuation_marker::is_consumed_marker(trim_ascii_start(body))
             });
+        self.description_line |= consumed_description_marker;
         self.para_open = if nested_item_closes || self.closed_div || consumed_description_marker {
             ParaOpen::Closed
         } else if let Some(body) = marker_body {

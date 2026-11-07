@@ -21,6 +21,21 @@ fn a_refused_quoted_description_plus_closes_the_quote() {
 }
 
 #[test]
+fn a_refused_list_hosted_description_plus_closes_the_quote() {
+    for source in [
+        "> - :: t\n>   : +\npara\n",
+        "> 1. :: t\n>    : +\npara\n",
+        "> - x\n>\n>   :: t\n>   : +\npara\n",
+    ] {
+        let html = to_html(source);
+        assert!(
+            html.trim_end().ends_with("</blockquote>\n<p>para</p>"),
+            "{source:?}: {html}"
+        );
+    }
+}
+
+#[test]
 fn refused_first_block_leaves_an_intervening_list_in_the_description() {
     for marker in ["-", "*", "1.", "- [x]"] {
         let source = format!(":: t\n: {marker} +\n   - z\n");
