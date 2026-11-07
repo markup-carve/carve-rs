@@ -764,6 +764,56 @@ pub(crate) fn attached_indented_block_end(
 }
 
 /// Parse one attached block, stopping at the host's next marker or sibling item.
+/// One past the closer of a `+`-attached colon body that [`attached_block_end`]
+/// ended at its first blank, when the host's lines at or past `content_col`
+/// hold that closer: such a body is not unclosed (PART 0 S1, §17 L3).
+fn host_closed_colon_end(
+    lines: CursorLines<'_>,
+    start: usize,
+    end: usize,
+    content_col: usize,
+) -> Option<usize> {
+    if !lines.line(end).is_some_and(is_blank_line) {
+        return None;
+    }
+    let opener = trim_ascii_start(lines.line(start)?);
+    let (fence_len, literal) = detect_line_block_open(opener)
+        .map(|fence_len| (fence_len, true))
+        .or_else(|| detect_hardbreaks_block_open(opener).map(|fence_len| (fence_len, false)))
+        .or_else(|| detect_quote_block_open(opener).map(|fence_len| (fence_len, false)))
+        .or_else(|| detect_container_open(opener).map(|open| (open.fence_len, false)))?;
+    let last = (end..lines.len())
+        .find(|&at| {
+            let line = lines.at(at);
+            !is_blank_line(line) && indent_columns(line) < content_col
+        })
+        .unwrap_or(lines.len());
+    // The scan reports an unclosed body at its end too, so a text line and a
+    // boundary past the host tell it apart from a closer on the host's last line.
+    let host_len = last - start;
+    let host: Vec<&str> = (start..last)
+        .map(|at| {
+            let line = lines.at(at);
+            if is_blank_line(line) {
+                ""
+            } else {
+                trim_ascii_start(line)
+            }
+        })
+        .chain(["\u{0}", "\u{0}"])
+        .collect();
+    let close = find_colon_fence_end_bounded(
+        CursorLines::Slice(&host),
+        0,
+        fence_len,
+        literal,
+        &mut None,
+        &mut None,
+        &mut |_, at| at > host_len,
+    );
+    (close > end - start && close <= host_len).then_some(start + close)
+}
+
 pub(crate) fn parse_continuation_block(
     cur: &mut LineCursor,
     options: &Options<'_>,
@@ -871,11 +921,20 @@ pub(crate) fn parse_continuation_block(
                 && detect_list_marker_full(line).is_some()
         },
     );
-    let end = attached_end;
-    let stripped = (pull_indent > 0).then(|| {
-        cur.lines
-            .range(cur.pos..end)
-            .map(|line| slice_columns_mapped(line, pull_indent, false).0)
+    // A closer the host holds keeps the colon body open past its first blank;
+    // the lines from that blank on are item content (carve#5405).
+    let host_closed = content_col.and_then(|content_col| {
+        host_closed_colon_end(lines, start, attached_end, content_col)
+            .map(|end| (end, attached_end, content_col))
+    });
+    let end = host_closed.map_or(attached_end, |(end, _, _)| end);
+    let column_at = |pos: usize| match host_closed {
+        Some((_, blank, content_col)) if pos >= blank => content_col,
+        _ => pull_indent,
+    };
+    let stripped = (pull_indent > 0 || host_closed.is_some()).then(|| {
+        (cur.pos..end)
+            .map(|pos| slice_columns_mapped(cur.lines.at(pos), column_at(pos), false).0)
             .collect::<Vec<_>>()
     });
     let slice: Vec<&str> = stripped.as_ref().map_or_else(
@@ -892,8 +951,9 @@ pub(crate) fn parse_continuation_block(
     let col_map: Vec<Option<isize>> = if cur.col_map.is_some() {
         (cur.pos..end)
             .map(|pos| {
-                let consumed = if pull_indent > 0 {
-                    slice_columns_mapped(cur.lines.at(pos), pull_indent, false).1
+                let column = column_at(pos);
+                let consumed = if column > 0 {
+                    slice_columns_mapped(cur.lines.at(pos), column, false).1
                 } else {
                     0
                 };
