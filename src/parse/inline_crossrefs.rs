@@ -49,6 +49,7 @@ pub(crate) fn crossref_index_for_document(
             assigned: None,
             collect_crossrefs: true,
             collect_heading_refs: false,
+            label_targets: None,
         },
         id_opts,
         &explicit_ids,
@@ -69,6 +70,7 @@ pub(crate) fn crossref_index_for_document(
                 assigned: None,
                 collect_crossrefs: true,
                 collect_heading_refs: false,
+                label_targets: None,
             },
             id_opts,
             &explicit_ids,
@@ -103,7 +105,7 @@ pub(in crate::parse) fn crossref_index_and_heading_ids_for_document(
         Some(doc.footnote_defs.keys().cloned().collect()),
     );
     let (mut index, ids) =
-        heading_index_with_explicit_ids(doc, id_opts, true, false, &explicit_ids);
+        heading_index_with_explicit_ids(doc, id_opts, (true, None), false, &explicit_ids);
     let mut captions = CaptionIndex {
         titles: &mut index.titles,
         labels: &mut index.labels,
@@ -122,7 +124,7 @@ pub(crate) fn heading_reference_index_for_document(
     doc: &Document,
     id_opts: HeadingIdOptions,
 ) -> CrossrefIndex {
-    heading_index(doc, id_opts, true, true).0
+    heading_index(doc, id_opts, true, true, None).0
 }
 
 pub(in crate::parse) fn heading_index(
@@ -130,6 +132,7 @@ pub(in crate::parse) fn heading_index(
     id_opts: HeadingIdOptions,
     collect_crossrefs: bool,
     collect_heading_refs: bool,
+    label_targets: Option<&std::collections::BTreeSet<String>>,
 ) -> (CrossrefIndex, Vec<String>) {
     let used_notes = crate::render::used_footnote_labels(&doc.children, &doc.footnote_defs);
     let mut explicit_ids = std::collections::BTreeSet::new();
@@ -142,7 +145,7 @@ pub(in crate::parse) fn heading_index(
     let (mut index, ids) = heading_index_with_explicit_ids(
         doc,
         id_opts,
-        collect_crossrefs,
+        (collect_crossrefs, label_targets),
         collect_heading_refs,
         &explicit_ids,
     );
@@ -150,10 +153,37 @@ pub(in crate::parse) fn heading_index(
     (index, ids)
 }
 
+/// Every id a `</#id>` in `texts` can name, NFC forms included; `None` when a
+/// braced comment could split a target, so every label stays.
+pub(in crate::parse) fn crossref_targets(
+    texts: &[&str],
+) -> Option<std::collections::BTreeSet<String>> {
+    let mut targets = std::collections::BTreeSet::new();
+    for text in texts {
+        if text.contains("{%") {
+            return None;
+        }
+        let bytes = text.as_bytes();
+        for at in memchr::memmem::find_iter(bytes, b"</#") {
+            let start = at + 3;
+            let len = bytes[start..]
+                .iter()
+                .position(|&b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))
+                .unwrap_or(bytes.len() - start);
+            // Normalization turns an authored NUL into U+FFFD before inline parsing.
+            let target =
+                String::from_utf8_lossy(&bytes[start..start + len]).replace('\0', "\u{FFFD}");
+            targets.insert(target.nfc().collect());
+            targets.insert(target);
+        }
+    }
+    Some(targets)
+}
+
 fn heading_index_with_explicit_ids(
     doc: &Document,
     id_opts: HeadingIdOptions,
-    collect_crossrefs: bool,
+    (collect_crossrefs, label_targets): (bool, Option<&std::collections::BTreeSet<String>>),
     collect_heading_refs: bool,
     explicit_ids: &std::collections::BTreeSet<String>,
 ) -> (CrossrefIndex, Vec<String>) {
@@ -175,6 +205,7 @@ fn heading_index_with_explicit_ids(
             assigned: Some(&mut assigned),
             collect_crossrefs,
             collect_heading_refs,
+            label_targets,
         },
         id_opts,
         explicit_ids,
@@ -197,6 +228,7 @@ fn heading_index_with_explicit_ids(
                 assigned: Some(&mut assigned),
                 collect_crossrefs,
                 collect_heading_refs,
+                label_targets,
             },
             id_opts,
             explicit_ids,
@@ -491,6 +523,15 @@ mod nested_reference_tests {
         })];
         resolve_nested_crossrefs(&mut nodes, &raw);
         assert_eq!(nodes, vec![InlineNode::text("target")]);
+    }
+
+    #[test]
+    fn crossref_targets_cover_every_spelling_a_lookup_can_use() {
+        let targets = crossref_targets(&["</#A> and </#Cafe\u{301}> and </#B\n"]).unwrap();
+        for id in ["A", "Cafe\u{301}", "Caf\u{e9}", "B"] {
+            assert!(targets.contains(id), "{id:?}");
+        }
+        assert_eq!(crossref_targets(&["# H {% x %}\n\n</#H>"]), None);
     }
 
     #[test]

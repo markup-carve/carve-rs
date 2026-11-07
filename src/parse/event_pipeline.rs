@@ -4053,6 +4053,7 @@ fn parse_document_with_custom_options_once(
                 options.heading_id_options(),
                 source.contains("</#"),
                 false,
+                crossref_targets(&[source]).as_ref(),
             );
             index.extend_captions(&doc);
             index.extend_captions(&doc);
@@ -4308,6 +4309,7 @@ fn parse_document_with_footnotes_options(
             options.heading_id_options(),
             source.contains("</#"),
             false,
+            crossref_targets(&[source]).as_ref(),
         );
         index.extend_captions(&doc);
         index.extend_titles(caption_titles);
