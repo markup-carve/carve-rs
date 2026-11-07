@@ -12,10 +12,7 @@ fn nested_description_markers_end_each_item_in_turn() {
 fn ordered_outer_item_ends_at_its_own_marker_column() {
     let input = "1. - a\n     :: t\n     : u\n       ::: |\n         x\n   : b\n: c\n";
     let html = carve::to_html(input);
-    assert!(
-        html.contains("    : b\n: c\n  </li>\n</ol>"),
-        "{html}"
-    );
+    assert!(html.contains("    : b\n: c\n  </li>\n</ol>"), "{html}");
 }
 
 #[test]
