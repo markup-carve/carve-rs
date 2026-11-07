@@ -1293,21 +1293,39 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .position(|line| is_blank_line(line) || is_plus_marker(line))
                 .unwrap_or(lines.len() - from)
         };
-        let pulled_closer = pulled_fence_closer(lines, i, container.content_column);
+        let fenced_block_end = |from: usize| {
+            let text = trim_ascii_start(lines.get(from)?);
+            if let Some(open) = detect_fence_open(text) {
+                return Some(
+                    (from + 1..lines.len())
+                        .find(|&at| {
+                            is_fence_close(
+                                strip_leading_columns(lines[at], marker_col).as_str(),
+                                open,
+                            )
+                        })
+                        .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
+                );
+            }
+            let open = detect_container_open(text)?;
+            Some(
+                (from + 1..lines.len())
+                    .find(|&at| {
+                        exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(open.fence_len)
+                    })
+                    .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
+            )
+        };
+        // Erased comment spans are invisible: the block they lead is the attached one (CARVE-P9-067).
+        let lead = i + lines[i..]
+            .iter()
+            .take_while(|line| is_line_comment_any_column(line))
+            .count();
+        let pulled_closer = pulled_fence_closer(lines, lead, container.content_column);
         let window_end = if let Some(closer) = pulled_closer {
             closer + 1
-        } else if let Some(open) = detect_fence_open(first_text) {
-            (i + 1..lines.len())
-                .find(|&at| {
-                    is_fence_close(strip_leading_columns(lines[at], marker_col).as_str(), open)
-                })
-                .map_or_else(|| first_boundary_after(i + 1), |at| at + 1)
-        } else if let Some(open) = detect_container_open(first_text) {
-            (i + 1..lines.len())
-                .find(|&at| {
-                    exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(open.fence_len)
-                })
-                .map_or_else(|| first_boundary_after(i + 1), |at| at + 1)
+        } else if let Some(end) = fenced_block_end(lead) {
+            end
         } else if let Some(open) = detect_comment_fence_line(first_text) {
             let after_comment = (i + 1..lines.len())
                 .find(|&at| is_comment_fence_close_any_column(lines[at], open.fence_len))
