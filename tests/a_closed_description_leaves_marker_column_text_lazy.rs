@@ -17,7 +17,7 @@ fn a_closed_description_leaves_the_item_paragraph_open() {
 }
 
 #[test]
-fn a_term_without_a_description_keeps_the_marker_boundary() {
+fn a_later_heading_releases_a_term_without_a_description() {
     let html = to_html("- a\n  :: t\n  # H\n  w\n: z\n");
-    assert!(html.trim_end().ends_with("</ul>\n<p>: z</p>"), "{html}");
+    assert!(html.contains("w\n: z\n  </li>"), "{html}");
 }

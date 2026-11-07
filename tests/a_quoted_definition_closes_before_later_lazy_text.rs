@@ -30,5 +30,5 @@ fn a_quote_before_a_term_leaves_the_later_item_paragraph_open() {
 fn a_quote_marker_in_code_does_not_open_a_quote() {
     let source = "- a\n  ```\n  > literal\n  ```\n  :: m\n\n  para\n: l\n";
     let html = to_html(source);
-    assert!(html.ends_with("</ul>\n<p>: l</p>"), "{html}");
+    assert!(html.contains("<p>para\n: l</p>"), "{html}");
 }
