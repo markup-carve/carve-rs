@@ -605,6 +605,13 @@ pub(crate) fn attached_block_end(
                     end = candidate;
                     continue;
                 }
+                // The bounded scan still knows which marker-shaped lines were
+                // inside a code fence. Keep its boundary when no blank ended
+                // the unclosed attachment before that boundary.
+                if (opener + 1..candidate).all(|at| !is_blank_line(lines.at(at))) {
+                    end = candidate;
+                    continue;
+                }
             }
             // An unclosed colon block has no later closer to carry its
             // attachment past the first blank or host boundary.
