@@ -2027,6 +2027,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             && self.lines.last().is_some_and(|prior| is_blank_line(prior))
             && fence.open.is_none()
             && !self.in_line_block()
+            && !self
+                .item_content_columns
+                .iter()
+                .any(|&column| column <= indent)
             && is_colon_fence_opener_shape(trim_ascii_start(&sliced))
         {
             sliced = trim_ascii_start(&sliced).to_owned();

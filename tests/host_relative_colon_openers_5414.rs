@@ -22,3 +22,14 @@ fn a_description_opens_the_postblank_colon_run_one_column_past_its_margin() {
     assert_host_opener(":: t\n: +\n::: |\n\n   ::::   \n");
     assert_host_opener(":: t\n: +\n::: |\n\n    ::::   \n");
 }
+
+#[test]
+fn a_colon_opener_at_a_descendant_item_column_stays_in_that_item() {
+    let source = ":: t\n: - item\n\n    ::: note\n    body\n    :::\n";
+    let html = to_html(source);
+    assert!(
+        html.contains("<li><p>item</p>\n        <aside class=\"admonition note\""),
+        "{html}"
+    );
+    assert!(!html.contains("<p>body\n:::</p>"), "{html}");
+}
