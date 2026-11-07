@@ -1832,6 +1832,52 @@ impl<'a> Walk<'a> {
         });
     }
 
+    /// The lines since the attached block began read as that one block (the
+    /// model's `endsAt`).
+    fn attached_ends_at(&self, at: usize) -> bool {
+        let Some(attached) = self.attached.as_ref() else {
+            return false;
+        };
+        let mut last = at;
+        while attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
+            && last > attached.from
+            && strip_quote_levels(self.lines[last - 1], attached.depth).is_some_and(is_blank_line)
+        {
+            last -= 1;
+        }
+        let own: Option<Vec<String>> = (attached.from..last)
+            .map(|k| {
+                let rest = strip_quote_levels(self.lines[k], attached.depth)?;
+                let (col, len) = indent_cols(rest);
+                Some(" ".repeat(col.saturating_sub(attached.marker)) + &rest[len..])
+            })
+            .collect();
+        own.is_some_and(|own| {
+            // Table rows remain part of one attached block at any indent.
+            // The standalone probe needs them at its local row column.
+            let table = own.first().is_some_and(|line| is_table_start(line));
+            let refs: Vec<&str> = own
+                .iter()
+                .map(|line| {
+                    let trimmed = line.trim_start_matches([' ', '\t']);
+                    if table && (is_table_start(trimmed) || is_table_continuation(trimmed)) {
+                        trimmed
+                    } else {
+                        line.as_str()
+                    }
+                })
+                .collect();
+            // The extent stops at a blank unless the block opens a fence (model `oneBlockEnd`).
+            let opener = refs.iter().take_while(|line| line.starts_with('{')).count();
+            let fenced =
+                self_delimiting_block_end(CursorLines::Slice(&refs), opener, &mut None).is_some();
+            !refs.is_empty()
+                && (fenced || !refs[1..].iter().any(|line| is_blank_line(line)))
+                && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
+                    >= refs.len()
+        })
+    }
+
     /// A `+` right after the one block a `+` attached reaches the same host, whose
     /// frames the walk closed when it read that block where it stands.
     fn reopen_attached_host(&mut self, at: usize, src: &str) {
@@ -1867,39 +1913,7 @@ impl<'a> Walk<'a> {
             self.attached = None;
             return;
         }
-        let mut last = at;
-        while attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
-            && last > attached.from
-            && strip_quote_levels(self.lines[last - 1], attached.depth).is_some_and(is_blank_line)
-        {
-            last -= 1;
-        }
-        let own: Option<Vec<String>> = (attached.from..last)
-            .map(|k| {
-                let rest = strip_quote_levels(self.lines[k], attached.depth)?;
-                let (col, len) = indent_cols(rest);
-                Some(" ".repeat(col.saturating_sub(attached.marker)) + &rest[len..])
-            })
-            .collect();
-        let one_block = own.is_some_and(|own| {
-            // Table rows remain part of one attached block at any indent.
-            // The standalone probe needs them at its local row column.
-            let table = own.first().is_some_and(|line| is_table_start(line));
-            let refs: Vec<&str> = own
-                .iter()
-                .map(|line| {
-                    let trimmed = line.trim_start_matches([' ', '\t']);
-                    if table && (is_table_start(trimmed) || is_table_continuation(trimmed)) {
-                        trimmed
-                    } else {
-                        line.as_str()
-                    }
-                })
-                .collect();
-            !refs.is_empty()
-                && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
-                    >= refs.len()
-        });
+        let one_block = self.attached_ends_at(at);
         let attached = self.attached.take().expect("checked above");
         if one_block {
             self.frames = attached.frames;
@@ -2416,7 +2430,7 @@ impl<'a> Walk<'a> {
             })
     }
 
-    fn end_attached_quote_at_blank(&mut self, src: &str) {
+    fn end_attached_quote_at_blank(&mut self, at: usize, src: &str) {
         // The attached block stands outside the quote that granted its `+`.
         // A blank ending that quote also ends the frames the block opened.
         if self.attached.as_ref().is_some_and(|attached| {
@@ -2430,7 +2444,8 @@ impl<'a> Walk<'a> {
                     .last()
                     .is_some_and(|frame| matches!(frame.kind, Kind::Fence | Kind::Colon))
                 && strip_quote_levels(src, attached.depth + 1).is_none()
-        }) {
+        }) && self.attached_ends_at(at)
+        {
             let attached = self.attached.take().expect("checked above");
             self.frames = attached.frames[..attached.frames.len() - 1].to_vec();
         }
@@ -2438,7 +2453,7 @@ impl<'a> Walk<'a> {
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
-        self.end_attached_quote_at_blank(c.src);
+        self.end_attached_quote_at_blank(at, c.src);
         let tracing = self.trace_wants(at);
         let line = self.first_line + at;
         let mut reached = 0;
