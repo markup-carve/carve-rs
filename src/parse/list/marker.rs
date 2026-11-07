@@ -601,7 +601,9 @@ pub(crate) fn attached_block_end(
                         (detect_list_marker_full(line).is_some()
                             || strip_lazy(line).strip_prefix(":: ").is_some()
                             || strip_definition_marker(strip_lazy(line)).is_some()
-                            || (past_blank && item_block_opener(trim_ascii_start(line))))
+                            || (past_blank
+                                && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+                                && item_block_opener(trim_ascii_start(line))))
                             && is_boundary(line, at)
                     },
                 );
@@ -936,12 +938,16 @@ pub(crate) fn parse_continuation_block(
         !is_blank_line(line)
             && !detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
     });
+    let mut past_blank = false;
+    let mut checked_through = start;
     let attached_end = attached_block_end(
         lines,
         start,
         &mut cur.comment_closer_last_index,
         &mut cur.code_closer_last_index,
         &mut |line, end| {
+            past_blank |= (checked_through..end).any(|at| is_blank_line(lines.at(at)));
+            checked_through = end;
             if (end > start || following_plus_attaches)
                 && trim_ascii(line) == "+"
                 && indent_columns(line) == base_indent
@@ -953,9 +959,12 @@ pub(crate) fn parse_continuation_block(
             end > start
                 && ((indent_columns(line) <= base_indent
                     && detect_list_marker_full(line).is_some())
-                    || (detect_container_open(lines.at(start)).is_some()
+                    || (past_blank
+                        && detect_container_open(lines.at(start)).is_some()
                         && content_col.is_some_and(|col| {
-                            indent_columns(line) < col && item_block_opener(trim_ascii_start(line))
+                            indent_columns(line) < col
+                                && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+                                && item_block_opener(trim_ascii_start(line))
                         })))
         },
     );

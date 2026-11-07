@@ -773,6 +773,7 @@ pub(in crate::parse) fn parse_definition_list(
                             .line(first_visible)
                             .is_some_and(|line| detect_container_open(line).is_some())
                         && indent_columns(a) < content_column
+                        && exact_colon_fence_len(trim_ascii_start(a)).is_none()
                         && item_block_opener(trim_ascii_start(a)))
                         || (attached_paragraph
                             && indent_columns(a) >= content_column

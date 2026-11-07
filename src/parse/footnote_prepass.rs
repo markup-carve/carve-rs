@@ -1328,6 +1328,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     is_blank_line(line)
                         || is_plus_marker(line)
                         || (indent_columns(line) < container.content_column
+                            && exact_colon_fence_len(trim_ascii_start(line)).is_none()
                             && item_block_opener(trim_ascii_start(line)))
                 },
             ))
