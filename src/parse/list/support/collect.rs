@@ -393,6 +393,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut surviving_definition_body_column = open_definition_body_column;
     let mut after_definition_blank = false;
     let mut marker_definition_has_description = !marker_is_definition_term;
+    let mut saw_description = false;
+    let mut term_closed_by_quote = false;
+    let mut quote_seen = false;
+    let mut quoted_definition_seen = false;
+    let mut quoted_definition_blank = false;
     let mut marker_description_is_paragraph = false;
     let mut nested_paragraph_column = None;
     let mut carried_lazy_owner = nested_item_columns.lazy_paragraph_owner.take();
@@ -517,6 +522,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut nested_blank_run: Option<usize> = None;
     let mut lead_span_scan = DescriptionLeadSpanScan::default();
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        if admission.blank && quoted_definition_seen {
+            quoted_definition_blank = true;
+        }
         // PART 0 S1 and the recovery table (carve#4770): a nonblank line that
         // misses this item ends a span the item opened, even with its closer
         // ahead. The re-parsed body then degrades the opener to a `%%` line.
@@ -1067,6 +1075,25 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && comment_fence.is_none()
             && literal_colon.is_none();
+        if strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+            || detect_quote_block_open(trim_ascii_start(line)).is_some()
+        {
+            quote_seen = true;
+        }
+        if quote_seen && (term || description) && indent >= strip_cols {
+            quoted_definition_seen = true;
+        }
+        if definition_list_column.is_some()
+            && !saw_description
+            && indent >= strip_cols
+            && (strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+                || detect_quote_block_open(trim_ascii_start(line)).is_some())
+        {
+            term_closed_by_quote = true;
+        }
+        if description && indent >= strip_cols && definition_list_column.is_some() {
+            saw_description = true;
+        }
         // The marker line's innermost term began before this collector ran.
         if description
             && indent == strip_cols
@@ -1085,6 +1112,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             surviving_definition_body_column = None;
         }
         if term && !below_definition_term {
+            term_closed_by_quote = false;
             description_line_block = None;
             if definition_list_column.is_some_and(|column| indent <= column) {
                 surviving_definition_body_column = None;
@@ -1096,6 +1124,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 _ => indent,
             });
         } else if description {
+            if definition_list_column.is_some() && indent >= strip_cols {
+                term_closed_by_quote = false;
+            }
             open_definition_body_column = definition_body_content_col(line);
             description_line_block = strip_description_prefix(trim_ascii_start(line))
                 .and_then(detect_line_block_open)
@@ -1425,8 +1456,35 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && line_starts_paragraph(line)
             && !item_block_opener(line)
             && !interrupts_lazy_continuation_as_container(cur, line);
+        let closed_description_lazy = description
+            && definition_list_column.is_none()
+            && saw_description
+            && indent == marker_base
+            && lines.last().is_some_and(|prior| {
+                line_starts_paragraph(prior)
+                    && strip_description_prefix(trim_ascii_start(prior)).is_none()
+            });
+        let closed_term_quote_lazy = description
+            && term_closed_by_quote
+            && definition_list_column.is_none()
+            && indent == marker_base
+            && lines.last().is_some_and(|prior| {
+                line_starts_paragraph(prior)
+                    && strip_description_prefix(trim_ascii_start(prior)).is_none()
+            });
+        let closed_quoted_definition_lazy = description
+            && quoted_definition_blank
+            && definition_list_column.is_none()
+            && indent == marker_base
+            && lines.last().is_some_and(|prior| {
+                line_starts_paragraph(prior)
+                    && strip_description_prefix(trim_ascii_start(prior)).is_none()
+            });
+        let retained_definition_lazy =
+            closed_description_lazy || closed_term_quote_lazy || closed_quoted_definition_lazy;
         if indent <= parent_indent
             && !(plain_nested_lazy && carried_lazy_owner.is_some_and(|owner| indent < owner))
+            && !retained_definition_lazy
             && !comment_retains_owner
             && !(marker_note_intermediate_quote_open
                 && line_starts_paragraph(line)
@@ -1470,6 +1528,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         if (definition_ended_paragraph || closed_code_leaf)
             && indent < strip_cols
+            && !retained_definition_lazy
             && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
         {
             break;
@@ -2042,6 +2101,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 && !separator_at_nested_marker
                 && !separator_in_own_item
                 && !separator_for_nested_item
+            || description
+                && indent > marker_base
+                && indent < strip_cols
+                && lines
+                    .last()
+                    .is_some_and(|prior| line_starts_paragraph(prior))
             || (marker_colon_retained_para && indent < strip_cols))
             && !sliced.starts_with(LAZY)
         {
