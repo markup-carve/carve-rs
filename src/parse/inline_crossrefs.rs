@@ -164,15 +164,24 @@ pub(in crate::parse) fn crossref_targets(
             return None;
         }
         let bytes = text.as_bytes();
+        // Openers sharing one stop share its scan; past a text's worth of
+        // target bytes (`</#` repeated), every label stays instead.
+        let mut stop = 0;
+        let mut budget = bytes.len();
         for at in memchr::memmem::find_iter(bytes, b"</#") {
             let start = at + 3;
-            let len = bytes[start..]
-                .iter()
-                .position(|&b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))
-                .unwrap_or(bytes.len() - start);
+            if stop < start {
+                stop = bytes[start..]
+                    .iter()
+                    .position(|&b| matches!(b, b'>' | b' ' | b'\r' | b'\n'))
+                    .map_or(bytes.len(), |len| start + len);
+            }
+            if bytes.get(stop) != Some(&b'>') || stop == start {
+                continue;
+            }
+            budget = budget.checked_sub(stop - start)?;
             // Normalization turns an authored NUL into U+FFFD before inline parsing.
-            let target =
-                String::from_utf8_lossy(&bytes[start..start + len]).replace('\0', "\u{FFFD}");
+            let target = String::from_utf8_lossy(&bytes[start..stop]).replace('\0', "\u{FFFD}");
             targets.insert(target.nfc().collect());
             targets.insert(target);
         }
@@ -527,11 +536,16 @@ mod nested_reference_tests {
 
     #[test]
     fn crossref_targets_cover_every_spelling_a_lookup_can_use() {
-        let targets = crossref_targets(&["</#A> and </#Cafe\u{301}> and </#B\n"]).unwrap();
-        for id in ["A", "Cafe\u{301}", "Caf\u{e9}", "B"] {
+        let targets = crossref_targets(&["</#A> and </#Cafe\u{301}> and </#</#B>"]).unwrap();
+        for id in ["A", "Cafe\u{301}", "Caf\u{e9}", "</#B", "B"] {
             assert!(targets.contains(id), "{id:?}");
         }
+        assert!(!crossref_targets(&["</#C\n"]).unwrap().contains("C"));
         assert_eq!(crossref_targets(&["# H {% x %}\n\n</#H>"]), None);
+        assert_eq!(
+            crossref_targets(&[&format!("{}x>", "</#".repeat(64))]),
+            None
+        );
     }
 
     #[test]
