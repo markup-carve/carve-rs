@@ -1499,11 +1499,52 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 });
                 i += 1;
             }
-            if lines.get(i).is_some_and(|line| is_blank_line(line)) {
+            let later_line_block_closer = attached_refs
+                .get(first_visible_at)
+                .and_then(|line| detect_line_block_open(trim_ascii_start(line)))
+                .filter(|run| {
+                    lines.get(i).is_some_and(|line| is_blank_line(line))
+                        && !attached_refs
+                            .get(first_visible_at + 1..end - start)
+                            .unwrap_or(&[])
+                            .iter()
+                            .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(*run))
+                })
+                .and_then(|run| {
+                    lines[i..]
+                        .iter()
+                        .take_while(|line| {
+                            parse_footnote_def_line(trim_ascii_start(line)).is_none()
+                        })
+                        .position(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(run))
+                        .map(|offset| i + offset)
+                });
+            if later_line_block_closer.is_none()
+                && lines.get(i).is_some_and(|line| is_blank_line(line))
+            {
                 let remaining = &lines[i + 1..];
                 for closer in attached_first_blank_closers(&attached_refs[..end - start], remaining)
                 {
                     note.push_with(closer, None, |_| None);
+                }
+            }
+            // A closed attached line block owns the blank and its exact
+            // closer, even when that closer misses the note's content column.
+            if let Some(close) = later_line_block_closer {
+                let closer_reaches_note = indent_columns(lines[close]) >= container.content_column;
+                while i <= close {
+                    let kept = if i == close {
+                        trim_ascii_start(lines[i]).to_owned()
+                    } else if is_line_comment_any_column(lines[i]) {
+                        String::new()
+                    } else if closer_reaches_note {
+                        strip_leading_columns(lines[i], container.content_column)
+                    } else {
+                        strip_leading_columns(lines[i], marker_col)
+                    };
+                    let stripped = (lines[i].chars().count() - kept.chars().count()) as isize;
+                    note.push_with(kept, Some(self.first_source_line + i), |_| Some(stripped));
+                    i += 1;
                 }
             }
             let caption_after_one_blank = lead_is_quote
