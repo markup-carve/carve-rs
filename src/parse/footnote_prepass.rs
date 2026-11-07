@@ -1550,8 +1550,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     } else {
                         strip_leading_columns(lines[i], marker_col)
                     };
-                    let stripped = (lines[i].chars().count() - kept.chars().count()) as isize;
-                    note.push_with(kept, Some(self.first_source_line + i), |_| Some(stripped));
+                    let column = stripped_col(Some(0), lines[i], &kept);
+                    note.push_with(kept, Some(self.first_source_line + i), |_| column);
                     i += 1;
                 }
             }

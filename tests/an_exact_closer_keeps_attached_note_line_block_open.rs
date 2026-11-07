@@ -63,3 +63,12 @@ fn definition_shaped_verse_before_closer_stays_in_attached_line_block() {
     );
     assert!(!html.contains("<li id=\"fn2\">"), "{html}");
 }
+
+#[test]
+fn tab_indented_verse_maps_columns_without_underflow() {
+    let html = render("[^1]: +\n::: |\n\n\ta\n  :::\n\n[^1]\n");
+    assert!(
+        html.contains("<div class=\"line-block\">\n        <p>&nbsp;&nbsp;a</p>\n      </div>"),
+        "{html}"
+    );
+}
