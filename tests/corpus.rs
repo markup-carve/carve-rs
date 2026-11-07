@@ -1410,26 +1410,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "868-a-paragraph-after-a-note-attached-fence-closed-past-a-blank-takes-a-lazy-line",
-        "carve#5410 reads an indented fence as a new block after the first blank",
-        r##"<p>see</p>
-<p>x<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <pre><code>a
-</code></pre>
-      <pre><code>c
-</code></pre>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
