@@ -802,6 +802,13 @@ pub(in crate::parse) fn parse_definition_list(
                     );
                     cur.consume();
                 }
+                if cur.peek().is_some_and(is_blank_line) {
+                    let block: Vec<&str> = cur.lines.range(first_visible..end).collect();
+                    let remaining: Vec<&str> = cur.lines.range(end + 1..cur.lines.len()).collect();
+                    for closer in attached_first_blank_closers(&block, &remaining) {
+                        fb.push_at(closer, None, None);
+                    }
+                }
                 fb.into_source()
             } else {
                 let seed = if def_trimmed.starts_with('\t') {
