@@ -1,0 +1,24 @@
+use carve::{to_html, to_html_with_options, Options};
+
+fn assert_host_opener(source: &str) {
+    let html = to_html(source);
+    assert!(html.contains("<div class=\"line-block\">"), "{html}");
+    assert!(html.contains("<div>\n\n"), "{html}");
+    assert!(!html.contains("<p>::::</p>"), "{html}");
+    assert_eq!(
+        html,
+        to_html_with_options(source, &Options::default().with_positions(true))
+    );
+}
+
+#[test]
+fn a_footnote_opens_the_postblank_colon_run_one_column_past_its_margin() {
+    assert_host_opener("[^1]: +\n::: |\n\n   ::::   \n\n[^1]\n");
+    assert_host_opener("[^1]: +\n::: |\n\n    ::::   \n\n[^1]\n");
+}
+
+#[test]
+fn a_description_opens_the_postblank_colon_run_one_column_past_its_margin() {
+    assert_host_opener(":: t\n: +\n::: |\n\n   ::::   \n");
+    assert_host_opener(":: t\n: +\n::: |\n\n    ::::   \n");
+}

@@ -2136,12 +2136,18 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // falling to the reachable ancestor (markup-carve/carve#1946,
         // carve-php#1895). Keeping the residual nests it, matching the
         // per-marker body column carve-js#1664 measures.
-        let trimmed: &str =
-            if state.body_open_below && is_note_def && state.note_fence.is_none() && residual < 2 {
-                flush
-            } else {
-                trimmed
-            };
+        let host_colon_opener = residual > 0
+            && note.lines.last().is_some_and(|prior| is_blank_line(prior))
+            && state.note_fence.is_none()
+            && note.comment_state.line_block.is_none()
+            && is_colon_fence_opener_shape(flush);
+        let trimmed: &str = if host_colon_opener
+            || state.body_open_below && is_note_def && state.note_fence.is_none() && residual < 2
+        {
+            flush
+        } else {
+            trimmed
+        };
         note.push_with(
             trimmed.to_string(),
             Some(self.first_source_line + *i),
