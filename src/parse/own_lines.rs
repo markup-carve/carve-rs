@@ -2416,8 +2416,7 @@ impl<'a> Walk<'a> {
             })
     }
 
-    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
-        c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
+    fn end_attached_quote_at_blank(&mut self, src: &str) {
         // The attached block stands outside the quote that granted its `+`.
         // A blank ending that quote also ends the frames the block opened.
         if self.attached.as_ref().is_some_and(|attached| {
@@ -2425,12 +2424,21 @@ impl<'a> Walk<'a> {
                 .frames
                 .last()
                 .is_some_and(|host| host.kind == Kind::Quote)
-                && is_blank_line(c.src)
-                && strip_quote_levels(c.src, attached.depth + 1).is_none()
+                && is_blank_line(src)
+                && !self
+                    .frames
+                    .last()
+                    .is_some_and(|frame| matches!(frame.kind, Kind::Fence | Kind::Colon))
+                && strip_quote_levels(src, attached.depth + 1).is_none()
         }) {
             let attached = self.attached.take().expect("checked above");
             self.frames = attached.frames[..attached.frames.len() - 1].to_vec();
         }
+    }
+
+    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
+        self.end_attached_quote_at_blank(c.src);
         let tracing = self.trace_wants(at);
         let line = self.first_line + at;
         let mut reached = 0;
