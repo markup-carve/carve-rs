@@ -3253,8 +3253,15 @@ impl<'a> Walk<'a> {
                         .is_some_and(|previous| self.frames[owner].plus == Some(previous))
                         || self.attached.as_ref().is_some_and(|block| block.from == at);
                     if attached {
-                        let first_blank = (at + 1..self.lines.len())
-                            .find(|&line| is_blank_line(self.lines[line]));
+                        let quote_depth = self.frames[1..=owner]
+                            .iter()
+                            .filter(|frame| frame.kind == Kind::Quote)
+                            .count();
+                        let first_blank = (at + 1..self.lines.len()).find(|&line| {
+                            is_blank_line(self.lines[line])
+                                || strip_quote_levels(self.lines[line], quote_depth)
+                                    .is_some_and(is_blank_line)
+                        });
                         if let Some(blank) = first_blank {
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
                             let has_closer = runs.code_by_column.has_later(ch, at, col, len);
@@ -3290,8 +3297,15 @@ impl<'a> Walk<'a> {
                     .is_some_and(|previous| self.frames[owner].plus == Some(previous))
                     || self.attached.as_ref().is_some_and(|block| block.from == at);
                 if attached {
-                    let first_blank =
-                        (at + 1..self.lines.len()).find(|&line| is_blank_line(self.lines[line]));
+                    let quote_depth = self.frames[1..=owner]
+                        .iter()
+                        .filter(|frame| frame.kind == Kind::Quote)
+                        .count();
+                    let first_blank = (at + 1..self.lines.len()).find(|&line| {
+                        is_blank_line(self.lines[line])
+                            || strip_quote_levels(self.lines[line], quote_depth)
+                                .is_some_and(is_blank_line)
+                    });
                     if let Some(blank) = first_blank {
                         let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
                         let has_closer = runs
