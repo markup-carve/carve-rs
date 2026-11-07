@@ -62,6 +62,16 @@ fn a_caption_after_a_blank_does_not_cross_an_attached_code_fence() {
 }
 
 #[test]
+fn a_quote_host_does_not_grant_a_marker_body_caption_handoff() {
+    let html = to_html("> +\n> para\n  ^ cap\n");
+    assert!(
+        html.contains("<blockquote><p>para\n^ cap</p></blockquote>"),
+        "{html}"
+    );
+    assert!(!html.contains("<figure>"), "{html}");
+}
+
+#[test]
 fn an_outer_host_resumes_after_a_nested_attachment_ends() {
     for blank in ["", "\n"] {
         for (host, tail, close) in [

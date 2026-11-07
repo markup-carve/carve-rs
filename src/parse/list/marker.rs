@@ -983,7 +983,9 @@ pub(crate) fn parse_continuation_block(
         .map(|end| (end, attached_end, content_col))
     });
     let mut end = host_closed.map_or(attached_end, |(end, _, _)| end);
-    let attached_quote = strip_blockquote_prefix(trim_ascii_start(lines.at(start))).is_some();
+    let attached_quote = lines
+        .line(start)
+        .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
     let caption_at_host = content_col.is_some_and(|column| {
         let first_blank = (start + 1..=end)
             .find(|&pos| lines.line(pos).is_some_and(is_blank_line))

@@ -1902,11 +1902,12 @@ impl<'a> Walk<'a> {
             .iter()
             .filter(|f| f.kind == Kind::Quote)
             .count();
-        if self
-            .lines
-            .get(from)
-            .and_then(|line| strip_quote_levels(line, depth))
-            .is_some_and(|line| quote_marker(trim_ascii_start(line)).is_some())
+        if self.frames[host].kind.is_marker_body()
+            && self
+                .lines
+                .get(from)
+                .and_then(|line| strip_quote_levels(line, depth))
+                .is_some_and(|line| quote_marker(trim_ascii_start(line)).is_some())
         {
             self.attached_quotes
                 .push((self.first_line + from, self.frames[host].col));
@@ -2033,7 +2034,11 @@ impl<'a> Walk<'a> {
         let Some(rest) = strip_quote_levels(src, attached.depth) else {
             return;
         };
-        let quoted_follower = self.frames.len() >= attached.frames.len()
+        let quoted_follower = attached
+            .frames
+            .last()
+            .is_some_and(|host| host.kind.is_marker_body())
+            && self.frames.len() >= attached.frames.len()
             && self.lines.get(attached.from).is_some_and(|line| {
                 strip_quote_levels(line, attached.depth)
                     .is_some_and(|rest| quote_marker(trim_ascii_start(rest)).is_some())
