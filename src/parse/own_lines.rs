@@ -2000,6 +2000,17 @@ impl<'a> Walk<'a> {
         self.frames = attached.frames.clone();
     }
 
+    fn restore_host_after_attached_closer(&mut self, inner: Option<&Frame>) {
+        // The attached block has ended, but its marker host is still open for
+        // a later line at the host's content column.
+        if let Some(host) = self.attached.as_ref().filter(|block| {
+            inner.is_some_and(|frame| block.from + self.first_line == frame.line)
+                && block.frames.len() > self.frames.len()
+        }) {
+            self.frames = host.frames.clone();
+        }
+    }
+
     fn accept_plus(&mut self, at: usize, host: usize, first_block: bool) {
         let f = &self.frames[host];
         let decision = continuation_marker::Decision {
@@ -2752,16 +2763,7 @@ impl<'a> Walk<'a> {
                         self.closed_comments.insert(frame.line);
                     }
                 }
-                // The attached block has ended, but its marker host is still
-                // open for a later line at the host's content column.
-                if let Some(host) = self.attached.as_ref().filter(|block| {
-                    inner
-                        .as_ref()
-                        .is_some_and(|frame| block.from + self.first_line == frame.line)
-                        && block.frames.len() > self.frames.len()
-                }) {
-                    self.frames = host.frames.clone();
-                }
+                self.restore_host_after_attached_closer(inner.as_ref());
                 self.top().last = last_after_closer(inner.as_ref());
             } else if line_block {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).
