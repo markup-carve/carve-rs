@@ -1407,7 +1407,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     cur,
                     options,
                     base_indent,
-                    None,
+                    Some(content_col),
                     content_col,
                     pull_indent,
                     &mut leading,
