@@ -982,18 +982,54 @@ pub(crate) fn parse_continuation_block(
         )
         .map(|end| (end, attached_end, content_col))
     });
-    let end = host_closed.map_or(attached_end, |(end, _, _)| end);
+    let mut end = host_closed.map_or(attached_end, |(end, _, _)| end);
+    let attached_quote = lines
+        .line(start)
+        .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
+    let caption_at_host = content_col.is_some_and(|column| {
+        let first_blank = (start + 1..=end)
+            .find(|&pos| lines.line(pos).is_some_and(is_blank_line))
+            .unwrap_or(end + 1);
+        (start + 1..end.min(first_blank)).any(|pos| {
+            let line = lines.at(pos);
+            indent_columns(line) == column && caption_content(trim_ascii_start(line)).is_some()
+        }) || end < first_blank
+            && lines.line(end).is_some_and(|line| {
+                indent_columns(line) == column && caption_content(trim_ascii_start(line)).is_some()
+            })
+    });
+    if attached_quote
+        && caption_at_host
+        && lines.line(end).is_some_and(|line| {
+            content_col.is_some_and(|column| indent_columns(line) == column)
+                && caption_content(trim_ascii_start(line)).is_some()
+        })
+    {
+        end += 1;
+    }
+    let caption_column = (attached_quote && caption_at_host)
+        .then_some(content_col)
+        .flatten();
     // The closer the host test found closes at whatever column it stands.
     let column_at = |pos: usize| match host_closed {
         Some((end, _, _)) if pos + 1 == end => indent_columns(lines.at(pos)),
         Some((_, blank, content_col)) if pos >= blank => content_col,
+        _ if caption_column.is_some_and(|column| {
+            pos > start
+                && indent_columns(lines.at(pos)) == column
+                && caption_content(trim_ascii_start(lines.at(pos))).is_some()
+        }) =>
+        {
+            caption_column.expect("checked above")
+        }
         _ => pull_indent,
     };
-    let stripped = (pull_indent > 0 || host_closed.is_some()).then(|| {
-        (cur.pos..end)
-            .map(|pos| slice_columns_mapped(cur.lines.at(pos), column_at(pos), false).0)
-            .collect::<Vec<_>>()
-    });
+    let stripped = (pull_indent > 0 || host_closed.is_some() || attached_quote && caption_at_host)
+        .then(|| {
+            (cur.pos..end)
+                .map(|pos| slice_columns_mapped(cur.lines.at(pos), column_at(pos), false).0)
+                .collect::<Vec<_>>()
+        });
     let slice: Vec<&str> = stripped.as_ref().map_or_else(
         || cur.lines.range(cur.pos..end).collect(),
         |lines| lines.iter().map(String::as_str).collect(),

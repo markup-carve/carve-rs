@@ -82,12 +82,14 @@ pub(super) fn kind_of(kind: super::own_lines::Kind) -> Option<Kind> {
 
 thread_local! {
     static DECISIONS: RefCell<Option<HashMap<usize, Decision>>> = const { RefCell::new(None) };
+    static ATTACHED_QUOTES: RefCell<Option<HashMap<usize, usize>>> = const { RefCell::new(None) };
     static LETTER: RefCell<Option<char>> = const { RefCell::new(None) };
     static CONSUMED: RefCell<(Vec<usize>, Option<char>)> = const { RefCell::new((Vec::new(), None)) };
 }
 
 pub(super) struct Guard(
     Option<HashMap<usize, Decision>>,
+    Option<HashMap<usize, usize>>,
     Option<char>,
     (Vec<usize>, Option<char>),
 );
@@ -122,6 +124,9 @@ impl Guard {
             .unwrap_or_default();
         Self(
             DECISIONS.with(|slot| slot.replace(decisions)),
+            ATTACHED_QUOTES.with(|slot| {
+                slot.replace(owned.map(|o| o.attached_quotes.iter().copied().collect()))
+            }),
             LETTER.with(|slot| slot.replace(letter)),
             CONSUMED.with(|slot| slot.replace(consumed)),
         )
@@ -131,8 +136,9 @@ impl Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         DECISIONS.with(|slot| slot.replace(self.0.take()));
-        LETTER.with(|slot| slot.replace(self.1.take()));
-        CONSUMED.with(|slot| slot.replace(std::mem::take(&mut self.2)));
+        ATTACHED_QUOTES.with(|slot| slot.replace(self.1.take()));
+        LETTER.with(|slot| slot.replace(self.2.take()));
+        CONSUMED.with(|slot| slot.replace(std::mem::take(&mut self.3)));
     }
 }
 
@@ -143,6 +149,10 @@ pub(super) fn active() -> bool {
 
 pub(super) fn decision(source_line: usize) -> Option<Decision> {
     DECISIONS.with(|slot| slot.borrow().as_ref()?.get(&source_line).copied())
+}
+
+pub(super) fn attached_quote_host_column(source_line: usize) -> Option<usize> {
+    ATTACHED_QUOTES.with(|slot| slot.borrow().as_ref()?.get(&source_line).copied())
 }
 
 /// Text with every refused `+` back as itself.

@@ -1383,6 +1383,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lead_is_paragraph = attached_refs
             .get(first_visible_at)
             .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+        let lead_is_quote = attached_refs
+            .get(first_visible_at)
+            .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
         let ends_at_marker = |at: usize, raw: &str| {
             at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
         };
@@ -1399,6 +1402,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 is_blank_line(line)
                     || is_plus_marker(line)
                     || ends_at_marker(at, raw)
+                    || (at > first_visible_at
+                        && lead_is_quote
+                        && indent_columns(raw) >= container.content_column
+                        && (if caption_content(trim_ascii_start(raw)).is_some() {
+                            indent_columns(raw) == container.content_column
+                        } else {
+                            item_block_opener(trim_ascii_start(raw))
+                        }))
                     || (at > first_visible_at
                         && marker_col > 0
                         && indent_columns(raw) <= marker_col
@@ -1495,7 +1506,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     note.push_with(closer, None, |_| None);
                 }
             }
-            note.push_blank();
+            let caption_after_one_blank = lead_is_quote
+                && lines.get(i).is_some_and(|line| is_blank_line(line))
+                && lines.get(i + 1).is_some_and(|line| {
+                    indent_columns(line) >= container.content_column
+                        && caption_content(trim_ascii_start(line)).is_some()
+                });
+            if !caption_after_one_blank {
+                note.push_blank();
+            }
         }
         i
     }
@@ -2148,7 +2167,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     && exact_colon_fence_len(innermost_marker_content(state.first)) == Some(run)
             })
             && is_colon_fence_opener_shape(flush);
-        let trimmed: &str = if host_colon_opener
+        let caption_after_quote_blank = caption_content(flush).is_some()
+            && note.lines.last().is_some_and(|line| is_blank_line(line))
+            && note
+                .lines
+                .iter()
+                .rev()
+                .nth(1)
+                .is_some_and(|line| strip_blockquote_prefix(line).is_some());
+        let trimmed: &str = if caption_after_quote_blank
+            || host_colon_opener
             || state.body_open_below && is_note_def && state.note_fence.is_none() && residual < 2
         {
             flush

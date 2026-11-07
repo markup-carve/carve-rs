@@ -800,6 +800,8 @@ struct Walk<'a> {
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
     attached: Option<AttachedBlock>,
+    enclosing_attachments: Vec<AttachedBlock>,
+    attached_quotes: Vec<(usize, usize)>,
     /// The marker frame this line's opener closed: kind, axes, list column and shift.
     sibling: Option<(Kind, String, usize, usize)>,
     /// Continuation lines of the wrapped attribute block just classified.
@@ -841,6 +843,7 @@ struct Skipped {
     brace: Option<(usize, bool, usize)>,
 }
 
+#[derive(Clone)]
 struct AttachedBlock {
     frames: Vec<Frame>,
     depth: usize,
@@ -1046,6 +1049,7 @@ pub(crate) struct OwnedSource {
     /// The byte a refused `+` is written as, when the walk refused one.
     pub(in crate::parse) letter: Option<char>,
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
+    pub(in crate::parse) attached_quotes: Vec<(usize, usize)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
     pub(crate) unclosed_comments: Vec<(usize, usize, usize, bool)>,
     pub(in crate::parse) overindented: Vec<OverindentedOpener>,
@@ -1160,6 +1164,8 @@ fn walk_traced(
         closed_comments: HashSet::new(),
         overindented: Vec::new(),
         attached: None,
+        enclosing_attachments: Vec::new(),
+        attached_quotes: Vec::new(),
         skipped: None,
         claimed: Default::default(),
         consumed: Vec::new(),
@@ -1271,6 +1277,7 @@ fn walk_traced(
         edits,
         letter: letter.filter(|_| wrote_letter),
         accepted: std::mem::take(&mut walk.accepted),
+        attached_quotes: std::mem::take(&mut walk.attached_quotes),
         refused: std::mem::take(&mut walk.refused),
         unclosed_comments: std::mem::take(&mut walk.unclosed_comments),
         overindented: std::mem::take(&mut walk.overindented),
@@ -1886,10 +1893,25 @@ impl<'a> Walk<'a> {
     }
 
     fn note_attached(&mut self, host: usize, from: usize) {
+        if let Some(previous) = self.attached.take() {
+            if self.frames.len() > previous.frames.len() {
+                self.enclosing_attachments.push(previous);
+            }
+        }
         let depth = self.frames[1..host]
             .iter()
             .filter(|f| f.kind == Kind::Quote)
             .count();
+        if self.frames[host].kind.is_marker_body()
+            && self
+                .lines
+                .get(from)
+                .and_then(|line| strip_quote_levels(line, depth))
+                .is_some_and(|line| quote_marker(trim_ascii_start(line)).is_some())
+        {
+            self.attached_quotes
+                .push((self.first_line + from, self.frames[host].col));
+        }
         self.attached = Some(AttachedBlock {
             frames: self.frames[..=host].to_vec(),
             depth,
@@ -2009,11 +2031,23 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
-        if !self.marker_line_attachment_host(attached)
-            || self.frames.len() >= attached.frames.len()
-            || strip_quote_levels(src, attached.depth).map_or(true, |rest| {
-                doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
+        let Some(rest) = strip_quote_levels(src, attached.depth) else {
+            return;
+        };
+        let quoted_follower = attached
+            .frames
+            .last()
+            .is_some_and(|host| host.kind.is_marker_body())
+            && self.frames.len() >= attached.frames.len()
+            && self.lines.get(attached.from).is_some_and(|line| {
+                strip_quote_levels(line, attached.depth)
+                    .is_some_and(|rest| quote_marker(trim_ascii_start(rest)).is_some())
             })
+            && strip_quote_levels(src, attached.depth + 1).is_none()
+            && !foldable_plain_line(trim_ascii_start(rest));
+        if !self.marker_line_attachment_host(attached)
+            || (self.frames.len() >= attached.frames.len() && !quoted_follower)
+            || doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
             || !self.attached_ends_at(at)
         {
             return;
@@ -2562,6 +2596,14 @@ impl<'a> Walk<'a> {
     }
 
     fn end_attached_quote_at_blank(&mut self, at: usize, src: &str) {
+        if !self.enclosing_attachments.is_empty()
+            && self.attached.as_ref().is_some_and(|attached| {
+                is_blank_line(src) || strip_quote_levels(src, attached.depth).is_none()
+            })
+            && self.attached_ends_at(at)
+        {
+            self.attached = self.enclosing_attachments.pop();
+        }
         // The attached block stands outside the quote that granted its `+`.
         // A blank ending that quote also ends the frames the block opened.
         if self.attached.as_ref().is_some_and(|attached| {
@@ -2622,6 +2664,27 @@ impl<'a> Walk<'a> {
         self.quote_note_plus_line = self.quote_note_body
             && strip_blockquote_prefix(rest)
                 .is_some_and(|rest| is_cont_marker(trim_ascii_start(rest)));
+    }
+
+    fn attached_quote_caption_residual(&mut self, form: &Form, rest: &str, col: usize) -> usize {
+        if !matches!(form, Form::Leaf(false)) || !is_caption(rest) {
+            return 0;
+        }
+        let Some(attached) = self.attached.as_ref() else {
+            return 0;
+        };
+        if !attached
+            .frames
+            .last()
+            .is_some_and(|host| host.kind.is_marker_body())
+            || !self.lines.get(attached.from).is_some_and(|line| {
+                strip_quote_levels(line, attached.depth)
+                    .is_some_and(|rest| quote_marker(trim_ascii_start(rest)).is_some())
+            })
+        {
+            return 0;
+        }
+        col.saturating_sub(self.top().col)
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
@@ -3003,12 +3066,17 @@ impl<'a> Walk<'a> {
             form => {
                 let (canon, shift) = (self.top().canon, self.top().shift);
                 let col = c.col;
+                let caption_residual = self.attached_quote_caption_residual(&form, c.rest, col);
                 if !plus_follower {
                     let owner = self.frames.len() - 1;
                     let content = self.frames[owner].col;
                     self.note_opener(owner, &form, content, at, c);
                 }
-                c.lead_in(canon, shift, matches!(form, Form::Term | Form::Dd(_)));
+                c.lead_in(
+                    canon + caption_residual,
+                    shift,
+                    matches!(form, Form::Term | Form::Dd(_)),
+                );
                 let owner = self.frames.len() - 1;
                 self.apply(owner, col, form, canon, true, at, c);
                 // A description a `+` filled stays open for a sibling (carve#4408).

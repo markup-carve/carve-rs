@@ -760,6 +760,10 @@ pub(in crate::parse) fn parse_definition_list(
                     .lines
                     .line(first_visible)
                     .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+                let attached_quote = cur
+                    .lines
+                    .line(first_visible)
+                    .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
                 let content_column = list_column + definition_column;
                 let first_blank = (first_visible + 1..lines.len())
                     .find(|&at| lines.line(at).is_some_and(is_blank_line))
@@ -781,6 +785,13 @@ pub(in crate::parse) fn parse_definition_list(
                         || (attached_paragraph
                             && indent_columns(a) >= content_column
                             && item_block_opener(trim_ascii_start(a)))
+                        || (attached_quote
+                            && indent_columns(a) >= content_column
+                            && (if caption_content(trim_ascii_start(a)).is_some() {
+                                indent_columns(a) == content_column
+                            } else {
+                                item_block_opener(trim_ascii_start(a))
+                            }))
                 };
                 let classified = cur.continuation_decision(def_start);
                 let end = match classified {
@@ -1940,6 +1951,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let attached_paragraph = cur
             .peek()
             .is_some_and(|line| line_starts_paragraph(trim_ascii_start(line)));
+        let attached_quote = cur
+            .peek()
+            .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
         let end = attached_block_past_invisible(
             cursor_lines,
             cur.pos,
@@ -1956,6 +1970,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                     || (attached_paragraph
                         && indent_columns(a) >= content_column
                         && item_block_opener(trim_ascii_start(a)))
+                    || (attached_quote
+                        && indent_columns(a) >= content_column
+                        && (if caption_content(trim_ascii_start(a)).is_some() {
+                            indent_columns(a) == content_column
+                        } else {
+                            item_block_opener(trim_ascii_start(a))
+                        }))
                     || a.strip_prefix(":: ").is_some()
                     || strip_definition_marker(a).is_some()
                     // Below the body's column a description marker opens a sibling (PART 0 S1).
@@ -2023,7 +2044,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // The residual is written back as the spaces the tab bought past
         // the margin, which is what makes the two spellings agree.
         let mut sliced = slice_columns(line, self.content_column.min(indent), true);
-        if indent > self.content_column
+        let host_colon_opener = indent > self.content_column
             && self.lines.last().is_some_and(|prior| is_blank_line(prior))
             && fence.open.is_none()
             && !self.in_line_block()
@@ -2039,8 +2060,18 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                         && exact_colon_fence_len(innermost_marker_content(seed)) == Some(run)
                 })
             })
-            && is_colon_fence_opener_shape(trim_ascii_start(&sliced))
-        {
+            && is_colon_fence_opener_shape(trim_ascii_start(&sliced));
+        let caption_after_quote_blank = caption_content(trim_ascii_start(&sliced)).is_some()
+            && self.lines.last().is_some_and(|line| is_blank_line(line))
+            && self
+                .lines
+                .iter()
+                .rev()
+                .nth(1)
+                .map(String::as_str)
+                .or_else(|| self.seed.lines().last())
+                .is_some_and(|line| strip_blockquote_prefix(line).is_some());
+        if host_colon_opener || caption_after_quote_blank {
             sliced = trim_ascii_start(&sliced).to_owned();
         }
         let term_past_column = self
