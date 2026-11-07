@@ -1397,10 +1397,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         while first_block_attaches && cur.peek().is_some_and(is_blank_line) {
             cur.consume();
         }
+        // In a quote the block is pulled at the content column, but never past
+        // its own first line: a verse line keeps the spaces it has beyond that.
         let pull_indent = cur
             .continuation_decision(item.at)
             .filter(|decision| decision.quote_depth > 0)
-            .map_or(base_indent, |_| content_col);
+            .map_or(base_indent, |_| {
+                cur.lines
+                    .range(cur.pos..cur.lines.len())
+                    .find(|line| !is_blank_line(line))
+                    .map_or(content_col, |line| content_col.min(indent_columns(line)))
+            });
         let mut leading = Vec::new();
         let attached = first_block_attaches
             .then(|| {
