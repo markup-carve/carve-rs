@@ -72,18 +72,15 @@ fn attached_first_blank_closers(block: &[&str], remaining: &[&str]) -> Vec<Strin
         return Vec::new();
     }
     // A line block or hardbreaks block nests nothing: any later run of its
-    // width in the host closes it.
+    // width closes it, as a later closer does for a div below.
     if let Some(fence_len) =
         detect_line_block_open(opener).or_else(|| detect_hardbreaks_block_open(opener))
     {
-        let host = remaining
-            .iter()
-            .take_while(|line| is_blank_line(line) || indent_columns(line) > 0);
         let closed = block
             .iter()
             .skip_while(|line| trim_ascii_start(line) != opener)
             .skip(1)
-            .chain(host)
+            .chain(remaining)
             .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(fence_len));
         return if closed {
             Vec::new()
