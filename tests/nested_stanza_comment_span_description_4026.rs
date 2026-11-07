@@ -18,3 +18,10 @@ fn the_description_after_the_span_survives_at_every_depth() {
         );
     }
 }
+
+#[test]
+fn a_line_that_misses_the_span_owner_folds_into_the_stanza() {
+    // carve-rs#4028
+    let html = to_html("- a\n  ::: |\n    v\n  %%%\n  c\nz\n");
+    assert!(html.contains("v<br>\nz</p>"), "{html}");
+}
