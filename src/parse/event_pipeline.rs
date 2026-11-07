@@ -3199,6 +3199,10 @@ fn strict_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
 }
 
 fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
+    // The thematic break is tested before a list marker (carve#4814).
+    if thematic_break_marker(line).is_some() {
+        return None;
+    }
     let marker = strict_list_marker(line)?;
     if simple_list_content(marker.2) {
         return Some(marker);
@@ -3206,7 +3210,9 @@ fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     let mut content = marker.2;
     let mut nested = false;
     while let Some((kind, ordinal, inner)) = strict_list_marker(content) {
-        if kind == SimpleListKind::Ordered && ordinal != 1 {
+        if (kind == SimpleListKind::Ordered && ordinal != 1)
+            || thematic_break_marker(content).is_some()
+        {
             return None;
         }
         nested = true;
@@ -3815,9 +3821,37 @@ fn parse_document_with_custom_options_once(
         None
     };
     let source = normalized.as_deref().unwrap_or(source);
-    if has_deep_quote_chain(source) || walk_moves_lines(source) {
+    if has_deep_quote_chain(source) {
         return None;
     }
+    // A walk that only re-indents lines hands both parsers the same text.
+    let owned = if walk_moves_lines(source) {
+        let owned = own_lines(source)?;
+        // Only the HTML facade reads the walked text here; extension callbacks
+        // keep their established order on the standard parse. Comment runs and
+        // quoted note grants read authored columns the event readers lack.
+        if !matches!(mode, ParseMode::HtmlFacade)
+            || options.positions
+            || options.source_lines
+            || !options.extensions.is_empty()
+            || !owned.only_moves_columns()
+            || source.contains('%')
+            || source.contains("[^")
+        {
+            return None;
+        }
+        // Frontmatter is read from the authored lines, as the standard parse does.
+        if split_frontmatter(source, false).1.is_none()
+            && split_frontmatter(&owned.source, false).1.is_some()
+        {
+            return None;
+        }
+        Some(owned)
+    } else {
+        None
+    };
+    let _owned_edits = owned.as_ref().map(|owned| EditsGuard::install(Some(owned)));
+    let source = owned.as_ref().map_or(source, |owned| owned.source.as_str());
     let may_have_link_defs = source.contains("]:") || !options.extensions.is_empty();
     let may_have_abbrevs = source.contains("*[");
     if source.contains("[^") {
