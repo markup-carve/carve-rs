@@ -1447,6 +1447,17 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
   </ol>
 </section>"##,
     ),
+    (
+        "851-a-first-block-plus-shape-reads-the-one-attach-rule-6",
+        "carve#5435 closes the quote after a refused description marker",
+        r##"<blockquote>
+  <dl>
+    <dt>t</dt>
+    <dd></dd>
+  </dl>
+</blockquote>
+<p>para</p>"##,
+    ),
 ];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
