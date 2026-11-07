@@ -1300,38 +1300,50 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .position(|line| is_blank_line(line) || is_plus_marker(line))
                 .unwrap_or(lines.len() - from)
         };
-        let fenced_block_end = |from: usize| {
+        let mut fenced_block_end = |from: usize| {
             let text = trim_ascii_start(lines.get(from)?);
             if let Some(open) = detect_fence_open(text) {
                 return Some(
                     (from + 1..lines.len())
                         .find(|&at| {
-                            is_fence_close(
-                                strip_leading_columns(lines[at], marker_col).as_str(),
-                                open,
-                            )
+                            indent_columns(lines[at]) == marker_col
+                                && is_fence_close(
+                                    strip_leading_columns(lines[at], marker_col).as_str(),
+                                    open,
+                                )
                         })
                         .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
                 );
             }
-            let fence_len = detect_line_block_open(text)
+            detect_line_block_open(text)
                 .or_else(|| detect_hardbreaks_block_open(text))
                 .or_else(|| detect_quote_block_open(text))
                 .or_else(|| detect_container_open(text).map(|open| open.fence_len))?;
-            Some(
-                (from + 1..lines.len())
-                    .find(|&at| {
-                        exact_colon_fence_len(trim_ascii_start(lines[at])) == Some(fence_len)
-                    })
-                    .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
-            )
+            let first_blank = (from + 1..lines.len())
+                .find(|&at| is_blank_line(lines[at]))
+                .unwrap_or(lines.len());
+            Some(attached_block_past_invisible(
+                CursorLines::Slice(lines),
+                from,
+                &mut self.comment_closers,
+                &mut self.closer_index,
+                self.options,
+                &mut |line, at| {
+                    is_blank_line(line)
+                        || is_plus_marker(line)
+                        || (at > first_blank
+                            && indent_columns(line) < container.content_column
+                            && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+                            && item_block_opener(trim_ascii_start(line)))
+                },
+            ))
         };
         // Erased comment spans are invisible: the block they lead is the attached one (CARVE-P9-067).
         let lead = i + lines[i..]
             .iter()
             .take_while(|line| is_line_comment_any_column(line))
             .count();
-        let pulled_closer = pulled_fence_closer(lines, lead, container.content_column);
+        let pulled_closer = pulled_fence_closer(lines, lead, container.content_column, marker_col);
         let window_end = if let Some(closer) = pulled_closer {
             closer + 1
         } else if let Some(end) = fenced_block_end(lead) {
@@ -1943,7 +1955,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
-        let pulled_closer = pulled_fence_closer(lines, *i, state.body_indent);
+        let pulled_closer = pulled_fence_closer(lines, *i, state.body_indent, state.body_indent);
         let end = pulled_closer.map_or_else(
             || {
                 attached_block_past_invisible(
@@ -2919,10 +2931,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
 /// say whether the line is that fence's payload or closer. The fence ends with
 /// its item, at a line below the item's content column, and a marker folded into
 /// a paragraph opens none.
-/// The closer of a fence a `+` attached from left of the note's body. A blank
-/// line ends the flush payload, so past it only the body column reaches the
-/// fence, and a closer there closes it (PART 0 S3 and S4, carve#4392).
-fn pulled_fence_closer(lines: &[&str], opener: usize, body_column: usize) -> Option<usize> {
+/// Find the closer at the column the host reads: the marker column for a
+/// marker-line `+`, or the note body column for a later standalone `+`.
+fn pulled_fence_closer(
+    lines: &[&str],
+    opener: usize,
+    body_column: usize,
+    closer_column: usize,
+) -> Option<usize> {
     let text = lines.get(opener)?;
     if indent_columns(text) >= body_column {
         return None;
@@ -2939,9 +2955,9 @@ fn pulled_fence_closer(lines: &[&str], opener: usize, body_column: usize) -> Opt
             ) {
                 return None;
             }
-        } else if indent_columns(line) < body_column {
+        } else if closer_column == body_column && indent_columns(line) < body_column {
             return None;
-        } else if indent_columns(line) == body_column
+        } else if indent_columns(line) == closer_column
             && is_fence_close(trim_ascii_start(line), open)
         {
             return Some(at);

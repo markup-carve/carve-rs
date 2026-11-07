@@ -583,6 +583,7 @@ pub(crate) fn attached_block_end(
                     .is_some_and(|&last| last > opener)
             });
             if may_close {
+                let mut past_blank = false;
                 let candidate = find_colon_fence_end_bounded(
                     lines,
                     opener,
@@ -593,9 +594,16 @@ pub(crate) fn attached_block_end(
                     // A sibling of the host ends the frame, whatever closer follows
                     // (CARVE-P9-084, carve#4798).
                     &mut |line, at| {
+                        if is_blank_line(line) {
+                            past_blank = true;
+                            return false;
+                        }
                         (detect_list_marker_full(line).is_some()
                             || strip_lazy(line).strip_prefix(":: ").is_some()
-                            || strip_definition_marker(strip_lazy(line)).is_some())
+                            || strip_definition_marker(strip_lazy(line)).is_some()
+                            || (past_blank
+                                && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+                                && item_block_opener(trim_ascii_start(line))))
                             && is_boundary(line, at)
                     },
                 );
@@ -792,7 +800,10 @@ fn host_closed_colon_end(
         let mut closers: HashMap<usize, Vec<usize>> = HashMap::new();
         for at in (0..lines.len()).rev() {
             let line = lines.at(at);
-            next_below[at] = if !is_blank_line(line) && indent_columns(line) < content_col {
+            next_below[at] = if !is_blank_line(line)
+                && indent_columns(line) < content_col
+                && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+            {
                 at
             } else {
                 next_below[at + 1]
@@ -930,6 +941,9 @@ pub(crate) fn parse_continuation_block(
         !is_blank_line(line)
             && !detect_list_marker_full(line).is_some_and(|marker| marker.indent <= base_indent)
     });
+    let first_blank = (start + 1..lines.len())
+        .find(|&at| is_blank_line(lines.at(at)))
+        .unwrap_or(lines.len());
     let attached_end = attached_block_end(
         lines,
         start,
@@ -945,8 +959,15 @@ pub(crate) fn parse_continuation_block(
             }
             // A sibling item ends the attachment before lazy continuation can claim it.
             end > start
-                && indent_columns(line) <= base_indent
-                && detect_list_marker_full(line).is_some()
+                && ((indent_columns(line) <= base_indent
+                    && detect_list_marker_full(line).is_some())
+                    || (detect_container_open(lines.at(start)).is_some()
+                        && end > first_blank
+                        && content_col.is_some_and(|col| {
+                            indent_columns(line) < col
+                                && exact_colon_fence_len(trim_ascii_start(line)).is_none()
+                                && item_block_opener(trim_ascii_start(line))
+                        })))
         },
     );
     // A closer the host holds keeps the colon body open past its first blank;

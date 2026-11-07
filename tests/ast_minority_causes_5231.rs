@@ -52,11 +52,15 @@ fn a_blank_before_a_descendants_plus_keeps_its_parent_list_tight() {
 }
 
 #[test]
-fn an_indented_fence_closer_ends_after_its_authored_run() {
+fn an_indented_fence_line_does_not_close_a_marker_column_fence() {
     let tree = ast("[^f]: +\n```\na\n\n  ```\n  c\nsee\n\nx[^f]\n");
     assert_eq!(
-        tree.pointer("/children/1/children/0/pos/endOffset"),
-        Some(&json!(20))
+        tree.pointer("/children/2/children/0/pos/endOffset"),
+        Some(&json!(13))
+    );
+    assert_eq!(
+        tree.pointer("/children/2/children/1/pos/endOffset"),
+        Some(&json!(24))
     );
 }
 
