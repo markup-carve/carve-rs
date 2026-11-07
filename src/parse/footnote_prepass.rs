@@ -1373,6 +1373,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map(|(offset, line)| {
                 if pulled_closer == Some(i + offset) {
                     trim_ascii_start(line).to_string()
+                } else if i + offset > lead
+                    && indent_columns(line) == container.content_column
+                    && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+                    && strip_blockquote_prefix(trim_ascii_start(lines[lead])).is_some()
+                {
+                    strip_leading_columns(line, container.content_column)
                 } else {
                     strip_leading_columns(line, marker_col)
                 }
@@ -1411,6 +1417,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                             indent_columns(raw) == container.content_column
                         } else {
                             item_block_opener(trim_ascii_start(raw))
+                                && !(lead_is_quote
+                                    && strip_blockquote_prefix(trim_ascii_start(raw)).is_some())
                         }))
                     || (at > first_visible_at
                         && marker_col > 0
@@ -1629,6 +1637,32 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         if let Some(flow) = self.attached_plus_block(state, note, line, column, i) {
             return flow;
+        }
+        if trim_ascii(state.first) == "+"
+            && column >= state.def_column
+            && column < state.body_indent
+            && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
+            && *i > 0
+            && !is_blank_line(self.lines[*i - 1])
+            && note
+                .lines
+                .iter()
+                .rev()
+                .find(|previous| !is_blank_line(previous))
+                .is_some_and(|previous| {
+                    strip_blockquote_prefix(trim_ascii_start(previous)).is_some()
+                })
+        {
+            if note.lines.last().is_some_and(|last| is_blank_line(last))
+                && note.line_map.last() == Some(&None)
+            {
+                note.lines.pop();
+                note.line_map.pop();
+                if note.positions {
+                    note.col_map.pop();
+                }
+            }
+            return self.indented_content_line(state, note, line, i);
         }
         // COLUMNS, not a byte count. §16 asks for >= 2 columns and
         // §24 C1 gives a tab a column value, so a bare tab reaches
