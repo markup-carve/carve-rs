@@ -3270,3 +3270,34 @@ fn verse_spacing_does_not_enter_a_link_destination() {
     let linked = crate::to_html("::: |\n[a](/u \"t\")\n");
     assert!(linked.contains("<a href=\"/u\""), "{linked}");
 }
+
+#[cfg(feature = "experimental-event-parser-options")]
+fn assert_event_root_matches_standard(sources: &[&str]) {
+    let options = Options::default();
+    for source in sources {
+        for mode in [ParseMode::Html, ParseMode::HtmlFacade, ParseMode::Carve] {
+            let expected = {
+                let _standard_root = StandardEventRootGuard::install();
+                let _standard_nested = StandardNestedReaderGuard::install();
+                parse_with_options_mode_and_index(source, &options, mode).0
+            };
+            let actual = parse_with_options_mode_and_index(source, &options, mode).0;
+            assert_eq!(actual, expected, "{source:?}");
+        }
+    }
+}
+
+// carve-rs#4052: the thematic break is tested before a bullet (carve#4814).
+#[cfg(feature = "experimental-event-parser-options")]
+#[test]
+fn event_list_reader_tests_the_thematic_break_first() {
+    assert_event_root_matches_standard(&[
+        "- x\n  * * *\n",
+        "* x\n* * *\n",
+        "> - x\n>   * * *\n",
+        "1. x\n   * * *\n",
+        "- * * *\n",
+        "- x\n  - * * *\n",
+        "- x\n  * * * x\n",
+    ]);
+}

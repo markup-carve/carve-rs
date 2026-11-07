@@ -3199,6 +3199,10 @@ fn strict_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
 }
 
 fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
+    // The thematic break is tested before a list marker (carve#4814).
+    if thematic_break_marker(line).is_some() {
+        return None;
+    }
     let marker = strict_list_marker(line)?;
     if simple_list_content(marker.2) {
         return Some(marker);
@@ -3206,7 +3210,9 @@ fn unified_list_marker(line: &str) -> Option<(SimpleListKind, usize, &str)> {
     let mut content = marker.2;
     let mut nested = false;
     while let Some((kind, ordinal, inner)) = strict_list_marker(content) {
-        if kind == SimpleListKind::Ordered && ordinal != 1 {
+        if (kind == SimpleListKind::Ordered && ordinal != 1)
+            || thematic_break_marker(content).is_some()
+        {
             return None;
         }
         nested = true;
