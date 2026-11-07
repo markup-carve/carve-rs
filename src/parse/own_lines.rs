@@ -2000,7 +2000,7 @@ impl<'a> Walk<'a> {
             .checked_sub(self.first_line)
             .and_then(|at| at.checked_add(1))
             == Some(attached.from)
-            && (host.kind == Kind::Item || attached.frames.len() == 2)
+            && host.kind.is_marker_body()
     }
 
     /// A `+` right after the one block a `+` attached reaches the same host, whose
@@ -3535,14 +3535,15 @@ impl<'a> Walk<'a> {
                             let mut code_closers = None;
                             let mut comment_closers = None;
                             let host_col = self.frames[owner].col;
-                            let end = find_colon_fence_end_bounded(
+                            let end = find_measured_colon_fence_end_bounded(
                                 slice,
                                 0,
                                 run,
-                                false,
+                                col,
                                 &mut code_closers,
                                 &mut comment_closers,
-                                &mut |line, pos| {
+                                &mut |_, pos| {
+                                    let line = slice.at(pos);
                                     pos > 0
                                         && doc_column(line, trim_ascii_start(line)) <= host_col
                                         && detect_list_marker_full(trim_ascii_start(line)).is_some()

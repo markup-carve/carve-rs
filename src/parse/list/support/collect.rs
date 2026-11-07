@@ -716,13 +716,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 || at > start
                                     && indent_columns(next) < strip_cols
                                     && !*attached_paragraph_open.get_or_insert_with(|| {
-                                        body_ends_with_open_paragraph(
-                                            &cur.lines.range(start..at)
-                                                .map(|line| slice_columns_mapped(line, strip_cols, true).0)
-                                                .collect::<Vec<_>>()
-                                                .join("\n"),
-                                            options,
-                                        )
+                                        let mut body = lines.join("\n");
+                                        for line in cur.lines.range(start..at) {
+                                            if !body.is_empty() { body.push('\n'); }
+                                            body.push_str(&slice_columns_mapped(line, strip_cols, true).0);
+                                        }
+                                        body_ends_with_open_paragraph(&body, options)
                                     })
                                 // A `+`-filled description's sibling ends its block (carve#4408).
                                 || strip_definition_marker(trim_ascii_start(next)).is_some()

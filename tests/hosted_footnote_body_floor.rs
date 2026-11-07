@@ -28,12 +28,12 @@ fn attached_paragraph_then_body_floor_heading_are_separate_blocks() {
 }
 
 #[test]
-fn later_heading_at_body_floor_belongs_to_host_item() {
+fn later_heading_at_body_floor_resumes_hosted_note() {
     let source = "- a\n  [^n]: +\n  # h\n    # h\n\nsee[^n]\n";
     let html = carve::to_html(source);
-    assert!(html.contains("<li>a\n    <h1 id=\"h\">h</h1>"), "{html}");
+    assert!(html.contains("<li>a</li>"), "{html}");
     assert!(
-        html.contains("<li id=\"fn1\">\n      <h1 id=\"h-2\">h</h1>"),
+        html.contains("<li id=\"fn1\">\n      <h1 id=\"h\">h</h1>\n      <h1 id=\"h-2\">h</h1>"),
         "{html}"
     );
 }
