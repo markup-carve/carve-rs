@@ -2000,7 +2000,7 @@ impl<'a> Walk<'a> {
             .checked_sub(self.first_line)
             .and_then(|at| at.checked_add(1))
             == Some(attached.from)
-            && (host.kind == Kind::Item || attached.frames.len() == 2)
+            && host.kind.is_marker_body()
     }
 
     /// A `+` right after the one block a `+` attached reaches the same host, whose
