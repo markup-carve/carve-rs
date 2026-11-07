@@ -583,7 +583,7 @@ pub(crate) fn attached_block_end(
                     .is_some_and(|&last| last > opener)
             });
             if may_close {
-                end = find_colon_fence_end_bounded(
+                let candidate = find_colon_fence_end_bounded(
                     lines,
                     opener,
                     fence_len,
@@ -599,7 +599,12 @@ pub(crate) fn attached_block_end(
                             && is_boundary(line, at)
                     },
                 );
-                continue;
+                if candidate > opener
+                    && exact_colon_fence_len(lines.at(candidate - 1)) == Some(fence_len)
+                {
+                    end = candidate;
+                    continue;
+                }
             }
             // An unclosed colon block has no later closer to carry its
             // attachment past the first blank or host boundary.

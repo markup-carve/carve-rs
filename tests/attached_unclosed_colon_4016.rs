@@ -31,3 +31,10 @@ fn a_closed_note_still_owns_its_interior_blank() {
     let expected = "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>tail</p>\n    </aside>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source), expected);
 }
+
+#[test]
+fn a_colon_run_inside_a_later_code_fence_does_not_close_the_attached_note() {
+    let source = "- +\n::: note\n\n  tail\n```\n:::\n```\n";
+    let expected = "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n\n    </aside>\n    <p>tail</p>\n  </li>\n</ul>\n<pre><code>:::\n</code></pre>";
+    assert_eq!(carve::to_html(source), expected);
+}

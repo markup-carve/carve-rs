@@ -3199,7 +3199,32 @@ impl<'a> Walk<'a> {
                             .colon_by_width
                             .get(&run)
                             .is_some_and(|index| index.has_later(b'~', at, col, run));
-                        if !has_closer {
+                        // A matching run inside a code fence or past a sibling is
+                        // not this container's closer. Use the indexed answer
+                        // only to skip the full scan when no run is reachable.
+                        let closes_here = has_closer && {
+                            let slice = CursorLines::Slice(&self.lines[at..]);
+                            let mut code_closers = None;
+                            let mut comment_closers = None;
+                            let host_col = self.frames[owner].col;
+                            let end = find_colon_fence_end_bounded(
+                                slice,
+                                0,
+                                run,
+                                false,
+                                &mut code_closers,
+                                &mut comment_closers,
+                                &mut |line, pos| {
+                                    pos > 0
+                                        && doc_column(line, trim_ascii_start(line)) <= host_col
+                                        && detect_list_marker_full(trim_ascii_start(line)).is_some()
+                                },
+                            );
+                            end > 0
+                                && end <= slice.len()
+                                && colon_closer(trim_ascii_start(slice.at(end - 1))) == Some(run)
+                        };
+                        if !closes_here {
                             f.attached_blank_end = Some(blank);
                         }
                     }
