@@ -43,6 +43,9 @@ pub(crate) use quote::holds_nothing;
 pub(crate) use quote_state::is_alnum;
 pub(crate) use table::table_run_open_after;
 #[cfg(test)]
+#[path = "parse/no_link_prepass_tests.rs"]
+mod no_link_prepass_tests;
+#[cfg(test)]
 #[path = "parse/tests.rs"]
 mod tests;
 mod verse;
@@ -1062,6 +1065,23 @@ fn merge_note_link_defs(
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static FORCE_LINK_PREPASS: Cell<bool> = const { Cell::new(false) };
+}
+
+#[inline]
+fn force_link_prepass() -> bool {
+    #[cfg(test)]
+    {
+        return FORCE_LINK_PREPASS.with(Cell::get);
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
+
 fn parse_with_options_mode_and_index_once(
     source: &str,
     options: &Options<'_>,
@@ -1119,7 +1139,7 @@ fn parse_with_options_mode_and_index_once(
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, mut footnote_defs_src, mut footnote_def_pos, mut note_link_defs) =
+    let (mut body, mut footnote_defs_src, mut footnote_def_pos, mut note_link_defs) =
         if body.contains("[^") {
             extract_footnote_defs(
                 body,
@@ -1164,8 +1184,23 @@ fn parse_with_options_mode_and_index_once(
         options,
     );
     let mut link_def_probe_budget = probe_budget_for(body.source.len());
-    let (body_source, mut link_defs) =
-        extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
+    // The no-candidate prepass only joins the body's lines. Preserve that
+    // terminal newline in place and keep the already matching source map.
+    let no_link_prepass = options.extensions.is_empty()
+        && !source_may_contain_link_definition(&body.source)
+        && !body.source.contains('\r')
+        && !force_link_prepass();
+    let (body_source, mut link_defs) = if no_link_prepass {
+        clear_prepass_abbreviations();
+        if !body.source.is_empty() && !body.source.ends_with('\n') {
+            body.source.push('\n');
+        }
+        (None, BTreeMap::new())
+    } else {
+        let (source, defs) =
+            extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
+        (Some(source), defs)
+    };
     // These lines index the FOOTNOTE-REDUCED body: a multi-line footnote body
     // collapses to one placeholder line, so a definition written below it sits
     // at a lower reduced index than its authored line. Map each back to the
@@ -1189,7 +1224,10 @@ fn parse_with_options_mode_and_index_once(
         body.line_map.get(line).and_then(|mapped| *mapped)
     });
     merge_note_link_defs(&mut link_defs, note_link_defs);
-    let mut body = remap_source(body_source, &body);
+    let mut body = match body_source {
+        Some(source) => remap_source(source, &body),
+        None => body,
+    };
     if !options.positions && body.source.contains("%%%") && body.source.contains("::") {
         body.col_map = vec![Some(0); line_count(&body.source)];
     }
