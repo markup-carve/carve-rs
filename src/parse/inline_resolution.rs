@@ -363,6 +363,8 @@ pub(in crate::parse) struct HeadingScan<'a> {
     pub(in crate::parse) collect_crossrefs: bool,
     /// Build the rendered-heading-text map only for collapsed references.
     pub(in crate::parse) collect_heading_refs: bool,
+    /// Clone labels only for these ids; every title is still recorded.
+    pub(in crate::parse) label_targets: Option<&'a std::collections::BTreeSet<String>>,
 }
 
 /// A WORKLIST, for the same reason and with the same order discipline as
@@ -430,9 +432,14 @@ pub(in crate::parse) fn collect_heading_titles(
                     // A duplicate explicit id resolves to the first heading
                     // (PART 9R R4).
                     if scan.collect_crossrefs {
-                        scan.labels
-                            .entry(id.clone())
-                            .or_insert_with(|| crossref_label_nodes(&h.children));
+                        if scan
+                            .label_targets
+                            .map_or(true, |targets| targets.contains(&id))
+                        {
+                            scan.labels
+                                .entry(id.clone())
+                                .or_insert_with(|| crossref_label_nodes(&h.children));
+                        }
                         scan.titles.entry(id).or_insert(title);
                     } else if scan.collect_heading_refs {
                         // `resolve_ref` returns both the id and its title even

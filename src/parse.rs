@@ -1277,11 +1277,16 @@ fn parse_with_options_mode_and_index_once(
     // heading IDs have been stamped. An earlier index is only consumed by
     // late reference-link resolution or by the HTML facade renderer.
     let mut heading_index = if needs_late_link_resolution || matches!(mode, ParseMode::HtmlFacade) {
+        // The facade renders only the labels its own `</#id>` targets name.
+        let label_targets = (matches!(mode, ParseMode::HtmlFacade) && has_crossrefs)
+            .then(|| crossref_targets(&[source, authored]))
+            .flatten();
         heading_index(
             &doc,
             options.heading_id_options(),
             has_crossrefs,
             needs_late_link_resolution,
+            label_targets.as_ref(),
         )
         .0
     } else {
@@ -1319,7 +1324,13 @@ fn parse_with_options_mode_and_index_once(
         } else {
             BTreeMap::new()
         };
-        if matches!(mode, ParseMode::HtmlFacade) && options.extensions.is_empty() && has_crossrefs {
+        // Both passes register the same id'd numbered captions, so no titles
+        // means no caption targets to add.
+        if matches!(mode, ParseMode::HtmlFacade)
+            && options.extensions.is_empty()
+            && has_crossrefs
+            && !caption_titles.is_empty()
+        {
             heading_index.extend_captions(&doc);
             heading_index.extend_titles(caption_titles);
         }
