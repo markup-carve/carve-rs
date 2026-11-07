@@ -1183,12 +1183,10 @@ fn parse_with_options_mode_and_index_once(
         &mut note_link_defs,
         options,
     );
-    let mut link_def_probe_budget = probe_budget_for(body.source.len());
     // The no-candidate prepass only joins the body's lines. Preserve that
     // terminal newline in place and keep the already matching source map.
     let no_link_prepass = options.extensions.is_empty()
         && !source_may_contain_link_definition(&body.source)
-        && !body.source.contains('\r')
         && !force_link_prepass();
     let (body_source, mut link_defs) = if no_link_prepass {
         clear_prepass_abbreviations();
@@ -1197,6 +1195,7 @@ fn parse_with_options_mode_and_index_once(
         }
         (None, BTreeMap::new())
     } else {
+        let mut link_def_probe_budget = probe_budget_for(body.source.len());
         let (source, defs) =
             extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
         (Some(source), defs)
