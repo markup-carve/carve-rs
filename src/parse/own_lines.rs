@@ -2041,7 +2041,7 @@ impl<'a> Walk<'a> {
         let one_block = self.attached_ends_at(at);
         let attached = self.attached.take().expect("checked above");
         if one_block {
-            self.frames = attached.frames;
+            self.replace_frames(attached.frames);
         }
     }
 
@@ -2070,7 +2070,7 @@ impl<'a> Walk<'a> {
         {
             return;
         }
-        self.frames = attached.frames.clone();
+        self.replace_frames(attached.frames.clone());
     }
 
     fn restore_host_after_attached_closer(&mut self, inner: Option<&Frame>) {
@@ -2081,7 +2081,7 @@ impl<'a> Walk<'a> {
                 && inner.is_some_and(|frame| block.from + self.first_line == frame.line)
                 && block.frames.len() > self.frames.len()
         }) {
-            self.frames = host.frames.clone();
+            self.replace_frames(host.frames.clone());
         }
     }
 
@@ -2130,6 +2130,11 @@ impl<'a> Walk<'a> {
             reason,
             first_block,
         });
+    }
+
+    fn replace_frames(&mut self, frames: Vec<Frame>) {
+        self.has_closed_list = frames.iter().any(|frame| frame.closed_list.is_some());
+        self.frames = frames;
     }
 
     /// A line left of a closed list's column ends that list's shift.
@@ -2469,7 +2474,7 @@ impl<'a> Walk<'a> {
             self.frames.pop();
         }
         if let Some(frames) = resume.filter(|frames| frames.len() > self.frames.len()) {
-            self.frames = frames;
+            self.replace_frames(frames);
             *reached = self.frames.len() - 1;
         }
     }
@@ -2642,7 +2647,7 @@ impl<'a> Walk<'a> {
         }) && self.attached_ends_at(at)
         {
             let attached = self.attached.take().expect("checked above");
-            self.frames = attached.frames[..attached.frames.len() - 1].to_vec();
+            self.replace_frames(attached.frames[..attached.frames.len() - 1].to_vec());
         }
     }
 
