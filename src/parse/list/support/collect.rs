@@ -1,5 +1,49 @@
 use super::*;
 
+/// Keep a child list's sibling separator in the same collected body. A quote
+/// fold can admit its first item before the collector normally stops at child
+/// markers; the next compatible marker still belongs to that list (§11 N1).
+fn same_child_list_after_blank(cur: &LineCursor<'_>, indent: usize, collected: &[String]) -> bool {
+    let mut prior = cur.pos;
+    let mut blanks = 0;
+    while prior > 0 && is_blank_line(cur.lines.at(prior - 1)) {
+        prior -= 1;
+        blanks += 1;
+    }
+    if !(1..=2).contains(&blanks) || prior == 0 {
+        return false;
+    }
+    // The earlier marker must be in this body. A new collection can begin
+    // after the same physical blank, but it has no child list to continue.
+    if collected.len() < blanks + 1
+        || !collected
+            .iter()
+            .rev()
+            .take(blanks)
+            .all(|line| is_blank_line(line))
+        || !collected
+            .get(collected.len() - blanks - 1)
+            .is_some_and(|line| is_list_marker(line))
+    {
+        return false;
+    }
+    let Some(first) = detect_list_marker_full_at(cur.lines.at(prior - 1), indent) else {
+        return false;
+    };
+    let Some(next) = detect_list_marker_full_at(cur.lines.at(cur.pos), indent) else {
+        return false;
+    };
+    first.indent == indent
+        && next.indent == indent
+        && first.ordered == next.ordered
+        && first.checked.is_some() == next.checked.is_some()
+        && if first.ordered {
+            first.delim == next.delim && dialect_compatible(ol_dialect(first.ol_type), &next)
+        } else {
+            first.marker == next.marker
+        }
+}
+
 /// The same collection for a MARKER-LADDER item (`- - - x`), told the content
 /// columns its descendants opened.
 ///
@@ -1747,6 +1791,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && colon_open.is_empty()
             && !surviving_definition_body_column.is_some_and(|column| indent >= column)
             && !collected_body_ends_in_a_quote_fold(&lines)
+            && !same_child_list_after_blank(cur, indent, &lines)
         {
             break;
         }
