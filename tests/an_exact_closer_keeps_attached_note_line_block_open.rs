@@ -41,3 +41,10 @@ fn comment_inside_closed_attached_line_block_leaves_empty_verse() {
     assert!(html.contains("<div class=\"line-block\">\n\n      </div>"), "{html}");
     assert!(!html.contains("<p></p>"), "{html}");
 }
+
+#[test]
+fn definition_shaped_verse_before_closer_stays_in_attached_line_block() {
+    let html = render("[^a]: +\n::: |\n\n[^b]: b\n :::\n\n[^a]\n");
+    assert!(html.contains("<div class=\"line-block\">\n        <p>[^b]: b</p>\n      </div>"), "{html}");
+    assert!(!html.contains("<li id=\"fn2\">"), "{html}");
+}

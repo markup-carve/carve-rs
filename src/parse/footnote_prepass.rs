@@ -617,6 +617,7 @@ struct FootnoteScan<'a, 'o> {
     container_closers: Option<ContainerCommentClosers>,
     comment_closers: Option<HashMap<usize, usize>>,
     closer_index: Option<HashMap<u8, Vec<usize>>>,
+    line_block_closers: Option<HashMap<usize, Vec<usize>>>,
     // See ContentColumns: a definition on an item's CONTINUATION line carries no
     // marker, so without this the line kept its indentation, stopped looking
     // like a definition, and was neither collected nor rendered - the author's
@@ -675,6 +676,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             container_closers: None,
             comment_closers: None,
             closer_index: None,
+            line_block_closers: None,
             columns: ContentColumns::new(),
             previous_line: PreviousLine::default(),
             last_folded_marker: false,
@@ -1511,13 +1513,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                             .any(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(*run))
                 })
                 .and_then(|run| {
-                    lines[i..]
-                        .iter()
-                        .take_while(|line| {
-                            parse_footnote_def_line(trim_ascii_start(line)).is_none()
-                        })
-                        .position(|line| exact_colon_fence_len(trim_ascii_start(line)) == Some(run))
-                        .map(|offset| i + offset)
+                    let closers = self.line_block_closers.get_or_insert_with(|| {
+                        let mut index: HashMap<usize, Vec<usize>> = HashMap::new();
+                        for (at, line) in lines.iter().enumerate() {
+                            if let Some(width) = exact_colon_fence_len(trim_ascii_start(line)) {
+                                index.entry(width).or_default().push(at);
+                            }
+                        }
+                        index
+                    });
+                    let positions = closers.get(&run)?;
+                    positions
+                        .get(positions.partition_point(|&at| at < i))
+                        .copied()
                 });
             if later_line_block_closer.is_none()
                 && lines.get(i).is_some_and(|line| is_blank_line(line))
