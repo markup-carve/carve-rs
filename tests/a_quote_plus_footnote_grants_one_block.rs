@@ -34,6 +34,22 @@ fn an_explicit_quote_marker_continues_the_quote() {
 }
 
 #[test]
+fn the_nested_quote_keeps_its_lazy_paragraph() {
+    assert_eq!(
+        carve::to_html("> +\n[^n]: x\n> a\nplain\n"),
+        "<blockquote>\n  <blockquote><p>a\nplain</p></blockquote>\n</blockquote>"
+    );
+}
+
+#[test]
+fn a_later_quote_plus_is_literal_text() {
+    assert_eq!(
+        carve::to_html("> +\n[^n]: x\n> +\n> b\n"),
+        "<blockquote>\n  <blockquote><p>+\nb</p></blockquote>\n</blockquote>"
+    );
+}
+
+#[test]
 fn a_note_body_line_does_not_split_later_list_siblings() {
     assert_eq!(
         carve::to_html("> +\n[^n]: x\n  y\n  - a\n- end\n"),

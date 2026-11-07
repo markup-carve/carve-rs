@@ -1446,19 +1446,24 @@ pub(in crate::parse) fn collect_blockquote_body(
 ) -> (usize, Vec<LineBuffer>, bool) {
     let mut body = QuoteBody::new(cur.pos);
     while let Some(line) = cur.peek() {
+        let authored_column = || {
+            cur.source_line(cur.pos)
+                .map(|line| own_lines::authored_visual_column(line, 1))
+        };
         if body.granted_note {
-            let authored_column = cur
-                .source_line(cur.pos)
-                .map(|line| own_lines::authored_visual_column(line, 1));
-            if authored_column != Some(0) || strip_blockquote_prefix(line).is_none() {
+            if authored_column() != Some(0) || strip_blockquote_prefix(line).is_none() {
                 break;
             }
             body.granted_note = false;
-            let at = cur.pos;
-            body.inner
-                .push_at(line.to_string(), cur.source_line(at), cur.source_col(at));
-            body.last_quoted_at = Some(at);
-            cur.consume();
+            body.granted_nested_quote = true;
+            body.quoted_nested_line(cur, options, line);
+            continue;
+        }
+        if body.granted_nested_quote
+            && authored_column() == Some(0)
+            && strip_blockquote_prefix(line).is_some()
+        {
+            body.quoted_nested_line(cur, options, line);
             continue;
         }
         let quote_line = if cur.colon_view.is_some_and(|view| view.marker_hosted) {
@@ -1630,6 +1635,7 @@ struct QuoteBody<'a> {
     // line, and the closer that ends that fence.
     attached_fence_end: Option<(usize, String)>,
     granted_note: bool,
+    granted_nested_quote: bool,
     // The last quoted line was read on a description body's base.
     description_line: bool,
     literal_quote_body: Option<usize>,
@@ -1643,6 +1649,29 @@ struct QuoteBody<'a> {
 }
 
 impl<'a> QuoteBody<'a> {
+    fn quoted_nested_line(
+        &mut self,
+        cur: &mut LineCursor<'a>,
+        options: &Options<'_>,
+        line: &'a str,
+    ) {
+        let at = cur.pos;
+        let source_line = cur.source_line(at);
+        let prior = self.last_quoted_at.replace(at);
+        cur.consume();
+        self.read_quoted_line(
+            cur,
+            options,
+            QuotedLine {
+                line,
+                stripped: line,
+                at,
+                source_line,
+                prior,
+            },
+        );
+    }
+
     fn take_unmarked_comment_closer(&mut self, cur: &mut LineCursor<'a>, line: &str) -> bool {
         let Some((run, depth, _)) = self.comment_run else {
             return false;
@@ -1707,6 +1736,7 @@ impl<'a> QuoteBody<'a> {
             may_hold_fence: false,
             attached_fence_end: None,
             granted_note: false,
+            granted_nested_quote: false,
             description_line: false,
             literal_quote_body: None,
             last_quoted_at: None,

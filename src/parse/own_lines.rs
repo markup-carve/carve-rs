@@ -821,6 +821,7 @@ struct Walk<'a> {
     moved_span_end: Option<usize>,
     /// Plain lines folded into a quote-granted footnote definition.
     quote_note_body: bool,
+    quote_note_plus_line: bool,
 }
 
 struct Skipped {
@@ -1161,6 +1162,7 @@ fn walk_traced(
         next_visible: 0,
         moved_span_end: None,
         quote_note_body: false,
+        quote_note_plus_line: false,
     };
     if let Some(trace) = walk.trace.as_mut() {
         // INPUT: frontmatter lines are read before ownership.
@@ -2511,7 +2513,14 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn mark_quote_note_plus_line(&mut self, rest: &str) {
+        self.quote_note_plus_line = self.quote_note_body
+            && strip_blockquote_prefix(rest)
+                .is_some_and(|rest| is_cont_marker(trim_ascii_start(rest)));
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         self.end_attached_quote_at_blank(at, c.src);
         let tracing = self.trace_wants(at);
@@ -3422,7 +3431,8 @@ impl<'a> Walk<'a> {
             let mut refused = false;
             if self.decide && is_cont_marker(c.rest) {
                 // Past the one space after a `>` the `+` is the quote's text (corpus 646).
-                let quote_text = self.frames[frame].kind == Kind::Quote && c.col > 0;
+                let quote_text = self.quote_note_plus_line
+                    || self.frames[frame].kind == Kind::Quote && c.col > 0;
                 let column = self.frames[frame].doc_marker;
                 match if quote_text {
                     Err(Refusal::Right)
