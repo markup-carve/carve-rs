@@ -26,6 +26,7 @@ fn a_refused_list_hosted_description_plus_closes_the_quote() {
         "> - :: t\n>   : +\npara\n",
         "> 1. :: t\n>    : +\npara\n",
         "> - x\n>\n>   :: t\n>   : +\npara\n",
+        "> - > :: t\n>   > : +\npara\n",
     ] {
         let html = to_html(source);
         assert!(
