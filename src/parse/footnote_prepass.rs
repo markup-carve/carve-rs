@@ -1506,7 +1506,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     note.push_with(closer, None, |_| None);
                 }
             }
-            let caption_after_one_blank = lines.get(i).is_some_and(|line| is_blank_line(line))
+            let caption_after_one_blank = lead_is_quote
+                && lines.get(i).is_some_and(|line| is_blank_line(line))
                 && lines.get(i + 1).is_some_and(|line| {
                     indent_columns(line) >= container.content_column
                         && caption_content(trim_ascii_start(line)).is_some()
