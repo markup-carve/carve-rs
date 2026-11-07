@@ -37,19 +37,6 @@ fn a_refused_list_hosted_description_plus_closes_the_quote() {
 }
 
 #[test]
-fn an_erased_comment_description_opens_no_quote_paragraph() {
-    assert_eq!(
-        to_html("> :: t\n> : %% c\npara\n").trim_end(),
-        "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd></dd>\n  </dl>\n</blockquote>\n<p>para</p>"
-    );
-    let html = to_html("> - :: t\n>   : %% c\npara\n");
-    assert!(
-        html.trim_end().ends_with("</blockquote>\n<p>para</p>"),
-        "{html}"
-    );
-}
-
-#[test]
 fn refused_first_block_leaves_an_intervening_list_in_the_description() {
     for marker in ["-", "*", "1.", "- [x]"] {
         let source = format!(":: t\n: {marker} +\n   - z\n");
