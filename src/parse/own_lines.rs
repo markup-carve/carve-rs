@@ -2011,10 +2011,10 @@ impl<'a> Walk<'a> {
         };
         if !self.marker_line_attachment_host(attached)
             || self.frames.len() >= attached.frames.len()
-            || !self.attached_ends_at(at)
             || strip_quote_levels(src, attached.depth).map_or(true, |rest| {
                 doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
             })
+            || !self.attached_ends_at(at)
         {
             return;
         }
