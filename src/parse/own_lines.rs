@@ -1905,7 +1905,8 @@ impl<'a> Walk<'a> {
             return false;
         };
         let mut last = at;
-        while attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
+        while (attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
+            || self.marker_line_attachment_host(attached))
             && last > attached.from
             && strip_quote_levels(self.lines[last - 1], attached.depth).is_some_and(is_blank_line)
         {
@@ -1942,6 +1943,24 @@ impl<'a> Walk<'a> {
                 && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
                     >= refs.len()
         })
+    }
+
+    fn marker_line_attachment_host(&self, attached: &AttachedBlock) -> bool {
+        let host = attached.frames.last().expect("attached host");
+        // A definition term is an invisible lead for the attachment prepass;
+        // its following definition lines still belong to that prepass.
+        if self
+            .lines
+            .get(attached.from)
+            .is_some_and(|line| is_definition_list_start(trim_ascii_start(line)))
+        {
+            return false;
+        }
+        host.line
+            .checked_sub(self.first_line)
+            .and_then(|at| at.checked_add(1))
+            == Some(attached.from)
+            && (host.kind == Kind::Item || attached.frames.len() == 2)
     }
 
     /// A `+` right after the one block a `+` attached reaches the same host, whose
@@ -1983,6 +2002,34 @@ impl<'a> Walk<'a> {
         let attached = self.attached.take().expect("checked above");
         if one_block {
             self.frames = attached.frames;
+        }
+    }
+
+    fn resume_attached_host(&mut self, at: usize, src: &str) {
+        let Some(attached) = self.attached.as_ref() else {
+            return;
+        };
+        if !self.marker_line_attachment_host(attached)
+            || self.frames.len() >= attached.frames.len()
+            || strip_quote_levels(src, attached.depth).map_or(true, |rest| {
+                doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
+            })
+            || !self.attached_ends_at(at)
+        {
+            return;
+        }
+        self.frames = attached.frames.clone();
+    }
+
+    fn restore_host_after_attached_closer(&mut self, inner: Option<&Frame>) {
+        // The attached block has ended, but its marker host is still open for
+        // a later line at the host's content column.
+        if let Some(host) = self.attached.as_ref().filter(|block| {
+            self.marker_line_attachment_host(block)
+                && inner.is_some_and(|frame| block.from + self.first_line == frame.line)
+                && block.frames.len() > self.frames.len()
+        }) {
+            self.frames = host.frames.clone();
         }
     }
 
@@ -2591,6 +2638,7 @@ impl<'a> Walk<'a> {
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
         self.sibling = None;
         self.reopen_attached_host(at, c.src);
+        self.resume_attached_host(at, c.src);
         for k in 1..self.frames.len() {
             let f = &self.frames[k];
             if let Some((marker_col, _)) = f.marker {
@@ -2737,6 +2785,7 @@ impl<'a> Walk<'a> {
                         self.closed_comments.insert(frame.line);
                     }
                 }
+                self.restore_host_after_attached_closer(inner.as_ref());
                 self.top().last = last_after_closer(inner.as_ref());
             } else if line_block {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).

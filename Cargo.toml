@@ -399,6 +399,10 @@ name = "closed_first_block_attachment_boundary"
 path = "tests/closed_first_block_attachment_boundary.rs"
 
 [[test]]
+name = "host_resumes_after_attached_block"
+path = "tests/host_resumes_after_attached_block.rs"
+
+[[test]]
 name = "accepted_plus_closes_body_fences"
 path = "tests/accepted_plus_closes_body_fences.rs"
 
