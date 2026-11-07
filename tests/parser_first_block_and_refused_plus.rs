@@ -42,6 +42,11 @@ fn an_erased_comment_description_opens_no_quote_paragraph() {
         to_html("> :: t\n> : %% c\npara\n").trim_end(),
         "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd></dd>\n  </dl>\n</blockquote>\n<p>para</p>"
     );
+    let html = to_html("> - :: t\n>   : %% c\npara\n");
+    assert!(
+        html.trim_end().ends_with("</blockquote>\n<p>para</p>"),
+        "{html}"
+    );
 }
 
 #[test]
