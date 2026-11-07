@@ -2418,6 +2418,19 @@ impl<'a> Walk<'a> {
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
+        // The attached block stands outside the quote that granted its `+`.
+        // A blank ending that quote also ends the frames the block opened.
+        if self.attached.as_ref().is_some_and(|attached| {
+            attached
+                .frames
+                .last()
+                .is_some_and(|host| host.kind == Kind::Quote)
+                && is_blank_line(c.src)
+                && strip_quote_levels(c.src, attached.depth + 1).is_none()
+        }) {
+            let attached = self.attached.take().expect("checked above");
+            self.frames = attached.frames[..attached.frames.len() - 1].to_vec();
+        }
         let tracing = self.trace_wants(at);
         let line = self.first_line + at;
         let mut reached = 0;
