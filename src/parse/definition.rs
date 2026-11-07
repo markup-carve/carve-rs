@@ -2023,6 +2023,26 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // The residual is written back as the spaces the tab bought past
         // the margin, which is what makes the two spellings agree.
         let mut sliced = slice_columns(line, self.content_column.min(indent), true);
+        if indent > self.content_column
+            && self.lines.last().is_some_and(|prior| is_blank_line(prior))
+            && fence.open.is_none()
+            && !self.in_line_block()
+            && !self
+                .item_content_columns
+                .iter()
+                .any(|&column| column <= indent)
+            && !exact_colon_fence_len(trim_ascii_start(&sliced))
+                .is_some_and(|run| self.open_colons.closing_widths().any(|width| width == run))
+            && !exact_colon_fence_len(trim_ascii_start(&sliced)).is_some_and(|run| {
+                self.seed.lines().last().is_some_and(|seed| {
+                    is_list_marker(trim_ascii_start(seed))
+                        && exact_colon_fence_len(innermost_marker_content(seed)) == Some(run)
+                })
+            })
+            && is_colon_fence_opener_shape(trim_ascii_start(&sliced))
+        {
+            sliced = trim_ascii_start(&sliced).to_owned();
+        }
         let term_past_column = self
             .nested_definition_column
             .is_some_and(|term| indent < term)
