@@ -17,6 +17,7 @@ Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes la
 
 ### Fixes
 
+- A paragraph after a repeated `+` footnote definition is no longer dropped (#4076).
 - Block ownership follows the spec's single rule A walk, and the `+` attach rule, list looseness, forward-only `+` markers and the October/November rulings are ported (#3389, #3404, #3464, #3493, #3589, #3605, #3628, #3633, #3669, #3739, #3748, #3775).
 - Comment lines, `%%%` spans and erased one-line comments and definitions stay invisible to layout: spans end at their host's boundary, keep their payload columns and no longer split or loosen lists (#3337, #3343, #3344, #3497, #3546, #3593, #3620, #3624, #3634, #3639, #3640, #3644, #3657, #3663, #3670, #3672, #3677, #3685, #3694, #3718, #3735, #3738, #3741, #3745, #3751, #3753, #3756, #3760, #3773, #3782, #3784, #3792, #3795, #3797, #3799, #3800, #3801, #3803, #3813, #3829, #3830, #3837, #3850, #3851, #3852, #3862).
 - A `+` attaches to the block its ruling names, skips invisible lines, and a refused `+` stays paragraph text or is escaped (#3339, #3352, #3360, #3558, #3584, #3653, #3689, #3707, #3742, #3746, #3755, #3777, #3796, #3806, #3807, #3808, #3812, #3823, #3839, #3853, #3954, #3955, #4007, #4010, #4017, #4021, #4064).
