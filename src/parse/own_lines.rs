@@ -1479,8 +1479,20 @@ impl<'a> Walk<'a> {
                 if doc_column(line, text) != column || parse_footnote_def_line(text).is_none() {
                     break;
                 }
+                if self.offers_indented_body(next, host, column) {
+                    break;
+                }
+                let offered = self.offers_plus(next, host, column);
                 next += 1;
-                if self.losing_plus_duplicate(host, text) {
+                if offered {
+                    while self.lines.get(next).is_some_and(|body| {
+                        self.through_quotes(body, host).is_some_and(|level| {
+                            let text = trim_ws_start(level);
+                            foldable_plain_line(text) && doc_column(body, text) != column
+                        })
+                    }) {
+                        next += 1;
+                    }
                     continue;
                 }
                 while let Some(body) = self.lines.get(next) {
@@ -1676,7 +1688,27 @@ impl<'a> Walk<'a> {
         // skipped note's `+` is a letter of its body (carve#5034).
         let (host, from, end) = (skipped.host, skipped.at, skipped.end);
         let in_comment = in_span;
-        if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
+        // A skipped definition's lone `+` offers nothing: the block went to the
+        // earlier marker (carve#5474).
+        let nested_note = (!skipped.fenced.contains(&at))
+            .then(|| parse_footnote_def_line(rest))
+            .flatten();
+        // A skipped definition still defines its label (PART 9R R2).
+        if let Some((label, _)) = nested_note {
+            self.note_labels.insert(label_key(label));
+        }
+        let skipped = self.skipped.as_mut().expect("held above");
+        let nested_plus = nested_note
+            .filter(|(_, first)| is_cont_marker(first))
+            .map(|(_, first)| rest.len() - first.len());
+        if let Some(head) = nested_plus {
+            let column = doc_column(line, &rest[head..]);
+            c.out.push_str(&rest[..head]);
+            c.consume_marker(self.mark, self.lines[at]);
+            self.consumed.push(self.first_line + at);
+            self.refuse_plus(at, column, Some(Kind::Note), Refusal::Claimed, true);
+            self.refuse_line = false;
+        } else if !skipped.fenced.contains(&at) && is_plus_marker(rest) {
             let column = doc_column(line, rest);
             if column == skipped.column {
                 c.consume_marker(self.mark, self.lines[at]);
@@ -1788,9 +1820,18 @@ impl<'a> Walk<'a> {
                 if self.frames[host].kind == Kind::Quote {
                     return k;
                 }
+                // A later `+` definition offers the block below it: one indented
+                // under it is its body, so the look stops at the definition.
+                if self.offers_indented_body(k, host, column) {
+                    return k;
+                }
+                let offered = self.offers_plus(k, host, column);
                 k += 1;
-                let folds = !self.losing_plus_duplicate(host, rest);
-                while folds && k < self.lines.len() && foldable_plain_line(view(k)) {
+                while k < self.lines.len()
+                    && self.through_quotes(self.lines[k], host).is_some()
+                    && foldable_plain_line(view(k))
+                    && (!offered || doc_column(self.lines[k], view(k)) != column)
+                {
                     k += 1;
                 }
             } else if rest.starts_with("%%")
@@ -2080,6 +2121,14 @@ impl<'a> Walk<'a> {
                     .last()
                     .is_some_and(|host| host.kind == Kind::Note)
                     && quote_marker(trim_ascii_start(rest)).is_some());
+        // A losing duplicate's `+` line holds nothing: the block below it is
+        // read where it stands and the reader hands it to the earlier `+`.
+        if self
+            .losing_note_plus
+            .contains(&(self.first_line + attached.from))
+        {
+            return;
+        }
         if !self.marker_line_attachment_host(attached)
             || (self.frames.len() >= attached.frames.len() && !quoted_follower)
             || doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col
@@ -2216,26 +2265,37 @@ impl<'a> Walk<'a> {
         self.caption_ends_quote(reached, col, rest)
     }
 
-    /// A duplicate of the host note whose `+` folds no body (carve#5474).
-    fn losing_plus_duplicate(&self, host: usize, def_text: &str) -> bool {
-        let frame = &self.frames[host];
-        if frame.kind != Kind::Note {
+    /// A definition at `column` whose body is a lone `+`.
+    fn offers_plus(&self, k: usize, host: usize, column: usize) -> bool {
+        let line = self.lines[k];
+        self.through_quotes(line, host).is_some_and(|level| {
+            let text = trim_ws_start(level);
+            doc_column(line, text) == column
+                && parse_footnote_def_line(text).is_some_and(|(_, first)| is_cont_marker(first))
+        })
+    }
+
+    /// An offering definition whose next nonblank line stands in its body column.
+    fn offers_indented_body(&self, k: usize, host: usize, column: usize) -> bool {
+        if !self.offers_plus(k, host, column) {
             return false;
         }
-        let Some((label, first)) = parse_footnote_def_line(def_text) else {
-            return false;
-        };
-        trim_ascii(first) == "+"
-            && frame
-                .line
-                .checked_sub(self.first_line)
-                .and_then(|at| self.lines.get(at))
-                .and_then(|line| {
-                    parse_footnote_def_line(trim_ascii_start(innermost_marker_content(
-                        quoted_rest(line),
-                    )))
-                })
-                .is_some_and(|(own, _)| label_key(own) == label_key(label))
+        let mut body = k + 1;
+        while self.lines.get(body).is_some_and(|line| is_blank_line(line)) {
+            body += 1;
+        }
+        self.lines.get(body).is_some_and(|line| {
+            let text = trim_ws_start(self.through_quotes(line, host).unwrap_or(""));
+            doc_column(line, text) >= column + FOOTNOTE_BODY_COLUMN
+        })
+    }
+
+    fn losing_note_line(&self, frame: usize, at: usize) -> bool {
+        let f = &self.frames[frame];
+        f.kind == Kind::Note
+            && at > 0
+            && f.line == self.first_line + at - 1
+            && self.losing_note_plus.contains(&f.line)
     }
 
     fn losing_note_band(&self, col: usize) -> bool {
@@ -2785,6 +2845,11 @@ impl<'a> Walk<'a> {
     }
 
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        // A losing duplicate's `+` line holds nothing: the next line is read
+        // in the enclosing container (PART 9R R2, carve#5474).
+        if self.frames.len() > 1 && self.losing_note_line(self.frames.len() - 1, at) {
+            self.frames.pop();
+        }
         self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         self.end_attached_quote_at_blank(at, c.src);

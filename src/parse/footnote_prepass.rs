@@ -216,12 +216,15 @@ fn first_visible_note_line(lines: &[&str]) -> Option<usize> {
     let mut at = 0;
     while let Some(&line) = lines.get(at) {
         let text = trim_ascii_start(line);
-        if parse_footnote_def_line(text).is_some() {
+        if let Some((_, first)) = parse_footnote_def_line(text) {
             // A note definition's body belongs to the note (CARVE-P9-067, carve#5034).
+            // A comment body, such as a consumed `+`, holds no paragraph to fold into.
+            let folds = !is_line_comment_any_column(first);
             at += 1;
-            while lines
-                .get(at)
-                .is_some_and(|line| own_lines::foldable_plain_line(trim_ascii_start(line)))
+            while folds
+                && lines
+                    .get(at)
+                    .is_some_and(|line| own_lines::foldable_plain_line(trim_ascii_start(line)))
             {
                 at += 1;
             }
