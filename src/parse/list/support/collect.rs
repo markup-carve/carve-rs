@@ -681,8 +681,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !is_list_marker(line)
             && !interrupts_lazy_continuation_as_container(cur, trim_ascii_start(line));
         after_definition_blank |= is_blank_line(line);
-        let follows_first_block = (!lead_is_continuation
-            || item_block_opener(trim_ascii_start(line)))
+        let description_sibling = definition_list_column
+            .is_some_and(|column| indent_columns(line) == column)
+            && strip_description_prefix(trim_ascii_start(line)).is_some();
+        let follows_first_block = !description_sibling
+            && (!lead_is_continuation || item_block_opener(trim_ascii_start(line)))
             && cur.pos.checked_sub(1).is_some_and(|previous| {
                 !is_definition_placeholder(cur.lines.at(previous))
                     && cur

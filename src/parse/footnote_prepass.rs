@@ -2444,6 +2444,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let mut attached: Vec<String> = lines[i..]
             .iter()
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
+            .take_while(|line| {
+                !(host.description_host
+                    && indent_columns(line) < host.note_floor
+                    && (trim_ascii_start(line).starts_with(":: ")
+                        || strip_definition_marker(trim_ascii_start(line)).is_some()))
+            })
             .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
         if attached.is_empty() {
