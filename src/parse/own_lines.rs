@@ -2104,6 +2104,14 @@ impl<'a> Walk<'a> {
     }
 
     fn resume_attached_host(&mut self, at: usize, src: &str) {
+        // The attached host may resume after a descendant opaque block ends,
+        // but it cannot replace that block while its payload is still open.
+        if self.frames.last().is_some_and(|frame| {
+            frame.kind == Kind::Fence
+                && (frame.family == "comment" || indent_cols(src).0 >= frame.open_col)
+        }) {
+            return;
+        }
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
@@ -2151,6 +2159,30 @@ impl<'a> Walk<'a> {
             return;
         }
         self.replace_frames(attached.frames.clone());
+    }
+
+    fn lazy_shift(
+        &self,
+        at: usize,
+        owner: &Frame,
+        next: &Frame,
+        target: usize,
+        col: usize,
+        rest: &str,
+    ) -> usize {
+        let literal_plus_in_note = at > 0
+            && next.kind == Kind::Note
+            && next.line == self.first_line + at - 1
+            && parse_footnote_def_line(trim_ws_start(self.lines[at - 1]))
+                .is_some_and(|(_, first)| is_cont_marker(first))
+            && is_cont_marker(rest);
+        if literal_plus_in_note {
+            next.canon.saturating_sub(target)
+        } else if target == owner.canon && col >= target {
+            owner.shift
+        } else {
+            0
+        }
     }
 
     fn restore_host_after_attached_closer(&mut self, inner: Option<&Frame>) {
@@ -3136,11 +3168,9 @@ impl<'a> Walk<'a> {
                 .max(owner.canon)
                 .min(limit)
                 .min(c.col);
-            let shift = if target == owner.canon && c.col >= target {
-                owner.shift
-            } else {
-                0
-            };
+            // A marker-line `+` grants its first block to the note even when
+            // that block begins with an off-column `+` read as a letter.
+            let shift = self.lazy_shift(at, owner, next, target, c.col, c.rest);
             c.lead_in(target, shift, false);
             // A later item continuation can lose its column in a nested
             // collector and look like a caption beside an image. Marker-line
