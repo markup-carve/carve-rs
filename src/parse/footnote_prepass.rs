@@ -1432,12 +1432,53 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     Some(0)
                 });
             }
-            note.push_with(
-                lines[i].to_string(),
-                Some(self.first_source_line + i),
-                |_| Some(0),
-            );
-            return i + 1;
+            let blank_end = (i..lines.len())
+                .find(|&at| is_blank_line(lines[at]))
+                .unwrap_or(lines.len());
+            let end = detect_fence_open(trim_ascii_start(lines[i]))
+                .and_then(|open| {
+                    (i + 1..lines.len())
+                        .find(|&at| is_fence_close(trim_ascii_start(lines[at]), open))
+                })
+                .map_or(blank_end, |at| at + 1);
+            let first = trim_ascii_start(lines[i]);
+            let count =
+                if strip_blockquote_prefix(first).is_some() || detect_fence_open(first).is_some() {
+                    end - i
+                } else {
+                    attached_one_block_lines(CursorLines::Slice(&lines[i..end]), self.options)
+                };
+            let opener_column = {
+                let raw = lines[i];
+                let walked = raw.chars().count() - trim_ascii_start(raw).chars().count() + 1;
+                own_lines::authored_visual_column(self.first_source_line + i, walked)
+            };
+            for offset in 0..count {
+                let raw = lines[i + offset];
+                let kept = if is_blank_line(raw) {
+                    String::new()
+                } else {
+                    let text = trim_ascii_start(raw);
+                    let walked = raw.chars().count() - text.chars().count() + 1;
+                    let authored = own_lines::authored_visual_column(
+                        self.first_source_line + i + offset,
+                        walked,
+                    );
+                    format!(
+                        "{}{}",
+                        " ".repeat(authored.saturating_sub(opener_column)),
+                        text
+                    )
+                };
+                note.push_with(kept, Some(self.first_source_line + i + offset), |_| {
+                    Some(if offset == 0 {
+                        indent_columns(raw) as isize
+                    } else {
+                        0
+                    })
+                });
+            }
+            return i + count;
         }
         blank
     }
@@ -2540,6 +2581,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         structural_len: usize,
         description_host: bool,
     ) -> usize {
+        if self.pass_winning_note(note, i, def.label, def.first) {
+            return i;
+        }
         let (quote_indents, inside) = note_quote_host(raw_def_line, structural_len);
         let prefix_cols = inside.chars().count() - def.def_line.chars().count();
         let host = NoteHost {
@@ -2600,6 +2644,76 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             walk.opacity.comment = None;
         }
         let resume_at = self.next_hosted_non_blank(&host, i);
+        if plus_note && host.quote_depth > 0 && resume_at > i {
+            if let Some(raw) = self.lines.get(resume_at) {
+                if let Some(line) = host.content(raw) {
+                    let text = trim_ascii_start(line);
+                    let walked_col = raw.chars().count() - text.chars().count() + 1;
+                    let authored_col = own_lines::authored_visual_column(
+                        self.first_source_line + resume_at,
+                        walked_col,
+                    );
+                    // The ownership walk can strip the indentation of a list
+                    // pulled through a quote. Recover the authored column so
+                    // a list at the note floor stays in the note.
+                    if (is_list_marker(text) || item_block_opener(text))
+                        && authored_col >= host.note_floor + host.quote_depth * 2
+                    {
+                        for at in i..resume_at {
+                            self.push_hosted_blank(&host, note, at);
+                        }
+                        let mut candidates = Vec::new();
+                        for (offset, raw) in self.lines[resume_at..].iter().enumerate() {
+                            let Some(line) = host.content(raw) else {
+                                break;
+                            };
+                            let text = trim_ascii_start(line);
+                            if !is_blank_line(line) {
+                                let column = raw.chars().count() - text.chars().count() + 1;
+                                let authored = own_lines::authored_visual_column(
+                                    self.first_source_line + resume_at + offset,
+                                    column,
+                                );
+                                if authored < host.note_floor + host.quote_depth * 2 {
+                                    break;
+                                }
+                            }
+                            candidates.push(line);
+                        }
+                        let count = candidates.len();
+                        for (offset, line) in candidates.into_iter().enumerate() {
+                            let kept = if is_blank_line(line) {
+                                String::new()
+                            } else {
+                                let text = trim_ascii_start(line);
+                                let raw = self.lines[resume_at + offset];
+                                let walked = raw.chars().count() - text.chars().count() + 1;
+                                let authored = own_lines::authored_visual_column(
+                                    self.first_source_line + resume_at + offset,
+                                    walked,
+                                );
+                                format!(
+                                    "{}{}",
+                                    " ".repeat(authored.saturating_sub(authored_col)),
+                                    text
+                                )
+                            };
+                            note.push_with(
+                                kept,
+                                Some(self.first_source_line + resume_at + offset),
+                                |_| {
+                                    Some(
+                                        (self.lines[resume_at + offset].len() - line.len())
+                                            as isize,
+                                    )
+                                },
+                            );
+                        }
+                        return resume_at + count;
+                    }
+                }
+            }
+        }
         if resume_at >= self.lines.len() {
             self.keep_blanks_for_open_fence(&host, note, i, resume_at);
             return i;

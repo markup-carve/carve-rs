@@ -39,3 +39,84 @@ fn an_indented_note_shaped_line_does_not_panic() {
     let html = to_html(source);
     assert!(html.contains("<p>para<a href=\"#fnref2\""), "{html}");
 }
+
+#[test]
+fn a_list_or_description_host_passes_the_later_note_its_body() {
+    for (source, host) in [
+        (
+            "- [^m]: +\n  [^n]: +\n  [^n]: +\n\n    para\n\nsee[^m][^n]\n",
+            "<li></li>",
+        ),
+        (
+            ":: term\n: [^m]: +\n  [^n]: +\n  [^n]: +\n\n    para\n\nsee[^m][^n]\n",
+            "<dd></dd>",
+        ),
+    ] {
+        let html = to_html(source);
+        assert!(html.contains(host), "{source}\n{html}");
+        assert!(
+            html.contains("<p>para<a href=\"#fnref2\""),
+            "{source}\n{html}"
+        );
+    }
+}
+
+#[test]
+fn a_quoted_note_keeps_an_authored_indented_block() {
+    let inside =
+        to_html("> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n>   - item\n\nsee[^m][^n]\n");
+    assert!(
+        inside.starts_with("<blockquote>\n\n</blockquote>"),
+        "{inside}"
+    );
+    assert!(inside.contains("<li id=\"fn2\">\n      <ul>"), "{inside}");
+
+    let outside =
+        to_html("> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n> - item\n\nsee[^m][^n]\n");
+    assert!(outside.starts_with("<blockquote>\n  <ul>"), "{outside}");
+}
+
+#[test]
+fn the_winning_note_keeps_an_attached_blocks_continuation() {
+    for source in [
+        "[^m]: +\n[^n]: +\n[^n]: +\n\n  - item\n    continuation\n\nsee[^m][^n]\n",
+        "> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n>   - item\n>     continuation\n\nsee[^m][^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(html.contains("<li>item\ncontinuation</li>"), "{source}\n{html}");
+        assert!(!html.starts_with("<ul>"), "{source}\n{html}");
+    }
+}
+
+#[test]
+fn the_winning_note_keeps_blank_payload_inside_a_closed_fence() {
+    let html =
+        to_html("[^m]: +\n[^n]: +\n[^n]: +\n\n  ```x\n  code\n\n  more\n  ```\n\nsee[^m][^n]\n");
+    assert!(
+        html.contains("<pre><code class=\"language-x\">code\n\nmore\n</code></pre>"),
+        "{html}"
+    );
+    assert!(html.starts_with("<p>see"), "{html}");
+}
+
+#[test]
+fn hosted_quote_and_fence_continuations_stay_in_the_winning_note() {
+    for source in [
+        "- [^m]: +\n  [^n]: +\n  [^n]: +\n\n    > q\n    > continuation\n\nsee[^m][^n]\n",
+        "> [^m]: +\n> [^n]: +\n> [^n]: +\n>\n>   > q\n>   > continuation\n\nsee[^m][^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(
+            html.contains("<blockquote><p>q\ncontinuation</p></blockquote>"),
+            "{source}\n{html}"
+        );
+    }
+
+    for source in [
+        "- [^m]: +\n  [^n]: +\n  [^n]: +\n\n    ```x\n    code\n\n    more\n    ```\n\nsee[^m][^n]\n",
+        "> [^m]: +\n> [^n]: +\n> [^n]: +\n>\n>   ```x\n>   code\n>\n>   more\n>   ```\n\nsee[^m][^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(html.contains("<pre><code class=\"language-x\">code\n\nmore\n</code></pre>"), "{source}\n{html}");
+    }
+}
