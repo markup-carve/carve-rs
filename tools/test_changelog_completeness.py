@@ -116,7 +116,8 @@ class ChangelogCompletenessTests(unittest.TestCase):
             (root / "src/lib.rs").write_text("pub fn abandoned() {}\n")
             git("commit", "-qam", "Abandoned fix (#99)")
             git("revert", "--no-edit", "HEAD")
-            (root / "src/lib.rs").write_text("pub fn final_fix() {}\n")
+            revert_sha = git("rev-parse", "HEAD")
+            (root / "src/extra.rs").write_text("pub fn final_fix() {}\n")
             (root / "CHANGELOG.md").write_text("## [Unreleased]\n\nFinal fix (#100).\n\n## [0.1.7]\n\nReleased.\n")
             git("add", ".")
             git("commit", "-qm", "Final fix (#100)")
@@ -124,6 +125,40 @@ class ChangelogCompletenessTests(unittest.TestCase):
             with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}) as closes:
                 self.assertEqual(0, changelog.main())
             self.assertEqual(["100"], closes.call_args.args[2])
+
+            git("revert", "--no-edit", revert_sha)
+            output = io.StringIO()
+            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
+                self.assertEqual(3, changelog.main())
+            self.assertIn("#99 is not cited", output.getvalue())
+
+    def test_revert_of_prior_release_change_still_requires_a_citation(self):
+        with tempfile.TemporaryDirectory(prefix="carve-changelog-test-") as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            git("init", "-q")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            (root / "Cargo.toml").write_text('[package]\nversion = "0.1.7"\n')
+            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\n## [0.1.7]\n\nReleased.\n")
+            git("add", ".")
+            git("commit", "-qm", "Start release")
+            (root / "src").mkdir()
+            (root / "src/lib.rs").write_text("pub fn old_behavior() {}\n")
+            git("add", ".")
+            git("commit", "-qm", "Old behavior (#98)")
+            old_sha = git("rev-parse", "HEAD")
+            git("tag", "0.1.7")
+            git("revert", "--no-commit", old_sha)
+            git("commit", "-qm", "Remove old behavior (#101)", "-m", f"This reverts commit {old_sha}.")
+
+            output = io.StringIO()
+            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
+                self.assertEqual(3, changelog.main())
+            self.assertIn("#101 is not cited", output.getvalue())
 
 
 if __name__ == "__main__":

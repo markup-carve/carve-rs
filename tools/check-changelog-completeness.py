@@ -120,8 +120,7 @@ def main() -> int:
     # A reverted patch does not ship. Remove both sides of an explicit revert
     # pair before looking up their pull requests.
     history = git("log", "--first-parent", "--format=%H\x1f%s\x1f%b\x1e", rng).split("\x1e")
-    reverted = set()
-    reverts = set()
+    entries = {}
     for line in history:
         line = line.strip()
         if not line:
@@ -129,16 +128,20 @@ def main() -> int:
         sha, _, rest = line.partition("\x1f")
         _, _, body = rest.partition("\x1f")
         match = REVERTED_COMMIT.search(body)
-        if match:
-            reverted.add(match.group(1))
-            reverts.add(sha)
+        entries[sha] = match.group(1) if match else None
+    canceled = set()
+    # History runs newest first. Pair each effective revert with its target;
+    # a revert of that revert restores the original change to the audit.
+    for sha, target in entries.items():
+        if target in entries and sha not in canceled and target not in canceled:
+            canceled.update((sha, target))
     for line in history:
         line = line.strip()
         if not line:
             continue
         sha, _, rest = line.partition("\x1f")
         subject, _, _ = rest.partition("\x1f")
-        if sha in reverted or sha in reverts:
+        if sha in canceled:
             continue
         if not touches_shipped(git, sha):
             continue
