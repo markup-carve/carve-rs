@@ -2454,6 +2454,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let lead = first_visible_note_line(&attached_refs).unwrap_or(0);
         if line_starts_paragraph(trim_ascii_start(&attached[lead])) {
+            if host.description_host {
+                if let Some(at) = (lead + 1..attached.len()).find(|&at| {
+                    let line = host.content(lines[i + at]).unwrap_or(lines[i + at]);
+                    indent_columns(line) < host.note_floor
+                        && (trim_ascii_start(line).starts_with(":: ")
+                            || strip_definition_marker(trim_ascii_start(line)).is_some())
+                }) {
+                    attached.truncate(at);
+                }
+            }
             if let Some(at) = attached
                 .iter()
                 .skip(lead + 1)

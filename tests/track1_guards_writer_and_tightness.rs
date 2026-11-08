@@ -98,6 +98,26 @@ fn a_description_note_leaves_the_next_entry_to_the_list() {
     );
 }
 
+#[test]
+fn an_attached_note_paragraph_leaves_the_next_description_to_its_host() {
+    html(
+        ":: term\n: [^a]: +\n  flusha\n: next\n\nsee[^a]\n",
+        "<dl>\n  <dt>term</dt>\n  <dd></dd>\n  <dd>next</dd>\n</dl>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>flusha<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+    html(
+        "- :: term\n  : [^a]: +\n    flusha\n  : next\n\n  see[^a]\n",
+        "<ul>\n  <li>\n    <dl>\n      <dt>term</dt>\n      <dd></dd>\n      <dd>next</dd>\n    </dl>\n    <p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  </li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>flusha<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
+
+#[test]
+fn a_description_shaped_line_inside_an_attached_fence_remains_code() {
+    html(
+        ":: term\n: [^a]: +\n  ```\n:: literal\n  ```\n\nsee[^a]\n",
+        "<dl>\n  <dt>term</dt>\n  <dd></dd>\n</dl>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <pre><code>:: literal\n</code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
+
 // carve-rs#3569
 #[test]
 fn a_fence_in_a_div_in_a_description_opens_a_code_block() {
