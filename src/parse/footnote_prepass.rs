@@ -1739,10 +1739,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && !opens_code_fence(rest)
             // A descendant's closing fence ends its paragraph before a line
             // below this note's floor can ask for lazy continuation.
-            && !note.lines.last().is_some_and(|last| {
-                let text = trim_ascii_start(last);
-                detect_fence_open(text).is_some() || detect_comment_fence_line(text).is_some()
-            })
+            && (note.stanza.in_block() == Some(true)
+                || !note.lines.last().is_some_and(|last| {
+                    let text = trim_ascii_start(last);
+                    detect_fence_open(text).is_some() || detect_comment_fence_line(text).is_some()
+                }))
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
             let text = strip_lazy(rest);
