@@ -2161,6 +2161,30 @@ impl<'a> Walk<'a> {
         self.replace_frames(attached.frames.clone());
     }
 
+    fn lazy_shift(
+        &self,
+        at: usize,
+        owner: &Frame,
+        next: &Frame,
+        target: usize,
+        col: usize,
+        rest: &str,
+    ) -> usize {
+        let literal_plus_in_note = at > 0
+            && next.kind == Kind::Note
+            && next.line == self.first_line + at - 1
+            && parse_footnote_def_line(trim_ws_start(self.lines[at - 1]))
+                .is_some_and(|(_, first)| is_cont_marker(first))
+            && is_cont_marker(rest);
+        if literal_plus_in_note {
+            next.canon.saturating_sub(target)
+        } else if target == owner.canon && col >= target {
+            owner.shift
+        } else {
+            0
+        }
+    }
+
     fn restore_host_after_attached_closer(&mut self, inner: Option<&Frame>) {
         // The attached block has ended, but its marker host is still open for
         // a later line at the host's content column.
@@ -3146,19 +3170,7 @@ impl<'a> Walk<'a> {
                 .min(c.col);
             // A marker-line `+` grants its first block to the note even when
             // that block begins with an off-column `+` read as a letter.
-            let literal_plus_in_note = at > 0
-                && next.kind == Kind::Note
-                && next.line == self.first_line + at - 1
-                && parse_footnote_def_line(trim_ws_start(self.lines[at - 1]))
-                    .is_some_and(|(_, first)| is_cont_marker(first))
-                && is_cont_marker(c.rest);
-            let shift = if literal_plus_in_note {
-                next.canon.saturating_sub(target)
-            } else if target == owner.canon && c.col >= target {
-                owner.shift
-            } else {
-                0
-            };
+            let shift = self.lazy_shift(at, owner, next, target, c.col, c.rest);
             c.lead_in(target, shift, false);
             // A later item continuation can lose its column in a nested
             // collector and look like a caption beside an image. Marker-line
