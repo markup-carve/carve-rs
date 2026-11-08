@@ -1441,13 +1441,34 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         .find(|&at| is_fence_close(trim_ascii_start(lines[at]), open))
                 })
                 .map_or(blank_end, |at| at + 1);
-            let count = attached_one_block_lines(CursorLines::Slice(&lines[i..end]), self.options);
+            let first = trim_ascii_start(lines[i]);
+            let count =
+                if strip_blockquote_prefix(first).is_some() || detect_fence_open(first).is_some() {
+                    end - i
+                } else {
+                    attached_one_block_lines(CursorLines::Slice(&lines[i..end]), self.options)
+                };
+            let opener_column = {
+                let raw = lines[i];
+                let walked = raw.chars().count() - trim_ascii_start(raw).chars().count() + 1;
+                own_lines::authored_visual_column(self.first_source_line + i, walked)
+            };
             for offset in 0..count {
                 let raw = lines[i + offset];
-                let kept = if offset == 0 {
-                    trim_ascii_start(raw).to_string()
+                let kept = if is_blank_line(raw) {
+                    String::new()
                 } else {
-                    raw.to_string()
+                    let text = trim_ascii_start(raw);
+                    let walked = raw.chars().count() - text.chars().count() + 1;
+                    let authored = own_lines::authored_visual_column(
+                        self.first_source_line + i + offset,
+                        walked,
+                    );
+                    format!(
+                        "{}{}",
+                        " ".repeat(authored.saturating_sub(opener_column)),
+                        text
+                    )
                 };
                 note.push_with(kept, Some(self.first_source_line + i + offset), |_| {
                     Some(if offset == 0 {
@@ -2659,13 +2680,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                             }
                             candidates.push(line);
                         }
-                        let count =
-                            attached_one_block_lines(CursorLines::Slice(&candidates), self.options);
-                        for (offset, line) in candidates.into_iter().take(count).enumerate() {
-                            let kept = if offset == 0 {
-                                trim_ascii_start(line).to_string()
+                        let count = candidates.len();
+                        for (offset, line) in candidates.into_iter().enumerate() {
+                            let kept = if is_blank_line(line) {
+                                String::new()
                             } else {
-                                line.to_string()
+                                let text = trim_ascii_start(line);
+                                let raw = self.lines[resume_at + offset];
+                                let walked = raw.chars().count() - text.chars().count() + 1;
+                                let authored = own_lines::authored_visual_column(
+                                    self.first_source_line + resume_at + offset,
+                                    walked,
+                                );
+                                format!(
+                                    "{}{}",
+                                    " ".repeat(authored.saturating_sub(authored_col)),
+                                    text
+                                )
                             };
                             note.push_with(
                                 kept,

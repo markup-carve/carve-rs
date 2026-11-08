@@ -98,3 +98,25 @@ fn the_winning_note_keeps_blank_payload_inside_a_closed_fence() {
     );
     assert!(html.starts_with("<p>see"), "{html}");
 }
+
+#[test]
+fn hosted_quote_and_fence_continuations_stay_in_the_winning_note() {
+    for source in [
+        "- [^m]: +\n  [^n]: +\n  [^n]: +\n\n    > q\n    > continuation\n\nsee[^m][^n]\n",
+        "> [^m]: +\n> [^n]: +\n> [^n]: +\n>\n>   > q\n>   > continuation\n\nsee[^m][^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(
+            html.contains("<blockquote><p>q\ncontinuation</p></blockquote>"),
+            "{source}\n{html}"
+        );
+    }
+
+    for source in [
+        "- [^m]: +\n  [^n]: +\n  [^n]: +\n\n    ```x\n    code\n\n    more\n    ```\n\nsee[^m][^n]\n",
+        "> [^m]: +\n> [^n]: +\n> [^n]: +\n>\n>   ```x\n>   code\n>\n>   more\n>   ```\n\nsee[^m][^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(html.contains("<pre><code class=\"language-x\">code\n\nmore\n</code></pre>"), "{source}\n{html}");
+    }
+}
