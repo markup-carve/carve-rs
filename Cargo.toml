@@ -497,3 +497,7 @@ path = "tests/ended_attached_fence_follower.rs"
 [[test]]
 name = "losing_duplicate_plus_lines_5502"
 path = "tests/losing_duplicate_plus_lines_5502.rs"
+
+[[test]]
+name = "interleaved_note_duplicate_5528"
+path = "tests/interleaved_note_duplicate_5528.rs"
