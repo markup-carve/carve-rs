@@ -2212,6 +2212,16 @@ impl<'a> Walk<'a> {
         self.caption_ends_quote(reached, col, rest)
     }
 
+    fn losing_note_band(&self, col: usize) -> bool {
+        self.frames.last().is_some_and(|frame| {
+            frame.kind == Kind::Note
+                && self.losing_note_plus.contains(&frame.line)
+                && frame
+                    .marker
+                    .is_some_and(|(marker, _)| col > marker && col < frame.col)
+        })
+    }
+
     /// A caption at its owner's block column attaches to a quote and ends it (CARVE-P2-008).
     fn caption_ends_quote(&self, reached: usize, col: usize, rest: &str) -> bool {
         is_caption(rest)
@@ -2970,15 +2980,8 @@ impl<'a> Walk<'a> {
         let marker_ends_unquoted_description = self.marker_ends_unquoted_description(c.col, c.rest);
         // A separator at a surviving item's marker column cannot be the lazy
         // text of an unquoted description held by that item (PART 0 S4).
-        let losing_note_band = self.frames.last().is_some_and(|frame| {
-            frame.kind == Kind::Note
-                && self.losing_note_plus.contains(&frame.line)
-                && frame
-                    .marker
-                    .is_some_and(|(marker, _)| c.col > marker && c.col < frame.col)
-        });
         let lazy_refused = marker_ends_unquoted_description
-            || losing_note_band
+            || self.losing_note_band(c.col)
             || self.lazy_refused(reached, c.col, c.rest);
         if missed
             && !c.rest.is_empty()
@@ -3766,21 +3769,29 @@ impl<'a> Walk<'a> {
                         self.refuse_line = false;
                         refused = true;
                         let in_note = self.frames[..frame].iter().any(|f| f.kind == Kind::Note);
-                        let next_repeats_note = self.lines.get(at + 1).is_some_and(|next| {
-                            let note = |line| {
-                                parse_footnote_def_line(trim_ascii_start(innermost_marker_content(
-                                    quoted_rest(line),
-                                )))
-                            };
-                            note(self.lines[at]).zip(note(next)).is_some_and(
-                                |((label, _), (following, _))| {
-                                    label_key(label) == label_key(following)
-                                },
-                            )
-                        });
+                        let duplicate_band_follower = self
+                            .lines
+                            .get(at + 1)
+                            .zip(self.lines.get(at + 2))
+                            .is_some_and(|(next, follower)| {
+                                let note = |line| {
+                                    parse_footnote_def_line(trim_ascii_start(
+                                        innermost_marker_content(quoted_rest(line)),
+                                    ))
+                                };
+                                let (note_col, _) = quoted_measure(next);
+                                let (follower_col, follower_text) = quoted_measure(follower);
+                                note(self.lines[at]).zip(note(next)).is_some_and(
+                                    |((label, _), (following, _))| {
+                                        label_key(label) == label_key(following)
+                                    },
+                                ) && follower_col > note_col
+                                    && follower_col < note_col + FOOTNOTE_BODY_COLUMN
+                                    && foldable_plain_line(follower_text)
+                            });
                         if (host == Kind::Note || (host == Kind::Item && in_note))
                             && !self.losing_note_plus.contains(&(self.first_line + at))
-                            && !next_repeats_note
+                            && !duplicate_band_follower
                         {
                             let lead = c.out.rfind("[^").map_or("", |end| &c.out[..end]);
                             let lead: String = lead

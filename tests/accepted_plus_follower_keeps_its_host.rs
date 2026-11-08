@@ -32,3 +32,11 @@ fn repeated_marker_lines_keep_the_follower_outside() {
         assert!(html.starts_with("<p>flush</p>\n<p>see"), "{input}: {html}");
     }
 }
+
+#[test]
+fn a_winning_note_plus_before_a_repeated_other_label_stays_consumed() {
+    let input = "[^a]: +\n[^b]: +\n[^b]: +\n\nsee[^b]\n";
+    let html = to_html(input);
+    assert!(html.contains("<li id=\"fn1\">"), "{html}");
+    assert!(!html.contains("<p>+"), "{html}");
+}
