@@ -1433,9 +1433,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 });
             }
             note.push_with(
-                lines[i].to_string(),
+                trim_ascii_start(lines[i]).to_string(),
                 Some(self.first_source_line + i),
-                |_| Some(0),
+                |_| Some(indent_columns(lines[i]) as isize),
             );
             return i + 1;
         }
@@ -2540,6 +2540,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         structural_len: usize,
         description_host: bool,
     ) -> usize {
+        if self.pass_winning_note(note, i, def.label, def.first) {
+            return i;
+        }
         let (quote_indents, inside) = note_quote_host(raw_def_line, structural_len);
         let prefix_cols = inside.chars().count() - def.def_line.chars().count();
         let host = NoteHost {
@@ -2600,6 +2603,34 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             walk.opacity.comment = None;
         }
         let resume_at = self.next_hosted_non_blank(&host, i);
+        if plus_note && host.quote_depth > 0 && resume_at > i {
+            if let Some(raw) = self.lines.get(resume_at) {
+                if let Some(line) = host.content(raw) {
+                    let text = trim_ascii_start(line);
+                    let walked_col = raw.chars().count() - text.chars().count() + 1;
+                    let authored_col = own_lines::authored_visual_column(
+                        self.first_source_line + resume_at,
+                        walked_col,
+                    );
+                    // The ownership walk can strip the indentation of a list
+                    // pulled through a quote. Recover the authored column so
+                    // a list at the note floor stays in the note.
+                    if (is_list_marker(text) || item_block_opener(text))
+                        && authored_col >= host.note_floor + host.quote_depth * 2
+                    {
+                        for at in i..resume_at {
+                            self.push_hosted_blank(&host, note, at);
+                        }
+                        note.push_with(
+                            text.to_string(),
+                            Some(self.first_source_line + resume_at),
+                            |_| Some(walked_col as isize - 1),
+                        );
+                        return resume_at + 1;
+                    }
+                }
+            }
+        }
         if resume_at >= self.lines.len() {
             self.keep_blanks_for_open_fence(&host, note, i, resume_at);
             return i;

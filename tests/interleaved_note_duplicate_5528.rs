@@ -39,3 +39,39 @@ fn an_indented_note_shaped_line_does_not_panic() {
     let html = to_html(source);
     assert!(html.contains("<p>para<a href=\"#fnref2\""), "{html}");
 }
+
+#[test]
+fn a_list_or_description_host_passes_the_later_note_its_body() {
+    for (source, host) in [
+        (
+            "- [^m]: +\n  [^n]: +\n  [^n]: +\n\n    para\n\nsee[^m][^n]\n",
+            "<li></li>",
+        ),
+        (
+            ":: term\n: [^m]: +\n  [^n]: +\n  [^n]: +\n\n    para\n\nsee[^m][^n]\n",
+            "<dd></dd>",
+        ),
+    ] {
+        let html = to_html(source);
+        assert!(html.contains(host), "{source}\n{html}");
+        assert!(
+            html.contains("<p>para<a href=\"#fnref2\""),
+            "{source}\n{html}"
+        );
+    }
+}
+
+#[test]
+fn a_quoted_note_keeps_an_authored_indented_block() {
+    let inside =
+        to_html("> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n>   - item\n\nsee[^m][^n]\n");
+    assert!(
+        inside.starts_with("<blockquote>\n\n</blockquote>"),
+        "{inside}"
+    );
+    assert!(inside.contains("<li id=\"fn2\">\n      <ul>"), "{inside}");
+
+    let outside =
+        to_html("> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n> - item\n\nsee[^m][^n]\n");
+    assert!(outside.starts_with("<blockquote>\n  <ul>"), "{outside}");
+}
