@@ -3814,14 +3814,64 @@ pub(super) fn has_multiline_braced_comment(source: &str) -> bool {
     let mut rest = source;
     while let Some(open) = rest.find("{%") {
         rest = &rest[open + 2..];
-        match (rest.find("%}"), rest.find(['\n', '\r'])) {
-            (Some(close), Some(line_end)) if line_end < close => return true,
-            (None, Some(_)) => return true,
-            (Some(close), _) => rest = &rest[close + 2..],
-            (None, None) => return false,
+        let mut at = 0;
+        loop {
+            let Some(next) = memchr::memchr3(b'%', b'\n', b'\r', &rest.as_bytes()[at..]) else {
+                return false;
+            };
+            at += next;
+            match rest.as_bytes()[at] {
+                b'\n' | b'\r' => return true,
+                b'%' if rest.as_bytes().get(at + 1) == Some(&b'}') => {
+                    rest = &rest[at + 2..];
+                    break;
+                }
+                _ => at += 1,
+            }
         }
     }
     false
+}
+
+#[cfg(test)]
+#[test]
+fn braced_comment_boundary_precheck_stops_at_each_closer() {
+    assert!(!has_multiline_braced_comment("{% a %} {% b %}\n{% c %}"));
+    assert!(has_multiline_braced_comment("{% a %} {% b\n c %}"));
+    assert!(has_multiline_braced_comment("{% a %} {% b\r c %}"));
+    assert!(has_multiline_braced_comment("{% a %}\n{% b\n"));
+    assert!(!has_multiline_braced_comment("{% a"));
+}
+
+#[cfg(test)]
+#[test]
+fn braced_comment_boundary_precheck_preserves_prior_decisions() {
+    fn prior(source: &str) -> bool {
+        let mut rest = source;
+        while let Some(open) = rest.find("{%") {
+            rest = &rest[open + 2..];
+            match (rest.find("%}"), rest.find(['\n', '\r'])) {
+                (Some(close), Some(line_end)) if line_end < close => return true,
+                (None, Some(_)) => return true,
+                (Some(close), _) => rest = &rest[close + 2..],
+                (None, None) => return false,
+            }
+        }
+        false
+    }
+
+    let parts = ["{%", "%}", "x", "\n", "\r", "%", "{", "}"];
+    for variant in 0..1024usize {
+        let mut source = String::from("{%");
+        for shift in (0..15).step_by(3) {
+            source.push_str(parts[(variant >> shift) & 7]);
+        }
+        assert_eq!(
+            has_multiline_braced_comment(&source),
+            prior(&source),
+            "{source:?}"
+        );
+    }
 }
 
 #[cfg(feature = "experimental-event-parser-options")]
