@@ -509,3 +509,7 @@ path = "tests/interleaved_note_duplicate_5528.rs"
 [[test]]
 name = "nested_note_lazy_4106"
 path = "tests/nested_note_lazy_4106.rs"
+
+[[test]]
+name = "quote_fence_prepass_4107"
+path = "tests/quote_fence_prepass_4107.rs"

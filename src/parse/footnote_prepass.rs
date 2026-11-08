@@ -801,6 +801,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let line = lines[i];
         let folded_fence = detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
             !self.closer_maxima.has_run_after(i, open)
+                && !i.checked_sub(1).is_some_and(|above| {
+                    strip_blockquote_prefix(trim_ascii_start(lines[above])).is_some()
+                        && strip_blockquote_prefix(trim_ascii_start(line)).is_none()
+                })
                 && prepass_paragraph_open_above(lines, i, &[], &self.folded_into_term)
         });
         // A footnote definition is collected at the top level AND from inside a
@@ -853,13 +857,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let mut fence_col = None;
         let fence_line = match self.folded_into_term.fence_openers.get(&i) {
             Some(host) => &line[host.opener_offset..],
-            None if content_col > 0 && !stripped.description => {
+            None if !folded_fence && !stripped.description => {
                 // As `extract_link_defs_with_guard_full`: a fence at an item's
                 // content column is payload for both collectors.
                 let kept = strip_container_prefixes_keep_indent(line);
                 let kept_indent = leading_ws(&kept);
                 let authored = trim_ascii_start(&kept);
                 if kept_indent >= content_col
+                    && (content_col > 0 || kept_indent <= 3)
                     && line.ends_with(authored)
                     && detect_fence_open(authored).is_some()
                 {
