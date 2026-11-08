@@ -497,8 +497,11 @@ pub(crate) fn attached_block_end(
     while end < lines.len() {
         let line = lines.at(end);
         if unclosed_fence {
-            // The unclosed fence's payload: no opener inside it opens anything.
-            if is_blank_line(line) || is_boundary(line, end) {
+            // The unclosed fence's payload: no opener inside it opens anything,
+            // and a lone `+` stays payload (PART 9 §17 L3, carve#5494).
+            if is_blank_line(line)
+                || (is_boundary(line, end) && !is_plus_marker(trim_ascii_start(line)))
+            {
                 break;
             }
             end += 1;
