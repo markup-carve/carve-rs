@@ -1395,7 +1395,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 })
             }) {
                 let scan = self.observe_line(i);
-                let duplicate = self.definition_at(i, &scan).expect("duplicate definition");
+                let Some(duplicate) = self.definition_at(i, &scan) else {
+                    break;
+                };
                 self.push_definition_replacement(
                     lines[i],
                     &duplicate,

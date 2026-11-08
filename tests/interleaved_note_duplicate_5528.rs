@@ -32,3 +32,10 @@ fn later_note_owns_a_list_after_the_losing_duplicate() {
         "{html}"
     );
 }
+
+#[test]
+fn an_indented_note_shaped_line_does_not_panic() {
+    let source = "[^m]: +\n[^n]: +\n  [^n]: +\n\n  para\n\nsee[^m][^n]\n";
+    let html = to_html(source);
+    assert!(html.contains("<p>para<a href=\"#fnref2\""), "{html}");
+}
