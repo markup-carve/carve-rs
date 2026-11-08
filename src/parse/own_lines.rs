@@ -790,7 +790,7 @@ fn trace_form(form: &Form) -> &'static str {
 struct Walk<'a> {
     lines: Vec<&'a str>,
     frames: Vec<Frame>,
-    first_note_plus: std::collections::HashMap<String, bool>,
+    note_labels: HashSet<String>,
     losing_note_plus: HashSet<usize>,
     reach: usize,
     runs: std::cell::OnceCell<Runs>,
@@ -1163,7 +1163,7 @@ fn walk_traced(
     let mut walk = Walk {
         lines: body.split('\n').collect(),
         frames: vec![Frame::new(Kind::Doc)],
-        first_note_plus: Default::default(),
+        note_labels: Default::default(),
         losing_note_plus: Default::default(),
         reach: 0,
         runs: std::cell::OnceCell::new(),
@@ -1480,6 +1480,9 @@ impl<'a> Walk<'a> {
                     break;
                 }
                 next += 1;
+                if self.losing_plus_duplicate(host, text) {
+                    continue;
+                }
                 while let Some(body) = self.lines.get(next) {
                     let Some(level) = self.through_quotes(body, host) else {
                         break;
@@ -1786,7 +1789,8 @@ impl<'a> Walk<'a> {
                     return k;
                 }
                 k += 1;
-                while k < self.lines.len() && foldable_plain_line(view(k)) {
+                let folds = !self.losing_plus_duplicate(host, rest);
+                while folds && k < self.lines.len() && foldable_plain_line(view(k)) {
                     k += 1;
                 }
             } else if rest.starts_with("%%")
@@ -2210,6 +2214,28 @@ impl<'a> Walk<'a> {
 
     fn lazy_refused(&self, reached: usize, col: usize, rest: &str) -> bool {
         self.caption_ends_quote(reached, col, rest)
+    }
+
+    /// A duplicate of the host note whose `+` folds no body (carve#5474).
+    fn losing_plus_duplicate(&self, host: usize, def_text: &str) -> bool {
+        let frame = &self.frames[host];
+        if frame.kind != Kind::Note {
+            return false;
+        }
+        let Some((label, first)) = parse_footnote_def_line(def_text) else {
+            return false;
+        };
+        trim_ascii(first) == "+"
+            && frame
+                .line
+                .checked_sub(self.first_line)
+                .and_then(|at| self.lines.get(at))
+                .and_then(|line| {
+                    parse_footnote_def_line(trim_ascii_start(innermost_marker_content(
+                        quoted_rest(line),
+                    )))
+                })
+                .is_some_and(|(own, _)| label_key(own) == label_key(label))
     }
 
     fn losing_note_band(&self, col: usize) -> bool {
@@ -3608,16 +3634,9 @@ impl<'a> Walk<'a> {
             Form::Note(head) => {
                 if let Some((label, first)) = parse_footnote_def_line(c.rest) {
                     let plus = trim_ascii(first) == "+";
-                    match self.first_note_plus.entry(label_key(label)) {
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            entry.insert(plus);
-                        }
-                        std::collections::hash_map::Entry::Occupied(entry)
-                            if *entry.get() && plus =>
-                        {
-                            self.losing_note_plus.insert(self.first_line + at);
-                        }
-                        _ => {}
+                    // A losing duplicate's `+` takes nothing (carve#5474).
+                    if !self.note_labels.insert(label_key(label)) && plus {
+                        self.losing_note_plus.insert(self.first_line + at);
                     }
                 }
                 self.push_marker(
@@ -3740,7 +3759,12 @@ impl<'a> Walk<'a> {
         if matches!(form, Form::Text) {
             let mut taken = false;
             let mut refused = false;
-            if self.decide && is_cont_marker(c.rest) {
+            // A losing duplicate's `+` takes nothing and holds no paragraph (carve#5474).
+            let losing = self.frames[frame].kind == Kind::Note
+                && self.losing_note_plus.contains(&self.frames[frame].line);
+            if self.decide && losing {
+                refused = true;
+            } else if self.decide && is_cont_marker(c.rest) {
                 // Past the one space after a `>` the `+` is the quote's text (corpus 646).
                 let quote_text = self.quote_note_plus_line
                     || self.frames[frame].kind == Kind::Quote && c.col > 0;
@@ -3790,7 +3814,6 @@ impl<'a> Walk<'a> {
                                     && foldable_plain_line(follower_text)
                             });
                         if (host == Kind::Note || (host == Kind::Item && in_note))
-                            && !self.losing_note_plus.contains(&(self.first_line + at))
                             && !duplicate_band_follower
                         {
                             let lead = c.out.rfind("[^").map_or("", |end| &c.out[..end]);
@@ -3817,7 +3840,7 @@ impl<'a> Walk<'a> {
             let f = &mut self.frames[frame];
             let empty_item = refused && f.kind == Kind::Item;
             f.absorbs = absorbs;
-            f.para = !taken && (!refused || in_note);
+            f.para = !taken && !losing && (!refused || in_note);
             f.last = if empty_item { Last::None } else { Last::Para };
             if taken {
                 f.plus = Some(at);
