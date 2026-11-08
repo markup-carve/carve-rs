@@ -77,7 +77,6 @@ VERSION_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 PULL_REQUEST = re.compile(r"\(#(\d+)\)\s*$")
 # A merge commit names it in GitHub's own subject instead.
 MERGED_PULL_REQUEST = re.compile(r"^Merge pull request #(\d+) from ")
-REVERTED_COMMIT = re.compile(r"^This reverts commit ([0-9a-f]{40})\.$", re.M)
 # A qualified reference to ANOTHER repository is not a citation of this one, so
 # the owner is checked rather than grepping for a bare `#N`.
 REFERENCE = re.compile(r"(?:([A-Za-z0-9._-]+/[A-Za-z0-9._-]+))?#(\d+)\b")
@@ -117,32 +116,11 @@ def main() -> int:
     # What merged, and what of it touched shipped source.
     shipping: dict[str, str] = {}
     unattributed: list[tuple[str, str]] = []
-    # A reverted patch does not ship. Remove both sides of an explicit revert
-    # pair before looking up their pull requests.
-    history = git("log", "--first-parent", "--format=%H\x1f%s\x1f%b\x1e", rng).split("\x1e")
-    entries = {}
-    for line in history:
-        line = line.strip()
+    # First parent only: a merged branch's own commits arrive with its merge.
+    for line in git("log", "--first-parent", "--format=%H\x1f%s", rng).splitlines():
         if not line:
             continue
-        sha, _, rest = line.partition("\x1f")
-        _, _, body = rest.partition("\x1f")
-        match = REVERTED_COMMIT.search(body)
-        entries[sha] = match.group(1) if match else None
-    canceled = set()
-    # History runs newest first. Pair each effective revert with its target;
-    # a revert of that revert restores the original change to the audit.
-    for sha, target in entries.items():
-        if target in entries and sha not in canceled and target not in canceled:
-            canceled.update((sha, target))
-    for line in history:
-        line = line.strip()
-        if not line:
-            continue
-        sha, _, rest = line.partition("\x1f")
-        subject, _, _ = rest.partition("\x1f")
-        if sha in canceled:
-            continue
+        sha, _, subject = line.partition("\x1f")
         if not touches_shipped(git, sha):
             continue
         m = PULL_REQUEST.search(subject) or MERGED_PULL_REQUEST.search(subject)
@@ -151,7 +129,10 @@ def main() -> int:
             continue
         shipping.setdefault(m.group(1), PULL_REQUEST.sub("", subject).strip())
 
-    closes = closing_issues(owner, name, list(shipping), shipping)
+    exemptions, malformed = read_exemptions(root)
+    # Exemptions can include a stale issue number in a commit's PR suffix.
+    # There is no pull request to query for such an entry.
+    closes = closing_issues(owner, name, [n for n in shipping if n not in exemptions], shipping)
     if closes is None:
         return 1
 
@@ -171,8 +152,6 @@ def main() -> int:
         if qualifier and qualifier.lower() != slug.lower():
             continue
         cited.add(number)
-
-    exemptions, malformed = read_exemptions(root)
 
     missing: list[tuple[str, str]] = []
     skipped: list[tuple[str, str, str]] = []

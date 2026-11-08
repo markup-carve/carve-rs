@@ -51,3 +51,4 @@
 3141: writer escape comments only; no output or API behavior changed.
 3145: internal function extraction to lower complexity; no output or public API behavior changed.
 3148: CI complexity threshold only; no runtime behavior changed.
+3951: caption abbreviation expansion in c251ff5a was reverted by 6be2c26f before release; the shipped fix is #3953. This suffix names an issue, not a PR.

@@ -39,9 +39,15 @@ class ChangelogCompletenessTests(unittest.TestCase):
             git("add", ".")
             git("commit", "-qm", "Fix parser (#99)")
 
+            queried = []
+
+            def closing(owner, name, numbers, titles):
+                queried.append(numbers)
+                return {}
+
             def run(*args):
                 output = io.StringIO()
-                with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo", *args]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
+                with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo", *args]), patch.object(changelog, "closing_issues", side_effect=closing), contextlib.redirect_stdout(output):
                     status = changelog.main()
                 return status, output.getvalue()
 
@@ -50,6 +56,9 @@ class ChangelogCompletenessTests(unittest.TestCase):
             self.assertIn("#99 is not cited in the Unreleased section", output)
             self.assertIn("since 0.1.7", output)
             self.assertEqual(0, run("0.1.7")[0])
+            (root / ".changelog-exempt").write_text("99: reverted before release\n")
+            self.assertEqual(0, run()[0])
+            self.assertEqual([], queried[-1], "an exempt number is not queried as a PR")
             (root / ".changelog-exempt").write_text("not an exemption\n")
             self.assertEqual(1, run()[0], "a malformed exemption file is a broken check, not drift")
             (root / ".changelog-exempt").unlink()
@@ -95,70 +104,6 @@ class ChangelogCompletenessTests(unittest.TestCase):
             (root / "CHANGELOG.md").write_text("## [Unreleased]\n\nFix (#100).\n\n## [0.1.7]\n\nReleased.\n")
             git("commit", "-qam", "Document fix")
             self.assertEqual(0, run()[0])
-
-    def test_reverted_source_commit_does_not_require_a_pull_request(self):
-        with tempfile.TemporaryDirectory(prefix="carve-changelog-test-") as directory:
-            root = Path(directory)
-
-            def git(*args):
-                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
-
-            git("init", "-q")
-            git("config", "user.email", "test@example.invalid")
-            git("config", "user.name", "Test")
-            (root / "Cargo.toml").write_text('[package]\nversion = "0.1.7"\n')
-            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\n## [0.1.7]\n\nReleased.\n")
-            (root / "src").mkdir()
-            (root / "src/lib.rs").write_text("pub fn original() {}\n")
-            git("add", ".")
-            git("commit", "-qm", "Release")
-            git("tag", "0.1.7")
-            (root / "src/lib.rs").write_text("pub fn abandoned() {}\n")
-            git("commit", "-qam", "Abandoned fix (#99)")
-            git("revert", "--no-edit", "HEAD")
-            revert_sha = git("rev-parse", "HEAD")
-            (root / "src/extra.rs").write_text("pub fn final_fix() {}\n")
-            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\nFinal fix (#100).\n\n## [0.1.7]\n\nReleased.\n")
-            git("add", ".")
-            git("commit", "-qm", "Final fix (#100)")
-
-            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}) as closes:
-                self.assertEqual(0, changelog.main())
-            self.assertEqual(["100"], closes.call_args.args[2])
-
-            git("revert", "--no-edit", revert_sha)
-            output = io.StringIO()
-            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
-                self.assertEqual(3, changelog.main())
-            self.assertIn("#99 is not cited", output.getvalue())
-
-    def test_revert_of_prior_release_change_still_requires_a_citation(self):
-        with tempfile.TemporaryDirectory(prefix="carve-changelog-test-") as directory:
-            root = Path(directory)
-
-            def git(*args):
-                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
-
-            git("init", "-q")
-            git("config", "user.email", "test@example.invalid")
-            git("config", "user.name", "Test")
-            (root / "Cargo.toml").write_text('[package]\nversion = "0.1.7"\n')
-            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\n## [0.1.7]\n\nReleased.\n")
-            git("add", ".")
-            git("commit", "-qm", "Start release")
-            (root / "src").mkdir()
-            (root / "src/lib.rs").write_text("pub fn old_behavior() {}\n")
-            git("add", ".")
-            git("commit", "-qm", "Old behavior (#98)")
-            old_sha = git("rev-parse", "HEAD")
-            git("tag", "0.1.7")
-            git("revert", "--no-commit", old_sha)
-            git("commit", "-qm", "Remove old behavior (#101)", "-m", f"This reverts commit {old_sha}.")
-
-            output = io.StringIO()
-            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
-                self.assertEqual(3, changelog.main())
-            self.assertIn("#101 is not cited", output.getvalue())
 
 
 if __name__ == "__main__":
