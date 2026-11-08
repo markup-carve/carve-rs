@@ -2527,6 +2527,18 @@ impl<'a> Walk<'a> {
     }
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
+        if let (Some(fence), Some(block)) = (self.frames.last(), self.attached.as_ref()) {
+            if fence.kind == Kind::Fence && fence.attached_blank_end.is_some_and(|blank| at < blank)
+            {
+                let rest = trim_ascii_start(quoted_rest(self.lines[at]));
+                let host = block.frames.last().expect("attached host");
+                if detect_list_marker_full(rest).is_some()
+                    && doc_column(self.lines[at], rest) <= host.marker.map_or(host.col, |m| m.0)
+                {
+                    return true;
+                }
+            }
+        }
         let ended = self
             .frames
             .last()
