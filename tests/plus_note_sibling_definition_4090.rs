@@ -63,6 +63,22 @@ fn a_definition_shaped_line_in_an_attached_container_stays_inside() {
 }
 
 #[test]
+fn an_attribute_line_does_not_hide_the_fence_it_leads() {
+    check(
+        "- [^a]: +\n  {.x}\n  ```\n  [^b]: code\n  ```\n\nsee[^a][^b]\n",
+        "<ul>\n  <li></li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>[^b]</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <pre class=\"x\"><code>[^b]: code\n</code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
+
+#[test]
+fn an_attribute_line_before_the_paragraph_keeps_the_rule() {
+    check(
+        "[^a]: +\n{.x}\nfa\n[^b]: # hb\nflb\n\nsee[^a][^b]\n",
+        "<p>flb</p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p class=\"x\">fa<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\">\n      <h1 id=\"hb\">hb</h1>\n      <p><a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
+
+#[test]
 fn a_flush_list_marker_ends_an_attached_quote() {
     check(
         "[^a]: +\n> q\n- t1\n\nsee[^a]\n",

@@ -2468,7 +2468,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         // A definition at the marker column opens a sibling note (carve-rs#4090),
         // unless it is the payload of a fenced or delimited first block.
-        let lead_text = trim_ascii_start(&attached[lead]);
+        let lead_text = attached[lead..]
+            .iter()
+            .map(|line| trim_ascii_start(line))
+            .find(|line| parse_standalone_attrs(line).is_none())
+            .unwrap_or("");
         let opaque_lead = detect_fence_open(lead_text).is_some()
             || detect_comment_fence_line(lead_text).is_some()
             || detect_container_open(lead_text).is_some()
