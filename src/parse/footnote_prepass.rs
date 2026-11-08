@@ -1329,6 +1329,119 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             });
     }
 
+    fn plus_definition_key(line: &str) -> Option<String> {
+        parse_footnote_def_line(trim_ascii_start(line))
+            .filter(|(_, body)| {
+                trim_ascii(body) == "+" || continuation_marker::is_consumed_marker(body)
+            })
+            .map(|(label, _)| label_key(label))
+    }
+
+    fn pass_winning_note(
+        &mut self,
+        note: &mut NoteBody,
+        i: usize,
+        label: &str,
+        first: &str,
+    ) -> bool {
+        let lines = self.lines;
+        let Some(key) = lines
+            .get(i)
+            .and_then(|line| Self::plus_definition_key(line))
+        else {
+            return false;
+        };
+        if key == label_key(label) || self.is_defined(&key) || trim_ascii(first) != "+" {
+            return false;
+        }
+        // A later winning note takes its own indented body after a blank.
+        // Its losing duplicates do not change that owner.
+        let mut after = i + 1;
+        while lines
+            .get(after)
+            .and_then(|line| Self::plus_definition_key(line))
+            .as_ref()
+            == Some(&key)
+        {
+            after += 1;
+        }
+        let blank = after;
+        while lines.get(after).is_some_and(|line| is_blank_line(line)) {
+            after += 1;
+        }
+        if after == blank
+            || !lines.get(after).is_some_and(|line| {
+                indent_columns(line) >= footnote_body_floor(lines[i])
+                    || item_block_opener(trim_ascii_start(line))
+                    || is_list_marker(trim_ascii_start(line))
+            })
+        {
+            return false;
+        }
+        note.lines[0].clear();
+        note.line_map[0] = None;
+        if self.positions {
+            note.col_map[0] = None;
+        }
+        self.passed_note = Some(key);
+        true
+    }
+
+    fn resume_passed_note(
+        &mut self,
+        note: &mut NoteBody,
+        mut i: usize,
+        label: &str,
+        container: IndentContainer,
+    ) -> usize {
+        self.passed_note = None;
+        let lines = self.lines;
+        let key = label_key(label);
+        while lines
+            .get(i)
+            .and_then(|line| Self::plus_definition_key(line))
+            .as_ref()
+            == Some(&key)
+        {
+            let scan = self.observe_line(i);
+            let Some(duplicate) = self.definition_at(i, &scan) else {
+                break;
+            };
+            self.push_definition_replacement(
+                lines[i],
+                &duplicate,
+                &scan.stripped,
+                self.first_source_line + i,
+                false,
+            );
+            i += 1;
+        }
+        let blank = i;
+        while lines.get(i).is_some_and(|line| is_blank_line(line)) {
+            i += 1;
+        }
+        if i > blank
+            && lines.get(i).is_some_and(|line| {
+                indent_columns(line) < container.content_column
+                    && (is_list_marker(trim_ascii_start(line))
+                        || item_block_opener(trim_ascii_start(line)))
+            })
+        {
+            for at in blank..i {
+                note.push_with(String::new(), Some(self.first_source_line + at), |_| {
+                    Some(0)
+                });
+            }
+            note.push_with(
+                lines[i].to_string(),
+                Some(self.first_source_line + i),
+                |_| Some(0),
+            );
+            return i + 1;
+        }
+        blank
+    }
+
     // A lone marker-line `+` gives the note its first flush-left block.
     // The same block bound is used by a later standalone `+` in a note.
     #[allow(clippy::too_many_arguments)]
@@ -1342,95 +1455,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         def_start_line: usize,
     ) -> usize {
         let lines = self.lines;
-        let next_note = lines.get(i).and_then(|line| {
-            parse_footnote_def_line(trim_ascii_start(line)).map(|(other, body)| {
-                (
-                    label_key(other),
-                    trim_ascii(body) == "+" || continuation_marker::is_consumed_marker(body),
-                )
-            })
-        });
-        if let Some((key, true)) = next_note {
-            if key != label_key(label) && !self.is_defined(&key) && trim_ascii(first) == "+" {
-                // A later winning note takes its own indented body after a blank.
-                // Its losing duplicates do not change that owner.
-                let mut after = i + 1;
-                while lines.get(after).is_some_and(|line| {
-                    parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(other, body)| {
-                        label_key(other) == key
-                            && (trim_ascii(body) == "+"
-                                || continuation_marker::is_consumed_marker(body))
-                    })
-                }) {
-                    after += 1;
-                }
-                let blank = after;
-                while lines.get(after).is_some_and(|line| is_blank_line(line)) {
-                    after += 1;
-                }
-                if after > blank
-                    && lines.get(after).is_some_and(|line| {
-                        indent_columns(line) >= footnote_body_floor(lines[i])
-                            || item_block_opener(trim_ascii_start(line))
-                            || is_list_marker(trim_ascii_start(line))
-                    })
-                {
-                    note.lines[0].clear();
-                    note.line_map[0] = None;
-                    if self.positions {
-                        note.col_map[0] = None;
-                    }
-                    self.passed_note = Some(key);
-                    return i;
-                }
-            }
+        if self.pass_winning_note(note, i, label, first) {
+            return i;
         }
         if self.passed_note.as_deref() == Some(&label_key(label)) {
-            self.passed_note = None;
-            while lines.get(i).is_some_and(|line| {
-                parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(other, body)| {
-                    label_key(other) == label_key(label)
-                        && (trim_ascii(body) == "+"
-                            || continuation_marker::is_consumed_marker(body))
-                })
-            }) {
-                let scan = self.observe_line(i);
-                let Some(duplicate) = self.definition_at(i, &scan) else {
-                    break;
-                };
-                self.push_definition_replacement(
-                    lines[i],
-                    &duplicate,
-                    &scan.stripped,
-                    self.first_source_line + i,
-                    false,
-                );
-                i += 1;
-            }
-            let blank = i;
-            while lines.get(i).is_some_and(|line| is_blank_line(line)) {
-                i += 1;
-            }
-            if i > blank
-                && lines.get(i).is_some_and(|line| {
-                    indent_columns(line) < container.content_column
-                        && (is_list_marker(trim_ascii_start(line))
-                            || item_block_opener(trim_ascii_start(line)))
-                })
-            {
-                for at in blank..i {
-                    note.push_with(String::new(), Some(self.first_source_line + at), |_| {
-                        Some(0)
-                    });
-                }
-                note.push_with(
-                    lines[i].to_string(),
-                    Some(self.first_source_line + i),
-                    |_| Some(0),
-                );
-                return i + 1;
-            }
-            i = blank;
+            i = self.resume_passed_note(note, i, label, container);
         }
         if trim_ascii(first) != "+"
             || !container.owns_continuation(first, self.decision_at(def_start_line))
