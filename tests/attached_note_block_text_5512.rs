@@ -36,3 +36,12 @@ fn heading_and_quote_after_plus_paragraph_are_blocks() {
     assert!(!out.contains("&gt; q"), "{out}");
 }
 
+#[test]
+fn nested_note_after_attached_quote_keeps_its_comment() {
+    let out = html("[^n0]: +\n> q\n  [^n1]: nb\n    %%%\n  ind1\n\nsee[^n0][^n1]\n");
+    assert!(
+        out.contains("<blockquote><p>q</p></blockquote>\n      <p>ind1<a href=\"#fnref1\""),
+        "{out}"
+    );
+    assert!(out.contains("<p>nb<a href=\"#fnref2\""), "{out}");
+}
