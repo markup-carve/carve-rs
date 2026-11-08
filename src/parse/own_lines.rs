@@ -453,7 +453,9 @@ fn note_follower_body<'l>(line: &'l str, lead: &str, item: bool) -> Option<&'l s
     (!(item && indent_cols(line).0 >= 2)
         && !is_cont_marker(body)
         && line_starts_paragraph(body)
-        && detect_list_marker_full(body).is_none())
+        && detect_list_marker_full(body).is_none()
+        // A new definition is no lazy line: it starts its own note.
+        && parse_footnote_def_line(body).is_none())
     .then_some(body)
 }
 

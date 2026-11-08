@@ -175,3 +175,16 @@ fn a_definition_in_a_skipped_comment_span_defines_no_label() {
         "{html}"
     );
 }
+
+// A refused note `+` takes the next line lazily, but a definition there
+// starts its own note and keeps its body.
+#[test]
+fn a_definition_after_a_refused_note_plus_keeps_its_body() {
+    let html = to_html("see[^a][^b]\n[^b]: +\n[^a]: d2\n  - item\n");
+    assert!(
+        html.contains("<li id=\"fn1\">\n      <p>d2</p>\n      <ul>\n        <li>item</li>"),
+        "{html}"
+    );
+    let html = to_html("see[^a]\n[^a]: +\n[^a]: d2\n  more\n");
+    assert!(!html.contains("more"), "{html}");
+}
