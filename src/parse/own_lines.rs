@@ -2062,11 +2062,18 @@ impl<'a> Walk<'a> {
         };
         // A fence that the previous attachment left at document level owns a
         // marker-column `+` in its payload before any older host may reopen.
-        if self
+        let fence_line = if attached
             .frames
             .last()
-            .is_some_and(|frame| frame.kind == Kind::Fence && indent_cols(src).0 >= frame.open_col)
+            .is_some_and(|host| host.kind == Kind::Quote)
         {
+            strip_quote_levels(src, attached.depth + 1).unwrap_or(src)
+        } else {
+            src
+        };
+        if self.frames.last().is_some_and(|frame| {
+            frame.kind == Kind::Fence && indent_cols(fence_line).0 >= frame.open_col
+        }) {
             return;
         }
         if !is_cont_marker(quoted_rest(src)) {
