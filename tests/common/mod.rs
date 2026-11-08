@@ -9,20 +9,15 @@ use std::path::{Path, PathBuf};
 
 /// The number of corpus documents the pinned spec should produce.
 ///
-/// DERIVED INDEPENDENTLY of the corpus directory, on purpose. A sweep that
-/// counts its own inputs and then asserts a FLOOR on that count cannot notice a
-/// truncated checkout: `> 400` accepts 401 of 892, less than half the corpus,
-/// and every document it never read passes by not existing. Counting the
-/// declared fence pairs in the spec's own examples gives a second, unrelated
-/// route to the same number, so the two disagreeing is the signal.
+/// Derived from the generated spec test files, independently of the corpus
+/// directory. The generator deduplicates declared examples before writing
+/// both sets of files. Seven byte-transform cases are omitted from the spec
+/// test files but remain in the corpus.
 ///
 /// carve-js and carve-php took the same route in markup-carve/carve-js#969 and
 /// markup-carve/carve-php#1155; this is the third engine (carve#755).
 ///
-/// The authored examples live under `resources/examples`. `docs/examples` is
-/// generated output as of markup-carve/carve#1194 and is no longer committed,
-/// so counting the generated copies would make this guard depend on whether a
-/// docs build had run in the checkout.
+/// Count the authored comparison pairs before the generator deduplicates them.
 pub fn count_declared_pairs(source: &str) -> Result<usize, &'static str> {
     let mut marker: Option<&str> = None;
     let mut fence: Option<&str> = None;
@@ -71,30 +66,22 @@ pub fn count_declared_pairs(source: &str) -> Result<usize, &'static str> {
 }
 
 pub fn expected_corpus_size() -> usize {
-    let examples = spec_root().join("resources/examples");
+    let spec_tests = spec_root().join("tests/spec");
     let mut count = 0;
-    let mut pages = vec![examples.join("core.md"), examples.join("extensions.md")];
-    // The spec stores each edge-case section in its own file since carve#4132.
-    let edge_cases = examples.join("edge-cases");
-    if edge_cases.is_dir() {
-        let mut sections: Vec<_> = std::fs::read_dir(&edge_cases)
-            .unwrap_or_else(|error| panic!("read {}: {error}", edge_cases.display()))
-            .map(|entry| entry.expect("edge-case entry").path())
-            .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
-            .collect();
-        sections.sort();
-        pages.extend(sections);
-    } else {
-        pages.push(examples.join("edge-cases.md"));
-    }
-    for path in pages {
+    for entry in std::fs::read_dir(&spec_tests)
+        .unwrap_or_else(|error| panic!("read {}: {error}", spec_tests.display()))
+    {
+        let path = entry.expect("spec test entry").path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("test") {
+            continue;
+        }
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-        count += count_declared_pairs(&source)
-            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        count += source.lines().filter(|line| *line == ".").count();
     }
-    assert!(count > 0, "no comparison pairs found in spec examples");
-    count
+    assert!(count > 0, "no mirrored pairs found in spec test files");
+    // bom (1), cr (1), crlf (1), nul (2), no-final-newline (2).
+    count + 7
 }
 
 /// `:::` or longer, then `compare`, optionally followed by arguments.

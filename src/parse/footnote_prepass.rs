@@ -1102,7 +1102,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             content_column: body_indent,
             owner: continuation_marker::Kind::Footnote,
         };
-        if !in_container {
+        if first_for_label && !in_container {
             i = self.lone_plus_first_block(&mut note, i, def.first, container, def_start_line);
         }
         // An authored quote may be deeper than the item's content column.

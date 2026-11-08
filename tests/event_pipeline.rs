@@ -11,6 +11,90 @@ fn parse_standard(source: &str) -> carve::Document {
     parse_with_options(source, &Options::default())
 }
 
+#[test]
+fn multiline_braced_comments_decline_to_the_established_parser() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let cases = [
+        "963-a-multi-line-braced-comment-keeps-the-nested-list-open-3",
+        "964-a-lazy-line-after-a-comment-keeps-the-deepest-list-open",
+    ];
+    let mut sources = cases
+        .iter()
+        .map(|name| fs::read_to_string(corpus.join(format!("{name}.crv"))).unwrap())
+        .collect::<Vec<_>>();
+    sources.extend([
+        "before {% comment\ncontinued %} after\n".to_owned(),
+        "> quoted {% comment\n> continued %}\n> tail\n".to_owned(),
+        "- outer\n  - inner {% comment\n    continued %}\n    tail\n".to_owned(),
+        "::: note\ninside {% comment\ncontinued %}\n:::\n".to_owned(),
+    ]);
+    for source in sources {
+        let (candidate, admitted) = parse_experimental_event_blocks(&source);
+        assert!(!admitted, "{source:?}");
+        let standard = parse_standard(&source);
+        assert_eq!(candidate, standard, "{source:?}");
+        assert_eq!(
+            render_html(&candidate),
+            render_html(&standard),
+            "{source:?}"
+        );
+        #[cfg(feature = "experimental-event-parser-options")]
+        for options in [
+            Options::default().with_positions(true),
+            Options::default().with_source_lines(true),
+        ] {
+            let (candidate, admitted) =
+                parse_experimental_event_blocks_with_options(&source, &options);
+            assert!(!admitted, "{source:?}");
+            assert_eq!(
+                candidate,
+                parse_with_options(&source, &options),
+                "{source:?}"
+            );
+        }
+    }
+    let (_, admitted) = parse_experimental_event_blocks("before {% one line %} after\n");
+    assert!(admitted);
+}
+
+#[test]
+fn multiline_braced_comment_variants_use_the_established_parser() {
+    let mut checked = 0;
+    for (open, indent, close) in [
+        ("", "", ""),
+        ("> ", "> ", ""),
+        ("- a\n  ", "  ", ""),
+        ("::: note\n", "", "\n:::"),
+    ] {
+        for shift in 0..5 {
+            for before in ["a ", "*a* ", "[a](/u) ", "b `c` ", "d "] {
+                for after in [
+                    "",
+                    " tail",
+                    " *tail*",
+                    " [tail](/u)",
+                    "\nnext",
+                    "\n\nnext",
+                    "\n# next",
+                    "\n- next",
+                    "\n> next",
+                    "\n```\nnext\n```",
+                ] {
+                    let spaces = " ".repeat(shift);
+                    let source = format!(
+                        "{open}{spaces}{before}{{% comment\n{indent}{spaces}continued %}}{after}{close}\n"
+                    );
+                    let (candidate, admitted) = parse_experimental_event_blocks(&source);
+                    assert!(!admitted, "{source:?}");
+                    assert_eq!(candidate, parse_standard(&source), "{source:?}");
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1_000);
+}
+
 // carve#5012: an unquoted `%%` comment or one-line link/abbreviation definition
 // is erased before layout, and the event route declines such a document.
 fn erases_a_line(source: &str) -> bool {

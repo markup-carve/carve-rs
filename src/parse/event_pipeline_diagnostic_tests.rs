@@ -51,6 +51,14 @@ fn admitted_corpus_preserves_parser_diagnostics() {
             );
             continue;
         }
+        if has_multiline_braced_comment(&source) {
+            assert!(
+                parse_document_with_options(&source, &options).is_none(),
+                "{}",
+                path.display()
+            );
+            continue;
+        }
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {
             collecting_unattached_block_attrs(|| parse_with_options(&source, &options))
         });
@@ -215,6 +223,10 @@ fn eof_fences_preserve_parser_diagnostics() {
                 "{}",
                 path.display()
             );
+            continue;
+        }
+        if has_multiline_braced_comment(source) {
+            assert!(parse_document_with_options(source, &options).is_none());
             continue;
         }
         let ((expected, expected_unattached), expected_events) = collecting_lint_events(|| {

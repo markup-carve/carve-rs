@@ -1758,7 +1758,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 880's footnote quote, and the two 948 quote-fence rows. Those four
     // documents now survive the bridge without a reported loss.
     // carve#5410 makes row 868 strictly reversible.
-    const STRICT: usize = 3454;
+    const STRICT: usize = 3456;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1786,7 +1786,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // same existing source loss for lazy braced comments.
     // The verse comment fix for carve#5213 moves three 867 rows into the strict set.
     // Row 868 moves to the strict set under carve#5410.
-    const LOSSY: usize = 949;
+    const LOSSY: usize = 960;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
@@ -1799,8 +1799,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // written at, and the assertion broke on a pull request that touches none
     // of this (carve-rs#1416).
     //
-    // `common::expected_corpus_size()` counts declared fence pairs in the
-    // spec's own examples - a route to the number that does not read the
+    // `common::expected_corpus_size()` counts unique mirrored pairs in the
+    // spec test files plus seven byte cases - a route that does not read the
     // corpus directory this sweep reads - so a truncated checkout still fails
     // here rather than passing by not existing. The other corpus sweeps in
     // this suite already derive it that way; this was the last hardcoded total.

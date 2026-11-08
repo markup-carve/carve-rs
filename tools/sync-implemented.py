@@ -44,11 +44,18 @@ def base_category(slug: str, stems: set[str]) -> str:
     invents a category no pair carries, which this tool then asks IMPLEMENTED to
     name and `all_implemented_pairs_exist` refuses.
     """
-    slug = strip_leading_number(slug)
-    head, sep, tail = slug.rpartition("-")
-    if sep and tail.isdigit() and head in stems:
+    number, _, rest = slug.partition("-")
+    if f"{number}-{rest}" in SECTIONS:
+        return rest
+    head, sep, tail = rest.rpartition("-")
+    if sep and tail.isdigit() and (head in stems or f"{number}-{head}" in SECTIONS):
         return head
-    return slug
+    return rest
+
+
+# The spec section files, which tests/corpus.rs base_category reads: a variant
+# belongs to its section even when dedupe left no unnumbered pair.
+SECTIONS = {p.stem for p in (Path(__file__).resolve().parent.parent / "tests/spec/tests/spec").glob("*.test")}
 
 
 DECLARATION = "const IMPLEMENTED: &[&str] = &["
