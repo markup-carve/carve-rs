@@ -77,6 +77,7 @@ VERSION_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 PULL_REQUEST = re.compile(r"\(#(\d+)\)\s*$")
 # A merge commit names it in GitHub's own subject instead.
 MERGED_PULL_REQUEST = re.compile(r"^Merge pull request #(\d+) from ")
+REVERTED_COMMIT = re.compile(r"^This reverts commit ([0-9a-f]{40})\.$", re.M)
 # A qualified reference to ANOTHER repository is not a citation of this one, so
 # the owner is checked rather than grepping for a bare `#N`.
 REFERENCE = re.compile(r"(?:([A-Za-z0-9._-]+/[A-Za-z0-9._-]+))?#(\d+)\b")
@@ -116,11 +117,29 @@ def main() -> int:
     # What merged, and what of it touched shipped source.
     shipping: dict[str, str] = {}
     unattributed: list[tuple[str, str]] = []
-    # First parent only: a merged branch's own commits arrive with its merge.
-    for line in git("log", "--first-parent", "--format=%H\x1f%s", rng).splitlines():
+    # A reverted patch does not ship. Remove both sides of an explicit revert
+    # pair before looking up their pull requests.
+    history = git("log", "--first-parent", "--format=%H\x1f%s\x1f%b\x1e", rng).split("\x1e")
+    reverted = set()
+    reverts = set()
+    for line in history:
+        line = line.strip()
         if not line:
             continue
-        sha, _, subject = line.partition("\x1f")
+        sha, _, rest = line.partition("\x1f")
+        _, _, body = rest.partition("\x1f")
+        match = REVERTED_COMMIT.search(body)
+        if match:
+            reverted.add(match.group(1))
+            reverts.add(sha)
+    for line in history:
+        line = line.strip()
+        if not line:
+            continue
+        sha, _, rest = line.partition("\x1f")
+        subject, _, _ = rest.partition("\x1f")
+        if sha in reverted or sha in reverts:
+            continue
         if not touches_shipped(git, sha):
             continue
         m = PULL_REQUEST.search(subject) or MERGED_PULL_REQUEST.search(subject)
