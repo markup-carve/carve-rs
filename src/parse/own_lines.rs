@@ -794,6 +794,10 @@ struct Walk<'a> {
     frames: Vec<Frame>,
     note_labels: HashSet<String>,
     losing_note_plus: HashSet<usize>,
+    /// The frames before a `[^x]: +` line, while that line is read.
+    before_note_plus: Option<Vec<Frame>>,
+    /// The frames a losing duplicate's `+` line closed, restored at a blank after it.
+    losing_restore: Option<Vec<Frame>>,
     reach: usize,
     runs: std::cell::OnceCell<Runs>,
     /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
@@ -1167,6 +1171,8 @@ fn walk_traced(
         frames: vec![Frame::new(Kind::Doc)],
         note_labels: Default::default(),
         losing_note_plus: Default::default(),
+        before_note_plus: None,
+        losing_restore: None,
         reach: 0,
         runs: std::cell::OnceCell::new(),
         sibling: None,
@@ -2034,6 +2040,22 @@ impl<'a> Walk<'a> {
                 && attached_one_block_lines(CursorLines::Slice(&refs), &Options::default())
                     >= refs.len()
         })
+    }
+
+    /// The innermost open note in `frames` is a `+` definition of `key`.
+    fn innermost_note_is(&self, frames: &[Frame], key: &str) -> bool {
+        frames
+            .iter()
+            .rev()
+            .find(|f| f.kind == Kind::Note)
+            .and_then(|f| f.line.checked_sub(self.first_line))
+            .and_then(|at| self.lines.get(at))
+            .and_then(|line| {
+                parse_footnote_def_line(trim_ascii_start(innermost_marker_content(quoted_rest(
+                    line,
+                ))))
+            })
+            .is_some_and(|(label, first)| label_key(label) == key && is_cont_marker(first))
     }
 
     fn marker_line_attachment_host(&self, attached: &AttachedBlock) -> bool {
@@ -2906,12 +2928,34 @@ impl<'a> Walk<'a> {
                 && reached == self.frames.len() - 1)
     }
 
-    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+    fn prepare_note_plus_line(&mut self, at: usize) {
         // A losing duplicate's `+` line holds nothing: the next line is read
         // in the enclosing container (PART 9R R2, carve#5474).
         if self.frames.len() > 1 && self.losing_note_line(self.frames.len() - 1, at) {
             self.frames.pop();
+            // Read as if the line were not there: a blank after it is still the
+            // note's, and so is the block below (carve#5502).
+            if let Some(frames) = self.losing_restore.take() {
+                if is_blank_line(quoted_rest(self.lines[at])) && frames.len() > self.frames.len() {
+                    self.replace_frames(frames);
+                }
+            }
         }
+        self.losing_restore = None;
+        self.before_note_plus = self.lines[at]
+            .contains("[^")
+            .then(|| {
+                parse_footnote_def_line(trim_ascii_start(innermost_marker_content(quoted_rest(
+                    self.lines[at],
+                ))))
+            })
+            .flatten()
+            .filter(|(_, first)| is_cont_marker(first))
+            .map(|_| self.frames.clone());
+    }
+
+    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        self.prepare_note_plus_line(at);
         self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         self.end_attached_quote_at_blank(at, c.src);
@@ -3762,6 +3806,11 @@ impl<'a> Walk<'a> {
                     // A losing duplicate's `+` takes nothing (carve#5474).
                     if !self.note_labels.insert(label_key(label)) && plus {
                         self.losing_note_plus.insert(self.first_line + at);
+                        let key = label_key(label);
+                        self.losing_restore = self
+                            .before_note_plus
+                            .take()
+                            .filter(|frames| self.innermost_note_is(frames, &key));
                     }
                 }
                 self.push_marker(
