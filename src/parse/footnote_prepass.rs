@@ -801,6 +801,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let line = lines[i];
         let folded_fence = detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
             !self.closer_maxima.has_run_after(i, open)
+                && !i.checked_sub(1).is_some_and(|above| {
+                    strip_blockquote_prefix(trim_ascii_start(lines[above])).is_some()
+                        && strip_blockquote_prefix(trim_ascii_start(line)).is_none()
+                })
                 && prepass_paragraph_open_above(lines, i, &[], &self.folded_into_term)
         });
         // A footnote definition is collected at the top level AND from inside a
@@ -853,13 +857,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let mut fence_col = None;
         let fence_line = match self.folded_into_term.fence_openers.get(&i) {
             Some(host) => &line[host.opener_offset..],
-            None if content_col > 0 && !stripped.description => {
+            None if !folded_fence && !stripped.description => {
                 // As `extract_link_defs_with_guard_full`: a fence at an item's
                 // content column is payload for both collectors.
                 let kept = strip_container_prefixes_keep_indent(line);
                 let kept_indent = leading_ws(&kept);
                 let authored = trim_ascii_start(&kept);
                 if kept_indent >= content_col
+                    && (content_col > 0 || kept_indent <= 3)
                     && line.ends_with(authored)
                     && detect_fence_open(authored).is_some()
                 {
@@ -2506,6 +2511,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .rev()
                 .nth(1)
                 .is_some_and(|line| strip_blockquote_prefix(line).is_some());
+        // A line at the ancestor body's column can still be lazy prose in
+        // the last nested note. Keep that ownership in the source handed to
+        // the recursive note pass, just as the hosted-note walk does.
+        let nested_lazy = state.body_open_below
+            && !is_note_def
+            && residual < 2
+            && keeps_paragraph_open(trimmed)
+            && nested_note_paragraph_open(note, self.options);
+        if nested_lazy {
+            let kept = note.frame_lazy(residual, flush);
+            note.push_with(kept, Some(self.first_source_line + *i), |_| {
+                stripped_col(Some(0), line, flush)
+            });
+            *i += 1;
+            return Flow::Next;
+        }
         let trimmed: &str = if caption_after_quote_blank
             || host_colon_opener
             || state.body_open_below && is_note_def && state.note_fence.is_none() && residual < 2

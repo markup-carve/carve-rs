@@ -493,15 +493,13 @@ pub(crate) fn attached_block_end(
 ) -> usize {
     let mut end = start;
     let mut in_fence: Option<FenceOpen> = None;
-    let mut unclosed_fence = false;
+    let mut unclosed_fence = None;
     while end < lines.len() {
         let line = lines.at(end);
-        if unclosed_fence {
-            // The unclosed fence's payload: no opener inside it opens anything,
-            // and a lone `+` stays payload (PART 9 §17 L3, carve#5494).
-            if is_blank_line(line)
-                || (is_boundary(line, end) && !is_plus_marker(trim_ascii_start(line)))
-            {
+        if let Some(owner_col) = unclosed_fence {
+            // An open payload ignores marker shapes. Only its first blank or a
+            // nonblank line left of the opener's owner can end it (PART 0 S1).
+            if is_blank_line(line) || indent_columns(line) < owner_col {
                 break;
             }
             end += 1;
@@ -540,7 +538,7 @@ pub(crate) fn attached_block_end(
                     .find(|&at| is_blank_line(lines.at(at)))
                     .is_some()
             {
-                unclosed_fence = true;
+                unclosed_fence = Some(indent_columns(line));
                 end += 1;
                 continue;
             }

@@ -266,14 +266,21 @@ fn a_block_between_them_closes_the_nested_body() {
 fn prose_between_them_keeps_the_nested_body_open() {
     assert_html(
         "[^f]: b\n\n  [^g]: c\n  text\n   [^n]: note\n\nSee [^n] and [^f] and [^g].\n",
-        "<p>See <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> and \
-         <a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a> and <a \
-         id=\"fnref3\" href=\"#fn3\" role=\"doc-noteref\"><sup>3</sup></a>.</p> <section \
-         role=\"doc-endnotes\" aria-label=\"Footnotes\"> <hr> <ol> <li id=\"fn1\"> \
-         <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to \
-         reference\">↩</a></p> </li> <li id=\"fn2\"> <p>b</p> <p>text<a href=\"#fnref2\" \
-         role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p> </li> <li \
-         id=\"fn3\"> <p>c<a href=\"#fnref3\" role=\"doc-backlink\" aria-label=\"Back to \
-         reference\">↩</a></p> </li> </ol> </section>",
+        r##"<p>See <a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a> and <a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a> and <a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a>.</p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <p>note<a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn2">
+      <p>b<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn3">
+      <p>c
+text<a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
     );
 }

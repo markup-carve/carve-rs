@@ -1,6 +1,6 @@
 //! An unclosed fence a first-block `+` attaches takes the rest of its container
-//! only when no blank line follows; otherwise it ends with the attached block,
-//! as the spec model and carve-js read it (markup-carve/carve#3421).
+//! until its first blank, including sibling-shaped payload lines (carve#5499
+//! and carve#5531 supersede the older carve#3421 sibling bound).
 
 use carve::to_html;
 
@@ -21,7 +21,7 @@ fn the_unclosed_fence_reads_like_the_references() {
         ),
         (
             "- +\n```\nx\n- y\n\npara\n",
-            "<ul><li><pre><code>x</code></pre></li><li>y</li></ul><p>para</p>",
+            "<ul><li><pre><code>x-y</code></pre></li></ul><p>para</p>",
         ),
         (
             "- +\n```\nx\n\ny\n",
@@ -33,7 +33,7 @@ fn the_unclosed_fence_reads_like_the_references() {
         ),
         (
             "- +\n```\nx\n~~~\n- y\n\n~~~\n",
-            "<ul><li><pre><code>x~~~</code></pre></li><li>y</li></ul><pre><code></code></pre>",
+            "<ul><li><pre><code>x~~~-y</code></pre></li></ul><pre><code></code></pre>",
         ),
     ] {
         assert_eq!(flat(source), expected, "{source:?}");
