@@ -96,6 +96,35 @@ class ChangelogCompletenessTests(unittest.TestCase):
             git("commit", "-qam", "Document fix")
             self.assertEqual(0, run()[0])
 
+    def test_reverted_source_commit_does_not_require_a_pull_request(self):
+        with tempfile.TemporaryDirectory(prefix="carve-changelog-test-") as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            git("init", "-q")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            (root / "Cargo.toml").write_text('[package]\nversion = "0.1.7"\n')
+            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\n## [0.1.7]\n\nReleased.\n")
+            (root / "src").mkdir()
+            (root / "src/lib.rs").write_text("pub fn original() {}\n")
+            git("add", ".")
+            git("commit", "-qm", "Release")
+            git("tag", "0.1.7")
+            (root / "src/lib.rs").write_text("pub fn abandoned() {}\n")
+            git("commit", "-qam", "Abandoned fix (#99)")
+            git("revert", "--no-edit", "HEAD")
+            (root / "src/lib.rs").write_text("pub fn final_fix() {}\n")
+            (root / "CHANGELOG.md").write_text("## [Unreleased]\n\nFinal fix (#100).\n\n## [0.1.7]\n\nReleased.\n")
+            git("add", ".")
+            git("commit", "-qm", "Final fix (#100)")
+
+            with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo"]), patch.object(changelog, "closing_issues", return_value={}) as closes:
+                self.assertEqual(0, changelog.main())
+            self.assertEqual(["100"], closes.call_args.args[2])
+
 
 if __name__ == "__main__":
     unittest.main()
