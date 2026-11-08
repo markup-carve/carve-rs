@@ -29,6 +29,9 @@ fn a_losing_description_note_keeps_its_lazy_continuation() {
     let source = ":: term\n: [^m]: +\n  [^m]: text\n  : next\n\nsee[^m]\n";
     let html = carve::to_html(source);
     assert!(html.contains("<dd></dd>"), "{html}");
-    assert!(html.contains("<li id=\"fn1\">\n      <p><a href=\"#fnref1\""), "{html}");
+    assert!(
+        html.contains("<li id=\"fn1\">\n      <p><a href=\"#fnref1\""),
+        "{html}"
+    );
     assert!(!html.contains(": next"), "{html}");
 }
