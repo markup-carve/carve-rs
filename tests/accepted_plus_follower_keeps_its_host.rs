@@ -165,3 +165,13 @@ fn a_losing_plus_of_a_skipped_label_leaves_the_block_to_the_winner() {
     );
     assert!(html.contains("<p>d1<a href=\"#fnref2\""), "{html}");
 }
+
+// A definition-shaped line inside a skipped comment span defines nothing.
+#[test]
+fn a_definition_in_a_skipped_comment_span_defines_no_label() {
+    let html = to_html("- +\n%%%\n[^a]: +\n%%%\n[^a]: +\n  - item\n\nsee[^a]\n");
+    assert!(
+        html.contains("<li id=\"fn1\">\n      <ul>\n        <li>item</li>"),
+        "{html}"
+    );
+}
