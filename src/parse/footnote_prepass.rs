@@ -509,6 +509,8 @@ struct IndentedNote<'a> {
     body_indent: usize,
     /// A quote's `+` granted the definition's current paragraph only.
     quote_granted: bool,
+    /// Authored marker column when the marker-line `+` took a quote.
+    attached_quote_marker: Option<usize>,
     def_column: usize,
     span_note_end: Option<(usize, bool)>,
     note_fence: Option<FenceOpen>,
@@ -1173,6 +1175,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 def_start_line,
             );
         }
+        let attached_quote_marker = (trim_ascii(def.first) == "+"
+            && note.line_map.first() == Some(&None)
+            && note
+                .lines
+                .iter()
+                .find(|line| !is_blank_line(line))
+                .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
+        .then(|| {
+            own_lines::authored_visual_column(def_start_line, indent_columns(raw_def_line) + 1)
+        });
         // An authored quote may be deeper than the item's content column.
         // Its prefix is still a container for note-body lines.
         if !in_container && !def.authored_quote_def {
@@ -1182,6 +1194,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 container,
                 body_indent,
                 quote_granted,
+                attached_quote_marker,
                 def_column: indent_columns(raw_def_line),
                 span_note_end: None,
                 // A marker starts the body, so a fence on it opens (PART 0 O1).
@@ -1585,7 +1598,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .take_while(|line| is_line_comment_any_column(line))
             .count();
         let pulled_closer = pulled_fence_closer(lines, lead, container.content_column, marker_col);
-        let window_end = if let Some(closer) = pulled_closer {
+        let mut window_end = if let Some(closer) = pulled_closer {
             closer + 1
         } else if let Some(end) = fenced_block_end(lead) {
             end
@@ -1606,6 +1619,27 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         } else {
             first_boundary_after(i)
         };
+        if lines
+            .get(lead)
+            .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some())
+        {
+            let authored_marker = own_lines::authored_visual_column(def_start_line, 1);
+            if let Some(sibling) = (lead + 1..window_end).find(|&at| {
+                let raw = lines[at];
+                let text = trim_ascii_start(raw);
+                strip_blockquote_prefix(text).is_none()
+                    && (is_list_marker(text) || item_block_opener(text))
+                    && own_lines::authored_visual_column(
+                        self.first_source_line + at,
+                        raw.chars()
+                            .take_while(|ch| *ch == ' ' || *ch == '\t')
+                            .count()
+                            + 1,
+                    ) <= authored_marker
+            }) {
+                window_end = sibling;
+            }
+        }
         let attached: Vec<String> = lines[i..window_end]
             .iter()
             .enumerate()
@@ -1852,6 +1886,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let column = indent_columns(line);
+        if let Some(marker) = state.attached_quote_marker {
+            let text = trim_ascii_start(line);
+            if !blank
+                && strip_blockquote_prefix(text).is_none()
+                && (is_list_marker(text) || item_block_opener(text))
+                && own_lines::authored_visual_column(
+                    self.first_source_line + *i,
+                    line.chars()
+                        .take_while(|ch| *ch == ' ' || *ch == '\t')
+                        .count()
+                        + 1,
+                ) <= marker
+            {
+                return Flow::Stop;
+            }
+        }
         if state.quote_granted
             && (blank
                 || item_block_opener(trim_ascii_start(line))

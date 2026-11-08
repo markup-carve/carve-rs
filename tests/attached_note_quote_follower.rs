@@ -26,3 +26,10 @@ fn quote_continuation_one_column_below_the_note_body_floor() {
     );
     assert!(!html.contains("<li>a\n"), "{html}");
 }
+
+#[test]
+fn marker_column_list_ends_an_indented_notes_attached_quote() {
+    let source = "  [^a]: +\n  > aq\n  - i\n\nsee[^a]\n";
+    let expected = "<ul>\n  <li>i</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <blockquote><p>aq</p></blockquote>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    assert_eq!(carve::to_html(source), expected);
+}
