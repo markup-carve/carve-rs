@@ -500,8 +500,9 @@ impl NoteBody {
         self.push_with(String::new(), None, |_| None);
     }
 
-    /// Does the body end inside a code fence a blank run still reaches? A `+`
-    /// block (after its synthetic separator, with no blank) ends at the blank.
+    /// Does the body end inside a code fence a blank run still reaches? A fence
+    /// a `+` attached (after its synthetic separator) ends at the blank; one
+    /// nested in an attached block does not (PART 0 S1, carve#5539).
     fn holds_open_fence(&self) -> bool {
         let Some(opener) = open_code_fence_opener(&self.lines) else {
             return false;
@@ -511,9 +512,12 @@ impl NoteBody {
             .enumerate()
             .rposition(|(at, line)| line.is_none() && self.block_separator != Some(at))
             .is_some_and(|separator| {
-                !self.lines[separator + 1..opener]
-                    .iter()
-                    .any(|l| is_blank_line(l))
+                self.lines[separator + 1..opener].iter().all(|l| {
+                    !is_blank_line(l)
+                        && (is_line_comment_any_column(l)
+                            || is_document_definition_placeholder(l)
+                            || parse_standalone_attrs(trim_ascii_start(l)).is_some())
+                })
             });
         !attached
     }
@@ -1870,7 +1874,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     indent_columns(line) >= container.content_column
                         && caption_content(trim_ascii_start(line)).is_some()
                 });
-            if !caption_after_one_blank {
+            // A fence nested in the attached block keeps the authored blanks
+            // as payload; a synthetic separator would add one (carve#5539).
+            if !caption_after_one_blank && !note.holds_open_fence() {
                 note.push_blank();
             }
         }
