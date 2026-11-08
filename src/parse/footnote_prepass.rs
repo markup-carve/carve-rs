@@ -2557,6 +2557,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // list there (PART 0 S3, carve#4860).
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let lead = first_visible_note_line(&attached_refs).unwrap_or(0);
+        // A definition opens its own span, even when the preceding note has
+        // a first-block grant. In particular, a losing duplicate must collect
+        // and discard its own lazy continuation instead of lending that text
+        // to the winning note.
+        if attached
+            .iter()
+            .take(lead + 1)
+            .any(|line| parse_footnote_def_line(trim_ascii_start(line)).is_some())
+        {
+            note.lines[0].clear();
+            note.line_map[0] = None;
+            if self.positions {
+                note.col_map[0] = None;
+            }
+            return i;
+        }
         if line_starts_paragraph(trim_ascii_start(&attached[lead])) {
             if host.description_host {
                 if let Some(at) = (lead + 1..attached.len()).find(|&at| {
