@@ -40,6 +40,20 @@ fn attached_quote_window_end(
         .unwrap_or(window_end)
 }
 
+fn marker_column_ends_attached_block(
+    raw: &str,
+    at: usize,
+    first_visible_at: usize,
+    marker_col: usize,
+    lead_is_quote: bool,
+    lead_is_list: bool,
+) -> bool {
+    at > first_visible_at
+        && (marker_col > 0 || lead_is_quote || lead_is_list)
+        && indent_columns(raw) <= marker_col
+        && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw))
+}
+
 fn unfenced_marker_content_col(line: &str) -> Option<usize> {
     let column = marker_content_col(line)?;
     let mut content = line;
@@ -1432,13 +1446,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         while lines.get(after).is_some_and(|line| is_blank_line(line)) {
             after += 1;
         }
-        if after == blank
-            || !lines.get(after).is_some_and(|line| {
-                indent_columns(line) >= footnote_body_floor(lines[i])
-                    || item_block_opener(trim_ascii_start(line))
-                    || is_list_marker(trim_ascii_start(line))
-            })
-        {
+        if !lines.get(after).is_some_and(|line| {
+            let structural =
+                item_block_opener(trim_ascii_start(line)) || is_list_marker(trim_ascii_start(line));
+            indent_columns(line) >= footnote_body_floor(lines[i]) || after > blank && structural
+        }) {
             return false;
         }
         note.lines[0].clear();
@@ -1737,6 +1749,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lead_is_quote = attached_refs
             .get(first_visible_at)
             .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
+        let lead_is_list = attached_refs
+            .get(first_visible_at)
+            .is_some_and(|line| is_list_marker(trim_ascii_start(line)))
+            && lines
+                .get(start + first_visible_at)
+                .is_some_and(|line| indent_columns(line) > marker_col);
         let ends_at_marker = |at: usize, raw: &str| {
             at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
         };
@@ -1764,10 +1782,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                                 && !(lead_is_quote
                                     && strip_blockquote_prefix(trim_ascii_start(raw)).is_some())
                         }))
-                    || (at > first_visible_at
-                        && (marker_col > 0 || lead_is_quote)
-                        && indent_columns(raw) <= marker_col
-                        && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw)))
+                    || marker_column_ends_attached_block(
+                        raw,
+                        at,
+                        first_visible_at,
+                        marker_col,
+                        lead_is_quote,
+                        lead_is_list,
+                    )
                     // A definition at the marker column opens a sibling note (carve-rs#4090).
                     // A losing duplicate's consumed `+` opens nothing (carve#5502).
                     || (at > first_visible_at
@@ -1787,11 +1809,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     is_blank_line(line)
                         || is_plus_marker(line)
                         || ends_at_marker(at, lines[start + at])
-                        || (at > first_visible_at
-                            && marker_col > 0
-                            && indent_columns(lines[start + at]) <= marker_col
-                            && (item_block_opener(trim_ascii_start(lines[start + at]))
-                                || is_list_marker(lines[start + at])))
+                        || marker_column_ends_attached_block(
+                            lines[start + at],
+                            at,
+                            first_visible_at,
+                            marker_col,
+                            false,
+                            lead_is_list,
+                        )
                 },
             );
             if next <= end {

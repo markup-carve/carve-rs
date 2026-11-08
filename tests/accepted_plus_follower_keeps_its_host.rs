@@ -1,6 +1,58 @@
 use carve::to_html;
 
 #[test]
+fn a_later_marker_line_note_keeps_its_structural_follower() {
+    for indent in 2..=4 {
+        let input = format!(
+            "[^a]: +\n[^b]: +\n{}> quote\n\nsee[^a][^b]\n",
+            " ".repeat(indent)
+        );
+        let html = to_html(&input);
+        let first = html.split("<li id=\"fn1\">").nth(1).expect("first note");
+        let second = html.split("<li id=\"fn2\">").nth(1).expect("second note");
+        assert!(
+            !first.split("</li>").next().unwrap().contains("quote"),
+            "{input}: {html}"
+        );
+        assert!(
+            second
+                .split("</li>")
+                .next()
+                .unwrap()
+                .contains("<blockquote><p>quote</p></blockquote>"),
+            "{input}: {html}"
+        );
+    }
+}
+
+#[test]
+fn a_losing_marker_line_preserves_its_surviving_notes_list_boundary() {
+    let input = "[^n]: +\n[^n]: +\n  - item\n- sibling\n\nsee[^n]\n";
+    let html = to_html(input);
+    assert!(
+        html.starts_with("<ul>\n  <li>sibling</li>\n</ul>\n"),
+        "{html}"
+    );
+    assert!(
+        html.contains("<li id=\"fn1\">\n      <ul>\n        <li>item</li>\n      </ul>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn adjacent_flush_list_items_stay_in_one_attached_note_block() {
+    let input = "[^n]: +\n- one\n- two\n\nsee[^n]\n";
+    let html = to_html(input);
+    assert!(html.starts_with("<p>see"), "{html}");
+    assert!(
+        html.contains(
+            "<li id=\"fn1\">\n      <ul>\n        <li>one</li>\n        <li>two</li>\n      </ul>"
+        ),
+        "{html}"
+    );
+}
+
+#[test]
 fn an_indented_quote_prefix_does_not_move_the_follower_out_of_its_item() {
     let source = "> - - - +\n  >   x\n";
     let html = to_html(source);
