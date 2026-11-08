@@ -86,3 +86,82 @@ fn a_winning_plus_takes_the_block_past_a_losing_plus() {
         );
     }
 }
+
+// carve#5474 and PART 9R R2: a losing duplicate registers nothing and its `+`
+// takes nothing; a winning `+` still takes the next block.
+
+#[test]
+fn a_losing_plus_of_another_label_leaves_the_block_to_the_winner() {
+    assert_eq!(
+        to_html("see[^a][^b]\n\n[^a]: x\n[^b]: +\n[^a]: +\nflush\n").trim_end(),
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>x<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\">\n      <p>flush<a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn a_skipped_plus_definition_is_no_literal_plus() {
+    assert_eq!(
+        to_html("see[^b]\n\n[^a]: +\n[^b]: +\n[^b]: +\nflush\n").trim_end(),
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn three_definitions_in_an_item_give_the_block_to_the_winner() {
+    assert_eq!(
+        to_html("- see[^a]\n  [^a]: +\n  [^a]: +\n  [^a]: +\n  flush\n").trim_end(),
+        "<ul>\n  <li>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>flush<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn a_winning_plus_takes_the_block_past_a_text_and_a_losing_plus() {
+    assert_eq!(
+        to_html("[^n]: +\n[^n]: d1\n[^n]: +\n  - item\n\nsee[^n]\n").trim_end(),
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>item</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn the_block_below_a_losing_plus_is_read_in_the_document() {
+    assert_eq!(
+        to_html("see[^a]\n[^a]: d1\n[^a]: +\n  - item\n").trim_end(),
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<ul>\n  <li>item</li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>d1<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn the_block_below_a_losing_plus_is_read_in_the_quote() {
+    assert_eq!(
+        to_html("> see[^a]\n> [^a]: d1\n> [^a]: +\n>   - item\n").trim_end(),
+        "<blockquote>\n  <p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  <ul>\n    <li>item</li>\n  </ul>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>d1<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn the_block_below_a_losing_plus_is_read_in_the_item() {
+    assert_eq!(
+        to_html("- see[^a]\n  [^a]: d1\n  [^a]: +\n    - item\n").trim_end(),
+        "<ul>\n  <li>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>\n    <ul>\n      <li>item</li>\n    </ul>\n  </li>\n</ul>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>d1<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+#[test]
+fn a_winning_plus_takes_the_indented_block_below_its_duplicate() {
+    assert_eq!(
+        to_html("see[^a]\n[^a]: +\n[^a]: +\n  - item\n").trim_end(),
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>item</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>\n".trim_end()
+    );
+}
+
+// carve#5482 shape 2: a skipped definition still defines its label, so the
+// later `[^m]: +` loses and the list goes to the winning `[^n]` (Expected there).
+#[test]
+fn a_losing_plus_of_a_skipped_label_leaves_the_block_to_the_winner() {
+    let html = to_html("[^n]: +\n[^m]: d1\n[^m]: +\n  - item\n\nsee[^n][^m]\n");
+    assert!(
+        html.contains("<li id=\"fn1\">\n      <ul>\n        <li>item</li>\n      </ul>"),
+        "{html}"
+    );
+    assert!(html.contains("<p>d1<a href=\"#fnref2\""), "{html}");
+}
