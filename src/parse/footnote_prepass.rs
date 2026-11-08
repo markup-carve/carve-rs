@@ -1737,6 +1737,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
             && !is_list_marker(rest)
             && !opens_code_fence(rest)
+            // A descendant's closing fence ends its paragraph before a line
+            // below this note's floor can ask for lazy continuation.
+            && (note.stanza.in_block() == Some(true)
+                || !note.lines.last().is_some_and(|last| {
+                    let text = trim_ascii_start(last);
+                    detect_fence_open(text).is_some() || detect_comment_fence_line(text).is_some()
+                }))
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
             let text = strip_lazy(rest);
