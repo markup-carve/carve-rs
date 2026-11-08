@@ -370,6 +370,11 @@ fn indent_rest(line: &str) -> &str {
     &line[indent_cols(line).1..]
 }
 
+/// `line` behind `depth` quote prefixes, or a line no reader continues.
+fn quote_level(line: &str, depth: usize) -> &str {
+    strip_quote_levels(line, depth).unwrap_or("\u{e000}")
+}
+
 fn strip_quote_levels(line: &str, depth: usize) -> Option<&str> {
     let mut rest = line;
     for _ in 0..depth {
@@ -1261,7 +1266,29 @@ fn walk_traced(
         result.push_str(c.src);
         if let Some((from, lead, item)) = walk.note_follower.take() {
             if at == from + 1 {
-                if let Some(body) = note_follower_body(line, &lead, item) {
+                // A wrapped attribute run is an attribute line, not a lazy follower.
+                let depth = lead.matches('>').count();
+                let attr_run = |body: &str| {
+                    body.starts_with('{')
+                        && attrs_block_len_at(
+                            indent_cols(quote_level(line, depth)).0,
+                            body,
+                            walk.lines[at + 1..]
+                                .iter()
+                                .map(|next| quote_level(next, depth)),
+                        )
+                        .is_some()
+                };
+                // Moving an open brace line left would move it off its continuations.
+                let open_brace_in_body = |body: &str| {
+                    body.starts_with('{')
+                        && !trim_ascii_end(body).ends_with('}')
+                        && indent_cols(quote_level(line, depth)).0
+                            >= indent_cols(quote_level(&lead, depth)).0
+                };
+                if let Some(body) = note_follower_body(line, &lead, item)
+                    .filter(|body| !attr_run(body) && !open_brace_in_body(body))
+                {
                     let authored = line.len() - body.len();
                     result.truncate(written);
                     result.push_str(&lead);

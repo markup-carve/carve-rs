@@ -741,12 +741,21 @@ pub(in crate::parse) fn parse_definition_list(
                 }
                 // The `+` attaches past invisible lines (carve#4449).
                 let mut first_visible = cur.pos;
-                while cur.lines.line(first_visible).is_some_and(|line| {
-                    is_document_definition_placeholder(line)
-                        || is_document_abbreviation(line)
-                        || is_line_comment_any_column(line)
-                }) {
-                    first_visible += 1;
+                loop {
+                    if cur.lines.line(first_visible).is_some_and(|line| {
+                        is_document_definition_placeholder(line)
+                            || is_document_abbreviation(line)
+                            || is_line_comment_any_column(line)
+                    }) {
+                        first_visible += 1;
+                    } else if let Some(len) = standalone_attrs_block_len_iter(
+                        cur.lines.range(first_visible..cur.lines.len()),
+                    ) {
+                        // An attribute line is invisible too; the body keeps it for the block.
+                        first_visible += len;
+                    } else {
+                        break;
+                    }
                 }
                 // A list marker inside an attached colon block is its content.
                 let attached_list = cur.lines.line(first_visible).is_some_and(|line| {
