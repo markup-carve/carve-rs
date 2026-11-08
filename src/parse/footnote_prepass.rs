@@ -1751,7 +1751,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
         let lead_is_list = attached_refs
             .get(first_visible_at)
-            .is_some_and(|line| is_list_marker(trim_ascii_start(line)));
+            .is_some_and(|line| is_list_marker(trim_ascii_start(line)))
+            && lines
+                .get(start + first_visible_at)
+                .is_some_and(|line| indent_columns(line) > marker_col);
         let ends_at_marker = |at: usize, raw: &str| {
             at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
         };

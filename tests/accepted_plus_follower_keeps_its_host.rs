@@ -40,6 +40,19 @@ fn a_losing_marker_line_preserves_its_surviving_notes_list_boundary() {
 }
 
 #[test]
+fn adjacent_flush_list_items_stay_in_one_attached_note_block() {
+    let input = "[^n]: +\n- one\n- two\n\nsee[^n]\n";
+    let html = to_html(input);
+    assert!(html.starts_with("<p>see"), "{html}");
+    assert!(
+        html.contains(
+            "<li id=\"fn1\">\n      <ul>\n        <li>one</li>\n        <li>two</li>\n      </ul>"
+        ),
+        "{html}"
+    );
+}
+
+#[test]
 fn an_indented_quote_prefix_does_not_move_the_follower_out_of_its_item() {
     let source = "> - - - +\n  >   x\n";
     let html = to_html(source);
