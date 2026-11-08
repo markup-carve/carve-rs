@@ -2928,7 +2928,7 @@ impl<'a> Walk<'a> {
                 && reached == self.frames.len() - 1)
     }
 
-    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+    fn prepare_note_plus_line(&mut self, at: usize) {
         // A losing duplicate's `+` line holds nothing: the next line is read
         // in the enclosing container (PART 9R R2, carve#5474).
         if self.frames.len() > 1 && self.losing_note_line(self.frames.len() - 1, at) {
@@ -2952,6 +2952,10 @@ impl<'a> Walk<'a> {
             .flatten()
             .filter(|(_, first)| is_cont_marker(first))
             .map(|_| self.frames.clone());
+    }
+
+    fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
+        self.prepare_note_plus_line(at);
         self.mark_quote_note_plus_line(c.rest);
         c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
         self.end_attached_quote_at_blank(at, c.src);
