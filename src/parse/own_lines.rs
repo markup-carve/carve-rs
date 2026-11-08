@@ -3136,7 +3136,17 @@ impl<'a> Walk<'a> {
                 .max(owner.canon)
                 .min(limit)
                 .min(c.col);
-            let shift = if target == owner.canon && c.col >= target {
+            // A marker-line `+` grants its first block to the note even when
+            // that block begins with an off-column `+` read as a letter.
+            let literal_plus_in_note = at > 0
+                && next.kind == Kind::Note
+                && next.line == self.first_line + at - 1
+                && parse_footnote_def_line(trim_ws_start(self.lines[at - 1]))
+                    .is_some_and(|(_, first)| is_cont_marker(first))
+                && is_cont_marker(c.rest);
+            let shift = if literal_plus_in_note {
+                next.canon.saturating_sub(target)
+            } else if target == owner.canon && c.col >= target {
                 owner.shift
             } else {
                 0

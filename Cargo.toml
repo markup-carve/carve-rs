@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "off_column_plus_note_first_block_5516"
+path = "tests/off_column_plus_note_first_block_5516.rs"
+
+[[test]]
 name = "attached_note_quote_follower"
 path = "tests/attached_note_quote_follower.rs"
 
