@@ -1690,7 +1690,7 @@ impl<'a> Walk<'a> {
         let in_comment = in_span;
         // A skipped definition's lone `+` offers nothing: the block went to the
         // earlier marker (carve#5474).
-        let nested_note = (!skipped.fenced.contains(&at))
+        let nested_note = (!skipped.fenced.contains(&at) && !in_span)
             .then(|| parse_footnote_def_line(rest))
             .flatten();
         // A skipped definition still defines its label (PART 9R R2).
