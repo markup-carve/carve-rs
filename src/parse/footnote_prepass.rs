@@ -500,8 +500,9 @@ impl NoteBody {
         self.push_with(String::new(), None, |_| None);
     }
 
-    /// Does the body end inside a code fence a blank run still reaches? A `+`
-    /// block (after its synthetic separator, with no blank) ends at the blank.
+    /// Does the body end inside a code fence a blank run still reaches? A fence
+    /// a `+` attached (after its synthetic separator) ends at the blank; one
+    /// nested in an attached block does not (PART 0 S1, carve#5539).
     fn holds_open_fence(&self) -> bool {
         let Some(opener) = open_code_fence_opener(&self.lines) else {
             return false;
@@ -511,9 +512,12 @@ impl NoteBody {
             .enumerate()
             .rposition(|(at, line)| line.is_none() && self.block_separator != Some(at))
             .is_some_and(|separator| {
-                !self.lines[separator + 1..opener]
-                    .iter()
-                    .any(|l| is_blank_line(l))
+                self.lines[separator + 1..opener].iter().all(|l| {
+                    !is_blank_line(l)
+                        && (is_line_comment_any_column(l)
+                            || is_document_definition_placeholder(l)
+                            || parse_standalone_attrs(trim_ascii_start(l)).is_some())
+                })
             });
         !attached
     }
@@ -1201,6 +1205,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             owner: continuation_marker::Kind::Footnote,
         };
         if first_for_label && !in_container {
+            i = self.skip_losing_plus_lines(i, def.label, def.first, raw_def_line);
             i = self.lone_plus_first_block(
                 &mut note,
                 i,
@@ -1413,13 +1418,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return false;
         }
         // A later winning note takes its own indented body after a blank.
-        // Its losing duplicates do not change that owner.
+        // Losing duplicate `+` lines, of any label, do not change that owner.
+        let own = label_key(label);
         let mut after = i + 1;
         while lines
             .get(after)
             .and_then(|line| Self::plus_definition_key(line))
-            .as_ref()
-            == Some(&key)
+            .is_some_and(|other| other == key || other == own || self.is_defined(&other))
         {
             after += 1;
         }
@@ -1445,6 +1450,51 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         true
     }
 
+    /// Losing duplicate `+` lines right below a `+` note are read as if they
+    /// were not there, so the note's `+` still takes the block below them
+    /// (PART 9R R2, carve#5538).
+    fn skip_losing_plus_lines(
+        &mut self,
+        mut i: usize,
+        label: &str,
+        first: &str,
+        raw_def_line: &str,
+    ) -> usize {
+        if !is_cont_marker_line(first) && !continuation_marker::is_consumed_marker(first) {
+            return i;
+        }
+        let column = indent_columns(raw_def_line);
+        let losing = |raw: &str| {
+            indent_columns(raw) == column
+                && parse_footnote_def_line(trim_ascii_start(raw)).is_some_and(|(other, body)| {
+                    (trim_ascii(body) == "+" || continuation_marker::is_consumed_marker(body))
+                        && (label_key(other) == label_key(label)
+                            || self.is_defined(&label_key(other)))
+                })
+        };
+        let end = i + self.lines[i..].iter().take_while(|raw| losing(raw)).count();
+        // After a blank the passed-note walk already reads the block below.
+        if end == i || !self.lines.get(end).is_some_and(|raw| !is_blank_line(raw)) {
+            return i;
+        }
+        while i < end {
+            let raw = self.lines[i];
+            let scan = self.observe_line(i);
+            let Some(duplicate) = self.definition_at(i, &scan) else {
+                break;
+            };
+            self.push_definition_replacement(
+                raw,
+                &duplicate,
+                &scan.stripped,
+                self.first_source_line + i,
+                false,
+            );
+            i += 1;
+        }
+        i
+    }
+
     fn resume_passed_note(
         &mut self,
         note: &mut NoteBody,
@@ -1458,8 +1508,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         while lines
             .get(i)
             .and_then(|line| Self::plus_definition_key(line))
-            .as_ref()
-            == Some(&key)
+            .is_some_and(|other| other == key || self.is_defined(&other))
         {
             let scan = self.observe_line(i);
             let Some(duplicate) = self.definition_at(i, &scan) else {
@@ -1870,7 +1919,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     indent_columns(line) >= container.content_column
                         && caption_content(trim_ascii_start(line)).is_some()
                 });
-            if !caption_after_one_blank {
+            // A fence nested in the attached block keeps the authored blanks
+            // as payload; a synthetic separator would add one (carve#5539).
+            if !caption_after_one_blank && !note.holds_open_fence() {
                 note.push_blank();
             }
         }

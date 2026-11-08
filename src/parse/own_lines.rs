@@ -2042,22 +2042,6 @@ impl<'a> Walk<'a> {
         })
     }
 
-    /// The innermost open note in `frames` is a `+` definition of `key`.
-    fn innermost_note_is(&self, frames: &[Frame], key: &str) -> bool {
-        frames
-            .iter()
-            .rev()
-            .find(|f| f.kind == Kind::Note)
-            .and_then(|f| f.line.checked_sub(self.first_line))
-            .and_then(|at| self.lines.get(at))
-            .and_then(|line| {
-                parse_footnote_def_line(trim_ascii_start(innermost_marker_content(quoted_rest(
-                    line,
-                ))))
-            })
-            .is_some_and(|(label, first)| label_key(label) == key && is_cont_marker(first))
-    }
-
     fn marker_line_attachment_host(&self, attached: &AttachedBlock) -> bool {
         let host = attached.frames.last().expect("attached host");
         // A definition term is an invisible lead for the attachment prepass;
@@ -2922,7 +2906,8 @@ impl<'a> Walk<'a> {
         if self.frames.len() > 1 && self.losing_note_line(self.frames.len() - 1, at) {
             self.frames.pop();
             // Read as if the line were not there: a blank after it is still the
-            // note's, and so is the block below (carve#5502).
+            // note's, and so is the block below, whichever label lost (carve#5502,
+            // carve#5538).
             if let Some(frames) = self.losing_restore.take() {
                 if is_blank_line(quoted_rest(self.lines[at])) && frames.len() > self.frames.len() {
                     self.replace_frames(frames);
@@ -3794,11 +3779,7 @@ impl<'a> Walk<'a> {
                     // A losing duplicate's `+` takes nothing (carve#5474).
                     if !self.note_labels.insert(label_key(label)) && plus {
                         self.losing_note_plus.insert(self.first_line + at);
-                        let key = label_key(label);
-                        self.losing_restore = self
-                            .before_note_plus
-                            .take()
-                            .filter(|frames| self.innermost_note_is(frames, &key));
+                        self.losing_restore = self.before_note_plus.take();
                     }
                 }
                 self.push_marker(
