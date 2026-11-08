@@ -19,4 +19,3 @@ fn a_plus_at_an_attached_quote_fences_content_column_is_payload() {
         );
     }
 }
-
