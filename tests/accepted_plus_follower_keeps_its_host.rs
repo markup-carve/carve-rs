@@ -14,3 +14,21 @@ fn the_shallower_follower_keeps_the_same_owner() {
     let html = to_html(source);
     assert!(html.contains("<li>x</li>"), "{html}");
 }
+
+#[test]
+fn a_losing_marker_line_plus_does_not_own_the_band_follower() {
+    let input = "[^a]: +\n[^a]: +\n flush\n\nsee[^a]\n";
+    let html = to_html(input);
+    assert!(html.starts_with("<p>flush</p>\n<p>see"), "{html}");
+    assert!(html.contains("<li id=\"fn1\">"), "{html}");
+    assert!(!html.contains("<p>flush<a href=\"#fnref1\""), "{html}");
+}
+
+#[test]
+fn repeated_marker_lines_keep_the_follower_outside() {
+    for count in 2..=4 {
+        let input = format!("{} flush\n\nsee[^a]\n", "[^a]: +\n".repeat(count));
+        let html = to_html(&input);
+        assert!(html.starts_with("<p>flush</p>\n<p>see"), "{input}: {html}");
+    }
+}
