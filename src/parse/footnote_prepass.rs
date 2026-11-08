@@ -1432,13 +1432,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         while lines.get(after).is_some_and(|line| is_blank_line(line)) {
             after += 1;
         }
-        if after == blank
-            || !lines.get(after).is_some_and(|line| {
-                indent_columns(line) >= footnote_body_floor(lines[i])
-                    || item_block_opener(trim_ascii_start(line))
-                    || is_list_marker(trim_ascii_start(line))
-            })
-        {
+        if !lines.get(after).is_some_and(|line| {
+            let structural =
+                item_block_opener(trim_ascii_start(line)) || is_list_marker(trim_ascii_start(line));
+            indent_columns(line) >= footnote_body_floor(lines[i]) || after > blank && structural
+        }) {
             return false;
         }
         note.lines[0].clear();
@@ -1737,6 +1735,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lead_is_quote = attached_refs
             .get(first_visible_at)
             .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
+        let lead_is_list = attached_refs
+            .get(first_visible_at)
+            .is_some_and(|line| is_list_marker(trim_ascii_start(line)));
         let ends_at_marker = |at: usize, raw: &str| {
             at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
         };
@@ -1765,7 +1766,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                                     && strip_blockquote_prefix(trim_ascii_start(raw)).is_some())
                         }))
                     || (at > first_visible_at
-                        && (marker_col > 0 || lead_is_quote)
+                        && (marker_col > 0 || lead_is_quote || lead_is_list)
                         && indent_columns(raw) <= marker_col
                         && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw)))
                     // A definition at the marker column opens a sibling note (carve-rs#4090).
@@ -1788,7 +1789,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         || is_plus_marker(line)
                         || ends_at_marker(at, lines[start + at])
                         || (at > first_visible_at
-                            && marker_col > 0
+                            && (marker_col > 0 || lead_is_list)
                             && indent_columns(lines[start + at]) <= marker_col
                             && (item_block_opener(trim_ascii_start(lines[start + at]))
                                 || is_list_marker(lines[start + at])))

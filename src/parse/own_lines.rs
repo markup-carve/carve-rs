@@ -2909,7 +2909,7 @@ impl<'a> Walk<'a> {
             // note's, and so is the block below, whichever label lost (carve#5502,
             // carve#5538).
             if let Some(frames) = self.losing_restore.take() {
-                if is_blank_line(quoted_rest(self.lines[at])) && frames.len() > self.frames.len() {
+                if frames.len() > self.frames.len() {
                     self.replace_frames(frames);
                 }
             }
