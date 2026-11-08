@@ -5,6 +5,36 @@ use super::*;
 /// walk has collected the definitions inside it. No label can start with NUL.
 pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
 
+fn attached_quote_window_end(
+    lines: &[&str],
+    lead: usize,
+    window_end: usize,
+    first_source_line: usize,
+    authored_marker: usize,
+) -> usize {
+    if !lines
+        .get(lead)
+        .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some())
+    {
+        return window_end;
+    }
+    (lead + 1..window_end)
+        .find(|&at| {
+            let raw = lines[at];
+            let text = trim_ascii_start(raw);
+            strip_blockquote_prefix(text).is_none()
+                && (is_list_marker(text) || item_block_opener(text))
+                && own_lines::authored_visual_column(
+                    first_source_line + at,
+                    raw.chars()
+                        .take_while(|ch| *ch == ' ' || *ch == '\t')
+                        .count()
+                        + 1,
+                ) <= authored_marker
+        })
+        .unwrap_or(window_end)
+}
+
 fn unfenced_marker_content_col(line: &str) -> Option<usize> {
     let column = marker_content_col(line)?;
     let mut content = line;
@@ -1598,7 +1628,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .take_while(|line| is_line_comment_any_column(line))
             .count();
         let pulled_closer = pulled_fence_closer(lines, lead, container.content_column, marker_col);
-        let mut window_end = if let Some(closer) = pulled_closer {
+        let window_end = if let Some(closer) = pulled_closer {
             closer + 1
         } else if let Some(end) = fenced_block_end(lead) {
             end
@@ -1619,27 +1649,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         } else {
             first_boundary_after(i)
         };
-        if lines
-            .get(lead)
-            .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some())
-        {
-            let authored_marker = own_lines::authored_visual_column(def_start_line, 1);
-            if let Some(sibling) = (lead + 1..window_end).find(|&at| {
-                let raw = lines[at];
-                let text = trim_ascii_start(raw);
-                strip_blockquote_prefix(text).is_none()
-                    && (is_list_marker(text) || item_block_opener(text))
-                    && own_lines::authored_visual_column(
-                        self.first_source_line + at,
-                        raw.chars()
-                            .take_while(|ch| *ch == ' ' || *ch == '\t')
-                            .count()
-                            + 1,
-                    ) <= authored_marker
-            }) {
-                window_end = sibling;
-            }
-        }
+        let window_end = attached_quote_window_end(
+            lines,
+            lead,
+            window_end,
+            self.first_source_line,
+            own_lines::authored_visual_column(def_start_line, 1),
+        );
         let attached: Vec<String> = lines[i..window_end]
             .iter()
             .enumerate()
