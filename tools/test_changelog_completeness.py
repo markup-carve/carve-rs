@@ -39,9 +39,15 @@ class ChangelogCompletenessTests(unittest.TestCase):
             git("add", ".")
             git("commit", "-qm", "Fix parser (#99)")
 
+            queried = []
+
+            def closing(owner, name, numbers, titles):
+                queried.append(numbers)
+                return {}
+
             def run(*args):
                 output = io.StringIO()
-                with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo", *args]), patch.object(changelog, "closing_issues", return_value={}), contextlib.redirect_stdout(output):
+                with patch("sys.argv", ["check", "--root", str(root), "--repo", "test/repo", *args]), patch.object(changelog, "closing_issues", side_effect=closing), contextlib.redirect_stdout(output):
                     status = changelog.main()
                 return status, output.getvalue()
 
@@ -50,6 +56,9 @@ class ChangelogCompletenessTests(unittest.TestCase):
             self.assertIn("#99 is not cited in the Unreleased section", output)
             self.assertIn("since 0.1.7", output)
             self.assertEqual(0, run("0.1.7")[0])
+            (root / ".changelog-exempt").write_text("99: reverted before release\n")
+            self.assertEqual(0, run()[0])
+            self.assertEqual([], queried[-1], "an exempt number is not queried as a PR")
             (root / ".changelog-exempt").write_text("not an exemption\n")
             self.assertEqual(1, run()[0], "a malformed exemption file is a broken check, not drift")
             (root / ".changelog-exempt").unlink()

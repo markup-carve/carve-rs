@@ -129,7 +129,10 @@ def main() -> int:
             continue
         shipping.setdefault(m.group(1), PULL_REQUEST.sub("", subject).strip())
 
-    closes = closing_issues(owner, name, list(shipping), shipping)
+    exemptions, malformed = read_exemptions(root)
+    # Exemptions can include a stale issue number in a commit's PR suffix.
+    # There is no pull request to query for such an entry.
+    closes = closing_issues(owner, name, [n for n in shipping if n not in exemptions], shipping)
     if closes is None:
         return 1
 
@@ -149,8 +152,6 @@ def main() -> int:
         if qualifier and qualifier.lower() != slug.lower():
             continue
         cited.add(number)
-
-    exemptions, malformed = read_exemptions(root)
 
     missing: list[tuple[str, str]] = []
     skipped: list[tuple[str, str, str]] = []
