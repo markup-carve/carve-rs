@@ -107,6 +107,36 @@ pub(in crate::parse) fn extract_footnote_defs(
     source_line_map: Option<&[Option<usize>]>,
     options: &Options<'_>,
 ) -> FootnoteExtraction {
+    extract_footnote_defs_seeded(
+        source,
+        first_source_line,
+        positions,
+        nested,
+        source_line_map,
+        options,
+        None,
+    )
+}
+
+/// The labels a note body's scan already knows: the note's own, and each label
+/// whose first definition starts before the note (`line`).
+pub(in crate::parse) struct DefinedBefore<'d> {
+    pub(in crate::parse) own: &'d str,
+    pub(in crate::parse) first_lines: &'d HashMap<String, usize>,
+    pub(in crate::parse) line: usize,
+}
+
+/// The same scan, inside a note body: a definition of a label `outer` already
+/// knows loses (PART 9R R2).
+pub(in crate::parse) fn extract_footnote_defs_seeded(
+    source: &str,
+    first_source_line: usize,
+    positions: bool,
+    nested: bool,
+    source_line_map: Option<&[Option<usize>]>,
+    options: &Options<'_>,
+    outer: Option<DefinedBefore<'_>>,
+) -> FootnoteExtraction {
     let lines: Vec<&str> = source.lines().collect();
     let mut scan = FootnoteScan::new(
         source,
@@ -117,6 +147,11 @@ pub(in crate::parse) fn extract_footnote_defs(
         source_line_map,
         options,
     );
+    if let Some(outer) = outer {
+        scan.definition_keys
+            .insert(label_key(outer.own), outer.own.to_string());
+        scan.defined_before = Some((outer.first_lines, outer.line));
+    }
     let mut i = 0;
     while i < lines.len() {
         i = scan.step(i);
@@ -594,6 +629,8 @@ struct FootnoteScan<'a, 'o> {
     body_line_map: Vec<Option<usize>>,
     defs: BTreeMap<String, MappedSource>,
     definition_keys: BTreeMap<String, String>,
+    /// In a note body: each label's first definition line, and the note's line.
+    defined_before: Option<(&'a HashMap<String, usize>, usize)>,
     // Where each definition was written. Lines and columns are final here; the
     // OFFSETS are filled by the caller, which is the only place that holds the
     // original text the offsets are measured in - the same split `fill_offsets`
@@ -667,6 +704,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             body_line_map: Vec::new(),
             defs: BTreeMap::new(),
             definition_keys: BTreeMap::new(),
+            defined_before: None,
             def_positions: BTreeMap::new(),
             note_link_defs: BTreeMap::new(),
             body_opacity_candidates: None,
@@ -1064,11 +1102,18 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let stripped = &scan.stripped;
         let in_container = !stripped.structural.is_empty();
         let normalized_label = label_key(def.label);
-        let first_for_label = !self.definition_keys.contains_key(&normalized_label);
+        let first_for_label = !self.is_defined(&normalized_label);
         let def_start_line = self.first_source_line + i;
         let raw_def_line = self.lines[i];
         if self.positions && first_for_label {
             self.record_definition_start(def.label, raw_def_line, def.def_line, def_start_line);
+        }
+        // A losing duplicate's `+` takes nothing: the lines below it are read
+        // where they stand, as if the marker line were not there (PART 9R R2,
+        // carve#5502).
+        if !first_for_label && continuation_marker::is_consumed_marker(def.first) {
+            self.push_definition_replacement(raw_def_line, &def, stripped, def_start_line, false);
+            return i + 1;
         }
         let mut i = i + 1;
         let mut comment_state = BodyCommentState::new();
@@ -1106,7 +1151,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             owner: continuation_marker::Kind::Footnote,
         };
         if first_for_label && !in_container {
-            i = self.lone_plus_first_block(&mut note, i, def.first, container, def_start_line);
+            i = self.lone_plus_first_block(
+                &mut note,
+                i,
+                def.label,
+                def.first,
+                container,
+                def_start_line,
+            );
         }
         // An authored quote may be deeper than the item's content column.
         // Its prefix is still a container for note-body lines.
@@ -1276,10 +1328,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
 
     // A lone marker-line `+` gives the note its first flush-left block.
     // The same block bound is used by a later standalone `+` in a note.
+    #[allow(clippy::too_many_arguments)]
     fn lone_plus_first_block(
         &mut self,
         note: &mut NoteBody,
         mut i: usize,
+        label: &str,
         first: &str,
         container: IndentContainer,
         def_start_line: usize,
@@ -1409,6 +1463,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let ends_at_marker = |at: usize, raw: &str| {
             at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
         };
+        let losing = |other: &str, first: &str| self.losing_plus_line(label, other, first);
         let mut comment_closers = None;
         let mut closer_index = None;
         let mut end = attached_block_past_invisible(
@@ -1437,9 +1492,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         && indent_columns(raw) <= marker_col
                         && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw)))
                     // A definition at the marker column opens a sibling note (carve-rs#4090).
+                    // A losing duplicate's consumed `+` opens nothing (carve#5502).
                     || (at > first_visible_at
                         && indent_columns(raw) <= marker_col
-                        && parse_footnote_def_line(trim_ascii_start(raw)).is_some())
+                        && parse_footnote_def_line(trim_ascii_start(raw))
+                            .is_some_and(|(other, first)| !losing(other, first)))
             },
         );
         while end <= first_visible_at && end < attached_refs.len() {
@@ -2371,8 +2428,29 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             description_host,
             behind_task_box: behind_task_box(raw_def_line),
         };
-        let i = self.hosted_first_block(&host, note, i, def.first);
+        let i = self.hosted_first_block(&host, note, i, def.label, def.first);
         let mut i = self.attach_quoted_plus_block(&host, note, i, raw_def_line);
+        // A losing duplicate's `+` line under a `+` note is read as if it were
+        // not there (carve#5502).
+        let plus_note =
+            is_cont_marker_line(def.first) || continuation_marker::is_consumed_marker(def.first);
+        while plus_note
+            && self
+                .lines
+                .get(i)
+                .and_then(|raw| host.content(raw))
+                .is_some_and(|line| {
+                    indent_columns(line) == host.note_floor.saturating_sub(2)
+                        && parse_footnote_def_line(trim_ascii_start(line)).is_some_and(
+                            |(other, first)| {
+                                label_key(other) == label_key(def.label)
+                                    && continuation_marker::is_consumed_marker(first)
+                            },
+                        )
+                })
+        {
+            i += 1;
+        }
         let source = self.source;
         let track = *self.body_opacity_candidates.get_or_insert_with(|| {
             source.contains("%%%") || source.contains("~~~") || source.contains("```")
@@ -2421,12 +2499,27 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i
     }
 
+    /// A later definition of `own` or of an already defined label whose `+` the
+    /// walk consumed: it takes nothing and opens no sibling note (PART 9R R2).
+    fn losing_plus_line(&self, own: &str, other: &str, first: &str) -> bool {
+        let key = label_key(other);
+        is_line_comment_any_column(first) && (key == label_key(own) || self.is_defined(&key))
+    }
+
+    fn is_defined(&self, key: &str) -> bool {
+        self.definition_keys.contains_key(key)
+            || self.defined_before.is_some_and(|(first_lines, line)| {
+                first_lines.get(key).is_some_and(|&at| at < line)
+            })
+    }
+
     /// A hosted note's marker-line `+` takes its one block through the host's prefix.
     fn hosted_first_block(
         &mut self,
         host: &NoteHost,
         note: &mut NoteBody,
         i: usize,
+        label: &str,
         first: &str,
     ) -> usize {
         let lines = self.lines;
@@ -2499,7 +2592,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if let Some(at) = attached.iter().skip(lead + 1).position(|line| {
             !opaque_lead
                 && !line.starts_with([' ', '\t'])
-                && parse_footnote_def_line(line).is_some()
+                && parse_footnote_def_line(line)
+                    .is_some_and(|(other, first)| !self.losing_plus_line(label, other, first))
         }) {
             attached.truncate(lead + 1 + at);
         }

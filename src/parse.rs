@@ -1537,6 +1537,11 @@ fn extract_nested_footnote_defs(
 ) {
     let mut pending: Vec<String> = defs.keys().cloned().collect();
     let mut seen = BTreeSet::new();
+    let first_lines: HashMap<String, usize> = defs
+        .iter()
+        .filter(|(label, _)| !label.starts_with(LOSING_NOTE_PREFIX))
+        .filter_map(|(label, source)| Some((label_key(label), first_mapped_line(source)?)))
+        .collect();
 
     while let Some(label) = pending.pop() {
         if !seen.insert(label.clone()) {
@@ -1550,13 +1555,18 @@ fn extract_nested_footnote_defs(
             continue;
         }
 
-        let (body, nested, nested_positions, nested_links) = extract_footnote_defs(
+        let (body, nested, nested_positions, nested_links) = extract_footnote_defs_seeded(
             &parent.source,
             1,
             options.positions,
             true,
             Some(&parent.line_map),
             options,
+            (!label.starts_with(LOSING_NOTE_PREFIX)).then(|| DefinedBefore {
+                own: &label,
+                first_lines: &first_lines,
+                line: first_mapped_line(&parent).unwrap_or(usize::MAX),
+            }),
         );
         let mut body = compose_mapped_source(body, &parent);
         // Still a note body: a list marker opens a list in it (PART 0 S3, carve#4860).
