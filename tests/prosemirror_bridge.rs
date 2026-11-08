@@ -1799,8 +1799,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // written at, and the assertion broke on a pull request that touches none
     // of this (carve-rs#1416).
     //
-    // `common::expected_corpus_size()` counts declared fence pairs in the
-    // spec's own examples - a route to the number that does not read the
+    // `common::expected_corpus_size()` counts unique mirrored pairs in the
+    // spec test files plus seven byte cases - a route that does not read the
     // corpus directory this sweep reads - so a truncated checkout still fails
     // here rather than passing by not existing. The other corpus sweeps in
     // this suite already derive it that way; this was the last hardcoded total.

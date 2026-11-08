@@ -11,8 +11,32 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 const IMPLEMENTED: &[&str] = &[
+    // Categories added by the pinned spec; each pair is checked by the full corpus sweep.
+    "a-block-at-a-pulled-description-column-opens-in-the-description",
+    "a-block-at-a-pulled-footnote-column-opens-in-the-note",
+    "a-block-at-the-host-column-after-a-plus-attached-quote-stays-in-the-host",
+    "a-caption-at-the-host-column-captions-a-plus-attached-quote",
+    "a-definition-marker-after-a-block-and-paragraph-ends-the-item",
+    "a-lazy-line-after-a-comment-keeps-the-deepest-list-open",
+    "a-multi-line-braced-comment-keeps-the-nested-list-open",
+    "a-nested-item-resumes-after-its-attached-fence-with-an-empty-line",
+    "a-quoted-comment-span-uses-its-live-owner",
+    "a-skipped-note-definition-cannot-claim-an-earlier-plus",
+    "adjacent-invalid-includes-keep-their-tokens-literal",
+    "an-attached-fence-closes-only-at-its-host-column-carve-5410",
+    "an-attribute-at-an-attached-task-quote-column-applies-to-its-paragraph",
+    "an-ended-definition-list-releases-its-marker-boundary",
+    "an-outer-item-loosens-after-a-nested-attached-colon-ends",
+    "an-outer-item-s-paragraph-after-a-nested-attached-fence-loosens-it",
+    "an-outer-plus-host-resumes-after-a-quote-holding-a-plus-host",
+    "an-unclosed-attached-colon-ends-at-its-first-blank",
+    "open-state-lifetime-boundaries",
+    "text-ending-a-nested-span-opens-a-paragraph-in-the-surviving-item",
+    "unresolved-reference-fallback-folds-soft-breaks-on-plain-and-ansi",
+
     // Category added at spec 91edd773 (carve#5224).
     "a-document-owned-comment-run-stays-between-list-items",
     // The three row 961 variants at spec 204ba739 (carve#5206).
@@ -676,7 +700,6 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#1526 and #1542: a container's span - and a definition
     // list's - ends at its last PLACED child, not at the line the scan reached.
     "a-container-s-span-ends-at-its-last-placed-child",
-    "a-definition-list-ends-at-its-last-placed-child-too",
     // markup-carve/carve#1516: an escape escalation reaches the block that
     // needed one, never the whole document.
     "a-leading-escaped-caret-keeps-its-escape",
@@ -1150,7 +1173,6 @@ const IMPLEMENTED: &[&str] = &[
     "a-quote-before-a-span-closer-closes",
     "a-quote-on-a-description-body-marker-line-takes-a-plus-at-its-column",
     "a-quoted-row-attribute-value-may-hold-a-pipe",
-    "a-quoted-term-takes-no-lazy-marker-or-separator",
     "a-reference-link-around-a-literal-directive-renders",
     "a-refused-plus-reads-like-a-letter",
     "a-row-attribute-block-follows-the-last-closing-pipe",
@@ -1625,22 +1647,33 @@ fn corpus_pairs_present() {
     );
 }
 
-/// Reduce a corpus pair slug to its base category: `NN-slug` or
-/// `NN-slug-MM` -> `NN-slug`. A trailing `-<digits>` is a variant suffix and is
-/// dropped so all variants of a category map to the single IMPLEMENTED entry.
-/// A CATEGORY MAY END IN A NUMBER OF ITS OWN, so the variant suffix is dropped
-/// only when what remains names a pair that exists.
-/// `an-empty-description-body-claims-no-line-below-column-0` is the category and
-/// `-0-2` through `-0-7` are its variants; stripping the `-0` off the base pair
-/// invented a category no pair carries, which `all_corpus_categories_implemented`
-/// then demanded and `all_implemented_pairs_exist` refused - one category the two
-/// tests could not both be satisfied on.
-fn base_category<'a>(slug: &'a str, pairs: &[String]) -> &'a str {
-    let slug = strip_leading_number(slug);
+/// Reduce a corpus pair slug to its spec section's category. The generator can
+/// deduplicate an unsuffixed pair while retaining numbered variants, so the
+/// pinned `.test` section name identifies their shared category. A category
+/// whose own name ends in a number keeps that number.
+/// `an-empty-description-body-claims-no-line-below-column-0` is a category;
+/// `-0-2` through `-0-7` are variants of that category.
+fn base_category<'a>(slug: &'a str, _pairs: &[String]) -> &'a str {
+    static SPEC_SECTIONS: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    let sections = SPEC_SECTIONS.get_or_init(|| {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/spec");
+        fs::read_dir(dir)
+            .expect("spec tests directory")
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                (path.extension().and_then(|ext| ext.to_str()) == Some("test"))
+                    .then(|| path.file_stem()?.to_str().map(String::from))?
+            })
+            .collect()
+    });
+    let (number, slug) = slug.split_once('-').unwrap_or(("", slug));
+    if sections.contains(&format!("{number}-{slug}")) {
+        return slug;
+    }
     if let Some((head, tail)) = slug.rsplit_once('-') {
         if !tail.is_empty()
             && tail.bytes().all(|b| b.is_ascii_digit())
-            && pairs.iter().any(|pair| strip_leading_number(pair) == head)
+            && sections.contains(&format!("{number}-{head}"))
         {
             return head;
         }
@@ -1666,9 +1699,11 @@ fn resolve_slug(slug: &str) -> String {
     if corpus_dir().join(format!("{slug}.crv")).is_file() {
         return slug.to_string();
     }
-    corpus_pairs()
-        .into_iter()
-        .find(|pair| strip_leading_number(pair) == slug)
+    let pairs = corpus_pairs();
+    pairs
+        .iter()
+        .find(|pair| base_category(pair, &pairs) == slug)
+        .cloned()
         .unwrap_or_else(|| panic!("no corpus pair for category {slug}"))
 }
 
@@ -1702,7 +1737,7 @@ fn all_implemented_pairs_exist() {
     let pairs = corpus_pairs();
     for slug in IMPLEMENTED {
         assert!(
-            pairs.iter().any(|p| strip_leading_number(p) == *slug),
+            pairs.iter().any(|p| base_category(p, &pairs) == *slug),
             "IMPLEMENTED references `{slug}` but no such corpus pair exists. \
              Either the slug is wrong or the submodule is out of date."
         );

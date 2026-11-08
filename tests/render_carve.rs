@@ -278,10 +278,9 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
 }
 
 fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
-    // Corpus rows the spec pin adds whose ruling this engine has not ported yet,
-    // with the ticket that ports it. Only a row that still fails is skipped; a
-    // fixed row runs the whole sweep.
-    const NOT_PORTED_AT_PIN: &[(&str, &str)] = &[
+    // Declared rows awaiting an engine port or a missing spec sidecar. Only a
+    // row that still fails is skipped; a fixed row runs the whole sweep.
+    const EXPECTED_DIFFERENCE_AT_PIN: &[(&str, &str)] = &[
         (
             "930-a-line-that-misses-a-nested-host-ends-it-when-a-comment-closer-lies-ahead",
             "markup-carve/carve-rs#3757",
@@ -322,13 +321,17 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
             "863-a-closer-or-caption-at-a-note-marker-line-item-s-content-column-is-the-item-s",
             "markup-carve/carve-rs#3535",
         ),
+        (
+            "964-a-lazy-line-after-a-comment-keeps-the-deepest-list-open",
+            "markup-carve/carve#5464: missing .fmt sidecar; formatting keeps the same HTML and paragraph",
+        ),
     ];
     for (slug, source) in corpus_sources() {
-        let not_ported = NOT_PORTED_AT_PIN.iter().any(|(prefix, _)| {
+        let declared_difference = EXPECTED_DIFFERENCE_AT_PIN.iter().any(|(prefix, _)| {
             slug.strip_prefix(prefix)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
         });
-        if not_ported {
+        if declared_difference {
             let formatted = carve::to_carve(&source);
             let sidecar = corpus_dir().join(format!("{slug}.fmt"));
             let tree_moves = canonical_tree(&source, false) != canonical_tree(&formatted, false);
