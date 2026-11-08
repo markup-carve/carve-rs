@@ -2515,10 +2515,6 @@ impl<'a> QuoteBody<'a> {
         let marker_body = (self.may_have_term && !description_content.starts_with([' ', '\t']))
             .then(|| strip_description_prefix(description_content))
             .flatten()
-            .filter(|body| {
-                is_definition_placeholder(trim_ascii_start(body))
-                    || !is_line_comment_any_column(body)
-            })
             .filter(|_| {
                 self.open_entry.advance(&self.inner.lines);
                 self.open_entry.half.is_some()

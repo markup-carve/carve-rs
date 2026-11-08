@@ -459,6 +459,10 @@ name = "a_quoted_description_stanza_takes_lazy_marker_text"
 path = "tests/a_quoted_description_stanza_takes_lazy_marker_text.rs"
 
 [[test]]
+name = "a_quoted_description_comment_closes_lazy_paragraph"
+path = "tests/a_quoted_description_comment_closes_lazy_paragraph.rs"
+
+[[test]]
 name = "a_band_paragraph_after_a_descendant_span_takes_lazy_text"
 path = "tests/a_band_paragraph_after_a_descendant_span_takes_lazy_text.rs"
 
