@@ -5,6 +5,17 @@ use super::*;
 /// walk has collected the definitions inside it. No label can start with NUL.
 pub(in crate::parse) const LOSING_NOTE_PREFIX: &str = "\u{0}losing:";
 
+fn authored_indent_column(line_number: usize, line: &str) -> usize {
+    let walked_column = line
+        .chars()
+        .take_while(|ch| *ch == ' ' || *ch == '\t')
+        .count()
+        + 1;
+    // The authored map restores stripped prefixes. A tab that remains in the
+    // walked line still occupies its full visual width (carve#5541).
+    own_lines::authored_visual_column(line_number, walked_column).max(indent_columns(line))
+}
+
 fn attached_quote_window_end(
     lines: &[&str],
     lead: usize,
@@ -24,13 +35,7 @@ fn attached_quote_window_end(
             let text = trim_ascii_start(raw);
             strip_blockquote_prefix(text).is_none()
                 && (is_list_marker(text) || item_block_opener(text))
-                && own_lines::authored_visual_column(
-                    first_source_line + at,
-                    raw.chars()
-                        .take_while(|ch| *ch == ' ' || *ch == '\t')
-                        .count()
-                        + 1,
-                ) <= authored_marker
+                && authored_indent_column(first_source_line + at, raw) <= authored_marker
         })
         .unwrap_or(window_end)
 }
@@ -1907,13 +1912,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             if !blank
                 && strip_blockquote_prefix(text).is_none()
                 && (is_list_marker(text) || item_block_opener(text))
-                && own_lines::authored_visual_column(
-                    self.first_source_line + *i,
-                    line.chars()
-                        .take_while(|ch| *ch == ' ' || *ch == '\t')
-                        .count()
-                        + 1,
-                ) <= marker
+                && authored_indent_column(self.first_source_line + *i, line) <= marker
             {
                 return Flow::Stop;
             }

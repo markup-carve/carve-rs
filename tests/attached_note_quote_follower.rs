@@ -33,3 +33,12 @@ fn marker_column_list_ends_an_indented_notes_attached_quote() {
     let expected = "<ul>\n  <li>i</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <blockquote><p>aq</p></blockquote>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
     assert_eq!(carve::to_html(source), expected);
 }
+
+#[test]
+fn tab_at_body_column_keeps_the_list_in_the_note() {
+    let tab = "  [^a]: +\n  > q\n\t- i\n\nsee[^a]\n";
+    let spaces = "  [^a]: +\n  > q\n    - i\n\nsee[^a]\n";
+    let tab_html = carve::to_html(tab);
+    assert_eq!(tab_html, carve::to_html(spaces));
+    assert!(tab_html.contains("<blockquote><p>q</p></blockquote>\n      <ul>"));
+}

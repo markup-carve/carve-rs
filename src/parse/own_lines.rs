@@ -4238,8 +4238,8 @@ thread_local! {
     static AUTHORED_TABS: std::cell::RefCell<Option<std::collections::HashMap<usize, String>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Keep authored lines when tabs can affect brace-column comparisons. The
-/// ownership walk and nested collectors may replace the tab with spaces.
+/// Keep authored lines when tabs can affect brace or note-column comparisons.
+/// The ownership walk and nested collectors may replace the tab with spaces.
 pub(crate) struct AuthoredTabsGuard {
     installed: bool,
     previous: Option<std::collections::HashMap<usize, String>>,
@@ -4247,7 +4247,7 @@ pub(crate) struct AuthoredTabsGuard {
 
 impl AuthoredTabsGuard {
     pub(crate) fn install(source: &str) -> Self {
-        if !source.contains('\t') || !source.contains("{%") {
+        if !source.contains('\t') || (!source.contains("{%") && !source.contains("[^")) {
             return Self {
                 installed: false,
                 previous: None,
