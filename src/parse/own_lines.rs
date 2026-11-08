@@ -2104,6 +2104,14 @@ impl<'a> Walk<'a> {
     }
 
     fn resume_attached_host(&mut self, at: usize, src: &str) {
+        // The attached host may resume after a descendant opaque block ends,
+        // but it cannot replace that block while its payload is still open.
+        if self.frames.last().is_some_and(|frame| {
+            frame.kind == Kind::Fence
+                && (frame.family == "comment" || indent_cols(src).0 >= frame.open_col)
+        }) {
+            return;
+        }
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
