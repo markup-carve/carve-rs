@@ -1758,7 +1758,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 880's footnote quote, and the two 948 quote-fence rows. Those four
     // documents now survive the bridge without a reported loss.
     // carve#5410 makes row 868 strictly reversible.
-    const STRICT: usize = 3454;
+    const STRICT: usize = 3456;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1786,7 +1786,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // same existing source loss for lazy braced comments.
     // The verse comment fix for carve#5213 moves three 867 rows into the strict set.
     // Row 868 moves to the strict set under carve#5410.
-    const LOSSY: usize = 949;
+    const LOSSY: usize = 960;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
