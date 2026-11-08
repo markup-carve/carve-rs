@@ -2894,6 +2894,24 @@ impl<'a> Walk<'a> {
         self.sibling = None;
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
+        if self.attached_ends_at(at)
+            && self.attached.as_ref().is_some_and(|block| {
+                block
+                    .frames
+                    .last()
+                    .is_some_and(|frame| frame.kind == Kind::Note)
+                    && self.lines.get(block.from).is_some_and(|line| {
+                        let text = trim_ascii_start(line);
+                        strip_blockquote_prefix(text).is_none() && line_starts_paragraph(text)
+                    })
+            })
+            && self
+                .frames
+                .last()
+                .is_some_and(|frame| frame.kind == Kind::Note)
+        {
+            self.frames.pop();
+        }
         for k in 1..self.frames.len() {
             if self.reaches_colon_suffix(k, c.col) {
                 reached = self.frames.len() - 1;
