@@ -40,3 +40,49 @@ fn a_winning_note_plus_before_a_repeated_other_label_stays_consumed() {
     assert!(html.contains("<li id=\"fn1\">"), "{html}");
     assert!(!html.contains("<p>+"), "{html}");
 }
+
+// carve#5474 (ruled A): a losing duplicate's `+` takes nothing.
+#[test]
+fn a_losing_plus_after_a_plain_first_definition_takes_nothing() {
+    for (input, flush) in [
+        (
+            "[^a]: x\n[^a]: +\n flush\n\nsee[^a]\n",
+            "<p>flush</p>\n<p>see",
+        ),
+        (
+            "[^a]: x\n[^a]: +\nflush\n\nsee[^a]\n",
+            "<p>flush</p>\n<p>see",
+        ),
+        (
+            "[^a]: x\n[^a]: +\n[^a]: +\nflush\n\nsee[^a]\n",
+            "<p>flush</p>\n<p>see",
+        ),
+        (
+            "[^a]: +\n x\n[^a]: +\nflush\n\nsee[^a]\n",
+            "<p>flush</p>\n<p>see",
+        ),
+        (
+            "> [^a]: x\n> [^a]: +\n> flush\n\nsee[^a]\n",
+            "<blockquote><p>flush</p></blockquote>",
+        ),
+    ] {
+        let html = to_html(input);
+        assert!(html.starts_with(flush), "{input}: {html}");
+        assert!(html.contains("<p>x<a href=\"#fnref1\""), "{input}: {html}");
+    }
+}
+
+#[test]
+fn a_winning_plus_takes_the_block_past_a_losing_plus() {
+    for input in [
+        "see[^a]\n\n[^a]: +\n[^a]: +\nflush\n",
+        "see[^a]\n\n[^a]: +\n[^a]: x\n[^a]: +\nflush\n",
+        "- see[^a]\n\n  [^a]: +\n  [^a]: +\n  flush\n",
+    ] {
+        let html = to_html(input);
+        assert!(
+            html.contains("<p>flush<a href=\"#fnref1\""),
+            "{input}: {html}"
+        );
+    }
+}
