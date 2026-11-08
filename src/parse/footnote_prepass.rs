@@ -1433,9 +1433,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                                     && strip_blockquote_prefix(trim_ascii_start(raw)).is_some())
                         }))
                     || (at > first_visible_at
-                        && marker_col > 0
+                        && (marker_col > 0 || lead_is_quote)
                         && indent_columns(raw) <= marker_col
                         && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw)))
+                    // A definition at the marker column opens a sibling note (carve-rs#4090).
+                    || (at > first_visible_at
+                        && indent_columns(raw) <= marker_col
+                        && parse_footnote_def_line(trim_ascii_start(raw)).is_some())
             },
         );
         while end <= first_visible_at && end < attached_refs.len() {
@@ -2471,6 +2475,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             {
                 attached.truncate(lead + 1 + at);
             }
+        }
+        // A definition at the marker column opens a sibling note (carve-rs#4090),
+        // unless it is the payload of a fenced or delimited first block.
+        let lead_text = attached[lead..]
+            .iter()
+            .map(|line| trim_ascii_start(line))
+            .find(|line| parse_standalone_attrs(line).is_none())
+            .unwrap_or("");
+        let opaque_lead = detect_fence_open(lead_text).is_some()
+            || detect_comment_fence_line(lead_text).is_some()
+            || detect_container_open(lead_text).is_some()
+            || detect_line_block_open(lead_text).is_some()
+            || detect_hardbreaks_block_open(lead_text).is_some()
+            || detect_quote_block_open(lead_text).is_some();
+        if let Some(at) = attached.iter().skip(lead + 1).position(|line| {
+            !opaque_lead
+                && !line.starts_with([' ', '\t'])
+                && parse_footnote_def_line(line).is_some()
+        }) {
+            attached.truncate(lead + 1 + at);
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
         let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
