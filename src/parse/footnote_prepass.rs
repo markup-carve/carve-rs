@@ -2506,6 +2506,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .rev()
                 .nth(1)
                 .is_some_and(|line| strip_blockquote_prefix(line).is_some());
+        // A line at the ancestor body's column can still be lazy prose in
+        // the last nested note. Keep that ownership in the source handed to
+        // the recursive note pass, just as the hosted-note walk does.
+        let nested_lazy = state.body_open_below
+            && !is_note_def
+            && residual < 2
+            && keeps_paragraph_open(trimmed)
+            && nested_note_paragraph_open(note, self.options);
+        if nested_lazy {
+            let kept = note.frame_lazy(residual, flush);
+            note.push_with(kept, Some(self.first_source_line + *i), |_| {
+                stripped_col(Some(0), line, flush)
+            });
+            *i += 1;
+            return Flow::Next;
+        }
         let trimmed: &str = if caption_after_quote_blank
             || host_colon_opener
             || state.body_open_below && is_note_def && state.note_fence.is_none() && residual < 2
