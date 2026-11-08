@@ -88,6 +88,10 @@ name = "off_column_plus_note_first_block_5516"
 path = "tests/off_column_plus_note_first_block_5516.rs"
 
 [[test]]
+name = "note_fence_return_to_host_4093"
+path = "tests/note_fence_return_to_host_4093.rs"
+
+[[test]]
 name = "attached_note_quote_follower"
 path = "tests/attached_note_quote_follower.rs"
 

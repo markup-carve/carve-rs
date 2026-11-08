@@ -2598,9 +2598,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return false;
         };
         open.quoted = host.quote_depth > 0;
-        [host.note_floor, column]
-            .into_iter()
-            .any(|closer_column| self.closer_maxima.closes_after_at(at, open, closer_column))
+        // A closer beyond a line that has already returned to the host cannot
+        // admit the fence through that host line. The fence ends with its note.
+        for raw in &self.lines[at + 1..] {
+            let Some(body) = host.content(raw) else {
+                break;
+            };
+            let body_col = indent_columns(body);
+            if !is_blank_line(body) && body_col < host.note_floor {
+                break;
+            }
+            if (body_col == host.note_floor || body_col == column)
+                && is_fence_close(trim_ascii_start(body), open)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     fn hosted_lazy_flow(
