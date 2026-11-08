@@ -40,6 +40,20 @@ fn attached_quote_window_end(
         .unwrap_or(window_end)
 }
 
+fn marker_column_ends_attached_block(
+    raw: &str,
+    at: usize,
+    first_visible_at: usize,
+    marker_col: usize,
+    lead_is_quote: bool,
+    lead_is_list: bool,
+) -> bool {
+    at > first_visible_at
+        && (marker_col > 0 || lead_is_quote || lead_is_list)
+        && indent_columns(raw) <= marker_col
+        && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw))
+}
+
 fn unfenced_marker_content_col(line: &str) -> Option<usize> {
     let column = marker_content_col(line)?;
     let mut content = line;
@@ -1765,10 +1779,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                                 && !(lead_is_quote
                                     && strip_blockquote_prefix(trim_ascii_start(raw)).is_some())
                         }))
-                    || (at > first_visible_at
-                        && (marker_col > 0 || lead_is_quote || lead_is_list)
-                        && indent_columns(raw) <= marker_col
-                        && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw)))
+                    || marker_column_ends_attached_block(
+                        raw,
+                        at,
+                        first_visible_at,
+                        marker_col,
+                        lead_is_quote,
+                        lead_is_list,
+                    )
                     // A definition at the marker column opens a sibling note (carve-rs#4090).
                     // A losing duplicate's consumed `+` opens nothing (carve#5502).
                     || (at > first_visible_at
@@ -1788,11 +1806,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     is_blank_line(line)
                         || is_plus_marker(line)
                         || ends_at_marker(at, lines[start + at])
-                        || (at > first_visible_at
-                            && (marker_col > 0 || lead_is_list)
-                            && indent_columns(lines[start + at]) <= marker_col
-                            && (item_block_opener(trim_ascii_start(lines[start + at]))
-                                || is_list_marker(lines[start + at])))
+                        || marker_column_ends_attached_block(
+                            lines[start + at],
+                            at,
+                            first_visible_at,
+                            marker_col,
+                            false,
+                            lead_is_list,
+                        )
                 },
             );
             if next <= end {
