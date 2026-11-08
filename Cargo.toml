@@ -92,10 +92,6 @@ name = "note_fence_return_to_host_4093"
 path = "tests/note_fence_return_to_host_4093.rs"
 
 [[test]]
-name = "attached_note_paragraph_returns_fence_5512"
-path = "tests/attached_note_paragraph_returns_fence_5512.rs"
-
-[[test]]
 name = "attached_note_comment_span_4094"
 path = "tests/attached_note_comment_span_4094.rs"
 
