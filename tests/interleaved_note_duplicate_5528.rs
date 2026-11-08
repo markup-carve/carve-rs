@@ -75,3 +75,26 @@ fn a_quoted_note_keeps_an_authored_indented_block() {
         to_html("> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n> - item\n\nsee[^m][^n]\n");
     assert!(outside.starts_with("<blockquote>\n  <ul>"), "{outside}");
 }
+
+#[test]
+fn the_winning_note_keeps_an_attached_blocks_continuation() {
+    for source in [
+        "[^m]: +\n[^n]: +\n[^n]: +\n\n  - item\n    continuation\n\nsee[^m][^n]\n",
+        "> [^m]: +\n> [^n]: +\n> [^n]: +\n> [^n]: +\n>\n>   - item\n>     continuation\n\nsee[^m][^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(html.contains("<li>item\ncontinuation</li>"), "{source}\n{html}");
+        assert!(!html.starts_with("<ul>"), "{source}\n{html}");
+    }
+}
+
+#[test]
+fn the_winning_note_keeps_blank_payload_inside_a_closed_fence() {
+    let html =
+        to_html("[^m]: +\n[^n]: +\n[^n]: +\n\n  ```x\n  code\n\n  more\n  ```\n\nsee[^m][^n]\n");
+    assert!(
+        html.contains("<pre><code class=\"language-x\">code\n\nmore\n</code></pre>"),
+        "{html}"
+    );
+    assert!(html.starts_with("<p>see"), "{html}");
+}

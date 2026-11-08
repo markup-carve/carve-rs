@@ -1432,12 +1432,32 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     Some(0)
                 });
             }
-            note.push_with(
-                trim_ascii_start(lines[i]).to_string(),
-                Some(self.first_source_line + i),
-                |_| Some(indent_columns(lines[i]) as isize),
-            );
-            return i + 1;
+            let blank_end = (i..lines.len())
+                .find(|&at| is_blank_line(lines[at]))
+                .unwrap_or(lines.len());
+            let end = detect_fence_open(trim_ascii_start(lines[i]))
+                .and_then(|open| {
+                    (i + 1..lines.len())
+                        .find(|&at| is_fence_close(trim_ascii_start(lines[at]), open))
+                })
+                .map_or(blank_end, |at| at + 1);
+            let count = attached_one_block_lines(CursorLines::Slice(&lines[i..end]), self.options);
+            for offset in 0..count {
+                let raw = lines[i + offset];
+                let kept = if offset == 0 {
+                    trim_ascii_start(raw).to_string()
+                } else {
+                    raw.to_string()
+                };
+                note.push_with(kept, Some(self.first_source_line + i + offset), |_| {
+                    Some(if offset == 0 {
+                        indent_columns(raw) as isize
+                    } else {
+                        0
+                    })
+                });
+            }
+            return i + count;
         }
         blank
     }
@@ -2621,12 +2641,44 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         for at in i..resume_at {
                             self.push_hosted_blank(&host, note, at);
                         }
-                        note.push_with(
-                            text.to_string(),
-                            Some(self.first_source_line + resume_at),
-                            |_| Some(walked_col as isize - 1),
-                        );
-                        return resume_at + 1;
+                        let mut candidates = Vec::new();
+                        for (offset, raw) in self.lines[resume_at..].iter().enumerate() {
+                            let Some(line) = host.content(raw) else {
+                                break;
+                            };
+                            let text = trim_ascii_start(line);
+                            if !is_blank_line(line) {
+                                let column = raw.chars().count() - text.chars().count() + 1;
+                                let authored = own_lines::authored_visual_column(
+                                    self.first_source_line + resume_at + offset,
+                                    column,
+                                );
+                                if authored < host.note_floor + host.quote_depth * 2 {
+                                    break;
+                                }
+                            }
+                            candidates.push(line);
+                        }
+                        let count =
+                            attached_one_block_lines(CursorLines::Slice(&candidates), self.options);
+                        for (offset, line) in candidates.into_iter().take(count).enumerate() {
+                            let kept = if offset == 0 {
+                                trim_ascii_start(line).to_string()
+                            } else {
+                                line.to_string()
+                            };
+                            note.push_with(
+                                kept,
+                                Some(self.first_source_line + resume_at + offset),
+                                |_| {
+                                    Some(
+                                        (self.lines[resume_at + offset].len() - line.len())
+                                            as isize,
+                                    )
+                                },
+                            );
+                        }
+                        return resume_at + count;
                     }
                 }
             }
