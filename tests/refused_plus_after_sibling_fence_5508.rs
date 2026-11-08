@@ -23,3 +23,12 @@ fn a_refused_plus_after_a_new_list_kind_does_not_become_text() {
         );
     }
 }
+
+#[test]
+fn a_bare_quote_marker_does_not_end_the_fence_like_a_blank() {
+    let source = "1. +\n```\n- z\n+\n>\n";
+    assert_eq!(
+        compact(source),
+        "<ol><li><pre><code>- z+&gt;</code></pre></li></ol>"
+    );
+}

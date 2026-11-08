@@ -2528,7 +2528,16 @@ impl<'a> Walk<'a> {
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
         if let (Some(fence), Some(block)) = (self.frames.last(), self.attached.as_ref()) {
-            if fence.kind == Kind::Fence && fence.attached_blank_end.is_some_and(|blank| at < blank)
+            if fence.kind == Kind::Fence
+                && fence.attached_blank_end.is_some_and(|blank| {
+                    at < blank
+                        && if block.depth == 0 {
+                            is_blank_line(self.lines[blank])
+                        } else {
+                            strip_quote_levels(self.lines[blank], block.depth)
+                                .is_some_and(is_blank_line)
+                        }
+                })
             {
                 let rest = trim_ascii_start(quoted_rest(self.lines[at]));
                 let host = block.frames.last().expect("attached host");
