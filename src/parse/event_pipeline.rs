@@ -3393,6 +3393,9 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    if has_multiline_braced_comment(source) {
+        return None;
+    }
     // Erased invisible lines (carve#5012) take the tree parser's route.
     if super::transparent_lines::erases_lines(source) {
         return None;
@@ -3784,6 +3787,9 @@ pub(super) fn parse_document_with_custom_options(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    if has_multiline_braced_comment(source) {
+        return None;
+    }
     if super::transparent_lines::erases_lines(source) {
         return None;
     }
@@ -3801,6 +3807,21 @@ pub(super) fn parse_document_with_custom_options(
         );
     }
     parse_document_with_custom_options_once(source, options, mode)
+}
+
+/// Leave comments crossing an authored line boundary to the established parser.
+pub(super) fn has_multiline_braced_comment(source: &str) -> bool {
+    let mut rest = source;
+    while let Some(open) = rest.find("{%") {
+        rest = &rest[open + 2..];
+        match (rest.find("%}"), rest.find(['\n', '\r'])) {
+            (Some(close), Some(line_end)) if line_end < close => return true,
+            (None, Some(_)) => return true,
+            (Some(close), _) => rest = &rest[close + 2..],
+            (None, None) => return false,
+        }
+    }
+    false
 }
 
 #[cfg(feature = "experimental-event-parser-options")]

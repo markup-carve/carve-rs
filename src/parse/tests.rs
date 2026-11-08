@@ -169,6 +169,16 @@ fn event_owned_pipeline_matches_public_modes() {
             );
             continue;
         }
+        if event_pipeline::has_multiline_braced_comment(&source) {
+            let options = Options::default();
+            assert!(
+                event_pipeline::parse_document_with_mode(&source, &options, ParseMode::Html)
+                    .is_none(),
+                "{}",
+                path.display()
+            );
+            continue;
+        }
         for positions in [false, true] {
             for source_lines in [false, true] {
                 let options = Options::default()
@@ -374,6 +384,19 @@ fn event_owned_modes_preserve_extension_callbacks() {
         if walk_moves_lines(&normalize_source(&source)) {
             continue;
         }
+        if event_pipeline::has_multiline_braced_comment(&source) {
+            assert!(
+                event_pipeline::parse_document_with_mode(
+                    &source,
+                    &Options::default(),
+                    ParseMode::Html,
+                )
+                .is_none(),
+                "{}",
+                path.display()
+            );
+            continue;
+        }
         // carve#5012: a document that erases a line takes the standard parse.
         if transparent_lines::erases_lines(&source) {
             let options = Options::default();
@@ -476,6 +499,19 @@ fn event_owned_facade_corpus_render_index_matches() {
         let source = std::fs::read_to_string(&path).unwrap();
         // Rule A: the event route declines a document the ownership walk rewrites.
         if walk_moves_lines(&normalize_source(&source)) {
+            continue;
+        }
+        if event_pipeline::has_multiline_braced_comment(&source) {
+            assert!(
+                event_pipeline::parse_document_with_mode(
+                    &source,
+                    &Options::default(),
+                    ParseMode::HtmlFacade,
+                )
+                .is_none(),
+                "{}",
+                path.display()
+            );
             continue;
         }
         // carve#5012: a document that erases a line takes the standard parse.

@@ -1715,7 +1715,7 @@ mod layout_html_tests {
         // a62d876f migrates authored GFM tables to native `|=` headers
         // (carve#5097), which this path does not take: 83 to 82.
         assert_eq!(
-            accepted, 82,
+            accepted, 83,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
