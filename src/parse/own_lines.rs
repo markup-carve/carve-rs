@@ -2168,6 +2168,15 @@ impl<'a> Walk<'a> {
         {
             return;
         }
+        // The host has already resumed when its first child opened after the
+        // attached block: that child is the host's own later block.
+        if self
+            .frames
+            .get(attached.frames.len())
+            .is_some_and(|child| child.line > self.first_line + attached.from)
+        {
+            return;
+        }
         if !self.marker_line_attachment_host(attached)
             || (self.frames.len() >= attached.frames.len() && !quoted_follower)
             || doc_column(src, indent_rest(rest)) < attached.frames.last().expect("host").col

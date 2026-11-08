@@ -416,6 +416,9 @@ struct NoteBody {
     /// A brace run opened on a lazy line keeps source columns when a later
     /// line reaches the note's content column.
     lazy_brace_open: bool,
+    /// The synthetic blank that ends a hosted `+` first block. It separates
+    /// blocks; it does not mark the start of an attached one.
+    block_separator: Option<usize>,
 }
 
 impl NoteBody {
@@ -470,7 +473,8 @@ impl NoteBody {
         };
         let attached = self.line_map[..opener]
             .iter()
-            .rposition(Option::is_none)
+            .enumerate()
+            .rposition(|(at, line)| line.is_none() && self.block_separator != Some(at))
             .is_some_and(|separator| {
                 !self.lines[separator + 1..opener]
                     .iter()
@@ -1140,6 +1144,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             },
             positions: self.positions,
             open_paragraph_at: Cell::new(None),
+            block_separator: None,
             quoted_fence: next_quoted_fence(None, def.first),
             lazy_brace_open: false,
         };
@@ -2828,6 +2833,20 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 attached.truncate(lead + 1 + at);
             }
         }
+        // A block opener at the note's floor ends an attached paragraph or
+        // quote, as it does for a root note (PART 9 §17 L3).
+        let lead_is_quote = strip_blockquote_prefix(trim_ascii_start(&attached[lead])).is_some();
+        if lead_is_quote || line_starts_paragraph(trim_ascii_start(&attached[lead])) {
+            if let Some(at) = (lead + 1..attached.len()).find(|&at| {
+                let line = host.content(lines[i + at]).unwrap_or(lines[i + at]);
+                let text = trim_ascii_start(line);
+                indent_columns(line) >= host.note_floor
+                    && item_block_opener(text)
+                    && !(lead_is_quote && strip_blockquote_prefix(text).is_some())
+            }) {
+                attached.truncate(at);
+            }
+        }
         // A definition at the marker column opens a sibling note (carve-rs#4090),
         // unless it is the payload of a fenced or delimited first block.
         let lead_text = attached[lead..]
@@ -2881,6 +2900,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         for closer in closers {
             note.push_with(closer, None, |_| None);
         }
+        note.block_separator = Some(note.lines.len());
         note.push_blank();
         i + count
     }
