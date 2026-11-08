@@ -1317,7 +1317,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                                     open,
                                 )
                         })
-                        .map_or_else(|| first_boundary_after(from + 1), |at| at + 1),
+                        // An unclosed fence's payload keeps a lone `+` (PART 9 §17 L3,
+                        // carve#5494): only its blank ends it.
+                        .map_or_else(
+                            || {
+                                (from + 1..lines.len())
+                                    .find(|&at| is_blank_line(lines[at]))
+                                    .unwrap_or(lines.len())
+                            },
+                            |at| at + 1,
+                        ),
                 );
             }
             detect_line_block_open(text)
