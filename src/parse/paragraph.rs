@@ -415,12 +415,15 @@ impl InlineSpanScan {
                             (Some(_), b'\\') => end += 1,
                             (Some(q), ch) if q == ch => quote = None,
                             (None, b'"' | b'\'') => quote = Some(bytes[end]),
+                            (None, b'{') => break,
                             (None, b'}') => break,
                             _ => {}
                         }
                         end += 1;
                     }
-                    if end < bytes.len() {
+                    if bytes.get(end) == Some(&b'}')
+                        && super::attrs::parse_standalone_attrs(&line.as_ref()[k..=end]).is_some()
+                    {
                         k = end;
                     }
                 }

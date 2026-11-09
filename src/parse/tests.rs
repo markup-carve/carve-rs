@@ -36,6 +36,10 @@ fn attribute_value_ticks_and_invalid_comment_do_not_hold_code_open() {
             "{%%%:fr}\n*y*{k=\"a\tb\"}\n{lang=de}\n",
             "<p>{%%%:fr}\n<strong k=\"a\tb\">y</strong></p>",
         ),
+        (
+            "p [x]{???`open}\n{.x}\nclose`\n",
+            "<p>p [x]{???<code>open}\n{.x}\nclose</code></p>",
+        ),
     ] {
         let html = crate::render_html(&parse(source)).unwrap();
         assert_eq!(html.trim_end(), expected, "{source}");
