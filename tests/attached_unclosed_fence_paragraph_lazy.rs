@@ -40,6 +40,14 @@ fn a_paired_fence_and_a_new_paragraph_still_open_blocks() {
 }
 
 #[test]
+fn a_caption_continuation_keeps_the_unpaired_fence_fold() {
+    let input = "- - +\n  ```\n\nx\n^ caption\n   ~~~\n";
+    let html = carve::to_html(input);
+    assert_eq!(html.matches("<pre>").count(), 1, "{html}");
+    assert!(html.contains("<p>x\n^ caption\n~~~</p>"), "{html}");
+}
+
+#[test]
 fn unpaired_fence_variant_sweep() {
     let mut checked = 0;
     for (host, opener_indent, paragraph_indent, follower_indent) in [

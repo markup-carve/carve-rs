@@ -2781,6 +2781,12 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn retain_paragraph_fence_fold(&mut self, owner: usize, form: &Form) {
+        if !matches!(form, Form::Text | Form::Leaf(false)) {
+            self.frames[owner].fold_unpaired_fence = false;
+        }
+    }
+
     fn attached_quote_comment_payload(&self, reached: usize, col: usize, inner: &Frame) -> bool {
         inner.family == "comment"
             && inner.line > self.first_line
@@ -3321,9 +3327,7 @@ impl<'a> Walk<'a> {
         );
         self.end_closed_lists(c);
         let mut form = self.classify(c.rest, reached, at);
-        if !matches!(form, Form::Text) {
-            self.frames[reached].fold_unpaired_fence = false;
-        }
+        self.retain_paragraph_fence_fold(reached, &form);
         let quote_granted_note = self.classify_granted_note(
             c.rest,
             *after_plus,
