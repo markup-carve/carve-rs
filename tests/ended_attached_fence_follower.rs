@@ -86,3 +86,10 @@ fn a_fence_at_the_host_content_column_opens_after_the_blank() {
     assert!(html.contains("<pre><code>a\n</code></pre>"), "{html}");
     assert!(html.contains("<pre><code>c\n</code></pre>"), "{html}");
 }
+
+#[test]
+fn a_shifted_run_before_any_blank_remains_fence_payload() {
+    let input = "- foo\n  - +\n  ```\n  x\n   ```\n";
+    let html = carve::to_html(input);
+    assert!(html.contains("<pre><code>x\n ```\n</code></pre>"), "{html}");
+}

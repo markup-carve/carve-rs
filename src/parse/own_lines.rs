@@ -87,6 +87,7 @@ struct Frame {
     attached_blank_end: Option<usize>,
     attached_host_fence: bool,
     open_col: usize,
+    attached_closer_col: usize,
     run: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
     absorbs: bool,
@@ -130,6 +131,14 @@ struct Frame {
 }
 
 impl Frame {
+    fn closer_col(&self) -> usize {
+        if self.attached_host_fence {
+            self.attached_closer_col
+        } else {
+            self.open_col
+        }
+    }
+
     fn open_comment(&self) -> Option<(usize, usize, usize)> {
         match self.closer {
             Some(Closer::Comment(run)) => Some((self.line, self.doc_marker + 1, run)),
@@ -159,6 +168,7 @@ impl Frame {
             attached_blank_end: None,
             attached_host_fence: false,
             open_col: 0,
+            attached_closer_col: 0,
             run: 0,
             absorbs: false,
             line_block: false,
@@ -2689,15 +2699,18 @@ impl<'a> Walk<'a> {
         host_col: usize,
         marker_col: usize,
     ) -> bool {
+        let mut past_blank = false;
         for line in &self.lines[at + 1..] {
             let rest = trim_ascii_start(line);
             let col = doc_column(line, rest);
-            if col >= marker_col
+            if past_blank
+                && col >= marker_col
                 && col <= host_col
                 && pure_fence(rest).is_some_and(|(found, width)| found == ch && width >= len)
             {
                 return true;
             }
+            past_blank |= is_blank_line(line);
             if col <= marker_col && (item_block_opener(rest) || rest.starts_with('>')) {
                 return false;
             }
@@ -2714,7 +2727,7 @@ impl<'a> Walk<'a> {
     ) -> usize {
         if inner.attached_host_fence
             && col >= inner.doc_marker
-            && closer.is_some_and(|cl| cl.closes(rest, col, inner.open_col))
+            && closer.is_some_and(|cl| cl.closes(rest, col, inner.closer_col()))
         {
             inner.canon
         } else {
@@ -2731,7 +2744,7 @@ impl<'a> Walk<'a> {
             && col >= inner.doc_marker
             && inner
                 .closer
-                .is_some_and(|closer| closer.closes(rest, col, inner.open_col));
+                .is_some_and(|closer| closer.closes(rest, col, inner.closer_col()));
         let comment_line = || {
             (inner.family == "comment" || inner.span.is_some_and(|(ch, _)| ch == b'%'))
                 && rest.starts_with("%%")
@@ -3312,7 +3325,7 @@ impl<'a> Walk<'a> {
             // S1: an open payload tests its closer first (B-<family>-keep, -end).
             let target = c.col.saturating_sub(inner.cut).max(inner.canon);
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
-            let (col, open_col) = (c.col, inner.open_col);
+            let (col, open_col) = (c.col, inner.closer_col());
             let family = inner.family;
             let target = Self::payload_target(inner, closer, c.rest, col, target);
             c.lead_in(target, inner.shift, false);
@@ -3890,6 +3903,14 @@ impl<'a> Walk<'a> {
                     .checked_sub(1)
                     .is_some_and(|previous| self.frames[owner].plus == Some(previous))
                     || self.attached.as_ref().is_some_and(|block| block.from == at);
+                let marker_line_attached = at
+                    .checked_sub(1)
+                    .is_some_and(|previous| self.frames[owner].plus == Some(previous))
+                    || self
+                        .attached
+                        .as_ref()
+                        .filter(|block| block.from == at)
+                        .is_some_and(|block| self.marker_line_attachment_host(block));
                 let attached_host_col = self
                     .attached
                     .as_ref()
@@ -3905,7 +3926,6 @@ impl<'a> Walk<'a> {
                         self.frames[owner].marker.map_or(0, |(col, _)| col),
                         |block| block.marker,
                     );
-                f.attached_host_fence = attached && matches!(closer, Closer::Fence(..));
                 if let Closer::Fence(ch, len) = closer {
                     if attached {
                         let quote_depth = self.frames[1..=owner]
@@ -3919,7 +3939,7 @@ impl<'a> Walk<'a> {
                         });
                         if let Some(blank) = first_blank {
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
-                            let has_closer =
+                            let has_closer = if marker_line_attached {
                                 runs.code_by_column
                                     .has_later(ch, at, attached_closer_col, len)
                                     && self.attached_host_has_closer(
@@ -3928,7 +3948,11 @@ impl<'a> Walk<'a> {
                                         len,
                                         attached_closer_col,
                                         attached_marker_col,
-                                    );
+                                    )
+                            } else {
+                                runs.code_by_column.has_later(ch, at, col, len)
+                            };
+                            f.attached_host_fence = marker_line_attached && has_closer;
                             if !has_closer {
                                 f.attached_blank_end = Some(blank);
                             }
@@ -3955,7 +3979,12 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                f.open_col = if attached { attached_closer_col } else { col };
+                f.open_col = col;
+                f.attached_closer_col = if f.attached_host_fence {
+                    attached_closer_col
+                } else {
+                    col
+                };
                 f.line_block = line_block;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
