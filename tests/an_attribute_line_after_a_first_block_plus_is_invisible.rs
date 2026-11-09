@@ -68,10 +68,7 @@ fn a_wrapped_attribute_line_below_a_refused_note_plus_leaves_the_note() {
 
 #[test]
 fn a_wrapped_attribute_line_below_a_refused_note_plus_keeps_unreferenced_text() {
-    check(
-        "[^a]: +\n {.x\n  .y}\npara\n",
-        "<p class=\"x y\">para</p>",
-    );
+    check("[^a]: +\n {.x\n  .y}\npara\n", "<p class=\"x y\">para</p>");
 }
 
 #[test]
@@ -89,4 +86,3 @@ fn plain_text_below_a_refused_note_plus_still_joins_the_note() {
         "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>foo<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
     );
 }
-
