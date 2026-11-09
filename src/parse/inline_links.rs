@@ -914,6 +914,11 @@ fn compute_bracket_runs_with_alt(
     let comment_end = |at: usize| -> Option<usize> {
         if last_comment_close.is_some_and(|close| close >= at + 2) {
             skip_editorial_comment(bytes, at)
+    let last_close_bracket = bytes.iter().rposition(|&b| b == b']');
+    let last_close_has_attrs = last_close_bracket.is_some_and(|close| {
+        read_attrs_at(bytes, close + 1, last_close_brace).is_some()
+            || read_empty_attrs_at(bytes, close + 1).is_some()
+    });
         } else {
             None
         }
@@ -1054,6 +1059,19 @@ fn compute_bracket_runs_with_alt(
                         matches[open] = i;
                         attribute_host_end = i + 1;
                         closed = true;
+                    }
+                    // An inner atom has already finished at this position. If
+                    // the remaining final closer carries the enclosing span's
+                    // attribute tail, a new unmatched `[` is literal content
+                    // of that span rather than an opener that steals its tail.
+                    let outer_span_tail = !stack.is_empty()
+                        && attribute_host_end == i
+                        && last_close_has_attrs
+                        && last_close_bracket.is_some_and(|close| close > i);
+                    if outer_span_tail {
+                        run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                        i += 1;
+                        continue;
                     }
                     alt.pop();
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
@@ -1225,6 +1243,14 @@ mod autolink_bracket_scan_tests {
 /// pairing pass skips over in one step.
 pub(in crate::parse) fn fill_run(run_at: &mut [usize], stack: &[usize], from: usize, to: usize) {
     let holder = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+    #[test]
+    fn nested_attribute_bracket_runs_keep_their_closers() {
+        let (matches, _) = compute_bracket_matches(b"[[a]{#1}][]#}");
+        assert_eq!((matches[0], matches[1]), (8, 3));
+        let (matches, _) = compute_bracket_matches(b"[[]{#1}[#}]{}");
+        assert_eq!((matches[0], matches[1], matches[7]), (10, 2, NO_BRACKET_MATCH));
+    }
+
     let end = to.min(run_at.len());
     for slot in &mut run_at[from.min(end)..end] {
         *slot = holder;
