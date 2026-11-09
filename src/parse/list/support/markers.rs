@@ -1007,7 +1007,10 @@ fn body_ends_with_open_paragraph_in(body: &str, options: &Options<'_>, marker_bo
     if let Some(open) = crate::parse::definition::body_ends_inside_line_block(body) {
         return open;
     }
-    if body_ends_with_an_attribute_line(body)
+    // A hard-break opener with no payload yet holds no paragraph. The probe
+    // below reads one past the body column as paragraph text.
+    if body_ends_with_hardbreaks_opener(body)
+        || body_ends_with_an_attribute_line(body)
         || body_ends_with_wrapped_attribute(body)
         || quoted_body_ends_with_an_invisible_line(body)
         || body
@@ -1060,6 +1063,15 @@ fn body_ends_with_open_paragraph_in(body: &str, options: &Options<'_>, marker_bo
         probe_blocks(body, options)
     };
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
+}
+
+fn body_ends_with_hardbreaks_opener(body: &str) -> bool {
+    body.lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|line| {
+            detect_hardbreaks_block_open(trim_ascii_start(strip_lazy(line))).is_some()
+        })
 }
 
 /// A wrapped attribute block leaves no paragraph open at any opener column.
@@ -1237,7 +1249,10 @@ pub(crate) fn nested_ends_with_open_paragraph(
     below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
-    if body_ends_with_wrapped_attribute(nested) || quoted_body_ends_with_a_blank_line(nested) {
+    if body_ends_with_wrapped_attribute(nested)
+        || quoted_body_ends_with_a_blank_line(nested)
+        || body_ends_with_hardbreaks_opener(nested)
+    {
         return false;
     }
     // A payload line is stanza text whatever it looks like (PART 2 `line_block`).
@@ -1417,8 +1432,11 @@ pub(crate) fn colon_fences_left_open(nested: &str) -> usize {
                 }
             }
         }
-        if let Some(container) = detect_container_open(trimmed) {
-            open.push((container.fence_len, host_floor, column));
+        if let Some(fence_len) = detect_container_open(trimmed)
+            .map(|container| container.fence_len)
+            .or_else(|| detect_hardbreaks_block_open(trimmed))
+        {
+            open.push((fence_len, host_floor, column));
         }
     }
     open.len()
