@@ -1410,8 +1410,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     line_starts_paragraph(prior)
                         && opens_colon_body_paragraph(prior, None, true).is_some()
                         && exact_colon_fence_len(trim_ascii_start(prior)).is_none()
-                        // A line block's opener holds no stanza yet (PART 0 S4).
+                        // A line block's opener holds no stanza yet (PART 0 S4),
+                        // nor a hard-break or quote block's opener a paragraph.
                         && detect_line_block_open(trim_ascii_start(prior)).is_none()
+                        && detect_hardbreaks_block_open(trim_ascii_start(prior)).is_none()
+                        && detect_quote_block_open(trim_ascii_start(prior)).is_none()
                         && detect_comment_fence_line_any_column(prior).is_none()
                         && detect_fence_open(trim_ascii_start(prior)).is_none()
                 })

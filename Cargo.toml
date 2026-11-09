@@ -88,6 +88,14 @@ name = "line_block_payload_closers_3123"
 path = "tests/line_block_payload_closers_3123.rs"
 
 [[test]]
+name = "bare_colon_openers_hold_no_paragraph"
+path = "tests/bare_colon_openers_hold_no_paragraph.rs"
+
+[[test]]
+name = "a_cut_attribute_tail_stays_literal"
+path = "tests/a_cut_attribute_tail_stays_literal.rs"
+
+[[test]]
 name = "first_block_plus_passes_sibling_note_bodies"
 path = "tests/first_block_plus_passes_sibling_note_bodies.rs"
 

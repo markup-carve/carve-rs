@@ -80,6 +80,7 @@ pub(in crate::parse) fn item_block_opener_with_invisible_arms(
         || detect_container_open(line).is_some()
         || detect_quote_block_open(line).is_some()
         || detect_line_block_open(line).is_some()
+        || detect_hardbreaks_block_open(line).is_some()
         || (invisible_arms && parse_footnote_def_line(line).is_some())
         || (invisible_arms && parse_standalone_attrs(line).is_some())
         || detect_block_image(line).is_some()
