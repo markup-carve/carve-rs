@@ -958,6 +958,11 @@ pub(in crate::parse) struct BodyCommentState {
     /// Nonblank lines as (column, is a description term or lead), each shadowing
     /// the earlier ones at or right of its column.
     entries: Vec<(usize, bool)>,
+    /// The lines since the last blank, where a refused brace run can end.
+    run: Vec<String>,
+    /// A refused brace run's fence-shaped follower, which is paragraph text
+    /// through its closer (CARVE-P2-035).
+    refused_follower: Option<FenceOpen>,
 }
 
 impl BodyCommentState {
@@ -974,6 +979,8 @@ impl BodyCommentState {
             line_block: None,
             line_block_span: None,
             entries: Vec::new(),
+            run: Vec::new(),
+            refused_follower: None,
         }
     }
 
@@ -1030,8 +1037,17 @@ impl BodyCommentState {
         }
         if line.is_empty() {
             self.at_block_start = true;
+            self.run.clear();
+            self.refused_follower = None;
             return;
         }
+        if let Some(open) = self.refused_follower {
+            if is_fence_close(line, open) {
+                self.refused_follower = None;
+            }
+            return;
+        }
+        self.run.push(raw.to_owned());
         let mut unquoted = line;
         while let Some(rest) = strip_blockquote_prefix(unquoted) {
             unquoted = trim_ascii_start(rest);
@@ -1068,7 +1084,13 @@ impl BodyCommentState {
             return;
         }
         if let Some(open) = detect_fence_open(opener) {
-            self.code = Some(open);
+            let before = &self.run[..self.run.len() - 1];
+            if !before.is_empty() && opener == line && ends_in_refused_brace_run(before) {
+                self.refused_follower = Some(open);
+            } else {
+                self.code = Some(open);
+                self.run.clear();
+            }
             return;
         }
         if let Some(open) = detect_comment_fence_line(opener) {

@@ -55,6 +55,38 @@ fn host_indent(host: &NoteHost, raw: &str) -> usize {
     indent_columns(host.content(raw).unwrap_or(raw))
 }
 
+/// Whether document lines end in a refused brace run, its columns read inside
+/// any quote prefixes (PART 9 §15 A5).
+fn lines_end_in_refused_brace_run(lines: &[&str]) -> bool {
+    let Some(last) = lines.last().filter(|line| line.contains('}')) else {
+        return false;
+    };
+    fn inside(line: &str) -> &str {
+        if trim_ascii_start(line).starts_with('>') {
+            without_blockquote_prefixes(trim_ascii_start(line))
+        } else {
+            line
+        }
+    }
+    let mut run = vec![inside(last)];
+    for &line in lines[..lines.len() - 1].iter().rev() {
+        let line = inside(line);
+        if is_blank_line(line) {
+            return false;
+        }
+        run.push(line);
+        if trim_ascii_start(line).starts_with('{') {
+            break;
+        }
+        // A run closes at its first brace, so an earlier closed line ends the search.
+        if line.contains('}') && !line.contains(['"', '\'']) {
+            return false;
+        }
+    }
+    run.reverse();
+    ends_in_refused_brace_run(&run)
+}
+
 /// Whether attached line `at` follows a refused brace run, whose paragraph
 /// takes it as text (CARVE-P2-035).
 fn follows_refused_run(attached: &[String], lead: usize, at: usize) -> bool {
@@ -1064,7 +1096,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     strip_blockquote_prefix(trim_ascii_start(lines[above])).is_some()
                         && strip_blockquote_prefix(trim_ascii_start(line)).is_none()
                 })
-                && prepass_paragraph_open_above(lines, i, &[], &self.folded_into_term)
+                && (prepass_paragraph_open_above(lines, i, &[], &self.folded_into_term)
+                    || lines_end_in_refused_brace_run(&lines[..i]))
         });
         // A footnote definition is collected at the top level AND from inside a
         // blockquote / bullet-list container: `> [^a]: body` and `- [^a]: body`
@@ -1348,6 +1381,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut unaffordable,
             );
         if folds || unaffordable || self.folded_into_term.folded.contains(&i) {
+            return None;
+        }
+        // The line after a refused brace run is its paragraph's text (CARVE-P2-035).
+        if lines_end_in_refused_brace_run(&self.lines[..i]) {
             return None;
         }
         Some(DefinitionLine {
@@ -2416,7 +2453,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 || !note.lines.last().is_some_and(|last| {
                     let text = trim_ascii_start(last);
                     detect_fence_open(text).is_some() || detect_comment_fence_line(text).is_some()
-                }))
+                })
+                || ends_in_refused_follower(&note.lines))
             && (lazy_open || note_paragraph_open(note, rest, self.options))
         {
             let text = strip_lazy(rest);
@@ -3338,12 +3376,18 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             || detect_line_block_open(lead_text).is_some()
             || detect_hardbreaks_block_open(lead_text).is_some()
             || detect_quote_block_open(lead_text).is_some();
-        if let Some(at) = attached.iter().skip(lead + 1).position(|line| {
-            !opaque_lead
-                && !line.starts_with([' ', '\t'])
-                && parse_footnote_def_line(line)
-                    .is_some_and(|(other, first)| !self.losing_plus_line(label, other, first))
-        }) {
+        if let Some(at) = attached
+            .iter()
+            .enumerate()
+            .skip(lead + 1)
+            .position(|(at, line)| {
+                !opaque_lead
+                    && !line.starts_with([' ', '\t'])
+                    && parse_footnote_def_line(line)
+                        .is_some_and(|(other, first)| !self.losing_plus_line(label, other, first))
+                    && !ends_in_refused_brace_run(&attached[lead..at])
+            })
+        {
             attached.truncate(lead + 1 + at);
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();

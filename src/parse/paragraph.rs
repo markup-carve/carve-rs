@@ -191,6 +191,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     // paragraph whatever it opens (carve#5080). A fence there keeps its closer.
     let mut literal: Vec<(usize, usize)> = Vec::new();
     let mut forced_through: Option<usize> = None;
+    // The follower line itself: only it can extend the forced range to its closer.
+    let mut follower: Option<usize> = None;
     let mut comment_scanned_through = 0usize;
     let mut inline_span = InlineSpanScan::default();
     while let Some(line) = cur.peek() {
@@ -224,6 +226,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                     literal.push((start, lines.len()));
                     inline_span.scanned = lines.len();
                     forced_through = Some(cur.pos);
+                    follower = Some(cur.pos);
                     continue;
                 }
                 RefusedBraceRun::No(scanned) if brace_line.starts_with("{%") => {
@@ -248,7 +251,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
-        if forced && forced_through == Some(cur.pos) {
+        if forced && follower == Some(cur.pos) {
             if let Some(open) = detect_fence_open(line) {
                 if let Some(closer) = (cur.pos + 1..cur.lines.len())
                     .find(|&k| cur.lines.line(k).is_some_and(|l| is_fence_close(l, open)))
