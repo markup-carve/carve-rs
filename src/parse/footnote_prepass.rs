@@ -3102,7 +3102,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let nested_lazy = state.body_open_below
             && !is_note_def
             && residual < 2
-            && keeps_paragraph_open(trimmed)
+            && own_lines::foldable_plain_line(flush)
             && nested_note_paragraph_open(note, self.options);
         if nested_lazy {
             let kept = note.frame_lazy(residual, flush);
