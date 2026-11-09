@@ -3092,8 +3092,10 @@ impl<'a> Walk<'a> {
             c.lead_in(canon, shift, false);
             let pad = frame_canon.saturating_sub(canon);
             if self.consume_refused_plus(at, k, c, plus_refusal, closes_descendant, pad) {
-                if let Some(frames) = list_before_refused_plus {
-                    self.replace_frames(frames);
+                if self.frames[k].kind == Kind::Dd {
+                    if let Some(frames) = list_before_refused_plus {
+                        self.replace_frames(frames);
+                    }
                 }
                 return;
             }
