@@ -489,10 +489,10 @@ pub(super) fn render_inline_after(
                 );
                 out.push_str(&render_attrs_without_keys(
                     &a.attrs,
-                    &[crate::roundtrip::AUTOLINK],
+                    &[crate::roundtrip::AUTOLINK, "href"],
                 ));
             } else {
-                write_attrs(out, &a.attrs);
+                out.push_str(&render_attrs_without_keys(&a.attrs, &["href"]));
             }
             out.push('>');
             write_escaped_text(out, display);
