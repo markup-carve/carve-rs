@@ -107,6 +107,26 @@ pub(in crate::parse) fn parse_symbol(
     bounds: &InlineBounds<'_>,
 ) -> Option<(Symbol, usize)> {
     let bytes = text.as_bytes();
+    let close_pos = symbol_close_at(bytes, pos)?;
+    let len = close_pos - pos - 1;
+    let (attrs, consumed) =
+        if let Some((attrs, next)) = read_attrs_at(bytes, close_pos + 1, bounds.last_close_brace) {
+            (Some(attrs), next - pos)
+        } else {
+            (None, len + 2)
+        };
+    Some((
+        Symbol {
+            name: text[pos + 1..close_pos].to_string(),
+            attrs,
+            pos: None,
+        },
+        consumed,
+    ))
+}
+
+/// Closing colon of a symbol atom, shared by parsing and delimiter pairing.
+pub(in crate::parse) fn symbol_close_at(bytes: &[u8], pos: usize) -> Option<usize> {
     if bytes.get(pos) != Some(&b':') {
         return None;
     }
@@ -137,20 +157,7 @@ pub(in crate::parse) fn parse_symbol(
     if bytes.get(close_pos) != Some(&b':') {
         return None;
     }
-    let (attrs, consumed) =
-        if let Some((attrs, next)) = read_attrs_at(bytes, close_pos + 1, bounds.last_close_brace) {
-            (Some(attrs), next - pos)
-        } else {
-            (None, len + 2)
-        };
-    Some((
-        Symbol {
-            name: text[pos + 1..close_pos].to_string(),
-            attrs,
-            pos: None,
-        },
-        consumed,
-    ))
+    Some(close_pos)
 }
 
 pub(in crate::parse) fn parse_autolink(
