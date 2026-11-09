@@ -46,3 +46,36 @@ fn a_plus_attached_fence_ends_at_the_blank() {
     assert_eq!(code("[^a]: +\n```\nx\n\nsee[^a]\n"), "x\n");
     assert_eq!(code("[^f]: n\n+\n```\na\n\nb\n\nsee[^f]\n"), "a\n");
 }
+
+#[test]
+fn an_own_line_plus_fence_keeps_the_blank_after_note_body_text() {
+    let input = "[^a]: p\n+\n```\ncode\n\n  tail\n\nsee[^a]\n";
+    assert_eq!(code(input), "code\n\ntail\n\n");
+}
+
+#[test]
+fn own_line_plus_note_fence_variant_sweep() {
+    let mut checked = 0;
+    for label in ["a", "b"] {
+        for fence in ['`', '~'] {
+            for width in 3..=5 {
+                let run = fence.to_string().repeat(width);
+                for blanks in 1..=2 {
+                    for word in 0..10 {
+                        for payload in 0..5 {
+                            let input = format!(
+                                "[^{label}]: p\n+\n{run}\ncode{payload}\n{}  tail{word}\n\nsee[^{label}]\n",
+                                "\n".repeat(blanks)
+                            );
+                            let expected =
+                                format!("code{payload}\n{}tail{word}\n\n", "\n".repeat(blanks));
+                            assert_eq!(code(&input), expected, "{input:?}");
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1200);
+}
