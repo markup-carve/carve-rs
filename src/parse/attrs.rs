@@ -345,19 +345,23 @@ pub(in crate::parse) fn cursor_ends_in_refused_brace_run(
 
 /// Whether the collected lines end in a refused brace run, whose paragraph
 /// takes the next line whatever it opens (carve#5080).
-pub(in crate::parse) fn ends_in_refused_brace_run(lines: &[String]) -> bool {
-    let Some(last) = lines.last().filter(|line| line.contains('}')) else {
+pub(in crate::parse) fn ends_in_refused_brace_run<S: AsRef<str>>(lines: &[S]) -> bool {
+    let Some(last) = lines
+        .last()
+        .map(AsRef::as_ref)
+        .filter(|line| line.contains('}'))
+    else {
         return false;
     };
     let mut start = lines.len() - 1;
     let mut candidates = 0;
     loop {
-        if is_blank_line(&lines[start]) {
+        if is_blank_line(lines[start].as_ref()) {
             return false;
         }
-        if trim_ascii_start(&lines[start]).starts_with('{') {
+        if trim_ascii_start(lines[start].as_ref()).starts_with('{') {
             if matches!(
-                refused_brace_run(lines[start..].iter().map(String::as_str), true),
+                refused_brace_run(lines[start..].iter().map(AsRef::as_ref), true),
                 RefusedBraceRun::Lines(count) if start + count == lines.len()
             ) {
                 return true;

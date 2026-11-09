@@ -386,6 +386,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     });
     let mut held_comment_span = HeldCommentSpan::new();
     let mut body_code_fence = OpenCodeFenceScan::default();
+    // A fence-shaped follower of a refused brace run is paragraph text, through
+    // its closer (CARVE-P2-035): it opens no fence for the collector.
+    let mut refused_follower: Option<FenceOpen> = None;
     let mut line_block_payload = LineBlockPayloadScan::default();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
@@ -2237,13 +2240,31 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             literal_code_closes_cursor(cur, floor, column, open)
                         }))
             });
-            if may_track_code {
+            if let Some(open) = refused_follower {
+                if is_blank_line(line) || is_fence_close(trim_ascii_start(line), open) {
+                    refused_follower = None;
+                }
+            } else if may_track_code {
                 let tracked = if literal_colon.is_some() {
                     trim_ascii_start(fence_line)
                 } else {
                     fence_line
                 };
-                track_collected_fence(fence, tracked, indent >= strip_cols, indent);
+                // A closed follower keeps its closer, as a fence would.
+                refused_follower = fence
+                    .is_none()
+                    .then(|| detect_fence_open(trim_ascii_start(tracked)))
+                    .flatten()
+                    .filter(|&open| {
+                        ends_in_refused_brace_run(&lines)
+                            && !(cur.pos + 1..cur.lines.len())
+                                .map(|k| cur.lines.at(k))
+                                .take_while(|next| !is_blank_line(next))
+                                .any(|next| is_fence_close(trim_ascii_start(next), open))
+                    });
+                if refused_follower.is_none() {
+                    track_collected_fence(fence, tracked, indent >= strip_cols, indent);
+                }
             }
             if marker_is_definition_term && !was_in_code && fence.is_some() {
                 term_code_lazy_tail = marker_term_paragraph_open
@@ -2507,8 +2528,12 @@ pub(crate) fn body_lines_hold_open_code_fence<S: AsRef<str>>(lines: &[S]) -> boo
 /// The line that opened the fence [`body_lines_hold_open_code_fence`] finds.
 pub(crate) fn open_code_fence_opener<S: AsRef<str>>(lines: &[S]) -> Option<usize> {
     let mut open = None;
+    let mut follower = None;
     let mut opener = 0;
     for (at, line) in lines.iter().enumerate() {
+        if refused_follower_step(&mut follower, open.is_some(), &lines[..at], line.as_ref()) {
+            continue;
+        }
         let was_open = open.is_some();
         track_body_code_fence(&mut open, line.as_ref());
         if !was_open && open.is_some() {
@@ -2516,6 +2541,60 @@ pub(crate) fn open_code_fence_opener<S: AsRef<str>>(lines: &[S]) -> Option<usize
         }
     }
     open.map(|_| opener)
+}
+
+/// Whether the last line is a refused brace run's fence-shaped follower or
+/// that follower's closer, both paragraph text (CARVE-P2-035).
+pub(crate) fn ends_in_refused_follower<S: AsRef<str>>(lines: &[S]) -> bool {
+    let Some((last, before)) = lines.split_last() else {
+        return false;
+    };
+    let last = trim_ascii_start(last.as_ref());
+    if detect_fence_open(last).is_some() && ends_in_refused_brace_run(before) {
+        return true;
+    }
+    for at in (0..before.len()).rev() {
+        let line = before[at].as_ref();
+        if is_blank_line(line) {
+            return false;
+        }
+        if let Some(open) = detect_fence_open(trim_ascii_start(line)) {
+            return is_fence_close(last, open) && ends_in_refused_brace_run(&before[..at]);
+        }
+    }
+    false
+}
+
+/// Whether `line` is paragraph text of a refused brace run's fence-shaped
+/// follower, from that follower through its closer (CARVE-P2-035), so it opens
+/// and closes no fence. `follower` holds the follower's fence while it lasts.
+pub(crate) fn refused_follower_step<S: AsRef<str>>(
+    follower: &mut Option<FenceOpen>,
+    in_fence: bool,
+    before: &[S],
+    line: &str,
+) -> bool {
+    if let Some(open) = *follower {
+        if is_blank_line(line) {
+            *follower = None;
+            return false;
+        }
+        if is_fence_close(trim_ascii_start(line), open) {
+            *follower = None;
+        }
+        return true;
+    }
+    if in_fence {
+        return false;
+    }
+    let Some(open) = detect_fence_open(trim_ascii_start(line)) else {
+        return false;
+    };
+    if !ends_in_refused_brace_run(before) {
+        return false;
+    }
+    *follower = Some(open);
+    true
 }
 
 fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
@@ -2534,6 +2613,7 @@ fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
 pub(crate) struct OpenCodeFenceScan {
     scanned: usize,
     open: Option<FenceOpen>,
+    follower: Option<FenceOpen>,
     verse: crate::parse::definition::LineBlockTail,
 }
 
@@ -2563,13 +2643,17 @@ impl LineBlockPayloadScan {
 
 impl OpenCodeFenceScan {
     pub(crate) fn holds_open_fence<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
-        for line in &lines[self.scanned..] {
+        for at in self.scanned..lines.len() {
+            let line = lines[at].as_ref();
             // A stanza's verse line is not a fence opener (B-div-keep).
-            self.verse.step(line.as_ref());
+            self.verse.step(line);
             if self.open.is_none() && self.verse.tail().is_some() {
                 continue;
             }
-            track_body_code_fence(&mut self.open, line.as_ref());
+            if refused_follower_step(&mut self.follower, self.open.is_some(), &lines[..at], line) {
+                continue;
+            }
+            track_body_code_fence(&mut self.open, line);
         }
         self.scanned = lines.len();
         self.open.is_some()

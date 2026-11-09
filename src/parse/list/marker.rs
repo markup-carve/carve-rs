@@ -494,8 +494,25 @@ pub(crate) fn attached_block_end(
     let mut end = start;
     let mut in_fence: Option<FenceOpen> = None;
     let mut unclosed_fence = None;
+    // A refused brace run's closed follower fence: paragraph text through its
+    // closer, where only a sibling marker still ends the block (CARVE-P2-035).
+    let mut follower: Option<FenceOpen> = None;
     while end < lines.len() {
         let line = lines.at(end);
+        if let Some(open) = follower {
+            if is_fence_close(line, open) {
+                follower = None;
+            } else if is_blank_line(line)
+                || ((is_plus_marker(line)
+                    || line.strip_prefix(":: ").is_some()
+                    || strip_definition_marker(line).is_some())
+                    && is_boundary(line, end))
+            {
+                break;
+            }
+            end += 1;
+            continue;
+        }
         if let Some(owner_col) = unclosed_fence {
             // An open payload ignores marker shapes. Only its first blank or a
             // nonblank line left of the opener's owner can end it (PART 0 S1).
@@ -530,6 +547,13 @@ pub(crate) fn attached_block_end(
                 });
             let closed =
                 possible && (end + 1..lines.len()).any(|at| is_fence_close(lines.at(at), open));
+            // A refused brace run's follower is paragraph text; only a closer
+            // carries it further (CARVE-P2-035).
+            if end > start && cursor_ends_in_refused_brace_run(lines, start, end) {
+                follower = closed.then_some(open);
+                end += 1;
+                continue;
+            }
             // Read from the end: the tail past the last blank line is short in practice,
             // and a scan forward from every unclosed opener would be quadratic.
             if !closed
