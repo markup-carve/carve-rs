@@ -111,6 +111,15 @@ fn marker_column_ends_attached_block(
             && follower_keeps_run(attached, first_visible_at, at, raw, marker_col))
 }
 
+fn later_marker_end(lines: &[&str], start: usize, end: usize, marker_col: usize) -> usize {
+    (start + 1..end)
+        .find(|&at| {
+            (indent_columns(lines[at]) <= marker_col && is_plus_marker(lines[at]))
+                || continuation_marker::is_consumed_marker(trim_ascii_start(lines[at]))
+        })
+        .unwrap_or(end)
+}
+
 /// Whether a blank in an attached list child's fence is followed by a
 /// compatible sibling of that list. The one-block list probe owns that blank
 /// and sibling; a generic attachment boundary sees only the blank.
@@ -1792,11 +1801,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let first_boundary_after = |from: usize| {
             from + lines[from..]
                 .iter()
-                .position(|line| {
-                    is_blank_line(line)
-                        || is_plus_marker(line)
-                        || continuation_marker::is_consumed_marker(line)
-                })
+                .position(|line| is_blank_line(line) || is_plus_marker(line))
                 .unwrap_or(lines.len() - from)
         };
         let mut fenced_block_end = |from: usize| {
@@ -1885,12 +1890,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         // A later marker at the attached block's column belongs to its host,
         // even when a list probe could interpret it as an item continuation.
-        let window_end = (i + 1..window_end)
-            .find(|&at| {
-                (indent_columns(lines[at]) <= marker_col && is_plus_marker(lines[at]))
-                    || continuation_marker::is_consumed_marker(trim_ascii_start(lines[at]))
-            })
-            .unwrap_or(window_end);
+        let window_end = later_marker_end(lines, i, window_end, marker_col);
         let window_end = attached_quote_window_end(
             lines,
             lead,
