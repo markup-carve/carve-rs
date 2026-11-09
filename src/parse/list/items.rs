@@ -530,6 +530,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
 
     fn non_marker_line(&mut self, line: &str) -> ControlFlow<()> {
         let indent = indent_columns(line);
+        // A region marker at the list's column is its sibling (P11-073a).
+        // Let the caller read it, then start a fresh list at the next item.
+        if indent <= self.base_indent
+            && own_lines::is_region_marker_text(line.trim_start_matches([' ', '\t']))
+        {
+            return END;
+        }
         if indent < self.content_col
             && is_line_comment_any_column(line)
             && !line.starts_with(LAZY)
