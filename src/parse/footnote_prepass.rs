@@ -364,6 +364,15 @@ fn is_cont_marker_line(line: &str) -> bool {
     trim_ascii(without_blockquote_prefixes(trim_ascii_start(line))) == "+"
 }
 
+/// The lines of the attribute run that opens on line `at`, if one does.
+fn attr_run_at(lines: &[&str], at: usize) -> Option<usize> {
+    let line = lines.get(at)?;
+    let text = trim_ascii_start(line);
+    text.starts_with('{')
+        .then(|| attrs_block_len_at(indent_columns(line), text, lines[at + 1..].iter().copied()))
+        .flatten()
+}
+
 fn first_visible_note_line(lines: &[&str]) -> Option<usize> {
     let mut at = 0;
     while let Some(&line) = lines.get(at) {
@@ -377,6 +386,7 @@ fn first_visible_note_line(lines: &[&str]) -> Option<usize> {
                 && lines
                     .get(at)
                     .is_some_and(|line| own_lines::foldable_plain_line(trim_ascii_start(line)))
+                && attr_run_at(lines, at).is_none()
             {
                 at += 1;
             }
@@ -385,6 +395,9 @@ fn first_visible_note_line(lines: &[&str]) -> Option<usize> {
             || parse_link_def_line(text).is_some()
         {
             at += 1;
+        } else if let Some(len) = attr_run_at(lines, at) {
+            // An attribute line is invisible: the block below it is the first.
+            at += len;
         } else if let Some(open) = detect_comment_fence_line(text) {
             at = lines[at + 1..]
                 .iter()
@@ -1955,6 +1968,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         && (in_skipped_note
                             || at > 0 && parse_footnote_def_line(&attached[at - 1]).is_some())
                         && own_lines::foldable_plain_line(trim_ascii_start(&line))
+                        && attr_run_at(&attached_refs, at).is_none()
                 };
                 visible |= !is_line_comment_any_column(&line);
                 let kept = if in_skipped_note {
