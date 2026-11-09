@@ -805,6 +805,8 @@ struct Walk<'a> {
     losing_restore: Option<Vec<Frame>>,
     reach: usize,
     runs: std::cell::OnceCell<Runs>,
+    quoted_fence_closers: std::cell::OnceCell<ScopedFenceClosers>,
+    quote_exits: std::cell::RefCell<std::collections::HashMap<usize, Vec<usize>>>,
     /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
     trace: Option<Vec<TraceRecord>>,
     /// When collecting erased-line owners, only these authored lines need records.
@@ -1180,6 +1182,8 @@ fn walk_traced(
         losing_restore: None,
         reach: 0,
         runs: std::cell::OnceCell::new(),
+        quoted_fence_closers: std::cell::OnceCell::new(),
+        quote_exits: std::cell::RefCell::new(std::collections::HashMap::new()),
         sibling: None,
         attr_rest: None,
         trace,
@@ -2584,6 +2588,42 @@ impl<'a> Walk<'a> {
         }
     }
 
+    fn payload_fence_has_closer(&self, at: usize, ch: u8, len: usize) -> bool {
+        let lines = &self.lines;
+        let quote_depth = self
+            .frames
+            .iter()
+            .filter(|frame| frame.kind == Kind::Quote)
+            .count();
+        if quote_depth == 0 {
+            let runs = self.runs.get_or_init(|| closer_runs(lines));
+            let widest = if ch == b'`' {
+                &runs.backtick
+            } else {
+                &runs.tilde
+            };
+            return widest.get(at + 1).copied().unwrap_or(0) >= len;
+        }
+        let exit = {
+            let mut exits = self.quote_exits.borrow_mut();
+            let boundaries = exits.entry(quote_depth).or_insert_with(|| {
+                let mut boundaries = vec![lines.len(); lines.len() + 1];
+                for index in (0..lines.len()).rev() {
+                    boundaries[index] = if strip_quote_levels(lines[index], quote_depth).is_none() {
+                        index
+                    } else {
+                        boundaries[index + 1]
+                    };
+                }
+                boundaries
+            });
+            boundaries[at + 1]
+        };
+        self.quoted_fence_closers
+            .get_or_init(|| ScopedFenceClosers::new(lines.iter().map(|line| quoted_rest(line))))
+            .code_in(at + 1..exit, ch, len)
+    }
+
     /// Whether the line stays in the innermost fence's payload. A `%%` line
     /// below the column inside an open `%%%` span is that span's payload, and
     /// its exact run the closer (PART 0 S1, PART 9 §28, carve#4994).
@@ -3120,21 +3160,14 @@ impl<'a> Walk<'a> {
             } else if line_block {
                 // A span in a line-block payload pairs past the column too (carve-php#3137).
                 let rest = c.rest;
-                let lines = &self.lines;
-                let runs = self.runs.get_or_init(|| closer_runs(lines));
                 let fence = detect_fence_open(rest).map(|_| {
                     let ch = rest.as_bytes()[0];
                     (ch, rest.bytes().take_while(|&b| b == ch).count())
                 });
                 let new_span = match fence {
-                    Some((ch, len)) => {
-                        let widest = if ch == b'`' {
-                            &runs.backtick
-                        } else {
-                            &runs.tilde
-                        };
-                        (widest.get(at + 1).copied().unwrap_or(0) >= len).then_some((ch, len))
-                    }
+                    Some((ch, len)) => self
+                        .payload_fence_has_closer(at, ch, len)
+                        .then_some((ch, len)),
                     None => comment_run(rest).map(|run| (b'%', run)),
                 };
                 if new_span.is_some() {
