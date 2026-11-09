@@ -50,3 +50,20 @@ fn a_line_that_is_not_an_opener_stays_a_break_or_text() {
     assert_eq!(carve::to_html("----\nx\n").trim(), "<hr>\n<p>x</p>");
     assert_eq!(carve::to_html(" ---\nx\n").trim(), "<hr>\n<p>x</p>");
 }
+
+#[test]
+fn an_erased_leading_line_does_not_move_the_frontmatter_gate() {
+    for lead in ["%% c\n", "  %% c\n", "[x]: /u\n", "*[X]: expanded\n"] {
+        for opener in ["---", "---yaml"] {
+            let source = format!("{lead}{opener}\nx\n");
+            let doc = carve::parse(&source);
+            assert!(doc.frontmatter_raw.is_none(), "{source:?}");
+            let html = carve::to_html(&source);
+            if opener == "---" {
+                assert_eq!(html, "<hr>\n<p>x</p>", "{source:?}");
+            } else {
+                assert_eq!(html, "<p>---yaml\nx</p>", "{source:?}");
+            }
+        }
+    }
+}

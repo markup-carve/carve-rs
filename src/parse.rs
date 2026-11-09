@@ -1131,8 +1131,11 @@ fn parse_with_options_mode_and_index_once(
     let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     // The walk drops a line's leading run, so ` ---` would read as a delimiter
     // here; `frontmatter_open` and `frontmatter_close` admit no indent.
+    let authored_normalized = normalize_source(authored);
     let (frontmatter, frontmatter_raw, body) =
-        if split_frontmatter(normalized.as_ref(), false).1.is_some() {
+        if frontmatter::frontmatter_extent(authored_normalized.as_ref()).is_some()
+            && frontmatter::frontmatter_extent(normalized.as_ref()).is_some()
+        {
             split_frontmatter(source, options.positions)
         } else {
             (BTreeMap::new(), None, source)
