@@ -991,7 +991,8 @@ fn parse_with_options_mode_and_index(
         return result;
     }
     // A hoisted abbreviation needs source lines (CARVE-P12-070). A multiline
-    // block comment needs authored columns after nested collection (CARVE-P2-035).
+    // block comment or a consumed `+` needs authored columns after nested
+    // collection, even when callers did not request AST positions.
     if !options.positions
         && (source.contains("{%")
             && source.lines().any(|line| {
@@ -999,7 +1000,10 @@ fn parse_with_options_mode_and_index(
                 line.starts_with("{%") && !line.contains("%}")
             })
             || transparent.is_some()
-            || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source)))
+            || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source))
+            || (parsed.contains('+')
+                && own_lines(normalize_source(parsed).as_ref())
+                    .is_some_and(|owned| !owned.consumed.is_empty())))
     {
         let (mut doc, index) = parse_with_options_mode_and_index_once(
             parsed,

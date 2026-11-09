@@ -819,6 +819,8 @@ struct Walk<'a> {
     refuse_line: bool,
     accepted: Vec<(usize, continuation_marker::Decision)>,
     refused: Vec<continuation_marker::Refused>,
+    /// A refused description marker after an attached ordered list, for the next line.
+    refused_dd_ordered_at: Option<usize>,
     unclosed_comments: Vec<(usize, usize, usize, bool)>,
     closed_comments: HashSet<usize>,
     /// Whether any frame may retain a closed list's output shift.
@@ -1193,6 +1195,7 @@ fn walk_traced(
         refuse_line: false,
         accepted: Vec::new(),
         refused: Vec::new(),
+        refused_dd_ordered_at: None,
         unclosed_comments: Vec::new(),
         closed_comments: HashSet::new(),
         has_closed_list: false,
@@ -3013,6 +3016,16 @@ impl<'a> Walk<'a> {
         // line must still be measured against that list's sibling column.
         let list_before_refused_plus =
             (is_cont_marker(c.rest) && self.top().kind == Kind::Item).then(|| self.frames.clone());
+        // The attached block's first marker supplies the sibling axis. An
+        // ordered marker has a wider head than a bullet marker.
+        let attached_ordered = is_cont_marker(quoted_rest(c.src))
+            && self.attached.as_ref().is_some_and(|attached| {
+                self.lines.get(attached.from).is_some_and(|line| {
+                    strip_quote_levels(line, attached.depth)
+                        .and_then(|rest| detect_list_marker_full(trim_ascii_start(rest)))
+                        .is_some_and(|marker| marker.ordered)
+                })
+            });
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
         for k in 1..self.frames.len() {
@@ -3093,7 +3106,23 @@ impl<'a> Walk<'a> {
             let pad = frame_canon.saturating_sub(canon);
             if self.consume_refused_plus(at, k, c, plus_refusal, closes_descendant, pad) {
                 if self.frames[k].kind == Kind::Dd {
-                    if let Some(frames) = list_before_refused_plus {
+                    self.refused_dd_ordered_at = attached_ordered.then_some(at);
+                    if let Some(mut frames) = list_before_refused_plus {
+                        let next_list_column = self.lines.get(at + 1).and_then(|line| {
+                            let depth = frames.iter().filter(|f| f.kind == Kind::Quote).count();
+                            strip_quote_levels(line, depth).and_then(|rest| {
+                                is_list_marker(trim_ascii_start(rest)).then(|| indent_cols(rest).0)
+                            })
+                        });
+                        if let Some(column) = next_list_column
+                            .filter(|&column| attached_ordered && column >= self.frames[k].col)
+                        {
+                            if let Some(item) =
+                                frames.iter_mut().rev().find(|f| f.kind == Kind::Item)
+                            {
+                                item.col = column.saturating_add(1);
+                            }
+                        }
                         self.replace_frames(frames);
                     }
                 }
@@ -3373,7 +3402,16 @@ impl<'a> Walk<'a> {
                 c.lead_in(target, shift, false);
             }
             form => {
-                let (canon, shift) = (self.top().canon, self.top().shift);
+                let (mut canon, shift) = (self.top().canon, self.top().shift);
+                if matches!(form, Form::Item(..))
+                    && self.top().kind == Kind::Dd
+                    && self.frames.iter().any(|frame| frame.kind == Kind::Quote)
+                    && self.refused_dd_ordered_at == at.checked_sub(1)
+                {
+                    // The quote prefix is already written; this sibling's
+                    // marker belongs at the attached list's local column.
+                    canon = 0;
+                }
                 let col = c.col;
                 let caption_residual = self.attached_quote_caption_residual(&form, c.rest, col);
                 if !plus_follower {

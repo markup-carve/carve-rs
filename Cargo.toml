@@ -160,6 +160,10 @@ name = "attach_rule_5250"
 path = "tests/attach_rule_5250.rs"
 
 [[test]]
+name = "refused_plus_keeps_list_boundaries"
+path = "tests/refused_plus_keeps_list_boundaries.rs"
+
+[[test]]
 name = "caption_abbreviation_expansion"
 path = "tests/caption_abbreviation_expansion.rs"
 
