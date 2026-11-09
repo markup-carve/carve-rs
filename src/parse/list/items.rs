@@ -217,6 +217,9 @@ struct LeadParagraph {
     // line joins whatever it opens.
     literal: Vec<(usize, usize)>,
     after_refused: bool,
+    // An unclosed fence-shaped follower and its column: a closer indented past
+    // it, met before anything ends the paragraph, is still its text.
+    open_follower: Option<(FenceOpen, usize)>,
     inline_span: crate::parse::paragraph::InlineSpanScan,
 }
 
@@ -2776,6 +2779,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .or_else(|| detect_quote_block_open(content)),
             literal: Vec::new(),
             after_refused: false,
+            open_follower: None,
             inline_span: Default::default(),
         };
         if let Some(count) = marker_refused_brace_run(self.cur.lines, item.at, paragraph_content) {
@@ -2812,6 +2816,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         if self.lead_refused_brace_run(lead, next) {
             return true;
+        }
+        if let Some((open, column)) = lead.open_follower {
+            let rest = trim_ascii_start(strip_lazy(next));
+            if indent_columns(next) > column
+                && indent_columns(next) >= self.content_col
+                && is_fence_close(rest, open)
+            {
+                lead.open_follower = None;
+                self.fold_lead_line(lead, rest);
+                return true;
+            }
         }
         if let Some(fence_len) = lead.literal_colon_opener {
             if indent_columns(next) <= base_indent && exact_colon_fence_len(next) == Some(fence_len)
@@ -2927,7 +2942,36 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     /// after it joins whatever it opens unless it leaves the item (carve#5080).
     fn lead_refused_brace_run(&mut self, lead: &mut LeadParagraph, next: &str) -> bool {
         if std::mem::take(&mut lead.after_refused) && indent_columns(next) > self.base_indent {
+            // A fence-shaped follower keeps its closer in the item (CARVE-P2-035).
+            let follower = detect_fence_open(trim_ascii_start(next));
+            let through = follower
+                .and_then(|open| {
+                    // A block short of the content column is read there (PART 0 S4).
+                    let (content_col, column) = (self.content_col, indent_columns(next));
+                    (self.cur.pos + 1..self.cur.lines.len())
+                        .map_while(|i| self.cur.lines.line(i))
+                        .take_while(|line| {
+                            let rest = trim_ascii_start(strip_lazy(line));
+                            !is_blank_line(line)
+                                && (indent_columns(line) >= content_col
+                                    || (line_starts_paragraph(rest)
+                                        && detect_fence_open(rest).is_none()
+                                        && !rest.starts_with('{')))
+                        })
+                        .position(|line| {
+                            indent_columns(line) <= column
+                                && is_fence_close(trim_ascii_start(strip_lazy(line)), open)
+                        })
+                })
+                .map_or(0, |offset| offset + 1);
+            if through == 0 {
+                lead.open_follower = follower.map(|open| (open, indent_columns(next)));
+            }
             self.fold_lead_line(lead, trim_ascii_start(next));
+            for _ in 0..through {
+                let Some(line) = self.cur.peek() else { break };
+                self.fold_lead_line(lead, trim_ascii_start(line));
+            }
             return true;
         }
         if !trim_ascii_start(strip_lazy(next)).starts_with('{')

@@ -1742,7 +1742,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     {
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
                         // A refused brace run's paragraph takes the fence as text.
-                        let refused = !after_blank && ends_in_refused_brace_run(&lines);
+                        let refused = !after_blank && ends_in_marker_aware_refused_run(&lines);
                         let interrupts = !after_blank
                             && !refused
                             && !lead_fence_scan.holds_open(&lines, column)
@@ -2250,7 +2250,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     .then(|| detect_fence_open(trim_ascii_start(tracked)))
                     .flatten()
                     .filter(|&open| {
-                        if !ends_in_refused_brace_run(&lines) {
+                        if !ends_in_marker_aware_refused_run(&lines) {
                             return false;
                         }
                         // The index rules out most followers; the scan stays in the item.
@@ -2497,6 +2497,30 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
 /// a bare run of the innermost width closes, any other opener nests. Only a
 /// line that reaches the content column can open or close one - below it the
 /// line is text (§24 C3), which is the same condition the code tracker takes.
+/// [`ends_in_refused_brace_run`], with a nested item's marker line read as its
+/// content at the content column, so a run the marker line opens is seen.
+fn ends_in_marker_aware_refused_run(lines: &[String]) -> bool {
+    if ends_in_refused_brace_run(lines) {
+        return true;
+    }
+    let start = lines
+        .iter()
+        .rposition(|line| is_blank_line(line))
+        .map_or(0, |at| at + 1);
+    let Some(marker_at) = (start..lines.len()).rev().find(|&at| {
+        detect_list_marker_full(&lines[at]).is_some_and(|nm| nm.content.starts_with('{'))
+    }) else {
+        return false;
+    };
+    let mut probe: Vec<String> = lines[marker_at..].to_vec();
+    let line = &lines[marker_at];
+    let nm = detect_list_marker_full(line).expect("marker line");
+    let offset = nm.content.as_ptr() as usize - line.as_ptr() as usize;
+    let column = line[..offset].chars().count();
+    probe[0] = format!("{}{}", " ".repeat(column), nm.content);
+    ends_in_refused_brace_run(&probe)
+}
+
 pub(crate) fn track_collected_colon_fence(
     open: &mut Vec<usize>,
     line: &str,
