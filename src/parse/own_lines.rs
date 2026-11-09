@@ -1944,10 +1944,16 @@ impl<'a> Walk<'a> {
                     return k;
                 }
                 let offered = self.offers_plus(k, host, column);
+                let note_body_column = parse_footnote_def_line(rest)
+                    .map(|(_, body)| doc_column(self.lines[k], body))
+                    .unwrap_or(usize::MAX);
                 k += 1;
                 while k < self.lines.len()
                     && self.through_quotes(self.lines[k], host).is_some()
                     && foldable_plain_line(view(k))
+                    && !(doc_column(self.lines[k], view(k)) < note_body_column
+                        && view(k).starts_with('{')
+                        && self.attrs_run_len(k, host).is_some())
                     && (!offered || doc_column(self.lines[k], view(k)) != column)
                 {
                     k += 1;
@@ -3171,6 +3177,13 @@ impl<'a> Walk<'a> {
         let Some(mut frames) = list_before_refused_plus else {
             return;
         };
+        if self
+            .lines
+            .get(at + 1)
+            .is_some_and(|line| !is_list_marker(trim_ascii_start(quoted_rest(line))))
+        {
+            return;
+        }
         let next_list_column = self.lines.get(at + 1).and_then(|line| {
             let depth = frames.iter().filter(|f| f.kind == Kind::Quote).count();
             strip_quote_levels(line, depth).and_then(|rest| {
@@ -3495,8 +3508,10 @@ impl<'a> Walk<'a> {
                     && self.frames[reached].kind != Kind::Dd
                     && f.marker.is_some_and(|(col, _)| col == c.col)
                     && c.rest.starts_with('{')
-                    && standalone_attrs_block_len(&[c.rest]) == Some(1)
-                    && self.next_col_reaches(at, reached, f.col)
+                    && standalone_attrs_block_len_iter(
+                        std::iter::once(c.rest).chain(self.lines[at + 1..].iter().copied()),
+                    )
+                    .is_some_and(|len| self.next_col_reaches(at + len - 1, reached, f.col))
             })
             .map(|f| (f.marker.map_or(0, |(_, canon)| canon), f.marker_shift))
         {
