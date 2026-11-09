@@ -85,6 +85,7 @@ struct Frame {
     closer: Option<Closer>,
     /// First blank that ends an attached, unclosed fence or colon container.
     attached_blank_end: Option<usize>,
+    attached_host_fence: bool,
     open_col: usize,
     run: usize,
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
@@ -156,6 +157,7 @@ impl Frame {
             marker_src: String::new(),
             closer: None,
             attached_blank_end: None,
+            attached_host_fence: false,
             open_col: 0,
             run: 0,
             absorbs: false,
@@ -2679,11 +2681,54 @@ impl<'a> Walk<'a> {
             .code_in(at + 1..exit, ch, len)
     }
 
+    fn attached_host_has_closer(
+        &self,
+        at: usize,
+        ch: u8,
+        len: usize,
+        host_col: usize,
+        marker_col: usize,
+    ) -> bool {
+        for line in &self.lines[at + 1..] {
+            let rest = trim_ascii_start(line);
+            let col = doc_column(line, rest);
+            if col <= host_col
+                && pure_fence(rest).is_some_and(|(found, width)| found == ch && width >= len)
+            {
+                return true;
+            }
+            if col <= marker_col && (item_block_opener(rest) || rest.starts_with('>')) {
+                return false;
+            }
+        }
+        false
+    }
+
+    fn payload_target(
+        inner: &Frame,
+        closer: Option<Closer>,
+        rest: &str,
+        col: usize,
+        target: usize,
+    ) -> usize {
+        if inner.attached_host_fence
+            && closer.is_some_and(|cl| cl.closes(rest, col, inner.open_col))
+        {
+            inner.canon
+        } else {
+            target
+        }
+    }
+
     /// Whether the line stays in the innermost fence's payload. A `%%` line
     /// below the column inside an open `%%%` span is that span's payload, and
     /// its exact run the closer (PART 0 S1, PART 9 §28, carve#4994).
     fn in_open_payload(&self, missed: bool, reached: usize, col: usize, rest: &str) -> bool {
         let inner = self.frames.last().expect("document frame");
+        let attached_closer = inner.attached_host_fence
+            && inner
+                .closer
+                .is_some_and(|closer| closer.closes(rest, col, inner.open_col));
         let comment_line = || {
             (inner.family == "comment" || inner.span.is_some_and(|(ch, _)| ch == b'%'))
                 && rest.starts_with("%%")
@@ -2692,7 +2737,14 @@ impl<'a> Walk<'a> {
                     .all(|f| f.kind != Kind::Quote)
         };
         let attached_quote_comment = self.attached_quote_comment_payload(reached, col, inner);
-        inner.kind == Kind::Fence && (!missed || comment_line() || attached_quote_comment)
+        let attached_blank =
+            rest.is_empty() && inner.attached_host_fence && inner.attached_blank_end.is_none();
+        inner.kind == Kind::Fence
+            && (!missed
+                || comment_line()
+                || attached_quote_comment
+                || attached_closer
+                || attached_blank)
     }
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
@@ -3259,6 +3311,7 @@ impl<'a> Walk<'a> {
             let (closer, span, line_block) = (inner.closer, inner.span, inner.line_block);
             let (col, open_col) = (c.col, inner.open_col);
             let family = inner.family;
+            let target = Self::payload_target(inner, closer, c.rest, col, target);
             c.lead_in(target, inner.shift, false);
             self.write_attached_quote_comment_payload(at, reached, missed, c, inner);
             if tracing {
@@ -3830,11 +3883,26 @@ impl<'a> Walk<'a> {
                     col.saturating_sub(canon)
                 };
                 f.closer = Some(closer);
+                let attached = at
+                    .checked_sub(1)
+                    .is_some_and(|previous| self.frames[owner].plus == Some(previous))
+                    || self.attached.as_ref().is_some_and(|block| block.from == at);
+                let attached_host_col = self
+                    .attached
+                    .as_ref()
+                    .filter(|block| block.from == at)
+                    .and_then(|block| block.frames.last())
+                    .map_or(self.frames[owner].col, |host| host.col);
+                let attached_marker_col = self
+                    .attached
+                    .as_ref()
+                    .filter(|block| block.from == at)
+                    .map_or(
+                        self.frames[owner].marker.map_or(0, |(col, _)| col),
+                        |block| block.marker,
+                    );
+                f.attached_host_fence = attached && matches!(closer, Closer::Fence(..));
                 if let Closer::Fence(ch, len) = closer {
-                    let attached = at
-                        .checked_sub(1)
-                        .is_some_and(|previous| self.frames[owner].plus == Some(previous))
-                        || self.attached.as_ref().is_some_and(|block| block.from == at);
                     if attached {
                         let quote_depth = self.frames[1..=owner]
                             .iter()
@@ -3847,7 +3915,18 @@ impl<'a> Walk<'a> {
                         });
                         if let Some(blank) = first_blank {
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
-                            let has_closer = runs.code_by_column.has_later(ch, at, col, len);
+                            let has_closer = runs.code_by_column.has_later(
+                                ch,
+                                at,
+                                attached_host_col.max(col),
+                                len,
+                            ) && self.attached_host_has_closer(
+                                at,
+                                ch,
+                                len,
+                                attached_host_col.max(col),
+                                attached_marker_col,
+                            );
                             if !has_closer {
                                 f.attached_blank_end = Some(blank);
                             }
@@ -3874,7 +3953,11 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                f.open_col = col;
+                f.open_col = if attached {
+                    attached_host_col.max(col)
+                } else {
+                    col
+                };
                 f.line_block = line_block;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
