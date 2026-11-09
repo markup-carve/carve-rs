@@ -780,6 +780,7 @@ pub(in crate::parse) fn parse_definition_list(
                 let line_map = cur.line_map;
                 let col_map = cur.col_map;
                 let geometry = cur.colon_geometry;
+                let mut nested_fence = NestedAttachedFence::default();
                 let mut boundary = |a: &str, at: usize| {
                     let same_list = detect_list_marker_full(lines.at(first_visible))
                         .zip(detect_list_marker_full(trim_ascii_start(a)))
@@ -823,7 +824,7 @@ pub(in crate::parse) fn parse_definition_list(
                                 authored > 0 && authored < content_column
                             })
                         };
-                    is_blank_line(a)
+                    (is_blank_line(a) && !nested_fence.open_before(lines, first_visible, at))
                         || is_plus_marker(a)
                         || refused_sibling_boundary
                         // A list marker ends an attached block that is no list (PART 0 S3, carve#4860),
