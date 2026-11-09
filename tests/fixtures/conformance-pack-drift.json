@@ -2,6 +2,13 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#5638",
+      "cause": "the pinned pack predates the ruling that an attribute line inside an open inline code span stays inline; carve main now matches this engine",
+      "cases": [
+        "roundtrip-1fecc86692d0"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#4033",
       "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
       "cases": [
