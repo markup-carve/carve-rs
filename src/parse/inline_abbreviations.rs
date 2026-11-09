@@ -81,6 +81,9 @@ pub(in crate::parse) fn apply_abbreviations_block(
             }
         }
         BlockNode::Admonition(a) => {
+            if let Some(title) = &mut a.title {
+                apply_abbreviations_inline(title, index);
+            }
             for child in &mut a.children {
                 apply_abbreviations_block(child, index);
             }
@@ -97,6 +100,9 @@ pub(in crate::parse) fn apply_abbreviations_block(
         // never expanded inside one -- even with the definition at the top
         // level, where collection was never in doubt. carve-js expands it.
         BlockNode::Directive(d) => {
+            if let Some(title) = &mut d.title {
+                apply_abbreviations_inline(title, index);
+            }
             for child in &mut d.children {
                 apply_abbreviations_block(child, index);
             }
@@ -107,6 +113,9 @@ pub(in crate::parse) fn apply_abbreviations_block(
             }
         }
         BlockNode::ExtensionCarrier(e) => {
+            if let Some(summary) = &mut e.summary {
+                apply_abbreviations_inline(summary, index);
+            }
             for child in &mut e.children {
                 apply_abbreviations_block(child, index);
             }
@@ -191,8 +200,37 @@ pub(in crate::parse) fn apply_abbreviations_inline(
                     if let Some(locator) = &mut item.locator {
                         apply_abbreviations_inline(locator, index);
                     }
+                    if let Some(suffix) = &mut item.suffix {
+                        apply_abbreviations_inline(suffix, index);
+                    }
                 }
                 out.push(InlineNode::CitationGroup(g));
+            }
+            InlineNode::Footnote(mut f) => {
+                if let Some(inline) = &mut f.inline {
+                    apply_abbreviations_inline(inline, index);
+                }
+                out.push(InlineNode::Footnote(f));
+            }
+            InlineNode::CriticInsert(mut c) => {
+                apply_abbreviations_inline(&mut c.children, index);
+                out.push(InlineNode::CriticInsert(c));
+            }
+            InlineNode::CriticDelete(mut c) => {
+                apply_abbreviations_inline(&mut c.children, index);
+                out.push(InlineNode::CriticDelete(c));
+            }
+            InlineNode::CriticSubstitute(mut c) => {
+                apply_abbreviations_inline(&mut c.old, index);
+                apply_abbreviations_inline(&mut c.new, index);
+                out.push(InlineNode::CriticSubstitute(c));
+            }
+            InlineNode::Ruby(mut r) => {
+                for pair in &mut r.pairs {
+                    apply_abbreviations_inline(&mut pair.base, index);
+                    apply_abbreviations_inline(&mut pair.annotation, index);
+                }
+                out.push(InlineNode::Ruby(r));
             }
             other => out.push(other),
         }
