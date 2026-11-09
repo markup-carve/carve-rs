@@ -275,7 +275,12 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         if forced && follower == Some(cur.pos) {
             if let Some(open) = detect_fence_open(line) {
                 if let Some(closer) = (cur.pos + 1..cur.lines.len())
-                    .find(|&k| cur.lines.line(k).is_some_and(|l| is_fence_close(l, open)))
+                    // An indented closer is the follower's closer too (carve#5600).
+                    .find(|&k| {
+                        cur.lines
+                            .line(k)
+                            .is_some_and(|l| is_fence_close(trim_ascii_start(strip_lazy(l)), open))
+                    })
                 {
                     forced_through = Some(closer);
                 }
