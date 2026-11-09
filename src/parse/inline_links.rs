@@ -913,12 +913,8 @@ fn compute_bracket_runs_with_alt(
         HashMap::new()
     };
     let last_comment_close = bytes.windows(2).rposition(|w| w == b"#}");
+    let comment_closers: Vec<usize> = memchr::memmem::find_iter(bytes, b"#}").collect();
     let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
-    let last_close_bracket = bytes.iter().rposition(|&b| b == b']');
-    let last_close_has_attrs = last_close_bracket.is_some_and(|close| {
-        read_attrs_at(bytes, close + 1, last_close_brace).is_some()
-            || read_empty_attrs_at(bytes, close + 1).is_some()
-    });
     let closed_span_end = |at: usize| -> (usize, Option<usize>) {
         let len = bytes[at..].iter().take_while(|&&b| b == b'`').count();
         let closes = last_run_start
@@ -1000,6 +996,19 @@ fn compute_bracket_runs_with_alt(
             if let Some(end) = attached_attr_end {
                 attribute_host_end = end;
             }
+            // The outer bracket scan reads a later `#}` as the closer of a
+            // nested `{#` run. The inner construct can still attach the
+            // attribute when it is parsed from its own label afterward.
+            let nested_comment_end = if !stack.is_empty()
+                && bytes.get(i..i + 2) == Some(b"{#")
+                && attached_attr_end.is_some()
+            {
+                comment_closers
+                    .get(comment_closers.partition_point(|&close| close < i + 2))
+                    .map(|&close| close + 2)
+            } else {
+                None
+            };
             match bytes[i] {
                 b'\\' if i + 1 < bytes.len() => {
                     fill_run(&mut run_at, &stack, i, i + 2);
@@ -1019,6 +1028,11 @@ fn compute_bracket_runs_with_alt(
                         i += len;
                     }
                 },
+                b'{' if nested_comment_end.is_some() => {
+                    let end = nested_comment_end.unwrap();
+                    fill_run(&mut run_at, &stack, i, end);
+                    i = end;
+                }
                 b'{' if attached_attr_end.is_some() && bytes.get(i + 1) == Some(&b'#') => {
                     let end = attached_attr_end.unwrap();
                     fill_run(&mut run_at, &stack, i, end);
@@ -1060,19 +1074,6 @@ fn compute_bracket_runs_with_alt(
                     i += 1;
                 }
                 b'[' => {
-                    // An inner atom has already finished at this position. If
-                    // the remaining final closer carries the enclosing span's
-                    // attribute tail, a new unmatched `[` is literal content
-                    // of that span rather than an opener that steals its tail.
-                    let outer_span_tail = !stack.is_empty()
-                        && attribute_host_end == i
-                        && last_close_has_attrs
-                        && last_close_bracket.is_some_and(|close| close > i);
-                    if outer_span_tail {
-                        run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
-                        i += 1;
-                        continue;
-                    }
                     if !in_alt {
                         if let Some(&close) = footnote_candidates.get(&i) {
                             reached.push((i, close));
@@ -1136,8 +1137,7 @@ fn compute_bracket_runs_with_alt(
                     % 2
                     == 0
                 && (image_tail(bytes, close + 1)
-                    || (matches[open] != NO_BRACKET_MATCH
-                        && image_tail(bytes, matches[open] + 1)));
+                    || (matches[open] != NO_BRACKET_MATCH && image_tail(bytes, matches[open] + 1)));
             if image_alt || label_end.is_some_and(|end| open <= end) {
                 continue;
             }
@@ -1248,7 +1248,10 @@ mod autolink_bracket_scan_tests {
         let (matches, _) = compute_bracket_matches(b"[[a]{#1}][]#}");
         assert_eq!((matches[0], matches[1]), (8, 3));
         let (matches, _) = compute_bracket_matches(b"[[]{#1}[#}]{}");
-        assert_eq!((matches[0], matches[1], matches[7]), (10, 2, NO_BRACKET_MATCH));
+        assert_eq!(
+            (matches[0], matches[1], matches[7]),
+            (10, 2, NO_BRACKET_MATCH)
+        );
     }
 
     #[test]

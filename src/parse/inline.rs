@@ -2053,11 +2053,6 @@ pub(in crate::parse) fn parse_reference_link(
     let label = std::str::from_utf8(&bytes[after_text + 1..label_close])
         .ok()?
         .to_string();
-    // A collapsed reference reuses text as its label. The label grammar has
-    // no `]`, so a nested bracket run cannot make this a reference atom.
-    if label.is_empty() && (text.contains(']') || text.contains('\n') || text.starts_with('@')) {
-        return None;
-    }
     let ref_label = if label.is_empty() {
         text.clone()
     } else {
