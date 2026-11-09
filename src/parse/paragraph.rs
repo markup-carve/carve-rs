@@ -277,10 +277,13 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                 }
             }
         }
+        // A brace line held by the paragraph's inline pairing cannot open a
+        // block attribute, whether the brace form is wrapped or complete.
+        let held_brace = brace_line.starts_with('{') && inline_span.open(&lines);
         if !forced
             && !lines.is_empty()
             && ((reference_caption_claimed && caption_content(line).is_some())
-                || interrupts_paragraph(cur, line)
+                || (!held_brace && interrupts_paragraph(cur, line))
                 || (cur.colon_view.is_some_and(|view| view.marker_hosted)
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()))
         {

@@ -2877,7 +2877,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return false;
         }
         let next_owned = next.to_string();
-        if interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
+        let held_brace =
+            trim_ascii_start(next).starts_with('{') && lead.inline_span.open(&lead.lines);
+        if !held_brace && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
         let inline_line = trim_ascii_start(next);
@@ -2908,7 +2910,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // block relative to it (#1705). Ordinary over-indented prose is
         // still lazy paragraph text.
         let over_indented = trim_ascii_start(next);
-        if item_block_opener(over_indented)
+        let held_brace = over_indented.starts_with('{') && lead.inline_span.open(&lead.lines);
+        if !held_brace
+            && item_block_opener(over_indented)
             && self
                 .item_unclosed_fence_base
                 .map_or(true, |base| base == indent)
@@ -2925,7 +2929,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A sibling/nesting marker above the content column was already
         // handled above; only a genuine lazy interrupt ends the fold.
         let next_owned = next.to_string();
-        if interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
+        if !held_brace && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
         // CARVE-P2-020: a caption continuation keeps its indentation.
@@ -3024,7 +3028,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     fn lead_line_at_column(&mut self, lead: &mut LeadParagraph, next: &str, indent: usize) -> bool {
         let content_col = self.content_col;
         let dedented = slice_columns(next, content_col, false);
-        let wrapped_attr_interrupts = if self.cur.pos < lead.attrs_scan_floor {
+        let held_brace = dedented.starts_with('{') && lead.inline_span.open(&lead.lines);
+        let wrapped_attr_interrupts = if held_brace || self.cur.pos < lead.attrs_scan_floor {
             false
         } else {
             match content_column_attr_block(
@@ -3042,7 +3047,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let fence_open = detect_fence_open(&dedented);
         let interrupts = wrapped_attr_interrupts
-            || interrupts_paragraph_as_container(self.cur, &dedented)
+            || (!held_brace && interrupts_paragraph_as_container(self.cur, &dedented))
             || fence_open.is_some();
         if interrupts {
             return false;

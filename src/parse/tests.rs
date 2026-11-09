@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn attribute_lines_inside_open_code_spans_stay_inline() {
+    for (source, expected) in [
+        (
+            "p\n`open\n{.x}\nclose`\nz\n",
+            "<p>p\n<code>open\n{.x}\nclose</code>\nz</p>",
+        ),
+        (
+            "- `open\n  {.x}\n  close`\n  z\n",
+            "<ul>\n  <li><code>open\n{.x}\nclose</code>\nz</li>\n</ul>",
+        ),
+        (
+            "p\n `open\n {.x\n .y}\n ```\n z\n",
+            "<p>p\n<code>open\n{.x\n.y}</code></p>\n<pre><code>z\n</code></pre>",
+        ),
+    ] {
+        let html = crate::render_html(&parse(source)).unwrap();
+        assert_eq!(html.trim_end(), expected, "{source}");
+    }
+}
+
+#[test]
 fn empty_outer_note_ends_at_its_marker_after_nested_hoist() {
     let source = "[^c0]: [^d0]: p\n            more\n\n";
     let doc = parse_with_options(source, &Options::default().with_positions(true));
