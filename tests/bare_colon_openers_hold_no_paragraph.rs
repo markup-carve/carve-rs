@@ -53,3 +53,15 @@ fn a_nested_items_bare_quote_block_opener_releases_a_column_zero_line() {
         "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <blockquote>\n\n        </blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>b</p>",
     );
 }
+
+#[test]
+fn a_closed_quote_block_inside_an_open_colon_block_keeps_its_paragraph_lazy() {
+    check(
+        "- ::: \\\n  ::: >\n  :::\n  x\nx\n",
+        "<ul>\n  <li>\n    <div class=\"hardbreaks\">\n      <blockquote>\n\n      </blockquote>\n      <p>x<br>\nx</p>\n    </div>\n  </li>\n</ul>",
+    );
+    check(
+        "- ::: note\n  ::: >\n  :::\n  x\nx\n",
+        "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <blockquote>\n\n      </blockquote>\n      <p>x\nx</p>\n    </aside>\n  </li>\n</ul>",
+    );
+}

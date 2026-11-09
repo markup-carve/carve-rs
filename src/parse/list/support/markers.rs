@@ -1435,6 +1435,7 @@ pub(crate) fn colon_fences_left_open(nested: &str) -> usize {
         if let Some(fence_len) = detect_container_open(trimmed)
             .map(|container| container.fence_len)
             .or_else(|| detect_hardbreaks_block_open(trimmed))
+            .or_else(|| detect_quote_block_open(trimmed))
         {
             open.push((fence_len, host_floor, column));
         }
