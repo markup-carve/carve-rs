@@ -3177,12 +3177,36 @@ impl<'a> Walk<'a> {
         let Some(mut frames) = list_before_refused_plus else {
             return;
         };
-        if self
-            .lines
-            .get(at + 1)
-            .is_some_and(|line| !is_list_marker(trim_ascii_start(quoted_rest(line))))
-        {
+        let next = self.lines.get(at + 1).copied().unwrap_or("");
+        let next_col = quoted_measure(next).0;
+        let next_is_list = is_list_marker(trim_ascii_start(quoted_rest(next)));
+        let wide_ordered = attached_ordered
+            && frames
+                .iter()
+                .rev()
+                .find(|f| f.kind == Kind::Item)
+                .is_some_and(|item| item.col > self.top().col);
+        if !next_is_list && (next_col < self.top().col || wide_ordered) {
             return;
+        }
+        let next_marker = detect_list_marker_full(trim_ascii_start(quoted_rest(next)));
+        let same_ordered_list = attached_ordered
+            && next_marker.is_some_and(|marker| {
+                marker.ordered
+                    && self.lines.get(at.wrapping_sub(1)).is_some_and(|previous| {
+                        detect_list_marker_full(trim_ascii_start(previous))
+                            .is_some_and(|first| first.ordered && first.delim == marker.delim)
+                    })
+            });
+        let ordered_sibling = attached_ordered
+            && next_is_list
+            && frames.get(1).is_some_and(|item| item.col > self.top().col)
+            && !same_ordered_list;
+        if self.top().kind == Kind::Dd
+            && frames.len() == 2
+            && ((next_col < frames[1].col && !same_ordered_list) || ordered_sibling)
+        {
+            frames[1] = self.top().clone();
         }
         let next_list_column = self.lines.get(at + 1).and_then(|line| {
             let depth = frames.iter().filter(|f| f.kind == Kind::Quote).count();
@@ -3190,9 +3214,15 @@ impl<'a> Walk<'a> {
                 is_list_marker(trim_ascii_start(rest)).then(|| indent_cols(rest).0)
             })
         });
-        if let Some(column) =
-            next_list_column.filter(|&column| attached_ordered && column >= self.top().col)
-        {
+        if let Some(column) = next_list_column.filter(|&column| {
+            attached_ordered
+                && column >= self.top().col
+                && frames
+                    .iter()
+                    .rev()
+                    .find(|f| f.kind == Kind::Item)
+                    .is_some_and(|item| item.col > self.top().col)
+        }) {
             if let Some(item) = frames.iter_mut().rev().find(|f| f.kind == Kind::Item) {
                 item.col = column.saturating_add(1);
             }

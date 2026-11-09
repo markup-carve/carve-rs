@@ -794,9 +794,10 @@ pub(in crate::parse) fn parse_definition_list(
                                     first.marker == next.marker
                                 }
                         });
-                    // After a refused `+`, a nonblank follower at or below the
-                    // description's body column belongs to the description,
-                    // not the list that the earlier marker attached.
+                    // A refused marker ends its attached list when a sibling
+                    // misses the list's content column.
+                    let attached_wider = marker_content_col(lines.at(first_visible))
+                        .is_some_and(|column| column > content_column);
                     let refused_sibling_boundary = at > first_visible
                         && !is_blank_line(a)
                         && lines.line(at - 1).is_some_and(|previous| {
@@ -822,7 +823,7 @@ pub(in crate::parse) fn parse_definition_list(
                                 let authored =
                                     super::own_lines::authored_visual_column(line, column)
                                         .saturating_sub(source_col);
-                                authored > 0
+                                authored > 0 && (authored < content_column || attached_wider)
                             })
                         };
                     (is_blank_line(a) && !nested_fence.open_before(lines, first_visible, at))
@@ -1759,6 +1760,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             && !is_list_marker(trim_ascii_start(line))
             && !is_blank_line(line)
             && column >= self.content_column
+            && self
+                .seed
+                .lines()
+                .next()
+                .and_then(marker_content_col)
+                .is_some_and(|column| column > self.content_column)
         {
             // The refused marker closed the list it had attached. Keep a
             // separator in the rebased body so the list reader cannot revive
