@@ -1814,14 +1814,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.first_source_line,
             own_lines::authored_visual_column(def_start_line, 1),
         );
+        let lead_col = indent_columns(lines[lead]);
         let attached: Vec<String> = lines[i..window_end]
             .iter()
             .enumerate()
             .map(|(offset, line)| {
                 if pulled_closer == Some(i + offset) {
                     trim_ascii_start(line).to_string()
-                } else if (i + offset > lead
-                    || indent_columns(lines[lead]) == container.content_column)
+                } else if lead_col > marker_col && indent_columns(line) >= lead_col {
+                    // The `+` takes its block at the block's own column (carve#5542).
+                    strip_leading_columns(line, lead_col)
+                } else if i + offset > lead
                     && indent_columns(line) == container.content_column
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
                     && strip_blockquote_prefix(trim_ascii_start(lines[lead])).is_some()
