@@ -298,14 +298,6 @@ pub(super) fn collect_footnotes_block(
             }
         }
         BlockNode::Figure(f) => {
-            collect_footnotes_inline(
-                assign_ref_ids,
-                &mut f.caption,
-                def_labels,
-                label_indices,
-                seen,
-                order,
-            );
             match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
@@ -367,6 +359,14 @@ pub(super) fn collect_footnotes_block(
                 }
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
+            collect_footnotes_inline(
+                assign_ref_ids,
+                &mut f.caption,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            );
         }
         BlockNode::ExtensionCarrier(e) => {
             // The carrier holds the title MOVED off the container it stands in,

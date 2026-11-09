@@ -924,6 +924,7 @@ impl<'a> Importer<'a> {
             // declaration by declaration, where this probe would read
             // `background` as the scheme of `background:url(javascript:x)`.
             let denied = !name.eq_ignore_ascii_case("style")
+                && !name.eq_ignore_ascii_case("id")
                 && (has_denied_url_scheme(&value)
                     || (!value.is_empty() && sanitize_attr_value(&name, &value).is_empty()));
             let (subject, reason, live) =

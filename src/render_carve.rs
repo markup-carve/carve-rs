@@ -5044,7 +5044,13 @@ fn render_inline_body(
             format!("{{#{}#}}", escape_critic_text(&comment.text))
         }
         InlineNode::CrossRef(crossref) => {
-            format!("</#{}>", spell_crossref_target(&crossref.target))
+            format!(
+                "</#{}>",
+                spell_cell_reference_source(
+                    &spell_crossref_target(&crossref.target),
+                    ctx.table_cell_depth > 0
+                )
+            )
         }
         InlineNode::CaptionNumber(_) => "#".to_string(),
         InlineNode::CitationGroup(group) => group.raw.clone(),
@@ -5464,7 +5470,13 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     }
     if node.from_crossref {
         if let Some(target) = node.href.strip_prefix('#') {
-            return format!("</#{}>", spell_crossref_target(target));
+            return format!(
+                "</#{}>",
+                spell_cell_reference_source(
+                    &spell_crossref_target(target),
+                    ctx.table_cell_depth > 0
+                )
+            );
         }
     }
     let text =

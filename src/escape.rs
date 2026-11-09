@@ -252,6 +252,10 @@ fn leads_with_dangerous_scheme(value: &str) -> bool {
 /// for byte. Do not "fix" it - the corpus pins it, along with the `ping`
 /// counterpart that must NOT blank.
 pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
+    // An id names an anchor; it is never a URL sink (PART 9 §25).
+    if name.eq_ignore_ascii_case("id") {
+        return std::borrow::Cow::Borrowed(value);
+    }
     // THE TOKEN PASS IS ADDED TO THE VALUE-WIDE PROBE, NOT SWAPPED FOR IT.
     // The clause changes WHERE the probe runs, not WHAT it denies, so the head
     // probe stays and the tokens are probed as well. Swapping would DENY LESS

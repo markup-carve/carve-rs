@@ -361,7 +361,7 @@ pub(in crate::parse) fn parse_crossref(
     let target = text.get(pos + 3..close)?;
     Some((
         CrossRef {
-            target: target.to_string(),
+            target: super::inline::logical_cell_reference_source(target),
             // Filled by `fill_crossref_hrefs` once the whole document exists:
             // resolution needs the heading table, which is not built yet here.
             href: None,
@@ -890,6 +890,21 @@ pub(in crate::parse) fn compute_link_bracket_runs(
     compute_bracket_runs_with_alt(bytes, footnote_refs, false)
 }
 
+fn nested_comment_extent(
+    bytes: &[u8],
+    at: usize,
+    inside_bracket: bool,
+    attached_attr_end: Option<usize>,
+    comment_closers: &[usize],
+) -> Option<usize> {
+    if !inside_bracket || attached_attr_end.is_none() || bytes.get(at..at + 2) != Some(b"{#") {
+        return None;
+    }
+    comment_closers
+        .get(comment_closers.partition_point(|&close| close < at + 2))
+        .map(|&close| close + 2)
+}
+
 fn compute_bracket_runs_with_alt(
     bytes: &[u8],
     footnote_refs: bool,
@@ -913,6 +928,7 @@ fn compute_bracket_runs_with_alt(
         HashMap::new()
     };
     let last_comment_close = bytes.windows(2).rposition(|w| w == b"#}");
+    let comment_closers: Vec<usize> = memchr::memmem::find_iter(bytes, b"#}").collect();
     let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
     let closed_span_end = |at: usize| -> (usize, Option<usize>) {
         let len = bytes[at..].iter().take_while(|&&b| b == b'`').count();
@@ -986,13 +1002,25 @@ fn compute_bracket_runs_with_alt(
         while i < bytes.len() {
             let in_alt = alt.last().copied().unwrap_or(false);
             let attached_attr_end = if !in_alt && attribute_host_end == i && bytes[i] == b'{' {
-                read_attrs_at(bytes, i, last_close_brace).map(|(_, end)| end)
+                read_attrs_at(bytes, i, last_close_brace)
+                    .map(|(_, end)| end)
+                    .filter(|&end| !bytes[i..end].contains(&b']'))
             } else {
                 None
             };
             if let Some(end) = attached_attr_end {
                 attribute_host_end = end;
             }
+            // The outer bracket scan reads a later `#}` as the closer of a
+            // nested `{#` run. The inner construct can still attach the
+            // attribute when it is parsed from its own label afterward.
+            let nested_comment_end = nested_comment_extent(
+                bytes,
+                i,
+                !stack.is_empty(),
+                attached_attr_end,
+                &comment_closers,
+            );
             match bytes[i] {
                 b'\\' if i + 1 < bytes.len() => {
                     fill_run(&mut run_at, &stack, i, i + 2);
@@ -1012,6 +1040,11 @@ fn compute_bracket_runs_with_alt(
                         i += len;
                     }
                 },
+                b'{' if nested_comment_end.is_some() => {
+                    let end = nested_comment_end.unwrap();
+                    fill_run(&mut run_at, &stack, i, end);
+                    i = end;
+                }
                 b'{' if attached_attr_end.is_some() && bytes.get(i + 1) == Some(&b'#') => {
                     let end = attached_attr_end.unwrap();
                     fill_run(&mut run_at, &stack, i, end);
@@ -1053,8 +1086,10 @@ fn compute_bracket_runs_with_alt(
                     i += 1;
                 }
                 b'[' => {
-                    if let Some(&close) = footnote_candidates.get(&i) {
-                        reached.push((i, close));
+                    if !in_alt {
+                        if let Some(&close) = footnote_candidates.get(&i) {
+                            reached.push((i, close));
+                        }
                     }
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                     stack.push(i);
@@ -1104,7 +1139,7 @@ fn compute_bracket_runs_with_alt(
         for &(open, close) in &reached {
             // A `[^` inside an earlier label is label text, and `![` with a
             // tail reads as an image first.
-            let image = open > 0
+            let image_alt = open > 0
                 && bytes[open - 1] == b'!'
                 && bytes[..open - 1]
                     .iter()
@@ -1113,9 +1148,9 @@ fn compute_bracket_runs_with_alt(
                     .count()
                     % 2
                     == 0
-                && matches[open] != NO_BRACKET_MATCH
-                && image_tail(bytes, matches[open] + 1);
-            if image || label_end.is_some_and(|end| open <= end) {
+                && (image_tail(bytes, close + 1)
+                    || (matches[open] != NO_BRACKET_MATCH && image_tail(bytes, matches[open] + 1)));
+            if image_alt || label_end.is_some_and(|end| open <= end) {
                 continue;
             }
             label_end = Some(close);
@@ -1212,6 +1247,24 @@ fn compute_bracket_runs_with_alt(
 #[cfg(test)]
 mod autolink_bracket_scan_tests {
     use super::*;
+
+    #[test]
+    fn an_unclosed_image_alt_does_not_borrow_its_inner_bracket_closer() {
+        let (matches, _) = compute_bracket_matches(b"![^[]()");
+        assert_eq!(matches[1], NO_BRACKET_MATCH, "{matches:?}");
+        assert_eq!(matches[3], 4, "{matches:?}");
+    }
+
+    #[test]
+    fn nested_attribute_bracket_runs_keep_their_closers() {
+        let (matches, _) = compute_bracket_matches(b"[[a]{#1}][]#}");
+        assert_eq!((matches[0], matches[1]), (NO_BRACKET_MATCH, 3));
+        let (matches, _) = compute_bracket_matches(b"[[]{#1}[#}]{}");
+        assert_eq!(
+            (matches[0], matches[1], matches[7]),
+            (10, 2, NO_BRACKET_MATCH)
+        );
+    }
 
     #[test]
     fn an_autolink_body_is_opaque_to_the_bracket_scan() {
