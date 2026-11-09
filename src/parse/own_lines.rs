@@ -3008,6 +3008,11 @@ impl<'a> Walk<'a> {
         let mut refused_by = None;
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
         self.sibling = None;
+        // Reopening an attached host to test a lone `+` may leave the list
+        // that host attached. A refused marker is invisible, so its following
+        // line must still be measured against that list's sibling column.
+        let list_before_refused_plus =
+            (is_cont_marker(c.rest) && self.top().kind == Kind::Item).then(|| self.frames.clone());
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
         for k in 1..self.frames.len() {
@@ -3087,6 +3092,9 @@ impl<'a> Walk<'a> {
             c.lead_in(canon, shift, false);
             let pad = frame_canon.saturating_sub(canon);
             if self.consume_refused_plus(at, k, c, plus_refusal, closes_descendant, pad) {
+                if let Some(frames) = list_before_refused_plus {
+                    self.replace_frames(frames);
+                }
                 return;
             }
             if self.decide {
