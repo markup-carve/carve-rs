@@ -1134,7 +1134,7 @@ pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
 }
 
 /// Line-by-line state behind [`line_block_payload_tail`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct LineBlockTail {
     open: Option<usize>,
     code: Option<FenceOpen>,
@@ -1326,6 +1326,12 @@ impl LineBlockTail {
 
     pub(crate) fn tail(&self) -> Option<bool> {
         self.last_is_payload.then_some(self.quoted)
+    }
+
+    /// Whether `line` reaches the open line block's host column, so it is
+    /// not a lazy fold.
+    pub(crate) fn reaches_host(&self, line: &str) -> bool {
+        self.open.is_some() && (self.quoted || indent_columns(line) >= self.host_col)
     }
 }
 

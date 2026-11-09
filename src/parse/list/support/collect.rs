@@ -386,6 +386,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     });
     let mut held_comment_span = HeldCommentSpan::new();
     let mut body_code_fence = OpenCodeFenceScan::default();
+    let mut line_block_payload = LineBlockPayloadScan::default();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
     // See `MappedSource::reached`.
@@ -1745,7 +1746,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         let interrupts = !after_blank
                             && !refused
                             && !lead_fence_scan.holds_open(&lines, column)
-                            && !body_code_fence.holds_open_fence(&lines);
+                            && !body_code_fence.holds_open_fence(&lines)
+                            // An open `::: |` stanza keeps the run as verse (B-div-keep).
+                            && !line_block_payload.takes(&lines, &slice_columns_mapped(line, strip_cols, true).0);
                         if after_blank || interrupts || refused {
                             if interrupts {
                                 // Preserve the accepted interruption when collection
@@ -2531,11 +2534,41 @@ fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
 pub(crate) struct OpenCodeFenceScan {
     scanned: usize,
     open: Option<FenceOpen>,
+    verse: crate::parse::definition::LineBlockTail,
+}
+
+/// Incremental [`LineBlockTail`] over the collected lines.
+#[derive(Default)]
+pub(crate) struct LineBlockPayloadScan {
+    tail: crate::parse::definition::LineBlockTail,
+    scanned: usize,
+}
+
+impl LineBlockPayloadScan {
+    /// Whether `candidate`, appended to `lines`, is a payload line at the
+    /// open line block's host column.
+    pub(crate) fn takes(&mut self, lines: &[String], candidate: &str) -> bool {
+        for line in &lines[self.scanned..] {
+            self.tail.step(line);
+        }
+        self.scanned = lines.len();
+        if !self.tail.reaches_host(candidate) {
+            return false;
+        }
+        let mut probe = self.tail.clone();
+        probe.step(candidate);
+        probe.tail().is_some()
+    }
 }
 
 impl OpenCodeFenceScan {
     pub(crate) fn holds_open_fence<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
         for line in &lines[self.scanned..] {
+            // A stanza's verse line is not a fence opener (B-div-keep).
+            self.verse.step(line.as_ref());
+            if self.open.is_none() && self.verse.tail().is_some() {
+                continue;
+            }
             track_body_code_fence(&mut self.open, line.as_ref());
         }
         self.scanned = lines.len();
