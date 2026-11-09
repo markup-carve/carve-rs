@@ -3177,6 +3177,13 @@ impl<'a> Walk<'a> {
         let Some(mut frames) = list_before_refused_plus else {
             return;
         };
+        if self
+            .lines
+            .get(at + 1)
+            .is_some_and(|line| !is_list_marker(trim_ascii_start(quoted_rest(line))))
+        {
+            return;
+        }
         let next_list_column = self.lines.get(at + 1).and_then(|line| {
             let depth = frames.iter().filter(|f| f.kind == Kind::Quote).count();
             strip_quote_levels(line, depth).and_then(|rest| {

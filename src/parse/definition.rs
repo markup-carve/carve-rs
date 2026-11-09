@@ -794,10 +794,11 @@ pub(in crate::parse) fn parse_definition_list(
                                     first.marker == next.marker
                                 }
                         });
-                    // A different list marker below the description body
-                    // column leaves that body after a refused `+`.
+                    // After a refused `+`, a nonblank follower at or below the
+                    // description's body column belongs to the description,
+                    // not the list that the earlier marker attached.
                     let refused_sibling_boundary = at > first_visible
-                        && is_list_marker(trim_ascii_start(a))
+                        && !is_blank_line(a)
                         && lines.line(at - 1).is_some_and(|previous| {
                             continuation_marker::is_consumed_marker(trim_ascii_start(previous))
                         })
@@ -821,7 +822,7 @@ pub(in crate::parse) fn parse_definition_list(
                                 let authored =
                                     super::own_lines::authored_visual_column(line, column)
                                         .saturating_sub(source_col);
-                                authored > 0 && authored < content_column
+                                authored > 0
                             })
                         };
                     (is_blank_line(a) && !nested_fence.open_before(lines, first_visible, at))
@@ -1751,6 +1752,19 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     ) -> BodyStep {
         self.after_plus_paragraph = std::mem::take(&mut self.plus_paragraph_ended);
         let column = indent_columns(line);
+        if self.lines.is_empty()
+            && self.seed.lines().last().is_some_and(|previous| {
+                continuation_marker::is_consumed_marker(trim_ascii_start(previous))
+            })
+            && !is_list_marker(trim_ascii_start(line))
+            && !is_blank_line(line)
+            && column >= self.content_column
+        {
+            // The refused marker closed the list it had attached. Keep a
+            // separator in the rebased body so the list reader cannot revive
+            // that item when the description's next paragraph is indented.
+            self.push(String::new(), None, None, false);
+        }
         if self.nested_attribute_closed && !blank {
             let attached_plus = is_plus_marker(trim_ascii_start(line))
                 && self
