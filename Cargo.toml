@@ -88,6 +88,10 @@ name = "attached_list_boundaries_4126"
 path = "tests/attached_list_boundaries_4126.rs"
 
 [[test]]
+name = "description_attached_open_fence_5575"
+path = "tests/description_attached_open_fence_5575.rs"
+
+[[test]]
 name = "attached_note_block_text_5512"
 path = "tests/attached_note_block_text_5512.rs"
 
