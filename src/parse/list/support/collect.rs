@@ -478,6 +478,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut literal_colon = marker_content
         .and_then(detect_line_block_open)
         .map(|width| (width, strip_cols, strip_cols));
+    // The open line block's authored lead and the spaces it was rewritten to.
+    let mut literal_colon_lead: Option<(String, String)> = None;
     let mut comment_fence = marker_comment.map(|open| {
         let descendant = marker_content.map_or(0, innermost_marker_content_col);
         (open.fence_len, strip_cols + descendant)
@@ -2065,7 +2067,18 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && nested_fence.is_none()
             && comment_fence.is_none()
             && !in_comment_span;
-        let (sliced, consumed, synthetic) = if literal_colon.is_none()
+        let mut rewritten_lead = None;
+        // Verse indentation is relative to the opener (§23), so a line-block
+        // line sharing the opener's authored lead gets that lead's rewrite too.
+        let opener_lead = literal_colon_lead
+            .as_ref()
+            .filter(|_| literal_colon.is_some())
+            .filter(|(raw, _)| payload_line.starts_with(raw.as_str()));
+        let (sliced, consumed, synthetic) = if let Some((raw, columns)) = opener_lead {
+            let mut rebased = columns.clone();
+            rebased.push_str(&payload_line[raw.len()..]);
+            (rebased, raw.chars().count(), columns.len())
+        } else if literal_colon.is_none()
             && stripped < indent
             && (visible || fence_closer)
             && sliced[..sliced.len() - trim_ascii_start(&sliced).len()].contains('\t')
@@ -2073,6 +2086,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             let lead = payload_line.len() - trim_ascii_start(payload_line).len();
             let mut columns = " ".repeat(indent - stripped);
+            rewritten_lead = Some((payload_line[..lead].to_string(), columns.clone()));
             columns.push_str(&payload_line[lead..]);
             (
                 columns,
@@ -2309,6 +2323,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
                 {
                     literal_colon = None;
+                    literal_colon_lead = None;
                 }
             } else if let Some(width) = detect_line_block_open(trim_ascii_start(line)) {
                 if indent >= strip_cols {
@@ -2316,6 +2331,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         .last()
                         .map_or(strip_cols, |&(_, col)| col);
                     literal_colon = Some((width, indent, floor));
+                    literal_colon_lead = rewritten_lead;
                 }
             }
         }
