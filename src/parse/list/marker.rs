@@ -722,6 +722,17 @@ pub(crate) struct NestedAttachedFence {
 }
 
 impl NestedAttachedFence {
+    /// Whether `line` at `at` is a blank that ends the attached block.
+    pub(crate) fn ends_at_blank(
+        &mut self,
+        lines: CursorLines<'_>,
+        start: usize,
+        at: usize,
+        line: &str,
+    ) -> bool {
+        is_blank_line(line) && !self.open_before(lines, start, at)
+    }
+
     pub(crate) fn open_before(&mut self, lines: CursorLines<'_>, start: usize, at: usize) -> bool {
         let Some(first) = lines.line(start) else {
             return false;

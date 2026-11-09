@@ -2016,12 +2016,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .iter()
                 .enumerate()
                 .position(|(offset, line)| {
-                    (is_blank_line(line)
-                        && !nested_fence.open_before(
-                            CursorLines::Slice(lines),
-                            from,
-                            from + offset,
-                        ))
+                    nested_fence.ends_at_blank(CursorLines::Slice(lines), from, from + offset, line)
                         || is_plus_marker(line)
                 })
                 .unwrap_or(lines.len() - from)
@@ -2099,8 +2094,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 &mut self.closer_index,
                 self.options,
                 &mut |line, at| {
-                    (is_blank_line(line)
-                        && !nested_fence.open_before(CursorLines::Slice(lines), i, at))
+                    nested_fence.ends_at_blank(CursorLines::Slice(lines), i, at, line)
                         || is_plus_marker(line)
                 },
             )
@@ -2184,12 +2178,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 self.options,
                 &mut |line, at| {
                     let raw = lines[start + at];
-                    (is_blank_line(line)
-                        && !nested_fence.open_before(
-                            CursorLines::Slice(&attached_refs),
-                            first_visible_at,
-                            at,
-                        ))
+                    nested_fence.ends_at_blank(
+                        CursorLines::Slice(&attached_refs),
+                        first_visible_at,
+                        at,
+                        line,
+                    )
                     || is_plus_marker(line)
                     || ends_at_marker(at, raw)
                     || (at > first_visible_at
