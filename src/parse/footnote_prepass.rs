@@ -2226,7 +2226,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
             // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
-            && (!is_list_marker(rest) || ends_in_refused_brace_run(&note.lines))
+            && !is_list_marker(rest)
             && !opens_code_fence(rest)
             // A descendant's closing fence ends its paragraph before a line
             // below this note's floor can ask for lazy continuation.

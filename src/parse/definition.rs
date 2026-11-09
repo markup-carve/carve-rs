@@ -2390,10 +2390,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         // A list marker that misses a marker body closes it, and a quote in the
         // body takes no unmarked marker (PART 0 S3, carve#4860).
-        if !line.starts_with(LAZY)
-            && is_list_marker(trim_ascii_start(line))
-            && !ends_in_refused_brace_run(&self.lines)
-        {
+        if !line.starts_with(LAZY) && is_list_marker(trim_ascii_start(line)) {
             return BodyStep::Stop;
         }
         // So does a description marker after a `+` paragraph: it opens a sibling (PART 0 S1).
@@ -2465,11 +2462,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // line.
         let opener = trim_ascii_start(line);
         // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
-        if !line.starts_with(LAZY)
-            && indent < self.content_column
-            && is_list_marker(opener)
-            && !ends_in_refused_brace_run(&self.lines)
-        {
+        if !line.starts_with(LAZY) && indent < self.content_column && is_list_marker(opener) {
             return BodyStep::Stop;
         }
         let fold_below_column_opener = self.folds_below_column_opener(opener, indent);
