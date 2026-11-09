@@ -711,6 +711,62 @@ fn note_definition_with_body(lines: CursorLines<'_>, from: usize, to: usize) -> 
 
 /// One past the block a `+` attached in a host with no marker column: a comment or
 /// a definition is invisible, so the block it leads is attached with it (CARVE-P0-004).
+/// Whether a fence nested in an attached block is open before a line. Such a
+/// fence is not ended by a blank run; only a fence the `+` attached itself is
+/// (PART 0 S1, carve#5539). Advances incrementally, so a boundary closure that
+/// asks once per line stays linear.
+#[derive(Default)]
+pub(crate) struct NestedAttachedFence {
+    scanned: Option<usize>,
+    open: Option<(FenceOpen, usize)>,
+}
+
+impl NestedAttachedFence {
+    /// Whether `line` at `at` is a blank that ends the attached block.
+    pub(crate) fn ends_at_blank(
+        &mut self,
+        lines: CursorLines<'_>,
+        start: usize,
+        at: usize,
+        line: &str,
+    ) -> bool {
+        is_blank_line(line) && !self.open_before(lines, start, at)
+    }
+
+    pub(crate) fn open_before(&mut self, lines: CursorLines<'_>, start: usize, at: usize) -> bool {
+        let Some(first) = lines.line(start) else {
+            return false;
+        };
+        if detect_fence_open(trim_ascii_start(first)).is_some() {
+            return false;
+        }
+        let floor = indent_columns(first);
+        let mut next = self.scanned.unwrap_or(start + 1).max(start + 1);
+        while next < at && next < lines.len() {
+            let line = lines.at(next);
+            next += 1;
+            if is_blank_line(line) {
+                continue;
+            }
+            let (indent, rest) = (indent_columns(line), trim_ascii_start(line));
+            if let Some((open, column)) = self.open {
+                if indent >= column {
+                    if indent == column && is_fence_close(rest, open) {
+                        self.open = None;
+                    }
+                    continue;
+                }
+                self.open = None;
+            }
+            if indent > floor {
+                self.open = detect_fence_open(rest).map(|open| (open, indent));
+            }
+        }
+        self.scanned = Some(next);
+        self.open.is_some()
+    }
+}
+
 pub(crate) fn attached_block_past_invisible(
     lines: CursorLines<'_>,
     start: usize,

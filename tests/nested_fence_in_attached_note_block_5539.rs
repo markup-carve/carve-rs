@@ -17,12 +17,13 @@ fn unclosed_item_fence_keeps_one_trailing_blank() {
 
 #[test]
 fn note_paragraph_after_the_blank_adds_no_second_blank() {
+    // The nested fence is not ended by the blank, so `more` is its payload.
     let out = html("[^a]: +\n- li\n  ``` x\n  code\n\n  more\n\nsee[^a]\n");
     assert!(
-        out.contains("<pre><code class=\"language-x\">code\n\n</code></pre>"),
+        out.contains("<pre><code class=\"language-x\">code\n\nmore\n\n</code></pre>"),
         "{out}"
     );
-    assert!(out.contains("<p>more<a href=\"#fnref1\""), "{out}");
+    assert!(!out.contains("<p>more"), "{out}");
 }
 
 #[test]

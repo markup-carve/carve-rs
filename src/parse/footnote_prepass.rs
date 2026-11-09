@@ -2025,9 +2025,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             || is_plus_marker(first_text);
         let mut list_fence_sibling = attached_list_fence_sibling(CursorLines::Slice(lines), i);
         let first_boundary_after = |from: usize| {
+            let mut nested_fence = NestedAttachedFence::default();
             from + lines[from..]
                 .iter()
-                .position(|line| is_blank_line(line) || is_plus_marker(line))
+                .enumerate()
+                .position(|(offset, line)| {
+                    nested_fence.ends_at_blank(CursorLines::Slice(lines), from, from + offset, line)
+                        || is_plus_marker(line)
+                })
                 .unwrap_or(lines.len() - from)
         };
         let mut fenced_block_end = |from: usize| {
@@ -2095,13 +2100,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         } else if list_fence_sibling {
             i + attached_one_block_lines(CursorLines::Slice(&lines[i..]), self.options)
         } else if needs_raw_probe {
+            let mut nested_fence = NestedAttachedFence::default();
             attached_block_past_invisible(
                 CursorLines::Slice(lines),
                 i,
                 &mut self.comment_closers,
                 &mut self.closer_index,
                 self.options,
-                &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+                &mut |line, at| {
+                    nested_fence.ends_at_blank(CursorLines::Slice(lines), i, at, line)
+                        || is_plus_marker(line)
+                },
             )
         } else {
             first_boundary_after(i)
@@ -2171,6 +2180,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let losing = |other: &str, first: &str| self.losing_plus_line(label, other, first);
         let mut comment_closers = None;
         let mut closer_index = None;
+        let mut nested_fence = NestedAttachedFence::default();
         let mut end = if list_fence_sibling {
             attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options)
         } else {
@@ -2182,7 +2192,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 self.options,
                 &mut |line, at| {
                     let raw = lines[start + at];
-                    is_blank_line(line)
+                    nested_fence.ends_at_blank(
+                        CursorLines::Slice(&attached_refs),
+                        first_visible_at,
+                        at,
+                        line,
+                    )
                     || is_plus_marker(line)
                     || ends_at_marker(at, raw)
                     || (at > first_visible_at
