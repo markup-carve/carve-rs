@@ -40,6 +40,22 @@ fn attached_quote_window_end(
         .unwrap_or(window_end)
 }
 
+/// Past a sibling definition the attached block is measured from its own lead (carve#5542).
+fn lead_block_end(attached: &[&str], lead: usize, end: usize, options: &Options<'_>) -> usize {
+    if lead == 0 || lead >= end {
+        return end;
+    }
+    let lead_end =
+        lead + attached_one_block_lines(CursorLines::Slice(&attached[lead..end]), options);
+    end.min(lead_end.max(lead + 1))
+}
+
+/// A `+` takes its block at the block's own column (carve#5542).
+fn at_own_column(line: &str, lead_col: usize, marker_col: usize) -> Option<String> {
+    (lead_col > marker_col && indent_columns(line) >= lead_col)
+        .then(|| strip_leading_columns(line, lead_col))
+}
+
 fn marker_column_ends_attached_block(
     raw: &str,
     at: usize,
@@ -1814,12 +1830,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.first_source_line,
             own_lines::authored_visual_column(def_start_line, 1),
         );
+        let lead_col = indent_columns(lines[lead]);
         let attached: Vec<String> = lines[i..window_end]
             .iter()
             .enumerate()
             .map(|(offset, line)| {
                 if pulled_closer == Some(i + offset) {
                     trim_ascii_start(line).to_string()
+                } else if let Some(own) = at_own_column(line, lead_col, marker_col) {
+                    own
                 } else if i + offset > lead
                     && indent_columns(line) == container.content_column
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
@@ -1920,6 +1939,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             end = next;
         }
+        let end = lead_block_end(&attached_refs, first_visible_at, end, self.options);
         let mut end = i + end;
         if attached
             .first()
@@ -3061,11 +3081,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // a first-block grant. In particular, a losing duplicate must collect
         // and discard its own lazy continuation instead of lending that text
         // to the winning note.
-        if attached
-            .iter()
-            .take(lead + 1)
-            .any(|line| parse_footnote_def_line(trim_ascii_start(line)).is_some())
-        {
+        // A definition whose `+` the walk consumed leaves a block at this note's
+        // marker column to this note (carve#5502, carve#5542).
+        let lead_at_marker = attached
+            .get(lead)
+            .is_some_and(|line| !line.starts_with([' ', '\t']));
+        if attached.iter().take(lead + 1).any(|line| {
+            parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(_, first)| {
+                !lead_at_marker || !continuation_marker::is_consumed_marker(first)
+            })
+        }) {
             note.lines[0].clear();
             note.line_map[0] = None;
             if self.positions {
@@ -3128,7 +3153,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             attached.truncate(lead + 1 + at);
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
-        let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
+        let mut count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
+        // The invisible lines ahead of the lead come with it (carve#4449).
+        if lead > 0 && lead < attached_refs.len() {
+            count = count.max(
+                lead + attached_one_block_lines(
+                    CursorLines::Slice(&attached_refs[lead..]),
+                    self.options,
+                ),
+            );
+        }
         let closers = if lines
             .get(i + count)
             .and_then(|raw| host.content(raw))
