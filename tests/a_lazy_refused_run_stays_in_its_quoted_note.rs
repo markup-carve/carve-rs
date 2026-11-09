@@ -29,4 +29,8 @@ fn next_line_is_still_in_the_same_paragraph() {
         "> [^a]: +\n> {#i\n> .y}\nnext\n\nsee[^a]\n",
         "{#i\n.y}\nnext",
     );
+    check(
+        "> [^a]: +\n> {#i\n.y}\n> next\n\nsee[^a]\n",
+        "{#i\n.y}\nnext",
+    );
 }

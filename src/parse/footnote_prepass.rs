@@ -3396,9 +3396,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if ends_in_refused_brace_run(&attached) {
             if let Some(raw) = lines
                 .get(i + attached.len())
-                .filter(|raw| !is_blank_line(raw) && host.content(raw).is_none())
+                .filter(|raw| !is_blank_line(raw))
             {
-                attached.push((*raw).to_owned());
+                let follower = host.content(raw).map_or_else(
+                    || (*raw).to_owned(),
+                    |line| strip_leading_columns(line, host.note_floor.saturating_sub(2)),
+                );
+                attached.push(follower);
             }
         }
         if attached.is_empty() {
