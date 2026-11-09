@@ -1783,6 +1783,35 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         blank
     }
 
+    /// A later winning definition takes the pending first-block grant.
+    fn yields_first_block(
+        &mut self,
+        note: &mut NoteBody,
+        i: usize,
+        label: &str,
+        first: &str,
+    ) -> bool {
+        self.passed_note
+            .as_deref()
+            .is_some_and(|key| key != label_key(label))
+            || self.pass_winning_note(note, i, label, first)
+    }
+
+    fn resume_own_passed_note(
+        &mut self,
+        note: &mut NoteBody,
+        i: &mut usize,
+        label: &str,
+        container: IndentContainer,
+    ) -> bool {
+        if self.passed_note.as_deref() == Some(&label_key(label)) {
+            *i = self.resume_passed_note(note, *i, label, container);
+            true
+        } else {
+            false
+        }
+    }
+
     // A lone marker-line `+` gives the note its first flush-left block.
     // The same block bound is used by a later standalone `+` in a note.
     #[allow(clippy::too_many_arguments)]
@@ -1796,20 +1825,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         def_start_line: usize,
     ) -> usize {
         let lines = self.lines;
-        if self
-            .passed_note
-            .as_deref()
-            .is_some_and(|key| key != label_key(label))
-        {
+        if self.yields_first_block(note, i, label, first) {
             return i;
         }
-        if self.pass_winning_note(note, i, label, first) {
-            return i;
-        }
-        let received_grant = self.passed_note.as_deref() == Some(&label_key(label));
-        if received_grant {
-            i = self.resume_passed_note(note, i, label, container);
-        }
+        let received_grant = self.resume_own_passed_note(note, &mut i, label, container);
         if !received_grant
             && (trim_ascii(first) != "+"
                 || !container.owns_continuation(first, self.decision_at(def_start_line)))
