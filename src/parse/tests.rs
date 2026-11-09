@@ -15,6 +15,27 @@ fn attribute_lines_inside_open_code_spans_stay_inline() {
             "p\n `open\n {.x\n .y}\n ```\n z\n",
             "<p>p\n<code>open\n{.x\n.y}</code></p>\n<pre><code>z\n</code></pre>",
         ),
+        (
+            "``\n{:grc}\nΜῆνιν ἄειδε θεά\n",
+            "<p><code>\n{:grc}\nΜῆνιν ἄειδε θεά</code></p>",
+        ),
+    ] {
+        let html = crate::render_html(&parse(source)).unwrap();
+        assert_eq!(html.trim_end(), expected, "{source}");
+    }
+}
+
+#[test]
+fn attribute_value_ticks_and_invalid_comment_do_not_hold_code_open() {
+    for (source, expected) in [
+        (
+            "[a]{title=\"`\"} and [n](u)\n{k=\"v\"}\n{% a ` %}[n](u)\n",
+            "<p><span title=\"`\">a</span> and <a href=\"u\">n</a></p>\n<p k=\"v\"><a href=\"u\">n</a></p>",
+        ),
+        (
+            "{%%%:fr}\n*y*{k=\"a\tb\"}\n{lang=de}\n",
+            "<p>{%%%:fr}\n<strong k=\"a\tb\">y</strong></p>",
+        ),
     ] {
         let html = crate::render_html(&parse(source)).unwrap();
         assert_eq!(html.trim_end(), expected, "{source}");

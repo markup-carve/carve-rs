@@ -279,7 +279,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         // A brace line held by the paragraph's inline pairing cannot open a
         // block attribute, whether the brace form is wrapped or complete.
-        let held_brace = brace_line.starts_with('{') && inline_span.open(&lines);
+        let held_brace = brace_line.starts_with('{') && inline_span.code_open(&lines);
         if !forced
             && !lines.is_empty()
             && ((reference_caption_claimed && caption_content(line).is_some())
@@ -374,6 +374,11 @@ pub(in crate::parse) struct InlineSpanScan {
 }
 
 impl InlineSpanScan {
+    pub(in crate::parse) fn code_open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
+        self.open(lines);
+        self.code_run != 0
+    }
+
     pub(in crate::parse) fn open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
         for line in &lines[self.scanned.min(lines.len())..] {
             let bytes = strip_lazy(line.as_ref()).as_bytes();
@@ -400,6 +405,24 @@ impl InlineSpanScan {
                 {
                     self.comment = true;
                     k += 1;
+                } else if self.code_run == 0 && bytes[k] == b'{' {
+                    // Backticks in an inline attribute's quoted value are
+                    // value bytes, not code-span delimiters.
+                    let mut quote = None;
+                    let mut end = k + 1;
+                    while end < bytes.len() {
+                        match (quote, bytes[end]) {
+                            (Some(_), b'\\') => end += 1,
+                            (Some(q), ch) if q == ch => quote = None,
+                            (None, b'"' | b'\'') => quote = Some(bytes[end]),
+                            (None, b'}') => break,
+                            _ => {}
+                        }
+                        end += 1;
+                    }
+                    if end < bytes.len() {
+                        k = end;
+                    }
                 }
                 k += 1;
             }
