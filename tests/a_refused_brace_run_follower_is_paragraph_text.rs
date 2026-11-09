@@ -81,3 +81,11 @@ fn a_second_opener_after_the_follower_closer_interrupts_at_the_root() {
         "<p>{.x\n.y}\n<code>\nwa\n</code></p>\n<pre><code></code></pre>",
     );
 }
+
+#[test]
+fn a_fence_after_an_unclosed_follower_opens_in_the_item() {
+    check(
+        "- +\n  {.x\n  .y}\n  ```\n  ~~~\n  - inner\n  ~~~\n",
+        "<ul>\n  <li>{.x\n.y}\n<code></code>\n    <pre><code>- inner\n</code></pre>\n  </li>\n</ul>",
+    );
+}

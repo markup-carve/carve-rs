@@ -386,9 +386,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     });
     let mut held_comment_span = HeldCommentSpan::new();
     let mut body_code_fence = OpenCodeFenceScan::default();
-    // A fence-shaped follower of a refused brace run is paragraph text, through
-    // its closer (CARVE-P2-035): it opens no fence for the collector.
-    let mut refused_follower: Option<FenceOpen> = None;
     let mut line_block_payload = LineBlockPayloadScan::default();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
@@ -2240,18 +2237,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                             literal_code_closes_cursor(cur, floor, column, open)
                         }))
             });
-            if let Some(open) = refused_follower {
-                if is_blank_line(line) || is_fence_close(trim_ascii_start(line), open) {
-                    refused_follower = None;
-                }
-            } else if may_track_code {
+            if may_track_code {
                 let tracked = if literal_colon.is_some() {
                     trim_ascii_start(fence_line)
                 } else {
                     fence_line
                 };
-                // A closed follower keeps its closer, as a fence would.
-                refused_follower = fence
+                // A closed follower keeps its closer, as a fence would; an
+                // unclosed one is this one line of text.
+                let refused_follower = fence
                     .is_none()
                     .then(|| detect_fence_open(trim_ascii_start(tracked)))
                     .flatten()
