@@ -87,6 +87,44 @@ fn lines_end_in_refused_brace_run(lines: &[&str]) -> bool {
     ends_in_refused_brace_run(&run)
 }
 
+/// The fence a refused brace run's follower on line `i` writes. It is that
+/// paragraph's text, so it opens no fence block (CARVE-P2-035).
+fn refused_run_follower(lines: &[&str], i: usize) -> Option<FenceOpen> {
+    let inside = trim_ascii_start(without_blockquote_prefixes(trim_ascii_start(lines[i])));
+    detect_fence_open(inside).filter(|_| lines_end_in_refused_brace_run(&lines[..i]))
+}
+
+/// The quote depth of a line and the text inside its quote prefixes.
+fn quote_depth_and_body(line: &str) -> (usize, &str) {
+    let mut depth = 0;
+    let mut body = line;
+    while let Some(inner) = strip_blockquote_prefix(trim_ascii_start(body)) {
+        depth += 1;
+        body = inner;
+    }
+    (depth, body)
+}
+
+/// Whether the follower on line `i` finds its closer in its own host: a line at
+/// its quote depth and indent, before a line that leaves the host.
+fn follower_closes_in_host(lines: &[&str], i: usize, open: FenceOpen) -> bool {
+    let (depth, body) = quote_depth_and_body(lines[i]);
+    let indent = indent_columns(body);
+    for line in &lines[i + 1..] {
+        let (at_depth, rest) = quote_depth_and_body(line);
+        if is_blank_line(rest) {
+            continue;
+        }
+        if at_depth < depth || (at_depth == depth && indent_columns(rest) < indent) {
+            return false;
+        }
+        if at_depth == depth && is_fence_close(trim_ascii_start(rest), open) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Whether attached line `at` follows a refused brace run, whose paragraph
 /// takes it as text (CARVE-P2-035).
 fn follows_refused_run(attached: &[String], lead: usize, at: usize) -> bool {
@@ -668,11 +706,14 @@ struct PrepassFenceState {
     inline_paragraph: Option<PrepassParagraph>,
     term_floor: usize,
     // Whether that fence has a closer, which decides whether a quoted line ends it.
+    /// A refused brace run's follower: its paragraph, and so the fence, ends at a blank.
+    paragraph_text: bool,
 }
 
 impl PrepassFenceState {
     fn ends_before(&self, line: &str, open: FenceOpen) -> bool {
-        inline_fence_paragraph_ends(line, open, self.inline_paragraph.as_ref())
+        (self.paragraph_text && is_blank_line(without_blockquote_prefixes(trim_ascii_start(line))))
+            || inline_fence_paragraph_ends(line, open, self.inline_paragraph.as_ref())
             || (self.description
                 && (self.description_blank || !self.inline_marker)
                 && description_fence_leaves_after_blank(line, open, &self.term_columns))
@@ -780,6 +821,9 @@ struct LineScan<'a> {
     fence_line: &'a str,
     /// The column of a fence written at a list item's content column.
     fence_col: Option<usize>,
+    /// A fence line right after a refused brace run, and whether a closer
+    /// follows it. It is that paragraph's text (CARVE-P2-035).
+    refused_follower: Option<bool>,
 }
 
 /// A line that parsed as a footnote definition and passed the fold guards.
@@ -1090,15 +1134,20 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     fn observe_line(&mut self, i: usize) -> LineScan<'a> {
         let lines = self.lines;
         let line = lines[i];
-        let folded_fence = detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-            !self.closer_maxima.has_run_after(i, open)
-                && !i.checked_sub(1).is_some_and(|above| {
-                    strip_blockquote_prefix(trim_ascii_start(lines[above])).is_some()
-                        && strip_blockquote_prefix(trim_ascii_start(line)).is_none()
-                })
-                && (prepass_paragraph_open_above(lines, i, &[], &self.folded_into_term)
-                    || lines_end_in_refused_brace_run(&lines[..i]))
+        let follower = refused_run_follower(lines, i);
+        let refused_follower = follower.map(|open| {
+            self.closer_maxima.has_run_after(i, open) && follower_closes_in_host(lines, i, open)
         });
+        let folded_fence = refused_follower == Some(false)
+            || detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                !self.closer_maxima.has_run_after(i, open)
+                    && !i.checked_sub(1).is_some_and(|above| {
+                        strip_blockquote_prefix(trim_ascii_start(lines[above])).is_some()
+                            && strip_blockquote_prefix(trim_ascii_start(line)).is_none()
+                    })
+                    && (prepass_paragraph_open_above(lines, i, &[], &self.folded_into_term)
+                        || lines_end_in_refused_brace_run(&lines[..i]))
+            });
         // A footnote definition is collected at the top level AND from inside a
         // blockquote / bullet-list container: `> [^a]: body` and `- [^a]: body`
         // both stash the def and leave the container empty, matching carve-js
@@ -1173,6 +1222,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             after_term,
             fence_line,
             fence_col,
+            refused_follower,
         }
     }
 
@@ -1266,6 +1316,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return false;
         };
         let line = self.lines[i];
+        let follower = scan
+            .refused_follower
+            .filter(|_| !self.folded_into_term.fence_openers.contains_key(&i));
+        if follower == Some(false) {
+            self.keep_line(i);
+            return true;
+        }
         let term_fence = self.folded_into_term.fence_openers.get(&i);
         if scan.stripped.description {
             open.content_col =
@@ -1325,6 +1382,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 inline_marker: fence.inline_marker,
                 inline_paragraph,
                 term_floor,
+                paragraph_text: follower.is_some(),
             };
         }
         self.keep_line(i);
