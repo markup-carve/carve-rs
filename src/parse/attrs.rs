@@ -330,6 +330,19 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
     RefusedBraceRun::No(if comment { usize::MAX } else { 0 })
 }
 
+/// [`ends_in_refused_brace_run`] over the cursor lines `from..to`.
+pub(in crate::parse) fn cursor_ends_in_refused_brace_run(
+    lines: crate::parse::cursor::CursorLines<'_>,
+    from: usize,
+    to: usize,
+) -> bool {
+    if from >= to || !lines.at(to - 1).contains('}') {
+        return false;
+    }
+    let collected: Vec<String> = (from..to).map(|at| lines.at(at).to_owned()).collect();
+    ends_in_refused_brace_run(&collected)
+}
+
 /// Whether the collected lines end in a refused brace run, whose paragraph
 /// takes the next line whatever it opens (carve#5080).
 pub(in crate::parse) fn ends_in_refused_brace_run(lines: &[String]) -> bool {

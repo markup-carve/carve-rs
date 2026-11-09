@@ -780,8 +780,11 @@ pub(in crate::parse) fn parse_definition_list(
                 let mut boundary = |a: &str, at| {
                     is_blank_line(a)
                         || is_plus_marker(a)
-                        // A list marker ends an attached block that is no list (PART 0 S3, carve#4860).
-                        || (!attached_list && is_list_marker(trim_ascii_start(a)))
+                        // A list marker ends an attached block that is no list (PART 0 S3, carve#4860),
+                        // unless it follows a refused brace run (CARVE-P2-035).
+                        || (!attached_list
+                            && is_list_marker(trim_ascii_start(a))
+                            && !cursor_ends_in_refused_brace_run(lines, first_visible, at))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
                     || (at > first_blank
@@ -1134,7 +1137,7 @@ pub(crate) fn line_block_payload_tail(source: &str) -> Option<bool> {
 }
 
 /// Line-by-line state behind [`line_block_payload_tail`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct LineBlockTail {
     open: Option<usize>,
     code: Option<FenceOpen>,
@@ -1326,6 +1329,12 @@ impl LineBlockTail {
 
     pub(crate) fn tail(&self) -> Option<bool> {
         self.last_is_payload.then_some(self.quoted)
+    }
+
+    /// Whether `line` reaches the open line block's host column, so it is
+    /// not a lazy fold.
+    pub(crate) fn reaches_host(&self, line: &str) -> bool {
+        self.open.is_some() && (self.quoted || indent_columns(line) >= self.host_col)
     }
 }
 
@@ -1963,22 +1972,27 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         let attached_quote = cur
             .peek()
             .is_some_and(|line| strip_blockquote_prefix(trim_ascii_start(line)).is_some());
+        let start = cur.pos;
         let end = attached_block_past_invisible(
             cursor_lines,
-            cur.pos,
+            start,
             &mut cur.comment_closer_last_index,
             &mut cur.code_closer_last_index,
             self.options,
-            &mut |a, _| {
+            &mut |a, at| {
                 is_blank_line(a)
                     || is_plus_marker(a)
-                    // A list marker ends an attached paragraph (PART 0 S3, carve#4860).
-                    || (attached_paragraph && is_list_marker(trim_ascii_start(a)))
+                    // A list marker ends an attached paragraph (PART 0 S3, carve#4860),
+                    // unless it follows a refused brace run (CARVE-P2-035).
+                    || (attached_paragraph
+                        && is_list_marker(trim_ascii_start(a))
+                        && !cursor_ends_in_refused_brace_run(cursor_lines, start, at))
                     // Once a pulled paragraph reaches this body's own column,
                     // a block opener is read by the description (CARVE-P0-011).
                     || (attached_paragraph
                         && indent_columns(a) >= content_column
-                        && item_block_opener(trim_ascii_start(a)))
+                        && item_block_opener(trim_ascii_start(a))
+                        && !cursor_ends_in_refused_brace_run(cursor_lines, start, at))
                     || (attached_quote
                         && indent_columns(a) >= content_column
                         && (if caption_content(trim_ascii_start(a)).is_some() {

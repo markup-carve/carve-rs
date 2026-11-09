@@ -50,6 +50,17 @@ fn lead_block_end(attached: &[&str], lead: usize, end: usize, options: &Options<
     end.min(lead_end.max(lead + 1))
 }
 
+/// Whether attached line `at` follows a refused brace run, whose paragraph
+/// takes it as text (CARVE-P2-035).
+fn follows_refused_run(attached: &[String], lead: usize, at: usize) -> bool {
+    at > lead && ends_in_refused_brace_run(&attached[lead..at])
+}
+
+/// A list marker ends an attached paragraph (PART 0 S3, carve#4860).
+fn marker_ends_attached_paragraph(attached: &[String], lead: usize, at: usize, raw: &str) -> bool {
+    at > lead && is_list_marker(trim_ascii_start(raw)) && !follows_refused_run(attached, lead, at)
+}
+
 /// A `+` takes its block at the block's own column (carve#5542).
 fn at_own_column(line: &str, lead_col: usize, marker_col: usize) -> Option<String> {
     (lead_col > marker_col && indent_columns(line) >= lead_col)
@@ -1866,8 +1877,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             && lines
                 .get(start + first_visible_at)
                 .is_some_and(|line| indent_columns(line) > marker_col);
+        let after_refused_run = |at: usize| follows_refused_run(&attached, first_visible_at, at);
         let ends_at_marker = |at: usize, raw: &str| {
-            at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
+            lead_is_paragraph
+                && marker_ends_attached_paragraph(&attached, first_visible_at, at, raw)
         };
         let losing = |other: &str, first: &str| self.losing_plus_line(label, other, first);
         let mut comment_closers = None;
@@ -1909,7 +1922,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     || (at > first_visible_at
                         && indent_columns(raw) <= marker_col
                         && parse_footnote_def_line(trim_ascii_start(raw))
-                            .is_some_and(|(other, first)| !losing(other, first)))
+                            .is_some_and(|(other, first)| !losing(other, first))
+                        && !after_refused_run(at))
                 },
             )
         };
@@ -1947,7 +1961,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         {
             for (at, &raw) in lines.iter().enumerate().take(end).skip(i + 1) {
                 let text = trim_ascii_start(raw);
-                if indent_columns(raw) >= container.content_column && item_block_opener(text) {
+                if indent_columns(raw) >= container.content_column
+                    && item_block_opener(text)
+                    && !follows_refused_run(&attached, first_visible_at, at - start)
+                {
                     end = at;
                     break;
                 }
@@ -3109,12 +3126,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     attached.truncate(at);
                 }
             }
-            if let Some(at) = attached
-                .iter()
-                .skip(lead + 1)
-                .position(|line| is_list_marker(trim_ascii_start(line)))
-            {
-                attached.truncate(lead + 1 + at);
+            if let Some(at) = (lead + 1..attached.len()).find(|&at| {
+                is_list_marker(trim_ascii_start(&attached[at]))
+                    && !ends_in_refused_brace_run(&attached[lead..at])
+            }) {
+                attached.truncate(at);
             }
         }
         // A block opener at the note's floor ends an attached paragraph or
@@ -3127,6 +3143,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 indent_columns(line) >= host.note_floor
                     && item_block_opener(text)
                     && !(lead_is_quote && strip_blockquote_prefix(text).is_some())
+                    && !ends_in_refused_brace_run(&attached[lead..at])
             }) {
                 attached.truncate(at);
             }
