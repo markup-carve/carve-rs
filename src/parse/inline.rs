@@ -2086,7 +2086,7 @@ pub(in crate::parse) fn parse_reference_link(
 /// A cell's `\|` is its separator escape, consumed before inline reference
 /// resolution. Keep the original bytes for positions and escaped-text nodes,
 /// but use the logical cell spelling for labels and unresolved literals.
-fn logical_cell_reference_source(source: &str) -> String {
+pub(in crate::parse) fn logical_cell_reference_source(source: &str) -> String {
     if !super::table::IN_CELL.with(std::cell::Cell::get) || !source.contains("\\|") {
         return source.to_string();
     }

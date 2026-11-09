@@ -361,7 +361,7 @@ pub(in crate::parse) fn parse_crossref(
     let target = text.get(pos + 3..close)?;
     Some((
         CrossRef {
-            target: target.to_string(),
+            target: super::inline::logical_cell_reference_source(target),
             // Filled by `fill_crossref_hrefs` once the whole document exists:
             // resolution needs the heading table, which is not built yet here.
             href: None,
