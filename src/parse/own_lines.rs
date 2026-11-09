@@ -92,6 +92,8 @@ struct Frame {
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
     absorbs: bool,
     line_block: bool,
+    /// The opener lead before owner frames rewrite it, for verse indentation.
+    verse_open_authored_col: usize,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
     /// Authored position of a comment span inside a line-block payload.
@@ -172,6 +174,7 @@ impl Frame {
             run: 0,
             absorbs: false,
             line_block: false,
+            verse_open_authored_col: 0,
             span: None,
             span_origin: None,
             verse: false,
@@ -3401,7 +3404,20 @@ impl<'a> Walk<'a> {
             let (col, open_col) = (c.col, inner.closer_col());
             let family = inner.family;
             let target = Self::payload_target(inner, closer, c.rest, col, target);
-            c.lead_in(target, inner.shift, false);
+            // Measure a verse line against its opener before the ownership
+            // walk rewrites either lead. Nested frames can re-measure a tab to
+            // either side of its authored column.
+            let verse_payload =
+                line_block && !closer.is_some_and(|cl| cl.closes(c.rest, col, open_col));
+            if verse_payload && c.authored_col >= inner.verse_open_authored_col {
+                let opener_shift = inner.verse_open_authored_col.saturating_sub(inner.canon);
+                c.lead_at(
+                    c.authored_col.saturating_sub(opener_shift) + inner.shift + c.attachment_shift,
+                    false,
+                );
+            } else {
+                c.lead_in(target, inner.shift, false);
+            }
             self.write_attached_quote_comment_payload(at, reached, missed, c, inner);
             if tracing {
                 let payload = self.deepest();
@@ -4061,6 +4077,7 @@ impl<'a> Walk<'a> {
                     col
                 };
                 f.line_block = line_block;
+                f.verse_open_authored_col = c.authored_col;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
                 f.doc_marker = doc_column(self.lines[at], c.src);
