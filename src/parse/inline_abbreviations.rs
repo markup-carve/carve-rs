@@ -163,22 +163,91 @@ pub(in crate::parse) fn apply_abbreviations_inline(
     nodes: &mut Vec<InlineNode>,
     index: &AbbreviationIndex<'_>,
 ) {
+    apply_abbreviations_inline_between(nodes, index, None, None);
+}
+
+fn abbreviation_edge(node: &InlineNode, first: bool) -> Option<char> {
+    let children: &[InlineNode] = match node {
+        InlineNode::Text(text) => {
+            return if first {
+                text.value.chars().next()
+            } else {
+                text.value.chars().next_back()
+            }
+        }
+        InlineNode::EscapedText(n) => {
+            return if first {
+                n.value.chars().next()
+            } else {
+                n.value.chars().next_back()
+            }
+        }
+        InlineNode::SoftBreak(_)
+        | InlineNode::HardBreak(_)
+        | InlineNode::CellWrap(_)
+        | InlineNode::NonBreakingSpace(_) => return Some(' '),
+        InlineNode::Emphasis(n) => &n.children,
+        InlineNode::Link(n) => &n.children,
+        InlineNode::Span(n) => &n.children,
+        InlineNode::Extension(n) => &n.children,
+        InlineNode::CriticInsert(n) => &n.children,
+        InlineNode::CriticDelete(n) => &n.children,
+        _ => return None,
+    };
+    if first {
+        children
+            .iter()
+            .find(|child| !matches!(child, InlineNode::Comment(_)))
+            .and_then(|child| abbreviation_edge(child, true))
+    } else {
+        children
+            .iter()
+            .rev()
+            .find(|child| !matches!(child, InlineNode::Comment(_)))
+            .and_then(|child| abbreviation_edge(child, false))
+    }
+}
+
+fn apply_abbreviations_inline_between(
+    nodes: &mut Vec<InlineNode>,
+    index: &AbbreviationIndex<'_>,
+    before: Option<char>,
+    after: Option<char>,
+) {
+    let mut left = Vec::with_capacity(nodes.len());
+    let mut preceding = before;
+    for node in nodes.iter() {
+        left.push(preceding);
+        if !matches!(node, InlineNode::Comment(_)) {
+            preceding = abbreviation_edge(node, false);
+        }
+    }
+    let mut right = vec![None; nodes.len()];
+    let mut following = after;
+    for (i, node) in nodes.iter().enumerate().rev() {
+        right[i] = following;
+        if !matches!(node, InlineNode::Comment(_)) {
+            following = abbreviation_edge(node, true);
+        }
+    }
     let mut out = Vec::with_capacity(nodes.len());
-    for node in std::mem::take(nodes) {
+    for (i, node) in std::mem::take(nodes).into_iter().enumerate() {
         match node {
             InlineNode::Text(text) => {
-                append_abbreviations_in_text(text.value, index, text.pos, &mut out);
+                append_abbreviations_in_text_between(
+                    text.value, index, text.pos, &mut out, left[i], right[i],
+                );
             }
             InlineNode::Emphasis(mut e) => {
-                apply_abbreviations_inline(&mut e.children, index);
+                apply_abbreviations_inline_between(&mut e.children, index, left[i], right[i]);
                 out.push(InlineNode::Emphasis(e));
             }
             InlineNode::Link(mut l) => {
-                apply_abbreviations_inline(&mut l.children, index);
+                apply_abbreviations_inline_between(&mut l.children, index, left[i], right[i]);
                 out.push(InlineNode::Link(l));
             }
             InlineNode::Extension(mut e) => {
-                apply_abbreviations_inline(&mut e.children, index);
+                apply_abbreviations_inline_between(&mut e.children, index, left[i], right[i]);
                 out.push(InlineNode::Extension(e));
             }
             // PART 9R R3 matches a term in RENDERED TEXT at word boundaries, and
@@ -189,7 +258,7 @@ pub(in crate::parse) fn apply_abbreviations_inline(
             // spelling a documented feature, so the loss sits inside a construct
             // the docs teach (carve#1151).
             InlineNode::Span(mut sp) => {
-                apply_abbreviations_inline(&mut sp.children, index);
+                apply_abbreviations_inline_between(&mut sp.children, index, left[i], right[i]);
                 out.push(InlineNode::Span(sp));
             }
             InlineNode::CitationGroup(mut g) => {
@@ -213,11 +282,11 @@ pub(in crate::parse) fn apply_abbreviations_inline(
                 out.push(InlineNode::Footnote(f));
             }
             InlineNode::CriticInsert(mut c) => {
-                apply_abbreviations_inline(&mut c.children, index);
+                apply_abbreviations_inline_between(&mut c.children, index, left[i], right[i]);
                 out.push(InlineNode::CriticInsert(c));
             }
             InlineNode::CriticDelete(mut c) => {
-                apply_abbreviations_inline(&mut c.children, index);
+                apply_abbreviations_inline_between(&mut c.children, index, left[i], right[i]);
                 out.push(InlineNode::CriticDelete(c));
             }
             InlineNode::CriticSubstitute(mut c) => {
@@ -249,11 +318,13 @@ pub(in crate::parse) fn apply_abbreviations_inline(
 /// no-break-space sentinel is one character standing in for two), and a node
 /// spanning more than one line has no single column to count from. Either way
 /// the pieces get no position rather than a derived-from-wrong one.
-pub(in crate::parse) fn append_abbreviations_in_text(
+fn append_abbreviations_in_text_between(
     text: String,
     index: &AbbreviationIndex<'_>,
     pos: Option<Pos>,
     out: &mut Vec<InlineNode>,
+    before: Option<char>,
+    after: Option<char>,
 ) {
     let anchor = pos.filter(|p| {
         p.start_line == p.end_line
@@ -281,7 +352,7 @@ pub(in crate::parse) fn append_abbreviations_in_text(
     while i < text.len() {
         let mut matched: Option<(&str, &str)> = None;
         let ch = text[i..].chars().next().unwrap();
-        if is_word_boundary(&text, i) {
+        if abbreviation_boundary(text[..i].chars().next_back().or(before)) {
             let mut node = 0;
             for (offset, byte) in text.as_bytes()[i..].iter().enumerate() {
                 let Some(&child) = index[node].children.get(byte) else {
@@ -289,7 +360,7 @@ pub(in crate::parse) fn append_abbreviations_in_text(
                 };
                 node = child;
                 if let Some(definition) = index[node].definition {
-                    if is_word_boundary(&text, i + offset + 1) {
+                    if abbreviation_boundary(text[i + offset + 1..].chars().next().or(after)) {
                         matched = Some(definition);
                         break;
                     }
@@ -331,9 +402,6 @@ pub(in crate::parse) fn append_abbreviations_in_text(
     }
 }
 
-/// PART 9R R3: a boundary needs a neighbor that is no Unicode letter or number.
-pub(in crate::parse) fn is_word_boundary(text: &str, pos: usize) -> bool {
-    let before = text[..pos].chars().next_back();
-    let after = text[pos..].chars().next();
-    !before.is_some_and(quote_state::is_alnum) || !after.is_some_and(quote_state::is_alnum)
+fn abbreviation_boundary(adjacent: Option<char>) -> bool {
+    !adjacent.is_some_and(quote_state::is_alnum)
 }
