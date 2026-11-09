@@ -73,6 +73,8 @@ struct Frame {
     canon: usize,
     cut: usize,
     para: bool,
+    /// An open paragraph after a plus-attached fence ended at its first blank.
+    fold_unpaired_fence: bool,
     last: Last,
     /// A definition term opened in this item's own body.
     definition_seen: bool,
@@ -146,6 +148,7 @@ impl Frame {
             canon: 0,
             cut: 0,
             para: false,
+            fold_unpaired_fence: false,
             last: Last::None,
             definition_seen: false,
             marker: None,
@@ -2759,12 +2762,28 @@ impl<'a> Walk<'a> {
                     doc_column(line, rest) >= frames.last().expect("attached host").col
                 })
             });
+        let ended_attached_code = kind == Kind::Fence
+            && self.frames.last().is_some_and(|frame| {
+                frame.attached_blank_end.is_some_and(|blank| at >= blank)
+                    && matches!(frame.closer, Some(Closer::Fence(..)))
+            });
         if kind == Kind::Fence || (kind == Kind::Colon && ended) {
             self.frames.pop();
         }
         if let Some(frames) = resume.filter(|frames| frames.len() > self.frames.len()) {
             self.replace_frames(frames);
             *reached = self.frames.len() - 1;
+        }
+        if ended_attached_code {
+            if let Some(owner) = self.frames.get_mut(*reached) {
+                owner.fold_unpaired_fence = true;
+            }
+        }
+    }
+
+    fn retain_paragraph_fence_fold(&mut self, owner: usize, form: &Form) {
+        if !matches!(form, Form::Text | Form::Leaf(false)) {
+            self.frames[owner].fold_unpaired_fence = false;
         }
     }
 
@@ -3308,6 +3327,7 @@ impl<'a> Walk<'a> {
         );
         self.end_closed_lists(c);
         let mut form = self.classify(c.rest, reached, at);
+        self.retain_paragraph_fence_fold(reached, &form);
         let quote_granted_note = self.classify_granted_note(
             c.rest,
             *after_plus,
@@ -4328,6 +4348,14 @@ impl<'a> Walk<'a> {
             // An opener interrupts with or without a closer (carve#4018).
             let ch = rest.as_bytes()[0];
             let len = rest.bytes().take_while(|&b| b == ch).count();
+            // The paragraph that survives an attached fence's first blank
+            // absorbs an unpaired run in any owner, including the document.
+            if owner_para
+                && self.frames[owner].fold_unpaired_fence
+                && !self.payload_fence_has_closer(at, ch, len)
+            {
+                return Form::Text;
+            }
             // A refused brace run's unclosed follower is its paragraph's text (CARVE-P2-035).
             if !self.payload_fence_has_closer(at, ch, len) {
                 let quotes = self.frames[..=owner]

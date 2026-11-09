@@ -827,7 +827,21 @@ impl NoteBody {
                             || parse_standalone_attrs(trim_ascii_start(l)).is_some())
                 })
             });
-        !attached
+        // An own-line plus grants only the first block. Once an authored blank
+        // has ended that grant and body text has continued the still-open
+        // fence, later blanks are ordinary fence payload (carve#5560).
+        if !attached {
+            return true;
+        }
+        let mut past_authored_blank = false;
+        for at in opener + 1..self.lines.len() {
+            if is_blank_line(&self.lines[at]) {
+                past_authored_blank |= self.line_map[at].is_some();
+            } else if past_authored_blank {
+                return true;
+            }
+        }
+        false
     }
 }
 
