@@ -1920,6 +1920,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             end = next;
         }
+        // Past a sibling definition the block is measured from its own lead (carve#5542).
+        if first_visible_at > 0 && first_visible_at < end {
+            let lead_end = first_visible_at
+                + attached_one_block_lines(
+                    CursorLines::Slice(&attached_refs[first_visible_at..end]),
+                    self.options,
+                );
+            end = end.min(lead_end.max(first_visible_at + 1));
+        }
         let mut end = i + end;
         if attached
             .first()
@@ -3061,11 +3070,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // a first-block grant. In particular, a losing duplicate must collect
         // and discard its own lazy continuation instead of lending that text
         // to the winning note.
-        if attached
-            .iter()
-            .take(lead + 1)
-            .any(|line| parse_footnote_def_line(trim_ascii_start(line)).is_some())
-        {
+        // A definition whose `+` the walk consumed leaves a block at this note's
+        // marker column to this note (carve#5502, carve#5542).
+        let lead_at_marker = attached
+            .get(lead)
+            .is_some_and(|line| !line.starts_with([' ', '\t']));
+        if attached.iter().take(lead + 1).any(|line| {
+            parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(_, first)| {
+                !lead_at_marker || !continuation_marker::is_consumed_marker(first)
+            })
+        }) {
             note.lines[0].clear();
             note.line_map[0] = None;
             if self.positions {
@@ -3128,7 +3142,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             attached.truncate(lead + 1 + at);
         }
         let attached_refs: Vec<&str> = attached.iter().map(String::as_str).collect();
-        let count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
+        let mut count = attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options);
+        // The invisible lines ahead of the lead come with it (carve#4449).
+        if lead > 0 && lead < attached_refs.len() {
+            count = count.max(
+                lead + attached_one_block_lines(
+                    CursorLines::Slice(&attached_refs[lead..]),
+                    self.options,
+                ),
+            );
+        }
         let closers = if lines
             .get(i + count)
             .and_then(|raw| host.content(raw))
