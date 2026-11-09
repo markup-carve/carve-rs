@@ -112,6 +112,12 @@ fn marker_column_ends_attached_block(
 }
 
 fn later_marker_end(lines: &[&str], start: usize, end: usize, marker_col: usize) -> usize {
+    if !lines
+        .get(start)
+        .is_some_and(|line| detect_list_marker_full(trim_ascii_start(line)).is_some())
+    {
+        return end;
+    }
     (start + 1..end)
         .find(|&at| {
             (indent_columns(lines[at]) <= marker_col && is_plus_marker(lines[at]))
