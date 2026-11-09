@@ -3368,6 +3368,39 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
             .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
+        // A lazy line without the quote prefix may finish a refused brace run
+        // in the first attached paragraph. Keep it in that block before the
+        // separator is inserted, so the paragraph reader sees the whole run.
+        if let Some(opener) = attached
+            .last()
+            .filter(|line| trim_ascii_start(line).starts_with('{') && !line.contains('}'))
+        {
+            let continuation: Vec<&str> = lines[i + attached.len()..]
+                .iter()
+                .take_while(|raw| !is_blank_line(raw) && host.content(raw).is_none())
+                .copied()
+                .collect();
+            if let RefusedBraceRun::Lines(count) = refused_brace_run(
+                std::iter::once(opener.as_str()).chain(continuation.iter().copied()),
+                true,
+            ) {
+                attached.extend(
+                    continuation[..count.saturating_sub(1)]
+                        .iter()
+                        .map(|line| (*line).to_owned()),
+                );
+            }
+        }
+        // The line after a refused run is still in its paragraph, even when
+        // it has no host prefix and would otherwise start a sibling block.
+        if ends_in_refused_brace_run(&attached) {
+            if let Some(raw) = lines
+                .get(i + attached.len())
+                .filter(|raw| !is_blank_line(raw) && host.content(raw).is_none())
+            {
+                attached.push((*raw).to_owned());
+            }
+        }
         if attached.is_empty() {
             return i;
         }
