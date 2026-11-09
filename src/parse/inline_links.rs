@@ -1258,7 +1258,7 @@ mod autolink_bracket_scan_tests {
     #[test]
     fn nested_attribute_bracket_runs_keep_their_closers() {
         let (matches, _) = compute_bracket_matches(b"[[a]{#1}][]#}");
-        assert_eq!((matches[0], matches[1]), (8, 3));
+        assert_eq!((matches[0], matches[1]), (NO_BRACKET_MATCH, 3));
         let (matches, _) = compute_bracket_matches(b"[[]{#1}[#}]{}");
         assert_eq!(
             (matches[0], matches[1], matches[7]),
