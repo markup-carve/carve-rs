@@ -1,6 +1,13 @@
 use carve::to_html;
 
 #[test]
+fn quoted_verse_span_does_not_pair_past_quote_exit() {
+    let source = "> - ::: |\n>   ```\nz\n>   ```\n";
+    let expected = "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><code>\nz\n</code></p>\n      </div>\n    </li>\n  </ul>\n</blockquote>";
+    assert_eq!(to_html(source).trim(), expected);
+}
+
+#[test]
 fn postblank_admonition() {
     assert_eq!(
         to_html(

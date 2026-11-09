@@ -3126,14 +3126,31 @@ impl<'a> Walk<'a> {
                     let ch = rest.as_bytes()[0];
                     (ch, rest.bytes().take_while(|&b| b == ch).count())
                 });
+                let quote_depth = self
+                    .frames
+                    .iter()
+                    .filter(|frame| frame.kind == Kind::Quote)
+                    .count();
                 let new_span = match fence {
                     Some((ch, len)) => {
-                        let widest = if ch == b'`' {
-                            &runs.backtick
+                        let paired = if quote_depth == 0 {
+                            let widest = if ch == b'`' {
+                                &runs.backtick
+                            } else {
+                                &runs.tilde
+                            };
+                            widest.get(at + 1).copied().unwrap_or(0) >= len
                         } else {
-                            &runs.tilde
+                            lines
+                                .iter()
+                                .skip(at + 1)
+                                .take_while(|line| strip_quote_levels(line, quote_depth).is_some())
+                                .any(|line| {
+                                    pure_fence(quoted_rest(line))
+                                        .is_some_and(|(close, width)| close == ch && width >= len)
+                                })
                         };
-                        (widest.get(at + 1).copied().unwrap_or(0) >= len).then_some((ch, len))
+                        paired.then_some((ch, len))
                     }
                     None => comment_run(rest).map(|run| (b'%', run)),
                 };
