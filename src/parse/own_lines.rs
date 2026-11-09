@@ -805,6 +805,8 @@ struct Walk<'a> {
     losing_restore: Option<Vec<Frame>>,
     reach: usize,
     runs: std::cell::OnceCell<Runs>,
+    quoted_fence_closers: std::cell::OnceCell<ScopedFenceClosers>,
+    quote_exits: std::cell::RefCell<std::collections::HashMap<usize, Vec<usize>>>,
     /// Decision trace records (carve `docs/decision-trace.md`); `None` on a parse.
     trace: Option<Vec<TraceRecord>>,
     /// When collecting erased-line owners, only these authored lines need records.
@@ -1180,6 +1182,8 @@ fn walk_traced(
         losing_restore: None,
         reach: 0,
         runs: std::cell::OnceCell::new(),
+        quoted_fence_closers: std::cell::OnceCell::new(),
+        quote_exits: std::cell::RefCell::new(std::collections::HashMap::new()),
         sibling: None,
         attr_rest: None,
         trace,
@@ -3141,14 +3145,31 @@ impl<'a> Walk<'a> {
                             };
                             widest.get(at + 1).copied().unwrap_or(0) >= len
                         } else {
-                            lines
-                                .iter()
-                                .skip(at + 1)
-                                .take_while(|line| strip_quote_levels(line, quote_depth).is_some())
-                                .any(|line| {
-                                    pure_fence(quoted_rest(line))
-                                        .is_some_and(|(close, width)| close == ch && width >= len)
+                            let exit = {
+                                let mut exits = self.quote_exits.borrow_mut();
+                                let boundaries = exits.entry(quote_depth).or_insert_with(|| {
+                                    let mut boundaries = vec![lines.len(); lines.len() + 1];
+                                    for index in (0..lines.len()).rev() {
+                                        boundaries[index] =
+                                            if strip_quote_levels(lines[index], quote_depth)
+                                                .is_none()
+                                            {
+                                                index
+                                            } else {
+                                                boundaries[index + 1]
+                                            };
+                                    }
+                                    boundaries
+                                });
+                                boundaries[at + 1]
+                            };
+                            self.quoted_fence_closers
+                                .get_or_init(|| {
+                                    ScopedFenceClosers::new(
+                                        lines.iter().map(|line| quoted_rest(line)),
+                                    )
                                 })
+                                .code_in(at + 1..exit, ch, len)
                         };
                         paired.then_some((ch, len))
                     }
