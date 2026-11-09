@@ -67,6 +67,15 @@ pub(in crate::parse) struct InlineBounds<'a> {
     pub(in crate::parse) footnote_refs: bool,
 }
 
+impl InlineBounds<'_> {
+    /// A closer inside an attribute value still closes an enclosing bracket run.
+    fn attr_crosses_open_bracket(&self, from: usize, to: usize) -> bool {
+        self.openers
+            .get(from..to)
+            .is_some_and(|openers| openers.iter().any(|&open| open < from))
+    }
+}
+
 pub(in crate::parse) fn inline_pos(
     map: Option<&InlinePositionMap<'_>>,
     start: usize,
@@ -1210,8 +1219,10 @@ impl InlineRun<'_, '_> {
             if let Some((attrs, next)) =
                 read_attrs_at(self.bytes, i + consumed, self.bounds.last_close_brace)
             {
-                apply_attrs_to_inline(&mut node, attrs);
-                consumed = next - i;
+                if !self.bounds.attr_crosses_open_bracket(i + consumed, next) {
+                    apply_attrs_to_inline(&mut node, attrs);
+                    consumed = next - i;
+                }
             }
         }
         self.emit(node, i, consumed)
@@ -1229,6 +1240,9 @@ impl InlineRun<'_, '_> {
             return None;
         }
         let (attrs, mut next) = read_attrs_at(bytes, i, self.bounds.last_close_brace)?;
+        if self.bounds.attr_crosses_open_bracket(i, next) {
+            return None;
+        }
         let mut attrs = Some(attrs);
         let mut slots = None;
         while bytes.get(next) == Some(&b'{')
@@ -1876,8 +1890,10 @@ pub(in crate::parse) fn parse_inline_footnote(
     let mut after = after_bracket;
     if bytes.get(after) == Some(&b'{') {
         if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
-            attrs = Some(parsed_attrs);
-            after = next;
+            if !bounds.attr_crosses_open_bracket(after, next) {
+                attrs = Some(parsed_attrs);
+                after = next;
+            }
         }
     }
     let children = {
@@ -2535,8 +2551,10 @@ pub(in crate::parse) fn parse_image_at(
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
         if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
-            attrs = Some(parsed_attrs);
-            after = next;
+            if !bounds.attr_crosses_open_bracket(after, next) {
+                attrs = Some(parsed_attrs);
+                after = next;
+            }
         }
     }
     Some((
@@ -2643,8 +2661,10 @@ pub(in crate::parse) fn parse_inline_link_with_options(
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
         if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
-            attrs = Some(parsed_attrs);
-            after = next;
+            if !bounds.attr_crosses_open_bracket(after, next) {
+                attrs = Some(parsed_attrs);
+                after = next;
+            }
         }
     }
     Some((

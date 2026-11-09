@@ -969,7 +969,9 @@ fn compute_bracket_runs_with_alt(
         while i < bytes.len() {
             let in_alt = alt.last().copied().unwrap_or(false);
             let attached_attr_end = if !in_alt && attribute_host_end == i && bytes[i] == b'{' {
-                read_attrs_at(bytes, i, last_close_brace).map(|(_, end)| end)
+                read_attrs_at(bytes, i, last_close_brace)
+                    .map(|(_, end)| end)
+                    .filter(|&end| !bytes[i..end].contains(&b']'))
             } else {
                 None
             };
