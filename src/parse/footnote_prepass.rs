@@ -40,6 +40,22 @@ fn attached_quote_window_end(
         .unwrap_or(window_end)
 }
 
+/// Past a sibling definition the attached block is measured from its own lead (carve#5542).
+fn lead_block_end(attached: &[&str], lead: usize, end: usize, options: &Options<'_>) -> usize {
+    if lead == 0 || lead >= end {
+        return end;
+    }
+    let lead_end =
+        lead + attached_one_block_lines(CursorLines::Slice(&attached[lead..end]), options);
+    end.min(lead_end.max(lead + 1))
+}
+
+/// A `+` takes its block at the block's own column (carve#5542).
+fn at_own_column(line: &str, lead_col: usize, marker_col: usize) -> Option<String> {
+    (lead_col > marker_col && indent_columns(line) >= lead_col)
+        .then(|| strip_leading_columns(line, lead_col))
+}
+
 fn marker_column_ends_attached_block(
     raw: &str,
     at: usize,
@@ -1821,9 +1837,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map(|(offset, line)| {
                 if pulled_closer == Some(i + offset) {
                     trim_ascii_start(line).to_string()
-                } else if lead_col > marker_col && indent_columns(line) >= lead_col {
-                    // The `+` takes its block at the block's own column (carve#5542).
-                    strip_leading_columns(line, lead_col)
+                } else if let Some(own) = at_own_column(line, lead_col, marker_col) {
+                    own
                 } else if i + offset > lead
                     && indent_columns(line) == container.content_column
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
@@ -1924,15 +1939,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             end = next;
         }
-        // Past a sibling definition the block is measured from its own lead (carve#5542).
-        if first_visible_at > 0 && first_visible_at < end {
-            let lead_end = first_visible_at
-                + attached_one_block_lines(
-                    CursorLines::Slice(&attached_refs[first_visible_at..end]),
-                    self.options,
-                );
-            end = end.min(lead_end.max(first_visible_at + 1));
-        }
+        let end = lead_block_end(&attached_refs, first_visible_at, end, self.options);
         let mut end = i + end;
         if attached
             .first()
