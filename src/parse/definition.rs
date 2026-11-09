@@ -783,9 +783,9 @@ pub(in crate::parse) fn parse_definition_list(
                         // A list marker ends an attached block that is no list (PART 0 S3, carve#4860).
                         || (!attached_list
                             && is_list_marker(trim_ascii_start(a))
-                            && !ends_in_refused_brace_run(
-                                &lines.range(first_visible..at).collect::<Vec<_>>(),
-                            ))
+                            && !ends_in_refused_brace_run_by(at - first_visible, |offset| {
+                                lines.at(first_visible + offset)
+                            }))
                         || strip_lazy(a).strip_prefix(":: ").is_some()
                         || strip_definition_marker(strip_lazy(a)).is_some()
                     || (at > first_blank

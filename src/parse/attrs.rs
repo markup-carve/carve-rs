@@ -333,23 +333,31 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
 /// Whether the collected lines end in a refused brace run, whose paragraph
 /// takes the next line whatever it opens (carve#5080).
 pub(in crate::parse) fn ends_in_refused_brace_run<T: AsRef<str>>(lines: &[T]) -> bool {
-    let Some(last) = lines
-        .last()
-        .map(AsRef::as_ref)
+    ends_in_refused_brace_run_by(lines.len(), |at| lines[at].as_ref())
+}
+
+/// Inspect a cursor's trailing run without copying its whole collected prefix.
+pub(in crate::parse) fn ends_in_refused_brace_run_by<'a>(
+    len: usize,
+    line: impl Fn(usize) -> &'a str,
+) -> bool {
+    let Some(last) = len
+        .checked_sub(1)
+        .map(&line)
         .filter(|line| line.contains('}'))
     else {
         return false;
     };
-    let mut start = lines.len() - 1;
+    let mut start = len - 1;
     let mut candidates = 0;
     loop {
-        if is_blank_line(lines[start].as_ref()) {
+        if is_blank_line(line(start)) {
             return false;
         }
-        if trim_ascii_start(lines[start].as_ref()).starts_with('{') {
+        if trim_ascii_start(line(start)).starts_with('{') {
             if matches!(
-                refused_brace_run(lines[start..].iter().map(AsRef::as_ref), true),
-                RefusedBraceRun::Lines(count) if start + count == lines.len()
+                refused_brace_run((start..len).map(&line), true),
+                RefusedBraceRun::Lines(count) if start + count == len
             ) {
                 return true;
             }
