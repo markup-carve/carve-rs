@@ -3873,6 +3873,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if self.hosted_marker_column_plus(host, walk, note, i) {
             return Flow::Next;
         }
+        // Ownership can shift a quoted follower onto the note's body column.
+        // Use its authored column after a refused marker-line plus: the band
+        // between the marker and body columns still belongs to the quote.
+        let follows_refused_plus = host.quote_depth > 0
+            && self.lines.get(i.saturating_sub(1)).is_some_and(|above| {
+                host.content(above).is_some_and(|text| {
+                    parse_footnote_def_line(trim_ascii_start(text))
+                        .is_some_and(|(_, first)| continuation_marker::is_consumed_marker(first))
+                })
+            });
+        if follows_refused_plus {
+            let text = trim_ascii_start(line);
+            let walked_col = raw.chars().count() - text.chars().count() + 1;
+            let authored_col =
+                own_lines::authored_visual_column(self.first_source_line + *i, walked_col);
+            let marker_col = host.note_floor + host.quote_depth * 2 - 2;
+            if authored_col > marker_col && authored_col < marker_col + 2 {
+                return Flow::Stop;
+            }
+        }
         if !walk.reaches_floor(host, raw) {
             return self.hosted_lazy_flow(host, walk, note, i);
         }
