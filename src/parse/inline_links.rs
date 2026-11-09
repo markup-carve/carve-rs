@@ -890,6 +890,21 @@ pub(in crate::parse) fn compute_link_bracket_runs(
     compute_bracket_runs_with_alt(bytes, footnote_refs, false)
 }
 
+fn nested_comment_extent(
+    bytes: &[u8],
+    at: usize,
+    inside_bracket: bool,
+    attached_attr_end: Option<usize>,
+    comment_closers: &[usize],
+) -> Option<usize> {
+    if !inside_bracket || attached_attr_end.is_none() || bytes.get(at..at + 2) != Some(b"{#") {
+        return None;
+    }
+    comment_closers
+        .get(comment_closers.partition_point(|&close| close < at + 2))
+        .map(|&close| close + 2)
+}
+
 fn compute_bracket_runs_with_alt(
     bytes: &[u8],
     footnote_refs: bool,
@@ -999,16 +1014,13 @@ fn compute_bracket_runs_with_alt(
             // The outer bracket scan reads a later `#}` as the closer of a
             // nested `{#` run. The inner construct can still attach the
             // attribute when it is parsed from its own label afterward.
-            let nested_comment_end = if !stack.is_empty()
-                && bytes.get(i..i + 2) == Some(b"{#")
-                && attached_attr_end.is_some()
-            {
-                comment_closers
-                    .get(comment_closers.partition_point(|&close| close < i + 2))
-                    .map(|&close| close + 2)
-            } else {
-                None
-            };
+            let nested_comment_end = nested_comment_extent(
+                bytes,
+                i,
+                !stack.is_empty(),
+                attached_attr_end,
+                &comment_closers,
+            );
             match bytes[i] {
                 b'\\' if i + 1 < bytes.len() => {
                     fill_run(&mut run_at, &stack, i, i + 2);
