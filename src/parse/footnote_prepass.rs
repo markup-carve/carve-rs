@@ -114,23 +114,20 @@ fn marker_column_ends_attached_block(
 /// Whether a blank in an attached list child's fence is followed by a
 /// compatible sibling of that list. The one-block list probe owns that blank
 /// and sibling; a generic attachment boundary sees only the blank.
-pub(super) fn attached_list_fence_sibling(lines: &[&str], start: usize) -> bool {
-    let Some(first) = lines
-        .get(start)
-        .and_then(|line| detect_list_marker_full(line))
-    else {
+pub(super) fn attached_list_fence_sibling(lines: CursorLines<'_>, start: usize) -> bool {
+    let Some(first) = lines.line(start).and_then(detect_list_marker_full) else {
         return false;
     };
     let mut fence: Option<(FenceOpen, usize)> = None;
     let mut item_markers = vec![start];
     for at in start + 1..lines.len() {
-        let line = lines[at];
+        let line = lines.at(at);
         if is_blank_line(line) {
             if fence.is_some() {
-                let next = (at + 1..lines.len()).find(|&k| !is_blank_line(lines[k]));
-                if let Some(next) = next.and_then(|k| detect_list_marker_full(lines[k])) {
+                let next = (at + 1..lines.len()).find(|&k| !is_blank_line(lines.at(k)));
+                if let Some(next) = next.and_then(|k| detect_list_marker_full(lines.at(k))) {
                     return item_markers.iter().rev().any(|&k| {
-                        let prior = detect_list_marker_full(lines[k]).expect("list marker");
+                        let prior = detect_list_marker_full(lines.at(k)).expect("list marker");
                         next.indent == prior.indent
                             && next.ordered == prior.ordered
                             && next.checked.is_some() == prior.checked.is_some()
@@ -160,7 +157,8 @@ pub(super) fn attached_list_fence_sibling(lines: &[&str], start: usize) -> bool 
                 return false;
             }
             while item_markers.last().is_some_and(|&k| {
-                detect_list_marker_full(lines[k]).is_some_and(|prior| prior.indent >= marker.indent)
+                detect_list_marker_full(lines.at(k))
+                    .is_some_and(|prior| prior.indent >= marker.indent)
             }) {
                 item_markers.pop();
             }
@@ -169,7 +167,7 @@ pub(super) fn attached_list_fence_sibling(lines: &[&str], start: usize) -> bool 
             if let Some(owner) = item_markers
                 .iter()
                 .rev()
-                .filter_map(|&k| marker_content_col(lines[k]))
+                .filter_map(|&k| marker_content_col(lines.at(k)))
                 .find(|&column| indent >= column)
             {
                 fence = Some((open, owner));
@@ -1790,7 +1788,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             || detect_list_marker_full(first_text).is_some()
             || parse_standalone_attrs(first_text).is_some()
             || is_plus_marker(first_text);
-        let list_fence_sibling = attached_list_fence_sibling(lines, i);
+        let list_fence_sibling = attached_list_fence_sibling(CursorLines::Slice(lines), i);
         let first_boundary_after = |from: usize| {
             from + lines[from..]
                 .iter()

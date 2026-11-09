@@ -810,11 +810,16 @@ pub(in crate::parse) fn parse_definition_list(
                     Some(decision)
                         if decision.owner == Some(continuation_marker::Kind::Description) =>
                     {
-                        let remaining: Vec<&str> =
-                            lines.range(first_visible..lines.len()).collect();
-                        let end = if footnote_prepass::attached_list_fence_sibling(&remaining, 0) {
+                        let end = if footnote_prepass::attached_list_fence_sibling(
+                            lines,
+                            first_visible,
+                        ) {
+                            let materialized = std::cell::OnceCell::new();
                             first_visible
-                                + attached_one_block_lines(CursorLines::Slice(&remaining), options)
+                                + attached_one_block_lines(
+                                    lines.window(first_visible..lines.len(), &materialized),
+                                    options,
+                                )
                         } else {
                             attached_block_past_invisible(
                                 lines,
