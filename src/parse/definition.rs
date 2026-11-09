@@ -2055,6 +2055,9 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             &mut |a, at| {
                 is_blank_line(a)
                     || is_plus_marker(a)
+                    || (attached_quote
+                        && is_list_marker(trim_ascii_start(a))
+                        && indent_columns(a) < content_column)
                     // A list marker ends an attached paragraph (PART 0 S3, carve#4860),
                     // unless it follows a refused brace run (CARVE-P2-035).
                     || (attached_paragraph
