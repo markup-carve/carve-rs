@@ -1867,7 +1867,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .get(start + first_visible_at)
                 .is_some_and(|line| indent_columns(line) > marker_col);
         let ends_at_marker = |at: usize, raw: &str| {
-            at > first_visible_at && lead_is_paragraph && is_list_marker(trim_ascii_start(raw))
+            at > first_visible_at
+                && lead_is_paragraph
+                && is_list_marker(trim_ascii_start(raw))
+                && !ends_in_refused_brace_run(&attached_refs[..at])
         };
         let losing = |other: &str, first: &str| self.losing_plus_line(label, other, first);
         let mut comment_closers = None;
@@ -2223,7 +2226,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 self.document_colon_open.get(*i).copied().unwrap_or(false),
             )
             // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
-            && !is_list_marker(rest)
+            && (!is_list_marker(rest) || ends_in_refused_brace_run(&note.lines))
             && !opens_code_fence(rest)
             // A descendant's closing fence ends its paragraph before a line
             // below this note's floor can ask for lazy continuation.
@@ -3111,8 +3114,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             if let Some(at) = attached
                 .iter()
+                .enumerate()
                 .skip(lead + 1)
-                .position(|line| is_list_marker(trim_ascii_start(line)))
+                .position(|(at, line)| {
+                    is_list_marker(trim_ascii_start(line))
+                        && !ends_in_refused_brace_run(&attached[..at])
+                })
             {
                 attached.truncate(lead + 1 + at);
             }
