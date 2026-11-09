@@ -3075,6 +3075,10 @@ impl<'a> Walk<'a> {
         self.replace_frames(frames);
     }
 
+    fn plus_closes_descendant(&self, host: usize, prior_code_fence: Option<usize>) -> bool {
+        self.frames.len() > host + 1 || prior_code_fence.is_some_and(|fence| fence > host)
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         self.prepare_note_plus_line(at);
         self.mark_quote_note_plus_line(c.rest);
@@ -3172,8 +3176,7 @@ impl<'a> Walk<'a> {
             self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {
-            let closes_descendant =
-                self.frames.len() > k + 1 || code_fence_at.is_some_and(|fence| fence > k);
+            let closes_descendant = self.plus_closes_descendant(k, code_fence_at);
             self.frames.truncate(k + 1);
             let f = self.top();
             f.para = false;
