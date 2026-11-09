@@ -10,7 +10,9 @@ fn a_kept_id_is_not_reported_as_a_denied_url() {
         },
     )
     .unwrap();
-    assert!(result.report.diagnostics.iter().all(|diagnostic| {
-        !diagnostic.message.contains("id with a denied URL scheme")
-    }));
+    assert!(result
+        .report
+        .diagnostics
+        .iter()
+        .all(|diagnostic| { !diagnostic.message.contains("id with a denied URL scheme") }));
 }

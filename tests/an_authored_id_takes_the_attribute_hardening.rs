@@ -6,8 +6,14 @@ fn an_authored_id_value_is_kept() {
     for (source, html) in [
         ("{id=\"javascript:x\"}\np\n", "<p id=\"javascript:x\">p</p>"),
         ("{id=\"Shell: b\"}\np\n", "<p id=\"Shell: b\">p</p>"),
-        ("*x*{id=\"data:x\"}\n", "<p><strong id=\"data:x\">x</strong></p>"),
-        ("{.c id=\"javascript:x\"}\n::: note\nx\n:::\n", "id=\"javascript:x\""),
+        (
+            "*x*{id=\"data:x\"}\n",
+            "<p><strong id=\"data:x\">x</strong></p>",
+        ),
+        (
+            "{.c id=\"javascript:x\"}\n::: note\nx\n:::\n",
+            "id=\"javascript:x\"",
+        ),
         ("{id=\"ok\"}\np\n", "<p id=\"ok\">p</p>"),
         ("{#ok}\np\n", "<p id=\"ok\">p</p>"),
     ] {

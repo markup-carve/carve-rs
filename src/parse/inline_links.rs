@@ -800,23 +800,6 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
     Some(offsets)
 }
 
-/// Whether `at` opens an image's `(dest)` or `[ref]` tail (`destSlot`, `refTail`).
-fn image_tail(bytes: &[u8], at: usize) -> bool {
-    match bytes.get(at) {
-        Some(b'(') => {
-            let body = bytes[at + 1..].iter().take_while(|&&b| b == b' ').count();
-            bytes.get(at + 1 + body) == Some(&b')') || link_destination_end(bytes, at).is_some()
-        }
-        Some(b'[') => {
-            bytes[at + 1..]
-                .iter()
-                .find(|&&b| matches!(b, b']' | b'\n' | b'\r'))
-                == Some(&b']')
-        }
-        _ => false,
-    }
-}
-
 /// Each `[^` whose label (up to the first `]` on its line) holds a `[`, as
 /// (open, close).
 pub(in crate::parse) fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
@@ -1053,8 +1036,10 @@ fn compute_bracket_runs_with_alt(
                     i += 1;
                 }
                 b'[' => {
-                    if let Some(&close) = footnote_candidates.get(&i) {
-                        reached.push((i, close));
+                    if !in_alt {
+                        if let Some(&close) = footnote_candidates.get(&i) {
+                            reached.push((i, close));
+                        }
                     }
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                     stack.push(i);
@@ -1104,7 +1089,7 @@ fn compute_bracket_runs_with_alt(
         for &(open, close) in &reached {
             // A `[^` inside an earlier label is label text, and `![` with a
             // tail reads as an image first.
-            let image = open > 0
+            let image_alt = open > 0
                 && bytes[open - 1] == b'!'
                 && bytes[..open - 1]
                     .iter()
@@ -1112,10 +1097,8 @@ fn compute_bracket_runs_with_alt(
                     .take_while(|&&b| b == b'\\')
                     .count()
                     % 2
-                    == 0
-                && matches[open] != NO_BRACKET_MATCH
-                && image_tail(bytes, matches[open] + 1);
-            if image || label_end.is_some_and(|end| open <= end) {
+                    == 0;
+            if image_alt || label_end.is_some_and(|end| open <= end) {
                 continue;
             }
             label_end = Some(close);
@@ -1212,6 +1195,13 @@ fn compute_bracket_runs_with_alt(
 #[cfg(test)]
 mod autolink_bracket_scan_tests {
     use super::*;
+
+    #[test]
+    fn an_unclosed_image_alt_does_not_borrow_its_inner_bracket_closer() {
+        let (matches, _) = compute_bracket_matches(b"![^[]()");
+        assert_eq!(matches[1], NO_BRACKET_MATCH, "{matches:?}");
+        assert_eq!(matches[3], 4, "{matches:?}");
+    }
 
     #[test]
     fn an_autolink_body_is_opaque_to_the_bracket_scan() {
