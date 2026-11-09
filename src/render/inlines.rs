@@ -847,6 +847,7 @@ pub(super) fn flatten_text_at(nodes: &[InlineNode], depth: usize) -> String {
         match node {
             InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
             InlineNode::Text(t) => out.push_str(&t.value),
+            InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
             InlineNode::Link(l) => out.push_str(&flatten_text_at(&l.children, depth + 1)),
