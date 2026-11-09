@@ -777,9 +777,55 @@ pub(in crate::parse) fn parse_definition_list(
                 let first_blank = (first_visible + 1..lines.len())
                     .find(|&at| lines.line(at).is_some_and(is_blank_line))
                     .unwrap_or(lines.len());
-                let mut boundary = |a: &str, at| {
+                let line_map = cur.line_map;
+                let col_map = cur.col_map;
+                let geometry = cur.colon_geometry;
+                let mut boundary = |a: &str, at: usize| {
+                    let same_list = detect_list_marker_full(lines.at(first_visible))
+                        .zip(detect_list_marker_full(trim_ascii_start(a)))
+                        .is_some_and(|(first, next)| {
+                            first.ordered == next.ordered
+                                && first.checked == next.checked
+                                && if first.ordered {
+                                    first.delim == next.delim
+                                        && dialect_compatible(ol_dialect(first.ol_type), &next)
+                                } else {
+                                    first.marker == next.marker
+                                }
+                        });
+                    // A different list marker below the description body
+                    // column leaves that body after a refused `+`.
+                    let refused_sibling_boundary = at > first_visible
+                        && is_list_marker(trim_ascii_start(a))
+                        && lines.line(at - 1).is_some_and(|previous| {
+                            continuation_marker::is_consumed_marker(trim_ascii_start(previous))
+                        })
+                        && !same_list
+                        && {
+                            let source_line = geometry
+                                .and_then(|rows| rows.get(at).and_then(|row| row.source_line()))
+                                .or_else(|| {
+                                    line_map.and_then(|map| map.get(at).copied().flatten())
+                                });
+                            let source_col =
+                                if let Some(rows) = geometry.filter(|_| col_map.is_some()) {
+                                    rows.get(at).and_then(|row| row.stripped)
+                                } else {
+                                    col_map.and_then(|map| map.get(at).copied().flatten())
+                                }
+                                .unwrap_or(0)
+                                .max(0) as usize;
+                            source_line.is_some_and(|line| {
+                                let column = source_col + indent_columns(a) + 1;
+                                let authored =
+                                    super::own_lines::authored_visual_column(line, column)
+                                        .saturating_sub(source_col);
+                                authored > 0 && authored < content_column
+                            })
+                        };
                     is_blank_line(a)
                         || is_plus_marker(a)
+                        || refused_sibling_boundary
                         // A list marker ends an attached block that is no list (PART 0 S3, carve#4860),
                         // unless it follows a refused brace run (CARVE-P2-035).
                         || (!attached_list
