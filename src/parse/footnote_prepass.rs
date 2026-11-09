@@ -50,15 +50,42 @@ fn lead_block_end(attached: &[&str], lead: usize, end: usize, options: &Options<
     end.min(lead_end.max(lead + 1))
 }
 
+/// A line's indentation inside its note's host, past the host's prefixes.
+fn host_indent(host: &NoteHost, raw: &str) -> usize {
+    indent_columns(host.content(raw).unwrap_or(raw))
+}
+
 /// Whether attached line `at` follows a refused brace run, whose paragraph
 /// takes it as text (CARVE-P2-035).
 fn follows_refused_run(attached: &[String], lead: usize, at: usize) -> bool {
     at > lead && ends_in_refused_brace_run(&attached[lead..at])
 }
 
+/// A follower that reaches the note's marker column stays in a refused run's
+/// paragraph; a lazy line has no column and misses it (PART 0 S3).
+fn follower_keeps_run(
+    attached: &[String],
+    lead: usize,
+    at: usize,
+    raw: &str,
+    marker_col: usize,
+) -> bool {
+    !raw.starts_with(LAZY)
+        && indent_columns(raw) >= marker_col
+        && follows_refused_run(attached, lead, at)
+}
+
 /// A list marker ends an attached paragraph (PART 0 S3, carve#4860).
-fn marker_ends_attached_paragraph(attached: &[String], lead: usize, at: usize, raw: &str) -> bool {
-    at > lead && is_list_marker(trim_ascii_start(raw)) && !follows_refused_run(attached, lead, at)
+fn marker_ends_attached_paragraph(
+    attached: &[String],
+    lead: usize,
+    at: usize,
+    raw: &str,
+    marker_col: usize,
+) -> bool {
+    at > lead
+        && is_list_marker(trim_ascii_start(raw))
+        && !follower_keeps_run(attached, lead, at, raw, marker_col)
 }
 
 /// A `+` takes its block at the block's own column (carve#5542).
@@ -68,6 +95,7 @@ fn at_own_column(line: &str, lead_col: usize, marker_col: usize) -> Option<Strin
 }
 
 fn marker_column_ends_attached_block(
+    attached: &[String],
     raw: &str,
     at: usize,
     first_visible_at: usize,
@@ -79,6 +107,8 @@ fn marker_column_ends_attached_block(
         && (marker_col > 0 || lead_is_quote || lead_is_list)
         && indent_columns(raw) <= marker_col
         && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw))
+        && !(indent_columns(raw) == marker_col
+            && follower_keeps_run(attached, first_visible_at, at, raw, marker_col))
 }
 
 /// Whether a blank in an attached list child's fence is followed by a
@@ -1880,7 +1910,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let after_refused_run = |at: usize| follows_refused_run(&attached, first_visible_at, at);
         let ends_at_marker = |at: usize, raw: &str| {
             lead_is_paragraph
-                && marker_ends_attached_paragraph(&attached, first_visible_at, at, raw)
+                && marker_ends_attached_paragraph(&attached, first_visible_at, at, raw, marker_col)
         };
         let losing = |other: &str, first: &str| self.losing_plus_line(label, other, first);
         let mut comment_closers = None;
@@ -1910,6 +1940,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                                     && strip_blockquote_prefix(trim_ascii_start(raw)).is_some())
                         }))
                     || marker_column_ends_attached_block(
+                        &attached,
                         raw,
                         at,
                         first_visible_at,
@@ -1939,6 +1970,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         || is_plus_marker(line)
                         || ends_at_marker(at, lines[start + at])
                         || marker_column_ends_attached_block(
+                            &attached,
                             lines[start + at],
                             at,
                             first_visible_at,
@@ -3128,7 +3160,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             }
             if let Some(at) = (lead + 1..attached.len()).find(|&at| {
                 is_list_marker(trim_ascii_start(&attached[at]))
-                    && !ends_in_refused_brace_run(&attached[lead..at])
+                    && !(host_indent(host, lines[i + at]) >= host_indent(host, lines[i + lead])
+                        && ends_in_refused_brace_run(&attached[lead..at]))
             }) {
                 attached.truncate(at);
             }
