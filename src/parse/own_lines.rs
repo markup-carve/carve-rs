@@ -1665,6 +1665,15 @@ impl<'a> Walk<'a> {
         if !matches!(kind, Kind::Item | Kind::Dd) {
             return Ok(());
         }
+        if kind == Kind::Dd
+            && is_sibling_of(Kind::Item, text)
+            && self.lines.get(at.wrapping_sub(1)).is_some_and(|previous| {
+                detect_list_marker_full(trim_ascii_start(previous)).is_some()
+                    && quoted_measure(previous).0 == column
+            })
+        {
+            return Err(Refusal::Sibling);
+        }
         // An attribute run moves nothing, so the sibling test reads the block it
         // leads as well (carve#4278).
         if is_sibling_of(kind, text)

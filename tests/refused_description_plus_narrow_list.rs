@@ -39,3 +39,11 @@ fn a_changed_ordered_delimiter_starts_a_description_sibling_list() {
     );
 }
 
+#[test]
+fn a_refused_marker_between_list_siblings_does_not_loosen_the_list() {
+    let source = ":: t\n: +\n- li\n+\n- sib\n";
+    assert_eq!(
+        carve::to_html(source),
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <ul>\n      <li>li</li>\n      <li>sib</li>\n    </ul>\n  </dd>\n</dl>"
+    );
+}
