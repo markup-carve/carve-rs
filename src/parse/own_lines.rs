@@ -1477,9 +1477,6 @@ pub(crate) fn own_lines(source: &str) -> Option<OwnedSource> {
         return hit;
     }
     let owned = walk(source);
-    if std::env::var_os("CARVE_WALK_DEBUG").is_some() {
-        eprintln!("WALK>>>\n{}\n<<<", owned.as_ref().map_or("(none)", |o| o.source.as_str()));
-    }
     LAST_WALK.with(|cell| *cell.borrow_mut() = Some((source.to_owned(), owned.clone())));
     owned
 }
