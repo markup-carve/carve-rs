@@ -94,6 +94,8 @@ struct Frame {
     line_block: bool,
     /// The opener lead before owner frames rewrite it, for verse indentation.
     verse_open_authored_col: usize,
+    /// A tab in the opener lead already has a host-relative rewrite.
+    verse_opener_tab: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
     /// Authored position of a comment span inside a line-block payload.
@@ -175,6 +177,7 @@ impl Frame {
             absorbs: false,
             line_block: false,
             verse_open_authored_col: 0,
+            verse_opener_tab: false,
             span: None,
             span_origin: None,
             verse: false,
@@ -3409,7 +3412,10 @@ impl<'a> Walk<'a> {
             // either side of its authored column.
             let verse_payload =
                 line_block && !closer.is_some_and(|cl| cl.closes(c.rest, col, open_col));
-            if verse_payload && c.authored_col >= inner.verse_open_authored_col {
+            if verse_payload
+                && !inner.verse_opener_tab
+                && c.authored_col >= inner.verse_open_authored_col
+            {
                 let opener_shift = inner.verse_open_authored_col.saturating_sub(inner.canon);
                 c.lead_at(
                     c.authored_col.saturating_sub(opener_shift) + inner.shift + c.attachment_shift,
@@ -4078,6 +4084,11 @@ impl<'a> Walk<'a> {
                 };
                 f.line_block = line_block;
                 f.verse_open_authored_col = c.authored_col;
+                f.verse_opener_tab = line_block
+                    && self.lines[at]
+                        .split(':')
+                        .next()
+                        .is_some_and(|lead| lead.contains('\t'));
                 f.shift = o_shift;
                 f.line = self.first_line + at;
                 f.doc_marker = doc_column(self.lines[at], c.src);
