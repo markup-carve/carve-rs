@@ -73,3 +73,27 @@ fn a_marker_below_a_body_column_run_still_ends_the_note() {
         "<ul>\n  <li>li</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>{.x\n.y}<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
     );
 }
+
+#[test]
+fn a_nested_note_keeps_a_marker_column_follower() {
+    check(
+        "- x\n  [^a]: +\n  {.x\n  .y}\n  - li\n\nsee[^a]\n",
+        "<ul>\n  <li>x</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>{.x\n.y}\n- li<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
+
+#[test]
+fn a_lazy_marker_below_an_item_note_still_ends_it() {
+    check(
+        "- [^a]: +\n  {#i\n  .y}\n - li\n\nsee[^a]\n",
+        "<ul>\n  <li></li>\n  <li>li</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>{#i\n.y}<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
+
+#[test]
+fn a_quoted_lazy_marker_below_an_item_note_still_ends_it() {
+    check(
+        "> - [^a]: +\n>   {#i\n>   .y}\n>  - li\n\nsee[^a]\n",
+        "<blockquote>\n  <ul>\n    <li></li>\n    <li>li</li>\n  </ul>\n</blockquote>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>{#i\n.y}<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    );
+}
