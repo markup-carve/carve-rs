@@ -114,7 +114,7 @@ fn marker_column_ends_attached_block(
 /// Whether a blank in an attached list child's fence is followed by a
 /// compatible sibling of that list. The one-block list probe owns that blank
 /// and sibling; a generic attachment boundary sees only the blank.
-fn attached_list_fence_sibling(lines: &[&str], start: usize) -> bool {
+pub(super) fn attached_list_fence_sibling(lines: &[&str], start: usize) -> bool {
     let Some(first) = lines
         .get(start)
         .and_then(|line| detect_list_marker_full(line))
@@ -1367,6 +1367,21 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 def_start_line,
             );
         }
+        // Once the marker-line grant has taken its list, a later marker at
+        // the note's column cannot grant that note a second block.
+        let detached_after_plus = trim_ascii(def.first) == "+"
+            && note.line_map.first() == Some(&None)
+            && self.lines.get(i).is_some_and(|line| {
+                (indent_columns(line) <= indent_columns(raw_def_line) && is_plus_marker(line))
+                    || continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            })
+            && self
+                .lines
+                .get(i + 1)
+                .is_some_and(|line| detect_list_marker_full(trim_ascii_start(line)).is_some());
+        if detached_after_plus {
+            i += 1;
+        }
         let attached_quote_marker = (trim_ascii(def.first) == "+"
             && note.line_map.first() == Some(&None)
             && note
@@ -1379,7 +1394,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         });
         // An authored quote may be deeper than the item's content column.
         // Its prefix is still a container for note-body lines.
-        if !in_container && !def.authored_quote_def {
+        if detached_after_plus {
+            // The next list is read at the document level.
+        } else if !in_container && !def.authored_quote_def {
             let state = IndentedNote {
                 label: def.label,
                 first: def.first,
@@ -1777,7 +1794,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let first_boundary_after = |from: usize| {
             from + lines[from..]
                 .iter()
-                .position(|line| is_blank_line(line) || is_plus_marker(line))
+                .position(|line| {
+                    is_blank_line(line)
+                        || is_plus_marker(line)
+                        || continuation_marker::is_consumed_marker(line)
+                })
                 .unwrap_or(lines.len() - from)
         };
         let mut fenced_block_end = |from: usize| {
@@ -1864,6 +1885,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 window_end -= 1;
             }
         }
+        // A later marker at the attached block's column belongs to its host,
+        // even when a list probe could interpret it as an item continuation.
+        let window_end = (i + 1..window_end)
+            .find(|&at| {
+                (indent_columns(lines[at]) <= marker_col && is_plus_marker(lines[at]))
+                    || continuation_marker::is_consumed_marker(trim_ascii_start(lines[at]))
+            })
+            .unwrap_or(window_end);
         let window_end = attached_quote_window_end(
             lines,
             lead,
