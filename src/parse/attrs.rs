@@ -360,6 +360,12 @@ pub(in crate::parse) fn ends_in_refused_brace_run<S: AsRef<str>>(lines: &[S]) ->
             return false;
         }
         if trim_ascii_start(lines[start].as_ref()).starts_with('{') {
+            // A brace line already held by an inline span is paragraph text,
+            // not a block-position run that can protect a later fence.
+            let mut inline = super::paragraph::InlineSpanScan::default();
+            if inline.open(&lines[..start]) {
+                return false;
+            }
             if matches!(
                 refused_brace_run(lines[start..].iter().map(AsRef::as_ref), true),
                 RefusedBraceRun::Lines(count) if start + count == lines.len()

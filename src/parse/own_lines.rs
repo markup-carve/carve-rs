@@ -467,7 +467,7 @@ fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
         return false;
     };
     let mut run: Vec<String> = Vec::new();
-    for line in lines.iter().rev() {
+    for (index, line) in lines.iter().enumerate().rev() {
         let Some(inner) = inside(line, quotes).filter(|inner| !inner.starts_with('>')) else {
             break;
         };
@@ -490,6 +490,18 @@ fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
             return false;
         }
         run.push(text);
+        if opens {
+            let prefix: Vec<&str> = lines[..index]
+                .iter()
+                .rev()
+                .map_while(|line| inside(line, quotes))
+                .take_while(|line| !is_blank_line(line))
+                .collect();
+            let mut inline = super::paragraph::InlineSpanScan::default();
+            if inline.open(&prefix.into_iter().rev().collect::<Vec<_>>()) {
+                return false;
+            }
+        }
         if opens || body.is_some() {
             break;
         }
