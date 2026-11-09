@@ -59,9 +59,14 @@ fn literal_targets_in_table_and_link_hosts_read_back() {
             .0;
         let tree = to_json(&parse(source));
         assert!(tree.contains("\"type\":\"heading_ref\""));
+        let target = if source.contains("\\|") {
+            target.replace("\\|", "|")
+        } else {
+            target.to_string()
+        };
         assert!(tree.contains(&format!(
             "\"target\":{}",
-            serde_json::to_string(target).unwrap()
+            serde_json::to_string(&target).unwrap()
         )));
         assert_eq!(to_carve(&once), once);
         assert_eq!(to_html(&once), to_html(source));
