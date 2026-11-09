@@ -1407,7 +1407,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         });
         // An authored quote may be deeper than the item's content column.
         // Its prefix is still a container for note-body lines.
-        if detached_after_plus {
+        if self
+            .passed_note
+            .as_deref()
+            .is_some_and(|key| key != normalized_label)
+        {
+            // A later winning `+` definition owns the grant's first block.
+            // Leave its definition line for the outer walk to collect.
+        } else if detached_after_plus {
             // The next list is read at the document level.
         } else if !in_container && !def.authored_quote_def {
             let state = IndentedNote {
@@ -1602,12 +1609,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // A later winning note takes its own indented body after a blank.
         // Losing duplicate `+` lines, of any label, do not change that owner.
         let own = label_key(label);
+        let mut recipient = key;
+        let mut recipient_at = i;
         let mut after = i + 1;
-        while lines
+        while let Some(other) = lines
             .get(after)
             .and_then(|line| Self::plus_definition_key(line))
-            .is_some_and(|other| other == key || other == own || self.is_defined(&other))
         {
+            if other != own && other != recipient && !self.is_defined(&other) {
+                recipient = other;
+                recipient_at = after;
+            }
             after += 1;
         }
         let blank = after;
@@ -1617,7 +1629,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if !lines.get(after).is_some_and(|line| {
             let structural =
                 item_block_opener(trim_ascii_start(line)) || is_list_marker(trim_ascii_start(line));
-            indent_columns(line) >= footnote_body_floor(lines[i]) || after > blank && structural
+            indent_columns(line) >= footnote_body_floor(lines[recipient_at])
+                || after > blank && structural
         }) {
             return false;
         }
@@ -1626,7 +1639,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if self.positions {
             note.col_map[0] = None;
         }
-        self.passed_note = Some(key);
+        self.passed_note = Some(recipient);
         true
     }
 
@@ -1770,6 +1783,35 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         blank
     }
 
+    /// A later winning definition takes the pending first-block grant.
+    fn yields_first_block(
+        &mut self,
+        note: &mut NoteBody,
+        i: usize,
+        label: &str,
+        first: &str,
+    ) -> bool {
+        self.passed_note
+            .as_deref()
+            .is_some_and(|key| key != label_key(label))
+            || self.pass_winning_note(note, i, label, first)
+    }
+
+    fn resume_own_passed_note(
+        &mut self,
+        note: &mut NoteBody,
+        i: &mut usize,
+        label: &str,
+        container: IndentContainer,
+    ) -> bool {
+        if self.passed_note.as_deref() == Some(&label_key(label)) {
+            *i = self.resume_passed_note(note, *i, label, container);
+            true
+        } else {
+            false
+        }
+    }
+
     // A lone marker-line `+` gives the note its first flush-left block.
     // The same block bound is used by a later standalone `+` in a note.
     #[allow(clippy::too_many_arguments)]
@@ -1783,14 +1825,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         def_start_line: usize,
     ) -> usize {
         let lines = self.lines;
-        if self.pass_winning_note(note, i, label, first) {
+        if self.yields_first_block(note, i, label, first) {
             return i;
         }
-        if self.passed_note.as_deref() == Some(&label_key(label)) {
-            i = self.resume_passed_note(note, i, label, container);
-        }
-        if trim_ascii(first) != "+"
-            || !container.owns_continuation(first, self.decision_at(def_start_line))
+        let received_grant = self.resume_own_passed_note(note, &mut i, label, container);
+        if !received_grant
+            && (trim_ascii(first) != "+"
+                || !container.owns_continuation(first, self.decision_at(def_start_line)))
             || !lines.get(i).is_some_and(|line| !is_blank_line(line))
         {
             return i;
@@ -3168,11 +3209,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lead_at_marker = attached
             .get(lead)
             .is_some_and(|line| !line.starts_with([' ', '\t']));
-        if attached.iter().take(lead + 1).any(|line| {
-            parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(_, first)| {
-                !lead_at_marker || !continuation_marker::is_consumed_marker(first)
+        let winning_plain_sibling = attached.iter().take(lead).any(|line| {
+            parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(other, first)| {
+                label_key(other) != label_key(label)
+                    && !continuation_marker::is_consumed_marker(first)
             })
-        }) {
+        });
+        if !winning_plain_sibling
+            && attached.iter().take(lead + 1).any(|line| {
+                parse_footnote_def_line(trim_ascii_start(line)).is_some_and(|(_, first)| {
+                    !lead_at_marker || !continuation_marker::is_consumed_marker(first)
+                })
+            })
+        {
             note.lines[0].clear();
             note.line_map[0] = None;
             if self.positions {
@@ -3267,9 +3316,25 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if self.positions {
             note.col_map[0] = None;
         }
-        for (offset, line) in attached.into_iter().take(count).enumerate() {
+        let mut in_skipped_note = false;
+        for (offset, line) in attached.iter().take(count).cloned().enumerate() {
             let col = (lines[i + offset].chars().count() - line.chars().count()) as isize;
-            note.push_with(line, Some(self.first_source_line + i + offset), |_| {
+            in_skipped_note = offset < lead
+                && if parse_footnote_def_line(trim_ascii_start(&line)).is_some() {
+                    false
+                } else {
+                    in_skipped_note
+                        || offset > 0
+                            && parse_footnote_def_line(trim_ascii_start(attached_refs[offset - 1]))
+                                .is_some()
+                }
+                && own_lines::foldable_plain_line(trim_ascii_start(&line));
+            let kept = if in_skipped_note {
+                note.frame_lazy(indent_columns(&line), trim_ascii_start(&line))
+            } else {
+                line
+            };
+            note.push_with(kept, Some(self.first_source_line + i + offset), |_| {
                 Some(col)
             });
         }

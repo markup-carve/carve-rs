@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "first_block_plus_passes_sibling_note_bodies"
+path = "tests/first_block_plus_passes_sibling_note_bodies.rs"
+
+[[test]]
 name = "attached_list_boundaries_4126"
 path = "tests/attached_list_boundaries_4126.rs"
 
