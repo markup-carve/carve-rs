@@ -143,6 +143,11 @@ pub(in crate::parse) fn promote_block_images(
             }
             match block {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),
+                BlockNode::Figure(f) => {
+                    if let FigureTarget::BlockQuote(b) = &mut *f.target {
+                        worklist.push(b.children.as_mut_slice());
+                    }
+                }
                 BlockNode::Admonition(a) => worklist.push(a.children.as_mut_slice()),
                 // Descend into the group so an image-with-caption paragraph built
                 // from a resolved reference image still becomes a panel (§4c).
