@@ -2250,11 +2250,26 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     .then(|| detect_fence_open(trim_ascii_start(tracked)))
                     .flatten()
                     .filter(|&open| {
-                        ends_in_refused_brace_run(&lines)
-                            && !(cur.pos + 1..cur.lines.len())
-                                .map(|k| cur.lines.at(k))
-                                .take_while(|next| !is_blank_line(next))
-                                .any(|next| is_fence_close(trim_ascii_start(next), open))
+                        if !ends_in_refused_brace_run(&lines) {
+                            return false;
+                        }
+                        // The index rules out most followers; the scan stays in the item.
+                        let (at, all) = (cur.pos, cur.lines);
+                        let possible = all
+                            .code_after(at, open.fence_char, open.fence_len)
+                            .unwrap_or_else(|| {
+                                let index = cur
+                                    .code_closer_last_index
+                                    .get_or_insert_with(|| build_code_closer_last_index(&all));
+                                code_closer_exists_after(index, at, open.fence_char, open.fence_len)
+                            });
+                        !(possible
+                            && (at + 1..all.len())
+                                .map(|k| all.at(k))
+                                .take_while(|next| {
+                                    !is_blank_line(next) && indent_columns(next) >= strip_cols
+                                })
+                                .any(|next| is_fence_close(trim_ascii_start(next), open)))
                     });
                 if refused_follower.is_none() {
                     track_collected_fence(fence, tracked, indent >= strip_cols, indent);
