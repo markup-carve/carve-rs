@@ -1574,6 +1574,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if detached_after_plus {
             i += 1;
         }
+        // A refused marker after the marker-line grant's block renders nothing;
+        // the note keeps the next line at its body column (carve#5601).
+        if trim_ascii(def.first) == "+"
+            && !detached_after_plus
+            && note.line_map.first() == Some(&None)
+            && indent_columns(raw_def_line) == 0
+            && self.lines.get(i).is_some_and(|line| {
+                indent_columns(line) == 0
+                    && continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            })
+            && self
+                .lines
+                .get(i + 1)
+                .is_some_and(|line| !is_blank_line(line) && indent_columns(line) >= body_indent)
+        {
+            i += 1;
+        }
         let attached_quote_marker = (trim_ascii(def.first) == "+"
             && note.line_map.first() == Some(&None)
             && note
