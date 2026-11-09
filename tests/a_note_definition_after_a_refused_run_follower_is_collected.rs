@@ -40,3 +40,19 @@ fn a_closed_follower_keeps_the_definition_as_its_text() {
         "<p>{#i\n.y}\n<code>\n[^b]: z\n</code></p>\n<p>see[^b]</p>",
     );
 }
+
+#[test]
+fn a_fence_that_leaves_the_quote_is_no_follower() {
+    check(
+        "> {.x\n> .y}\n```\n[^b]: z\n\nsee[^b]\n",
+        "<blockquote><p>{.x\n.y}</p></blockquote>\n<pre><code>[^b]: z\n\nsee[^b]\n</code></pre>",
+    );
+}
+
+#[test]
+fn a_fence_below_the_item_column_is_no_follower() {
+    check(
+        "- +\n  {.x\n  .y}\n```\n[^b]: z\n\nsee[^b]\n",
+        "<ul>\n  <li>{.x\n.y}</li>\n</ul>\n<pre><code>[^b]: z\n\nsee[^b]\n</code></pre>",
+    );
+}

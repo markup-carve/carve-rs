@@ -91,7 +91,24 @@ fn lines_end_in_refused_brace_run(lines: &[&str]) -> bool {
 /// paragraph's text, so it opens no fence block (CARVE-P2-035).
 fn refused_run_follower(lines: &[&str], i: usize) -> Option<FenceOpen> {
     let inside = trim_ascii_start(without_blockquote_prefixes(trim_ascii_start(lines[i])));
-    detect_fence_open(inside).filter(|_| lines_end_in_refused_brace_run(&lines[..i]))
+    let open = detect_fence_open(inside)?;
+    // The run and its follower share one quote host; a lazy or quote-leaving
+    // line ends that paragraph's run.
+    let (depth, follower) = quote_depth_and_body(lines[i]);
+    // A follower below the run's column has left the run's host.
+    if i == 0 || indent_columns(follower) < indent_columns(quote_depth_and_body(lines[i - 1]).1) {
+        return None;
+    }
+    for line in lines[..i].iter().rev() {
+        let (at_depth, body) = quote_depth_and_body(line);
+        if is_blank_line(body) || at_depth != depth {
+            return None;
+        }
+        if trim_ascii_start(body).starts_with('{') {
+            break;
+        }
+    }
+    lines_end_in_refused_brace_run(&lines[..i]).then_some(open)
 }
 
 /// The quote depth of a line and the text inside its quote prefixes.
