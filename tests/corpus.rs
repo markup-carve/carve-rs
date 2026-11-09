@@ -1460,8 +1460,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
     // Newly reached corpus pairs at spec b426bf87. Each actual HTML is measured.
-    ("860-an-id-key-is-a-spelling-of-the-id-slot-3", "ruling at the 5643d59c pin not ported yet", "<p><strong id=\"\">x</strong></p>"),
-    ("860-an-id-key-is-a-spelling-of-the-id-slot-4", "ruling at the 5643d59c pin not ported yet", "<table>\n  <tbody>\n    <tr><td id=\"\">x</td></tr>\n  </tbody>\n</table>"),
 ];
 
 fn check_pair(slug: &str) {
