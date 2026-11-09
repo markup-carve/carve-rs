@@ -687,7 +687,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         let follows_first_block = !description_sibling
             && (!lead_is_continuation || item_block_opener(trim_ascii_start(line)))
             && cur.pos.checked_sub(1).is_some_and(|previous| {
-                !is_definition_placeholder(cur.lines.at(previous))
+                // A note definition on an item marker line is replaced by an
+                // invisible marker *inside* that line. Its consumed `+` has
+                // already attached its block, so the next line cannot start
+                // another attachment (carve-rs#4117).
+                !is_definition_placeholder(innermost_marker_content(cur.lines.at(previous)))
                     && cur
                         .continuation_decision(previous)
                         .is_some_and(|decision| decision.first_block)

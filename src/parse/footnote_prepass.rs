@@ -54,6 +54,74 @@ fn marker_column_ends_attached_block(
         && (item_block_opener(trim_ascii_start(raw)) || is_list_marker(raw))
 }
 
+/// Whether a blank in an attached list child's fence is followed by a
+/// compatible sibling of that list. The one-block list probe owns that blank
+/// and sibling; a generic attachment boundary sees only the blank.
+fn attached_list_fence_sibling(lines: &[&str], start: usize) -> bool {
+    let Some(first) = lines
+        .get(start)
+        .and_then(|line| detect_list_marker_full(line))
+    else {
+        return false;
+    };
+    let mut fence: Option<(FenceOpen, usize)> = None;
+    let mut item_markers = vec![start];
+    for at in start + 1..lines.len() {
+        let line = lines[at];
+        if is_blank_line(line) {
+            if fence.is_some() {
+                let next = (at + 1..lines.len()).find(|&k| !is_blank_line(lines[k]));
+                if let Some(next) = next.and_then(|k| detect_list_marker_full(lines[k])) {
+                    return item_markers.iter().rev().any(|&k| {
+                        let prior = detect_list_marker_full(lines[k]).expect("list marker");
+                        next.indent == prior.indent
+                            && next.ordered == prior.ordered
+                            && next.checked.is_some() == prior.checked.is_some()
+                            && if prior.ordered {
+                                next.delim == prior.delim
+                                    && dialect_compatible(ol_dialect(prior.ol_type), &next)
+                            } else {
+                                next.marker == prior.marker
+                            }
+                    });
+                }
+            }
+            return false;
+        }
+        let indent = indent_columns(line);
+        if let Some((open, owner)) = fence {
+            if indent >= owner {
+                if is_fence_close(trim_ascii_start(line), open) {
+                    fence = None;
+                }
+                continue;
+            }
+            fence = None;
+        }
+        if let Some(marker) = detect_list_marker_full(line) {
+            if marker.indent < first.indent {
+                return false;
+            }
+            while item_markers.last().is_some_and(|&k| {
+                detect_list_marker_full(lines[k]).is_some_and(|prior| prior.indent >= marker.indent)
+            }) {
+                item_markers.pop();
+            }
+            item_markers.push(at);
+        } else if let Some(open) = detect_fence_open(trim_ascii_start(line)) {
+            if let Some(owner) = item_markers
+                .iter()
+                .rev()
+                .filter_map(|&k| marker_content_col(lines[k]))
+                .find(|&column| indent >= column)
+            {
+                fence = Some((open, owner));
+            }
+        }
+    }
+    false
+}
+
 fn unfenced_marker_content_col(line: &str) -> Option<usize> {
     let column = marker_content_col(line)?;
     let mut content = line;
@@ -1635,6 +1703,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             || detect_list_marker_full(first_text).is_some()
             || parse_standalone_attrs(first_text).is_some()
             || is_plus_marker(first_text);
+        let list_fence_sibling = attached_list_fence_sibling(lines, i);
         let first_boundary_after = |from: usize| {
             from + lines[from..]
                 .iter()
@@ -1703,6 +1772,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .find(|&at| is_comment_fence_close_any_column(lines[at], open.fence_len))
                 .map_or(i + 1, |at| at + 1);
             first_boundary_after(after_comment)
+        } else if list_fence_sibling {
+            i + attached_one_block_lines(CursorLines::Slice(&lines[i..]), self.options)
         } else if needs_raw_probe {
             attached_block_past_invisible(
                 CursorLines::Slice(lines),
@@ -1715,6 +1786,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         } else {
             first_boundary_after(i)
         };
+        // The list probe consumes a trailing separator as part of the list
+        // cursor. That separator belongs to the host after the one block.
+        let mut window_end = window_end;
+        if list_fence_sibling {
+            while window_end > i && is_blank_line(lines[window_end - 1]) {
+                window_end -= 1;
+            }
+        }
         let window_end = attached_quote_window_end(
             lines,
             lead,
@@ -1761,15 +1840,18 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let losing = |other: &str, first: &str| self.losing_plus_line(label, other, first);
         let mut comment_closers = None;
         let mut closer_index = None;
-        let mut end = attached_block_past_invisible(
-            CursorLines::Slice(&attached_refs),
-            0,
-            &mut comment_closers,
-            &mut closer_index,
-            self.options,
-            &mut |line, at| {
-                let raw = lines[start + at];
-                is_blank_line(line)
+        let mut end = if list_fence_sibling {
+            attached_one_block_lines(CursorLines::Slice(&attached_refs), self.options)
+        } else {
+            attached_block_past_invisible(
+                CursorLines::Slice(&attached_refs),
+                0,
+                &mut comment_closers,
+                &mut closer_index,
+                self.options,
+                &mut |line, at| {
+                    let raw = lines[start + at];
+                    is_blank_line(line)
                     || is_plus_marker(line)
                     || ends_at_marker(at, raw)
                     || (at > first_visible_at
@@ -1796,8 +1878,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         && indent_columns(raw) <= marker_col
                         && parse_footnote_def_line(trim_ascii_start(raw))
                             .is_some_and(|(other, first)| !losing(other, first)))
-            },
-        );
+                },
+            )
+        };
         while end <= first_visible_at && end < attached_refs.len() {
             let next = attached_block_past_invisible(
                 CursorLines::Slice(&attached_refs),
