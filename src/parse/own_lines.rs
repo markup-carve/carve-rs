@@ -262,16 +262,24 @@ fn indent_in_item_frame(line: &str, frame_col: usize) -> Option<usize> {
     None
 }
 
-fn marker_ladder_tab_col(frames: &[Frame], line: &str, measured: usize) -> usize {
+fn marker_ladder_tab_col(
+    frames: &[Frame],
+    line: &str,
+    measured: usize,
+    prior_line: Option<&str>,
+) -> usize {
+    // A lone `+` uses its attachment host's authored tab phase. Rephasing its
+    // follower through an ancestor item can turn an attached block into text.
+    if prior_line.is_some_and(|prior| is_cont_marker(trim_ascii_start(strip_lazy(prior)))) {
+        return measured;
+    }
     let indent_len = indent_cols(line).1;
     if !line.as_bytes()[..indent_len].contains(&b'\t') {
         return measured;
     }
     frames
         .windows(2)
-        .filter(|pair| {
-            pair[0].kind == Kind::Item && pair[1].kind == Kind::Item && pair[0].line == pair[1].line
-        })
+        .filter(|pair| pair[0].kind == Kind::Item && pair[1].kind == Kind::Item)
         .filter_map(|pair| indent_in_item_frame(line, pair[0].col))
         .max()
         .unwrap_or(measured)
@@ -3246,7 +3254,8 @@ impl<'a> Walk<'a> {
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         self.prepare_note_plus_line(at);
         self.mark_quote_note_plus_line(c.rest);
-        c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
+        let prior_line = at.checked_sub(1).map(|prev| self.lines[prev]);
+        c.col = marker_ladder_tab_col(&self.frames, c.src, c.col, prior_line);
         self.end_attached_quote_at_blank(at, c.src);
         let tracing = self.trace_wants(at);
         let line = self.first_line + at;
@@ -3319,7 +3328,7 @@ impl<'a> Walk<'a> {
                 let n = quote_marker(c.src).expect("measured above");
                 c.take(n);
                 c.measure();
-                c.col = marker_ladder_tab_col(&self.frames, c.src, c.col);
+                c.col = marker_ladder_tab_col(&self.frames, c.src, c.col, prior_line);
                 reached = k;
                 continue;
             }
