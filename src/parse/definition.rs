@@ -810,14 +810,26 @@ pub(in crate::parse) fn parse_definition_list(
                     Some(decision)
                         if decision.owner == Some(continuation_marker::Kind::Description) =>
                     {
-                        let end = attached_block_past_invisible(
+                        let end = if footnote_prepass::attached_list_fence_sibling(
                             lines,
                             first_visible,
-                            &mut cur.comment_closer_last_index,
-                            &mut cur.code_closer_last_index,
-                            options,
-                            &mut boundary,
-                        );
+                        ) {
+                            let materialized = std::cell::OnceCell::new();
+                            first_visible
+                                + attached_one_block_lines(
+                                    lines.window(first_visible..lines.len(), &materialized),
+                                    options,
+                                )
+                        } else {
+                            attached_block_past_invisible(
+                                lines,
+                                first_visible,
+                                &mut cur.comment_closer_last_index,
+                                &mut cur.code_closer_last_index,
+                                options,
+                                &mut boundary,
+                            )
+                        };
                         if end > first_visible {
                             end
                         } else {
