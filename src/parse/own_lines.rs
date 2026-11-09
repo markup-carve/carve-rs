@@ -2692,7 +2692,8 @@ impl<'a> Walk<'a> {
         for line in &self.lines[at + 1..] {
             let rest = trim_ascii_start(line);
             let col = doc_column(line, rest);
-            if col <= host_col
+            if col >= marker_col
+                && col <= host_col
                 && pure_fence(rest).is_some_and(|(found, width)| found == ch && width >= len)
             {
                 return true;
@@ -2712,6 +2713,7 @@ impl<'a> Walk<'a> {
         target: usize,
     ) -> usize {
         if inner.attached_host_fence
+            && col >= inner.doc_marker
             && closer.is_some_and(|cl| cl.closes(rest, col, inner.open_col))
         {
             inner.canon
@@ -2726,6 +2728,7 @@ impl<'a> Walk<'a> {
     fn in_open_payload(&self, missed: bool, reached: usize, col: usize, rest: &str) -> bool {
         let inner = self.frames.last().expect("document frame");
         let attached_closer = inner.attached_host_fence
+            && col >= inner.doc_marker
             && inner
                 .closer
                 .is_some_and(|closer| closer.closes(rest, col, inner.open_col));
@@ -3893,6 +3896,7 @@ impl<'a> Walk<'a> {
                     .filter(|block| block.from == at)
                     .and_then(|block| block.frames.last())
                     .map_or(self.frames[owner].col, |host| host.col);
+                let attached_closer_col = attached_host_col.saturating_sub(1).max(col);
                 let attached_marker_col = self
                     .attached
                     .as_ref()
@@ -3915,18 +3919,16 @@ impl<'a> Walk<'a> {
                         });
                         if let Some(blank) = first_blank {
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
-                            let has_closer = runs.code_by_column.has_later(
-                                ch,
-                                at,
-                                attached_host_col.max(col),
-                                len,
-                            ) && self.attached_host_has_closer(
-                                at,
-                                ch,
-                                len,
-                                attached_host_col.max(col),
-                                attached_marker_col,
-                            );
+                            let has_closer =
+                                runs.code_by_column
+                                    .has_later(ch, at, attached_closer_col, len)
+                                    && self.attached_host_has_closer(
+                                        at,
+                                        ch,
+                                        len,
+                                        attached_closer_col,
+                                        attached_marker_col,
+                                    );
                             if !has_closer {
                                 f.attached_blank_end = Some(blank);
                             }
@@ -3953,11 +3955,7 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                f.open_col = if attached {
-                    attached_host_col.max(col)
-                } else {
-                    col
-                };
+                f.open_col = if attached { attached_closer_col } else { col };
                 f.line_block = line_block;
                 f.shift = o_shift;
                 f.line = self.first_line + at;
