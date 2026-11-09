@@ -800,6 +800,23 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
     Some(offsets)
 }
 
+/// Whether `at` opens an image's `(dest)` or `[ref]` tail (`destSlot`, `refTail`).
+fn image_tail(bytes: &[u8], at: usize) -> bool {
+    match bytes.get(at) {
+        Some(b'(') => {
+            let body = bytes[at + 1..].iter().take_while(|&&b| b == b' ').count();
+            bytes.get(at + 1 + body) == Some(&b')') || link_destination_end(bytes, at).is_some()
+        }
+        Some(b'[') => {
+            bytes[at + 1..]
+                .iter()
+                .find(|&&b| matches!(b, b']' | b'\n' | b'\r'))
+                == Some(&b']')
+        }
+        _ => false,
+    }
+}
+
 /// Each `[^` whose label (up to the first `]` on its line) holds a `[`, as
 /// (open, close).
 pub(in crate::parse) fn footnote_labels_holding_bracket(bytes: &[u8]) -> Vec<(usize, usize)> {
@@ -897,6 +914,11 @@ fn compute_bracket_runs_with_alt(
     };
     let last_comment_close = bytes.windows(2).rposition(|w| w == b"#}");
     let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
+    let last_close_bracket = bytes.iter().rposition(|&b| b == b']');
+    let last_close_has_attrs = last_close_bracket.is_some_and(|close| {
+        read_attrs_at(bytes, close + 1, last_close_brace).is_some()
+            || read_empty_attrs_at(bytes, close + 1).is_some()
+    });
     let closed_span_end = |at: usize| -> (usize, Option<usize>) {
         let len = bytes[at..].iter().take_while(|&&b| b == b'`').count();
         let closes = last_run_start
@@ -914,11 +936,6 @@ fn compute_bracket_runs_with_alt(
     let comment_end = |at: usize| -> Option<usize> {
         if last_comment_close.is_some_and(|close| close >= at + 2) {
             skip_editorial_comment(bytes, at)
-    let last_close_bracket = bytes.iter().rposition(|&b| b == b']');
-    let last_close_has_attrs = last_close_bracket.is_some_and(|close| {
-        read_attrs_at(bytes, close + 1, last_close_brace).is_some()
-            || read_empty_attrs_at(bytes, close + 1).is_some()
-    });
         } else {
             None
         }
@@ -1043,6 +1060,19 @@ fn compute_bracket_runs_with_alt(
                     i += 1;
                 }
                 b'[' => {
+                    // An inner atom has already finished at this position. If
+                    // the remaining final closer carries the enclosing span's
+                    // attribute tail, a new unmatched `[` is literal content
+                    // of that span rather than an opener that steals its tail.
+                    let outer_span_tail = !stack.is_empty()
+                        && attribute_host_end == i
+                        && last_close_has_attrs
+                        && last_close_bracket.is_some_and(|close| close > i);
+                    if outer_span_tail {
+                        run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                        i += 1;
+                        continue;
+                    }
                     if !in_alt {
                         if let Some(&close) = footnote_candidates.get(&i) {
                             reached.push((i, close));
@@ -1059,19 +1089,6 @@ fn compute_bracket_runs_with_alt(
                         matches[open] = i;
                         attribute_host_end = i + 1;
                         closed = true;
-                    }
-                    // An inner atom has already finished at this position. If
-                    // the remaining final closer carries the enclosing span's
-                    // attribute tail, a new unmatched `[` is literal content
-                    // of that span rather than an opener that steals its tail.
-                    let outer_span_tail = !stack.is_empty()
-                        && attribute_host_end == i
-                        && last_close_has_attrs
-                        && last_close_bracket.is_some_and(|close| close > i);
-                    if outer_span_tail {
-                        run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
-                        i += 1;
-                        continue;
                     }
                     alt.pop();
                     run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
@@ -1117,7 +1134,10 @@ fn compute_bracket_runs_with_alt(
                     .take_while(|&&b| b == b'\\')
                     .count()
                     % 2
-                    == 0;
+                    == 0
+                && (image_tail(bytes, close + 1)
+                    || (matches[open] != NO_BRACKET_MATCH
+                        && image_tail(bytes, matches[open] + 1)));
             if image_alt || label_end.is_some_and(|end| open <= end) {
                 continue;
             }
@@ -1224,6 +1244,14 @@ mod autolink_bracket_scan_tests {
     }
 
     #[test]
+    fn nested_attribute_bracket_runs_keep_their_closers() {
+        let (matches, _) = compute_bracket_matches(b"[[a]{#1}][]#}");
+        assert_eq!((matches[0], matches[1]), (8, 3));
+        let (matches, _) = compute_bracket_matches(b"[[]{#1}[#}]{}");
+        assert_eq!((matches[0], matches[1], matches[7]), (10, 2, NO_BRACKET_MATCH));
+    }
+
+    #[test]
     fn an_autolink_body_is_opaque_to_the_bracket_scan() {
         let source = "[a <https://x]> b](u)";
         let (matches, _) = compute_bracket_matches(source.as_bytes());
@@ -1243,14 +1271,6 @@ mod autolink_bracket_scan_tests {
 /// pairing pass skips over in one step.
 pub(in crate::parse) fn fill_run(run_at: &mut [usize], stack: &[usize], from: usize, to: usize) {
     let holder = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
-    #[test]
-    fn nested_attribute_bracket_runs_keep_their_closers() {
-        let (matches, _) = compute_bracket_matches(b"[[a]{#1}][]#}");
-        assert_eq!((matches[0], matches[1]), (8, 3));
-        let (matches, _) = compute_bracket_matches(b"[[]{#1}[#}]{}");
-        assert_eq!((matches[0], matches[1], matches[7]), (10, 2, NO_BRACKET_MATCH));
-    }
-
     let end = to.min(run_at.len());
     for slot in &mut run_at[from.min(end)..end] {
         *slot = holder;
