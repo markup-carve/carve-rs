@@ -2231,6 +2231,17 @@ fn find_emphasis_close_walk(
             j = bounds.braced_closers(bytes).after_attributes(bytes, j);
             continue;
         }
+        // A symbol's glued attribute run belongs to the atom. Delimiters in
+        // its key/value text cannot close an enclosing emphasis span.
+        if ch == b':' {
+            if let Some(close) = symbol_close_at(bytes, j) {
+                j = close + 1;
+                while let Some((_, next)) = read_attrs_at(bytes, j, bounds.last_close_brace) {
+                    j = next;
+                }
+                continue;
+            }
+        }
         // E2a: a link destination and an autolink are opaque too. A link
         // LABEL is not, and neither is a plain brace group.
         if ch == b']'

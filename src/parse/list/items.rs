@@ -2920,6 +2920,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let held_brace = over_indented.starts_with('{') && lead.inline_span.code_open(&lead.lines);
         if !held_brace
             && item_block_opener(over_indented)
+            && detect_block_image(over_indented).is_none()
             && self
                 .item_unclosed_fence_base
                 .map_or(true, |base| base == indent)

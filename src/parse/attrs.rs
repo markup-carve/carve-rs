@@ -986,6 +986,7 @@ pub(in crate::parse) fn merge_attrs_into_inline(
         InlineNode::AutoLink(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
         InlineNode::Extension(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
         InlineNode::Code(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Symbol(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
         // A trailing standalone block chains onto an inline literal, promoting a
         // bare literal to a `<span>` (`` !`x`{.a}{.b} `` -> class="a b"). Matches
         // carve-js, whose merge attaches to any non-text node.
@@ -1010,6 +1011,7 @@ pub(crate) fn inline_is_attributable(node: &InlineNode) -> bool {
             | InlineNode::AutoLink(_)
             | InlineNode::Extension(_)
             | InlineNode::Code(_)
+            | InlineNode::Symbol(_)
             | InlineNode::LiteralInline(_)
             | InlineNode::Footnote(_)
             | InlineNode::CriticInsert(_)
