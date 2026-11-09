@@ -159,7 +159,12 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
             }
             collect_blocks(&a.children, suppressed, out);
         }
-        BlockNode::Directive(d) => collect_blocks(&d.children, suppressed, out),
+        BlockNode::Directive(d) => {
+            if let Some(title) = &d.title {
+                collect_inlines(title, suppressed, out);
+            }
+            collect_blocks(&d.children, suppressed, out);
+        }
         BlockNode::Div(d) => collect_blocks(&d.children, suppressed, out),
         BlockNode::Section(d) => collect_blocks(&d.children, suppressed, out),
         BlockNode::LineBlock(lb) => collect_blocks(&lb.children, suppressed, out),
@@ -189,7 +194,12 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
             }
         }
         BlockNode::BlockExtension(e) => collect_blocks(e.fallback_slice(), suppressed, out),
-        BlockNode::ExtensionCarrier(e) => collect_blocks(&e.children, suppressed, out),
+        BlockNode::ExtensionCarrier(e) => {
+            if let Some(summary) = &e.summary {
+                collect_inlines(summary, suppressed, out);
+            }
+            collect_blocks(&e.children, suppressed, out);
+        }
         // A code block's text is never abbreviation-expanded, and the remaining
         // block kinds carry no inline children at all.
         BlockNode::CodeBlock(_)
