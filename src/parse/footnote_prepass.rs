@@ -1820,7 +1820,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map(|(offset, line)| {
                 if pulled_closer == Some(i + offset) {
                     trim_ascii_start(line).to_string()
-                } else if i + offset > lead
+                } else if (i + offset > lead
+                    || indent_columns(lines[lead]) == container.content_column)
                     && indent_columns(line) == container.content_column
                     && strip_blockquote_prefix(trim_ascii_start(line)).is_some()
                     && strip_blockquote_prefix(trim_ascii_start(lines[lead])).is_some()
