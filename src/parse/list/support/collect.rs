@@ -573,6 +573,29 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         if admission.blank {
             refused_nested_follower_span = None;
         }
+        // A refused `+` at this item's marker column renders nothing and ends
+        // the item's open fence; the item keeps the next line (CARVE-P9-067, carve#5637).
+        if !admission.blank
+            && parent_indent < strip_cols
+            && indent_columns(line) == parent_indent
+            && continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            && cur
+                .lines
+                .line(container.blank_run_end(cur.lines, cur.pos + 1))
+                .is_some_and(|next| indent_columns(next) >= strip_cols)
+        {
+            let closer = fence.take().map(|open| {
+                String::from_utf8(vec![open.fence_char; open.fence_len]).unwrap_or_default()
+            });
+            lines.push(closer.unwrap_or_else(|| trim_ascii_start(line).to_owned()));
+            reached.push(false);
+            if building_maps {
+                line_map.push(cur.source_line(cur.pos));
+                col_map.push(None);
+            }
+            cur.consume();
+            continue;
+        }
         if admission.blank && quoted_definition_seen {
             quoted_definition_blank = true;
         }
