@@ -3019,7 +3019,7 @@ impl<'a> QuoteBody<'a> {
         }
         // The replay reads a description body as quoted text; its own base
         // closes the paragraph too.
-        let quoted_open = if stanza_fold {
+        let quoted_open = if stanza_fold && !(self.last_nested && fenced_below == Some(false)) {
             true
         } else if self.closed_div {
             false

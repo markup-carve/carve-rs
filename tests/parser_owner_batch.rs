@@ -8,6 +8,13 @@ fn quoted_verse_span_does_not_pair_past_quote_exit() {
 }
 
 #[test]
+fn closed_sibling_fence_in_nested_quote_does_not_hold_outer_quote() {
+    let source = "> > 1. ::: |\n> >   ```\nz\n";
+    let expected = "<blockquote>\n  <blockquote>\n    <ol>\n      <li>\n        <div class=\"line-block\">\n\n        </div>\n      </li>\n    </ol>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>\n<p>z</p>";
+    assert_eq!(to_html(source).trim(), expected);
+}
+
+#[test]
 fn postblank_admonition() {
     assert_eq!(
         to_html(
