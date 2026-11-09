@@ -111,6 +111,56 @@ fn marker_column_ends_attached_block(
             && follower_keeps_run(attached, first_visible_at, at, raw, marker_col))
 }
 
+fn compatible_list_sibling_after_marker(lines: &[&str], start: usize, marker_at: usize) -> bool {
+    let Some(first) = lines
+        .get(start)
+        .and_then(|line| detect_list_marker_full(trim_ascii_start(line)))
+    else {
+        return false;
+    };
+    lines
+        .get(marker_at + 1)
+        .and_then(|line| detect_list_marker_full(line))
+        .is_some_and(|next| {
+            next.indent == first.indent
+                && next.ordered == first.ordered
+                && next.checked.is_some() == first.checked.is_some()
+                && if first.ordered {
+                    next.delim == first.delim
+                        && dialect_compatible(ol_dialect(first.ol_type), &next)
+                } else {
+                    next.marker == first.marker
+                }
+        })
+}
+
+fn continued_list_window(
+    lines: &[&str],
+    start: usize,
+    marker_at: usize,
+    options: &Options<'_>,
+) -> Option<usize> {
+    let marker = lines.get(marker_at)?;
+    if !(is_plus_marker(marker)
+        || continuation_marker::is_consumed_marker(trim_ascii_start(marker)))
+        || !compatible_list_sibling_after_marker(lines, start, marker_at)
+    {
+        return None;
+    }
+    Some(
+        marker_at
+            + 1
+            + attached_one_block_lines(CursorLines::Slice(&lines[marker_at + 1..]), options),
+    )
+}
+
+fn trim_attached_list_window(lines: &[&str], start: usize, mut end: usize) -> usize {
+    while end > start && is_blank_line(lines[end - 1]) {
+        end -= 1;
+    }
+    end
+}
+
 fn later_marker_end(lines: &[&str], start: usize, end: usize, marker_col: usize) -> usize {
     if !lines
         .get(start)
@@ -120,8 +170,11 @@ fn later_marker_end(lines: &[&str], start: usize, end: usize, marker_col: usize)
     }
     (start + 1..end)
         .find(|&at| {
-            (indent_columns(lines[at]) <= marker_col && is_plus_marker(lines[at]))
-                || continuation_marker::is_consumed_marker(trim_ascii_start(lines[at]))
+            (indent_columns(lines[at]) <= marker_col
+                && is_plus_marker(lines[at])
+                && !compatible_list_sibling_after_marker(lines, start, at))
+                || (continuation_marker::is_consumed_marker(trim_ascii_start(lines[at]))
+                    && !compatible_list_sibling_after_marker(lines, start, at))
         })
         .unwrap_or(end)
 }
@@ -1844,7 +1897,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             || detect_list_marker_full(first_text).is_some()
             || parse_standalone_attrs(first_text).is_some()
             || is_plus_marker(first_text);
-        let list_fence_sibling = attached_list_fence_sibling(CursorLines::Slice(lines), i);
+        let mut list_fence_sibling = attached_list_fence_sibling(CursorLines::Slice(lines), i);
         let first_boundary_after = |from: usize| {
             from + lines[from..]
                 .iter()
@@ -1930,10 +1983,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // The list probe consumes a trailing separator as part of the list
         // cursor. That separator belongs to the host after the one block.
         let mut window_end = window_end;
+        // A refused marker between compatible list items renders nothing.
+        // The first-block grant already owns the list, including its next item.
+        let continued = continued_list_window(lines, i, window_end, self.options);
+        list_fence_sibling |= continued.is_some();
+        window_end = continued.unwrap_or(window_end);
         if list_fence_sibling {
-            while window_end > i && is_blank_line(lines[window_end - 1]) {
-                window_end -= 1;
-            }
+            window_end = trim_attached_list_window(lines, i, window_end);
         }
         // A later marker at the attached block's column belongs to its host,
         // even when a list probe could interpret it as an item continuation.
@@ -2114,11 +2170,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         && attr_run_at(&attached_refs, at).is_none()
                 };
                 visible |= !is_line_comment_any_column(&line);
-                let kept = if in_skipped_note {
-                    note.frame_lazy(indent_columns(&line), trim_ascii_start(&line))
-                } else {
-                    line
-                };
+                let kept =
+                    continued_list_window(&attached_refs, first_visible_at, at, self.options)
+                        .filter(|_| is_plus_marker(&line))
+                        .map(|_| String::new())
+                        .unwrap_or_else(|| {
+                            if in_skipped_note {
+                                note.frame_lazy(indent_columns(&line), trim_ascii_start(&line))
+                            } else {
+                                line
+                            }
+                        });
                 note.push_with(kept, Some(self.first_source_line + i), |_| {
                     Some(marker_col as isize)
                 });

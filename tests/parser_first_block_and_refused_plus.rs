@@ -71,3 +71,17 @@ fn a_refused_second_plus_renders_nothing_in_the_attached_item_paragraph() {
         assert!(!html.contains("<p>+</p>"), "{source:?}: {html}");
     }
 }
+
+#[test]
+fn a_refused_plus_keeps_a_note_attached_list_after_a_closed_child_fence() {
+    let source = "[^a]: +\n- li\n  ```\n  x\n  ```\n+\n - sib\n\nsee[^a]\n";
+    let expected = "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>li\n          <pre><code>x\n</code></pre>\n        </li>\n        <li>sib</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    assert_eq!(to_html(source), expected);
+}
+
+#[test]
+fn a_marker_column_sibling_after_a_refused_plus_stays_in_the_note() {
+    let source = "[^a]: +\n- li\n  ```\n  x\n  ```\n+\n- sib\n\nsee[^a]\n";
+    let expected = "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li><p>li</p>\n          <pre><code>x\n</code></pre>\n        </li>\n        <li><p>sib</p></li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    assert_eq!(to_html(source), expected);
+}
