@@ -2091,13 +2091,33 @@ pub(in crate::parse) fn take_opaque_span_into(
 pub(in crate::parse) fn skip_opaque_span_into(
     inner: &mut LineBuffer,
     cur: &mut LineCursor<'_>,
+    code_blocks: bool,
 ) -> bool {
     let Some(line) = cur.peek() else {
         return false;
     };
     if let Some(open) = detect_fence_open(line) {
-        take_opaque_span_into(inner, cur, |candidate| is_fence_close(candidate, open));
-        return true;
+        if code_blocks {
+            take_opaque_span_into(inner, cur, |candidate| is_fence_close(candidate, open));
+            return true;
+        }
+        // A paired fence-shaped inline span can shield a colon run. An
+        // unpaired run is payload and cannot hide the line block's closer.
+        let paired = cur
+            .lines
+            .code_after(cur.pos, open.fence_char, open.fence_len)
+            .unwrap_or_else(|| {
+                let index = cur
+                    .code_closer_last_index
+                    .get_or_insert_with(|| build_code_closer_last_index(&cur.lines));
+                code_closer_exists_after(index, cur.pos, open.fence_char, open.fence_len)
+            });
+        if paired {
+            take_opaque_span_into(inner, cur, |candidate| {
+                is_verse_fence_close(candidate, open)
+            });
+            return true;
+        }
     }
     if let Some(open) = detect_comment_fence_line(line) {
         if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
@@ -2109,6 +2129,10 @@ pub(in crate::parse) fn skip_opaque_span_into(
         }
     }
     false
+}
+
+fn is_verse_fence_close(line: &str, open: FenceOpen) -> bool {
+    is_fence_close(trim_ascii_start(line), open)
 }
 
 pub(in crate::parse) fn reuse_colon_views() -> bool {
@@ -2180,6 +2204,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
     let mut inner = LineBuffer::default();
     let mut closed = false;
     let mut stack = vec![opener_len];
+    let mut literal_frames = vec![false];
     let mut origins = vec![None];
     let mut boundaries = Vec::new();
     let mut cacheable = true;
@@ -2190,8 +2215,13 @@ pub(in crate::parse) fn collect_indexed_colon_body(
     let mut indented_code: Option<(FenceOpen, usize)> = None;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
+        let literal = *literal_frames.last().unwrap();
         let paragraph_was_open = paragraph_open;
-        paragraph_open = opens_colon_body_paragraph(cur.peek().unwrap(), paragraph_was_open, false);
+        paragraph_open = if literal {
+            None
+        } else {
+            opens_colon_body_paragraph(cur.peek().unwrap(), paragraph_was_open, false)
+        };
         // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
         // about a paragraph swallowing a would-be OPENER; the container this
         // line closes was opened BEFORE the malformed fence was ever read, so
@@ -2211,6 +2241,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
             push_current_line(&mut inner, cur);
             cur.consume();
             stack.pop();
+            literal_frames.pop();
             continue;
         }
         let line = cur.peek().unwrap();
@@ -2234,7 +2265,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
             {
                 indented_span = None;
             }
-        } else if line.starts_with([' ', '\t']) {
+        } else if !literal && line.starts_with([' ', '\t']) {
             let rest = trim_ascii_start(line);
             if let Some(open) = detect_fence_open(rest) {
                 indented_code = Some((open, indent_columns(line)));
@@ -2246,7 +2277,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
                 continue;
             }
         }
-        if indented_span.is_none() && skip_opaque_span_into(&mut inner, cur) {
+        if indented_span.is_none() && skip_opaque_span_into(&mut inner, cur, !literal) {
             paragraph_open = None;
             continue;
         }
@@ -2254,7 +2285,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
         // An unclosed fence is code up to the innermost container's own closer;
         // every other colon line before it is content (A CLOSER IS REQUIRED,
         // carve#3201). Under an open paragraph it is text (§10 I4).
-        if paragraph_was_open.is_none() && detect_fence_open(line).is_some() {
+        if !literal && paragraph_was_open.is_none() && detect_fence_open(line).is_some() {
             push_current_line(&mut inner, cur);
             cur.consume();
             while let Some(next) = cur.peek() {
@@ -2267,10 +2298,11 @@ pub(in crate::parse) fn collect_indexed_colon_body(
             paragraph_open = None;
             continue;
         }
-        if !line.starts_with([' ', '\t']) {
+        if !literal && !line.starts_with([' ', '\t']) {
+            let line_block = detect_line_block_open(line);
             if let Some(len) = detect_container_open(line)
                 .map(|open| open.fence_len)
-                .or_else(|| detect_line_block_open(line))
+                .or(line_block)
                 .or_else(|| detect_hardbreaks_block_open(line))
                 .or_else(|| detect_quote_block_open(line))
             {
@@ -2285,6 +2317,7 @@ pub(in crate::parse) fn collect_indexed_colon_body(
                 boundaries.resize(origin + 1, None);
                 origins.push(Some(origin));
                 stack.push(len);
+                literal_frames.push(line_block.is_some());
                 push_current_line(&mut inner, cur);
                 cur.consume();
                 continue;
@@ -2466,6 +2499,8 @@ fn find_colon_fence_end_with<'a>(
             }
             continue;
         }
+        // A paired fence-shaped inline span can shield a colon run; an
+        // unpaired run cannot change this line block's boundary.
         if let Some(open) = detect_fence_open(if literal {
             trim_ascii_start(line)
         } else {
@@ -2490,28 +2525,22 @@ fn find_colon_fence_end_with<'a>(
             let has_closer = possible
                 && (idx + 1..lines.len()).any(|at| {
                     let candidate = measured(at);
-                    is_fence_close(
-                        if literal {
-                            trim_ascii_start(&candidate)
-                        } else {
-                            &candidate
-                        },
-                        open,
-                    )
+                    if literal {
+                        is_verse_fence_close(&candidate, open)
+                    } else {
+                        is_fence_close(&candidate, open)
+                    }
                 });
             if has_closer {
                 idx += 1;
                 while idx < lines.len() {
                     let candidate = measured(idx);
                     idx += 1;
-                    if is_fence_close(
-                        if literal {
-                            trim_ascii_start(&candidate)
-                        } else {
-                            &candidate
-                        },
-                        open,
-                    ) {
+                    if if literal {
+                        is_verse_fence_close(&candidate, open)
+                    } else {
+                        is_fence_close(&candidate, open)
+                    } {
                         break;
                     }
                 }
