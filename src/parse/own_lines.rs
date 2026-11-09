@@ -434,6 +434,42 @@ fn is_sibling_of(kind: Kind, text: &str) -> bool {
 }
 
 /// The text of the line after a refused note marker, when it joins the note body.
+/// Whether the paragraph lines above end in a refused brace run, read inside
+/// `quotes` quote levels with a marker line's marker kept as its columns.
+fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
+    let mut run: Vec<String> = Vec::new();
+    for line in lines.iter().rev() {
+        let Some(inner) = (if quotes == 0 {
+            Some(*line)
+        } else {
+            strip_quote_levels(trim_ascii_start(line), quotes)
+        }) else {
+            break;
+        };
+        if is_blank_line(inner) {
+            break;
+        }
+        let body = detect_list_marker_full(inner)
+            .map(|marker| marker.content)
+            .or_else(|| strip_definition_marker(trim_ascii_start(inner)).map(|(body, _)| body));
+        let text = match body {
+            Some(body) => " ".repeat(inner[..inner.len() - body.len()].chars().count()) + body,
+            None => inner.to_owned(),
+        };
+        let opens = trim_ascii_start(&text).starts_with('{');
+        // A run closes at its first brace, so an earlier closed line ends the search.
+        if !opens && !run.is_empty() && text.contains('}') && !text.contains(['"', '\'']) {
+            return false;
+        }
+        run.push(text);
+        if opens || body.is_some() {
+            break;
+        }
+    }
+    run.reverse();
+    ends_in_refused_brace_run(&run)
+}
+
 fn note_follower_body<'l>(line: &'l str, lead: &str, item: bool) -> Option<&'l str> {
     let depth = |text: &str| {
         let mut rest = text;
@@ -3039,6 +3075,10 @@ impl<'a> Walk<'a> {
         self.replace_frames(frames);
     }
 
+    fn plus_closes_descendant(&self, host: usize, prior_code_fence: Option<usize>) -> bool {
+        self.frames.len() > host + 1 || prior_code_fence.is_some_and(|fence| fence > host)
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         self.prepare_note_plus_line(at);
         self.mark_quote_note_plus_line(c.rest);
@@ -3060,6 +3100,12 @@ impl<'a> Walk<'a> {
         // The attached block's first marker supplies the sibling axis. An
         // ordered marker has a wider head than a bullet marker.
         let attached_ordered = self.attached_list_is_ordered(c.src);
+        // A code fence the reopened host held ends at a marker below its column
+        // (CARVE-P0-013), even when reopening dropped its frame.
+        let code_fence_at = self
+            .frames
+            .iter()
+            .rposition(|f| f.kind == Kind::Fence && matches!(f.closer, Some(Closer::Fence(..))));
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
         for k in 1..self.frames.len() {
@@ -3130,7 +3176,7 @@ impl<'a> Walk<'a> {
             self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {
-            let closes_descendant = self.frames.len() > k + 1;
+            let closes_descendant = self.plus_closes_descendant(k, code_fence_at);
             self.frames.truncate(k + 1);
             let f = self.top();
             f.para = false;
@@ -4269,6 +4315,16 @@ impl<'a> Walk<'a> {
             // An opener interrupts with or without a closer (carve#4018).
             let ch = rest.as_bytes()[0];
             let len = rest.bytes().take_while(|&b| b == ch).count();
+            // A refused brace run's unclosed follower is its paragraph's text (CARVE-P2-035).
+            if owner_para && !self.payload_fence_has_closer(at, ch, len) {
+                let quotes = self.frames[..=owner]
+                    .iter()
+                    .filter(|frame| frame.kind == Kind::Quote)
+                    .count();
+                if lines_end_in_refused_run(&self.lines[..at], quotes) {
+                    return Form::Text;
+                }
+            }
             return Form::Fence(Closer::Fence(ch, len), true, false);
         }
         // A `%%%` opener always opens its span (F1, carve#4907).
