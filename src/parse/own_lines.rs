@@ -3096,6 +3096,12 @@ impl<'a> Walk<'a> {
         // The attached block's first marker supplies the sibling axis. An
         // ordered marker has a wider head than a bullet marker.
         let attached_ordered = self.attached_list_is_ordered(c.src);
+        // A code fence the reopened host held ends at a marker below its column
+        // (CARVE-P0-013), even when reopening dropped its frame.
+        let code_fence_at = self
+            .frames
+            .iter()
+            .rposition(|f| f.kind == Kind::Fence && matches!(f.closer, Some(Closer::Fence(..))));
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
         for k in 1..self.frames.len() {
@@ -3166,7 +3172,8 @@ impl<'a> Walk<'a> {
             self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {
-            let closes_descendant = self.frames.len() > k + 1;
+            let closes_descendant =
+                self.frames.len() > k + 1 || code_fence_at.is_some_and(|fence| fence > k);
             self.frames.truncate(k + 1);
             let f = self.top();
             f.para = false;
