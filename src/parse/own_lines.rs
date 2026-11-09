@@ -434,16 +434,26 @@ fn is_sibling_of(kind: Kind, text: &str) -> bool {
 }
 
 /// The text of the line after a refused note marker, when it joins the note body.
-/// Whether the paragraph lines above end in a refused brace run, read inside
-/// `quotes` quote levels with a marker line's marker kept as its columns.
+/// Whether the last line follows a refused brace run in its own host: the
+/// lines above, read inside `quotes` quote levels with a marker line's marker
+/// kept as its columns, end in that run, and the last line is not left of it.
 fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
-    let mut run: Vec<String> = Vec::new();
-    for line in lines.iter().rev() {
-        let Some(inner) = (if quotes == 0 {
-            Some(*line)
+    fn inside(line: &str, quotes: usize) -> Option<&str> {
+        if quotes == 0 {
+            Some(line)
         } else {
             strip_quote_levels(trim_ascii_start(line), quotes)
-        }) else {
+        }
+    }
+    let Some((follower, lines)) = lines.split_last() else {
+        return false;
+    };
+    let Some(follower) = inside(follower, quotes) else {
+        return false;
+    };
+    let mut run: Vec<String> = Vec::new();
+    for line in lines.iter().rev() {
+        let Some(inner) = inside(line, quotes).filter(|inner| !inner.starts_with('>')) else {
             break;
         };
         if is_blank_line(inner) {
@@ -459,6 +469,9 @@ fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
         let opens = trim_ascii_start(&text).starts_with('{');
         // A run closes at its first brace, so an earlier closed line ends the search.
         if !opens && !run.is_empty() && text.contains('}') && !text.contains(['"', '\'']) {
+            return false;
+        }
+        if run.is_empty() && indent_columns(follower) < indent_columns(&text) {
             return false;
         }
         run.push(text);
@@ -4316,12 +4329,12 @@ impl<'a> Walk<'a> {
             let ch = rest.as_bytes()[0];
             let len = rest.bytes().take_while(|&b| b == ch).count();
             // A refused brace run's unclosed follower is its paragraph's text (CARVE-P2-035).
-            if owner_para && !self.payload_fence_has_closer(at, ch, len) {
+            if !self.payload_fence_has_closer(at, ch, len) {
                 let quotes = self.frames[..=owner]
                     .iter()
                     .filter(|frame| frame.kind == Kind::Quote)
                     .count();
-                if lines_end_in_refused_run(&self.lines[..at], quotes) {
+                if lines_end_in_refused_run(&self.lines[..=at], quotes) {
                     return Form::Text;
                 }
             }

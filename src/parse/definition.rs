@@ -2200,7 +2200,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // block. A manufactured blank here would make it attach none.
         if accept_fence_opener
             && paragraph_open
-            && !ends_in_refused_brace_run(&self.lines)
+            && !self.ends_in_refused_brace_run()
             && !self.last_line_opens_marker_fence()
             && !(self.nested_definition_open
                 && self.lines.last().is_some_and(|line| is_plus_marker(line)))
@@ -2292,6 +2292,16 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             let bottom = innermost_marker_content(line);
             bottom.len() != line.len() && detect_fence_open(bottom).is_some()
         })
+    }
+
+    /// The run may start on the marker line, which the seed holds (CARVE-P2-035).
+    fn ends_in_refused_brace_run(&self) -> bool {
+        if self.lines.iter().any(|line| is_blank_line(line)) {
+            return ends_in_refused_brace_run(&self.lines);
+        }
+        let mut probe: Vec<&str> = self.seed.lines().collect();
+        probe.extend(self.lines.iter().map(String::as_str));
+        ends_in_refused_brace_run(&probe)
     }
 
     fn paragraph_open(&self) -> bool {
