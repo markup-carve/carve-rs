@@ -211,8 +211,25 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                 (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
                 true,
                 |offset, raw| {
-                    (raw.starts_with(LAZY) && !cur.in_quoted_body)
-                        .then(|| cur.source_col(cur.pos + offset).unwrap_or(0).max(0) as usize)
+                    // A note body's first two residual columns are its lazy
+                    // band. Beyond them, the source map gives the run's
+                    // authored column after quote prefixes (CARVE-P2-035).
+                    if !cur.in_note_or_description
+                        || cur.peek().map_or(true, |first| indent_columns(first) < 2)
+                    {
+                        return (raw.starts_with(LAZY) && !cur.in_quoted_body).then(|| {
+                            cur.source_col(cur.pos + offset).unwrap_or(0).max(0) as usize
+                        });
+                    }
+                    let at = cur.pos + offset;
+                    let source_line = cur.source_line(at)?;
+                    let stripped = cur.source_col(at)?;
+                    let walked =
+                        (stripped + indent_columns(strip_lazy(raw)) as isize).max(0) as usize;
+                    Some(crate::parse::own_lines::authored_visual_column(
+                        source_line,
+                        walked + 1,
+                    ))
                 },
             ) {
                 RefusedBraceRun::Lines(count) => {
