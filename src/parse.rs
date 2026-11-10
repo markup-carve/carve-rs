@@ -1184,6 +1184,7 @@ fn parse_with_options_mode_and_index_once(
                     outer_plus_after_blank: false,
                     item_marker_at_start: false,
                     marker_tail: None,
+                    marker_brace_column: None,
                     in_quoted_body: false,
                     sublists_carry_authored_base: false,
                 },
@@ -2229,6 +2230,7 @@ fn parse_positioned_mapped_source_standard(
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
     cursor.in_note_or_description = source.sublists_carry_authored_base;
     cursor.marker_tail = source.marker_tail;
+    cursor.marker_brace_column = source.marker_brace_column;
     if extents.is_some() {
         cursor.block_extents = Some(Vec::new());
     }

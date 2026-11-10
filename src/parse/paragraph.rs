@@ -213,6 +213,11 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                 (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
                 true,
                 |offset, raw| {
+                    if offset == 0 && cur.pos == 0 {
+                        if let Some(column) = cur.marker_brace_column {
+                            return Some(column);
+                        }
+                    }
                     // Ownership can strip indentation from any line of a run,
                     // including its opener on a host's marker line. Compare
                     // all lines in the same authored coordinate system. A

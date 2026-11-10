@@ -386,6 +386,7 @@ fn definition_source(note: NoteBody) -> MappedSource {
         line_map: note.line_map,
         item_marker_at_start: false,
         marker_tail: None,
+        marker_brace_column: note.marker_brace_column,
         opaque_blank_lines: Vec::new(),
         discarded_outer_blank: false,
         outer_plus_after_blank: false,
@@ -775,6 +776,7 @@ struct NoteBody {
     open_colons: OpenBodyColons,
     line_map: Vec<Option<usize>>,
     col_map: Vec<Option<isize>>,
+    marker_brace_column: Option<usize>,
     positions: bool,
     /// `lines.len()` when the body last read as ending in an open paragraph.
     open_paragraph_at: Cell<Option<usize>>,
@@ -1541,6 +1543,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         comment_state.observe(def.first);
         let mut stanza = crate::parse::definition::LineBlockTail::default();
         stanza.step(def.first);
+        let body_indent = footnote_body_floor(raw_def_line);
+        // A run opened by the marker-line body compares continuations with
+        // the body's column. The note label contributes no width to that
+        // column (CARVE-P2-035, carve#5748).
+        let marker_brace_column = def.first.starts_with('{').then_some(body_indent);
         let mut note = NoteBody {
             lines: vec![def.first.to_string()],
             comment_state,
@@ -1556,13 +1563,13 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             } else {
                 Vec::new()
             },
+            marker_brace_column,
             positions: self.positions,
             open_paragraph_at: Cell::new(None),
             block_separator: None,
             quoted_fence: next_quoted_fence(None, def.first),
             lazy_brace_open: false,
         };
-        let body_indent = footnote_body_floor(raw_def_line);
         let quote_granted = def_start_line > self.first_source_line
             && self
                 .decision_at(def_start_line - 1)
@@ -4266,6 +4273,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 source: joined_source(&self.body),
                 item_marker_at_start: false,
                 marker_tail: None,
+                marker_brace_column: None,
                 reached: Vec::new(),
                 opaque_blank_lines: Vec::new(),
                 discarded_outer_blank: false,

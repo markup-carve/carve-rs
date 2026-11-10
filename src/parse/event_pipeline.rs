@@ -465,6 +465,7 @@ pub(super) fn parse_nested_mapped_blocks(
     cur.sublists_carry_authored_base = positioned && source.sublists_carry_authored_base;
     cur.in_note_or_description = source.sublists_carry_authored_base;
     cur.marker_tail = source.marker_tail;
+    cur.marker_brace_column = source.marker_brace_column;
     let mut observed = Vec::new();
     let record_extents = extents.is_some();
     let mut nested_pending = Vec::new();
@@ -3554,6 +3555,7 @@ pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
             outer_plus_after_blank: false,
             item_marker_at_start: false,
             marker_tail: None,
+            marker_brace_column: None,
             in_quoted_body: false,
             sublists_carry_authored_base: false,
         };
@@ -4105,6 +4107,7 @@ fn parse_document_with_custom_options_once(
                 outer_plus_after_blank: false,
                 item_marker_at_start: false,
                 marker_tail: None,
+                marker_brace_column: None,
                 in_quoted_body: false,
                 sublists_carry_authored_base: false,
             };
