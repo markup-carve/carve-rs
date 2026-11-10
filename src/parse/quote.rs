@@ -1649,6 +1649,8 @@ struct QuoteBody<'a> {
     block_opened_at: Option<usize>,
     list_open: bool,
     list_content_columns: Vec<usize>,
+    /// A heading at the quote column ended a refused marker body's paragraph.
+    refused_marker_heading: bool,
 }
 
 impl<'a> QuoteBody<'a> {
@@ -1658,6 +1660,7 @@ impl<'a> QuoteBody<'a> {
         options: &Options<'_>,
         line: &'a str,
     ) {
+        self.refused_marker_heading = false;
         let at = cur.pos;
         let source_line = cur.source_line(at);
         let prior = self.last_quoted_at.replace(at);
@@ -1747,6 +1750,7 @@ impl<'a> QuoteBody<'a> {
             block_opened_at: None,
             list_open: false,
             list_content_columns: Vec::new(),
+            refused_marker_heading: false,
         }
     }
 
@@ -1782,6 +1786,7 @@ impl<'a> QuoteBody<'a> {
         line: &'a str,
         stripped: &'a str,
     ) {
+        self.refused_marker_heading = false;
         // A refused block-position run leaves an open paragraph. Its immediate
         // `+` is text in that paragraph even when the line carries a quote
         // prefix; it cannot be handed to an attachment collector (R03).
@@ -2547,12 +2552,14 @@ impl<'a> QuoteBody<'a> {
             && is_plus_marker(innermost_marker_content(stripped))
         {
             self.para_open = ParaOpen::Closed;
-        } else if !nested_item_closes
+        }
+        let refused_after = !nested_item_closes
             && !self.closed_div
             && !is_blank_line(stripped)
             && self.follows_refused_brace_run()
-            && !self.para_open.get()
-        {
+            && !self.para_open.get();
+        self.refused_marker_heading = refused_after && self.outdented_marker_heading(stripped);
+        if refused_after && !self.refused_marker_heading {
             // The line after a refused brace run continues its paragraph
             // whatever it opens (CARVE-P2-035), so a lazy line can follow it.
             self.para_open = ParaOpen::from_line("x", inherited_absorption);
@@ -2590,6 +2597,19 @@ impl<'a> QuoteBody<'a> {
             self.paragraph_depth = None;
             self.absorption_depth = None;
         }
+    }
+
+    fn outdented_marker_heading(&self, stripped: &str) -> bool {
+        if detect_heading(trim_ascii_start(stripped)).is_none() {
+            return false;
+        }
+        self.brace_starts[0].is_some_and(|start| {
+            let opener = trim_ascii_start(strip_all_quotes(&self.inner.lines[start].text).0);
+            let floor = detect_list_marker_full(opener)
+                .map(|_| innermost_marker_content_col(opener))
+                .or_else(|| definition_body_content_col(opener));
+            floor.is_some_and(|floor| indent_columns(stripped) < floor)
+        })
     }
 
     // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
@@ -2955,7 +2975,8 @@ impl<'a> QuoteBody<'a> {
             .last()
             .is_some_and(|last| detect_heading(trim_ascii_start(&last.text)).is_some())
             && !stanza_open
-            && self.nested_replay.verdict(&self.inner.lines, cur) != Some(true)
+            && (self.refused_marker_heading
+                || self.nested_replay.verdict(&self.inner.lines, cur) != Some(true))
         {
             return true;
         }

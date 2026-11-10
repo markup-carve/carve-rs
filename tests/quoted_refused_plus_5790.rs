@@ -49,3 +49,15 @@ fn a_brace_line_inside_an_open_inline_span_does_not_refuse_a_block_run() {
         assert_eq!(to_html(source), expected, "{source:?}");
     }
 }
+
+#[test]
+fn an_outdented_quoted_heading_closes_the_refused_runs_item_paragraph() {
+    for (opener, rendered) in [("{.x\n> }", "{.x\n}"), ("{% a\n>  %}", "{% a\n%}")] {
+        let source = format!("> - {opener}\n> # h\nz\n");
+        let expected = format!(
+            "<blockquote>\n  <ul>\n    <li>{}</li>\n  </ul>\n  <h1 id=\"h\">h</h1>\n</blockquote>\n<p>z</p>",
+            rendered
+        );
+        assert_eq!(to_html(&source), expected, "{source:?}");
+    }
+}
