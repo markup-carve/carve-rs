@@ -43,7 +43,8 @@ fn presence_is_authoritative_on_direct_and_hoisted_headings_in_every_mode() {
         HtmlImportMode::Semantic,
         HtmlImportMode::Roundtrip,
     ] {
-        { let name = "data-carve-explicit-id";
+        {
+            let name = "data-carve-explicit-id";
             for value in ["1", "", "false", "0"] {
                 for html in [
                     format!("<h1 id=\"H\" {name}=\"{value}\">H</h1>"),

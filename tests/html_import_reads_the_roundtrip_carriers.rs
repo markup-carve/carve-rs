@@ -293,14 +293,15 @@ fn contradicting_carriers_restore_neither_meaning_with_one_warning() {
         ),
     ] {
         for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
-            { let html = html.to_owned();
+            {
+                let html = html.to_owned();
                 let json = tree(&html, mode);
                 assert_eq!(json, tree(ordinary, mode), "{mode:?} {html}");
                 let text = json.to_string();
                 for kind in &forbidden {
                     assert!(!text.contains(&format!("\"type\":\"{kind}\"")), "{html}");
                 }
-                assert!(!text.contains("data-carve-") );
+                assert!(!text.contains("data-carve-"));
                 assert_eq!(
                     dropped(&html, mode, HtmlImportSeverity::Warning),
                     1,

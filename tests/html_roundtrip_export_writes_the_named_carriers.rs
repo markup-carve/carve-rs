@@ -719,8 +719,7 @@ fn reserved_names_are_dropped_once_on_every_host_with_default_bytes_preserved() 
                 .iter()
                 .filter(|loss| loss.code == "carrier-attribute-dropped")
                 .count(),
-            row["dropped"].as_u64().unwrap() as usize
-                - source.matches("data-djot-").count(),
+            row["dropped"].as_u64().unwrap() as usize - source.matches("data-djot-").count(),
             "{}: {:?}",
             row["id"],
             result.losses

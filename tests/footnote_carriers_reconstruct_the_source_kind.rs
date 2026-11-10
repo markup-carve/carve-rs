@@ -9,7 +9,8 @@ fn footnote_carriers_restore_labels_and_inline_bodies_in_every_mode() {
         "a^[*note*]\n",
     ] {
         let html = to_html_with_options(source, &Options::default().with_roundtrip(true));
-        { let prefix = "data-carve-";
+        {
+            let prefix = "data-carve-";
             let html = html.replace("data-carve-", prefix);
             for mode in [
                 HtmlImportMode::Safe,
@@ -139,8 +140,10 @@ fn numeric_fallbacks_skip_labels_reserved_by_later_definitions() {
 
 #[test]
 fn contradictory_endnote_carriers_restore_an_ordinary_numbered_note() {
-    { let label_prefix = "data-carve-";
-        { let inline_prefix = "data-carve-";
+    {
+        let label_prefix = "data-carve-";
+        {
+            let inline_prefix = "data-carve-";
             for mode in [
                 HtmlImportMode::Safe,
                 HtmlImportMode::Semantic,
@@ -174,10 +177,7 @@ fn contradictory_endnote_carriers_restore_an_ordinary_numbered_note() {
                         &Options::default().with_roundtrip(true),
                     );
                     assert!(!exported.contains("inline-footnote"));
-                    assert!(
-                        !result.value.contains("data-carve-")
-
-                    );
+                    assert!(!result.value.contains("data-carve-"));
                     assert!(!exported.contains("data-djot-"));
                 }
             }
@@ -252,8 +252,10 @@ fn shared_footnote_carrier_recovery_controls_match_the_import_report() {
 
 #[test]
 fn rejected_carriers_do_not_reserve_another_notes_fallback_number() {
-    { let label_prefix = "data-carve-";
-        { let inline_prefix = "data-carve-";
+    {
+        let label_prefix = "data-carve-";
+        {
+            let inline_prefix = "data-carve-";
             for mode in [
                 HtmlImportMode::Safe,
                 HtmlImportMode::Semantic,
@@ -286,8 +288,10 @@ fn rejected_carriers_do_not_reserve_another_notes_fallback_number() {
 
 #[test]
 fn invalid_label_values_do_not_conflict_with_valid_inline_carriers() {
-    { let label_prefix = "data-carve-";
-        { let inline_prefix = "data-carve-";
+    {
+        let label_prefix = "data-carve-";
+        {
+            let inline_prefix = "data-carve-";
             for mode in [
                 HtmlImportMode::Safe,
                 HtmlImportMode::Semantic,

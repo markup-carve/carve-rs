@@ -104,7 +104,8 @@ fn shared_code_label_is_consumed_in_every_html_mode() {
             HtmlImportMode::Semantic,
             HtmlImportMode::Roundtrip,
         ] {
-            { let html = html.clone();
+            {
+                let html = html.clone();
                 let options = HtmlImportOptions {
                     mode,
                     ..Default::default()
@@ -115,9 +116,7 @@ fn shared_code_label_is_consumed_in_every_html_mode() {
                     &fixture["expectedNodes"],
                 );
                 let imported = carve::html_to_carve(&html, &options).unwrap().value;
-                assert!(
-                    !imported.contains("data-carve-label")
-                );
+                assert!(!imported.contains("data-carve-label"));
                 assert_eq!(carve::to_html(&imported), carve::to_html(source));
             }
         }
@@ -243,9 +242,7 @@ fn html_label_validation_precedence_and_attribute_placement() {
             "<p data-carve-label=\"unused\">x</p>",
         ] {
             let imported = carve::html_to_carve(html, &options).unwrap().value;
-            assert!(
-                !imported.contains("data-carve-label")
-            );
+            assert!(!imported.contains("data-carve-label"));
         }
     }
     let html = carve::to_html_with_options(

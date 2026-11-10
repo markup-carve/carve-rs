@@ -15,10 +15,25 @@ fn imported(input: &str) -> String {
 #[test]
 fn old_prefix_names_are_ordinary_attributes() {
     for suffix in [
-        "ref", "src", "raw", "escaped", "autolink", "footnote-label",
-        "explicit-id", "generated-id", "id-slot", "inline-footnote",
-        "col-widths", "label", "tight", "abbreviations", "xref",
-        "caption-number", "div", "line-block", "substitution",
+        "ref",
+        "src",
+        "raw",
+        "escaped",
+        "autolink",
+        "footnote-label",
+        "explicit-id",
+        "generated-id",
+        "id-slot",
+        "inline-footnote",
+        "col-widths",
+        "label",
+        "tight",
+        "abbreviations",
+        "xref",
+        "caption-number",
+        "div",
+        "line-block",
+        "substitution",
     ] {
         let name = format!("data-djot-{suffix}");
         let input = format!("<p><span {name}=\"v\">x</span></p>");
@@ -38,10 +53,25 @@ fn old_prefix_names_are_ordinary_attributes() {
 #[test]
 fn old_prefix_variants_remain_unreserved_across_hosts_and_modes() {
     let suffixes = [
-        "ref", "src", "raw", "escaped", "autolink", "footnote-label",
-        "explicit-id", "generated-id", "id-slot", "inline-footnote",
-        "col-widths", "label", "tight", "abbreviations", "xref",
-        "caption-number", "div", "line-block", "substitution",
+        "ref",
+        "src",
+        "raw",
+        "escaped",
+        "autolink",
+        "footnote-label",
+        "explicit-id",
+        "generated-id",
+        "id-slot",
+        "inline-footnote",
+        "col-widths",
+        "label",
+        "tight",
+        "abbreviations",
+        "xref",
+        "caption-number",
+        "div",
+        "line-block",
+        "substitution",
     ];
     let mut checked = 0;
     for suffix in suffixes {
@@ -63,7 +93,10 @@ fn old_prefix_variants_remain_unreserved_across_hosts_and_modes() {
                         };
                         let output = html_to_carve(
                             &html,
-                            &HtmlImportOptions { mode, ..Default::default() },
+                            &HtmlImportOptions {
+                                mode,
+                                ..Default::default()
+                            },
                         )
                         .unwrap()
                         .value;
@@ -85,6 +118,10 @@ fn retired_lint_name_does_not_suppress_heading_skip() {
         .any(|finding| finding.rule == "heading-level-skip"));
     let old = "%% carve-lint-disable a11y/heading-jump\n# One\n\n### Three\n";
     let canonical = old.replace("a11y/heading-jump", "heading-level-skip");
-    assert!(lint_carve(old).iter().any(|finding| finding.rule == "heading-level-skip"));
-    assert!(!lint_carve(&canonical).iter().any(|finding| finding.rule == "heading-level-skip"));
+    assert!(lint_carve(old)
+        .iter()
+        .any(|finding| finding.rule == "heading-level-skip"));
+    assert!(!lint_carve(&canonical)
+        .iter()
+        .any(|finding| finding.rule == "heading-level-skip"));
 }
