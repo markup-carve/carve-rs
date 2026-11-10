@@ -936,7 +936,7 @@ fn host_closed_colon_end(
 
 /// An own-line `+` keeps an unclosed fence's first blank and the payload after
 /// it; only a line that misses the host ends it (PART 0 S1 step 3, carve#5635).
-fn own_line_fence_end(
+pub(crate) fn own_line_fence_end(
     lines: CursorLines<'_>,
     start: usize,
     end: usize,

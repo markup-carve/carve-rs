@@ -916,6 +916,7 @@ struct IndentedNote<'a> {
     def_column: usize,
     span_note_end: Option<(usize, bool)>,
     note_fence: Option<FenceOpen>,
+    own_line_fence: bool,
     // A fence on a list item's marker line in the body: its payload is never
     // a definition, though the body's own fence state does not track it.
     marker_fence: Option<(FenceOpen, usize)>,
@@ -1670,6 +1671,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     open.content_col = body_indent;
                     open
                 }),
+                own_line_fence: false,
                 marker_fence: marker_line_fence(def.first),
                 body_open_below: false,
                 open_term: term_start_column(def.first).is_some(),
@@ -2097,27 +2099,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         };
         let mut fenced_block_end = |from: usize| {
             let text = trim_ascii_start(lines.get(from)?);
-            if let Some(open) = detect_fence_open(text) {
-                return Some(
-                    (from + 1..lines.len())
-                        .find(|&at| {
-                            indent_columns(lines[at]) == marker_col
-                                && is_fence_close(
-                                    strip_leading_columns(lines[at], marker_col).as_str(),
-                                    open,
-                                )
-                        })
-                        // An unclosed fence's payload keeps a lone `+` (PART 9 §17 L3,
-                        // carve#5494): only its blank ends it.
-                        .map_or_else(
-                            || {
-                                (from + 1..lines.len())
-                                    .find(|&at| is_blank_line(lines[at]))
-                                    .unwrap_or(lines.len())
-                            },
-                            |at| at + 1,
-                        ),
-                );
+            if detect_fence_open(text).is_some() {
+                let first_blank = (from + 1..lines.len())
+                    .find(|&at| is_blank_line(lines[at]))
+                    .unwrap_or(lines.len());
+                return Some(own_line_fence_end(
+                    CursorLines::Slice(lines),
+                    from,
+                    first_blank,
+                    Some(container.content_column),
+                ));
             }
             detect_line_block_open(text)
                 .or_else(|| detect_hardbreaks_block_open(text))
@@ -2203,6 +2194,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map(|(offset, line)| {
                 if pulled_closer == Some(i + offset) {
                     trim_ascii_start(line).to_string()
+                } else if i + offset > lead
+                    && detect_fence_open(trim_ascii_start(lines[lead])).is_some()
+                {
+                    strip_leading_columns(line, lead_col)
                 } else if let Some(own) = at_own_column(line, lead_col, marker_col) {
                     own
                 } else if i + offset > lead
@@ -2924,7 +2919,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
     // next footnote definition.
     fn attached_plus_block(
         &mut self,
-        state: &IndentedNote<'a>,
+        state: &mut IndentedNote<'a>,
         note: &mut NoteBody,
         line: &str,
         column: usize,
@@ -2955,6 +2950,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut attached: Vec<String> = Vec::new();
         let attached_start = *i;
+        state.own_line_fence = lines
+            .get(*i)
+            .is_some_and(|line| detect_fence_open(trim_ascii_start(line)).is_some());
         let pulled_closer = pulled_fence_closer(lines, *i, state.body_indent, state.body_indent);
         let end = pulled_closer.map_or_else(
             || {
@@ -3006,7 +3004,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         // (#611). Every other container strips its own prefix
         // and leaves the rest, which is why the same two lines
         // nest in a quote, a div and a list item.
-        let dedented = if note.lazy_brace_open {
+        let dedented = if note.lazy_brace_open
+            || (state.own_line_fence && note.comment_state.code.is_some())
+        {
             line.to_string()
         } else {
             strip_leading_columns(line, state.body_indent)
@@ -3477,20 +3477,6 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 true,
             ) {
                 RefusedBraceRun::Lines(count) => Some(count),
-                RefusedBraceRun::No(_) if quote_depth(lines[i + attached.len() - 1]) == 1 => {
-                    // The paragraph the run leads folds lazily into the note too.
-                    attrs_block_len_at(0, opener.as_str(), continuation.iter().copied())
-                        .filter(|&count| count > 1)
-                        .map(|count| {
-                            count
-                                + continuation[count - 1..]
-                                    .iter()
-                                    .take_while(|line| {
-                                        line_starts_paragraph(trim_ascii_start(line))
-                                    })
-                                    .count()
-                        })
-                }
                 RefusedBraceRun::No(_) => None,
             };
             if let Some(count) = count {
@@ -3512,7 +3498,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     && line_starts_paragraph(trim_ascii_start(raw))
                     && !trim_ascii_start(raw).starts_with('{')
             }) {
-                attached.push((*raw).to_owned());
+                attached.push(note.frame_lazy(indent_columns(raw), trim_ascii_start(raw)));
             }
         }
         // The line after a refused run is still in its paragraph, even when
@@ -3660,7 +3646,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut in_skipped_note = false;
         for (offset, line) in attached.iter().take(count).cloned().enumerate() {
-            let col = (lines[i + offset].chars().count() - line.chars().count()) as isize;
+            let col = lines[i + offset].chars().count() as isize - line.chars().count() as isize;
             in_skipped_note = offset < lead
                 && if parse_footnote_def_line(trim_ascii_start(&line)).is_some() {
                     false

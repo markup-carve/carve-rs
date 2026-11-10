@@ -1530,7 +1530,7 @@ pub(in crate::parse) fn collect_definition_body(
         content_column,
         owner: continuation_marker::Kind::Description,
     };
-    let mut body = DefinitionBodyCollector::new(seed, content_column, container, options);
+    let mut body = DefinitionBodyCollector::new(seed, content_column, container, options, cur);
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
         match body.take_line(cur, fence, line, admission.blank) {
             BodyStep::Next => continue,
@@ -1597,6 +1597,8 @@ struct DefinitionBodyCollector<'s, 'o> {
     comment_state: BodyCommentState,
     open_colons: OpenBodyColons,
     retained_fence: Option<(FenceOpen, bool)>,
+    own_line_fence: bool,
+    refused_seed_brace: bool,
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
     // lines below, which cannot close it - but an INDENTED closer written at or
@@ -1631,6 +1633,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         content_column: usize,
         container: IndentContainer,
         options: &'s Options<'o>,
+        cur: &LineCursor<'_>,
     ) -> Self {
         let last = seed.lines().last();
         let paragraph_owner_is_item =
@@ -1643,6 +1646,16 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         for raw in seed.lines() {
             comment_state.observe(raw);
         }
+        let refused_seed_brace = seed.lines().last().is_some_and(|line| {
+            matches!(
+                refused_brace_run(
+                    std::iter::once(line)
+                        .chain((cur.pos..cur.lines.len()).map_while(|at| cur.lines.line(at))),
+                    true
+                ),
+                RefusedBraceRun::Lines(1)
+            )
+        });
         Self {
             seed,
             content_column,
@@ -1691,6 +1704,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             comment_state,
             open_colons: OpenBodyColons::from_source(seed),
             retained_fence: None,
+            own_line_fence: false,
+            refused_seed_brace,
             nested_lead_fence,
         }
     }
@@ -2059,6 +2074,10 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
 
     fn take_plus_block(&mut self, cur: &mut LineCursor<'_>, column: usize) {
         cur.consume();
+        self.own_line_fence = !is_plus_marker(trim_ascii_start(self.seed))
+            && cur
+                .peek()
+                .is_some_and(|line| detect_fence_open(trim_ascii_start(line)).is_some());
         let mut attached = LineBuffer::default();
         let cursor_lines = cur.lines;
         let content_column = self.content_column;
@@ -2165,7 +2184,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         //
         // The residual is written back as the spaces the tab bought past
         // the margin, which is what makes the two spellings agree.
-        let mut sliced = slice_columns(line, self.content_column.min(indent), true);
+        let payload_column = if self.own_line_fence && self.comment_state.code.is_some() {
+            0
+        } else {
+            self.content_column.min(indent)
+        };
+        let mut sliced = slice_columns(line, payload_column, true);
         let host_colon_opener = indent > self.content_column
             && self.lines.last().is_some_and(|prior| is_blank_line(prior))
             && fence.open.is_none()
@@ -2193,7 +2217,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                 .map(String::as_str)
                 .or_else(|| self.seed.lines().last())
                 .is_some_and(|line| strip_blockquote_prefix(line).is_some());
-        if host_colon_opener || caption_after_quote_blank {
+        if host_colon_opener
+            || caption_after_quote_blank
+            || (self.refused_seed_brace
+                && indent >= self.content_column
+                && parse_standalone_attrs(opener).is_some())
+        {
             sliced = trim_ascii_start(&sliced).to_owned();
         }
         let term_past_column = self

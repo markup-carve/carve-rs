@@ -206,29 +206,28 @@ fn wrapped_attrs_run_at<'a>(
     None
 }
 
-/// What a block-position brace run says when its only fault is a continuation
-/// at or below its `{` column (carve#5080): the run is literal paragraph text.
+/// What a block-position brace opener says when its continuation is refused.
 pub(crate) enum RefusedBraceRun {
-    /// The run is refused and takes this many lines.
+    /// The refused opener is literal and claims only its own line.
     Lines(usize),
     /// Not refused. A comment run scanned this many lines, and none of them
     /// opens a refused comment run either.
     No(usize),
 }
 
-/// `lazy_refuses` is false in a quote, whose lazy line keeps an attribute run inline.
+/// A run takes no lazy continuation lines in any container (carve#5830).
 pub(crate) fn refused_brace_run<'a>(
     lines: impl Iterator<Item = &'a str>,
-    lazy_refuses: bool,
+    _lazy_refuses: bool,
 ) -> RefusedBraceRun {
-    refused_brace_run_with_columns(lines, lazy_refuses, |_, _| None)
+    refused_brace_run_with_columns(lines, true, |_, _| None)
 }
 
 /// Collection may rebase ordinary and framed lazy lines. Callers with an
 /// authored-column map supply each line's original brace-continuation column.
 pub(crate) fn refused_brace_run_with_columns<'a>(
     mut lines: impl Iterator<Item = &'a str>,
-    lazy_refuses: bool,
+    _lazy_refuses: bool,
     mut source_column: impl FnMut(usize, &str) -> Option<usize>,
 ) -> RefusedBraceRun {
     let Some(first) = lines.next() else {
@@ -249,10 +248,16 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
     if !opener.starts_with('{') {
         return RefusedBraceRun::No(0);
     }
+    if opener.as_bytes().get(1).is_some_and(|byte| {
+        matches!(
+            byte,
+            b'+' | b'-' | b'~' | b'=' | b'*' | b'/' | b'_' | b'^' | b','
+        )
+    }) {
+        return RefusedBraceRun::No(0);
+    }
     let opener_column = column_of(0, first, &mut source_column);
     let comment = opener.starts_with("{%");
-    let mut repaired: Vec<String> = Vec::new();
-    let mut shallow = false;
     let mut depth = 0usize;
     let mut brace_column = opener_column;
     for (n, raw) in std::iter::once(first).chain(lines).enumerate() {
@@ -260,9 +265,8 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
             break;
         }
         let line = strip_lazy(raw);
-        // A lazy line has no column, so it never continues a comment run (carve#5189).
-        if !lazy_refuses && !comment && line.len() != raw.len() {
-            return RefusedBraceRun::No(0);
+        if n > 0 && line.len() != raw.len() {
+            return RefusedBraceRun::Lines(1);
         }
         let column = column_of(n, raw, &mut source_column);
         let rest = trim_ascii_start(line);
@@ -270,26 +274,14 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
             return RefusedBraceRun::No(0);
         }
         if n > 0 && column <= brace_column {
-            shallow = true;
+            return RefusedBraceRun::Lines(1);
         }
         if comment {
             if line.contains("%}") {
-                return if shallow {
-                    RefusedBraceRun::Lines(n + 1)
-                } else {
-                    RefusedBraceRun::No(n + 1)
-                };
+                return RefusedBraceRun::No(n + 1);
             }
             continue;
         }
-        let pad = if n == 0 {
-            0
-        } else {
-            (column.saturating_sub(opener_column))
-                .max(brace_column + 1 - opener_column)
-                .max(1)
-        };
-        repaired.push(format!("{}{}", " ".repeat(pad), trim_ascii_end(rest)));
         let mut quote = None;
         let mut source_column = column;
         let mut chars = rest.chars();
@@ -317,14 +309,7 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
             };
         }
         if depth == 0 {
-            let valid = shallow
-                && wrapped_attrs_run(repaired.iter().map(String::as_str))
-                    .is_some_and(|(_, count)| count == n + 1);
-            return if valid {
-                RefusedBraceRun::Lines(n + 1)
-            } else {
-                RefusedBraceRun::No(0)
-            };
+            return RefusedBraceRun::No(0);
         }
     }
     RefusedBraceRun::No(if comment { usize::MAX } else { 0 })
@@ -485,7 +470,7 @@ pub(in crate::parse) fn visual_column_before(line: &str, end: usize) -> usize {
 /// fragments also end the window before a later opener is skipped.
 pub(in crate::parse) fn quoted_attrs_block_len<'a>(
     stripped: &'a str,
-    opener_source_column: usize,
+    _opener_source_column: usize,
     rest: impl Iterator<Item = &'a str>,
 ) -> QuotedAttrsBlock {
     if !stripped.contains('{') {
@@ -514,11 +499,10 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
         return QuotedAttrsBlock::No;
     }
     let mut block = vec![opener.to_string()];
-    let opener_frame_offset = opener_source_column.saturating_sub(indent_columns(opener));
     let mut met_a_closer = false;
     for line in rest {
-        // A continuation need not supply every quote prefix. Read the prefixes
-        // it does supply, then compare the remaining line at its written column.
+        // A block-position run takes no lazy line: every continuation carries
+        // the quote prefixes of the opener (carve#5830 rule B).
         let mut inner = line;
         let mut prefixes = 0;
         for _ in 0..=nested_depth {
@@ -532,25 +516,10 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
         if strip_blockquote_prefix(inner).is_some() {
             break;
         }
-        if prefixes != 0 && prefixes != nested_depth + 1 {
-            // A shallower quoted continuation has its own owner transition.
-            // Only a fully prefixed or wholly unprefixed run is read here.
-            break;
+        if prefixes != nested_depth + 1 {
+            return QuotedAttrsBlock::NoneWithin(block.len());
         }
-        // Compare an unprefixed continuation in the opener's source frame.
-        let normalized = if prefixes == nested_depth + 1 {
-            inner.to_string()
-        } else {
-            let payload_start = line.len() - trim_ascii_start(inner).len();
-            let column =
-                visual_column_before(line, payload_start).saturating_sub(opener_frame_offset);
-            if column <= indent_columns(opener) {
-                // A refused run can leave later lines to open their own inline
-                // constructs. Do not mark those lines as scanned attribute body.
-                return QuotedAttrsBlock::NoneWithin(block.len());
-            }
-            format!("{}{}", " ".repeat(column), trim_ascii_start(inner))
-        };
+        let normalized = inner.to_string();
         #[cfg(test)]
         ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + inner.len()));
         if !is_blank_line(&normalized) && !valid_wrapped_attr_continuation(&normalized) {

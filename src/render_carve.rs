@@ -4379,7 +4379,7 @@ fn render_nodes_with_verbatim(
         if matches!(node, InlineNode::Comment(c) if c.delimited)
             && (out.is_empty() || out.ends_with('\n'))
         {
-            rendered = indent_wrapped_comment(&rendered);
+            rendered = indent_wrapped_comment(&dedent_wrapped_comment(&rendered));
         }
         out.push_str(&rendered);
         if !rendered.is_empty() {
@@ -4408,7 +4408,8 @@ fn render_nodes_with_verbatim(
 /// A `{% ... %}` comment. A wrapped line sits past the `{`, or the comment
 /// would read as text (carve#5080).
 fn delimited_comment_source(content: &str) -> String {
-    indent_wrapped_comment(&format!("{{%{} %}}", pad_delimited(content)))
+    let written = format!("{{%{} %}}", pad_delimited(content));
+    indent_wrapped_comment(&dedent_wrapped_comment(&written))
 }
 
 /// Indent every wrapped line of a written `{% ... %}` but a closer line, which
@@ -4419,6 +4420,29 @@ fn indent_wrapped_comment(written: &str) -> String {
         None => (written, ""),
     };
     format!("{}{closer}", body.replace('\n', "\n "))
+}
+
+/// The parser retains the authored margin in a comment's payload. Rebase that
+/// margin before writing the run at its new host column, so repeated formatting
+/// does not add another host margin on each pass.
+fn dedent_wrapped_comment(written: &str) -> String {
+    let (body, closer) = match written.strip_suffix("\n %}") {
+        Some(body) => (body, "\n %}"),
+        None => (written, ""),
+    };
+    let mut lines = body.split('\n');
+    let Some(first) = lines.next() else {
+        return written.to_owned();
+    };
+    let rest: Vec<&str> = lines.collect();
+    let mut out = first.to_owned();
+    for line in rest {
+        out.push('\n');
+        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        out.push_str(&line[indent..]);
+    }
+    out.push_str(closer);
+    out
 }
 
 fn inline_hosts_caption(node: &InlineNode) -> bool {

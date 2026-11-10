@@ -213,13 +213,8 @@ struct LeadParagraph {
     // image's is not, and its unpromoted text is trimmed.
     inline_image_lead: bool,
     literal_colon_opener: Option<usize>,
-    // Refused brace runs among the lines (carve#5080), and whether the next
-    // line joins whatever it opens.
+    // The literal opener of each refused brace run.
     literal: Vec<(usize, usize)>,
-    after_refused: bool,
-    // An unclosed fence-shaped follower and its column: a closer indented past
-    // it, met before anything ends the paragraph, is still its text.
-    open_follower: Option<(FenceOpen, usize)>,
     inline_span: crate::parse::paragraph::InlineSpanScan,
     /// A closed `{%` run past its `{` holds its lines up to here (CARVE-P2-035).
     comment_through: usize,
@@ -2829,8 +2824,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .or_else(|| detect_hardbreaks_block_open(content))
                 .or_else(|| detect_quote_block_open(content)),
             literal: Vec::new(),
-            after_refused: false,
-            open_follower: None,
             inline_span: Default::default(),
             comment_through: 0,
         };
@@ -2859,7 +2852,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 }
                 lead.literal.push((0, lead.lines.len()));
                 lead.inline_span.scanned = lead.lines.len();
-                lead.after_refused = true;
             }
             Some(RefusedBraceRun::No(count)) if count != usize::MAX => {
                 for _ in 1..owner_boundary.unwrap_or(count) {
@@ -2904,17 +2896,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         if self.lead_refused_brace_run(lead, next) {
             return true;
-        }
-        if let Some((open, column)) = lead.open_follower {
-            let rest = trim_ascii_start(strip_lazy(next));
-            if indent_columns(next) > column
-                && indent_columns(next) >= self.content_col
-                && is_fence_close(rest, open)
-            {
-                lead.open_follower = None;
-                self.fold_lead_line(lead, rest);
-                return true;
-            }
         }
         if let Some(fence_len) = lead.literal_colon_opener {
             if indent_columns(next) <= base_indent && exact_colon_fence_len(next) == Some(fence_len)
@@ -3036,61 +3017,37 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     /// A refused brace run folds into the lead as literal text, and the line
     /// after it joins whatever it opens unless it leaves the item (carve#5080).
     fn lead_refused_brace_run(&mut self, lead: &mut LeadParagraph, next: &str) -> bool {
-        if std::mem::take(&mut lead.after_refused) && indent_columns(next) > self.base_indent {
-            // A fence-shaped follower keeps its closer in the item (CARVE-P2-035).
-            let follower = detect_fence_open(trim_ascii_start(next));
-            let through = follower
-                .and_then(|open| {
-                    // A block short of the content column is read there (PART 0 S4).
-                    let content_col = self.content_col;
-                    (self.cur.pos + 1..self.cur.lines.len())
-                        .map_while(|i| self.cur.lines.line(i))
-                        .take_while(|line| {
-                            let rest = trim_ascii_start(strip_lazy(line));
-                            !is_blank_line(line)
-                                && (indent_columns(line) >= content_col
-                                    || (line_starts_paragraph(rest)
-                                        && detect_fence_open(rest).is_none()
-                                        && !rest.starts_with('{')))
-                        })
-                        // An indented closer is the follower's closer too (carve#5600).
-                        .position(|line| is_fence_close(trim_ascii_start(strip_lazy(line)), open))
-                })
-                .map_or(0, |offset| offset + 1);
-            if through == 0 {
-                lead.open_follower = follower.map(|open| (open, indent_columns(next)));
-            }
-            self.fold_lead_line(lead, trim_ascii_start(next));
-            for _ in 0..through {
-                let Some(line) = self.cur.peek() else { break };
-                self.fold_lead_line(lead, trim_ascii_start(line));
-            }
-            return true;
-        }
         if !trim_ascii_start(strip_lazy(next)).starts_with('{')
             || lead.inline_span.open(&lead.lines)
         {
             return false;
         }
-        let run = refused_brace_run_with_columns(
-            (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
-            !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
-            |offset, raw| {
-                (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
-                    .then(|| {
-                        let at = self.cur.pos + offset;
-                        let line = self.cur.source_line(at)?;
-                        let stripped = self.cur.source_col(at)?;
-                        let walked =
-                            (stripped + indent_columns(strip_lazy(raw)) as isize).max(0) as usize;
-                        Some(crate::parse::own_lines::authored_visual_column(
-                            line,
-                            walked + 1,
-                        ))
-                    })
-                    .flatten()
-            },
-        );
+        let run = if indent_columns(next) < self.content_col && !trim_ascii_end(next).ends_with('}')
+        {
+            // The opener itself reached this paragraph lazily. It cannot
+            // claim a following line as a block-position run (carve#5830).
+            RefusedBraceRun::Lines(1)
+        } else {
+            refused_brace_run_with_columns(
+                (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
+                !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
+                |offset, raw| {
+                    (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
+                        .then(|| {
+                            let at = self.cur.pos + offset;
+                            let line = self.cur.source_line(at)?;
+                            let stripped = self.cur.source_col(at)?;
+                            let walked = (stripped + indent_columns(strip_lazy(raw)) as isize)
+                                .max(0) as usize;
+                            Some(crate::parse::own_lines::authored_visual_column(
+                                line,
+                                walked + 1,
+                            ))
+                        })
+                        .flatten()
+                },
+            )
+        };
         let count = match run {
             RefusedBraceRun::Lines(count) => count,
             RefusedBraceRun::No(count)
@@ -3108,7 +3065,6 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         lead.literal.push((start, lead.lines.len()));
         lead.inline_span.scanned = lead.lines.len();
-        lead.after_refused = true;
         true
     }
 

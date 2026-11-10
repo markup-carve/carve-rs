@@ -259,7 +259,13 @@ pub(super) fn spell_list_item(
     let first = lines.next().unwrap_or_default();
     let first = first.strip_prefix(marker.as_str()).unwrap_or(first);
     let mut source = format!("{prefix}{first}\n");
-    let continuation = " ".repeat(continuation_width);
+    // A marker-glued attribute shifts a braced comment opener past the
+    // ordinary item column. Its continuation must pass the written `{`.
+    let continuation = " ".repeat(if first.starts_with("{%") {
+        continuation_width.max(prefix.len())
+    } else {
+        continuation_width
+    });
     let blank = verbatim_blank(session);
     for line in lines {
         if line.is_empty() || line == *blank {

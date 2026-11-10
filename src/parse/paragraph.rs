@@ -187,12 +187,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     let code_include = cur
         .peek()
         .and_then(|line| crate::includes::code_include_line(strip_lazy(trim_ascii_start(line))));
-    // A refused brace run is literal text, and the line after it joins the
-    // paragraph whatever it opens (carve#5080). A fence there keeps its closer.
+    // A refused opener is literal text; following lines use ordinary block rules.
     let mut literal: Vec<(usize, usize)> = Vec::new();
-    let mut forced_through: Option<usize> = None;
-    // The follower line itself: only it can extend the forced range to its closer.
-    let mut follower: Option<usize> = None;
     let mut comment_scanned_through = 0usize;
     // A closed block-position `{%` run past its `{` holds every line it spans (CARVE-P2-035).
     let mut comment_run_through = 0usize;
@@ -253,8 +249,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                     }
                     literal.push((start, lines.len()));
                     inline_span.scanned = lines.len();
-                    forced_through = Some(cur.pos);
-                    follower = Some(cur.pos);
                     continue;
                 }
                 RefusedBraceRun::No(scanned) if brace_line.starts_with("{%") => {
@@ -266,8 +260,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                 RefusedBraceRun::No(_) => {}
             }
         }
-        let forced = forced_through.is_some_and(|through| cur.pos <= through)
-            || cur.pos < comment_run_through;
+        let forced = cur.pos < comment_run_through;
         if is_blank_line(line) {
             if image_lead
                 && lines.len() == 1
@@ -283,20 +276,6 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
-        if forced && follower == Some(cur.pos) {
-            if let Some(open) = detect_fence_open(line) {
-                if let Some(closer) = (cur.pos + 1..cur.lines.len())
-                    // An indented closer is the follower's closer too (carve#5600).
-                    .find(|&k| {
-                        cur.lines
-                            .line(k)
-                            .is_some_and(|l| is_fence_close(trim_ascii_start(strip_lazy(l)), open))
-                    })
-                {
-                    forced_through = Some(closer);
-                }
-            }
-        }
         // A brace line held by the paragraph's inline pairing cannot open a
         // block attribute, whether the brace form is wrapped or complete.
         let held_brace = brace_line.starts_with('{') && inline_span.holds_brace_line(&lines, cur);
@@ -522,72 +501,47 @@ impl OpenComment {
     }
 }
 
-/// Paragraph children when refused brace runs sit among the lines: each line
-/// of a run is one literal text (carve#5080).
+/// Parse the paragraph once while protecting each refused opener's `{` from
+/// inline pairing. The rest of every line still participates in inline parsing.
 pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
     options: &Options<'_>,
     lines: &[S],
     anchors: Option<&[Option<(usize, isize)>]>,
     literal: &[(usize, usize)],
 ) -> Vec<InlineNode> {
-    let lines: Vec<&str> = lines.iter().map(AsRef::as_ref).collect();
-    let parse_range = |from: usize, to: usize| -> Vec<InlineNode> {
-        let text = lines[from..to]
-            .iter()
-            .map(|l| strip_lazy(l))
-            .collect::<Vec<_>>()
-            .join("\n");
-        match anchors {
-            Some(anchors) => {
-                parse_inline_lines_with_anchor(&text, options, anchors[from..to].to_vec())
-            }
-            None => parse_inline_with_options(&text, options),
-        }
-    };
-    let literal_range = |from: usize, to: usize| -> Vec<InlineNode> {
-        let text = lines[from..to]
-            .iter()
-            .map(|l| strip_lazy(l))
-            .collect::<Vec<_>>()
-            .join("\n");
-        literal_line_children(&parse_range(from, to), &text)
-    };
-    let mut out: Vec<InlineNode> = Vec::new();
-    let mut push = |nodes: Vec<InlineNode>| {
-        if nodes.is_empty() {
-            return;
-        }
-        if let Some(last) = out
-            .last()
-            .filter(|last| !matches!(last, InlineNode::HardBreak(_)))
-        {
-            let pos = last.pos().zip(nodes[0].pos()).map(|(before, after)| Pos {
-                start_line: before.end_line,
-                start_column: before.end_column,
-                start_offset: before.end_offset,
-                end_line: after.start_line,
-                end_column: after.start_column,
-                end_offset: after.start_offset,
-                ..before.clone()
-            });
-            out.push(InlineNode::SoftBreak(Break { pos }));
-        }
-        out.extend(nodes);
-    };
-    let mut at = 0;
+    const STAND_IN: char = '\u{e000}';
+    let mut source: Vec<String> = lines
+        .iter()
+        .map(|line| strip_lazy(line.as_ref()).to_owned())
+        .collect();
     for &(start, end) in literal {
-        if start > at {
-            push(parse_range(at, start));
+        for line in source.iter_mut().take(end).skip(start) {
+            if let Some(at) = line.find('{') {
+                line.replace_range(at..at + 1, &STAND_IN.to_string());
+            }
         }
-        for k in start..end {
-            push(literal_range(k, k + 1));
+    }
+    let source = source.join("\n");
+    let mut nodes = match anchors {
+        Some(anchors) => parse_inline_lines_with_anchor(&source, options, anchors.to_vec()),
+        None => parse_inline_with_options(&source, options),
+    };
+    struct Restore;
+    impl crate::include_walk::SubtreeVisitor for Restore {
+        fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+            for node in nodes {
+                if let InlineNode::Text(text) = node {
+                    if text.value.contains(STAND_IN) {
+                        text.value = text.value.replace(STAND_IN, "{");
+                    }
+                }
+                crate::include_walk::visit_inline_children(node, self);
+            }
         }
-        at = end;
     }
-    if at < lines.len() {
-        push(parse_range(at, lines.len()));
-    }
-    out
+    use crate::include_walk::SubtreeVisitor;
+    Restore.inlines(&mut nodes);
+    nodes
 }
 
 /// Whether `line`, seen while accumulating a paragraph, ends it and starts a
