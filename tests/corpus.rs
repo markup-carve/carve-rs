@@ -1703,38 +1703,6 @@ b
 <p k="v">b</p>"##,
     ),
     (
-        "1042-a-quoted-nested-item-keeps-three-verse-spaces",
-        "carve#5755: spec pin behavior pending its separate engine port",
-        r##"<blockquote>
-  <ul>
-    <li>a
-      <ul>
-        <li>a
-          <div class="line-block">
-            <p>&nbsp;z</p>
-          </div>
-        </li>
-      </ul>
-    </li>
-  </ul>
-</blockquote>"##,
-    ),
-    (
-        "1044-a-nested-item-without-a-quote-keeps-three-verse-spaces",
-        "carve#5755: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li>a
-    <ul>
-      <li>a
-        <div class="line-block">
-          <p>&nbsp;z</p>
-        </div>
-      </li>
-    </ul>
-  </li>
-</ul>"##,
-    ),
-    (
         "1045-a-nested-code-body-keeps-its-literal-content-after-frame-stripping",
         "carve#5755: spec pin behavior pending its separate engine port",
         r##"<ul>
