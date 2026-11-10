@@ -540,7 +540,7 @@ fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
 /// R03 also applies before the ownership walk classifies a quoted `+`.
 /// Normalize quote prefixes and marker-line leads, but keep an unprefixed
 /// continuation at its written column (CARVE-P2-035).
-fn quoted_plus_after_refused_run(lines: &[&str], at: usize) -> bool {
+fn quoted_plus_after_refused_run(lines: &[&str], at: usize, marker_floor: Option<usize>) -> bool {
     let Some(current) = lines.get(at) else {
         return false;
     };
@@ -557,7 +557,7 @@ fn quoted_plus_after_refused_run(lines: &[&str], at: usize) -> bool {
         return false;
     }
     let mut run = Vec::new();
-    for &source in lines[..at].iter().rev() {
+    for (index, &source) in lines[..at].iter().enumerate().rev() {
         let inner = strip_quote_levels(source, depth).unwrap_or(source);
         if is_blank_line(inner) {
             break;
@@ -580,6 +580,25 @@ fn quoted_plus_after_refused_run(lines: &[&str], at: usize) -> bool {
         let opens = trim_ascii_start(&normalized).starts_with('{');
         run.push(normalized);
         if opens {
+            // A line short of an open marker body's content column is lazy
+            // paragraph text there, even if it resembles a brace opener.
+            if marker_floor.is_some_and(|floor| {
+                inner
+                    .find('{')
+                    .is_some_and(|brace| doc_column(inner, &inner[brace..]) < floor)
+            }) {
+                return false;
+            }
+            let prefix: Vec<&str> = lines[..index]
+                .iter()
+                .rev()
+                .map(|line| strip_quote_levels(line, depth).unwrap_or(line))
+                .take_while(|line| !is_blank_line(line))
+                .collect();
+            let mut inline = paragraph::InlineSpanScan::default();
+            if inline.open(&prefix.into_iter().rev().collect::<Vec<_>>()) {
+                return false;
+            }
             break;
         }
     }
@@ -3489,7 +3508,13 @@ impl<'a> Walk<'a> {
         let line = self.first_line + at;
         let mut reached = 0;
         let mut plus = None;
-        let quoted_refused_plus = quoted_plus_after_refused_run(&self.lines, at);
+        let marker_floor = self
+            .frames
+            .iter()
+            .rev()
+            .find(|frame| frame.kind.is_marker_body())
+            .map(|frame| frame.col);
+        let quoted_refused_plus = quoted_plus_after_refused_run(&self.lines, at, marker_floor);
         // An eligible marker the next block does not attach to is still consumed (carve#5013).
         let mut plus_refusal = None;
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);

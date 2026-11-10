@@ -2557,18 +2557,21 @@ impl<'a> QuoteBody<'a> {
             // whatever it opens (CARVE-P2-035), so a lazy line can follow it.
             self.para_open = ParaOpen::from_line("x", inherited_absorption);
         }
-        let marker_body = innermost_marker_content(trim_ascii_start(strip_all_quotes(stripped).0));
-        let marker_body = strip_definition_marker(trim_ascii_start(marker_body))
-            .map_or(marker_body, |(body, _)| body);
-        if marker_body.starts_with('{') {
-            let comment_start = self.brace_starts.iter().flatten().copied().find(|&start| {
-                trim_ascii_start(strip_all_quotes(&self.inner.lines[start].text).0)
-                    .starts_with("{%")
-            });
-            self.brace_starts = [
-                Some(self.inner.lines.len()),
-                comment_start.or(self.brace_starts[0]),
-            ];
+        if stripped.contains('{') {
+            let marker_body =
+                innermost_marker_content(trim_ascii_start(strip_all_quotes(stripped).0));
+            let marker_body = strip_definition_marker(trim_ascii_start(marker_body))
+                .map_or(marker_body, |(body, _)| body);
+            if marker_body.starts_with('{') {
+                let comment_start = self.brace_starts.iter().flatten().copied().find(|&start| {
+                    trim_ascii_start(strip_all_quotes(&self.inner.lines[start].text).0)
+                        .starts_with("{%")
+                });
+                self.brace_starts = [
+                    Some(self.inner.lines.len()),
+                    comment_start.or(self.brace_starts[0]),
+                ];
+            }
         }
         self.scan_attrs_block(cur, at, stripped, prior_paragraph);
         // An attribute line leaves no paragraph open, so the next line is not lazy.
@@ -3106,6 +3109,39 @@ impl<'a> QuoteBody<'a> {
         }
         let kept = lines.last().is_some_and(|line| line.text.contains('}'))
             && self.brace_starts.iter().flatten().any(|&start| {
+                let opener = strip_all_quotes(&lines[start].text).0;
+                let opener_col = if detect_list_marker_full(opener).is_some() {
+                    innermost_marker_content_col(opener)
+                } else {
+                    indent_columns(opener)
+                };
+                let prior_floor = lines[..start]
+                    .iter()
+                    .rev()
+                    .map(|line| strip_all_quotes(&line.text).0)
+                    .take_while(|line| !is_blank_line(line))
+                    .find_map(|line| {
+                        detect_list_marker_full(line)
+                            .map(|_| innermost_marker_content_col(line))
+                            .or_else(|| definition_body_content_col(line))
+                    });
+                if prior_floor
+                    .or_else(|| self.list_content_columns.last().copied())
+                    .is_some_and(|floor| opener_col < floor)
+                    && detect_list_marker_full(opener).is_none()
+                {
+                    return false;
+                }
+                let prefix: Vec<&str> = lines[..start]
+                    .iter()
+                    .rev()
+                    .map(|line| strip_all_quotes(&line.text).0)
+                    .take_while(|line| !is_blank_line(line))
+                    .collect();
+                let mut inline = super::paragraph::InlineSpanScan::default();
+                if inline.open(&prefix.into_iter().rev().collect::<Vec<_>>()) {
+                    return false;
+                }
                 let run: Vec<String> = lines[start..]
                     .iter()
                     .map(|line| {

@@ -28,3 +28,24 @@ fn a_quoted_plus_after_a_refused_run_is_paragraph_text_in_each_host() {
         assert_eq!(to_html(source), expected, "{source:?}");
     }
 }
+
+#[test]
+fn a_brace_line_inside_an_open_inline_span_does_not_refuse_a_block_run() {
+    let cases = [
+        (
+            "> - a\n> {.x\n> }\n> +\n> z\n",
+            "<blockquote>\n  <ul>\n    <li>a\n{.x\n}\n      z\n    </li>\n  </ul>\n</blockquote>",
+        ),
+        (
+            "> - `a\n> {.x\n> }\n> +\n> z\n",
+            "<blockquote>\n  <ul>\n    <li><code>a\n{.x\n}</code>\n      z\n    </li>\n  </ul>\n</blockquote>",
+        ),
+        (
+            "> - [a\n> {.x\n> }\n> +\n> z\n",
+            "<blockquote>\n  <ul>\n    <li>[a\n{.x\n}\n      z\n    </li>\n  </ul>\n</blockquote>",
+        ),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(to_html(source), expected, "{source:?}");
+    }
+}
