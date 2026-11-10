@@ -907,6 +907,8 @@ struct Walk<'a> {
     /// The frames a losing duplicate's `+` line closed, restored at a blank after it.
     losing_restore: Option<Vec<Frame>>,
     reach: usize,
+    /// The walk reads a marker body a collector cut out, so its root is that body.
+    body_root: bool,
     runs: std::cell::OnceCell<Runs>,
     quoted_fence_closers: std::cell::OnceCell<ScopedFenceClosers>,
     quote_exits: std::cell::RefCell<std::collections::HashMap<usize, Vec<usize>>>,
@@ -1293,6 +1295,8 @@ fn walk_traced(
         before_note_plus: None,
         losing_restore: None,
         reach: 0,
+        // Only `walk_body` reads without frontmatter.
+        body_root: !frontmatter,
         runs: std::cell::OnceCell::new(),
         quoted_fence_closers: std::cell::OnceCell::new(),
         quote_exits: std::cell::RefCell::new(std::collections::HashMap::new()),
@@ -3668,7 +3672,7 @@ impl<'a> Walk<'a> {
             // A marker that a marker body owns, or that misses one, opens a list
             // (PART 0 S3, carve#4545, carve#4860).
             && !(matches!(form, Form::Item(..))
-                && (self.frames[reached].kind.is_marker_body()
+                && (self.marker_body(reached)
                     || self.frames[reached + 1..].iter().any(|f| f.kind.is_marker_body())))
         {
             if self.decide && matches!(form, Form::Item(..)) {
@@ -4747,6 +4751,10 @@ impl<'a> Walk<'a> {
         found
     }
 
+    fn marker_body(&self, frame: usize) -> bool {
+        self.frames[frame].kind.is_marker_body() || (frame == 0 && self.body_root)
+    }
+
     fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
         // Line-final whitespace is trimmed before a line is read.
         let rest = rest.trim_end_matches([' ', '\t']);
@@ -4856,7 +4864,7 @@ impl<'a> Walk<'a> {
         }
         if let Some((width, head, axes)) = list_marker(rest) {
             // §10 I2: under an open paragraph a marker opens only in a marker body (carve#4860).
-            if owner_para && !owner_kind.is_marker_body() {
+            if owner_para && !owner_kind.is_marker_body() && !(owner == 0 && self.body_root) {
                 return Form::Text;
             }
             return Form::Item(width, head, axes);
