@@ -3180,6 +3180,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let nested_lazy = state.body_open_below
             && !is_note_def
             && residual < 2
+            && !is_list_marker(flush)
             && (keeps_paragraph_open(trimmed)
                 || (flush.starts_with('[') && own_lines::foldable_plain_line(flush)))
             && nested_note_paragraph_open(note, self.options);
@@ -4113,6 +4114,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let lazy_in_nested = below_nested
             && walk.opacity.code.is_none()
             && walk.opacity.comment.is_none()
+            // A marker below the nested body's floor opens in the reached
+            // ancestor; it cannot continue the nested paragraph (PART 0 S3).
+            && !is_list_marker(text)
             && !interrupts_paragraph_with_rest(text, &self.lines[*i + 1..])
             && !is_colon_fence_opener_shape(text)
             && !exact_colon_fence_len(text).is_some_and(|run| run >= 3)
