@@ -950,13 +950,18 @@ fn own_line_fence_end(
     ) else {
         return end;
     };
-    if !lines.line(end).is_some_and(is_blank_line)
-        || (start + 1..end).any(|at| is_fence_close(trim_ascii_start(lines.at(at)), open))
-    {
+    let first_blank = (start + 1..lines.len()).find(|&at| is_blank_line(lines.at(at)));
+    let Some(first_blank) = first_blank else {
+        return end;
+    };
+    if first_blank > end {
+        return end;
+    }
+    if (start + 1..first_blank).any(|at| is_fence_close(trim_ascii_start(lines.at(at)), open)) {
         return end;
     }
     let opener_col = indent_columns(lines.at(start));
-    let mut at = end;
+    let mut at = first_blank;
     while let Some(line) = lines.line(at) {
         if is_blank_line(line) {
             at += 1;
@@ -968,10 +973,23 @@ fn own_line_fence_end(
         }
         at += 1;
         if closes {
+            // A caption immediately after the closer belongs to this
+            // attached fenced block, even when the first blank bounded the
+            // initial attachment scan.
+            if lines.line(at).is_some_and(|next| {
+                indent_columns(next) == opener_col
+                    && caption_content(trim_ascii_start(next)).is_some()
+            }) {
+                return at + 1;
+            }
             break;
         }
     }
-    at
+    if end == first_blank {
+        at
+    } else {
+        at.min(end)
+    }
 }
 
 pub(crate) fn parse_continuation_block(
@@ -1093,7 +1111,33 @@ pub(crate) fn parse_continuation_block(
         },
     );
     let attached_end = if own_line {
-        own_line_fence_end(lines, start, attached_end, content_col)
+        // A nested item's attachment can continue at the enclosing item's
+        // content column after the first blank. The nested cursor is already
+        // within that host; its marker column is the enclosing content column.
+        let fence_host_col = content_col.map(|col| {
+            if cur.in_note_or_description && base_indent > 0 {
+                col.min(base_indent)
+            } else {
+                col
+            }
+        });
+        // A leading attribute run is part of the same attached block. Once
+        // the ordinary extent scan found its closer, the rebased slice no
+        // longer carries the outer item's authored content column.
+        if leading_attrs.is_some()
+            && (start + 1..attached_end).any(|at| {
+                lines.line(at).is_some_and(|line| {
+                    lines
+                        .line(start)
+                        .and_then(|open| detect_fence_open(trim_ascii_start(open)))
+                        .is_some_and(|open| is_fence_close(trim_ascii_start(line), open))
+                })
+            })
+        {
+            attached_end
+        } else {
+            own_line_fence_end(lines, start, attached_end, fence_host_col)
+        }
     } else {
         attached_end
     };

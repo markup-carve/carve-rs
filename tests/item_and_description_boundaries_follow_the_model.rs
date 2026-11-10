@@ -36,9 +36,8 @@ fn a_blank_before_a_refused_plus_stays_in_the_deeper_item() {
 }
 
 #[test]
-#[ignore = "carve-rs#4184"]
 fn a_refused_plus_after_a_blank_keeps_the_follower_in_the_deeper_item() {
-    // The owner follows carve#5637; the looseness still differs from the model.
+    // The owner and list looseness follow carve#5637 and PART 0 L6.
     assert_rows(&[(
         "- a0\n  - ```\n\n  +\n    x\n",
         "<ul><li><p>a0</p><ul><li><pre><code></code></pre>\n        x\n      </li></ul></li></ul>",

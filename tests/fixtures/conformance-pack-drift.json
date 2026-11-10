@@ -3,21 +3,19 @@
   "entries": [
     {
       "ticket": "markup-carve/carve#5658",
-      "cause": "the pinned pack predates the plus ownership table (carve#5716: carve#5635, carve#5637, carve#5639); carve main now matches this engine",
+      "cause": "the pinned pack predates the plus ownership table (carve#5716: carve#5632, carve#5635, carve#5637, carve#5639); carve main now matches this engine",
       "cases": [
         "fences-06ce61cd4497",
+        "fences-0af850d06646",
+        "fences-12ba255d2b80",
         "fences-4e8b129ee1fb",
+        "fences-56c4bb18eac4",
         "fences-8ed246bfdc05",
+        "fences-9215ec1e0b3d",
+        "fences-bc7a7b28fd34",
         "notes-5c5cdf831f5f",
         "notes-71dd1fb4f83e",
         "notes-9980f8efdfe9"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve-rs#4185",
-      "cause": "the own-line fence now matches carve main (carve#5635); the paragraph after it still reads the indented closer as inline code text",
-      "cases": [
-        "fences-12ba255d2b80"
       ]
     },
     {

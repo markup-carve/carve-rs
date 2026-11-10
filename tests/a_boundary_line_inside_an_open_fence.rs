@@ -156,10 +156,10 @@ fn the_first_block_definition_collector_keeps_a_colon_fence_whole() {
 // change that broke it would otherwise only show up as a corpus failure.
 
 #[test]
-fn the_list_item_collector_keeps_a_code_fence_whole() {
+fn the_list_item_collector_ends_an_own_line_attachment_at_a_missed_host() {
     assert_eq!(
         flat(&format!("- x\n+\n{CODE}\nz\n")),
-        format!("<ul> <li>x {CODE_HTML} </li> </ul> <p>z</p>")
+        "<ul> <li>x <pre><code>a </code></pre> </li> </ul> <p>b</p> <pre><code> z </code></pre>"
     );
 }
 
