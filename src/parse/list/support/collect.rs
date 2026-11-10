@@ -224,29 +224,35 @@ impl DescriptionLeadSpanScan {
                 continue;
             };
             let lead = rest.len() - after.len();
-            // The entry above: the nearest line at or left of this column is its term.
-            let mut paragraph_after_term = false;
+            // A lead continues only a chain that reaches a term at this column.
+            // Deeper content before the first description ends that term's entry.
+            let mut deeper = false;
             for above in (0..self.at - 1).rev().map(&line_at) {
                 let (above_col, above_rest, _) = quote_free_measure(above);
                 if above_rest.is_empty() {
                     continue;
                 }
                 if above_col > col {
-                    paragraph_after_term |= line_starts_paragraph(above_rest)
-                        && !is_line_comment_any_column(above_rest);
+                    deeper = true;
                     continue;
                 }
-                if above_col == col
-                    && (above_rest.starts_with(": ")
-                        || above_rest.starts_with(":: ") && !paragraph_after_term)
+                if above_col != col
+                    || !(above_rest.starts_with(": ") || above_rest.starts_with(":: "))
                 {
+                    break;
+                }
+                if above_rest.starts_with(":: ") {
+                    if deeper {
+                        break;
+                    }
                     self.span = Some(LeadSpan {
                         run,
                         owner: col + lead,
                         depth: quotes.len(),
                     });
+                    break;
                 }
-                break;
+                deeper = false;
             }
         }
         self.span.is_some()
@@ -385,6 +391,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && !previous.contains("%}")
     });
     let mut held_comment_span = HeldCommentSpan::new();
+    let mut description_entry_cache = std::collections::HashMap::new();
     let mut body_code_fence = OpenCodeFenceScan::default();
     let mut line_block_payload = LineBlockPayloadScan::default();
     let mut line_map = Vec::new();
@@ -1943,7 +1950,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && colon_open.is_empty()
             && detect_comment_fence_line_any_column(line).is_none()
         {
-            if let Some((open, opener_column)) = marker_line_comment_opener(line) {
+            if let Some((open, opener_column)) = marker_line_comment_opener(line).filter(|_| {
+                !trim_ascii_start(line).starts_with(": ")
+                    || description_entry_above(
+                        cur,
+                        cur.pos,
+                        indent_columns(line),
+                        &mut description_entry_cache,
+                    )
+            }) {
                 if opener_column >= strip_cols
                     && cur.has_comment_closer_after(cur.pos + 1, open.fence_len)
                 {
@@ -3038,6 +3053,53 @@ fn marker_line_comment_opener(line: &str) -> Option<(CommentFenceOpen, usize)> {
     let rest = trim_ascii_start(body);
     let col = advance_columns(&lead[..lead.len() - rest.len()], col);
     detect_comment_fence_line(rest).map(|open| (open, col))
+}
+
+/// A description marker is a body lead only when its same-column chain reaches
+/// a live term. Memoizing each traversed marker makes long runs of descriptions
+/// linear even when each one has a comment-shaped lead.
+fn description_entry_above(
+    cur: &LineCursor<'_>,
+    before: usize,
+    column: usize,
+    cache: &mut std::collections::HashMap<(usize, usize), bool>,
+) -> bool {
+    let mut deeper = false;
+    let mut chain = Vec::new();
+    let mut result = false;
+    for at in (0..before).rev() {
+        let raw = cur.lines.at(at);
+        if is_blank_line(raw) {
+            continue;
+        }
+        let (mut col, mut rest, _) = quote_free_measure(raw);
+        if let Some(marker) = detect_list_marker_full_at(raw, col) {
+            col = marker_content_col(raw).unwrap_or(col);
+            rest = trim_ascii_start(marker.content);
+        }
+        if col > column {
+            deeper = true;
+            continue;
+        }
+        if col != column || !(rest.starts_with(": ") || rest.starts_with(":: ")) {
+            break;
+        }
+        if rest.starts_with(":: ") {
+            result = !deeper;
+            break;
+        }
+        if let Some(&known) = cache.get(&(at, column)) {
+            result = known;
+            break;
+        }
+        chain.push(at);
+        deeper = false;
+    }
+    for at in chain {
+        cache.insert((at, column), result);
+    }
+    cache.insert((before, column), result);
+    result
 }
 
 /// A blank an outer collector inserted to keep a fence's interruption: it is
