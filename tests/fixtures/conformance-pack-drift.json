@@ -9,13 +9,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve#4033",
-      "cause": "an unclosed fence's trailing blank run in a description body: the pin's model predates carve main, and the model reads a reopened item fence differently",
-      "cases": [
-        "fences-9caa332a8a41"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#5013",
       "cause": "pin move to carve d9d5dea7: an eligible plus classifies as a marker before attachment; the carve-rs port is pending",
       "cases": [
