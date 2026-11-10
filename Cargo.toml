@@ -100,6 +100,10 @@ name = "a_tab_led_line_block_keeps_its_opener_lead"
 path = "tests/a_tab_led_line_block_keeps_its_opener_lead.rs"
 
 [[test]]
+name = "a_rewritten_tabbed_line_block_opener"
+path = "tests/a_rewritten_tabbed_line_block_opener.rs"
+
+[[test]]
 name = "first_block_plus_passes_sibling_note_bodies"
 path = "tests/first_block_plus_passes_sibling_note_bodies.rs"
 

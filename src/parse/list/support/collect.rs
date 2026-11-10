@@ -2330,6 +2330,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     let floor = nested_item_columns
                         .last()
                         .map_or(strip_cols, |&(_, col)| col);
+                    // A descendant item can have a higher content column
+                    // than this opener. Its stanza belongs at the opener,
+                    // unless a straddling tab left a residual lead to rebase.
+                    let floor = if rewritten_lead.is_none() {
+                        floor.min(indent)
+                    } else {
+                        floor
+                    };
                     literal_colon = Some((width, indent, floor));
                     literal_colon_lead = rewritten_lead;
                 }
