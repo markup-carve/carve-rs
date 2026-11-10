@@ -68,18 +68,42 @@ fn lines_end_in_refused_brace_run(lines: &[&str]) -> bool {
             line
         }
     }
-    let mut run = vec![inside(last)];
+    // A marker-line brace opens at its written column. Preserve that column
+    // while presenting the run to the shared refusal predicate: the marker is
+    // a host prefix, not part of the brace paragraph.
+    fn brace_line(line: &str) -> String {
+        let text = trim_ascii_start(line);
+        let body = strip_definition_marker(text)
+            .map(|(body, _)| body)
+            .or_else(|| detect_list_marker_full(text).map(|marker| marker.content));
+        if let Some(body) = body.filter(|body| body.starts_with('{')) {
+            if let Some(offset) = line.find(body) {
+                let col = line[..offset].chars().fold(0usize, |col, ch| {
+                    if ch == '\t' {
+                        col + 4 - col % 4
+                    } else {
+                        col + 1
+                    }
+                });
+                return format!("{}{body}", " ".repeat(col));
+            }
+        }
+        line.to_owned()
+    }
+    let mut run = vec![brace_line(inside(last))];
     for &line in lines[..lines.len() - 1].iter().rev() {
-        let line = inside(line);
-        if is_blank_line(line) {
+        let line = brace_line(inside(line));
+        if is_blank_line(&line) {
             return false;
         }
+        let opens = trim_ascii_start(&line).starts_with('{');
+        let closes = line.contains('}') && !line.contains(['"', '\'']);
         run.push(line);
-        if trim_ascii_start(line).starts_with('{') {
+        if opens {
             break;
         }
         // A run closes at its first brace, so an earlier closed line ends the search.
-        if line.contains('}') && !line.contains(['"', '\'']) {
+        if closes {
             return false;
         }
     }
