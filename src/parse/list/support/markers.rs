@@ -182,7 +182,12 @@ pub(crate) fn marker_content_is_attr_block(
         .pos
         .checked_sub(1)
         .and_then(|at| cur.lines.line(at))
-        .and_then(|raw| raw.find(content).map(|offset| &raw[..offset]))
+        .and_then(|raw| {
+            let offset = (content.as_ptr() as usize).checked_sub(raw.as_ptr() as usize)?;
+            raw.get(offset..)
+                .filter(|tail| tail.starts_with(content))
+                .and_then(|_| raw.get(..offset))
+        })
         .map(|prefix| {
             prefix.chars().fold(0usize, |col, ch| {
                 if ch == '\t' {
