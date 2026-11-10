@@ -24,6 +24,14 @@ fn a_task_marker_line_run_uses_the_brace_source_column() {
 fn a_repeated_marker_attribute_does_not_move_the_brace_column() {
     check(
         "-{.x} {.x\n     .y}\n  # h\n",
-        "<ul>\n  <li class=\"x\">{.x\n.y}\n# h</li>\n</ul>",
+        "<ul>\n  <li class=\"x\">{.x\n.y}\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>",
+    );
+    check(
+        "-{.a} {.x\n     .y}\n  # h\n",
+        "<ul>\n  <li class=\"a\">{.x\n.y}\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>",
+    );
+    check(
+        "-{.x} {.x\n       .y}\n  # h\n",
+        "<ul>\n  <li class=\"x\">\n    <h1 class=\"x y\" id=\"h\">h</h1>\n  </li>\n</ul>",
     );
 }
