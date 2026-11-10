@@ -364,7 +364,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // Verse text is never a fence opener (CARVE-P9-047).
         let mut verse = verse_open(lines.at(from));
         let mut code = code_open(lines.at(from)).filter(|_| !verse);
+        let mut braced_start = vec![None; k - from];
+        let mut braced_end = from + 1;
         for at in from + 1..k {
+            if at < braced_end {
+                continue;
+            }
             // A nested host's marker line can open the span (`- %%%`, `: %%%`).
             let line = lines.at(at);
             verse = verse || (code.is_none() && verse_open(line));
@@ -378,6 +383,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 code = code_open(line);
                 if code.is_some() {
                     continue;
+                }
+                if trim_ascii_start(line).starts_with("{%") {
+                    let view = |at| trim_ascii_start(lines.at(at));
+                    let measured = |at| lines.at(at);
+                    if let Some(end) = comment_only_para_end(k, at, true, &view, &measured) {
+                        for start in &mut braced_start[at - from..end - from] {
+                            *start = Some(at);
+                        }
+                        braced_end = end;
+                        continue;
+                    }
                 }
             }
             let line = match open_span {
@@ -398,6 +414,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         while k > from + 1 {
             k -= 1;
+            if let Some(start) = braced_start[k - from] {
+                k = start;
+                skipped = true;
+                continue;
+            }
             let line = lines.at(k);
             if is_blank_line(line) {
                 return skipped;
