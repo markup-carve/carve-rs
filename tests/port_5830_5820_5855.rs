@@ -21,6 +21,14 @@ fn refused_brace_openers_leave_later_lines_to_their_host() {
 }
 
 #[test]
+fn authored_private_use_text_survives_a_refused_opener() {
+    assert_eq!(
+        html("{.x\n.y}\n\u{e000}\u{e001}\n"),
+        "<p>{.x\n.y}\n\u{e000}\u{e001}</p>"
+    );
+}
+
+#[test]
 fn wrapped_quote_run_requires_each_prefix() {
     assert_eq!(
         html("> {.x\n>   .y}\n> # H\n"),

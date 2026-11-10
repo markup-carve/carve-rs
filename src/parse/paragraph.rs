@@ -509,15 +509,19 @@ pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
     anchors: Option<&[Option<(usize, isize)>]>,
     literal: &[(usize, usize)],
 ) -> Vec<InlineNode> {
-    const STAND_IN: char = '\u{e000}';
     let mut source: Vec<String> = lines
         .iter()
         .map(|line| strip_lazy(line.as_ref()).to_owned())
         .collect();
+    let mut occupied = std::collections::BTreeSet::new();
+    for line in &source {
+        crate::sentinel_run::collect_private_use(line, &mut occupied);
+    }
+    let stand_in = crate::sentinel_run::pick_sentinel_run::<1>(&occupied, 0xe001)[0];
     for &(start, end) in literal {
         for line in source.iter_mut().take(end).skip(start) {
             if let Some(at) = line.find('{') {
-                line.replace_range(at..at + 1, &STAND_IN.to_string());
+                line.replace_range(at..at + 1, &stand_in.to_string());
             }
         }
     }
@@ -526,13 +530,13 @@ pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
         Some(anchors) => parse_inline_lines_with_anchor(&source, options, anchors.to_vec()),
         None => parse_inline_with_options(&source, options),
     };
-    struct Restore;
+    struct Restore(char);
     impl crate::include_walk::SubtreeVisitor for Restore {
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
             for node in nodes {
                 if let InlineNode::Text(text) = node {
-                    if text.value.contains(STAND_IN) {
-                        text.value = text.value.replace(STAND_IN, "{");
+                    if text.value.contains(self.0) {
+                        text.value = text.value.replace(self.0, "{");
                     }
                 }
                 crate::include_walk::visit_inline_children(node, self);
@@ -540,7 +544,7 @@ pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
         }
     }
     use crate::include_walk::SubtreeVisitor;
-    Restore.inlines(&mut nodes);
+    Restore(stand_in).inlines(&mut nodes);
     nodes
 }
 
