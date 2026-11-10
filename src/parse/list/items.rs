@@ -761,6 +761,31 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             &mut self.item_open_fence,
             options,
         );
+        // The first reached list after a quote may have a following sibling
+        // or child marker beyond this collector's first chunk. Keep those
+        // markers in the same rebased body so their original list relationship
+        // survives the second ownership walk.
+        if !reached_quote_list_boundaries(&nested).is_empty() {
+            while self
+                .cur
+                .peek()
+                .and_then(detect_list_marker_full)
+                .is_some_and(|marker| {
+                    marker.indent >= content_col && marker.indent > self.base_indent
+                })
+            {
+                let before = self.cur.pos;
+                nested.append(collect_indented_block_mapped(
+                    self.cur,
+                    content_col.saturating_sub(1),
+                    content_col,
+                    options,
+                ));
+                if self.cur.pos == before {
+                    break;
+                }
+            }
+        }
         let collected_tail_blank = self.item_open_fence.is_some() && self.previous_line_blank();
         self.fold_continuation_chunk(&mut nested, collected_tail_blank);
         let definition_ended_paragraph = nested.source.lines().any(|line| {
@@ -2829,9 +2854,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         };
         let marker_run = marker_refused_brace_run(self.cur, item.at, paragraph_content);
         let owner_boundary = match &marker_run {
-            Some(RefusedBraceRun::Lines(count) | RefusedBraceRun::No(count))
-                if *count != usize::MAX =>
-            {
+            Some(RefusedBraceRun::Lines(count)) if *count != usize::MAX => {
                 (1..*count).find(|&offset| {
                     self.cur.lines.line(item.at + offset).is_some_and(|line| {
                         indent_columns(line) < self.content_col
@@ -3443,27 +3466,7 @@ fn walk_chunk(stream: &mut MappedSource) {
     // the enclosing item. A synthetic boundary carries the already-decided
     // owner change through this second walk.
     let source_lines: Vec<&str> = stream.source.split('\n').collect();
-    let mut fence = None;
-    let mut boundaries = Vec::new();
-    for at in 1..source_lines.len() {
-        let previous = source_lines[at - 1].trim_start();
-        if let Some(open) = fence {
-            if is_fence_close(previous, open) {
-                fence = None;
-            }
-        } else {
-            fence = detect_fence_open(previous);
-        }
-        if fence.is_none()
-            && previous.starts_with('>')
-            && indent_columns(source_lines[at - 1]) == 0
-            && indent_columns(source_lines[at]) == 0
-            && detect_list_marker_full(source_lines[at]).is_some()
-            && stream.reached.get(at) == Some(&true)
-        {
-            boundaries.push(at);
-        }
-    }
+    let boundaries = reached_quote_list_boundaries(stream);
     if !boundaries.is_empty() {
         let mut lines: Vec<String> = source_lines.iter().map(|line| (*line).to_owned()).collect();
         for (offset, boundary) in boundaries.into_iter().enumerate() {
@@ -3496,6 +3499,32 @@ fn walk_chunk(stream: &mut MappedSource) {
     }
     stream.set_source(walked);
     stream.marker_tail = None;
+}
+
+fn reached_quote_list_boundaries(stream: &MappedSource) -> Vec<usize> {
+    let source_lines: Vec<&str> = stream.source.split('\n').collect();
+    let mut fence = None;
+    let mut boundaries = Vec::new();
+    for at in 1..source_lines.len() {
+        let previous = source_lines[at - 1].trim_start();
+        if let Some(open) = fence {
+            if is_fence_close(previous, open) {
+                fence = None;
+            }
+        } else {
+            fence = detect_fence_open(previous);
+        }
+        if fence.is_none()
+            && previous.starts_with('>')
+            && indent_columns(source_lines[at - 1]) == 0
+            && indent_columns(source_lines[at]) == 0
+            && detect_list_marker_full(source_lines[at]).is_some()
+            && stream.reached.get(at) == Some(&true)
+        {
+            boundaries.push(at);
+        }
+    }
+    boundaries
 }
 
 /// Whether the item at `at` opens with a paragraph of only braced comments,
@@ -3544,8 +3573,21 @@ fn marker_refused_brace_run(
     }
     let column = indent_columns(&" ".repeat(raw.chars().count() - content.chars().count()));
     let opener = format!("{}{content}", " ".repeat(column));
+    let mut measured = vec![opener];
+    for k in at + 1..lines.len() {
+        let Some(line) = lines.line(k) else { break };
+        // A collected line can carry an internal lazy marker even though its
+        // authored line reached this item's content column. The authored
+        // reach decides whether it can continue a block-position run.
+        let line = if cur.reached.and_then(|flags| flags.get(k)) == Some(&true) {
+            strip_lazy(line)
+        } else {
+            line
+        };
+        measured.push(line.to_owned());
+    }
     match refused_brace_run_with_columns(
-        std::iter::once(opener.as_str()).chain((at + 1..lines.len()).map_while(|k| lines.line(k))),
+        measured.iter().map(String::as_str),
         true,
         |offset, raw| {
             let source = cur.source_line(at + offset)?;

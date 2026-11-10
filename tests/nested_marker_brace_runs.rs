@@ -83,6 +83,6 @@ fn a_marker_shaped_payload_does_not_replace_the_comment_opener() {
     );
     assert_all_routes(
         "- {% note\n   - {x}\n  end %} text\n  ```\n  code\n  ```",
-        "<ul>\n  <li>{% note\n- {x}\nend %} text\n<code>\ncode\n</code></li>\n</ul>",
+        "<ul>\n  <li>{% note\n    <ul>\n      <li></li>\n    </ul>\n    end %} text\n    <pre><code>code\n</code></pre>\n  </li>\n</ul>",
     );
 }

@@ -1796,43 +1796,6 @@ z %}</li>
 </blockquote>"##,
     ),
     (
-        "1064-a-colon-line-without-a-term-continues-no-entry",
-        "carve#5841: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li><p>a
-:</p>
-    <p>:</p>
-  </li>
-</ul>
-<p>c</p>"##,
-    ),
-    (
-        "1064-a-colon-line-without-a-term-continues-no-entry-2",
-        "carve#5841: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li><p>a
-: x</p>
-    <p>:</p>
-  </li>
-</ul>
-<p>c</p>"##,
-    ),
-    (
-        "1064-a-colon-line-without-a-term-continues-no-entry-3",
-        "carve#5841: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li><p>a</p>
-    <dl>
-      <dt>t</dt>
-    </dl>
-    <p>deep
-: d</p>
-    <p>:</p>
-  </li>
-</ul>
-<p>c</p>"##,
-    ),
-    (
         "981-a-losing-note-plus-leaves-following-blocks-with-their-owner-3",
         "carve#5482: spec pin behavior pending its separate engine port",
         r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a></p>

@@ -79,4 +79,12 @@ fn a_reached_sublist_after_a_quote_keeps_its_children() {
         let ast = carve::to_json(&carve::parse(source));
         assert!(!ast.contains("\"type\":\"comment\""), "{source:?}\n{ast}");
     }
+    assert_eq!(
+        html("- p\n  > q\n  - x\n    # h\n  - sibling\n"),
+        "<ul>\n  <li>p\n    <blockquote><p>q</p></blockquote>\n    <ul>\n      <li>x\n        <h1 id=\"h\">h</h1>\n      </li>\n      <li>sibling</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        html("- p\n  > q\n  - x\n    # h\n    - child\n"),
+        "<ul>\n  <li>p\n    <blockquote><p>q</p></blockquote>\n    <ul>\n      <li>x\n        <h1 id=\"h\">h</h1>\n        <ul>\n          <li>child</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
 }

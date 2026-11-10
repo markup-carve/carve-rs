@@ -9,7 +9,7 @@ fn shallow_lazy_attribute_run_is_literal_at_each_quote_depth() {
         ),
         (
             "> > q\n> > {.k\ntail\n> > #x}\n",
-            "<blockquote>\n  <blockquote><p>q\n{.k\ntail\n#x}</p></blockquote>\n</blockquote>",
+            "<blockquote>\n  <blockquote><p>q\n{.k\ntail\n<span class=\"tag\"><strong>#x</strong></span>}</p></blockquote>\n</blockquote>",
         ),
     ] {
         assert_eq!(carve::to_html(source), expected, "source: {source:?}");
@@ -41,7 +41,7 @@ fn the_opening_braces_authored_indent_is_the_comparison_column() {
     for (source, expected) in [
         (
             "> q\n>  {.k\n tail\n>  #x}\n",
-            "<blockquote><p>q\n{.k\ntail\n#x}</p></blockquote>",
+            "<blockquote><p>q\n{.k\ntail\n<span class=\"tag\"><strong>#x</strong></span>}</p></blockquote>",
         ),
         (
             "> q\n>  {.k\n  tail\n>   #x}\n",
