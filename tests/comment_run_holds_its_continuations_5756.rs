@@ -34,7 +34,10 @@ fn block_comment_run_holds_block_shaped_continuations() {
         ] {
             let html = to_html(&source);
             assert!(html.contains(" y</p>"), "{source:?}\n{html}");
-            assert!(!html.contains("<h1") && !html.contains("<pre"), "{source:?}\n{html}");
+            assert!(
+                !html.contains("<h1") && !html.contains("<pre"),
+                "{source:?}\n{html}"
+            );
             assert!(!html.contains("z %}"), "{source:?}\n{html}");
         }
     }
@@ -44,7 +47,11 @@ fn block_comment_run_holds_block_shaped_continuations() {
 fn item_comment_run_holds_a_heading_or_fence() {
     for middle in ["# h", "```"] {
         let source = format!("- {{% a\n   {middle}\n   z %}} y\n");
-        assert_eq!(to_html(&source).trim(), "<ul>\n  <li> y</li>\n</ul>", "{source:?}");
+        assert_eq!(
+            to_html(&source).trim(),
+            "<ul>\n  <li> y</li>\n</ul>",
+            "{source:?}"
+        );
         let source = format!("- p\n  {{% a\n   {middle}\n   z %}} y\n");
         assert_eq!(
             to_html(&source).trim(),
