@@ -34,7 +34,10 @@ fn note_marker_brace_column_does_not_grow_with_its_label_or_quote_prefix() {
         "> [^n]: {% a\n>     {k=v}\n>     z %} y\n\n> r[^n]\n",
     ] {
         let html = to_html(source);
-        assert!(html.contains("<p> y<a href=\"#fnref1\""), "{source:?}\n{html}");
+        assert!(
+            html.contains("<p> y<a href=\"#fnref1\""),
+            "{source:?}\n{html}"
+        );
         assert!(!html.contains("{% a"), "{source:?}\n{html}");
     }
 }
