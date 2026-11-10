@@ -65,7 +65,7 @@ fn a_multi_line_attribute_block_reaches_it() {
     // it across the chunk boundary has to take the whole run or none of it.
     assert_eq!(
         carve::to_html("- a\n\n  {#id\n  .x}\n  - b\n"),
-        "<ul>\n  <li><p>a</p>\n    <p>{#id\n.x}\n- b</p>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>a</p>\n    <p>{<span class=\"tag\"><strong>#id</strong></span>\n.x}</p>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

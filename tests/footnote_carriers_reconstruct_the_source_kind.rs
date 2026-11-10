@@ -192,7 +192,7 @@ fn shared_footnote_carrier_recovery_controls_match_the_import_report() {
     ))
     .unwrap();
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 24);
+    assert_eq!(cases.len(), 27);
     for case in cases {
         // This pin predates carve#5735. The retired-prefix rows are covered by
         // retired_input_aliases_5735 until a safe spec pin can move.

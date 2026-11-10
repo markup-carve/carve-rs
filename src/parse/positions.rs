@@ -1,5 +1,95 @@
 use super::*;
 
+/// A mapped position is optional, but one that points at unrelated source is
+/// never useful. Validate authored text after every ownership rebase has run.
+pub(in crate::parse) fn clear_unverifiable_text_positions(doc: &mut Document, source: &str) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+
+    struct Validate<'a> {
+        source: &'a [char],
+    }
+
+    impl Validate<'_> {
+        fn contains(&self, pos: &Pos, text: &str) -> bool {
+            if pos.file.is_some() {
+                return true;
+            }
+            let Some(slice) = self.source.get(pos.start_offset..pos.end_offset) else {
+                return false;
+            };
+            slice
+                .iter()
+                .collect::<String>()
+                .replace('\0', "\u{fffd}")
+                .contains(text)
+        }
+
+        fn anchor(nodes: &[InlineNode]) -> Option<String> {
+            for node in nodes {
+                let found = match node {
+                    InlineNode::Text(text) if text.pos.is_some() => {
+                        let trimmed = text.value.trim();
+                        (!trimmed.is_empty()
+                            && !trimmed
+                                .chars()
+                                .any(|ch| matches!(ch, '\u{e000}'..='\u{e002}')))
+                        .then(|| trimmed.chars().take(10).collect())
+                    }
+                    InlineNode::Emphasis(emphasis) => Self::anchor(&emphasis.children),
+                    InlineNode::Link(link) => Self::anchor(&link.children),
+                    _ => None,
+                };
+                if found.is_some() {
+                    return found;
+                }
+            }
+            None
+        }
+    }
+
+    impl SubtreeVisitor for Validate<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                if let BlockNode::Paragraph(paragraph) = block {
+                    if let (Some(pos), Some(anchor)) =
+                        (paragraph.pos.as_ref(), Self::anchor(&paragraph.children))
+                    {
+                        if !self.contains(pos, &anchor) {
+                            paragraph.pos = None;
+                        }
+                    }
+                }
+                visit_block_children(block, self);
+            }
+        }
+
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if let InlineNode::Text(text) = inline {
+                    let want = text.value.trim();
+                    if !want.is_empty()
+                        && !want.chars().any(|ch| matches!(ch, '\u{e000}'..='\u{e002}'))
+                        && text
+                            .pos
+                            .as_ref()
+                            .is_some_and(|pos| !self.contains(pos, want))
+                    {
+                        text.pos = None;
+                    }
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+
+    let source: Vec<char> = source.chars().collect();
+    let mut validate = Validate { source: &source };
+    validate.blocks(&mut doc.children);
+    for body in doc.footnote_defs.values_mut() {
+        validate.blocks(body);
+    }
+}
+
 /// Codepoints a container took from the front of a line, when that is knowable.
 pub(in crate::parse) fn stripped_col(
     outer: Option<isize>,

@@ -5,19 +5,19 @@ fn unprefixed_continuation_closes_each_quote_host() {
     let cases = [
         (
             "> {.x\n   .y}\nplain\n",
-            "<blockquote>\n\n</blockquote>\n<p>plain</p>",
+            "<blockquote><p>{.x\n.y}\nplain</p></blockquote>",
         ),
         (
             "> > {.x\n     .y}\nplain\n",
-            "<blockquote>\n  <blockquote>\n\n  </blockquote>\n</blockquote>\n<p>plain</p>",
+            "<blockquote>\n  <blockquote><p>{.x\n.y}\nplain</p></blockquote>\n</blockquote>",
         ),
         (
             "> \t{.x\n     .y}\nplain\n",
-            "<blockquote>\n\n</blockquote>\n<p>plain</p>",
+            "<blockquote><p>{.x\n.y}\nplain</p></blockquote>",
         ),
         (
             "- > {.x\n     .y}\nplain\n",
-            "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n<p>plain</p>",
+            "<ul>\n  <li>\n    <blockquote><p>{.x\n.y}\nplain</p></blockquote>\n  </li>\n</ul>",
         ),
     ];
     for (source, expected) in cases {

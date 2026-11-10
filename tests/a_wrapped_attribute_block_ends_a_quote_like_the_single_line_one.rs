@@ -122,7 +122,7 @@ fn a_block_whose_closer_sits_at_a_shallower_depth() {
     // paragraph text, and the open paragraph takes the lazy tail.
     assert_eq!(
         html("> > q\n> > {.k\n> #x}\ntail\n"),
-        "<blockquote>\n  <blockquote><p>q\n{.k\n#x}\ntail</p></blockquote>\n</blockquote>"
+        "<blockquote>\n  <blockquote><p>q\n{.k\n<span class=\"tag\"><strong>#x</strong></span>}\ntail</p></blockquote>\n</blockquote>"
     );
     // The SINGLE-LINE spelling is a different document, not a twin: `{.k}` is
     // complete at depth two, so `#x}` is ordinary content of the OUTER quote

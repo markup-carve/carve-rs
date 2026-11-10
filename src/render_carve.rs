@@ -3521,7 +3521,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::Comment(comment) => {
             if comment.delimited {
-                delimited_comment_source(&comment.content)
+                delimited_comment_source(&comment.content, comment.pos.is_some())
             } else if comment.block {
                 render_block_comment(session, &comment.content)
             } else {
@@ -4376,10 +4376,15 @@ fn render_nodes_with_verbatim(
         }
         // A comment opening a line is a block-position run: its wrapped lines
         // sit past the `{` (carve#5080).
-        if matches!(node, InlineNode::Comment(c) if c.delimited)
-            && (out.is_empty() || out.ends_with('\n'))
-        {
-            rendered = indent_wrapped_comment(&rendered);
+        if let InlineNode::Comment(comment) = node {
+            if comment.delimited && (out.is_empty() || out.ends_with('\n')) {
+                let written = if comment.pos.is_some() {
+                    dedent_wrapped_comment(&rendered)
+                } else {
+                    rendered.clone()
+                };
+                rendered = indent_wrapped_comment(&written);
+            }
         }
         out.push_str(&rendered);
         if !rendered.is_empty() {
@@ -4407,8 +4412,13 @@ fn render_nodes_with_verbatim(
 
 /// A `{% ... %}` comment. A wrapped line sits past the `{`, or the comment
 /// would read as text (carve#5080).
-fn delimited_comment_source(content: &str) -> String {
-    indent_wrapped_comment(&format!("{{%{} %}}", pad_delimited(content)))
+fn delimited_comment_source(content: &str, parsed_margin: bool) -> String {
+    let written = format!("{{%{} %}}", pad_delimited(content));
+    if parsed_margin {
+        indent_wrapped_comment(&dedent_wrapped_comment(&written))
+    } else {
+        indent_wrapped_comment(&written)
+    }
 }
 
 /// Indent every wrapped line of a written `{% ... %}` but a closer line, which
@@ -4418,7 +4428,40 @@ fn indent_wrapped_comment(written: &str) -> String {
         Some(body) => (body, "\n %}"),
         None => (written, ""),
     };
-    format!("{}{closer}", body.replace('\n', "\n "))
+    let mut lines = body.split('\n');
+    let mut out = lines.next().unwrap_or_default().to_owned();
+    for line in lines {
+        out.push('\n');
+        if !line.starts_with([' ', '\t']) {
+            out.push(' ');
+        }
+        out.push_str(line);
+    }
+    out.push_str(closer);
+    out
+}
+
+/// The parser retains the authored margin in a comment's payload. Rebase that
+/// margin before writing the run at its new host column, so repeated formatting
+/// does not add another host margin on each pass.
+fn dedent_wrapped_comment(written: &str) -> String {
+    let (body, closer) = match written.strip_suffix("\n %}") {
+        Some(body) => (body, "\n %}"),
+        None => (written, ""),
+    };
+    let mut lines = body.split('\n');
+    let Some(first) = lines.next() else {
+        return written.to_owned();
+    };
+    let rest: Vec<&str> = lines.collect();
+    let mut out = first.to_owned();
+    for line in rest {
+        out.push('\n');
+        let indent = line.bytes().take_while(|byte| *byte == b' ').count();
+        out.push_str(&line[indent..]);
+    }
+    out.push_str(closer);
+    out
 }
 
 fn inline_hosts_caption(node: &InlineNode) -> bool {

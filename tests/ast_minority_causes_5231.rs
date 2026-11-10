@@ -79,15 +79,17 @@ fn a_lazy_quoted_list_starts_at_its_parent_content_column() {
 }
 
 #[test]
-fn a_braced_comment_ends_at_its_closer_even_with_a_tail() {
-    for (source, end) in [
-        ("- a\n  - b\n{% c\n  d %}\n  - z\n", 21),
-        ("- a0\n  - b0\n{% c0\n  d0 %}  - z0\n", 25),
+fn a_refused_comment_opener_claims_no_later_lines() {
+    for (source, expected) in [
+        (
+            "- a\n  - b\n{% c\n  d %}\n  - z\n",
+            "<ul>\n  <li>a\n    <ul>\n      <li>b\n{% c\nd %}</li>\n      <li>z</li>\n    </ul>\n  </li>\n</ul>",
+        ),
+        (
+            "- a0\n  - b0\n{% c0\n  d0 %}  - z0\n",
+            "<ul>\n  <li>a0\n    <ul>\n      <li>b0\n{% c0\nd0 %}  - z0</li>\n    </ul>\n  </li>\n</ul>",
+        ),
     ] {
-        let tree = ast(source);
-        let comment = tree
-            .pointer("/children/0/items/0/children/1/items/0/children/0/children/2")
-            .unwrap();
-        assert_eq!(comment["pos"]["endOffset"], end);
+        assert_eq!(carve::to_html(source), expected);
     }
 }

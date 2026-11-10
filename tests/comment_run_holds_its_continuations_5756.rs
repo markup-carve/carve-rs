@@ -19,9 +19,12 @@ fn item_comment_run_keeps_a_brace_line_past_its_opener() {
 }
 
 #[test]
-fn item_comment_run_at_its_opener_column_stays_refused() {
+fn item_comment_run_at_its_opener_column_releases_later_lines() {
     let html = to_html("- {% a\n  {lang=de}\n  z %} y\n");
-    assert!(html.contains("<li>{% a\n{lang=de}\nz %} y</li>"), "{html}");
+    assert!(
+        html.contains("<li>{% a\n    <p lang=\"de\">z %} y</p>"),
+        "{html}"
+    );
 }
 
 #[test]

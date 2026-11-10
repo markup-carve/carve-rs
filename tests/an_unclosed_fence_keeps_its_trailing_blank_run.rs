@@ -50,7 +50,7 @@ fn a_plus_attached_fence_ends_at_the_blank() {
 #[test]
 fn an_own_line_plus_fence_keeps_the_blank_after_note_body_text() {
     let input = "[^a]: p\n+\n```\ncode\n\n  tail\n\nsee[^a]\n";
-    assert_eq!(code(input), "code\n\ntail\n\n");
+    assert_eq!(code(input), "code\n\n  tail\n\n");
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn own_line_plus_note_fence_variant_sweep() {
                                 "\n".repeat(blanks)
                             );
                             let expected =
-                                format!("code{payload}\n{}tail{word}\n\n", "\n".repeat(blanks));
+                                format!("code{payload}\n{}  tail{word}\n\n", "\n".repeat(blanks));
                             assert_eq!(code(&input), expected, "{input:?}");
                             checked += 1;
                         }

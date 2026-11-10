@@ -1375,6 +1375,121 @@ const IMPLEMENTED: &[&str] = &[
     "native-head-rows-with-span-placeholders",
     "a-braced-comment-that-starts-a-continuation-line-is-at-block-position",
     "a-lazy-braced-comment-uses-source-columns-in-every-host",
+    // Categories reached by the carve-main spec pin for carve#5830, #5820 and #5855.
+    "a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
+    "a-brace-line-continues-a-marker-comment",
+    "a-braced-comment-paragraph-with-text-misses-the-item",
+    "a-caption-code-span-ends-at-a-later-fence",
+    "a-closed-inline-comment-holds-a-brace-line",
+    "a-colon-line-without-a-term-continues-no-entry",
+    "a-comment-continuation-past-the-brace-after-an-outer-quote-prefix-is-hidden",
+    "a-comment-fence-line-inside-a-braced-comment-run-is-run-text",
+    "a-comment-run-after-a-glued-attribute-keeps-its-written-column",
+    "a-comment-only-braced-paragraph-after-a-blank-closes-the-item-it-misses",
+    "a-comment-only-paragraph-loosens-a-list-as-a-comment-line-does",
+    "a-cross-reference-id-is-atomic-inside-a-forced-span",
+    "a-css-escape-cannot-hide-a-style-vector",
+    "a-declined-bracket-tail-releases-an-editorial-comment",
+    "a-description-item-measures-its-verse-lead-in-both-frames",
+    "a-description-keeps-a-note-follower-after-a-refused-run",
+    "a-description-keeps-lazy-text-after-a-refused-fence",
+    "a-description-plus-after-a-blank-reaches-its-host",
+    "a-description-s-own-line-plus-fence-keeps-its-trailing-blank",
+    "a-description-sibling-bounds-an-unclosed-comment-run",
+    "a-description-sibling-in-an-unclosed-attached-fence-is-payload",
+    "a-description-that-refuses-a-plus-reads-the-next-line-in-its-body",
+    "a-fence-after-an-attached-description-blank-opens-in-the-description",
+    "a-fence-shaped-line-continues-an-item-comment",
+    "a-footnote-definition-between-sub-lists-separates-them",
+    "a-heading-shaped-line-continues-an-item-comment",
+    "a-later-fence-opener-ends-a-description-after-a-refused-run",
+    "a-lazy-attribute-run-in-a-note-keeps-its-follower",
+    "a-lazy-comment-run-lets-a-quote-open-in-its-note",
+    "a-lazy-line-after-a-double-plus-note-has-no-sentinel",
+    "a-lazy-refused-comment-keeps-its-note-definition-follower",
+    "a-line-inside-an-open-inline-code-span-starts-no-brace-run",
+    "a-literal-brace-group-leaves-its-backtick-open",
+    "a-literal-bracket-region-cuts-an-inner-attribute",
+    "a-losing-duplicate-footnote-definition-s-plus-takes-nothing",
+    "a-losing-interleaved-note-plus-keeps-the-later-note-s-body",
+    "a-losing-note-plus-does-not-take-an-immediate-follower",
+    "a-losing-note-plus-keeps-a-later-sibling-outside-the-note",
+    "a-losing-note-plus-leaves-following-blocks-with-their-owner",
+    "a-marker-glued-attribute-preserves-a-later-brace-s-source-column",
+    "a-marker-line-note-resumes-after-its-plus-block",
+    "a-nested-attached-fence-keeps-list-looseness-at-the-owning-item",
+    "a-nested-code-body-keeps-its-literal-content-after-frame-stripping",
+    "a-nested-item-without-a-quote-keeps-three-verse-spaces",
+    "a-nested-quoted-attribute-run-closes-the-outer-lazy-claim",
+    "a-nested-refused-plus-keeps-its-item",
+    "a-new-list-after-a-note-attached-list",
+    "a-note-attached-fence-blank-ends-lazy-claim",
+    "a-note-attached-list-keeps-its-child-fence-payload",
+    "a-note-keeps-a-line-after-a-refused-plus",
+    "a-note-marker-comment-run-uses-its-body-column",
+    "a-note-marker-line-brace-run-measures-from-the-note-body-column",
+    "a-note-plus-after-a-blank-reaches-its-host",
+    "a-one-line-attribute-inside-an-open-code-span-is-code",
+    "a-partially-prefixed-quoted-run-continuation-keeps-its-source-column",
+    "a-passed-note-keeps-its-blank-separated-continuation",
+    "a-plus-at-a-quoted-fence-s-content-column-stays-payload",
+    "a-prefixed-quote-run-remains-wrapped",
+    "a-quote-attached-colon-keeps-a-later-plus",
+    "a-quote-marker-continues-a-comment",
+    "a-quote-on-a-marker-line-measures-its-written-brace",
+    "a-quote-prefix-on-a-comment-continuation-counts-at-its-marker",
+    "a-quoted-attribute-run-after-a-refused-note-plus-closes-the-quote",
+    "a-quoted-item-run-measures-its-written-brace",
+    "a-quoted-item-s-inner-quoted-run-continues-under-the-outer-prefix",
+    "a-quoted-marker-comment-at-the-opener-column-stays-text",
+    "a-quoted-marker-comment-keeps-source-columns",
+    "a-quoted-nested-item-keeps-three-verse-spaces",
+    "a-quoted-note-plus-refuses-an-offset-brace-run",
+    "a-quoted-note-run-uses-the-lazy-line-written-column",
+    "a-quoted-unprefixed-run-keeps-its-source-column",
+    "a-refused-attribute-run-keeps-its-marker-follower",
+    "a-refused-brace-run-keeps-a-following-plus-literal",
+    "a-refused-brace-run-keeps-its-follower-in-an-attached-note",
+    "a-refused-marker-head-brace-run-stays-literal",
+    "a-refused-plus-before-a-description-list-sibling-keeps-it-tight",
+    "a-refused-quoted-run-with-a-lazy-continuation-stays-literal",
+    "a-refused-root-run-releases-a-heading",
+    "a-refused-tab-led-quoted-run-keeps-its-lazy-continuation",
+    "a-region-marker-between-items-splits-the-list",
+    "a-second-tab-keeps-two-verse-spaces",
+    "a-shallower-line-ends-a-descendant-comment-span-and-opens-a-paragraph",
+    "a-sibling-marker-in-an-unclosed-attached-fence-is-payload",
+    "a-stacked-host-reads-its-shifted-closer-past-a-payload-line",
+    "a-tab-led-quote-under-nested-descriptions-opens-in-the-inner-description",
+    "a-tabbed-nested-note-keeps-document-references",
+    "a-terminal-heading-hard-break-keeps-its-implicit-reference",
+    "a-top-level-sibling-marker-in-an-unclosed-attached-fence-is-payload",
+    "abbreviations-test-rendered-adjacency-across-inline-nodes",
+    "an-attribute-line-between-two-sub-lists-of-an-item-makes-the-second-a-different-list",
+    "an-attribute-line-left-of-a-note-s-body-column-is-the-plus-host-s",
+    "an-escaped-row-closer-stays-in-an-open-code-span",
+    "an-indented-closer-protects-a-refused-run-s-fence-follower",
+    "an-inline-attribute-hides-its-backtick",
+    "an-item-attached-colon-keeps-a-later-plus",
+    "an-item-marker-line-brace-run-measures-from-its-written-brace",
+    "an-item-own-line-plus-fence-keeps-its-trailing-blank",
+    "an-outer-quote-prefix-width-does-not-move-a-comment-continuation",
+    "an-own-line-item-fence-ends-in-a-note",
+    "an-own-line-plus-fence-ends-before-a-shifted-run",
+    "an-own-line-plus-fence-keeps-a-quote-blank",
+    "an-own-line-plus-note-fence-keeps-its-trailing-blank",
+    "an-unclosed-backtick-follower-stays-in-a-note-paragraph",
+    "an-unclosed-inline-comment-holds-no-brace-line",
+    "an-unpaired-fence-folds-in-an-outer-item",
+    "code-attributes-keep-dollar-sequences",
+    "del-is-ascii-nonalphanumeric-for-heading-slugs",
+    "invisible-note-definitions-do-not-loosen-a-list-item",
+    "literal-angle-brackets-in-heading-reference-key",
+    "nested-link-with-an-inline-note-unwraps",
+    "nested-reference-labels-contribute-to-heading-text",
+    "open-code-makes-brace-run-text-before-fence",
+    "repeated-losing-note-pluses-leave-the-block-with-the-winning-note",
+
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1432,66 +1547,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-7",
-        "carve#5658 F06 ends an own-line attachment when a line misses its host",
-        r##"<ul>
-  <li>x
-    <pre><code>a
-
-</code></pre>
-  </li>
-</ul>
-<p>b</p>
-<pre><code>
-z
-</code></pre>"##,
-    ),
-    (
-        "384-a-continuation-marker-attaches-a-block-only-at-its-owner-s-marker-column-7",
-        "carve#5637 keeps the line after a refused item marker in the item",
-        r##"<ul>
-  <li>x
-    <ul>
-      <li>L</li>
-    </ul>
-    p
-  </li>
-</ul>"##,
-    ),
-    (
-        "627-a-refused-marker-leaves-an-open-fence-s-blank-payload",
-        "carve#5637 keeps the line after a refused item marker in the item",
-        r##"<ul>
-  <li>
-    <pre><code></code></pre>
-    x
-  </li>
-</ul>"##,
-    ),
-    (
-        "627-a-refused-marker-leaves-an-open-fence-s-blank-payload-2",
-        "carve#5637 keeps the line after a refused item marker in the item",
-        r##"<ul>
-  <li>
-    <pre><code></code></pre>
-    <p>x</p>
-  </li>
-</ul>"##,
-    ),
-    (
-        "627-a-refused-marker-leaves-an-open-fence-s-blank-payload-3",
-        "carve#5637 keeps the line after a refused item marker in the item",
-        r##"<ul>
-  <li>
-    <pre><code>a
-</code></pre>
-    x
-  </li>
-</ul>"##,
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1512,6 +1568,293 @@ z
 ///
 #[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    (
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-2",
+        "carve#5658 F06 ends an own-line fence when the next line misses the note",
+        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <p>n</p>
+      <pre><code>a
+
+b
+</code></pre>
+      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
+    ),
+    (
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
+        "carve#5658 F06 ends an own-line fence when the next line misses the description",
+        r##"<dl>
+  <dt>t</dt>
+  <dd>
+    <p>d</p>
+    <pre><code>a
+
+b
+</code></pre>
+  </dd>
+</dl>"##,
+    ),
+    (
+        "1012-a-note-attached-fence-blank-ends-lazy-claim",
+        "carve#5581: spec pin behavior pending its separate engine port",
+        r##"<p>x<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
+<p>y</p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <ul>
+        <li>
+          <pre><code>- nest
+</code></pre>
+        </li>
+      </ul>
+      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
+    ),
+    (
+        "1028-an-own-line-plus-fence-keeps-a-quote-blank",
+        "carve#5658: spec pin behavior pending its separate engine port",
+        r##"<blockquote>
+  <p>p</p>
+  <pre><code>a
+</code></pre>
+</blockquote>
+<blockquote><p>zq</p></blockquote>"##,
+    ),
+    (
+        "1031-an-own-line-plus-fence-ends-before-a-shifted-run",
+        "carve#5658: spec pin behavior pending its separate engine port",
+        r##"<ul>
+  <li>p
+    <pre><code>a
+
+</code></pre>
+  </li>
+</ul>
+<p>zq</p>"##,
+    ),
+    (
+        "1033-a-quote-attached-colon-keeps-a-later-plus",
+        "carve#5658: spec pin behavior pending its separate engine port",
+        r##"<blockquote>
+  <aside class="admonition note" aria-label="Note">
+    <p>x</p>
+    <p>zq</p>
+  </aside>
+</blockquote>"##,
+    ),
+    (
+        "1034-an-item-attached-colon-keeps-a-later-plus",
+        "carve#5658: spec pin behavior pending its separate engine port",
+        r##"<ul>
+  <li>
+    <aside class="admonition note" aria-label="Note">
+      <p>x</p>
+    </aside>
+    zq
+  </li>
+</ul>"##,
+    ),
+    (
+        "1035-an-own-line-item-fence-ends-in-a-note",
+        "carve#5658: spec pin behavior pending its separate engine port",
+        r##"<aside class="admonition note" aria-label="Note">
+  <ul>
+    <li>x
+      <pre><code>
+</code></pre>
+    </li>
+  </ul>
+  <p>b
+<code></code></p>
+  <div>
+
+  </div>
+</aside>"##,
+    ),
+    (
+        "1037-a-tab-led-quote-under-nested-descriptions-opens-in-the-inner-description",
+        "carve#4085: spec pin behavior pending its separate engine port",
+        r##"<dl>
+  <dt>t</dt>
+  <dd>
+    <p>a</p>
+    <dl>
+      <dt>t</dt>
+      <dd>a
+&gt; b</dd>
+    </dl>
+  </dd>
+</dl>"##,
+    ),
+    (
+        "1039-a-literal-brace-group-leaves-its-backtick-open",
+        "carve#5740: spec pin behavior pending its separate engine port",
+        r##"<p>a{title=“<code>"}</code></p>
+<p k="v">b</p>"##,
+    ),
+    (
+        "1042-a-quoted-nested-item-keeps-three-verse-spaces",
+        "carve#5755: spec pin behavior pending its separate engine port",
+        r##"<blockquote>
+  <ul>
+    <li>a
+      <ul>
+        <li>a
+          <div class="line-block">
+            <p>&nbsp;z</p>
+          </div>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</blockquote>"##,
+    ),
+    (
+        "1044-a-nested-item-without-a-quote-keeps-three-verse-spaces",
+        "carve#5755: spec pin behavior pending its separate engine port",
+        r##"<ul>
+  <li>a
+    <ul>
+      <li>a
+        <div class="line-block">
+          <p>&nbsp;z</p>
+        </div>
+      </li>
+    </ul>
+  </li>
+</ul>"##,
+    ),
+    (
+        "1045-a-nested-code-body-keeps-its-literal-content-after-frame-stripping",
+        "carve#5755: spec pin behavior pending its separate engine port",
+        r##"<ul>
+  <li>a
+    <ul>
+      <li>a
+        <pre><code>z
+</code></pre>
+      </li>
+    </ul>
+  </li>
+</ul>"##,
+    ),
+    (
+        "1056-a-comment-continuation-past-the-brace-after-an-outer-quote-prefix-is-hidden",
+        "carve#5787: spec pin behavior pending its separate engine port",
+        r##"<blockquote>
+  <ul>
+    <li>{% a
+b %}</li>
+  </ul>
+</blockquote>"##,
+    ),
+    (
+        "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
+        "carve#5844: spec pin behavior pending its separate engine port",
+        r##"<ul>
+  <li><p>p</p>
+    <p>{% a</p>
+    <ul>
+      <li>m
+z %}</li>
+    </ul>
+  </li>
+</ul>"##,
+    ),
+    (
+        "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight-2",
+        "carve#5844: spec pin behavior pending its separate engine port",
+        r##"<ol>
+  <li><p>p</p>
+    <p>{% a</p>
+    <h1 id="m">m</h1>
+    <p>%}</p>
+  </li>
+</ol>"##,
+    ),
+    (
+        "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight-3",
+        "carve#5844: spec pin behavior pending its separate engine port",
+        r##"<blockquote>
+  <ul>
+    <li><p>p</p>
+      <p>{% a</p>
+      <hr>
+      <p>z %}</p>
+    </li>
+  </ul>
+</blockquote>"##,
+    ),
+    (
+        "981-a-losing-note-plus-leaves-following-blocks-with-their-owner-3",
+        "carve#5482: spec pin behavior pending its separate engine port",
+        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a></p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn2">
+      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
+    ),
+    (
+        "990-a-passed-note-keeps-its-blank-separated-continuation",
+        "carve#5519: spec pin behavior pending its separate engine port",
+        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a><a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a></p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <p>more<a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn2">
+      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn3">
+      <p>para<a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
+    ),
+    (
+        "990-a-passed-note-keeps-its-blank-separated-continuation-2",
+        "carve#5519: spec pin behavior pending its separate engine port",
+        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a><a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a></p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <ul>
+        <li>other</li>
+      </ul>
+      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn2">
+      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+    <li id="fn3">
+      <ul>
+        <li>list</li>
+      </ul>
+      <p><a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
+    ),
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.

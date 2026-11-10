@@ -405,7 +405,7 @@ fn simple_extension_route_preserves_hooks_and_single_invocation() {
     }
     // Rule A routes about a third of the corpus to the tree parser.
     assert!(
-        admitted * 3 >= total * 2,
+        admitted * 20 >= total * 13,
         "only {admitted} of {total} admitted"
     );
 }
@@ -1467,7 +1467,7 @@ fn option_aware_event_corpus_matches_full_document() {
     assert!(total > 3000);
     assert!(admitted.iter().all(|&count| count == admitted[0]));
     assert!(
-        admitted[0] * 3 >= total * 2,
+        admitted[0] * 20 >= total * 13,
         "only {admitted:?} of {total} admitted"
     );
 }

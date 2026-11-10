@@ -13,7 +13,7 @@ fn check(source: &str, expected: &str) {
 fn a_description_marker_line_run_keeps_its_follower() {
     check(
         ":: t\n: {#i\n  .y}\n  ```\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>{#i\n.y}\n<code></code></dd>\n</dl>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n    <pre><code></code></pre>\n  </dd>\n</dl>",
     );
 }
 
@@ -21,7 +21,7 @@ fn a_description_marker_line_run_keeps_its_follower() {
 fn a_description_marker_line_run_keeps_the_next_line() {
     check(
         ":: t\n: {#i\n  .y}\n  ```\n  more\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>{#i\n.y}\n<code>\nmore</code></dd>\n</dl>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n    <pre><code>more\n</code></pre>\n  </dd>\n</dl>",
     );
 }
 
@@ -29,7 +29,7 @@ fn a_description_marker_line_run_keeps_the_next_line() {
 fn a_note_definition_after_the_description_follower_is_a_note() {
     check(
         ":: t\n: {#i\n  .y}\n  ```\n[^b]: z\n\nsee[^b]\n",
-        "<dl>\n  <dt>t</dt>\n  <dd>{#i\n.y}\n<code></code></dd>\n</dl>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>z<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>z<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
     );
 }
 
@@ -37,6 +37,6 @@ fn a_note_definition_after_the_description_follower_is_a_note() {
 fn a_quoted_description_marker_line_run_keeps_its_follower() {
     check(
         "> :: t\n> : {.x\n>   .y}\n>   ```\n>   more\n",
-        "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>{.x\n.y}\n<code>\nmore</code></dd>\n  </dl>\n</blockquote>",
+        "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd>\n      <p>{.x\n.y}</p>\n      <pre><code>more\n</code></pre>\n    </dd>\n  </dl>\n</blockquote>",
     );
 }
