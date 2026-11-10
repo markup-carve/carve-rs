@@ -2019,6 +2019,48 @@ impl<'a> Walk<'a> {
         k
     }
 
+    /// A marker-column attribute run after a lone `+` closes its host when the
+    /// next line is content or a `+` that has nothing at the marker column to
+    /// attach (plus-ownership row A02, §17 L3).
+    fn attr_run_closes_host(&self, host: usize, at: usize, end: usize, column: usize) -> bool {
+        if end <= at + 1 || end >= self.lines.len() {
+            return false;
+        }
+        let rest = |j: usize| {
+            self.through_quotes(self.lines[j], host).map(|level| {
+                (
+                    doc_column(self.lines[j], trim_ws_start(level)),
+                    trim_ws_start(level),
+                )
+            })
+        };
+        let mut k = at + 1;
+        while k < end {
+            let Some((col, text)) = rest(k) else {
+                return false;
+            };
+            let Some(len) = (col == column && text.starts_with('{'))
+                .then(|| self.attrs_run_len(k, host))
+                .flatten()
+            else {
+                return false;
+            };
+            k += len;
+        }
+        let Some((col, text)) = rest(end) else {
+            return false;
+        };
+        if col != column {
+            return true;
+        }
+        if !is_cont_marker(text) {
+            return false;
+        }
+        !(end + 1 < self.lines.len()
+            && rest(end + 1)
+                .is_some_and(|(next, text)| !text.is_empty() && (next == column || next == 0)))
+    }
+
     /// The lines an attribute run opening on line `k` takes, its continuations
     /// measured past its brace in the host's coordinates (carve#5080).
     fn attrs_run_len(&self, k: usize, host: usize) -> Option<usize> {
@@ -3068,7 +3110,10 @@ impl<'a> Walk<'a> {
         } else {
             String::new()
         };
-        self.skip_invisible(k, at, column, Some(c.out.clone()), true);
+        let end = self.skip_invisible(k, at, column, Some(c.out.clone()), true);
+        if self.attr_run_closes_host(k, at, end, column) {
+            self.skipped = None;
+        }
         if let Some(skipped) = self.skipped.as_mut().filter(|skipped| skipped.at == at) {
             skipped.span_lead = Some(c.out.clone() + &pad);
         }
@@ -3424,7 +3469,11 @@ impl<'a> Walk<'a> {
             if self.decide {
                 self.accept_plus(at, k, false);
                 let column = doc_column(self.lines[at], c.rest);
-                let end = self.skip_invisible(k, at, column, Some(c.out.clone()), false);
+                let mut end = self.skip_invisible(k, at, column, Some(c.out.clone()), false);
+                if self.attr_run_closes_host(k, at, end, column) {
+                    self.skipped = None;
+                    end = at + 1;
+                }
                 self.note_attached(k, end);
             }
             *after_plus = true;
