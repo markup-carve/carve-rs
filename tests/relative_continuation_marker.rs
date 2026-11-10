@@ -229,8 +229,9 @@ fn a_quote_refuses_a_plus_followed_by_a_sibling_list_opener() {
             "<ul>\n  <li>a\n    <blockquote>\n      <p>q</p>\n      <ul>\n        <li>b</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>",
         ),
         (
+            // The refused marker keeps the next line in the item (carve#5637).
             "- a\n  > q\n+\n  - b",
-            "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>\n<ul>\n  <li>b</li>\n</ul>",
+            "<ul>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>",
         ),
     ] {
         assert_eq!(carve::to_html(source).trim_end(), expected, "{source}");

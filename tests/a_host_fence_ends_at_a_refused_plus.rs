@@ -34,10 +34,11 @@ fn a_note_fence_ends_at_a_final_plus() {
 }
 
 #[test]
-fn the_item_ends_at_the_refused_plus() {
+fn the_item_keeps_its_follower_after_the_refused_plus() {
     check(
         "- +\np\n  ```\n+\n\n  more\n",
-        "<ul>\n  <li>p\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>more</p>",
+        // The refused marker keeps the next line's owner (carve#5637).
+        "<ul>\n  <li><p>p</p>\n    <pre><code></code></pre>\n    <p>more</p>\n  </li>\n</ul>",
     );
 }
 

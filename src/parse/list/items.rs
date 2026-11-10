@@ -461,6 +461,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             base_indent,
             Some(content_col),
             marker_column,
+            true,
             &mut leading,
         );
         for comment in leading {
@@ -1427,6 +1428,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     base_indent,
                     Some(content_col),
                     pull_indent,
+                    false,
                     &mut leading,
                 )
             })
@@ -2961,7 +2963,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             let through = follower
                 .and_then(|open| {
                     // A block short of the content column is read there (PART 0 S4).
-                    let (content_col, column) = (self.content_col, indent_columns(next));
+                    let content_col = self.content_col;
                     (self.cur.pos + 1..self.cur.lines.len())
                         .map_while(|i| self.cur.lines.line(i))
                         .take_while(|line| {
@@ -2972,10 +2974,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                                         && detect_fence_open(rest).is_none()
                                         && !rest.starts_with('{')))
                         })
-                        .position(|line| {
-                            indent_columns(line) <= column
-                                && is_fence_close(trim_ascii_start(strip_lazy(line)), open)
-                        })
+                        // An indented closer is the follower's closer too (carve#5600).
+                        .position(|line| is_fence_close(trim_ascii_start(strip_lazy(line)), open))
                 })
                 .map_or(0, |offset| offset + 1);
             if through == 0 {

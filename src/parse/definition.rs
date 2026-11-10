@@ -2792,9 +2792,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             return BodyStep::Next;
         }
         match cur.lines.line(cur.pos + look) {
+            // A `+` at the marker column reaches the description through the
+            // blank (PART 9 §17 L3, carve#5639).
             Some(after)
-                if container.classify(after, || cur.continuation_decision(cur.pos + look))
-                    == ContainerLine::Content =>
+                if matches!(
+                    container.classify(after, || cur.continuation_decision(cur.pos + look)),
+                    ContainerLine::Content | ContainerLine::OwnedContinuation
+                ) =>
             {
                 self.folded_a_lazy_line = false;
                 for _ in 0..look {

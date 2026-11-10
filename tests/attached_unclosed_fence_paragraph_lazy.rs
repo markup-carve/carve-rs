@@ -8,7 +8,8 @@ fn paragraph_after_an_attached_unclosed_fence_takes_a_lazy_line() {
 #[test]
 fn line_left_of_attached_host_does_not_pull_a_later_closer() {
     let source = "- x\n+\n```\na\n\nb\n``\n>> \n  ```\nz\n";
-    let expected = "<ul>\n  <li>x\n    <pre><code>a\n</code></pre>\n  </li>\n</ul>\n<p>b\n<code>\n&gt;&gt;\n```\nz</code></p>";
+    // An own-line fence keeps its first blank (carve#5635); the tail is carve-rs#4185.
+    let expected = "<ul>\n  <li>x\n    <pre><code>a\n\n</code></pre>\n  </li>\n</ul>\n<p>b\n<code>\n&gt;&gt;\n```\nz</code></p>";
     assert_eq!(carve::to_html(source), expected);
 }
 use carve::to_html;

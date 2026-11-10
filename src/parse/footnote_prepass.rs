@@ -1574,6 +1574,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if detached_after_plus {
             i += 1;
         }
+        // A refused marker after the marker-line grant's block renders nothing;
+        // the note keeps the next line at its body column (carve#5601).
+        if trim_ascii(def.first) == "+"
+            && !detached_after_plus
+            && note.line_map.first() == Some(&None)
+            && indent_columns(raw_def_line) == 0
+            && self.lines.get(i).is_some_and(|line| {
+                indent_columns(line) == 0
+                    && continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            })
+            && self
+                .lines
+                .get(i + 1)
+                .is_some_and(|line| !is_blank_line(line) && indent_columns(line) >= body_indent)
+        {
+            i += 1;
+        }
         let attached_quote_marker = (trim_ascii(def.first) == "+"
             && note.line_map.first() == Some(&None)
             && note
@@ -3410,15 +3427,49 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .take_while(|raw| !is_blank_line(raw) && host.content(raw).is_none())
                 .copied()
                 .collect();
-            if let RefusedBraceRun::Lines(count) = refused_brace_run(
+            // The lazy line keeps its written column, so it can also finish
+            // a valid attribute run (CARVE-P2-035, carve#5619).
+            let count = match refused_brace_run(
                 std::iter::once(opener.as_str()).chain(continuation.iter().copied()),
                 true,
             ) {
+                RefusedBraceRun::Lines(count) => Some(count),
+                RefusedBraceRun::No(_) if quote_depth(lines[i + attached.len() - 1]) == 1 => {
+                    // The paragraph the run leads folds lazily into the note too.
+                    attrs_block_len_at(0, opener.as_str(), continuation.iter().copied())
+                        .filter(|&count| count > 1)
+                        .map(|count| {
+                            count
+                                + continuation[count - 1..]
+                                    .iter()
+                                    .take_while(|line| {
+                                        line_starts_paragraph(trim_ascii_start(line))
+                                    })
+                                    .count()
+                        })
+                }
+                RefusedBraceRun::No(_) => None,
+            };
+            if let Some(count) = count {
                 attached.extend(
                     continuation[..count.saturating_sub(1)]
                         .iter()
                         .map(|line| (*line).to_owned()),
                 );
+            }
+        }
+        // A lazy line continues the attached paragraph (PART 0 S4).
+        if quote_depth(lines[i.saturating_sub(1)]) == 1
+            && !ends_in_refused_brace_run(&attached)
+            && body_ends_with_open_paragraph(&attached.join("\n"), self.options)
+        {
+            while let Some(raw) = lines.get(i + attached.len()).filter(|raw| {
+                !is_blank_line(raw)
+                    && host.content(raw).is_none()
+                    && line_starts_paragraph(trim_ascii_start(raw))
+                    && !trim_ascii_start(raw).starts_with('{')
+            }) {
+                attached.push((*raw).to_owned());
             }
         }
         // The line after a refused run is still in its paragraph, even when

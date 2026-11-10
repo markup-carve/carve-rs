@@ -934,12 +934,53 @@ fn host_closed_colon_end(
     (close > end - start && close <= host_len).then_some(start + close)
 }
 
+/// An own-line `+` keeps an unclosed fence's first blank and the payload after
+/// it; only a line that misses the host ends it (PART 0 S1 step 3, carve#5635).
+fn own_line_fence_end(
+    lines: CursorLines<'_>,
+    start: usize,
+    end: usize,
+    content_col: Option<usize>,
+) -> usize {
+    let (Some(content_col), Some(open)) = (
+        content_col,
+        lines
+            .line(start)
+            .and_then(|line| detect_fence_open(trim_ascii_start(line))),
+    ) else {
+        return end;
+    };
+    if !lines.line(end).is_some_and(is_blank_line)
+        || (start + 1..end).any(|at| is_fence_close(trim_ascii_start(lines.at(at)), open))
+    {
+        return end;
+    }
+    let opener_col = indent_columns(lines.at(start));
+    let mut at = end;
+    while let Some(line) = lines.line(at) {
+        if is_blank_line(line) {
+            at += 1;
+            continue;
+        }
+        let closes = is_fence_close(trim_ascii_start(line), open);
+        if indent_columns(line) < content_col && !(closes && indent_columns(line) == opener_col) {
+            break;
+        }
+        at += 1;
+        if closes {
+            break;
+        }
+    }
+    at
+}
+
 pub(crate) fn parse_continuation_block(
     cur: &mut LineCursor,
     options: &Options<'_>,
     base_indent: usize,
     content_col: Option<usize>,
     pull_indent: usize,
+    own_line: bool,
     leading: &mut Vec<BlockNode>,
 ) -> Option<BlockNode> {
     // Definitions belong to the attached block. Nested lists manage their own markers.
@@ -1051,6 +1092,11 @@ pub(crate) fn parse_continuation_block(
                         })))
         },
     );
+    let attached_end = if own_line {
+        own_line_fence_end(lines, start, attached_end, content_col)
+    } else {
+        attached_end
+    };
     // A closer the host holds keeps the colon body open past its first blank;
     // the lines from that blank on are item content (carve#5405).
     let host_closed = content_col.and_then(|content_col| {

@@ -3366,7 +3366,6 @@ impl<'a> Walk<'a> {
         let mut plus = None;
         // An eligible marker the next block does not attach to is still consumed (carve#5013).
         let mut plus_refusal = None;
-        let mut refused_by = None;
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
         self.sibling = None;
         // Reopening an attached host to test a lone `+` may leave the list
@@ -3397,20 +3396,12 @@ impl<'a> Walk<'a> {
                     && (f.kind == Kind::Quote || c.authored_col < f.col)
                 {
                     let column = doc_column(self.lines[at], c.rest);
-                    // A blank line has closed a note to a `+` at its marker.
-                    if self.decide
-                        && f.kind == Kind::Note
-                        && at > 0
-                        && is_blank_line(self.lines[at - 1])
-                    {
-                        refused_by = Some((Some(f.kind), Refusal::WrongColumn));
-                    } else {
-                        if self.decide {
-                            plus_refusal = self.plus_attaches(k, at, column).err();
-                        }
-                        plus = Some(k);
-                        break;
+                    // A blank does not close a host to a `+` at its marker column (carve#5639).
+                    if self.decide {
+                        plus_refusal = self.plus_attaches(k, at, column).err();
                     }
+                    plus = Some(k);
+                    break;
                 }
             }
             if f.kind == Kind::Quote {
@@ -3448,7 +3439,7 @@ impl<'a> Walk<'a> {
         // Payload stays as written.
         if self.unattached_plus_is_letter(plus, c.rest, reached) {
             let column = doc_column(self.lines[at], c.rest);
-            let refusal = refused_by.or_else(|| self.stray_plus(at, reached, c.col, column));
+            let refusal = self.stray_plus(at, reached, c.col, column);
             self.refuse_letter(at, column, refusal);
         }
         if let Some(k) = plus {

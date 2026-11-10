@@ -2,6 +2,25 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#5658",
+      "cause": "the pinned pack predates the plus ownership table (carve#5716: carve#5635, carve#5637, carve#5639); carve main now matches this engine",
+      "cases": [
+        "fences-06ce61cd4497",
+        "fences-4e8b129ee1fb",
+        "fences-8ed246bfdc05",
+        "notes-5c5cdf831f5f",
+        "notes-71dd1fb4f83e",
+        "notes-9980f8efdfe9"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve-rs#4185",
+      "cause": "the own-line fence now matches carve main (carve#5635); the paragraph after it still reads the indented closer as inline code text",
+      "cases": [
+        "fences-12ba255d2b80"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#5638",
       "cause": "the pinned pack predates the ruling that an attribute line inside an open inline code span stays inline; carve main now matches this engine",
       "cases": [
@@ -12,9 +31,6 @@
       "ticket": "markup-carve/carve#5013",
       "cause": "pin move to carve d9d5dea7: an eligible plus classifies as a marker before attachment; the carve-rs port is pending",
       "cases": [
-        "notes-0fab1ee9bd1b",
-        "notes-4c972a38291f",
-        "notes-c34d64b6881a",
         "notes-df75bb746533",
         "ownership-94b0c7c5deba"
       ]
