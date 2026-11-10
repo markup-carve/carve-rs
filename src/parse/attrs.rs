@@ -226,6 +226,16 @@ pub(crate) fn is_block_brace_opener(opener: &str) -> bool {
         })
 }
 
+/// A block-position brace opener whose construct needs a later line.
+pub(crate) fn block_brace_needs_continuation(opener: &str) -> bool {
+    is_block_brace_opener(opener)
+        && if opener.starts_with("{%") {
+            !opener.contains("%}")
+        } else {
+            parse_standalone_attrs(opener).is_none()
+        }
+}
+
 /// A run takes no lazy continuation lines in any container (carve#5830).
 pub(crate) fn refused_brace_run<'a>(
     lines: impl Iterator<Item = &'a str>,
@@ -261,6 +271,9 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
     }
     if !is_block_brace_opener(opener) {
         return RefusedBraceRun::No(0);
+    }
+    if strip_lazy(first).len() != first.len() && block_brace_needs_continuation(opener) {
+        return RefusedBraceRun::Lines(1);
     }
     let opener_column = column_of(0, first, &mut source_column);
     let comment = opener.starts_with("{%");

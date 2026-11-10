@@ -2681,6 +2681,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let keep = if caption_content(&owned).is_some() {
             format!("{LAZY}{owned}")
+        } else if (indent == 0 || line.starts_with(LAZY))
+            && crate::parse::block_brace_needs_continuation(trim_ascii_start(&owned))
+        {
+            // A brace opener collected through paragraph laziness cannot
+            // start a multi-line block run in this description.
+            format!("{LAZY}{owned}")
         } else if self.folds_into_a_spanned_stanza() {
             self.stanza_fold = true;
             // The frame lets an unclosed `%%%` span end at this line (carve#4956).
