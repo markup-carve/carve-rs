@@ -16,7 +16,10 @@ fn check(data: &str, count: usize) {
         // historical fixture remains read-only; its positive old-ID rows
         // describe the diagnostic before that ruling.
         if rule == "continuation-marker-refused"
-            && !vector["expected"]["findings"].as_array().unwrap().is_empty()
+            && !vector["expected"]["findings"]
+                .as_array()
+                .unwrap()
+                .is_empty()
         {
             continue;
         }

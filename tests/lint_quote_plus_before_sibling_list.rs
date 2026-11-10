@@ -6,7 +6,12 @@ use carve::{lint_carve, to_html};
 fn refusals(source: &str) -> Vec<(usize, usize, String)> {
     lint_carve(source)
         .into_iter()
-        .filter(|warning| matches!(warning.rule, "continuation-marker-refused" | "refused-continuation-marker"))
+        .filter(|warning| {
+            matches!(
+                warning.rule,
+                "continuation-marker-refused" | "refused-continuation-marker"
+            )
+        })
         .map(|warning| (warning.line, warning.column, warning.message))
         .collect()
 }

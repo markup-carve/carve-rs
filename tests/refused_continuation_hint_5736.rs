@@ -9,17 +9,28 @@ fn refused_own_line_markers_hint_across_hosts_and_stops() {
         ("> q\n+\n+\n", vec![(2, 1), (3, 1)]),
     ];
     for (source, expected) in cases {
-        let actual: Vec<_> = lint_carve(source).into_iter()
+        let actual: Vec<_> = lint_carve(source)
+            .into_iter()
             .filter(|row| row.rule == "refused-continuation-marker")
             .map(|row| {
                 assert!(row.message.contains("attaches nothing"));
                 assert!(row.message.contains("removed"));
                 (row.line, row.column)
-            }).collect();
+            })
+            .collect();
         assert_eq!(actual, expected, "{source:?}");
     }
-    for source in ["see[^a]\n\n[^a]: +\nx\n", "q\n+\n- s\n", "- a\n%% carve-lint-disable-next-line refused-continuation-marker\n+\n\nx\n"] {
-        assert!(!lint_carve(source).iter().any(|row| row.rule == "refused-continuation-marker"), "{source:?}");
+    for source in [
+        "see[^a]\n\n[^a]: +\nx\n",
+        "q\n+\n- s\n",
+        "- a\n%% carve-lint-disable-next-line refused-continuation-marker\n+\n\nx\n",
+    ] {
+        assert!(
+            !lint_carve(source)
+                .iter()
+                .any(|row| row.rule == "refused-continuation-marker"),
+            "{source:?}"
+        );
     }
 }
 
@@ -34,8 +45,10 @@ fn generated_blank_stop_variants_report_the_refused_offer() {
             format!("see[^a]\n\n[^a]: note{word}\n+\n\ntail{word}\n"),
         ];
         for source in sources {
-            let count = lint_carve(&source).into_iter()
-                .filter(|row| row.rule == "refused-continuation-marker").count();
+            let count = lint_carve(&source)
+                .into_iter()
+                .filter(|row| row.rule == "refused-continuation-marker")
+                .count();
             assert_eq!(count, 1, "{source:?}");
             checked += 1;
         }
