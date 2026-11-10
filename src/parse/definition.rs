@@ -1689,6 +1689,15 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
     }
 
+    fn body_holds_open_code_fence(&self) -> bool {
+        let lines: Vec<&str> = self
+            .seed
+            .lines()
+            .chain(self.lines.iter().map(String::as_str))
+            .collect();
+        body_lines_hold_open_code_fence(&lines)
+    }
+
     fn into_mapped_source(self) -> MappedSource {
         debug_assert_eq!(self.col_map.len(), self.lines.len());
         debug_assert_eq!(self.reached.len(), self.lines.len());
@@ -2804,8 +2813,8 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             }
             _ => {
                 // A fence the marker line opens past a list marker is open too (carve#4741).
-                if self.nested_lead_fence.is_some() || body_lines_hold_open_code_fence(&self.lines)
-                {
+                // The seed belongs to the scan: its marker-line fence may close and reopen below.
+                if self.nested_lead_fence.is_some() || self.body_holds_open_code_fence() {
                     self.keep_blanks_for_open_fence(cur, cur.pos + look);
                 }
                 BodyStep::Stop

@@ -2675,14 +2675,64 @@ pub(crate) fn refused_follower_step<S: AsRef<str>>(
     true
 }
 
-fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
+fn track_body_code_fence(open: &mut Option<BodyFence>, line: &str) {
+    // A line left of the item a marker-line fence opened in ends that item,
+    // and the fence with it (PART 0 S4); the line is then read on its own.
+    if open.is_some_and(|o| !is_blank_line(line) && indent_columns(line) < o.item_col) {
+        *open = None;
+    }
     let mut text = trim_ascii_start(line);
+    let mut item_col = 0;
     if open.is_none() {
-        if let Some(marker) = detect_list_marker_full(text) {
-            text = innermost_marker_content(marker.content);
+        if let Some((lead, column)) = marker_line_lead(line) {
+            text = lead;
+            item_col = column;
         }
     }
-    track_collected_fence(open, text, true, indent_columns(line));
+    let indent = indent_columns(line);
+    // A closer right of the fence's column is code text.
+    if open.is_some_and(|o| indent > o.fence.content_col) {
+        return;
+    }
+    let mut fence = open.map(|o| o.fence);
+    track_collected_fence(&mut fence, text, true, indent.max(item_col));
+    *open = fence.map(|fence| BodyFence {
+        fence,
+        item_col: open.map_or(item_col, |o| o.item_col),
+    });
+}
+
+/// A fence in collected body lines, with the content column of the list item
+/// whose marker line opened it (0 for a fence on its own line).
+#[derive(Clone, Copy)]
+pub(crate) struct BodyFence {
+    fence: FenceOpen,
+    item_col: usize,
+}
+
+/// The text after every list and description body marker a line opens with,
+/// and the content column of the innermost of them.
+fn marker_line_lead(line: &str) -> Option<(&str, usize)> {
+    let mut column = 0;
+    let mut rest = line;
+    let mut found = false;
+    loop {
+        let local = trim_ascii_start(rest);
+        if let Some(marker) = detect_list_marker_full(local) {
+            let Some(width) = marker_content_col(rest) else {
+                break;
+            };
+            column += width;
+            rest = marker.content;
+        } else if let Some((body, width)) = strip_definition_marker(local) {
+            column += indent_columns(rest) + width;
+            rest = body;
+        } else {
+            break;
+        }
+        found = true;
+    }
+    found.then(|| (trim_ascii_start(rest), column))
 }
 
 /// [`body_lines_hold_open_code_fence`] over a body that only grows, read
@@ -2690,7 +2740,7 @@ fn track_body_code_fence(open: &mut Option<FenceOpen>, line: &str) {
 #[derive(Default)]
 pub(crate) struct OpenCodeFenceScan {
     scanned: usize,
-    open: Option<FenceOpen>,
+    open: Option<BodyFence>,
     follower: Option<FenceOpen>,
     verse: crate::parse::definition::LineBlockTail,
 }
