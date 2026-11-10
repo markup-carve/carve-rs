@@ -74,3 +74,15 @@ fn quoted_marker_line_runs_use_columns_after_quote_prefixes() {
         "<ul>\n  <li>\n    <blockquote><p> y</p></blockquote>\n  </li>\n</ul>",
     );
 }
+
+#[test]
+fn a_marker_shaped_payload_does_not_replace_the_comment_opener() {
+    assert_all_routes(
+        "- a\n  - {% note\n     - {x}\n     ```\n     text %} end",
+        "<ul>\n  <li>a\n    <ul>\n      <li> end</li>\n    </ul>\n  </li>\n</ul>",
+    );
+    assert_all_routes(
+        "- {% note\n   - {x}\n  end %} text\n  ```\n  code\n  ```",
+        "<ul>\n  <li>{% note\n- {x}\nend %} text\n<code>\ncode\n</code></li>\n</ul>",
+    );
+}

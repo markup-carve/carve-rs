@@ -1798,12 +1798,14 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 nested_fence = None;
             }
         } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
-            if let Some(marker) = detect_list_marker_full_at(line, indent) {
-                body_code_fence.holds_open_fence(&lines);
+            if let Some(marker) = detect_list_marker_full_at(line, indent)
+                .filter(|_| marker_brace_run_until.map_or(true, |until| cur.pos >= until))
+            {
                 marker_brace_run_until = marker
                     .content
                     .starts_with("{%")
                     .then(|| {
+                        body_code_fence.holds_open_fence(&lines);
                         let column = marker_content_col_at(line, indent).unwrap_or(indent);
                         let opener = format!("{}{}", " ".repeat(column), marker.content);
                         let run = refused_brace_run(
@@ -1904,7 +1906,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             break;
         }
-        let is_marker = detect_list_marker_full_at(line, indent).is_some();
+        let is_marker = marker_brace_run_until.map_or(true, |until| cur.pos >= until)
+            && detect_list_marker_full_at(line, indent).is_some();
         // A sibling marker misses a span opened on the preceding marker line.
         // The delimiter after that sibling begins a new span at its own host.
         if marker_comment_span.is_some() && is_marker && indent <= marker_comment_owner {
@@ -2661,31 +2664,37 @@ fn ends_in_marker_aware_refused_run(lines: &[String]) -> bool {
         .iter()
         .rposition(|line| is_blank_line(line))
         .map_or(0, |at| at + 1);
-    let Some(marker_at) = (start..lines.len()).rev().find(|&at| {
-        detect_list_marker_full(&lines[at]).is_some_and(|nm| nm.content.starts_with('{'))
-    }) else {
-        return false;
-    };
-    let mut probe: Vec<String> = lines[marker_at..].to_vec();
-    let line = &lines[marker_at];
-    let nm = detect_list_marker_full(line).expect("marker line");
-    let offset = nm.content.as_ptr() as usize - line.as_ptr() as usize;
-    let column = line[..offset].chars().count();
-    let content_column = marker_content_col_at(line, indent_columns(line)).unwrap_or(column);
-    if lines[marker_at + 1..].iter().any(|line| {
-        indent_columns(line) < content_column
-            && (is_list_marker(line) || item_block_opener(trim_ascii_start(line)))
-    }) {
-        return false;
+    for marker_at in (start..lines.len()).rev() {
+        let line = &lines[marker_at];
+        if !line.contains("{%") {
+            continue;
+        }
+        let Some(nm) = detect_list_marker_full(line).filter(|nm| nm.content.starts_with('{'))
+        else {
+            continue;
+        };
+        let offset = nm.content.as_ptr() as usize - line.as_ptr() as usize;
+        let column = line[..offset].chars().count();
+        let content_column = marker_content_col_at(line, indent_columns(line)).unwrap_or(column);
+        if lines[marker_at + 1..].iter().any(|line| {
+            indent_columns(line) < content_column
+                && (is_list_marker(line) || item_block_opener(trim_ascii_start(line)))
+        }) {
+            continue;
+        }
+        let opener = format!("{}{}", " ".repeat(column), nm.content);
+        if matches!(
+            refused_brace_run(
+                std::iter::once(opener.as_str())
+                    .chain(lines[marker_at + 1..].iter().map(String::as_str)),
+                true
+            ),
+            RefusedBraceRun::Lines(count) if count == lines.len() - marker_at
+        ) {
+            return true;
+        }
     }
-    probe[0] = format!("{}{}", " ".repeat(column), nm.content);
-    // The marker is a fresh block boundary. A brace-shaped continuation
-    // inside its comment run is text, not another run candidate; the generic
-    // backward search would mistake it for one and miss the marker opener.
-    matches!(
-        refused_brace_run(probe.iter().map(String::as_str), true),
-        RefusedBraceRun::Lines(count) if count == probe.len()
-    )
+    false
 }
 
 pub(crate) fn track_collected_colon_fence(
