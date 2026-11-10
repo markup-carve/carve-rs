@@ -2666,7 +2666,7 @@ fn ends_in_marker_aware_refused_run(lines: &[String]) -> bool {
         .map_or(0, |at| at + 1);
     for marker_at in (start..lines.len()).rev() {
         let line = &lines[marker_at];
-        if !line.contains("{%") {
+        if !line.contains('{') {
             continue;
         }
         let Some(nm) = detect_list_marker_full(line).filter(|nm| nm.content.starts_with('{'))
