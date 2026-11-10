@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn termless_colon_leads_do_not_claim_a_document_comment_span() {
+    assert_eq!(
+        crate::to_html("- a\n  : \n\n  : %%%\n%%%\nc\n"),
+        "<ul>\n  <li><p>a\n:</p>\n    <p>:</p>\n  </li>\n</ul>"
+    );
+    for above in ["  : ", "  : x", "  : \n  : ", "  :: t\n    deep\n  : d"] {
+        for gap in ["", "\n"] {
+            let source = format!("- a\n{above}\n{gap}  : %%%\n%%%\nc\n");
+            let html = crate::to_html(&source);
+            assert!(!html.contains("<p>c</p>"), "{source:?}: {html}");
+        }
+    }
+    for above in ["  :: t", "  :: t\n  : d", "  :: t\n  : d\n    more"] {
+        let source = format!("- a\n{above}\n\n  : %%%\n%%%\nc\n");
+        let html = crate::to_html(&source);
+        assert!(html.ends_with("<p>c</p>"), "{source:?}: {html}");
+    }
+}
+
+#[test]
 fn attribute_lines_inside_open_code_spans_stay_inline() {
     for (source, expected) in [
         (

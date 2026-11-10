@@ -958,7 +958,8 @@ pub(in crate::parse) struct BodyCommentState {
     line_block_span: Option<usize>,
     /// Nonblank lines as (column, is a description term or lead), each shadowing
     /// the earlier ones at or right of its column.
-    entries: Vec<(usize, bool)>,
+    // Same-column definition chain, and whether its last member is a term.
+    entries: Vec<(usize, bool, bool)>,
     /// The lines since the last blank, where a refused brace run can end.
     run: Vec<String>,
     /// A refused brace run's fence-shaped follower, which is paragraph text
@@ -1004,7 +1005,7 @@ impl BodyCommentState {
             .entries
             .iter()
             .rev()
-            .find(|&&(above, _)| above <= col)?;
+            .find(|&&(above, _, _)| above <= col)?;
         (above.0 == col && above.1).then_some(text)
     }
 
@@ -1015,11 +1016,28 @@ impl BodyCommentState {
         } else {
             let col = indent_columns(strip_lazy(raw));
             let lead = self.after_body_lead(line, col);
-            while self.entries.last().is_some_and(|&(above, _)| above >= col) {
+            let above = self.entries.iter().rev().find(|entry| entry.0 <= col);
+            let continued = above.is_some_and(|entry| entry.0 == col && entry.1);
+            let term = line.starts_with(":: ");
+            let description = line.starts_with(": ") && continued;
+            // A term has no body: deeper text before its first description ends it.
+            if self
+                .entries
+                .last()
+                .is_some_and(|entry| entry.0 < col && entry.2)
+            {
+                if let Some(entry) = self.entries.last_mut() {
+                    entry.1 = false;
+                }
+            }
+            while self
+                .entries
+                .last()
+                .is_some_and(|&(above, _, _)| above >= col)
+            {
                 self.entries.pop();
             }
-            self.entries
-                .push((col, line.starts_with(": ") || line.starts_with(":: ")));
+            self.entries.push((col, term || description, term));
             lead
         };
         if let Some(open) = self.code {
