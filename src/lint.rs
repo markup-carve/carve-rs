@@ -531,6 +531,17 @@ fn collect_parser_events(
             crate::render_depth::push_inline_children(inline, inline_depth, &mut inlines);
         }
     }
+    visible_plus_spans.sort_unstable_by_key(|span| span.0);
+    let mut merged_plus_spans: Vec<(usize, usize)> = Vec::with_capacity(visible_plus_spans.len());
+    for (start, end) in visible_plus_spans {
+        if let Some(last) = merged_plus_spans.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        merged_plus_spans.push((start, end));
+    }
     let mut seen = HashSet::new();
     for event in events {
         let (line, column, rule, message, len) = match event {
@@ -634,11 +645,14 @@ fn collect_parser_events(
                         .get(line.saturating_sub(1))
                         .and_then(|row| row.rfind('+').map(|byte| row[..byte].chars().count()))
                         .unwrap_or(column.saturating_sub(1));
-                if !*first_block
-                    && visible_plus_spans
-                        .iter()
-                        .any(|&(start, end)| start <= marker_offset && marker_offset < end)
-                {
+                let visible = merged_plus_spans
+                    .get(
+                        merged_plus_spans
+                            .partition_point(|&(start, _)| start <= marker_offset)
+                            .saturating_sub(1),
+                    )
+                    .is_some_and(|&(start, end)| start <= marker_offset && marker_offset < end);
+                if !*first_block && visible {
                     continue;
                 }
                 let explanation = match *reason {
