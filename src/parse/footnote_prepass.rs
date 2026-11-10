@@ -3801,6 +3801,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let rest = trim_ascii_start(
             inside.unwrap_or_else(|| without_blockquote_prefixes(trim_ascii_start(raw))),
         );
+        // A refused marker-line run keeps a following note-shaped line as
+        // paragraph text rather than registering a sibling definition.
+        // List and heading markers at this column still leave the host first.
+        if parse_footnote_def_line(rest).is_some() && ends_in_refused_brace_run(&note.lines) {
+            let local = inside.unwrap_or_else(|| without_blockquote_prefixes(raw));
+            let kept = note.frame_lazy(indent_columns(local), rest);
+            note.push_with(kept, Some(self.first_source_line + *i), |_| {
+                stripped_col(Some(0), raw, rest)
+            });
+            walk.lazy_open = true;
+            *i += 1;
+            return true;
+        }
         let verse_text = note.stanza.in_block() == Some(true) && !is_list_marker(rest);
         let lazy = !is_blank_line(rest)
             && walk.admitted_fence.is_none()
