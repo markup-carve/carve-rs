@@ -979,6 +979,7 @@ struct AttachedBlock {
 /// One line being rewritten: `out` is written, `src` remains.
 struct Cursor<'s> {
     out: String,
+    raw_line: &'s str,
     src: &'s str,
     col: usize,
     /// The measured column; `col` differs when the walk stands a line deeper.
@@ -1338,6 +1339,7 @@ fn walk_traced(
         let line = walk.lines[at];
         let mut c = Cursor {
             out: String::new(),
+            raw_line: line,
             src: line,
             col: 0,
             authored_col: 0,
@@ -2863,7 +2865,27 @@ impl<'a> Walk<'a> {
         {
             // A one-column verse lead survives an enclosing quoted item.
             c.lead_at(inner.canon + 1 + inner.shift + c.attachment_shift, false);
-        } else if inner.line_block && inner.verse_opener_tab && !inner.verse_marker_line {
+        } else if verse_payload
+            && inner.verse_opener_tab
+            && !inner.verse_marker_line
+            && !c.out.is_empty()
+            && c.src[..c.src.len() - c.rest.len()]
+                .bytes()
+                .filter(|&byte| byte == b'\t')
+                .count()
+                > 1
+            && c.raw_line[..c.raw_line.len() - c.rest.len()]
+                .rsplit_once('>')
+                .is_some_and(|(_, tail)| tail.starts_with(" \t"))
+        {
+            // A second tab immediately after the quote's canonical space
+            // reuses the containing frame's stop.
+            c.lead_at(inner.canon + inner.shift + c.attachment_shift, false);
+        } else if inner.line_block
+            && inner.verse_opener_tab
+            && !inner.verse_marker_line
+            && c.out.is_empty()
+        {
             // The opener now stands at `canon`, but its later lines were
             // measured in the authored frame. Use that same frame for both
             // payload and closer. Expand a tab only when a containing item
