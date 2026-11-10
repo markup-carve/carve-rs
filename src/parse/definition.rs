@@ -1316,8 +1316,14 @@ impl LineBlockTail {
                 // A bare opener is hosted by the item it sits in (PART 0 S1).
                 if !line_quoted && !is_blank_line(line) {
                     let indent = indent_columns(line);
-                    if marked || prior_blank {
+                    let note = !marked
+                        && crate::parse::footnote_prepass::parse_footnote_def_line(local).is_some();
+                    if marked || note || prior_blank {
                         self.item_cols.retain(|&col| col <= indent);
+                    }
+                    // A nested note hosts its body two columns past its marker (§24 C3).
+                    if note {
+                        self.item_cols.push(indent + 2);
                     }
                     // A description body hosts a bare opener below it too (PART 0 S1).
                     if marked
