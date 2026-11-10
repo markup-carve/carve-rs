@@ -2061,7 +2061,20 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // A quote collector rebases ordinary child lines already. A marker
         // ladder on one quote line instead keeps its descendant columns here;
         // preserve the authored visual remainder when the child frame reparses it.
-        let visible = (!cur.in_quoted_body || !marker_line_columns.is_empty())
+        // The next tab crosses this quoted item's content column. Rebase the
+        // opener through the same lead path as visible list lines, so its
+        // residual spaces do not become the verse reader's structural base.
+        let quoted_verse_lead = cur.in_quoted_body
+            && detect_line_block_open(trim_ascii_start(line)).is_some()
+            && (cur.pos + 1..cur.lines.len())
+                .map(|at| cur.lines.at(at))
+                .find(|next| !is_blank_line(next))
+                .is_some_and(|next| {
+                    let lead = &next[..next.len() - trim_ascii_start(next).len()];
+                    lead.find('\t').is_some_and(|tab| tab < strip_cols)
+                        && indent_columns(next) == indent + 1
+                });
+        let visible = (!cur.in_quoted_body || !marker_line_columns.is_empty() || quoted_verse_lead)
             && fence.is_none()
             && active_nested_fence.is_none()
             && nested_fence.is_none()
