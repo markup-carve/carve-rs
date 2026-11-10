@@ -2051,36 +2051,15 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(payload_line, stripped, true);
         // A tab left after slicing expands from column zero on the next read.
-        // Preserve its authored remainder for visible list lines. Quoted
-        // bodies already had their tab phase rebased by the quote collector;
-        // opaque payloads keep their literal tabs. A fence closer is
-        // structural even while the fence is open (carve#3141).
+        // Preserve its authored remainder for visible list lines, quoted or
+        // not: a quoted body measures its tabs after the quote frame, so its
+        // nested frames need the same remainder (carve#5720). Opaque payloads
+        // keep their literal tabs. A fence closer is structural even while
+        // the fence is open (carve#3141).
         let fence_closer = fence.is_some_and(|open| {
             indent <= open.content_col && is_fence_close(trim_ascii_start(payload_line), open)
         });
-        // A quote collector rebases ordinary child lines already. A marker
-        // ladder on one quote line instead keeps its descendant columns here;
-        // preserve the authored visual remainder when the child frame reparses it.
-        // The next tab crosses this quoted item's content column. Rebase the
-        // opener through the same lead path as visible list lines, so its
-        // residual spaces do not become the verse reader's structural base.
-        let quoted_verse_lead = cur.in_quoted_body
-            && detect_line_block_open(trim_ascii_start(line)).is_some_and(|width| {
-                (cur.pos + 1..cur.lines.len())
-                    .map(|at| cur.lines.at(at))
-                    .take_while(|next| is_blank_line(next) || indent_columns(next) >= strip_cols)
-                    .take_while(|next| {
-                        !(indent_columns(next) <= indent
-                            && exact_colon_fence_len(trim_ascii_start(next)) == Some(width))
-                    })
-                    .any(|next| {
-                        let lead = &next[..next.len() - trim_ascii_start(next).len()];
-                        lead.find('\t').is_some_and(|tab| tab < strip_cols)
-                            && indent_columns(next) == indent + 1
-                    })
-            });
-        let visible = (!cur.in_quoted_body || !marker_line_columns.is_empty() || quoted_verse_lead)
-            && fence.is_none()
+        let visible = fence.is_none()
             && active_nested_fence.is_none()
             && nested_fence.is_none()
             && comment_fence.is_none()
