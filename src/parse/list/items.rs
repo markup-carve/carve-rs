@@ -2884,6 +2884,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             return false;
         }
         let next_owned = next.to_string();
+        // A lazy line is held by an open code span only, as in the ownership walk.
         let held_brace =
             trim_ascii_start(next).starts_with('{') && lead.inline_span.code_open(&lead.lines);
         if !held_brace && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
@@ -2917,7 +2918,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // block relative to it (#1705). Ordinary over-indented prose is
         // still lazy paragraph text.
         let over_indented = trim_ascii_start(next);
-        let held_brace = over_indented.starts_with('{') && lead.inline_span.code_open(&lead.lines);
+        let held_brace = over_indented.starts_with('{')
+            && lead.inline_span.holds_brace_line(&lead.lines, self.cur);
         if !held_brace
             && item_block_opener(over_indented)
             && detect_block_image(over_indented).is_none()
@@ -3036,7 +3038,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     fn lead_line_at_column(&mut self, lead: &mut LeadParagraph, next: &str, indent: usize) -> bool {
         let content_col = self.content_col;
         let dedented = slice_columns(next, content_col, false);
-        let held_brace = dedented.starts_with('{') && lead.inline_span.code_open(&lead.lines);
+        let held_brace =
+            dedented.starts_with('{') && lead.inline_span.holds_brace_line(&lead.lines, self.cur);
         let wrapped_attr_interrupts = if held_brace || self.cur.pos < lead.attrs_scan_floor {
             false
         } else {

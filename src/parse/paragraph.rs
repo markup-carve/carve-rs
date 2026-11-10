@@ -279,7 +279,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
         }
         // A brace line held by the paragraph's inline pairing cannot open a
         // block attribute, whether the brace form is wrapped or complete.
-        let held_brace = brace_line.starts_with('{') && inline_span.code_open(&lines);
+        let held_brace = brace_line.starts_with('{') && inline_span.holds_brace_line(&lines, cur);
         if !forced
             && !lines.is_empty()
             && ((reference_caption_claimed && caption_content(line).is_some())
@@ -371,9 +371,49 @@ pub(in crate::parse) struct InlineSpanScan {
     pub(in crate::parse) scanned: usize,
     code_run: usize,
     comment: bool,
+    /// The last forward search for a `%}`: the line it started on and the
+    /// line it found, if any.
+    closer: Option<(usize, Option<usize>)>,
 }
 
 impl InlineSpanScan {
+    /// Whether the inline pairing of `lines` holds the cursor's brace line:
+    /// an open code span, or an open braced comment whose `%}` stands on this
+    /// line or a later one before the next blank (PART 9 §21a, carve#5740).
+    pub(in crate::parse) fn holds_brace_line<S: AsRef<str>>(
+        &mut self,
+        lines: &[S],
+        cur: &LineCursor<'_>,
+    ) -> bool {
+        if self.code_open(lines) {
+            return true;
+        }
+        self.comment && self.comment_closes_from(cur)
+    }
+
+    fn comment_closes_from(&mut self, cur: &LineCursor<'_>) -> bool {
+        let at = cur.pos;
+        if let Some((from, found)) = self.closer {
+            if from <= at && found.map_or(true, |k| k >= at) {
+                return found.is_some();
+            }
+        }
+        let mut found = None;
+        let mut k = at;
+        while let Some(line) = cur.lines.line(k) {
+            if is_blank_line(line) {
+                break;
+            }
+            if line.contains("%}") {
+                found = Some(k);
+                break;
+            }
+            k += 1;
+        }
+        self.closer = Some((at, found));
+        found.is_some()
+    }
+
     pub(in crate::parse) fn code_open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
         self.open(lines);
         self.code_run != 0
