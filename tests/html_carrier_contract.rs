@@ -48,6 +48,13 @@ fn reference_carriers_restore_definitions_and_source_in_every_mode() {
                 let html = html.replace("PREFIX", prefix);
                 let value = json(&html, mode);
                 let mut definitions = Vec::new(); nodes(&value, "link_reference_definition", &mut definitions);
+                if prefix == "djot" {
+                    // The old prefix is ordinary input after carve#5735.
+                    assert!(definitions.is_empty(), "{tag} {mode:?}");
+                    let source = html_to_carve(&html, &HtmlImportOptions { mode, ..Default::default() }).unwrap().value;
+                    assert!(source.contains("data-djot-ref"), "{source}");
+                    continue;
+                }
                 assert_eq!(definitions.len(), 1, "{tag} {prefix} {mode:?}");
                 assert_eq!(definitions[0]["label"], "label");
                 assert_eq!(definitions[0]["href"], destination);
@@ -92,6 +99,21 @@ fn abbreviation_templates_restore_only_definition_text() {
             let value = json(&html, mode);
             let mut definitions = Vec::new();
             nodes(&value, "abbreviation_def", &mut definitions);
+            if prefix == "djot" {
+                // A retired carrier on a template no longer restores definitions.
+                assert!(definitions.is_empty(), "{value}");
+                let source = html_to_carve(
+                    &html,
+                    &HtmlImportOptions {
+                        mode,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+                .value;
+                assert!(!source.contains("*[HTML]"), "{source}");
+                continue;
+            }
             assert_eq!(definitions.len(), 2, "{value}");
             assert_eq!(definitions[0]["expansion"], "Hyper & Text");
             let source = html_to_carve(

@@ -4,7 +4,7 @@ use carve::{
     HtmlImportMode, HtmlImportOptions, Options,
 };
 use html5ever::{local_name, ns, tendril::TendrilSink, QualName};
-use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use serde_json::Value;
 
 fn fixtures() -> Value {
@@ -113,29 +113,28 @@ fn import_projection(tree: &Value, fixture: &Value) -> bool {
     }
 }
 fn reserved(name: &str) -> bool {
-    // `data-carve-src` is reserved with no inventory row and no deprecated alias.
-    matches!(
-        name,
-        "data-marker" | "data-char" | "data-carve-src" | "data-djot-src"
-    ) || [
-        "explicit-id",
-        "ref",
-        "autolink",
-        "footnote-label",
-        "inline-footnote",
-        "raw",
-        "escaped",
-        "abbreviations",
-        "col-widths",
-        "label",
-        "generated-id",
-        "id-slot",
-        "tight",
-        "xref",
-        "caption-number",
-    ]
-    .iter()
-    .any(|suffix| name == format!("data-carve-{suffix}") || name == format!("data-djot-{suffix}"))
+    // `data-carve-src` is reserved with no inventory row. The former
+    // `data-djot-*` names are ordinary attributes under carve#5735.
+    matches!(name, "data-marker" | "data-char" | "data-carve-src")
+        || [
+            "explicit-id",
+            "ref",
+            "autolink",
+            "footnote-label",
+            "inline-footnote",
+            "raw",
+            "escaped",
+            "abbreviations",
+            "col-widths",
+            "label",
+            "generated-id",
+            "id-slot",
+            "tight",
+            "xref",
+            "caption-number",
+        ]
+        .iter()
+        .any(|suffix| name == format!("data-carve-{suffix}"))
 }
 fn no_reserved(tree: &Value) {
     for node in node_list(tree) {
@@ -235,47 +234,6 @@ fn carrier_text(handle: &Handle) -> String {
         })
         .collect();
     payload
-}
-fn deprecated_html(html: &str) -> String {
-    let tree = dom(html);
-    let mut all = Vec::new();
-    visit(&tree.document, &mut all);
-    for handle in all {
-        if let NodeData::Element { attrs, .. } = &handle.data {
-            for attr in attrs.borrow_mut().iter_mut() {
-                let name = attr.name.local.to_string();
-                if name.starts_with("data-carve-") && name != "data-carve-src" && reserved(&name) {
-                    attr.name.local = name.replacen("data-carve-", "data-djot-", 1).into();
-                }
-            }
-        }
-    }
-    let mut all = Vec::new();
-    visit(&tree.document, &mut all);
-    for handle in all {
-        if let NodeData::Element {
-            template_contents, ..
-        } = &handle.data
-        {
-            if let Some(content) = template_contents.borrow().as_ref() {
-                *handle.children.borrow_mut() = content.children.borrow().clone();
-            }
-        }
-    }
-    let root = tree.document.children.borrow()[0].clone();
-    let mut bytes = Vec::new();
-    for child in root.children.borrow().iter() {
-        html5ever::serialize(
-            &mut bytes,
-            &SerializableHandle::from(child.clone()),
-            html5ever::serialize::SerializeOpts {
-                traversal_scope: html5ever::serialize::TraversalScope::IncludeNode,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    }
-    String::from_utf8(bytes).unwrap()
 }
 
 #[test]
@@ -399,9 +357,6 @@ fn shared_export_inventory_restores_approved_ast_fields() {
                         assert_eq!(declined, expected_decline, "{} {name}", fixture["id"]);
                     }
                     no_reserved(&imported);
-                    let legacy = import_ast(&deprecated_html(&exported), &options);
-                    assert_eq!(import_projection(&legacy, fixture), declined);
-                    no_reserved(&legacy);
                     for absent in rows(fixture, "expectedAbsentFields") {
                         assert!(node_list(&imported)
                             .iter()
@@ -549,6 +504,11 @@ fn collision_row(fixture: &Value) {
     // A null `value` names a reserved name with no carrier: nothing is written.
     let expected: Vec<String> = fixture["value"]
         .as_str()
+        .or_else(|| {
+            name.starts_with("data-djot-")
+                .then(|| fixture["defaultValue"].as_str())
+                .flatten()
+        })
         .map(str::to_owned)
         .into_iter()
         .collect();
@@ -558,7 +518,7 @@ fn collision_row(fixture: &Value) {
             && row.attribute.as_deref() == Some(name.as_str())
             && row.format.is_none()
             && row.target.as_str() == "html")
-            == !fixture["kept"].as_bool().unwrap_or(false),
+            == !(fixture["kept"].as_bool().unwrap_or(false) || name.starts_with("data-djot-")),
         "{}",
         fixture["id"]
     );
@@ -850,6 +810,11 @@ fn shared_footnote_recovery_remains_a_complete_separate_resource() {
     .unwrap();
     assert_eq!(paired.as_array().unwrap().len(), 24);
     for fixture in paired.as_array().unwrap() {
+        // The pinned fixture predates carve#5735; the retired-prefix cases
+        // are checked against the new rule in retired_input_aliases_5735.
+        if fixture["html"].as_str().unwrap().contains("data-djot-") {
+            continue;
+        }
         let options = mode(fixture["mode"].as_str().unwrap());
         let html = text(fixture, "html");
         assert_eq!(
@@ -947,12 +912,13 @@ fn xref_contradictions_keep_an_ordinary_link_in_every_mode() {
                         .any(|node| node["type"] == "link" && node["href"] == "#target"),
                     "{source}: {tree}"
                 );
-                assert!(
+                assert_eq!(
                     imported
                         .report
                         .diagnostics
                         .iter()
                         .any(|row| row.code.as_str() == "attribute-dropped"),
+                    prefix == "data-carve",
                     "{source}: {:?}",
                     imported.report
                 );

@@ -92,7 +92,7 @@ fn shared_new_markdown_carriers_restore_nodes_and_html() {
 }
 
 #[test]
-fn shared_code_label_is_consumed_in_every_html_mode_and_spelling() {
+fn shared_code_label_is_consumed_in_every_html_mode() {
     for fixture in fixtures()["exportImport"].as_array().unwrap() {
         let source = fixture["source"].as_str().unwrap();
         assert!(!carve::to_html(source).contains("data-carve-label"));
@@ -104,10 +104,8 @@ fn shared_code_label_is_consumed_in_every_html_mode_and_spelling() {
             HtmlImportMode::Semantic,
             HtmlImportMode::Roundtrip,
         ] {
-            for html in [
-                html.clone(),
-                html.replace("data-carve-label", "data-djot-label"),
-            ] {
+            {
+                let html = html.clone();
                 let options = HtmlImportOptions {
                     mode,
                     ..Default::default()
@@ -118,9 +116,7 @@ fn shared_code_label_is_consumed_in_every_html_mode_and_spelling() {
                     &fixture["expectedNodes"],
                 );
                 let imported = carve::html_to_carve(&html, &options).unwrap().value;
-                assert!(
-                    !imported.contains("data-carve-label") && !imported.contains("data-djot-label")
-                );
+                assert!(!imported.contains("data-carve-label"));
                 assert_eq!(carve::to_html(&imported), carve::to_html(source));
             }
         }
@@ -240,14 +236,13 @@ fn html_label_validation_precedence_and_attribute_placement() {
         .unwrap()
         .value;
         assert!(imported.contains("[new]"));
+        assert!(imported.contains("data-djot-label=old"));
         for html in [
             "<pre data-carve-label=\"unused\">x</pre>",
-            "<p data-djot-label=\"unused\">x</p>",
+            "<p data-carve-label=\"unused\">x</p>",
         ] {
             let imported = carve::html_to_carve(html, &options).unwrap().value;
-            assert!(
-                !imported.contains("data-carve-label") && !imported.contains("data-djot-label")
-            );
+            assert!(!imported.contains("data-carve-label"));
         }
     }
     let html = carve::to_html_with_options(

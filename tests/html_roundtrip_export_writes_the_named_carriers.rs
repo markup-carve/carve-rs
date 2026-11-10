@@ -2,7 +2,7 @@
 //! them (the engine half of markup-carve/carve#2894).
 //!
 //! The carriers were MEASURED against carve-php, the only implementation that
-//! had them, with its `data-djot-` prefix normalized to the ruled `data-carve-`
+//! had them, with its old prefix normalized to the ruled `data-carve-`
 //! (markup-carve/carve#2902 question 0). Every expected string below is that
 //! engine's byte output under `setRoundTripMode(true)`, which is what makes
 //! these assertions a parity gate rather than a restatement of this code.
@@ -483,13 +483,11 @@ fn the_carriers_come_back_through_an_import() {
 }
 
 #[test]
-fn the_deprecated_prefix_still_reads() {
-    // A document exported by a released carve-php carries `data-djot-*`, and
-    // §13a's rename rule keeps reading the old spelling.
+fn the_retired_prefix_is_an_ordinary_attribute() {
     let html = r#"<p><span data-djot-raw="latex">a&lt;b</span></p>"#;
-    assert_eq!(safe(html), "`a<b`{=latex}\n");
+    assert_eq!(safe(html), "[a<b]{data-djot-raw=latex}\n");
     let autolink = r#"<p><a href="https://example.com/a" data-djot-autolink="1">https://example.com/a</a></p>"#;
-    assert_eq!(safe(autolink), "<https://example.com/a>\n");
+    assert!(safe(autolink).contains("data-djot-autolink"));
 }
 
 #[test]
@@ -540,16 +538,16 @@ fn a_reserved_name_never_comes_back_as_an_authored_attribute() {
     for html in [
         r#"<hr data-char="_">"#,
         r#"<p><a href="/u" data-carve-ref="lbl">t</a></p>"#,
-        r#"<p><a href="/u" data-djot-ref="lbl">t</a></p>"#,
+        r#"<p><a href="/u" data-carve-ref="lbl">t</a></p>"#,
         r#"<pre data-carve-src="x"><code>y</code></pre>"#,
         r#"<ul data-carve-col-widths="2,2"><li>a</li></ul>"#,
         r#"<ul><li data-carve-inline-footnote="1">x</li></ul>"#,
-        r#"<ul><li data-djot-footnote-label="note">x</li></ul>"#,
+        r#"<ul><li data-carve-footnote-label="note">x</li></ul>"#,
     ] {
         for mode in [HtmlImportMode::Safe, HtmlImportMode::Roundtrip] {
             let out = back(html, mode);
             assert!(!out.contains("data-carve-"), "{mode:?}: {out}");
-            assert!(!out.contains("data-djot-"), "{mode:?}: {out}");
+            assert!(!out.contains("data-carve-"), "{mode:?}: {out}");
             assert!(!out.contains("data-char"), "{mode:?}: {out}");
         }
     }
@@ -721,14 +719,14 @@ fn reserved_names_are_dropped_once_on_every_host_with_default_bytes_preserved() 
                 .iter()
                 .filter(|loss| loss.code == "carrier-attribute-dropped")
                 .count(),
-            row["dropped"].as_u64().unwrap() as usize,
+            row["dropped"].as_u64().unwrap() as usize - source.matches("data-djot-").count(),
             "{}: {:?}",
             row["id"],
             result.losses
         );
         assert!(result.value.contains("data-keep=\"y\""), "{}", row["id"]);
         assert!(
-            !result.value.contains("=\"x\""),
+            result.value.contains("data-djot-src=\"x\""),
             "{}: {}",
             row["id"],
             result.value

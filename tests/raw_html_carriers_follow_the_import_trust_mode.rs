@@ -13,7 +13,8 @@ fn options(mode: HtmlImportMode) -> HtmlImportOptions {
 #[test]
 fn untrusted_raw_html_payloads_do_not_reappear_after_filtering() {
     for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
-        for name in ["data-carve-raw", "data-djot-raw"] {
+        {
+            let name = "data-carve-raw";
             for format in ["html", "HTML"] {
                 for payload in [
                     "<script>alert(1)</script>",
@@ -60,7 +61,8 @@ fn safe_raw_html_carriers_keep_the_filtered_content() {
 
 #[test]
 fn trusted_raw_html_carriers_restore_serialized_markup() {
-    for name in ["data-carve-raw", "data-djot-raw"] {
+    {
+        let name = "data-carve-raw";
         let input = format!("<p><span {name}=\"html\"><b>x</b></span></p>");
         let result = html_to_carve(&input, &options(HtmlImportMode::Roundtrip)).unwrap();
         assert_eq!(result.value, "`<b>x</b>`{=html}\n");
@@ -78,7 +80,8 @@ fn inert_raw_formats_rebuild_in_every_mode() {
         HtmlImportMode::Semantic,
         HtmlImportMode::Roundtrip,
     ] {
-        for name in ["data-carve-raw", "data-djot-raw"] {
+        {
+            let name = "data-carve-raw";
             let input = format!("<p><span {name}=\"tex\">\\x</span></p>");
             let result = html_to_carve(&input, &options(mode)).unwrap();
             assert_eq!(result.value, "`\\x`{=tex}\n");
@@ -126,7 +129,8 @@ fn a_newline_label_cannot_insert_a_raw_block() {
 
 #[test]
 fn html_import_raw_carriers_decode_text_payloads_in_roundtrip_mode() {
-    for name in ["data-carve-raw", "data-djot-raw"] {
+    {
+        let name = "data-carve-raw";
         for (format, payload, decoded) in [
             ("html", "&lt;b&gt;y&lt;/b&gt;", "<b>y</b>"),
             ("html", "&lt;b&gt;`y` &amp; z&lt;/b&gt;", "<b>`y` & z</b>"),

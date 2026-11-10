@@ -3389,7 +3389,7 @@ pub(crate) fn write_carrier(
 ///
 /// §13a: "A writer writes the empty value or `1`". Measured against carve-php
 /// under roundtrip mode, two of the four presence carriers are written BARE
-/// (`<span data-djot-escaped>`, `<template data-djot-abbreviations>`) and the
+/// (`<span data-carve-escaped>`, `<template data-carve-abbreviations>`) and the
 /// other three carry `="1"`, so the inventory's two spellings are both in use
 /// and byte-parity needs both here.
 pub(crate) fn write_bare_carrier(
