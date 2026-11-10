@@ -31,3 +31,21 @@ fn a_tab_past_a_spaced_opener_stays_verse_indentation() {
         "<ul>\n  <li>a\n    <div class=\"line-block\">\n      <p>&nbsp;&nbsp;&nbsp;&nbsp;y</p>\n    </div>\n  </li>\n</ul>",
     );
 }
+
+#[test]
+fn a_tab_in_a_nested_items_line_block_keeps_its_verse_indentation() {
+    for lead in ["    \t", "      \t"] {
+        check(
+            &format!("- a\n  - a\n    ::: |\n{lead}y\n    :::\n"),
+            "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p>&nbsp;&nbsp;&nbsp;&nbsp;y</p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        );
+    }
+}
+
+#[test]
+fn a_tabbed_opener_does_not_add_space_led_verse_indentation() {
+    check(
+        "- a\n  - a\n  \t::: |\n      y\n  \t:::\n",
+        "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p>y</p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
+    );
+}

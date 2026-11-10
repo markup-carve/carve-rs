@@ -92,6 +92,12 @@ struct Frame {
     /// The open paragraph absorbed an invalid colon opener (CARVE-P9-016).
     absorbs: bool,
     line_block: bool,
+    /// The opener lead before owner frames rewrite it, for verse indentation.
+    verse_open_authored_col: usize,
+    /// A tab in the opener lead already has a host-relative rewrite.
+    verse_opener_tab: bool,
+    /// A marker-line opener already has its host-relative lead.
+    verse_marker_line: bool,
     /// A fence or comment span open inside a line-block payload.
     span: Option<(u8, usize)>,
     /// Authored position of a comment span inside a line-block payload.
@@ -172,6 +178,9 @@ impl Frame {
             run: 0,
             absorbs: false,
             line_block: false,
+            verse_open_authored_col: 0,
+            verse_opener_tab: false,
+            verse_marker_line: false,
             span: None,
             span_origin: None,
             verse: false,
@@ -2773,6 +2782,33 @@ impl<'a> Walk<'a> {
     /// Whether the line stays in the innermost fence's payload. A `%%` line
     /// below the column inside an open `%%%` span is that span's payload, and
     /// its exact run the closer (PART 0 S1, PART 9 §28, carve#4994).
+    fn write_payload_lead(
+        c: &mut Cursor<'_>,
+        inner: &Frame,
+        target: usize,
+        closer: Option<Closer>,
+        col: usize,
+        open_col: usize,
+    ) {
+        // A line block keeps verse indentation relative to its opener. A
+        // marker-line or tabbed opener already has a host-relative rewrite.
+        let verse_payload =
+            inner.line_block && !closer.is_some_and(|cl| cl.closes(c.rest, col, open_col));
+        if verse_payload
+            && !inner.verse_opener_tab
+            && !inner.verse_marker_line
+            && c.authored_col >= inner.verse_open_authored_col
+        {
+            let opener_shift = inner.verse_open_authored_col.saturating_sub(inner.canon);
+            c.lead_at(
+                c.authored_col.saturating_sub(opener_shift) + inner.shift + c.attachment_shift,
+                false,
+            );
+        } else {
+            c.lead_in(target, inner.shift, false);
+        }
+    }
+
     fn in_open_payload(&self, missed: bool, reached: usize, col: usize, rest: &str) -> bool {
         let inner = self.frames.last().expect("document frame");
         let attached_closer = inner.attached_host_fence
@@ -3401,7 +3437,7 @@ impl<'a> Walk<'a> {
             let (col, open_col) = (c.col, inner.closer_col());
             let family = inner.family;
             let target = Self::payload_target(inner, closer, c.rest, col, target);
-            c.lead_in(target, inner.shift, false);
+            Self::write_payload_lead(c, inner, target, closer, col, open_col);
             self.write_attached_quote_comment_payload(at, reached, missed, c, inner);
             if tracing {
                 let payload = self.deepest();
@@ -4061,6 +4097,14 @@ impl<'a> Walk<'a> {
                     col
                 };
                 f.line_block = line_block;
+                f.verse_open_authored_col = c.authored_col;
+                f.verse_marker_line =
+                    line_block && detect_line_block_open(unquoted(self.lines[at])).is_none();
+                f.verse_opener_tab = line_block
+                    && self.lines[at]
+                        .split(':')
+                        .next()
+                        .is_some_and(|lead| lead.contains('\t'));
                 f.shift = o_shift;
                 f.line = self.first_line + at;
                 f.doc_marker = doc_column(self.lines[at], c.src);
