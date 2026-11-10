@@ -537,6 +537,59 @@ fn lines_end_in_refused_run(lines: &[&str], quotes: usize) -> bool {
     ends_in_refused_brace_run(&run)
 }
 
+/// R03 also applies before the ownership walk classifies a quoted `+`.
+/// Normalize quote prefixes and marker-line leads, but keep an unprefixed
+/// continuation at its written column (CARVE-P2-035).
+fn quoted_plus_after_refused_run(lines: &[&str], at: usize) -> bool {
+    let Some(current) = lines.get(at) else {
+        return false;
+    };
+    if !trim_ascii_end(current).ends_with('+') || at == 0 || !lines[at - 1].contains('}') {
+        return false;
+    }
+    let mut depth = 0;
+    let mut rest = *current;
+    while let Some(inner) = strip_quote_levels(rest, 1) {
+        depth += 1;
+        rest = inner;
+    }
+    if depth == 0 || !is_cont_marker(trim_ascii_start(rest)) {
+        return false;
+    }
+    let mut run = Vec::new();
+    for &source in lines[..at].iter().rev() {
+        let inner = strip_quote_levels(source, depth).unwrap_or(source);
+        if is_blank_line(inner) {
+            break;
+        }
+        let body = detect_list_marker_full(inner)
+            .map(|marker| marker.content)
+            .or_else(|| strip_definition_marker(trim_ascii_start(inner)).map(|(body, _)| body))
+            .or_else(|| parse_footnote_def_line(trim_ascii_start(inner)).map(|(_, body)| body));
+        let normalized = body.map_or_else(
+            || inner.to_string(),
+            |body| {
+                let pad = if parse_footnote_def_line(trim_ascii_start(inner)).is_some() {
+                    FOOTNOTE_BODY_COLUMN
+                } else {
+                    inner.len() - body.len()
+                };
+                format!("{}{}", " ".repeat(pad), body)
+            },
+        );
+        let opens = trim_ascii_start(&normalized).starts_with('{');
+        run.push(normalized);
+        if opens {
+            break;
+        }
+    }
+    run.reverse();
+    matches!(
+        refused_brace_run(run.iter().map(String::as_str), true),
+        RefusedBraceRun::Lines(count) if count == run.len()
+    )
+}
+
 fn note_follower_body<'l>(line: &'l str, lead: &str, item: bool) -> Option<&'l str> {
     let depth = |text: &str| {
         let mut rest = text;
@@ -3436,6 +3489,7 @@ impl<'a> Walk<'a> {
         let line = self.first_line + at;
         let mut reached = 0;
         let mut plus = None;
+        let quoted_refused_plus = quoted_plus_after_refused_run(&self.lines, at);
         // An eligible marker the next block does not attach to is still consumed (carve#5013).
         let mut plus_refusal = None;
         let follows_marker_line = at > 0 && self.top().plus == Some(at - 1);
@@ -3463,7 +3517,8 @@ impl<'a> Walk<'a> {
             let f = &self.frames[k];
             if let Some((marker_col, _)) = f.marker {
                 // A lone `+` reaches the marker column of an open marker container.
-                if is_cont_marker(c.rest)
+                if !quoted_refused_plus
+                    && is_cont_marker(c.rest)
                     && c.authored_col == marker_col
                     && (f.kind == Kind::Quote || c.authored_col < f.col)
                 {

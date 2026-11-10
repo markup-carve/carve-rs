@@ -1782,6 +1782,14 @@ impl<'a> QuoteBody<'a> {
         line: &'a str,
         stripped: &'a str,
     ) {
+        // A refused block-position run leaves an open paragraph. Its immediate
+        // `+` is text in that paragraph even when the line carries a quote
+        // prefix; it cannot be handed to an attachment collector (R03).
+        if is_plus_marker(stripped) && self.follows_refused_brace_run() {
+            self.last_quoted_at = Some(cur.pos);
+            self.fold_lazy_line(cur, stripped);
+            return;
+        }
         self.attrs_closed_last = false;
         self.unclosed_nested_attribute = false;
         self.note_openers(cur.pos, stripped);
@@ -2549,8 +2557,10 @@ impl<'a> QuoteBody<'a> {
             // whatever it opens (CARVE-P2-035), so a lazy line can follow it.
             self.para_open = ParaOpen::from_line("x", inherited_absorption);
         }
-        if stripped.contains('{') && trim_ascii_start(strip_all_quotes(stripped).0).starts_with('{')
-        {
+        let marker_body = innermost_marker_content(trim_ascii_start(strip_all_quotes(stripped).0));
+        let marker_body = strip_definition_marker(trim_ascii_start(marker_body))
+            .map_or(marker_body, |(body, _)| body);
+        if marker_body.starts_with('{') {
             let comment_start = self.brace_starts.iter().flatten().copied().find(|&start| {
                 trim_ascii_start(strip_all_quotes(&self.inner.lines[start].text).0)
                     .starts_with("{%")
@@ -3096,11 +3106,22 @@ impl<'a> QuoteBody<'a> {
         }
         let kept = lines.last().is_some_and(|line| line.text.contains('}'))
             && self.brace_starts.iter().flatten().any(|&start| {
-                let run = lines[start..]
+                let run: Vec<String> = lines[start..]
                     .iter()
-                    .map(|line| strip_all_quotes(&line.text).0);
+                    .map(|line| {
+                        let text = strip_all_quotes(&line.text).0;
+                        let body = innermost_marker_content(text);
+                        let body = strip_definition_marker(trim_ascii_start(body))
+                            .map_or(body, |(content, _)| content);
+                        if body.len() < text.len() {
+                            format!("{}{}", " ".repeat(text.len() - body.len()), body)
+                        } else {
+                            text.to_string()
+                        }
+                    })
+                    .collect();
                 matches!(
-                    refused_brace_run(run, true),
+                    refused_brace_run(run.iter().map(String::as_str), true),
                     RefusedBraceRun::Lines(count) if start + count == lines.len()
                 )
             });
