@@ -2814,6 +2814,14 @@ impl<'a> Walk<'a> {
             // path and keeps its next stop in the list reader.
             let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
             c.lead_at(target + inner.shift + c.attachment_shift, false);
+        } else if verse_payload
+            && inner.verse_opener_tab
+            && !inner.verse_marker_line
+            && c.authored_col == inner.verse_open_authored_col + 1
+        {
+            // A literal tabbed opener and a verse line one authored column
+            // farther apart keep that distance through quote/list collection.
+            c.lead_at(inner.canon + 1 + inner.shift + c.attachment_shift, false);
         } else {
             c.lead_in(target, inner.shift, false);
         }

@@ -990,6 +990,13 @@ fn parse_with_options_mode_and_index(
         }
         return result;
     }
+    // A tabbed line-block opener needs its authored columns after nested
+    // quote/list collection, even when the caller did not request positions.
+    let tabbed_line_block = source.contains('\t')
+        && source.lines().any(|line| {
+            line.find("::: |")
+                .is_some_and(|at| line[..at].contains('\t'))
+        });
     // A hoisted abbreviation needs source lines (CARVE-P12-070). A multiline
     // block comment or a consumed `+` needs authored columns after nested
     // collection, even when callers did not request AST positions.
@@ -1000,6 +1007,7 @@ fn parse_with_options_mode_and_index(
                 line.starts_with("{%") && !line.contains("%}")
             })
             || transparent.is_some()
+            || tabbed_line_block
             || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source))
             || (parsed.contains('+')
                 && own_lines(normalize_source(parsed).as_ref())
