@@ -544,6 +544,11 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
             let payload_start = line.len() - trim_ascii_start(inner).len();
             let column =
                 visual_column_before(line, payload_start).saturating_sub(opener_frame_offset);
+            if column <= indent_columns(opener) {
+                // A refused run can leave later lines to open their own inline
+                // constructs. Do not mark those lines as scanned attribute body.
+                return QuotedAttrsBlock::NoneWithin(block.len());
+            }
             format!("{}{}", " ".repeat(column), trim_ascii_start(inner))
         };
         #[cfg(test)]
