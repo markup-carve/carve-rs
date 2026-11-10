@@ -557,11 +557,24 @@ fn quoted_plus_after_refused_run(lines: &[&str], at: usize, marker_floor: Option
         return false;
     }
     let mut run = Vec::new();
+    let comment_run = lines[at - 1].contains("%}");
+    let mut closer_column = None;
     for (index, &source) in lines[..at].iter().enumerate().rev() {
         let inner = strip_quote_levels(source, depth).unwrap_or(source);
         if is_blank_line(inner) {
             break;
         }
+        let column = indent_columns(inner);
+        if !run.is_empty()
+            && if comment_run {
+                inner.contains("%}")
+            } else {
+                inner.contains('}') && closer_column.is_some_and(|closer| column <= closer)
+            }
+        {
+            break;
+        }
+        closer_column.get_or_insert(column);
         let body = detect_list_marker_full(inner)
             .map(|marker| marker.content)
             .or_else(|| strip_definition_marker(trim_ascii_start(inner)).map(|(body, _)| body))
