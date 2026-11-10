@@ -808,7 +808,7 @@ fn shared_footnote_recovery_remains_a_complete_separate_resource() {
         "spec/resources/footnote-carrier-recovery-fixtures.json"
     ))
     .unwrap();
-    assert_eq!(paired.as_array().unwrap().len(), 24);
+    assert_eq!(paired.as_array().unwrap().len(), 27);
     for fixture in paired.as_array().unwrap() {
         // The pinned fixture predates carve#5735; the retired-prefix cases
         // are checked against the new rule in retired_input_aliases_5735.

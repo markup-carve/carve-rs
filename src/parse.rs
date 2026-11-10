@@ -1521,6 +1521,9 @@ fn parse_with_options_mode_and_index_once(
     // A crossref label clones the heading's inlines, so a heading holding a
     // reference link needs the index rebuilt after the late resolution.
     let reuse_heading_index = !(needs_late_link_resolution && has_crossrefs);
+    if options.positions {
+        positions::clear_unverifiable_text_positions(&mut doc, original);
+    }
     let crossref_index = if matches!(mode, ParseMode::HtmlFacade)
         && options.extensions.is_empty()
         && reuse_heading_index
@@ -3214,6 +3217,7 @@ fn parse_item_body_into(
             let _depth = DepthScope::set(depth);
             let _group = FigureGroupScope::set(in_group);
             let mut extents = Vec::new();
+            let pending_start = nested.len();
             let children = parse_mapped_source_at_level_into_recording(
                 &source,
                 options,
@@ -3222,6 +3226,12 @@ fn parse_item_body_into(
                 false,
                 nested,
                 Some(&mut extents),
+            );
+            let children = drop_synthetic_owner_comments(
+                &source,
+                children,
+                &mut extents,
+                &mut nested[pending_start..],
             );
             if !suppress_tree_looseness {
                 if drop_empty_paragraphs {
@@ -3585,6 +3595,44 @@ fn item_body_with_layout_suppression(
 /// parses through the level-into entry: its own containers and lists go onto
 /// the worklist rather than down the stack, and what comes back is a list of
 /// correctly-typed blocks plus the bodies still waiting on them.
+/// Remove only the invisible boundary comments inserted by the list owner
+/// walk. Authored comments never have an opaque slot at their source line.
+fn drop_synthetic_owner_comments(
+    source: &MappedSource,
+    children: Vec<BlockNode>,
+    extents: &mut Vec<(usize, usize)>,
+    pending: &mut [PendingBody],
+) -> Vec<BlockNode> {
+    if children.len() != extents.len() {
+        return children;
+    }
+    let synthetic: Vec<usize> = source
+        .opaque_blank_lines
+        .iter()
+        .copied()
+        .filter(|&at| source.source.lines().nth(at) == Some("%%"))
+        .collect();
+    if synthetic.is_empty() {
+        return children;
+    }
+    let mut kept = Vec::with_capacity(children.len());
+    let mut kept_extents = Vec::with_capacity(extents.len());
+    let mut removed = Vec::new();
+    for (index, (child, extent)) in children.into_iter().zip(extents.drain(..)).enumerate() {
+        if matches!(child, BlockNode::Comment(_)) && synthetic.contains(&extent.0) {
+            removed.push(index);
+            continue;
+        }
+        kept.push(child);
+        kept_extents.push(extent);
+    }
+    for body in pending {
+        body.index -= removed.partition_point(|&index| index < body.index);
+    }
+    *extents = kept_extents;
+    kept
+}
+
 fn parse_item_chunk(
     source: &MappedSource,
     options: &Options<'_>,
@@ -3597,6 +3645,7 @@ fn parse_item_chunk(
         .lines()
         .any(|line| line.starts_with([' ', '\t']))
     {
+        let pending_start = carried.len();
         let children = parse_mapped_source_at_level_into_recording(
             source,
             options,
@@ -3605,6 +3654,12 @@ fn parse_item_chunk(
             false,
             carried,
             Some(&mut extents),
+        );
+        let children = drop_synthetic_owner_comments(
+            source,
+            children,
+            &mut extents,
+            &mut carried[pending_start..],
         );
         let loose = item_chunk_tree_looseness(
             &source.source,
@@ -3617,6 +3672,7 @@ fn parse_item_chunk(
         );
         return (children, loose);
     }
+    let pending_start = carried.len();
     let children = parse_mapped_source_at_level_into_recording(
         source,
         options,
@@ -3625,6 +3681,12 @@ fn parse_item_chunk(
         false,
         carried,
         Some(&mut extents),
+    );
+    let children = drop_synthetic_owner_comments(
+        source,
+        children,
+        &mut extents,
+        &mut carried[pending_start..],
     );
     let loose = item_chunk_tree_looseness(
         &source.source,

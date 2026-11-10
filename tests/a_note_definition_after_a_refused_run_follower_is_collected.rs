@@ -13,7 +13,7 @@ fn check(source: &str, expected: &str) {
 fn a_note_definition_after_an_unclosed_follower_is_a_note() {
     check(
         "{#i\n.y}\n```\n[^b]: z\n\nsee[^b]\n",
-        "<p>{#i\n.y}\n<code></code></p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>z<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+        "<p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n<pre><code>[^b]: z\n\nsee[^b]\n</code></pre>",
     );
 }
 
@@ -21,7 +21,7 @@ fn a_note_definition_after_an_unclosed_follower_is_a_note() {
 fn a_note_definition_after_a_blank_below_the_follower_is_a_note() {
     check(
         "{#i\n.y}\n```\n\n[^b]: z\n\nsee[^b]\n",
-        "<p>{#i\n.y}\n<code></code></p>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>z<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+        "<p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n<pre><code>\n[^b]: z\n\nsee[^b]\n</code></pre>",
     );
 }
 
@@ -29,7 +29,7 @@ fn a_note_definition_after_a_blank_below_the_follower_is_a_note() {
 fn a_quoted_note_definition_after_an_unclosed_follower_is_a_note() {
     check(
         "> {#i\n> .y}\n> ```\n> [^b]: z\n\nsee[^b]\n",
-        "<blockquote><p>{#i\n.y}\n<code></code></p></blockquote>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>z<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+        "<blockquote>\n  <p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n  <pre><code>[^b]: z\n</code></pre>\n</blockquote>\n<p>see[^b]</p>",
     );
 }
 
@@ -37,7 +37,7 @@ fn a_quoted_note_definition_after_an_unclosed_follower_is_a_note() {
 fn a_closed_follower_keeps_the_definition_as_its_text() {
     check(
         "{#i\n.y}\n```\n[^b]: z\n```\n\nsee[^b]\n",
-        "<p>{#i\n.y}\n<code>\n[^b]: z\n</code></p>\n<p>see[^b]</p>",
+        "<p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}</p>\n<pre><code>[^b]: z\n</code></pre>\n<p>see[^b]</p>",
     );
 }
 

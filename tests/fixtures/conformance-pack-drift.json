@@ -2,35 +2,32 @@
   "comment": "Conformance pack cases this engine renders differently from the spec model, one entry per cause with its open ticket. See tests/conformance_pack.rs.",
   "entries": [
     {
+      "ticket": "markup-carve/carve#5855",
+      "cause": "the spec model still drops an own-line attached fence after a blank when payload is below the host body column; all engines preserve the fence",
+      "cases": [
+        "notes-3bc330d1a3be",
+        "notes-425e819e8134",
+        "notes-ed586560a203",
+        "ownership-515b9fdab518"
+      ]
+    },
+    {
+      "ticket": "markup-carve/carve#5872",
+      "cause": "the spec model includes an unresolved footnote reference in the derived task checkbox accessible name; all engines omit it under CARVE-P2-004",
+      "cases": [
+        "attributes-d7a022809675"
+      ]
+    },
+    {
       "ticket": "markup-carve/carve#5658",
-      "cause": "the pinned pack predates the plus ownership table (carve#5716: carve#5632, carve#5635, carve#5637, carve#5639); carve main now matches this engine",
+      "cause": "other own-line plus fence ownership cells in the new pack remain cross-engine gaps: trailing blank retention and tabbed fence attachment; tracked in the paused ownership family",
       "cases": [
-        "fences-06ce61cd4497",
-        "fences-0af850d06646",
-        "fences-12ba255d2b80",
-        "fences-4e8b129ee1fb",
-        "fences-56c4bb18eac4",
-        "fences-8ed246bfdc05",
-        "fences-9215ec1e0b3d",
-        "fences-bc7a7b28fd34",
-        "notes-5c5cdf831f5f",
-        "notes-71dd1fb4f83e",
-        "notes-9980f8efdfe9"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#5638",
-      "cause": "the pinned pack predates the ruling that an attribute line inside an open inline code span stays inline; carve main now matches this engine",
-      "cases": [
-        "roundtrip-1fecc86692d0"
-      ]
-    },
-    {
-      "ticket": "markup-carve/carve#5013",
-      "cause": "pin move to carve d9d5dea7: an eligible plus classifies as a marker before attachment; the carve-rs port is pending",
-      "cases": [
-        "notes-df75bb746533",
-        "ownership-94b0c7c5deba"
+        "notes-5ad58f3eaad3",
+        "notes-ab1ebf8987b6",
+        "notes-dd130b0b59c1",
+        "notes-f3d430ac99b0",
+        "notes-ffd53f488294",
+        "plus-8950d7cfc583"
       ]
     }
   ]

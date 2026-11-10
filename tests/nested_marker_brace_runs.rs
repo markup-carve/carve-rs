@@ -19,7 +19,7 @@ fn a_marker_line_comment_keeps_a_reached_marker_opaque() {
     assert_all_routes("- {% a\n   - m\n   z %} y", "<ul>\n  <li> y</li>\n</ul>");
     assert_all_routes(
         "- {% a\n  - m\n  z %} y",
-        "<ul>\n  <li>{% a\n- m\nz %} y</li>\n</ul>",
+        "<ul>\n  <li>{% a\n    <ul>\n      <li>m\nz %} y</li>\n    </ul>\n  </li>\n</ul>",
     );
     assert_eq!(
         to_html("- a0\n  - {% a\n     - m\n     z %} y"),
@@ -31,7 +31,7 @@ fn a_marker_line_comment_keeps_a_reached_marker_opaque() {
 fn a_nested_marker_line_run_classifies_its_fence_follower() {
     assert_eq!(
         to_html("- a\n  - {% a\n    {lang=de}\n    z %} y\n    ```\n    code\n    ```"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>{% a\n{lang=de}\nz %} y\n<code>\ncode\n</code></li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>{% a\n        <p lang=\"de\">z %} y</p>\n        <pre><code>code\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
     assert_eq!(
         to_html("- a\n  - {% a\n     ```\n     z %} y\n    ```\n    code\n    ```"),
@@ -79,7 +79,7 @@ fn quoted_marker_line_runs_use_columns_after_quote_prefixes() {
 fn a_marker_shaped_payload_does_not_replace_the_comment_opener() {
     assert_all_routes(
         "- a\n  - {% note\n     - {x}\n     ```\n     text %} end",
-        "<ul>\n  <li>a\n    <ul>\n      <li> end</li>\n    </ul>\n  </li>\n</ul>",
+        "<ul>\n  <li>a\n    <ul>\n      <li>{% note\n        <ul>\n          <li></li>\n        </ul>\n        <pre><code>text %} end</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>",
     );
     assert_all_routes(
         "- {% note\n   - {x}\n  end %} text\n  ```\n  code\n  ```",

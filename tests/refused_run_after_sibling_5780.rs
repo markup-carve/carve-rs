@@ -10,17 +10,17 @@ fn check(source: &str, expected: &str) {
 
 #[test]
 fn a_refused_run_after_a_sibling_keeps_its_follower_and_lazy_line() {
-    for (sibling, preceding) in [
-        ("  - q", "    <ul>\n      <li>q</li>\n      <li>"),
+    for (sibling, expected) in [
+        (
+            "  - q",
+            "<ul>\n  <li>p\n    <ul>\n      <li>q</li>\n      <li>{% a\n%}\n        <h1 id=\"h\">h</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>plain</p>",
+        ),
         (
             "  > q",
-            "    <blockquote><p>q</p></blockquote>\n    <ul>\n      <li>",
+            "<ul>\n  <li>p\n    <blockquote><p>q</p></blockquote>\n    <ul>\n      <li>{% a\n%}\n        <h1 id=\"h\">h</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>plain</p>",
         ),
     ] {
         let source = format!("- p\n{sibling}\n  - {{% a\n    %}}\n    # h\nplain\n");
-        let expected = format!(
-            "<ul>\n  <li>p\n{preceding}{{% a\n%}}\n# h\nplain</li>\n    </ul>\n  </li>\n</ul>"
-        );
-        check(&source, &expected);
+        check(&source, expected);
     }
 }

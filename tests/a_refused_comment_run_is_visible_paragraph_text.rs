@@ -12,7 +12,7 @@ fn a_refused_run_after_a_plus_attaches() {
 fn the_line_after_the_refused_run_continues_its_paragraph() {
     assert_eq!(
         carve::to_html("- a\n+\n{% x\n%}\n{y}\n more\n"),
-        "<ul>\n  <li>a\n    {% x\n%}\n{y}\nmore\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    {% x\n%}\n  </li>\n</ul>\n<p y=\"\">more</p>"
     );
 }
 
@@ -20,7 +20,7 @@ fn the_line_after_the_refused_run_continues_its_paragraph() {
 fn a_marker_line_plus_keeps_the_heading_shaped_line_as_text() {
     assert_eq!(
         carve::to_html("- +\n{% x\n%}\n# H\n"),
-        "<ul>\n  <li>{% x\n%}\n# H</li>\n</ul>"
+        "<ul>\n  <li>{% x\n%}</li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 

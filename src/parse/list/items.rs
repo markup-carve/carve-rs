@@ -3022,7 +3022,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             return false;
         }
-        let run = if indent_columns(next) < self.content_col && !trim_ascii_end(next).ends_with('}')
+        let run = if indent_columns(next) < self.content_col
+            && !trim_ascii_end(next).ends_with('}')
+            && is_block_brace_opener(trim_ascii_start(strip_lazy(next)))
         {
             // The opener itself reached this paragraph lazily. It cannot
             // claim a following line as a block-position run (carve#5830).
@@ -3435,6 +3437,55 @@ fn resume_marker_sublist(
 /// Reads a collected body the way the document walk reads a document: an
 /// opener past the body's column opens there (rule A, carve#3885).
 fn walk_chunk(stream: &mut MappedSource) {
+    // The original owner walk can admit a list immediately after a quote in
+    // this item. After rebasing, the quote parser would otherwise read that
+    // marker as its lazy paragraph text and move the list's later children to
+    // the enclosing item. A synthetic boundary carries the already-decided
+    // owner change through this second walk.
+    let source_lines: Vec<&str> = stream.source.split('\n').collect();
+    let mut fence = None;
+    let mut boundaries = Vec::new();
+    for at in 1..source_lines.len() {
+        let previous = source_lines[at - 1].trim_start();
+        if let Some(open) = fence {
+            if is_fence_close(previous, open) {
+                fence = None;
+            }
+        } else {
+            fence = detect_fence_open(previous);
+        }
+        if fence.is_none()
+            && previous.starts_with('>')
+            && indent_columns(source_lines[at - 1]) == 0
+            && indent_columns(source_lines[at]) == 0
+            && detect_list_marker_full(source_lines[at]).is_some()
+            && stream.reached.get(at) == Some(&true)
+        {
+            boundaries.push(at);
+        }
+    }
+    if !boundaries.is_empty() {
+        let mut lines: Vec<String> = source_lines.iter().map(|line| (*line).to_owned()).collect();
+        for (offset, boundary) in boundaries.into_iter().enumerate() {
+            let at = boundary + offset;
+            lines.insert(at, "%%".to_owned());
+            if stream.line_map.len() > at {
+                stream.line_map.insert(at, None);
+            }
+            if stream.col_map.len() > at {
+                stream.col_map.insert(at, None);
+            }
+            stream.reached.insert(at, false);
+            for blank in &mut stream.opaque_blank_lines {
+                if *blank >= at {
+                    *blank += 1;
+                }
+            }
+            stream.opaque_blank_lines.push(at);
+        }
+        stream.opaque_blank_lines.sort_unstable();
+        stream.set_source(lines.join("\n"));
+    }
     let Some((walked, shifts)) = walk_body(&stream.source) else {
         return;
     };

@@ -513,11 +513,13 @@ pub(in crate::parse) fn literal_run_children<S: AsRef<str>>(
         .iter()
         .map(|line| strip_lazy(line.as_ref()).to_owned())
         .collect();
-    let mut occupied = std::collections::BTreeSet::new();
-    for line in &source {
-        crate::sentinel_run::collect_private_use(line, &mut occupied);
-    }
-    let stand_in = crate::sentinel_run::pick_sentinel_run::<1>(&occupied, 0xe001)[0];
+    // The stand-in must occupy one source byte so anchored positions still
+    // point into the authored input after the opener is restored.
+    let stand_in = (1u8..=31)
+        .chain(std::iter::once(127))
+        .map(char::from)
+        .find(|candidate| source.iter().all(|line| !line.contains(*candidate)))
+        .expect("a free one-byte control sentinel");
     for &(start, end) in literal {
         for line in source.iter_mut().take(end).skip(start) {
             if let Some(at) = line.find('{') {

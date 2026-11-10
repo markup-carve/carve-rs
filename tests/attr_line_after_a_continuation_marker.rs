@@ -164,7 +164,7 @@ fn consecutive_attribute_lines_merge_into_one_set() {
 fn a_block_that_spans_lines_is_read_whole() {
     assert_eq!(
         carve::to_html("- a\n+\n{#id\n.foo}\n> q\n"),
-        "<ul>\n  <li>a\n    {#id\n.foo}\n&gt; q\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    {<span class=\"tag\"><strong>#id</strong></span>\n.foo}\n  </li>\n</ul>\n<blockquote><p>q</p></blockquote>"
     );
 }
 

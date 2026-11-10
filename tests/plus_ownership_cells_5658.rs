@@ -4,7 +4,7 @@
 fn a_refused_run_follower_keeps_an_indented_closer_past_a_quote() {
     // carve#5600
     let source = "{.x\n.y}\n```\nwa\n> q\n  ```\n";
-    let html = "<p>{.x\n.y}\n<code>\nwa\n&gt; q\n</code></p>";
+    let html = "<p>{.x\n.y}</p>\n<pre><code>wa\n&gt; q\n  ```\n</code></pre>";
     assert_eq!(carve::to_html(source).trim(), html);
 }
 
@@ -20,7 +20,7 @@ fn a_note_keeps_the_line_after_a_refused_marker_ends_its_list_fence() {
 fn a_quoted_note_lazy_line_finishes_an_attribute_run() {
     // carve#5619
     let source = "> [^a]: +\n> {#i\n .y}\n\nsee[^a]\n";
-    let html = "<blockquote>\n\n</blockquote>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    let html = "<blockquote>\n\n</blockquote>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>{<span class=\"tag\"><strong>#i</strong></span>\n.y}<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
     assert_eq!(carve::to_html(source).trim(), html);
 }
 

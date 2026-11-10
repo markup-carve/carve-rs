@@ -63,3 +63,17 @@ fn own_line_fence_payload_keeps_spaces_after_a_blank() {
         );
     }
 }
+
+#[test]
+fn a_reached_sublist_after_a_quote_keeps_its_children() {
+    for source in [
+        "- p\n  > q\n  - x\n    # h\n",
+        "1. p\n   > q\n   - x\n     # h\n",
+    ] {
+        let output = html(source);
+        assert!(output.contains("<li>x\n        <h1 id=\"h\">h</h1>"), "{source:?}\n{output}");
+        assert!(!output.contains("<li><p>p</p>"), "{source:?}\n{output}");
+        let ast = carve::to_json(&carve::parse(source));
+        assert!(!ast.contains("\"type\":\"comment\""), "{source:?}\n{ast}");
+    }
+}

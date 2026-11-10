@@ -368,7 +368,25 @@ fn unfenced_marker_content_col(line: &str) -> Option<usize> {
     Some(column)
 }
 
-fn definition_source(note: NoteBody) -> MappedSource {
+fn definition_source(mut note: NoteBody) -> MappedSource {
+    // A lazy continuation admitted after a first-block attachment belongs to
+    // that block's open paragraph. Its synthetic closing separator must not
+    // become an authored blank between the two lines.
+    if let Some(at) = note.block_separator {
+        if note.line_map.get(at) == Some(&None)
+            && note.lines.get(at).is_some_and(|line| is_blank_line(line))
+            && note
+                .lines
+                .get(at + 1)
+                .is_some_and(|line| line.starts_with(LAZY))
+        {
+            note.lines.remove(at);
+            note.line_map.remove(at);
+            if note.positions {
+                note.col_map.remove(at);
+            }
+        }
+    }
     // An authored trailing blank (an open fence's payload, corpus 291) survives
     // `str::lines()`; the separator `push_blank` leaves after a `+` block does not.
     let mut source = note.lines.join("\n");

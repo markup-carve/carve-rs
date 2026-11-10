@@ -9,7 +9,7 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_quote() {
         ),
         (
             "> pre\n{% b\n b %}\n",
-            "<blockquote><p>pre\n</p></blockquote>",
+            "<blockquote><p>pre\n{% b\nb %}</p></blockquote>",
         ),
         (
             "> pre\n{% b\n> b %}\n",
@@ -21,7 +21,7 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_quote() {
         ),
         (
             "- > pre\n{% b\n b %}\n",
-            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nb %}</p></blockquote>\n  </li>\n</ul>",
         ),
         (
             "- > pre\n {% b\n b %}\n",
@@ -29,11 +29,11 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_quote() {
         ),
         (
             "- > pre\n {% b\n  b %}\n",
-            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nb %}</p></blockquote>\n  </li>\n</ul>",
         ),
         (
             "- > pre\n{% b\n c\n d %}\n",
-            "<ul>\n  <li>\n    <blockquote><p>pre\n</p></blockquote>\n  </li>\n</ul>",
+            "<ul>\n  <li>\n    <blockquote><p>pre\n{% b\nc\nd %}</p></blockquote>\n  </li>\n</ul>",
         ),
         (
             "- > pre\n {% b\n  c\n b %}\n",
@@ -52,7 +52,7 @@ fn a_lazy_braced_comment_uses_written_columns_in_a_list() {
             "- pre\n{% b\nb %}\n",
             "<ul>\n  <li>pre\n{% b\nb %}</li>\n</ul>",
         ),
-        ("- pre\n{% b\n b %}\n", "<ul>\n  <li>pre\n</li>\n</ul>"),
+        ("- pre\n{% b\n b %}\n", "<ul>\n  <li>pre\n{% b\nb %}</li>\n</ul>"),
     ];
     for (source, expected) in cases {
         assert_eq!(to_html(source).trim(), expected, "{source:?}");
@@ -71,7 +71,7 @@ fn a_lazy_brace_run_does_not_move_a_sibling_list_marker() {
 fn a_lazy_braced_comment_uses_written_columns_in_a_footnote_and_div() {
     let cases = [
         ("[^n]: pre\n{% b\nb %}\n\nx[^n]\n", true),
-        ("[^n]: pre\n{% b\n b %}\n\nx[^n]\n", false),
+        ("[^n]: pre\n{% b\n b %}\n\nx[^n]\n", true),
         ("[^n]: pre\n{% b\n  b %}\n\nx[^n]\n", false),
         ("::: note\npre\n{% b\nb %}\n:::\n", true),
         ("::: note\npre\n{% b\n b %}\n:::\n", false),

@@ -5,7 +5,7 @@ fn shallow_lazy_attribute_run_is_literal_at_each_quote_depth() {
     for (source, expected) in [
         (
             "> q\n> {.k\ntail\n> #x}\n",
-            "<blockquote><p>q\n{.k\ntail\n#x}</p></blockquote>",
+            "<blockquote><p>q\n{.k\ntail\n<span class=\"tag\"><strong>#x</strong></span>}</p></blockquote>",
         ),
         (
             "> > q\n> > {.k\ntail\n> > #x}\n",

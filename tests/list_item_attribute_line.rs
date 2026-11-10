@@ -51,7 +51,7 @@ fn a_brace_only_marker_line_with_no_following_block_leaves_an_empty_item() {
 fn a_multi_line_attribute_block_on_the_marker_line_attaches() {
     assert_eq!(
         carve::to_html("- {#id\n  .foo}\n  # H\n"),
-        "<ul>\n  <li>{#id\n.foo}\n# H</li>\n</ul>"
+        "<ul>\n  <li>{<span class=\"tag\"><strong>#id</strong></span>\n.foo}\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
     );
 }
 

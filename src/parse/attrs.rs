@@ -215,6 +215,17 @@ pub(crate) enum RefusedBraceRun {
     No(usize),
 }
 
+/// Inline brace delimiters are not candidates for block-position run refusal.
+pub(crate) fn is_block_brace_opener(opener: &str) -> bool {
+    opener.starts_with('{')
+        && !opener.as_bytes().get(1).is_some_and(|byte| {
+            matches!(
+                byte,
+                b'+' | b'-' | b'~' | b'=' | b'*' | b'/' | b'_' | b'^' | b','
+            )
+        })
+}
+
 /// A run takes no lazy continuation lines in any container (carve#5830).
 pub(crate) fn refused_brace_run<'a>(
     lines: impl Iterator<Item = &'a str>,
@@ -248,12 +259,7 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
     if !opener.starts_with('{') {
         return RefusedBraceRun::No(0);
     }
-    if opener.as_bytes().get(1).is_some_and(|byte| {
-        matches!(
-            byte,
-            b'+' | b'-' | b'~' | b'=' | b'*' | b'/' | b'_' | b'^' | b','
-        )
-    }) {
+    if !is_block_brace_opener(opener) {
         return RefusedBraceRun::No(0);
     }
     let opener_column = column_of(0, first, &mut source_column);
