@@ -88,3 +88,11 @@ fn a_reached_sublist_after_a_quote_keeps_its_children() {
         "<ul>\n  <li>p\n    <blockquote><p>q</p></blockquote>\n    <ul>\n      <li>x\n        <h1 id=\"h\">h</h1>\n        <ul>\n          <li>child</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
+
+#[test]
+fn imported_comment_keeps_significant_wrapped_spaces() {
+    let json = r#"{"type":"document","children":[{"type":"comment","block":false,"delimited":true,"form":"braced","content":"a\n  b"}],"srcByteLength":0,"astVersion":"1.2"}"#;
+    let doc = carve::from_json(json).expect("valid AST");
+    let written = carve::render_carve(&doc).expect("spellable comment");
+    assert_eq!(written.trim(), "{% a\n  b %}");
+}
