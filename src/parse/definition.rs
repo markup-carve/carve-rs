@@ -2355,6 +2355,12 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         ends_in_refused_brace_run(&probe)
     }
 
+    fn ends_in_refused_marker_comment_run(&self) -> bool {
+        self.seed.starts_with("{%")
+            && !self.lines.iter().any(|line| is_blank_line(line))
+            && self.ends_in_refused_brace_run()
+    }
+
     fn paragraph_open(&self) -> bool {
         !self.descendant_block_ended
             && match self.lines.last() {
@@ -2514,7 +2520,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if cur.carried_reach(cur.pos) == Some(true)
             && is_list_marker(trim_ascii_start(line))
             && !self.folded_into_quote
-            && !self.ends_in_refused_brace_run()
+            && !self.ends_in_refused_marker_comment_run()
         {
             return BodyStep::Stop;
         }
@@ -2522,7 +2528,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // body takes no unmarked marker (PART 0 S3, carve#4860).
         if !line.starts_with(LAZY)
             && is_list_marker(trim_ascii_start(line))
-            && !self.ends_in_refused_brace_run()
+            && !self.ends_in_refused_marker_comment_run()
         {
             return BodyStep::Stop;
         }
@@ -2598,7 +2604,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if !line.starts_with(LAZY)
             && indent < self.content_column
             && is_list_marker(opener)
-            && !self.ends_in_refused_brace_run()
+            && !self.ends_in_refused_marker_comment_run()
         {
             return BodyStep::Stop;
         }
