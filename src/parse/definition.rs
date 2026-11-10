@@ -2339,7 +2339,18 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if self.lines.iter().any(|line| is_blank_line(line)) {
             return ends_in_refused_brace_run(&self.lines);
         }
-        let mut probe: Vec<&str> = self.seed.lines().collect();
+        // The marker was stripped before the seed reached this collector, but
+        // a brace on that line opened at the description's content column.
+        // Compare a following line with that authored column, not column zero.
+        let padded_seed = self
+            .seed
+            .starts_with('{')
+            .then(|| format!("{}{}", " ".repeat(self.content_column), self.seed));
+        let mut probe: Vec<&str> = padded_seed
+            .as_deref()
+            .unwrap_or(self.seed)
+            .lines()
+            .collect();
         probe.extend(self.lines.iter().map(String::as_str));
         ends_in_refused_brace_run(&probe)
     }
@@ -2503,12 +2514,16 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         if cur.carried_reach(cur.pos) == Some(true)
             && is_list_marker(trim_ascii_start(line))
             && !self.folded_into_quote
+            && !self.ends_in_refused_brace_run()
         {
             return BodyStep::Stop;
         }
         // A list marker that misses a marker body closes it, and a quote in the
         // body takes no unmarked marker (PART 0 S3, carve#4860).
-        if !line.starts_with(LAZY) && is_list_marker(trim_ascii_start(line)) {
+        if !line.starts_with(LAZY)
+            && is_list_marker(trim_ascii_start(line))
+            && !self.ends_in_refused_brace_run()
+        {
             return BodyStep::Stop;
         }
         // So does a description marker after a `+` paragraph: it opens a sibling (PART 0 S1).
@@ -2580,7 +2595,11 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         // line.
         let opener = trim_ascii_start(line);
         // A list marker that misses a marker body closes it (PART 0 S3, carve#4860).
-        if !line.starts_with(LAZY) && indent < self.content_column && is_list_marker(opener) {
+        if !line.starts_with(LAZY)
+            && indent < self.content_column
+            && is_list_marker(opener)
+            && !self.ends_in_refused_brace_run()
+        {
             return BodyStep::Stop;
         }
         let fold_below_column_opener = self.folds_below_column_opener(opener, indent);
