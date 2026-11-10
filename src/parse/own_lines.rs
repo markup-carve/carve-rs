@@ -96,6 +96,8 @@ struct Frame {
     verse_open_authored_col: usize,
     /// A tab in the opener lead already has a host-relative rewrite.
     verse_opener_tab: bool,
+    /// The opener's tab became spaces at its owner's content column.
+    verse_rewritten_opener: bool,
     /// A marker-line opener already has its host-relative lead.
     verse_marker_line: bool,
     /// A fence or comment span open inside a line-block payload.
@@ -180,6 +182,7 @@ impl Frame {
             line_block: false,
             verse_open_authored_col: 0,
             verse_opener_tab: false,
+            verse_rewritten_opener: false,
             verse_marker_line: false,
             span: None,
             span_origin: None,
@@ -2804,6 +2807,13 @@ impl<'a> Walk<'a> {
                 c.authored_col.saturating_sub(opener_shift) + inner.shift + c.attachment_shift,
                 false,
             );
+        } else if inner.line_block && inner.verse_rewritten_opener && !inner.verse_marker_line {
+            // The opener now stands at `canon`, but its later lines were
+            // measured in the authored frame. Use that same frame for both
+            // payload and closer; a tab that remains literal takes the normal
+            // path and keeps its next stop in the list reader.
+            let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
+            c.lead_at(target + inner.shift + c.attachment_shift, false);
         } else {
             c.lead_in(target, inner.shift, false);
         }
@@ -4105,6 +4115,12 @@ impl<'a> Walk<'a> {
                         .split(':')
                         .next()
                         .is_some_and(|lead| lead.contains('\t'));
+                f.verse_rewritten_opener = f.verse_opener_tab
+                    && c.authored_col >= f.canon
+                    && !c.out.split(':').next().unwrap_or("").contains('\t');
+                if f.verse_rewritten_opener {
+                    f.cut = c.authored_col.saturating_sub(f.canon);
+                }
                 f.shift = o_shift;
                 f.line = self.first_line + at;
                 f.doc_marker = doc_column(self.lines[at], c.src);
