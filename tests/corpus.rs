@@ -1434,6 +1434,21 @@ fn expected_corpus_size() -> usize {
 /// leaving a declaration that no longer declares anything.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
     (
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-7",
+        "carve#5658 F06 ends an own-line attachment when a line misses its host",
+        r##"<ul>
+  <li>x
+    <pre><code>a
+
+</code></pre>
+  </li>
+</ul>
+<p>b</p>
+<pre><code>
+z
+</code></pre>"##,
+    ),
+    (
         "384-a-continuation-marker-attaches-a-block-only-at-its-owner-s-marker-column-7",
         "carve#5637 keeps the line after a refused item marker in the item",
         r##"<ul>
