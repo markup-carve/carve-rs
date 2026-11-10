@@ -2809,9 +2809,26 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             inline_span: Default::default(),
             comment_through: 0,
         };
-        match marker_refused_brace_run(self.cur.lines, item.at, paragraph_content) {
+        let marker_run = marker_refused_brace_run(self.cur, item.at, paragraph_content);
+        let owner_boundary = match &marker_run {
+            Some(RefusedBraceRun::Lines(count) | RefusedBraceRun::No(count))
+                if *count != usize::MAX =>
+            {
+                (1..*count).find(|&offset| {
+                    self.cur.lines.line(item.at + offset).is_some_and(|line| {
+                        indent_columns(line) < self.content_col
+                            && (detect_list_marker_full(line).is_some()
+                                || item_block_opener(trim_ascii_start(line)))
+                    })
+                })
+            }
+            _ => None,
+        };
+        match marker_run {
             Some(RefusedBraceRun::Lines(count)) => {
-                for _ in 1..count {
+                // Owner changes are decided before the run's paragraph text.
+                let through = owner_boundary.unwrap_or(count);
+                for _ in 1..through {
                     let Some(line) = self.cur.peek() else { break };
                     self.fold_lead_line(&mut lead, trim_ascii_start(line));
                 }
@@ -2820,11 +2837,18 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 lead.after_refused = true;
             }
             Some(RefusedBraceRun::No(count)) if count != usize::MAX => {
+                for _ in 1..owner_boundary.unwrap_or(count) {
+                    let Some(line) = self.cur.peek() else { break };
+                    self.fold_lead_line(&mut lead, line);
+                }
                 lead.comment_through = item.at + count;
             }
             _ => {}
         }
         while let Some(next) = self.cur.peek() {
+            if owner_boundary.is_some_and(|offset| self.cur.pos == item.at + offset) {
+                break;
+            }
             if !self.lead_paragraph_line(&mut lead, next) {
                 break;
             }
@@ -3476,10 +3500,11 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
 
 /// The brace run opening in a marker's content: refused, it takes its lines (carve#5080).
 fn marker_refused_brace_run(
-    lines: CursorLines<'_>,
+    cur: &LineCursor<'_>,
     at: usize,
     content: &str,
 ) -> Option<RefusedBraceRun> {
+    let lines = cur.lines;
     let raw = lines.line(at)?;
     let content = trim_ascii_start(content);
     if !content.starts_with('{') || !raw.ends_with(content) {
@@ -3487,9 +3512,28 @@ fn marker_refused_brace_run(
     }
     let column = indent_columns(&" ".repeat(raw.chars().count() - content.chars().count()));
     let opener = format!("{}{content}", " ".repeat(column));
-    match refused_brace_run(
+    match refused_brace_run_with_columns(
         std::iter::once(opener.as_str()).chain((at + 1..lines.len()).map_while(|k| lines.line(k))),
         true,
+        |offset, raw| {
+            let source = cur.source_line(at + offset)?;
+            if content.starts_with("{%") {
+                if let Some(column) =
+                    crate::parse::own_lines::authored_comment_column(source, offset == 0)
+                {
+                    return Some(column);
+                }
+            }
+            let walked = if offset == 0 {
+                column
+            } else {
+                indent_columns(strip_lazy(raw))
+            };
+            Some(crate::parse::own_lines::authored_visual_column(
+                source,
+                walked + 1,
+            ))
+        },
     ) {
         RefusedBraceRun::No(_) if !content.starts_with("{%") => None,
         run => Some(run),

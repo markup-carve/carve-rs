@@ -4902,19 +4902,19 @@ impl<'a> Walk<'a> {
 
 thread_local! {
     static ACTIVE_EDITS: std::cell::RefCell<Vec<LineEdit>> = const { std::cell::RefCell::new(Vec::new()) };
-    static AUTHORED_TABS: std::cell::RefCell<Option<std::collections::HashMap<usize, String>>> = const { std::cell::RefCell::new(None) };
+    static AUTHORED_SOURCE: std::cell::RefCell<Option<std::collections::HashMap<usize, String>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Keep authored lines when tabs can affect brace or note-column comparisons.
-/// The ownership walk and nested collectors may replace the tab with spaces.
-pub(crate) struct AuthoredTabsGuard {
+/// Keep authored lines when a brace run or tab needs its source columns.
+/// The ownership walk and nested collectors may rebase those columns.
+pub(crate) struct AuthoredSourceGuard {
     installed: bool,
     previous: Option<std::collections::HashMap<usize, String>>,
 }
 
-impl AuthoredTabsGuard {
+impl AuthoredSourceGuard {
     pub(crate) fn install(source: &str) -> Self {
-        if !source.contains('\t') || (!source.contains("{%") && !source.contains("[^")) {
+        if !source.contains("{%") && !(source.contains('\t') && source.contains("[^")) {
             return Self {
                 installed: false,
                 previous: None,
@@ -4927,15 +4927,15 @@ impl AuthoredTabsGuard {
             .collect();
         Self {
             installed: true,
-            previous: AUTHORED_TABS.with(|slot| slot.replace(Some(lines))),
+            previous: AUTHORED_SOURCE.with(|slot| slot.replace(Some(lines))),
         }
     }
 }
 
-impl Drop for AuthoredTabsGuard {
+impl Drop for AuthoredSourceGuard {
     fn drop(&mut self) {
         if self.installed {
-            AUTHORED_TABS.with(|slot| *slot.borrow_mut() = self.previous.take());
+            AUTHORED_SOURCE.with(|slot| *slot.borrow_mut() = self.previous.take());
         }
     }
 }
@@ -5000,7 +5000,7 @@ pub(crate) fn restore_authored_columns(pos: &mut Pos) {
 /// Map a walked 1-based codepoint column to the authored visual column.
 pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
     let authored = ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column));
-    AUTHORED_TABS.with(|slot| {
+    AUTHORED_SOURCE.with(|slot| {
         let tabs = slot.borrow();
         let Some(text) = tabs.as_ref().and_then(|lines| lines.get(&line)) else {
             return authored - 1;
@@ -5020,6 +5020,30 @@ pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
             };
         }
         visual
+    })
+}
+
+/// The written column of a block comment opener or one of its continuations.
+/// Nested collectors may have removed owner columns without a position map.
+pub(crate) fn authored_comment_column(line: usize, opener: bool) -> Option<usize> {
+    AUTHORED_SOURCE.with(|slot| {
+        let source = slot.borrow();
+        let mut text = source.as_ref()?.get(&line)?.as_str();
+        while let Some(after) = super::prepass_links::strip_blockquote_prefix(text) {
+            text = after;
+        }
+        let end = if opener {
+            text.find("{%")?
+        } else {
+            text.len() - text.trim_start_matches([' ', '\t']).len()
+        };
+        Some(text[..end].chars().fold(0, |column, ch| {
+            if ch == '\t' {
+                column + 4 - column % 4
+            } else {
+                column + 1
+            }
+        }))
     })
 }
 

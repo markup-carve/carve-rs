@@ -558,6 +558,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let marker_colon_column = marker_line_columns.last().copied().unwrap_or(strip_cols);
     let mut nested_fence: Option<FenceOpen> = None;
     let mut refused_nested_follower_span: Option<FenceOpen> = None;
+    let mut marker_brace_run_until: Option<usize> = None;
     let mut active_nested_fence = marker_content
         .filter(|content| content.contains(['`', '~']))
         .and_then(detect_list_marker_full)
@@ -1797,7 +1798,32 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 nested_fence = None;
             }
         } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
-            if let Some(marker) = detect_list_marker_full_at(line, indent) {
+            if let Some(marker) = detect_list_marker_full_at(line, indent)
+                .filter(|_| marker_brace_run_until.map_or(true, |until| cur.pos >= until))
+            {
+                marker_brace_run_until = marker
+                    .content
+                    .starts_with("{%")
+                    .then(|| {
+                        body_code_fence.holds_open_fence(&lines);
+                        let column = marker_content_col_at(line, indent).unwrap_or(indent);
+                        let opener = format!("{}{}", " ".repeat(column), marker.content);
+                        let run = refused_brace_run(
+                            std::iter::once(opener.as_str()).chain(
+                                (cur.pos + 1..cur.lines.len()).map_while(|at| cur.lines.line(at)),
+                            ),
+                            true,
+                        );
+                        match run {
+                            RefusedBraceRun::Lines(count) | RefusedBraceRun::No(count)
+                                if count != usize::MAX && count > 0 =>
+                            {
+                                Some(cur.pos + count)
+                            }
+                            _ => None,
+                        }
+                    })
+                    .flatten();
                 nested_item_columns.tabbed_marker |= line[..leading_ws(line)].contains('\t');
                 if active_nested_fence.is_none() && marker.content.contains(['`', '~']) {
                     active_nested_fence = detect_fence_open(innermost_marker_content(
@@ -1829,7 +1855,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                         nested_item_columns.pop();
                     }
                 }
-                if let Some(mut open) = detect_fence_open(trim_ascii_start(line)) {
+                if let Some(mut open) = detect_fence_open(trim_ascii_start(line))
+                    .filter(|_| marker_brace_run_until.map_or(true, |until| cur.pos >= until))
+                {
                     if let Some(&(_, column)) = nested_item_columns
                         .iter()
                         .rev()
@@ -1878,7 +1906,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             break;
         }
-        let is_marker = detect_list_marker_full_at(line, indent).is_some();
+        let is_marker = marker_brace_run_until.map_or(true, |until| cur.pos >= until)
+            && detect_list_marker_full_at(line, indent).is_some();
         // A sibling marker misses a span opened on the preceding marker line.
         // The delimiter after that sibling begins a new span at its own host.
         if marker_comment_span.is_some() && is_marker && indent <= marker_comment_owner {
@@ -2342,7 +2371,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             &sliced
         };
-        if !in_comment_span {
+        if !in_comment_span && marker_brace_run_until.map_or(true, |until| cur.pos >= until) {
             let was_in_code = fence.is_some();
             let may_track_code = literal_colon.map_or(true, |(_, column, floor)| {
                 indent >= floor
@@ -2489,6 +2518,10 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             sliced
         });
+        if marker_brace_run_until.is_some_and(|until| cur.pos < until) {
+            // A marker-line brace run's fence-shaped lines are its payload.
+            body_code_fence.scanned = lines.len();
+        }
         table_seen |= is_table_start(trim_ascii_start(line));
         table_caption_open = if caption_content(trim_ascii_start(line)).is_some() {
             table_seen
@@ -2632,18 +2665,37 @@ fn ends_in_marker_aware_refused_run(lines: &[String]) -> bool {
         .iter()
         .rposition(|line| is_blank_line(line))
         .map_or(0, |at| at + 1);
-    let Some(marker_at) = (start..lines.len()).rev().find(|&at| {
-        detect_list_marker_full(&lines[at]).is_some_and(|nm| nm.content.starts_with('{'))
-    }) else {
-        return false;
-    };
-    let mut probe: Vec<String> = lines[marker_at..].to_vec();
-    let line = &lines[marker_at];
-    let nm = detect_list_marker_full(line).expect("marker line");
-    let offset = nm.content.as_ptr() as usize - line.as_ptr() as usize;
-    let column = line[..offset].chars().count();
-    probe[0] = format!("{}{}", " ".repeat(column), nm.content);
-    ends_in_refused_brace_run(&probe)
+    for marker_at in (start..lines.len()).rev() {
+        let line = &lines[marker_at];
+        if !line.contains('{') {
+            continue;
+        }
+        let Some(nm) = detect_list_marker_full(line).filter(|nm| nm.content.starts_with('{'))
+        else {
+            continue;
+        };
+        let offset = nm.content.as_ptr() as usize - line.as_ptr() as usize;
+        let column = line[..offset].chars().count();
+        let content_column = marker_content_col_at(line, indent_columns(line)).unwrap_or(column);
+        if lines[marker_at + 1..].iter().any(|line| {
+            indent_columns(line) < content_column
+                && (is_list_marker(line) || item_block_opener(trim_ascii_start(line)))
+        }) {
+            continue;
+        }
+        let opener = format!("{}{}", " ".repeat(column), nm.content);
+        if matches!(
+            refused_brace_run(
+                std::iter::once(opener.as_str())
+                    .chain(lines[marker_at + 1..].iter().map(String::as_str)),
+                true
+            ),
+            RefusedBraceRun::Lines(count) if count == lines.len() - marker_at
+        ) {
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn track_collected_colon_fence(
