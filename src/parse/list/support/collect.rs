@@ -1100,6 +1100,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && (is_definition_list_start(trim_ascii_start(line))
                 || is_list_marker(line)
                 || item_block_opener(trim_ascii_start(line)))
+            && !ends_in_marker_aware_refused_run(&lines)
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
@@ -1762,6 +1763,12 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         } else {
             false
         };
+        let refused_block_follower = indent >= strip_cols
+            && nested_item_columns
+                .last()
+                .is_some_and(|&(_, column)| indent >= column)
+            && item_block_opener(trim_ascii_start(line))
+            && ends_in_marker_aware_refused_run(&lines);
         if let Some(open) = nested_fence {
             if indent < open.content_col {
                 nested_fence = None;
@@ -2166,7 +2173,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         };
         let mut sliced = sliced;
         let mut trimmed_after_slice = 0usize;
-        if refused_nested_follower && !sliced.starts_with(LAZY) {
+        if (refused_nested_follower || refused_block_follower) && !sliced.starts_with(LAZY) {
             // The descendant must re-read this protected follower as text,
             // even after its marker column has been rebased away.
             trimmed_after_slice += indent_columns(&sliced);
@@ -2180,25 +2187,30 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
         }
         // PART 9 §10 I2 carries the deepest open paragraph across plain lazy lines.
-        let marker_paragraph_owner = (nested_paragraph_column.is_none() && plain_nested_lazy)
-            .then(|| {
-                lines.last().map_or(carried_lazy_owner, |prior| {
-                    if detect_list_marker_full(prior).is_some()
-                        && paragraph_owner_column(prior, 0).is_some()
-                    {
-                        nested_item_columns.last().map(|&(_, column)| column)
-                    } else if prior.starts_with(LAZY)
-                        || (carried_lazy_owner.is_some()
-                            && line_starts_paragraph(trim_ascii_start(prior)))
-                    {
-                        carried_lazy_owner
-                    } else {
-                        None
-                    }
-                })
-            })
+        let marker_paragraph_owner = refused_block_follower
+            .then(|| nested_item_columns.last().map(|&(_, column)| column))
             .flatten()
-            .filter(|&owner| indent < owner);
+            .or_else(|| {
+                (nested_paragraph_column.is_none() && plain_nested_lazy)
+                    .then(|| {
+                        lines.last().map_or(carried_lazy_owner, |prior| {
+                            if detect_list_marker_full(prior).is_some()
+                                && paragraph_owner_column(prior, 0).is_some()
+                            {
+                                nested_item_columns.last().map(|&(_, column)| column)
+                            } else if prior.starts_with(LAZY)
+                                || (carried_lazy_owner.is_some()
+                                    && line_starts_paragraph(trim_ascii_start(prior)))
+                            {
+                                carried_lazy_owner
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .flatten()
+                    .filter(|&owner| indent < owner)
+            });
         if let Some(owner) = marker_paragraph_owner {
             nested_paragraph_column = Some(owner);
         }
