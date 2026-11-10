@@ -502,9 +502,11 @@ impl OpenComment {
         let was_open = self.scan.comment;
         self.scan.scanned = 0;
         self.scan.open(&[line]);
-        if !was_open && self.scan.comment {
-            self.line_start =
-                trim_ascii_start(strip_lazy(line)).starts_with("{%") && !line.contains("%}");
+        if self.scan.comment && line.contains("%}") {
+            // The comment left open here opened after a closer on this line.
+            self.line_start = false;
+        } else if !was_open && self.scan.comment {
+            self.line_start = trim_ascii_start(strip_lazy(line)).starts_with("{%");
         }
     }
 

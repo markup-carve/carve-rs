@@ -71,3 +71,9 @@ fn inline_comment_does_not_hold_a_heading() {
     let html = to_html("p {% a\n# h\nz %} y\n");
     assert!(html.contains("<h1>h</h1>"), "{html}");
 }
+
+#[test]
+fn an_inline_comment_after_a_closed_run_does_not_hold_a_heading() {
+    let html = to_html("p\n{% one\n x %} inline {% two\n # heading\n y %} end\n");
+    assert!(html.contains("<h1>heading</h1>"), "{html}");
+}
