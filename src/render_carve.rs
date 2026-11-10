@@ -2105,7 +2105,7 @@ fn render_blocks(
             // Consecutive line comments owned by a loose container are one
             // block. A blank between them can become a hard boundary after the
             // comments are erased and change the containing list (carve#5206).
-            let comment_run = ((item.is_some() && last_visible.is_some())
+            let comment_run = ((ctx.at_item_content_column && last_visible.is_some())
                 || (list == ctx.marker_body && ctx.list_depth == 0))
                 && previous_emitted.is_some_and(is_line_comment_in_run)
                 && is_line_comment_in_run(block);

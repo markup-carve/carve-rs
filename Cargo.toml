@@ -557,3 +557,7 @@ path = "tests/quote_fence_prepass_4107.rs"
 [[test]]
 name = "attached_open_fence_sibling_5499"
 path = "tests/attached_open_fence_sibling_5499.rs"
+
+[[test]]
+name = "position_free_comment_runs_5724"
+path = "tests/position_free_comment_runs_5724.rs"
