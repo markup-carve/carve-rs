@@ -112,6 +112,10 @@ name = "a_literal_quoted_tabbed_line_block"
 path = "tests/a_literal_quoted_tabbed_line_block.rs"
 
 [[test]]
+name = "tabbed_verse_facade_5733"
+path = "tests/tabbed_verse_facade_5733.rs"
+
+[[test]]
 name = "first_block_plus_passes_sibling_note_bodies"
 path = "tests/first_block_plus_passes_sibling_note_bodies.rs"
 

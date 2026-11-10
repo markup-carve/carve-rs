@@ -2854,10 +2854,6 @@ impl<'a> Walk<'a> {
                 false,
             );
         } else if inner.line_block && inner.verse_rewritten_opener && !inner.verse_marker_line {
-            // The opener now stands at `canon`, but its later lines were
-            // measured in the authored frame. Use that same frame for both
-            // payload and closer; a tab that remains literal takes the normal
-            // path and keeps its next stop in the list reader.
             let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
             c.lead_at(target + inner.shift + c.attachment_shift, false);
         } else if verse_payload
@@ -2865,9 +2861,18 @@ impl<'a> Walk<'a> {
             && !inner.verse_marker_line
             && c.authored_col == inner.verse_open_authored_col + 1
         {
-            // A literal tabbed opener and a verse line one authored column
-            // farther apart keep that distance through quote/list collection.
+            // A one-column verse lead survives an enclosing quoted item.
             c.lead_at(inner.canon + 1 + inner.shift + c.attachment_shift, false);
+        } else if inner.line_block && inner.verse_opener_tab && !inner.verse_marker_line {
+            // The opener now stands at `canon`, but its later lines were
+            // measured in the authored frame. Use that same frame for both
+            // payload and closer. Expand a tab only when a containing item
+            // advanced its stop beyond the authored column.
+            let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
+            c.lead_at(
+                target + inner.shift + c.attachment_shift,
+                c.col > c.authored_col,
+            );
         } else {
             c.lead_in(target, inner.shift, false);
         }
