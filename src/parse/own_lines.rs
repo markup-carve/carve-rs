@@ -77,6 +77,8 @@ struct Frame {
     para_from: usize,
     /// An open paragraph after a plus-attached fence ended at its first blank.
     fold_unpaired_fence: bool,
+    fold_unpaired_from: usize,
+    fold_unpaired_scan: paragraph::InlineSpanScan,
     last: Last,
     /// A definition term opened in this item's own body.
     definition_seen: bool,
@@ -170,6 +172,8 @@ impl Frame {
             para: false,
             para_from: 0,
             fold_unpaired_fence: false,
+            fold_unpaired_from: 0,
+            fold_unpaired_scan: paragraph::InlineSpanScan::default(),
             last: Last::None,
             definition_seen: false,
             marker: None,
@@ -2824,6 +2828,35 @@ impl<'a> Walk<'a> {
         false
     }
 
+    /// An own-line fence may keep its first blank, but a later ordinary line
+    /// below the host's column ends its closer search (PART 0 S1 step 2).
+    fn own_line_attached_has_closer(
+        &self,
+        at: usize,
+        ch: u8,
+        len: usize,
+        opener_col: usize,
+        host_col: usize,
+    ) -> bool {
+        let mut past_blank = false;
+        for line in &self.lines[at + 1..] {
+            let rest = quoted_rest(line);
+            let col = doc_column(line, rest);
+            let blank = is_blank_line(rest);
+            if col <= opener_col
+                && pure_fence(trim_ascii_start(rest))
+                    .is_some_and(|(found, width)| found == ch && width >= len)
+            {
+                return true;
+            }
+            if past_blank && !blank && col < host_col {
+                return false;
+            }
+            past_blank |= blank;
+        }
+        false
+    }
+
     fn payload_target(
         inner: &Frame,
         closer: Option<Closer>,
@@ -2912,11 +2945,35 @@ impl<'a> Walk<'a> {
     }
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
-        let ended = self
+        let blank_end = self
             .frames
             .last()
-            .and_then(|frame| frame.attached_blank_end)
-            .is_some_and(|end| at >= end);
+            .and_then(|frame| frame.attached_blank_end);
+        let ended = blank_end.is_some_and(|end| at >= end);
+        // Keep the fence's trailing blank, then let the first nonblank line
+        // that misses its host leave the fence (PART 0 S1 step 2).
+        if blank_end.is_some_and(|end| at > end)
+            && !is_blank_line(self.lines[at])
+            && !self.frames.last().is_some_and(|frame| {
+                let rest = quoted_rest(self.lines[at]);
+                let col = doc_column(self.lines[at], rest);
+                frame
+                    .closer
+                    .is_some_and(|closer| closer.closes(rest, col, frame.closer_col()))
+            })
+            && self.attached.as_ref().is_some_and(|block| {
+                let host_col = block.frames.last().expect("attached host").col;
+                let enclosing_col = self
+                    .frames
+                    .iter()
+                    .rev()
+                    .find(|frame| matches!(frame.kind, Kind::Item | Kind::Dd | Kind::Note))
+                    .map_or(host_col, |frame| frame.col.min(host_col));
+                doc_column(self.lines[at], quoted_rest(self.lines[at])) < enclosing_col
+            })
+        {
+            return true;
+        }
         ended
             && (self
                 .frames
@@ -2993,6 +3050,8 @@ impl<'a> Walk<'a> {
         if ended_attached_code {
             if let Some(owner) = self.frames.get_mut(*reached) {
                 owner.fold_unpaired_fence = true;
+                owner.fold_unpaired_from = at;
+                owner.fold_unpaired_scan = paragraph::InlineSpanScan::default();
             }
         }
     }
@@ -4108,6 +4167,11 @@ impl<'a> Walk<'a> {
                     .filter(|block| block.from == at)
                     .and_then(|block| block.frames.last())
                     .map_or(self.frames[owner].col, |host| host.col);
+                let enclosing_host_col = self.frames[..=owner]
+                    .iter()
+                    .rev()
+                    .find(|frame| matches!(frame.kind, Kind::Item | Kind::Dd | Kind::Note))
+                    .map_or(attached_host_col, |frame| frame.col.min(attached_host_col));
                 let attached_closer_col = attached_host_col.saturating_sub(1).max(col);
                 let attached_marker_col = self
                     .attached
@@ -4142,6 +4206,13 @@ impl<'a> Walk<'a> {
                                     )
                             } else {
                                 runs.code_by_column.has_later(ch, at, col, len)
+                                    && self.own_line_attached_has_closer(
+                                        at,
+                                        ch,
+                                        len,
+                                        col,
+                                        enclosing_host_col,
+                                    )
                             };
                             f.attached_host_fence = marker_line_attached && has_closer;
                             if !has_closer {
@@ -4731,10 +4802,21 @@ impl<'a> Walk<'a> {
             // An opener interrupts with or without a closer (carve#4018).
             let ch = rest.as_bytes()[0];
             let len = rest.bytes().take_while(|&b| b == ch).count();
+            let open_code = if self.frames[owner].fold_unpaired_fence {
+                let frame = &mut self.frames[owner];
+                frame
+                    .fold_unpaired_scan
+                    .code_open(&self.lines[frame.fold_unpaired_from..at])
+            } else {
+                false
+            };
             // The paragraph that survives an attached fence's first blank
             // absorbs an unpaired run in any owner, including the document.
+            // An open inline code span is paragraph content but does not hide
+            // a shifted fence opener (PART 9 §10 I4, plus-ownership P04).
             if owner_para
                 && self.frames[owner].fold_unpaired_fence
+                && !open_code
                 && !self.payload_fence_has_closer(at, ch, len)
             {
                 return Form::Text;

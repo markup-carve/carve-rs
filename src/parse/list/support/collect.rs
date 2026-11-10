@@ -921,6 +921,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             // (PART 0 S2: a blank reaches every frame).
             if active_nested_fence.is_some() && nested_blank_run.is_none() {
                 let end = container.blank_run_end(cur.lines, cur.pos + 1);
+                let marker_at_outer_column = cur.lines.line(end).is_some_and(|next| {
+                    indent_columns(next) == strip_cols
+                        && continuation_marker::is_consumed_marker(trim_ascii_start(next))
+                        && cur.lines.line(end + 1).is_some_and(|follower| {
+                            !is_blank_line(follower) && indent_columns(follower) >= strip_cols
+                        })
+                });
                 // A refused `+` in a deeper item keeps the blank there (§17 L3).
                 let outer_follower = cur.lines.line(end).is_some_and(|next| {
                     !is_blank_line(next)
@@ -946,7 +953,11 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                                 || indent_columns(line) + strip_cols >= open.content_col
                         })
                 });
-                discarded_outer_blank |= outer_follower && in_fence;
+                // The fence keeps the blank as payload, while a consumed
+                // marker at this collector's column resumes the enclosing
+                // item. Charge its separator to that item, not the child.
+                outer_plus_after_blank |= marker_at_outer_column && in_fence;
+                discarded_outer_blank |= outer_follower && in_fence && !marker_at_outer_column;
                 nested_blank_run = Some(end);
             }
             marker_note_intermediate_quote_open = false;

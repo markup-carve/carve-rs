@@ -446,6 +446,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let marker_column = indent_columns(line);
+        let blank_before = self.previous_line_blank();
+        let marker_line_fence_before = self.last_item_bare_continuation
+            && self
+                .items
+                .last()
+                .and_then(|item| item.children.last())
+                .is_some_and(|block| matches!(block, BlockNode::CodeBlock(_)));
+        let trailing_payload_blank = self.last_child_holds_trailing_payload_blank();
         self.cur.consume();
         self.pending_blank = false;
         // A marker is not the block these were written for either (§15 A4).
@@ -493,6 +501,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             }
         }
         if let Some(block) = attached {
+            if blank_before
+                && marker_line_fence_before
+                && !trailing_payload_blank
+                && !block_renders_nothing(&block)
+            {
+                self.tight = false;
+            }
             // A quote in a marker body ends at an unmarked list marker, so its
             // paragraph is not open for one below the content column (PART 0 S3).
             let quote_meets_marker = matches!(block, BlockNode::BlockQuote(_))

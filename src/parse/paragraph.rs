@@ -381,7 +381,7 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
 
 /// Whether the paragraph lines read so far leave an inline code span or a
 /// braced comment open, so a line-initial `{` is inline content.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(in crate::parse) struct InlineSpanScan {
     pub(in crate::parse) scanned: usize,
     code_run: usize,
