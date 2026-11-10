@@ -2877,8 +2877,9 @@ impl<'a> Walk<'a> {
                 .iter()
                 .map(|frame| frame.col + frame.shift)
                 .collect();
+            let reached = frame_tab_column(c.src, &origins);
             origins.push(opener_origin);
-            let column = if c.col < opener_origin {
+            let column = if reached < opener_origin {
                 inner.canon
             } else {
                 inner.canon + frame_tab_column(c.src, &origins).saturating_sub(opener_origin)

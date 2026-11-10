@@ -64,6 +64,13 @@ fn below_opener_tab_does_not_indent_the_verse() {
 }
 
 #[test]
+fn item_frame_tab_keeps_its_verse_space() {
+    let source = "- a\n  \t::: |\n  \t x\n  \t:::\n";
+    let html = to_html(source);
+    assert!(html.contains("<p>&nbsp;x</p>"), "{html}");
+}
+
+#[test]
 fn tab_only_opener_keeps_nested_verse_and_closer() {
     let source = "- a\n  - a\n\t::: |\n  \tz\n  \t:::\nend\n";
     let html = to_html(source);
