@@ -277,6 +277,7 @@ impl MappedSource {
             } else {
                 self.item_marker_at_start = other.item_marker_at_start;
                 self.marker_tail = other.marker_tail;
+                self.marker_brace_column = other.marker_brace_column;
             }
             self.source.push_str(&other.source);
             self.line_map.extend(other.line_map);
@@ -307,6 +308,7 @@ impl MappedSource {
         } else {
             self.item_marker_at_start = other.item_marker_at_start;
             self.marker_tail = other.marker_tail;
+            self.marker_brace_column = other.marker_brace_column;
         }
         self.source.push_str(&other.source);
         self.line_map.extend(other.line_map);
@@ -377,7 +379,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
             item_marker_at_start: original.item_marker_at_start,
             marker_tail: None,
-            marker_brace_column: None,
+            marker_brace_column: original.marker_brace_column,
             reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
             opaque_blank_lines: original
                 .opaque_blank_lines
