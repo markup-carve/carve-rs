@@ -944,7 +944,9 @@ fn own_line_fence_end(
 ) -> usize {
     let (Some(content_col), Some(open)) = (
         content_col,
-        lines.line(start).and_then(|line| detect_fence_open(trim_ascii_start(line))),
+        lines
+            .line(start)
+            .and_then(|line| detect_fence_open(trim_ascii_start(line))),
     ) else {
         return end;
     };

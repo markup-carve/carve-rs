@@ -55,10 +55,10 @@ fn a_table_below_a_nested_list_reaches_the_output() {
 }
 
 #[test]
-fn an_inert_plus_leaves_plain_text_in_the_deepest_item() {
-    // The refused `+` and its follower stay in the nested item's paragraph.
+fn an_inert_plus_leaves_its_follower_in_the_outer_item() {
+    // The refused `+` keeps the next line's owner: the outer item (carve#5637).
     let source = "- x\n  - L\n+\n  p\n";
-    assert_eq!(carve::to_markdown(source), "- x\n  - L\n\np\n");
+    assert_eq!(carve::to_markdown(source), "- x\n  - L\n\n  p\n");
     let blocks = item_blocks(source);
     let nested = blocks
         .iter()
@@ -69,12 +69,12 @@ fn an_inert_plus_leaves_plain_text_in_the_deepest_item() {
         .expect("the nested list");
     assert_eq!(nested.items[0].children.len(), 1);
     assert!(
-        !blocks
+        blocks
             .iter()
             .skip_while(|block| !matches!(block, BlockNode::List(_)))
             .skip(1)
             .any(|block| matches!(block, BlockNode::Paragraph(_))),
-        "the outer item gained a paragraph: {blocks:?}"
+        "the outer item holds the follower: {blocks:?}"
     );
 }
 
@@ -110,10 +110,10 @@ fn a_tail_that_cannot_take_lazy_text_keeps_its_paragraph_glued() {
 
 #[test]
 fn the_absorption_set_is_unchanged() {
-    // The quote keeps the refused `+` and the following quoted line together.
+    // The refused `+` is absent, so the quote goes on (carve#5637).
     assert_eq!(
         carve::to_markdown("- x\n  > q\n+\n  > r\n"),
-        "- x\n  > q\n\n\\> r\n"
+        "- x\n  > q\n  > r\n"
     );
     assert_eq!(carve::to_markdown("- x\n  > q\n"), "- x\n  > q\n");
 }

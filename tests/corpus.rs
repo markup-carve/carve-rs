@@ -1432,7 +1432,51 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "384-a-continuation-marker-attaches-a-block-only-at-its-owner-s-marker-column-7",
+        "carve#5637 keeps the line after a refused item marker in the item",
+        r##"<ul>
+  <li>x
+    <ul>
+      <li>L</li>
+    </ul>
+    p
+  </li>
+</ul>"##,
+    ),
+    (
+        "627-a-refused-marker-leaves-an-open-fence-s-blank-payload",
+        "carve#5637 keeps the line after a refused item marker in the item",
+        r##"<ul>
+  <li>
+    <pre><code></code></pre>
+    x
+  </li>
+</ul>"##,
+    ),
+    (
+        "627-a-refused-marker-leaves-an-open-fence-s-blank-payload-2",
+        "carve#5637 keeps the line after a refused item marker in the item",
+        r##"<ul>
+  <li>
+    <pre><code></code></pre>
+    <p>x</p>
+  </li>
+</ul>"##,
+    ),
+    (
+        "627-a-refused-marker-leaves-an-open-fence-s-blank-payload-3",
+        "carve#5637 keeps the line after a refused item marker in the item",
+        r##"<ul>
+  <li>
+    <pre><code>a
+</code></pre>
+    x
+  </li>
+</ul>"##,
+    ),
+];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

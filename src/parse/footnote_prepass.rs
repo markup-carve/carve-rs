@@ -3442,7 +3442,9 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                             count
                                 + continuation[count - 1..]
                                     .iter()
-                                    .take_while(|line| line_starts_paragraph(trim_ascii_start(line)))
+                                    .take_while(|line| {
+                                        line_starts_paragraph(trim_ascii_start(line))
+                                    })
                                     .count()
                         })
                 }

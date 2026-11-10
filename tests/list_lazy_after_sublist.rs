@@ -11,10 +11,11 @@ fn lazy_after_sublist_folds_into_deepest() {
 }
 
 #[test]
-fn inert_plus_before_indented_text_keeps_the_deepest_item_open() {
+fn inert_plus_before_indented_text_stays_in_the_outer_item() {
+    // The refused marker keeps the next line's owner (carve#5637).
     assert_eq!(
         carve::to_html("- x\n  - L\n+\n  p\n"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>L</li>\n    </ul>\n  </li>\n</ul>\n<p>p</p>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>L</li>\n    </ul>\n    p\n  </li>\n</ul>"
     );
 }
 

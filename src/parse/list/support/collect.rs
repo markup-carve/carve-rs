@@ -583,19 +583,24 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                 .lines
                 .line(container.blank_run_end(cur.lines, cur.pos + 1))
                 .is_some_and(|next| indent_columns(next) >= strip_cols)
-            && (fence.is_some() || cur.lines.line(cur.pos + 1).is_some_and(|next| !is_blank_line(next)))
+            && (fence.is_some()
+                || cur
+                    .lines
+                    .line(cur.pos + 1)
+                    .is_some_and(|next| !is_blank_line(next)))
         {
             let closer = fence.take().map(|open| {
                 String::from_utf8(vec![open.fence_char; open.fence_len]).unwrap_or_default()
             });
             // Between two quote lines the marker is absent: the quote goes on.
             let quote_goes_on = closer.is_none()
-                && lines
-                    .last()
-                    .is_some_and(|prior| strip_blockquote_prefix(trim_ascii_start(prior)).is_some())
-                && cur.lines.line(cur.pos + 1).is_some_and(|next| {
-                    strip_blockquote_prefix(trim_ascii_start(next)).is_some()
-                });
+                && lines.last().is_some_and(|prior| {
+                    strip_blockquote_prefix(trim_ascii_start(prior)).is_some()
+                })
+                && cur
+                    .lines
+                    .line(cur.pos + 1)
+                    .is_some_and(|next| strip_blockquote_prefix(trim_ascii_start(next)).is_some());
             if !quote_goes_on {
                 lines.push(closer.unwrap_or_else(|| trim_ascii_start(line).to_owned()));
                 reached.push(false);
