@@ -1487,6 +1487,19 @@ pub(in crate::parse) fn collect_blockquote_body(
         {
             continue;
         }
+        if body.attrs_block_rest > 0 {
+            // The lookahead already accepted this unprefixed continuation as
+            // part of the wrapped attribute block. It opens no paragraph in
+            // the quote, and keeps its authored column for the inner parse.
+            body.attrs_block_rest -= 1;
+            body.attrs_closed_last = body.attrs_block_rest == 0;
+            body.para_open = ParaOpen::Closed;
+            let source_line = cur.source_line(cur.pos);
+            let column = cur.source_col(cur.pos);
+            body.push_carried(cur, cur.pos, line.to_string(), source_line, column);
+            cur.consume();
+            continue;
+        }
         if body.lazy_ends_quote(cur, options, line, attached_host_col) {
             break;
         }
@@ -2607,7 +2620,16 @@ impl<'a> QuoteBody<'a> {
         } else {
             stripped
         };
-        match quoted_attrs_block_len(opener, cur.lines.range(cur.pos..cur.lines.len())) {
+        let raw = cur.lines.at(at);
+        let opener_source_column = raw
+            .find('{')
+            .map(|brace| super::attrs::visual_column_before(raw, brace))
+            .unwrap_or(0);
+        match quoted_attrs_block_len(
+            opener,
+            opener_source_column,
+            cur.lines.range(cur.pos..cur.lines.len()),
+        ) {
             QuotedAttrsBlock::Block(len) => {
                 self.para_open = ParaOpen::Closed;
                 self.attrs_block_rest = len - 1;
