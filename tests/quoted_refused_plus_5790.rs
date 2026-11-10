@@ -61,3 +61,25 @@ fn an_outdented_quoted_heading_closes_the_refused_runs_item_paragraph() {
         assert_eq!(to_html(&source), expected, "{source:?}");
     }
 }
+
+#[test]
+fn a_quoted_sibling_block_after_a_refused_run_leaves_no_lazy_paragraph() {
+    let cases = [
+        (
+            "::: note",
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n\n  </aside>",
+        ),
+        ("```", "<pre><code></code></pre>"),
+        (
+            "| a |",
+            "<table>\n    <tbody>\n      <tr><td>a</td></tr>\n    </tbody>\n  </table>",
+        ),
+    ];
+    for (sibling, rendered) in cases {
+        let source = format!("> - {{.x\n> }}\n> {sibling}\nz\n");
+        let expected = format!(
+            "<blockquote>\n  <ul>\n    <li>{{.x\n}}</li>\n  </ul>\n  {rendered}\n</blockquote>\n<p>z</p>"
+        );
+        assert_eq!(to_html(&source), expected, "{source:?}");
+    }
+}
