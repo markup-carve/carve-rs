@@ -1964,7 +1964,11 @@ impl<'a> Walk<'a> {
             } else if parse_footnote_def_line(rest).is_some() {
                 // A quote's `+` grants this definition as its one invisible
                 // leaf. It does not skip past it to grant the following block.
-                if self.frames[host].kind == Kind::Quote {
+                if self
+                    .frames
+                    .get(host)
+                    .is_some_and(|frame| frame.kind == Kind::Quote)
+                {
                     return k;
                 }
                 // A later `+` definition offers the block below it: one indented
