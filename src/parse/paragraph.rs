@@ -232,6 +232,11 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                         .take_while(|ch| matches!(ch, ' ' | '\t'))
                         .count();
                     let walked = (stripped + indent_codepoints as isize).max(0) as usize;
+                    if offset == 0 && cur.pos == 0 {
+                        if let Some(column) = cur.marker_brace_column {
+                            return Some(column);
+                        }
+                    }
                     Some(crate::parse::own_lines::authored_visual_column(
                         source_line,
                         walked + 1,

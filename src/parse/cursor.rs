@@ -196,6 +196,8 @@ pub(in crate::parse) struct LineCursor<'a> {
     pub(in crate::parse) colon_view: Option<&'a ColonView>,
     pub(in crate::parse) colon_geometry: Option<&'a [SourceLine]>,
     pub(in crate::parse) marker_tail: Option<MarkerTail>,
+    /// Body column of a brace run opened on a container marker line.
+    pub(in crate::parse) marker_brace_column: Option<usize>,
     pub(in crate::parse) lines: CursorLines<'a>,
     pub(in crate::parse) line_map: Option<&'a [Option<usize>]>,
     /// Columns already stripped from the front of each line by an enclosing
@@ -295,6 +297,7 @@ impl<'a> LineCursor<'a> {
             colon_view: None,
             colon_geometry: None,
             marker_tail: None,
+            marker_brace_column: None,
             lines,
             line_map,
             col_map,

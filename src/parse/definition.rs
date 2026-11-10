@@ -1719,6 +1719,7 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
             line_map: self.line_map,
             item_marker_at_start: false,
             marker_tail: None,
+            marker_brace_column: None,
             reached: self.reached,
             opaque_blank_lines: Vec::new(),
             discarded_outer_blank: false,

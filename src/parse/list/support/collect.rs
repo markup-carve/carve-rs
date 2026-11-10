@@ -2594,6 +2594,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         line_map,
         item_marker_at_start: false,
         marker_tail: None,
+        marker_brace_column: None,
         reached,
         opaque_blank_lines,
         discarded_outer_blank,

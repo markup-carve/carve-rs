@@ -20,9 +20,21 @@ fn note_marker_comment_continues_only_past_its_opening_brace() {
     assert!(html.contains("<p> y<a href=\"#fnref1\""), "{html}");
     assert!(!html.contains("{% a"), "{html}");
 
-    // Shape B of carve#5748 awaits a ruling. Its continuation is at the
-    // note body column, left of the opening brace's source column.
-    let parked = "[^n]: {% a\n    {k=v}\n    z %} y\n\nr[^n]\n";
-    let html = to_html(parked);
-    assert!(html.contains("<p>{% a\n{k=v}\nz %} y"), "{html}");
+    // The carve#5748 ruling measures a marker-line run from the body column.
+    let body_column = "[^n]: {% a\n    {k=v}\n    z %} y\n\nr[^n]\n";
+    let html = to_html(body_column);
+    assert!(html.contains("<p> y<a href=\"#fnref1\""), "{html}");
+    assert!(!html.contains("{% a"), "{html}");
+}
+
+#[test]
+fn note_marker_brace_column_does_not_grow_with_its_label_or_quote_prefix() {
+    for source in [
+        "[^long-label]: {% a\n    {k=v}\n    z %} y\n\nr[^long-label]\n",
+        "> [^n]: {% a\n>     {k=v}\n>     z %} y\n\n> r[^n]\n",
+    ] {
+        let html = to_html(source);
+        assert!(html.contains("<p> y<a href=\"#fnref1\""), "{source:?}\n{html}");
+        assert!(!html.contains("{% a"), "{source:?}\n{html}");
+    }
 }

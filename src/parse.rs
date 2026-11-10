@@ -1184,6 +1184,7 @@ fn parse_with_options_mode_and_index_once(
                     outer_plus_after_blank: false,
                     item_marker_at_start: false,
                     marker_tail: None,
+                    marker_brace_column: None,
                     in_quoted_body: false,
                     sublists_carry_authored_base: false,
                 },
