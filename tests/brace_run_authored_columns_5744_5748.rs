@@ -9,6 +9,8 @@ fn block_comment_continuations_use_authored_columns_after_a_brace_line() {
             assert_eq!(to_html(&source).trim(), "<p> y</p>", "{source:?}");
         }
     }
+    assert_eq!(to_html("\t{% a\n     z %} y\n").trim(), "<p> y</p>");
+    assert_eq!(to_html("    {% a\n     z %} y\n").trim(), "<p> y</p>");
 }
 
 #[test]

@@ -224,8 +224,12 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                     let at = cur.pos + offset;
                     let source_line = cur.source_line(at)?;
                     let stripped = cur.source_col(at)?;
-                    let walked =
-                        (stripped + indent_columns(strip_lazy(raw)) as isize).max(0) as usize;
+                    let lead = strip_lazy(raw);
+                    let indent_codepoints = lead
+                        .chars()
+                        .take_while(|ch| matches!(ch, ' ' | '\t'))
+                        .count();
+                    let walked = (stripped + indent_codepoints as isize).max(0) as usize;
                     Some(crate::parse::own_lines::authored_visual_column(
                         source_line,
                         walked + 1,
