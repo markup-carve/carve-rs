@@ -178,11 +178,26 @@ pub(crate) fn marker_content_is_attr_block(
     cur: &LineCursor<'_>,
     content_col: usize,
 ) -> bool {
+    let opener_col = cur
+        .pos
+        .checked_sub(1)
+        .and_then(|at| cur.lines.line(at))
+        .and_then(|raw| raw.find(content).map(|offset| &raw[..offset]))
+        .map(|prefix| {
+            prefix.chars().fold(0usize, |col, ch| {
+                if ch == '\t' {
+                    col + 4 - col % 4
+                } else {
+                    col + 1
+                }
+            })
+        })
+        .unwrap_or(content_col);
     matches!(
         content_column_attr_block(
             content,
             cur.lines.range(cur.pos..cur.lines.len()),
-            content_col
+            opener_col
         ),
         ContentColumnAttrBlock::Block
     )
@@ -197,7 +212,7 @@ pub(crate) enum ContentColumnAttrBlock {
 pub(crate) fn content_column_attr_block<'a>(
     content: &str,
     rest: impl Iterator<Item = &'a str>,
-    content_col: usize,
+    opener_col: usize,
 ) -> ContentColumnAttrBlock {
     if !trim_ascii(content).starts_with('{') {
         return ContentColumnAttrBlock::No;
@@ -218,11 +233,7 @@ pub(crate) fn content_column_attr_block<'a>(
         #[cfg(test)]
         ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
         // The opener's later lines belong to it at any column (carve#3421).
-        let fragment = if indent_columns(line) < content_col {
-            trim_ascii_start(line).to_string()
-        } else {
-            slice_columns(line, content_col, false)
-        };
+        let fragment = line.to_string();
         if !valid_wrapped_attr_continuation(&fragment) {
             return ContentColumnAttrBlock::NoneWithin(normalized.len());
         }
@@ -233,7 +244,7 @@ pub(crate) fn content_column_attr_block<'a>(
         }
     }
     let lines: Vec<&str> = normalized.iter().map(String::as_str).collect();
-    match standalone_attrs_block_len(&lines) {
+    match attrs_block_len_at(opener_col, lines[0], lines[1..].iter().copied()) {
         Some(_) => ContentColumnAttrBlock::Block,
         // A closer was available but did not validate this opener. A later
         // opener may still form a valid block with that closer, so only the
