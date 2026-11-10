@@ -1697,12 +1697,6 @@ b
 </dl>"##,
     ),
     (
-        "1039-a-literal-brace-group-leaves-its-backtick-open",
-        "carve#5740: spec pin behavior pending its separate engine port",
-        r##"<p>a{title=“<code>"}</code></p>
-<p k="v">b</p>"##,
-    ),
-    (
         "1045-a-nested-code-body-keeps-its-literal-content-after-frame-stripping",
         "carve#5755: spec pin behavior pending its separate engine port",
         r##"<ul>
