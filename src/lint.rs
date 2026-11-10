@@ -470,6 +470,12 @@ fn collect_parser_events(
     use crate::parse::LintEvent;
     use std::collections::{HashMap, HashSet};
     let lines: Vec<&str> = source.split('\n').collect();
+    let mut line_starts = Vec::with_capacity(lines.len());
+    let mut next_start = 0;
+    for row in &lines {
+        line_starts.push(next_start);
+        next_start += row.chars().count() + 1;
+    }
     let mut fences = HashMap::new();
     let mut attached_first_block_items = HashSet::new();
     let mut visible_plus_spans = Vec::new();
@@ -620,11 +626,10 @@ fn collect_parser_events(
                 {
                     continue;
                 }
-                let marker_offset = lines
-                    .iter()
-                    .take(line.saturating_sub(1))
-                    .map(|row| row.chars().count() + 1)
-                    .sum::<usize>()
+                let marker_offset = line_starts
+                    .get(line.saturating_sub(1))
+                    .copied()
+                    .unwrap_or(0)
                     + lines
                         .get(line.saturating_sub(1))
                         .and_then(|row| row.rfind('+').map(|byte| row[..byte].chars().count()))
