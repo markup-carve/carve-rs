@@ -470,8 +470,15 @@ fn collect_parser_events(
     use crate::parse::LintEvent;
     use std::collections::{HashMap, HashSet};
     let lines: Vec<&str> = source.split('\n').collect();
+    let mut line_starts = Vec::with_capacity(lines.len());
+    let mut next_start = 0;
+    for row in &lines {
+        line_starts.push(next_start);
+        next_start += row.chars().count() + 1;
+    }
     let mut fences = HashMap::new();
     let mut attached_first_block_items = HashSet::new();
+    let mut visible_plus_spans = Vec::new();
     let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
     for body in doc.footnote_defs.values() {
         blocks.extend(body.iter().map(|block| (block, 0)));
@@ -513,6 +520,27 @@ fn collect_parser_events(
         }
         let mut inlines = Vec::new();
         crate::render_depth::push_block_children(block, depth, &mut blocks, &mut inlines);
+        while let Some((inline, inline_depth)) = inlines.pop() {
+            if let InlineNode::Text(text) = inline {
+                if text.value.contains('+') {
+                    if let Some(pos) = &text.pos {
+                        visible_plus_spans.push((pos.start_offset, pos.end_offset));
+                    }
+                }
+            }
+            crate::render_depth::push_inline_children(inline, inline_depth, &mut inlines);
+        }
+    }
+    visible_plus_spans.sort_unstable_by_key(|span| span.0);
+    let mut merged_plus_spans: Vec<(usize, usize)> = Vec::with_capacity(visible_plus_spans.len());
+    for (start, end) in visible_plus_spans {
+        if let Some(last) = merged_plus_spans.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        merged_plus_spans.push((start, end));
     }
     let mut seen = HashSet::new();
     for event in events {
@@ -583,8 +611,48 @@ fn collect_parser_events(
                 reason,
                 first_block,
             } => {
-                if *first_block && *host == "list item" && attached_first_block_items.contains(line)
+                // A nested ownership walk may skip invisible line comments
+                // before the marker. Its local line then names the first
+                // skipped comment; restore the authored marker line before
+                // applying line-scoped suppression.
+                let mut line = *line;
+                if !*first_block {
+                    while lines.get(line.saturating_sub(1)).is_some_and(|row| {
+                        row.trim_start_matches([' ', '\t', '>'])
+                            .trim_start()
+                            .starts_with("%%")
+                    }) && lines.get(line).is_some_and(|row| {
+                        row.chars().nth(column.saturating_sub(1)) == Some('+')
+                            && row.chars().skip(*column).all(char::is_whitespace)
+                    }) {
+                        line += 1;
+                    }
+                }
+                if matches!(*reason, "wrong-column" | "unclaimed") {
+                    continue;
+                }
+                if *first_block
+                    && *host == "list item"
+                    && attached_first_block_items.contains(&line)
                 {
+                    continue;
+                }
+                let marker_offset = line_starts
+                    .get(line.saturating_sub(1))
+                    .copied()
+                    .unwrap_or(0)
+                    + lines
+                        .get(line.saturating_sub(1))
+                        .and_then(|row| row.rfind('+').map(|byte| row[..byte].chars().count()))
+                        .unwrap_or(column.saturating_sub(1));
+                let visible = merged_plus_spans
+                    .get(
+                        merged_plus_spans
+                            .partition_point(|&(start, _)| start <= marker_offset)
+                            .saturating_sub(1),
+                    )
+                    .is_some_and(|&(start, end)| start <= marker_offset && marker_offset < end);
+                if !*first_block && visible {
                     continue;
                 }
                 let explanation = match *reason {
@@ -620,10 +688,10 @@ fn collect_parser_events(
                     _ => "It renders nothing.".to_string(),
                 };
                 (
-                    *line,
+                    line,
                     *column,
-                    "continuation-marker-refused",
-                    format!("This + attaches nothing because {explanation}. {effect}"),
+                    if *first_block { "continuation-marker-refused" } else { "refused-continuation-marker" },
+                    format!("This + attaches nothing because {explanation}. {effect} It can be removed."),
                     1,
                 )
             }

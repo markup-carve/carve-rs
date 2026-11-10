@@ -1,30 +1,32 @@
 //! A quote-prefixed `+` followed by a list item at the same quote level stays
-//! text, and `continuation-marker-refused` reports it (carve#3421, corpus 630-4).
+//! text, so it is not a refused offer under carve#5736 (corpus 630-4).
 
 use carve::{lint_carve, to_html};
 
 fn refusals(source: &str) -> Vec<(usize, usize, String)> {
     lint_carve(source)
         .into_iter()
-        .filter(|warning| warning.rule == "continuation-marker-refused")
+        .filter(|warning| {
+            matches!(
+                warning.rule,
+                "continuation-marker-refused" | "refused-continuation-marker"
+            )
+        })
         .map(|warning| (warning.line, warning.column, warning.message))
         .collect()
 }
 
-const MESSAGE: &str =
-    "This + attaches nothing because the next list item is a sibling. It renders nothing.";
-
 #[test]
-fn a_nested_quote_plus_before_a_list_item_is_reported() {
+fn a_nested_quote_plus_before_a_list_item_is_quiet() {
     let source = "> > q\n> > +\n> > - s\n";
-    assert_eq!(refusals(source), vec![(2, 5, MESSAGE.to_string())]);
+    assert!(refusals(source).is_empty());
     assert!(to_html(source).contains("<p>q\n+\n- s</p>"));
 }
 
 #[test]
-fn a_quote_plus_before_a_list_item_is_reported() {
+fn a_quote_plus_before_a_list_item_is_quiet() {
     let source = "> q\n> +\n> - s\n";
-    assert_eq!(refusals(source), vec![(2, 3, MESSAGE.to_string())]);
+    assert!(refusals(source).is_empty());
     assert!(to_html(source).contains("<p>q\n+\n- s</p>"));
 }
 
