@@ -448,6 +448,18 @@ pub(in crate::parse) enum QuotedAttrsBlock {
     No,
 }
 
+pub(in crate::parse) fn visual_column_before(line: &str, end: usize) -> usize {
+    line.char_indices()
+        .take_while(|(at, _)| *at < end)
+        .fold(0, |column, (_, ch)| {
+            if ch == '\t' {
+                column + 4 - column % 4
+            } else {
+                column + 1
+            }
+        })
+}
+
 /// Whether a standalone attribute block starts on the quoted line `stripped`,
 /// and how many QUOTED lines it takes.
 ///
@@ -473,6 +485,7 @@ pub(in crate::parse) enum QuotedAttrsBlock {
 /// fragments also end the window before a later opener is skipped.
 pub(in crate::parse) fn quoted_attrs_block_len<'a>(
     stripped: &'a str,
+    opener_source_column: usize,
     rest: impl Iterator<Item = &'a str>,
 ) -> QuotedAttrsBlock {
     if !stripped.contains('{') {
@@ -500,33 +513,45 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
     if trim_ascii_end(first).ends_with('}') {
         return QuotedAttrsBlock::No;
     }
-    let mut block: Vec<&str> = vec![opener];
+    let mut block = vec![opener.to_string()];
+    let opener_frame_offset = opener_source_column.saturating_sub(indent_columns(opener));
     let mut met_a_closer = false;
     for line in rest {
-        // The block lives INSIDE the quote: an unprefixed line is the lazy
-        // continuation the caller is deciding about, not part of the block.
-        let Some(next) = strip_blockquote_prefix(line) else {
-            break;
-        };
-        let mut inner = next;
-        let mut matched_depth = true;
-        for _ in 0..nested_depth {
+        // A continuation need not supply every quote prefix. Read the prefixes
+        // it does supply, then compare the remaining line at its written column.
+        let mut inner = line;
+        let mut prefixes = 0;
+        for _ in 0..=nested_depth {
             if let Some(rest) = strip_blockquote_prefix(inner) {
                 inner = rest;
+                prefixes += 1;
             } else {
-                matched_depth = false;
                 break;
             }
         }
-        if !matched_depth || strip_blockquote_prefix(inner).is_some() {
+        if strip_blockquote_prefix(inner).is_some() {
             break;
         }
+        if prefixes != 0 && prefixes != nested_depth + 1 {
+            // A shallower quoted continuation has its own owner transition.
+            // Only a fully prefixed or wholly unprefixed run is read here.
+            break;
+        }
+        // Compare an unprefixed continuation in the opener's source frame.
+        let normalized = if prefixes == nested_depth + 1 {
+            inner.to_string()
+        } else {
+            let payload_start = line.len() - trim_ascii_start(inner).len();
+            let column =
+                visual_column_before(line, payload_start).saturating_sub(opener_frame_offset);
+            format!("{}{}", " ".repeat(column), trim_ascii_start(inner))
+        };
         #[cfg(test)]
         ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + inner.len()));
-        if !is_blank_line(inner) && !valid_wrapped_attr_continuation(inner) {
+        if !is_blank_line(&normalized) && !valid_wrapped_attr_continuation(&normalized) {
             return QuotedAttrsBlock::NoneWithin(block.len());
         }
-        block.push(inner);
+        block.push(normalized);
         if is_blank_line(inner) {
             break;
         }
@@ -535,7 +560,7 @@ pub(in crate::parse) fn quoted_attrs_block_len<'a>(
             break;
         }
     }
-    match attrs_block_len_from(opener, block[1..].iter().copied()) {
+    match attrs_block_len_from(opener, block[1..].iter().map(String::as_str)) {
         Some(len) => QuotedAttrsBlock::Block(len),
         // A closer was there and the join was still refused - a later line may
         // open a block that ends on that same closer, so nothing is proved.
