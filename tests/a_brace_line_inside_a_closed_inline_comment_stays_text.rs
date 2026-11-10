@@ -11,7 +11,10 @@ fn the_comment_holds_the_brace_line() {
         ("p {% a\n{lang=de} %} y\n", "<p>p  y</p>"),
         ("p {% a\n{.x\n foo}\nz %} y\n", "<p>p  y</p>"),
         ("p {% a %} {% b\n{lang=de}\nz %} y\n", "<p>p   y</p>"),
-        ("- p {% a\n  {lang=de}\n  z %} y\n", "<ul>\n  <li>p  y</li>\n</ul>"),
+        (
+            "- p {% a\n  {lang=de}\n  z %} y\n",
+            "<ul>\n  <li>p  y</li>\n</ul>",
+        ),
         (
             "> p {% a\n> {lang=de}\n> z %} y\n",
             "<blockquote><p>p  y</p></blockquote>",
