@@ -221,6 +221,8 @@ struct LeadParagraph {
     // it, met before anything ends the paragraph, is still its text.
     open_follower: Option<(FenceOpen, usize)>,
     inline_span: crate::parse::paragraph::InlineSpanScan,
+    /// A closed `{%` run past its `{` holds its lines up to here (CARVE-P2-035).
+    comment_through: usize,
 }
 
 impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
@@ -2790,15 +2792,22 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             after_refused: false,
             open_follower: None,
             inline_span: Default::default(),
+            comment_through: 0,
         };
-        if let Some(count) = marker_refused_brace_run(self.cur.lines, item.at, paragraph_content) {
-            for _ in 1..count {
-                let Some(line) = self.cur.peek() else { break };
-                self.fold_lead_line(&mut lead, trim_ascii_start(line));
+        match marker_refused_brace_run(self.cur.lines, item.at, paragraph_content) {
+            Some(RefusedBraceRun::Lines(count)) => {
+                for _ in 1..count {
+                    let Some(line) = self.cur.peek() else { break };
+                    self.fold_lead_line(&mut lead, trim_ascii_start(line));
+                }
+                lead.literal.push((0, lead.lines.len()));
+                lead.inline_span.scanned = lead.lines.len();
+                lead.after_refused = true;
             }
-            lead.literal.push((0, lead.lines.len()));
-            lead.inline_span.scanned = lead.lines.len();
-            lead.after_refused = true;
+            Some(RefusedBraceRun::No(count)) if count != usize::MAX => {
+                lead.comment_through = item.at + count;
+            }
+            _ => {}
         }
         while let Some(next) = self.cur.peek() {
             if !self.lead_paragraph_line(&mut lead, next) {
@@ -2822,6 +2831,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         if is_blank_line(next) {
             return false;
+        }
+        if self.cur.pos < lead.comment_through
+            && detect_list_marker_full(trim_ascii_start(next)).is_none()
+        {
+            self.fold_lead_line(lead, trim_ascii_start(next));
+            return true;
         }
         if self.lead_refused_brace_run(lead, next) {
             return true;
@@ -2993,7 +3008,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             return false;
         }
-        let RefusedBraceRun::Lines(count) = refused_brace_run_with_columns(
+        let run = refused_brace_run_with_columns(
             (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
             !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
             |offset, raw| {
@@ -3011,8 +3026,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     })
                     .flatten()
             },
-        ) else {
-            return false;
+        );
+        let count = match run {
+            RefusedBraceRun::Lines(count) => count,
+            RefusedBraceRun::No(count)
+                if count != usize::MAX && trim_ascii_start(strip_lazy(next)).starts_with("{%") =>
+            {
+                lead.comment_through = self.cur.pos + count;
+                return false;
+            }
+            RefusedBraceRun::No(_) => return false,
         };
         let start = lead.lines.len();
         for _ in 0..count {
@@ -3436,8 +3459,12 @@ fn comment_only_item_lead(lines: CursorLines<'_>, at: usize, content: &str) -> b
     comment_only_para_end(lines.len(), at, true, &view, &measured).is_some()
 }
 
-/// The lines a refused brace run opening in a marker's content takes (carve#5080).
-fn marker_refused_brace_run(lines: CursorLines<'_>, at: usize, content: &str) -> Option<usize> {
+/// The brace run opening in a marker's content: refused, it takes its lines (carve#5080).
+fn marker_refused_brace_run(
+    lines: CursorLines<'_>,
+    at: usize,
+    content: &str,
+) -> Option<RefusedBraceRun> {
     let raw = lines.line(at)?;
     let content = trim_ascii_start(content);
     if !content.starts_with('{') || !raw.ends_with(content) {
@@ -3449,8 +3476,8 @@ fn marker_refused_brace_run(lines: CursorLines<'_>, at: usize, content: &str) ->
         std::iter::once(opener.as_str()).chain((at + 1..lines.len()).map_while(|k| lines.line(k))),
         true,
     ) {
-        RefusedBraceRun::Lines(count) => Some(count),
-        RefusedBraceRun::No(_) => None,
+        RefusedBraceRun::No(_) if !content.starts_with("{%") => None,
+        run => Some(run),
     }
 }
 

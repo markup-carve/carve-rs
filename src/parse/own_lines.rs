@@ -73,6 +73,8 @@ struct Frame {
     canon: usize,
     cut: usize,
     para: bool,
+    /// The line the open paragraph started on.
+    para_from: usize,
     /// An open paragraph after a plus-attached fence ended at its first blank.
     fold_unpaired_fence: bool,
     last: Last,
@@ -166,6 +168,7 @@ impl Frame {
             canon: 0,
             cut: 0,
             para: false,
+            para_from: 0,
             fold_unpaired_fence: false,
             last: Last::None,
             definition_seen: false,
@@ -931,6 +934,13 @@ struct Walk<'a> {
     sibling: Option<(Kind, String, usize, usize)>,
     /// Continuation lines of the wrapped attribute block just classified.
     attr_rest: Option<(usize, usize)>,
+    /// Whether the source holds a `{%` at all, and the open paragraph's comment
+    /// scan: owner, quote depth, first line, next line, state.
+    braced_comments: bool,
+    comment_scan: Option<(usize, usize, usize, usize, super::paragraph::OpenComment)>,
+    /// The last `%}` search: quote depth, from, the line it stopped on, and
+    /// whether that line holds the closer.
+    comment_close: Option<(usize, usize, usize, bool)>,
     /// The invisible lines between an accepted `+` and its block (carve#4449).
     skipped: Option<Skipped>,
     /// Later markers a forward search offered the block an earlier marker took (carve#5013).
@@ -1288,6 +1298,9 @@ fn walk_traced(
         trace_filter,
         first_line,
         decide: decide && source.contains('+'),
+        braced_comments: source.contains("{%"),
+        comment_scan: None,
+        comment_close: None,
         refuse_line: false,
         accepted: Vec::new(),
         refused: Vec::new(),
@@ -3728,6 +3741,9 @@ impl<'a> Walk<'a> {
                     owner.canon
                 };
                 owner.absorbs = owner.para && owner.absorbs;
+                if !owner.para {
+                    owner.para_from = at;
+                }
                 owner.para = true;
                 owner.last = Last::Para;
                 // As for a lazy line, only the item's own column moves.
@@ -3986,6 +4002,7 @@ impl<'a> Walk<'a> {
             c.lead_in(canon, shift, false);
             let f = self.top();
             f.absorbs = absorbs;
+            f.para_from = at;
             f.para = true;
             f.last = Last::Para;
             if self.trace_wants(at) {
@@ -4048,6 +4065,7 @@ impl<'a> Walk<'a> {
                 }
                 // A caption folds its following lines like a paragraph (CARVE-P2-021).
                 o.para = matches!(form, Form::Leaf(false));
+                o.para_from = at;
                 o.last = match form {
                     Form::Term => Last::Term,
                     Form::Dd(_) => Last::Dd,
@@ -4361,7 +4379,7 @@ impl<'a> Walk<'a> {
                 }
             }
         } else if kind == Kind::Item && lead_tab {
-            self.lead_tab_content(at_frame, c);
+            self.lead_tab_content(at_frame, at, c);
         } else {
             self.content(at_frame, col + head, canon + head, at, c);
         }
@@ -4379,7 +4397,7 @@ impl<'a> Walk<'a> {
     }
 
     /// Content behind a lead tab is paragraph text, whatever it spells (corpus 684, 736).
-    fn lead_tab_content(&mut self, frame: usize, c: &mut Cursor<'_>) {
+    fn lead_tab_content(&mut self, frame: usize, at: usize, c: &mut Cursor<'_>) {
         // The quote collector looks past a lead tab, so spell the `+` as text for it.
         if is_cont_marker(trim_ascii_start(innermost_marker_content(c.rest))) {
             self.refuse_line = true;
@@ -4389,6 +4407,7 @@ impl<'a> Walk<'a> {
         c.lead(col);
         let f = &mut self.frames[frame];
         f.absorbs = absorbs;
+        f.para_from = at;
         f.para = true;
         f.last = Last::Para;
     }
@@ -4483,6 +4502,7 @@ impl<'a> Walk<'a> {
             let f = &mut self.frames[frame];
             let empty_item = refused && f.kind == Kind::Item;
             f.absorbs = absorbs;
+            f.para_from = at;
             f.para = !taken && !losing && (!refused || in_note);
             f.last = if empty_item { Last::None } else { Last::Para };
             if taken {
@@ -4599,6 +4619,63 @@ impl<'a> Walk<'a> {
         });
     }
 
+    /// Whether the owner's open paragraph holds line `at` in a braced comment
+    /// that closes on it or later: any comment holds a brace line (PART 9
+    /// §21a), a line-start `{%` run holds every line (CARVE-P2-035, carve#5756).
+    fn comment_holds(&mut self, owner: usize, at: usize, brace_line: bool) -> bool {
+        if !self.braced_comments {
+            return false;
+        }
+        let depth = self.frames[1..=owner]
+            .iter()
+            .filter(|frame| frame.kind == Kind::Quote)
+            .count();
+        let from = self.frames[owner].para_from.min(at);
+        let lines = &self.lines;
+        let unquoted = |k: usize| {
+            let text = trim_ascii_start(strip_quote_levels(lines[k], depth).unwrap_or(""));
+            if k > from {
+                return text;
+            }
+            let body = innermost_marker_content(text);
+            parse_footnote_def_line(body).map_or(body, |(_, rest)| rest)
+        };
+        let (next, mut state) = match self.comment_scan.take() {
+            Some((o, d, f, next, state)) if (o, d, f) == (owner, depth, from) && next <= at => {
+                (next, state)
+            }
+            _ => (from, Default::default()),
+        };
+        for k in next..at {
+            state.feed(unquoted(k));
+        }
+        let holds = state.holds(brace_line);
+        self.comment_scan = Some((owner, depth, from, at, state));
+        if !holds {
+            return false;
+        }
+        if let Some((d, start, stop, found)) = self.comment_close {
+            if d == depth && start <= at && at <= stop {
+                return found;
+            }
+        }
+        let mut stop = at;
+        let mut found = false;
+        while stop < lines.len() {
+            let line = unquoted(stop);
+            if is_blank_line(line) {
+                break;
+            }
+            if line.contains("%}") {
+                found = true;
+                break;
+            }
+            stop += 1;
+        }
+        self.comment_close = Some((depth, at, stop, found));
+        found
+    }
+
     fn classify(&mut self, rest: &str, owner: usize, at: usize) -> Form {
         // Line-final whitespace is trimmed before a line is read.
         let rest = rest.trim_end_matches([' ', '\t']);
@@ -4611,6 +4688,15 @@ impl<'a> Walk<'a> {
         let owner_para = self.frames[owner].para;
         let owner_kind = self.frames[owner].kind;
         let owner_last = self.frames[owner].last;
+        // A list marker still opens its item there, as ownership decides it
+        // first, and a `%%` line stays invisible.
+        if owner_para
+            && list_marker(rest).is_none()
+            && !rest.starts_with("%%")
+            && self.comment_holds(owner, at, rest.starts_with('{'))
+        {
+            return Form::Text;
+        }
         let colons = colon_run(rest);
         if colons >= 3 {
             if colon_closer(rest).is_some() {

@@ -194,6 +194,8 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
     // The follower line itself: only it can extend the forced range to its closer.
     let mut follower: Option<usize> = None;
     let mut comment_scanned_through = 0usize;
+    // A closed block-position `{%` run past its `{` holds every line it spans (CARVE-P2-035).
+    let mut comment_run_through = 0usize;
     let mut inline_span = InlineSpanScan::default();
     while let Some(line) = cur.peek() {
         if code_include.is_some() && !lines.is_empty() {
@@ -252,11 +254,15 @@ pub(super) fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Bl
                 }
                 RefusedBraceRun::No(scanned) if brace_line.starts_with("{%") => {
                     comment_scanned_through = cur.pos.saturating_add(scanned);
+                    if scanned != usize::MAX {
+                        comment_run_through = comment_scanned_through;
+                    }
                 }
                 RefusedBraceRun::No(_) => {}
             }
         }
-        let forced = forced_through.is_some_and(|through| cur.pos <= through);
+        let forced = forced_through.is_some_and(|through| cur.pos <= through)
+            || cur.pos < comment_run_through;
         if is_blank_line(line) {
             if image_lead
                 && lines.len() == 1
@@ -481,6 +487,31 @@ impl InlineSpanScan {
         }
         self.scanned = lines.len();
         self.code_run != 0 || self.comment
+    }
+}
+
+/// The braced comment state of a paragraph's lines, fed one line at a time.
+#[derive(Default)]
+pub(in crate::parse) struct OpenComment {
+    scan: InlineSpanScan,
+    line_start: bool,
+}
+
+impl OpenComment {
+    pub(in crate::parse) fn feed(&mut self, line: &str) {
+        let was_open = self.scan.comment;
+        self.scan.scanned = 0;
+        self.scan.open(&[line]);
+        if !was_open && self.scan.comment {
+            self.line_start =
+                trim_ascii_start(strip_lazy(line)).starts_with("{%") && !line.contains("%}");
+        }
+    }
+
+    /// Whether the open comment holds the next line: any comment holds a brace
+    /// line, only one opened at its line's start holds other lines.
+    pub(in crate::parse) fn holds(&self, brace_line: bool) -> bool {
+        self.scan.comment && self.scan.code_run == 0 && (brace_line || self.line_start)
     }
 }
 
