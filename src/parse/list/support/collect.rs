@@ -557,6 +557,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     }
     let marker_colon_column = marker_line_columns.last().copied().unwrap_or(strip_cols);
     let mut nested_fence: Option<FenceOpen> = None;
+    let mut refused_nested_follower_span: Option<FenceOpen> = None;
     let mut active_nested_fence = marker_content
         .filter(|content| content.contains(['`', '~']))
         .and_then(detect_list_marker_full)
@@ -569,6 +570,9 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut nested_blank_run: Option<usize> = None;
     let mut lead_span_scan = DescriptionLeadSpanScan::default();
     run_indented_body!(cur.lines, cur.pos, container, |line, admission| {
+        if admission.blank {
+            refused_nested_follower_span = None;
+        }
         if admission.blank && quoted_definition_seen {
             quoted_definition_blank = true;
         }
@@ -1690,6 +1694,35 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             break;
         }
+        let refused_nested_follower = if is_blank_line(line) {
+            refused_nested_follower_span = None;
+            false
+        } else if let Some(open) = refused_nested_follower_span {
+            if is_fence_close(trim_ascii_start(line), open) {
+                refused_nested_follower_span = None;
+            }
+            true
+        } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
+            if let Some(open) = detect_fence_open(trim_ascii_start(line))
+                .filter(|_| ends_in_marker_aware_refused_run(&lines))
+            {
+                // An unclosed inline follower can still be interrupted by a
+                // later block opener. Only a proved closer protects the lines
+                // between it and this opener as one inline span.
+                if (cur.pos + 1..cur.lines.len())
+                    .map(|at| cur.lines.at(at))
+                    .take_while(|next| !is_blank_line(next))
+                    .any(|next| is_fence_close(trim_ascii_start(next), open))
+                {
+                    refused_nested_follower_span = Some(open);
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         if let Some(open) = nested_fence {
             if indent < open.content_col {
                 nested_fence = None;
@@ -1747,14 +1780,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     {
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
                         // A refused brace run's paragraph takes the fence as text.
-                        let refused = !after_blank && ends_in_marker_aware_refused_run(&lines);
                         let interrupts = !after_blank
-                            && !refused
+                            && !refused_nested_follower
                             && !lead_fence_scan.holds_open(&lines, column)
                             && !body_code_fence.holds_open_fence(&lines)
                             // An open `::: |` stanza keeps the run as verse (B-div-keep).
                             && !line_block_payload.takes(&lines, &slice_columns_mapped(line, strip_cols, true).0);
-                        if after_blank || interrupts || refused {
+                        if after_blank || interrupts {
                             if interrupts {
                                 // Preserve the accepted interruption when collection
                                 // ends before the closer reaches the child parser.
@@ -2094,6 +2126,13 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             (sliced, consumed, synthetic)
         };
         let mut sliced = sliced;
+        let mut trimmed_after_slice = 0usize;
+        if refused_nested_follower && !sliced.starts_with(LAZY) {
+            // The descendant must re-read this protected follower as text,
+            // even after its marker column has been rebased away.
+            trimmed_after_slice += indent_columns(&sliced);
+            sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
+        }
         // A line that misses the span's owner ends it under S1 (carve-rs#4028).
         if spanned_stanza_lazy
             && !trim_ascii_start(strip_lazy(line)).starts_with("%%")
@@ -2101,7 +2140,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         {
             sliced = format!("{LAZY}{}", trim_ascii_start(&sliced));
         }
-        let mut trimmed_after_slice = 0usize;
         // PART 9 §10 I2 carries the deepest open paragraph across plain lazy lines.
         let marker_paragraph_owner = (nested_paragraph_column.is_none() && plain_nested_lazy)
             .then(|| {
