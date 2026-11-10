@@ -1993,6 +1993,7 @@ fn render_blocks(
     blocks: &[BlockNode],
     ctx: &mut CarveContext,
     item: Option<&Pos>,
+    item_body: bool,
 ) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -2105,7 +2106,7 @@ fn render_blocks(
             // Consecutive line comments owned by a loose container are one
             // block. A blank between them can become a hard boundary after the
             // comments are erased and change the containing list (carve#5206).
-            let comment_run = ((ctx.at_item_content_column && last_visible.is_some())
+            let comment_run = ((item_body && last_visible.is_some())
                 || (list == ctx.marker_body && ctx.list_depth == 0))
                 && previous_emitted.is_some_and(is_line_comment_in_run)
                 && is_line_comment_in_run(block);
@@ -2613,7 +2614,7 @@ fn render_inside_colon_container(
 ) -> String {
     ctx.colon_fence_depth += 1;
     ctx.indented_host_depth += 1;
-    let body = render_blocks(session, blocks, ctx, None);
+    let body = render_blocks(session, blocks, ctx, None, false);
     ctx.indented_host_depth -= 1;
     ctx.colon_fence_depth -= 1;
     body
@@ -2820,7 +2821,7 @@ fn render_item_blocks(
         // A blank above a trailing comment would stand over the marker below
         // and loosen its list (carve#4904).
         ctx.join_trailing_comments = followed_by_tight_marker;
-        let out = render_blocks(session, blocks, ctx, item);
+        let out = render_blocks(session, blocks, ctx, item, true);
         ctx.item_followed_by_marker = followed_by_marker;
         ctx.item_followed_by_tight_marker = followed_by_tight_marker;
         return out;
@@ -3286,7 +3287,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             }
             ctx.quote_depth += 1;
             let inner = with_reset_colon_fence_depth(ctx, |ctx| {
-                render_blocks(session, &quote.children, ctx, None)
+                render_blocks(session, &quote.children, ctx, None, false)
             });
             ctx.quote_depth -= 1;
             let body = inner
@@ -3468,7 +3469,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             let body = render_inside_colon_container(session, &div.children, ctx);
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
-        BlockNode::Section(section) => render_blocks(session, &section.children, ctx, None),
+        BlockNode::Section(section) => render_blocks(session, &section.children, ctx, None, false),
         BlockNode::DefinitionList(list) => {
             let body = with_reset_colon_fence_depth(ctx, |ctx| {
                 render_definition_list(session, &list.items, ctx)
@@ -3543,7 +3544,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::ExtensionCarrier(extension) => with_block_attrs(
             &extension.attrs,
-            &render_blocks(session, &extension.children, ctx, None),
+            &render_blocks(session, &extension.children, ctx, None, false),
         ),
     }
 }
@@ -3643,7 +3644,7 @@ fn render_footnote_def_source(
     let previous_guard_types = std::mem::take(&mut ctx.footnote_guard_types);
     ctx.in_footnote_body = true;
     let outer_body = std::mem::replace(&mut ctx.marker_body, blocks.as_ptr() as usize);
-    let raw_body = render_blocks(session, blocks, ctx, None);
+    let raw_body = render_blocks(session, blocks, ctx, None, false);
     ctx.marker_body = outer_body;
     ctx.in_footnote_body = previous_footnote_body;
     let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
