@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "blank_before_invisible_child_list_4220"
+path = "tests/blank_before_invisible_child_list_4220.rs"
+
+[[test]]
 name = "nested_marker_brace_runs"
 path = "tests/nested_marker_brace_runs.rs"
 

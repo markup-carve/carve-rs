@@ -679,8 +679,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     continue;
                 }
             }
-            return detect_list_marker_full(next)
-                .is_some_and(|marker| marker.indent == self.base_indent);
+            return detect_list_marker_full(next).is_some_and(|marker| {
+                marker.indent == self.base_indent
+                    && (!self.pending_blank
+                        || !trim_ascii_start(line).starts_with("{%")
+                        || self.sibling_joins_list(&marker, 0))
+            });
         }
         false
     }
