@@ -1003,8 +1003,8 @@ fn parse_with_options_mode_and_index(
     if !options.positions
         && (source.contains("{%")
             && source.lines().any(|line| {
-                let line = trim_ascii_start(line);
-                line.starts_with("{%") && !line.contains("%}")
+                line.rfind("{%")
+                    .is_some_and(|open| !line[open..].contains("%}"))
             })
             || transparent.is_some()
             || tabbed_line_block
