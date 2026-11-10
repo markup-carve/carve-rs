@@ -6,11 +6,8 @@
 //! `data-char`) and keep their own spelling, ruled on markup-carve/carve#2902
 //! question 3.
 //!
-//! THE PREFIX IS `data-carve-`, ruled on carve#2902 question 0. The carriers
-//! were named `data-djot-*` because Carve forked from Djot and carve-php kept
-//! the attribute names; a writer now emits `data-carve-*` only, and a READER
-//! accepts `data-djot-*` as a deprecated alias so a document exported by a
-//! released carve-php keeps round-tripping.
+//! THE PREFIX IS `data-carve-`, ruled on carve#2902 question 0. The retired
+//! `data-djot-*` names are ordinary unreserved attributes (carve#5735).
 
 /// The authored list marker, where it is not the default (`<ul>`, `<ol>`).
 pub(crate) const MARKER: &str = "data-marker";
@@ -102,19 +99,10 @@ pub(crate) const CARRIERS: [&str; 21] = [
 /// The canonical §13a name an attribute spells, or `None` for a name outside
 /// the inventory.
 ///
-/// Both spellings answer: `data-djot-ref` and `data-carve-ref` map to
-/// [`REF`]. The comparison is ASCII-case-insensitive because an HTML attribute
-/// name is.
+/// The comparison is ASCII-case-insensitive because an HTML attribute name is.
 pub(crate) fn canonical(name: &str) -> Option<&'static str> {
     let lower = name.to_ascii_lowercase();
-    if let Some(found) = CARRIERS.iter().find(|c| **c == lower) {
-        return Some(found);
-    }
-    let rest = lower.strip_prefix("data-djot-")?;
-    CARRIERS
-        .iter()
-        .copied()
-        .find(|c| c.strip_prefix("data-carve-") == Some(rest))
+    CARRIERS.iter().copied().find(|c| *c == lower)
 }
 
 /// Report reserved authored names before rendering without changing layout.

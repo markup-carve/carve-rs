@@ -116,14 +116,13 @@ fn two_endnotes_cannot_be_merged_by_a_repeated_label() {
 }
 
 #[test]
-fn the_deprecated_spelling_is_read_for_a_prefixed_carrier() {
-    // Documents released carve-php versions exported carry `data-djot-`
-    // (carve#2902 ruling 0). The alias has to buy the SAME import, so this is a
-    // differential against the canonical spelling rather than a literal.
+fn the_retired_spelling_is_not_read_for_a_prefixed_carrier() {
+    // The old spelling is now an ordinary attribute (carve#5735).
     let canonical = export("a[^note]\n\n[^note]: n\n", true);
     let legacy = canonical.replace("data-carve-", "data-djot-");
     assert_ne!(canonical, legacy, "the fixture carries no prefixed carrier");
-    assert_eq!(import(&legacy), import(&canonical));
+    assert_ne!(import(&legacy), import(&canonical));
+    assert!(import(&legacy).contains("[^1]"));
 }
 
 const MODES: [HtmlImportMode; 3] = [
@@ -166,10 +165,6 @@ fn a_marked_generated_section_drops_its_id_without_the_slug_guess() {
     let unmarked = r#"<section id="custom"><h1>H</h1></section>"#;
     for mode in MODES {
         assert_eq!(import_in(marked, mode).value, "# H\n");
-        assert_eq!(
-            import_in(&marked.replace("data-carve-", "data-djot-"), mode).value,
-            "# H\n"
-        );
         assert_eq!(import_in(unmarked, mode).value, "{#custom}\n# H\n");
         assert_eq!(dropped(marked, mode, HtmlImportSeverity::Info), 0);
     }
@@ -217,10 +212,6 @@ fn an_id_slot_places_the_id_and_refuses_an_oversized_slot() {
                 usize::from(slot == "9" || slot.len() > 2 || heading == "<h1>H</h1>"),
                 "{html}"
             );
-            assert_eq!(
-                import_in(&html.replace("data-carve-", "data-djot-"), mode).value,
-                source
-            );
         }
     }
 }
@@ -258,10 +249,6 @@ fn a_tight_carrier_wins_over_what_the_paragraphs_imply() {
         assert_eq!(tree(loose, mode)["children"][0]["tight"], true);
         assert_eq!(
             tree("<ol><li>a</li><li>b</li></ol>", mode)["children"][0]["tight"],
-            true
-        );
-        assert_eq!(
-            tree(&tight.replace("data-carve-", "data-djot-"), mode)["children"][0]["tight"],
             true
         );
         for html in [tight, loose] {
@@ -306,14 +293,14 @@ fn contradicting_carriers_restore_neither_meaning_with_one_warning() {
         ),
     ] {
         for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
-            for html in [html.to_owned(), html.replace("data-carve-", "data-djot-")] {
+            { let html = html.to_owned();
                 let json = tree(&html, mode);
                 assert_eq!(json, tree(ordinary, mode), "{mode:?} {html}");
                 let text = json.to_string();
                 for kind in &forbidden {
                     assert!(!text.contains(&format!("\"type\":\"{kind}\"")), "{html}");
                 }
-                assert!(!text.contains("data-carve-") && !text.contains("data-djot-"));
+                assert!(!text.contains("data-carve-") );
                 assert_eq!(
                     dropped(&html, mode, HtmlImportSeverity::Warning),
                     1,

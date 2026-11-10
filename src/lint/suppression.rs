@@ -53,13 +53,7 @@ fn parse_comment(
     let rules = ids
         .split([' ', ','])
         .filter(|id| !id.is_empty())
-        .map(|id| {
-            if id == "a11y/heading-jump" {
-                "heading-level-skip".to_owned()
-            } else {
-                id.to_owned()
-            }
-        })
+        .map(str::to_owned)
         .collect();
     Some(Directive {
         line: pos.start_line,

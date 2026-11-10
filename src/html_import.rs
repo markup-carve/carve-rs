@@ -1732,8 +1732,8 @@ impl<'a> Importer<'a> {
         }
         if let Some(canonical) = crate::roundtrip::canonical(name) {
             // A PART 10 §13a CARRIER, which this engine writes under roundtrip
-            // export. `data-djot-*` is the deprecated spelling a released
-            // carve-php wrote and `canonical` answers for both.
+            // export. Retired `data-djot-*` names follow the ordinary
+            // attribute path (carve#5735).
             //
             // RULED on markup-carve/carve#2902 question 5: a reader consumes
             // the inventory and NEVER writes a reserved name back out as an
@@ -2242,14 +2242,9 @@ impl<'a> Importer<'a> {
         Some(label)
     }
 
-    /// A carrier's value under either spelling, canonical first.
+    /// A canonical carrier's value.
     fn carrier(handle: &Handle, canonical: &str) -> Option<String> {
-        Self::attr(handle, canonical).or_else(|| {
-            let deprecated = canonical.replacen("data-carve-", "data-djot-", 1);
-            (deprecated != canonical)
-                .then(|| Self::attr(handle, &deprecated))
-                .flatten()
-        })
+        Self::attr(handle, canonical)
     }
 
     /// The CSS mapping: every declaration that reaches a slot, and one

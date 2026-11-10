@@ -4,7 +4,7 @@ use carve::{
     HtmlImportMode, HtmlImportOptions, Options,
 };
 use html5ever::{local_name, ns, tendril::TendrilSink, QualName};
-use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use serde_json::Value;
 
 fn fixtures() -> Value {
@@ -113,29 +113,28 @@ fn import_projection(tree: &Value, fixture: &Value) -> bool {
     }
 }
 fn reserved(name: &str) -> bool {
-    // `data-carve-src` is reserved with no inventory row and no deprecated alias.
-    matches!(
-        name,
-        "data-marker" | "data-char" | "data-carve-src" | "data-djot-src"
-    ) || [
-        "explicit-id",
-        "ref",
-        "autolink",
-        "footnote-label",
-        "inline-footnote",
-        "raw",
-        "escaped",
-        "abbreviations",
-        "col-widths",
-        "label",
-        "generated-id",
-        "id-slot",
-        "tight",
-        "xref",
-        "caption-number",
-    ]
-    .iter()
-    .any(|suffix| name == format!("data-carve-{suffix}") || name == format!("data-djot-{suffix}"))
+    // `data-carve-src` is reserved with no inventory row. The former
+    // `data-djot-*` names are ordinary attributes under carve#5735.
+    matches!(name, "data-marker" | "data-char" | "data-carve-src")
+        || [
+            "explicit-id",
+            "ref",
+            "autolink",
+            "footnote-label",
+            "inline-footnote",
+            "raw",
+            "escaped",
+            "abbreviations",
+            "col-widths",
+            "label",
+            "generated-id",
+            "id-slot",
+            "tight",
+            "xref",
+            "caption-number",
+        ]
+        .iter()
+        .any(|suffix| name == format!("data-carve-{suffix}"))
 }
 fn no_reserved(tree: &Value) {
     for node in node_list(tree) {
@@ -235,47 +234,6 @@ fn carrier_text(handle: &Handle) -> String {
         })
         .collect();
     payload
-}
-fn deprecated_html(html: &str) -> String {
-    let tree = dom(html);
-    let mut all = Vec::new();
-    visit(&tree.document, &mut all);
-    for handle in all {
-        if let NodeData::Element { attrs, .. } = &handle.data {
-            for attr in attrs.borrow_mut().iter_mut() {
-                let name = attr.name.local.to_string();
-                if name.starts_with("data-carve-") && name != "data-carve-src" && reserved(&name) {
-                    attr.name.local = name.replacen("data-carve-", "data-djot-", 1).into();
-                }
-            }
-        }
-    }
-    let mut all = Vec::new();
-    visit(&tree.document, &mut all);
-    for handle in all {
-        if let NodeData::Element {
-            template_contents, ..
-        } = &handle.data
-        {
-            if let Some(content) = template_contents.borrow().as_ref() {
-                *handle.children.borrow_mut() = content.children.borrow().clone();
-            }
-        }
-    }
-    let root = tree.document.children.borrow()[0].clone();
-    let mut bytes = Vec::new();
-    for child in root.children.borrow().iter() {
-        html5ever::serialize(
-            &mut bytes,
-            &SerializableHandle::from(child.clone()),
-            html5ever::serialize::SerializeOpts {
-                traversal_scope: html5ever::serialize::TraversalScope::IncludeNode,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    }
-    String::from_utf8(bytes).unwrap()
 }
 
 #[test]
@@ -399,9 +357,6 @@ fn shared_export_inventory_restores_approved_ast_fields() {
                         assert_eq!(declined, expected_decline, "{} {name}", fixture["id"]);
                     }
                     no_reserved(&imported);
-                    let legacy = import_ast(&deprecated_html(&exported), &options);
-                    assert_eq!(import_projection(&legacy, fixture), declined);
-                    no_reserved(&legacy);
                     for absent in rows(fixture, "expectedAbsentFields") {
                         assert!(node_list(&imported)
                             .iter()
