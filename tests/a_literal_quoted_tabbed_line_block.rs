@@ -39,3 +39,11 @@ fn a_tab_after_one_space_crosses_the_quoted_item_column() {
         "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>a\n          <div class=\"line-block\">\n            <p>&nbsp;z</p>\n          </div>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>",
     );
 }
+
+#[test]
+fn a_later_verse_line_keeps_its_column_after_plain_text() {
+    check(
+        "> - a\n>   - a\n>   \t::: |\n>   \tfirst\n> \t z\n>   \t:::\n",
+        "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>a\n          <div class=\"line-block\">\n            <p>first<br>\n&nbsp;z</p>\n          </div>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>",
+    );
+}
