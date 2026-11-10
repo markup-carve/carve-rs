@@ -27,4 +27,3 @@ fn a_note_definition_after_a_refused_run_stays_in_its_open_paragraph() {
         check(source, expected);
     }
 }
-

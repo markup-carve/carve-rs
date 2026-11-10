@@ -19,4 +19,3 @@ fn a_task_marker_line_run_uses_the_brace_source_column() {
         "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> </li>\n</ul>\n<p>z</p>",
     );
 }
-
