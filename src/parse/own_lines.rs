@@ -98,6 +98,8 @@ struct Frame {
     line_block: bool,
     /// The opener lead before owner frames rewrite it, for verse indentation.
     verse_open_authored_col: usize,
+    /// Lead of a tabbed opener after each containing frame strips its columns.
+    verse_open_frame_lead: Option<usize>,
     /// A tab in the opener lead already has a host-relative rewrite.
     verse_opener_tab: bool,
     /// The opener's tab became spaces at its owner's content column.
@@ -188,6 +190,7 @@ impl Frame {
             absorbs: false,
             line_block: false,
             verse_open_authored_col: 0,
+            verse_open_frame_lead: None,
             verse_opener_tab: false,
             verse_rewritten_opener: false,
             verse_marker_line: false,
@@ -897,6 +900,23 @@ fn trace_form(form: &Form) -> &'static str {
     }
 }
 
+/// Leading column after each owner frame restarts the tab stop in its body.
+fn frame_tab_column(line: &str, origins: &[usize]) -> usize {
+    let (mut column, mut origin, mut next) = (0usize, 0usize, 0usize);
+    for byte in line.bytes() {
+        match byte {
+            b' ' => column += 1,
+            b'\t' => column = origin + ((column - origin) / 4 + 1) * 4,
+            _ => break,
+        }
+        while next < origins.len() && origins[next] <= column {
+            origin = origins[next];
+            next += 1;
+        }
+    }
+    column
+}
+
 struct Walk<'a> {
     lines: Vec<&'a str>,
     frames: Vec<Frame>,
@@ -1032,7 +1052,7 @@ impl<'s> Cursor<'s> {
 
     fn lead_at(&mut self, col: usize, spaces: bool) {
         let authored = &self.src[..self.src.len() - self.rest.len()];
-        if col == self.authored_col && !(spaces && self.out.is_empty() && authored.contains('\t')) {
+        if col == self.authored_col && !(spaces && authored.contains('\t')) {
             self.out.push_str(authored);
         } else {
             self.out.extend(std::iter::repeat(' ').take(col));
@@ -2884,6 +2904,7 @@ impl<'a> Walk<'a> {
     fn write_payload_lead(
         c: &mut Cursor<'_>,
         inner: &Frame,
+        frames: &[Frame],
         target: usize,
         closer: Option<Closer>,
         col: usize,
@@ -2893,7 +2914,28 @@ impl<'a> Walk<'a> {
         // marker-line or tabbed opener already has a host-relative rewrite.
         let verse_payload =
             inner.line_block && !closer.is_some_and(|cl| cl.closes(c.rest, col, open_col));
-        if verse_payload
+        if let Some(opener_lead) = inner.verse_open_frame_lead.filter(|_| {
+            !(inner.verse_rewritten_opener && !verse_payload)
+                && c.src[..c.src.len() - c.rest.len()].contains('\t')
+        }) {
+            let opener_origin = inner.canon + opener_lead;
+            let start = frames
+                .iter()
+                .rposition(|frame| frame.kind == Kind::Quote)
+                .map_or(1, |index| index + 1);
+            let mut origins: Vec<_> = frames[start..frames.len() - 1]
+                .iter()
+                .map(|frame| frame.col + frame.shift)
+                .collect();
+            let reached = frame_tab_column(c.src, &origins);
+            origins.push(opener_origin);
+            let column = if reached < opener_origin {
+                inner.canon
+            } else {
+                inner.canon + frame_tab_column(c.src, &origins).saturating_sub(opener_origin)
+            };
+            c.lead_at(column + inner.shift + c.attachment_shift, true);
+        } else if verse_payload
             && !inner.verse_opener_tab
             && !inner.verse_marker_line
             && c.authored_col >= inner.verse_open_authored_col
@@ -2904,10 +2946,6 @@ impl<'a> Walk<'a> {
                 false,
             );
         } else if inner.line_block && inner.verse_rewritten_opener && !inner.verse_marker_line {
-            // The opener now stands at `canon`, but its later lines were
-            // measured in the authored frame. Use that same frame for both
-            // payload and closer; a tab that remains literal takes the normal
-            // path and keeps its next stop in the list reader.
             let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
             c.lead_at(target + inner.shift + c.attachment_shift, false);
         } else if verse_payload
@@ -2915,9 +2953,38 @@ impl<'a> Walk<'a> {
             && !inner.verse_marker_line
             && c.authored_col == inner.verse_open_authored_col + 1
         {
-            // A literal tabbed opener and a verse line one authored column
-            // farther apart keep that distance through quote/list collection.
+            // A one-column verse lead survives an enclosing quoted item.
             c.lead_at(inner.canon + 1 + inner.shift + c.attachment_shift, false);
+        } else if verse_payload
+            && inner.verse_opener_tab
+            && !inner.verse_marker_line
+            && !c.out.is_empty()
+            && c.src[..c.src.len() - c.rest.len()]
+                .bytes()
+                .filter(|&byte| byte == b'\t')
+                .count()
+                == 1
+            && c.authored_col > inner.verse_open_authored_col + 1
+        {
+            // A quoted verse lead past the opener is measured after the
+            // containing frame consumes its own columns.
+            let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
+            c.lead_at(target + inner.shift + c.attachment_shift, false);
+        } else if inner.line_block
+            && inner.verse_opener_tab
+            && !inner.verse_marker_line
+            && c.out.is_empty()
+            && inner.cut > 0
+        {
+            // The opener now stands at `canon`, but its later lines were
+            // measured in the authored frame. Use that same frame for both
+            // payload and closer. Expand a tab only when a containing item
+            // advanced its stop beyond the authored column.
+            let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
+            c.lead_at(
+                target + inner.shift + c.attachment_shift,
+                c.col > c.authored_col,
+            );
         } else {
             c.lead_in(target, inner.shift, false);
         }
@@ -3575,7 +3642,7 @@ impl<'a> Walk<'a> {
             let (col, open_col) = (c.col, inner.closer_col());
             let family = inner.family;
             let target = Self::payload_target(inner, closer, c.rest, col, target);
-            Self::write_payload_lead(c, inner, target, closer, col, open_col);
+            Self::write_payload_lead(c, inner, &self.frames, target, closer, col, open_col);
             self.write_attached_quote_comment_payload(at, reached, missed, c, inner);
             if tracing {
                 let payload = self.deepest();
@@ -4260,6 +4327,26 @@ impl<'a> Walk<'a> {
                         .split(':')
                         .next()
                         .is_some_and(|lead| lead.contains('\t'));
+                if f.verse_opener_tab {
+                    let start = self
+                        .frames
+                        .iter()
+                        .rposition(|frame| frame.kind == Kind::Quote)
+                        .map_or(1, |index| index + 1);
+                    let origins: Vec<_> = self.frames[start..]
+                        .iter()
+                        .map(|frame| frame.col + frame.shift)
+                        .collect();
+                    let depth = self
+                        .frames
+                        .iter()
+                        .filter(|frame| frame.kind == Kind::Quote)
+                        .count();
+                    let segment =
+                        strip_quote_levels(self.lines[at], depth).unwrap_or(self.lines[at]);
+                    f.verse_open_frame_lead =
+                        Some(frame_tab_column(segment, &origins).saturating_sub(f.canon));
+                }
                 f.verse_rewritten_opener = f.verse_opener_tab
                     && c.authored_col >= f.canon
                     && !c.out.split(':').next().unwrap_or("").contains('\t');
