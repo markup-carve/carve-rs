@@ -577,8 +577,8 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
         // the item's open fence; the item keeps the next line (CARVE-P9-067, carve#5637).
         if !admission.blank
             && parent_indent < strip_cols
-            && indent_columns(line) == parent_indent
             && continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            && indent_columns(line) == parent_indent
             && cur
                 .lines
                 .line(container.blank_run_end(cur.lines, cur.pos + 1))

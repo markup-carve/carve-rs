@@ -28,7 +28,8 @@ fn a_quoted_note_lazy_line_finishes_an_attribute_run() {
 fn an_own_line_item_fence_keeps_its_first_blank_and_tail() {
     // carve#5635
     let source = "- p\n+\n```\ncode\n\n  tail\n\nsee\n";
-    let html = "<ul>\n  <li>p\n    <pre><code>code\n\n  tail\n\n</code></pre>\n  </li>\n</ul>\n<p>see</p>";
+    let html =
+        "<ul>\n  <li>p\n    <pre><code>code\n\n  tail\n\n</code></pre>\n  </li>\n</ul>\n<p>see</p>";
     assert_eq!(carve::to_html(source).trim(), html);
 }
 
