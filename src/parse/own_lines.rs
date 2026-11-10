@@ -979,7 +979,6 @@ struct AttachedBlock {
 /// One line being rewritten: `out` is written, `src` remains.
 struct Cursor<'s> {
     out: String,
-    raw_line: &'s str,
     src: &'s str,
     col: usize,
     /// The measured column; `col` differs when the walk stands a line deeper.
@@ -1339,7 +1338,6 @@ fn walk_traced(
         let line = walk.lines[at];
         let mut c = Cursor {
             out: String::new(),
-            raw_line: line,
             src: line,
             col: 0,
             authored_col: 0,
@@ -2873,14 +2871,13 @@ impl<'a> Walk<'a> {
                 .bytes()
                 .filter(|&byte| byte == b'\t')
                 .count()
-                > 1
-            && c.raw_line[..c.raw_line.len() - c.rest.len()]
-                .rsplit_once('>')
-                .is_some_and(|(_, tail)| tail.starts_with(" \t"))
+                == 1
+            && c.authored_col > inner.verse_open_authored_col + 1
         {
-            // A second tab immediately after the quote's canonical space
-            // reuses the containing frame's stop.
-            c.lead_at(inner.canon + inner.shift + c.attachment_shift, false);
+            // A quoted verse lead past the opener is measured after the
+            // containing frame consumes its own columns.
+            let target = c.authored_col.saturating_sub(inner.cut).max(inner.canon);
+            c.lead_at(target + inner.shift + c.attachment_shift, false);
         } else if inner.line_block
             && inner.verse_opener_tab
             && !inner.verse_marker_line

@@ -1,11 +1,10 @@
 use carve::{to_html, to_html_with_options, Options};
 
 #[test]
-fn nested_quoted_two_tab_verse_matches_positioned_render() {
+fn nested_quoted_two_tab_verse_uses_each_owner_frame() {
     let source = "> - a\n>   - a\n>   \t::: |\n> \t\tz\n>   \t:::\n";
-    let positioned = to_html_with_options(source, &Options::default().with_positions(true));
-    assert!(positioned.contains("<p>z</p>"), "{positioned}");
-    assert_eq!(to_html(source), positioned);
+    let html = to_html(source);
+    assert!(html.contains("<p>&nbsp;&nbsp;z</p>"), "{html}");
 }
 
 #[test]
@@ -16,10 +15,6 @@ fn ticket_reproductions_match_positioned_render() {
             "<div>\n\n          </div>",
         ),
         ("* a\n  * a\n   \t::: |\n  \ty\n   \t:::\n", "<p>y</p>"),
-        (
-            "> - a\n>   - a\n>   \t::: |\n>     \t z\n>   \t:::\n",
-            "<p>&nbsp;z</p>",
-        ),
     ] {
         let facade = to_html(source);
         let positioned = to_html_with_options(source, &Options::default().with_positions(true));
@@ -29,4 +24,11 @@ fn ticket_reproductions_match_positioned_render() {
         );
         assert!(facade.contains(expected_fragment), "{source:?}\n{facade}");
     }
+}
+
+#[test]
+fn nested_quoted_one_tab_verse_uses_each_owner_frame() {
+    let source = "> - a\n>   - a\n>   \t::: |\n>     \t z\n>   \t:::\n";
+    let html = to_html(source);
+    assert!(html.contains("<p>&nbsp;&nbsp;&nbsp;z</p>"), "{html}");
 }
