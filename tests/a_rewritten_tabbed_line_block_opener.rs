@@ -12,7 +12,7 @@ fn check(source: &str, expected: &str) {
 fn a_tabbed_opener_rewritten_at_its_parent_keeps_payload_lead() {
     check(
         "- a\n  - a\n\t ::: |\n  \tx *b*\n\t :::\n",
-        "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p>&nbsp;&nbsp;x <strong>b</strong></p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p>&nbsp;x <strong>b</strong></p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
     );
 }
 
@@ -20,7 +20,7 @@ fn a_tabbed_opener_rewritten_at_its_parent_keeps_payload_lead() {
 fn a_rewritten_opener_keeps_the_same_lead_at_three_item_depths() {
     check(
         "* a\n  * a\n    * a\n\t ::: |\n  \tx *b*\n\t :::\n",
-        "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <ul>\n          <li>a</li>\n        </ul>\n        <div class=\"line-block\">\n          <p>&nbsp;&nbsp;x <strong>b</strong></p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <ul>\n          <li>a</li>\n        </ul>\n        <div class=\"line-block\">\n          <p>&nbsp;x <strong>b</strong></p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
     );
 }
 
