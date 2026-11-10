@@ -2879,7 +2879,7 @@ impl<'a> Walk<'a> {
                 .collect();
             origins.push(opener_origin);
             let column = if c.col < opener_origin {
-                c.col
+                inner.canon
             } else {
                 inner.canon + frame_tab_column(c.src, &origins).saturating_sub(opener_origin)
             };

@@ -57,6 +57,13 @@ fn quoted_tabbed_closer_uses_the_same_frame_as_its_opener() {
 }
 
 #[test]
+fn below_opener_tab_does_not_indent_the_verse() {
+    let source = "\t\t::: |\n\tx\n\t:::\n";
+    let html = to_html(source);
+    assert_eq!(html, "<div class=\"line-block\">\n  <p>x</p>\n</div>");
+}
+
+#[test]
 fn tab_only_opener_keeps_nested_verse_and_closer() {
     let source = "- a\n  - a\n\t::: |\n  \tz\n  \t:::\nend\n";
     let html = to_html(source);
