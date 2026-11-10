@@ -77,7 +77,8 @@ walk left it as a cell of its own.
 | Rule | Trigger | Suggested action |
 | --- | --- | --- |
 | `unclosed-code-fence` | A code or raw fence reaches a container boundary, a continuation marker, or the end of the document without a closer | Add a closing fence where the code should stop |
-| `continuation-marker-refused` | A `+` in a list item or definition description is followed by a blank line or the end of the document | Attach a block or delete the `+` |
+| `continuation-marker-refused` | A first-block `+` offer on a container marker line is refused | Attach a block or delete the `+` |
+| `refused-continuation-marker` | An own-line `+` offer is refused, including at a blank stop | Attach a block or remove the `+` |
 | `list-marker-below-content-column` | A marker shaped like a list item sits below a list item's content column: it folds into the item's paragraph as text, or after a blank line starts a separate list | Indent it to the content column to nest it, or align it with the item's marker to start a sibling |
 | `description-separator-below-content-column` | A `:` or `::` line starts below a definition list's column and adds no entry to that list | Indent it to the definition list's column |
 | `ordered-list-split-by-indent` | Consecutive ordered lists continue numbering at different marker columns | Align the markers, or use `{start=N}` with bare `.` markers for decimal lists |

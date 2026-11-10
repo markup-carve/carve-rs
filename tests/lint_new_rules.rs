@@ -12,6 +12,14 @@ fn check(data: &str, count: usize) {
         if name.contains("first-block") {
             continue;
         }
+        // carve#5736 moves refused own-line offers to the new hint. The
+        // historical fixture remains read-only; its positive old-ID rows
+        // describe the diagnostic before that ruling.
+        if rule == "continuation-marker-refused"
+            && !vector["expected"]["findings"].as_array().unwrap().is_empty()
+        {
+            continue;
+        }
         let actual: Vec<_> = lint_carve(vector["source"].as_str().unwrap())
             .into_iter()
             .filter(|warning| warning.rule == rule)
@@ -64,5 +72,13 @@ fn continuation_marker_refused_vectors() {
     check(
         include_str!("fixtures/lint-rule-vectors/continuation-marker-refused.json"),
         65,
+    );
+}
+
+#[test]
+fn refused_continuation_marker_vectors() {
+    check(
+        include_str!("fixtures/lint-rule-vectors/refused-continuation-marker.json"),
+        24,
     );
 }
