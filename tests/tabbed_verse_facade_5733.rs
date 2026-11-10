@@ -34,6 +34,29 @@ fn nested_quoted_one_tab_verse_uses_each_owner_frame() {
 }
 
 #[test]
+fn quoted_verse_tab_restarts_at_intermediate_item_column() {
+    let source = "> - a\n>   - a\n>   \t::: |\n>    \t z\n>   \t:::\n";
+    let html = to_html(source);
+    assert!(html.contains("<p>&nbsp;z</p>"), "{html}");
+}
+
+#[test]
+fn quoted_tabbed_closer_uses_the_same_frame_as_its_opener() {
+    let closed = "> - a\n>   - a\n>   \t::: |\n>     \t z\n>    \t:::\n";
+    let held = "> - a\n>   - a\n>   \t::: |\n>     \t z\n>     \t:::\n";
+    let closed_html = to_html(closed);
+    let held_html = to_html(held);
+    assert!(
+        closed_html.contains("<p>&nbsp;&nbsp;&nbsp;z</p>"),
+        "{closed_html}"
+    );
+    assert!(
+        held_html.contains("<p>&nbsp;&nbsp;&nbsp;z<br>\n&nbsp;&nbsp;:::</p>"),
+        "{held_html}"
+    );
+}
+
+#[test]
 fn tab_only_opener_keeps_nested_verse_and_closer() {
     let source = "- a\n  - a\n\t::: |\n  \tz\n  \t:::\nend\n";
     let html = to_html(source);

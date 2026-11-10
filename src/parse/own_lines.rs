@@ -1036,7 +1036,7 @@ impl<'s> Cursor<'s> {
 
     fn lead_at(&mut self, col: usize, spaces: bool) {
         let authored = &self.src[..self.src.len() - self.rest.len()];
-        if col == self.authored_col && !(spaces && self.out.is_empty() && authored.contains('\t')) {
+        if col == self.authored_col && !(spaces && authored.contains('\t')) {
             self.out.push_str(authored);
         } else {
             self.out.extend(std::iter::repeat(' ').take(col));
@@ -2864,10 +2864,10 @@ impl<'a> Walk<'a> {
         // marker-line or tabbed opener already has a host-relative rewrite.
         let verse_payload =
             inner.line_block && !closer.is_some_and(|cl| cl.closes(c.rest, col, open_col));
-        if let Some(opener_lead) = inner
-            .verse_open_frame_lead
-            .filter(|_| verse_payload && c.src[..c.src.len() - c.rest.len()].contains('\t'))
-        {
+        if let Some(opener_lead) = inner.verse_open_frame_lead.filter(|_| {
+            !(inner.verse_rewritten_opener && !verse_payload)
+                && c.src[..c.src.len() - c.rest.len()].contains('\t')
+        }) {
             let opener_origin = inner.canon + opener_lead;
             let start = frames
                 .iter()
