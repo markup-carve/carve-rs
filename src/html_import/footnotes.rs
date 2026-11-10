@@ -1,6 +1,6 @@
 use super::{
-    dom_text_is_layout_only, is_counted_admonition_title, Importer, ADMONITION_ID_PREFIX,
-    FOOTNOTE_DEFINITION_BLOCKS, FOOTNOTE_WRAPPER_BLOCKS,
+    dom_text_is_layout_only, is_counted_admonition_title, sibling_position, Importer,
+    ADMONITION_ID_PREFIX, FOOTNOTE_DEFINITION_BLOCKS, FOOTNOTE_WRAPPER_BLOCKS,
 };
 use super::{HtmlImportDiagnosticCode, HtmlImportError, HtmlImportSeverity};
 use crate::ast::*;
@@ -274,6 +274,16 @@ impl<'a> Importer<'a> {
             heuristic,
         );
         drop(lookups);
+        if !heuristic {
+            let top: HashMap<usize, usize> = super::fragment_top_level(root)
+                .iter()
+                .enumerate()
+                .map(|(index, node)| (node_key(node), index))
+                .collect();
+            for definition in &definitions {
+                self.report_definition_attributes(&definition.block, &top);
+            }
+        }
         let definition_blocks: HashSet<_> = definitions
             .iter()
             .map(|note| node_key(&note.block))
@@ -532,6 +542,101 @@ impl<'a> Importer<'a> {
 
         *self.admonition_title_ids.get_mut() = None;
         Ok(defs)
+    }
+}
+
+impl<'a> Importer<'a> {
+    /// A rebuilt footnote definition has no attribute slot for its item.
+    fn report_definition_attributes(&mut self, item: &Handle, top: &HashMap<usize, usize>) {
+        let tag = Self::tag(item).unwrap_or_else(|| "li".to_owned());
+        let NodeData::Element { attrs, .. } = &item.data else {
+            return;
+        };
+        let attributes: Vec<_> = attrs
+            .borrow()
+            .iter()
+            .map(|a| (a.name.local.to_string(), a.value.to_string()))
+            .filter(|(name, value)| {
+                name != "id"
+                    && crate::roundtrip::canonical(name).is_none()
+                    && !(name == "role"
+                        && matches!(
+                            value.trim().to_ascii_lowercase().as_str(),
+                            "doc-endnote" | "doc-footnote"
+                        ))
+            })
+            .collect();
+        if attributes.is_empty() {
+            return;
+        }
+        let path = self.definition_item_path(item, top);
+        for (name, value) in attributes {
+            if name == "style" {
+                for (property, _) in super::style_declarations(&value) {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StyleUnmapped,
+                        format!("CSS declaration {property} was not mapped"),
+                        HtmlImportSeverity::Info,
+                        &path,
+                        item,
+                    );
+                }
+                continue;
+            }
+            let dangerous = crate::escape::is_dangerous_attr_name(&name);
+            let subject = if dangerous {
+                format!(
+                    "{} attribute {name}",
+                    if name.starts_with("on") {
+                        "event-handler"
+                    } else {
+                        "injection-sink"
+                    }
+                )
+            } else {
+                name
+            };
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                format!(
+                    "Dropped {subject} on <{tag}>: a footnote definition has no attribute slot"
+                ),
+                if dangerous {
+                    HtmlImportSeverity::Warning
+                } else {
+                    HtmlImportSeverity::Info
+                },
+                &path,
+                item,
+            );
+        }
+    }
+
+    fn definition_item_path(&self, item: &Handle, top: &HashMap<usize, usize>) -> String {
+        let mut chain = Vec::new();
+        let mut at = item.clone();
+        while let Some(parent) = parent_handle(&at) {
+            if top.contains_key(&node_key(&at)) {
+                break;
+            }
+            if matches!(
+                Self::tag(&parent).as_deref(),
+                Some("html" | "head" | "body")
+            ) {
+                break;
+            }
+            chain.push((at.clone(), parent.clone()));
+            at = parent;
+        }
+        let index = top.get(&node_key(&at)).copied().unwrap_or(0);
+        let mut path = Self::child_path("", &at, index);
+        for (child, parent) in chain.iter().rev() {
+            let children = parent.children.borrow();
+            let index =
+                sibling_position(&self.sibling_index, parent, &children, child).unwrap_or(0);
+            path = Self::child_path(&path, child, index);
+        }
+        path
     }
 }
 
