@@ -75,3 +75,30 @@ fn generated_endnote_item_attributes_keep_the_same_diagnostic_contract() {
     }
     assert_eq!(checked, 1008);
 }
+
+#[test]
+fn many_endnote_items_keep_their_own_report_paths() {
+    let mut refs = String::new();
+    let mut items = String::new();
+    for n in 1..=64 {
+        refs.push_str(&format!("<a href=\"#fn{n}\" role=\"doc-noteref\">{n}</a>"));
+        items.push_str(&format!(
+            "<li id=\"fn{n}\" data-note=\"{n}\"><p>body{n}</p></li>"
+        ));
+    }
+    let html = format!("<p>{refs}</p><section role=\"doc-endnotes\"><ol>{items}</ol></section>");
+    let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
+    let drops: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code.as_str() == "attribute-dropped")
+        .collect();
+    assert_eq!(drops.len(), 64);
+    for (n, row) in drops.iter().enumerate() {
+        assert_eq!(
+            row.path.as_deref(),
+            Some(format!("/section[2]/ol[1]/li[{}]", n + 1).as_str())
+        );
+    }
+}

@@ -1,6 +1,6 @@
 use super::{
-    dom_text_is_layout_only, is_counted_admonition_title, Importer, ADMONITION_ID_PREFIX,
-    FOOTNOTE_DEFINITION_BLOCKS, FOOTNOTE_WRAPPER_BLOCKS,
+    dom_text_is_layout_only, is_counted_admonition_title, sibling_position, Importer,
+    ADMONITION_ID_PREFIX, FOOTNOTE_DEFINITION_BLOCKS, FOOTNOTE_WRAPPER_BLOCKS,
 };
 use super::{HtmlImportDiagnosticCode, HtmlImportError, HtmlImportSeverity};
 use crate::ast::*;
@@ -275,7 +275,11 @@ impl<'a> Importer<'a> {
         );
         drop(lookups);
         if !heuristic {
-            let top = super::fragment_top_level(root);
+            let top: HashMap<usize, usize> = super::fragment_top_level(root)
+                .iter()
+                .enumerate()
+                .map(|(index, node)| (node_key(node), index))
+                .collect();
             for definition in &definitions {
                 self.report_definition_attributes(&definition.block, &top);
             }
@@ -543,8 +547,7 @@ impl<'a> Importer<'a> {
 
 impl<'a> Importer<'a> {
     /// A rebuilt footnote definition has no attribute slot for its item.
-    fn report_definition_attributes(&mut self, item: &Handle, top: &[Handle]) {
-        let path = self.definition_item_path(item, top);
+    fn report_definition_attributes(&mut self, item: &Handle, top: &HashMap<usize, usize>) {
         let tag = Self::tag(item).unwrap_or_else(|| "li".to_owned());
         let NodeData::Element { attrs, .. } = &item.data else {
             return;
@@ -553,18 +556,21 @@ impl<'a> Importer<'a> {
             .borrow()
             .iter()
             .map(|a| (a.name.local.to_string(), a.value.to_string()))
+            .filter(|(name, value)| {
+                name != "id"
+                    && crate::roundtrip::canonical(name).is_none()
+                    && !(name == "role"
+                        && matches!(
+                            value.trim().to_ascii_lowercase().as_str(),
+                            "doc-endnote" | "doc-footnote"
+                        ))
+            })
             .collect();
+        if attributes.is_empty() {
+            return;
+        }
+        let path = self.definition_item_path(item, top);
         for (name, value) in attributes {
-            if name == "id"
-                || crate::roundtrip::canonical(&name).is_some()
-                || (name == "role"
-                    && matches!(
-                        value.trim().to_ascii_lowercase().as_str(),
-                        "doc-endnote" | "doc-footnote"
-                    ))
-            {
-                continue;
-            }
             if name == "style" {
                 for (property, _) in super::style_declarations(&value) {
                     self.diag(
@@ -606,11 +612,11 @@ impl<'a> Importer<'a> {
         }
     }
 
-    fn definition_item_path(&self, item: &Handle, top: &[Handle]) -> String {
+    fn definition_item_path(&self, item: &Handle, top: &HashMap<usize, usize>) -> String {
         let mut chain = Vec::new();
         let mut at = item.clone();
         while let Some(parent) = parent_handle(&at) {
-            if top.iter().any(|candidate| Rc::ptr_eq(candidate, &at)) {
+            if top.contains_key(&node_key(&at)) {
                 break;
             }
             if matches!(
@@ -622,18 +628,12 @@ impl<'a> Importer<'a> {
             chain.push((at.clone(), parent.clone()));
             at = parent;
         }
-        let index = top
-            .iter()
-            .position(|child| Rc::ptr_eq(child, &at))
-            .unwrap_or(0);
+        let index = top.get(&node_key(&at)).copied().unwrap_or(0);
         let mut path = Self::child_path("", &at, index);
         for (child, parent) in chain.iter().rev() {
-            let index = parent
-                .children
-                .borrow()
-                .iter()
-                .position(|node| Rc::ptr_eq(node, child))
-                .unwrap_or(0);
+            let children = parent.children.borrow();
+            let index =
+                sibling_position(&self.sibling_index, parent, &children, child).unwrap_or(0);
             path = Self::child_path(&path, child, index);
         }
         path
