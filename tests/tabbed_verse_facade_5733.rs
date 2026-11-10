@@ -32,3 +32,13 @@ fn nested_quoted_one_tab_verse_uses_each_owner_frame() {
     let html = to_html(source);
     assert!(html.contains("<p>&nbsp;&nbsp;&nbsp;z</p>"), "{html}");
 }
+
+#[test]
+fn tab_only_opener_keeps_nested_verse_and_closer() {
+    let source = "- a\n  - a\n\t::: |\n  \tz\n  \t:::\nend\n";
+    let html = to_html(source);
+    assert!(
+        html.contains("<p>&nbsp;&nbsp;z<br>\n&nbsp;&nbsp;:::<br>\nend</p>"),
+        "{html}"
+    );
+}

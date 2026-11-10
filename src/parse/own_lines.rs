@@ -2882,6 +2882,7 @@ impl<'a> Walk<'a> {
             && inner.verse_opener_tab
             && !inner.verse_marker_line
             && c.out.is_empty()
+            && inner.cut > 0
         {
             // The opener now stands at `canon`, but its later lines were
             // measured in the authored frame. Use that same frame for both
