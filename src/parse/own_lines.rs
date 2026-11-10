@@ -1143,6 +1143,17 @@ fn braced_comments_only(text: &str) -> bool {
 /// of `len`, where `view` gives each line's text past its indentation.
 /// In an item a list marker interrupts it; elsewhere the marker is its text.
 /// `measured` keeps the indentation `view` drops (CARVE-P2-035).
+/// Whether a non-blank line without a list marker continues the paragraph
+/// `comment_only_para_end` reads.
+pub(crate) fn continues_comment_para(rest: &str) -> bool {
+    !(!line_starts_paragraph(rest)
+        || rest.starts_with("%%")
+        || parse_link_def_line(rest).is_some()
+        || parse_footnote_def_line(rest).is_some()
+        || detect_abbreviation_def(rest).is_some()
+        || (rest.starts_with('{') && standalone_attrs_block_len_iter([rest].into_iter()).is_some()))
+}
+
 pub(crate) fn comment_only_para_end<'a>(
     len: usize,
     k: usize,
@@ -1159,14 +1170,7 @@ pub(crate) fn comment_only_para_end<'a>(
             }
             return None;
         }
-        if !line_starts_paragraph(rest)
-            || rest.starts_with("%%")
-            || parse_link_def_line(rest).is_some()
-            || parse_footnote_def_line(rest).is_some()
-            || detect_abbreviation_def(rest).is_some()
-            || (rest.starts_with('{')
-                && standalone_attrs_block_len_iter([rest].into_iter()).is_some())
-        {
+        if !continues_comment_para(rest) {
             break;
         }
         end += 1;
