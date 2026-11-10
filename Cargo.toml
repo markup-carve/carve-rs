@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "virtual_item_host_4198"
+path = "tests/virtual_item_host_4198.rs"
+
+[[test]]
 name = "line_block_payload_closers_3123"
 path = "tests/line_block_payload_closers_3123.rs"
 
