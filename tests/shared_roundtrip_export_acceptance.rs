@@ -504,6 +504,11 @@ fn collision_row(fixture: &Value) {
     // A null `value` names a reserved name with no carrier: nothing is written.
     let expected: Vec<String> = fixture["value"]
         .as_str()
+        .or_else(|| {
+            name.starts_with("data-djot-")
+                .then(|| fixture["defaultValue"].as_str())
+                .flatten()
+        })
         .map(str::to_owned)
         .into_iter()
         .collect();
@@ -513,7 +518,7 @@ fn collision_row(fixture: &Value) {
             && row.attribute.as_deref() == Some(name.as_str())
             && row.format.is_none()
             && row.target.as_str() == "html")
-            == !fixture["kept"].as_bool().unwrap_or(false),
+            == !(fixture["kept"].as_bool().unwrap_or(false) || name.starts_with("data-djot-")),
         "{}",
         fixture["id"]
     );
@@ -805,6 +810,11 @@ fn shared_footnote_recovery_remains_a_complete_separate_resource() {
     .unwrap();
     assert_eq!(paired.as_array().unwrap().len(), 24);
     for fixture in paired.as_array().unwrap() {
+        // The pinned fixture predates carve#5735; the retired-prefix cases
+        // are checked against the new rule in retired_input_aliases_5735.
+        if fixture["html"].as_str().unwrap().contains("data-djot-") {
+            continue;
+        }
         let options = mode(fixture["mode"].as_str().unwrap());
         let html = text(fixture, "html");
         assert_eq!(
@@ -902,12 +912,13 @@ fn xref_contradictions_keep_an_ordinary_link_in_every_mode() {
                         .any(|node| node["type"] == "link" && node["href"] == "#target"),
                     "{source}: {tree}"
                 );
-                assert!(
+                assert_eq!(
                     imported
                         .report
                         .diagnostics
                         .iter()
                         .any(|row| row.code.as_str() == "attribute-dropped"),
+                    prefix == "data-carve",
                     "{source}: {:?}",
                     imported.report
                 );
