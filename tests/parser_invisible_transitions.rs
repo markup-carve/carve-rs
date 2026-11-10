@@ -69,3 +69,66 @@ fn nested_comment_blank_does_not_loosen_an_ancestor_item() {
         "<ul>\n  <li><p>host</p>\n    <ul>\n      <li>\n        <ul>\n          <li>a</li>\n        </ul>\n      </li>\n    </ul>\n    <p>x</p>\n  </li>\n</ul>"
     );
 }
+
+#[test]
+fn nested_braced_comment_preserves_blank_before_outer_sibling() {
+    let expected = "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n  <li><p>s</p></li>\n</ul>";
+    for invisible in ["{% a z %}", "{% a\n     z %}", "%% c"] {
+        let source = format!("- a\n  - x\n\n    {invisible}\n- s\n");
+        assert_eq!(to_html(&source), expected, "{source}");
+    }
+}
+
+#[test]
+fn braced_comment_matches_line_comment_at_nested_blank_boundary() {
+    let mut checked = 0;
+    for (outer, sibling) in [
+        ("- a", "- s"),
+        ("* a", "* s"),
+        ("1. a", "2. s"),
+        ("- [ ] a", "- [ ] s"),
+    ] {
+        for (inner, width) in [("- x", 2), ("1. x", 3), ("- [ ] x", 6)] {
+            for depth in [1, 2] {
+                for tail_kind in ["", "y", "- y"] {
+                    for shift in 0..3 {
+                        for brace in [
+                            "{% a z %}",
+                            "{% a\n{}z %}",
+                            "{% a %}{% z %}",
+                            "{% a %}",
+                            "{% z %}",
+                        ] {
+                            let indent =
+                                " ".repeat(2 + width + shift + if depth == 2 { 2 } else { 0 });
+                            let inner_line = if depth == 2 {
+                                format!("  - b\n    {inner}")
+                            } else {
+                                format!("  {inner}")
+                            };
+                            let tail = if tail_kind.is_empty() {
+                                String::new()
+                            } else {
+                                format!(
+                                    "\n{}{tail_kind}",
+                                    " ".repeat(2 + width + if depth == 2 { 2 } else { 0 })
+                                )
+                            };
+                            let payload = if brace.contains("{}") {
+                                brace.replace("{}", &" ".repeat(indent.len() + 1))
+                            } else {
+                                brace.to_string()
+                            };
+                            let body = format!("{outer}\n{inner_line}{tail}\n\n{indent}");
+                            let a = format!("{body}{payload}\n{sibling}\n");
+                            let b = format!("{body}%% c\n{sibling}\n");
+                            assert_eq!(to_html(&a), to_html(&b), "brace={a:?}, twin={b:?}");
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 1080);
+}
