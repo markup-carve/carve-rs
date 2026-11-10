@@ -557,6 +557,18 @@ fn nested_note_paragraph_open(note: &NoteBody, options: &Options<'_>) -> bool {
 /// The body of the last nested note, when every line after its marker reaches
 /// that note's body column.
 fn open_nested_note_body(lines: &[String]) -> Option<String> {
+    let mut body = direct_nested_note_body(lines)?;
+    while let Some(inner) =
+        direct_nested_note_body(&body.lines().map(str::to_owned).collect::<Vec<_>>())
+    {
+        body = inner;
+    }
+    Some(body)
+}
+
+/// Peel one reachable nested note. The caller keeps peeling until the body
+/// belongs to the deepest note, whose last block decides lazy ownership.
+fn direct_nested_note_body(lines: &[String]) -> Option<String> {
     let at = lines
         .iter()
         .rposition(|line| parse_footnote_def_line(trim_ascii_start(line)).is_some())?;
