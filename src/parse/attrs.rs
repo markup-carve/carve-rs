@@ -272,7 +272,7 @@ pub(crate) fn refused_brace_run_with_columns<'a>(
     if !is_block_brace_opener(opener) {
         return RefusedBraceRun::No(0);
     }
-    if strip_lazy(first).len() != first.len() && block_brace_needs_continuation(opener) {
+    if first.starts_with(LAZY_REFUSED_BRACE) {
         return RefusedBraceRun::Lines(1);
     }
     let opener_column = column_of(0, first, &mut source_column);

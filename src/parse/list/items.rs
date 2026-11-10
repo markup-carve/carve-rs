@@ -3045,34 +3045,37 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             return false;
         }
-        let run = if indent_columns(next) < self.content_col
-            && !trim_ascii_end(next).ends_with('}')
-            && is_block_brace_opener(trim_ascii_start(strip_lazy(next)))
-        {
-            // The opener itself reached this paragraph lazily. It cannot
-            // claim a following line as a block-position run (carve#5830).
-            RefusedBraceRun::Lines(1)
-        } else {
-            refused_brace_run_with_columns(
-                (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
-                !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
-                |offset, raw| {
-                    (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
-                        .then(|| {
-                            let at = self.cur.pos + offset;
-                            let line = self.cur.source_line(at)?;
-                            let stripped = self.cur.source_col(at)?;
-                            let walked = (stripped + indent_columns(strip_lazy(raw)) as isize)
-                                .max(0) as usize;
-                            Some(crate::parse::own_lines::authored_visual_column(
-                                line,
-                                walked + 1,
-                            ))
-                        })
-                        .flatten()
-                },
-            )
-        };
+        let lazy_opener = indent_columns(next) < self.content_col;
+        let run = refused_brace_run_with_columns(
+            (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
+            !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
+            |offset, raw| {
+                (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
+                    .then(|| {
+                        let at = self.cur.pos + offset;
+                        let line = self.cur.source_line(at)?;
+                        let stripped = self.cur.source_col(at)?;
+                        let walked =
+                            (stripped + indent_columns(strip_lazy(raw)) as isize).max(0) as usize;
+                        let column =
+                            crate::parse::own_lines::authored_visual_column(line, walked + 1);
+                        // A lazy opener is measured from its written brace,
+                        // but every continuation must also reach this item's
+                        // content column before that brace test applies.
+                        Some(
+                            if lazy_opener
+                                && offset > 0
+                                && indent_columns(strip_lazy(raw)) < self.content_col
+                            {
+                                0
+                            } else {
+                                column
+                            },
+                        )
+                    })
+                    .flatten()
+            },
+        );
         let count = match run {
             RefusedBraceRun::Lines(count) => count,
             RefusedBraceRun::No(count)
