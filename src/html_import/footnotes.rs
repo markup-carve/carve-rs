@@ -274,6 +274,12 @@ impl<'a> Importer<'a> {
             heuristic,
         );
         drop(lookups);
+        if !heuristic {
+            let top = super::fragment_top_level(root);
+            for definition in &definitions {
+                self.report_definition_attributes(&definition.block, &top);
+            }
+        }
         let definition_blocks: HashSet<_> = definitions
             .iter()
             .map(|note| node_key(&note.block))
@@ -532,6 +538,105 @@ impl<'a> Importer<'a> {
 
         *self.admonition_title_ids.get_mut() = None;
         Ok(defs)
+    }
+}
+
+impl<'a> Importer<'a> {
+    /// A rebuilt footnote definition has no attribute slot for its item.
+    fn report_definition_attributes(&mut self, item: &Handle, top: &[Handle]) {
+        let path = self.definition_item_path(item, top);
+        let tag = Self::tag(item).unwrap_or_else(|| "li".to_owned());
+        let NodeData::Element { attrs, .. } = &item.data else {
+            return;
+        };
+        let attributes: Vec<_> = attrs
+            .borrow()
+            .iter()
+            .map(|a| (a.name.local.to_string(), a.value.to_string()))
+            .collect();
+        for (name, value) in attributes {
+            if name == "id"
+                || crate::roundtrip::canonical(&name).is_some()
+                || (name == "role"
+                    && matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "doc-endnote" | "doc-footnote"
+                    ))
+            {
+                continue;
+            }
+            if name == "style" {
+                for (property, _) in super::style_declarations(&value) {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StyleUnmapped,
+                        format!("CSS declaration {property} was not mapped"),
+                        HtmlImportSeverity::Info,
+                        &path,
+                        item,
+                    );
+                }
+                continue;
+            }
+            let dangerous = crate::escape::is_dangerous_attr_name(&name);
+            let subject = if dangerous {
+                format!(
+                    "{} attribute {name}",
+                    if name.starts_with("on") {
+                        "event-handler"
+                    } else {
+                        "injection-sink"
+                    }
+                )
+            } else {
+                name
+            };
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                format!(
+                    "Dropped {subject} on <{tag}>: a footnote definition has no attribute slot"
+                ),
+                if dangerous {
+                    HtmlImportSeverity::Warning
+                } else {
+                    HtmlImportSeverity::Info
+                },
+                &path,
+                item,
+            );
+        }
+    }
+
+    fn definition_item_path(&self, item: &Handle, top: &[Handle]) -> String {
+        let mut chain = Vec::new();
+        let mut at = item.clone();
+        while let Some(parent) = parent_handle(&at) {
+            if top.iter().any(|candidate| Rc::ptr_eq(candidate, &at)) {
+                break;
+            }
+            if matches!(
+                Self::tag(&parent).as_deref(),
+                Some("html" | "head" | "body")
+            ) {
+                break;
+            }
+            chain.push((at.clone(), parent.clone()));
+            at = parent;
+        }
+        let index = top
+            .iter()
+            .position(|child| Rc::ptr_eq(child, &at))
+            .unwrap_or(0);
+        let mut path = Self::child_path("", &at, index);
+        for (child, parent) in chain.iter().rev() {
+            let index = parent
+                .children
+                .borrow()
+                .iter()
+                .position(|node| Rc::ptr_eq(node, child))
+                .unwrap_or(0);
+            path = Self::child_path(&path, child, index);
+        }
+        path
     }
 }
 
