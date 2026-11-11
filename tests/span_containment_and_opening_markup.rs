@@ -347,11 +347,6 @@ fn a_parent_span_contains_every_child_span_over_the_corpus() {
 }
 
 fn a_parent_span_contains_every_child_span_over_the_corpus_inner() {
-    // Position lag in corpus documents newly reached by the e61790d3 spec pin.
-    // Exact diagnostics keep both errors visible and retire on the fixing PR.
-    const POSITION_LAG: &[&str] = &[
-        "981-a-losing-note-plus-leaves-following-blocks-with-their-owner-3: \"paragraph\" at $.children[2].children[0] [14, 16] is not inside its placed ancestor [17, 16]",
-    ];
     let mut pairs = 0usize;
     let mut findings: Vec<String> = Vec::new();
     for (name, source) in corpus() {
@@ -373,12 +368,6 @@ fn a_parent_span_contains_every_child_span_over_the_corpus_inner() {
                 ));
             }
         }
-    }
-    for known in POSITION_LAG {
-        let Some(index) = findings.iter().position(|finding| finding == known) else {
-            panic!("declared position lag retired or changed: {known}");
-        };
-        findings.remove(index);
     }
     assert!(
         findings.is_empty(),
