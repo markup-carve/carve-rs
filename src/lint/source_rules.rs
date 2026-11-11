@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::LintWarning;
 use crate::ast::*;
@@ -1420,6 +1421,11 @@ struct ListScan<'s, 'r> {
     marker_shaped: &'static regex::Regex,
     block_opener: &'static regex::Regex,
     folded: BTreeSet<usize>,
+    split_lines: BTreeSet<usize>,
+    /// Item indices ordered by last line.
+    by_last: Vec<usize>,
+    /// Per quote depth, the first row of the blank run ending before each row.
+    blank_from: RefCell<HashMap<usize, Vec<usize>>>,
     list_lines: BTreeSet<usize>,
     open_fence: Option<(usize, char, usize)>,
     previous_run: Option<(char, Option<usize>)>,
@@ -1446,9 +1452,19 @@ impl<'s, 'r> ListScan<'s, 'r> {
             .filter(|w| w.rule == "definition-term-block-folded")
             .map(|w| w.line)
             .collect();
+        let split_lines = out
+            .iter()
+            .filter(|w| w.rule == "ordered-list-split-by-indent")
+            .map(|w| w.line)
+            .collect();
+        let mut by_last: Vec<usize> = (0..scan.items.len()).collect();
+        by_last.sort_by_key(|&at| (scan.items[at].last, at));
         Self {
             rows,
             scan,
+            split_lines,
+            by_last,
+            blank_from: RefCell::new(HashMap::new()),
             marker_shaped: lint_regex!(
                 r"^(?:[-+*](?: +\[[ xX\-_>?/!]\])?|\([0-9A-Za-z]+\)|[0-9A-Za-z]+[.)]|\.)[ \t]"
             ),
@@ -1577,29 +1593,29 @@ impl<'s, 'r> ListScan<'s, 'r> {
         if !(ln > 1
             && !self.scan.ignored.contains(&ln)
             && self.marker_shaped.is_match(l.view)
-            && !out
-                .iter()
-                .any(|w| w.rule == "ordered-list-split-by-indent" && w.line == ln))
+            && !self.split_lines.contains(&ln))
         {
             return;
         }
-        let host = items
+        let host = items[items.partition_point(|i| i.first < ln)..]
             .iter()
-            .filter(|i| i.first == ln)
+            .take_while(|i| i.first == ln)
             .min_by_key(|i| i.base)
             .and_then(|opened| {
-                items
+                // Only items ending in the blank run right above this row qualify.
+                let from = self.blank_run_start(opened.quotes, index);
+                let by_last = &self.by_last;
+                let lo = by_last.partition_point(|&at| items[at].last < from);
+                let hi = by_last.partition_point(|&at| items[at].last < ln);
+                by_last[lo..hi]
                     .iter()
-                    .filter(|i| {
-                        i.last < ln
-                            && i.quotes == opened.quotes
-                            && i.base < opened.base
-                            && opened.base < i.content
-                            && rows[i.last..index]
-                                .iter()
-                                .all(|r| quoted_view(r.text, i.quotes).0.trim().is_empty())
+                    .copied()
+                    .filter(|&at| {
+                        let i = &items[at];
+                        i.quotes == opened.quotes && i.base < opened.base && opened.base < i.content
                     })
-                    .max_by_key(|i| i.content)
+                    .max_by_key(|&at| (items[at].content, at))
+                    .map(|at| &items[at])
             });
         if let Some(host) = host {
             let after_blank = quoted_view(rows[index - 1].text, l.owner.map_or(0, |i| i.quotes))
@@ -1614,6 +1630,22 @@ impl<'s, 'r> ListScan<'s, 'r> {
             let len = self.marker_shaped.find(l.view).unwrap().len() - 1;
             emit(out, rows, ln, l.at, len, "list-marker-below-content-column", &format!("This list marker starts at column {column}{where_}, below the content column {} of the list item above, so it starts a separate list instead of nesting. Indent it to column {} to nest it under the item, or start it at column {} to put it at the item's own level.", host.content, host.content, host.base));
         }
+    }
+
+    /// The first row index of the run of rows blank at quote depth `quotes`
+    /// that ends right before row `index`.
+    fn blank_run_start(&self, quotes: usize, index: usize) -> usize {
+        let mut cache = self.blank_from.borrow_mut();
+        let starts = cache.entry(quotes).or_insert_with(|| {
+            let mut starts = Vec::with_capacity(self.rows.len() + 1);
+            starts.push(0);
+            for (at, row) in self.rows.iter().enumerate() {
+                let blank = quoted_view(row.text, quotes).0.trim().is_empty();
+                starts.push(if blank { starts[at] } else { at + 1 });
+            }
+            starts
+        });
+        starts[index]
     }
 
     fn check_block_opener(&mut self, l: &ListRow<'s>, out: &mut Vec<LintWarning>) {

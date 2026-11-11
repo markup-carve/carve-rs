@@ -533,8 +533,8 @@ pub(in crate::parse) fn anchor_list_starts(blocks: &mut [BlockNode], lines: &[&s
 /// A mapped container can count stripped indentation twice on the last line
 /// of an inline span. A source position cannot extend beyond that line's
 /// authored codepoints, so enforce the boundary after all owner rewrites.
-pub(in crate::parse) fn bound_positions_to_lines(
-    blocks: &mut [BlockNode],
+pub(in crate::parse) fn bound_positions_to_lines<'b>(
+    groups: impl IntoIterator<Item = &'b mut [BlockNode]>,
     lines: &[&str],
     source: &str,
 ) {
@@ -624,7 +624,7 @@ pub(in crate::parse) fn bound_positions_to_lines(
         },
         source,
     };
-    for block in blocks {
+    for block in groups.into_iter().flatten() {
         visit_block_children(block, &mut bound);
     }
 }
