@@ -1020,6 +1020,8 @@ struct Skipped {
     fenced: Vec<usize>,
     /// The skipped lines inside a `%%%` span, opener and closer included, ascending.
     comment: Vec<usize>,
+    /// Skipped note body lines at or past the note's body column, ascending.
+    note_body: Vec<usize>,
     lead: String,
     /// The lead of the `%%%` span lines a refused `+` holds: its host's content
     /// column, since a span closes no item (carve#5170).
@@ -1809,6 +1811,7 @@ impl<'a> Walk<'a> {
     ) -> usize {
         let mut fenced = Vec::new();
         let mut comment = Vec::new();
+        let mut note_body = Vec::new();
         let in_item = self.frames[host].kind == Kind::Item;
         let content = self.content_column(host, column, refused);
         let end = self.first_visible_line(
@@ -1817,7 +1820,7 @@ impl<'a> Walk<'a> {
             column,
             content,
             in_item,
-            Some((&mut fenced, &mut comment)),
+            Some((&mut fenced, &mut comment, &mut note_body)),
         );
         if end == at + 1 || end >= self.lines.len() {
             return at + 1;
@@ -1835,6 +1838,7 @@ impl<'a> Walk<'a> {
             column,
             fenced,
             comment,
+            note_body,
             lead,
             span_lead: None,
             brace: None,
@@ -1900,6 +1904,13 @@ impl<'a> Walk<'a> {
             doc_column(line, rest).saturating_sub(host_content)
         } else {
             0
+        };
+        // A note body line stands at the note's body column, two past the
+        // definition (§24 C3); a brace run's later lines keep their offset.
+        let pad = if skipped.note_body.binary_search(&at).is_ok() {
+            2 + pad
+        } else {
+            pad
         };
         let lead = format!("{}{}", base, " ".repeat(pad + payload_pad));
         c.out.push_str(&lead);
@@ -1999,7 +2010,7 @@ impl<'a> Walk<'a> {
         column: usize,
         content: usize,
         in_item: bool,
-        mut collect: Option<(&mut Vec<usize>, &mut Vec<usize>)>,
+        mut collect: Option<(&mut Vec<usize>, &mut Vec<usize>, &mut Vec<usize>)>,
     ) -> usize {
         let view = |k: usize| -> &'a str {
             trim_ws_start(
@@ -2046,7 +2057,7 @@ impl<'a> Walk<'a> {
                 // The list readers keep the span as one comment; the others
                 // read its lines as `%%` lines. A kept span the next line missed
                 // is read that way in a list too, so its opener pairs with nothing.
-                if let Some((fenced, comment)) = collect.as_mut() {
+                if let Some((fenced, comment, _)) = collect.as_mut() {
                     comment.extend(opener..k.min(self.lines.len()));
                     if !in_item || (at != column && !closed) {
                         fenced.extend(opener..k.min(self.lines.len()));
@@ -2068,19 +2079,40 @@ impl<'a> Walk<'a> {
                     return k;
                 }
                 let offered = self.offers_plus(k, host, column);
-                let note_body_column = parse_footnote_def_line(rest)
-                    .map(|(_, body)| doc_column(self.lines[k], body))
-                    .unwrap_or(usize::MAX);
+                // The footnote offset is two columns (§24 C3). An attribute
+                // run at or past it is the note's (PART 9 §15 A4, carve#5957).
+                let note_body_column = at + 2;
+                let mut attributed = false;
                 k += 1;
-                while k < self.lines.len()
-                    && self.through_quotes(self.lines[k], host).is_some()
-                    && foldable_plain_line(view(k))
-                    && !(doc_column(self.lines[k], view(k)) < note_body_column
-                        && view(k).starts_with('{')
-                        && self.attrs_run_len(k, host).is_some())
-                    && (!offered || doc_column(self.lines[k], view(k)) != column)
-                {
-                    k += 1;
+                while k < self.lines.len() && self.through_quotes(self.lines[k], host).is_some() {
+                    let text = view(k);
+                    let col = doc_column(self.lines[k], text);
+                    if offered && col == column {
+                        break;
+                    }
+                    let run = text
+                        .starts_with('{')
+                        .then(|| self.attrs_run_len(k, host))
+                        .flatten();
+                    let len = match run {
+                        Some(len) if col >= note_body_column => {
+                            attributed = true;
+                            len
+                        }
+                        Some(_) => break,
+                        None if foldable_plain_line(text)
+                            && (!attributed || col >= note_body_column) =>
+                        {
+                            1
+                        }
+                        None => break,
+                    };
+                    if let Some((_, _, note_body)) = collect.as_mut() {
+                        note_body.extend((k..k + len).filter(|&line| {
+                            doc_column(self.lines[line], view(line)) >= note_body_column
+                        }));
+                    }
+                    k += len;
                 }
             } else if rest.starts_with("%%")
                 || parse_link_def_line(rest).is_some()
@@ -2099,7 +2131,7 @@ impl<'a> Walk<'a> {
                 .flatten()
             {
                 // A paragraph of only comments is skipped as a `%%` line is (carve#4799).
-                if let Some((fenced, _)) = collect.as_mut() {
+                if let Some((fenced, _, _)) = collect.as_mut() {
                     fenced.extend(k..end);
                 }
                 k = end;
