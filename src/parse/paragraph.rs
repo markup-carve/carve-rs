@@ -373,7 +373,11 @@ pub(in crate::parse) struct InlineSpanScan {
     /// The last forward search for a `%}`: the line it started on and the
     /// line it found, if any.
     closer: Option<(usize, Option<usize>)>,
+    /// The last earlier line holding each inline host opener, by `HOST_OPENERS` slot.
+    marks: [Option<usize>; HOST_OPENERS.len()],
 }
+
+const HOST_OPENERS: &[u8] = b"[<{/*_~=:`";
 
 impl InlineSpanScan {
     /// Whether the inline pairing of `lines` holds the cursor's brace line:
@@ -388,6 +392,72 @@ impl InlineSpanScan {
             return true;
         }
         self.comment && self.comment_closes_from(cur)
+    }
+
+    /// Whether inline pairing attaches an attribute block at byte `at` of line
+    /// `index` to a preceding host. A bare word, an intraword `*b*` or an
+    /// escaped `\[a]` takes none, so that block's backticks pair (carve#5740).
+    fn inline_host_before<S: AsRef<str>>(&self, lines: &[S], index: usize, at: usize) -> bool {
+        let line = strip_lazy(lines[index].as_ref());
+        let bytes = line.as_bytes();
+        let Some(&closer) = at.checked_sub(1).and_then(|c| bytes.get(c)) else {
+            return false;
+        };
+        if !b"])`/*_~=}>:".contains(&closer) {
+            return false;
+        }
+        let head = &bytes[..at - 1];
+        let open = match closer {
+            b']' => matching_bracket(head),
+            b')' => line[..at - 1]
+                .rfind("](")
+                .and_then(|tail| matching_bracket(&bytes[..tail])),
+            b'`' => head.iter().rposition(|&b| b == b'`').map(|mut o| {
+                while o > 0 && bytes[o - 1] == b'`' {
+                    o -= 1;
+                }
+                o
+            }),
+            b'>' => head.iter().rposition(|&b| b == b'<'),
+            b'}' => head.iter().rposition(|&b| b == b'{'),
+            other => head.iter().rposition(|&b| b == other),
+        };
+        if let Some(open) = open {
+            // One character of context before the opener, and the whole escape run
+            // when it is a backslash, so the probe sees the opener's escape parity.
+            let mut start = line[..open]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(i, _)| i);
+            if bytes.get(start) == Some(&b'\\') {
+                while start > 0 && bytes[start - 1] == b'\\' {
+                    start -= 1;
+                }
+            }
+            if attaches_probe(&line[start..at]) {
+                return true;
+            }
+        }
+        // The host may have opened on an earlier soft line.
+        let opener = match closer {
+            b']' | b')' => b'[',
+            b'>' => b'<',
+            b'}' => b'{',
+            other => other,
+        };
+        let slot = HOST_OPENERS.iter().position(|&b| b == opener);
+        let Some(prior) = slot
+            .and_then(|slot| self.marks[slot])
+            .filter(|&p| p < index)
+        else {
+            return false;
+        };
+        let mut prefix: Vec<&str> = lines[prior..index]
+            .iter()
+            .map(|l| strip_lazy(l.as_ref()))
+            .collect();
+        prefix.push(&line[..at]);
+        attaches_probe(&prefix.join("\n"))
     }
 
     fn comment_closes_from(&mut self, cur: &LineCursor<'_>) -> bool {
@@ -419,8 +489,9 @@ impl InlineSpanScan {
     }
 
     pub(in crate::parse) fn open<S: AsRef<str>>(&mut self, lines: &[S]) -> bool {
-        for line in &lines[self.scanned.min(lines.len())..] {
-            let bytes = strip_lazy(line.as_ref()).as_bytes();
+        for index in self.scanned.min(lines.len())..lines.len() {
+            let text = strip_lazy(lines[index].as_ref());
+            let bytes = text.as_bytes();
             let mut k = 0;
             while k < bytes.len() {
                 if self.comment {
@@ -461,17 +532,49 @@ impl InlineSpanScan {
                         end += 1;
                     }
                     if bytes.get(end) == Some(&b'}')
-                        && super::attrs::parse_standalone_attrs(&line.as_ref()[k..=end]).is_some()
+                        && super::attrs::parse_standalone_attrs(&text[k..=end]).is_some()
+                        && self.inline_host_before(lines, index, k)
                     {
                         k = end;
                     }
                 }
                 k += 1;
             }
+            for (slot, &opener) in HOST_OPENERS.iter().enumerate() {
+                if bytes.contains(&opener) {
+                    self.marks[slot] = Some(index);
+                }
+            }
         }
         self.scanned = lines.len();
         self.code_run != 0 || self.comment
     }
+}
+
+/// The `[` that pairs with the `]` ending `head`'s next byte, if any.
+fn matching_bracket(head: &[u8]) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (i, &b) in head.iter().enumerate() {
+        match b {
+            b'[' => stack.push(i),
+            b']' => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    stack.pop()
+}
+
+/// Whether the inline parser attaches an attribute block written after `host`.
+fn attaches_probe(host: &str) -> bool {
+    let mut key = String::from("data-carve-host-probe");
+    while host.contains(key.as_str()) {
+        key.push('x');
+    }
+    let options = Options::default();
+    let nodes = super::inline::parse_matcher_inlines(&format!("{host}{{{key}=1}}"), &options);
+    crate::render::render_inlines_with_options(&nodes, &options).contains(&format!(" {key}=\"1\""))
 }
 
 /// The braced comment state of a paragraph's lines, fed one line at a time.

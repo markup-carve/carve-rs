@@ -379,7 +379,15 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 if code.is_some() {
                     continue;
                 }
-                if trim_ascii_start(line).starts_with("{%") {
+                // Only a paragraph start can open a comment-only paragraph; testing
+                // every line of a failed paragraph is quadratic (carve#5859).
+                let para_start = at == from + 1 || {
+                    let prev = trim_ascii_start(lines.at(at - 1));
+                    is_blank_line(prev)
+                        || detect_list_marker_full(prev).is_some()
+                        || !crate::parse::own_lines::continues_comment_para(prev)
+                };
+                if para_start && trim_ascii_start(line).starts_with("{%") {
                     let view = |at| trim_ascii_start(lines.at(at));
                     let measured = |at| lines.at(at);
                     if let Some(end) = comment_only_para_end(k, at, true, &view, &measured) {
