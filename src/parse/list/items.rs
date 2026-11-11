@@ -1563,7 +1563,19 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .continuation_decision(item.at)
                 .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
         let continuation_has_content = if first_block_quote_attaches {
-            self.quote_first_block(&mut stream, content, innermost, item.at)
+            let took = self.quote_first_block(&mut stream, content, innermost, item.at);
+            // A quote line after the attached block resumes the marker line's
+            // quote, as it would outside the item (carve#5658 Q cells).
+            let quote_resumes = took
+                && self.cur.peek().is_some_and(|line| {
+                    indent_columns(line) >= content_col
+                        && strip_blockquote_prefix(&slice_columns(line, content_col, false))
+                            .is_some()
+                });
+            if quote_resumes {
+                self.quote_continuation(&mut stream, false, false, false);
+            }
+            took
         } else if self.quote_plus_takes_paragraph(innermost) {
             self.quote_plus_paragraph(&mut stream);
             true
