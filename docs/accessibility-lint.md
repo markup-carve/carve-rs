@@ -14,7 +14,7 @@ for diagnostic in lint_accessibility("# One\n\n### Three\n\n![](/map.png)\n") {
 The draft currently reports:
 
 - `a11y/image-alt` for an image with empty alternative text;
-- `a11y/heading-jump` when a heading skips a level.
+- `heading-level-skip` when a heading skips a level.
 
 Diagnostics carry severity and source offsets. This lets CLIs, editors, CI,
 and bindings present the same finding instead of implementing separate regex

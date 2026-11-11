@@ -66,7 +66,7 @@ pub fn lint_accessibility(source: &str) -> Vec<AccessibilityDiagnostic> {
                 if previous_heading.is_some_and(|previous| heading.level > previous + 1) {
                     let (start_offset, end_offset) = range(heading.pos.as_ref());
                     diagnostics.push(AccessibilityDiagnostic {
-                        rule: "a11y/heading-jump",
+                        rule: "heading-level-skip",
                         severity: AccessibilitySeverity::Warning,
                         message: format!(
                             "heading level jumps from {} to {}",
