@@ -56,3 +56,30 @@ fn quote_own_fence_3() {
         "<blockquote>\n  <p>p</p>\n  <pre><code>a\n\n ```\n  zq</code></pre>\n</blockquote>";
     assert_eq!(carve::to_html(source).trim(), expected);
 }
+#[test]
+fn own_fence_shifted_0() {
+    let source = "- p\n+\n```\na\n\n ```\n  zq";
+    let expected = "<ul>\n  <li>p\n    <pre><code>a\n\n</code></pre>\n  </li>\n</ul>\n<pre><code> zq</code></pre>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn own_fence_shifted_1() {
+    let source = "* p\n+\n```\na\n\n ```\n  zq";
+    let expected = "<ul>\n  <li>p\n    <pre><code>a\n\n</code></pre>\n  </li>\n</ul>\n<pre><code> zq</code></pre>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn own_fence_shifted_2() {
+    let source = "see[^a]\n\n[^a]: p\n+\n```\na\n\n ```\n  zq";
+    let expected = "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<pre><code> zq</code></pre>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>p</p>\n      <pre><code>a\n\n</code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn own_fence_shifted_3() {
+    let source = ":: t\n: p\n+\n```\na\n\n ```\n  zq";
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>p</p>\n    <pre><code>a\n\n</code></pre>\n  </dd>\n</dl>\n<pre><code> zq</code></pre>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}

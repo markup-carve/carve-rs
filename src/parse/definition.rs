@@ -2125,6 +2125,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                         && strip_definition_marker(trim_ascii_start(a)).is_some())
             },
         );
+        let end = if self.own_line_fence {
+            own_line_fence_end(cursor_lines, start, end, Some(content_column), |at| {
+                cur.source_line(at)
+            })
+        } else {
+            end
+        };
         while cur.pos < end {
             let a = cur.lines.at(cur.pos);
             attached.push_at(

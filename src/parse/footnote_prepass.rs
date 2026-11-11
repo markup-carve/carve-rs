@@ -2228,6 +2228,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                     from,
                     first_blank,
                     Some(container.content_column),
+                    |at| Some(self.first_source_line + at),
                 ));
             }
             detect_line_block_open(text)
@@ -3091,6 +3092,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             },
             |closer| closer + 1,
         );
+        let end = if state.own_line_fence {
+            own_line_fence_end(
+                CursorLines::Slice(lines),
+                attached_start,
+                end,
+                Some(state.body_indent),
+                |at| Some(self.first_source_line + at),
+            )
+        } else {
+            end
+        };
         while *i < end {
             attached.push(if pulled_closer == Some(*i) {
                 trim_ascii_start(lines[*i]).to_string()
