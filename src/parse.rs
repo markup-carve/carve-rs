@@ -1373,6 +1373,7 @@ fn parse_with_options_mode_and_index_once(
         // replaced `widen_over_hosted_definitions` (carve#1522, carve#1524).
         let source_lines: Vec<&str> = original.lines().collect();
         narrow_to_last_placed_child(&mut children, &source_lines);
+        positions::end_before_next_sibling(&mut children);
         // A FOOTNOTE BODY IS A SEPARATE BLOCK LIST, walked separately by every
         // pass above for the same reason: it is not under `children`. Reaching
         // only `children` left a list inside a note body still ending after the
@@ -1381,6 +1382,7 @@ fn parse_with_options_mode_and_index_once(
         // forget to apply.
         for blocks in footnote_defs.values_mut() {
             narrow_to_last_placed_child(blocks, &source_lines);
+            positions::end_before_next_sibling(blocks);
         }
         for (label, pos) in &mut footnote_def_pos {
             let last = footnote_defs
