@@ -662,12 +662,6 @@ pub(super) fn read_djot_attributes_with_context(
     read_djot_attributes_with_source_form(source, start, carve, table, paragraph_context, false)
 }
 
-/// The end of a Djot attribute run at `start`, its continuation columns unchecked.
-pub(super) fn read_djot_attributes_unchecked(source: &str, start: usize) -> Option<usize> {
-    read_djot_attributes_checked(source, start, false, false, true, false, false)
-        .map(|(end, _, _)| end)
-}
-
 pub(super) fn read_djot_attributes_with_source_form(
     source: &str,
     start: usize,
