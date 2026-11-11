@@ -46,7 +46,10 @@ fn an_unattached_attribute_after_a_comment_run_reports_its_source_column() {
     let note = "x[^n]\n\n[^n]: {% a\n     b\n     z %}\n    {.x}\nplain\n";
     assert_eq!(findings(note), [(6, 5, "unattached-block-attribute")]);
     let description = ":: t\n:   {% a\n     {k=v}\n: next\n";
-    assert_eq!(findings(description), [(3, 6, "unattached-block-attribute")]);
+    assert_eq!(
+        findings(description),
+        [(3, 6, "unattached-block-attribute")]
+    );
 }
 
 #[test]
