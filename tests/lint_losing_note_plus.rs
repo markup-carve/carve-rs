@@ -83,3 +83,9 @@ fn a_plus_that_takes_the_block_past_a_losing_plus_stays_quiet() {
     );
     assert!(to_html(source).contains("<p>para<a href=\"#fnref1\""));
 }
+
+#[test]
+fn a_tab_led_losing_plus_is_text() {
+    let source = "[^n]: x\n[^n]: \t+\n flush\n\nsee[^n]\n";
+    assert_eq!(findings(source), ["2:1 duplicate-footnote-definition"]);
+}

@@ -4921,6 +4921,8 @@ impl<'a> Walk<'a> {
                 // reported as for any marker-line `+` (carve#5953 ruling A).
                 let line = self.first_line + at;
                 if is_cont_marker(c.rest)
+                    && !self.quote_note_plus_line
+                    && !behind_tab(self.lines[at], c.rest)
                     && !self
                         .refused
                         .iter()
