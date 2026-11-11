@@ -2485,6 +2485,35 @@ impl<'a> Walk<'a> {
         Some(block.frames.clone())
     }
 
+    fn restore_attached_code_span_tail(&mut self, at: usize) {
+        let frames = self.attached_code_span_tail(at);
+        self.span_tail_at = frames.as_ref().map(|_| at);
+        if let Some(frames) = frames {
+            self.replace_frames(frames);
+        }
+    }
+
+    fn span_tail_reached(&self, at: usize, reached: usize) -> usize {
+        if self.span_tail_at == Some(at) {
+            self.frames.len() - 1
+        } else {
+            reached
+        }
+    }
+
+    fn lead_text_span_tail(&self, at: usize, c: &mut Cursor<'_>, target: usize, shift: usize) {
+        let indent = self
+            .attached
+            .as_ref()
+            .map(|block| indent_cols(self.lines[block.from]).0)
+            .filter(|&indent| self.span_tail_at == Some(at) && c.col < indent);
+        if let Some(indent) = indent {
+            c.lead_at(indent + shift + c.attachment_shift, false);
+        } else {
+            c.lead_in(target, shift, false);
+        }
+    }
+
     fn lazy_shift(
         &self,
         at: usize,
@@ -3624,11 +3653,7 @@ impl<'a> Walk<'a> {
             .rposition(|f| f.kind == Kind::Fence && matches!(f.closer, Some(Closer::Fence(..))));
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
-        let span_tail = self.attached_code_span_tail(at);
-        self.span_tail_at = span_tail.as_ref().map(|_| at);
-        if let Some(frames) = span_tail {
-            self.replace_frames(frames);
-        }
+        self.restore_attached_code_span_tail(at);
         for k in 1..self.frames.len() {
             if self.reaches_colon_suffix(k, c.col) {
                 reached = self.frames.len() - 1;
@@ -3694,9 +3719,7 @@ impl<'a> Walk<'a> {
         reached = self.attached_item_after_quote(at, c, reached);
         reached = self.attach_unclosed_quote_comment(at, reached, c);
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
-        if self.span_tail_at == Some(at) {
-            reached = self.frames.len() - 1;
-        }
+        reached = self.span_tail_reached(at, reached);
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.unattached_plus_is_letter(plus, c.rest, reached) {
@@ -3980,11 +4003,6 @@ impl<'a> Walk<'a> {
                 top.last = Last::Block;
             }
             Form::Text => {
-                let span_tail = self.span_tail_at == Some(at);
-                let span_indent = self
-                    .attached
-                    .as_ref()
-                    .map(|block| indent_cols(self.lines[block.from]).0);
                 let owner = self.top();
                 let cut = owner
                     .cut
@@ -4006,11 +4024,7 @@ impl<'a> Walk<'a> {
                 } else {
                     0
                 };
-                if span_tail && span_indent.is_some_and(|indent| c.col < indent) {
-                    c.lead_at(span_indent.unwrap() + shift + c.attachment_shift, false);
-                } else {
-                    c.lead_in(target, shift, false);
-                }
+                self.lead_text_span_tail(at, c, target, shift);
             }
             form => {
                 let (mut canon, shift) = (self.top().canon, self.top().shift);
