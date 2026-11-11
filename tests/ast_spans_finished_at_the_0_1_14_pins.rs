@@ -48,18 +48,20 @@ fn verse_lead(doc: &Value, path: &[&str]) -> (Span, Vec<Span>) {
 fn a_verse_lead_places_its_authored_spaces_and_omits_columns_cut_from_a_tab() {
     // CARVE-P12-004: a column a tab expanded has no exact source range; an
     // authored space beside it does.
-    let item = ["children", "0", "items", "0", "children", "1", "children", "0"];
+    let item = [
+        "children", "0", "items", "0", "children", "1", "children", "0",
+    ];
     let nested = [
-        "children", "0", "items", "0", "children", "1", "items", "0", "children", "1",
-        "children", "0",
+        "children", "0", "items", "0", "children", "1", "items", "0", "children", "1", "children",
+        "0",
     ];
     let quoted_nested = [
-        "children", "0", "children", "0", "items", "0", "children", "1", "items", "0",
-        "children", "1", "children", "0",
+        "children", "0", "children", "0", "items", "0", "children", "1", "items", "0", "children",
+        "1", "children", "0",
     ];
     let description = [
-        "children", "0", "items", "1", "children", "1", "items", "0", "children", "1",
-        "children", "0",
+        "children", "0", "items", "1", "children", "1", "items", "0", "children", "1", "children",
+        "0",
     ];
     let top = ["children", "0", "children", "0"];
     let cases: [Case; 6] = [
@@ -108,10 +110,7 @@ fn a_verse_lead_places_its_authored_spaces_and_omits_columns_cut_from_a_tab() {
 fn a_block_comment_in_a_marker_line_note_ends_after_its_closer() {
     // Corpus 951-2: the comment belongs to the note and ends after `%%%`.
     for (source, span) in [
-        (
-            "- [^n]: t\n  %%%\n  %%%\n\n    ~~~\n    e\n]\n",
-            (12, 21),
-        ),
+        ("- [^n]: t\n  %%%\n  %%%\n\n    ~~~\n    e\n]\n", (12, 21)),
         ("- [^n]: t\n  %%%\n  z\n  %%%\n    e\n", (12, 25)),
     ] {
         let doc = ast(source);
