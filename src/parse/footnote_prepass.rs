@@ -2576,12 +2576,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                             if in_skipped_note {
                                 note.frame_lazy(indent_columns(&line), trim_ascii_start(&line))
                             } else {
-                                line
+                                line.clone()
                             }
                         });
-                note.push_with(kept, Some(self.first_source_line + i), |_| {
-                    Some(marker_col as isize)
-                });
+                // The attached line may be stripped past the marker column.
+                let column = stripped_col(Some(0), lines[i], &line).unwrap_or(marker_col as isize);
+                note.push_with(kept, Some(self.first_source_line + i), |_| Some(column));
                 i += 1;
             }
             let later_line_block_closer = attached_refs
