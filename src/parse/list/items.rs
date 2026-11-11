@@ -3138,33 +3138,12 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 ))
             })
             .unwrap_or(self.content_col);
-        let opener_misses_marker = lazy_opener
-            && trim_ascii_start(strip_lazy(next)).starts_with("{%")
-            && self
-                .cur
-                .source_line(self.cur.pos)
-                .and_then(|line| crate::parse::own_lines::authored_comment_column(line, None))
-                .map(|(column, _)| column)
-                .zip(
-                    self.cur
-                        .source_line(self.item_head)
-                        .zip(self.cur.source_col(self.item_head)),
-                )
-                .is_some_and(|(opener, (line, stripped))| {
-                    let marker = crate::parse::own_lines::authored_visual_column(
-                        line,
-                        stripped.max(0) as usize + 1,
-                    );
-                    opener > 0 && opener < marker
-                });
         let opener_quotes = self
             .cur
             .source_line(self.cur.pos)
             .and_then(|line| crate::parse::own_lines::authored_comment_column(line, None))
             .map_or(usize::MAX, |(_, quotes)| quotes);
-        let run = if opener_misses_marker {
-            RefusedBraceRun::Lines(1)
-        } else {
+        let run = {
             refused_brace_run_with_columns(
                 (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
                 !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
