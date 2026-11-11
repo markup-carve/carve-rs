@@ -2329,6 +2329,7 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
+        let marker_line_host = self.marker_line_attachment_host(attached);
         // A fence that the previous attachment left at document level owns a
         // marker-column `+` in its payload before any older host may reopen.
         let fence_line = if attached
@@ -2341,7 +2342,9 @@ impl<'a> Walk<'a> {
             src
         };
         if self.frames.last().is_some_and(|frame| {
-            frame.kind == Kind::Fence && indent_cols(fence_line).0 >= frame.open_col
+            frame.kind == Kind::Fence
+                && indent_cols(fence_line).0 >= frame.open_col
+                && !(marker_line_host && frame.attached_blank_end.is_some_and(|blank| at > blank))
         }) {
             return;
         }
