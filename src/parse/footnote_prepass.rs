@@ -2576,12 +2576,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                             if in_skipped_note {
                                 note.frame_lazy(indent_columns(&line), trim_ascii_start(&line))
                             } else {
-                                line
+                                line.clone()
                             }
                         });
-                note.push_with(kept, Some(self.first_source_line + i), |_| {
-                    Some(marker_col as isize)
-                });
+                // The attached line may be stripped past the marker column.
+                let column = stripped_col(Some(0), lines[i], &line).unwrap_or(marker_col as isize);
+                note.push_with(kept, Some(self.first_source_line + i), |_| Some(column));
                 i += 1;
             }
             let later_line_block_closer = attached_refs
@@ -3923,7 +3923,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut in_skipped_note = false;
         for (offset, line) in attached.iter().take(count).cloned().enumerate() {
-            let col = lines[i + offset].chars().count() as isize - line.chars().count() as isize;
+            let col = lines[i + offset].chars().count() as isize
+                - strip_lazy(&line).chars().count() as isize;
             in_skipped_note = offset < lead
                 && if parse_footnote_def_line(trim_ascii_start(&line)).is_some() {
                     false
