@@ -38,7 +38,7 @@ fn a_following_sibling_takes_no_separator() {
     );
     assert_eq!(
         carve::to_carve("- o\n  - - s\n  %% c\n  - s\n"),
-        "- o\n  - - s\n  - s\n\n  %% c\n"
+        "- o\n  - - s\n  %% c\n  - s\n"
     );
 }
 
