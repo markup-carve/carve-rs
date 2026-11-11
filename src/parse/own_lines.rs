@@ -2482,6 +2482,7 @@ impl<'a> Walk<'a> {
                 .any(|line| is_blank_line(line))
             || detect_fence_open(trim_ascii_start(self.lines[block.from])).is_some()
             || detect_fence_open(trim_ascii_start(self.lines[at])).is_some()
+            || !foldable_plain_line(trim_ascii_start(self.lines[at]))
             || !block.span_scan.code_open(&self.lines[block.from..at])
         {
             return None;

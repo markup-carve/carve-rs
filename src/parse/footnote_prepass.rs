@@ -2223,6 +2223,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 let first_blank = (from + 1..lines.len())
                     .find(|&at| is_blank_line(lines[at]))
                     .unwrap_or(lines.len());
+                // The marker-line grant stops at its first blank. Only an
+                // own-line attachment can carry that blank into its fence.
+                if trim_ascii(first) == "+" {
+                    return Some(first_blank);
+                }
                 return Some(own_line_fence_end(
                     CursorLines::Slice(lines),
                     from,
@@ -3035,7 +3040,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let resumes = resumes || span_resumes;
         if !resumes {
             // The run still reaches an open fence that ends with the note.
-            if note.holds_open_fence() {
+            if note.holds_open_fence() && trim_ascii(state.first) != "+" {
                 for (at, blank) in lines.iter().enumerate().take(after_run).skip(*i) {
                     let (residue, consumed, synthetic) =
                         slice_columns_mapped(blank, state.body_indent, true);
@@ -3619,10 +3624,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
             .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
-        if attached
-            .first()
-            .is_some_and(|line| detect_fence_open(trim_ascii_start(line)).is_some())
-        {
+        if attached.first().is_some_and(|line| {
+            detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                !lines[i + 1..].iter().any(|raw| {
+                    is_fence_close(trim_ascii_start(raw), open)
+                        && indent_columns(raw) == indent_columns(lines[i])
+                })
+            })
+        }) {
             let marker_col = host.note_floor.saturating_sub(2);
             if let Some(missed) =
                 (1..attached.len()).find(|&at| indent_columns(lines[i + at]) < marker_col)
