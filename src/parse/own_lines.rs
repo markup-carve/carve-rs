@@ -5012,10 +5012,10 @@ impl<'a> Walk<'a> {
                         self.refuse_line = false;
                         refused = true;
                         // The comment lines after a refused item marker stay in the item.
-                        let comment_follows = self
-                            .lines
-                            .get(at + 1)
-                            .is_some_and(|next| trim_ascii_start(unquoted(next)).starts_with("%%"));
+                        let comment_follows = self.lines.get(at + 1).is_some_and(|next| {
+                            let rest = trim_ascii_start(unquoted(next));
+                            rest.starts_with("%%") && !rest.starts_with("%%%")
+                        });
                         if host == Kind::Item && comment_follows {
                             self.skip_invisible(frame, at, column, None, true);
                         }
