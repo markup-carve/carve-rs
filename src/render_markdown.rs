@@ -2145,11 +2145,13 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
         ctx.footnote_allowed_lists.clear();
         ctx.previous_list = outer;
         let mut lines = trim_non_nbsp(&body).split('\n');
-        out.push_str(&format!(
-            "[^{}]: {}\n",
-            escape_md_html(&strip_controls(label)),
-            lines.next().unwrap_or_default()
-        ));
+        let first = lines.next().unwrap_or_default();
+        out.push_str(&format!("[^{}]:", escape_md_html(&strip_controls(label))));
+        if !first.is_empty() {
+            out.push(' ');
+            out.push_str(first);
+        }
+        out.push('\n');
         render_continuation_lines(&mut out, lines, 4);
     }
     out
