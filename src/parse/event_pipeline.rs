@@ -4372,6 +4372,7 @@ fn parse_document_with_footnotes_options(
         fill_offsets(&mut doc.children, &starts);
         let source_lines: Vec<&str> = original_source.lines().collect();
         narrow_to_last_placed_child(&mut doc.children, &source_lines);
+        positions::end_before_next_sibling(&mut doc.children);
         for blocks in doc.footnote_defs.values_mut() {
             definition::start_descriptions_at_their_comments(blocks);
             fill_offsets(blocks, &starts);

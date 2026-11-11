@@ -1048,6 +1048,50 @@ pub(in crate::parse) fn start_list_at_markup_after_quote(pos: &mut Pos, lines: &
     pos.start_offset += placing;
 }
 
+/// A block whose span runs onto the line its next sibling opens on ends at that
+/// line's start: sibling spans do not overlap (PART 12 §4, carve-rs#4262).
+pub(in crate::parse) fn end_before_next_sibling(blocks: &mut [BlockNode]) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+    struct Clamp(Pos);
+    impl SubtreeVisitor for Clamp {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn position(&mut self, pos: &mut Pos) {
+            if pos.file == self.0.file
+                && pos.end_offset > self.0.end_offset
+                && pos.start_offset < self.0.end_offset
+            {
+                pos.end_line = self.0.end_line;
+                pos.end_column = self.0.end_column;
+                pos.end_offset = self.0.end_offset;
+            }
+        }
+    }
+    for at in 1..blocks.len() {
+        let Some(next) = crate::ast_json::block_pos(&blocks[at]).cloned() else {
+            continue;
+        };
+        let Some(prev) = crate::ast_json::block_pos(&blocks[at - 1]) else {
+            continue;
+        };
+        if prev.file != next.file
+            || prev.start_line >= next.start_line
+            || prev.end_line != next.start_line
+            || prev.end_offset <= next.start_offset
+        {
+            continue;
+        }
+        let mut bound = next.clone();
+        bound.end_line = next.start_line;
+        bound.end_column = 1;
+        bound.end_offset = next.start_offset - (next.start_column - 1);
+        visit_block_children(&mut blocks[at - 1], &mut Clamp(bound));
+    }
+}
+
 pub(in crate::parse) fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
     for block in blocks.iter_mut() {
         match block {
