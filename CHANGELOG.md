@@ -18,7 +18,7 @@ Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes la
 ### Breaking
 
 - HTML import reads only the canonical `data-carve-*` carriers; `data-djot-*` attributes import as ordinary attributes. Lint suppression no longer aliases `a11y/heading-jump`, and accessibility lint reports `heading-level-skip` (#4195, #4258).
-- Lint reports a refused own-line `+` as `refused-continuation-marker` instead of `continuation-marker-refused` (#4201).
+- Lint reports a refused own-line `+` that stands after a block as `refused-continuation-marker` instead of `continuation-marker-refused`; a refused first-block `+` keeps `continuation-marker-refused` (#4201).
 - `render_markdown_with_options` returns `MarkdownRenderError` and `try_to_markdown_with_options` returns `CarveWriteError`: a roundtrip carrier the writer cannot spell is an error, and the CLI prints it and exits 1 (#4252).
 
 ### Fixes
