@@ -3143,11 +3143,13 @@ impl<'a> Walk<'a> {
         } else if verse_payload
             && !inner.verse_opener_tab
             && !inner.verse_marker_line
-            && c.authored_col >= inner.verse_open_authored_col
+            && Self::verse_frame_col(c, frames) >= inner.verse_open_authored_col
         {
             let opener_shift = inner.verse_open_authored_col.saturating_sub(inner.canon);
             c.lead_at(
-                c.authored_col.saturating_sub(opener_shift) + inner.shift + c.attachment_shift,
+                Self::verse_frame_col(c, frames).saturating_sub(opener_shift)
+                    + inner.shift
+                    + c.attachment_shift,
                 false,
             );
         } else if inner.line_block && inner.verse_rewritten_opener && !inner.verse_marker_line {
@@ -3193,6 +3195,24 @@ impl<'a> Walk<'a> {
         } else {
             c.lead_in(target, inner.shift, false);
         }
+    }
+
+    /// A tabbed verse lead walks from each containing frame's content column
+    /// (carve#5885); the opener's own indentation is no frame.
+    fn verse_frame_col(c: &Cursor<'_>, frames: &[Frame]) -> usize {
+        let lead = &c.src[..c.src.len() - c.rest.len()];
+        if !lead.contains('\t') {
+            return c.authored_col;
+        }
+        let start = frames
+            .iter()
+            .rposition(|frame| frame.kind == Kind::Quote)
+            .map_or(1, |index| index + 1);
+        let origins: Vec<_> = frames[start..frames.len() - 1]
+            .iter()
+            .map(|frame| frame.col + frame.shift)
+            .collect();
+        frame_tab_column(lead, &origins)
     }
 
     fn in_open_payload(&self, missed: bool, reached: usize, col: usize, rest: &str) -> bool {
