@@ -3051,11 +3051,11 @@ impl<'a> Walk<'a> {
         } else if matches!(closer, Some(Closer::Fence(..)))
             && c.src[..c.src.len() - c.rest.len()]
                 .find('\t')
-                .is_some_and(|at| at >= inner.canon)
+                .is_some_and(|at| {
+                    at >= inner.canon && c.src[at + 1..c.src.len() - c.rest.len()].contains(' ')
+                })
         {
-            // Code payload is verbatim after its structural frames are stripped.
-            // Keep a tab that begins after those frames for the recursive body
-            // reader; a tab straddling their columns is structural instead.
+            // A tab authored after the structural lead is literal code.
             c.lead_at(c.authored_col, false);
         } else if verse_payload
             && !inner.verse_opener_tab
@@ -3640,8 +3640,14 @@ impl<'a> Walk<'a> {
         self.frames.len() > host + 1 || prior_code_fence.is_some_and(|fence| fence > host)
     }
 
-    fn rephase_line_column(&self, c: &mut Cursor<'_>, reached: usize) {
-        if reached == 0 || !c.src[..indent_cols(c.src).1].contains('\t') {
+    fn rephase_line_column(&self, c: &mut Cursor<'_>, reached: usize, at: usize) {
+        if reached == 0
+            || !c.src[..indent_cols(c.src).1].contains('\t')
+            || self.frames.iter().any(|frame| frame.closer.is_some())
+            || self.frames.iter().any(|frame| frame.line_block)
+            || detect_fence_open(c.rest).is_some()
+            || at > 0 && is_cont_marker(trim_ws_start(self.lines[at - 1]))
+        {
             return;
         }
         let origins: Vec<_> = self.frames[1..=reached]
@@ -3796,7 +3802,7 @@ impl<'a> Walk<'a> {
         reached = self.reach_after_attached_fence_end(reached, attached_fence_ended);
         // The line was admitted through these frames using their tab stops.
         // Record its marker or follower column in those same coordinates.
-        self.rephase_line_column(c, reached);
+        self.rephase_line_column(c, reached, at);
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
@@ -5200,7 +5206,7 @@ pub(crate) struct AuthoredSourceGuard {
 impl AuthoredSourceGuard {
     pub(crate) fn install(source: &str) -> Self {
         if !source.contains("{%")
-            && !(source.contains('\t') && source.contains("[^"))
+            && !source.contains('\t')
             && !(source.contains('{') && source.contains('>'))
         {
             return Self {
@@ -5331,6 +5337,15 @@ pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
             };
         }
         visual
+    })
+}
+
+pub(crate) fn authored_line_contains_tab(line: usize) -> bool {
+    AUTHORED_SOURCE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|lines| lines.get(&line))
+            .is_some_and(|text| text.contains('\t'))
     })
 }
 

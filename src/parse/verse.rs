@@ -861,6 +861,19 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
         let mut columns = Vec::new();
         let expanded = expand_line_block_ws(stripped, options.positions.then_some(&mut columns));
         if options.positions {
+            // The ownership walk may have expanded an authored tab before the
+            // verse reader sees this line. Its generated spaces have no
+            // individual source column, just like tabs expanded here.
+            if cur
+                .source_line(line_at)
+                .is_some_and(own_lines::authored_line_contains_tab)
+            {
+                for (at, ch) in expanded.chars().enumerate() {
+                    if ch == crate::NBSP_PLACEHOLDER {
+                        columns[at] = None;
+                    }
+                }
+            }
             source_columns.push(columns);
         }
         let stripped_columns = stripped_col(cur.source_col(line_at), strip_lazy(line), stripped);

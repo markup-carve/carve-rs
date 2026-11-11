@@ -485,6 +485,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut literal_colon = marker_content
         .and_then(detect_line_block_open)
         .map(|width| (width, strip_cols, strip_cols));
+    let mut literal_colon_lead: Option<(String, String)> = None;
     let mut comment_fence = marker_comment.map(|open| {
         let descendant = marker_content.map_or(0, innermost_marker_content_col);
         (open.fence_len, strip_cols + descendant)
@@ -2181,9 +2182,50 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             comment_fence_strip = None;
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(payload_line, stripped, true);
-        // The next frame reads this line in its own coordinates. A tab left
-        // after the slice restarts at column zero there; the raw line's visual
-        // column is not an indentation to restore in the child frame.
+        // A tab left after slicing expands from column zero on the next read.
+        // Preserve its authored remainder for visible list lines, quoted or
+        // not: a quoted body measures its tabs after the quote frame, so its
+        // nested frames need the same remainder (carve#5720). Opaque payloads
+        // keep their literal tabs. A fence closer is structural even while
+        // the fence is open (carve#3141).
+        let fence_closer = fence.is_some_and(|open| {
+            indent <= open.content_col && is_fence_close(trim_ascii_start(payload_line), open)
+        });
+        let visible = fence.is_none()
+            && active_nested_fence.is_none()
+            && nested_fence.is_none()
+            && comment_fence.is_none()
+            && !in_comment_span;
+        let mut rewritten_lead = None;
+        // Verse indentation is relative to the opener (§23), so a line-block
+        // line sharing the opener's authored lead gets that lead's rewrite too.
+        let opener_lead = literal_colon_lead
+            .as_ref()
+            .filter(|_| literal_colon.is_some())
+            .filter(|(raw, _)| payload_line.starts_with(raw.as_str()));
+        let (sliced, consumed, synthetic) = if let Some((raw, columns)) = opener_lead {
+            let mut rebased = columns.clone();
+            rebased.push_str(&payload_line[raw.len()..]);
+            (rebased, raw.chars().count(), columns.len())
+        } else if literal_colon.is_none()
+            && detect_line_block_open(trim_ascii_start(payload_line)).is_none()
+            && stripped < indent
+            && (visible || fence_closer)
+            && sliced[..sliced.len() - trim_ascii_start(&sliced).len()].contains('\t')
+            && indent_columns(&sliced) != indent - stripped
+        {
+            let lead = payload_line.len() - trim_ascii_start(payload_line).len();
+            let mut columns = " ".repeat(indent - stripped);
+            rewritten_lead = Some((payload_line[..lead].to_string(), columns.clone()));
+            columns.push_str(&payload_line[lead..]);
+            (
+                columns,
+                payload_line[..lead].chars().count(),
+                indent - stripped,
+            )
+        } else {
+            (sliced, consumed, synthetic)
+        };
         let mut sliced = sliced;
         let mut trimmed_after_slice = 0usize;
         if (refused_nested_follower || refused_block_follower) && !sliced.starts_with(LAZY) {
@@ -2422,16 +2464,23 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
                 {
                     literal_colon = None;
+                    literal_colon_lead = None;
                 }
             } else if let Some(width) = detect_line_block_open(trim_ascii_start(line)) {
                 if indent >= strip_cols {
-                    // The stanza begins at its per-frame column, even when a
-                    // tab straddled a parent frame's content column.
                     let floor = nested_item_columns
                         .last()
-                        .map_or(strip_cols, |&(_, col)| col)
-                        .min(indent);
+                        .map_or(strip_cols, |&(_, col)| col);
+                    // A descendant item can have a higher content column
+                    // than this opener. Its stanza belongs at the opener,
+                    // unless a straddling tab left a residual lead to rebase.
+                    let floor = if rewritten_lead.is_none() {
+                        floor.min(indent)
+                    } else {
+                        floor
+                    };
                     literal_colon = Some((width, indent, floor));
+                    literal_colon_lead = rewritten_lead;
                 }
             }
         }
