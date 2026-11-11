@@ -1585,8 +1585,9 @@ struct QuoteBody<'a> {
     /// The line-block scan over `inner.lines`, advanced only by new lines.
     stanza_scan: (crate::parse::definition::LineBlockTail, usize),
     lead_span_scan: DescriptionLeadSpanScan,
-    /// `body_owning`'s stack of (indentation, line index) over `inner.lines`.
-    shallower_lines: (Vec<(usize, usize)>, usize),
+    /// `body_owning`'s stacks of (indentation, line index) over `inner.lines`,
+    /// one per quote depth.
+    shallower_lines: Vec<(Vec<(usize, usize)>, usize)>,
     // The comment run whose unmarked closer search already failed.
     in_fence: Option<FenceOpen>,
     opaque_tail: bool,
@@ -1963,7 +1964,10 @@ impl<'a> QuoteBody<'a> {
                 .filter(|_| !self.para_open.get() || self.nested_marker_last)
             {
                 Some((col, text)) => (Some(col), text),
-                None => (None, quoted_text),
+                None => (
+                    self.body_owning(comment_depth, indent_columns(quoted_text)),
+                    quoted_text,
+                ),
             }
         };
         if let Some((run, depth, _)) = self.comment_run {
@@ -1991,7 +1995,7 @@ impl<'a> QuoteBody<'a> {
             } else if host_col.is_some() {
                 host_col
             } else if comment_depth == 0 {
-                self.body_owning(indent_columns(stripped))
+                self.body_owning(0, indent_columns(stripped))
             } else {
                 None
             };
@@ -1999,14 +2003,20 @@ impl<'a> QuoteBody<'a> {
     }
 
     /// The content column of the item or description body that owns a line at
-    /// `column`, read from the nearest shallower marker line above it (PART 0 S1).
-    fn body_owning(&mut self, column: usize) -> Option<usize> {
+    /// `column` inside `depth` nested quotes, read from the nearest shallower
+    /// marker line above it at that depth (PART 0 S1).
+    fn body_owning(&mut self, depth: usize, column: usize) -> Option<usize> {
         if column == 0 {
             return None;
         }
+        if self.shallower_lines.len() <= depth {
+            self.shallower_lines
+                .resize_with(depth + 1, Default::default);
+        }
         // Lines by strictly rising indentation: the nearest shallower line
         // above any later line is on this stack, so each line is pushed once.
-        let (stack, seen) = &mut self.shallower_lines;
+        // A line outside the nested quote ends every body inside it.
+        let (stack, seen) = &mut self.shallower_lines[depth];
         if self.inner.lines.len() < *seen {
             stack.clear();
             *seen = 0;
@@ -2015,7 +2025,11 @@ impl<'a> QuoteBody<'a> {
             if line.text.starts_with(LAZY) || is_blank_line(&line.text) {
                 continue;
             }
-            let indent = indent_columns(&line.text);
+            let Some(text) = strip_quote_depth(&line.text, depth) else {
+                stack.clear();
+                continue;
+            };
+            let indent = indent_columns(text);
             while stack.last().is_some_and(|&(above, _)| above >= indent) {
                 stack.pop();
             }
@@ -2023,7 +2037,7 @@ impl<'a> QuoteBody<'a> {
         }
         *seen = self.inner.lines.len();
         let &(_, at) = stack.iter().rev().find(|&&(indent, _)| indent < column)?;
-        let mut rest = self.inner.lines[at].text.as_str();
+        let mut rest = strip_quote_depth(&self.inner.lines[at].text, depth)?;
         let mut base = 0;
         let mut owner = None;
         loop {
@@ -3340,6 +3354,10 @@ impl<'a> QuoteBody<'a> {
 }
 
 /// Whether a lazy `:`/`::` line is framed as text, and whether it is dedented.
+fn strip_quote_depth(text: &str, depth: usize) -> Option<&str> {
+    (0..depth).try_fold(text, |body, _| strip_prepass_blockquote_prefix(body))
+}
+
 fn lazy_marker_frame(open_entry: &QuotedEntryScan, line: &str, is_desc: bool) -> (bool, bool) {
     // A LAZY LINE HAS NO COLUMN (PART 0), so a `:`/`::` marker continues
     // the innermost open definition entry wherever it was written - the
