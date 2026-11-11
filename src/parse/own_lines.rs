@@ -307,6 +307,15 @@ fn marker_ladder_tab_col(
         .unwrap_or(measured)
 }
 
+fn open_code_fence_keeps_tabbed_line(frames: &[Frame], col: usize, tabbed_lead: bool) -> bool {
+    tabbed_lead
+        && frames.last().is_some_and(|inner| {
+            inner.kind == Kind::Fence
+                && matches!(inner.closer, Some(Closer::Fence(..)))
+                && col >= inner.open_col
+        })
+}
+
 /// The owner's state once a fence or span frame closes.
 fn last_after_closer(inner: Option<&Frame>) -> Last {
     match inner {
@@ -3573,7 +3582,8 @@ impl<'a> Walk<'a> {
                 reached = k;
                 continue;
             }
-            let frame_col = if c.src[..indent_cols(c.src).1].contains('\t') && reached > 0 {
+            let tabbed_lead = c.src[..indent_cols(c.src).1].contains('\t');
+            let frame_col = if tabbed_lead && reached > 0 {
                 let origins: Vec<_> = self.frames[1..=reached]
                     .iter()
                     .filter(|frame| frame.kind != Kind::Quote)
@@ -3583,7 +3593,9 @@ impl<'a> Walk<'a> {
             } else {
                 c.col
             };
-            if !c.rest.is_empty() && frame_col < f.col {
+            let opaque_code_payload =
+                open_code_fence_keeps_tabbed_line(&self.frames, c.col, tabbed_lead);
+            if !c.rest.is_empty() && frame_col < f.col && !opaque_code_payload {
                 break;
             }
             reached = k;
