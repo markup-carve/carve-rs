@@ -1589,28 +1589,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
 </section>"##,
     ),
     (
-        "1033-a-quote-attached-colon-keeps-a-later-plus",
-        "carve#5658: spec pin behavior pending its separate engine port",
-        r##"<blockquote>
-  <aside class="admonition note" aria-label="Note">
-    <p>x</p>
-    <p>zq</p>
-  </aside>
-</blockquote>"##,
-    ),
-    (
-        "1034-an-item-attached-colon-keeps-a-later-plus",
-        "carve#5658: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li>
-    <aside class="admonition note" aria-label="Note">
-      <p>x</p>
-    </aside>
-    zq
-  </li>
-</ul>"##,
-    ),
-    (
         "1035-an-own-line-item-fence-ends-in-a-note",
         "carve#5658: spec pin behavior pending its separate engine port",
         r##"<aside class="admonition note" aria-label="Note">

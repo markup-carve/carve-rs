@@ -2380,6 +2380,15 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
+        // The attached block is still open inside a colon body. Its line
+        // reaches that body before the original marker host can resume.
+        if self.frames.last().is_some_and(|frame| {
+            frame.kind == Kind::Colon
+                && !frame.attached_blank_end.is_some_and(|blank| at > blank)
+                && doc_column(src, quoted_rest(src)) >= frame.colon_suffix_max_col
+        }) {
+            return;
+        }
         let marker_line_host = self.marker_line_attachment_host(attached);
         // A fence that the previous attachment left at document level owns a
         // marker-column `+` in its payload before any older host may reopen.
@@ -3722,6 +3731,17 @@ impl<'a> Walk<'a> {
         self.resume_attached_host(at, c.src);
         self.restore_attached_code_span_tail(at);
         for k in 1..self.frames.len() {
+            // A colon body reached by this line owns even a bare `+` at an
+            // enclosing marker's column. Test that open suffix before the
+            // enclosing marker can offer the line to its host (carve#5923).
+            if is_cont_marker(c.rest)
+                && self.frames.last().is_some_and(|last| {
+                    last.kind == Kind::Colon && c.col >= last.colon_suffix_max_col
+                })
+            {
+                reached = self.frames.len() - 1;
+                break;
+            }
             if self.reaches_colon_suffix(k, c.col) {
                 reached = self.frames.len() - 1;
                 break;
