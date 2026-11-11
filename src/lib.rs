@@ -218,7 +218,7 @@ pub use render_loss::{
     with_render_loss_report, CheckedRenderOptions, RawNodeType, RenderLoss, RenderLossError,
     RenderResult, RenderTarget, DEFAULT_MAX_RENDER_LOSSES,
 };
-pub use render_markdown::{render_markdown, render_markdown_with_options};
+pub use render_markdown::{render_markdown, render_markdown_with_options, MarkdownRenderError};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 pub use source_layout::{parse_with_source_layout, to_source_layout_json};
 pub use source_patch::{
@@ -711,15 +711,15 @@ pub fn to_json_with_options(source: &str, options: &Options<'_>) -> String {
 /// Markdown is inherently static, so the render mode is forced to
 /// [`Mode::Interactive`] in the hooks (the HTML-only static path never runs);
 /// the Markdown renderer flattens containers on its own.
+/// Returns a typed writer refusal when a roundtrip carrier cannot be spelled.
 pub fn try_to_markdown_with_options(
     source: &str,
     options: &Options<'_>,
-) -> Result<String, ProfileViolationError> {
+) -> Result<String, CarveWriteError> {
     let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
         prepare_doc(source, options, Mode::Interactive, false)
     });
-    let rendered = render_markdown_with_options(&doc?, options)
-        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
+    let rendered = render_markdown_with_options(&doc?, options)?;
     render_loss::collect_markdown_unattached(unattached);
     Ok(rendered)
 }

@@ -84,6 +84,10 @@ name = "suite"
 path = "tests/suite/main.rs"
 
 [[test]]
+name = "markdown_carrier_writer_refusal"
+path = "tests/markdown_carrier_writer_refusal.rs"
+
+[[test]]
 name = "plus_ownership_remaining_5658"
 path = "tests/plus_ownership_remaining_5658.rs"
 
