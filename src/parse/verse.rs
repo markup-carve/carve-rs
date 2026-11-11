@@ -861,25 +861,6 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
         let mut columns = Vec::new();
         let expanded = expand_line_block_ws(stripped, options.positions.then_some(&mut columns));
         if options.positions {
-            // The ownership walk may have expanded an authored tab before the
-            // verse reader sees this line. Its generated spaces have no
-            // individual source column, just like tabs expanded here.
-            if cur
-                .source_line(line_at)
-                .and_then(own_lines::authored_line_len_after_tab_lead)
-                .is_some_and(|len| {
-                    cur.source_col(line_at)
-                        .is_some_and(|column| column > len as isize)
-                })
-            {
-                let leading = expanded
-                    .chars()
-                    .take_while(|&ch| ch == crate::NBSP_PLACEHOLDER)
-                    .count();
-                for column in columns.iter_mut().take(leading) {
-                    *column = None;
-                }
-            }
             source_columns.push(columns);
         }
         let stripped_columns = stripped_col(cur.source_col(line_at), strip_lazy(line), stripped);

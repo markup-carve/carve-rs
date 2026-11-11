@@ -601,3 +601,7 @@ path = "tests/position_free_comment_runs_5724.rs"
 [[test]]
 name = "ast_ungated_rows_5480"
 path = "tests/ast_ungated_rows_5480.rs"
+
+[[test]]
+name = "tabbed_verse_authored_spaces_5755"
+path = "tests/tabbed_verse_authored_spaces_5755.rs"
