@@ -1089,55 +1089,97 @@ fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>,
 fn inter_item_comments(doc: &Document) -> (HashMap<usize, Vec<Vec<String>>>, HashSet<usize>) {
     let mut by_list = HashMap::new();
     let mut moved = HashSet::new();
-    for block in &doc.children {
-        let BlockNode::List(list) = block else {
-            continue;
-        };
-        if list.items.len() < 2 {
-            continue;
-        }
-        let mut gaps = vec![Vec::new(); list.items.len()];
-        for candidate in &doc.children {
-            let BlockNode::Comment(comment) = candidate else {
+    let mut sequences: Vec<&[BlockNode]> = vec![&doc.children];
+    sequences.extend(doc.footnote_defs.values().map(Vec::as_slice));
+    while let Some(blocks) = sequences.pop() {
+        for block in blocks {
+            match block {
+                BlockNode::List(list) => {
+                    sequences.extend(list.items.iter().map(|item| item.children.as_slice()))
+                }
+                BlockNode::BlockQuote(node) => sequences.push(&node.children),
+                BlockNode::Div(node) => sequences.push(&node.children),
+                BlockNode::Admonition(node) => sequences.push(&node.children),
+                BlockNode::Directive(node) => sequences.push(&node.children),
+                BlockNode::Section(node) => sequences.push(&node.children),
+                BlockNode::LineBlock(node) => sequences.push(&node.children),
+                BlockNode::FigureGroup(node) => sequences.push(&node.children),
+                BlockNode::DefinitionList(node) => {
+                    for item in &node.items {
+                        sequences
+                            .extend(item.definitions.iter().map(|def| def.children.as_slice()));
+                    }
+                }
+                BlockNode::Table(node) => {
+                    for row in &node.rows {
+                        for cell in &row.cells {
+                            if let Some(children) = &cell.blocks {
+                                sequences.push(children);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            let BlockNode::List(list) = block else {
                 continue;
             };
-            let Some(pos) = comment.pos.as_ref() else {
-                continue;
-            };
-            if comment.block
-                || comment.delimited
-                || is_region_marker_comment(comment)
-                || pos.start_column != 1
-                || pos.file.is_some()
-            {
+            if list.items.len() < 2 {
                 continue;
             }
-            let after_index = list.items.partition_point(|item| {
-                item.pos.as_ref().is_some_and(|item_pos| {
-                    item_pos.file == pos.file && item_pos.end_offset <= pos.start_offset
-                })
-            });
-            if after_index == 0 || after_index == list.items.len() {
-                continue;
-            }
-            let Some(after) = list.items[after_index].pos.as_ref() else {
-                continue;
-            };
-            if after.file == pos.file && pos.end_offset <= after.start_offset {
-                let content = comment.content.trim_end_matches([' ', '\t']);
-                gaps[after_index - 1].push(if content.is_empty() {
-                    "%%".to_string()
-                } else {
-                    format!("%% {content}")
+            let mut gaps = vec![Vec::new(); list.items.len()];
+            for candidate in blocks {
+                let BlockNode::Comment(comment) = candidate else {
+                    continue;
+                };
+                let Some(pos) = comment.pos.as_ref() else {
+                    continue;
+                };
+                if comment.block
+                    || comment.delimited
+                    || is_region_marker_comment(comment)
+                    || list
+                        .items
+                        .first()
+                        .and_then(|item| item.pos.as_ref())
+                        .map_or(true, |item| pos.start_column != item.start_column)
+                    || pos.file.is_some()
+                {
+                    continue;
+                }
+                let after_index = list.items.partition_point(|item| {
+                    item.pos.as_ref().is_some_and(|item_pos| {
+                        item_pos.file == pos.file && item_pos.end_offset <= pos.start_offset
+                    })
                 });
-                moved.insert(pos.start_offset);
+                if after_index == 0 || after_index == list.items.len() {
+                    continue;
+                }
+                let Some(after) = list.items[after_index].pos.as_ref() else {
+                    continue;
+                };
+                if after.file == pos.file && pos.end_offset <= after.start_offset {
+                    let content = comment.content.trim_end_matches([' ', '\t']);
+                    gaps[after_index - 1].push(if content.is_empty() {
+                        "%%".to_string()
+                    } else {
+                        format!("%% {content}")
+                    });
+                    moved.insert(pos.start_offset);
+                }
             }
-        }
-        if gaps.iter().any(|gap| !gap.is_empty()) {
-            by_list.insert(list as *const List as usize, gaps);
+            if gaps.iter().any(|gap| !gap.is_empty()) {
+                by_list.insert(list as *const List as usize, gaps);
+            }
         }
     }
     (by_list, moved)
+}
+
+fn moved_inter_item_comment(block: &BlockNode, ctx: &CarveContext) -> bool {
+    matches!(block, BlockNode::Comment(comment)
+        if comment.pos.as_ref().is_some_and(|pos|
+            pos.file.is_none() && ctx.inter_item_comment_offsets.contains(&pos.start_offset)))
 }
 
 fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: EscapeMode) -> String {
@@ -1256,10 +1298,7 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
                 ctx.list_note_limit = next_lines[index].unwrap_or(usize::MAX);
                 let mut text = render_block(session, child, &mut ctx);
-                if matches!(child, BlockNode::Comment(comment)
-                    if comment.pos.as_ref().is_some_and(|pos|
-                        pos.file.is_none() && ctx.inter_item_comment_offsets.contains(&pos.start_offset)))
-                {
+                if moved_inter_item_comment(child, &ctx) {
                     text.clear();
                 }
                 if let Some(notes) = list_notes_after(session, child, next_lines[index], &mut ctx) {
@@ -2046,6 +2085,9 @@ fn render_blocks(
             });
         ctx.list_note_limit = next_line.unwrap_or(enclosing_note_limit);
         let mut text = render_block(session, block, ctx);
+        if moved_inter_item_comment(block, ctx) {
+            text.clear();
+        }
         if item.is_none() {
             if let Some(notes) = list_notes_after(session, block, next_line, ctx) {
                 text.push('\n');
@@ -2852,6 +2894,9 @@ fn render_item_blocks(
         ctx.item_followed_by_marker = followed_by_marker && nothing_visible_below;
         ctx.item_followed_by_tight_marker = followed_by_tight_marker && nothing_visible_below;
         let mut rendered = render_block(session, block, ctx);
+        if moved_inter_item_comment(block, ctx) {
+            rendered.clear();
+        }
         ctx.item_followed_by_marker = followed_by_marker;
         ctx.item_followed_by_tight_marker = followed_by_tight_marker;
         guard_literal_plus_after_nested_list(prev, block, &mut rendered);
