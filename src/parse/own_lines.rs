@@ -2260,10 +2260,7 @@ impl<'a> Walk<'a> {
         };
         // An own-line fence's blank is its last payload when the next line
         // reaches a note or definition body's marker column as a `+`.
-        if attached
-            .frames
-            .last()
-            .is_some_and(|host| matches!(host.kind, Kind::Note | Kind::Dd))
+        if self.own_line_marker_plus_follower_reaches(attached, at)
             && self.lines.get(at).is_some_and(|line| {
                 is_cont_marker(indent_rest(line)) && indent_cols(line).0 == attached.marker
             })
@@ -2342,6 +2339,17 @@ impl<'a> Walk<'a> {
             && host.kind.is_marker_body()
     }
 
+    fn own_line_marker_plus_follower_reaches(&self, attached: &AttachedBlock, at: usize) -> bool {
+        attached
+            .frames
+            .last()
+            .is_some_and(|host| matches!(host.kind, Kind::Note | Kind::Dd))
+            && self
+                .lines
+                .get(at + 1)
+                .is_some_and(|line| indent_cols(line).0 >= attached.marker + 2)
+    }
+
     /// A `+` right after the one block a `+` attached reaches the same host, whose
     /// frames the walk closed when it read that block where it stands.
     fn reopen_attached_host(&mut self, at: usize, src: &str) {
@@ -2363,11 +2371,7 @@ impl<'a> Walk<'a> {
         if self.frames.last().is_some_and(|frame| {
             frame.kind == Kind::Fence
                 && indent_cols(fence_line).0 >= frame.open_col
-                && !((marker_line_host
-                    || attached
-                        .frames
-                        .last()
-                        .is_some_and(|host| matches!(host.kind, Kind::Note | Kind::Dd)))
+                && !((marker_line_host || self.own_line_marker_plus_follower_reaches(attached, at))
                     && frame.attached_blank_end.is_some_and(|blank| at > blank))
         }) {
             return;

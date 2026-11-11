@@ -144,3 +144,24 @@ fn quote_fence_tail_ends_before_document_sibling() {
     let expected = "<blockquote>\n  <p>p</p>\n  <pre><code>a\n\n ```\n  zq\n</code></pre>\n</blockquote>\n<p>outside0</p>";
     assert_eq!(carve::to_html(source).trim(), expected);
 }
+
+#[test]
+fn below_content_refused_plus_296() {
+    let source = "see[^a]\n\n[^a]: p\n+\n```\na\n\n+\n zq";
+    let expected = "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<p>+\nzq</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>p</p>\n      <pre><code>a\n\n</code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn below_content_refused_plus_595() {
+    let source = ":: t\n: p\n+\n```\na\n\n+\nzq";
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>p</p>\n    <pre><code>a\n\n</code></pre>\n  </dd>\n</dl>\n<p>+\nzq</p>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn below_content_refused_plus_596() {
+    let source = ":: t\n: p\n+\n```\na\n\n+\n zq";
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>p</p>\n    <pre><code>a\n\n</code></pre>\n  </dd>\n</dl>\n<p>+\nzq</p>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
