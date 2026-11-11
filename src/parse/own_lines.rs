@@ -2247,8 +2247,20 @@ impl<'a> Walk<'a> {
             return false;
         };
         let mut last = at;
-        while (attached.frames.last().is_some_and(|f| f.kind == Kind::Item)
-            || self.marker_line_attachment_host(attached))
+        let view = |k: usize| strip_quote_levels(self.lines[k], attached.depth).map(trim_ws_start);
+        // A blank after the attached block keeps the host's later marker-column
+        // `+` for every host; an unclosed attached fence keeps it as payload
+        // (model `endsAt`, carve#5639).
+        let first = view(attached.from).unwrap_or("");
+        let open_fence = detect_fence_open(first).filter(|open| {
+            !(attached.from + 1..at)
+                .any(|k| view(k).is_some_and(|line| is_fence_close(line, *open)))
+        });
+        let host_is_item = attached.frames.last().is_some_and(|f| f.kind == Kind::Item);
+        let trims = (open_fence.is_none()
+            && (host_is_item || parse_footnote_def_line(first).is_none()))
+            || self.marker_line_attachment_host(attached);
+        while trims
             && last > attached.from
             && strip_quote_levels(self.lines[last - 1], attached.depth).is_some_and(is_blank_line)
         {
