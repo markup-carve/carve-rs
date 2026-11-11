@@ -1695,6 +1695,23 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             owner: continuation_marker::Kind::Footnote,
         };
         if first_for_label && !in_container {
+            if trim_ascii(def.first) == "+" {
+                let before = i;
+                i = self.advance_past_interleaved_definitions(i, raw_def_line);
+                if i > before
+                    && self.lines.get(i).is_some_and(|line| is_blank_line(line))
+                    && self.lines[i..]
+                        .iter()
+                        .find(|line| !is_blank_line(line))
+                        .is_some_and(|line| indent_columns(line) >= body_indent)
+                {
+                    note.lines[0].clear();
+                    note.line_map[0] = None;
+                    if self.positions {
+                        note.col_map[0] = None;
+                    }
+                }
+            }
             i = self.skip_losing_plus_lines(i, def.label, def.first, raw_def_line);
             i = self.lone_plus_first_block(
                 &mut note,
@@ -1951,6 +1968,42 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map(|(label, _)| label_key(label))
     }
 
+    /// Definitions do not consume a pending `+` grant. Read plain sibling
+    /// definitions before deciding which later block that grant takes, and
+    /// discard their losing `+` duplicates without changing its owner.
+    fn advance_past_interleaved_definitions(&mut self, mut at: usize, host: &str) -> usize {
+        let column = indent_columns(host);
+        while self
+            .lines
+            .get(at)
+            .is_some_and(|line| indent_columns(line) == column)
+        {
+            let scan = self.observe_line(at);
+            let Some(def) = self.definition_at(at, &scan) else {
+                break;
+            };
+            let key = label_key(def.label);
+            let plus =
+                trim_ascii(def.first) == "+" || continuation_marker::is_consumed_marker(def.first);
+            if plus && !self.is_defined(&key) {
+                break;
+            }
+            if plus {
+                self.push_definition_replacement(
+                    self.lines[at],
+                    &def,
+                    &scan.stripped,
+                    self.first_source_line + at,
+                    false,
+                );
+                at += 1;
+            } else {
+                at = self.collect_definition(at, &scan, def);
+            }
+        }
+        at
+    }
+
     fn pass_winning_note(
         &mut self,
         note: &mut NoteBody,
@@ -1959,31 +2012,31 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         first: &str,
     ) -> bool {
         let lines = self.lines;
-        let Some(key) = lines
-            .get(i)
-            .and_then(|line| Self::plus_definition_key(line))
-        else {
-            return false;
-        };
-        if key == label_key(label) || self.is_defined(&key) || trim_ascii(first) != "+" {
+        if trim_ascii(first) != "+" {
             return false;
         }
         // A later winning note takes its own indented body after a blank.
         // Losing duplicate `+` lines, of any label, do not change that owner.
         let own = label_key(label);
-        let mut recipient = key;
-        let mut recipient_at = i;
-        let mut after = i + 1;
-        while let Some(other) = lines
+        let mut seen = HashSet::from([own]);
+        let mut recipient = None;
+        let mut after = i;
+        while let Some((other, body)) = lines
             .get(after)
-            .and_then(|line| Self::plus_definition_key(line))
+            .and_then(|line| parse_footnote_def_line(trim_ascii_start(line)))
         {
-            if other != own && other != recipient && !self.is_defined(&other) {
-                recipient = other;
-                recipient_at = after;
+            let key = label_key(other);
+            if seen.insert(key.clone())
+                && !self.is_defined(&key)
+                && (trim_ascii(body) == "+" || continuation_marker::is_consumed_marker(body))
+            {
+                recipient = Some((key, after));
             }
             after += 1;
         }
+        let Some((recipient, recipient_at)) = recipient else {
+            return false;
+        };
         let blank = after;
         while lines.get(after).is_some_and(|line| is_blank_line(line)) {
             after += 1;

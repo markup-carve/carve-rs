@@ -1622,66 +1622,6 @@ z %}</li>
   </ul>
 </blockquote>"##,
     ),
-    (
-        "981-a-losing-note-plus-leaves-following-blocks-with-their-owner-3",
-        "carve#5482: spec pin behavior pending its separate engine port",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn2">
-      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
-        "990-a-passed-note-keeps-its-blank-separated-continuation",
-        "carve#5519: spec pin behavior pending its separate engine port",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a><a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <p>more<a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn2">
-      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn3">
-      <p>para<a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
-        "990-a-passed-note-keeps-its-blank-separated-continuation-2",
-        "carve#5519: spec pin behavior pending its separate engine port",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a><a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <ul>
-        <li>other</li>
-      </ul>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn2">
-      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn3">
-      <ul>
-        <li>list</li>
-      </ul>
-      <p><a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.
