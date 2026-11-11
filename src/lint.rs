@@ -671,6 +671,7 @@ fn collect_parser_events(
                 let explanation = match *reason {
                     "blank" => "a blank line follows it",
                     "document" => "it reaches the end of the document",
+                    "sibling" if *host == "footnote" => "the next footnote definition is a sibling",
                     "sibling" => "the next list item is a sibling",
                     "list" => "the first-block form does not attach a list",
                     "left" => "the next block starts left of its column",
