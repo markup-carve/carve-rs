@@ -1172,6 +1172,24 @@ struct FootnoteScan<'a, 'o> {
     last_folded_marker: bool,
 }
 
+fn push_attached_trailing_blank(
+    note: &mut NoteBody,
+    caption_after_one_blank: bool,
+    next_line: Option<&str>,
+    source_line: usize,
+) {
+    if caption_after_one_blank {
+        return;
+    }
+    if note.holds_open_fence() {
+        if next_line.is_some_and(is_blank_line) {
+            note.push_with(String::new(), Some(source_line), |_| Some(0));
+        }
+    } else {
+        note.push_blank();
+    }
+}
+
 impl<'a, 'o> FootnoteScan<'a, 'o> {
     fn new(
         source: &'a str,
@@ -2628,17 +2646,12 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 });
             // A fence nested in the attached block keeps the authored blanks
             // as payload; a synthetic separator would add one (carve#5539).
-            if !caption_after_one_blank {
-                if note.holds_open_fence() {
-                    if lines.get(i).is_some_and(|line| is_blank_line(line)) {
-                        note.push_with(String::new(), Some(self.first_source_line + i), |_| {
-                            Some(0)
-                        });
-                    }
-                } else {
-                    note.push_blank();
-                }
-            }
+            push_attached_trailing_blank(
+                note,
+                caption_after_one_blank,
+                lines.get(i).copied(),
+                self.first_source_line + i,
+            );
         }
         i
     }
