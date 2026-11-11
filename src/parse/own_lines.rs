@@ -953,6 +953,9 @@ struct Walk<'a> {
     refuse_line: bool,
     accepted: Vec<(usize, continuation_marker::Decision)>,
     refused: Vec<continuation_marker::Refused>,
+    /// Refused markers a note with a body keeps: line, the note's line, and
+    /// whether the next visible line is below the note's body (carve#5890).
+    note_breaks: Vec<(usize, usize, bool)>,
     /// A refused description marker after an attached ordered list, for the next line.
     refused_dd_ordered_at: Option<usize>,
     unclosed_comments: Vec<(usize, usize, usize, bool)>,
@@ -1225,6 +1228,7 @@ pub(crate) struct OwnedSource {
     pub(in crate::parse) accepted: Vec<(usize, continuation_marker::Decision)>,
     pub(in crate::parse) attached_quotes: Vec<(usize, usize)>,
     pub(in crate::parse) refused: Vec<continuation_marker::Refused>,
+    pub(in crate::parse) note_breaks: Vec<(usize, usize, bool)>,
     pub(crate) unclosed_comments: Vec<(usize, usize, usize, bool)>,
     pub(in crate::parse) overindented: Vec<OverindentedOpener>,
     /// Lines whose refused marker was written as a `%%` line.
@@ -1345,6 +1349,7 @@ fn walk_traced(
         refuse_line: false,
         accepted: Vec::new(),
         refused: Vec::new(),
+        note_breaks: Vec::new(),
         refused_dd_ordered_at: None,
         unclosed_comments: Vec::new(),
         closed_comments: HashSet::new(),
@@ -1493,6 +1498,7 @@ fn walk_traced(
         accepted: std::mem::take(&mut walk.accepted),
         attached_quotes: std::mem::take(&mut walk.attached_quotes),
         refused: std::mem::take(&mut walk.refused),
+        note_breaks: std::mem::take(&mut walk.note_breaks),
         unclosed_comments: std::mem::take(&mut walk.unclosed_comments),
         overindented: std::mem::take(&mut walk.overindented),
         consumed: std::mem::take(&mut walk.consumed),
@@ -3272,6 +3278,9 @@ impl<'a> Walk<'a> {
         // A refused marker renders nothing; its placeholder stays in the host
         // so the next line keeps the same owner (carve#5013).
         self.refuse_plus(at, column, Some(host), reason, false);
+        if host == Kind::Note {
+            self.keep_note_break(at, k);
+        }
         self.refuse_line = false;
         let pad = if !closes_descendant && reason != Refusal::Claimed {
             " ".repeat(pad)
@@ -3295,6 +3304,22 @@ impl<'a> Walk<'a> {
             self.emit(at, record);
         }
         true
+    }
+
+    /// A refused marker in a note whose `+` attached a block ends that block (carve#5890).
+    fn keep_note_break(&mut self, at: usize, k: usize) {
+        let note = &self.frames[k];
+        let visible = |line: &&&str| !is_blank_line(quoted_rest(line));
+        let from = note.line.saturating_sub(self.first_line) + 1;
+        if from >= at || !self.lines[from..at].iter().any(|line| visible(&line)) {
+            return;
+        }
+        let below = !self.lines[at + 1..]
+            .iter()
+            .find(visible)
+            .is_some_and(|line| doc_column(line, quoted_rest(line)) >= note.col);
+        self.note_breaks
+            .push((self.first_line + at, note.line, below));
     }
 
     fn marker_reaches_descendant_quote(&self, at: usize, frame: usize, rest: &str) -> bool {

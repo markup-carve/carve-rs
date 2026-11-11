@@ -85,6 +85,7 @@ thread_local! {
     static ATTACHED_QUOTES: RefCell<Option<HashMap<usize, usize>>> = const { RefCell::new(None) };
     static LETTER: RefCell<Option<char>> = const { RefCell::new(None) };
     static CONSUMED: RefCell<(Vec<usize>, Option<char>)> = const { RefCell::new((Vec::new(), None)) };
+    static NOTE_BREAKS: RefCell<HashMap<usize, (usize, bool)>> = RefCell::new(HashMap::new());
 }
 
 pub(super) struct Guard(
@@ -92,6 +93,7 @@ pub(super) struct Guard(
     Option<HashMap<usize, usize>>,
     Option<char>,
     (Vec<usize>, Option<char>),
+    HashMap<usize, (usize, bool)>,
 );
 
 impl Guard {
@@ -129,6 +131,14 @@ impl Guard {
             }),
             LETTER.with(|slot| slot.replace(letter)),
             CONSUMED.with(|slot| slot.replace(consumed)),
+            NOTE_BREAKS.with(|slot| {
+                slot.replace(owned.map_or_else(HashMap::new, |o| {
+                    o.note_breaks
+                        .iter()
+                        .map(|&(line, note, below)| (line, (note, below)))
+                        .collect()
+                }))
+            }),
         )
     }
 }
@@ -139,6 +149,7 @@ impl Drop for Guard {
         ATTACHED_QUOTES.with(|slot| slot.replace(self.1.take()));
         LETTER.with(|slot| slot.replace(self.2.take()));
         CONSUMED.with(|slot| slot.replace(std::mem::take(&mut self.3)));
+        NOTE_BREAKS.with(|slot| slot.replace(std::mem::take(&mut self.4)));
     }
 }
 
@@ -169,6 +180,11 @@ pub(super) fn is_refused_letter(line: &str) -> bool {
     LETTER
         .with(|slot| *slot.borrow())
         .is_some_and(|letter| line.strip_prefix(letter) == Some(""))
+}
+
+/// The note line and below-body flag of a refused `+` that note keeps (carve#5890).
+pub(super) fn note_break(source_line: usize) -> Option<(usize, bool)> {
+    NOTE_BREAKS.with(|slot| slot.borrow().get(&source_line).copied())
 }
 
 /// The whole line is the placeholder of a consumed `+`.

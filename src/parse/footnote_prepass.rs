@@ -368,7 +368,79 @@ fn unfenced_marker_content_col(line: &str) -> Option<usize> {
     Some(column)
 }
 
+/// A refused `+` the note keeps ends every block above it, and the line at
+/// the note's body column after it opens a new one (carve#5890): close an
+/// open code fence, then hold the next run apart with a hard boundary.
+fn end_blocks_at_kept_refusal(note: &mut NoteBody) {
+    let Some(at) = note.line_map.iter().position(|line| {
+        line.and_then(continuation_marker::note_break)
+            .is_some_and(|(host, below)| !below && !note.line_map.contains(&Some(host)))
+    }) else {
+        return;
+    };
+    let mut open: Option<(usize, String)> = None;
+    for line in &note.lines[..at] {
+        let text = trim_ascii(line);
+        match &open {
+            Some((_, run))
+                if text.starts_with(run.as_str())
+                    && text.bytes().all(|b| b == run.as_bytes()[0]) =>
+            {
+                open = None;
+            }
+            Some(_) => {}
+            None => {
+                open = detect_fence_open(text).map(|fence| {
+                    (
+                        indent_columns(line),
+                        (fence.fence_char as char)
+                            .to_string()
+                            .repeat(fence.fence_len),
+                    )
+                });
+            }
+        }
+    }
+    let rest: Vec<usize> = (at + 1..note.lines.len())
+        .filter(|&k| !is_blank_line(&note.lines[k]))
+        .collect();
+    let shift = rest
+        .iter()
+        .map(|&k| indent_columns(&note.lines[k]))
+        .min()
+        .unwrap_or(0);
+    for &k in &rest {
+        if note.lines[k].bytes().take(shift).all(|b| b == b' ') {
+            note.lines[k] = note.lines[k][shift..].to_string();
+            if let Some(Some(column)) = note.col_map.get_mut(k) {
+                *column += shift as isize;
+            }
+        }
+    }
+    // Before the synthetic separator a `+` block leaves, which is no payload.
+    let mut close = at;
+    while close > 1 && note.line_map[close - 1].is_none() && is_blank_line(&note.lines[close - 1]) {
+        close -= 1;
+    }
+    let mut insert = |at: usize, line: String| {
+        note.lines.insert(at, line);
+        note.line_map.insert(at, None);
+        if note.positions {
+            note.col_map.insert(at, None);
+        }
+    };
+    let mut after = at + 1;
+    if let Some((indent, run)) = open {
+        insert(close, format!("{}{run}", " ".repeat(indent)));
+        after += 1;
+    }
+    for _ in 0..3 {
+        insert(after, String::new());
+    }
+}
+
 fn definition_source(mut note: NoteBody) -> MappedSource {
+    end_blocks_at_kept_refusal(&mut note);
     // A lazy continuation admitted after a first-block attachment belongs to
     // that block's open paragraph. Its synthetic closing separator must not
     // become an authored blank between the two lines.
@@ -1154,6 +1226,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
     }
 
+    fn note_break_at(&self, line: usize) -> Option<(usize, bool)> {
+        let physical = match self.source_line_map {
+            Some(map) => map
+                .get(line.checked_sub(self.first_source_line)?)
+                .copied()
+                .flatten()?,
+            None => line,
+        };
+        continuation_marker::note_break(physical)
+    }
+
     fn decision_at(&self, line: usize) -> Option<continuation_marker::Decision> {
         let physical = match self.source_line_map {
             Some(map) => map
@@ -1633,6 +1716,14 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 .lines
                 .get(i + 1)
                 .is_some_and(|line| detect_list_marker_full(trim_ascii_start(line)).is_some());
+        // Past a refused `+` the note keeps, the next line is the note's at its
+        // body column and outside the note below it (carve#5890).
+        let detached_after_plus = match self.note_break_at(self.first_source_line + i) {
+            Some((_, below)) => {
+                below && trim_ascii(def.first) == "+" && note.line_map.first() == Some(&None)
+            }
+            None => detached_after_plus,
+        };
         if detached_after_plus {
             i += 1;
         }
@@ -1646,11 +1737,22 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 indent_columns(line) == 0
                     && continuation_marker::is_consumed_marker(trim_ascii_start(line))
             })
-            && self
+            && (self
                 .lines
                 .get(i + 1)
                 .is_some_and(|line| !is_blank_line(line) && indent_columns(line) >= body_indent)
+                || self
+                    .note_break_at(self.first_source_line + i)
+                    .is_some_and(|(_, below)| !below))
         {
+            // Kept in the body, the marker ends the blocks above it (carve#5890).
+            if self.note_break_at(self.first_source_line + i).is_some() {
+                note.push_with(
+                    trim_ascii(self.lines[i]).to_string(),
+                    Some(self.first_source_line + i),
+                    |_| Some(0),
+                );
+            }
             i += 1;
         }
         let attached_quote_marker = (trim_ascii(def.first) == "+"
@@ -2205,6 +2307,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             self.first_source_line,
             own_lines::authored_visual_column(def_start_line, 1),
         );
+        // A refused `+` the note keeps ends its attached block (carve#5890).
+        let window_end = (i + 1..window_end)
+            .find(|&at| self.note_break_at(self.first_source_line + at).is_some())
+            .unwrap_or(window_end);
         let lead_col = indent_columns(lines[lead]);
         let attached: Vec<String> = lines[i..window_end]
             .iter()
@@ -3411,7 +3517,11 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         if i == resume_at && self.hosted_marker_column_plus(&host, &mut walk, note, &mut i) {
             // The attached block leaves the walk at its next line.
-        } else if !walk.reaches_floor(&host, self.lines[resume_at]) {
+        } else if !walk.reaches_floor(&host, self.lines[resume_at])
+            && !self
+                .note_break_at(self.first_source_line + resume_at)
+                .is_some_and(|(_, below)| !below)
+        {
             while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
             if !walk.lazy_open {
                 self.keep_blanks_for_open_fence(&host, note, i, resume_at);
@@ -4005,6 +4115,20 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if is_blank_line(line) {
             walk.lazy_open = false;
             return self.hosted_blank_run(host, walk, note, i);
+        }
+        // A refused `+` the note keeps stays in its body (carve#5890).
+        if self
+            .note_break_at(self.first_source_line + *i)
+            .is_some_and(|(_, below)| !below)
+        {
+            let text = trim_ascii_start(line);
+            let col = (raw.chars().count() - text.chars().count()) as isize;
+            note.push_with(text.to_string(), Some(self.first_source_line + *i), |_| {
+                Some(col)
+            });
+            walk.lazy_open = false;
+            *i += 1;
+            return Flow::Next;
         }
         if self.hosted_marker_column_plus(host, walk, note, i) {
             return Flow::Next;
