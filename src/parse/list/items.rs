@@ -2978,20 +2978,23 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         let next_owned = next.to_string();
         // A lazy line is held by an open code span only, as in the ownership walk.
-        let held_brace =
-            trim_ascii_start(next).starts_with('{') && lead.inline_span.code_open(&lead.lines);
+        let parent_attribute = self.quoted_parent_attribute_block(next, indent);
+        let held_brace = trim_ascii_start(next).starts_with('{')
+            && !parent_attribute
+            && lead.inline_span.code_open(&lead.lines);
         // A wrapped attribute line closes the paragraph even when it is
         // written at an ancestor's column. Its one-line spelling already
         // interrupts here; use the same block test before taking a lazy line.
-        if !held_brace
-            && matches!(
-                content_column_attr_block(
-                    trim_ascii_start(next),
-                    self.cur.lines.range(self.cur.pos + 1..self.cur.lines.len()),
-                    indent,
-                ),
-                ContentColumnAttrBlock::Block
-            )
+        if parent_attribute
+            || !held_brace
+                && matches!(
+                    content_column_attr_block(
+                        trim_ascii_start(next),
+                        self.cur.lines.range(self.cur.pos + 1..self.cur.lines.len()),
+                        indent,
+                    ),
+                    ContentColumnAttrBlock::Block
+                )
         {
             return false;
         }
@@ -3012,6 +3015,19 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         lead.caption_below_content_column |= caption_content(inline_line).is_some();
         self.fold_lead_line(lead, inline_line);
         true
+    }
+
+    fn quoted_parent_attribute_block(&self, line: &str, indent: usize) -> bool {
+        self.cur.in_quoted_body
+            && indent < self.content_col
+            && matches!(
+                content_column_attr_block(
+                    trim_ascii_start(line),
+                    self.cur.lines.range(self.cur.pos + 1..self.cur.lines.len()),
+                    indent,
+                ),
+                ContentColumnAttrBlock::Block
+            )
     }
 
     fn lead_line_over_indented(
@@ -3065,6 +3081,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     fn lead_refused_brace_run(&mut self, lead: &mut LeadParagraph, next: &str) -> bool {
         if !trim_ascii_start(strip_lazy(next)).starts_with('{')
             || lead.inline_span.open(&lead.lines)
+                && !self.quoted_parent_attribute_block(next, indent_columns(next))
         {
             return false;
         }
