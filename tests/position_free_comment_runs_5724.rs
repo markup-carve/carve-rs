@@ -76,3 +76,10 @@ fn one_thousand_position_free_item_runs_read_back() {
     }
     assert_eq!(checked, 1_000);
 }
+#[test]
+fn item_owned_comment_stays_between_sub_list_items() {
+    let source = "- a\n  - b\n  %%\n\n  - c\n";
+    let written = carve::to_carve(source);
+    assert_eq!(written, "- a\n  - b\n\n  %%\n\n  - c\n");
+    assert_eq!(carve::to_html(&written), carve::to_html(source));
+}

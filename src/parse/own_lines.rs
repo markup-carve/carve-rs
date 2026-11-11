@@ -90,6 +90,7 @@ struct Frame {
     /// First blank that ends an attached, unclosed fence or colon container.
     attached_blank_end: Option<usize>,
     attached_host_fence: bool,
+    attached_marker_line: bool,
     quote_fence_after_blank: bool,
     open_col: usize,
     attached_closer_col: usize,
@@ -185,6 +186,7 @@ impl Frame {
             closer: None,
             attached_blank_end: None,
             attached_host_fence: false,
+            attached_marker_line: false,
             quote_fence_after_blank: false,
             open_col: 0,
             attached_closer_col: 0,
@@ -3267,6 +3269,12 @@ impl<'a> Walk<'a> {
                         block.depth == 0
                             || strip_quote_levels(self.lines[at], block.depth).is_some()
                     })
+                    .filter(|block| {
+                        let rest = quoted_rest(self.lines[at]);
+                        is_blank_line(rest)
+                            || doc_column(self.lines[at], rest)
+                                >= block.frames.last().expect("attached host").col
+                    })
                     .map(|block| block.frames.clone())
             })
             .flatten()
@@ -3282,6 +3290,7 @@ impl<'a> Walk<'a> {
         let ended_attached_code = kind == Kind::Fence
             && self.frames.last().is_some_and(|frame| {
                 frame.attached_blank_end.is_some_and(|blank| at >= blank)
+                    && frame.attached_marker_line
                     && matches!(frame.closer, Some(Closer::Fence(..)))
             });
         if kind == Kind::Fence || (kind == Kind::Colon && ended) {
@@ -4482,6 +4491,7 @@ impl<'a> Walk<'a> {
                         .as_ref()
                         .filter(|block| block.from == at)
                         .is_some_and(|block| self.marker_line_attachment_host(block));
+                f.attached_marker_line = marker_line_attached;
                 let attached_host_col = self
                     .attached
                     .as_ref()

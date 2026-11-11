@@ -49,3 +49,9 @@ fn ast_positions_and_json_roundtrip_keep_the_authored_line() {
     assert_eq!(render_html(&decoded).unwrap(), to_html(SECOND_PARAGRAPH));
     assert_eq!(to_json(&decoded), json);
 }
+#[test]
+fn tab_led_quote_in_nested_description_opens_a_quote() {
+    let source = ":: t\n: a\n  :: t\n  : a\n  \t> b\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("<blockquote><p>b</p></blockquote>"), "{html}");
+}

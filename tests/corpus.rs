@@ -1569,58 +1569,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 #[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     (
-        "1012-a-note-attached-fence-blank-ends-lazy-claim",
-        "carve#5581: spec pin behavior pending its separate engine port",
-        r##"<p>x<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
-<p>y</p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <ul>
-        <li>
-          <pre><code>- nest
-</code></pre>
-        </li>
-      </ul>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
-        "1035-an-own-line-item-fence-ends-in-a-note",
-        "carve#5658: spec pin behavior pending its separate engine port",
-        r##"<aside class="admonition note" aria-label="Note">
-  <ul>
-    <li>x
-      <pre><code>
-</code></pre>
-    </li>
-  </ul>
-  <p>b
-<code></code></p>
-  <div>
-
-  </div>
-</aside>"##,
-    ),
-    (
-        "1037-a-tab-led-quote-under-nested-descriptions-opens-in-the-inner-description",
-        "carve#4085: spec pin behavior pending its separate engine port",
-        r##"<dl>
-  <dt>t</dt>
-  <dd>
-    <p>a</p>
-    <dl>
-      <dt>t</dt>
-      <dd>a
-&gt; b</dd>
-    </dl>
-  </dd>
-</dl>"##,
-    ),
-    (
         "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
         "carve#5844: spec pin behavior pending its separate engine port",
         r##"<ul>
@@ -1656,66 +1604,6 @@ z %}</li>
     </li>
   </ul>
 </blockquote>"##,
-    ),
-    (
-        "981-a-losing-note-plus-leaves-following-blocks-with-their-owner-3",
-        "carve#5482: spec pin behavior pending its separate engine port",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn2">
-      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
-        "990-a-passed-note-keeps-its-blank-separated-continuation",
-        "carve#5519: spec pin behavior pending its separate engine port",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a><a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <p>more<a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn2">
-      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn3">
-      <p>para<a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
-        "990-a-passed-note-keeps-its-blank-separated-continuation-2",
-        "carve#5519: spec pin behavior pending its separate engine port",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a><a id="fnref2" href="#fn2" role="doc-noteref"><sup>2</sup></a><a id="fnref3" href="#fn3" role="doc-noteref"><sup>3</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <ul>
-        <li>other</li>
-      </ul>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn2">
-      <p>d1<a href="#fnref2" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-    <li id="fn3">
-      <ul>
-        <li>list</li>
-      </ul>
-      <p><a href="#fnref3" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
     ),
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.

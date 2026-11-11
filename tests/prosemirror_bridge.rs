@@ -1764,9 +1764,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve#5410 makes row 868 strictly reversible.
     // The df07d996 spec pin adds 108 strict corpus documents.
     // carve#5787 makes row 1056 (an outer quote's comment run) strictly reversible.
-    // carve#5923 keeps the soft breaks in rows 1033 and 1034 inside their
-    // attached colon bodies. ProseMirror reports both as lossy.
-    const STRICT: usize = 3563;
+    // carve#5923 moves rows 1033 and 1034 to the soft-break loss bucket.
+    // Rows 1035 and 1037 leave it when their fence and tabbed quote parse
+    // match the spec corpus (carve#5926, carve#5927).
+    const STRICT: usize = 3565;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1796,8 +1797,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Row 868 moves to the strict set under carve#5410.
     // The same pin adds 79 documents with declared editor losses.
     // carve#5787 moves row 1056 to the strict set, named with STRICT above.
-    // carve#5923 moves rows 1033 and 1034 here, named with STRICT above.
-    const LOSSY: usize = 1040;
+    // The four moved rows are named with STRICT above.
+    const LOSSY: usize = 1038;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

@@ -93,3 +93,12 @@ fn a_shifted_run_before_any_blank_remains_fence_payload() {
     let html = carve::to_html(input);
     assert!(html.contains("<pre><code>x\n ```\n</code></pre>"), "{html}");
 }
+#[test]
+fn own_line_fence_ends_before_the_next_fence_in_its_parent() {
+    let source = "- x\n+\n```\n\nb\n  ```\n";
+    let html = carve::to_html(source);
+    assert!(
+        html.contains("<p>b</p>\n<pre><code></code></pre>"),
+        "{html}"
+    );
+}

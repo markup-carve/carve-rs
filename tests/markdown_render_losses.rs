@@ -201,3 +201,9 @@ fn cli_accepts_the_new_codes_and_allows_an_actual_container_loss() {
     assert!(output.status.success(), "{:?}", output.stderr);
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "p\n");
 }
+#[test]
+fn empty_note_definition_has_no_trailing_space() {
+    let source = "[^m]: +\n[^n]: +\n[^n]: +\n\n  para\n\nsee[^m][^n]\n";
+    let rendered = carve::to_markdown(source);
+    assert_eq!(rendered, "see[^m][^n]\n\n[^m]:\n[^n]: para\n");
+}

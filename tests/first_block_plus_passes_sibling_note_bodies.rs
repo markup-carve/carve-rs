@@ -23,3 +23,17 @@ fn quoted_plus_note_passes_a_plain_sibling_note_and_its_lazy_body() {
         "<blockquote>\n\n</blockquote>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <blockquote><p>q</p></blockquote>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\">\n      <p>x\npara<a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
     );
 }
+#[test]
+fn later_note_keeps_blank_separated_continuation_after_pass() {
+    let source = "[^n]: +\n[^m]: d1\n[^k]: +\n  para\n\n  more\n\nsee[^n][^m][^k]\n";
+    let html = to_html(source);
+    assert!(html.contains("<p>para</p>\n      <p>more"), "{html}");
+    assert!(!html.contains("<li id=\"fn1\">\n      <p>more"), "{html}");
+}
+
+#[test]
+fn losing_later_plus_leaves_the_blank_separated_block_with_the_first_note() {
+    let source = "[^n]: +\n[^m]: d1\n[^m]: +\n\n  para\n\nsee[^n][^m]\n";
+    let html = to_html(source);
+    assert!(html.contains("<li id=\"fn1\">\n      <p>para"), "{html}");
+}
