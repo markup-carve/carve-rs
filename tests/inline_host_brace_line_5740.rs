@@ -44,3 +44,15 @@ fn a_host_opened_on_an_earlier_line_still_attaches() {
         "<blockquote>\n  <p><strong title=\"`\">a\nb</strong></p>\n  <p k=\"v\">b</p>\n</blockquote>"
     );
 }
+
+#[test]
+fn the_host_probe_keeps_escape_parity_and_character_boundaries() {
+    assert_eq!(
+        html("é[a]{title=\"`\"}\n{k=v}\nb\n"),
+        "<p>é<span title=\"`\">a</span></p>\n<p k=\"v\">b</p>"
+    );
+    assert_eq!(
+        html("\\\\[a]{title=\"`\"}\n{k=v}\nb\n"),
+        "<p>\\<span title=\"`\">a</span></p>\n<p k=\"v\">b</p>"
+    );
+}

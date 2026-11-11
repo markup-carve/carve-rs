@@ -423,7 +423,18 @@ impl InlineSpanScan {
             other => head.iter().rposition(|&b| b == other),
         };
         if let Some(open) = open {
-            if attaches_probe(&line[open.saturating_sub(1)..at]) {
+            // One character of context before the opener, and the whole escape run
+            // when it is a backslash, so the probe sees the opener's escape parity.
+            let mut start = line[..open]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(i, _)| i);
+            if bytes.get(start) == Some(&b'\\') {
+                while start > 0 && bytes[start - 1] == b'\\' {
+                    start -= 1;
+                }
+            }
+            if attaches_probe(&line[start..at]) {
                 return true;
             }
         }
