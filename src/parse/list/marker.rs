@@ -941,6 +941,7 @@ pub(crate) fn own_line_fence_end(
     start: usize,
     end: usize,
     content_col: Option<usize>,
+    source_line: impl Fn(usize) -> Option<usize>,
 ) -> usize {
     let (Some(content_col), Some(open)) = (
         content_col,
@@ -961,14 +962,25 @@ pub(crate) fn own_line_fence_end(
         return end;
     }
     let opener_col = indent_columns(lines.at(start));
+    let authored_opener_col = source_line(start)
+        .map(|line| crate::parse::own_lines::authored_visual_column(line, 1))
+        .unwrap_or(opener_col);
     let mut at = first_blank;
     while let Some(line) = lines.line(at) {
         if is_blank_line(line) {
             at += 1;
             continue;
         }
-        let closes = is_fence_close(trim_ascii_start(line), open);
-        if indent_columns(line) < content_col && !(closes && indent_columns(line) == opener_col) {
+        let authored_col = source_line(at)
+            .map(|line| crate::parse::own_lines::authored_visual_column(line, 1))
+            .unwrap_or_else(|| indent_columns(line));
+        let closes =
+            authored_col <= authored_opener_col && is_fence_close(trim_ascii_start(line), open);
+        if (indent_columns(line) < content_col
+            || (authored_col < content_col
+                && continuation_marker::is_consumed_marker(trim_ascii_start(line))))
+            && !(closes && indent_columns(line) == opener_col)
+        {
             break;
         }
         at += 1;
@@ -1136,7 +1148,9 @@ pub(crate) fn parse_continuation_block(
         {
             attached_end
         } else {
-            own_line_fence_end(lines, start, attached_end, fence_host_col)
+            own_line_fence_end(lines, start, attached_end, fence_host_col, |at| {
+                cur.source_line(at)
+            })
         }
     } else {
         attached_end

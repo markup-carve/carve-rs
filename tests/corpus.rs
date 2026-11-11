@@ -1569,38 +1569,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 #[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     (
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-2",
-        "carve#5658 F06 ends an own-line fence when the next line misses the note",
-        r##"<p>see<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <p>n</p>
-      <pre><code>a
-
-b
-</code></pre>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
-        "carve#5658 F06 ends an own-line fence when the next line misses the description",
-        r##"<dl>
-  <dt>t</dt>
-  <dd>
-    <p>d</p>
-    <pre><code>a
-
-b
-</code></pre>
-  </dd>
-</dl>"##,
-    ),
-    (
         "1012-a-note-attached-fence-blank-ends-lazy-claim",
         "carve#5581: spec pin behavior pending its separate engine port",
         r##"<p>x<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
@@ -1619,28 +1587,6 @@ b
     </li>
   </ol>
 </section>"##,
-    ),
-    (
-        "1028-an-own-line-plus-fence-keeps-a-quote-blank",
-        "carve#5658: spec pin behavior pending its separate engine port",
-        r##"<blockquote>
-  <p>p</p>
-  <pre><code>a
-</code></pre>
-</blockquote>
-<blockquote><p>zq</p></blockquote>"##,
-    ),
-    (
-        "1031-an-own-line-plus-fence-ends-before-a-shifted-run",
-        "carve#5658: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li>p
-    <pre><code>a
-
-</code></pre>
-  </li>
-</ul>
-<p>zq</p>"##,
     ),
     (
         "1033-a-quote-attached-colon-keeps-a-later-plus",

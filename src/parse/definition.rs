@@ -1784,6 +1784,24 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
     ) -> BodyStep {
         self.after_plus_paragraph = std::mem::take(&mut self.plus_paragraph_ended);
         let column = indent_columns(line);
+        if self.own_line_fence
+            && continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            && self.lines.last().is_some_and(|last| is_blank_line(last))
+        {
+            if let Some(open) = fence.open.take().or(self.comment_state.code) {
+                self.push(
+                    char::from(open.fence_char)
+                        .to_string()
+                        .repeat(open.fence_len),
+                    None,
+                    None,
+                    false,
+                );
+            }
+            self.own_line_fence = false;
+            cur.consume();
+            return BodyStep::Next;
+        }
         if self.lines.is_empty()
             && self.seed.lines().last().is_some_and(|previous| {
                 continuation_marker::is_consumed_marker(trim_ascii_start(previous))
@@ -2125,6 +2143,13 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
                         && strip_definition_marker(trim_ascii_start(a)).is_some())
             },
         );
+        let end = if self.own_line_fence {
+            own_line_fence_end(cursor_lines, start, end, Some(content_column), |at| {
+                cur.source_line(at)
+            })
+        } else {
+            end
+        };
         while cur.pos < end {
             let a = cur.lines.at(cur.pos);
             attached.push_at(

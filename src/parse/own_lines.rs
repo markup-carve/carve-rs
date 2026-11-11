@@ -90,6 +90,7 @@ struct Frame {
     /// First blank that ends an attached, unclosed fence or colon container.
     attached_blank_end: Option<usize>,
     attached_host_fence: bool,
+    quote_fence_after_blank: bool,
     open_col: usize,
     attached_closer_col: usize,
     run: usize,
@@ -184,6 +185,7 @@ impl Frame {
             closer: None,
             attached_blank_end: None,
             attached_host_fence: false,
+            quote_fence_after_blank: false,
             open_col: 0,
             attached_closer_col: 0,
             run: 0,
@@ -966,6 +968,7 @@ struct Walk<'a> {
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
     attached: Option<AttachedBlock>,
+    span_tail_at: Option<usize>,
     enclosing_attachments: Vec<AttachedBlock>,
     attached_quotes: Vec<(usize, usize)>,
     /// The marker frame this line's opener closed: kind, axes, list column and shift.
@@ -1022,6 +1025,7 @@ struct AttachedBlock {
     depth: usize,
     marker: usize,
     from: usize,
+    span_scan: paragraph::InlineSpanScan,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -1356,6 +1360,7 @@ fn walk_traced(
         has_closed_list: false,
         overindented: Vec::new(),
         attached: None,
+        span_tail_at: None,
         enclosing_attachments: Vec::new(),
         attached_quotes: Vec::new(),
         skipped: None,
@@ -2243,6 +2248,7 @@ impl<'a> Walk<'a> {
             depth,
             marker: self.frames[host].marker.map_or(0, |(col, _)| col),
             from,
+            span_scan: paragraph::InlineSpanScan::default(),
         });
     }
 
@@ -2252,6 +2258,16 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return false;
         };
+        // An own-line fence's blank is its last payload when the next line
+        // reaches a note or definition body's marker column as a `+`.
+        if self.own_line_marker_plus_follower_reaches(attached, at)
+            && self.lines.get(at).is_some_and(|line| {
+                is_cont_marker(indent_rest(line)) && indent_cols(line).0 == attached.marker
+            })
+            && (attached.from + 1..at).any(|k| is_blank_line(self.lines[k]))
+        {
+            return true;
+        }
         let mut last = at;
         let view = |k: usize| strip_quote_levels(self.lines[k], attached.depth).map(trim_ws_start);
         // A blank after the attached block keeps the host's later marker-column
@@ -2323,12 +2339,24 @@ impl<'a> Walk<'a> {
             && host.kind.is_marker_body()
     }
 
+    fn own_line_marker_plus_follower_reaches(&self, attached: &AttachedBlock, at: usize) -> bool {
+        attached
+            .frames
+            .last()
+            .is_some_and(|host| matches!(host.kind, Kind::Note | Kind::Dd))
+            && self
+                .lines
+                .get(at + 1)
+                .is_some_and(|line| indent_cols(line).0 >= attached.marker + 2)
+    }
+
     /// A `+` right after the one block a `+` attached reaches the same host, whose
     /// frames the walk closed when it read that block where it stands.
     fn reopen_attached_host(&mut self, at: usize, src: &str) {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
+        let marker_line_host = self.marker_line_attachment_host(attached);
         // A fence that the previous attachment left at document level owns a
         // marker-column `+` in its payload before any older host may reopen.
         let fence_line = if attached
@@ -2341,7 +2369,10 @@ impl<'a> Walk<'a> {
             src
         };
         if self.frames.last().is_some_and(|frame| {
-            frame.kind == Kind::Fence && indent_cols(fence_line).0 >= frame.open_col
+            frame.kind == Kind::Fence
+                && indent_cols(fence_line).0 >= frame.open_col
+                && !((marker_line_host || self.own_line_marker_plus_follower_reaches(attached, at))
+                    && frame.attached_blank_end.is_some_and(|blank| at > blank))
         }) {
             return;
         }
@@ -2437,6 +2468,55 @@ impl<'a> Walk<'a> {
             return;
         }
         self.replace_frames(attached.frames.clone());
+    }
+
+    fn attached_code_span_tail(&mut self, at: usize) -> Option<Vec<Frame>> {
+        let block = self.attached.as_mut()?;
+        if at <= block.from
+            || !block
+                .frames
+                .last()
+                .is_some_and(|host| matches!(host.kind, Kind::Item | Kind::Dd))
+            || self.lines[block.from..at]
+                .iter()
+                .any(|line| is_blank_line(line))
+            || detect_fence_open(trim_ascii_start(self.lines[block.from])).is_some()
+            || detect_fence_open(trim_ascii_start(self.lines[at])).is_some()
+            || !foldable_plain_line(trim_ascii_start(self.lines[at]))
+            || !block.span_scan.code_open(&self.lines[block.from..at])
+        {
+            return None;
+        }
+        Some(block.frames.clone())
+    }
+
+    fn restore_attached_code_span_tail(&mut self, at: usize) {
+        let frames = self.attached_code_span_tail(at);
+        self.span_tail_at = frames.as_ref().map(|_| at);
+        if let Some(frames) = frames {
+            self.replace_frames(frames);
+        }
+    }
+
+    fn span_tail_reached(&self, at: usize, reached: usize) -> usize {
+        if self.span_tail_at == Some(at) {
+            self.frames.len() - 1
+        } else {
+            reached
+        }
+    }
+
+    fn lead_text_span_tail(&self, at: usize, c: &mut Cursor<'_>, target: usize, shift: usize) {
+        let indent = self
+            .attached
+            .as_ref()
+            .map(|block| indent_cols(self.lines[block.from]).0)
+            .filter(|&indent| self.span_tail_at == Some(at) && c.col < indent);
+        if let Some(indent) = indent {
+            c.lead_at(indent + shift + c.attachment_shift, false);
+        } else {
+            c.lead_in(target, shift, false);
+        }
     }
 
     fn lazy_shift(
@@ -3043,7 +3123,9 @@ impl<'a> Walk<'a> {
                 || comment_line()
                 || attached_quote_comment
                 || attached_closer
-                || attached_blank)
+                || attached_blank
+                || (inner.quote_fence_after_blank
+                    && (rest.is_empty() || quote_marker(rest).is_some())))
     }
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
@@ -3576,6 +3658,7 @@ impl<'a> Walk<'a> {
             .rposition(|f| f.kind == Kind::Fence && matches!(f.closer, Some(Closer::Fence(..))));
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
+        self.restore_attached_code_span_tail(at);
         for k in 1..self.frames.len() {
             if self.reaches_colon_suffix(k, c.col) {
                 reached = self.frames.len() - 1;
@@ -3641,6 +3724,7 @@ impl<'a> Walk<'a> {
         reached = self.attached_item_after_quote(at, c, reached);
         reached = self.attach_unclosed_quote_comment(at, reached, c);
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
+        reached = self.span_tail_reached(at, reached);
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.unattached_plus_is_letter(plus, c.rest, reached) {
@@ -3945,7 +4029,7 @@ impl<'a> Walk<'a> {
                 } else {
                     0
                 };
-                c.lead_in(target, shift, false);
+                self.lead_text_span_tail(at, c, target, shift);
             }
             form => {
                 let (mut canon, shift) = (self.top().canon, self.top().shift);
@@ -4327,6 +4411,20 @@ impl<'a> Walk<'a> {
                                     .is_some_and(is_blank_line)
                         });
                         if let Some(blank) = first_blank {
+                            f.quote_fence_after_blank = !marker_line_attached
+                                && self.attached.as_ref().is_some_and(|block| {
+                                    block.from == at
+                                        && block
+                                            .frames
+                                            .last()
+                                            .is_some_and(|host| host.kind == Kind::Quote)
+                                })
+                                && self.lines[blank + 1..]
+                                    .iter()
+                                    .find(|line| !is_blank_line(line))
+                                    .is_some_and(|line| {
+                                        quote_marker(trim_ascii_start(line)).is_some()
+                                    });
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
                             let has_closer = if marker_line_attached {
                                 runs.code_by_column
@@ -4349,7 +4447,7 @@ impl<'a> Walk<'a> {
                                     )
                             };
                             f.attached_host_fence = marker_line_attached && has_closer;
-                            if !has_closer {
+                            if !has_closer && !f.quote_fence_after_blank {
                                 f.attached_blank_end = Some(blank);
                             }
                         }
@@ -4917,6 +5015,9 @@ impl<'a> Walk<'a> {
         let owner_para = self.frames[owner].para;
         let owner_kind = self.frames[owner].kind;
         let owner_last = self.frames[owner].last;
+        if self.span_tail_at == Some(at) && owner_kind.is_marker_body() {
+            return Form::Text;
+        }
         // A list marker still opens its item there, as ownership decides it
         // first, and a `%%` line stays invisible.
         if owner_para

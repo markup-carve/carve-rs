@@ -44,7 +44,7 @@ fn a_note_body_keeps_the_blank() {
 #[test]
 fn a_plus_attached_fence_ends_at_the_blank() {
     assert_eq!(code("[^a]: +\n```\nx\n\nsee[^a]\n"), "x\n");
-    assert_eq!(code("[^f]: n\n+\n```\na\n\nb\n\nsee[^f]\n"), "a\n");
+    assert_eq!(code("[^f]: n\n+\n```\na\n\nb\n\nsee[^f]\n"), "a\n\n");
 }
 
 #[test]

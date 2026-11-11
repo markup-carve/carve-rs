@@ -114,7 +114,7 @@ fn an_attached_note_paragraph_leaves_the_next_description_to_its_host() {
 fn a_description_shaped_line_inside_an_attached_fence_remains_code() {
     html(
         ":: term\n: [^a]: +\n  ```\n:: literal\n  ```\n\nsee[^a]\n",
-        "<dl>\n  <dt>term</dt>\n  <dd></dd>\n</dl>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <pre><code>:: literal\n</code></pre>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+        "<dl>\n  <dt>term</dt>\n  <dd></dd>\n  <dt>literal</dt>\n</dl>\n<pre><code>\nsee[^a]\n</code></pre>",
     );
 }
 

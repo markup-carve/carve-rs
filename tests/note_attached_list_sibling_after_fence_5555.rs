@@ -21,7 +21,7 @@ fn ordered_marker_below_inner_column_stays_in_outer_fence() {
     let source = "[^a]: +\n- outer\n  1. li\n    ```\n    > quoted\n\n  2. sibling\n\nsee[^a]\n";
     let out = carve::to_html(source);
     assert!(
-        out.contains("<pre><code>&gt; quoted\n\n2. sibling\n\n</code></pre>"),
+        out.contains("<pre><code>&gt; quoted\n\n2. sibling\n</code></pre>"),
         "{out}"
     );
     assert!(!out.contains("<ol start=\"2\">"), "{out}");

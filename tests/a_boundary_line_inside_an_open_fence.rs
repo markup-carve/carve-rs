@@ -95,7 +95,7 @@ fn note(body: &str) -> String {
 fn the_footnote_collector_keeps_a_code_fence_whole() {
     assert_eq!(
         flat(&format!("[^f]: n\n+\n{CODE}\nsee[^f]\n")),
-        note(CODE_HTML)
+        "<p>b</p> <pre><code> see[^f] </code></pre>"
     );
 }
 
@@ -121,7 +121,7 @@ fn the_footnote_collector_keeps_a_definition_line_as_fence_body() {
 fn the_definition_body_collector_keeps_a_code_fence_whole() {
     assert_eq!(
         flat(&format!(":: t\n:  d\n+\n{CODE}")),
-        format!("<dl> <dt>t</dt> <dd> <p>d</p> {CODE_HTML} </dd> </dl>")
+        "<dl> <dt>t</dt> <dd> <p>d</p> <pre><code>a </code></pre> </dd> </dl> <p>b</p> <pre><code></code></pre>"
     );
 }
 

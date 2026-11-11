@@ -1562,8 +1562,10 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 .cur
                 .continuation_decision(item.at)
                 .is_some_and(|decision| decision.owner == Some(continuation_marker::Kind::Quote));
+        let mut quote_attached_attr_run = false;
         let continuation_has_content = if first_block_quote_attaches {
-            let took = self.quote_first_block(&mut stream, content, innermost, item.at);
+            let (took, attr_run) = self.quote_first_block(&mut stream, content, innermost, item.at);
+            quote_attached_attr_run = attr_run;
             // A quote line after the attached block resumes the marker line's
             // quote, as it would outside the item (carve#5658 Q cells).
             let quote_resumes = took
@@ -1608,7 +1610,17 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     && strip_description_prefix(trim_ascii_start(line)).is_some()
             })
             && body_ends_in_quoted_definition_list(&stream.source, options);
-        if (quote_holds_a_paragraph || continuation_has_content) && !marker_column_description {
+        let unprefixed_quote_boundary = first_block_quote_attaches
+            && quote_attached_attr_run
+            && self.cur.peek().is_some_and(|line| {
+                !is_blank_line(line)
+                    && indent_columns(line) < content_col
+                    && strip_blockquote_prefix(trim_ascii_start(line)).is_none()
+            });
+        if (quote_holds_a_paragraph || continuation_has_content)
+            && !marker_column_description
+            && !unprefixed_quote_boundary
+        {
             // The collector stopped short of a band line only for a quote that holds no
             // paragraph; a paragraph written after that quote still takes it lazily.
             let lazy_column = if quote_holds_a_paragraph {
@@ -1689,7 +1701,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         content: &str,
         innermost: &str,
         item_at: usize,
-    ) -> bool {
+    ) -> (bool, bool) {
         let (base_indent, content_col, options) =
             (self.base_indent, self.content_col, self.options);
         let cur = &mut *self.cur;
@@ -1713,6 +1725,14 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                         at > block
                             && (detect_list_marker_full(line)
                                 .is_some_and(|marker| marker.indent <= base_indent)
+                                // The quote in this item's marker body owns
+                                // only lines that reach the item's content
+                                // column. An open inline span in its attached
+                                // paragraph cannot claim an unprefixed line
+                                // back at the outer marker column (Q091).
+                                || (!is_blank_line(line)
+                                    && indent_columns(line) < content_col
+                                    && strip_blockquote_prefix(trim_ascii_start(line)).is_none())
                                 || attached_fence
                                     && !is_blank_line(line)
                                     && indent_columns(line) < content_col
@@ -1738,6 +1758,13 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                 )
             });
         let end = attached_block_at_own_column(cur.lines, block, end, options);
+        let attached_attr_run = (block..end).any(|at| {
+            let line = cur.lines.at(at);
+            let rest = trim_ascii_start(line);
+            rest.starts_with('{')
+                && attrs_block_len_at(indent_columns(line), rest, cur.lines.range(at + 1..end))
+                    .is_some()
+        });
         // A quote follower at an eligible raw column opens a block in the
         // innermost quote, which owns the `+` (`- > > +` / `> q` nests three
         // deep, carve#3421): it takes the `+` line's place behind its prefix.
@@ -1803,7 +1830,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             );
             cur.consume();
         }
-        end > start
+        (end > start, attached_attr_run)
     }
 
     fn quote_plus_takes_paragraph(&self, innermost: &str) -> bool {

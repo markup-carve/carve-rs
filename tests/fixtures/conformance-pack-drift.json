@@ -5,9 +5,6 @@
       "ticket": "markup-carve/carve#5855",
       "cause": "the spec model still drops an own-line attached fence after a blank when payload is below the host body column; all engines preserve the fence",
       "cases": [
-        "notes-3bc330d1a3be",
-        "notes-425e819e8134",
-        "notes-ed586560a203",
         "ownership-515b9fdab518"
       ]
     },
@@ -22,8 +19,6 @@
       "ticket": "markup-carve/carve#5658",
       "cause": "other own-line plus fence ownership cells in the new pack remain cross-engine gaps: trailing blank retention and tabbed fence attachment; tracked in the paused ownership family",
       "cases": [
-        "notes-5ad58f3eaad3",
-        "notes-ab1ebf8987b6",
         "notes-dd130b0b59c1",
         "notes-f3d430ac99b0",
         "notes-ffd53f488294",

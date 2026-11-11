@@ -2223,11 +2223,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 let first_blank = (from + 1..lines.len())
                     .find(|&at| is_blank_line(lines[at]))
                     .unwrap_or(lines.len());
+                // The marker-line grant stops at its first blank. Only an
+                // own-line attachment can carry that blank into its fence.
+                if trim_ascii(first) == "+" {
+                    return Some(first_blank);
+                }
                 return Some(own_line_fence_end(
                     CursorLines::Slice(lines),
                     from,
                     first_blank,
                     Some(container.content_column),
+                    |at| Some(self.first_source_line + at),
                 ));
             }
             detect_line_block_open(text)
@@ -2605,6 +2611,26 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         i: &mut usize,
     ) -> Flow {
         let column = indent_columns(line);
+        // The ownership walk consumes a refused marker at the note's marker
+        // column. It cannot become payload of the fence attached above it.
+        if state.own_line_fence
+            && continuation_marker::is_consumed_marker(trim_ascii_start(line))
+            && note.lines.last().is_some_and(|last| is_blank_line(last))
+        {
+            if let Some(open) = note.comment_state.code {
+                note.push_with(
+                    char::from(open.fence_char)
+                        .to_string()
+                        .repeat(open.fence_len),
+                    None,
+                    |_| None,
+                );
+            }
+            state.note_fence = None;
+            state.own_line_fence = false;
+            *i += 1;
+            return Flow::Next;
+        }
         if let Some(marker) = state.attached_quote_marker {
             let text = trim_ascii_start(line);
             if !blank
@@ -3014,7 +3040,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         let resumes = resumes || span_resumes;
         if !resumes {
             // The run still reaches an open fence that ends with the note.
-            if note.holds_open_fence() {
+            if note.holds_open_fence() && trim_ascii(state.first) != "+" {
                 for (at, blank) in lines.iter().enumerate().take(after_run).skip(*i) {
                     let (residue, consumed, synthetic) =
                         slice_columns_mapped(blank, state.body_indent, true);
@@ -3091,6 +3117,17 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             },
             |closer| closer + 1,
         );
+        let end = if state.own_line_fence {
+            own_line_fence_end(
+                CursorLines::Slice(lines),
+                attached_start,
+                end,
+                Some(state.body_indent),
+                |at| Some(self.first_source_line + at),
+            )
+        } else {
+            end
+        };
         while *i < end {
             attached.push(if pulled_closer == Some(*i) {
                 trim_ascii_start(lines[*i]).to_string()
@@ -3587,6 +3624,21 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             .map_while(|raw| host.content(raw).filter(|line| !is_blank_line(line)))
             .map(|line| strip_leading_columns(line, host.note_floor.saturating_sub(2)))
             .collect();
+        if attached.first().is_some_and(|line| {
+            detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                !lines[i + 1..].iter().any(|raw| {
+                    is_fence_close(trim_ascii_start(raw), open)
+                        && indent_columns(raw) == indent_columns(lines[i])
+                })
+            })
+        }) {
+            let marker_col = host.note_floor.saturating_sub(2);
+            if let Some(missed) =
+                (1..attached.len()).find(|&at| indent_columns(lines[i + at]) < marker_col)
+            {
+                attached.truncate(missed);
+            }
+        }
         // A lazy line without the quote prefix may finish a refused brace run
         // in the first attached paragraph. Keep it in that block before the
         // separator is inserted, so the paragraph reader sees the whole run.
@@ -3752,10 +3804,31 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 ),
             );
         }
-        let closers = if lines
-            .get(i + count)
-            .and_then(|raw| host.content(raw))
-            .is_some_and(is_blank_line)
+        let shifted_closer = attached_refs
+            .get(lead)
+            .and_then(|line| detect_fence_open(trim_ascii_start(line)))
+            .and_then(|open| {
+                let first_blank = i + count;
+                let after_blank =
+                    (first_blank..lines.len()).find(|&at| !is_blank_line(lines[at]))?;
+                let raw = lines[after_blank];
+                let marker_col = host.note_floor.saturating_sub(2);
+                let authored_col =
+                    authored_indent_column(self.first_source_line + after_blank, raw);
+                (first_blank < after_blank
+                    && authored_col > marker_col
+                    && authored_col < host.note_floor
+                    && is_fence_close(trim_ascii_start(raw), open)
+                    && lines.get(after_blank + 1).is_some_and(|next| {
+                        host.content(next).is_some() && indent_columns(next) >= host.note_floor
+                    }))
+                .then_some(after_blank)
+            });
+        let closers = if shifted_closer.is_none()
+            && lines
+                .get(i + count)
+                .and_then(|raw| host.content(raw))
+                .is_some_and(is_blank_line)
         {
             let remaining: Vec<&str> = lines[i + count + 1..]
                 .iter()
@@ -3797,6 +3870,19 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         for closer in closers {
             note.push_with(closer, None, |_| None);
+        }
+        if let Some(closer_at) = shifted_closer {
+            for at in i + count..closer_at {
+                self.push_hosted_blank(host, note, at);
+            }
+            note.push_with(
+                trim_ascii_start(lines[closer_at]).to_owned(),
+                Some(self.first_source_line + closer_at),
+                |_| Some(indent_columns(lines[closer_at]) as isize),
+            );
+            note.block_separator = Some(note.lines.len());
+            note.push_blank();
+            return closer_at + 1;
         }
         note.block_separator = Some(note.lines.len());
         note.push_blank();
