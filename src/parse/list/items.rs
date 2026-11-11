@@ -3623,7 +3623,7 @@ fn walk_chunk(stream: &mut MappedSource) {
         stream.opaque_blank_lines.sort_unstable();
         stream.set_source(lines.join("\n"));
     }
-    let Some((walked, shifts)) = walk_body(&stream.source) else {
+    let Some((walked, shifts)) = walk_body(&stream.source, &stream.line_map) else {
         return;
     };
     for (line, delta) in shifts {

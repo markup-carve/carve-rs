@@ -695,11 +695,12 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                         let Some(&start) = self.starts.get(line.saturating_sub(1)) else {
                             continue;
                         };
-                        for column in (lead.chars().count().saturating_sub(spaces) + 1
+                        let columns: Vec<_> = (lead.chars().count().saturating_sub(spaces) + 1
                             ..=lead.chars().count())
                             .rev()
                             .take(wanted.saturating_sub(placed))
-                        {
+                            .collect();
+                        for column in columns.into_iter().rev() {
                             let offset = start + column - 1;
                             if paragraph.pos.as_ref().is_some_and(|pos| {
                                 offset < pos.start_offset || offset + 1 > pos.end_offset

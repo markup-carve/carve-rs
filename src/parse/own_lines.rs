@@ -831,7 +831,7 @@ pub fn decision_trace(source: &str) -> String {
     let source = normalize_source(source);
     let records = match super::transparent_lines::Transparent::detect(source.as_ref()) {
         Some(transparent) => transparent_trace(&transparent),
-        None => walk_traced(source.as_ref(), true, true, Some(Vec::new()), None)
+        None => walk_traced(source.as_ref(), true, true, Some(Vec::new()), None, None)
             .1
             .unwrap_or_default(),
     };
@@ -862,9 +862,16 @@ fn transparent_trace(transparent: &super::transparent_lines::Transparent) -> Vec
             .collect::<Vec<_>>()
             .join("/")
     };
-    let mut records = walk_traced(&transparent.visible, true, true, Some(Vec::new()), None)
-        .1
-        .unwrap_or_default();
+    let mut records = walk_traced(
+        &transparent.visible,
+        true,
+        true,
+        Some(Vec::new()),
+        None,
+        None,
+    )
+    .1
+    .unwrap_or_default();
     for record in &mut records {
         record.line = line(record.line);
         record.owner = path(&record.owner);
@@ -930,6 +937,7 @@ fn frame_tab_column(line: &str, origins: &[usize]) -> usize {
 
 struct Walk<'a> {
     lines: Vec<&'a str>,
+    authored_fence_tab_openers: Vec<bool>,
     frames: Vec<Frame>,
     note_labels: HashSet<String>,
     losing_note_plus: HashSet<usize>,
@@ -1284,8 +1292,11 @@ fn walk(source: &str) -> Option<OwnedSource> {
 /// Walk a body a collector cut out, so an opener past the body's column opens
 /// there as it does in a document. Returns the walked body and, per 0-based
 /// line, the leading columns it removed.
-pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
-    let owned = walk_from(source, false, false)?;
+pub(crate) fn walk_body(
+    source: &str,
+    line_map: &[Option<usize>],
+) -> Option<(String, Vec<(usize, isize)>)> {
+    let owned = walk_traced(source, false, false, None, None, Some(line_map)).0?;
     let mut shifts: Vec<(usize, isize)> = Vec::new();
     for edit in &owned.edits {
         match shifts.last_mut() {
@@ -1297,7 +1308,7 @@ pub(crate) fn walk_body(source: &str) -> Option<(String, Vec<(usize, isize)>)> {
 }
 
 fn walk_from(source: &str, frontmatter: bool, decide: bool) -> Option<OwnedSource> {
-    walk_traced(source, frontmatter, decide, None, None).0
+    walk_traced(source, frontmatter, decide, None, None, None).0
 }
 
 fn walk_traced(
@@ -1306,6 +1317,7 @@ fn walk_traced(
     decide: bool,
     trace: Option<Vec<TraceRecord>>,
     candidate_lines: Option<&[usize]>,
+    line_map: Option<&[Option<usize>]>,
 ) -> (Option<OwnedSource>, Option<Vec<TraceRecord>>) {
     let (_, fm, body) = if frontmatter {
         split_frontmatter(source, false)
@@ -1330,6 +1342,18 @@ fn walk_traced(
     });
     let mut walk = Walk {
         lines: body.split('\n').collect(),
+        authored_fence_tab_openers: line_map.map_or_else(Vec::new, |mapped| {
+            AUTHORED_SOURCE.with(|slot| {
+                let source = slot.borrow();
+                mapped
+                    .iter()
+                    .map(|line| {
+                        line.and_then(|line| source.as_ref()?.get(&line))
+                            .is_some_and(|text| text[..indent_cols(text).1].contains('\t'))
+                    })
+                    .collect()
+            })
+        }),
         frames: vec![Frame::new(Kind::Doc)],
         note_labels: Default::default(),
         losing_note_plus: Default::default(),
@@ -3833,7 +3857,12 @@ impl<'a> Walk<'a> {
             let opener_tab = self
                 .lines
                 .get(inner.line.saturating_sub(1))
-                .is_some_and(|opener| opener[..indent_cols(opener).1].contains('\t'));
+                .is_some_and(|opener| opener[..indent_cols(opener).1].contains('\t'))
+                || self
+                    .authored_fence_tab_openers
+                    .get(inner.line.saturating_sub(1))
+                    .copied()
+                    .unwrap_or(false);
             Self::write_payload_lead(
                 c,
                 inner,
@@ -5228,6 +5257,7 @@ impl AuthoredSourceGuard {
     pub(crate) fn install(source: &str) -> Self {
         if !source.contains("{%")
             && !(source.contains('\t') && source.contains("[^"))
+            && !(source.contains('\t') && (source.contains("```") || source.contains("~~~")))
             && !(source.contains('{') && source.contains('>'))
         {
             return Self {
@@ -5287,13 +5317,20 @@ pub(crate) fn remap_active_edit_lines(map: impl Fn(usize) -> usize) {
 /// and whether a `+` above skips the line. Line numbers count from the top of
 /// `source`, frontmatter included.
 pub(crate) fn traced_leaves(source: &str, candidate_lines: &[usize]) -> Vec<(usize, String, bool)> {
-    walk_traced(source, true, true, Some(Vec::new()), Some(candidate_lines))
-        .1
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.step == "S5" && record.form == "leaf" && !record.in_comment)
-        .map(|record| (record.line - 1, record.owner, record.plus.is_some()))
-        .collect()
+    walk_traced(
+        source,
+        true,
+        true,
+        Some(Vec::new()),
+        Some(candidate_lines),
+        None,
+    )
+    .1
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|record| record.step == "S5" && record.form == "leaf" && !record.in_comment)
+    .map(|record| (record.line - 1, record.owner, record.plus.is_some()))
+    .collect()
 }
 
 pub(crate) fn is_region_marker_text(text: &str) -> bool {

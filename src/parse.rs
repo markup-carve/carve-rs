@@ -1000,6 +1000,8 @@ fn parse_with_options_mode_and_index(
             line.find("::: |")
                 .is_some_and(|at| line[..at].contains('\t'))
         });
+    let tabbed_code_fence =
+        source.contains('\t') && (source.contains("```") || source.contains("~~~"));
     // A hoisted abbreviation needs source lines (CARVE-P12-070). A multiline
     // block comment or a consumed `+` needs authored columns after nested
     // collection, even when callers did not request AST positions.
@@ -1011,6 +1013,7 @@ fn parse_with_options_mode_and_index(
             })
             || transparent.is_some()
             || tabbed_line_block
+            || tabbed_code_fence
             || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source))
             || (parsed.contains('+')
                 && own_lines(normalize_source(parsed).as_ref())

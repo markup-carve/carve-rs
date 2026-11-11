@@ -502,7 +502,7 @@ fn definition_source(mut note: NoteBody) -> MappedSource {
             })
         })
     {
-        if let Some((walked, shifts)) = walk_body(&mapped.source) {
+        if let Some((walked, shifts)) = walk_body(&mapped.source, &mapped.line_map) {
             for (line, delta) in shifts {
                 if let Some(Some(column)) = mapped.col_map.get_mut(line) {
                     *column += delta;

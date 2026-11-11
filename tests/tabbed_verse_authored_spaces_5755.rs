@@ -44,4 +44,17 @@ fn a_tabbed_stanza_keeps_positions_for_authored_spaces() {
         no_break_space_columns("- a\n  - a\n\n  \t::: |\n  \t  x\n  \t:::\n"),
         vec![Some((5, 5)), None]
     );
+    assert_eq!(
+        no_break_space_columns("- a\n  - a\n\n  \t::: |\n\t\t  x\n\t:::\n"),
+        vec![Some((5, 3)), Some((5, 4)), None, None]
+    );
+}
+
+#[test]
+fn a_nested_tabbed_fence_keeps_literal_code_after_collection() {
+    let source = "- a\n  - a\n  \t```\n    \t z\n  \t```\n";
+    let formatted = carve::to_carve(source);
+    let html = carve::to_html(source);
+    assert!(html.contains("<pre><code>\t z\n</code></pre>"), "{html}");
+    assert_eq!(html, carve::to_html(&formatted));
 }

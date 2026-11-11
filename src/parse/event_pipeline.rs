@@ -3394,6 +3394,9 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
+    if source.contains('\t') && (source.contains("```") || source.contains("~~~")) {
+        return None;
+    }
     if has_multiline_braced_comment(source) {
         return None;
     }
@@ -3882,6 +3885,9 @@ fn parse_document_with_custom_options_once(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
+    if source.contains('\t') && (source.contains("```") || source.contains("~~~")) {
+        return None;
+    }
     let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return None;
