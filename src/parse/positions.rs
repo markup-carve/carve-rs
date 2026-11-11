@@ -629,6 +629,64 @@ pub(in crate::parse) fn bound_positions_to_lines<'b>(
     }
 }
 
+/// A block comment ends after its closer (CARVE-P12-014). A comment in a note
+/// opened on a list marker line maps its closer line short of the `%` run.
+pub(in crate::parse) fn extend_comment_closers<'b>(
+    groups: impl IntoIterator<Item = &'b mut [BlockNode]>,
+    lines: &[&str],
+) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+
+    struct Closers<'a> {
+        lines: &'a [&'a str],
+    }
+
+    impl Closers<'_> {
+        fn block(&mut self, block: &mut BlockNode) {
+            if let BlockNode::Comment(comment) = block {
+                let raw = comment
+                    .pos
+                    .as_ref()
+                    .filter(|_| comment.block)
+                    .and_then(|pos| self.lines.get(pos.end_line.checked_sub(1)?));
+                if let (Some(run), Some(pos)) =
+                    (raw.and_then(|l| closer_run(l)), comment.pos.as_mut())
+                {
+                    if (run.start..run.end).contains(&pos.end_column) {
+                        pos.end_offset += run.end - pos.end_column;
+                        pos.end_column = run.end;
+                    }
+                }
+            }
+            visit_block_children(block, self);
+        }
+    }
+
+    impl SubtreeVisitor for Closers<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                self.block(block);
+            }
+        }
+    }
+
+    let mut closers = Closers { lines };
+    for block in groups.into_iter().flatten() {
+        closers.block(block);
+    }
+}
+
+/// The 1-based columns `[first %, after last %)` of a `%%%` closer line.
+fn closer_run(line: &str) -> Option<std::ops::Range<usize>> {
+    let chars: Vec<char> = line.chars().collect();
+    let start = chars
+        .iter()
+        .position(|&ch| !matches!(ch, ' ' | '\t' | '>'))?;
+    let end = start + chars[start..].iter().take_while(|&&ch| ch == '%').count();
+    (end - start >= 3 && chars[end..].iter().all(|&ch| matches!(ch, ' ' | '\t')))
+        .then_some(start + 1..end + 1)
+}
+
 /// Restore the authored spaces in a verse lead after a tab has crossed owner
 /// frames. The inline reader can lose their columns when the rewritten lead
 /// starts beyond the authored line; only spaces still present in that line
