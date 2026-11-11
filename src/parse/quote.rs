@@ -2763,6 +2763,33 @@ impl<'a> QuoteBody<'a> {
                     || (trim_ascii(next) == "+" && indent_columns(next) == 0)
             },
         );
+        // An own-line fence keeps its blank when a quoted line resumes the
+        // host. Carry that quoted tail as fence payload, stripping only the
+        // quote marker. The first-block scan stops at the blank because it
+        // cannot decide the owner of the following line by itself (carve#5658).
+        let mut quoted_fence_tail = None;
+        if cur.lines.line(attach_end).is_some_and(is_blank_line)
+            && cur
+                .lines
+                .line(cur.pos)
+                .and_then(detect_fence_open)
+                .is_some_and(|open| {
+                    (cur.pos + 1..attach_end).all(|at| !is_fence_close(cur.lines.at(at), open))
+                })
+        {
+            let mut at = attach_end;
+            while let Some(next) = cur.lines.line(at) {
+                if is_blank_line(next) || strip_blockquote_prefix(next).is_some() {
+                    at += 1;
+                } else {
+                    break;
+                }
+            }
+            if at > attach_end + 1 {
+                quoted_fence_tail = Some(attach_end);
+                attach_end = at;
+            }
+        }
         while attach_end > cur.pos
             && cursor_lines.line(attach_end - 1).is_some_and(|last| {
                 is_definition_placeholder(without_blockquote_prefixes(trim_ascii_start(last)))
@@ -2793,8 +2820,13 @@ impl<'a> QuoteBody<'a> {
             let next = cur.lines.at(cur.pos);
             // Attached lines are spliced in verbatim, so the container took
             // nothing beyond whatever an outer one already had.
+            let carried = if quoted_fence_tail.is_some_and(|start| cur.pos > start) {
+                strip_blockquote_prefix(next).unwrap_or(next)
+            } else {
+                next
+            };
             attached.push_at(
-                next.to_string(),
+                carried.to_string(),
                 cur.source_line(cur.pos),
                 cur.source_col(cur.pos),
             );

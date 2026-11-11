@@ -27,3 +27,32 @@ fn dd_stacked_unclosed_fence_refused_plus_3() {
     let expected = "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd>\n        <pre><code>a\n</code></pre>\n        <p>zq</p>\n      </dd>\n    </dl>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source).trim(), expected);
 }
+#[test]
+fn quote_own_fence_0() {
+    let source = "> p\n+\n```\na\n\n>   zq";
+    let expected = "<blockquote>\n  <p>p</p>\n  <pre><code>a\n\n  zq</code></pre>\n</blockquote>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn quote_own_fence_1() {
+    let source = "> p\n+\n```\na\n\n> zq";
+    let expected = "<blockquote>\n  <p>p</p>\n  <pre><code>a\n\nzq</code></pre>\n</blockquote>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn quote_own_fence_2() {
+    let source = "> p\n+\n```\na\n\n> +\n>   zq";
+    let expected =
+        "<blockquote>\n  <p>p</p>\n  <pre><code>a\n\n+\n  zq</code></pre>\n</blockquote>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn quote_own_fence_3() {
+    let source = "> p\n+\n```\na\n\n>  ```\n>   zq";
+    let expected =
+        "<blockquote>\n  <p>p</p>\n  <pre><code>a\n\n ```\n  zq</code></pre>\n</blockquote>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}

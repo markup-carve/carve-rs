@@ -90,6 +90,7 @@ struct Frame {
     /// First blank that ends an attached, unclosed fence or colon container.
     attached_blank_end: Option<usize>,
     attached_host_fence: bool,
+    quote_fence_after_blank: bool,
     open_col: usize,
     attached_closer_col: usize,
     run: usize,
@@ -184,6 +185,7 @@ impl Frame {
             closer: None,
             attached_blank_end: None,
             attached_host_fence: false,
+            quote_fence_after_blank: false,
             open_col: 0,
             attached_closer_col: 0,
             run: 0,
@@ -3046,7 +3048,9 @@ impl<'a> Walk<'a> {
                 || comment_line()
                 || attached_quote_comment
                 || attached_closer
-                || attached_blank)
+                || attached_blank
+                || (inner.quote_fence_after_blank
+                    && (rest.is_empty() || quote_marker(rest).is_some())))
     }
 
     fn attached_fence_ends_at(&self, at: usize) -> bool {
@@ -4330,6 +4334,20 @@ impl<'a> Walk<'a> {
                                     .is_some_and(is_blank_line)
                         });
                         if let Some(blank) = first_blank {
+                            f.quote_fence_after_blank = !marker_line_attached
+                                && self.attached.as_ref().is_some_and(|block| {
+                                    block.from == at
+                                        && block
+                                            .frames
+                                            .last()
+                                            .is_some_and(|host| host.kind == Kind::Quote)
+                                })
+                                && self.lines[blank + 1..]
+                                    .iter()
+                                    .find(|line| !is_blank_line(line))
+                                    .is_some_and(|line| {
+                                        quote_marker(trim_ascii_start(line)).is_some()
+                                    });
                             let runs = self.runs.get_or_init(|| closer_runs(&self.lines));
                             let has_closer = if marker_line_attached {
                                 runs.code_by_column
@@ -4352,7 +4370,7 @@ impl<'a> Walk<'a> {
                                     )
                             };
                             f.attached_host_fence = marker_line_attached && has_closer;
-                            if !has_closer {
+                            if !has_closer && !f.quote_fence_after_blank {
                                 f.attached_blank_end = Some(blank);
                             }
                         }
