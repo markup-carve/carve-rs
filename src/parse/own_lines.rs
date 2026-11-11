@@ -3042,10 +3042,21 @@ impl<'a> Walk<'a> {
             origins.push(opener_origin);
             let column = if reached < opener_origin {
                 inner.canon
-            } else {
+            } else if inner.verse_rewritten_opener {
                 inner.canon + frame_tab_column(c.src, &origins).saturating_sub(opener_origin)
+            } else {
+                frame_tab_column(c.src, &origins)
             };
             c.lead_at(column + inner.shift + c.attachment_shift, true);
+        } else if matches!(closer, Some(Closer::Fence(..)))
+            && c.src[..c.src.len() - c.rest.len()]
+                .find('\t')
+                .is_some_and(|at| at >= inner.canon)
+        {
+            // Code payload is verbatim after its structural frames are stripped.
+            // Keep a tab that begins after those frames for the recursive body
+            // reader; a tab straddling their columns is structural instead.
+            c.lead_at(c.authored_col, false);
         } else if verse_payload
             && !inner.verse_opener_tab
             && !inner.verse_marker_line
@@ -3771,6 +3782,16 @@ impl<'a> Walk<'a> {
         *after_plus = false;
         let attached_fence_ended = self.attached_fence_ends_at(at);
         reached = self.reach_after_attached_fence_end(reached, attached_fence_ended);
+        // The line was admitted through these frames using their tab stops.
+        // Record its marker or follower column in those same coordinates.
+        if reached > 0 && c.src[..indent_cols(c.src).1].contains('\t') {
+            let origins: Vec<_> = self.frames[1..=reached]
+                .iter()
+                .filter(|frame| frame.kind != Kind::Quote)
+                .map(|frame| frame.col + frame.shift)
+                .collect();
+            c.col = frame_tab_column(c.src, &origins);
+        }
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
