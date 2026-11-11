@@ -3655,15 +3655,20 @@ fn marker_refused_brace_run(
         };
         measured.push(line.to_owned());
     }
+    let mut opener_quotes = None;
     match refused_brace_run_with_columns(
         measured.iter().map(String::as_str),
         true,
         |offset, raw| {
             let source = cur.source_line(at + offset)?;
             if content.starts_with("{%") {
-                if let Some(column) =
-                    crate::parse::own_lines::authored_comment_column(source, offset == 0)
+                let quotes = if offset == 0 { None } else { opener_quotes };
+                if let Some((column, read)) =
+                    crate::parse::own_lines::authored_comment_column(source, quotes)
                 {
+                    if offset == 0 {
+                        opener_quotes = Some(read);
+                    }
                     return Some(column);
                 }
             }
