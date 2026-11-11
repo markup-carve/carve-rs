@@ -11,9 +11,15 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-## [0.1.14] - 2026-11-08
+## [0.1.14] - 2026-11-11
 
 Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes layout, inline and import behavior.
+
+### Breaking
+
+- HTML import reads only the canonical `data-carve-*` carriers; `data-djot-*` attributes import as ordinary attributes. Lint suppression no longer aliases `a11y/heading-jump`, and accessibility lint reports `heading-level-skip` (#4195, #4258).
+- Lint reports a refused own-line `+` as `refused-continuation-marker` instead of `continuation-marker-refused` (#4201).
+- `render_markdown_with_options` returns `MarkdownRenderError` and `try_to_markdown_with_options` returns `CarveWriteError`: a roundtrip carrier the writer cannot spell is an error, and the CLI prints it and exits 1 (#4252).
 
 ### Fixes
 
@@ -48,9 +54,20 @@ Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes la
 - Bare include quotes retain their surrounding block ownership (#3962).
 - Attached fences, colon bodies and quote frames close at the owning host boundary (#4005, #4020, #4031, #4037, #4040).
 - The HTML facade preserves thematic breaks and walks text in document order (#4053).
+- Footnote and note `+`: losing duplicate definitions, refused note markers, attached blocks, lazy lines and fences keep the owner the walk gives them (#4082, #4084, #4086, #4091, #4092, #4096, #4098, #4099, #4102, #4103, #4104, #4108, #4109, #4110, #4115, #4116, #4119, #4132, #4144, #4153, #4175, #4235, #4243, #4245, #4249, #4254).
+- Attached fences and lists: a `+` inside an unclosed attached fence stays code, shifted closers and child fences stay in their host, and siblings survive a refused `+` (#4088, #4095, #4129, #4133, #4134, #4142, #4150, #4151, #4187, #4193, #4200, #4210, #4227, #4236).
+- A refused block brace run claims no lines and its follower reads as paragraph text in every host; brace runs are measured in authored columns after each line's quote prefixes (#4127, #4128, #4135, #4143, #4146, #4149, #4152, #4154, #4155, #4203, #4205, #4211, #4212, #4216, #4218, #4223, #4240).
+- Comment spans and runs stay invisible or literal in description, quote, note and list hosts, including brace lines inside a comment that closes later (#4085, #4194, #4196, #4206, #4214, #4221, #4222, #4225, #4229, #4234, #4246).
+- An attribute line after a first-block `+` is invisible, and one inside an open code span stays code (#4118, #4156).
+- Line blocks and colon fences: quoted verse pairing stays in its quote, tabbed verse openers keep their columns, a bare colon opener holds no paragraph, and quote openers among colon fences are tracked (#4121, #4176, #4177, #4179, #4189, #4197, #4204).
+- Abbreviations expand in nested inline text and respect word boundaries across inline nodes; a region marker at a list's column ends the list (#4161, #4170).
+- Symbol attribute runs merge, an autolink ignores an authored `href`, nested item continuations keep their tab reach, and figure note order, cell cross-reference pipes and link-text brackets follow the spec (#4169, #4174).
+- The canonical writer keeps position-free item comment runs together (#4191).
+- AST positions for tabbed verse spaces and nested duplicate notes follow the spec (#4244).
 
 ### Improvements
 
+- HTML import reports authored attributes it drops from endnote items (#4202).
 - `carve trace <file>` and `carve::decision_trace(source)` print the block decision trace (format version 1) from the ownership walk (#3562).
 - Table includes select records with `@rows` and project columns with `@cols` for marked CSV and TSV files; `@lines` on a table include gets a lint hint (#3433).
 - Markdown import reads GitHub alert blockquotes (`> [!NOTE]` and the rest) as admonitions (#3532).
