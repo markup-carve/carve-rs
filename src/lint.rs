@@ -479,6 +479,9 @@ fn collect_parser_events(
     let mut fences = HashMap::new();
     let mut attached_first_block_items = HashSet::new();
     let mut visible_plus_spans = Vec::new();
+    // The walk reads lines strictly inside a multi-line `{% %}` run as blocks;
+    // the readers keep them as run text (carve-rs#4260).
+    let mut comment_interior = HashSet::new();
     let mut blocks: Vec<_> = doc.children.iter().map(|block| (block, 0)).collect();
     for body in doc.footnote_defs.values() {
         blocks.extend(body.iter().map(|block| (block, 0)));
@@ -516,11 +519,21 @@ fn collect_parser_events(
                     }
                 }
             }
+            BlockNode::Comment(comment) => {
+                if let Some(pos) = &comment.pos {
+                    comment_interior.extend(pos.start_line + 1..pos.end_line);
+                }
+            }
             _ => {}
         }
         let mut inlines = Vec::new();
         crate::render_depth::push_block_children(block, depth, &mut blocks, &mut inlines);
         while let Some((inline, inline_depth)) = inlines.pop() {
+            if let InlineNode::Comment(comment) = inline {
+                if let Some(pos) = &comment.pos {
+                    comment_interior.extend(pos.start_line + 1..pos.end_line);
+                }
+            }
             if let InlineNode::Text(text) = inline {
                 if text.value.contains('+') {
                     if let Some(pos) = &text.pos {
@@ -738,6 +751,9 @@ fn collect_parser_events(
                 )
             }
         };
+        if rule != "unclosed-code-fence" && comment_interior.contains(&line) {
+            continue;
+        }
         if !seen.insert((line, column, rule)) {
             continue;
         }

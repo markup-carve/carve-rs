@@ -1143,6 +1143,17 @@ impl<'d> BlockWalker<'d, '_> {
             }
             BlockNode::Paragraph(p) => {
                 scan.paragraphs.extend(pos.start_line..=pos.end_line);
+                // The lines strictly inside a multi-line `{% %}` run are its
+                // text, not blocks (carve-rs#4260).
+                let mut inlines: Vec<_> = p.children.iter().map(|inline| (inline, 0)).collect();
+                while let Some((inline, depth)) = inlines.pop() {
+                    if let InlineNode::Comment(c) = inline {
+                        if let Some(at) = &c.pos {
+                            scan.ignored.extend(at.start_line + 1..at.end_line);
+                        }
+                    }
+                    crate::render_depth::push_inline_children(inline, depth, &mut inlines);
+                }
                 if let Some(InlineNode::Text(t)) = p.children.first() {
                     if let Some(p) = &t.pos {
                         scan.starts.push((p.clone(), t.value.as_str()));
