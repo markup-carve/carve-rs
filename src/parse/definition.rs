@@ -2214,7 +2214,17 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         } else {
             self.content_column.min(indent)
         };
-        let mut sliced = slice_columns(line, payload_column, true);
+        let mut sliced = if fence.open.is_none()
+            && line[..leading_ws(line)].contains('\t')
+            && item_block_opener(opener)
+        {
+            // A marker below nested descriptions keeps the tab width it had
+            // in its parent frame. Leaving the tab byte after stripping that
+            // frame restarts it at column zero in the child and invents lead.
+            format!("{}{}", " ".repeat(indent - payload_column), opener)
+        } else {
+            slice_columns(line, payload_column, true)
+        };
         let host_colon_opener = indent > self.content_column
             && self.lines.last().is_some_and(|prior| is_blank_line(prior))
             && fence.open.is_none()

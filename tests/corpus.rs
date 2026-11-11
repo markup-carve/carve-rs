@@ -1586,21 +1586,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
 </aside>"##,
     ),
     (
-        "1037-a-tab-led-quote-under-nested-descriptions-opens-in-the-inner-description",
-        "carve#4085: spec pin behavior pending its separate engine port",
-        r##"<dl>
-  <dt>t</dt>
-  <dd>
-    <p>a</p>
-    <dl>
-      <dt>t</dt>
-      <dd>a
-&gt; b</dd>
-    </dl>
-  </dd>
-</dl>"##,
-    ),
-    (
         "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
         "carve#5844: spec pin behavior pending its separate engine port",
         r##"<ul>
