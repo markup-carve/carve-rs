@@ -32,7 +32,10 @@ fn a_note_attribute_line_under_a_plus_is_dropped_with_the_note() {
 #[test]
 fn an_attribute_line_left_of_the_note_body_column_stays_the_hosts() {
     let html = carve::to_html("- +\n[^m]: n\n {y}\nq\n\np[^m]\n");
-    assert!(html.contains("<ul>\n  <li></li>\n</ul>\n<p y=\"\">q</p>"), "{html}");
+    assert!(
+        html.contains("<ul>\n  <li></li>\n</ul>\n<p y=\"\">q</p>"),
+        "{html}"
+    );
 }
 
 #[test]
