@@ -3087,7 +3087,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             && self
                 .cur
                 .source_line(self.cur.pos)
-                .and_then(|line| crate::parse::own_lines::authored_comment_column(line, true))
+                .and_then(|line| crate::parse::own_lines::authored_comment_column(line, None))
+                .map(|(column, _)| column)
                 .zip(
                     self.cur
                         .source_line(self.item_head)
@@ -3100,6 +3101,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                     );
                     opener > 0 && opener < marker
                 });
+        let opener_quotes = self
+            .cur
+            .source_line(self.cur.pos)
+            .and_then(|line| crate::parse::own_lines::authored_comment_column(line, None))
+            .map_or(usize::MAX, |(_, quotes)| quotes);
         let run = if opener_misses_marker {
             RefusedBraceRun::Lines(1)
         } else {
@@ -3117,8 +3123,11 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                             let column =
                                 crate::parse::own_lines::authored_visual_column(line, walked + 1);
                             let written = if trim_ascii_start(next).starts_with("{%") {
-                                crate::parse::own_lines::authored_comment_column(line, false)
-                                    .unwrap_or(column)
+                                crate::parse::own_lines::authored_comment_column(
+                                    line,
+                                    Some(opener_quotes),
+                                )
+                                .map_or(column, |(written, _)| written)
                             } else {
                                 column
                             };
