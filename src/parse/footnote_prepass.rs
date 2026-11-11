@@ -3923,7 +3923,8 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         }
         let mut in_skipped_note = false;
         for (offset, line) in attached.iter().take(count).cloned().enumerate() {
-            let col = lines[i + offset].chars().count() as isize - line.chars().count() as isize;
+            let col = lines[i + offset].chars().count() as isize
+                - strip_lazy(&line).chars().count() as isize;
             in_skipped_note = offset < lead
                 && if parse_footnote_def_line(trim_ascii_start(&line)).is_some() {
                     false
