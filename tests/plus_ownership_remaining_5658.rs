@@ -83,3 +83,23 @@ fn own_fence_shifted_3() {
     let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>p</p>\n    <pre><code>a\n\n</code></pre>\n  </dd>\n</dl>\n<pre><code> zq</code></pre>";
     assert_eq!(carve::to_html(source).trim(), expected);
 }
+#[test]
+fn stacked_code_attribute_0() {
+    let source = "- - +\n  `o\n  {#i\n   .y}\nzq";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li><code>o\n{#i\n.y}\nzq</code></li>\n    </ul>\n  </li>\n</ul>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn stacked_code_attribute_1() {
+    let source = "* - +\n  `o\n  {#i\n   .y}\nzq";
+    let expected = "<ul>\n  <li>\n    <ul>\n      <li><code>o\n{#i\n.y}\nzq</code></li>\n    </ul>\n  </li>\n</ul>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
+
+#[test]
+fn stacked_code_attribute_2() {
+    let source = "- :: t\n  : +\n  `o\n  {#i\n   .y}\nzq";
+    let expected = "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd><code>o\n{#i\n.y}\nzq</code></dd>\n    </dl>\n  </li>\n</ul>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}

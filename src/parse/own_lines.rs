@@ -968,6 +968,7 @@ struct Walk<'a> {
     /// The frames at the last accepted `+`, its host's quote depth and marker
     /// column, and the line its block starts on.
     attached: Option<AttachedBlock>,
+    span_tail_at: Option<usize>,
     enclosing_attachments: Vec<AttachedBlock>,
     attached_quotes: Vec<(usize, usize)>,
     /// The marker frame this line's opener closed: kind, axes, list column and shift.
@@ -1024,6 +1025,7 @@ struct AttachedBlock {
     depth: usize,
     marker: usize,
     from: usize,
+    span_scan: paragraph::InlineSpanScan,
 }
 
 /// One line being rewritten: `out` is written, `src` remains.
@@ -1358,6 +1360,7 @@ fn walk_traced(
         has_closed_list: false,
         overindented: Vec::new(),
         attached: None,
+        span_tail_at: None,
         enclosing_attachments: Vec::new(),
         attached_quotes: Vec::new(),
         skipped: None,
@@ -2245,6 +2248,7 @@ impl<'a> Walk<'a> {
             depth,
             marker: self.frames[host].marker.map_or(0, |(col, _)| col),
             from,
+            span_scan: paragraph::InlineSpanScan::default(),
         });
     }
 
@@ -2442,6 +2446,25 @@ impl<'a> Walk<'a> {
             return;
         }
         self.replace_frames(attached.frames.clone());
+    }
+
+    fn attached_code_span_tail(&mut self, at: usize) -> Option<Vec<Frame>> {
+        let block = self.attached.as_mut()?;
+        if at <= block.from
+            || !block
+                .frames
+                .last()
+                .is_some_and(|host| matches!(host.kind, Kind::Item | Kind::Dd))
+            || self.lines[block.from..at]
+                .iter()
+                .any(|line| is_blank_line(line))
+            || detect_fence_open(trim_ascii_start(self.lines[block.from])).is_some()
+            || detect_fence_open(trim_ascii_start(self.lines[at])).is_some()
+            || !block.span_scan.code_open(&self.lines[block.from..at])
+        {
+            return None;
+        }
+        Some(block.frames.clone())
     }
 
     fn lazy_shift(
@@ -3583,6 +3606,11 @@ impl<'a> Walk<'a> {
             .rposition(|f| f.kind == Kind::Fence && matches!(f.closer, Some(Closer::Fence(..))));
         self.reopen_attached_host(at, c.src);
         self.resume_attached_host(at, c.src);
+        let span_tail = self.attached_code_span_tail(at);
+        self.span_tail_at = span_tail.as_ref().map(|_| at);
+        if let Some(frames) = span_tail {
+            self.replace_frames(frames);
+        }
         for k in 1..self.frames.len() {
             if self.reaches_colon_suffix(k, c.col) {
                 reached = self.frames.len() - 1;
@@ -3648,6 +3676,9 @@ impl<'a> Walk<'a> {
         reached = self.attached_item_after_quote(at, c, reached);
         reached = self.attach_unclosed_quote_comment(at, reached, c);
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
+        if self.span_tail_at == Some(at) {
+            reached = self.frames.len() - 1;
+        }
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
         // Payload stays as written.
         if self.unattached_plus_is_letter(plus, c.rest, reached) {
@@ -3931,6 +3962,11 @@ impl<'a> Walk<'a> {
                 top.last = Last::Block;
             }
             Form::Text => {
+                let span_tail = self.span_tail_at == Some(at);
+                let span_indent = self
+                    .attached
+                    .as_ref()
+                    .map(|block| indent_cols(self.lines[block.from]).0);
                 let owner = self.top();
                 let cut = owner
                     .cut
@@ -3952,7 +3988,11 @@ impl<'a> Walk<'a> {
                 } else {
                     0
                 };
-                c.lead_in(target, shift, false);
+                if span_tail && span_indent.is_some_and(|indent| c.col < indent) {
+                    c.lead_at(span_indent.unwrap() + shift + c.attachment_shift, false);
+                } else {
+                    c.lead_in(target, shift, false);
+                }
             }
             form => {
                 let (mut canon, shift) = (self.top().canon, self.top().shift);
@@ -4938,6 +4978,9 @@ impl<'a> Walk<'a> {
         let owner_para = self.frames[owner].para;
         let owner_kind = self.frames[owner].kind;
         let owner_last = self.frames[owner].last;
+        if self.span_tail_at == Some(at) && owner_kind.is_marker_body() {
+            return Form::Text;
+        }
         // A list marker still opens its item there, as ownership decides it
         // first, and a `%%` line stays invisible.
         if owner_para
