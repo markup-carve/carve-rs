@@ -3591,31 +3591,27 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                         }
                         let count = candidates.len();
                         for (offset, line) in candidates.into_iter().enumerate() {
-                            let kept = if is_blank_line(line) {
-                                String::new()
+                            let raw = self.lines[resume_at + offset];
+                            let (kept, col) = if is_blank_line(line) {
+                                (String::new(), raw.chars().count() - line.chars().count())
                             } else {
                                 let text = trim_ascii_start(line);
-                                let raw = self.lines[resume_at + offset];
-                                let walked = raw.chars().count() - text.chars().count() + 1;
+                                let lead = raw.chars().count() - text.chars().count();
                                 let authored = own_lines::authored_visual_column(
                                     self.first_source_line + resume_at + offset,
-                                    walked,
+                                    lead + 1,
                                 );
-                                format!(
-                                    "{}{}",
-                                    " ".repeat(authored.saturating_sub(authored_col)),
-                                    text
+                                let indent = authored.saturating_sub(authored_col);
+                                // The column map names where the kept line's indent starts.
+                                (
+                                    format!("{}{}", " ".repeat(indent), text),
+                                    lead.saturating_sub(indent),
                                 )
                             };
                             note.push_with(
                                 kept,
                                 Some(self.first_source_line + resume_at + offset),
-                                |_| {
-                                    Some(
-                                        (self.lines[resume_at + offset].len() - line.len())
-                                            as isize,
-                                    )
-                                },
+                                |_| Some(col as isize),
                             );
                         }
                         return resume_at + count;
