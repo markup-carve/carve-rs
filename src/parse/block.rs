@@ -1823,14 +1823,30 @@ pub(in crate::parse) fn parse_fence(
         .map(|(start, end)| open_line[start..end].to_string());
     let mut content_lines: Vec<String> = Vec::new();
     let mut last_payload_line = None;
+    let mut span_end = None;
     while let Some(line) = cur.peek() {
         if is_fence_close(line, open)
             || (cur.at_document_level
                 && line.starts_with(LAZY)
                 && is_fence_close(strip_lazy(line), open))
         {
+            // A collector writes this closer for a refused `+` that ends the
+            // fence (carve#5637); the fence itself stays unclosed (carve#5951).
+            let synthetic = cur.source_col(cur.pos).is_none()
+                && cur
+                    .source_line(cur.pos)
+                    .or_else(|| {
+                        (span_start..cur.pos)
+                            .rev()
+                            .find_map(|at| cur.source_line(at))
+                            .map(|line| line + 1)
+                    })
+                    .is_some_and(super::continuation_marker::is_consumed_line);
+            if synthetic {
+                span_end = Some(cur.pos);
+            }
             cur.consume();
-            closed = true;
+            closed = !synthetic;
             break;
         }
         last_payload_line = cur.source_line(cur.pos);
@@ -1846,7 +1862,7 @@ pub(in crate::parse) fn parse_fence(
     // The span covers the opener, the body and the closer - the whole block as
     // the author wrote it, not just its content. A blank final payload has no
     // codepoint except its line ending, which belongs to an open fence.
-    let mut pos = span_of(cur, span_start, cur.pos, options);
+    let mut pos = span_of(cur, span_start, span_end.unwrap_or(cur.pos), options);
     let lint_pos = pos.clone();
     if !closed
         && !unterminated
@@ -1868,7 +1884,9 @@ pub(in crate::parse) fn parse_fence(
             let marker = std::iter::repeat(open.fence_char as char)
                 .take(open.fence_len)
                 .collect();
-            let end_line = cur.source_line(cur.pos).unwrap_or(pos.end_line + 1);
+            let end_line = cur
+                .source_line(span_end.unwrap_or(cur.pos))
+                .unwrap_or(pos.end_line + 1);
             note_lint_event(LintEvent::Fence {
                 pos,
                 marker,
