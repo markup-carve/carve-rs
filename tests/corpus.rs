@@ -1569,26 +1569,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 #[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
     (
-        "1012-a-note-attached-fence-blank-ends-lazy-claim",
-        "carve#5581: spec pin behavior pending its separate engine port",
-        r##"<p>x<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
-<p>y</p>
-<section role="doc-endnotes" aria-label="Footnotes">
-  <hr>
-  <ol>
-    <li id="fn1">
-      <ul>
-        <li>
-          <pre><code>- nest
-</code></pre>
-        </li>
-      </ul>
-      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
-    </li>
-  </ol>
-</section>"##,
-    ),
-    (
         "1035-an-own-line-item-fence-ends-in-a-note",
         "carve#5658: spec pin behavior pending its separate engine port",
         r##"<aside class="admonition note" aria-label="Note">

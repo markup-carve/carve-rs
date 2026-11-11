@@ -943,18 +943,19 @@ impl NoteBody {
         let Some(opener) = open_code_fence_opener(&self.lines) else {
             return false;
         };
-        let attached = self.line_map[..opener]
-            .iter()
-            .enumerate()
-            .rposition(|(at, line)| line.is_none() && self.block_separator != Some(at))
-            .is_some_and(|separator| {
-                self.lines[separator + 1..opener].iter().all(|l| {
-                    !is_blank_line(l)
-                        && (is_line_comment_any_column(l)
-                            || is_document_definition_placeholder(l)
-                            || parse_standalone_attrs(trim_ascii_start(l)).is_some())
-                })
-            });
+        let attached = detect_fence_open(trim_ascii_start(&self.lines[opener])).is_some()
+            && self.line_map[..opener]
+                .iter()
+                .enumerate()
+                .rposition(|(at, line)| line.is_none() && self.block_separator != Some(at))
+                .is_some_and(|separator| {
+                    self.lines[separator + 1..opener].iter().all(|l| {
+                        !is_blank_line(l)
+                            && (is_line_comment_any_column(l)
+                                || is_document_definition_placeholder(l)
+                                || parse_standalone_attrs(trim_ascii_start(l)).is_some())
+                    })
+                });
         // An own-line plus grants only the first block. Once an authored blank
         // has ended that grant and body text has continued the still-open
         // fence, later blanks are ordinary fence payload (carve#5560).
@@ -2574,8 +2575,16 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
                 });
             // A fence nested in the attached block keeps the authored blanks
             // as payload; a synthetic separator would add one (carve#5539).
-            if !caption_after_one_blank && !note.holds_open_fence() {
-                note.push_blank();
+            if !caption_after_one_blank {
+                if note.holds_open_fence() {
+                    if lines.get(i).is_some_and(|line| is_blank_line(line)) {
+                        note.push_with(String::new(), Some(self.first_source_line + i), |_| {
+                            Some(0)
+                        });
+                    }
+                } else {
+                    note.push_blank();
+                }
             }
         }
         i
