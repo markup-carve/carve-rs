@@ -6,7 +6,9 @@ use carve::{lint_carve, to_html};
 fn findings(source: &str) -> Vec<String> {
     lint_carve(source)
         .into_iter()
-        .filter(|w| w.rule.contains("continuation-marker") || w.rule == "duplicate-footnote-definition")
+        .filter(|w| {
+            w.rule.contains("continuation-marker") || w.rule == "duplicate-footnote-definition"
+        })
         .map(|w| format!("{}:{} {}", w.line, w.column, w.rule))
         .collect()
 }
@@ -56,7 +58,9 @@ fn a_following_definition_with_an_indented_body_is_a_sibling() {
     let lint = lint_carve(source);
     let first = lint.iter().find(|w| w.line == 1).expect("line 1 refused");
     assert_eq!(first.rule, "continuation-marker-refused");
-    assert!(first.message.contains("the next footnote definition is a sibling"));
+    assert!(first
+        .message
+        .contains("the next footnote definition is a sibling"));
 }
 
 #[test]
