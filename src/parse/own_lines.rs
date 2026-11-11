@@ -3640,6 +3640,18 @@ impl<'a> Walk<'a> {
         self.frames.len() > host + 1 || prior_code_fence.is_some_and(|fence| fence > host)
     }
 
+    fn rephase_line_column(&self, c: &mut Cursor<'_>, reached: usize) {
+        if reached == 0 || !c.src[..indent_cols(c.src).1].contains('\t') {
+            return;
+        }
+        let origins: Vec<_> = self.frames[1..=reached]
+            .iter()
+            .filter(|frame| frame.kind != Kind::Quote)
+            .map(|frame| frame.col + frame.shift)
+            .collect();
+        c.col = frame_tab_column(c.src, &origins);
+    }
+
     fn line(&mut self, at: usize, c: &mut Cursor<'a>, after_plus: &mut bool) {
         self.prepare_note_plus_line(at);
         self.mark_quote_note_plus_line(c.rest);
@@ -3784,14 +3796,7 @@ impl<'a> Walk<'a> {
         reached = self.reach_after_attached_fence_end(reached, attached_fence_ended);
         // The line was admitted through these frames using their tab stops.
         // Record its marker or follower column in those same coordinates.
-        if reached > 0 && c.src[..indent_cols(c.src).1].contains('\t') {
-            let origins: Vec<_> = self.frames[1..=reached]
-                .iter()
-                .filter(|frame| frame.kind != Kind::Quote)
-                .map(|frame| frame.col + frame.shift)
-                .collect();
-            c.col = frame_tab_column(c.src, &origins);
-        }
+        self.rephase_line_column(c, reached);
         let missed = reached < self.frames.len() - 1;
         self.reach = reached;
         if self.carry_attr_continuation(at, line, reached, c, tracing) {
