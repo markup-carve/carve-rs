@@ -15,10 +15,11 @@ fn ast(source: &str) -> Value {
 }
 
 fn at<'a>(node: &'a Value, path: &[&str]) -> &'a Value {
-    path.iter().fold(node, |node, step| match step.parse::<usize>() {
-        Ok(index) => &node[index],
-        Err(_) => &node[*step],
-    })
+    path.iter()
+        .fold(node, |node, step| match step.parse::<usize>() {
+            Ok(index) => &node[index],
+            Err(_) => &node[*step],
+        })
 }
 
 fn offsets(node: &Value) -> (u64, u64) {
@@ -37,7 +38,12 @@ fn an_item_lead_comment_run_drops_its_continuation_indentation() {
         ("1. {% a\n      b\n      c %} y\n", "a\nb\nc"),
     ] {
         let doc = ast(source);
-        let comment = at(&doc, &["children", "0", "items", "0", "children", "0", "children", "0"]);
+        let comment = at(
+            &doc,
+            &[
+                "children", "0", "items", "0", "children", "0", "children", "0",
+            ],
+        );
         assert_eq!(comment["type"], "comment", "{source:?}");
         assert_eq!(comment["content"], content, "{source:?}");
     }
@@ -66,7 +72,9 @@ fn the_second_line_of_a_lazy_brace_run_is_placed() {
     let doc = ast("- a\n  - b\n{% c\n  d %}\n  - c\n");
     let para = at(
         &doc,
-        &["children", "0", "items", "0", "children", "1", "items", "0", "children", "0"],
+        &[
+            "children", "0", "items", "0", "children", "1", "items", "0", "children", "0",
+        ],
     );
     let children = para["children"].as_array().unwrap();
     assert_eq!(children[3]["type"], "soft_break");
