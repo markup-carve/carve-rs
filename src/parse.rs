@@ -572,7 +572,10 @@ fn note_unattached_block_attrs(pos: Option<Pos>) {
     if probing() {
         return;
     }
-    let Some(pos) = pos else { return };
+    let Some(mut pos) = pos else { return };
+    // The span never reaches the tree, so it misses the offset pass that maps
+    // walked columns back to authored ones (carve#5952).
+    restore_authored_columns(&mut pos);
     UNATTACHED_BLOCK_ATTRS.with(|slot| {
         if let Some(spans) = slot.borrow_mut().as_mut() {
             spans.push(pos);
