@@ -3412,10 +3412,7 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if i == resume_at && self.hosted_marker_column_plus(&host, &mut walk, note, &mut i) {
             // The attached block leaves the walk at its next line.
         } else if !walk.reaches_floor(&host, self.lines[resume_at]) {
-            while i < self.lines.len()
-                && !walk.reaches_floor(&host, self.lines[i])
-                && self.hosted_lazy_line(&host, &mut walk, note, &mut i)
-            {}
+            while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
             if !walk.lazy_open {
                 self.keep_blanks_for_open_fence(&host, note, i, resume_at);
                 return i;
@@ -3877,7 +3874,15 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
             return false;
         }
         let local = inside.unwrap_or_else(|| without_blockquote_prefixes(raw));
-        let kept = note.frame_lazy(indent_columns(local), rest);
+        // The opener may have joined this paragraph lazily, but a later
+        // comment line that reaches the note's body column is not lazy
+        // (CARVE-P2-035). Keep its note-local indentation for the paragraph
+        // reader. Continue this scan so repeated runs are gathered once.
+        let kept = if note.lazy_brace_open && walk.reaches_floor(host, raw) {
+            local.to_string()
+        } else {
+            note.frame_lazy(indent_columns(local), rest)
+        };
         note.push_with(kept, Some(self.first_source_line + *i), |_| {
             stripped_col(Some(0), raw, rest)
         });
