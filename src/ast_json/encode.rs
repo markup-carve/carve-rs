@@ -146,7 +146,7 @@ pub(crate) enum DocEntry<'a> {
 pub(crate) fn footnote_defs_in_source_order(doc: &Document) -> Vec<(&String, &Vec<BlockNode>)> {
     let file_order = file_appearance_order(doc);
     let mut defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
-    defs.sort_by_key(|(label, children)| {
+    defs.sort_by_cached_key(|(label, children)| {
         let pos = doc
             .footnote_def_pos
             .get(label.as_str())

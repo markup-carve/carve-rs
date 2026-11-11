@@ -1061,10 +1061,13 @@ fn parse_with_options_mode_and_index(
                 .map_or(1, |pos| positions::visual_owner_at_column(pos, &lines, 2));
             positions::anchor_list_starts(blocks, &lines, owner);
         }
-        positions::bound_positions_to_lines(&mut doc.children, &lines, source);
-        for blocks in doc.footnote_defs.values_mut() {
-            positions::bound_positions_to_lines(blocks, &lines, source);
-        }
+        // One pass for all footnote bodies: the line table is O(source).
+        positions::bound_positions_to_lines(
+            std::iter::once(doc.children.as_mut_slice())
+                .chain(doc.footnote_defs.values_mut().map(Vec::as_mut_slice)),
+            &lines,
+            source,
+        );
         if source.contains('\t') {
             let starts = CodepointLineStarts::original(source);
             positions::restore_verse_lead_spaces(&mut doc.children, &lines, &starts);

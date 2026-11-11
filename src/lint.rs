@@ -471,10 +471,13 @@ fn collect_parser_events(
     use std::collections::{HashMap, HashSet};
     let lines: Vec<&str> = source.split('\n').collect();
     let mut line_starts = Vec::with_capacity(lines.len());
-    let mut next_start = 0;
+    let mut byte_starts = Vec::with_capacity(lines.len());
+    let (mut next_start, mut next_byte) = (0, 0);
     for row in &lines {
         line_starts.push(next_start);
+        byte_starts.push(next_byte);
         next_start += row.chars().count() + 1;
+        next_byte += row.len() + 1;
     }
     let mut fences = HashMap::new();
     let mut attached_first_block_items = HashSet::new();
@@ -783,12 +786,7 @@ fn collect_parser_events(
                 .nth(column.saturating_sub(1))
                 .map_or(text.len(), |(offset, _)| offset)
         };
-        let start = lines
-            .iter()
-            .take(line.saturating_sub(1))
-            .map(|line| line.len() + 1)
-            .sum::<usize>()
-            + before;
+        let start = byte_starts[line.saturating_sub(1)] + before;
         out.push(LintWarning {
             file: None,
             included_by: Vec::new(),
