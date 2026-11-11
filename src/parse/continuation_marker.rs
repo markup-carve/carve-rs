@@ -195,6 +195,11 @@ pub(super) fn is_consumed_marker(line: &str) -> bool {
     })
 }
 
+/// The source line held a `+` the walk consumed.
+pub(super) fn is_consumed_line(line: usize) -> bool {
+    CONSUMED.with(|slot| slot.borrow().0.contains(&line))
+}
+
 /// A reader may keep as payload a `+` the walk read as a letter or consumed.
 pub(super) fn restore_payloads(doc: &mut crate::ast::Document) {
     let consumed = CONSUMED
