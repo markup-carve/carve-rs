@@ -3075,7 +3075,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                         line,
                         stripped.max(0) as usize + 1,
                     );
-                    opener < marker
+                    opener > 0 && opener < marker
                 });
         let run = if opener_misses_marker {
             RefusedBraceRun::Lines(1)

@@ -35,7 +35,15 @@ fn an_owned_comment_run_still_hides_its_lines() {
 #[test]
 fn a_nested_item_uses_its_content_column_for_the_run() {
     assert_eq!(
+        html("- a\n  - pre\n{% b\n    b %}\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>pre\n</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
         html("- a\n  - pre\n {% b\n    b %}\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>pre\n{% b\nb %}</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        html("- a\n  - pre\n {% b\n     b %}\n"),
         "<ul>\n  <li>a\n    <ul>\n      <li>pre\n{% b\nb %}</li>\n    </ul>\n  </li>\n</ul>"
     );
     assert_eq!(
