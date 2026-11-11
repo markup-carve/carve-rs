@@ -1711,16 +1711,6 @@ b
 </ul>"##,
     ),
     (
-        "1056-a-comment-continuation-past-the-brace-after-an-outer-quote-prefix-is-hidden",
-        "carve#5787: spec pin behavior pending its separate engine port",
-        r##"<blockquote>
-  <ul>
-    <li>{% a
-b %}</li>
-  </ul>
-</blockquote>"##,
-    ),
-    (
         "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
         "carve#5844: spec pin behavior pending its separate engine port",
         r##"<ul>

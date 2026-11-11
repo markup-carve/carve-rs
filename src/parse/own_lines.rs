@@ -5035,7 +5035,10 @@ pub(crate) struct AuthoredSourceGuard {
 
 impl AuthoredSourceGuard {
     pub(crate) fn install(source: &str) -> Self {
-        if !source.contains("{%") && !(source.contains('\t') && source.contains("[^")) {
+        if !source.contains("{%")
+            && !(source.contains('\t') && source.contains("[^"))
+            && !(source.contains('{') && source.contains('>'))
+        {
             return Self {
                 installed: false,
                 previous: None,
@@ -5118,6 +5121,33 @@ pub(crate) fn restore_authored_columns(pos: &mut Pos) {
     });
 }
 
+/// The byte length and count of the first `most` quote prefixes before byte
+/// `limit`, past any indentation and list markers in front of them, so every
+/// line of a brace run is measured after the quote prefixes it has (CARVE-P2-035).
+fn quote_prefix_len(text: &str, limit: usize, most: usize) -> (usize, usize) {
+    let (mut end, mut at, mut quotes) = (0, 0, 0);
+    loop {
+        let rest = &text[at..];
+        let lead = at + rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        if lead >= limit || quotes == most {
+            return (end, quotes);
+        }
+        if let Some(after) = super::prepass_links::strip_blockquote_prefix(&text[lead..]) {
+            end = text.len() - after.len();
+            at = end;
+            quotes += 1;
+        } else if let Some(marker) = detect_list_marker_full(&text[lead..]) {
+            let content = marker.content.as_ptr() as usize - text.as_ptr() as usize;
+            if marker.content.is_empty() || content <= lead {
+                return (end, quotes);
+            }
+            at = content;
+        } else {
+            return (end, quotes);
+        }
+    }
+}
+
 /// Map a walked 1-based codepoint column to the authored visual column.
 pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
     let authored = ACTIVE_EDITS.with(|cell| authored_column(&cell.borrow(), line, column));
@@ -5126,12 +5156,8 @@ pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
         let Some(text) = tabs.as_ref().and_then(|lines| lines.get(&line)) else {
             return authored - 1;
         };
-        let mut content = text.as_str();
-        let mut prefix = 0;
-        while let Some(after) = super::prepass_links::strip_blockquote_prefix(content) {
-            prefix += content.len() - after.len();
-            content = after;
-        }
+        let (prefix, _) = quote_prefix_len(text, (authored - 1).min(text.len()), usize::MAX);
+        let content = &text[prefix..];
         let mut visual = 0;
         for ch in content.chars().take((authored - 1).saturating_sub(prefix)) {
             visual = if ch == '\t' {
@@ -5144,27 +5170,41 @@ pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
     })
 }
 
-/// The written column of a block comment opener or one of its continuations.
-/// Nested collectors may have removed owner columns without a position map.
-pub(crate) fn authored_comment_column(line: usize, opener: bool) -> Option<usize> {
+/// The written column of a block comment opener (`quotes` is `None`) or of a
+/// continuation read past at most the opener's `quotes` prefixes, with the
+/// count of prefixes read. Nested collectors may have removed owner columns
+/// without a position map; a `>` past the opener's quotes is the run's text.
+pub(crate) fn authored_comment_column(
+    line: usize,
+    quotes: Option<usize>,
+) -> Option<(usize, usize)> {
     AUTHORED_SOURCE.with(|slot| {
         let source = slot.borrow();
-        let mut text = source.as_ref()?.get(&line)?.as_str();
-        while let Some(after) = super::prepass_links::strip_blockquote_prefix(text) {
-            text = after;
-        }
-        let end = if opener {
-            text.find("{%")?
-        } else {
-            text.len() - text.trim_start_matches([' ', '\t']).len()
+        let full = source.as_ref()?.get(&line)?.as_str();
+        let (text, end, read) = match quotes {
+            None => {
+                let at = full.find("{%")?;
+                let (start, read) = quote_prefix_len(full, at, usize::MAX);
+                (&full[start..], at - start, read)
+            }
+            Some(most) => {
+                let (start, read) = quote_prefix_len(full, full.len(), most);
+                let text = &full[start..];
+                (
+                    text,
+                    text.len() - text.trim_start_matches([' ', '\t']).len(),
+                    read,
+                )
+            }
         };
-        Some(text[..end].chars().fold(0, |column, ch| {
+        let column = text[..end].chars().fold(0, |column, ch| {
             if ch == '\t' {
                 column + 4 - column % 4
             } else {
                 column + 1
             }
-        }))
+        });
+        Some((column, read))
     })
 }
 
