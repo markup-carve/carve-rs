@@ -1068,6 +1068,13 @@ fn parse_with_options_mode_and_index(
             &lines,
             source,
         );
+        if source.contains("%%%") {
+            positions::extend_comment_closers(
+                std::iter::once(doc.children.as_mut_slice())
+                    .chain(doc.footnote_defs.values_mut().map(Vec::as_mut_slice)),
+                &lines,
+            );
+        }
         if source.contains('\t') {
             let starts = CodepointLineStarts::original(source);
             positions::restore_verse_lead_spaces(&mut doc.children, &lines, &starts);

@@ -629,10 +629,73 @@ pub(in crate::parse) fn bound_positions_to_lines<'b>(
     }
 }
 
-/// Restore the authored spaces in a verse lead after a tab has crossed owner
-/// frames. The inline reader can lose their columns when the rewritten lead
-/// starts beyond the authored line; only spaces still present in that line
-/// receive positions.
+/// A block comment ends after its closer (CARVE-P12-014). A comment in a note
+/// opened on a list marker line maps its closer line short of the `%` run.
+pub(in crate::parse) fn extend_comment_closers<'b>(
+    groups: impl IntoIterator<Item = &'b mut [BlockNode]>,
+    lines: &[&str],
+) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+
+    struct Closers<'a> {
+        lines: &'a [&'a str],
+    }
+
+    impl Closers<'_> {
+        fn block(&mut self, block: &mut BlockNode) {
+            if let BlockNode::Comment(comment) = block {
+                let raw = comment
+                    .pos
+                    .as_ref()
+                    .filter(|_| comment.block)
+                    .and_then(|pos| self.lines.get(pos.end_line.checked_sub(1)?));
+                if let (Some(run), Some(pos)) =
+                    (raw.and_then(|l| closer_run(l)), comment.pos.as_mut())
+                {
+                    if (run.start..run.end).contains(&pos.end_column) {
+                        pos.end_offset += run.end - pos.end_column;
+                        pos.end_column = run.end;
+                    }
+                }
+            }
+            visit_block_children(block, self);
+        }
+    }
+
+    impl SubtreeVisitor for Closers<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                self.block(block);
+            }
+        }
+    }
+
+    let mut closers = Closers { lines };
+    for block in groups.into_iter().flatten() {
+        closers.block(block);
+    }
+}
+
+/// The 1-based columns `[first %, line end)` of a `%%%` closer line; text after
+/// the run belongs to the closer, as the parser reads it.
+fn closer_run(line: &str) -> Option<std::ops::Range<usize>> {
+    let chars: Vec<char> = line.chars().collect();
+    let start = chars
+        .iter()
+        .position(|&ch| !matches!(ch, ' ' | '\t' | '>'))?;
+    let run = chars[start..].iter().take_while(|&&ch| ch == '%').count();
+    let end = chars.len()
+        - chars
+            .iter()
+            .rev()
+            .take_while(|&&ch| matches!(ch, ' ' | '\t'))
+            .count();
+    (run >= 3).then_some(start + 1..end + 1)
+}
+
+/// Place a verse lead on a line whose indent holds a tab. Walking back from
+/// the content, each space is one exact column; columns cut from a tab omit
+/// `pos` (CARVE-P12-004). The paragraph starts at the first lead codepoint.
 pub(in crate::parse) fn restore_verse_lead_spaces(
     blocks: &mut Vec<BlockNode>,
     lines: &[&str],
@@ -650,92 +713,8 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
             for block in blocks {
                 if let BlockNode::LineBlock(verse) = block {
                     for child in &mut verse.children {
-                        let BlockNode::Paragraph(paragraph) = child else {
-                            continue;
-                        };
-                        let Some(line) = paragraph
-                            .children
-                            .iter()
-                            .find_map(InlineNode::pos)
-                            .map(|p| p.start_line)
-                        else {
-                            continue;
-                        };
-                        let Some(&raw) = self.lines.get(line.saturating_sub(1)) else {
-                            continue;
-                        };
-                        let lead: String = raw
-                            .chars()
-                            .take_while(|&ch| matches!(ch, ' ' | '\t' | '>'))
-                            .collect();
-                        let Some((_, after_tab)) = lead.rsplit_once('\t') else {
-                            continue;
-                        };
-                        if !after_tab.chars().all(|ch| ch == ' ') {
-                            continue;
-                        }
-                        let spaces = after_tab.chars().filter(|&ch| ch == ' ').count();
-                        let tabs = lead.chars().filter(|&ch| ch == '\t').count();
-                        let leading = paragraph
-                            .children
-                            .iter()
-                            .take_while(|node| matches!(node, InlineNode::NonBreakingSpace(_)))
-                            .count();
-                        let wanted = spaces.min(leading.saturating_sub(tabs));
-                        let placed = paragraph.children[..leading]
-                            .iter()
-                            .filter(|node| {
-                                node.pos().is_some_and(|p| {
-                                    p.start_line == line
-                                        && raw.as_bytes().get(p.start_column.saturating_sub(1))
-                                            == Some(&b' ')
-                                })
-                            })
-                            .count();
-                        let Some(&start) = self.starts.get(line.saturating_sub(1)) else {
-                            continue;
-                        };
-                        let occupied: HashSet<_> = paragraph.children[..leading]
-                            .iter()
-                            .filter_map(|node| {
-                                node.pos()
-                                    .filter(|pos| pos.start_line == line)
-                                    .map(|pos| pos.start_column)
-                            })
-                            .collect();
-                        let columns: Vec<_> = (lead.chars().count().saturating_sub(spaces) + 1
-                            ..=lead.chars().count())
-                            .rev()
-                            .filter(|column| !occupied.contains(column))
-                            .take(wanted.saturating_sub(placed))
-                            .collect();
-                        let columns = columns.into_iter().rev().filter(|&column| {
-                            let offset = start + column - 1;
-                            match paragraph.pos.as_ref() {
-                                Some(pos) => offset >= pos.start_offset && offset < pos.end_offset,
-                                None => true,
-                            }
-                        });
-                        let spaces =
-                            paragraph.children[..leading].iter_mut().filter_map(
-                                |node| match node {
-                                    InlineNode::NonBreakingSpace(space) if space.pos.is_none() => {
-                                        Some(space)
-                                    }
-                                    _ => None,
-                                },
-                            );
-                        for (space, column) in spaces.zip(columns) {
-                            let offset = start + column - 1;
-                            space.pos = Some(Pos {
-                                start_line: line,
-                                end_line: line,
-                                start_column: column,
-                                end_column: column + 1,
-                                start_offset: offset,
-                                end_offset: offset + 1,
-                                file: None,
-                            });
+                        if let BlockNode::Paragraph(paragraph) = child {
+                            place_verse_lead(paragraph, self.lines, self.starts);
                         }
                     }
                 }
@@ -746,6 +725,153 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
 
     let mut restore = Restore { lines, starts };
     restore.blocks(blocks);
+}
+
+fn place_verse_lead(
+    paragraph: &mut crate::ast::Paragraph,
+    lines: &[&str],
+    starts: &CodepointLineStarts,
+) {
+    // An escaped space (`\ `, two codepoints) is content, not lead.
+    let leading = paragraph
+        .children
+        .iter()
+        .take_while(|node| {
+            matches!(node, InlineNode::NonBreakingSpace(space)
+                if !space.pos.as_ref().is_some_and(|p| p.end_offset - p.start_offset >= 2))
+        })
+        .count();
+    if leading == 0 {
+        return;
+    }
+    let Some(content) = paragraph.children[leading..]
+        .iter()
+        .find_map(InlineNode::pos)
+    else {
+        return;
+    };
+    let (line, content_column) = (content.start_line, content.start_column);
+    let Some(&raw) = lines.get(line.saturating_sub(1)) else {
+        return;
+    };
+    let Some(&line_start) = starts.get(line.saturating_sub(1)) else {
+        return;
+    };
+    let lead: Vec<char> = raw.chars().take(content_column.saturating_sub(1)).collect();
+    if lead.len() + 1 != content_column || !lead.iter().all(|&ch| matches!(ch, ' ' | '\t' | '>')) {
+        return;
+    }
+    // Walk back from the content: each space is one exact column, a tab
+    // gives up to four columns cut from it.
+    let mut sources = vec![None; leading];
+    let mut first = lead.len();
+    let mut left = leading;
+    let mut cut = None;
+    while left > 0 {
+        match lead[..first].last() {
+            Some(' ') if cut.is_none() => {
+                first -= 1;
+                left -= 1;
+                sources[left] = Some(first);
+            }
+            Some('\t') => {
+                first -= 1;
+                cut = Some(first);
+                let from = left.saturating_sub(4);
+                // A column the parser already gave this tab's own codepoint keeps it.
+                for (slot, source) in sources.iter_mut().enumerate().take(left).skip(from) {
+                    let names_tab = paragraph.children[slot].pos().is_some_and(|p| {
+                        p.start_line == line
+                            && p.start_column == first + 1
+                            && p.end_column == first + 2
+                    });
+                    if names_tab {
+                        *source = Some(first);
+                    }
+                }
+                left = from;
+            }
+            // Spaces before a tab: only an earlier span on one of them is kept.
+            Some(' ') => break,
+            _ => return,
+        }
+    }
+    if !lead.contains(&'\t') {
+        return;
+    }
+    let reaches_tab = cut.is_some();
+    let cut = cut.unwrap_or(first);
+    // An earlier span may still name an authored space before the tab; the
+    // columns between stay unplaced.
+    let mut floor = 0;
+    for (index, node) in paragraph.children[..leading].iter().enumerate() {
+        if sources[index].is_some() {
+            break;
+        }
+        let kept = node
+            .pos()
+            .filter(|p| p.start_line == line && p.end_column == p.start_column + 1)
+            .map(|p| p.start_column - 1);
+        if let Some(at) = kept.filter(|&at| at >= floor && at < cut && lead[at] == ' ') {
+            sources[index] = Some(at);
+            floor = at + 1;
+        }
+    }
+    let first = sources
+        .iter()
+        .flatten()
+        .copied()
+        .min()
+        .map_or(cut, |at| at.min(cut));
+    for (node, source) in paragraph.children[..leading].iter_mut().zip(sources) {
+        let InlineNode::NonBreakingSpace(space) = node else {
+            continue;
+        };
+        space.pos = source.map(|i| {
+            let offset = line_start + i;
+            Pos {
+                start_line: line,
+                end_line: line,
+                start_column: i + 1,
+                end_column: i + 2,
+                start_offset: offset,
+                end_offset: offset + 1,
+                file: None,
+            }
+        });
+    }
+    let start = Pos {
+        start_line: line,
+        end_line: line,
+        start_column: first + 1,
+        end_column: first + 1,
+        start_offset: line_start + first,
+        end_offset: line_start + first,
+        file: None,
+    };
+    match paragraph.pos.as_mut() {
+        // Columns cut from a tab may begin before it, so an earlier start stays.
+        Some(pos) if reaches_tab && pos.start_line == line && pos.start_column <= first + 1 => {}
+        Some(pos) => {
+            pos.start_line = start.start_line;
+            pos.start_column = start.start_column;
+            pos.start_offset = start.start_offset;
+        }
+        None => {
+            let end = paragraph
+                .children
+                .iter()
+                .rev()
+                .find_map(InlineNode::pos)
+                .cloned();
+            paragraph.pos = end.map(|end| Pos {
+                end_line: end.end_line,
+                end_column: end.end_column,
+                end_offset: end.end_offset,
+                ..start
+            });
+        }
+    }
 }
 
 fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {
