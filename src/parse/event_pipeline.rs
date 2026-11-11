@@ -3394,7 +3394,11 @@ fn has_fence_candidate_without_final_newline(source: &str) -> bool {
 }
 
 pub(super) fn parse_document(source: &str) -> Option<(Document, bool)> {
-    if source.contains('\t') && (source.contains("```") || source.contains("~~~")) {
+    if super::tabbed_code_fence_opener(source) {
+        #[cfg(feature = "experimental-event-parser-options")]
+        return parse_document_with_custom_options(source, &Options::default(), ParseMode::Html)
+            .map(|(doc, _, used)| (doc, used));
+        #[cfg(not(feature = "experimental-event-parser-options"))]
         return None;
     }
     if has_multiline_braced_comment(source) {
@@ -3800,8 +3804,8 @@ pub(super) fn parse_document_with_custom_options(
     }
     // Hoisted definitions are placed by source line (CARVE-P12-070).
     if !options.positions
-        && !matches!(mode, ParseMode::HtmlFacade)
-        && source_may_hoist_abbreviation(source)
+        && ((!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source))
+            || super::tabbed_code_fence_opener(source))
     {
         let positioned = options.positioned_parse_copy();
         return parse_document_with_custom_options_once(source, &positioned, mode).map(
@@ -3885,9 +3889,8 @@ fn parse_document_with_custom_options_once(
     options: &Options<'_>,
     mode: ParseMode,
 ) -> Option<(Document, Option<CrossrefIndex>, bool)> {
-    if source.contains('\t') && (source.contains("```") || source.contains("~~~")) {
-        return None;
-    }
+    let _authored_source = super::tabbed_code_fence_opener(source)
+        .then(|| own_lines::AuthoredSourceGuard::install(source));
     let _skipped_abbreviations = SkippedSiblingAbbreviationsGuard::install();
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
         return None;

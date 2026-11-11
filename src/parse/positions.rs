@@ -687,8 +687,8 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                             .filter(|node| {
                                 node.pos().is_some_and(|p| {
                                     p.start_line == line
-                                        && raw.chars().nth(p.start_column.saturating_sub(1))
-                                            == Some(' ')
+                                        && raw.as_bytes().get(p.start_column.saturating_sub(1))
+                                            == Some(&b' ')
                                 })
                             })
                             .count();
@@ -700,20 +700,24 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                             .rev()
                             .take(wanted.saturating_sub(placed))
                             .collect();
-                        for column in columns.into_iter().rev() {
+                        let columns = columns.into_iter().rev().filter(|&column| {
                             let offset = start + column - 1;
-                            if paragraph.pos.as_ref().is_some_and(|pos| {
-                                offset < pos.start_offset || offset + 1 > pos.end_offset
-                            }) {
-                                continue;
+                            match paragraph.pos.as_ref() {
+                                Some(pos) => offset >= pos.start_offset && offset < pos.end_offset,
+                                None => true,
                             }
-                            let Some(InlineNode::NonBreakingSpace(space)) = paragraph.children
-                                [..leading]
-                                .iter_mut()
-                                .find(|node| node.pos().is_none())
-                            else {
-                                break;
-                            };
+                        });
+                        let spaces =
+                            paragraph.children[..leading].iter_mut().filter_map(
+                                |node| match node {
+                                    InlineNode::NonBreakingSpace(space) if space.pos.is_none() => {
+                                        Some(space)
+                                    }
+                                    _ => None,
+                                },
+                            );
+                        for (space, column) in spaces.zip(columns) {
+                            let offset = start + column - 1;
                             space.pos = Some(Pos {
                                 start_line: line,
                                 end_line: line,

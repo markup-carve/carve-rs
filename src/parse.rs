@@ -873,6 +873,14 @@ enum ParseMode {
     Carve,
 }
 
+fn tabbed_code_fence_opener(source: &str) -> bool {
+    source.contains('\t')
+        && source.lines().any(|line| {
+            line.find("```").is_some_and(|at| line[..at].contains('\t'))
+                || line.find("~~~").is_some_and(|at| line[..at].contains('\t'))
+        })
+}
+
 /// Marks a lazily folded container line so nested parsing reads it as text.
 /// Source normalization replaces authored NUL with U+FFFD. Nested block
 /// parsing leaves the inserted marker intact. It pins the line to column 0,
@@ -1000,8 +1008,7 @@ fn parse_with_options_mode_and_index(
             line.find("::: |")
                 .is_some_and(|at| line[..at].contains('\t'))
         });
-    let tabbed_code_fence =
-        source.contains('\t') && (source.contains("```") || source.contains("~~~"));
+    let tabbed_code_fence = tabbed_code_fence_opener(source);
     // A hoisted abbreviation needs source lines (CARVE-P12-070). A multiline
     // block comment or a consumed `+` needs authored columns after nested
     // collection, even when callers did not request AST positions.
