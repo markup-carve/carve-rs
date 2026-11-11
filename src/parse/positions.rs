@@ -581,6 +581,17 @@ pub(in crate::parse) fn bound_positions_to_lines(
                     }
                 }
                 visit_inline_children(inline, self);
+                if let InlineNode::NonBreakingSpace(space) = inline {
+                    if space.pos.as_ref().is_some_and(|pos| {
+                        self.widths
+                            .get(pos.start_line.saturating_sub(1))
+                            .is_some_and(|&end| pos.start_column >= end)
+                    }) {
+                        // The last column is the line ending, never an
+                        // authored space, even after a mapped span is bounded.
+                        space.pos = None;
+                    }
+                }
             }
         }
         fn position(&mut self, pos: &mut Pos) {
@@ -616,6 +627,125 @@ pub(in crate::parse) fn bound_positions_to_lines(
     for block in blocks {
         visit_block_children(block, &mut bound);
     }
+}
+
+/// Restore the authored spaces in a verse lead after a tab has crossed owner
+/// frames. The inline reader can lose their columns when the rewritten lead
+/// starts beyond the authored line; only spaces still present in that line
+/// receive positions.
+pub(in crate::parse) fn restore_verse_lead_spaces(
+    blocks: &mut Vec<BlockNode>,
+    lines: &[&str],
+    starts: &CodepointLineStarts,
+) {
+    use crate::include_walk::{visit_block_children, SubtreeVisitor};
+
+    struct Restore<'a> {
+        lines: &'a [&'a str],
+        starts: &'a CodepointLineStarts,
+    }
+
+    impl SubtreeVisitor for Restore<'_> {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                if let BlockNode::LineBlock(verse) = block {
+                    for child in &mut verse.children {
+                        let BlockNode::Paragraph(paragraph) = child else {
+                            continue;
+                        };
+                        let Some(line) = paragraph
+                            .children
+                            .iter()
+                            .find_map(InlineNode::pos)
+                            .map(|p| p.start_line)
+                        else {
+                            continue;
+                        };
+                        let Some(&raw) = self.lines.get(line.saturating_sub(1)) else {
+                            continue;
+                        };
+                        let lead: String = raw
+                            .chars()
+                            .take_while(|&ch| matches!(ch, ' ' | '\t' | '>'))
+                            .collect();
+                        let Some((_, after_tab)) = lead.rsplit_once('\t') else {
+                            continue;
+                        };
+                        if !after_tab.chars().all(|ch| ch == ' ') {
+                            continue;
+                        }
+                        let spaces = after_tab.chars().filter(|&ch| ch == ' ').count();
+                        let tabs = lead.chars().filter(|&ch| ch == '\t').count();
+                        let leading = paragraph
+                            .children
+                            .iter()
+                            .take_while(|node| matches!(node, InlineNode::NonBreakingSpace(_)))
+                            .count();
+                        let wanted = spaces.min(leading.saturating_sub(tabs));
+                        let placed = paragraph.children[..leading]
+                            .iter()
+                            .filter(|node| {
+                                node.pos().is_some_and(|p| {
+                                    p.start_line == line
+                                        && raw.as_bytes().get(p.start_column.saturating_sub(1))
+                                            == Some(&b' ')
+                                })
+                            })
+                            .count();
+                        let Some(&start) = self.starts.get(line.saturating_sub(1)) else {
+                            continue;
+                        };
+                        let occupied: HashSet<_> = paragraph.children[..leading]
+                            .iter()
+                            .filter_map(|node| {
+                                node.pos()
+                                    .filter(|pos| pos.start_line == line)
+                                    .map(|pos| pos.start_column)
+                            })
+                            .collect();
+                        let columns: Vec<_> = (lead.chars().count().saturating_sub(spaces) + 1
+                            ..=lead.chars().count())
+                            .rev()
+                            .filter(|column| !occupied.contains(column))
+                            .take(wanted.saturating_sub(placed))
+                            .collect();
+                        let columns = columns.into_iter().rev().filter(|&column| {
+                            let offset = start + column - 1;
+                            match paragraph.pos.as_ref() {
+                                Some(pos) => offset >= pos.start_offset && offset < pos.end_offset,
+                                None => true,
+                            }
+                        });
+                        let spaces =
+                            paragraph.children[..leading].iter_mut().filter_map(
+                                |node| match node {
+                                    InlineNode::NonBreakingSpace(space) if space.pos.is_none() => {
+                                        Some(space)
+                                    }
+                                    _ => None,
+                                },
+                            );
+                        for (space, column) in spaces.zip(columns) {
+                            let offset = start + column - 1;
+                            space.pos = Some(Pos {
+                                start_line: line,
+                                end_line: line,
+                                start_column: column,
+                                end_column: column + 1,
+                                start_offset: offset,
+                                end_offset: offset + 1,
+                                file: None,
+                            });
+                        }
+                    }
+                }
+                visit_block_children(block, self);
+            }
+        }
+    }
+
+    let mut restore = Restore { lines, starts };
+    restore.blocks(blocks);
 }
 
 fn anchor_list_blocks(blocks: &mut [BlockNode], lines: &[&str], owner: usize) {

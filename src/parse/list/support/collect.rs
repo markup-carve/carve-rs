@@ -485,7 +485,6 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
     let mut literal_colon = marker_content
         .and_then(detect_line_block_open)
         .map(|width| (width, strip_cols, strip_cols));
-    // The open line block's authored lead and the spaces it was rewritten to.
     let mut literal_colon_lead: Option<(String, String)> = None;
     let mut comment_fence = marker_comment.map(|open| {
         let descendant = marker_content.map_or(0, innermost_marker_content_col);
@@ -2209,6 +2208,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             rebased.push_str(&payload_line[raw.len()..]);
             (rebased, raw.chars().count(), columns.len())
         } else if literal_colon.is_none()
+            && detect_line_block_open(trim_ascii_start(payload_line)).is_none()
             && stripped < indent
             && (visible || fence_closer)
             && sliced[..sliced.len() - trim_ascii_start(&sliced).len()].contains('\t')

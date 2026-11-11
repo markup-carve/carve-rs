@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn tabbed_nested_item_and_follower_use_each_frame_column() {
+    let expected =
+        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>b</p>\n  </li>\n</ul>";
+    for source in ["- a\n  \t- a\n\n\t\tb\n", "- a\n  \t- a\n\n  \tb\n"] {
+        assert_eq!(crate::to_html(source), expected, "{source:?}");
+    }
+}
+
+#[test]
 fn termless_colon_leads_do_not_claim_a_document_comment_span() {
     assert_eq!(
         crate::to_html("- a\n  : \n\n  : %%%\n%%%\nc\n"),

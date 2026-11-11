@@ -1643,20 +1643,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
 </dl>"##,
     ),
     (
-        "1045-a-nested-code-body-keeps-its-literal-content-after-frame-stripping",
-        "carve#5755: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li>a
-    <ul>
-      <li>a
-        <pre><code>z
-</code></pre>
-      </li>
-    </ul>
-  </li>
-</ul>"##,
-    ),
-    (
         "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
         "carve#5844: spec pin behavior pending its separate engine port",
         r##"<ul>

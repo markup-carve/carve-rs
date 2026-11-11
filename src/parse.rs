@@ -873,6 +873,14 @@ enum ParseMode {
     Carve,
 }
 
+fn tabbed_code_fence_opener(source: &str) -> bool {
+    source.contains('\t')
+        && source.lines().any(|line| {
+            line.find("```").is_some_and(|at| line[..at].contains('\t'))
+                || line.find("~~~").is_some_and(|at| line[..at].contains('\t'))
+        })
+}
+
 /// Marks a lazily folded container line so nested parsing reads it as text.
 /// Source normalization replaces authored NUL with U+FFFD. Nested block
 /// parsing leaves the inserted marker intact. It pins the line to column 0,
@@ -1000,6 +1008,7 @@ fn parse_with_options_mode_and_index(
             line.find("::: |")
                 .is_some_and(|at| line[..at].contains('\t'))
         });
+    let tabbed_code_fence = tabbed_code_fence_opener(source);
     // A hoisted abbreviation needs source lines (CARVE-P12-070). A multiline
     // block comment or a consumed `+` needs authored columns after nested
     // collection, even when callers did not request AST positions.
@@ -1011,6 +1020,7 @@ fn parse_with_options_mode_and_index(
             })
             || transparent.is_some()
             || tabbed_line_block
+            || tabbed_code_fence
             || (!matches!(mode, ParseMode::HtmlFacade) && source_may_hoist_abbreviation(source))
             || (parsed.contains('+')
                 && own_lines(normalize_source(parsed).as_ref())
@@ -1051,6 +1061,13 @@ fn parse_with_options_mode_and_index(
         positions::bound_positions_to_lines(&mut doc.children, &lines, source);
         for blocks in doc.footnote_defs.values_mut() {
             positions::bound_positions_to_lines(blocks, &lines, source);
+        }
+        if source.contains('\t') {
+            let starts = CodepointLineStarts::original(source);
+            positions::restore_verse_lead_spaces(&mut doc.children, &lines, &starts);
+            for blocks in doc.footnote_defs.values_mut() {
+                positions::restore_verse_lead_spaces(blocks, &lines, &starts);
+            }
         }
     }
     (doc, index)
