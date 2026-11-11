@@ -1158,7 +1158,10 @@ fn inter_item_comments(doc: &Document) -> (HashMap<usize, Vec<Vec<String>>>, Has
                 let Some(after) = list.items[after_index].pos.as_ref() else {
                     continue;
                 };
-                if after.file == pos.file && pos.end_offset <= after.start_offset {
+                if after.file == pos.file
+                    && pos.end_offset <= after.start_offset
+                    && (pos.start_column == 1 || after.start_line > pos.end_line + 1)
+                {
                     let content = comment.content.trim_end_matches([' ', '\t']);
                     gaps[after_index - 1].push(if content.is_empty() {
                         "%%".to_string()
