@@ -3049,7 +3049,10 @@ impl<'a> Walk<'a> {
             };
             c.lead_at(column + inner.shift + c.attachment_shift, true);
         } else if matches!(closer, Some(Closer::Fence(..)))
-            && (inner.canon > inner.cut || (inner.canon == 0 && inner.cut > 0))
+            && ((inner.canon > inner.cut
+                && inner.doc_marker <= inner.canon
+                && target == inner.canon + 1)
+                || (inner.canon == 0 && inner.cut == 2 && target > 1))
             && c.src[..c.src.len() - c.rest.len()]
                 .find('\t')
                 .is_some_and(|at| {
