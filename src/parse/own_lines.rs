@@ -3573,7 +3573,17 @@ impl<'a> Walk<'a> {
                 reached = k;
                 continue;
             }
-            if !c.rest.is_empty() && c.col < f.col {
+            let frame_col = if c.src[..indent_cols(c.src).1].contains('\t') && reached > 0 {
+                let origins: Vec<_> = self.frames[1..=reached]
+                    .iter()
+                    .filter(|frame| frame.kind != Kind::Quote)
+                    .map(|frame| frame.col + frame.shift)
+                    .collect();
+                frame_tab_column(c.src, &origins)
+            } else {
+                c.col
+            };
+            if !c.rest.is_empty() && frame_col < f.col {
                 break;
             }
             reached = k;
