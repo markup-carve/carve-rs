@@ -72,10 +72,11 @@ fn a_refused_second_plus_renders_nothing_in_the_attached_item_paragraph() {
     }
 }
 
+// carve#5890 ruling B replaces the carve#5597 reading: the refused `+` ends the note's list.
 #[test]
-fn a_refused_plus_keeps_a_note_attached_list_after_a_closed_child_fence() {
+fn a_refused_plus_ends_a_note_attached_list_after_a_closed_child_fence() {
     let source = "[^a]: +\n- li\n  ```\n  x\n  ```\n+\n - sib\n\nsee[^a]\n";
-    let expected = "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>li\n          <pre><code>x\n</code></pre>\n        </li>\n        <li>sib</li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
+    let expected = "<ul>\n  <li>sib</li>\n</ul>\n<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <ul>\n        <li>li\n          <pre><code>x\n</code></pre>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>";
     assert_eq!(to_html(source), expected);
 }
 
