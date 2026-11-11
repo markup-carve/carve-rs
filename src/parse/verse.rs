@@ -866,12 +866,14 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             // individual source column, just like tabs expanded here.
             if cur
                 .source_line(line_at)
-                .is_some_and(own_lines::authored_line_contains_tab)
+                .is_some_and(own_lines::authored_line_has_tab_in_lead)
             {
-                for (at, ch) in expanded.chars().enumerate() {
-                    if ch == crate::NBSP_PLACEHOLDER {
-                        columns[at] = None;
-                    }
+                for (at, _) in expanded
+                    .chars()
+                    .take_while(|&ch| ch == crate::NBSP_PLACEHOLDER)
+                    .enumerate()
+                {
+                    columns[at] = None;
                 }
             }
             source_columns.push(columns);
