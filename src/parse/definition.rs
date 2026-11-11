@@ -2681,6 +2681,26 @@ impl<'s, 'o> DefinitionBodyCollector<'s, 'o> {
         }
         let keep = if caption_content(&owned).is_some() {
             format!("{LAZY}{owned}")
+        } else if indent == 0
+            && crate::parse::block_brace_needs_continuation(trim_ascii_start(&owned))
+            && matches!(
+                refused_brace_run_with_columns(
+                    (cur.pos..cur.lines.len()).map_while(|at| cur.lines.line(at)),
+                    true,
+                    |offset, raw| Some(
+                        if offset > 0 && indent_columns(raw) < self.content_column {
+                            0
+                        } else {
+                            indent_columns(raw)
+                        }
+                    ),
+                ),
+                RefusedBraceRun::Lines(1)
+            )
+        {
+            // This continuation passed the brace but missed the description's
+            // body column. Carry the host's refusal through the reparse.
+            format!("{LAZY_REFUSED_BRACE}{owned}")
         } else if self.folds_into_a_spanned_stanza() {
             self.stanza_fold = true;
             // The frame lets an unclosed `%%%` span end at this line (carve#4956).

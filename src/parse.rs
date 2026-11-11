@@ -878,6 +878,8 @@ enum ParseMode {
 /// parsing leaves the inserted marker intact. It pins the line to column 0,
 /// and no block opener matches it.
 pub(crate) const LAZY: &str = "\u{0000}L\u{0000}";
+/// A collected lazy brace opener already refused by its host's body-column test.
+pub(crate) const LAZY_REFUSED_BRACE: &str = "\u{0000}L\u{0000}\u{0000}R\u{0000}";
 /// A quote's lazy follower at its owner's column can still supply a first block.
 pub(crate) const LAZY_OWNER: &str = "\u{0000}L\u{0000}\u{0000}O\u{0000}";
 /// A lazy term line with indentation past its host column still has literal spaces.
@@ -896,7 +898,8 @@ pub(crate) const ITEM_PARAGRAPH: &str = "\u{0000}P\u{0000}";
 /// shapes that tell the two apart rather than listing them.
 pub(crate) fn strip_lazy(line: &str) -> &str {
     let rest = line
-        .strip_prefix(LAZY_OWNER)
+        .strip_prefix(LAZY_REFUSED_BRACE)
+        .or_else(|| line.strip_prefix(LAZY_OWNER))
         .or_else(|| line.strip_prefix(LAZY_INDENT))
         .or_else(|| line.strip_prefix(LAZY))
         .or_else(|| line.strip_prefix(ITEM_PARAGRAPH));

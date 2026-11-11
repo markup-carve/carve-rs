@@ -3045,12 +3045,39 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         {
             return false;
         }
-        let run = if indent_columns(next) < self.content_col
-            && !trim_ascii_end(next).ends_with('}')
-            && is_block_brace_opener(trim_ascii_start(strip_lazy(next)))
-        {
-            // The opener itself reached this paragraph lazily. It cannot
-            // claim a following line as a block-position run (carve#5830).
+        let lazy_opener = indent_columns(next) < self.content_col;
+        let authored_body_col = self
+            .cur
+            .source_line(self.item_head)
+            .zip(self.cur.source_col(self.item_head))
+            .and_then(|(line, stripped)| {
+                let marker = self.cur.lines.line(self.item_head)?;
+                let width = marker_content_col(marker)?;
+                Some(crate::parse::own_lines::authored_visual_column(
+                    line,
+                    (stripped + width as isize).max(0) as usize + 1,
+                ))
+            })
+            .unwrap_or(self.content_col);
+        let opener_misses_marker = lazy_opener
+            && trim_ascii_start(strip_lazy(next)).starts_with("{%")
+            && self
+                .cur
+                .source_line(self.cur.pos)
+                .and_then(|line| crate::parse::own_lines::authored_comment_column(line, true))
+                .zip(
+                    self.cur
+                        .source_line(self.item_head)
+                        .zip(self.cur.source_col(self.item_head)),
+                )
+                .is_some_and(|(opener, (line, stripped))| {
+                    let marker = crate::parse::own_lines::authored_visual_column(
+                        line,
+                        stripped.max(0) as usize + 1,
+                    );
+                    opener > 0 && opener < marker
+                });
+        let run = if opener_misses_marker {
             RefusedBraceRun::Lines(1)
         } else {
             refused_brace_run_with_columns(
@@ -3064,10 +3091,24 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                             let stripped = self.cur.source_col(at)?;
                             let walked = (stripped + indent_columns(strip_lazy(raw)) as isize)
                                 .max(0) as usize;
-                            Some(crate::parse::own_lines::authored_visual_column(
-                                line,
-                                walked + 1,
-                            ))
+                            let column =
+                                crate::parse::own_lines::authored_visual_column(line, walked + 1);
+                            let written = if trim_ascii_start(next).starts_with("{%") {
+                                crate::parse::own_lines::authored_comment_column(line, false)
+                                    .unwrap_or(column)
+                            } else {
+                                column
+                            };
+                            // A lazy opener is measured from its written brace,
+                            // but every continuation must also reach this item's
+                            // authored content column before that brace test applies.
+                            Some(
+                                if lazy_opener && offset > 0 && written < authored_body_col {
+                                    0
+                                } else {
+                                    column
+                                },
+                            )
                         })
                         .flatten()
                 },
