@@ -94,6 +94,11 @@ fn flat_comment_owners(lines: &[&str], candidates: &[usize]) -> Option<Vec<(usiz
 }
 
 thread_local! {
+    /// While `restore` runs: authored line of each restored node to a lower
+    /// bound on the run of restored siblings ending at it, so a lookup jumps
+    /// over the run instead of walking it (carve-rs#4266).
+    static RESTORED_RUNS: std::cell::RefCell<std::collections::HashMap<usize, usize>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
     /// The event route probes before the tree parser. Hand the already found
     /// erased lines to that parser instead of detecting them a second time.
     static LAST_DETECTION: std::cell::RefCell<Option<(String, Option<Transparent>)>> =
@@ -369,6 +374,17 @@ impl Transparent {
         notes: &mut BTreeMap<String, Vec<BlockNode>>,
         note_pos: &BTreeMap<String, Pos>,
     ) {
+        RESTORED_RUNS.with(|runs| runs.borrow_mut().clear());
+        self.restore_lines(children, notes, note_pos);
+        RESTORED_RUNS.with(|runs| runs.borrow_mut().clear());
+    }
+
+    fn restore_lines(
+        &self,
+        children: &mut Vec<BlockNode>,
+        notes: &mut BTreeMap<String, Vec<BlockNode>>,
+        note_pos: &BTreeMap<String, Pos>,
+    ) {
         // A document comment no block around it can take is placed by position in
         // one merge at the end, not by an insert per comment.
         let mut loose: Vec<((usize, usize), BlockNode)> = Vec::new();
@@ -390,7 +406,7 @@ impl Transparent {
                     };
                     def.pos = Some(pos);
                     let at = position_index(children, (line.index + 1, line.lead + 1));
-                    children.insert(at, BlockNode::AbbreviationDef(def));
+                    insert_restored(children, at, BlockNode::AbbreviationDef(def));
                 }
                 Kind::Comment => {
                     let content = line.rest[2..]
@@ -518,7 +534,7 @@ impl SubtreeVisitor for TermGap<'_> {
                     let node = self.node.take().expect("node");
                     let at = self.at;
                     let index = position_index(&def.children, at);
-                    def.children.insert(index, node);
+                    insert_restored(&mut def.children, index, node);
                     return;
                 }
                 for def in &mut item.definitions {
@@ -677,12 +693,42 @@ fn position_index(blocks: &[BlockNode], at: (usize, usize)) -> usize {
     })
 }
 
+/// The run of restored siblings ending at `block`, when `restore` put it there.
+fn restored_run(block: &BlockNode) -> Option<usize> {
+    if !matches!(block, BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)) {
+        return None;
+    }
+    let line = crate::ast_json::block_pos(block)?.start_line;
+    RESTORED_RUNS.with(|runs| runs.borrow().get(&line).copied())
+}
+
+/// Insert a restored node and record the run it extends.
+fn insert_restored(blocks: &mut Vec<BlockNode>, index: usize, node: BlockNode) {
+    let run = index
+        .checked_sub(1)
+        .and_then(|before| restored_run(&blocks[before]))
+        .unwrap_or(0)
+        + 1;
+    if let Some(pos) = crate::ast_json::block_pos(&node) {
+        let line = pos.start_line;
+        RESTORED_RUNS.with(|runs| runs.borrow_mut().insert(line, run));
+    }
+    blocks.insert(index, node);
+}
+
 /// The blocks that can hold `at`: the last one starting at or before it, and
-/// the comments and definitions restored after it. Blocks stand in source
-/// order, so this keeps each lookup logarithmic.
+/// the authored comments and definitions after it. Restored nodes hold
+/// nothing, so their runs are skipped whole. Blocks stand in source order, so
+/// this keeps each lookup logarithmic.
 fn candidates(blocks: &[BlockNode], at: (usize, usize)) -> Vec<usize> {
     let mut found = Vec::new();
-    for j in (0..position_index(blocks, at)).rev() {
+    let mut j = position_index(blocks, at);
+    while j > 0 {
+        if let Some(run) = restored_run(&blocks[j - 1]) {
+            j = j.saturating_sub(run);
+            continue;
+        }
+        j -= 1;
         found.push(j);
         if !matches!(
             blocks[j],
@@ -721,7 +767,7 @@ fn place_comment(blocks: &mut Vec<BlockNode>, node: BlockNode, pos: &Pos, owner:
         containing_blocks(blocks, at)
     };
     let index = position_index(siblings, at);
-    siblings.insert(index, node);
+    insert_restored(siblings, index, node);
 }
 
 /// The walk's owner path below the document (and below a note, whose body is
@@ -755,7 +801,7 @@ fn place_on_path(
     let Some(&(kind, line)) = path.first() else {
         if let Some(node) = node.take() {
             let index = position_index(blocks, at);
-            blocks.insert(index, node);
+            insert_restored(blocks, index, node);
         }
         return true;
     };
@@ -848,19 +894,17 @@ impl SubtreeVisitor for AfterParagraph<'_> {
                 continue;
             }
             if matches!(blocks[i], BlockNode::Paragraph(_)) {
-                let mut j = i + 1;
-                while j < blocks.len()
-                    && matches!(
-                        blocks[j],
-                        BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)
-                    )
-                    && crate::ast_json::block_pos(&blocks[j])
-                        .is_some_and(|pos| at_or_before(pos, self.at))
-                {
-                    j += 1;
-                }
+                // Siblings stand in source order, so the nodes after the
+                // paragraph that start at or before `at` are a prefix.
+                let j = i
+                    + 1
+                    + blocks[i + 1..].partition_point(|block| {
+                        matches!(block, BlockNode::Comment(_) | BlockNode::AbbreviationDef(_))
+                            && crate::ast_json::block_pos(block)
+                                .is_some_and(|pos| at_or_before(pos, self.at))
+                    });
                 if let Some(node) = self.node.take() {
-                    blocks.insert(j, node);
+                    insert_restored(blocks, j, node);
                 }
                 return;
             }
@@ -937,7 +981,7 @@ fn owner_walk(
                     *seen += 1;
                     if *seen == nth {
                         let index = position_index(&q.children, at);
-                        q.children.insert(index, node.take().expect("node"));
+                        insert_restored(&mut q.children, index, node.take().expect("node"));
                         extend_end(&mut q.pos, pos);
                         return true;
                     }
@@ -955,7 +999,7 @@ fn owner_walk(
                         *seen += 1;
                         if *seen == nth {
                             let index = position_index(&item.children, at);
-                            item.children.insert(index, node.take().expect("node"));
+                            insert_restored(&mut item.children, index, node.take().expect("node"));
                             extend_end(&mut item.pos, pos);
                             placed = true;
                             break;
