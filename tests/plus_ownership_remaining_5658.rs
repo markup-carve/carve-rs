@@ -103,3 +103,9 @@ fn stacked_code_attribute_2() {
     let expected = "<ul>\n  <li>\n    <dl>\n      <dt>t</dt>\n      <dd><code>o\n{#i\n.y}\nzq</code></dd>\n    </dl>\n  </li>\n</ul>";
     assert_eq!(carve::to_html(source).trim(), expected);
 }
+#[test]
+fn stacked_quote_attribute_code_span_releases_its_marker_column() {
+    let source = "- > +\n  `o\n  {#i\n   .y}\nzq";
+    let expected = "<ul>\n  <li>\n    <blockquote><p><code>o\n{#i\n.y}</code></p></blockquote>\n  </li>\n</ul>\n<p>zq</p>";
+    assert_eq!(carve::to_html(source).trim(), expected);
+}
