@@ -803,7 +803,7 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         }
         return out;
     }
-    for slot in &attrs.order {
+    for slot in attrs.unique_order() {
         match slot {
             AttrSlot::Id => emit_id(&mut out),
             AttrSlot::Class => emit_class(&mut out),
@@ -871,7 +871,7 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         }
         return out;
     }
-    for slot in &attrs.order {
+    for slot in attrs.unique_order() {
         match slot {
             AttrSlot::Id => emit_id(&mut out),
             AttrSlot::Class => emit_class(&mut out),

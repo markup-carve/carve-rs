@@ -1352,8 +1352,7 @@ fn attrs(a: Option<&Attrs>) -> Object {
             out.insert(
                 "carveAttrOrder".into(),
                 Json::Array(
-                    a.order
-                        .iter()
+                    a.unique_order()
                         .map(|slot| {
                             Json::String(match slot {
                                 AttrSlot::Id => "#id".into(),

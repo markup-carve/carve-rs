@@ -739,10 +739,64 @@ pub(in crate::parse) fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs)
     merge_attrs_indexed(target, incoming, &mut None);
 }
 
+/// Per ASCII-folded name the slot written last; `seen` holds the class slots.
+#[derive(Default)]
+pub(in crate::parse) struct AttrSlotIndex {
+    seen: HashSet<AttrSlot>,
+    latest: HashMap<String, AttrSlot>,
+}
+
+impl AttrSlotIndex {
+    fn of(order: &[AttrSlot]) -> Self {
+        let mut index = Self::default();
+        for slot in order {
+            match folded_slot_name(slot) {
+                Some(name) => {
+                    index.latest.insert(name, slot.clone());
+                }
+                None => {
+                    index.seen.insert(slot.clone());
+                }
+            }
+        }
+        index
+    }
+
+    /// Record a write of `slot`. HTML keeps one attribute per folded name with
+    /// the LAST value (PART 10 section 1), so a write to a name last written in
+    /// another spelling appends its slot again, and the renderer's fold reads
+    /// the last write (carve#5982). Readers that do not fold use
+    /// `Attrs::unique_order`.
+    fn write(&mut self, order: &mut Vec<AttrSlot>, slot: AttrSlot) {
+        match folded_slot_name(&slot) {
+            Some(name) => {
+                if self.latest.get(&name) != Some(&slot) {
+                    order.push(slot.clone());
+                    self.latest.insert(name, slot);
+                }
+            }
+            None => {
+                if self.seen.insert(slot.clone()) {
+                    order.push(slot);
+                }
+            }
+        }
+    }
+}
+
+/// `class` accumulates instead of taking the last value, so it has no entry.
+fn folded_slot_name(slot: &AttrSlot) -> Option<String> {
+    match slot {
+        AttrSlot::Id => Some("id".to_string()),
+        AttrSlot::Key(key) if !key.eq_ignore_ascii_case("class") => Some(key.to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
 pub(in crate::parse) fn merge_attrs_indexed(
     target: &mut Option<Attrs>,
     incoming: Attrs,
-    slots: &mut Option<HashSet<AttrSlot>>,
+    slots: &mut Option<AttrSlotIndex>,
 ) {
     if target.is_none() {
         *slots = None;
@@ -750,16 +804,14 @@ pub(in crate::parse) fn merge_attrs_indexed(
         return;
     }
     let target = target.as_mut().unwrap();
-    let slots = slots.get_or_insert_with(|| target.order.iter().cloned().collect());
+    let slots = slots.get_or_insert_with(|| AttrSlotIndex::of(&target.order));
     if incoming.id.is_some() {
         target.id = incoming.id;
     }
     target.classes.extend(incoming.classes);
     target.key_values.extend(incoming.key_values);
     for slot in incoming.order {
-        if slots.insert(slot.clone()) {
-            target.order.push(slot);
-        }
+        slots.write(&mut target.order, slot);
     }
 }
 
@@ -993,7 +1045,7 @@ pub(in crate::parse) fn apply_attrs_to_inline(node: &mut InlineNode, attrs: Attr
 pub(in crate::parse) fn merge_attrs_into_inline(
     node: &mut InlineNode,
     attrs: Attrs,
-    slots: &mut Option<HashSet<AttrSlot>>,
+    slots: &mut Option<AttrSlotIndex>,
 ) {
     match node {
         InlineNode::Emphasis(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
@@ -1317,22 +1369,19 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
         return None;
     }
     let mut attrs = Attrs::default();
+    let mut slots = AttrSlotIndex::default();
     for token in attr_tokens(src)? {
         if let Some(tag) = token.strip_prefix(':') {
             if !is_language_tag(tag) {
                 return None;
             }
-            if !attrs.key_values.contains_key("lang") {
-                attrs.order.push(AttrSlot::Key("lang".to_string()));
-            }
+            slots.write(&mut attrs.order, AttrSlot::Key("lang".to_string()));
             attrs.key_values.insert("lang".to_string(), tag.to_string());
         } else if let Some(id) = token.strip_prefix('#') {
             if !is_css_identifier(id) {
                 return None;
             }
-            if attrs.id.is_none() {
-                attrs.order.push(AttrSlot::Id);
-            }
+            slots.write(&mut attrs.order, AttrSlot::Id);
             attrs.id = Some(id.to_string());
         } else if let Some(class) = token.strip_prefix('.') {
             if !is_css_identifier(class) {
@@ -1373,9 +1422,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                 // (invalid HTML). `id` never enters key_values, so a bare `id`
                 // boolean (below) cannot leave a stale duplicate. Matches
                 // carve-php.
-                if attrs.id.is_none() {
-                    attrs.order.push(AttrSlot::Id);
-                }
+                slots.write(&mut attrs.order, AttrSlot::Id);
                 attrs.id = Some(value);
             } else if key == "class" {
                 // `class=value` is a SPELLING OF THE CLASS SLOT, the same way
@@ -1404,18 +1451,14 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                     attrs.classes.push(value);
                 }
             } else {
-                if !attrs.key_values.contains_key(key) {
-                    attrs.order.push(AttrSlot::Key(key.to_string()));
-                }
+                slots.write(&mut attrs.order, AttrSlot::Key(key.to_string()));
                 attrs.key_values.insert(key.to_string(), value);
             }
         } else if is_boolean_attr_name(&token) {
             if token == "id" {
                 // A bare boolean `id` also feeds the id slot (value ""), last-wins
                 // and single -- `{id id=j}` -> `id="j"`, `{id}` -> `id=""`.
-                if attrs.id.is_none() {
-                    attrs.order.push(AttrSlot::Id);
-                }
+                slots.write(&mut attrs.order, AttrSlot::Id);
                 attrs.id = Some(String::new());
             } else if token == "class" {
                 // And a bare boolean `class` feeds the class slot, because PART 4
@@ -1430,9 +1473,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
             } else {
                 // Boolean attribute: a bare word with no value, rendered name="".
                 // (Matched last so `k=v` is a key/value, not a bare `k`.)
-                if !attrs.key_values.contains_key(&token) {
-                    attrs.order.push(AttrSlot::Key(token.clone()));
-                }
+                slots.write(&mut attrs.order, AttrSlot::Key(token.clone()));
                 attrs.key_values.insert(token, String::new());
             }
         } else {

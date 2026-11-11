@@ -444,7 +444,7 @@ fn take_standalone_attrs(
     cur: &mut LineCursor,
     options: &Options<'_>,
     pending_attrs: &mut Option<Attrs>,
-    pending_attr_slots: &mut Option<HashSet<AttrSlot>>,
+    pending_attr_slots: &mut Option<AttrSlotIndex>,
     pending_attrs_pos: &mut Option<Pos>,
 ) -> bool {
     let attrs_start = cur.pos;

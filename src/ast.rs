@@ -154,6 +154,16 @@ pub struct Attrs {
     pub order: Vec<AttrSlot>,
 }
 
+impl Attrs {
+    /// `order` with each slot at its first appearance. The parser repeats a
+    /// slot whose folded name another spelling wrote in between, so the HTML
+    /// fold sees the last write (carve#5982); every other reader wants it once.
+    pub(crate) fn unique_order(&self) -> impl Iterator<Item = &AttrSlot> {
+        let mut seen: std::collections::HashSet<&AttrSlot> = std::collections::HashSet::new();
+        self.order.iter().filter(move |slot| seen.insert(slot))
+    }
+}
+
 /// An attribute position in [`Attrs::order`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AttrSlot {

@@ -747,7 +747,7 @@ fn render_section(
             let slot = heading
                 .attrs
                 .as_ref()
-                .and_then(|attrs| attrs.order.iter().filter(|slot| !matches!(slot, AttrSlot::Key(name) if crate::roundtrip::canonical(name).is_some())).position(|s| matches!(s, AttrSlot::Id)))
+                .and_then(|attrs| attrs.unique_order().filter(|slot| !matches!(slot, AttrSlot::Key(name) if crate::roundtrip::canonical(name).is_some())).position(|s| matches!(s, AttrSlot::Id)))
                 .unwrap_or(0);
             if slot > 0 {
                 write_carrier(

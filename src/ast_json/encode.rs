@@ -2184,7 +2184,7 @@ pub(super) fn write_attrs(out: &mut String, attrs: &Attrs) {
         w.field("order", |out| {
             out.push('[');
             let mut first = true;
-            for slot in &attrs.order {
+            for slot in attrs.unique_order() {
                 write_comma(out, &mut first);
                 match slot {
                     AttrSlot::Id => write_string(out, "#id"),
