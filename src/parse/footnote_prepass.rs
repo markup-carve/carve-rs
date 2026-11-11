@@ -3412,7 +3412,10 @@ impl<'a, 'o> FootnoteScan<'a, 'o> {
         if i == resume_at && self.hosted_marker_column_plus(&host, &mut walk, note, &mut i) {
             // The attached block leaves the walk at its next line.
         } else if !walk.reaches_floor(&host, self.lines[resume_at]) {
-            while self.hosted_lazy_line(&host, &mut walk, note, &mut i) {}
+            while i < self.lines.len()
+                && !walk.reaches_floor(&host, self.lines[i])
+                && self.hosted_lazy_line(&host, &mut walk, note, &mut i)
+            {}
             if !walk.lazy_open {
                 self.keep_blanks_for_open_fence(&host, note, i, resume_at);
                 return i;
