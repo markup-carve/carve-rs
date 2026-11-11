@@ -2258,6 +2258,19 @@ impl<'a> Walk<'a> {
         let Some(attached) = self.attached.as_ref() else {
             return false;
         };
+        // An own-line fence's blank is its last payload when the next line
+        // reaches a note or definition body's marker column as a `+`.
+        if attached
+            .frames
+            .last()
+            .is_some_and(|host| matches!(host.kind, Kind::Note | Kind::Dd))
+            && self.lines.get(at).is_some_and(|line| {
+                is_cont_marker(indent_rest(line)) && indent_cols(line).0 == attached.marker
+            })
+            && (attached.from + 1..at).any(|k| is_blank_line(self.lines[k]))
+        {
+            return true;
+        }
         let mut last = at;
         let view = |k: usize| strip_quote_levels(self.lines[k], attached.depth).map(trim_ws_start);
         // A blank after the attached block keeps the host's later marker-column
@@ -2350,7 +2363,12 @@ impl<'a> Walk<'a> {
         if self.frames.last().is_some_and(|frame| {
             frame.kind == Kind::Fence
                 && indent_cols(fence_line).0 >= frame.open_col
-                && !(marker_line_host && frame.attached_blank_end.is_some_and(|blank| at > blank))
+                && !((marker_line_host
+                    || attached
+                        .frames
+                        .last()
+                        .is_some_and(|host| matches!(host.kind, Kind::Note | Kind::Dd)))
+                    && frame.attached_blank_end.is_some_and(|blank| at > blank))
         }) {
             return;
         }

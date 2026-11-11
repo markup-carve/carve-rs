@@ -976,7 +976,11 @@ pub(crate) fn own_line_fence_end(
             .unwrap_or_else(|| indent_columns(line));
         let closes =
             authored_col <= authored_opener_col && is_fence_close(trim_ascii_start(line), open);
-        if indent_columns(line) < content_col && !(closes && indent_columns(line) == opener_col) {
+        if (indent_columns(line) < content_col
+            || (authored_col < content_col
+                && continuation_marker::is_consumed_marker(trim_ascii_start(line))))
+            && !(closes && indent_columns(line) == opener_col)
+        {
             break;
         }
         at += 1;

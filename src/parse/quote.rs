@@ -2787,7 +2787,20 @@ impl<'a> QuoteBody<'a> {
             }
             if at > attach_end + 1 {
                 quoted_fence_tail = Some(attach_end);
-                attach_end = at;
+                // A blank after the last prefixed payload separates the
+                // quote from the following document block when that payload
+                // was itself a fence-shaped line.
+                let fence_shaped_tail = (attach_end..at).any(|line| {
+                    strip_blockquote_prefix(cur.lines.at(line))
+                        .is_some_and(|rest| detect_fence_open(trim_ascii_start(rest)).is_some())
+                });
+                attach_end = if fence_shaped_tail {
+                    (attach_end..at)
+                        .rfind(|&line| !is_blank_line(cur.lines.at(line)))
+                        .map_or(attach_end, |line| line + 1)
+                } else {
+                    at
+                };
             }
         }
         while attach_end > cur.pos
