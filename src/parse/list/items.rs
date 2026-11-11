@@ -2926,7 +2926,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             Some(RefusedBraceRun::No(count)) if count != usize::MAX => {
                 for _ in 1..owner_boundary.unwrap_or(count) {
                     let Some(line) = self.cur.peek() else { break };
-                    self.fold_lead_line(&mut lead, line);
+                    self.fold_lead_line(&mut lead, trim_ascii_start(line));
                 }
                 lead.comment_through = item.at + count;
             }
