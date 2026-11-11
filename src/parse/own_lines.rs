@@ -3018,9 +3018,10 @@ impl<'a> Walk<'a> {
         frames: &[Frame],
         target: usize,
         closer: Option<Closer>,
-        col: usize,
-        open_col: usize,
+        columns: (usize, usize),
+        opener_tab: bool,
     ) {
+        let (col, open_col) = columns;
         // A line block keeps verse indentation relative to its opener. A
         // marker-line or tabbed opener already has a host-relative rewrite.
         let verse_payload =
@@ -3052,7 +3053,11 @@ impl<'a> Walk<'a> {
             && ((inner.canon > inner.cut
                 && inner.doc_marker <= inner.canon
                 && target == inner.canon + 1)
-                || (inner.canon == 0 && inner.cut == 2 && target > 1))
+                || (inner.canon > 0
+                    && inner.cut == 0
+                    && frames.len() > 2
+                    && inner.doc_marker == inner.canon)
+                || (opener_tab && inner.canon == 0 && inner.cut == 2 && target > 1))
             && c.src[..c.src.len() - c.rest.len()]
                 .find('\t')
                 .is_some_and(|at| {
@@ -3825,7 +3830,19 @@ impl<'a> Walk<'a> {
             let (col, open_col) = (c.col, inner.closer_col());
             let family = inner.family;
             let target = Self::payload_target(inner, closer, c.rest, col, target);
-            Self::write_payload_lead(c, inner, &self.frames, target, closer, col, open_col);
+            let opener_tab = self
+                .lines
+                .get(inner.line.saturating_sub(1))
+                .is_some_and(|opener| opener[..indent_cols(opener).1].contains('\t'));
+            Self::write_payload_lead(
+                c,
+                inner,
+                &self.frames,
+                target,
+                closer,
+                (col, open_col),
+                opener_tab,
+            );
             self.write_attached_quote_comment_payload(at, reached, missed, c, inner);
             if tracing {
                 let payload = self.deepest();

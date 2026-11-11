@@ -671,6 +671,9 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                         let Some((_, after_tab)) = lead.rsplit_once('\t') else {
                             continue;
                         };
+                        if !after_tab.chars().all(|ch| ch == ' ') {
+                            continue;
+                        }
                         let spaces = after_tab.chars().filter(|&ch| ch == ' ').count();
                         let tabs = lead.chars().filter(|&ch| ch == '\t').count();
                         let leading = paragraph
@@ -697,6 +700,12 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                             .rev()
                             .take(wanted.saturating_sub(placed))
                         {
+                            let offset = start + column - 1;
+                            if paragraph.pos.as_ref().is_some_and(|pos| {
+                                offset < pos.start_offset || offset + 1 > pos.end_offset
+                            }) {
+                                continue;
+                            }
                             let Some(InlineNode::NonBreakingSpace(space)) = paragraph.children
                                 [..leading]
                                 .iter_mut()
@@ -709,8 +718,8 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                                 end_line: line,
                                 start_column: column,
                                 end_column: column + 1,
-                                start_offset: start + column - 1,
-                                end_offset: start + column,
+                                start_offset: offset,
+                                end_offset: offset + 1,
                                 file: None,
                             });
                         }
