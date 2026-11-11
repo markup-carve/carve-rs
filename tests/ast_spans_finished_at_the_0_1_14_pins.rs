@@ -112,6 +112,7 @@ fn a_block_comment_in_a_marker_line_note_ends_after_its_closer() {
     for (source, span) in [
         ("- [^n]: t\n  %%%\n  %%%\n\n    ~~~\n    e\n]\n", (12, 21)),
         ("- [^n]: t\n  %%%\n  z\n  %%%\n    e\n", (12, 25)),
+        ("- [^n]: t\n  %%%\n  %%% tail\n    e\n", (12, 26)),
     ] {
         let doc = ast(source);
         let footnote = doc["children"]

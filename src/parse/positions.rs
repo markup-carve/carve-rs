@@ -676,15 +676,21 @@ pub(in crate::parse) fn extend_comment_closers<'b>(
     }
 }
 
-/// The 1-based columns `[first %, after last %)` of a `%%%` closer line.
+/// The 1-based columns `[first %, line end)` of a `%%%` closer line; text after
+/// the run belongs to the closer, as the parser reads it.
 fn closer_run(line: &str) -> Option<std::ops::Range<usize>> {
     let chars: Vec<char> = line.chars().collect();
     let start = chars
         .iter()
         .position(|&ch| !matches!(ch, ' ' | '\t' | '>'))?;
-    let end = start + chars[start..].iter().take_while(|&&ch| ch == '%').count();
-    (end - start >= 3 && chars[end..].iter().all(|&ch| matches!(ch, ' ' | '\t')))
-        .then_some(start + 1..end + 1)
+    let run = chars[start..].iter().take_while(|&&ch| ch == '%').count();
+    let end = chars.len()
+        - chars
+            .iter()
+            .rev()
+            .take_while(|&&ch| matches!(ch, ' ' | '\t'))
+            .count();
+    (run >= 3).then_some(start + 1..end + 1)
 }
 
 /// Place a verse lead on a line whose indent holds a tab. Walking back from
