@@ -2978,8 +2978,9 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         }
         let next_owned = next.to_string();
         // A lazy line is held by an open code span only, as in the ownership walk.
-        let held_brace =
-            trim_ascii_start(next).starts_with('{') && lead.inline_span.code_open(&lead.lines);
+        let held_brace = trim_ascii_start(next).starts_with('{')
+            && !self.cur.in_quoted_body
+            && lead.inline_span.code_open(&lead.lines);
         // A wrapped attribute line closes the paragraph even when it is
         // written at an ancestor's column. Its one-line spelling already
         // interrupts here; use the same block test before taking a lazy line.
@@ -3064,7 +3065,8 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
     /// after it joins whatever it opens unless it leaves the item (carve#5080).
     fn lead_refused_brace_run(&mut self, lead: &mut LeadParagraph, next: &str) -> bool {
         if !trim_ascii_start(strip_lazy(next)).starts_with('{')
-            || lead.inline_span.open(&lead.lines)
+            || (!self.cur.in_quoted_body || indent_columns(next) >= self.content_col)
+                && lead.inline_span.open(&lead.lines)
         {
             return false;
         }
