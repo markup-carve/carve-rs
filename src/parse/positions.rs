@@ -695,9 +695,18 @@ pub(in crate::parse) fn restore_verse_lead_spaces(
                         let Some(&start) = self.starts.get(line.saturating_sub(1)) else {
                             continue;
                         };
+                        let occupied: HashSet<_> = paragraph.children[..leading]
+                            .iter()
+                            .filter_map(|node| {
+                                node.pos()
+                                    .filter(|pos| pos.start_line == line)
+                                    .map(|pos| pos.start_column)
+                            })
+                            .collect();
                         let columns: Vec<_> = (lead.chars().count().saturating_sub(spaces) + 1
                             ..=lead.chars().count())
                             .rev()
+                            .filter(|column| !occupied.contains(column))
                             .take(wanted.saturating_sub(placed))
                             .collect();
                         let columns = columns.into_iter().rev().filter(|&column| {

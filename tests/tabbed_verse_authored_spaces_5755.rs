@@ -48,6 +48,10 @@ fn a_tabbed_stanza_keeps_positions_for_authored_spaces() {
         no_break_space_columns("- a\n  - a\n\n  \t::: |\n\t\t  x\n\t:::\n"),
         vec![Some((5, 3)), Some((5, 4)), None, None]
     );
+    assert_eq!(
+        no_break_space_columns("- a\n  - a\n\n  \t::: |\n   \t    x\n"),
+        vec![Some((5, 7)), Some((5, 8)), None, None]
+    );
 }
 
 #[test]
