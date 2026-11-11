@@ -22,9 +22,21 @@ fn heading_jump_rule_is_canonical_across_1000_documents() {
     for variant in 0..1000 {
         let first = variant % 4 + 1;
         let next = first + 2;
-        let prefix = if variant % 2 == 0 { "A paragraph.\n\n" } else { "" };
-        let between = if variant % 3 == 0 { "\nText between headings.\n" } else { "" };
-        let suffix = if variant % 5 == 0 { "\n\n> A quoted sibling.\n" } else { "" };
+        let prefix = if variant % 2 == 0 {
+            "A paragraph.\n\n"
+        } else {
+            ""
+        };
+        let between = if variant % 3 == 0 {
+            "\nText between headings.\n"
+        } else {
+            ""
+        };
+        let suffix = if variant % 5 == 0 {
+            "\n\n> A quoted sibling.\n"
+        } else {
+            ""
+        };
         let source = format!(
             "{prefix}{} First {variant}\n{between}\n{} Next {variant}\n{suffix}",
             "#".repeat(first),
