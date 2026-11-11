@@ -3583,7 +3583,11 @@ impl<'a> Walk<'a> {
             } else {
                 c.col
             };
-            if !c.rest.is_empty() && frame_col < f.col {
+            let inner = self.frames.last().expect("document frame");
+            let opaque_code_payload = inner.kind == Kind::Fence
+                && matches!(inner.closer, Some(Closer::Fence(..)))
+                && c.col >= inner.open_col;
+            if !c.rest.is_empty() && frame_col < f.col && !opaque_code_payload {
                 break;
             }
             reached = k;
