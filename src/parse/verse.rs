@@ -867,6 +867,7 @@ pub(in crate::parse) fn parse_line_block(cur: &mut LineCursor, options: &Options
             if cur
                 .source_line(line_at)
                 .is_some_and(own_lines::authored_line_has_tab_in_lead)
+                && cur.source_col(line_at).is_some_and(|column| column >= 0)
             {
                 for (at, _) in expanded
                     .chars()
