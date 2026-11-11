@@ -2722,6 +2722,20 @@ fn definition_in_gap(
     (!parts.is_empty()).then(|| (parts.join("\n"), separates))
 }
 
+fn note_in_gap(before: &BlockNode, after: &BlockNode, ctx: &CarveContext) -> bool {
+    let (Some(from), Some(to)) = (block_pos(before), block_pos(after)) else {
+        return false;
+    };
+    ((from.end_line + 1)..to.start_line).any(|line| {
+        !ctx.written_in_place.contains(&line)
+            && ctx.definitions_by_line.get(&line).is_some_and(|entries| {
+                entries
+                    .iter()
+                    .any(|entry| matches!(entry, DefinitionAtLine::Footnote(..)))
+            })
+    })
+}
+
 /// Write the hoisted definition whose authored source line is `line`.
 ///
 /// Rendering happens before the line is claimed because the document-level
@@ -2945,7 +2959,15 @@ fn render_item_blocks(
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
             let gap_guard_start = ctx.footnote_guard_types.len();
-            if let Some((written, separates)) = definition_in_gap(session, prev_block, block, ctx) {
+            // A note written here would take the paragraph below as its lazy
+            // line; with no paragraph above to end, it is hoisted (carve#5987).
+            let hoists_note = matches!(block, BlockNode::Paragraph(_))
+                && !an_open_paragraph_reaches_down(prev_block)
+                && note_in_gap(prev_block, block, ctx);
+            if let Some((written, separates)) = (!hoists_note)
+                .then(|| definition_in_gap(session, prev_block, block, ctx))
+                .flatten()
+            {
                 ctx.footnote_guard_types[guard_start..].rotate_left(gap_guard_start - guard_start);
                 out.push_str(&written);
                 out.push('\n');

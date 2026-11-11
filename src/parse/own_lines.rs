@@ -2013,6 +2013,18 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// The column of `rest` in `line` as the frames up to `host` admit it: a
+    /// tab stop restarts at each frame column (PART 9 §24 C5, carve#5987).
+    fn host_tab_column(&self, line: &str, rest: &str, host: usize) -> usize {
+        let lead = &line[..line.len() - rest.len()];
+        let frames = &self.frames[1..=host.min(self.frames.len() - 1)];
+        if !lead.contains('\t') || frames.iter().any(|frame| frame.kind == Kind::Quote) {
+            return doc_column(line, rest);
+        }
+        let origins: Vec<_> = frames.iter().map(|frame| frame.col + frame.shift).collect();
+        frame_tab_column(lead, &origins)
+    }
+
     /// The first line past the invisible lines from `from` (CARVE-P9-013,
     /// carve#4449): those at the marker column, or at or past `content`
     /// (carve#5130). `collect` gathers the skipped lines the readers take as
@@ -2036,7 +2048,7 @@ impl<'a> Walk<'a> {
             self.through_quotes(self.lines[k], host)
                 .map_or(true, |level| {
                     let text = trim_ws_start(level);
-                    !is_ws_only(text) && doc_column(self.lines[k], text) < bound
+                    !is_ws_only(text) && self.host_tab_column(self.lines[k], text, host) < bound
                 })
         };
         let mut k = from;
@@ -2045,7 +2057,7 @@ impl<'a> Walk<'a> {
                 return k;
             }
             let rest = view(k);
-            let at = doc_column(self.lines[k], rest);
+            let at = self.host_tab_column(self.lines[k], rest, host);
             if is_blank_line(self.lines[k]) || (at != column && at < content) {
                 return k;
             }
@@ -2100,7 +2112,7 @@ impl<'a> Walk<'a> {
                 k += 1;
                 while k < self.lines.len() && self.through_quotes(self.lines[k], host).is_some() {
                     let text = view(k);
-                    let col = doc_column(self.lines[k], text);
+                    let col = self.host_tab_column(self.lines[k], text, host);
                     if offered && col == column {
                         break;
                     }
@@ -2123,7 +2135,8 @@ impl<'a> Walk<'a> {
                     };
                     if let Some((_, _, note_body)) = collect.as_mut() {
                         note_body.extend((k..k + len).filter(|&line| {
-                            doc_column(self.lines[line], view(line)) >= note_body_column
+                            self.host_tab_column(self.lines[line], view(line), host)
+                                >= note_body_column
                         }));
                     }
                     k += len;
