@@ -2376,10 +2376,26 @@ impl<'a> Walk<'a> {
 
     /// A `+` right after the one block a `+` attached reaches the same host, whose
     /// frames the walk closed when it read that block where it stands.
+    fn attached_colon_reaches(&self, at: usize, column: usize) -> bool {
+        self.attached.as_ref().is_some_and(|attached| {
+            self.frames.last().is_some_and(|frame| {
+                frame.kind == Kind::Colon
+                    && frame.line == self.first_line + attached.from
+                    && !frame.attached_blank_end.is_some_and(|blank| at > blank)
+                    && column >= frame.colon_suffix_max_col
+            })
+        })
+    }
+
     fn reopen_attached_host(&mut self, at: usize, src: &str) {
         let Some(attached) = self.attached.as_ref() else {
             return;
         };
+        // The attached block is still open inside a colon body. Its line
+        // reaches that body before the original marker host can resume.
+        if self.attached_colon_reaches(at, doc_column(src, quoted_rest(src))) {
+            return;
+        }
         let marker_line_host = self.marker_line_attachment_host(attached);
         // A fence that the previous attachment left at document level owns a
         // marker-column `+` in its payload before any older host may reopen.
@@ -3547,11 +3563,16 @@ impl<'a> Walk<'a> {
         col.saturating_sub(self.top().col)
     }
 
-    fn reaches_colon_suffix(&self, index: usize, column: usize) -> bool {
+    fn reaches_colon_suffix(&self, at: usize, index: usize, column: usize, rest: &str) -> bool {
         self.frames.last().is_some_and(|last| {
             last.kind == Kind::Colon
-                && last.colon_suffix_start == index
                 && column >= last.colon_suffix_max_col
+                && (last.colon_suffix_start == index
+                    // A bare `+` already reaches the open colon before an
+                    // enclosing marker gets a chance to attach it (carve#5923).
+                    || (index == 1
+                        && is_cont_marker(rest)
+                        && self.attached_colon_reaches(at, column)))
         })
     }
 
@@ -3722,7 +3743,7 @@ impl<'a> Walk<'a> {
         self.resume_attached_host(at, c.src);
         self.restore_attached_code_span_tail(at);
         for k in 1..self.frames.len() {
-            if self.reaches_colon_suffix(k, c.col) {
+            if self.reaches_colon_suffix(at, k, c.col, c.rest) {
                 reached = self.frames.len() - 1;
                 break;
             }
