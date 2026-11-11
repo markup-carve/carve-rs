@@ -65,6 +65,18 @@ pub(in crate::parse) fn clear_unverifiable_text_positions(doc: &mut Document, so
 
         fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
             for inline in inlines {
+                if let InlineNode::NonBreakingSpace(space) = inline {
+                    if let Some(pos) = space.pos.as_ref() {
+                        if pos.file.is_none()
+                            && !matches!(
+                                self.source.get(pos.start_offset..pos.end_offset),
+                                Some([' ']) | Some(['\\', ' '])
+                            )
+                        {
+                            space.pos = None;
+                        }
+                    }
+                }
                 if let InlineNode::Text(text) = inline {
                     let want = text.value.trim();
                     if !want.is_empty()
@@ -1085,6 +1097,9 @@ pub(crate) fn end_at_last_placed_child(pos: &mut Pos, last: Option<Pos>) -> bool
     let Some(last) = last else {
         return false;
     };
+    if last.file != pos.file || last.start_offset < pos.start_offset {
+        return false;
+    }
     pos.end_line = last.end_line;
     pos.end_column = last.end_column;
     pos.end_offset = last.end_offset;

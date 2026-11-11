@@ -1614,7 +1614,22 @@ fn extract_nested_footnote_defs(
         }
         for (nested_label, mut pos) in nested_positions {
             map_pos_through_source(&mut pos, &parent);
-            positions.entry(nested_label).or_insert(pos);
+            // A nested definition can precede a root-level duplicate that the
+            // outer scan saw first. Its body already wins by source order, so
+            // its opening position must win by that same order.
+            match positions.entry(nested_label) {
+                std::collections::btree_map::Entry::Occupied(mut existing)
+                    if pos.start_line < existing.get().start_line
+                        || (pos.start_line == existing.get().start_line
+                            && pos.start_column < existing.get().start_column) =>
+                {
+                    existing.insert(pos);
+                }
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(pos);
+                }
+                _ => {}
+            }
         }
         for (nested_label, mut def) in nested_links {
             if let Some(line) = def.line {
