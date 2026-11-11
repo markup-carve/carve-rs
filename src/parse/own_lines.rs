@@ -5344,15 +5344,17 @@ pub(crate) fn authored_visual_column(line: usize, column: usize) -> usize {
     })
 }
 
-pub(crate) fn authored_line_has_tab_in_lead(line: usize) -> bool {
+pub(crate) fn authored_line_len_after_tab_lead(line: usize) -> Option<usize> {
     AUTHORED_SOURCE.with(|slot| {
         slot.borrow()
             .as_ref()
             .and_then(|lines| lines.get(&line))
-            .is_some_and(|text| {
-                text.chars()
+            .and_then(|text| {
+                let lead: String = text
+                    .chars()
                     .take_while(|ch| matches!(ch, ' ' | '\t' | '>'))
-                    .any(|ch| ch == '\t')
+                    .collect();
+                lead.contains('\t').then(|| text.chars().count())
             })
     })
 }
