@@ -996,6 +996,8 @@ struct Walk<'a> {
     skipped: Option<Skipped>,
     /// Later markers a forward search offered the block an earlier marker took (carve#5013).
     claimed: std::cell::RefCell<std::collections::BTreeMap<usize, usize>>,
+    /// Set by a note attach whose block is a following definition (carve#5953).
+    sibling_note: std::cell::Cell<bool>,
     /// Lines whose refused marker was written as a `%%` line.
     consumed: Vec<usize>,
     /// The comment text of that `%%` line, a letter the source does not hold.
@@ -1393,6 +1395,7 @@ fn walk_traced(
         attached_quotes: Vec::new(),
         skipped: None,
         claimed: Default::default(),
+        sibling_note: Default::default(),
         consumed: Vec::new(),
         mark: plus_letter(source),
         note_follower: None,
@@ -1677,6 +1680,7 @@ impl<'a> Walk<'a> {
         column: usize,
         host: usize,
     ) -> Result<(), Refusal> {
+        self.sibling_note.set(false);
         if self.claimed.borrow().contains_key(&at) {
             return Err(Refusal::Claimed);
         }
@@ -1740,6 +1744,16 @@ impl<'a> Walk<'a> {
                     next += 1;
                 }
             }
+            // A following definition at the column is the note's sibling, so lint
+            // reports the `+` refused; the walk still reads the block from here
+            // (carve#5953 ruling A).
+            self.sibling_note
+                .set(self.lines.get(next).is_some_and(|line| {
+                    self.through_quotes(line, host).is_some_and(|level| {
+                        let text = trim_ws_start(level);
+                        doc_column(line, text) == column && parse_footnote_def_line(text).is_some()
+                    })
+                }));
         }
         let Some(line) = self.lines.get(next) else {
             return Err(Refusal::Document);
@@ -2653,6 +2667,15 @@ impl<'a> Walk<'a> {
         self.refuse_line = true;
         if let Some((host, reason)) = refusal {
             self.refuse_plus(at, column, host, reason, false);
+        }
+    }
+
+    /// The lint verdict of the last note attach that ended on a sibling definition.
+    fn sibling_refusal(&self) -> Result<(), Refusal> {
+        if self.sibling_note.take() {
+            Err(Refusal::Sibling)
+        } else {
+            Ok(())
         }
     }
 
@@ -4894,6 +4917,44 @@ impl<'a> Walk<'a> {
                 && self.losing_note_plus.contains(&self.frames[frame].line);
             if self.decide && losing {
                 refused = true;
+                // The losing `+` meets the attach gates for lint only; a refusal is
+                // reported as for any marker-line `+` (carve#5953 ruling A).
+                let line = self.first_line + at;
+                if is_cont_marker(c.rest)
+                    && !self
+                        .refused
+                        .iter()
+                        .rev()
+                        .take_while(|r| r.line >= line)
+                        .any(|r| r.line == line)
+                {
+                    let held: Vec<usize> = self
+                        .claimed
+                        .borrow()
+                        .range(at + 1..)
+                        .map(|(&k, _)| k)
+                        .collect();
+                    let verdict = self
+                        .plus_attaches(frame, at, self.frames[frame].doc_marker)
+                        .and_then(|()| self.sibling_refusal());
+                    // Only lint reads this verdict: drop the claims it made.
+                    let mut claimed = self.claimed.borrow_mut();
+                    let made: Vec<usize> = claimed
+                        .range(at + 1..)
+                        .filter(|&(line, &by)| by == at && !held.contains(line))
+                        .map(|(&line, _)| line)
+                        .collect();
+                    for line in made {
+                        claimed.remove(&line);
+                    }
+                    drop(claimed);
+                    if let Err(reason) = verdict {
+                        let plus = doc_column(self.lines[at], c.rest);
+                        let refuse_line = self.refuse_line;
+                        self.refuse_plus(at, plus, Some(Kind::Note), reason, true);
+                        self.refuse_line = refuse_line;
+                    }
+                }
             } else if self.decide && is_cont_marker(c.rest) {
                 // Past the one space after a `>` the `+` is the quote's text (corpus 646).
                 let quote_text = self.quote_note_plus_line
@@ -4906,6 +4967,12 @@ impl<'a> Walk<'a> {
                 } {
                     Ok(()) => {
                         taken = true;
+                        if let Err(reason) = self.sibling_refusal() {
+                            let plus = doc_column(self.lines[at], c.rest);
+                            let refuse_line = self.refuse_line;
+                            self.refuse_plus(at, plus, Some(Kind::Note), reason, true);
+                            self.refuse_line = refuse_line;
+                        }
                         self.accept_plus(at, frame, true);
                         let end = self.skip_invisible(frame, at, column, None, false);
                         self.note_attached(frame, end);
