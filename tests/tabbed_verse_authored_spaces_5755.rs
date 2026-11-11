@@ -38,19 +38,19 @@ fn no_break_space_columns(source: &str) -> Vec<Option<(u64, u64)>> {
 fn a_tabbed_stanza_keeps_positions_for_authored_spaces() {
     assert_eq!(
         no_break_space_columns("- a\n\n\t::: |\n  \t  x\n\t:::\n"),
-        vec![None, Some((4, 4)), Some((4, 5)), None]
+        vec![None, None, Some((4, 4)), Some((4, 5))]
     );
     assert_eq!(
         no_break_space_columns("- a\n  - a\n\n  \t::: |\n  \t  x\n  \t:::\n"),
-        vec![Some((5, 5)), None]
+        vec![Some((5, 4)), Some((5, 5))]
     );
     assert_eq!(
         no_break_space_columns("- a\n  - a\n\n  \t::: |\n\t\t  x\n\t:::\n"),
-        vec![Some((5, 3)), Some((5, 4)), None, None]
+        vec![None, None, Some((5, 3)), Some((5, 4))]
     );
     assert_eq!(
         no_break_space_columns("- a\n  - a\n\n  \t::: |\n   \t    x\n"),
-        vec![Some((5, 7)), Some((5, 8)), None, None]
+        vec![Some((5, 5)), Some((5, 6)), Some((5, 7)), Some((5, 8))]
     );
 }
 
