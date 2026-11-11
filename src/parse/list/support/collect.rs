@@ -2510,6 +2510,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             && indent < strip_cols
             && is_line_comment_any_column(line)
             && !is_definition_placeholder(line);
+        let mut lazy_brace_pad = 0usize;
         if (lazy_brace_source_open
             || (indent < strip_cols && trim_ascii_start(strip_lazy(line)).starts_with("{%")))
             && !sliced.starts_with(LAZY)
@@ -2518,6 +2519,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
                     && !is_list_marker(trim_ascii_start(line))))
             && indent_columns(&sliced) < indent
         {
+            lazy_brace_pad = indent - indent_columns(&sliced);
             sliced = format!("{}{}", " ".repeat(indent), trim_ascii_start(&sliced));
         }
         if line.contains("%}") || is_blank_line(line) {
@@ -2556,6 +2558,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             col_map.push(cur.source_col(cur.pos).map(|outer| {
                 outer + consumed as isize + trimmed_after_slice as isize
                     - synthetic as isize
+                    - lazy_brace_pad as isize
                     - usize::from(term_comment_below_column) as isize
             }));
         }
