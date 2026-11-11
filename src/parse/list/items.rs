@@ -2980,6 +2980,21 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         // A lazy line is held by an open code span only, as in the ownership walk.
         let held_brace =
             trim_ascii_start(next).starts_with('{') && lead.inline_span.code_open(&lead.lines);
+        // A wrapped attribute line closes the paragraph even when it is
+        // written at an ancestor's column. Its one-line spelling already
+        // interrupts here; use the same block test before taking a lazy line.
+        if !held_brace
+            && matches!(
+                content_column_attr_block(
+                    trim_ascii_start(next),
+                    self.cur.lines.range(self.cur.pos + 1..self.cur.lines.len()),
+                    indent,
+                ),
+                ContentColumnAttrBlock::Block
+            )
+        {
+            return false;
+        }
         if !held_brace && interrupts_lazy_continuation_as_container(self.cur, &next_owned) {
             return false;
         }
@@ -3107,11 +3122,16 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
                             } else {
                                 column
                             };
-                            // A lazy opener is measured from its written brace,
-                            // but every continuation must also reach this item's
-                            // authored content column before that brace test applies.
+                            // A lazy opener in this item needs each continuation
+                            // to reach the item's body column. In a quoted body,
+                            // the quote owns an opener left of the item, so its
+                            // continuations use their written columns instead.
                             Some(
-                                if lazy_opener && offset > 0 && written < authored_body_col {
+                                if lazy_opener
+                                    && offset > 0
+                                    && !self.cur.in_quoted_body
+                                    && written < authored_body_col
+                                {
                                     0
                                 } else {
                                     column
