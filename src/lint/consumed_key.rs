@@ -44,7 +44,7 @@ fn report(
     to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
 ) {
-    for slot in &attrs.order {
+    for slot in attrs.unique_order() {
         let AttrSlot::Key(word) = slot else { continue };
         if attrs.key_values.get(word).is_some_and(String::is_empty) && is_near_miss(word, key) {
             out.push(warning(

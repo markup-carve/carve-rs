@@ -544,7 +544,7 @@ fn render_attrs(attrs: &Attrs) -> String {
         }
         return out;
     }
-    for slot in &attrs.order {
+    for slot in attrs.unique_order() {
         match slot {
             AttrSlot::Id => {
                 if let Some(id) = &attrs.id {

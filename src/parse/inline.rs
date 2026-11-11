@@ -810,7 +810,7 @@ struct InlineRun<'a, 'o> {
     combined_shape_seen: bool,
     combined_shape_scanned: usize,
     attribute_target: Option<usize>,
-    attribute_slots: Option<HashSet<AttrSlot>>,
+    attribute_slots: Option<AttrSlotIndex>,
     sink: InlineSink<'a>,
 }
 

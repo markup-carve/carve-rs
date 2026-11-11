@@ -154,7 +154,7 @@ pub(super) fn render_attrs_with_markers(
             emit_key(&mut parts, key);
         }
     } else {
-        for slot in &attrs.order {
+        for slot in attrs.unique_order() {
             match slot {
                 AttrSlot::Id => emit_id(&mut parts),
                 AttrSlot::Class => emit_classes(&mut parts),

@@ -80,7 +80,7 @@ struct ListScan<'a, 'l, 'o> {
     // so a set of attributes can only ever reach the sub-list that directly
     // follows it, and one that reaches nothing is dropped exactly as before.
     pending_attrs: Option<Attrs>,
-    pending_attr_slots: Option<HashSet<AttrSlot>>,
+    pending_attr_slots: Option<AttrSlotIndex>,
     // Where that set was written, for §15 A4's diagnostic. This slot holds
     // attributes LIFTED off a chunk (`split_trailing_attrs`), so the span comes
     // from the chunk's own maps rather than from the cursor.
