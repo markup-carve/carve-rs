@@ -211,12 +211,25 @@ struct RenderOutcome {
 impl RenderOutcome {
     fn from_checked<E: Into<RenderError>>(
         checked: carve::RenderResult<Result<String, E>>,
+        format: OutputFormat,
     ) -> Result<Self, ExitCode> {
         let output = match checked.value {
             Ok(output) => output,
             Err(err) => {
                 let err: RenderError = err.into();
-                eprintln!("carve: {err}");
+                if let (
+                    OutputFormat::Markdown,
+                    RenderError::Carve(carve::RenderCarveError::SourceUnspellable(ref refusal)),
+                ) = (format, &err)
+                {
+                    eprintln!(
+                        "carve: cannot spell {}: {}",
+                        refusal.node_type(),
+                        refusal.reason()
+                    );
+                } else {
+                    eprintln!("carve: {err}");
+                }
                 return Err(ExitCode::FAILURE);
             }
         };
@@ -986,7 +999,7 @@ fn render_from_json(
         render_document(doc, format, options)
     })
     .expect("non-strict collection cannot fail");
-    RenderOutcome::from_checked(checked)
+    RenderOutcome::from_checked(checked, format)
 }
 
 fn render_with_includes(
@@ -1042,7 +1055,7 @@ fn render_with_includes(
         render_document(prepared.doc.clone(), format, options)
     })
     .expect("non-strict collection cannot fail");
-    let mut outcome = RenderOutcome::from_checked(checked)?;
+    let mut outcome = RenderOutcome::from_checked(checked, format)?;
     outcome.include_dependencies = prepared.dependencies;
     Ok(outcome)
 }
@@ -1065,7 +1078,6 @@ fn render_source(
         OutputFormat::Markdown => {
             options = options.with_positions(true);
             carve::try_to_markdown_with_options(source, &options)
-                .map_err(carve::CarveWriteError::from)
         }
         OutputFormat::Plain => {
             options = options.with_positions(true);
@@ -1090,7 +1102,7 @@ fn render_source(
         }
     })
     .expect("non-strict collection cannot fail");
-    RenderOutcome::from_checked(checked)
+    RenderOutcome::from_checked(checked, format)
 }
 
 fn finish_render(
@@ -1697,6 +1709,12 @@ impl From<carve::RenderDepthError> for RenderError {
 impl From<carve::RenderCarveError> for RenderError {
     fn from(err: carve::RenderCarveError) -> Self {
         RenderError::Carve(err)
+    }
+}
+
+impl From<carve::MarkdownRenderError> for RenderError {
+    fn from(err: carve::MarkdownRenderError) -> Self {
+        RenderError::Carve(err.into())
     }
 }
 

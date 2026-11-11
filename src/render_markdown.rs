@@ -13,6 +13,56 @@ use std::rc::Rc;
 
 use crate::render::MAX_RENDER_DEPTH;
 
+/// A Markdown render refused by the depth guard or by a roundtrip carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MarkdownRenderError {
+    /// The document exceeded the renderer's depth ceiling.
+    Depth(crate::RenderDepthError),
+    /// The canonical writer cannot spell a carrier's inline source.
+    SourceUnspellable(crate::SourceUnspellable),
+}
+
+impl std::fmt::Display for MarkdownRenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Depth(error) => error.fmt(f),
+            Self::SourceUnspellable(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for MarkdownRenderError {}
+
+impl From<crate::RenderDepthError> for MarkdownRenderError {
+    fn from(error: crate::RenderDepthError) -> Self {
+        Self::Depth(error)
+    }
+}
+
+impl From<crate::RenderCarveError> for MarkdownRenderError {
+    fn from(error: crate::RenderCarveError) -> Self {
+        match error {
+            crate::RenderCarveError::Depth(error) => Self::Depth(error),
+            crate::RenderCarveError::SourceUnspellable(error) => Self::SourceUnspellable(error),
+        }
+    }
+}
+
+impl From<MarkdownRenderError> for crate::RenderCarveError {
+    fn from(error: MarkdownRenderError) -> Self {
+        match error {
+            MarkdownRenderError::Depth(error) => Self::Depth(error),
+            MarkdownRenderError::SourceUnspellable(error) => Self::SourceUnspellable(error),
+        }
+    }
+}
+
+impl From<MarkdownRenderError> for crate::CarveWriteError {
+    fn from(error: MarkdownRenderError) -> Self {
+        Self::Render(error.into())
+    }
+}
+
 fn trim_block_output(s: &str) -> &str {
     s.trim_matches(|c| c == '\n' || c == ' ')
 }
@@ -40,32 +90,32 @@ fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
 /// profile transform is applied to `doc` upstream (see `crate::prepare_doc`).
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
 ///
-/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
-/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
-/// the parse cap sits below the ceiling - so this fails only for a tree built
-/// through the API or read by `from_json`, which is the caller who can act on it.
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`] (PART 9
+/// §25), or when a roundtrip carrier has no faithful Carve source spelling.
 pub fn render_markdown_with_options(
     doc: &Document,
     options: &Options<'_>,
-) -> Result<String, crate::RenderDepthError> {
+) -> Result<String, MarkdownRenderError> {
     crate::render_depth::refuse_if_too_deep(doc, "markdown")?;
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_markdown_inner(
+    let previous_error = CARRIER_WRITE_ERROR.with(|cell| cell.replace(None));
+    let output = render_markdown_inner(
         doc,
         options.smart_typography,
         options.heading_id_options(),
         options.roundtrip,
-    ))
+    );
+    let carrier_error = CARRIER_WRITE_ERROR.with(|cell| cell.replace(previous_error));
+    let output = watch.into_result(output)?;
+    carrier_error.map_or(Ok(output), |error| Err(error.into()))
 }
 
 /// Render a document to Markdown with the default settings, so smart
 /// typography renders as its glyph.
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
 ///
-/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
-/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
-/// the parse cap sits below the ceiling - so this fails only for a tree built
-/// through the API or read by `from_json`, which is the caller who can act on it.
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`] (PART 9
+/// §25).
 pub fn render_markdown(doc: &Document) -> Result<String, crate::RenderDepthError> {
     crate::render_depth::refuse_if_too_deep(doc, "markdown")?;
     let watch = crate::render_depth::RenderDepthWatch::new();
@@ -633,7 +683,18 @@ fn inline_carrier_at(prefix: &str, nodes: &[InlineNode], depth: usize) -> String
         children,
         ..Paragraph::default()
     }));
-    let text = crate::render_carve::render_carve(&doc).expect("carrier inline source");
+    let text = match crate::render_carve::render_carve(&doc) {
+        Ok(text) => text,
+        Err(error) => {
+            CARRIER_WRITE_ERROR.with(|cell| {
+                let mut first = cell.borrow_mut();
+                if first.is_none() {
+                    *first = Some(error);
+                }
+            });
+            return String::new();
+        }
+    };
     let text = if protect_term_tab {
         text.strip_prefix('a').expect("temporary carrier prefix")
     } else {
@@ -2752,6 +2813,7 @@ fn render_attributed_emphasis(
 }
 
 thread_local! {
+    static CARRIER_WRITE_ERROR: std::cell::RefCell<Option<crate::RenderCarveError>> = const { std::cell::RefCell::new(None) };
     static INLINE_CARRIER_PATTERN: std::cell::RefCell<Option<regex::Regex>> = const { std::cell::RefCell::new(None) };
     static INLINE_CARRIER_PREFIX: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
