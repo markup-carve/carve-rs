@@ -1101,11 +1101,29 @@ fn body_ends_with_wrapped_attribute(body: &str) -> bool {
         return false;
     };
     let trimmed: Vec<_> = lines.iter().map(|line| trim_ascii_start(line)).collect();
-    (0..end)
+    let unquoted = (0..end)
         .rev()
         .take_while(|&at| !is_blank_line(lines[at]))
         .filter(|&at| trimmed[at].starts_with('{'))
-        .any(|at| standalone_attrs_block_len(&trimmed[at..=end]) == Some(end - at + 1))
+        .any(|at| standalone_attrs_block_len(&trimmed[at..=end]) == Some(end - at + 1));
+    unquoted
+        || (0..end)
+            .rev()
+            .take_while(|&at| !is_blank_line(lines[at]))
+            .filter(|&at| lines[at].contains('{'))
+            .any(|at| {
+                let Some(inner) = strip_blockquote_prefix(trim_ascii_start(lines[at])) else {
+                    return false;
+                };
+                matches!(
+                    crate::parse::attrs::quoted_attrs_block_len(
+                        inner,
+                        0,
+                        lines[at + 1..=end].iter().copied(),
+                    ),
+                    crate::parse::attrs::QuotedAttrsBlock::Block(len) if len == end - at + 1
+                )
+            })
 }
 
 /// Whether a body's last line is a definition or attribute line written

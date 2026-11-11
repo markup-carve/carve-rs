@@ -88,6 +88,10 @@ name = "hosted_note_frame_tabs_5877"
 path = "tests/hosted_note_frame_tabs_5877.rs"
 
 [[test]]
+name = "a_quoted_wrapped_attribute_closes_the_host"
+path = "tests/a_quoted_wrapped_attribute_closes_the_host.rs"
+
+[[test]]
 name = "blank_before_invisible_child_list_4220"
 path = "tests/blank_before_invisible_child_list_4220.rs"
 
