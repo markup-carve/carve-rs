@@ -36,3 +36,12 @@ fn a_parent_quote_attribute_closes_a_child_code_span() {
         "<ul>\n  <li>\n    <blockquote>\n      <ul>\n        <li><code>a</code></li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
+
+#[test]
+fn a_refused_brace_line_stays_inside_a_child_code_span() {
+    let source = "- > - `a\n  > {oops\n  > b\n  > `end\n";
+    assert_eq!(
+        to_html(source),
+        "<ul>\n  <li>\n    <blockquote>\n      <ul>\n        <li><code>a\n{oops\nb\n</code>end</li>\n      </ul>\n    </blockquote>\n  </li>\n</ul>"
+    );
+}
