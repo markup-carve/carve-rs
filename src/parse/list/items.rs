@@ -3143,49 +3143,47 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
             .source_line(self.cur.pos)
             .and_then(|line| crate::parse::own_lines::authored_comment_column(line, None))
             .map_or(usize::MAX, |(_, quotes)| quotes);
-        let run = {
-            refused_brace_run_with_columns(
-                (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
-                !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
-                |offset, raw| {
-                    (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
-                        .then(|| {
-                            let at = self.cur.pos + offset;
-                            let line = self.cur.source_line(at)?;
-                            let stripped = self.cur.source_col(at)?;
-                            let walked = (stripped + indent_columns(strip_lazy(raw)) as isize)
-                                .max(0) as usize;
-                            let column =
-                                crate::parse::own_lines::authored_visual_column(line, walked + 1);
-                            let written = if trim_ascii_start(next).starts_with("{%") {
-                                crate::parse::own_lines::authored_comment_column(
-                                    line,
-                                    Some(opener_quotes),
-                                )
-                                .map_or(column, |(written, _)| written)
+        let run = refused_brace_run_with_columns(
+            (self.cur.pos..self.cur.lines.len()).map_while(|i| self.cur.lines.line(i)),
+            !self.cur.in_quoted_body || trim_ascii_start(strip_lazy(next)).starts_with("{%"),
+            |offset, raw| {
+                (!self.cur.in_quoted_body || !raw.starts_with(LAZY))
+                    .then(|| {
+                        let at = self.cur.pos + offset;
+                        let line = self.cur.source_line(at)?;
+                        let stripped = self.cur.source_col(at)?;
+                        let walked =
+                            (stripped + indent_columns(strip_lazy(raw)) as isize).max(0) as usize;
+                        let column =
+                            crate::parse::own_lines::authored_visual_column(line, walked + 1);
+                        let written = if trim_ascii_start(next).starts_with("{%") {
+                            crate::parse::own_lines::authored_comment_column(
+                                line,
+                                Some(opener_quotes),
+                            )
+                            .map_or(column, |(written, _)| written)
+                        } else {
+                            column
+                        };
+                        // A lazy opener in this item needs each continuation
+                        // to reach the item's body column. In a quoted body,
+                        // the quote owns an opener left of the item, so its
+                        // continuations use their written columns instead.
+                        Some(
+                            if lazy_opener
+                                && offset > 0
+                                && !self.cur.in_quoted_body
+                                && written < authored_body_col
+                            {
+                                0
                             } else {
                                 column
-                            };
-                            // A lazy opener in this item needs each continuation
-                            // to reach the item's body column. In a quoted body,
-                            // the quote owns an opener left of the item, so its
-                            // continuations use their written columns instead.
-                            Some(
-                                if lazy_opener
-                                    && offset > 0
-                                    && !self.cur.in_quoted_body
-                                    && written < authored_body_col
-                                {
-                                    0
-                                } else {
-                                    column
-                                },
-                            )
-                        })
-                        .flatten()
-                },
-            )
-        };
+                            },
+                        )
+                    })
+                    .flatten()
+            },
+        );
         let count = match run {
             RefusedBraceRun::Lines(count) => count,
             RefusedBraceRun::No(count)

@@ -21,7 +21,10 @@ fn a_verse_lead_under_an_indented_opener_is_measured_per_frame() {
     assert_eq!(html("- a\n  \t::: |\n    \tx\n  \t:::\n"), verse(0));
     assert_eq!(
         html("> - a\n>    ::: |\n>   \tx\n>    :::\n"),
-        format!("<blockquote>\n  {}\n</blockquote>", verse(3).replace('\n', "\n  "))
+        format!(
+            "<blockquote>\n  {}\n</blockquote>",
+            verse(3).replace('\n', "\n  ")
+        )
     );
 }
 
