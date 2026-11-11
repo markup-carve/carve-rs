@@ -1052,6 +1052,13 @@ fn parse_with_options_mode_and_index(
         for blocks in doc.footnote_defs.values_mut() {
             positions::bound_positions_to_lines(blocks, &lines, source);
         }
+        if source.contains('\t') {
+            let starts = CodepointLineStarts::original(source);
+            positions::restore_verse_lead_spaces(&mut doc.children, &lines, &starts);
+            for blocks in doc.footnote_defs.values_mut() {
+                positions::restore_verse_lead_spaces(blocks, &lines, &starts);
+            }
+        }
     }
     (doc, index)
 }
