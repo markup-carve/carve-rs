@@ -77,3 +77,28 @@ fn an_item_fence_ends_before_the_sibling_its_next_line_opens() {
     };
     assert_eq!(code.pos.as_ref().map(|pos| pos.end_offset), Some(13));
 }
+
+#[test]
+fn a_nested_item_fence_ends_before_its_sibling_too() {
+    let doc = carve::parse_with_options(
+        "::: div\n- p\n+\n```\na\n\n ```\n  zq\n:::\n",
+        &carve::Options {
+            positions: true,
+            ..Default::default()
+        },
+    );
+    let BlockNode::Admonition(host) = &doc.children[0] else {
+        panic!("admonition")
+    };
+    let spans: Vec<(usize, usize)> = host
+        .children
+        .iter()
+        .filter_map(|block| match block {
+            BlockNode::List(list) => list.pos.as_ref(),
+            BlockNode::CodeBlock(code) => code.pos.as_ref(),
+            _ => None,
+        })
+        .map(|pos| (pos.start_offset, pos.end_offset))
+        .collect();
+    assert_eq!(spans, [(8, 21), (22, 30)]);
+}

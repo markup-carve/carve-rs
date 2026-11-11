@@ -4377,6 +4377,7 @@ fn parse_document_with_footnotes_options(
             definition::start_descriptions_at_their_comments(blocks);
             fill_offsets(blocks, &starts);
             narrow_to_last_placed_child(blocks, &source_lines);
+            positions::end_before_next_sibling(blocks);
         }
         for pos in doc.footnote_def_pos.values_mut() {
             apply_offsets(pos, &starts);

@@ -1382,6 +1382,7 @@ fn parse_with_options_mode_and_index_once(
         // forget to apply.
         for blocks in footnote_defs.values_mut() {
             narrow_to_last_placed_child(blocks, &source_lines);
+            positions::end_before_next_sibling(blocks);
         }
         for (label, pos) in &mut footnote_def_pos {
             let last = footnote_defs

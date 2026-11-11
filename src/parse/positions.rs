@@ -1049,7 +1049,7 @@ pub(in crate::parse) fn start_list_at_markup_after_quote(pos: &mut Pos, lines: &
 }
 
 /// A block whose span runs onto the line its next sibling opens on ends at that
-/// line's start: sibling spans do not overlap (PART 12 §4, carve-rs#4262).
+/// line's start, in every block list: sibling spans do not overlap (PART 12 §4).
 pub(in crate::parse) fn end_before_next_sibling(blocks: &mut [BlockNode]) {
     use crate::include_walk::{visit_block_children, SubtreeVisitor};
     struct Clamp(Pos);
@@ -1089,6 +1089,15 @@ pub(in crate::parse) fn end_before_next_sibling(blocks: &mut [BlockNode]) {
         bound.end_column = 1;
         bound.end_offset = next.start_offset - (next.start_column - 1);
         visit_block_children(&mut blocks[at - 1], &mut Clamp(bound));
+    }
+    struct Nested;
+    impl SubtreeVisitor for Nested {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            end_before_next_sibling(blocks);
+        }
+    }
+    for block in blocks.iter_mut() {
+        visit_block_children(block, &mut Nested);
     }
 }
 
