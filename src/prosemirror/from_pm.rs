@@ -596,6 +596,7 @@ impl Reader {
 
     fn table(&mut self, obj: &Object) -> Result<Json, ProseMirrorError> {
         let mut rows = Vec::new();
+        let mut carries: Vec<SpanCarry> = Vec::new();
         let mut caption = None;
         for child in array_field(obj, "content") {
             let co = object_ref(child, "table child")?;
@@ -610,7 +611,36 @@ impl Reader {
                 ));
             }
             let mut cells = Vec::new();
-            for cell in array_field(co, "content") {
+            let mut col = 0;
+            let mut pending = array_field(co, "content").iter();
+            loop {
+                // A rowspan from a row above owns this column: `^` under its
+                // first column, its cover marker (default `<`) under the rest.
+                if let Some(carry) = carries.get_mut(col).filter(|c| c.rows_left > 0) {
+                    let marker = if carry.offset == 0 {
+                        "^".to_owned()
+                    } else {
+                        carry
+                            .cover
+                            .get(carry.row)
+                            .and_then(|m| m.chars().nth(carry.offset - 1))
+                            .unwrap_or('<')
+                            .to_string()
+                    };
+                    carry.rows_left -= 1;
+                    carry.row += 1;
+                    cells.push(span_marker_cell(&marker));
+                    col += 1;
+                    continue;
+                }
+                let Some(cell) = pending.next() else {
+                    if carries.iter().skip(col).any(|c| c.rows_left > 0) {
+                        // Trailing covered columns with no carry at `col`.
+                        col += 1;
+                        continue;
+                    }
+                    break;
+                };
                 let ce = object_ref(cell, "table cell")?;
                 let (cty, flavor) = self.known(string_field(ce, "type")?)?;
                 if cty != "table_cell" {
@@ -631,17 +661,28 @@ impl Reader {
                 } else {
                     ("children", Json::Array(self.table_cell_inlines(ce)?))
                 };
+                // The map's spelling first, then the one this bridge wrote
+                // before it followed the map, so stored documents still read.
+                let align = match optional_string(ca, "textAlign") {
+                    Json::Null => optional_string(ca, "alignment"),
+                    v => v,
+                };
+                let valign = match optional_string(ca, "carveVerticalAlign") {
+                    Json::Null => optional_string(ca, "verticalAlignment"),
+                    v => v,
+                };
+                let marker = string_opt(ca, "carveSpanMarker");
                 let mut cn = with_attrs(
                     node(
                         "table_cell",
                         [
                             ("header", Json::Bool(flavor == 1)),
                             content,
-                            ("align", optional_string(ca, "alignment")),
-                            ("valign", optional_string(ca, "verticalAlignment")),
+                            ("align", align),
+                            ("valign", valign),
                             (
                                 "span",
-                                match string_opt(ca, "carveSpanMarker") {
+                                match marker {
                                     Some("^") => Json::String("rowspan".into()),
                                     Some("<") => Json::String("colspan".into()),
                                     _ => Json::Null,
@@ -653,11 +694,39 @@ impl Reader {
                 );
                 remove_nulls(&mut cn);
                 cells.push(cn);
+                let colspan = span_count(ca, "colspan");
+                let rowspan = span_count(ca, "rowspan");
+                let cover: Vec<String> = array_field(ca, "carveCoverMarkers")
+                    .iter()
+                    .filter_map(|v| match v {
+                        Json::String(s) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                for offset in 0..colspan {
+                    if offset > 0 {
+                        cells.push(span_marker_cell("<"));
+                    }
+                    if rowspan > 1 {
+                        if carries.len() <= col {
+                            carries.resize_with(col + 1, SpanCarry::default);
+                        }
+                        carries[col] = SpanCarry {
+                            rows_left: rowspan - 1,
+                            offset,
+                            row: 0,
+                            cover: cover.clone(),
+                        };
+                    }
+                    col += 1;
+                }
             }
-            rows.push(with_attrs(
-                node("table_row", [("cells", Json::Array(cells))]),
-                attrs_obj(co),
-            ));
+            let lines = span_count(attrs_obj(co), "carveContinuationLines");
+            let mut row = node("table_row", [("cells", Json::Array(cells))]);
+            if lines > 1 || attrs_obj(co).contains_key("carveContinuationLines") {
+                insert(&mut row, "continuationLines", Json::from(lines));
+            }
+            rows.push(with_attrs(row, attrs_obj(co)));
         }
         let mut n = with_attrs(
             node(
@@ -1072,7 +1141,7 @@ impl Reader {
                 ],
             ),
             "literal_inline" => {
-                with_attrs(node(ty, [("content", string_json(a, "content", ""))]), a)
+                with_attrs(node(ty, [("content", child_text_or_legacy(obj, a))]), a)
             }
             "symbol" => with_attrs(node(ty, [("name", string_json(a, "name", ""))]), a),
             "heading_ref" => node(ty, [("target", string_json(a, "target", ""))]),
@@ -1099,7 +1168,7 @@ impl Reader {
                 [
                     ("block", bool_json(a, "block", false)),
                     ("delimited", bool_json(a, "delimited", false)),
-                    ("content", string_json(a, "content", "")),
+                    ("content", child_text_or_legacy(obj, a)),
                 ],
             ),
             "inline_extension" => {
@@ -1321,6 +1390,15 @@ fn optional_bool(o: &Object, k: &str) -> Json {
         _ => Json::Null,
     }
 }
+/// The map keeps a literal's or inline comment's text as child content and
+/// names `attrs.content` its legacy form, still read from stored documents.
+fn child_text_or_legacy(obj: &Object, a: &Object) -> Json {
+    if obj.contains_key("content") {
+        Json::String(text_content(obj))
+    } else {
+        string_json(a, "content", "")
+    }
+}
 fn text_content(o: &Object) -> String {
     array_field(o, "content")
         .iter()
@@ -1520,6 +1598,40 @@ fn separator_widths(a: &Object) -> Json {
 /// Prefix for an authored key-value whose key a bridge field already uses.
 pub(super) const KEY_VALUE_ESCAPE: &str = "carveAttr:";
 
+/// A rowspan's claim on one column of the rows below its own.
+#[derive(Default)]
+struct SpanCarry {
+    rows_left: usize,
+    /// Which of the origin's columns this is; 0 writes `^`.
+    offset: usize,
+    /// Rows already written below the origin, which indexes `cover`.
+    row: usize,
+    cover: Vec<String>,
+}
+
+fn span_count(a: &Object, key: &str) -> usize {
+    match a.get(key) {
+        Some(Json::Number(n)) => n.as_u64().map_or(1, |n| n.max(1) as usize),
+        _ => 1,
+    }
+}
+
+/// The covered cell a span writes back: an empty non-header marker, as the
+/// carve-grammars serializer writes it.
+fn span_marker_cell(marker: &str) -> Json {
+    node(
+        "table_cell",
+        [
+            ("header", Json::Bool(false)),
+            ("children", Json::Array(Vec::new())),
+            (
+                "span",
+                Json::String(if marker == "^" { "rowspan" } else { "colspan" }.into()),
+            ),
+        ],
+    )
+}
+
 pub(super) fn is_structural_attr(k: &str) -> bool {
     matches!(
         k,
@@ -1528,6 +1640,12 @@ pub(super) fn is_structural_attr(k: &str) -> bool {
             | "verticalAlignment"
             | "carveAttrOrder"
             | "carveCellBlocks"
+            | "carveContinuationLines"
+            | "carveCoverMarkers"
+            | "carveInheritedTextAlign"
+            | "carveInheritedVerticalAlign"
+            | "carveVerticalAlign"
+            | "textAlign"
             | "carveAutolink"
             | "carveAdmonitionKind"
             | "carveAdmonitionTitle"

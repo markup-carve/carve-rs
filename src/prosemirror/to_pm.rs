@@ -511,81 +511,7 @@ impl Renderer {
         if table.row_groups.is_some() {
             self.degrade("table_row_groups");
         }
-        let mut rows = Vec::new();
-        for row in &table.rows {
-            if row.continuation_lines.is_some() {
-                // A `+` line with no content leaves no marker, and its loss is
-                // the same boundary the schema map declares for `cell_wrap`.
-                self.degrade("cell_wrap");
-            }
-            let cells = row
-                .cells
-                .iter()
-                .filter_map(|cell| {
-                    let name = if cell.header {
-                        self.nth_name("table_cell", 1)?
-                    } else {
-                        self.nth_name("table_cell", 0)?
-                    };
-                    let mut a = attrs(cell.attrs.as_ref());
-                    a.insert("colspan".into(), Json::from(1));
-                    a.insert("rowspan".into(), Json::from(1));
-                    if let Some(align) = cell.align {
-                        a.insert(
-                            "alignment".into(),
-                            Json::String(
-                                match align {
-                                    TableAlign::Left => "left",
-                                    TableAlign::Right => "right",
-                                    TableAlign::Center => "center",
-                                }
-                                .into(),
-                            ),
-                        );
-                    }
-                    if let Some(valign) = cell.valign {
-                        a.insert(
-                            "verticalAlignment".into(),
-                            Json::String(
-                                match valign {
-                                    TableVerticalAlign::Top => "top",
-                                    TableVerticalAlign::Middle => "middle",
-                                    TableVerticalAlign::Bottom => "bottom",
-                                }
-                                .into(),
-                            ),
-                        );
-                    }
-                    if let Some(span) = cell.span {
-                        a.insert(
-                            "carveSpanMarker".into(),
-                            Json::String(
-                                match span {
-                                    TableCellSpan::Rowspan => "^",
-                                    TableCellSpan::Colspan => "<",
-                                }
-                                .into(),
-                            ),
-                        );
-                    }
-                    let content = if let Some(blocks) = &cell.blocks {
-                        a.insert("carveCellBlocks".into(), Json::Bool(true));
-                        self.blocks(blocks)
-                    } else {
-                        if matches!(cell.children.first(), Some(InlineNode::CellWrap(_))) {
-                            self.degrade("cell_wrap");
-                        }
-                        self.inlines(crate::ast::visible_table_cell_children(&cell.children), &[])
-                    };
-                    Some(node_with(name, a, content))
-                })
-                .collect();
-            rows.push(node_with(
-                self.name("table_row")?,
-                attrs(row.attrs.as_ref()),
-                cells,
-            ));
-        }
+        let rows = self.table_rows(table)?;
         let mut content = Vec::new();
         if let Some(caption) = &table.caption {
             content.push(node_with(
@@ -612,6 +538,273 @@ impl Renderer {
             );
         }
         Some(node_with(self.name("table")?, a, content))
+    }
+
+    /// The cell grid the schema map defines (`types.table_cell`), built the way
+    /// carve-grammars' `carveToProseMirror` builds it: a span marker grows its
+    /// origin's `colspan` / `rowspan` where the grown rectangle covers only
+    /// markers, and a blocked marker stays a cell of its own.
+    fn table_rows(&mut self, table: &Table) -> Option<Vec<Json>> {
+        struct Cell {
+            name: &'static str,
+            attrs: Object,
+            content: Vec<Json>,
+            colspan: usize,
+            rowspan: usize,
+            cover: Option<Vec<String>>,
+        }
+        let paragraph = self.name("paragraph")?;
+        let header_name = self.nth_name("table_cell", 1)?;
+        let cell_name = self.nth_name("table_cell", 0)?;
+        let row_name = self.name("table_row")?;
+        let mut aligns: Vec<Option<TableAlign>> = table.columns.iter().map(|c| c.align).collect();
+        let mut valigns: Vec<Option<TableVerticalAlign>> =
+            table.columns.iter().map(|c| c.valign).collect();
+        let head_rows = match &table.row_groups {
+            Some(groups) => groups.head_rows,
+            None => table
+                .rows
+                .iter()
+                .take_while(|row| {
+                    row.cells.iter().any(|c| c.header)
+                        && row.cells.iter().all(|c| c.header || c.span.is_some())
+                })
+                .count(),
+        };
+        for row in table.rows.iter().take(head_rows) {
+            for (col, cell) in row.cells.iter().enumerate() {
+                if !cell.header {
+                    continue;
+                }
+                if aligns.len() <= col {
+                    aligns.resize(col + 1, None);
+                    valigns.resize(col + 1, None);
+                }
+                if cell.align.is_some() {
+                    aligns[col] = cell.align;
+                }
+                if cell.valign.is_some() {
+                    valigns[col] = cell.valign;
+                }
+            }
+        }
+        let mut cells: Vec<Cell> = Vec::new();
+        let mut start_col: Vec<usize> = Vec::new();
+        let mut layout: Vec<(Object, Vec<usize>)> = Vec::new();
+        let mut previous: Vec<Option<usize>> = Vec::new();
+        for row in &table.rows {
+            if row.continuation_lines.is_some() {
+                // A `+` line with no content leaves no marker, and its loss is
+                // the same boundary the schema map declares for `cell_wrap`.
+                self.degrade("cell_wrap");
+            }
+            let mut grid: Vec<Option<usize>> = vec![None; row.cells.len()];
+            let mut here: Vec<usize> = Vec::new();
+            let first = cells.len();
+            let blocked = |this: &mut Self,
+                           cells: &mut Vec<Cell>,
+                           start_col: &mut Vec<usize>,
+                           cell: &TableCell,
+                           marker: &str,
+                           col: usize| {
+                let mut a = attrs(cell.attrs.as_ref());
+                a.insert("carveSpanMarker".into(), Json::String(marker.into()));
+                // A blocked marker keeps a cell, so its own alignment has a slot.
+                if let Some(align) = cell.align {
+                    a.insert("textAlign".into(), Json::String(align_name(align).into()));
+                }
+                if let Some(valign) = cell.valign {
+                    a.insert(
+                        "carveVerticalAlign".into(),
+                        Json::String(valign_name(valign).into()),
+                    );
+                }
+                let inlines =
+                    this.inlines(crate::ast::visible_table_cell_children(&cell.children), &[]);
+                cells.push(Cell {
+                    name: if cell.header { header_name } else { cell_name },
+                    attrs: a,
+                    content: vec![node_with(paragraph, Object::new(), inlines)],
+                    colspan: 1,
+                    rowspan: 1,
+                    cover: None,
+                });
+                start_col.push(col);
+                cells.len() - 1
+            };
+            for col in 0..row.cells.len() {
+                if grid[col].is_some() {
+                    continue;
+                }
+                let cell = &row.cells[col];
+                match cell.span {
+                    Some(TableCellSpan::Rowspan) => {
+                        let origin = previous
+                            .get(col)
+                            .copied()
+                            .flatten()
+                            .filter(|&o| start_col[o] == col);
+                        let grown = origin.and_then(|o| {
+                            let width = cells[o].colspan;
+                            let covered = row.cells.get(col + 1..col + width)?;
+                            covered
+                                .iter()
+                                .all(|other| other.span.is_some())
+                                .then_some((o, width, covered))
+                        });
+                        let Some((o, width, covered)) = grown else {
+                            let id = blocked(self, &mut cells, &mut start_col, cell, "^", col);
+                            grid[col] = Some(id);
+                            here.push(id);
+                            continue;
+                        };
+                        let markers: String = covered
+                            .iter()
+                            .map(|other| match other.span {
+                                Some(TableCellSpan::Rowspan) => '^',
+                                _ => '<',
+                            })
+                            .collect();
+                        let origin = &mut cells[o];
+                        if markers.contains('^') || origin.cover.is_some() {
+                            let before = origin.rowspan - 1;
+                            let cover = origin
+                                .cover
+                                .get_or_insert_with(|| vec!["<".repeat(width - 1); before]);
+                            cover.push(markers);
+                        }
+                        origin.rowspan += 1;
+                        // Read back as non-header markers, as the carve-grammars
+                        // serializer writes them.
+                        for marker in std::iter::once(cell).chain(covered) {
+                            self.note_merged_marker(marker, marker.header);
+                        }
+                        for slot in grid.iter_mut().skip(col).take(width) {
+                            *slot = Some(o);
+                        }
+                    }
+                    Some(TableCellSpan::Colspan) => {
+                        match col
+                            .checked_sub(1)
+                            .and_then(|left| grid[left])
+                            .filter(|o| here.contains(o))
+                        {
+                            Some(o) => {
+                                cells[o].colspan += 1;
+                                grid[col] = Some(o);
+                                // Read back as a non-header marker, as the
+                                // carve-grammars serializer writes it.
+                                self.note_merged_marker(cell, cell.header);
+                            }
+                            None => {
+                                let id = blocked(self, &mut cells, &mut start_col, cell, "<", col);
+                                grid[col] = Some(id);
+                                here.push(id);
+                            }
+                        }
+                    }
+                    None => {
+                        let mut a = attrs(cell.attrs.as_ref());
+                        if let Some(align) = cell.align {
+                            a.insert("textAlign".into(), Json::String(align_name(align).into()));
+                        } else if let Some(align) = aligns.get(col).copied().flatten() {
+                            a.insert(
+                                "carveInheritedTextAlign".into(),
+                                Json::String(align_name(align).into()),
+                            );
+                        }
+                        if let Some(valign) = cell.valign {
+                            a.insert(
+                                "carveVerticalAlign".into(),
+                                Json::String(valign_name(valign).into()),
+                            );
+                        } else if let Some(valign) = valigns.get(col).copied().flatten() {
+                            a.insert(
+                                "carveInheritedVerticalAlign".into(),
+                                Json::String(valign_name(valign).into()),
+                            );
+                        }
+                        let content = if let Some(blocks) = &cell.blocks {
+                            a.insert("carveCellBlocks".into(), Json::Bool(true));
+                            self.blocks(blocks)
+                        } else {
+                            if matches!(cell.children.first(), Some(InlineNode::CellWrap(_))) {
+                                self.degrade("cell_wrap");
+                            }
+                            let inlines = self.inlines(
+                                crate::ast::visible_table_cell_children(&cell.children),
+                                &[],
+                            );
+                            vec![node_with(paragraph, Object::new(), inlines)]
+                        };
+                        cells.push(Cell {
+                            name: if cell.header { header_name } else { cell_name },
+                            attrs: a,
+                            content,
+                            colspan: 1,
+                            rowspan: 1,
+                            cover: None,
+                        });
+                        start_col.push(col);
+                        let id = cells.len() - 1;
+                        grid[col] = Some(id);
+                        here.push(id);
+                    }
+                }
+            }
+            let mut row_attrs = attrs(row.attrs.as_ref());
+            if let Some(lines) = row.continuation_lines.filter(|&n| n > 0) {
+                row_attrs.insert("carveContinuationLines".into(), Json::from(lines));
+            }
+            layout.push((row_attrs, (first..cells.len()).collect()));
+            previous = grid;
+        }
+        let mut built: Vec<Option<Json>> = cells
+            .into_iter()
+            .map(|cell| {
+                let mut a = cell.attrs;
+                if cell.colspan > 1 {
+                    a.insert("colspan".into(), Json::from(cell.colspan));
+                }
+                if cell.rowspan > 1 {
+                    a.insert("rowspan".into(), Json::from(cell.rowspan));
+                }
+                if let Some(cover) = cell.cover {
+                    a.insert(
+                        "carveCoverMarkers".into(),
+                        Json::Array(cover.into_iter().map(Json::String).collect()),
+                    );
+                }
+                Some(node_with(cell.name, a, cell.content))
+            })
+            .collect();
+        Some(
+            layout
+                .into_iter()
+                .map(|(row_attrs, ids)| {
+                    let content = ids.into_iter().filter_map(|i| built[i].take()).collect();
+                    node_with(row_name, row_attrs, content)
+                })
+                .collect(),
+        )
+    }
+
+    /// A marker that merges into its origin's span leaves no cell, so its own
+    /// content (an interchange AST may give it some), alignment, attributes
+    /// (`|{<} < |`) or unexpected header flag have nowhere to go.
+    fn note_merged_marker(&mut self, cell: &TableCell, header_differs: bool) {
+        if header_differs
+            || cell.align.is_some()
+            || cell.valign.is_some()
+            || cell.attrs.is_some()
+            || cell.blocks.is_some()
+            || !crate::ast::visible_table_cell_children(&cell.children).is_empty()
+        {
+            self.degraded.insert(
+                "table_cell".into(),
+                "a span marker's own content, alignment, attributes or header flag have no slot once it merges into a colspan or rowspan".into(),
+            );
+        }
     }
 
     fn inlines(&mut self, nodes: &[InlineNode], marks: &[Json]) -> Vec<Json> {
@@ -895,13 +1088,15 @@ impl Renderer {
                     marks,
                 ));
             }
+            // The map keeps the payload as child text; `attrs.content` is its
+            // legacy form (markup-carve/carve-rs#4294).
             InlineNode::LiteralInline(n) => {
-                let mut a = attrs(n.attrs.as_ref());
-                a.insert("content".into(), Json::String(n.content.clone()));
+                let a = attrs(n.attrs.as_ref());
                 let Some(name) = self.name("literal_inline") else {
                     return;
                 };
-                out.push(node_marked(name, a, Vec::new(), marks));
+                let text = self.text_content(&n.content, &[]);
+                out.push(node_marked(name, a, text, marks));
             }
             InlineNode::Symbol(n) => {
                 let mut a = attrs(n.attrs.as_ref());
@@ -1065,10 +1260,10 @@ impl Renderer {
                 let Some(name) = self.nth_name("comment", 1) else {
                     return;
                 };
+                let text = self.text_content(&n.content, &[]);
                 out.push(node_marked(
                     name,
                     Map::from_iter([
-                        ("content".into(), Json::String(n.content.clone())),
                         ("delimited".into(), Json::Bool(n.delimited)),
                         // §21a: the spelling is the node's identity here as it is
                         // on the block arm. Drop the flag and a folded `%%%` fence
@@ -1076,7 +1271,7 @@ impl Renderer {
                         // inline run and eats what followed it on the line.
                         ("block".into(), Json::Bool(n.block)),
                     ]),
-                    Vec::new(),
+                    text,
                     marks,
                 ));
             }
@@ -1306,6 +1501,20 @@ fn position(pos: &Pos) -> Json {
     Json::Object(out)
 }
 
+fn align_name(align: TableAlign) -> &'static str {
+    match align {
+        TableAlign::Left => "left",
+        TableAlign::Right => "right",
+        TableAlign::Center => "center",
+    }
+}
+fn valign_name(valign: TableVerticalAlign) -> &'static str {
+    match valign {
+        TableVerticalAlign::Top => "top",
+        TableVerticalAlign::Middle => "middle",
+        TableVerticalAlign::Bottom => "bottom",
+    }
+}
 fn object(name: &str) -> Object {
     Map::from_iter([("type".into(), Json::String(name.into()))])
 }
