@@ -1263,7 +1263,7 @@ fn markdown_to_ast_with_code_lines(
             .filter(|token| !token.is_empty())
             .map(str::to_owned),
         track_code_lines: code_lines.is_some(),
-        tight_lists,
+        tight_lists: [tight_lists, definition_tight_lists(&source, options)].concat(),
         ..Builder::default()
     };
     if source.contains("[^") && source.contains('|') {
@@ -2616,6 +2616,142 @@ fn block_starts(text: &str, options: Options) -> Vec<usize> {
         })
         .map(|(_, range)| range.start)
         .collect()
+}
+
+/// Start offsets of the lists pulldown reads loose only because an item holds
+/// a link reference definition. cmark-gfm removes a definition-only paragraph
+/// before it tests looseness, so this replays its test with the definitions
+/// left out: a list is loose when a non-last item ends with a blank line, or an
+/// item child ends with one and has a sibling or a following item.
+fn definition_tight_lists(text: &str, options: Options) -> Vec<usize> {
+    #[derive(PartialEq)]
+    enum Kind {
+        List,
+        Item,
+        Paragraph,
+        Block,
+    }
+    struct Node {
+        kind: Kind,
+        range: std::ops::Range<usize>,
+        quotes: usize,
+        children: Vec<usize>,
+    }
+    if !text.contains("]:") {
+        return Vec::new();
+    }
+    let parser = Parser::new_ext(text, options).into_offset_iter();
+    let mut definitions: Vec<usize> = parser
+        .reference_definitions()
+        .iter()
+        .map(|(_, definition)| definition.span.start)
+        .collect();
+    definitions.sort_unstable();
+    if definitions.is_empty() {
+        return Vec::new();
+    }
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut quotes = 0;
+    for (event, range) in parser {
+        let kind = match &event {
+            Event::Start(Tag::List(_)) => Kind::List,
+            Event::Start(Tag::Item) => Kind::Item,
+            Event::Start(Tag::Paragraph) => Kind::Paragraph,
+            Event::Start(_) | Event::Rule => Kind::Block,
+            Event::End(TagEnd::BlockQuote(_)) => {
+                quotes -= 1;
+                stack.pop();
+                continue;
+            }
+            Event::End(_) => {
+                stack.pop();
+                continue;
+            }
+            _ => continue,
+        };
+        let index = nodes.len();
+        nodes.push(Node {
+            kind,
+            range,
+            quotes,
+            children: Vec::new(),
+        });
+        if let Some(&parent) = stack.last() {
+            nodes[parent].children.push(index);
+        }
+        match event {
+            Event::Start(Tag::BlockQuote(_)) => {
+                quotes += 1;
+                stack.push(index);
+            }
+            Event::Start(_) => stack.push(index),
+            _ => {}
+        }
+    }
+    // cmark-gfm marks a block whose last line is followed by a line that is
+    // blank inside the block's quotes.
+    let blank_after = |node: &Node| {
+        let body = text[node.range.clone()].trim_end_matches([' ', '\t', '\n', '\r', '>']);
+        let Some(line_end) = text[node.range.start + body.len()..].find('\n') else {
+            return false;
+        };
+        let next = node.range.start + body.len() + line_end + 1;
+        let line = text[next..].split('\n').next().unwrap_or_default();
+        line.matches('>').count() <= node.quotes
+            && line.trim_matches([' ', '\t', '\r', '>']).is_empty()
+            && next < text.len()
+    };
+    fn ends_with_blank(nodes: &[Node], index: usize, blank_after: &dyn Fn(&Node) -> bool) -> bool {
+        let node = &nodes[index];
+        match node.kind {
+            Kind::List => node
+                .children
+                .last()
+                .is_some_and(|&last| ends_with_blank(nodes, last, blank_after)),
+            Kind::Item => {
+                blank_after(node)
+                    || node
+                        .children
+                        .last()
+                        .is_some_and(|&last| ends_with_blank(nodes, last, blank_after))
+            }
+            Kind::Paragraph | Kind::Block => blank_after(node),
+        }
+    }
+    let mut tight = Vec::new();
+    for list in nodes.iter().filter(|node| node.kind == Kind::List) {
+        let items = &list.children;
+        let pulldown_loose = items.iter().any(|&item| {
+            nodes[item]
+                .children
+                .iter()
+                .any(|&child| nodes[child].kind == Kind::Paragraph)
+        });
+        let holds_definition = items.iter().any(|&item| {
+            let range = &nodes[item].range;
+            let first = definitions.partition_point(|&start| start < range.start);
+            definitions
+                .get(first)
+                .is_some_and(|&start| start < range.end)
+        });
+        if !pulldown_loose || !holds_definition {
+            continue;
+        }
+        let loose = items.iter().enumerate().any(|(at, &item)| {
+            let followed = at + 1 < items.len();
+            let children = &nodes[item].children;
+            (followed && blank_after(&nodes[item]))
+                || children.iter().enumerate().any(|(index, &child)| {
+                    (followed || index + 1 < children.len())
+                        && ends_with_blank(&nodes, child, &blank_after)
+                })
+        });
+        if !loose {
+            tight.push(list.range.start);
+        }
+    }
+    tight
 }
 
 /// Start offsets of the lists pulldown reads as tight.
