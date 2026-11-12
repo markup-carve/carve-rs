@@ -2997,8 +2997,10 @@ fn render_item_blocks(
         });
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
+            // An attribute line already parts the two lists; a boundary would loosen the item (carve#6005).
             if !separated
                 && merges_with.is_some_and(|previous| adjacent_blocks_merge(previous, block))
+                && !opens_with_an_attribute_line(&rendered)
             {
                 out.push_str(&hard_list_boundary_in_a_tight_item(session, &rendered));
             } else {
