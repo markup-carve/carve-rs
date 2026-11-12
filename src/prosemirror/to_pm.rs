@@ -790,13 +790,19 @@ impl Renderer {
     }
 
     /// A marker that merges into its origin's span leaves no cell, so its own
-    /// alignment, attributes (`|{<} < |`) or unexpected header flag have
-    /// nowhere to go.
+    /// content (an interchange AST may give it some), alignment, attributes
+    /// (`|{<} < |`) or unexpected header flag have nowhere to go.
     fn note_merged_marker(&mut self, cell: &TableCell, header_differs: bool) {
-        if header_differs || cell.align.is_some() || cell.valign.is_some() || cell.attrs.is_some() {
+        if header_differs
+            || cell.align.is_some()
+            || cell.valign.is_some()
+            || cell.attrs.is_some()
+            || cell.blocks.is_some()
+            || !crate::ast::visible_table_cell_children(&cell.children).is_empty()
+        {
             self.degraded.insert(
                 "table_cell".into(),
-                "a span marker's own alignment, attributes or header flag have no slot once it merges into a colspan or rowspan".into(),
+                "a span marker's own content, alignment, attributes or header flag have no slot once it merges into a colspan or rowspan".into(),
             );
         }
     }

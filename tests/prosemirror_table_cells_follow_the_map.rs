@@ -65,6 +65,21 @@ fn a_covered_marker_with_its_own_alignment_is_reported() {
     assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
 }
 
+/// An interchange AST may give a marker content; merging it away is a loss.
+#[test]
+fn a_merged_marker_with_content_is_reported() {
+    let mut doc = parse("| a | < |\n");
+    let content = match &parse("x\n").children[0] {
+        carve::BlockNode::Paragraph(p) => p.children.clone(),
+        _ => panic!("a paragraph"),
+    };
+    let carve::BlockNode::Table(table) = &mut doc.children[0] else {
+        panic!("a table")
+    };
+    table.rows[0].cells[1].children = content;
+    assert!(to_prosemirror(&doc).degraded.contains_key("table_cell"));
+}
+
 #[test]
 fn a_blocked_marker_stays_a_cell() {
     let t = table("| ^ | a |\n");
