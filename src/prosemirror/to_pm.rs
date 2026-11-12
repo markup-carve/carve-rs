@@ -602,11 +602,11 @@ impl Renderer {
             let mut here: Vec<usize> = Vec::new();
             let first = cells.len();
             let blocked = |this: &mut Self,
-                               cells: &mut Vec<Cell>,
-                               start_col: &mut Vec<usize>,
-                               cell: &TableCell,
-                               marker: &str,
-                               col: usize| {
+                           cells: &mut Vec<Cell>,
+                           start_col: &mut Vec<usize>,
+                           cell: &TableCell,
+                           marker: &str,
+                           col: usize| {
                 let mut a = attrs(cell.attrs.as_ref());
                 a.insert("carveSpanMarker".into(), Json::String(marker.into()));
                 // A blocked marker keeps a cell, so its own alignment has a slot.
@@ -619,10 +619,8 @@ impl Renderer {
                         Json::String(valign_name(valign).into()),
                     );
                 }
-                let inlines = this.inlines(
-                    crate::ast::visible_table_cell_children(&cell.children),
-                    &[],
-                );
+                let inlines =
+                    this.inlines(crate::ast::visible_table_cell_children(&cell.children), &[]);
                 cells.push(Cell {
                     name: if cell.header { header_name } else { cell_name },
                     attrs: a,
@@ -652,7 +650,7 @@ impl Renderer {
                             covered
                                 .iter()
                                 .all(|other| other.span.is_some())
-                                .then(|| (o, width, covered))
+                                .then_some((o, width, covered))
                         });
                         let Some((o, width, covered)) = grown else {
                             let id = blocked(self, &mut cells, &mut start_col, cell, "^", col);
@@ -698,8 +696,7 @@ impl Renderer {
                                 self.note_merged_marker(cell, cell.header);
                             }
                             None => {
-                                let id =
-                                    blocked(self, &mut cells, &mut start_col, cell, "<", col);
+                                let id = blocked(self, &mut cells, &mut start_col, cell, "<", col);
                                 grid[col] = Some(id);
                                 here.push(id);
                             }
@@ -795,11 +792,7 @@ impl Renderer {
     /// alignment, attributes (`|{<} < |`) or unexpected header flag have
     /// nowhere to go.
     fn note_merged_marker(&mut self, cell: &TableCell, header_differs: bool) {
-        if header_differs
-            || cell.align.is_some()
-            || cell.valign.is_some()
-            || cell.attrs.is_some()
-        {
+        if header_differs || cell.align.is_some() || cell.valign.is_some() || cell.attrs.is_some() {
             self.degraded.insert(
                 "table_cell".into(),
                 "a span marker's own alignment, attributes or header flag have no slot once it merges into a colspan or rowspan".into(),

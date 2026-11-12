@@ -726,10 +726,7 @@ impl Reader {
             if lines > 1 || attrs_obj(co).contains_key("carveContinuationLines") {
                 insert(&mut row, "continuationLines", Json::from(lines));
             }
-            rows.push(with_attrs(
-                row,
-                attrs_obj(co),
-            ));
+            rows.push(with_attrs(row, attrs_obj(co)));
         }
         let mut n = with_attrs(
             node(
