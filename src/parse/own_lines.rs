@@ -4190,9 +4190,7 @@ impl<'a> Walk<'a> {
                 record.reached = Some(self.path(reached));
             }
             record.plus = plus_follower.then(|| line - 1);
-            if matches!(form, Form::Leaf(_)) && !plus_follower {
-                record.reach = Some(self.path(own_reach.min(reached)));
-            }
+            record.reach = self.leaf_reach(&form, plus_follower, own_reach.min(reached));
             record
         });
         let closed_column = self.closed_column_after_quote(reached);
@@ -4503,6 +4501,11 @@ impl<'a> Walk<'a> {
     }
 
     /// Emit an S5 record owned by the frames up to `depth`, or the deepest open one.
+    /// The owner path an erased leaf line's own column reaches (carve#5178).
+    fn leaf_reach(&self, form: &Form, plus_follower: bool, depth: usize) -> Option<String> {
+        (matches!(form, Form::Leaf(_)) && !plus_follower).then(|| self.path(depth))
+    }
+
     fn emit_applied(&mut self, at: usize, record: Option<TraceRecord>, depth: Option<usize>) {
         if let Some(mut record) = record {
             if record.owner.is_empty() {
