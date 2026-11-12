@@ -130,3 +130,47 @@ fn the_writer_keeps_each_line_where_it_was_authored() {
         unchanged(source);
     }
 }
+
+/// markup-carve/carve#6003: a deeper line after the comment does not move it
+/// into the container that line reaches.
+#[test]
+fn a_deeper_line_after_it_does_not_move_it() {
+    let source = "- [^n]: t\n  %%\n\n    ~~~\n    e\n]\n";
+    assert_eq!(
+        parent(source),
+        ("$.children[0].items[0]".into(), Some((0, 14)))
+    );
+    let doc = tree(source);
+    assert_eq!(span(&doc["children"][0]["pos"]), Some((0, 14)));
+    let note = &doc["children"][2];
+    assert_eq!(note["type"], "footnote");
+    assert_eq!(span(&note["pos"]), Some((2, 29)));
+    assert_eq!(note["children"][1]["type"], "code_block");
+    let written = carve::to_carve(source);
+    assert_eq!(written, "- %%\n\n]\n\n[^n]: t\n\n  ```\n  e\n  ```\n");
+    assert_eq!(carve::to_html(&written), carve::to_html(source));
+
+    let source = "- - a\n\n  %% n\n\n    b\n";
+    assert_eq!(
+        parent(source),
+        ("$.children[0].items[0]".into(), Some((0, 20)))
+    );
+    assert_eq!(
+        tree(source)["children"][0]["items"][0]["children"][1]["type"],
+        "comment"
+    );
+    let written = carve::to_carve(source);
+    assert_eq!(parent(&written).0, "$.children[0].items[0]", "{written:?}");
+    assert_eq!(carve::to_html(&written), carve::to_html(source));
+
+    for (source, expected) in [
+        (
+            "- [^n]: t\n  %% n\n\n    deeper\n",
+            "$.children[0].items[0]",
+        ),
+        ("> - a\n>\n> %% n\n>\n>   b\n", "$.children[0]"),
+        ("- a\n\n%% n\n\n  b\n", "$"),
+    ] {
+        assert_eq!(parent(source).0, expected, "{source:?}");
+    }
+}
