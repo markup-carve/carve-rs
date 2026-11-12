@@ -1333,6 +1333,9 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
         if used.contains(&definition.span.start)
             || !crate::parse::reference_label_has_definition_spelling(label)
             || definition.dest.is_empty()
+            || crate::markdown_import::markdown_denied_destinations::is_denied(
+                &crate::render_carve::escape_destination(&definition.dest),
+            )
             || definition
                 .title
                 .as_ref()

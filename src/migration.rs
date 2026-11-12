@@ -310,6 +310,7 @@ fn assess_markdown_migration(
                     MarkdownLossKind::CarrierMarkerDropped => "carrier-marker-dropped",
                     MarkdownLossKind::RawCodeFallback => "raw-code-fallback",
                     MarkdownLossKind::HtmlComment => "markdown-html-comment",
+                    MarkdownLossKind::AttributeDropped => "attribute-dropped",
                 }
                 .to_owned(),
                 message: loss.message,
@@ -320,7 +321,9 @@ fn assess_markdown_migration(
                 // Degraded where the span and its text survive and a whitespace
                 // run inside it does not (markup-carve/carve#2804).
                 fidelity: match loss.kind {
-                    MarkdownLossKind::Unspellable => MigrationFidelity::Dropped,
+                    MarkdownLossKind::Unspellable | MarkdownLossKind::AttributeDropped => {
+                        MigrationFidelity::Dropped
+                    }
                     MarkdownLossKind::RawSpanWhitespaceTrimmed
                     | MarkdownLossKind::CarrierMarkersDamaged
                     | MarkdownLossKind::CarrierMarkerDropped
