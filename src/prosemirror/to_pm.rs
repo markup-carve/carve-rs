@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
 use crate::ast_json::{emphasis_type, value_to_json, Json};
+use crate::render_loss::DeniedSink;
 
 use super::{schema_map, ProseMirrorDoc, SchemaMap};
 
@@ -398,7 +399,8 @@ impl Renderer {
             BlockNode::LinkReferenceDefinition(n) => {
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("label".into(), Json::String(n.label.clone()));
-                a.insert("href".into(), Json::String(n.href.clone()));
+                let href = self.destination(&n.href, DeniedSink::Destination);
+                a.insert("href".into(), Json::String(href));
                 if let Some(t) = &n.title {
                     set_link_title(&mut a, t);
                 }
@@ -778,7 +780,8 @@ impl Renderer {
             InlineNode::Link(n) => {
                 let before = out.len();
                 let mut a = attrs(n.attrs.as_ref());
-                a.insert("href".into(), Json::String(n.href.clone()));
+                let href = self.destination(&n.href, DeniedSink::Destination);
+                a.insert("href".into(), Json::String(href));
                 if let Some(t) = &n.title {
                     set_link_title(&mut a, t);
                 }
@@ -806,7 +809,8 @@ impl Renderer {
             }
             InlineNode::AutoLink(n) => {
                 let mut a = attrs(n.attrs.as_ref());
-                a.insert("href".into(), Json::String(n.href.clone()));
+                let href = self.destination(&n.href, DeniedSink::Destination);
+                a.insert("href".into(), Json::String(href));
                 a.insert("carveAutolink".into(), Json::Bool(true));
                 let mut next = marks.to_vec();
                 let Some(name) = self.name("autolink") else {
@@ -1188,7 +1192,8 @@ impl Renderer {
     }
     fn image(&mut self, n: &Image, marks: &[Json]) -> Option<Json> {
         let mut a = attrs(n.attrs.as_ref());
-        a.insert("src".into(), Json::String(n.src.clone()));
+        let src = self.destination(&n.src, DeniedSink::ImageSource);
+        a.insert("src".into(), Json::String(src));
         a.insert("alt".into(), Json::String(n.alt.clone()));
         if let Some(t) = &n.title {
             set_link_title(&mut a, t);
@@ -1249,6 +1254,24 @@ impl Renderer {
             EmphasisKind::Highlight => self.name("highlight"),
             EmphasisKind::SmallCaps => self.name("small_caps"),
         }
+    }
+    /// PART 9 §25 binds this target too: the JSON is rendered by whatever
+    /// editor reads it next, so a denied scheme is blanked with the HTML
+    /// sink's own predicate and reported (markup-carve/carve#6009).
+    fn destination(&mut self, url: &str, sink: DeniedSink) -> String {
+        if !crate::escape::has_denied_url_scheme(url) {
+            return url.to_owned();
+        }
+        let message = sink.message();
+        let entry = self
+            .degraded
+            .entry("destination-denied".into())
+            .or_insert_with(|| message.to_owned());
+        if !entry.split("; ").any(|m| m == message) {
+            entry.push_str("; ");
+            entry.push_str(message);
+        }
+        String::new()
     }
     fn degrade(&mut self, ty: &str) {
         let reason = self

@@ -44,6 +44,7 @@ pub fn from_prosemirror_with_report(json: &str) -> Result<ProseMirrorImport, Pro
         map: schema_map(),
         dropped: BTreeMap::new(),
         degraded: BTreeMap::new(),
+        empty_definitions: std::collections::HashSet::new(),
     };
     let wire = reader.document(&input)?;
     let mut document =
@@ -61,6 +62,11 @@ struct Reader {
     map: &'static SchemaMap,
     dropped: BTreeMap<String, String>,
     degraded: BTreeMap<String, String>,
+    /// Label keys of the document's empty-destination definitions. A
+    /// reference image with an empty `src` resolved against one of these (a
+    /// blanked denied scheme writes exactly that, carve#6009), so it is not
+    /// the unresolved literal that needs its paragraph.
+    empty_definitions: std::collections::HashSet<String>,
 }
 
 impl Reader {
@@ -95,6 +101,26 @@ impl Reader {
             return Err(ProseMirrorError::new(
                 "The payload root must be a ProseMirror document node",
             ));
+        }
+        for child in array_field(obj, "content") {
+            let Json::Object(child_obj) = child else {
+                continue;
+            };
+            let Some(Json::String(child_name)) = child_obj.get("type") else {
+                continue;
+            };
+            if self.resolve(child_name).as_ref().map(|v| v.0.as_str())
+                == Some("link_reference_definition")
+            {
+                let a = attrs_obj(child_obj);
+                let label = string_opt(a, "label").unwrap_or_default();
+                if string_opt(a, "href").unwrap_or_default().is_empty()
+                    && crate::parse::reference_label_has_definition_spelling(label)
+                {
+                    self.empty_definitions
+                        .insert(crate::parse::label_key(label));
+                }
+            }
         }
         let mut children = Vec::new();
         for child in array_field(obj, "content") {
@@ -191,8 +217,11 @@ impl Reader {
                 }
                 if let [(only, Some(mapped))] = visible.as_slice() {
                     let ia = attrs_obj(only);
-                    let unresolved = string_opt(ia, "carveRef").is_some()
-                        && string_opt(ia, "src").unwrap_or_default().is_empty();
+                    let unresolved = string_opt(ia, "carveRef").is_some_and(|label| {
+                        !self
+                            .empty_definitions
+                            .contains(&crate::parse::label_key(label))
+                    }) && string_opt(ia, "src").unwrap_or_default().is_empty();
                     // A MARKED image is not a lone one. Its marks are what
                     // wrap it - a link, a span, an emphasis - and a block
                     // image has nowhere to carry them, so unwrapping
