@@ -240,8 +240,7 @@ pub(super) fn normalize(source: &str) -> String {
                 if let Some(BlockNode::Paragraph(before)) = previous {
                     if let (Some(before), Some(after)) = (&before.pos, position(child)) {
                         let mut blank = false;
-                        for line in before.end_line - 1..after.start_line - 1 {
-                            let value = layout.lines[line];
+                        for &value in &layout.lines[before.end_line - 1..after.start_line - 1] {
                             if value
                                 .bytes()
                                 .all(|byte| matches!(byte, b' ' | b'\t' | b'>'))

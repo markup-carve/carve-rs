@@ -2140,7 +2140,7 @@ fn run_lint_paths(
             if *path == "-" {
                 let mut buf = String::new();
                 if let Err(err) = read_stdin_lossy(&mut buf) {
-                    cli_error(
+                    let _ = cli_error(
                         "input-unreadable",
                         format!("lint: cannot read stdin: {err}"),
                     );
@@ -2156,7 +2156,7 @@ fn run_lint_paths(
                     // Reported and skipped rather than fatal, so one bad path in
                     // a glob still lets every other document be checked - the
                     // whole point of running this over a tree.
-                    cli_error(
+                    let _ = cli_error(
                         "input-unreadable",
                         format!("lint: cannot read {path}: {err}"),
                     );

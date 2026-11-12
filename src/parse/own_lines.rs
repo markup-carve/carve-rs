@@ -4435,8 +4435,7 @@ impl<'a> Walk<'a> {
         };
         let (col, _) = indent_cols(stands);
         let mut deepest = from;
-        for k in from + 1..self.frames.len() {
-            let f = &self.frames[k];
+        for (k, f) in self.frames.iter().enumerate().skip(from + 1) {
             if !matches!(f.kind, Kind::Item | Kind::Dd | Kind::Note) || col < f.col {
                 break;
             }
