@@ -1490,6 +1490,14 @@ const IMPLEMENTED: &[&str] = &[
     "open-code-makes-brace-run-text-before-fence",
     "repeated-losing-note-pluses-leave-the-block-with-the-winning-note",
 
+    "a-column-after-an-astral-character-is-one-code-point",
+    "a-comment-span-under-a-marker-line-note-leaves-no-paragraph",
+    "a-tab-led-attribute-line-in-a-note-a-nested-plus-passes-stays-the-note-s",
+    "a-tabbed-verse-line-keeps-the-lead-its-frames-leave",
+    "a-verse-lead-under-an-indented-opener-is-measured-per-frame",
+    "an-attribute-line-in-a-note-s-body-stays-the-note-s-under-a-plus",
+    "a-lazy-comment-opener-is-measured-where-its-brace-is-written",
+    "a-line-that-ends-a-span-in-an-item-s-description-leaves-the-item-s-paragraph-open",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1612,6 +1620,47 @@ z %}</li>
     // Corpus pairs the spec c3c2f80f pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d4c64561. Each actual HTML is measured.
     // Newly reached corpus pairs at spec b426bf87. Each actual HTML is measured.
+    // Corpus pairs the spec 0.1.14 tag (51c56315) moved past this engine. Each actual HTML is measured.
+    (
+        "1070-a-lazy-comment-opener-is-measured-where-its-brace-is-written-4",
+        "carve#5940: tab-led lazy comment opener in a note description, engine port pending",
+        r##"<p>x<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</sup></a></p>
+<section role="doc-endnotes" aria-label="Footnotes">
+  <hr>
+  <ol>
+    <li id="fn1">
+      <p>p</p>
+      <dl>
+        <dt>t</dt>
+        <dd>pre
+</dd>
+      </dl>
+      <p><a href="#fnref1" role="doc-backlink" aria-label="Back to reference">↩</a></p>
+    </li>
+  </ol>
+</section>"##,
+    ),
+    (
+        "1076-a-line-that-ends-a-span-in-an-item-s-description-leaves-the-item-s-paragraph-open-5",
+        "carve#5978: quoted lazy line after an item's unterminated description fence, engine port pending",
+        r##"<blockquote>
+  <blockquote>
+    <ul>
+      <li>
+        <dl>
+          <dt>t</dt>
+          <dd>
+            <p>d</p>
+            <pre><code></code></pre>
+          </dd>
+        </dl>
+        z
+      </li>
+    </ul>
+  </blockquote>
+</blockquote>
+<p>plain</p>"##,
+    ),
 ];
 
 fn check_pair(slug: &str) {

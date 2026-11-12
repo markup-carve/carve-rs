@@ -30,18 +30,6 @@ use std::path::{Path, PathBuf};
 /// survived forever - which is the same green above, read the other way round.
 /// The check below is made outside that branch for exactly that reason.
 const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
-    (
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-2",
-        "fmt",
-        "carve#5658: note fence ownership is awaiting its separate port",
-        "b\n\n```\n\nsee[^f]\n```\n\n[^f]: n\n\n  ```\n  a\n\n  ```\n",
-    ),
-    (
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
-        "fmt",
-        "carve#5658: description fence ownership is awaiting its separate port",
-        ":: t\n: d\n\n  ```\n  a\n\n  ```\n\nb\n\n```\n```\n",
-    ),
     // Rows this writer is BEHIND or where the fixture is in question,
     // declared under the ticket each names so every other row stays gated.
 ];
