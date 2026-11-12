@@ -1,0 +1,132 @@
+name: Schema map drift
+
+# Compares the vendored ProseMirror map with carve-grammars `main`, the source
+# of truth (markup-carve/carve-grammars#236). Upstream moving is not a failure
+# of a pull request here, so this runs daily and files one tracking issue, the
+# way carve-php's schema-map-drift.yml does (markup-carve/carve-rs#4292). A
+# drift verdict files the ticket and the run stays green; a check that could
+# not run, or a ticket that could not be filed, is red.
+
+on:
+  schedule:
+    # 05:45 UTC, after carve-php's run at 05:30.
+    - cron: '45 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: schema-map-drift-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+
+jobs:
+  schema-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: ProseMirror schema map matches carve-grammars
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/checkout@v6
+        with:
+          repository: markup-carve/carve-grammars
+          path: .carve-grammars
+
+      - name: Compare the vendored map with carve-grammars main
+        id: measure
+        run: |
+          set -euo pipefail
+          vendored=resources/prosemirror-schema-map.json
+          upstream=.carve-grammars/tiptap/schema-map.json
+          upstream_sha="$(git -C .carve-grammars rev-parse HEAD)"
+          echo "upstream=$upstream_sha" >> "$GITHUB_OUTPUT"
+          if ! jq -S . "$vendored" > /tmp/vendored.json || ! jq -S . "$upstream" > /tmp/upstream.json; then
+            echo "::error::a schema map is missing or is not JSON; no verdict to file."
+            exit 1
+          fi
+          if diff -u /tmp/vendored.json /tmp/upstream.json > /tmp/schema-map-drift.txt; then
+            verdict=clean
+          else
+            verdict=drift
+            echo "::warning::$vendored differs from carve-grammars $upstream_sha"
+          fi
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Schema map drift'
+            echo
+            echo "carve-grammars \`$upstream_sha\`: $verdict"
+            echo
+            echo '```diff'
+            head -c 60000 /tmp/schema-map-drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: File the verdict where someone reads it
+        if: ${{ !cancelled() && (steps.measure.outputs.verdict == 'clean' || steps.measure.outputs.verdict == 'drift') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERDICT: ${{ steps.measure.outputs.verdict }}
+          UPSTREAM: ${{ steps.measure.outputs.upstream }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "Schema map drift tickets are scoped to $DEFAULT_BRANCH; $REF_NAME keeps its Actions verdict only."
+            exit 0
+          fi
+
+          TITLE="The vendored ProseMirror schema map has drifted from carve-grammars"
+          MARKER="<!-- schema-map-drift-verdict ref=$REF_NAME -->"
+
+          open_issues="$(gh api "repos/$REPO/issues?state=open&per_page=100" --paginate \
+            | jq -r --arg m "$MARKER" \
+                '.[] | select(.pull_request == null) | select((.body // "") | contains($m)) | .number')"
+          issue="${open_issues%%$'\n'*}"
+
+          if [ "$VERDICT" = clean ]; then
+            echo "The schema map agrees with carve-grammars $UPSTREAM."
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --repo "$REPO" --body \
+                "Clean again: run $RUN_URL against carve-grammars \`$UPSTREAM\`. Closing. The next drift verdict opens a fresh ticket."
+              gh issue close "$issue" --repo "$REPO"
+            fi
+            exit 0
+          fi
+
+          {
+            echo "$MARKER"
+            echo
+            echo "\`resources/prosemirror-schema-map.json\` no longer matches carve-grammars"
+            echo "\`tiptap/schema-map.json\` at \`$UPSTREAM\`."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "### Difference (vendored, then upstream; keys sorted)"
+            echo
+            echo '```diff'
+            head -c 50000 /tmp/schema-map-drift.txt
+            echo '```'
+            echo
+            echo "### How to clear it"
+            echo
+            echo "Copy carve-grammars \`tiptap/schema-map.json\` to \`resources/prosemirror-schema-map.json\`"
+            echo "and make the bridge in \`src/prosemirror/\` follow what moved."
+            echo
+            echo "This ticket is maintained by the workflow: each drift verdict edits it and"
+            echo "the first clean run closes it."
+          } > /tmp/schema-map-drift-verdict.md
+
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --repo "$REPO" --body-file /tmp/schema-map-drift-verdict.md
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" \
+              --label chore --label area:tooling \
+              --body-file /tmp/schema-map-drift-verdict.md
+          fi

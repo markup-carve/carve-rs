@@ -21,6 +21,14 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
         "the corpus contains no parsed citation group",
     ),
     (
+        "carveCitationDefinition",
+        "no engine parse produces a citation definition yet; it reaches the editor only over the AST-JSON wire",
+    ),
+    (
+        "carveEmbed",
+        "a media directive reaches carveEmbed through the HTML route, not from the AST",
+    ),
+    (
         "carveSection",
         "sections are rendering wrappers, not parsed source nodes",
     ),
@@ -246,7 +254,7 @@ fn nested_inline_elements_become_marks_on_text() {
 
 #[test]
 fn a_continuation_row_is_a_stated_loss() {
-    const REASON: &str = "the editor does not retain a table cell's continuation-row boundary";
+    const REASON: &str = "a continuation join is the space it replaced in the ProseMirror model";
     for source in ["| a | b |\n+ c | d |\n", "| a | b |\n+ | |\n"] {
         let report = to_prosemirror(&parse(source));
         assert_eq!(
@@ -1770,7 +1778,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve#6009 blanks denied destinations and reports `destination-denied`,
     // so ten rows leave the strict set: 108-security-hardening (base, 2, 3, 4,
     // 5, 7, 12), 536, 716-2 and 855-5.
-    const STRICT: usize = 3555;
+    // carve-rs#4292 merges span markers into colspan/rowspan as the schema map
+    // does; a merged marker with its own alignment or header flag reports the
+    // loss, so 659-4, 952-2 and 953-3 leave the strict set.
+    const STRICT: usize = 3552;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1802,7 +1813,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve#5787 moves row 1056 to the strict set, named with STRICT above.
     // The four moved rows are named with STRICT above.
     // carve#6009 moves ten rows here, named with STRICT above.
-    const LOSSY: usize = 1048;
+    // carve-rs#4292 moves three rows here, named with STRICT above.
+    const LOSSY: usize = 1051;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
