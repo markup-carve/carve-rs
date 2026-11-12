@@ -2,7 +2,7 @@
 //! a resolvable URL: a destination the HTML renderer blanks is blanked in the
 //! editor JSON too, and reported (markup-carve/carve#6009).
 
-use carve::{parse, render_html, to_json, to_prosemirror};
+use carve::{from_prosemirror, parse, render_html, to_json, to_prosemirror};
 use serde_json::{json, Value};
 
 fn destinations(value: &Value, out: &mut Vec<(String, String)>) {
@@ -50,6 +50,22 @@ fn the_ticket_reproduction_is_blanked_and_reported() {
     );
 }
 
+/// The blanked source of a RESOLVED reference image is not the empty source
+/// of an unresolved one, so the image stays a block image on the way back.
+#[test]
+fn a_resolved_reference_image_keeps_its_block_after_blanking() {
+    let first = |source: &str| -> Value {
+        let back = from_prosemirror(&to_prosemirror(&parse(source)).json).unwrap();
+        let ast: Value = serde_json::from_str(&to_json(&back)).unwrap();
+        ast["children"][0]["type"].clone()
+    };
+    let control = first("![a][r]\n\n[r]: /x\n");
+    assert_eq!(control, json!("image"));
+    assert_eq!(first("![a][r]\n\n[r]: data:image/png;base64,AA\n"), control);
+    assert_eq!(first("![a][r]\n\n[r]:\n"), control);
+    assert_eq!(first("![a][r]\n"), json!("paragraph"));
+}
+
 #[test]
 fn a_safe_destination_is_kept_and_not_reported() {
     let pm = to_prosemirror(&parse(
@@ -92,7 +108,7 @@ fn the_bridge_blanks_what_the_html_renderer_blanks() {
     let infixes = ["", "\t", "&#9;", "&Tab;"];
     let payloads = ["alert(1)", "image/png;base64,AA", "text/html,x", "//host/p"];
     let mut variants = 0;
-    let mut blanked = 0;
+    let mut blanked = [0usize; 5];
     for scheme in schemes {
         for prefix in prefixes {
             for infix in infixes {
@@ -103,12 +119,16 @@ fn the_bridge_blanks_what_the_html_renderer_blanks() {
                         &scheme[..split],
                         &scheme[split..]
                     );
-                    for source in [
-                        format!("[x](<{dest}>)\n"),
-                        format!("![b](<{dest}>)\n"),
-                        format!("[x][r]\n\n[r]: <{dest}>\n"),
+                    for (form, source) in [
+                        format!("[x]({dest})\n"),
+                        format!("![b]({dest})\n"),
+                        format!("[x][r]\n\n[r]: {dest}\n"),
+                        format!("![b][r]\n\n[r]: {dest}\n"),
                         format!("<{}:{payload}>\n", scheme),
-                    ] {
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
                         let doc = parse(&source);
                         let html = render_html(&doc).unwrap();
                         let html_blank =
@@ -135,15 +155,19 @@ fn the_bridge_blanks_what_the_html_renderer_blanks() {
                             "{source:?}"
                         );
                         variants += 1;
-                        blanked += usize::from(pm_blank > authored_blank);
+                        blanked[form] += usize::from(pm_blank > authored_blank);
                     }
                 }
             }
         }
     }
     assert!(variants >= 1000, "{variants}");
-    assert!(
-        blanked > 300 && blanked < variants,
-        "{blanked} of {variants}"
-    );
+    // Every form, the reference definition included, meets denied and kept
+    // destinations alike.
+    for count in blanked {
+        assert!(
+            count > 100 && count < variants / 5,
+            "{blanked:?} of {variants}"
+        );
+    }
 }
