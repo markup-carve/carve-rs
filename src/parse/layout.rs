@@ -871,6 +871,7 @@ fn render_layout_list(
     if indent >= 2 * MAX_NESTING_DEPTH {
         return None;
     }
+    let loose = bullet_list_is_loose(lines, i, indent);
     layout_indent(out, depth);
     out.push_str("<ul>");
     while i < lines.len() {
@@ -903,8 +904,24 @@ fn render_layout_list(
             consumed: i..i + 1,
             active_definition: false,
         });
-        render_layout_inline(out, text, options)?;
+        if loose {
+            out.push_str("<p>");
+            render_layout_inline(out, text, options)?;
+            out.push_str("</p>");
+        } else {
+            render_layout_inline(out, text, options)?;
+        }
         i += 1;
+        if loose && lines.get(i).is_some_and(|line| is_blank_line(line)) {
+            if let Some(next) = (i..lines.len()).find(|&at| !is_blank_line(lines[at])) {
+                if lines[next].bytes().take_while(|byte| *byte == b' ').count() > indent {
+                    if next - i > 2 {
+                        return None;
+                    }
+                    i = next;
+                }
+            }
+        }
         if i < lines.len() {
             let next = lines[i];
             let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
@@ -923,15 +940,21 @@ fn render_layout_list(
             break;
         }
         if is_blank_line(lines[i]) {
-            if lines[i + 1..]
-                .iter()
-                .find(|line| !is_blank_line(line))
-                .is_some_and(|next| {
-                    let next_indent = next.bytes().take_while(|byte| *byte == b' ').count();
-                    next_indent == indent && next[next_indent..].starts_with("- ")
-                })
-            {
+            let Some(next) = (i + 1..lines.len()).find(|&at| !is_blank_line(lines[at])) else {
+                break;
+            };
+            let next_indent = lines[next].bytes().take_while(|byte| *byte == b' ').count();
+            if next_indent > indent {
+                // Item content after a blank is not a shape this facade writes.
                 return None;
+            }
+            if next_indent == indent && lines[next][next_indent..].starts_with("- ") {
+                // Three blanks end the list (corpus 05-lists-23); the tree route splits it.
+                if !loose || next - i > 2 {
+                    return None;
+                }
+                i = next;
+                continue;
             }
             break;
         }
@@ -944,6 +967,42 @@ fn render_layout_list(
     layout_indent(out, depth);
     out.push_str("</ul>");
     Some(i)
+}
+
+/// PART 9 §17 L1: a blank before a sibling item, or between an item's lead and
+/// its sublist, loosens the list at `indent`. Blanks inside a deeper list are
+/// that list's. Reads only this list's own lines, so nesting stays linear.
+fn bullet_list_is_loose(lines: &[&str], mut i: usize, indent: usize) -> bool {
+    let leading = |line: &str| line.bytes().take_while(|byte| *byte == b' ').count();
+    let mut after_lead = false;
+    while i < lines.len() {
+        let line = lines[i];
+        if is_blank_line(line) {
+            let Some(next) = lines[i + 1..].iter().find(|line| !is_blank_line(line)) else {
+                return false;
+            };
+            let next_indent = leading(next);
+            if next_indent < indent {
+                return false;
+            }
+            if next_indent == indent {
+                return next[next_indent..].starts_with("- ");
+            }
+            if after_lead && next_indent == indent + 2 {
+                return true;
+            }
+            i += 1;
+            continue;
+        }
+        let line_indent = leading(line);
+        if line_indent < indent || (line_indent == indent && !line[line_indent..].starts_with("- "))
+        {
+            return false;
+        }
+        after_lead = line_indent == indent;
+        i += 1;
+    }
+    false
 }
 
 fn decimal_list_item(line: &str) -> Option<(usize, &str)> {
@@ -1425,6 +1484,88 @@ mod layout_html_tests {
     }
 
     #[test]
+    fn loose_bullet_lists_match_the_authoritative_pipeline() {
+        // carve#6026: every bullet tree of up to four items at columns 0/2/4,
+        // each gap one to three blank lines or none, inside each context below.
+        let columns = [0usize, 2, 4];
+        let separators = ["\n", "\n\n", "\n\n\n", "\n\n\n\n"];
+        let contexts = [
+            ("", ""),
+            ("# H\n\n", "\ntext\n"),
+            ("text\n\n", "\n> q\n"),
+            ("", "\n1. a\n"),
+        ];
+        let mut shapes = Vec::new();
+        for count in 1..=4u32 {
+            let mut stack = vec![(vec![0usize], vec![])];
+            while let Some((indents_now, gaps)) = stack.pop() {
+                if indents_now.len() == count as usize {
+                    shapes.push((indents_now, gaps));
+                    continue;
+                }
+                let last = *indents_now.last().unwrap();
+                for &column in &columns {
+                    if column > last + 2 {
+                        continue;
+                    }
+                    for separator in separators {
+                        let mut next = indents_now.clone();
+                        next.push(column);
+                        let mut gaps: Vec<&str> = gaps.clone();
+                        gaps.push(separator);
+                        stack.push((next, gaps));
+                    }
+                }
+            }
+        }
+        let (mut checked, mut loose) = (0, 0);
+        for (indents, gaps) in &shapes {
+            let mut list = String::new();
+            for (n, column) in indents.iter().enumerate() {
+                if n > 0 {
+                    list.push_str(gaps[n - 1]);
+                }
+                list.push_str(&format!("{}- i{n}", " ".repeat(*column)));
+            }
+            list.push('\n');
+            for (before, after) in contexts {
+                let source = format!("{before}{list}{after}");
+                if let Some(fast) = try_layout_html(&source, &Options::default()) {
+                    assert_eq!(fast, authoritative(&source), "source:\n{source}");
+                    checked += 1;
+                    loose += usize::from(fast.contains("<li><p>"));
+                }
+            }
+        }
+        assert!(
+            checked > 1000 && loose > 500,
+            "checked {checked}, loose {loose}"
+        );
+    }
+
+    #[test]
+    fn a_blank_before_a_sublist_stays_on_the_layout_path() {
+        // carve#6026: this shape left the facade for the full pipeline, which
+        // costs several times as much per list.
+        let section = "## S\n\n- first\n- second\n\n  - nested\n  - another\n\n";
+        let source = section.repeat(4);
+        let fast = try_layout_html(&source, &Options::default())
+            .expect("a loose bullet list must stay on the layout path");
+        assert_eq!(fast, authoritative(&source));
+        assert!(fast.contains("<li><p>second</p>\n"));
+        for source in [
+            "- a\n\n  text\n",
+            "- a\n  - b\n\n  text\n",
+            "- a\n\n   - b\n",
+        ] {
+            assert!(
+                try_layout_html(source, &Options::default()).is_none(),
+                "item content after a blank must go back:\n{source}"
+            );
+        }
+    }
+
+    #[test]
     fn only_a_sibling_ordered_marker_hands_the_document_back() {
         // THE NEAR MISS. The repair for the blank-separated list is a bail-out, and
         // a bail-out that is too wide would "fix" the divergence by giving up the
@@ -1714,8 +1855,10 @@ mod layout_html_tests {
         // (carve#4814) add corpus 132 and 132-5, now a lone `<hr>`. Spec
         // a62d876f migrates authored GFM tables to native `|=` headers
         // (carve#5097), which this path does not take: 83 to 82.
+        // Loose bullet lists (carve#6026) add corpus 05-lists-15, 75-2, 87-2,
+        // 144-2 and 408: 83 to 88, each compared with the parser above.
         assert_eq!(
-            accepted, 83,
+            accepted, 88,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
