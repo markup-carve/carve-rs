@@ -43,8 +43,5 @@ fn the_writer_puts_it_at_column_zero_and_settles() {
 /// into the item (carve#5178, carve#6003).
 #[test]
 fn a_comment_between_two_blocks_of_one_item_below_its_column_is_the_documents() {
-    assert_eq!(
-        top_level_types("- a\n\n%% c\n\n  b\n"),
-        ["list", "comment"],
-    );
+    assert_eq!(top_level_types("- a\n\n%% c\n\n  b\n"), ["list", "comment"],);
 }

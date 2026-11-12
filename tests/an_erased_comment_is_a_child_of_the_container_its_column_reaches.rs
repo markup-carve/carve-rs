@@ -164,7 +164,10 @@ fn a_deeper_line_after_it_does_not_move_it() {
     assert_eq!(carve::to_html(&written), carve::to_html(source));
 
     for (source, expected) in [
-        ("- [^n]: t\n  %% n\n\n    deeper\n", "$.children[0].items[0]"),
+        (
+            "- [^n]: t\n  %% n\n\n    deeper\n",
+            "$.children[0].items[0]",
+        ),
         ("> - a\n>\n> %% n\n>\n>   b\n", "$.children[0]"),
         ("- a\n\n%% n\n\n  b\n", "$"),
     ] {
