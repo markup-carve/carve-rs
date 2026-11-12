@@ -876,15 +876,11 @@ pub(super) fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool 
     // continuation like any block opener. An INDENTED colon fence (above the
     // quote's content column) is literal paragraph text under the strict
     // column-0 rule, so lazy continuation stays inside the quote.
-    if !line.starts_with([' ', '\t'])
+    !line.starts_with([' ', '\t'])
         && (detect_container_open(line).is_some()
             || detect_line_block_open(line).is_some()
             || detect_hardbreaks_block_open(line).is_some()
             || detect_quote_block_open(line).is_some())
-    {
-        return true;
-    }
-    false
 }
 
 /// A `- ` / `* ` bullet, including the attributed form `-{.c} ` (NOT `+`, the
