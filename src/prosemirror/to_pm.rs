@@ -1081,13 +1081,15 @@ impl Renderer {
                     marks,
                 ));
             }
+            // The map keeps the payload as child text; `attrs.content` is its
+            // legacy form (markup-carve/carve-rs#4294).
             InlineNode::LiteralInline(n) => {
-                let mut a = attrs(n.attrs.as_ref());
-                a.insert("content".into(), Json::String(n.content.clone()));
+                let a = attrs(n.attrs.as_ref());
                 let Some(name) = self.name("literal_inline") else {
                     return;
                 };
-                out.push(node_marked(name, a, Vec::new(), marks));
+                let text = self.text_content(&n.content, &[]);
+                out.push(node_marked(name, a, text, marks));
             }
             InlineNode::Symbol(n) => {
                 let mut a = attrs(n.attrs.as_ref());
@@ -1251,10 +1253,10 @@ impl Renderer {
                 let Some(name) = self.nth_name("comment", 1) else {
                     return;
                 };
+                let text = self.text_content(&n.content, &[]);
                 out.push(node_marked(
                     name,
                     Map::from_iter([
-                        ("content".into(), Json::String(n.content.clone())),
                         ("delimited".into(), Json::Bool(n.delimited)),
                         // §21a: the spelling is the node's identity here as it is
                         // on the block arm. Drop the flag and a folded `%%%` fence
@@ -1262,7 +1264,7 @@ impl Renderer {
                         // inline run and eats what followed it on the line.
                         ("block".into(), Json::Bool(n.block)),
                     ]),
-                    Vec::new(),
+                    text,
                     marks,
                 ));
             }

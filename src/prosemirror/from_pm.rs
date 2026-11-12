@@ -1141,7 +1141,7 @@ impl Reader {
                 ],
             ),
             "literal_inline" => {
-                with_attrs(node(ty, [("content", string_json(a, "content", ""))]), a)
+                with_attrs(node(ty, [("content", child_text_or_legacy(obj, a))]), a)
             }
             "symbol" => with_attrs(node(ty, [("name", string_json(a, "name", ""))]), a),
             "heading_ref" => node(ty, [("target", string_json(a, "target", ""))]),
@@ -1168,7 +1168,7 @@ impl Reader {
                 [
                     ("block", bool_json(a, "block", false)),
                     ("delimited", bool_json(a, "delimited", false)),
-                    ("content", string_json(a, "content", "")),
+                    ("content", child_text_or_legacy(obj, a)),
                 ],
             ),
             "inline_extension" => {
@@ -1388,6 +1388,15 @@ fn optional_bool(o: &Object, k: &str) -> Json {
     match o.get(k) {
         Some(Json::Bool(v)) => Json::Bool(*v),
         _ => Json::Null,
+    }
+}
+/// The map keeps a literal's or inline comment's text as child content and
+/// names `attrs.content` its legacy form, still read from stored documents.
+fn child_text_or_legacy(obj: &Object, a: &Object) -> Json {
+    if obj.contains_key("content") {
+        Json::String(text_content(obj))
+    } else {
+        string_json(a, "content", "")
     }
 }
 fn text_content(o: &Object) -> String {
