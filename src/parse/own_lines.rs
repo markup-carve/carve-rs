@@ -773,6 +773,9 @@ pub(crate) struct TraceRecord {
     plus: Option<usize>,
     /// A skipped line inside a `%%%` span: payload, never an erasable line.
     in_comment: bool,
+    /// The frames a leaf's own column reaches, before an invisible line is
+    /// read at the next visible line's depth: an erased line's parent (carve#5178).
+    reach: Option<String>,
 }
 
 impl TraceRecord {
@@ -794,6 +797,7 @@ impl TraceRecord {
             reached: None,
             plus: None,
             in_comment: false,
+            reach: None,
         }
     }
 
@@ -3903,6 +3907,7 @@ impl<'a> Walk<'a> {
         // The attachment test measured through quote prefixes. Keep that owner.
         reached = self.attached_item_after_quote(at, c, reached);
         reached = self.attach_unclosed_quote_comment(at, reached, c);
+        let own_reach = reached;
         reached = self.stand_invisible_line(at, c, reached, plus.is_some());
         reached = self.span_tail_reached(at, reached);
         // A lone `+` nothing took is a plain letter and ends nothing (carve#4396).
@@ -4185,6 +4190,9 @@ impl<'a> Walk<'a> {
                 record.reached = Some(self.path(reached));
             }
             record.plus = plus_follower.then(|| line - 1);
+            if matches!(form, Form::Leaf(_)) && !plus_follower {
+                record.reach = Some(self.path(own_reach.min(reached)));
+            }
             record
         });
         let closed_column = self.closed_column_after_quote(reached);
@@ -5502,7 +5510,10 @@ pub(crate) fn traced_leaves(source: &str, candidate_lines: &[usize]) -> Vec<(usi
     .unwrap_or_default()
     .into_iter()
     .filter(|record| record.step == "S5" && record.form == "leaf" && !record.in_comment)
-    .map(|record| (record.line - 1, record.owner, record.plus.is_some()))
+    .map(|record| {
+        let owner = record.reach.unwrap_or(record.owner);
+        (record.line - 1, owner, record.plus.is_some())
+    })
     .collect()
 }
 
