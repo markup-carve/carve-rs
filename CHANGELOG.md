@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Fixes
+
+- `to_html` renders a loose bullet list, such as a blank line before a nested list, on its fast path instead of the full parser; a blank before a nested list had made 0.1.14 about 1.7x slower than 0.1.13 on such documents (markup-carve/carve#6026).
+
 ## [0.1.14] - 2026-11-12
 
 Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes layout, inline and import behavior.
