@@ -1576,43 +1576,6 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 ///
 #[rustfmt::skip]
 const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
-    (
-        "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
-        "carve#5844: spec pin behavior pending its separate engine port",
-        r##"<ul>
-  <li><p>p</p>
-    <p>{% a</p>
-    <ul>
-      <li>m
-z %}</li>
-    </ul>
-  </li>
-</ul>"##,
-    ),
-    (
-        "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight-2",
-        "carve#5844: spec pin behavior pending its separate engine port",
-        r##"<ol>
-  <li><p>p</p>
-    <p>{% a</p>
-    <h1 id="m">m</h1>
-    <p>%}</p>
-  </li>
-</ol>"##,
-    ),
-    (
-        "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight-3",
-        "carve#5844: spec pin behavior pending its separate engine port",
-        r##"<blockquote>
-  <ul>
-    <li><p>p</p>
-      <p>{% a</p>
-      <hr>
-      <p>z %}</p>
-    </li>
-  </ul>
-</blockquote>"##,
-    ),
     // Corpus pairs the spec 62b41b27 pin moved past this engine. Each actual HTML is measured.
     // Newly reached corpus pairs at spec d9d5dea7. Each actual HTML is measured.
     // Corpus pairs the spec 04ab7a96 pin moved past this engine. Each actual HTML is measured.

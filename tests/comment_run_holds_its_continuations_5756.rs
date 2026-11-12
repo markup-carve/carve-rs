@@ -65,9 +65,9 @@ fn item_comment_run_holds_a_heading_or_fence() {
 }
 
 #[test]
-fn a_list_marker_still_opens_its_item_inside_the_run() {
+fn a_list_marker_inside_the_run_is_payload() {
     let html = to_html("- p\n  {% a\n   - m\n   z %} y\n");
-    assert!(html.contains("<li>m\nz %} y</li>"), "{html}");
+    assert_eq!(html, "<ul>\n  <li>p\n y</li>\n</ul>");
 }
 
 #[test]

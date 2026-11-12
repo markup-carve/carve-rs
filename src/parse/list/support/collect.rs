@@ -1108,6 +1108,25 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             continue;
         }
         let indent = indent_columns(line);
+        // A `{%` run at a line start whose continuations sit past its `{` holds
+        // its lines through `%}`, block shapes included (CARVE-P2-035).
+        if marker_brace_run_until.map_or(true, |until| cur.pos >= until)
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && indent >= strip_cols
+            && trim_ascii_start(line).starts_with("{%")
+        {
+            if let RefusedBraceRun::No(count) = refused_brace_run(
+                (cur.pos..cur.lines.len()).map_while(|at| cur.lines.line(at)),
+                true,
+            ) {
+                if count > 1 && count != usize::MAX {
+                    marker_brace_run_until = Some(cur.pos + count);
+                }
+            }
+        }
+        let in_brace_run = marker_brace_run_until.is_some_and(|until| cur.pos < until);
         if description_line_block.is_some_and(|(width, column)| {
             indent <= column && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
         }) {
@@ -1126,6 +1145,7 @@ pub(crate) fn collect_indented_block_mapped_with_columns(
             break;
         }
         if after_blank_paragraph
+            && !in_brace_run
             && !lines.is_empty()
             && indent > strip_cols
             && item_block_opener(trim_ascii_start(line))
