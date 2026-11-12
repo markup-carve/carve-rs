@@ -5210,7 +5210,7 @@ impl<'a> Walk<'a> {
     /// Whether the owner's open paragraph holds line `at` in a braced comment
     /// that closes on it or later: any comment holds a brace line (PART 9
     /// §21a), a line-start `{%` run holds every line (CARVE-P2-035, carve#5756).
-    fn comment_holds(&mut self, owner: usize, at: usize, brace_line: bool) -> bool {
+    fn comment_holds(&mut self, owner: usize, at: usize, brace_line: bool, marker: bool) -> bool {
         if !self.braced_comments {
             return false;
         }
@@ -5235,12 +5235,36 @@ impl<'a> Walk<'a> {
             _ => (from, Default::default()),
         };
         for k in next..at {
-            state.feed(unquoted(k));
+            state.feed(unquoted(k), k);
         }
         let holds = state.holds(brace_line);
+        let opened_at = state.opened_at;
         self.comment_scan = Some((owner, depth, from, at, state));
         if !holds {
             return false;
+        }
+        // A marker opens its item unless the run holds it past its `{` (CARVE-P2-035).
+        if marker {
+            let column = |k: usize| {
+                strip_quote_levels(lines[k], depth).map(|text| {
+                    let brace = if k == at {
+                        text.len() - trim_ascii_start(text).len()
+                    } else {
+                        text.find("{%").unwrap_or(0)
+                    };
+                    text[..brace].chars().fold(0, |column, ch| {
+                        if ch == '\t' {
+                            column + 4 - column % 4
+                        } else {
+                            column + 1
+                        }
+                    })
+                })
+            };
+            if !matches!((column(opened_at), column(at)), (Some(brace), Some(line)) if line > brace)
+            {
+                return false;
+            }
         }
         if let Some((d, start, stop, found)) = self.comment_close {
             if d == depth && start <= at && at <= stop {
@@ -5283,12 +5307,17 @@ impl<'a> Walk<'a> {
         if self.span_tail_at == Some(at) && owner_kind.is_marker_body() {
             return Form::Text;
         }
-        // A list marker still opens its item there, as ownership decides it
-        // first, and a `%%` line stays invisible.
+        // A list marker opens its item unless a line-start run in an item holds
+        // it past its `{`, and a `%%` line stays invisible.
         if owner_para
-            && list_marker(rest).is_none()
             && !rest.starts_with("%%")
-            && self.comment_holds(owner, at, rest.starts_with('{'))
+            && (owner_kind == Kind::Item || list_marker(rest).is_none())
+            && self.comment_holds(
+                owner,
+                at,
+                rest.starts_with('{'),
+                list_marker(rest).is_some(),
+            )
         {
             return Form::Text;
         }

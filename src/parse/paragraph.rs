@@ -582,10 +582,12 @@ fn attaches_probe(host: &str) -> bool {
 pub(in crate::parse) struct OpenComment {
     scan: InlineSpanScan,
     line_start: bool,
+    /// The line the open line-start comment opened on.
+    pub(in crate::parse) opened_at: usize,
 }
 
 impl OpenComment {
-    pub(in crate::parse) fn feed(&mut self, line: &str) {
+    pub(in crate::parse) fn feed(&mut self, line: &str, at: usize) {
         let was_open = self.scan.comment;
         self.scan.scanned = 0;
         self.scan.open(&[line]);
@@ -594,6 +596,7 @@ impl OpenComment {
             self.line_start = false;
         } else if !was_open && self.scan.comment {
             self.line_start = trim_ascii_start(strip_lazy(line)).starts_with("{%");
+            self.opened_at = at;
         }
     }
 

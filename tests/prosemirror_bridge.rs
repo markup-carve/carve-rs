@@ -1783,7 +1783,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // loss, so 659-4, 952-2 and 953-3 leave the strict set.
     // The spec 0.1.14 tag (51c56315) adds rows 1070 to 1077: nine round trip
     // strictly and nineteen report a loss; no existing document moves.
-    const STRICT: usize = 3561;
+    // carve#5844 hides the comment run in row 1063, which no longer reports
+    // the soft break its inner sub-list carried.
+    const STRICT: usize = 3562;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1818,7 +1820,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve-rs#4292 moves three rows here, named with STRICT above.
     // Nineteen of the 1070 to 1077 rows report a loss, eight of them the
     // nbsp-only kind named above.
-    const LOSSY: usize = 1070;
+    // Row 1063 leaves for the strict set, named with STRICT above.
+    const LOSSY: usize = 1069;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

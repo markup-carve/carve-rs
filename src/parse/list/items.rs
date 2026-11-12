@@ -2958,9 +2958,7 @@ impl<'a, 'l, 'o> ListScan<'a, 'l, 'o> {
         if is_blank_line(next) {
             return false;
         }
-        if self.cur.pos < lead.comment_through
-            && detect_list_marker_full(trim_ascii_start(next)).is_none()
-        {
+        if self.cur.pos < lead.comment_through {
             self.fold_lead_line(lead, trim_ascii_start(next));
             return true;
         }
