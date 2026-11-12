@@ -118,6 +118,10 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
 
+      # The spec is released first; an engine release implements a spec release.
+      - name: The spec pin is a published spec release
+        run: ./scripts/check-spec-pin-is-tag.sh tests/spec
+
       # The tag does not exist yet. A crates.io version can never be yanked
       # back into availability under the same number, and the tag is what the
       # publish below packages, so a tag that is already on the remote means
