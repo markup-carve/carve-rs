@@ -493,11 +493,24 @@ fn collect_parser_events(
         match block {
             BlockNode::List(list) => {
                 for item in &list.items {
+                    // A `+` attaches the first visible block: comment lines kept in
+                    // the item are skipped (carve-rs#4286).
+                    let comments = item
+                        .children
+                        .iter()
+                        .take_while(|child| matches!(child, BlockNode::Comment(_)))
+                        .count();
+                    let after = item.children[..comments]
+                        .last()
+                        .and_then(crate::ast_json::block_pos)
+                        .map(|pos| pos.end_line);
                     if let (Some(marker), Some(child)) = (
                         item.pos.as_ref(),
-                        item.children.first().and_then(crate::ast_json::block_pos),
+                        item.children
+                            .get(comments)
+                            .and_then(crate::ast_json::block_pos),
                     ) {
-                        if child.start_line == marker.start_line + 1
+                        if child.start_line == after.unwrap_or(marker.start_line) + 1
                             && child.start_column == marker.start_column
                         {
                             attached_first_block_items.insert(marker.start_line);
