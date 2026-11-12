@@ -30,6 +30,8 @@ use pulldown_cmark::{
 use crate::ast::*;
 use crate::render_carve;
 
+#[path = "markdown_import/markdown_denied_destinations.rs"]
+pub(crate) mod markdown_denied_destinations;
 #[cfg(test)]
 #[path = "markdown_import/markdown_native_destination_tests.rs"]
 mod native_destination_tests;
@@ -58,6 +60,8 @@ pub(crate) enum MarkdownLossKind {
     RawCodeFallback,
     /// An HTML comment block imported as a Carve comment (carve#4812).
     HtmlComment,
+    /// A destination the §25 sink denylist blanks, not written (carve#6010).
+    AttributeDropped,
 }
 
 /// A block that holds exactly one HTML comment, as a Carve comment: `%%` for one
@@ -1779,6 +1783,41 @@ fn markdown_to_ast_with_code_lines(
             .into_values()
             .map(BlockNode::LinkReferenceDefinition),
     );
+    // carve#6010: one row per definition with a denied destination, used or
+    // not, and the uses of it unwrap without a row of their own.
+    let denied_definitions: Vec<_> = parser
+        .reference_definitions()
+        .iter()
+        .filter(|(_, def)| {
+            markdown_denied_destinations::is_denied(&markdown_destination(&def.dest, false))
+        })
+        .map(|(key, def)| {
+            (
+                def.span.start,
+                markdown_denied_destinations::reference_key(key),
+            )
+        })
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect();
+    let denied_rows = markdown_denied_destinations::drop_denied_destinations(
+        &mut document,
+        &denied_definitions.iter().cloned().collect(),
+    );
+    losses.extend(
+        denied_rows
+            .into_iter()
+            .chain(
+                denied_definitions
+                    .iter()
+                    .map(|_| markdown_denied_destinations::DENIED_REFERENCE_DESTINATION.to_owned()),
+            )
+            .map(|message| MarkdownImportLoss {
+                message,
+                line: None,
+                kind: MarkdownLossKind::AttributeDropped,
+            }),
+    );
     crate::ast_json::hydrate_resolved_empty_references(&mut document);
     if needs_email_walk {
         crate::markdown_gfm_autolinks::link_email_text(&mut document);
@@ -3103,6 +3142,9 @@ enum Frame {
         src: String,
         title: Option<String>,
         alt: String,
+        /// Set only for a reference image whose destination is denied, so the
+        /// denied-destination pass can tell its definition already reports it.
+        denied_ref: Option<String>,
     },
     Table {
         alignments: Vec<Alignment>,
@@ -3771,8 +3813,25 @@ impl Builder {
                 }),
             },
             Tag::Image {
-                dest_url, title, ..
+                dest_url,
+                title,
+                id,
+                link_type,
             } => Frame::Image {
+                denied_ref: (!id.is_empty()
+                    && matches!(
+                        link_type,
+                        LinkType::Reference
+                            | LinkType::ReferenceUnknown
+                            | LinkType::Collapsed
+                            | LinkType::CollapsedUnknown
+                            | LinkType::Shortcut
+                            | LinkType::ShortcutUnknown
+                    )
+                    && markdown_denied_destinations::is_denied(&markdown_destination(
+                        &dest_url, false,
+                    )))
+                .then(|| id.to_string()),
                 src: {
                     let src = markdown_destination(&dest_url, false);
                     record_authored_destination(
@@ -4133,12 +4192,17 @@ impl Builder {
                 from_heading_reference: false,
                 pos: None,
             })),
-            Frame::Image { src, title, alt } => self.inline(InlineNode::Image(Image {
+            Frame::Image {
+                src,
+                title,
+                alt,
+                denied_ref,
+            } => self.inline(InlineNode::Image(Image {
                 attrs: None,
                 src,
                 alt,
                 title,
-                ref_label: None,
+                ref_label: denied_ref,
                 raw_ref: None,
                 resolved_empty_reference: false,
                 pos: None,
