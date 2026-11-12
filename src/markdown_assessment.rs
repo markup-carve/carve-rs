@@ -724,6 +724,11 @@ struct EventScan<'a> {
     link_depth: usize,
     /// One entry per open link or image: whether the import drops its destination.
     denied_links: Vec<bool>,
+    /// The tags open inside a dropped image's alt, which the import writes as plain text.
+    denied_alt: Option<usize>,
+    /// Per open inline run (paragraph, heading, cell, tight item): where it
+    /// starts, whether it dropped a destination, and whether it is an item's.
+    runs: Vec<(usize, bool, bool)>,
     code_depth: usize,
     code_needs_ending: bool,
     html_block: bool,
@@ -734,9 +739,77 @@ struct EventScan<'a> {
 }
 
 impl<'a> EventScan<'a> {
-    fn event(&mut self, event: Event<'a>, range: std::ops::Range<usize>) {
+    fn event(&mut self, mut event: Event<'a>, range: std::ops::Range<usize>) {
         use crate::html_import::ImportFidelity::Normalized;
         let source = self.source;
+        if let Some(depth) = self.denied_alt {
+            match &event {
+                Event::Start(_) => {
+                    self.denied_alt = Some(depth + 1);
+                    self.content_spans.push(range);
+                    return;
+                }
+                Event::End(_) if depth > 0 => {
+                    self.denied_alt = Some(depth - 1);
+                    return;
+                }
+                Event::End(_) => self.denied_alt = None,
+                Event::Text(_) => {}
+                Event::Code(code) | Event::InlineHtml(code) => event = Event::Text(code.clone()),
+                Event::SoftBreak | Event::HardBreak => event = Event::SoftBreak,
+                _ => {
+                    self.content_spans.push(range);
+                    return;
+                }
+            }
+        }
+        // An item's own run ends at its first block.
+        if matches!(
+            event,
+            Event::End(TagEnd::Item)
+                | Event::Start(
+                    Tag::Paragraph
+                        | Tag::Heading { .. }
+                        | Tag::List(_)
+                        | Tag::CodeBlock(_)
+                        | Tag::BlockQuote(_)
+                        | Tag::HtmlBlock
+                        | Tag::Table(_)
+                )
+        ) && matches!(self.runs.last(), Some((_, _, true)))
+        {
+            if let Some((start, true, _)) = self.runs.pop() {
+                self.trim_run(start);
+            }
+        }
+        if matches!(
+            event,
+            Event::End(TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::TableCell)
+        ) {
+            if let Some((start, true, _)) = self.runs.pop() {
+                self.trim_run(start);
+            }
+        }
+        // The import removes a paragraph or formatting run a dropped destination emptied.
+        if let Event::End(
+            end @ (TagEnd::Paragraph | TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough),
+        ) = &event
+        {
+            if let Some((Event::Start(start), offset)) = self.events.last() {
+                if start.to_end() == *end {
+                    let offset = *offset;
+                    self.events.pop();
+                    if let Some(row) = self
+                        .diagnostics
+                        .iter()
+                        .rposition(|(at, row)| *at == offset && row.code != "attribute-dropped")
+                    {
+                        self.diagnostics.remove(row);
+                    }
+                    return;
+                }
+            }
+        }
         if let Event::Start(Tag::Table(alignments)) = &event {
             self.table_width = alignments.len();
         }
@@ -761,6 +834,12 @@ impl<'a> EventScan<'a> {
             let denied = denied_destination(dest_url);
             self.denied_links.push(denied);
             if denied {
+                if let Some(run) = self.runs.last_mut() {
+                    run.1 = true;
+                }
+                if matches!(event, Event::Start(Tag::Image { .. })) {
+                    self.denied_alt = Some(0);
+                }
                 self.link_depth += 1;
                 self.content_spans.push(range.clone());
                 if !matches!(
@@ -852,12 +931,79 @@ impl<'a> EventScan<'a> {
                 fidelity,
             ));
         }
+        let opens_run = match event {
+            Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::TableCell) => Some(false),
+            Event::Start(Tag::Item) => Some(true),
+            _ => None,
+        };
         self.events.push((event, range.start));
+        if let Some(item) = opens_run {
+            self.runs.push((self.events.len(), false, item));
+        }
         if paren_list {
             self.events.push((
                 Event::Html(format!("<!--{}-->", self.expected_list_marker).into()),
                 range.start,
             ));
+        }
+    }
+
+    fn remove_row(&mut self, offset: usize, code: &str) {
+        if let Some(row) = self
+            .diagnostics
+            .iter()
+            .rposition(|(at, row)| *at == offset && row.code == code)
+        {
+            self.diagnostics.remove(row);
+        }
+    }
+
+    /// The import trims the spaces a dropped destination leaves at a block's edges.
+    fn trim_run(&mut self, start: usize) {
+        if matches!(self.events.get(start), Some((Event::SoftBreak, _))) {
+            let (_, offset) = self.events.remove(start);
+            self.remove_row(offset, "markdown-soft-break");
+        }
+        if self.events.len() > start && matches!(self.events.last(), Some((Event::SoftBreak, _))) {
+            if let Some((_, offset)) = self.events.pop() {
+                self.remove_row(offset, "markdown-soft-break");
+            }
+        }
+        // Carve reads no spaces at a line's edges, so the ones dropped content
+        // left beside a line break do not survive the write.
+        for at in start..self.events.len() {
+            let before = at > start && matches!(self.events[at - 1].0, Event::SoftBreak);
+            let after = matches!(self.events.get(at + 1), Some((Event::SoftBreak, _)));
+            if let (Event::Text(text), true) = (&mut self.events[at].0, before || after) {
+                let mut trimmed: &str = text;
+                if before {
+                    trimmed = trimmed.trim_start_matches([' ', '\t']);
+                }
+                if after {
+                    trimmed = trimmed.trim_end_matches([' ', '\t']);
+                }
+                if trimmed.len() != text.len() {
+                    *text = trimmed.to_owned().into();
+                }
+            }
+        }
+        if let Some((Event::Text(text), _)) = self.events.get_mut(start) {
+            let trimmed = text.trim_start_matches([' ', '\t']);
+            if trimmed.is_empty() {
+                self.events.remove(start);
+            } else if trimmed.len() != text.len() {
+                *text = trimmed.to_owned().into();
+            }
+        }
+        if self.events.len() > start {
+            if let Some((Event::Text(text), _)) = self.events.last_mut() {
+                let trimmed = text.trim_end_matches([' ', '\t']);
+                if trimmed.is_empty() {
+                    self.events.pop();
+                } else if trimmed.len() != text.len() {
+                    *text = trimmed.to_owned().into();
+                }
+            }
         }
     }
 
@@ -1531,6 +1677,8 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         authored_ordered_delimiters: Vec::new(),
         link_depth: 0,
         denied_links: Vec::new(),
+        denied_alt: None,
+        runs: Vec::new(),
         code_depth: 0,
         code_needs_ending: false,
         html_block: false,
