@@ -21,14 +21,6 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
         "the corpus contains no parsed citation group",
     ),
     (
-        "carveCitationDefinition",
-        "no engine parse produces a citation definition yet; it reaches the editor only over the AST-JSON wire",
-    ),
-    (
-        "carveEmbed",
-        "a media directive reaches carveEmbed through the HTML route, not from the AST",
-    ),
-    (
         "carveSection",
         "sections are rendering wrappers, not parsed source nodes",
     ),

@@ -1,11 +1,11 @@
-name: Schema map drift
+name: Schema map attribute drift
 
-# Compares the vendored ProseMirror map with carve-grammars `main`, the source
-# of truth (markup-carve/carve-grammars#236). Upstream moving is not a failure
-# of a pull request here, so this runs daily and files one tracking issue, the
-# way carve-php's schema-map-drift.yml does (markup-carve/carve-rs#4292). A
-# drift verdict files the ticket and the run stays green; a check that could
-# not run, or a ticket that could not be filed, is red.
+# ci.yml's schema-map job gates the map's DECISIONS on every pull request
+# (tools/check-schema-map.py) and does not read node `attrs`, which is how the
+# table cell attributes fell behind (markup-carve/carve-rs#4292). This compares
+# the attrs with carve-grammars `main` daily and files one tracking issue, the
+# way carve-php's schema-map-drift.yml does. A drift verdict files the ticket
+# and the run stays green; a check that could not run is red.
 
 on:
   schedule:
@@ -25,7 +25,7 @@ jobs:
   schema-map:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    name: ProseMirror schema map matches carve-grammars
+    name: ProseMirror schema map attributes match carve-grammars
 
     steps:
       - uses: actions/checkout@v6
@@ -35,32 +35,28 @@ jobs:
           repository: markup-carve/carve-grammars
           path: .carve-grammars
 
-      - name: Compare the vendored map with carve-grammars main
+      - name: Compare the map's attributes with carve-grammars main
         id: measure
         run: |
-          set -euo pipefail
-          vendored=resources/prosemirror-schema-map.json
-          upstream=.carve-grammars/tiptap/schema-map.json
+          set -uo pipefail
           upstream_sha="$(git -C .carve-grammars rev-parse HEAD)"
           echo "upstream=$upstream_sha" >> "$GITHUB_OUTPUT"
-          if ! jq -S . "$vendored" > /tmp/vendored.json || ! jq -S . "$upstream" > /tmp/upstream.json; then
-            echo "::error::a schema map is missing or is not JSON; no verdict to file."
-            exit 1
-          fi
-          if diff -u /tmp/vendored.json /tmp/upstream.json > /tmp/schema-map-drift.txt; then
-            verdict=clean
-          else
-            verdict=drift
-            echo "::warning::$vendored differs from carve-grammars $upstream_sha"
-          fi
+          python3 tools/schema-map-attrs-drift.py resources/prosemirror-schema-map.json \
+            .carve-grammars/tiptap/schema-map.json > /tmp/schema-map-drift.txt
+          status=$?
+          case "$status" in
+            0) verdict=clean ;;
+            1) verdict=drift; echo "::warning::node attributes differ from carve-grammars $upstream_sha" ;;
+            *) echo "::error::schema-map-attrs-drift could not run (exit $status); no verdict to file."; exit 1 ;;
+          esac
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
           {
-            echo '## Schema map drift'
+            echo '## Schema map attribute drift'
             echo
             echo "carve-grammars \`$upstream_sha\`: $verdict"
             echo
-            echo '```diff'
-            head -c 60000 /tmp/schema-map-drift.txt
+            echo '```text'
+            cat /tmp/schema-map-drift.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -82,7 +78,7 @@ jobs:
             exit 0
           fi
 
-          TITLE="The vendored ProseMirror schema map has drifted from carve-grammars"
+          TITLE="The vendored ProseMirror schema map's node attributes have drifted from carve-grammars"
           MARKER="<!-- schema-map-drift-verdict ref=$REF_NAME -->"
 
           open_issues="$(gh api "repos/$REPO/issues?state=open&per_page=100" --paginate \
@@ -91,7 +87,7 @@ jobs:
           issue="${open_issues%%$'\n'*}"
 
           if [ "$VERDICT" = clean ]; then
-            echo "The schema map agrees with carve-grammars $UPSTREAM."
+            echo "The schema map attributes agree with carve-grammars $UPSTREAM."
             if [ -n "$issue" ]; then
               gh issue comment "$issue" --repo "$REPO" --body \
                 "Clean again: run $RUN_URL against carve-grammars \`$UPSTREAM\`. Closing. The next drift verdict opens a fresh ticket."
@@ -103,21 +99,22 @@ jobs:
           {
             echo "$MARKER"
             echo
-            echo "\`resources/prosemirror-schema-map.json\` no longer matches carve-grammars"
-            echo "\`tiptap/schema-map.json\` at \`$UPSTREAM\`."
+            echo "The node attributes in \`resources/prosemirror-schema-map.json\` no longer match"
+            echo "carve-grammars \`tiptap/schema-map.json\` at \`$UPSTREAM\`."
             echo
             echo "Run: $RUN_URL"
             echo
-            echo "### Difference (vendored, then upstream; keys sorted)"
+            echo "### Types whose attributes differ"
             echo
-            echo '```diff'
-            head -c 50000 /tmp/schema-map-drift.txt
+            echo '```text'
+            cat /tmp/schema-map-drift.txt
             echo '```'
             echo
             echo "### How to clear it"
             echo
-            echo "Copy carve-grammars \`tiptap/schema-map.json\` to \`resources/prosemirror-schema-map.json\`"
-            echo "and make the bridge in \`src/prosemirror/\` follow what moved."
+            echo "Refresh \`resources/prosemirror-schema-map.json\` from carve-grammars (keep \`_provenance\`"
+            echo "and its declared divergences, bump \`_provenance.commit\`), make the bridge in"
+            echo "\`src/prosemirror/\` follow what moved, and run \`tools/check-schema-map.py\`."
             echo
             echo "This ticket is maintained by the workflow: each drift verdict edits it and"
             echo "the first clean run closes it."

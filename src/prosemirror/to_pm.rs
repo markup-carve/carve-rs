@@ -676,8 +676,9 @@ impl Renderer {
                         origin.rowspan += 1;
                         // Read back as non-header markers, as the carve-grammars
                         // serializer writes them.
-                        let headed = cell.header || covered.iter().any(|c| c.header);
-                        self.note_merged_marker(cell, headed);
+                        for marker in std::iter::once(cell).chain(covered) {
+                            self.note_merged_marker(marker, marker.header);
+                        }
                         for slot in grid.iter_mut().skip(col).take(width) {
                             *slot = Some(o);
                         }

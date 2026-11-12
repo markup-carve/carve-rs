@@ -55,6 +55,16 @@ fn a_covered_column_written_with_a_caret_keeps_its_marker() {
     );
 }
 
+/// Every marker a rowspan swallows is checked, not only the one under the
+/// origin's first column.
+#[test]
+fn a_covered_marker_with_its_own_alignment_is_reported() {
+    let pm = to_prosemirror(&parse("| a | < |\n| ^ |{>} < |\n"));
+    assert!(pm.degraded.contains_key("table_cell"), "{:?}", pm.degraded);
+    let pm = to_prosemirror(&parse("| a | < |\n| ^ | < |\n"));
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
+
 #[test]
 fn a_blocked_marker_stays_a_cell() {
     let t = table("| ^ | a |\n");
