@@ -11,7 +11,7 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-## [0.1.14] - 2026-11-11
+## [0.1.14] - 2026-11-12
 
 Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes layout, inline and import behavior.
 
@@ -64,6 +64,14 @@ Carve 0.1.14 follows the current spec pin, improves public parsing, and fixes la
 - Symbol attribute runs merge, an autolink ignores an authored `href`, nested item continuations keep their tab reach, and figure note order, cell cross-reference pipes and link-text brackets follow the spec (#4169, #4174).
 - The canonical writer keeps position-free item comment runs together (#4191).
 - AST positions for tabbed verse spaces and nested duplicate notes follow the spec (#4244).
+- AST spans and parents: item lead comment runs, verse leads, comment closers and quoted note lists keep their columns, and an erased line's parent is the container its own column reaches (#4281, #4284, #4288).
+- A line a `+` skips measures its tabs per frame, and the writer keeps a note between two item blocks (#4283).
+- An attribute name written twice in different case is one HTML attribute and the last write wins (#4279).
+- The canonical writer writes no list boundary before an attribute-led sub-list in a tight item (#4287).
+- Lint reports a refused `+` on a losing footnote definition and on an item followed by a kept comment line (#4272, #4290).
+- Markdown import drops a destination whose scheme the renderer denies, reports it with a location, keeps footnote-used definitions, and keeps a list tight when only a reference definition sits by a blank line (#4297, #4299, #4300, #4302).
+- The ProseMirror bridge blanks denied destinations, and table cells and literal text follow the schema map (#4293, #4296).
+- Linting many list items and rendering many footnotes run in linear time (#4277).
 
 ### Improvements
 
