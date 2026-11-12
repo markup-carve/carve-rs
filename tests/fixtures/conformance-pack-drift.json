@@ -9,13 +9,6 @@
       ]
     },
     {
-      "ticket": "markup-carve/carve#5872",
-      "cause": "the spec model includes an unresolved footnote reference in the derived task checkbox accessible name; all engines omit it under CARVE-P2-004",
-      "cases": [
-        "attributes-d7a022809675"
-      ]
-    },
-    {
       "ticket": "markup-carve/carve#5658",
       "cause": "other own-line plus fence ownership cells in the new pack remain cross-engine gaps: trailing blank retention and tabbed fence attachment; tracked in the paused ownership family",
       "cases": [

@@ -1453,6 +1453,14 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             "1043-a-second-tab-keeps-two-verse-spaces.crv",
             "1044-a-nested-item-without-a-quote-keeps-three-verse-spaces.crv",
             "1046-a-description-item-measures-its-verse-lead-in-both-frames.crv",
+            "1071-a-tabbed-verse-line-keeps-the-lead-its-frames-leave-2.crv",
+            "1071-a-tabbed-verse-line-keeps-the-lead-its-frames-leave-3.crv",
+            "1071-a-tabbed-verse-line-keeps-the-lead-its-frames-leave-4.crv",
+            "1071-a-tabbed-verse-line-keeps-the-lead-its-frames-leave.crv",
+            "1073-a-verse-lead-under-an-indented-opener-is-measured-per-frame-2.crv",
+            "1073-a-verse-lead-under-an-indented-opener-is-measured-per-frame-4.crv",
+            "1073-a-verse-lead-under-an-indented-opener-is-measured-per-frame.crv",
+            "1077-a-column-after-an-astral-character-is-one-code-point-4.crv",
             "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
             "29-non-breaking-space.crv",
             "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",
@@ -1773,7 +1781,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve-rs#4292 merges span markers into colspan/rowspan as the schema map
     // does; a merged marker with its own alignment or header flag reports the
     // loss, so 659-4, 952-2 and 953-3 leave the strict set.
-    const STRICT: usize = 3552;
+    // The spec 0.1.14 tag (51c56315) adds rows 1070 to 1077: nine round trip
+    // strictly and nineteen report a loss; no existing document moves.
+    const STRICT: usize = 3561;
     // Spec 894ff32e adds 616-25, whose marked quote soft break reports a loss.
     // The eight parsed CSV/TSV tables lose their source fence in ProseMirror;
     // the bridge reports that loss instead of claiming a strict round trip.
@@ -1806,7 +1816,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // The four moved rows are named with STRICT above.
     // carve#6009 moves ten rows here, named with STRICT above.
     // carve-rs#4292 moves three rows here, named with STRICT above.
-    const LOSSY: usize = 1051;
+    // Nineteen of the 1070 to 1077 rows report a loss, eight of them the
+    // nbsp-only kind named above.
+    const LOSSY: usize = 1070;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
