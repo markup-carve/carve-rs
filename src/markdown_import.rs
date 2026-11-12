@@ -654,6 +654,9 @@ fn normalize_imported_reference_links(document: &mut Document) {
         preserved: BTreeSet::new(),
     };
     normalize.blocks(&mut document.children);
+    for blocks in document.footnote_defs.values_mut() {
+        normalize.blocks(blocks);
+    }
     document.children.retain(|block| {
         !matches!(block, BlockNode::LinkReferenceDefinition(def)
             if !normalize.preserved.contains(&crate::parse::label_key(&def.label).to_uppercase()))
