@@ -255,17 +255,28 @@ fn assess_markdown_migration(
     notices: Vec<crate::markdown_import::FrontmatterNotice>,
 ) -> Result<MigrationResult, crate::RenderCarveError> {
     let assessment = crate::markdown_assessment::assess(source, &value);
+    let tasks = losses
+        .iter()
+        .filter(|loss| loss.message == crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE)
+        .count();
+    let denied = losses
+        .iter()
+        .filter(|loss| loss.kind == MarkdownLossKind::AttributeDropped)
+        .count();
+    let assessed_rows = |code: &str| {
+        assessment
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == code)
+            .count()
+    };
+    // The assessment's located rows stand in for the drop pass's only when it
+    // saw every dropped destination (carve#6013).
     if assessment.complete
         && notices.is_empty()
-        && losses
-            .iter()
-            .all(|loss| loss.message == crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE)
-        && losses.len()
-            <= assessment
-                .diagnostics
-                .iter()
-                .filter(|row| row.code == "structure-unspellable")
-                .count()
+        && tasks + denied == losses.len()
+        && tasks <= assessed_rows("structure-unspellable")
+        && denied == assessed_rows("attribute-dropped")
     {
         let mut literal = assessed(source, value.clone(), SourceFormat::Markdown, false);
         if literal

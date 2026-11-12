@@ -85,6 +85,35 @@ fn destination_has_entity(source: &str) -> bool {
     false
 }
 
+/// Whether the import drops this destination (carve#6010); the read is the import's own.
+fn denied_destination(dest: &str) -> bool {
+    crate::markdown_import::markdown_denied_destinations::is_denied(
+        &crate::markdown_import::markdown_destination(dest, false),
+    )
+}
+
+/// The `attribute-dropped` row for one destination the import dropped.
+fn dropped_row(
+    line_starts: &[usize],
+    offset: usize,
+    message: &str,
+) -> (usize, MigrationDiagnostic) {
+    (
+        offset,
+        MigrationDiagnostic {
+            code: "attribute-dropped".to_owned(),
+            message: message.to_owned(),
+            severity: HtmlImportSeverity::Warning,
+            fidelity: MigrationFidelity::Dropped,
+            confidence: MigrationConfidence::Exact,
+            path: Some(format!(
+                "line:{}",
+                line_starts.partition_point(|start| *start <= offset)
+            )),
+        },
+    )
+}
+
 fn bare_link_events<'a>(label: &str, prefix: &str) -> [Event<'a>; 3] {
     [
         Event::Start(Tag::Link {
@@ -693,6 +722,8 @@ struct EventScan<'a> {
     lists: Vec<bool>,
     authored_ordered_delimiters: Vec<char>,
     link_depth: usize,
+    /// One entry per open link or image: whether the import drops its destination.
+    denied_links: Vec<bool>,
     code_depth: usize,
     code_needs_ending: bool,
     html_block: bool,
@@ -711,6 +742,52 @@ impl<'a> EventScan<'a> {
         }
         if matches!(event, Event::Start(Tag::TableHead | Tag::TableRow)) {
             self.table_row(matches!(event, Event::Start(Tag::TableRow)), range.start);
+        }
+        // A dropped destination is modeled as its content; a reference use is
+        // covered by its definition's row.
+        if let Event::Start(
+            Tag::Link {
+                dest_url,
+                link_type,
+                ..
+            }
+            | Tag::Image {
+                dest_url,
+                link_type,
+                ..
+            },
+        ) = &event
+        {
+            let denied = denied_destination(dest_url);
+            self.denied_links.push(denied);
+            if denied {
+                self.link_depth += 1;
+                self.content_spans.push(range.clone());
+                if !matches!(
+                    link_type,
+                    LinkType::Reference
+                        | LinkType::ReferenceUnknown
+                        | LinkType::Collapsed
+                        | LinkType::CollapsedUnknown
+                        | LinkType::Shortcut
+                        | LinkType::ShortcutUnknown
+                ) {
+                    let message = if matches!(event, Event::Start(Tag::Image { .. })) {
+                        crate::markdown_import::markdown_denied_destinations::DENIED_IMAGE_SOURCE
+                    } else {
+                        crate::markdown_import::markdown_denied_destinations::DENIED_LINK_DESTINATION
+                    };
+                    self.diagnostics
+                        .push(dropped_row(self.line_starts, range.start, message));
+                }
+                return;
+            }
+        }
+        if matches!(event, Event::End(TagEnd::Link | TagEnd::Image))
+            && self.denied_links.pop() == Some(true)
+        {
+            self.link_depth = self.link_depth.saturating_sub(1);
+            return;
         }
         if matches!(
             &event,
@@ -1413,6 +1490,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut definition_spans = Vec::new();
     for (_, definition) in parser.reference_definitions().iter() {
         let span = strikes.original_range(definition.span.clone());
+        if denied_destination(&definition.dest) {
+            diagnostics.push(dropped_row(
+                &line_starts,
+                span.start,
+                crate::markdown_import::markdown_denied_destinations::DENIED_REFERENCE_DESTINATION,
+            ));
+            definition_spans.push(span);
+            continue;
+        }
         if destination_has_entity(&source[span.clone()]) {
             complete = false;
         }
@@ -1444,6 +1530,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         lists: Vec::new(),
         authored_ordered_delimiters: Vec::new(),
         link_depth: 0,
+        denied_links: Vec::new(),
         code_depth: 0,
         code_needs_ending: false,
         html_block: false,
