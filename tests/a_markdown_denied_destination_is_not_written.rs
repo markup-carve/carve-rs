@@ -9,7 +9,9 @@ const IMAGE_ROW: &str = "Dropped an image source with a denied URL scheme";
 const REFERENCE_ROW: &str = "Dropped a reference definition with a denied URL scheme";
 
 fn written(markdown: &str) -> String {
-    markdown_to_carve(markdown).trim_end_matches('\n').to_owned()
+    markdown_to_carve(markdown)
+        .trim_end_matches('\n')
+        .to_owned()
 }
 
 fn dropped(markdown: &str) -> Vec<(String, String, String, String)> {
@@ -44,39 +46,82 @@ fn the_reproduction_imports_as_its_content_with_one_warning_per_destination() {
     let result = migrate_markdown(markdown);
     assert_eq!(result.value, "Siehe x und b.\n");
     assert_eq!(markdown_to_carve(markdown), "Siehe x und b.\n");
-    assert_eq!(dropped(markdown), vec![warning(LINK_ROW), warning(IMAGE_ROW)]);
+    assert_eq!(
+        dropped(markdown),
+        vec![warning(LINK_ROW), warning(IMAGE_ROW)]
+    );
 }
 
 #[test]
 fn every_destination_carrier_is_dropped_to_its_content() {
     for (name, markdown, carve) in [
         ("scheme case", "[x](JaVaScRiPt:x)", "x"),
-        ("a title goes with the destination", "[x](vbscript:x \"t\")", "x"),
+        (
+            "a title goes with the destination",
+            "[x](vbscript:x \"t\")",
+            "x",
+        ),
         ("an entity-encoded scheme", "[x](&#106;avascript:x)", "x"),
         ("an OS-handler scheme", "[x](ms-msdt:x)", "x"),
-        ("link text keeps its markup", "[*a* `c`](javascript:x)", "/a/ `c`"),
+        (
+            "link text keeps its markup",
+            "[*a* `c`](javascript:x)",
+            "/a/ `c`",
+        ),
         ("a pointy destination", "[x](<javascript:x>)", "x"),
-        ("an autolink keeps its text", "<javascript:alert(1)>", "javascript:alert(1)"),
-        ("a block image becomes its alt text", "![a b](data:x)", "a b"),
+        (
+            "an autolink keeps its text",
+            "<javascript:alert(1)>",
+            "javascript:alert(1)",
+        ),
+        (
+            "a block image becomes its alt text",
+            "![a b](data:x)",
+            "a b",
+        ),
         ("a titled block image", "![a *b*](data:x \"t\")", "a b"),
-        ("an empty block image leaves nothing", "p\n\n![](data:x)", "p"),
-        ("an image inside an allowed link", "[![i](data:x)](https://e)", "[i](https://e)"),
+        (
+            "an empty block image leaves nothing",
+            "p\n\n![](data:x)",
+            "p",
+        ),
+        (
+            "an image inside an allowed link",
+            "[![i](data:x)](https://e)",
+            "[i](https://e)",
+        ),
         (
             "an allowed image inside a denied link",
             "[![i](https://e/i.png)](javascript:x)",
             "![i](https://e/i.png)",
         ),
-        ("a reference link and its definition", "[x][r] ![i][r]\n\n[r]: javascript:x", "x i"),
+        (
+            "a reference link and its definition",
+            "[x][r] ![i][r]\n\n[r]: javascript:x",
+            "x i",
+        ),
         ("an unused definition", "p\n\n[r]: data:x", "p"),
-        ("an empty link inside emphasis", "a *[](javascript:x)* b", "a  b"),
-        ("in a definition description", "Term\n: [y](javascript:x) d", "Term\n: y d"),
+        (
+            "an empty link inside emphasis",
+            "a *[](javascript:x)* b",
+            "a  b",
+        ),
+        (
+            "in a definition description",
+            "Term\n: [y](javascript:x) d",
+            "Term\n: y d",
+        ),
         ("in a quoted list item", "> - [y](javascript:x)", "> - y"),
         (
             "in a table cell",
             "| a |\n|---|\n| [](javascript:x) [ok](https://e) |",
             "|= a |\n| [ok](https://e) |",
         ),
-        ("in a footnote", "a[^1]\n\n[^1]: see [x](javascript:x)", "a[^1]\n\n[^1]: see x"),
+        (
+            "in a footnote",
+            "a[^1]\n\n[^1]: see [x](javascript:x)",
+            "a[^1]\n\n[^1]: see x",
+        ),
     ] {
         assert_eq!(written(markdown), carve, "{name}");
     }
