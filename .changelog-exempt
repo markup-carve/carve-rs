@@ -52,3 +52,23 @@
 3145: internal function extraction to lower complexity; no output or public API behavior changed.
 3148: CI complexity threshold only; no runtime behavior changed.
 3951: caption abbreviation expansion in c251ff5a was reverted by 6be2c26f before release; the shipped fix is #3953. This suffix names an issue, not a PR.
+4112: the quadratic braced-comment precheck belongs to the event parser, which became the default after 0.1.13; output is unchanged (measured against 0.1.13).
+4140: a quadratic lookahead added by #4135 in the same unreleased window; output unchanged.
+4248: a quadratic scan added by #4246 in the same unreleased window; output unchanged.
+4139: follow-up to #4135 in the same unreleased window; #4135's entry covers the behavior.
+4199: a panic in the ownership walk added after 0.1.13; carve-rs 0.1.13 renders the reproduction without panicking.
+4120: restores 0.1.13 output for a marker-column block after a losing duplicate note (regression after 0.1.13).
+4256: restores the 0.1.13 source order of a comment between nested list items (regression after 0.1.13).
+4264: fixes regressions the 0.1.14 cut gates found in code merged after 0.1.13 (carve#5950, #5951, #5952, #4260).
+4265: fixes two regressions against 0.1.13 (carve#5957, carve#5886); 0.1.13 renders the fixed output.
+4180: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4182: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4190: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4219: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4230: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4237: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4239: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4250: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4253: regression after 0.1.13; carve-rs 0.1.13 renders every reproduction in the PR body as the fix does.
+4269: the quadratic erased-line restore came from #3830 in the same unreleased window; output unchanged.
+4271: fixes regressions against 0.1.13 found by the full-corpus verdict (carve#5961); 0.1.13 renders the fixed rows.
