@@ -193,18 +193,28 @@ impl<'a> El<'a> {
         let authored = self
             .attrs
             .map_or(&[] as &[String], |a| a.classes.as_slice());
-        let mut out: Vec<String> = Vec::new();
+        let mut keep: Vec<&str> = Vec::new();
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let all = self
             .base
             .iter()
             .chain(authored.iter().filter(|c| !url::value_fails(c)))
             .chain(&self.trailing);
         for c in all {
-            if !out.contains(c) {
-                out.push(c.clone());
+            // A short list is searched; a long one goes through the set.
+            if keep.len() == 16 && seen.is_empty() {
+                seen.extend(keep.iter().copied());
+            }
+            let new = if seen.is_empty() {
+                !keep.contains(&c.as_str())
+            } else {
+                seen.insert(c.as_str())
+            };
+            if new {
+                keep.push(c);
             }
         }
-        out
+        keep.into_iter().map(String::from).collect()
     }
 }
 

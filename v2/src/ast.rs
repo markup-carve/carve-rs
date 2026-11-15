@@ -39,18 +39,38 @@ impl Attrs {
             self.id = later.id;
         }
         self.classes.extend(later.classes);
-        for (k, v) in later.key_values {
-            if let Some(slot) = self
-                .key_values
-                .iter_mut()
-                .find(|(ek, _)| ek.eq_ignore_ascii_case(&k))
+        self.key_values.extend(later.key_values);
+        dedupe_keys(&mut self.key_values);
+    }
+}
+
+/// Merges keys that are equal without ASCII case: the later value at the
+/// first key's place (C2-A-035). Linear: a long list goes through a map.
+pub fn dedupe_keys(kv: &mut Vec<(String, String)>) {
+    let mut out: Vec<(String, String)> = Vec::with_capacity(kv.len());
+    if kv.len() <= 16 {
+        for (k, v) in kv.drain(..) {
+            match out.iter_mut().find(|(ek, _)| ek.eq_ignore_ascii_case(&k)) {
+                Some(slot) => slot.1 = v,
+                None => out.push((k, v)),
+            }
+        }
+    } else {
+        let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (k, v) in kv.drain(..) {
+            match at
+                .get(&k.to_ascii_lowercase())
+                .and_then(|&i| out.get_mut(i))
             {
-                slot.1 = v;
-            } else {
-                self.key_values.push((k, v));
+                Some(slot) => slot.1 = v,
+                None => {
+                    at.insert(k.to_ascii_lowercase(), out.len());
+                    out.push((k, v));
+                }
             }
         }
     }
+    *kv = out;
 }
 
 /// A source range (C2-A-140).

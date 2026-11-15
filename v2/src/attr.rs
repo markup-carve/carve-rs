@@ -48,6 +48,7 @@ pub fn parse_block(s: &str, at: usize) -> Option<(AttrBlock, usize)> {
         match b.get(i) {
             Some(b'}') => {
                 block.empty = parts == 0;
+                crate::ast::dedupe_keys(&mut block.attrs.key_values);
                 return Some((block, i + 1));
             }
             None | Some(b'\n') => return None,
@@ -169,14 +170,8 @@ fn add_key(block: &mut AttrBlock, key: &str, value: String) {
                 .filter(|c| !c.is_empty())
                 .map(String::from),
         );
-    } else if let Some(slot) = block
-        .attrs
-        .key_values
-        .iter_mut()
-        .find(|(k, _)| k.eq_ignore_ascii_case(key))
-    {
-        slot.1 = value;
     } else {
+        // Merged by name once the block is read (`dedupe_keys`).
         block.attrs.key_values.push((key.to_string(), value));
     }
 }

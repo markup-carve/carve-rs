@@ -99,3 +99,26 @@ fn c2_i_084_the_first_heading_matching_by_text_or_source_wins() {
         "<section id=\"a\">\n  <h1>*a*</h1>\n</section>\n<section id=\"a-2\">\n  <h1><strong>a</strong></h1>\n  <p><a href=\"#a\">x</a></p>\n</section>"
     );
 }
+
+#[test]
+fn c2_a_035_a_later_key_takes_the_first_place_in_a_long_block() {
+    let keys: Vec<String> = (0..20).map(|i| format!("k{i}=a")).collect();
+    let classes: Vec<String> = (0..18).map(|i| format!(".x{i}")).collect();
+    let src = format!(
+        "{{{} K3=b .c .d .c {} .x2}}\npara\n",
+        keys.join(" "),
+        classes.join(" ")
+    );
+    let attrs: Vec<String> = (0..20)
+        .map(|i| format!("k{i}=\"{}\"", if i == 3 { "b" } else { "a" }))
+        .collect();
+    let names: Vec<String> = (0..18).map(|i| format!("x{i}")).collect();
+    assert_eq!(
+        html(&src),
+        format!(
+            "<p class=\"c d {}\" {}>para</p>",
+            names.join(" "),
+            attrs.join(" ")
+        )
+    );
+}
