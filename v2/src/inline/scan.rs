@@ -237,29 +237,29 @@ impl Scanner<'_, '_> {
                     self.leaf(
                         v0,
                         e,
-                        Node::RawInline(RawInline {
+                        Node::RawInline(Box::new(RawInline {
                             format,
                             value,
                             ..Default::default()
-                        }),
+                        })),
                         false,
                     );
                     return true;
                 }
-                Node::Code(Code {
+                Node::Code(Box::new(Code {
                     value,
                     ..Default::default()
-                })
+                }))
             }
-            CodeKind::Literal => Node::LiteralInline(LiteralInline {
+            CodeKind::Literal => Node::LiteralInline(Box::new(LiteralInline {
                 value,
                 ..Default::default()
-            }),
-            CodeKind::Math(display) => Node::Math(Math {
+            })),
+            CodeKind::Math(display) => Node::Math(Box::new(Math {
                 value,
                 display,
                 ..Default::default()
-            }),
+            })),
         };
         self.leaf(v0, end, node, true);
         true
@@ -367,11 +367,11 @@ impl Scanner<'_, '_> {
         let raw = self.t.get(i + 2..k).unwrap_or("");
         let raw = raw.strip_prefix(' ').unwrap_or(raw);
         let raw = raw.strip_suffix(' ').unwrap_or(raw);
-        let node = Node::Comment(Comment {
+        let node = Node::Comment(Box::new(Comment {
             form: CommentForm::Braced,
             value: raw.to_string(),
             ..Default::default()
-        });
+        }));
         self.push(
             i,
             k + 2,
@@ -405,10 +405,10 @@ impl Scanner<'_, '_> {
         self.leaf(
             i,
             k + 2,
-            Node::CriticComment(CriticComment {
+            Node::CriticComment(Box::new(CriticComment {
                 value,
                 ..Default::default()
-            }),
+            })),
             false,
         );
         true
@@ -436,11 +436,11 @@ impl Scanner<'_, '_> {
             .strip_prefix(' ')
             .unwrap_or(raw)
             .trim_end_matches([' ', '\t']);
-        let node = Node::Comment(Comment {
+        let node = Node::Comment(Box::new(Comment {
             form: CommentForm::Line,
             value: raw.to_string(),
             ..Default::default()
-        });
+        }));
         self.i = start;
         self.leaf(start, end, node, false);
         true
@@ -450,11 +450,11 @@ impl Scanner<'_, '_> {
         let i = self.i;
         match atoms::angle(self.t, i) {
             Some(Angle::Xref { key, end }) => {
-                let node = Node::Xref(Xref {
+                let node = Node::Xref(Box::new(Xref {
                     key,
                     namespace: XrefNamespace::Heading,
                     ..Default::default()
-                });
+                }));
                 self.leaf(i, end, node, false);
                 true
             }
@@ -464,11 +464,11 @@ impl Scanner<'_, '_> {
                 self.leaf(
                     i,
                     end,
-                    Node::Autolink(Autolink {
+                    Node::Autolink(Box::new(Autolink {
                         href,
                         text,
                         ..Default::default()
-                    }),
+                    })),
                     true,
                 );
                 true
@@ -496,16 +496,16 @@ impl Scanner<'_, '_> {
         };
         let name = self.t.get(i + 1..end).unwrap_or("").to_string();
         let node = if at {
-            Node::Mention(Mention {
+            Node::Mention(Box::new(Mention {
                 target: name,
                 kind: "user".to_string(),
                 ..Default::default()
-            })
+            }))
         } else {
-            Node::Tag(Tag {
+            Node::Tag(Box::new(Tag {
                 name,
                 ..Default::default()
-            })
+            }))
         };
         self.leaf(i, end, node, false);
         true
@@ -533,10 +533,10 @@ impl Scanner<'_, '_> {
             self.leaf(
                 i,
                 end + 1,
-                Node::Symbol(Symbol {
+                Node::Symbol(Box::new(Symbol {
                     name,
                     ..Default::default()
-                }),
+                })),
                 true,
             );
             return true;
@@ -561,11 +561,11 @@ impl Scanner<'_, '_> {
         if let Label::Ok(e, end) = self.label(i + 2) {
             let key = self.label_key(i + 2, e);
             if !key.is_empty() {
-                let node = Node::FootnoteRef(FootnoteRef {
+                let node = Node::FootnoteRef(Box::new(FootnoteRef {
                     key,
                     namespace: "footnote".to_string(),
                     ..Default::default()
-                });
+                }));
                 self.leaf(i, end, node, true);
                 return true;
             }
@@ -841,7 +841,7 @@ impl Scanner<'_, '_> {
                 v0,
                 end,
                 K::Leaf {
-                    node: Box::new(Node::Image(img)),
+                    node: Box::new(Node::Image(Box::new(img))),
                     host: true,
                     transparent: false,
                 },

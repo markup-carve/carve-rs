@@ -395,9 +395,12 @@ impl<'a> Renderer<'a> {
     fn task_box(children: &[Node], checked: bool) -> String {
         let mut texts = Vec::new();
         for c in children {
-            if let Node::Paragraph(ast::Paragraph { children, .. })
-            | Node::Heading(ast::Heading { children, .. }) = c
-            {
+            let children = match c {
+                Node::Paragraph(n) => Some(&n.children),
+                Node::Heading(n) => Some(&n.children),
+                _ => None,
+            };
+            if let Some(children) = children {
                 let t = crate::resolve::plain::text_of(children);
                 if !t.is_empty() {
                     texts.push(t);

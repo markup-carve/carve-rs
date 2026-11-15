@@ -319,7 +319,7 @@ fn write_struct(out: &mut String, name: &str, ty: &str, fields: &[Field]) {
 fn write_node_enum(out: &mut String, variants: &[(String, String)]) {
     out.push_str("/// Every node type of the 2.0 contract (C2-A-050).\n#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"type\")]\npub enum Node {\n");
     for (json, ty) in variants {
-        let _ = writeln!(out, "    #[serde(rename = {json:?})]\n    {ty}({ty}),");
+        let _ = writeln!(out, "    #[serde(rename = {json:?})]\n    {ty}(Box<{ty}>),");
     }
     out.push_str("}\n\nimpl Node {\n    /// The node type name as the schema spells it.\n    #[must_use]\n    pub const fn type_name(&self) -> &'static str {\n        match self {\n");
     for (json, ty) in variants {

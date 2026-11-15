@@ -9,8 +9,8 @@ use super::smart::{Out, Prev, Smart};
 use super::token::Kind;
 use super::{InlineEnv, abbr};
 use crate::ast::{
-    Abbreviation, CommentForm, HardBreak, InlineExtension, InlineFootnote, Link, Node,
-    NonBreakingSpace, Pos, SmartPunctuation, SoftBreak, Span, Text,
+    Abbreviation, CommentForm, HardBreak, InlineExtension, Link, Node, NonBreakingSpace, Pos,
+    SmartPunctuation, SoftBreak, Text,
 };
 use crate::attr::AttrBlock;
 use crate::tables;
@@ -152,7 +152,7 @@ pub fn set_lang(node: &mut Node, lang: Option<String>) {
 fn container(kind: Kind) -> Option<Node> {
     Some(match kind {
         Kind::Styled(name) => serde_json::from_value(serde_json::json!({ "type": name })).ok()?,
-        Kind::Span => Node::Span(Span::default()),
+        Kind::Span => Node::Span(Box::default()),
         Kind::Link {
             href,
             tooltip,
@@ -160,20 +160,20 @@ fn container(kind: Kind) -> Option<Node> {
             form,
         } => {
             let namespace = key.as_ref().map(|_| "link".to_string());
-            Node::Link(Link {
+            Node::Link(Box::new(Link {
                 href,
                 tooltip,
                 key,
                 namespace,
                 ref_form: form,
                 ..Default::default()
-            })
+            }))
         }
-        Kind::InlineFootnote => Node::InlineFootnote(InlineFootnote::default()),
-        Kind::Extension(name) => Node::InlineExtension(InlineExtension {
+        Kind::InlineFootnote => Node::InlineFootnote(Box::default()),
+        Kind::Extension(name) => Node::InlineExtension(Box::new(InlineExtension {
             name,
             ..Default::default()
-        }),
+        })),
     })
 }
 
@@ -220,11 +220,11 @@ impl Builder<'_, '_> {
         } else {
             None
         };
-        self.add(Node::Text(Text {
+        self.add(Node::Text(Box::new(Text {
             value,
             pos,
             ..Default::default()
-        }));
+        })));
     }
 
     fn slice(&self, v0: usize, v1: usize) -> String {
@@ -257,10 +257,10 @@ impl Builder<'_, '_> {
             Ev::Nbsp { v0, v1 } => {
                 self.space_prev('\u{a0}');
                 let pos = self.pos(v0, v1);
-                self.add(Node::NonBreakingSpace(NonBreakingSpace {
+                self.add(Node::NonBreakingSpace(Box::new(NonBreakingSpace {
                     pos,
                     ..Default::default()
-                }));
+                })));
             }
             Ev::Break { v0, v1, hard } => {
                 self.space_prev('\n');
@@ -270,23 +270,23 @@ impl Builder<'_, '_> {
                     self.pos(v0, v1)
                 };
                 self.add(if hard {
-                    Node::HardBreak(HardBreak {
+                    Node::HardBreak(Box::new(HardBreak {
                         pos,
                         ..Default::default()
-                    })
+                    }))
                 } else {
-                    Node::SoftBreak(SoftBreak {
+                    Node::SoftBreak(Box::new(SoftBreak {
                         pos,
                         ..Default::default()
-                    })
+                    }))
                 });
             }
             Ev::CellJoin { .. } => {
                 self.space_prev(' ');
-                self.add(Node::Text(Text {
+                self.add(Node::Text(Box::new(Text {
                     value: " ".to_string(),
                     ..Default::default()
-                }));
+                })));
             }
             Ev::Leaf {
                 v0,
@@ -386,7 +386,7 @@ impl Builder<'_, '_> {
                 pos,
                 ..Default::default()
             };
-            self.add(Node::Abbreviation(node));
+            self.add(Node::Abbreviation(Box::new(node)));
             if let Some(last) = s.get(..b).and_then(|x| x.chars().next_back()) {
                 self.smart.prev = Prev::Char(last);
             }
@@ -429,7 +429,7 @@ impl Builder<'_, '_> {
                         pos,
                         ..Default::default()
                     };
-                    self.add(Node::SmartPunctuation(node));
+                    self.add(Node::SmartPunctuation(Box::new(node)));
                 }
             }
         }

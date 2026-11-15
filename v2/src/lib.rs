@@ -74,5 +74,5 @@ pub fn render(input: &str, opts: &Options) -> String {
 /// The JSON of a tree (C2-A-165).
 #[must_use]
 pub fn to_json(doc: &ast::Document) -> String {
-    serde_json::to_string(&ast::Node::Document(doc.clone())).unwrap_or_default()
+    serde_json::to_string(&ast::Node::Document(Box::new(doc.clone()))).unwrap_or_default()
 }

@@ -152,43 +152,45 @@ impl Builder<'_> {
     fn container(&self, kind: ContainerKind, attrs: Option<AttrBlock>) -> (Node, bool) {
         let (attrs, lang) = split_attrs(attrs);
         let node = match kind {
-            ContainerKind::Quote => Node::BlockQuote(ast::BlockQuote {
+            ContainerKind::Quote => Node::BlockQuote(Box::new(ast::BlockQuote {
                 attrs,
                 lang,
                 ..Default::default()
-            }),
-            ContainerKind::List { kind, start } => Node::List(ast::List {
+            })),
+            ContainerKind::List { kind, start } => Node::List(Box::new(ast::List {
                 marker: marker(kind, start),
                 attrs,
                 lang,
                 ..Default::default()
-            }),
+            })),
             ContainerKind::Item { task } => {
                 let task = task.map(|c| ast::Task { mark: task_mark(c) });
-                Node::ListItem(ast::ListItem {
+                Node::ListItem(Box::new(ast::ListItem {
                     task,
                     attrs,
                     lang,
                     ..Default::default()
-                })
+                }))
             }
-            ContainerKind::DescList => Node::DefinitionList(ast::DefinitionList {
+            ContainerKind::DescList => Node::DefinitionList(Box::new(ast::DefinitionList {
                 attrs,
                 lang,
                 ..Default::default()
-            }),
-            ContainerKind::Desc => Node::DefinitionDescription(ast::DefinitionDescription {
-                attrs,
-                lang,
-                ..Default::default()
-            }),
-            ContainerKind::Footnote { label } => Node::Footnote(ast::Footnote {
+            })),
+            ContainerKind::Desc => {
+                Node::DefinitionDescription(Box::new(ast::DefinitionDescription {
+                    attrs,
+                    lang,
+                    ..Default::default()
+                }))
+            }
+            ContainerKind::Footnote { label } => Node::Footnote(Box::new(ast::Footnote {
                 key: fold_label(&label),
                 namespace: "footnote".into(),
                 attrs,
                 lang,
                 ..Default::default()
-            }),
+            })),
             ContainerKind::Div { info, sigil } => {
                 return (self.div(info, sigil, attrs, lang), sigil == Some('\\'));
             }
@@ -216,20 +218,20 @@ impl Builder<'_> {
         let group_label = info.label;
         match sigil {
             Some('>') => {
-                return Node::BlockQuote(ast::BlockQuote {
+                return Node::BlockQuote(Box::new(ast::BlockQuote {
                     attrs,
                     lang,
                     ..Default::default()
-                });
+                }));
             }
             Some('\\') => {
                 let mut a = attrs.unwrap_or_default();
                 a.classes.push("hardbreaks".into());
-                return Node::Div(ast::Div {
+                return Node::Div(Box::new(ast::Div {
                     attrs: Some(a),
                     lang,
                     ..Default::default()
-                });
+                }));
             }
             _ => {}
         }
@@ -239,28 +241,28 @@ impl Builder<'_> {
             .find(|(n, _)| *n == name)
             .map(|(_, k)| *k);
         match kind {
-            Some("admonition") => Node::Admonition(ast::Admonition {
+            Some("admonition") => Node::Admonition(Box::new(ast::Admonition {
                 kind: admonition_kind(&name),
                 title,
                 group_label,
                 attrs,
                 lang,
                 ..Default::default()
-            }),
-            Some("directive") => Node::Directive(ast::Directive {
+            })),
+            Some("directive") => Node::Directive(Box::new(ast::Directive {
                 kind: directive_kind(&name),
                 title,
                 group_label,
                 attrs,
                 lang,
                 ..Default::default()
-            }),
+            })),
             Some("figure_group") if title.is_none() && group_label.is_none() => {
-                Node::FigureGroup(ast::FigureGroup {
+                Node::FigureGroup(Box::new(ast::FigureGroup {
                     attrs,
                     lang,
                     ..Default::default()
-                })
+                }))
             }
             _ => {
                 let mut a = attrs.unwrap_or_default();
@@ -268,13 +270,13 @@ impl Builder<'_> {
                     a.classes.insert(0, name);
                 }
                 let attrs = (!a.is_empty()).then_some(a);
-                Node::Div(ast::Div {
+                Node::Div(Box::new(ast::Div {
                     title,
                     group_label,
                     attrs,
                     lang,
                     ..Default::default()
-                })
+                }))
             }
         }
     }
@@ -295,35 +297,35 @@ impl Builder<'_> {
                     Role::Image => ast::ParagraphRole::Image,
                     Role::Math => ast::ParagraphRole::Math,
                 });
-                Node::Paragraph(ast::Paragraph {
+                Node::Paragraph(Box::new(ast::Paragraph {
                     children,
                     role,
                     attrs,
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
             LeafKind::Heading { level, pieces } => {
                 let children = self.inline(ContentKind::Heading, &pieces);
-                Node::Heading(ast::Heading {
+                Node::Heading(Box::new(ast::Heading {
                     level: i64::from(level),
                     children,
                     attrs,
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
             LeafKind::Term { pieces } => {
                 let children = self.inline(ContentKind::Term, &pieces);
-                Node::DefinitionTerm(ast::DefinitionTerm {
+                Node::DefinitionTerm(Box::new(ast::DefinitionTerm {
                     children,
                     attrs,
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
             other => self.other_leaf(other, attrs, lang, pos, start, end),
         };
@@ -342,14 +344,14 @@ impl Builder<'_> {
         match kind {
             LeafKind::Code { value, info } => {
                 if let Some(format) = info.raw {
-                    return Node::RawBlock(ast::RawBlock {
+                    return Node::RawBlock(Box::new(ast::RawBlock {
                         format,
                         value,
                         attrs,
                         lang,
                         pos,
                         ..Default::default()
-                    });
+                    }));
                 }
                 if let Some(sep) = delimited::separator(info.language.as_deref(), attrs.as_ref()) {
                     return Self::delimited_table(&value, sep, attrs, lang, pos);
@@ -364,7 +366,7 @@ impl Builder<'_> {
                         }],
                     )
                 });
-                Node::CodeBlock(ast::CodeBlock {
+                Node::CodeBlock(Box::new(ast::CodeBlock {
                     value,
                     syntax: info.language,
                     title,
@@ -373,7 +375,7 @@ impl Builder<'_> {
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
             LeafKind::Comment { block, value } => {
                 let form = if block {
@@ -381,24 +383,24 @@ impl Builder<'_> {
                 } else {
                     ast::CommentForm::Line
                 };
-                Node::Comment(ast::Comment {
+                Node::Comment(Box::new(ast::Comment {
                     form,
                     value,
                     attrs,
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
-            LeafKind::Thematic => Node::ThematicBreak(ast::ThematicBreak {
+            LeafKind::Thematic => Node::ThematicBreak(Box::new(ast::ThematicBreak {
                 attrs,
                 lang,
                 pos,
                 ..Default::default()
-            }),
+            })),
             LeafKind::Table(data) => self.table(*data, attrs, lang, start, end),
             LeafKind::LinkDef { label, href, title } => {
-                Node::LinkReferenceDefinition(ast::LinkReferenceDefinition {
+                Node::LinkReferenceDefinition(Box::new(ast::LinkReferenceDefinition {
                     key: fold_label(&label),
                     namespace: "link".into(),
                     href,
@@ -407,32 +409,36 @@ impl Builder<'_> {
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
-            LeafKind::AbbrDef { key, expansion } => Node::AbbreviationDef(ast::AbbreviationDef {
-                key,
-                expansion,
-                namespace: "abbr".into(),
-                attrs,
-                lang,
-                pos,
-                ..Default::default()
-            }),
-            LeafKind::Frontmatter { format, value } => Node::Frontmatter(ast::Frontmatter {
-                format,
-                value,
-                attrs,
-                lang,
-                pos,
-                ..Default::default()
-            }),
+            LeafKind::AbbrDef { key, expansion } => {
+                Node::AbbreviationDef(Box::new(ast::AbbreviationDef {
+                    key,
+                    expansion,
+                    namespace: "abbr".into(),
+                    attrs,
+                    lang,
+                    pos,
+                    ..Default::default()
+                }))
+            }
+            LeafKind::Frontmatter { format, value } => {
+                Node::Frontmatter(Box::new(ast::Frontmatter {
+                    format,
+                    value,
+                    attrs,
+                    lang,
+                    pos,
+                    ..Default::default()
+                }))
+            }
             LeafKind::Include {
                 path,
                 section,
                 options,
             } => {
                 let options = (!options.is_empty()).then_some(serde_json::Value::Object(options));
-                Node::Include(ast::Include {
+                Node::Include(Box::new(ast::Include {
                     path,
                     section,
                     options,
@@ -440,53 +446,53 @@ impl Builder<'_> {
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
             LeafKind::LineBlock { lines } => {
                 let children = lines.into_iter().map(|l| self.line(l)).collect();
-                Node::LineBlock(ast::LineBlock {
+                Node::LineBlock(Box::new(ast::LineBlock {
                     children,
                     attrs,
                     lang,
                     pos,
                     ..Default::default()
-                })
+                }))
             }
             LeafKind::Paragraph { .. }
             | LeafKind::Heading { .. }
             | LeafKind::Term { .. }
-            | LeafKind::Caption { .. } => Node::ThematicBreak(ast::ThematicBreak::default()),
+            | LeafKind::Caption { .. } => Node::ThematicBreak(Box::default()),
         }
     }
 
     fn line(&self, p: Piece) -> Node {
         if p.start == p.end {
-            return Node::Line(ast::Line {
+            return Node::Line(Box::new(ast::Line {
                 pos: self.pos(p.start, p.end),
                 ..Default::default()
-            });
+            }));
         }
         let children = self.inline(ContentKind::LineBlockLine, &[p]);
         let pos = self.pos(p.start, p.end);
-        Node::Line(ast::Line {
+        Node::Line(Box::new(ast::Line {
             children,
             pos,
             ..Default::default()
-        })
+        }))
     }
 
     /// A caption attaches to the block before it (C2-A-082, C2-A-183).
     fn caption(&mut self, children: Vec<Node>, start: usize, content: usize, end: usize) {
-        let para = Node::Paragraph(ast::Paragraph {
+        let para = Node::Paragraph(Box::new(ast::Paragraph {
             children,
             pos: self.pos(content, end),
             ..Default::default()
-        });
-        let cap = Node::Caption(ast::Caption {
+        }));
+        let cap = Node::Caption(Box::new(ast::Caption {
             children: vec![para],
             pos: self.pos(start, end),
             ..Default::default()
-        });
+        }));
         let src = self.src;
         let list = self.children();
         let Some(target) = list.pop() else { return };
@@ -520,13 +526,13 @@ fn wrap_caption(src: &Source, target: Node, cap: Node, end: usize) -> Node {
     if let Some(p) = &mut pos {
         extend(src, p, end);
     }
-    Node::Figure(ast::Figure {
+    Node::Figure(Box::new(ast::Figure {
         children: vec![target],
         caption: Some(Box::new(cap)),
         attrs,
         pos,
         ..Default::default()
-    })
+    }))
 }
 
 /// The figure takes the attribute lines; the block inside starts at its own markup.

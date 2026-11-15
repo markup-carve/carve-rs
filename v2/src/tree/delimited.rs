@@ -76,25 +76,25 @@ fn row(cells: &[String], header: bool) -> Node {
             let text = if v.is_empty() {
                 Vec::new()
             } else {
-                vec![Node::Text(ast::Text {
+                vec![Node::Text(Box::new(ast::Text {
                     value: v.clone(),
                     ..Default::default()
-                })]
+                }))]
             };
-            Node::TableCell(ast::TableCell {
+            Node::TableCell(Box::new(ast::TableCell {
                 header,
-                children: vec![Node::CellParagraph(ast::CellParagraph {
+                children: vec![Node::CellParagraph(Box::new(ast::CellParagraph {
                     children: text,
                     ..Default::default()
-                })],
+                }))],
                 ..Default::default()
-            })
+            }))
         })
         .collect();
-    Node::TableRow(ast::TableRow {
+    Node::TableRow(Box::new(ast::TableRow {
         children,
         ..Default::default()
-    })
+    }))
 }
 
 /// The table node; `declared` is the `header-rows` count when it is one (C2-B-210).
@@ -117,10 +117,10 @@ pub(super) fn table(
     let mut groups = Vec::new();
     if head > 0 {
         let children = rows.iter().take(head).map(|r| row(r, true)).collect();
-        groups.push(Node::TableHead(ast::TableHead {
+        groups.push(Node::TableHead(Box::new(ast::TableHead {
             children,
             ..Default::default()
-        }));
+        })));
     }
     if n - foot > head {
         let children = rows
@@ -130,18 +130,18 @@ pub(super) fn table(
             .map(|r| row(r, over))
             .collect();
         let head_rows = declared.and_then(|d| i64::try_from(d).ok());
-        groups.push(Node::TableBody(ast::TableBody {
+        groups.push(Node::TableBody(Box::new(ast::TableBody {
             children,
             head_rows,
             ..Default::default()
-        }));
+        })));
     }
     if foot > 0 {
         let children = rows.iter().skip(n - foot).map(|r| row(r, false)).collect();
-        groups.push(Node::TableFoot(ast::TableFoot {
+        groups.push(Node::TableFoot(Box::new(ast::TableFoot {
             children,
             ..Default::default()
-        }));
+        })));
     }
     (groups, ncols)
 }

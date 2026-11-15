@@ -59,14 +59,14 @@ impl Builder<'_> {
         for (s, e, value) in trailing {
             groups.push(self.comment(s, e, value));
         }
-        Node::Table(ast::Table {
+        Node::Table(Box::new(ast::Table {
             children: groups,
             columns,
             attrs,
             lang,
             pos: Some(self.src.pos(start, end)),
             ..Default::default()
-        })
+        }))
     }
 
     /// C2-B-209, C2-B-221: the head count of a delimited table and its partition.
@@ -89,23 +89,23 @@ impl Builder<'_> {
             a
         });
         let (columns, attrs) = columns(ncols, attrs.filter(|a| !a.is_empty()));
-        Node::Table(ast::Table {
+        Node::Table(Box::new(ast::Table {
             children,
             columns,
             attrs,
             lang,
             pos,
             ..Default::default()
-        })
+        }))
     }
 
     fn comment(&self, s: usize, e: usize, value: String) -> Node {
-        Node::Comment(ast::Comment {
+        Node::Comment(Box::new(ast::Comment {
             form: ast::CommentForm::Line,
             value,
             pos: Some(self.src.pos(s, e)),
             ..Default::default()
-        })
+        }))
     }
 
     fn group(&self, rows: &[Row], spans: &[Vec<Resolved>], lo: usize, hi: usize, kind: u8) -> Node {
@@ -124,21 +124,21 @@ impl Builder<'_> {
         let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| r.end);
         let pos = Some(self.src.pos(first, last));
         match kind {
-            0 => Node::TableHead(ast::TableHead {
+            0 => Node::TableHead(Box::new(ast::TableHead {
                 children,
                 pos,
                 ..Default::default()
-            }),
-            1 => Node::TableBody(ast::TableBody {
+            })),
+            1 => Node::TableBody(Box::new(ast::TableBody {
                 children,
                 pos,
                 ..Default::default()
-            }),
-            _ => Node::TableFoot(ast::TableFoot {
+            })),
+            _ => Node::TableFoot(Box::new(ast::TableFoot {
                 children,
                 pos,
                 ..Default::default()
-            }),
+            })),
         }
     }
 
@@ -180,11 +180,11 @@ impl Builder<'_> {
                     None
                 };
                 let inl = if positioned { inl } else { strip_pos(inl) };
-                vec![Node::CellParagraph(ast::CellParagraph {
+                vec![Node::CellParagraph(Box::new(ast::CellParagraph {
                     children: inl,
                     pos: ppos,
                     ..Default::default()
-                })]
+                }))]
             };
             let header = if sp.failed {
                 all_header(i)
@@ -202,7 +202,7 @@ impl Builder<'_> {
             let align = cell
                 .align
                 .and_then(|a| serde_json::from_value(serde_json::Value::String(a.into())).ok());
-            cells.push(Node::TableCell(ast::TableCell {
+            cells.push(Node::TableCell(Box::new(ast::TableCell {
                 children,
                 header,
                 span,
@@ -213,17 +213,17 @@ impl Builder<'_> {
                 lang,
                 pos: cell_positioned.then(|| self.src.pos(cell.start, cell.end)),
                 ..Default::default()
-            }));
+            })));
         }
         let (attrs, lang) = super::split_attrs(row.attrs.clone());
         let pos = (!row.joined).then(|| self.src.pos(row.start, row.end));
-        Node::TableRow(ast::TableRow {
+        Node::TableRow(Box::new(ast::TableRow {
             children: cells,
             attrs,
             lang,
             pos,
             ..Default::default()
-        })
+        }))
     }
 }
 
@@ -331,7 +331,12 @@ fn count(v: &str) -> Option<usize> {
 fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
     let mut cols: Vec<ast::TableColumn> = (0..ncols).map(|_| ast::TableColumn::default()).collect();
     let Some(mut a) = attrs else {
-        return (cols.into_iter().map(Node::TableColumn).collect(), None);
+        return (
+            cols.into_iter()
+                .map(|col| Node::TableColumn(Box::new(col)))
+                .collect(),
+            None,
+        );
     };
     if let Some(v) = a.get("aligns") {
         for (i, entry) in v.split(',').enumerate() {
@@ -357,7 +362,12 @@ fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
     a.key_values
         .retain(|(k, _)| !TABLE_KEYS.iter().any(|t| t.eq_ignore_ascii_case(k)));
     let attrs = (!a.is_empty()).then_some(a);
-    (cols.into_iter().map(Node::TableColumn).collect(), attrs)
+    (
+        cols.into_iter()
+            .map(|col| Node::TableColumn(Box::new(col)))
+            .collect(),
+        attrs,
+    )
 }
 
 /// C2-B-212, C2-B-220: a decimal number greater than 0 and at most 100.

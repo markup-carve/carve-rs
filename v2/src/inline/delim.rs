@@ -4,7 +4,7 @@
 
 use super::scan::is_space;
 use super::token::{Delim, K, Kind, Sort, Tok};
-use crate::ast::{CaptionNumber, Node};
+use crate::ast::Node;
 use crate::attr::AttrBlock;
 use crate::chars::is_word;
 use crate::tables;
@@ -321,7 +321,7 @@ fn caption(toks: &mut [Tok]) {
             K::CaptionMark if depth == 0 && !done => {
                 done = true;
                 t.k = K::Leaf {
-                    node: Box::new(Node::CaptionNumber(CaptionNumber::default())),
+                    node: Box::new(Node::CaptionNumber(Box::default())),
                     host: false,
                     transparent: false,
                 };
