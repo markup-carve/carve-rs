@@ -308,3 +308,19 @@ fn g_025_trailing_blank_lines_of_an_unclosed_line_block_are_dropped() {
     };
     assert_eq!(b.children.len(), 3);
 }
+
+#[test]
+fn c2_b_052_three_blank_lines_end_a_description_list() {
+    assert_eq!(
+        html(":: t\n\n\n\n:: u"),
+        "<dl>\n  <dt>t</dt>\n</dl>\n<dl>\n  <dt>u</dt>\n</dl>"
+    );
+}
+
+#[test]
+fn g_026_a_caret_line_below_a_quoted_term_is_a_lazy_line() {
+    assert_eq!(
+        html("> :: t\n^ c"),
+        "<blockquote>\n  <dl>\n    <dt>t\n^ c</dt>\n  </dl>\n</blockquote>"
+    );
+}

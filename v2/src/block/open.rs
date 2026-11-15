@@ -83,7 +83,16 @@ impl Parser<'_> {
     /// Interrupter (d) and Exception C2-B-018.
     fn caption_interrupts(&self, walk: &Walk<'_>) -> bool {
         if let Some(q) = walk.missing_quote {
-            if walk.matched == q {
+            // Gap G-026: C2-B-018 interrupts an open paragraph; an open term
+            // takes the caret line as a lazy line, as in the oracle.
+            let term = matches!(
+                self.leaf,
+                Some(OpenLeaf {
+                    leaf: Leaf::Term { .. },
+                    ..
+                })
+            );
+            if walk.matched == q && !term {
                 return true;
             }
         }
@@ -204,7 +213,10 @@ impl Parser<'_> {
                     }
                 }
                 Some(Kind::DescList { col, has_term }) => match shapes::desc_mark(k) {
-                    Some((term, pos, ccol)) if col == m && (term || has_term) => {
+                    // C2-B-052: three blank lines end a description list too.
+                    Some((term, pos, ccol))
+                        if col == m && (term || has_term) && blanks < LIST_END_BLANK_LINES =>
+                    {
                         return Some(self.desc_entry(k, m, term, pos, ccol, e));
                     }
                     _ => self.pop_container(),
