@@ -299,7 +299,10 @@ fn write_enum(out: &mut String, name: &str, values: &[String]) {
     }
     let _ = writeln!(
         out,
-        "        }}\n    }}\n\n    /// The value the schema spells `name`.\n    #[must_use]\n    pub fn from_name(name: &str) -> Option<Self> {{\n        match name {{"
+        concat!(
+            "        }}\n    }}\n\n    /// The value the schema spells `name`.\n    #[must_use]\n",
+            "    pub fn from_name(name: &str) -> Option<Self> {{\n        match name {{",
+        )
     );
     for v in values {
         let _ = writeln!(out, "            {v:?} => Some(Self::{}),", camel(v));
@@ -310,7 +313,12 @@ fn write_enum(out: &mut String, name: &str, values: &[String]) {
 fn write_struct(out: &mut String, name: &str, ty: &str, fields: &[Field]) {
     let _ = writeln!(
         out,
-        "/// The `{name}` node.\n#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct {ty} {{"
+        concat!(
+            "/// The `{name}` node.\n#[derive(Debug, Clone, Default, PartialEq, serde::Serialize,",
+            " serde::Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct {ty} {{",
+        ),
+        name = name,
+        ty = ty,
     );
     for f in fields {
         let mut attrs = Vec::new();
@@ -333,11 +341,18 @@ fn write_struct(out: &mut String, name: &str, ty: &str, fields: &[Field]) {
 }
 
 fn write_node_enum(out: &mut String, variants: &[(String, String)]) {
-    out.push_str("/// Every node type of the 2.0 contract (C2-A-050).\n#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"type\")]\npub enum Node {\n");
+    out.push_str(concat!(
+        "/// Every node type of the 2.0 contract (C2-A-050).\n#[derive(Debug, Clone, PartialEq,",
+        " serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"type\")]\npub enum Node ",
+        "{\n",
+    ));
     for (json, ty) in variants {
         let _ = writeln!(out, "    #[serde(rename = {json:?})]\n    {ty}(Box<{ty}>),");
     }
-    out.push_str("}\n\nimpl Node {\n    /// The node type name as the schema spells it.\n    #[must_use]\n    pub const fn type_name(&self) -> &'static str {\n        match self {\n");
+    out.push_str(concat!(
+        "}\n\nimpl Node {\n    /// The node type name as the schema spells it.\n    #[must_use]\n",
+        "    pub const fn type_name(&self) -> &'static str {\n        match self {\n",
+    ));
     for (json, ty) in variants {
         let _ = writeln!(out, "            Self::{ty}(_) => {json:?},");
     }
@@ -636,7 +651,10 @@ fn gen_limits(out: &mut String, v: &Value) {
 }
 
 fn gen_tasks(out: &mut String, v: &Value) {
-    out.push_str("/// (box character, tree mark, `data-task-state` value, checked)\npub const TASK_STATES: &[(char, char, Option<char>, bool)] = &[\n");
+    out.push_str(concat!(
+        "/// (box character, tree mark, `data-task-state` value, checked)\npub const TASK_STATES: ",
+        "&[(char, char, Option<char>, bool)] = &[\n",
+    ));
     for row in arr(v, "states") {
         let c = s(row, "char").chars().next().unwrap_or(' ');
         let m = s(row, "mark").chars().next().unwrap_or(' ');
@@ -788,7 +806,13 @@ fn gen_url(out: &mut String, v: &Value) {
         "pub const STYLE_PATTERNS: &[&str] = &[{}];\n",
         pats.join(", ")
     );
-    out.push_str("pub struct ProfileRow {\n    pub name: &'static str,\n    pub denied_block: &'static [&'static str],\n    pub denied_inline: &'static [&'static str],\n    pub allowed_block: Option<&'static [&'static str]>,\n    pub allowed_inline: Option<&'static [&'static str]>,\n    pub link_rel: &'static [&'static str],\n    pub max_nesting: Option<usize>,\n    pub max_length: Option<usize>,\n}\n\npub const PROFILES: &[ProfileRow] = &[\n");
+    out.push_str(concat!(
+        "pub struct ProfileRow {\n    pub name: &'static str,\n    pub denied_block: &'static ",
+        "[&'static str],\n    pub denied_inline: &'static [&'static str],\n    pub allowed_block: ",
+        "Option<&'static [&'static str]>,\n    pub allowed_inline: Option<&'static [&'static ",
+        "str]>,\n    pub link_rel: &'static [&'static str],\n    pub max_nesting: Option<usize>,",
+        "\n    pub max_length: Option<usize>,\n}\n\npub const PROFILES: &[ProfileRow] = &[\n",
+    ));
     for row in arr(v, "profiles") {
         let list = |k: &str| {
             arr(row, k)
@@ -812,7 +836,10 @@ fn gen_url(out: &mut String, v: &Value) {
         };
         let _ = writeln!(
             out,
-            "    ProfileRow {{ name: {:?}, denied_block: &[{}], denied_inline: &[{}], allowed_block: {}, allowed_inline: {}, link_rel: &[{}], max_nesting: {}, max_length: {} }},",
+            concat!(
+                "    ProfileRow {{ name: {:?}, denied_block: &[{}], denied_inline: &[{}], allowed_block: ",
+                "{}, allowed_inline: {}, link_rel: &[{}], max_nesting: {}, max_length: {} }},",
+            ),
             s(row, "name"),
             list("denied_block"),
             list("denied_inline"),
@@ -891,7 +918,10 @@ fn gen_delims(out: &mut String, v: &Value, braces: &Value) {
 }
 
 fn gen_includes(out: &mut String, v: &Value) {
-    out.push_str("/// (rank, key, value shape, without value, outside shape, repeated)\npub const INCLUDE_OPTIONS: &[(u64, &str, &str, &str, &str, &str)] = &[\n");
+    out.push_str(concat!(
+        "/// (rank, key, value shape, without value, outside shape, repeated)\npub const ",
+        "INCLUDE_OPTIONS: &[(u64, &str, &str, &str, &str, &str)] = &[\n",
+    ));
     for row in arr(v, "options") {
         let rank = row.get("rank").and_then(Value::as_u64).unwrap_or(0);
         let _ = writeln!(
