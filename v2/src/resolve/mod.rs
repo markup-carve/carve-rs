@@ -8,15 +8,20 @@
 pub mod order;
 pub mod plain;
 pub mod slug;
-mod table;
+pub mod table;
 
 use crate::ast::{Document, Node, TableColumnResolvedAlign};
 use crate::chars::fold_label;
 use crate::options::{HeadingIds, Options};
-use crate::tables::DEPTH_CAP;
+
 use order::{Order, Visit, addr, caption_of, mark_of};
 use plain::Symbols;
 use std::collections::HashMap;
+
+/// The bound of every recursive walk over a tree: the nesting cap counts
+/// blocks and inlines together (C2-B-190), and a node's slots can add a level
+/// the cap does not count, so the walk allows twice the cap.
+pub const WALK_CAP: usize = 2 * crate::tables::DEPTH_CAP;
 
 /// The names of the stages this resolver completes (C2-A-135).
 pub const STAGES: [&str; 2] = ["referenceResolution", "tableAlignment"];
@@ -65,7 +70,7 @@ fn to_i64(n: usize) -> i64 {
 
 /// Every node of the tree in document order, for the order-free results.
 fn every_node<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>, depth: usize) {
-    if depth > DEPTH_CAP {
+    if depth > crate::resolve::WALK_CAP {
         return;
     }
     for n in nodes {
@@ -84,7 +89,12 @@ fn every_node<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>, depth: usize) {
 /// C2-H-022 to C2-H-025: authored ids are reserved first, in document order;
 /// generated ids follow in resolution order. Returns the heading id of each
 /// heading address that has one.
-fn heading_ids(doc: &Document, order: &Order<'_>, mode: HeadingIds, res: &mut HashMap<usize, Res>) -> HashMap<usize, String> {
+fn heading_ids(
+    doc: &Document,
+    order: &Order<'_>,
+    mode: HeadingIds,
+    res: &mut HashMap<usize, Res>,
+) -> HashMap<usize, String> {
     let mut taken = slug::Taken::default();
     let mut all = Vec::new();
     every_node(&doc.children, &mut all, 1);
@@ -117,14 +127,22 @@ struct Numbered {
 
 /// C2-H-149 to C2-H-151 and C2-H-170: one count per sequence key, in
 /// resolution order, a node before the nodes inside it.
-fn caption_numbers(order: &Order<'_>, opts: &Options, res: &mut HashMap<usize, Res>) -> Vec<Numbered> {
+fn caption_numbers(
+    order: &Order<'_>,
+    opts: &Options,
+    res: &mut HashMap<usize, Res>,
+) -> Vec<Numbered> {
     let mut counts: HashMap<String, i64> = HashMap::new();
     let mut out = Vec::new();
     for v in &order.visits {
         if let Some((mark, label)) = caption_mark(v, opts) {
             let n = next(&mut counts, &label);
             res.insert(addr(mark), Res::Number(n));
-            out.push(Numbered { owner: addr(v.node), label, n });
+            out.push(Numbered {
+                owner: addr(v.node),
+                label,
+                n,
+            });
         } else if let Node::Math(m) = v.node {
             if let (true, Some(prefix), false) = (m.display, &m.number_prefix, v.in_marked_figure) {
                 res.insert(addr(v.node), Res::Number(next(&mut counts, prefix)));
@@ -152,7 +170,10 @@ fn caption_mark<'a>(v: &Visit<'a>, opts: &Options) -> Option<(&'a Node, String)>
 /// The plain text of a caption label without trailing whitespace; symbols give
 /// their written text (C2-B-208).
 #[must_use]
-pub fn label_key(before: &[Node], symbols: Option<&std::collections::BTreeMap<String, String>>) -> String {
+pub fn label_key(
+    before: &[Node],
+    symbols: Option<&std::collections::BTreeMap<String, String>>,
+) -> String {
     let mut s = String::new();
     let sym = symbols.map_or(Symbols::Nothing, Symbols::Written);
     plain::inline_text(before, sym, &mut s);
@@ -169,7 +190,12 @@ struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    fn new(doc: &'a Document, order: &Order<'a>, ids: &HashMap<usize, String>, captions: &[Numbered]) -> Self {
+    fn new(
+        doc: &'a Document,
+        order: &Order<'a>,
+        ids: &HashMap<usize, String>,
+        captions: &[Numbered],
+    ) -> Self {
         let mut links = HashMap::new();
         let mut abbrs = HashMap::new();
         for c in &doc.children {
@@ -191,7 +217,11 @@ impl<'a> Index<'a> {
             if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
                 let mut src = String::new();
                 plain::source_text(&h.children, &mut src, 0);
-                headings.push((fold_label(&plain::text_of(&h.children)), fold_label(&src), id.clone()));
+                headings.push((
+                    fold_label(&plain::text_of(&h.children)),
+                    fold_label(&src),
+                    id.clone(),
+                ));
                 targets.entry(id.clone()).or_insert(());
             } else if owners.contains_key(&a) {
                 if let Some(id) = v.node.attrs().and_then(|x| x.id.clone()) {
@@ -199,7 +229,12 @@ impl<'a> Index<'a> {
                 }
             }
         }
-        Index { links, abbrs, headings, targets }
+        Index {
+            links,
+            abbrs,
+            headings,
+            targets,
+        }
     }
 
     /// C2-I-081 to C2-I-084, C2-A-109, C2-H-095, C2-I-098.
@@ -212,7 +247,9 @@ impl<'a> Index<'a> {
                     res.insert(a, Res::Href((*href).to_string()));
                 } else if !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut)) {
                     // Gap HTML-002: the heading is matched on its plain text only; the tree has no source.
-                    if let Some((_, _, id)) = self.headings.iter().find(|(t, s, _)| t == key || s == key) {
+                    if let Some((_, _, id)) =
+                        self.headings.iter().find(|(t, s, _)| t == key || s == key)
+                    {
                         res.insert(a, Res::Href(format!("#{id}")));
                     }
                 }
@@ -238,7 +275,7 @@ impl<'a> Index<'a> {
 }
 
 fn apply(n: &mut Node, res: &HashMap<usize, Res>, depth: usize) {
-    if depth > DEPTH_CAP {
+    if depth > crate::resolve::WALK_CAP {
         return;
     }
     if let Some(r) = res.get(&std::ptr::from_ref::<Node>(n).addr()) {

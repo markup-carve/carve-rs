@@ -8,7 +8,11 @@ use serde_json::Value;
 
 /// The result fields of `ast-results.json` by node type.
 fn results() -> Vec<(String, String)> {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/spec-data/ast-results.json")).unwrap_or_default();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/spec-data/ast-results.json"
+    ))
+    .unwrap_or_default();
     let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     let mut out = Vec::new();
     if let Some(nodes) = v["nodes"].as_object() {
@@ -26,7 +30,11 @@ fn results() -> Vec<(String, String)> {
 fn strip(v: &mut Value, fields: &[(String, String)]) {
     match v {
         Value::Object(m) => {
-            let ty = m.get("type").and_then(Value::as_str).unwrap_or("").to_string();
+            let ty = m
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             for (t, f) in fields {
                 // A direct link or image keeps its destination; only a reference use resolves.
                 let direct = (ty == "link" || ty == "image") && !m.contains_key("key");
@@ -45,7 +53,10 @@ fn strip(v: &mut Value, fields: &[(String, String)]) {
 
 pub fn options_of(opts: &Value) -> Options {
     let mut o = Options::default();
-    if let Some(h) = opts["headingIds"].as_str().and_then(carve2::options::HeadingIds::from_name) {
+    if let Some(h) = opts["headingIds"]
+        .as_str()
+        .and_then(carve2::options::HeadingIds::from_name)
+    {
         o.heading_ids = h;
     }
     o
@@ -57,6 +68,7 @@ fn c2_a_133_resolve_restores_the_oracle_results() {
     let mut pass = 0;
     let mut failures = Vec::new();
     let all = common::examples();
+    assert_eq!(all.len(), 374, "fixture not read");
     for ex in &all {
         let mut stripped = ex.oracle_tree.clone();
         strip(&mut stripped, &fields);

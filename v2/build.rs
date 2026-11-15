@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 fn main() {
     let dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default()).join("spec-data");
     println!("cargo:rerun-if-changed=spec-data");
+    println!("cargo:rerun-if-changed=build.rs");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap_or_default());
     let ast = gen_ast(&load(&dir, "ast-schema.json"), &load(&dir, "node-slots.json"));
     write(&out.join("ast_gen.rs"), &ast);
@@ -412,7 +413,17 @@ fn gen_tables(dir: &Path) -> String {
     gen_delims(&mut out, &load(dir, "inline-delimiters.json"), &load(dir, "inline-braces.json"));
     gen_includes(&mut out, &load(dir, "include-options.json"));
     gen_dispatch(&mut out, &load(dir, "line-shapes.json"));
+    gen_ordered(&mut out, &load(dir, "ordered-styles.json"));
     out
+}
+
+fn gen_ordered(out: &mut String, v: &Value) {
+    out.push_str("/// (ordered list style, HTML `type` value)\npub const ORDERED_STYLES: &[(&str, Option<&str>)] = &[\n");
+    for row in arr(v, "styles") {
+        let t = row.get("html_type").and_then(Value::as_str);
+        let _ = writeln!(out, "    ({:?}, {t:?}),", s(row, "style"));
+    }
+    out.push_str("];\n\n");
 }
 
 fn gen_limits(out: &mut String, v: &Value) {

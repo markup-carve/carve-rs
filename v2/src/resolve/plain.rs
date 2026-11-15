@@ -2,7 +2,7 @@
 //! caption keys, cross-reference text and task labels.
 
 use crate::ast::Node;
-use crate::tables::DEPTH_CAP;
+
 use std::collections::BTreeMap;
 
 /// How a symbol contributes: nothing (C2-H-143) or the text the caption
@@ -29,7 +29,7 @@ pub fn text_of(nodes: &[Node]) -> String {
 }
 
 fn node_text(n: &Node, symbols: Symbols<'_>, out: &mut String, depth: usize) {
-    if depth > DEPTH_CAP {
+    if depth > crate::resolve::WALK_CAP {
         return;
     }
     if leaf_text(n, symbols, out) {
@@ -120,7 +120,7 @@ pub fn symbol_text(map: &BTreeMap<String, String>, name: &str, out: &mut String)
 /// their bare form, code spans in one backtick, every other node as its plain
 /// text.
 pub fn source_text(nodes: &[Node], out: &mut String, depth: usize) {
-    if depth > DEPTH_CAP {
+    if depth > crate::resolve::WALK_CAP {
         return;
     }
     for n in nodes {

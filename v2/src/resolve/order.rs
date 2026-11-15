@@ -5,7 +5,7 @@
 //! the order of the notes.
 
 use crate::ast::{Document, Node};
-use crate::tables::DEPTH_CAP;
+
 use std::collections::HashMap;
 
 /// The address of a node, the key of every per-node result.
@@ -61,7 +61,11 @@ impl<'a> Order<'a> {
     pub fn build(doc: &'a Document) -> Self {
         let defs = footnote_defs(doc);
         let mut o = Order::default();
-        let top = Ctx { panel: false, in_marked_figure: false, note: 0 };
+        let top = Ctx {
+            panel: false,
+            in_marked_figure: false,
+            note: 0,
+        };
         for c in &doc.children {
             if !matches!(c, Node::Footnote(_)) {
                 o.walk(c, &defs, top, 1);
@@ -75,7 +79,11 @@ impl<'a> Order<'a> {
                 _ => &[],
             };
             i += 1;
-            let ctx = Ctx { panel: false, in_marked_figure: false, note: i };
+            let ctx = Ctx {
+                panel: false,
+                in_marked_figure: false,
+                note: i,
+            };
             for c in content {
                 o.walk(c, &defs, ctx, 1);
             }
@@ -84,10 +92,15 @@ impl<'a> Order<'a> {
     }
 
     fn walk(&mut self, n: &'a Node, defs: &HashMap<&str, &'a Node>, ctx: Ctx, depth: usize) {
-        if depth > DEPTH_CAP {
+        if depth > crate::resolve::WALK_CAP {
             return;
         }
-        self.visits.push(Visit { node: n, panel: ctx.panel, in_marked_figure: ctx.in_marked_figure, note: ctx.note });
+        self.visits.push(Visit {
+            node: n,
+            panel: ctx.panel,
+            in_marked_figure: ctx.in_marked_figure,
+            note: ctx.note,
+        });
         match n {
             Node::FootnoteRef(r) => {
                 if let Some(def) = defs.get(r.key.as_str()) {
@@ -102,19 +115,32 @@ impl<'a> Order<'a> {
             _ => {}
         }
         let group = matches!(n, Node::FigureGroup(_));
-        let marked = ctx.in_marked_figure || (matches!(n, Node::Figure(_) | Node::FigureGroup(_)) && caption_marked(n));
+        let marked = ctx.in_marked_figure
+            || (matches!(n, Node::Figure(_) | Node::FigureGroup(_)) && caption_marked(n));
         let mut list = Vec::new();
         slots(n, &mut list);
         for c in list {
             let panel = group && matches!(c, Node::Figure(_) | Node::Table(_));
-            self.walk(c, defs, Ctx { panel, in_marked_figure: marked, note: ctx.note }, depth + 1);
+            self.walk(
+                c,
+                defs,
+                Ctx {
+                    panel,
+                    in_marked_figure: marked,
+                    note: ctx.note,
+                },
+                depth + 1,
+            );
         }
     }
 
     fn use_note(&mut self, r: &'a Node, note: &'a Node, key: Option<&'a str>) {
         let existing = key.and_then(|k| self.note_of_key.get(k).copied());
         let idx = existing.unwrap_or_else(|| {
-            self.notes.push(Note { node: note, refs: Vec::new() });
+            self.notes.push(Note {
+                node: note,
+                refs: Vec::new(),
+            });
             let idx = self.notes.len() - 1;
             if let Some(k) = key {
                 self.note_of_key.insert(k, idx);
@@ -156,10 +182,16 @@ pub fn caption_of(n: &Node) -> Option<&Node> {
 /// mark stands in the top-level inline content (C2-B-207).
 #[must_use]
 pub fn mark_of(caption: &Node) -> Option<(&Node, &[Node])> {
-    let Node::Caption(c) = caption else { return None };
+    let Node::Caption(c) = caption else {
+        return None;
+    };
     for p in &c.children {
         if let Node::Paragraph(p) = p {
-            if let Some(i) = p.children.iter().position(|x| matches!(x, Node::CaptionNumber(_))) {
+            if let Some(i) = p
+                .children
+                .iter()
+                .position(|x| matches!(x, Node::CaptionNumber(_)))
+            {
                 return Some((p.children.get(i)?, p.children.get(..i)?));
             }
         }

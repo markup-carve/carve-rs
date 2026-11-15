@@ -30,7 +30,11 @@ pub fn rows(t: &Table) -> Vec<(&Node, GroupKind)> {
             Node::TableFoot(x) => (GroupKind::Foot, &x.children),
             _ => continue,
         };
-        out.extend(rows.iter().filter(|r| matches!(r, Node::TableRow(_))).map(|r| (r, kind)));
+        out.extend(
+            rows.iter()
+                .filter(|r| matches!(r, Node::TableRow(_)))
+                .map(|r| (r, kind)),
+        );
     }
     out
 }
@@ -48,7 +52,9 @@ pub enum GroupKind {
 #[must_use]
 pub fn layout(t: &Table) -> Vec<Placed<'_>> {
     let rows = rows(t);
-    let marks = rows.iter().any(|(r, _)| cells(r).any(|c| matches!(c, Node::TableCell(x) if x.span.is_some())));
+    let marks = rows
+        .iter()
+        .any(|(r, _)| cells(r).any(|c| matches!(c, Node::TableCell(x) if x.span.is_some())));
     let mut grid: Vec<Vec<Option<usize>>> = vec![Vec::new(); rows.len()];
     let mut placed: Vec<Placed<'_>> = Vec::new();
     for (r, (row, kind)) in rows.iter().enumerate() {
@@ -58,7 +64,16 @@ pub fn layout(t: &Table) -> Vec<Placed<'_>> {
             while occupied(&grid, r, c) {
                 c += 1;
             }
-            let base = Placed { node: cell, row: r, col: c, colspan: 1, rowspan: 1, mark: false, head: *kind == GroupKind::Head, extended_in: r };
+            let base = Placed {
+                node: cell,
+                row: r,
+                col: c,
+                colspan: 1,
+                rowspan: 1,
+                mark: false,
+                head: *kind == GroupKind::Head,
+                extended_in: r,
+            };
             match (marks, x.span) {
                 (true, Some(span)) => {
                     let owner = match span {
@@ -72,10 +87,21 @@ pub fn layout(t: &Table) -> Vec<Placed<'_>> {
                     c += 1;
                 }
                 _ => {
-                    let (cs, rs) = if marks { (1, 1) } else { (x.colspan.unwrap_or(1).max(1), x.rowspan.unwrap_or(1).max(1)) };
+                    let (cs, rs) = if marks {
+                        (1, 1)
+                    } else {
+                        (x.colspan.unwrap_or(1).max(1), x.rowspan.unwrap_or(1).max(1))
+                    };
                     let idx = placed.len();
-                    placed.push(Placed { colspan: cs, rowspan: rs, ..base });
-                    let (w, h) = (usize::try_from(cs).unwrap_or(1), usize::try_from(rs).unwrap_or(1));
+                    placed.push(Placed {
+                        colspan: cs,
+                        rowspan: rs,
+                        ..base
+                    });
+                    let (w, h) = (
+                        usize::try_from(cs).unwrap_or(1),
+                        usize::try_from(rs).unwrap_or(1),
+                    );
                     fill(&mut grid, r, c, w, h, idx);
                     c += w;
                 }
@@ -111,7 +137,9 @@ fn fill(grid: &mut [Vec<Option<usize>>], r: usize, c: usize, w: usize, h: usize,
 /// A valid mark adds one to the count of the cell it joins; several marks of
 /// one row under a wide cell extend its row span once.
 fn extend(placed: &mut [Placed<'_>], owner: Option<usize>, span: TableCellSpan, r: usize) {
-    let Some(o) = owner.and_then(|o| placed.get_mut(o)) else { return };
+    let Some(o) = owner.and_then(|o| placed.get_mut(o)) else {
+        return;
+    };
     match span {
         TableCellSpan::Colspan => o.colspan += 1,
         TableCellSpan::Rowspan => {

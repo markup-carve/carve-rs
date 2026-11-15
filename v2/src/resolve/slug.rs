@@ -113,7 +113,10 @@ mod tests {
     #[test]
     fn c2_h_146_runs_become_one_hyphen() {
         assert_eq!(slug("Hello, World!", HeadingIds::KeepCase), "Hello-World");
-        assert_eq!(slug("Don’t stop – go", HeadingIds::KeepCase), "Don-t-stop-go");
+        assert_eq!(
+            slug("Don’t stop – go", HeadingIds::KeepCase),
+            "Don-t-stop-go"
+        );
     }
 
     #[test]
