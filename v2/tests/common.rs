@@ -18,11 +18,12 @@ pub fn examples() -> Vec<Example> {
         "/tests/data/examples.json"
     ))
     .unwrap_or_default();
-    // serde_json stops at nesting depth 128 and one example nests deeper, so
-    // the top-level array is split by hand and each example read on its own.
-    split_array(&text)
+    let mut de = serde_json::Deserializer::from_str(&text);
+    de.disable_recursion_limit();
+    let v: Value = serde::Deserialize::deserialize(&mut de).unwrap_or(Value::Null);
+    v.as_array()
         .into_iter()
-        .filter_map(|s| serde_json::from_str::<Value>(s).ok())
+        .flatten()
         .map(|e| Example {
             id: e["id"].as_str().unwrap_or("").to_string(),
             input: e["input"].as_str().unwrap_or("").to_string(),
@@ -31,40 +32,6 @@ pub fn examples() -> Vec<Example> {
             oracle_tree: e["oracleTree"].clone(),
         })
         .collect()
-}
-
-/// The elements of a top-level JSON array, as source slices.
-fn split_array(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let (mut depth, mut in_str, mut esc, mut start) = (0usize, false, false, 0usize);
-    for (i, b) in text.bytes().enumerate() {
-        if in_str {
-            match b {
-                _ if esc => esc = false,
-                b'\\' => esc = true,
-                b'"' => in_str = false,
-                _ => {}
-            }
-            continue;
-        }
-        match b {
-            b'"' => in_str = true,
-            b'[' | b'{' => {
-                depth += 1;
-                if depth == 2 {
-                    start = i;
-                }
-            }
-            b']' | b'}' => {
-                if depth == 2 {
-                    out.push(&text[start..=i]);
-                }
-                depth = depth.saturating_sub(1);
-            }
-            _ => {}
-        }
-    }
-    out
 }
 
 /// JSON with object keys sorted, for byte comparison.
@@ -85,4 +52,60 @@ pub fn sorted(v: &Value) -> String {
         }
     }
     serde_json::to_string(&walk(v)).unwrap_or_default()
+}
+
+/// The result fields of `ast-results.json` by node type.
+pub fn results() -> Vec<(String, String)> {
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/spec-data/ast-results.json"
+    ))
+    .unwrap_or_default();
+    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    let mut out = Vec::new();
+    if let Some(nodes) = v["nodes"].as_object() {
+        for (ty, fields) in nodes {
+            for f in fields.as_array().into_iter().flatten() {
+                if let Some(name) = f["field"].as_str() {
+                    out.push((ty.clone(), name.to_string()));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn strip_with(v: &mut Value, fields: &[(String, String)]) {
+    match v {
+        Value::Object(m) => {
+            let ty = m
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let marks = ty != "table" || m.get("children").is_some_and(|c| c.to_string().contains("\"span\":"));
+            for (t, f) in fields {
+                // Gap HTML-017: `numberPrefix` is listed as a result but nothing derives it.
+                // Counts without a span mark are authored (C2-A-093).
+                if f == "numberPrefix" || (!marks && (f == "colspan" || f == "rowspan")) {
+                    continue;
+                }
+                // A direct link or image keeps its destination; only a reference use resolves.
+                let direct = (ty == "link" || ty == "image") && !m.contains_key("key");
+                if *t == ty && !direct {
+                    m.remove(f);
+                }
+            }
+            for c in m.values_mut() {
+                strip_with(c, fields);
+            }
+        }
+        Value::Array(a) => a.iter_mut().for_each(|c| strip_with(c, fields)),
+        _ => {}
+    }
+}
+
+/// Removes every result field of `ast-results.json` from a tree.
+pub fn strip_results(v: &mut Value) {
+    strip_with(v, &results());
 }
