@@ -144,12 +144,14 @@ impl Builder<'_> {
 
     fn row(&self, row: &Row, spans: &[Resolved], _in_group: bool) -> Node {
         // C2-B-173, gap G-005: "every other cell" needs at least one other cell.
-        let others = |i: usize| row.cells.iter().enumerate().filter(move |&(j, _)| j != i);
-        let all_header = |i: usize| {
-            others(i).count() > 0
-                && others(i)
-                    .all(|(j, c)| c.header || spans.get(j).is_some_and(|s| s.mark.is_some()))
+        // A span-mark cell is no cell of its own for this test.
+        let others = |i: usize| {
+            row.cells
+                .iter()
+                .enumerate()
+                .filter(move |&(j, _)| j != i && !spans.get(j).is_some_and(|s| s.mark.is_some()))
         };
+        let all_header = |i: usize| others(i).count() > 0 && others(i).all(|(_, c)| c.header);
         let mut cells = Vec::new();
         for (i, (cell, sp)) in row.cells.iter().zip(spans).enumerate() {
             // Gap G-009: a cell with no content has no position.
