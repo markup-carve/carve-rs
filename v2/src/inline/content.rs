@@ -87,6 +87,10 @@ impl<'a> Content<'a> {
                 // C2-B-184: an empty fragment adds nothing.
                 continue;
             }
+            if p.join == Join::Cell && text.is_empty() {
+                // C2-B-184: an empty cell has no text for the space to follow.
+                segs.clear();
+            }
             if !segs.is_empty() {
                 joins.push((text.len(), p.join));
                 text.push('\n');

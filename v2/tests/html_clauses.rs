@@ -208,3 +208,63 @@ fn c2_h_126_without_social_a_mention_is_an_inert_span() {
         "<p><span class=\"mention\"><strong>@ann</strong></span></p>"
     );
 }
+
+#[test]
+fn c2_b_184_an_empty_cell_takes_a_fragment_without_a_space() {
+    assert_eq!(
+        html("|  | x |\n+ b | y |"),
+        "<table>\n  <tbody>\n    <tr><td>b</td><td>x y</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn c2_b_176_an_empty_fragment_past_the_last_column_forms_a_cell() {
+    assert_eq!(
+        html("| a |\n+ b | |"),
+        "<table>\n  <tbody>\n    <tr><td>a b</td><td></td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn c2_b_192_attribute_lines_no_block_takes_stay_before_a_comment_line() {
+    let doc = carve2::parse("{a}\n%% x");
+    let kinds: Vec<&str> = doc
+        .children
+        .iter()
+        .map(|n| match n {
+            carve2::ast::Node::Paragraph(_) => "paragraph",
+            carve2::ast::Node::Comment(_) => "comment",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["paragraph", "comment"]);
+}
+
+#[test]
+fn c2_b_146_a_caret_line_the_item_does_not_own_is_a_lazy_line() {
+    assert_eq!(
+        html("- ![](a.png)\n^ cap"),
+        "<ul>\n  <li><img src=\"a.png\" alt=\"\">\n^ cap</li>\n</ul>"
+    );
+}
+
+#[test]
+fn c2_b_167_a_row_takes_a_trailing_line_comment() {
+    assert_eq!(
+        html("| a | %% c\n| b |"),
+        "<table>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn c2_i_032_an_unquoted_value_may_hold_an_opening_brace() {
+    assert_eq!(html("{s={}\nx"), "<p s=\"{\">x</p>");
+}
+
+#[test]
+fn g_008_one_empty_last_line_of_a_delimited_body_is_no_record() {
+    assert_eq!(
+        html("{table}\n```csv\na\n\n\n```"),
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><td></td></tr>\n  </tbody>\n</table>"
+    );
+}

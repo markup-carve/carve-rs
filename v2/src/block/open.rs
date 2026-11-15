@@ -87,6 +87,11 @@ impl Parser<'_> {
                 return true;
             }
         }
+        // C2-B-146: a caret line the paragraph's container does not own is no
+        // caption line, so it is a lazy line (as in C2-B-018).
+        if walk.matched < self.stack.len() {
+            return false;
+        }
         let Some(OpenLeaf {
             leaf: Leaf::Para { pieces },
             ..
@@ -667,6 +672,7 @@ impl Parser<'_> {
                     end,
                     lines: vec![(start, e)],
                     depth: self.stack.len(),
+                    at: self.events.len(),
                 });
             }
         }

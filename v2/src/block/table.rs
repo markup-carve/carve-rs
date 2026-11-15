@@ -188,11 +188,10 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
     row.joined = true;
     for (col, &(s, e)) in frags.iter().enumerate() {
         let (a, z) = trim(text, s, e);
-        if a >= z {
-            continue;
-        }
         let target = covering_col(row, col);
         match row.cells.get_mut(target) {
+            // C2-B-184: an empty fragment adds nothing to a cell.
+            Some(_) if a >= z => {}
             Some(cell) => {
                 cell.joined = true;
                 if cell.pieces.is_empty() {
@@ -209,13 +208,14 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
                     });
                 }
             }
+            // C2-B-176: a fragment past the last column forms a cell, even an empty one.
             None => row.cells.push(Cell {
                 start: s,
                 end: e,
                 joined: true,
                 pieces: vec![Piece {
                     start: a,
-                    end: z,
+                    end: z.max(a),
                     join: Join::Line,
                 }],
                 ..Cell::default()

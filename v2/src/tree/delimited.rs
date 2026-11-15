@@ -50,6 +50,10 @@ fn records(body: &str, sep: char) -> Vec<Vec<String>> {
     if let Some(r) = rows.last_mut() {
         r.push(cur);
     }
+    // Gap G-008: as in the oracle, one empty last line of the body is no record.
+    if body.ends_with('\n') && rows.len() > 1 && rows.last().is_some_and(|r| r == &[""]) {
+        rows.pop();
+    }
     rows
 }
 

@@ -147,6 +147,9 @@ struct Pending {
     end: usize,
     lines: Vec<(usize, usize)>,
     depth: usize,
+    /// The event index at the first line: comment lines between the
+    /// attribute lines and the block emit before the block does (C2-B-137).
+    at: usize,
 }
 
 /// What closed directly above, for a caption (C2-B-146).
@@ -560,6 +563,10 @@ impl<'a> Parser<'a> {
             p.end,
             None,
         );
+        // The paragraph goes before the comment lines that followed it.
+        if let Some(ev) = self.events.pop() {
+            self.events.insert(p.at.min(self.events.len()), ev);
+        }
         self.closed = None;
     }
 
