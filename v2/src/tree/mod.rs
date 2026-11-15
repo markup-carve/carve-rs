@@ -600,9 +600,9 @@ fn task_mark(c: char) -> String {
 }
 
 fn admonition_kind(name: &str) -> ast::AdmonitionKind {
-    serde_json::from_value(serde_json::Value::String(name.into())).unwrap_or_default()
+    ast::AdmonitionKind::from_name(name).unwrap_or_default()
 }
 
 fn directive_kind(name: &str) -> ast::DirectiveKind {
-    serde_json::from_value(serde_json::Value::String(name.into())).unwrap_or_default()
+    ast::DirectiveKind::from_name(name).unwrap_or_default()
 }

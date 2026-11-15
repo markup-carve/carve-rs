@@ -148,10 +148,26 @@ pub fn set_lang(node: &mut Node, lang: Option<String>) {
     *slot = lang;
 }
 
+/// An empty node of a delimiter span type (`tables::DELIMITERS`).
+fn styled(name: &str) -> Option<Node> {
+    Some(match name {
+        "delete" => Node::Delete(Box::default()),
+        "emphasis" => Node::Emphasis(Box::default()),
+        "highlight" => Node::Highlight(Box::default()),
+        "insert" => Node::Insert(Box::default()),
+        "strike" => Node::Strike(Box::default()),
+        "strong" => Node::Strong(Box::default()),
+        "subscript" => Node::Subscript(Box::default()),
+        "superscript" => Node::Superscript(Box::default()),
+        "underline" => Node::Underline(Box::default()),
+        _ => return None,
+    })
+}
+
 /// A container node of `kind`, empty.
 fn container(kind: Kind) -> Option<Node> {
     Some(match kind {
-        Kind::Styled(name) => serde_json::from_value(serde_json::json!({ "type": name })).ok()?,
+        Kind::Styled(name) => styled(name)?,
         Kind::Span => Node::Span(Box::default()),
         Kind::Link {
             href,
@@ -416,9 +432,7 @@ impl Builder<'_, '_> {
                     kind,
                     glyph,
                 } => {
-                    let Ok(kind) =
-                        serde_json::from_value(serde_json::Value::String(kind.to_string()))
-                    else {
+                    let Some(kind) = crate::ast::SmartPunctuationKind::from_name(kind) else {
                         continue;
                     };
                     let pos = self.pos(v0, v1);

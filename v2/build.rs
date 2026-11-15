@@ -288,7 +288,14 @@ fn write_enum(out: &mut String, name: &str, values: &[String]) {
     for v in values {
         let _ = writeln!(out, "            Self::{} => {v:?},", camel(v));
     }
-    let _ = writeln!(out, "        }}\n    }}\n}}\n");
+    let _ = writeln!(
+        out,
+        "        }}\n    }}\n\n    /// The value the schema spells `name`.\n    #[must_use]\n    pub fn from_name(name: &str) -> Option<Self> {{\n        match name {{"
+    );
+    for v in values {
+        let _ = writeln!(out, "            {v:?} => Some(Self::{}),", camel(v));
+    }
+    let _ = writeln!(out, "            _ => None,\n        }}\n    }}\n}}\n");
 }
 
 fn write_struct(out: &mut String, name: &str, ty: &str, fields: &[Field]) {

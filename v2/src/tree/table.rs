@@ -199,9 +199,7 @@ impl Builder<'_> {
                     ast::TableCellSpan::Rowspan
                 }
             });
-            let align = cell
-                .align
-                .and_then(|a| serde_json::from_value(serde_json::Value::String(a.into())).ok());
+            let align = cell.align.and_then(ast::TableCellAlign::from_name);
             cells.push(Node::TableCell(Box::new(ast::TableCell {
                 children,
                 header,
@@ -346,11 +344,9 @@ fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
     };
     if let Some(v) = a.get("aligns") {
         for (i, entry) in v.split(',').enumerate() {
-            if let (Some(col), Ok(al)) = (
+            if let (Some(col), Some(al)) = (
                 cols.get_mut(i),
-                serde_json::from_value::<ast::TableColumnAlign>(serde_json::Value::String(
-                    entry.trim().into(),
-                )),
+                ast::TableColumnAlign::from_name(entry.trim()),
             ) {
                 col.align = Some(al);
                 col.authored = Some(true);
