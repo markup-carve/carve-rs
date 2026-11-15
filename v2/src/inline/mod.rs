@@ -1,6 +1,16 @@
 //! The inline pass (C2-I): one content at a time, a scan that emits events,
 //! and the builder that turns them into inline nodes.
 
+mod abbr;
+mod atoms;
+mod build;
+mod content;
+mod delim;
+mod events;
+mod scan;
+mod smart;
+mod token;
+
 use crate::ast::Node;
 use crate::source::Source;
 use std::collections::HashSet;
@@ -56,6 +66,15 @@ pub struct InlineEnv<'a> {
 /// Parses one content into inline nodes with positions.
 #[must_use]
 pub fn parse(env: &InlineEnv<'_>, pieces: &[Piece]) -> Vec<Node> {
-    let _ = (env, pieces);
-    Vec::new()
+    let content = content::Content::new(env, pieces);
+    let scanned = scan::scan(&content, env);
+    let mut toks = scanned.toks;
+    let ctx = delim::Ctx {
+        t: &content.text,
+        comments: &scanned.comments,
+        depth: env.depth,
+    };
+    delim::resolve(&mut toks, &ctx);
+    let evs = events::from_tokens(toks);
+    build::build(&content, &ctx, env, evs)
 }
