@@ -29,6 +29,8 @@ pub mod chars;
 pub mod html;
 pub mod inline;
 pub mod options;
+#[cfg(feature = "profile")]
+pub mod profile;
 pub mod resolve;
 pub mod source;
 pub mod tables;

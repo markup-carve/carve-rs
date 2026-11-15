@@ -107,7 +107,12 @@ impl Builder<'_> {
             kind,
             hard_breaks: self.hard > 0,
         };
-        inline::parse(&env, pieces)
+        #[cfg(feature = "profile")]
+        crate::profile::inline(true);
+        let out = inline::parse(&env, pieces);
+        #[cfg(feature = "profile")]
+        crate::profile::inline(false);
+        out
     }
 
     fn children(&mut self) -> &mut Vec<Node> {

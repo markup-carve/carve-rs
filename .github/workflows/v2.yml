@@ -29,9 +29,14 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Format
-        run: cargo fmt --check
+        run: |
+          cargo fmt --check
+          cargo fmt --check --manifest-path bench/Cargo.toml
       - name: Clippy, pedantic included
-        run: cargo clippy --all-targets -- -D warnings -W clippy::pedantic
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
+      # The timing program is its own workspace (it depends on the 0.1 crate).
+      - name: Clippy of the timing program
+        run: cargo clippy --manifest-path bench/Cargo.toml -- -D warnings -W clippy::pedantic
       - name: Tests (every specification example, HTML and tree)
         run: cargo test
 
