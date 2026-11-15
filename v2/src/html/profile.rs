@@ -15,6 +15,9 @@ impl<'a> Renderer<'a> {
         let Some(row) = self.profile_row() else {
             return true;
         };
+        if self.degrading > 0 {
+            return false;
+        }
         if row.max_nesting.is_some_and(|m| self.level > m) {
             return false;
         }

@@ -59,3 +59,95 @@ footnote references inside the caption are numbered after the children.
 The host table is not specified. This engine decomposes (NFKD) and keeps the
 ASCII characters, then applies C2-H-146 again and lowers. Outside conformance
 by the clause's own words.
+
+## HTML-007 C2-H-165/C2-H-166: a list item past the nesting bound
+
+Nearest clauses: C2-H-165 ("Any other block that holds blocks is written as
+those blocks in their degraded forms"), C2-H-166.
+
+```carve
+- a
+  - d *e*
+    - f
+```
+
+With `profile: minimal` (`max_nesting` 2) the inner list stands at the bound
+and stays, and its item is outside. Readings: (a) the item is replaced by its
+degraded blocks, which puts `<p>` directly into `<ul>`; (b) the item keeps its
+`<li>` and its blocks are degraded.
+
+Oracle: (b), `<li>d e` then `<p>- f</p>`. This engine: (b).
+
+## HTML-008 C2-H-114 keeps `data-carve-abbreviations` on `<template>` but places none
+
+Nearest clause: C2-H-114. No clause says where the template stands (end of the
+document, the place of the first definition, each definition) or how a line is
+spelled. The oracle writes no template under `roundtrip`. This engine writes
+none.
+
+## HTML-009 C2-H-168: static display math and its final line break
+
+```carve
+$$`E=mc^2`
+```
+
+With `mode: static` the clause says "`<pre><code class="language-math">`
+around its source". The oracle writes the value and a line break, as a code
+block value has one (C2-A-045). This engine follows the oracle.
+
+## HTML-010 C2-H-175 and C2-H-161: an `abbr` value the filter empties
+
+```carve
+[g]{abbr="javascript:x"}
+```
+
+C2-H-175 omits `title` when the derived value is empty; C2-H-161 empties an
+authored `abbr` value that names a denied scheme. Readings: (a) the emptiness
+is tested after the filter, no `title`; (b) before it, `title=""`. Oracle: (b).
+This engine: (b).
+
+## HTML-011 C2-H-141: key order when a definition's attributes merge
+
+```carve
+[x][r]{k=2}
+
+{k=1 t=3}
+[r]: /u
+```
+
+C2-H-141 says the reference's key wins, not where it stands. C2-A-035 (merge of
+attribute blocks) would keep `k` at its first place: `k="2" t="3"`. The oracle
+writes the definition's other keys first and then the reference's keys:
+`t="3" k="2"`. This engine follows the oracle.
+
+## HTML-012 C2-H-064: a table panel of a figure group
+
+C2-H-064: "Each panel in it is `<figure class="carve-figure-panel">`", and
+C2-A-084 makes a `table` a panel too. A table panel is a `<table>`, not a
+`<figure>`. The oracle writes it as a plain `<table>` without the panel class.
+This engine does the same.
+
+## HTML-013 C2-H-060: the single body takes the head rows too
+
+```carve
+{footer-rows=1}
+|= h |= h2 |
+| a | b |
+| c | ^ |
+```
+
+"The table is then written with one `<tbody>` that holds every row." Read
+literally that includes the head rows, though only the body/foot boundary is
+crossed. The oracle puts the head rows into the one `<tbody>` as well (their
+cells keep `scope="col"`). This engine follows the oracle.
+
+## HTML-014 C2-H-139: an empty key value in the text of an unresolved reference
+
+```carve
+[a][nope]{e=""}
+```
+
+C2-H-139 fixes the order of the brace block but not the spelling of a value.
+The oracle writes `{e}` for an empty value and quotes a value with a space
+(`k="v w"`). This engine does the same; a value with other characters outside
+letters, digits and `-_.:/` is quoted.

@@ -158,7 +158,7 @@ impl<'a> Renderer<'a> {
             })
             .unwrap_or("");
         format!(
-            "<pre{}><code class=\"language-math\">{}</code></pre>",
+            "<pre{}><code class=\"language-math\">{}\n</code></pre>",
             el.write(self.filter()),
             esc::text_str(value)
         )
@@ -273,7 +273,11 @@ impl<'a> Renderer<'a> {
                 self.item(item, depth + 1, tight, ordered);
                 self.level -= 1;
             } else {
-                self.degrade_block(item, depth + 1);
+                // Gap HTML-007: an item past the bound keeps its `<li>` and degrades its blocks.
+                self.losses.push("profile-construct-degraded");
+                self.degrading += 1;
+                self.item(item, depth + 1, tight, ordered);
+                self.degrading -= 1;
             }
         }
         self.line(depth, &format!("</{tag}>"));
@@ -421,6 +425,7 @@ impl<'a> Renderer<'a> {
                 "div"
             }
             _ => {
+                el.align_style = true;
                 if self.opts.roundtrip && attrs.is_none_or(Attrs::is_empty) && lang.is_none() {
                     el.carriers.push(("data-carve-div", None));
                 }

@@ -50,6 +50,10 @@ pub(crate) struct Renderer<'a> {
     in_link: usize,
     in_abbr: usize,
     level: usize,
+    /// A line was written (an empty first line still counts, C2-H-134).
+    started: bool,
+    /// Inside a node that stays while its children are degraded.
+    degrading: usize,
     losses: Vec<&'static str>,
 }
 
@@ -70,6 +74,8 @@ impl<'a> Renderer<'a> {
             in_link: 0,
             in_abbr: 0,
             level: 0,
+            started: false,
+            degrading: 0,
             losses: Vec::new(),
         };
         r.index();
@@ -163,9 +169,10 @@ impl<'a> Renderer<'a> {
 
     /// Appends one line at `depth` (C2-H-005).
     fn line(&mut self, depth: usize, s: &str) {
-        if !self.out.is_empty() {
+        if self.started {
             self.out.push('\n');
         }
+        self.started = true;
         for _ in 0..depth {
             self.out.push_str("  ");
         }
@@ -189,9 +196,8 @@ impl<'a> Renderer<'a> {
         if self.placing.is_none() && !self.order.notes.is_empty() {
             self.footnote_section(0, None);
         }
-        if self.opts.roundtrip {
-            self.abbreviation_template();
-        }
+        // Gap HTML-008: C2-H-114 keeps `data-carve-abbreviations` but places no
+        // template, and the oracle writes none.
     }
 
     /// C2-H-026 to C2-H-028: each top-level heading opens a section.
@@ -233,23 +239,6 @@ impl<'a> Renderer<'a> {
             el.carriers.push(("data-carve-explicit-id", None));
         } else if h.generated_id.is_some() {
             el.carriers.push(("data-carve-generated-id", None));
-        }
-    }
-
-    /// C2-H-114: the abbreviation definitions, one per line, in a template.
-    fn abbreviation_template(&mut self) {
-        let mut lines = Vec::new();
-        for c in &self.doc.children {
-            if let Node::AbbreviationDef(d) = c {
-                lines.push(format!("*[{}]: {}", d.key, d.expansion));
-            }
-        }
-        if !lines.is_empty() {
-            let body = esc::text_str(&lines.join("\n"));
-            self.line(
-                0,
-                &format!("<template data-carve-abbreviations>{body}</template>"),
-            );
         }
     }
 }

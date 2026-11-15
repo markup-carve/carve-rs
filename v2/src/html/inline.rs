@@ -416,7 +416,9 @@ impl<'a> Renderer<'a> {
         let (abbr, time, kbd) = (get("abbr"), get("time"), get("kbd"));
         let mut layers: Vec<(&'static str, Option<(&'static str, String)>)> = Vec::new();
         if let Some(v) = abbr.as_ref() {
-            let title = get("title").or_else(|| Some(v.clone()).filter(|v| !v.is_empty()));
+            // Gap HTML-010: emptiness is tested before the value filter, as the oracle does.
+            let raw = s.attrs.as_ref().and_then(|a| a.get("abbr")).unwrap_or("");
+            let title = get("title").or_else(|| (!raw.is_empty()).then(|| v.clone()));
             layers.push(("abbr", title.map(|t| ("title", t))));
         }
         if let Some(v) = time.as_ref() {
@@ -521,10 +523,19 @@ impl<'a> Renderer<'a> {
             self.losses.push("raw-format-dropped");
             return;
         }
+        let open = if self.opts.roundtrip {
+            "<span data-carve-raw=\"html\">"
+        } else {
+            ""
+        };
+        out.push_str(open);
         if self.opts.raw_html {
             out.push_str(&r.value);
         } else {
             esc::text(&r.value, out);
+        }
+        if self.opts.roundtrip {
+            out.push_str("</span>");
         }
     }
 
@@ -630,7 +641,11 @@ fn attr_text(attrs: Option<&Attrs>, lang: Option<&str>) -> String {
     }
     if let Some(a) = attrs {
         for (k, v) in &a.key_values {
-            parts.push(format!("{k}={}", bare_or_quoted(v)));
+            if v.is_empty() {
+                parts.push(k.clone());
+            } else {
+                parts.push(format!("{k}={}", bare_or_quoted(v)));
+            }
         }
     }
     if parts.is_empty() {
@@ -654,18 +669,24 @@ fn bare_or_quoted(v: &str) -> String {
 fn merge_def(def: Option<&Attrs>, own: Option<&Attrs>) -> Option<Attrs> {
     match (def, own) {
         (None, None) => None,
+        // Gap HTML-011: the definition's keys that the reference does not
+        // replace come first, then the reference's keys, as the oracle does.
         (Some(d), o) => {
-            let mut m = d.clone();
-            if let Some(o) = o {
-                m.merge(o.clone());
-            }
-            Some(m)
+            let own = o.cloned().unwrap_or_default();
+            let mut key_values: Vec<(String, String)> = d
+                .key_values
+                .iter()
+                .filter(|(k, _)| own.get(k).is_none())
+                .cloned()
+                .collect();
+            key_values.extend(own.key_values);
+            let classes = d.classes.iter().chain(&own.classes).cloned().collect();
+            Some(Attrs {
+                id: own.id.or_else(|| d.id.clone()),
+                classes,
+                key_values,
+            })
         }
         (None, Some(o)) => Some(o.clone()),
     }
-}
-
-/// The plain text of a node list, for the degraded forms.
-pub(super) fn plain_of(nodes: &[Node]) -> String {
-    plain::text_of(nodes)
 }

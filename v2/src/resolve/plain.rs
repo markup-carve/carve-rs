@@ -127,6 +127,10 @@ pub fn source_text(nodes: &[Node], out: &mut String, depth: usize) {
         let mark = match n {
             Node::Strong(_) => "*",
             Node::Emphasis(_) => "/",
+            Node::SmartPunctuation(s) => {
+                out.push_str(&s.source);
+                continue;
+            }
             Node::Code(c) => {
                 out.push('`');
                 out.push_str(&c.value);
