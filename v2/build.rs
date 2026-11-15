@@ -240,6 +240,12 @@ fn collect_fields(
                 ename
             }
         };
+        // Fields the engine never sets: boxed, so each node is smaller.
+        let base = if common && RARE.contains(&pname.as_str()) {
+            format!("Box<{base}>")
+        } else {
+            base
+        };
         let ty = if req { base } else { format!("Option<{base}>") };
         fields.push(Field {
             json: pname.clone(),
@@ -251,6 +257,9 @@ fn collect_fields(
     }
     fields
 }
+
+/// The common fields only a deserialized tree carries.
+const RARE: [&str; 4] = ["data", "dir", "metadata", "segments"];
 
 fn common_kind(name: &str) -> FieldKind {
     match name {
