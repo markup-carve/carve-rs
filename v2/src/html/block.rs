@@ -332,7 +332,7 @@ impl<'a> Renderer<'a> {
             if !ordered {
                 el.style_before = Some("list-style: none".into());
             }
-            head = self.task_box(&i.children, state.is_some_and(|s| s.3));
+            head = Self::task_box(&i.children, state.is_some_and(|s| s.3));
         }
         let open = format!("<li{}>{head}", el.write(self.filter()));
         let vis: Vec<&'a Node> = i.children.iter().filter(|c| visible(c)).collect();
@@ -358,7 +358,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// The checkbox of a task item (C2-H-032, C2-H-174).
-    fn task_box(&self, children: &[Node], checked: bool) -> String {
+    fn task_box(children: &[Node], checked: bool) -> String {
         let mut texts = Vec::new();
         for c in children {
             if let Node::Paragraph(ast::Paragraph { children, .. })

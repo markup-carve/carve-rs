@@ -74,37 +74,34 @@ pub fn layout(t: &Table) -> Vec<Placed<'_>> {
                 head: *kind == GroupKind::Head,
                 extended_in: r,
             };
-            match (marks, x.span) {
-                (true, Some(span)) => {
-                    let owner = match span {
-                        TableCellSpan::Colspan => c.checked_sub(1).and_then(|p| at(&grid, r, p)),
-                        TableCellSpan::Rowspan => r.checked_sub(1).and_then(|p| at(&grid, p, c)),
-                    };
-                    extend(&mut placed, owner, span, r);
-                    let idx = placed.len();
-                    placed.push(Placed { mark: true, ..base });
-                    fill(&mut grid, r, c, 1, 1, owner.unwrap_or(idx));
-                    c += 1;
-                }
-                _ => {
-                    let (cs, rs) = if marks {
-                        (1, 1)
-                    } else {
-                        (x.colspan.unwrap_or(1).max(1), x.rowspan.unwrap_or(1).max(1))
-                    };
-                    let idx = placed.len();
-                    placed.push(Placed {
-                        colspan: cs,
-                        rowspan: rs,
-                        ..base
-                    });
-                    let (w, h) = (
-                        usize::try_from(cs).unwrap_or(1),
-                        usize::try_from(rs).unwrap_or(1),
-                    );
-                    fill(&mut grid, r, c, w, h, idx);
-                    c += w;
-                }
+            if let (true, Some(span)) = (marks, x.span) {
+                let owner = match span {
+                    TableCellSpan::Colspan => c.checked_sub(1).and_then(|p| at(&grid, r, p)),
+                    TableCellSpan::Rowspan => r.checked_sub(1).and_then(|p| at(&grid, p, c)),
+                };
+                extend(&mut placed, owner, span, r);
+                let idx = placed.len();
+                placed.push(Placed { mark: true, ..base });
+                fill(&mut grid, r, c, 1, 1, owner.unwrap_or(idx));
+                c += 1;
+            } else {
+                let (cs, rs) = if marks {
+                    (1, 1)
+                } else {
+                    (x.colspan.unwrap_or(1).max(1), x.rowspan.unwrap_or(1).max(1))
+                };
+                let idx = placed.len();
+                placed.push(Placed {
+                    colspan: cs,
+                    rowspan: rs,
+                    ..base
+                });
+                let (width, height) = (
+                    usize::try_from(cs).unwrap_or(1),
+                    usize::try_from(rs).unwrap_or(1),
+                );
+                fill(&mut grid, r, c, width, height, idx);
+                c += width;
             }
         }
     }
@@ -165,7 +162,7 @@ pub fn resolved_aligns(t: &Table, placed: &[Placed<'_>]) -> Vec<Option<TableColu
     }
     for (slot, col) in out.iter_mut().zip(&t.columns) {
         if let (None, Node::TableColumn(c)) = (&slot, col) {
-            *slot = c.align.map(|a| convert_column(a));
+            *slot = c.align.map(convert_column);
         }
     }
     out

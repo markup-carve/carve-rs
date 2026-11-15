@@ -12,6 +12,7 @@ pub struct Example {
     pub oracle_tree: Value,
 }
 
+#[must_use]
 pub fn examples() -> Vec<Example> {
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -35,6 +36,7 @@ pub fn examples() -> Vec<Example> {
 }
 
 /// JSON with object keys sorted, for byte comparison.
+#[must_use]
 pub fn sorted(v: &Value) -> String {
     fn walk(v: &Value) -> Value {
         match v {
@@ -55,6 +57,7 @@ pub fn sorted(v: &Value) -> String {
 }
 
 /// The result fields of `ast-results.json` by node type.
+#[must_use]
 pub fn results() -> Vec<(String, String)> {
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
