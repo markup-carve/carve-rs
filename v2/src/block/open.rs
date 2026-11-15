@@ -21,9 +21,25 @@ struct Frame {
 
 impl Parser<'_> {
     fn frame(&self, walk: &Walk<'_>, m: usize) -> Frame {
-        let lo = self.stack.iter().take(walk.matched).rposition(|c| matches!(c.kind, Kind::Quote)).map_or(1, |q| q + 1);
-        let hi = self.stack.iter().enumerate().skip(walk.matched).find(|(_, c)| matches!(c.kind, Kind::Quote)).map_or(self.stack.len(), |(i, _)| i);
-        let mut f = Frame { lists: Vec::new(), desc_lists: Vec::new(), owner: false, footnote: false };
+        let lo = self
+            .stack
+            .iter()
+            .take(walk.matched)
+            .rposition(|c| matches!(c.kind, Kind::Quote))
+            .map_or(1, |q| q + 1);
+        let hi = self
+            .stack
+            .iter()
+            .enumerate()
+            .skip(walk.matched)
+            .find(|(_, c)| matches!(c.kind, Kind::Quote))
+            .map_or(self.stack.len(), |(i, _)| i);
+        let mut f = Frame {
+            lists: Vec::new(),
+            desc_lists: Vec::new(),
+            owner: false,
+            footnote: false,
+        };
         for c in self.stack.get(lo..hi).unwrap_or(&[]) {
             match &c.kind {
                 Kind::List { col, .. } => f.lists.push(*col),
@@ -37,7 +53,10 @@ impl Parser<'_> {
                 }
             }
         }
-        f.footnote = self.stack.iter().any(|c| matches!(c.kind, Kind::Footnote { .. }));
+        f.footnote = self
+            .stack
+            .iter()
+            .any(|c| matches!(c.kind, Kind::Footnote { .. }));
         f
     }
 
@@ -68,7 +87,13 @@ impl Parser<'_> {
                 return true;
             }
         }
-        let Some(OpenLeaf { leaf: Leaf::Para { pieces }, .. }) = &self.leaf else { return false };
+        let Some(OpenLeaf {
+            leaf: Leaf::Para { pieces },
+            ..
+        }) = &self.leaf
+        else {
+            return false;
+        };
         super::paragraph_role(self.src, pieces).is_some() && pieces.len() == 1
     }
 
@@ -83,20 +108,37 @@ impl Parser<'_> {
         let text = self.src.text();
         if owned {
             if let Some((s, z, attrs)) = shapes::table_row(&k) {
-                let row = Row { cells: table::parse_cells(text, k.base + s, k.base + z), start: k.offset(), end: k.base + z + 1, attrs, ..Row::default() };
-                if let Some(OpenLeaf { leaf: Leaf::Table { data }, end, .. }) = &mut self.leaf {
+                let line_end = k.offset() + k.rest().trim_end_matches([' ', '\t']).len();
+                let row = Row {
+                    cells: table::parse_cells(text, k.base + s, k.base + z),
+                    start: k.offset(),
+                    end: line_end,
+                    attrs,
+                    ..Row::default()
+                };
+                if let Some(OpenLeaf {
+                    leaf: Leaf::Table { data },
+                    end,
+                    ..
+                }) = &mut self.leaf
+                {
                     data.rows.push(row);
-                    *end = k.base + z + 1;
+                    *end = line_end;
                 }
                 self.closed = None;
                 return true;
             }
             if let Some(frags) = continuation(&k) {
-                if let Some(OpenLeaf { leaf: Leaf::Table { data }, end, .. }) = &mut self.leaf {
+                if let Some(OpenLeaf {
+                    leaf: Leaf::Table { data },
+                    end,
+                    ..
+                }) = &mut self.leaf
+                {
                     if let Some(row) = data.rows.last_mut() {
                         table::join_continuation(row, text, &frags);
-                        row.end = e;
-                        *end = row.end.max(*end);
+                        *end =
+                            (k.offset() + k.rest().trim_end_matches([' ', '\t']).len()).max(*end);
                     }
                 }
                 return true;
@@ -142,18 +184,29 @@ impl Parser<'_> {
 
     /// Settles a list or description list in the innermost context: a
     /// matching marker is a sibling, anything else closes the list.
-    fn sibling<'c>(&mut self, k: &Cursor<'c>, m: usize, blanks: usize, e: usize) -> Option<Cursor<'c>> {
+    fn sibling<'c>(
+        &mut self,
+        k: &Cursor<'c>,
+        m: usize,
+        blanks: usize,
+        e: usize,
+    ) -> Option<Cursor<'c>> {
         loop {
             match self.stack.last().map(|c| c.kind.clone()) {
                 Some(Kind::List { kind, .. }) => {
-                    let marker = shapes::list_marker(k).filter(|mk| shapes::marker_matches(kind, mk.kind));
+                    let marker =
+                        shapes::list_marker(k).filter(|mk| shapes::marker_matches(kind, mk.kind));
                     match marker {
-                        Some(mk) if blanks < LIST_END_BLANK_LINES => return Some(self.sibling_item(k, m, &mk, blanks)),
+                        Some(mk) if blanks < LIST_END_BLANK_LINES => {
+                            return Some(self.sibling_item(k, m, &mk, blanks));
+                        }
                         _ => self.pop_container(),
                     }
                 }
                 Some(Kind::DescList { col, has_term }) => match shapes::desc_mark(k) {
-                    Some((term, pos, ccol)) if col == m && (term || has_term) => return Some(self.desc_entry(k, m, term, pos, ccol, e)),
+                    Some((term, pos, ccol)) if col == m && (term || has_term) => {
+                        return Some(self.desc_entry(k, m, term, pos, ccol, e));
+                    }
                     _ => self.pop_container(),
                 },
                 _ => return None,
@@ -161,7 +214,13 @@ impl Parser<'_> {
         }
     }
 
-    fn sibling_item<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker, blanks: usize) -> Cursor<'c> {
+    fn sibling_item<'c>(
+        &mut self,
+        k: &Cursor<'c>,
+        m: usize,
+        mk: &ListMarker,
+        blanks: usize,
+    ) -> Cursor<'c> {
         if let Some(Kind::Item { .. }) = self.stack.last().map(|c| &c.kind) {
             self.pop_container();
         }
@@ -180,7 +239,10 @@ impl Parser<'_> {
     fn push_item<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker) -> Cursor<'c> {
         let start = k.offset();
         let ev = ContainerKind::Item { task: mk.task };
-        let item = Kind::Item { marker_col: m, content_col: mk.content_col - (k.col - m) };
+        let item = Kind::Item {
+            marker_col: m,
+            content_col: mk.content_col - (k.col - m),
+        };
         self.push_container(item, ev, start, mk.attrs.clone());
         let mut c = *k;
         c.pos = mk.content;
@@ -188,7 +250,15 @@ impl Parser<'_> {
         c
     }
 
-    fn desc_entry<'c>(&mut self, k: &Cursor<'c>, m: usize, term: bool, pos: usize, ccol: usize, e: usize) -> Cursor<'c> {
+    fn desc_entry<'c>(
+        &mut self,
+        k: &Cursor<'c>,
+        m: usize,
+        term: bool,
+        pos: usize,
+        ccol: usize,
+        e: usize,
+    ) -> Cursor<'c> {
         if let Some(Kind::Desc { .. }) = self.stack.last().map(|c| &c.kind) {
             self.pop_container();
         }
@@ -196,27 +266,60 @@ impl Parser<'_> {
         c.pos = pos;
         c.col = ccol;
         if term {
-            if let Some(Container { kind: Kind::DescList { has_term, .. }, .. }) = self.stack.last_mut() {
+            if let Some(Container {
+                kind: Kind::DescList { has_term, .. },
+                ..
+            }) = self.stack.last_mut()
+            {
                 *has_term = true;
             }
-            let piece = Piece { start: c.offset(), end: e, join: Join::Line };
-            self.set_leaf(Leaf::Term { pieces: vec![piece] }, k.offset(), e, None);
+            let piece = Piece {
+                start: c.offset(),
+                end: e,
+                join: Join::Line,
+            };
+            self.set_leaf(
+                Leaf::Term {
+                    pieces: vec![piece],
+                },
+                k.offset(),
+                e,
+                None,
+            );
             c.pos = c.text.len();
             return c;
         }
-        self.push_container(Kind::Desc { marker_col: m, content_col: ccol - (k.col - m) }, ContainerKind::Desc, k.offset(), None);
+        self.push_container(
+            Kind::Desc {
+                marker_col: m,
+                content_col: ccol - (k.col - m),
+            },
+            ContainerKind::Desc,
+            k.offset(),
+            None,
+        );
         c
     }
 
     fn set_leaf(&mut self, leaf: Leaf, start: usize, end: usize, attrs: Option<AttrBlock>) {
         let (start, attrs) = self.take_pending(start, attrs);
-        self.leaf = Some(OpenLeaf { leaf, start, end, attrs, depth: self.stack.len() });
+        self.leaf = Some(OpenLeaf {
+            leaf,
+            start,
+            end,
+            attrs,
+            depth: self.stack.len(),
+        });
         self.closed = None;
     }
 
     /// The pending attribute lines go to the first block of the line
     /// (C2-B-091); its own attributes merge after them.
-    fn take_pending(&mut self, start: usize, attrs: Option<AttrBlock>) -> (usize, Option<AttrBlock>) {
+    fn take_pending(
+        &mut self,
+        start: usize,
+        attrs: Option<AttrBlock>,
+    ) -> (usize, Option<AttrBlock>) {
         match self.pending.take() {
             Some(p) => {
                 let mut a = p.attrs;
@@ -235,7 +338,12 @@ impl Parser<'_> {
 
     /// A container opener: a quote mark, a list marker, a term or a
     /// description mark, a footnote definition, a div opener.
-    fn open_container<'c>(&mut self, k: &Cursor<'c>, m: usize, first: bool) -> Option<(Cursor<'c>, Option<usize>)> {
+    fn open_container<'c>(
+        &mut self,
+        k: &Cursor<'c>,
+        m: usize,
+        first: bool,
+    ) -> Option<(Cursor<'c>, Option<usize>)> {
         let _ = first;
         if let Some(after) = shapes::quote_mark(k) {
             if !self.room(1) {
@@ -259,7 +367,15 @@ impl Parser<'_> {
                 return None;
             }
             let (start, attrs) = self.take_pending(k.offset(), None);
-            self.push_container(Kind::DescList { col: m, has_term: true }, ContainerKind::DescList, start, attrs);
+            self.push_container(
+                Kind::DescList {
+                    col: m,
+                    has_term: true,
+                },
+                ContainerKind::DescList,
+                start,
+                attrs,
+            );
             let e = k.base + k.text.len();
             return Some((self.desc_entry(k, m, true, pos, ccol, e), None));
         }
@@ -268,7 +384,12 @@ impl Parser<'_> {
                 let (start, attrs) = self.take_pending(k.offset(), None);
                 let mut c = *k;
                 c.bump_n(content);
-                self.push_container(Kind::Footnote { content_col: c.col }, ContainerKind::Footnote { label }, start, attrs);
+                self.push_container(
+                    Kind::Footnote { content_col: c.col },
+                    ContainerKind::Footnote { label },
+                    start,
+                    attrs,
+                );
                 return Some((c, None));
             }
         }
@@ -284,8 +405,22 @@ impl Parser<'_> {
         if let (Some(v), MarkerKind::Ordered { style, .. }) = (&mut value, mk.kind) {
             start_attribute(attrs.as_mut(), style, v);
         }
-        let list = Kind::List { kind: mk.kind, col: m, loose: false, next: value.unwrap_or(1) + 1, items: 1 };
-        self.push_container(list, ContainerKind::List { kind: mk.kind, start: value }, start, attrs);
+        let list = Kind::List {
+            kind: mk.kind,
+            col: m,
+            loose: false,
+            next: value.unwrap_or(1) + 1,
+            items: 1,
+        };
+        self.push_container(
+            list,
+            ContainerKind::List {
+                kind: mk.kind,
+                start: value,
+            },
+            start,
+            attrs,
+        );
         self.push_item(k, m, mk)
     }
 
@@ -295,16 +430,58 @@ impl Parser<'_> {
         let start = k.offset();
         if shapes::thematic_break(k) {
             let (s, attrs) = self.take_pending(start, None);
-            self.push_leaf_event(LeafKind::Thematic, s, start + r.trim_end_matches([' ', '\t']).len(), attrs);
+            self.push_leaf_event(
+                LeafKind::Thematic,
+                s,
+                start + r.trim_end_matches([' ', '\t']).len(),
+                attrs,
+            );
             self.closed = None;
             return;
         }
         if let Some((level, content)) = shapes::heading(k) {
-            let piece = Piece { start: k.base + content, end: e, join: Join::Line };
-            self.set_leaf(Leaf::Heading { level, marker_col: m, pieces: vec![piece] }, start, e, None);
+            let piece = Piece {
+                start: k.base + content,
+                end: e,
+                join: Join::Line,
+            };
+            self.set_leaf(
+                Leaf::Heading {
+                    level,
+                    marker_col: m,
+                    pieces: vec![piece],
+                },
+                start,
+                e,
+                None,
+            );
             return;
         }
-        if self.open_fence(k, m, e) || self.open_table(k, e) || self.open_attr_line(k, e) || self.open_caption(k, e) {
+        if let Some(inc) = r
+            .starts_with("{{")
+            .then(|| super::include::parse(r))
+            .flatten()
+        {
+            let (s, attrs) = self.take_pending(start, None);
+            let end = start + r.trim_end_matches([' ', '\t']).len();
+            self.push_leaf_event(
+                LeafKind::Include {
+                    path: inc.path,
+                    section: inc.section,
+                    options: inc.options,
+                },
+                s,
+                end,
+                attrs,
+            );
+            self.closed = None;
+            return;
+        }
+        if self.open_fence(k, m, e)
+            || self.open_table(k, e)
+            || self.open_attr_line(k, e)
+            || self.open_caption(k, e)
+        {
             return;
         }
         if self.stack.len() == 1 && k.col == 0 && self.open_definition(r, start, e) {
@@ -315,25 +492,74 @@ impl Parser<'_> {
             // C2-B-136: a comment after a marker or a quote mark is content.
             let value = shapes::line_comment_value(r);
             let end = start + r.trim_end_matches([' ', '\t']).len();
-            self.push_leaf_event(LeafKind::Comment { block: false, value }, start, end, None);
+            self.push_leaf_event(
+                LeafKind::Comment {
+                    block: false,
+                    value,
+                },
+                start,
+                end,
+                None,
+            );
             return;
         }
-        let piece = Piece { start, end: e, join: Join::Line };
-        self.set_leaf(Leaf::Para { pieces: vec![piece] }, start, e, None);
+        let piece = Piece {
+            start,
+            end: e,
+            join: Join::Line,
+        };
+        self.set_leaf(
+            Leaf::Para {
+                pieces: vec![piece],
+            },
+            start,
+            e,
+            None,
+        );
     }
 
     fn open_fence(&mut self, k: &Cursor<'_>, m: usize, e: usize) -> bool {
         let start = k.offset();
         if let Some((len, info)) = shapes::code_fence_opener(k) {
             let own = info.attrs.clone();
-            self.set_leaf(Leaf::Code { len, indent: m, info, value: String::new(), held: Vec::new() }, start, e, own);
+            self.set_leaf(
+                Leaf::Code {
+                    len,
+                    indent: m,
+                    info,
+                    value: String::new(),
+                    held: Vec::new(),
+                },
+                start,
+                e,
+                own,
+            );
             return true;
         }
         let n = shapes::fence_run(k, b'%');
         if n >= 3 {
-            let first = k.rest().get(n..).unwrap_or("").trim_start_matches([' ', '\t']).trim_end_matches([' ', '\t']);
-            let lines = if first.is_empty() { Vec::new() } else { vec![first.to_string()] };
-            self.set_leaf(Leaf::CommentBlock { len: n, indent: m, lines, held: 0 }, start, e, None);
+            let first = k
+                .rest()
+                .get(n..)
+                .unwrap_or("")
+                .trim_start_matches([' ', '\t'])
+                .trim_end_matches([' ', '\t']);
+            let lines = if first.is_empty() {
+                Vec::new()
+            } else {
+                vec![first.to_string()]
+            };
+            self.set_leaf(
+                Leaf::CommentBlock {
+                    len: n,
+                    indent: m,
+                    lines,
+                    held: 0,
+                },
+                start,
+                e,
+                None,
+            );
             return true;
         }
         self.open_div(k, e)
@@ -341,11 +567,20 @@ impl Parser<'_> {
 
     /// Div openers and bare colon runs (C2-B-119, C2-B-125, C2-B-127).
     fn open_div(&mut self, k: &Cursor<'_>, e: usize) -> bool {
-        let Some((len, info)) = shapes::div_opener(k) else { return false };
+        let Some((len, info)) = shapes::div_opener(k) else {
+            return false;
+        };
         let start = k.offset();
-        let bare = info.name.is_none() && info.sigil.is_none() && info.title.is_none() && info.label.is_none();
+        let bare = info.name.is_none()
+            && info.sigil.is_none()
+            && info.title.is_none()
+            && info.label.is_none();
         if bare {
-            if let Some(i) = self.stack.iter().rposition(|c| matches!(c.kind, Kind::Div { .. })) {
+            if let Some(i) = self
+                .stack
+                .iter()
+                .rposition(|c| matches!(c.kind, Kind::Div { .. }))
+            {
                 if let Some(Kind::Div { len: open_len, .. }) = self.stack.get(i).map(|c| &c.kind) {
                     if *open_len <= len && i + 1 == self.stack.len() {
                         if let Some(top) = self.stack.last_mut() {
@@ -362,13 +597,28 @@ impl Parser<'_> {
         }
         if info.sigil == Some('|') {
             let (s, attrs) = self.take_pending(start, None);
-            self.leaf = Some(OpenLeaf { leaf: Leaf::LineBlock { len, lines: Vec::new() }, start: s, end: e, attrs, depth: self.stack.len() });
+            self.leaf = Some(OpenLeaf {
+                leaf: Leaf::LineBlock {
+                    len,
+                    lines: Vec::new(),
+                },
+                start: s,
+                end: e,
+                attrs,
+                depth: self.stack.len(),
+            });
             return true;
         }
         let (s, attrs) = self.take_pending(start, info.attrs.clone());
-        let figure = info.name.as_deref() == Some("figure") && info.title.is_none() && info.label.is_none();
+        let figure =
+            info.name.as_deref() == Some("figure") && info.title.is_none() && info.label.is_none();
         let sigil = info.sigil;
-        self.push_container(Kind::Div { len, sigil, figure }, ContainerKind::Div { info, sigil }, s, attrs);
+        self.push_container(
+            Kind::Div { len, sigil, figure },
+            ContainerKind::Div { info, sigil },
+            s,
+            attrs,
+        );
         if let Some(top) = self.stack.last_mut() {
             top.end = start + k.rest().trim_end_matches([' ', '\t']).len();
         }
@@ -376,18 +626,29 @@ impl Parser<'_> {
     }
 
     fn open_table(&mut self, k: &Cursor<'_>, e: usize) -> bool {
-        let Some((s, z, attrs)) = shapes::table_row(k) else { return false };
+        let Some((s, z, attrs)) = shapes::table_row(k) else {
+            return false;
+        };
         let _ = e;
         let text = self.src.text();
-        let row = Row { cells: table::parse_cells(text, k.base + s, k.base + z), start: k.offset(), end: k.base + z + 1, attrs, ..Row::default() };
+        let line_end = k.offset() + k.rest().trim_end_matches([' ', '\t']).len();
+        let row = Row {
+            cells: table::parse_cells(text, k.base + s, k.base + z),
+            start: k.offset(),
+            end: line_end,
+            attrs,
+            ..Row::default()
+        };
         let data = table::TableData { rows: vec![row] };
-        self.set_leaf(Leaf::Table { data }, k.offset(), k.base + z + 1, None);
+        self.set_leaf(Leaf::Table { data }, k.offset(), line_end, None);
         true
     }
 
     /// C2-B-090, C2-B-102: attribute lines merge and wait for the next line.
     fn open_attr_line(&mut self, k: &Cursor<'_>, e: usize) -> bool {
-        let Some(block) = shapes::attribute_line(k) else { return false };
+        let Some(block) = shapes::attribute_line(k) else {
+            return false;
+        };
         let start = k.offset();
         let end = start + k.rest().trim_end_matches([' ', '\t']).len();
         let _ = e;
@@ -397,14 +658,24 @@ impl Parser<'_> {
                 p.end = end;
                 p.lines.push((start, e));
             }
-            None => self.pending = Some(Pending { attrs: block, start, end, lines: vec![(start, e)], depth: self.stack.len() }),
+            None => {
+                self.pending = Some(Pending {
+                    attrs: block,
+                    start,
+                    end,
+                    lines: vec![(start, e)],
+                    depth: self.stack.len(),
+                })
+            }
         }
         true
     }
 
     /// C2-B-146: a caption directly below its block in the same container.
     fn open_caption(&mut self, k: &Cursor<'_>, e: usize) -> bool {
-        let Some(content) = shapes::caption(k) else { return false };
+        let Some(content) = shapes::caption(k) else {
+            return false;
+        };
         if let Some(p) = self.pending.take() {
             // C2-B-096: a caption takes no attribute line.
             self.pending_to_paragraph(p);
@@ -414,8 +685,20 @@ impl Parser<'_> {
         if !ok {
             return false;
         }
-        let piece = Piece { start: k.base + content, end: e, join: Join::Line };
-        self.leaf = Some(OpenLeaf { leaf: Leaf::Caption { pieces: vec![piece] }, start: k.offset(), end: e, attrs: None, depth: self.stack.len() });
+        let piece = Piece {
+            start: k.base + content,
+            end: e,
+            join: Join::Line,
+        };
+        self.leaf = Some(OpenLeaf {
+            leaf: Leaf::Caption {
+                pieces: vec![piece],
+            },
+            start: k.offset(),
+            end: e,
+            attrs: None,
+            depth: self.stack.len(),
+        });
         true
     }
 
@@ -425,7 +708,16 @@ impl Parser<'_> {
             let (s, attrs) = self.take_pending(start, None);
             let end = start + r.trim_end_matches([' ', '\t']).len();
             let _ = e;
-            self.push_leaf_event(LeafKind::LinkDef { label: d.label, href: d.href, title: d.title }, s, end, attrs);
+            self.push_leaf_event(
+                LeafKind::LinkDef {
+                    label: d.label,
+                    href: d.href,
+                    title: d.title,
+                },
+                s,
+                end,
+                attrs,
+            );
             self.closed = None;
             return true;
         }
@@ -439,7 +731,6 @@ impl Parser<'_> {
         false
     }
 }
-
 
 /// Interrupter (b) on the frame of the line (C2-B-015, C2-B-054, C2-B-055, C2-B-056).
 fn list_interrupts(f: &Frame, m: usize, mk: &ListMarker) -> bool {
@@ -468,10 +759,21 @@ fn list_interrupts(f: &Frame, m: usize, mk: &ListMarker) -> bool {
 /// its first number and is not kept as a key; another value stays a key.
 fn start_attribute(attrs: Option<&mut AttrBlock>, style: shapes::Style, value: &mut u64) {
     let Some(a) = attrs else { return };
-    let Some(i) = a.attrs.key_values.iter().position(|(k, _)| k.eq_ignore_ascii_case("start")) else { return };
-    let Some((_, v)) = a.attrs.key_values.get(i) else { return };
+    let Some(i) = a
+        .attrs
+        .key_values
+        .iter()
+        .position(|(k, _)| k.eq_ignore_ascii_case("start"))
+    else {
+        return;
+    };
+    let Some((_, v)) = a.attrs.key_values.get(i) else {
+        return;
+    };
     let ok = !v.is_empty() && v.len() <= 9 && v.bytes().all(|b| b.is_ascii_digit());
-    let Some(n) = v.parse::<u64>().ok().filter(|_| ok) else { return };
+    let Some(n) = v.parse::<u64>().ok().filter(|_| ok) else {
+        return;
+    };
     if n == 0 && style != shapes::Style::Decimal {
         return;
     }
@@ -481,11 +783,15 @@ fn start_attribute(attrs: Option<&mut AttrBlock>, style: shapes::Style, value: &
 
 /// Interrupter (a): a fence line (C2-B-014).
 fn fence_line(k: &Cursor<'_>) -> bool {
-    shapes::code_fence_opener(k).is_some() || shapes::fence_run(k, b'%') >= 3 || shapes::div_opener(k).is_some()
+    shapes::code_fence_opener(k).is_some()
+        || shapes::fence_run(k, b'%') >= 3
+        || shapes::div_opener(k).is_some()
 }
 
 fn is_definition(r: &str) -> bool {
-    shapes::footnote_def(r).is_some() || shapes::link_def(r).is_some() || shapes::abbr_def(r).is_some()
+    shapes::footnote_def(r).is_some()
+        || shapes::link_def(r).is_some()
+        || shapes::abbr_def(r).is_some()
 }
 
 /// A continuation row `+ ... |` (C2-B-175): the fragment areas.
@@ -494,7 +800,10 @@ fn continuation(k: &Cursor<'_>) -> Option<Vec<(usize, usize)>> {
     let body = r.strip_prefix('+')?;
     let seps = table::separators(body);
     let last = *seps.last()?;
-    if !body.get(last + 1..).is_some_and(crate::chars::is_blank_line) {
+    if !body
+        .get(last + 1..)
+        .is_some_and(crate::chars::is_blank_line)
+    {
         return None;
     }
     let base = k.offset() + 1;
@@ -510,9 +819,15 @@ fn continuation(k: &Cursor<'_>) -> Option<Vec<(usize, usize)>> {
 /// C2-B-197: one image form, glued attribute blocks, trailing spaces.
 #[must_use]
 pub fn block_image_line(line: &str) -> bool {
-    let Some(rest) = line.strip_prefix("![") else { return false };
-    let Some(close) = bracket_end(rest) else { return false };
-    let Some(after) = rest.get(close + 1..) else { return false };
+    let Some(rest) = line.strip_prefix("![") else {
+        return false;
+    };
+    let Some(close) = bracket_end(rest) else {
+        return false;
+    };
+    let Some(after) = rest.get(close + 1..) else {
+        return false;
+    };
     let after = match after.as_bytes().first() {
         Some(b'(') => paren_tail(after),
         Some(b'[') => after.find(']').and_then(|i| after.get(i + 1..)),
@@ -577,7 +892,9 @@ fn trailing_attrs(mut s: &str) -> bool {
 /// C2-B-198, C2-I-121: `$$`, a code span closed on the line, attributes, spaces.
 #[must_use]
 pub fn display_math_line(line: &str) -> bool {
-    let Some(rest) = line.strip_prefix("$$") else { return false };
+    let Some(rest) = line.strip_prefix("$$") else {
+        return false;
+    };
     let n = rest.bytes().take_while(|&b| b == b'`').count();
     if n == 0 {
         return false;
@@ -586,7 +903,9 @@ pub fn display_math_line(line: &str) -> bool {
     let mut i = n;
     while i < b.len() {
         if b.get(i) == Some(&b'`') {
-            let m = b.get(i..).map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
+            let m = b
+                .get(i..)
+                .map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
             if m == n {
                 return rest.get(i + m..).is_some_and(trailing_attrs);
             }

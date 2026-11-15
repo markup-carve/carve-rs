@@ -33,7 +33,12 @@ pub enum MarkerKind {
     Bullet(char),
     /// `value` is `None` for the bare dot. `letter` holds a single letter,
     /// which a roman list reads as a numeral and an alphabetic list as a letter.
-    Ordered { style: Style, delim: char, value: Option<u64>, letter: Option<char> },
+    Ordered {
+        style: Style,
+        delim: char,
+        value: Option<u64>,
+        letter: Option<char>,
+    },
 }
 
 /// A matched list marker.
@@ -49,13 +54,18 @@ pub struct ListMarker {
 
 fn roman_value(s: &str) -> Option<u64> {
     let lower = s.to_ascii_lowercase();
-    let upper_ok = s.bytes().all(|b| b.is_ascii_uppercase()) || s.bytes().all(|b| b.is_ascii_lowercase());
+    let upper_ok =
+        s.bytes().all(|b| b.is_ascii_uppercase()) || s.bytes().all(|b| b.is_ascii_lowercase());
     if !upper_ok {
         return None;
     }
     let mut rest = lower.as_str();
     let mut value = 0u64;
-    let places: [(&str, &str, &str, u64); 3] = [("c", "d", "m", 100), ("x", "l", "c", 10), ("i", "v", "x", 1)];
+    let places: [(&str, &str, &str, u64); 3] = [
+        ("c", "d", "m", 100),
+        ("x", "l", "c", 10),
+        ("i", "v", "x", 1),
+    ];
     let m = rest.bytes().take_while(|&b| b == b'm').count();
     if m > 3 {
         return None;
@@ -84,7 +94,13 @@ fn roman_place(s: &str, one: &str, five: &str, ten: &str) -> (u64, usize) {
         used = 1;
         v = 5;
     }
-    let ones = s.get(used..).unwrap_or("").bytes().take_while(|&b| char::from(b).to_string() == one).take(3).count();
+    let ones = s
+        .get(used..)
+        .unwrap_or("")
+        .bytes()
+        .take_while(|&b| char::from(b).to_string() == one)
+        .take(3)
+        .count();
     (v + ones as u64, used + ones)
 }
 
@@ -127,7 +143,13 @@ pub fn list_marker(c: &Cursor<'_>) -> Option<ListMarker> {
     };
     let attrs = glued_attrs(&mut k)?;
     let (pos, col) = after_spaces(&k, min_spaces)?;
-    let mut m = ListMarker { kind, attrs, task: None, content: pos, content_col: col };
+    let mut m = ListMarker {
+        kind,
+        attrs,
+        task: None,
+        content: pos,
+        content_col: col,
+    };
     if let MarkerKind::Ordered { value: None, .. } = kind {
         // C2-B-043: `. . . and then silence` is a paragraph.
         if k.text.get(pos..).is_some_and(|r| r.starts_with(". ")) {
@@ -144,10 +166,14 @@ fn task_box(k: &Cursor<'_>, m: &mut ListMarker) {
     t.pos = m.content;
     t.col = m.content_col;
     let r = t.rest().as_bytes();
-    let (Some(b'['), Some(&ch), Some(b']'), Some(b' ')) = (r.first(), r.get(1), r.get(2), r.get(3)) else {
+    let (Some(b'['), Some(&ch), Some(b']'), Some(b' ')) = (r.first(), r.get(1), r.get(2), r.get(3))
+    else {
         return;
     };
-    if !crate::tables::TASK_STATES.iter().any(|(c, ..)| *c == char::from(ch)) {
+    if !crate::tables::TASK_STATES
+        .iter()
+        .any(|(c, ..)| *c == char::from(ch))
+    {
         return;
     }
     t.bump_n(4);
@@ -164,7 +190,15 @@ fn ordered_head(k: &mut Cursor<'_>) -> Option<(MarkerKind, usize)> {
     let b = rest.as_bytes();
     if b.first() == Some(&b'.') {
         k.bump();
-        return Some((MarkerKind::Ordered { style: Style::Decimal, delim: '.', value: None, letter: None }, 1));
+        return Some((
+            MarkerKind::Ordered {
+                style: Style::Decimal,
+                delim: '.',
+                value: None,
+                letter: None,
+            },
+            1,
+        ));
     }
     let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
     if digits > 0 {
@@ -174,7 +208,15 @@ fn ordered_head(k: &mut Cursor<'_>) -> Option<(MarkerKind, usize)> {
         }
         let value = rest.get(..digits)?.parse().ok()?;
         k.bump_n(digits + 1);
-        return Some((MarkerKind::Ordered { style: Style::Decimal, delim, value: Some(value), letter: None }, 1));
+        return Some((
+            MarkerKind::Ordered {
+                style: Style::Decimal,
+                delim,
+                value: Some(value),
+                letter: None,
+            },
+            1,
+        ));
     }
     let letters = b.iter().take_while(|c| c.is_ascii_alphabetic()).count();
     if letters == 0 || letters > 9 {
@@ -190,7 +232,15 @@ fn ordered_head(k: &mut Cursor<'_>) -> Option<(MarkerKind, usize)> {
     // C2-B-040: an uppercase marker with a dot needs two spaces (see gap G-002).
     let min = if upper && delim == '.' { 2 } else { 1 };
     k.bump_n(letters + 1);
-    Some((MarkerKind::Ordered { style, delim, value: Some(value), letter }, min))
+    Some((
+        MarkerKind::Ordered {
+            style,
+            delim,
+            value: Some(value),
+            letter,
+        },
+        min,
+    ))
 }
 
 fn letter_style(word: &str, upper: bool) -> Option<(Style, u64, Option<char>)> {
@@ -204,11 +254,23 @@ fn letter_style(word: &str, upper: bool) -> Option<(Style, u64, Option<char>)> {
             (false, false) => Style::LowerAlpha,
             (false, true) => Style::UpperAlpha,
         };
-        let value = if roman { 1 } else { u64::from(first.to_ascii_lowercase() as u8 - b'a' + 1) };
+        let value = if roman {
+            1
+        } else {
+            u64::from(first.to_ascii_lowercase() as u8 - b'a' + 1)
+        };
         return Some((style, value, Some(first)));
     }
     let value = roman_value(word)?;
-    Some((if upper { Style::UpperRoman } else { Style::LowerRoman }, value, None))
+    Some((
+        if upper {
+            Style::UpperRoman
+        } else {
+            Style::LowerRoman
+        },
+        value,
+        None,
+    ))
 }
 
 /// The value of a single letter read in a list of `style`.
@@ -225,7 +287,19 @@ pub fn letter_value(letter: char, style: Style) -> Option<u64> {
 pub fn marker_matches(list: MarkerKind, m: MarkerKind) -> bool {
     match (list, m) {
         (MarkerKind::Bullet(a), MarkerKind::Bullet(b)) => a == b,
-        (MarkerKind::Ordered { style: ls, delim: ld, .. }, MarkerKind::Ordered { style, delim, letter, .. }) => {
+        (
+            MarkerKind::Ordered {
+                style: ls,
+                delim: ld,
+                ..
+            },
+            MarkerKind::Ordered {
+                style,
+                delim,
+                letter,
+                ..
+            },
+        ) => {
             if ld != delim {
                 return false;
             }
@@ -283,7 +357,10 @@ pub fn heading(c: &Cursor<'_>) -> Option<(u8, usize)> {
     if rest.bytes().all(|x| x == b' ' || x == b'\t') {
         return None;
     }
-    let skip = rest.bytes().take_while(|&x| x == b' ' || x == b'\t').count();
+    let skip = rest
+        .bytes()
+        .take_while(|&x| x == b' ' || x == b'\t')
+        .count();
     u8::try_from(n).ok().map(|l| (l, c.pos + n + 1 + skip))
 }
 
@@ -337,13 +414,17 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
         i = 1;
     }
     if b.get(i) == Some(&b'=') {
-        let n = b.get(i + 1..).map_or(0, |r| r.iter().take_while(|&&x| is_lang_char(x)).count());
+        let n = b
+            .get(i + 1..)
+            .map_or(0, |r| r.iter().take_while(|&&x| is_lang_char(x)).count());
         if n > 0 {
             fi.raw = info.get(i + 1..i + 1 + n).map(String::from);
             return fi;
         }
     }
-    let n = b.get(i..).map_or(0, |r| r.iter().take_while(|&&x| is_lang_char(x)).count());
+    let n = b
+        .get(i..)
+        .map_or(0, |r| r.iter().take_while(|&&x| is_lang_char(x)).count());
     if n > 0 {
         fi.language = info.get(i..i + n).map(String::from);
         i += n;
@@ -359,9 +440,17 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
 }
 
 /// An optional quoted title and an optional bracket label after spaces.
-pub fn title_and_label(s: &str, mut i: usize, base: usize, title: &mut Option<(usize, usize)>, label: &mut Option<String>) {
+pub fn title_and_label(
+    s: &str,
+    mut i: usize,
+    base: usize,
+    title: &mut Option<(usize, usize)>,
+    label: &mut Option<String>,
+) {
     let b = s.as_bytes();
-    let sp = b.get(i..).map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
+    let sp = b
+        .get(i..)
+        .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
     if b.get(i + sp) == Some(&b'"') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find('"')) {
             let start = i + sp + 1;
@@ -369,7 +458,9 @@ pub fn title_and_label(s: &str, mut i: usize, base: usize, title: &mut Option<(u
             i = start + close + 1;
         }
     }
-    let sp = b.get(i..).map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
+    let sp = b
+        .get(i..)
+        .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
     if b.get(i + sp) == Some(&b'[') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find(']')) {
             *label = s.get(i + sp + 1..i + sp + 1 + close).map(String::from);
@@ -381,7 +472,11 @@ pub fn title_and_label(s: &str, mut i: usize, base: usize, title: &mut Option<(u
 #[must_use]
 pub fn bare_run(c: &Cursor<'_>, ch: u8) -> usize {
     let n = fence_run(c, ch);
-    if n >= 3 && c.rest().get(n..).is_some_and(crate::chars::is_blank_line) { n } else { 0 }
+    if n >= 3 && c.rest().get(n..).is_some_and(crate::chars::is_blank_line) {
+        n
+    } else {
+        0
+    }
 }
 
 /// What a div opener holds (C2-B-119).
@@ -413,14 +508,28 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
         return None;
     }
     let i = sp;
-    let name_len = b.get(i..).map_or(0, |r| r.iter().take_while(|&&x| x.is_ascii_alphanumeric() || x == b'_' || x == b'-').count());
+    let name_len = b.get(i..).map_or(0, |r| {
+        r.iter()
+            .take_while(|&&x| x.is_ascii_alphanumeric() || x == b'_' || x == b'-')
+            .count()
+    });
     if name_len > 0 {
         info.name = rest.get(i..i + name_len).map(String::from);
         after_div_name(rest, i + name_len, base, &mut info);
     } else if let Some(&s @ (b'>' | b'\\' | b'|')) = b.get(i) {
         info.sigil = Some(char::from(s));
     } else {
-        title_and_label(rest, if sp > 1 && b.get(i) == Some(&b'"') { i } else { 0 }, base, &mut info.title, &mut info.label);
+        title_and_label(
+            rest,
+            if sp > 1 && b.get(i) == Some(&b'"') {
+                i
+            } else {
+                0
+            },
+            base,
+            &mut info.title,
+            &mut info.label,
+        );
     }
     Some((n, info))
 }
@@ -461,7 +570,13 @@ fn row_tail(tail: &str) -> Option<Option<AttrBlock>> {
     let mut i = 0;
     let b = tail.as_bytes();
     let mut attrs = None;
-    let brace_at = if b.first() == Some(&b'{') { Some(0) } else if b.first() == Some(&b' ') && b.get(1) == Some(&b'{') { Some(1) } else { None };
+    let brace_at = if b.first() == Some(&b'{') {
+        Some(0)
+    } else if b.first() == Some(&b' ') && b.get(1) == Some(&b'{') {
+        Some(1)
+    } else {
+        None
+    };
     if let Some(at) = brace_at {
         if let Some((block, end)) = parse_glued(tail, at) {
             if !block.empty {
@@ -581,7 +696,10 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
         return None;
     }
     let rest = rest.get(sp..)?;
-    let dlen = rest.bytes().take_while(|&b| b != b' ' && b != b'\t').count();
+    let dlen = rest
+        .bytes()
+        .take_while(|&b| b != b' ' && b != b'\t')
+        .count();
     if dlen == 0 {
         return None;
     }
@@ -592,7 +710,11 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
     } else {
         Some(def_title(tail)?)
     };
-    Some(LinkDef { label: label.to_string(), href, title })
+    Some(LinkDef {
+        label: label.to_string(),
+        href,
+        title,
+    })
 }
 
 fn def_title(tail: &str) -> Option<String> {
@@ -614,7 +736,10 @@ fn def_title(tail: &str) -> Option<String> {
                 None => out.push('\\'),
             }
         } else if c == q {
-            return t.get(i + 1..).filter(|r| crate::chars::is_blank_line(r)).map(|_| out);
+            return t
+                .get(i + 1..)
+                .filter(|r| crate::chars::is_blank_line(r))
+                .map(|_| out);
         } else {
             out.push(c);
         }
@@ -649,14 +774,16 @@ pub fn frontmatter_opener(line: &str) -> Option<String> {
     let word = rest.strip_prefix(' ').unwrap_or(rest);
     let b = word.as_bytes();
     let ok = b.first().is_some_and(u8::is_ascii_lowercase)
-        && b.iter().all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-');
+        && b.iter()
+            .all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-');
     ok.then(|| word.to_string())
 }
 
 /// The frontmatter closer (C2-B-162).
 #[must_use]
 pub fn frontmatter_closer(line: &str) -> bool {
-    line.strip_prefix("---").is_some_and(crate::chars::is_blank_line)
+    line.strip_prefix("---")
+        .is_some_and(crate::chars::is_blank_line)
 }
 
 /// Whether `r` is a comment-only line: `%%` at its start (C2-B-137).

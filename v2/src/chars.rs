@@ -24,7 +24,10 @@ pub fn is_word(c: char) -> bool {
 /// A Unicode number, category N (C2-H-148).
 #[must_use]
 pub fn is_number(c: char) -> bool {
-    matches!(get_general_category(c), G::DecimalNumber | G::LetterNumber | G::OtherNumber)
+    matches!(
+        get_general_category(c),
+        G::DecimalNumber | G::LetterNumber | G::OtherNumber
+    )
 }
 
 /// Whitespace for the tests of the character before or after a position:
@@ -38,7 +41,10 @@ pub const fn is_flank_space(c: char) -> bool {
 #[must_use]
 pub fn is_joining(c: char) -> bool {
     matches!(c, '\u{200D}' | '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
-        || matches!(get_general_category(c), G::NonspacingMark | G::SpacingMark | G::EnclosingMark)
+        || matches!(
+            get_general_category(c),
+            G::NonspacingMark | G::SpacingMark | G::EnclosingMark
+        )
 }
 
 /// A control (Cc) or format (Cf) character (C2-I-122).

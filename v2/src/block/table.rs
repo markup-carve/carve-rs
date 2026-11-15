@@ -63,11 +63,15 @@ pub fn separators(r: &str) -> Vec<usize> {
 /// Past a backtick run and its closing run of the same length, or past the
 /// opening run alone when no closer follows on the line.
 fn skip_code(b: &[u8], i: usize) -> usize {
-    let n = b.get(i..).map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
+    let n = b
+        .get(i..)
+        .map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
     let mut j = i + n;
     while j < b.len() {
         if b.get(j) == Some(&b'`') {
-            let m = b.get(j..).map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
+            let m = b
+                .get(j..)
+                .map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
             if m == n {
                 return j + m;
             }
@@ -113,7 +117,11 @@ pub fn parse_cells(text: &str, s: usize, e: usize) -> Vec<Cell> {
 }
 
 fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
-    let mut cell = Cell { start, end, ..Cell::default() };
+    let mut cell = Cell {
+        start,
+        end,
+        ..Cell::default()
+    };
     let mut i = start;
     if text.as_bytes().get(i) == Some(&b'=') && i < end {
         cell.header = true;
@@ -133,7 +141,11 @@ fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
         _ => {}
     }
     if a < z || cell.span.is_none() {
-        cell.pieces.push(Piece { start: a, end: z, join: Join::Line });
+        cell.pieces.push(Piece {
+            start: a,
+            end: z,
+            join: Join::Line,
+        });
     }
     if cell.span.is_some() {
         cell.pieces.clear();
@@ -143,7 +155,11 @@ fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
 
 /// The brace block of a cell prefix: an alignment mark first (C2-B-182),
 /// then the parts of an attribute block.
-fn cell_brace(text: &str, i: usize, end: usize) -> Option<(Option<AttrBlock>, Option<&'static str>, usize)> {
+fn cell_brace(
+    text: &str,
+    i: usize,
+    end: usize,
+) -> Option<(Option<AttrBlock>, Option<&'static str>, usize)> {
     let b = text.as_bytes();
     let mark = match b.get(i + 1) {
         Some(b'<') => Some("left"),
@@ -180,12 +196,30 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
             Some(cell) => {
                 cell.joined = true;
                 if cell.pieces.is_empty() {
-                    cell.pieces.push(Piece { start: a, end: z, join: Join::Line });
+                    cell.pieces.push(Piece {
+                        start: a,
+                        end: z,
+                        join: Join::Line,
+                    });
                 } else {
-                    cell.pieces.push(Piece { start: a, end: z, join: Join::Cell });
+                    cell.pieces.push(Piece {
+                        start: a,
+                        end: z,
+                        join: Join::Cell,
+                    });
                 }
             }
-            None => row.cells.push(Cell { start: s, end: e, joined: true, pieces: vec![Piece { start: a, end: z, join: Join::Line }], ..Cell::default() }),
+            None => row.cells.push(Cell {
+                start: s,
+                end: e,
+                joined: true,
+                pieces: vec![Piece {
+                    start: a,
+                    end: z,
+                    join: Join::Line,
+                }],
+                ..Cell::default()
+            }),
         }
     }
 }

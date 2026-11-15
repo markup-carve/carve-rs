@@ -20,17 +20,25 @@ fn main() {
             "--no-smart-typography" => opts.smart_typography = false,
             "--source-lines" => opts.source_lines = true,
             "--heading-ids" => {
-                if let Some(v) = it.next().and_then(|v| carve2::options::HeadingIds::from_name(v)) {
+                if let Some(v) = it
+                    .next()
+                    .and_then(|v| carve2::options::HeadingIds::from_name(v))
+                {
                     opts.heading_ids = v;
                 }
             }
             "--profile" => {
-                if let Some(v) = it.next().and_then(|v| carve2::options::Profile::from_name(v)) {
+                if let Some(v) = it
+                    .next()
+                    .and_then(|v| carve2::options::Profile::from_name(v))
+                {
                     opts.profile = v;
                 }
             }
             _ => {
-                eprintln!("usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input");
+                eprintln!(
+                    "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input"
+                );
                 std::process::exit(2);
             }
         }
@@ -53,12 +61,17 @@ fn main() {
 /// `--batch IN OUT`: IN is a JSON list of `{"input", "opts"}`, OUT gets a
 /// list of `{"html", "tree", "ns"}`, for the differential runs.
 fn batch(input: Option<&String>, output: Option<&String>) {
-    let (Some(input), Some(output)) = (input, output) else { std::process::exit(2) };
+    let (Some(input), Some(output)) = (input, output) else {
+        std::process::exit(2)
+    };
     let text = std::fs::read_to_string(input).unwrap_or_default();
     let cases: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
     let mut out = Vec::new();
     for c in cases.as_array().into_iter().flatten() {
-        let src = c.get("input").and_then(serde_json::Value::as_str).unwrap_or("");
+        let src = c
+            .get("input")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         let opts = options_from_json(c.get("opts"));
         let t0 = std::time::Instant::now();
         let html = carve2::render(src, &opts);
@@ -79,10 +92,18 @@ fn options_from_json(v: Option<&serde_json::Value>) -> carve2::Options {
     o.sections = flag("sections", o.sections);
     o.smart_typography = flag("smartTypography", o.smart_typography);
     o.source_lines = flag("sourceLines", o.source_lines);
-    if let Some(h) = v.get("headingIds").and_then(serde_json::Value::as_str).and_then(carve2::options::HeadingIds::from_name) {
+    if let Some(h) = v
+        .get("headingIds")
+        .and_then(serde_json::Value::as_str)
+        .and_then(carve2::options::HeadingIds::from_name)
+    {
         o.heading_ids = h;
     }
-    if let Some(p) = v.get("profile").and_then(serde_json::Value::as_str).and_then(carve2::options::Profile::from_name) {
+    if let Some(p) = v
+        .get("profile")
+        .and_then(serde_json::Value::as_str)
+        .and_then(carve2::options::Profile::from_name)
+    {
         o.profile = p;
     }
     o

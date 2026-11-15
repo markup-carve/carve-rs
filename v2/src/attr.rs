@@ -81,7 +81,8 @@ fn parse_part(s: &str, i: usize, block: &mut AttrBlock) -> Option<usize> {
         b':' => {
             let end = run(b, i + 1, |c| c.is_ascii_alphanumeric() || c == b'-');
             let tag = &s[i + 1..end];
-            let ok = tag.is_empty() || (!tag.starts_with('-') && !tag.ends_with('-') && !tag.contains("--"));
+            let ok = tag.is_empty()
+                || (!tag.starts_with('-') && !tag.ends_with('-') && !tag.contains("--"));
             ok.then(|| {
                 block.lang = Some(tag.to_string());
                 end
@@ -150,7 +151,9 @@ fn parse_value(s: &str, i: usize) -> Option<(String, usize)> {
             }
         }
         _ => {
-            let end = run(b, i, |c| !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n'));
+            let end = run(b, i, |c| {
+                !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
+            });
             (end > i).then(|| (s[i..end].to_string(), end))
         }
     }
@@ -162,8 +165,18 @@ fn add_key(block: &mut AttrBlock, key: &str, value: String) {
     if key.eq_ignore_ascii_case("id") {
         block.attrs.id = Some(value);
     } else if key.eq_ignore_ascii_case("class") {
-        block.attrs.classes.extend(value.split([' ', '\t']).filter(|c| !c.is_empty()).map(String::from));
-    } else if let Some(slot) = block.attrs.key_values.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(key)) {
+        block.attrs.classes.extend(
+            value
+                .split([' ', '\t'])
+                .filter(|c| !c.is_empty())
+                .map(String::from),
+        );
+    } else if let Some(slot) = block
+        .attrs
+        .key_values
+        .iter_mut()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+    {
         slot.1 = value;
     } else {
         block.attrs.key_values.push((key.to_string(), value));

@@ -2,6 +2,7 @@
 //! open containers and the open leaf, and emits events.
 
 pub mod events;
+pub mod include;
 pub mod line;
 mod open;
 pub mod shapes;
@@ -34,12 +35,33 @@ enum Kind {
     Document,
     Quote,
     /// `col` is the marker column of the first item, relative to the quote base.
-    List { kind: MarkerKind, col: usize, loose: bool, next: u64, items: usize },
-    Item { marker_col: usize, content_col: usize },
-    DescList { col: usize, has_term: bool },
-    Desc { marker_col: usize, content_col: usize },
-    Footnote { content_col: usize },
-    Div { len: usize, sigil: Option<char>, figure: bool },
+    List {
+        kind: MarkerKind,
+        col: usize,
+        loose: bool,
+        next: u64,
+        items: usize,
+    },
+    Item {
+        marker_col: usize,
+        content_col: usize,
+    },
+    DescList {
+        col: usize,
+        has_term: bool,
+    },
+    Desc {
+        marker_col: usize,
+        content_col: usize,
+    },
+    Footnote {
+        content_col: usize,
+    },
+    Div {
+        len: usize,
+        sigil: Option<char>,
+        figure: bool,
+    },
 }
 
 impl Kind {
@@ -51,7 +73,14 @@ impl Kind {
     /// Marker and content column of an indent-owned container.
     const fn indent_cols(&self) -> Option<(usize, usize)> {
         match self {
-            Self::Item { marker_col, content_col } | Self::Desc { marker_col, content_col } => Some((*marker_col, *content_col)),
+            Self::Item {
+                marker_col,
+                content_col,
+            }
+            | Self::Desc {
+                marker_col,
+                content_col,
+            } => Some((*marker_col, *content_col)),
             Self::Footnote { content_col } => Some((0, *content_col)),
             _ => None,
         }
@@ -61,15 +90,44 @@ impl Kind {
 /// The open leaf.
 #[derive(Debug, Clone)]
 enum Leaf {
-    Para { pieces: Vec<Piece> },
-    Heading { level: u8, marker_col: usize, pieces: Vec<Piece> },
-    Term { pieces: Vec<Piece> },
-    Caption { pieces: Vec<Piece> },
-    Code { len: usize, indent: usize, info: FenceInfo, value: String, held: Vec<String> },
-    CommentBlock { len: usize, indent: usize, lines: Vec<String>, held: usize },
-    Frontmatter { format: String, value: String },
-    LineBlock { len: usize, lines: Vec<Piece> },
-    Table { data: TableData },
+    Para {
+        pieces: Vec<Piece>,
+    },
+    Heading {
+        level: u8,
+        marker_col: usize,
+        pieces: Vec<Piece>,
+    },
+    Term {
+        pieces: Vec<Piece>,
+    },
+    Caption {
+        pieces: Vec<Piece>,
+    },
+    Code {
+        len: usize,
+        indent: usize,
+        info: FenceInfo,
+        value: String,
+        held: Vec<String>,
+    },
+    CommentBlock {
+        len: usize,
+        indent: usize,
+        lines: Vec<String>,
+        held: usize,
+    },
+    Frontmatter {
+        format: String,
+        value: String,
+    },
+    LineBlock {
+        len: usize,
+        lines: Vec<Piece>,
+    },
+    Table {
+        data: TableData,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +187,10 @@ pub fn scan(src: &Source) -> BlockOutput {
     let mut p = Parser {
         src,
         events: Vec::new(),
-        stack: vec![Container { kind: Kind::Document, end: 0 }],
+        stack: vec![Container {
+            kind: Kind::Document,
+            end: 0,
+        }],
         leaf: None,
         pending: None,
         blank_run: 0,
@@ -166,7 +227,10 @@ impl<'a> Parser<'a> {
             self.blank_line(&walk, s, e);
             return;
         }
-        let had_opaque = matches!(self.leaf.as_ref().map(|l| &l.leaf), Some(Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. }));
+        let had_opaque = matches!(
+            self.leaf.as_ref().map(|l| &l.leaf),
+            Some(Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. })
+        );
         if self.opaque_line(&walk, e) {
             return;
         }
@@ -196,12 +260,26 @@ impl<'a> Parser<'a> {
         if self.line_no == 0 && self.leaf.is_none() {
             if let Some(format) = shapes::frontmatter_opener(text) {
                 let start = s;
-                self.leaf = Some(OpenLeaf { leaf: Leaf::Frontmatter { format, value: String::new() }, start, end: e, attrs: None, depth: 1 });
+                self.leaf = Some(OpenLeaf {
+                    leaf: Leaf::Frontmatter {
+                        format,
+                        value: String::new(),
+                    },
+                    start,
+                    end: e,
+                    attrs: None,
+                    depth: 1,
+                });
                 return true;
             }
             return false;
         }
-        let Some(OpenLeaf { leaf: Leaf::Frontmatter { value, .. }, end, .. }) = &mut self.leaf else {
+        let Some(OpenLeaf {
+            leaf: Leaf::Frontmatter { value, .. },
+            end,
+            ..
+        }) = &mut self.leaf
+        else {
             return false;
         };
         *end = e;
@@ -216,7 +294,12 @@ impl<'a> Parser<'a> {
 
     /// Reads the prefixes of the open containers, outside in (C2-B-008).
     fn walk(&self, cur: Cursor<'a>, blank: bool) -> Walk<'a> {
-        let mut w = Walk { matched: 1, cur, qbase: 0, missing_quote: None };
+        let mut w = Walk {
+            matched: 1,
+            cur,
+            qbase: 0,
+            missing_quote: None,
+        };
         for (i, c) in self.stack.iter().enumerate().skip(1) {
             match &c.kind {
                 Kind::Quote => {
@@ -230,7 +313,9 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Kind::Item { .. } | Kind::Desc { .. } | Kind::Footnote { .. } => {
-                    let Some((marker, content)) = c.kind.indent_cols() else { break };
+                    let Some((marker, content)) = c.kind.indent_cols() else {
+                        break;
+                    };
                     if !blank {
                         let k = w.cur.after_blanks();
                         if k.col - w.qbase <= marker || k.is_blank() {
@@ -267,7 +352,9 @@ impl<'a> Parser<'a> {
     /// A blank line inside a fence body is held back (C2-B-113).
     fn opaque_blank(&mut self, walk: &Walk<'a>, _s: usize, _e: usize) -> bool {
         let owned = self.leaf.as_ref().is_some_and(|l| l.depth <= walk.matched);
-        let Some(open) = &mut self.leaf else { return false };
+        let Some(open) = &mut self.leaf else {
+            return false;
+        };
         if !owned {
             return false;
         }
@@ -283,7 +370,11 @@ impl<'a> Parser<'a> {
                 true
             }
             Leaf::LineBlock { lines, .. } => {
-                lines.push(Piece { start: _s, end: _s, join: Join::Line });
+                lines.push(Piece {
+                    start: _s,
+                    end: _s,
+                    join: Join::Line,
+                });
                 true
             }
             _ => false,
@@ -293,7 +384,10 @@ impl<'a> Parser<'a> {
     /// A line in an opaque body or a line block (C2-B-112, C2-B-123).
     fn opaque_line(&mut self, walk: &Walk<'a>, e: usize) -> bool {
         let Some(open) = &self.leaf else { return false };
-        if !matches!(open.leaf, Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. }) {
+        if !matches!(
+            open.leaf,
+            Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. }
+        ) {
             return false;
         }
         if open.depth > walk.matched || walk.matched < self.stack.len() {
@@ -302,7 +396,9 @@ impl<'a> Parser<'a> {
             return false;
         }
         let k = walk.cur.after_blanks();
-        let Some(OpenLeaf { leaf, end, .. }) = &mut self.leaf else { return false };
+        let Some(OpenLeaf { leaf, end, .. }) = &mut self.leaf else {
+            return false;
+        };
         let closes = match leaf {
             Leaf::Code { len, .. } => shapes::bare_run(&k, b'`') >= *len,
             Leaf::CommentBlock { len, .. } => shapes::bare_run(&k, b'%') >= *len,
@@ -313,7 +409,10 @@ impl<'a> Parser<'a> {
         if closes {
             let target = matches!(leaf, Leaf::Code { .. });
             self.close_leaf();
-            self.closed = Some(Closed { depth: self.stack.len(), target });
+            self.closed = Some(Closed {
+                depth: self.stack.len(),
+                target,
+            });
             return true;
         }
         opaque_push(leaf, walk);
@@ -327,15 +426,32 @@ impl<'a> Parser<'a> {
         let k = walk.cur.after_blanks();
         let lazy = match &open.leaf {
             Leaf::Para { .. } | Leaf::Term { .. } | Leaf::Caption { .. } => true,
-            Leaf::Heading { marker_col, .. } => walk.matched == self.stack.len() && walk.missing_quote.is_none() && k.col - walk.qbase > *marker_col,
+            Leaf::Heading { marker_col, .. } => {
+                walk.matched == self.stack.len()
+                    && walk.missing_quote.is_none()
+                    && k.col - walk.qbase > *marker_col
+            }
             Leaf::Table { .. } => return self.table_line(walk, e),
             _ => false,
         };
         if !lazy || self.interrupts(walk) {
             return false;
         }
-        let piece = Piece { start: k.offset(), end: e, join: Join::Line };
-        if let Some(OpenLeaf { leaf: Leaf::Para { pieces } | Leaf::Term { pieces } | Leaf::Caption { pieces } | Leaf::Heading { pieces, .. }, end, .. }) = &mut self.leaf {
+        let piece = Piece {
+            start: k.offset(),
+            end: e,
+            join: Join::Line,
+        };
+        if let Some(OpenLeaf {
+            leaf:
+                Leaf::Para { pieces }
+                | Leaf::Term { pieces }
+                | Leaf::Caption { pieces }
+                | Leaf::Heading { pieces, .. },
+            end,
+            ..
+        }) = &mut self.leaf
+        {
             pieces.push(piece);
             *end = e;
         }
@@ -350,13 +466,21 @@ impl<'a> Parser<'a> {
         if !shapes::comment_only(k.rest()) {
             return false;
         }
-        if matches!(self.leaf.as_ref().map(|l| &l.leaf), Some(Leaf::Heading { .. })) {
+        if matches!(
+            self.leaf.as_ref().map(|l| &l.leaf),
+            Some(Leaf::Heading { .. })
+        ) {
             self.close_leaf();
         }
         let value = shapes::line_comment_value(k.rest());
         let start = k.offset();
         let end = start + k.rest().trim_end_matches([' ', '\t']).len();
-        if let Some(OpenLeaf { leaf: Leaf::Table { data }, end: tend, .. }) = &mut self.leaf {
+        if let Some(OpenLeaf {
+            leaf: Leaf::Table { data },
+            end: tend,
+            ..
+        }) = &mut self.leaf
+        {
             if let Some(row) = data.rows.last_mut() {
                 row.comments.push((start, end, value));
                 *tend = end;
@@ -364,15 +488,34 @@ impl<'a> Parser<'a> {
             }
         }
         let _ = e;
-        self.push_leaf_event(LeafKind::Comment { block: false, value }, start, end, None);
+        self.push_leaf_event(
+            LeafKind::Comment {
+                block: false,
+                value,
+            },
+            start,
+            end,
+            None,
+        );
         true
     }
 
-    fn push_leaf_event(&mut self, kind: LeafKind, start: usize, end: usize, attrs: Option<AttrBlock>) {
+    fn push_leaf_event(
+        &mut self,
+        kind: LeafKind,
+        start: usize,
+        end: usize,
+        attrs: Option<AttrBlock>,
+    ) {
         if let Some(top) = self.stack.last_mut() {
             top.end = top.end.max(end);
         }
-        self.events.push(Event::Leaf { kind, start, end, attrs });
+        self.events.push(Event::Leaf {
+            kind,
+            start,
+            end,
+            attrs,
+        });
     }
 
     /// Pending attribute lines stay pending only for a block of their own
@@ -391,8 +534,22 @@ impl<'a> Parser<'a> {
         while self.stack.len() > p.depth {
             self.pop_container();
         }
-        let pieces = p.lines.iter().enumerate().map(|(i, &(s, e))| Piece { start: s, end: e, join: if i == 0 { Join::Line } else { Join::Line } }).collect();
-        self.push_leaf_event(LeafKind::Paragraph { pieces, role: None }, p.start, p.end, None);
+        let pieces = p
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(i, &(s, e))| Piece {
+                start: s,
+                end: e,
+                join: if i == 0 { Join::Line } else { Join::Line },
+            })
+            .collect();
+        self.push_leaf_event(
+            LeafKind::Paragraph { pieces, role: None },
+            p.start,
+            p.end,
+            None,
+        );
         self.closed = None;
     }
 
@@ -400,8 +557,14 @@ impl<'a> Parser<'a> {
     fn close_leaf(&mut self) {
         let Some(open) = self.leaf.take() else { return };
         let (kind, target) = self.finish_leaf(open.leaf, open.start);
-        let end = if let LeafKind::Paragraph { pieces, .. } | LeafKind::Heading { pieces, .. } | LeafKind::Term { pieces } | LeafKind::Caption { pieces } = &kind {
-            pieces.last().map_or(open.end, |p| trim_end(self.src, p.start, p.end))
+        let end = if let LeafKind::Paragraph { pieces, .. }
+        | LeafKind::Heading { pieces, .. }
+        | LeafKind::Term { pieces }
+        | LeafKind::Caption { pieces } = &kind
+        {
+            pieces
+                .last()
+                .map_or(open.end, |p| trim_end(self.src, p.start, p.end))
         } else {
             open.end
         };
@@ -410,7 +573,10 @@ impl<'a> Parser<'a> {
             self.pop_container();
         }
         self.push_leaf_event(kind, open.start, end, attrs);
-        self.closed = Some(Closed { depth: self.stack.len(), target });
+        self.closed = Some(Closed {
+            depth: self.stack.len(),
+            target,
+        });
     }
 
     fn finish_leaf(&self, leaf: Leaf, start: usize) -> (LeafKind, bool) {
@@ -424,7 +590,13 @@ impl<'a> Parser<'a> {
             Leaf::Term { pieces } => (LeafKind::Term { pieces }, false),
             Leaf::Caption { pieces } => (LeafKind::Caption { pieces }, false),
             Leaf::Code { info, value, .. } => (LeafKind::Code { value, info }, true),
-            Leaf::CommentBlock { lines, .. } => (LeafKind::Comment { block: true, value: lines.join("\n") }, false),
+            Leaf::CommentBlock { lines, .. } => (
+                LeafKind::Comment {
+                    block: true,
+                    value: lines.join("\n"),
+                },
+                false,
+            ),
             Leaf::Frontmatter { format, value } => (LeafKind::Frontmatter { format, value }, false),
             Leaf::LineBlock { lines, .. } => (LeafKind::LineBlock { lines }, false),
             Leaf::Table { data } => {
@@ -445,7 +617,11 @@ impl<'a> Parser<'a> {
     }
 
     fn pop_container(&mut self) {
-        if self.leaf.as_ref().is_some_and(|l| l.depth >= self.stack.len()) {
+        if self
+            .leaf
+            .as_ref()
+            .is_some_and(|l| l.depth >= self.stack.len())
+        {
             self.close_leaf();
         }
         let Some(c) = self.stack.pop() else { return };
@@ -457,17 +633,38 @@ impl<'a> Parser<'a> {
             Kind::List { loose, .. } => Some(loose),
             _ => None,
         };
-        let target = matches!(c.kind, Kind::Quote | Kind::Div { sigil: Some('>'), .. } | Kind::Div { figure: true, .. });
+        let target = matches!(
+            c.kind,
+            Kind::Quote
+                | Kind::Div {
+                    sigil: Some('>'),
+                    ..
+                }
+                | Kind::Div { figure: true, .. }
+        );
         self.events.push(Event::Exit { end: c.end, loose });
         if let Some(top) = self.stack.last_mut() {
             top.end = top.end.max(c.end);
         }
-        self.closed = Some(Closed { depth: self.stack.len(), target });
+        self.closed = Some(Closed {
+            depth: self.stack.len(),
+            target,
+        });
     }
 
-    fn push_container(&mut self, kind: Kind, ev: ContainerKind, start: usize, attrs: Option<AttrBlock>) {
+    fn push_container(
+        &mut self,
+        kind: Kind,
+        ev: ContainerKind,
+        start: usize,
+        attrs: Option<AttrBlock>,
+    ) {
         let end = start;
-        self.events.push(Event::Enter { kind: ev, start, attrs });
+        self.events.push(Event::Enter {
+            kind: ev,
+            start,
+            attrs,
+        });
         self.stack.push(Container { kind, end });
         self.closed = None;
     }
@@ -487,7 +684,12 @@ impl<'a> Parser<'a> {
 /// (C2-B-029) or, in a line block, by the container only (C2-B-130).
 fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
     match leaf {
-        Leaf::Code { indent, value, held, .. } => {
+        Leaf::Code {
+            indent,
+            value,
+            held,
+            ..
+        } => {
             for h in held.drain(..) {
                 value.push_str(&h);
                 value.push('\n');
@@ -497,7 +699,12 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
             value.push_str(k.rest());
             value.push('\n');
         }
-        Leaf::CommentBlock { indent, lines, held, .. } => {
+        Leaf::CommentBlock {
+            indent,
+            lines,
+            held,
+            ..
+        } => {
             for _ in 0..*held {
                 lines.push(String::new());
             }
@@ -508,7 +715,11 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
         }
         Leaf::LineBlock { lines, .. } => {
             let k = walk.cur;
-            lines.push(Piece { start: k.offset(), end: k.base + k.text.len(), join: Join::Line });
+            lines.push(Piece {
+                start: k.offset(),
+                end: k.base + k.text.len(),
+                join: Join::Line,
+            });
         }
         _ => {}
     }
@@ -523,7 +734,9 @@ pub(crate) fn trim_end(src: &Source, s: usize, e: usize) -> usize {
         z -= 1;
     }
     if z < e && z > s && b.get(z - 1) == Some(&b'\\') {
-        let run = b.get(s..z).map_or(0, |r| r.iter().rev().take_while(|&&c| c == b'\\').count());
+        let run = b
+            .get(s..z)
+            .map_or(0, |r| r.iter().rev().take_while(|&&c| c == b'\\').count());
         if run % 2 == 1 {
             z += 1;
         }
@@ -535,7 +748,10 @@ pub(crate) fn trim_end(src: &Source, s: usize, e: usize) -> usize {
 /// display math line.
 fn paragraph_role(src: &Source, pieces: &[Piece]) -> Option<Role> {
     let first = pieces.first()?;
-    let rest_comments = pieces.iter().skip(1).all(|p| shapes::comment_only(src.slice(p.start, p.end).trim_start_matches([' ', '\t'])));
+    let rest_comments = pieces
+        .iter()
+        .skip(1)
+        .all(|p| shapes::comment_only(src.slice(p.start, p.end).trim_start_matches([' ', '\t'])));
     if !rest_comments {
         return None;
     }

@@ -17,7 +17,12 @@ pub struct Cursor<'a> {
 impl<'a> Cursor<'a> {
     #[must_use]
     pub const fn new(text: &'a str, base: usize) -> Self {
-        Self { text, base, pos: 0, col: 0 }
+        Self {
+            text,
+            base,
+            pos: 0,
+            col: 0,
+        }
     }
 
     /// The rest of the line from the cursor.
@@ -45,7 +50,11 @@ impl<'a> Cursor<'a> {
     /// Column after the character at the cursor.
     #[must_use]
     pub const fn col_after(col: usize, c: char) -> usize {
-        if c == '\t' { (col / TAB_STOP + 1) * TAB_STOP } else { col + 1 }
+        if c == '\t' {
+            (col / TAB_STOP + 1) * TAB_STOP
+        } else {
+            col + 1
+        }
     }
 
     /// Advances over one character.

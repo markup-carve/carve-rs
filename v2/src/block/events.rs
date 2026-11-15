@@ -11,33 +11,75 @@ use crate::inline::Piece;
 #[derive(Debug, Clone)]
 pub enum ContainerKind {
     Quote,
-    List { kind: MarkerKind, start: Option<u64> },
-    Item { task: Option<char> },
+    List {
+        kind: MarkerKind,
+        start: Option<u64>,
+    },
+    Item {
+        task: Option<char>,
+    },
     DescList,
     Desc,
-    Footnote { label: String },
-    Div { info: DivInfo, sigil: Option<char> },
+    Footnote {
+        label: String,
+    },
+    Div {
+        info: DivInfo,
+        sigil: Option<char>,
+    },
 }
 
 /// A leaf block, complete.
 #[derive(Debug, Clone)]
 pub enum LeafKind {
-    Paragraph { pieces: Vec<Piece>, role: Option<Role> },
-    Heading { level: u8, pieces: Vec<Piece> },
-    Term { pieces: Vec<Piece> },
+    Paragraph {
+        pieces: Vec<Piece>,
+        role: Option<Role>,
+    },
+    Heading {
+        level: u8,
+        pieces: Vec<Piece>,
+    },
+    Term {
+        pieces: Vec<Piece>,
+    },
     /// A caption attaches to the block that closed directly above (C2-B-146).
-    Caption { pieces: Vec<Piece> },
-    Code { value: String, info: FenceInfo },
+    Caption {
+        pieces: Vec<Piece>,
+    },
+    Code {
+        value: String,
+        info: FenceInfo,
+    },
     /// `%%%` block or a comment-only line outside a leaf (C2-A-074).
-    Comment { block: bool, value: String },
+    Comment {
+        block: bool,
+        value: String,
+    },
     Thematic,
     Table(Box<TableData>),
-    LinkDef { label: String, href: String, title: Option<String> },
-    AbbrDef { key: String, expansion: String },
-    Frontmatter { format: String, value: String },
-    Include { path: String, section: Option<String>, options: serde_json::Map<String, serde_json::Value> },
+    LinkDef {
+        label: String,
+        href: String,
+        title: Option<String>,
+    },
+    AbbrDef {
+        key: String,
+        expansion: String,
+    },
+    Frontmatter {
+        format: String,
+        value: String,
+    },
+    Include {
+        path: String,
+        section: Option<String>,
+        options: serde_json::Map<String, serde_json::Value>,
+    },
     /// One entry per body line; an empty piece for an empty line (C2-A-069).
-    LineBlock { lines: Vec<Piece> },
+    LineBlock {
+        lines: Vec<Piece>,
+    },
 }
 
 /// A fact set when a paragraph closes (C2-B-157, C2-B-158).
@@ -50,8 +92,17 @@ pub enum Role {
 /// One event of the block pass.
 #[derive(Debug, Clone)]
 pub enum Event {
-    Enter { kind: ContainerKind, start: usize, attrs: Option<AttrBlock> },
+    Enter {
+        kind: ContainerKind,
+        start: usize,
+        attrs: Option<AttrBlock>,
+    },
     /// `loose` is the tightness of a list (C2-B-062); `None` for other containers.
     Exit { end: usize, loose: Option<bool> },
-    Leaf { kind: LeafKind, start: usize, end: usize, attrs: Option<AttrBlock> },
+    Leaf {
+        kind: LeafKind,
+        start: usize,
+        end: usize,
+        attrs: Option<AttrBlock>,
+    },
 }

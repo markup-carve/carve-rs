@@ -28,7 +28,14 @@ struct Resolved {
 const TABLE_KEYS: [&str; 4] = ["aligns", "widths", "header-rows", "footer-rows"];
 
 impl Builder<'_> {
-    pub(super) fn table(&self, data: TableData, attrs: Option<Attrs>, lang: Option<String>, start: usize, end: usize) -> Node {
+    pub(super) fn table(
+        &self,
+        data: TableData,
+        attrs: Option<Attrs>,
+        lang: Option<String>,
+        start: usize,
+        end: usize,
+    ) -> Node {
         let head = head_rows(&data.rows);
         let spans = resolve_spans(&data.rows, head);
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
@@ -44,44 +51,139 @@ impl Builder<'_> {
             groups.push(self.group(&data.rows, &spans, lo, hi, kind));
         }
         let _ = (start, end);
-        Node::Table(ast::Table { children: groups, columns, attrs, lang, pos: Some(self.src.pos(start, end)), ..Default::default() })
+        Node::Table(ast::Table {
+            children: groups,
+            columns,
+            attrs,
+            lang,
+            pos: Some(self.src.pos(start, end)),
+            ..Default::default()
+        })
+    }
+
+    /// C2-B-209, C2-B-221: the head count of a delimited table and its partition.
+    pub(super) fn delimited_table(
+        value: &str,
+        sep: char,
+        attrs: Option<Attrs>,
+        lang: Option<String>,
+        pos: Option<ast::Pos>,
+    ) -> Node {
+        let declared = attrs
+            .as_ref()
+            .and_then(|a| a.get("header-rows"))
+            .and_then(count);
+        let footer = footer_count(attrs.as_ref());
+        let (children, ncols) = super::delimited::table(value, sep, declared, footer);
+        let attrs = attrs.map(|mut a| {
+            a.key_values
+                .retain(|(k, _)| !k.eq_ignore_ascii_case("table"));
+            a
+        });
+        let (columns, attrs) = columns(ncols, attrs.filter(|a| !a.is_empty()));
+        Node::Table(ast::Table {
+            children,
+            columns,
+            attrs,
+            lang,
+            pos,
+            ..Default::default()
+        })
     }
 
     fn group(&self, rows: &[Row], spans: &[Vec<Resolved>], lo: usize, hi: usize, kind: u8) -> Node {
         let mut children = Vec::new();
         for (i, row) in rows.iter().enumerate().take(hi).skip(lo) {
-            children.push(self.row(row, spans.get(i).map_or(&[][..], Vec::as_slice), i < lo + (hi - lo)));
+            children.push(self.row(
+                row,
+                spans.get(i).map_or(&[][..], Vec::as_slice),
+                i < lo + (hi - lo),
+            ));
             for (s, e, value) in &row.comments {
-                children.push(Node::Comment(ast::Comment { form: ast::CommentForm::Line, value: value.clone(), pos: Some(self.src.pos(*s, *e)), ..Default::default() }));
+                children.push(Node::Comment(ast::Comment {
+                    form: ast::CommentForm::Line,
+                    value: value.clone(),
+                    pos: Some(self.src.pos(*s, *e)),
+                    ..Default::default()
+                }));
             }
         }
         let first = rows.get(lo).map_or(0, |r| r.start);
         let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| r.end);
         let pos = Some(self.src.pos(first, last));
         match kind {
-            0 => Node::TableHead(ast::TableHead { children, pos, ..Default::default() }),
-            1 => Node::TableBody(ast::TableBody { children, pos, ..Default::default() }),
-            _ => Node::TableFoot(ast::TableFoot { children, pos, ..Default::default() }),
+            0 => Node::TableHead(ast::TableHead {
+                children,
+                pos,
+                ..Default::default()
+            }),
+            1 => Node::TableBody(ast::TableBody {
+                children,
+                pos,
+                ..Default::default()
+            }),
+            _ => Node::TableFoot(ast::TableFoot {
+                children,
+                pos,
+                ..Default::default()
+            }),
         }
     }
 
     fn row(&self, row: &Row, spans: &[Resolved], _in_group: bool) -> Node {
-        let all_header = row.cells.iter().zip(spans).all(|(c, s)| c.header || s.mark.is_some() || s.failed);
+        // C2-B-173, gap G-005: "every other cell" needs at least one other cell.
+        let others = |i: usize| row.cells.iter().enumerate().filter(move |&(j, _)| j != i);
+        let all_header = |i: usize| {
+            others(i).count() > 0
+                && others(i)
+                    .all(|(j, c)| c.header || spans.get(j).is_some_and(|s| s.mark.is_some()))
+        };
         let mut cells = Vec::new();
-        for (cell, sp) in row.cells.iter().zip(spans) {
-            let positioned = !row.joined && !cell.joined && !cell.pieces.is_empty() && sp.mark.is_none() && !sp.failed;
+        for (i, (cell, sp)) in row.cells.iter().zip(spans).enumerate() {
+            let positioned =
+                !cell.joined && !cell.pieces.is_empty() && sp.mark.is_none() && !sp.failed;
+            let cell_positioned = positioned || (sp.failed && !cell.joined);
             let children = if sp.mark.is_some() {
                 Vec::new()
             } else {
                 let inl = self.inline(ContentKind::Cell, &cell.pieces);
-                let ppos = if positioned { cell.pieces.first().map(|p| self.src.pos(p.start, crate::block::trim_end(self.src, p.start, cell.pieces.last().map_or(p.end, |l| l.end)))) } else { None };
+                let ppos = if positioned {
+                    cell.pieces.first().map(|p| {
+                        self.src.pos(
+                            p.start,
+                            crate::block::trim_end(
+                                self.src,
+                                p.start,
+                                cell.pieces.last().map_or(p.end, |l| l.end),
+                            ),
+                        )
+                    })
+                } else {
+                    None
+                };
                 let inl = if positioned { inl } else { strip_pos(inl) };
-                vec![Node::CellParagraph(ast::CellParagraph { children: inl, pos: ppos, ..Default::default() })]
+                vec![Node::CellParagraph(ast::CellParagraph {
+                    children: inl,
+                    pos: ppos,
+                    ..Default::default()
+                })]
             };
-            let header = if sp.failed { all_header } else { cell.header };
+            let header = if sp.failed {
+                all_header(i)
+            } else {
+                cell.header
+            };
             let (attrs, lang) = super::split_attrs(cell.attrs.clone());
-            let span = sp.mark.map(|m| if m == '<' { ast::TableCellSpan::Colspan } else { ast::TableCellSpan::Rowspan });
-            let align = cell.align.and_then(|a| serde_json::from_value(serde_json::Value::String(a.into())).ok());
+            let span = sp.mark.map(|m| {
+                if m == '<' {
+                    ast::TableCellSpan::Colspan
+                } else {
+                    ast::TableCellSpan::Rowspan
+                }
+            });
+            let align = cell
+                .align
+                .and_then(|a| serde_json::from_value(serde_json::Value::String(a.into())).ok());
             cells.push(Node::TableCell(ast::TableCell {
                 children,
                 header,
@@ -91,13 +193,19 @@ impl Builder<'_> {
                 align,
                 attrs,
                 lang,
-                pos: positioned.then(|| self.src.pos(cell.start, cell.end)),
+                pos: cell_positioned.then(|| self.src.pos(cell.start, cell.end)),
                 ..Default::default()
             }));
         }
         let (attrs, lang) = super::split_attrs(row.attrs.clone());
         let pos = (!row.joined).then(|| self.src.pos(row.start, row.end));
-        Node::TableRow(ast::TableRow { children: cells, attrs, lang, pos, ..Default::default() })
+        Node::TableRow(ast::TableRow {
+            children: cells,
+            attrs,
+            lang,
+            pos,
+            ..Default::default()
+        })
     }
 }
 
@@ -119,17 +227,44 @@ fn clear_pos(n: &mut Node, depth: usize) {
 
 /// C2-B-178: the leading rows made only of header cells (span marks count with them).
 fn head_rows(rows: &[Row]) -> usize {
-    rows.iter().take_while(|r| r.cells.iter().any(|c| c.header) && r.cells.iter().all(|c| c.header || c.span.is_some())).count()
+    rows.iter()
+        .take_while(|r| {
+            r.cells.iter().any(|c| c.header) && r.cells.iter().all(|c| c.header || c.span.is_some())
+        })
+        .count()
 }
 
 fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
-    let mut out: Vec<Vec<Resolved>> = rows.iter().map(|r| vec![Resolved { colspan: 1, rowspan: 1, ..Resolved::default() }; r.cells.len()]).collect();
-    let mut grid: Vec<Vec<Option<Origin>>> = rows.iter().map(|r| vec![None; r.cells.len()]).collect();
+    let mut out: Vec<Vec<Resolved>> = rows
+        .iter()
+        .map(|r| {
+            vec![
+                Resolved {
+                    colspan: 1,
+                    rowspan: 1,
+                    ..Resolved::default()
+                };
+                r.cells.len()
+            ]
+        })
+        .collect();
+    let mut grid: Vec<Vec<Option<Origin>>> =
+        rows.iter().map(|r| vec![None; r.cells.len()]).collect();
     for (r, row) in rows.iter().enumerate() {
         for (c, cell) in row.cells.iter().enumerate() {
             let origin = match cell.span {
-                Some('<') if c > 0 => grid.get(r).and_then(|g| g.get(c - 1)).copied().flatten().filter(|o| o.row == r),
-                Some('^') if r > 0 && !(r == head && head > 0) => grid.get(r - 1).and_then(|g| g.get(c)).copied().flatten().filter(|o| o.col == c),
+                Some('<') if c > 0 => grid
+                    .get(r)
+                    .and_then(|g| g.get(c - 1))
+                    .copied()
+                    .flatten()
+                    .filter(|o| o.row == r),
+                Some('^') if r > 0 && !(r == head && head > 0) => grid
+                    .get(r - 1)
+                    .and_then(|g| g.get(c))
+                    .copied()
+                    .flatten()
+                    .filter(|o| o.col == c),
                 _ => None,
             };
             let set = match (cell.span, origin) {
@@ -167,7 +302,11 @@ fn count(v: &str) -> Option<usize> {
     if v.is_empty() {
         return Some(1);
     }
-    if v.bytes().all(|b| b.is_ascii_digit()) { v.parse().ok() } else { None }
+    if v.bytes().all(|b| b.is_ascii_digit()) {
+        v.parse().ok()
+    } else {
+        None
+    }
 }
 
 /// The columns and the table attributes that are read, not kept (gap G-003).
@@ -178,7 +317,12 @@ fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
     };
     if let Some(v) = a.get("aligns") {
         for (i, entry) in v.split(',').enumerate() {
-            if let (Some(col), Ok(al)) = (cols.get_mut(i), serde_json::from_value::<ast::TableColumnAlign>(serde_json::Value::String(entry.trim().into()))) {
+            if let (Some(col), Ok(al)) = (
+                cols.get_mut(i),
+                serde_json::from_value::<ast::TableColumnAlign>(serde_json::Value::String(
+                    entry.trim().into(),
+                )),
+            ) {
                 col.align = Some(al);
                 col.authored = Some(true);
             }
@@ -192,7 +336,8 @@ fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
             }
         }
     }
-    a.key_values.retain(|(k, _)| !TABLE_KEYS.iter().any(|t| t.eq_ignore_ascii_case(k)));
+    a.key_values
+        .retain(|(k, _)| !TABLE_KEYS.iter().any(|t| t.eq_ignore_ascii_case(k)));
     let attrs = (!a.is_empty()).then_some(a);
     (cols.into_iter().map(Node::TableColumn).collect(), attrs)
 }
@@ -209,5 +354,8 @@ fn width(e: &str) -> Option<f64> {
 }
 
 fn footer_count(attrs: Option<&Attrs>) -> usize {
-    attrs.and_then(|a| a.get("footer-rows")).and_then(count).unwrap_or(0)
+    attrs
+        .and_then(|a| a.get("footer-rows"))
+        .and_then(count)
+        .unwrap_or(0)
 }
