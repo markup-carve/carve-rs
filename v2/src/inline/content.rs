@@ -66,7 +66,16 @@ impl<'a> Content<'a> {
                 }
             }
             let raw_end = end;
-            let end = trim_end(b, start, end);
+            let end = if env.kind == ContentKind::Cell {
+                // C2-I-002: the cell padding goes first, so a backslash before it is a hard break (GAP INL-017).
+                let mut e = end;
+                while e > start && b.get(e - 1).copied().is_some_and(is_pad) {
+                    e -= 1;
+                }
+                e
+            } else {
+                trim_end(b, start, end)
+            };
             if n > 0 && p.join == Join::Cell && start == end {
                 // C2-B-184: an empty fragment adds nothing.
                 continue;

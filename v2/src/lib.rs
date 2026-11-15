@@ -3,11 +3,11 @@
 #![forbid(unsafe_code)]
 
 pub mod ast;
-pub mod tables;
 pub mod attr;
 pub mod chars;
-pub mod source;
-pub mod options;
 pub mod html;
 pub mod inline;
+pub mod options;
 pub mod resolve;
+pub mod source;
+pub mod tables;

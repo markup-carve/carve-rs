@@ -245,7 +245,8 @@ pub fn link_tail(t: &str, i: usize, cell: bool) -> Option<Tail> {
     loop {
         let c = t.get(j..)?.chars().next()?;
         match c {
-            ' ' | '\t' | '\n' => break,
+            ' ' | '\t' | '\n' if depth == 0 => break,
+            ' ' | '\t' | '\n' => return None,
             '\\' => {
                 let n = b.get(j + 1).copied();
                 if matches!(n, Some(b'(' | b')' | b'\\')) || (cell && n == Some(b'|')) {
@@ -315,7 +316,10 @@ fn quoted(t: &str, mut i: usize, q: u8) -> Option<(String, usize)> {
 pub enum Label {
     /// The raw label source between the brackets and the end behind `]`.
     Ok(usize, usize),
+    /// A line comment starts in the label (C2-I-077).
     Unclosed,
+    /// No `]` follows in the content.
+    End,
 }
 
 /// C2-I-023: `%%` at `j` starts a line comment.
@@ -351,5 +355,5 @@ pub fn label(t: &str, i: usize, comments: bool) -> Label {
             _ => j += 1,
         }
     }
-    Label::Unclosed
+    Label::End
 }

@@ -43,7 +43,12 @@ impl Source {
                 line_starts.push(i + 1);
             }
         }
-        Self { text, line_starts, nul_at, bom }
+        Self {
+            text,
+            line_starts,
+            nul_at,
+            bom,
+        }
     }
 
     /// The normalized text.
@@ -89,7 +94,10 @@ impl Source {
     /// Byte offset of the end of line `i` including its line ending.
     #[must_use]
     pub fn line_end_with_break(&self, i: usize) -> usize {
-        self.line_starts.get(i + 1).copied().unwrap_or(self.text.len())
+        self.line_starts
+            .get(i + 1)
+            .copied()
+            .unwrap_or(self.text.len())
     }
 
     /// A slice of the normalized text, empty when the range is out of bounds.
@@ -111,7 +119,9 @@ impl Source {
     /// 0-based line index of a byte offset.
     #[must_use]
     pub fn line_of(&self, at: usize) -> usize {
-        self.line_starts.partition_point(|&s| s <= at).saturating_sub(1)
+        self.line_starts
+            .partition_point(|&s| s <= at)
+            .saturating_sub(1)
     }
 
     /// 1-based line and column (code points) of an offset (C2-A-141).
@@ -119,7 +129,10 @@ impl Source {
     pub fn line_col(&self, at: usize) -> (usize, usize) {
         let line = self.line_of(at);
         let start = self.line_starts.get(line).copied().unwrap_or(0);
-        let col = self.text.get(start..at.max(start)).map_or(0, |s| s.chars().count());
+        let col = self
+            .text
+            .get(start..at.max(start))
+            .map_or(0, |s| s.chars().count());
         (line + 1, col + 1)
     }
 

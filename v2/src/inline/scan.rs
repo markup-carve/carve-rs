@@ -48,6 +48,10 @@ struct Scanner<'a, 'e> {
     toks: Vec<Tok>,
     text_from: Option<usize>,
     brackets: Vec<Bracket>,
+    /// How many entries of `brackets` are past the depth cap.
+    dead: usize,
+    /// No unescaped `]` follows this offset.
+    no_label_from: Option<usize>,
     comments: Vec<(usize, usize)>,
     /// Last start of `%}` and of `#}`, to keep the closer search linear.
     last_pct: Option<usize>,
@@ -68,6 +72,8 @@ pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
         toks: Vec::new(),
         text_from: None,
         brackets: Vec::new(),
+        dead: 0,
+        no_label_from: None,
         comments: Vec::new(),
         last_pct: t.rfind("%}"),
         last_hash: t.rfind("#}"),
@@ -517,7 +523,7 @@ impl Scanner<'_, '_> {
 
     /// C2-I-087: `[^label]`; with no label the `[` is text.
     fn footnote_ref(&mut self, i: usize) -> bool {
-        if let Label::Ok(e, end) = atoms::label(self.t, i + 2, self.comments_on()) {
+        if let Label::Ok(e, end) = self.label(i + 2) {
             let key = self.label_key(i + 2, e);
             if !key.is_empty() {
                 let node = Node::FootnoteRef(FootnoteRef {
@@ -531,6 +537,18 @@ impl Scanner<'_, '_> {
         }
         self.text_char();
         true
+    }
+
+    /// A label from `at`; once no `]` follows, none follows later either.
+    fn label(&mut self, at: usize) -> Label {
+        if self.no_label_from.is_some_and(|n| n <= at) {
+            return Label::End;
+        }
+        let l = atoms::label(self.t, at, self.comments_on());
+        if matches!(l, Label::End) {
+            self.no_label_from = Some(at);
+        }
+        l
     }
 
     fn comments_on(&self) -> bool {
@@ -549,12 +567,9 @@ impl Scanner<'_, '_> {
 
     /// C2-I-118: an opener past the cap is text, and its closer too (C2-I-126).
     fn push_bracket(&mut self, v0: usize, v1: usize, kind: BKind) -> bool {
-        let open = self
-            .brackets
-            .iter()
-            .filter(|b| b.kind != BKind::Dead)
-            .count();
+        let open = self.brackets.len() - self.dead;
         if self.env.depth + open >= tables::DEPTH_CAP {
+            self.dead += 1;
             self.brackets.push(Bracket {
                 tok: usize::MAX,
                 kind: BKind::Dead,
@@ -580,7 +595,10 @@ impl Scanner<'_, '_> {
         };
         let i = self.i;
         match top.kind.clone() {
-            BKind::Dead => false,
+            BKind::Dead => {
+                self.dead -= 1;
+                false
+            }
             BKind::Footnote => {
                 self.form(&top, i, i + 1, Kind::InlineFootnote, None);
                 true
@@ -675,7 +693,7 @@ impl Scanner<'_, '_> {
             self.fail_pair(top);
             return;
         }
-        if let Label::Ok(e, end) = atoms::label(self.t, i + 2, self.comments_on()) {
+        if let Label::Ok(e, end) = self.label(i + 2) {
             let key = self.label_key(i + 2, e);
             if !key.is_empty() {
                 self.link(

@@ -26,7 +26,10 @@ impl Attrs {
     /// The value of a key, compared without ASCII case (C2-A-035).
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.key_values.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.as_str())
+        self.key_values
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
     }
 
     /// Merges `later` into `self` (C2-A-035, C2-I-039): classes add up, a later
@@ -37,7 +40,11 @@ impl Attrs {
         }
         self.classes.extend(later.classes);
         for (k, v) in later.key_values {
-            if let Some(slot) = self.key_values.iter_mut().find(|(ek, _)| ek.eq_ignore_ascii_case(&k)) {
+            if let Some(slot) = self
+                .key_values
+                .iter_mut()
+                .find(|(ek, _)| ek.eq_ignore_ascii_case(&k))
+            {
                 slot.1 = v;
             } else {
                 self.key_values.push((k, v));

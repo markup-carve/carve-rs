@@ -114,7 +114,16 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
     }
     let src = Source::new(input);
     let mut out = Vec::new();
+    let ctx = Ctx {
+        src: &src,
+        keys: &keys,
+        abbrs: &abbrs,
+        sorted,
+    };
     for c in &children {
+        if c.get("type").and_then(Value::as_str) == Some("table") {
+            cells(&ctx, c, &mut out);
+        }
         let ty = c.get("type").and_then(Value::as_str).unwrap_or("");
         if !matches!(ty, "paragraph" | "heading")
             || c.get("attrs").is_some()
@@ -148,4 +157,74 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
         out.push((sorted(&expected), sorted(&actual)));
     }
     out
+}
+
+struct Ctx<'a> {
+    src: &'a Source,
+    keys: &'a HashSet<String>,
+    abbrs: &'a [(String, String)],
+    sorted: fn(&Value) -> String,
+}
+
+/// Every positioned cell of a table: one piece between its pipes.
+fn cells(ctx: &Ctx<'_>, node: &Value, out: &mut Vec<(String, String)>) {
+    for c in node
+        .get("children")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        match c.get("type").and_then(Value::as_str) {
+            Some("table_cell") => cell(ctx, c, out),
+            Some(_) => cells(ctx, c, out),
+            None => {}
+        }
+    }
+}
+
+fn cell(ctx: &Ctx<'_>, c: &Value, out: &mut Vec<(String, String)>) {
+    let Some(pos) = c.get("pos") else { return };
+    let off = |k: &str| {
+        pos.get(k)
+            .and_then(Value::as_u64)
+            .and_then(|v| usize::try_from(v).ok())
+    };
+    let (Some(s), Some(e)) = (off("startOffset"), off("endOffset")) else {
+        return;
+    };
+    let kids = c
+        .get("children")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let [para] = kids.as_slice() else { return };
+    if para.get("type").and_then(Value::as_str) != Some("cell_paragraph")
+        || c.get("attrs").is_some()
+    {
+        return;
+    }
+    let env = InlineEnv {
+        src: ctx.src,
+        link_keys: ctx.keys,
+        // OR-INL-003: the oracle reads no abbreviation in a cell.
+        abbreviations: &[],
+        depth: 0,
+        kind: ContentKind::Cell,
+        hard_breaks: false,
+    };
+    let nodes = parse(
+        &env,
+        &[Piece {
+            start: s,
+            end: e,
+            join: Join::Line,
+        }],
+    );
+    let mut expected = para
+        .get("children")
+        .cloned()
+        .unwrap_or(Value::Array(Vec::new()));
+    strip_results(&mut expected);
+    let actual = serde_json::to_value(&nodes).unwrap_or_default();
+    out.push(((ctx.sorted)(&expected), (ctx.sorted)(&actual)));
 }

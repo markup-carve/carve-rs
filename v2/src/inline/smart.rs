@@ -82,7 +82,10 @@ impl Smart {
         let mut p = v0;
         let mut text_from = v0;
         // GAP INL-012: the exact-run tests see only unreplaced text of this run.
-        let mut plain_before: Option<char> = None;
+        let mut plain_before: Option<char> = match self.prev {
+            Prev::Char(c) => Some(c),
+            _ => None,
+        };
         while p < v1 {
             let Some(c) = t.get(p..v1).and_then(|s| s.chars().next()) else {
                 break;

@@ -37,7 +37,12 @@ pub enum UrlPolicy {
 
 impl Default for UrlPolicy {
     fn default() -> Self {
-        Self::Deny(tables::DEFAULT_DENIED_SCHEMES.iter().map(|s| (*s).to_string()).collect())
+        Self::Deny(
+            tables::DEFAULT_DENIED_SCHEMES
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+        )
     }
 }
 
@@ -108,7 +113,10 @@ impl Default for Options {
             heading_ids: HeadingIds::default(),
             mode: Mode::default(),
             symbols: BTreeMap::new(),
-            labels: tables::DEFAULT_LABELS.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect(),
+            labels: tables::DEFAULT_LABELS
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect(),
             source_lines: tables::DEFAULT_SOURCE_LINES,
             sections: tables::DEFAULT_SECTIONS,
             smart_typography: tables::DEFAULT_SMART_TYPOGRAPHY,

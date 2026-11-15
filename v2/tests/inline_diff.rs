@@ -98,6 +98,22 @@ const TOKENS: &[&str] = &[
     "'90s",
     "'em",
     "~",
+    "\\\n",
+    "\\`",
+    "\\[",
+    "[x](/u \"t\")",
+    "![i](/p)",
+    "![x]",
+    "*a*",
+    "/b/",
+    "{^",
+    "^}",
+    "{~",
+    "~}",
+    "&",
+    "ö",
+    "{:en}",
+    "{k=v}",
 ];
 
 struct Rng(u64);
@@ -115,12 +131,24 @@ impl Rng {
     }
 }
 
+fn mix(rng: &mut Rng, len: usize, cell: bool) -> String {
+    let mut s = String::new();
+    for _ in 0..len {
+        let t = TOKENS.get(rng.below(TOKENS.len())).copied().unwrap_or("a");
+        if !(cell && t.contains('\n')) {
+            s.push_str(t);
+        }
+    }
+    s
+}
+
 fn generate(rng: &mut Rng) -> String {
     let len = 2 + rng.below(14);
-    let mut s = String::from("a ");
-    for _ in 0..len {
-        s.push_str(TOKENS.get(rng.below(TOKENS.len())).copied().unwrap_or("a"));
-    }
+    let mut s = match rng.below(7) {
+        0 => format!("# a {}", mix(rng, len, false)),
+        1 => format!("| a {} | {} |", mix(rng, len, true), mix(rng, 3, true)),
+        _ => format!("a {}", mix(rng, len, false)),
+    };
     match rng.below(4) {
         0 => s.push_str("\n\n[a]: /u\n*[HT]: Hyper"),
         1 => s.push_str("\n\n[x]: /v"),
