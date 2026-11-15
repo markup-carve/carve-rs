@@ -152,8 +152,12 @@ impl Builder<'_> {
         };
         let mut cells = Vec::new();
         for (i, (cell, sp)) in row.cells.iter().zip(spans).enumerate() {
-            let positioned =
-                !cell.joined && !cell.pieces.is_empty() && sp.mark.is_none() && !sp.failed;
+            // Gap G-009: a cell with no content has no position.
+            let blank = cell
+                .pieces
+                .iter()
+                .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
+            let positioned = !cell.joined && !blank && sp.mark.is_none() && !sp.failed;
             let cell_positioned = positioned || (sp.failed && !cell.joined);
             let children = if sp.mark.is_some() {
                 Vec::new()

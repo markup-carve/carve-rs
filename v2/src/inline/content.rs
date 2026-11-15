@@ -28,6 +28,8 @@ pub struct Content<'a> {
     joins: Vec<(usize, Join)>,
     /// Number of characters in `text[..i]`, for columns in linear time.
     chars: Vec<usize>,
+    /// A continuation row joined a fragment, computed once (linear time).
+    cell_joined: bool,
     src: &'a Source,
 }
 
@@ -110,11 +112,13 @@ impl<'a> Content<'a> {
             }
             chars.push(n);
         }
+        let cell_joined = joins.iter().any(|&(_, j)| j == Join::Cell);
         Self {
             text,
             segs,
             joins,
             chars,
+            cell_joined,
             src: env.src,
         }
     }
@@ -185,8 +189,8 @@ impl<'a> Content<'a> {
 
     /// True when a continuation row joined a fragment (C2-B-184).
     #[must_use]
-    pub fn cell_joined(&self) -> bool {
-        self.joins.iter().any(|&(_, j)| j == Join::Cell)
+    pub const fn cell_joined(&self) -> bool {
+        self.cell_joined
     }
 
     /// True when the source of `v0..v1` is one contiguous slice.
