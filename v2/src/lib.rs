@@ -11,8 +11,6 @@
     clippy::unreachable,
     clippy::todo
 )]
-// Open leaves mirror parser state; boxing them would add allocation on every transition.
-#![allow(clippy::large_enum_variant)]
 // Parser offsets and byte markers are clearer as short names in their local scopes.
 #![allow(clippy::many_single_char_names)]
 // Generated schema literals use their source formatting.
@@ -23,16 +21,6 @@
 #![allow(clippy::option_option)]
 // Generated AST constructors preserve their current field grouping.
 #![allow(clippy::inconsistent_struct_constructor)]
-// Similar punctuation bindings name separate dash variants.
-#![allow(clippy::similar_names)]
-// Parser matches keep their arms aligned with grammar alternatives.
-#![allow(clippy::single_match_else)]
-// A pending paragraph is consumed at this transition.
-#![allow(clippy::needless_pass_by_value)]
-// Tree positions use the optional node position type throughout construction.
-#![allow(clippy::unnecessary_wraps)]
-// Parser branch expressions preserve the existing style.
-#![allow(clippy::semicolon_if_nothing_returned)]
 
 pub mod ast;
 pub mod attr;

@@ -351,7 +351,7 @@ impl<'a> Parser<'a> {
             return;
         }
         if let Some(p) = self.pending.take() {
-            self.pending_to_paragraph(p);
+            self.pending_to_paragraph(&p);
         }
         self.close_leaf();
         self.blank_run += 1;
@@ -535,13 +535,13 @@ impl<'a> Parser<'a> {
         let Some(p) = &self.pending else { return };
         if walk.matched < p.depth {
             if let Some(p) = self.pending.take() {
-                self.pending_to_paragraph(p);
+                self.pending_to_paragraph(&p);
             }
         }
     }
 
     /// C2-B-192: attribute lines no block takes become one closed paragraph.
-    fn pending_to_paragraph(&mut self, p: Pending) {
+    fn pending_to_paragraph(&mut self, p: &Pending) {
         while self.stack.len() > p.depth {
             self.pop_container();
         }
@@ -679,7 +679,7 @@ impl<'a> Parser<'a> {
 
     fn finish(&mut self) {
         if let Some(p) = self.pending.take() {
-            self.pending_to_paragraph(p);
+            self.pending_to_paragraph(&p);
         }
         self.close_leaf();
         while self.stack.len() > 1 {

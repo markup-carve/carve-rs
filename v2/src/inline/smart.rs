@@ -300,8 +300,8 @@ fn dashes(t: &str, p: usize, v1: usize) -> Step {
         .get(p..v1)
         .map_or(0, |s| s.bytes().take_while(|&b| b == b'-').count());
     let (em_kind, em_glyph, em_len) = dash_row("em_dash");
-    let (en_kind, en_glyph, en_len) = dash_row("en_dash");
-    if n < en_len.min(em_len) || em_len == 0 || en_len == 0 {
+    let (half_kind, half_glyph, half_len) = dash_row("en_dash");
+    if n < half_len.min(em_len) || em_len == 0 || half_len == 0 {
         return Step::Text(1);
     }
     let mut list = Vec::new();
@@ -311,8 +311,8 @@ fn dashes(t: &str, p: usize, v1: usize) -> Step {
             list.extend((0..left / em_len).map(|_| (em_len, em_kind, em_glyph)));
             break;
         }
-        if left % en_len == 0 {
-            list.extend((0..left / en_len).map(|_| (en_len, en_kind, en_glyph)));
+        if left % half_len == 0 {
+            list.extend((0..left / half_len).map(|_| (half_len, half_kind, half_glyph)));
             break;
         }
         if left < em_len {

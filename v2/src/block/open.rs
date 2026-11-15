@@ -165,19 +165,15 @@ impl Parser<'_> {
                     continue;
                 }
             }
-            match self.open_container(&k, m, first) {
-                Some((next, base)) => {
-                    cur = next;
-                    if let Some(b) = base {
-                        qbase = b;
-                    }
-                    first = false;
-                }
-                None => {
-                    self.open_leaf(&k, m, e, first);
-                    break;
-                }
+            let Some((next, base)) = self.open_container(&k, m, first) else {
+                self.open_leaf(&k, m, e, first);
+                break;
+            };
+            cur = next;
+            if let Some(b) = base {
+                qbase = b;
             }
+            first = false;
         }
     }
 
@@ -587,7 +583,7 @@ impl Parser<'_> {
                     if *open_len <= len && i + 1 == self.stack.len() {
                         // C2-B-192: attribute lines left in the div close inside it.
                         if let Some(p) = self.pending.take() {
-                            self.pending_to_paragraph(p);
+                            self.pending_to_paragraph(&p);
                         }
                         if let Some(top) = self.stack.last_mut() {
                             top.end = start + k.rest().len();
@@ -671,7 +667,7 @@ impl Parser<'_> {
                     end,
                     lines: vec![(start, e)],
                     depth: self.stack.len(),
-                })
+                });
             }
         }
         true
@@ -684,7 +680,7 @@ impl Parser<'_> {
         };
         if let Some(p) = self.pending.take() {
             // C2-B-096: a caption takes no attribute line.
-            self.pending_to_paragraph(p);
+            self.pending_to_paragraph(&p);
             return false;
         }
         let ok = matches!(self.closed, Some(Closed { depth, target: true }) if depth == self.stack.len());

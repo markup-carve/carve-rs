@@ -87,8 +87,8 @@ fn split_attrs(a: Option<AttrBlock>) -> (Option<Attrs>, Option<String>) {
 }
 
 impl Builder<'_> {
-    fn pos(&self, s: usize, e: usize) -> Option<ast::Pos> {
-        Some(self.src.pos(s, e))
+    fn pos(&self, s: usize, e: usize) -> ast::Pos {
+        self.src.pos(s, e)
     }
 
     fn inline(&self, kind: ContentKind, pieces: &[Piece]) -> Vec<Node> {
@@ -282,7 +282,7 @@ impl Builder<'_> {
     }
 
     fn leaf(&mut self, kind: LeafKind, start: usize, end: usize, attrs: Option<AttrBlock>) {
-        let pos = self.pos(start, end);
+        let pos = Some(self.pos(start, end));
         if let LeafKind::Caption { pieces } = &kind {
             let children = self.inline(ContentKind::Caption, pieces);
             let content = pieces.first().map_or(start, |p| p.start);
@@ -468,12 +468,12 @@ impl Builder<'_> {
     fn line(&self, p: Piece) -> Node {
         if p.start == p.end {
             return Node::Line(Box::new(ast::Line {
-                pos: self.pos(p.start, p.end),
+                pos: Some(self.pos(p.start, p.end)),
                 ..Default::default()
             }));
         }
         let children = self.inline(ContentKind::LineBlockLine, &[p]);
-        let pos = self.pos(p.start, p.end);
+        let pos = Some(self.pos(p.start, p.end));
         Node::Line(Box::new(ast::Line {
             children,
             pos,
@@ -485,12 +485,12 @@ impl Builder<'_> {
     fn caption(&mut self, children: Vec<Node>, start: usize, content: usize, end: usize) {
         let para = Node::Paragraph(Box::new(ast::Paragraph {
             children,
-            pos: self.pos(content, end),
+            pos: Some(self.pos(content, end)),
             ..Default::default()
         }));
         let cap = Node::Caption(Box::new(ast::Caption {
             children: vec![para],
-            pos: self.pos(start, end),
+            pos: Some(self.pos(start, end)),
             ..Default::default()
         }));
         let src = self.src;

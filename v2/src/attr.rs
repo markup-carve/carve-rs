@@ -121,9 +121,20 @@ fn parse_key(s: &str, i: usize, block: &mut AttrBlock) -> Option<usize> {
 
 fn parse_value(s: &str, i: usize) -> Option<(String, usize)> {
     let b = s.as_bytes();
-    match b.get(i)? {
-        q @ (b'"' | b'\'') => {
-            let q = *q;
+    let q = *b.get(i)?;
+    if matches!(q, b'"' | b'\'') {
+        quoted_value(s, i, q)
+    } else {
+        let end = run(b, i, |c| {
+            !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
+        });
+        Some((s.get(i..end).filter(|_| end > i)?.to_string(), end))
+    }
+}
+
+fn quoted_value(s: &str, i: usize, q: u8) -> Option<(String, usize)> {
+    {
+        {
             let mut out = String::new();
             let mut j = i + 1;
             loop {
@@ -148,12 +159,6 @@ fn parse_value(s: &str, i: usize) -> Option<(String, usize)> {
                     }
                 }
             }
-        }
-        _ => {
-            let end = run(b, i, |c| {
-                !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
-            });
-            Some((s.get(i..end).filter(|_| end > i)?.to_string(), end))
         }
     }
 }

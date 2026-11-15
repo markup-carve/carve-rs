@@ -58,15 +58,14 @@ pub fn dedupe_keys(kv: &mut Vec<(String, String)>) {
     } else {
         let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for (k, v) in kv.drain(..) {
-            match at
+            if let Some(slot) = at
                 .get(&k.to_ascii_lowercase())
                 .and_then(|&i| out.get_mut(i))
             {
-                Some(slot) => slot.1 = v,
-                None => {
-                    at.insert(k.to_ascii_lowercase(), out.len());
-                    out.push((k, v));
-                }
+                slot.1 = v;
+            } else {
+                at.insert(k.to_ascii_lowercase(), out.len());
+                out.push((k, v));
             }
         }
     }

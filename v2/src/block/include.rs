@@ -191,24 +191,21 @@ fn option(sc: &mut Scan<'_>, out: &mut Map<String, Value>) -> Option<()> {
 }
 
 fn value(sc: &mut Scan<'_>) -> Option<Written> {
-    match sc.peek()? {
-        q @ ('"' | '\'') => {
-            let raw = sc.quoted(q)?.to_owned();
-            Some(Written {
-                text: unescape(&raw),
-                dquoted_raw: (q == '"').then_some(raw),
-            })
-        }
-        _ => {
-            let v = sc
-                .take_while(|c| !matches!(c, '@' | '}' | ' ' | '\t'))
-                .to_owned();
-            (!v.is_empty()).then_some(Written {
-                text: v,
-                dquoted_raw: None,
-            })
-        }
+    let q = sc.peek()?;
+    if matches!(q, '"' | '\'') {
+        let raw = sc.quoted(q)?.to_owned();
+        return Some(Written {
+            text: unescape(&raw),
+            dquoted_raw: (q == '"').then_some(raw),
+        });
     }
+    let v = sc
+        .take_while(|c| !matches!(c, '@' | '}' | ' ' | '\t'))
+        .to_owned();
+    (!v.is_empty()).then_some(Written {
+        text: v,
+        dquoted_raw: None,
+    })
 }
 
 /// The value in its tree form, or `None` when it is outside its shape (C2-B-205).
