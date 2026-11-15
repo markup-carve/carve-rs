@@ -8,3 +8,6 @@ pub mod attr;
 pub mod chars;
 pub mod source;
 pub mod options;
+pub mod html;
+pub mod inline;
+pub mod resolve;
