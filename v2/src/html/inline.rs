@@ -88,7 +88,7 @@ impl<'a> Renderer<'a> {
         match n {
             Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
                 (Some(e), 0) => {
-                    let mut el = El::new(a.attrs.as_ref(), a.lang.as_deref());
+                    let mut el = El::new(a.attrs.as_deref(), a.lang.as_deref());
                     el.structural.push(("title", Some(e.clone())));
                     let _ = write!(out, "<abbr{}>", el.write(self.filter()));
                     esc::text(&a.key, out);
@@ -102,7 +102,7 @@ impl<'a> Renderer<'a> {
                 let b = Badge {
                     class: "mention",
                     name: &m.target,
-                    attrs: m.attrs.as_ref(),
+                    attrs: m.attrs.as_deref(),
                     lang: m.lang.as_deref(),
                 };
                 self.badge(&b, &text, out);
@@ -111,7 +111,7 @@ impl<'a> Renderer<'a> {
                 let b = Badge {
                     class: "tag",
                     name: &t.name,
-                    attrs: t.attrs.as_ref(),
+                    attrs: t.attrs.as_deref(),
                     lang: t.lang.as_deref(),
                 };
                 self.badge(&b, &format!("#{}", t.name), out);
@@ -122,7 +122,7 @@ impl<'a> Renderer<'a> {
                     Some(v) => inner.push_str(v),
                     None => esc::text(&format!(":{}:", s.name), &mut inner),
                 }
-                self.wrap_span(s.attrs.as_ref(), s.lang.as_deref(), &inner, out);
+                self.wrap_span(s.attrs.as_deref(), s.lang.as_deref(), &inner, out);
             }
             Node::RawInline(r) => self.raw_inline(r, out),
             Node::InlineExtension(e) => self.inline_extension(e, out),
@@ -130,7 +130,7 @@ impl<'a> Renderer<'a> {
                 let _ = write!(
                     out,
                     "<ruby{}>",
-                    El::new(r.attrs.as_ref(), r.lang.as_deref()).write(self.filter())
+                    El::new(r.attrs.as_deref(), r.lang.as_deref()).write(self.filter())
                 );
                 for p in &r.pairs {
                     if let Node::RubyPair(p) = p {
@@ -190,15 +190,15 @@ impl<'a> Renderer<'a> {
         let Some(tag) = wrapper_tag(n) else {
             match n {
                 Node::Code(c) => {
-                    let el = El::new(c.attrs.as_ref(), c.lang.as_deref());
+                    let el = El::new(c.attrs.as_deref(), c.lang.as_deref());
                     let _ = write!(out, "<code{}>", el.write(self.filter()));
                     esc::text(&c.value, out);
                     out.push_str("</code>");
                 }
                 Node::LiteralInline(l) => {
                     let inner = esc::text_str(&l.value);
-                    if l.attrs.as_ref().is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
-                        self.wrap_span(l.attrs.as_ref(), l.lang.as_deref(), &inner, out);
+                    if l.attrs.as_deref().is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
+                        self.wrap_span(l.attrs.as_deref(), l.lang.as_deref(), &inner, out);
                     } else {
                         out.push_str(&inner);
                     }
@@ -287,7 +287,7 @@ impl<'a> Renderer<'a> {
                 self.inlines(&l.children, out);
                 out.push(']');
                 push_label(out, l.ref_form.map(ref_suffix), key);
-                out.push_str(&attr_text(l.attrs.as_ref(), l.lang.as_deref()));
+                out.push_str(&attr_text(l.attrs.as_deref(), l.lang.as_deref()));
                 return;
             }
             return self.anchor(n, l, "", out);
@@ -297,7 +297,7 @@ impl<'a> Renderer<'a> {
 
     fn anchor(&mut self, _n: &'a Node, l: &'a ast::Link, href: &str, out: &mut String) {
         let def = l.key.as_deref().and_then(|k| self.links.get(k)).copied();
-        let merged = merge_def(def.and_then(|d| d.attrs.as_ref()), l.attrs.as_ref());
+        let merged = merge_def(def.and_then(|d| d.attrs.as_deref()), l.attrs.as_deref());
         let mut el = El::new(merged.as_ref(), l.lang.as_deref());
         el.structural.push(("href", Some(self.destination(href))));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
@@ -330,7 +330,7 @@ impl<'a> Renderer<'a> {
             esc::text(text, out);
             return;
         }
-        let mut el = El::new(a.attrs.as_ref(), a.lang.as_deref());
+        let mut el = El::new(a.attrs.as_deref(), a.lang.as_deref());
         el.structural
             .push(("href", Some(self.destination(&a.href))));
         self.rel(&mut el);
@@ -361,11 +361,11 @@ impl<'a> Renderer<'a> {
                 i.ref_form.map(image_suffix),
                 i.key.as_deref().unwrap_or(""),
             );
-            out.push_str(&attr_text(i.attrs.as_ref(), i.lang.as_deref()));
+            out.push_str(&attr_text(i.attrs.as_deref(), i.lang.as_deref()));
             return;
         };
         let def = i.key.as_deref().and_then(|k| self.links.get(k)).copied();
-        let merged = merge_def(def.and_then(|d| d.attrs.as_ref()), i.attrs.as_ref());
+        let merged = merge_def(def.and_then(|d| d.attrs.as_deref()), i.attrs.as_deref());
         let mut el = El::new(merged.as_ref(), i.lang.as_deref());
         el.structural.push(("src", Some(self.destination(src))));
         el.structural.push(("alt", Some(alt.to_string())));
@@ -425,7 +425,7 @@ impl<'a> Renderer<'a> {
             esc::text(&text, out);
             return;
         }
-        let mut el = El::new(x.attrs.as_ref(), x.lang.as_deref());
+        let mut el = El::new(x.attrs.as_deref(), x.lang.as_deref());
         el.structural.push(("href", Some(self.destination(href))));
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
@@ -447,7 +447,7 @@ impl<'a> Renderer<'a> {
         let mut layers: Vec<(&'static str, Option<(&'static str, String)>)> = Vec::new();
         if let Some(v) = abbr.as_ref() {
             // Gap HTML-010: emptiness is tested before the value filter, as the oracle does.
-            let raw = s.attrs.as_ref().and_then(|a| a.get("abbr")).unwrap_or("");
+            let raw = s.attrs.as_deref().and_then(|a| a.get("abbr")).unwrap_or("");
             let title = get("title").or_else(|| (!raw.is_empty()).then(|| v.clone()));
             layers.push(("abbr", title.map(|t| ("title", t))));
         }
@@ -460,7 +460,7 @@ impl<'a> Renderer<'a> {
         if kbd.is_some() {
             layers.push(("kbd", None));
         }
-        let mut el = El::new(s.attrs.as_ref(), s.lang.as_deref());
+        let mut el = El::new(s.attrs.as_deref(), s.lang.as_deref());
         el.skip_keys = &["abbr", "time", "kbd"];
         let Some((outer, rest)) = layers.split_last() else {
             let _ = write!(out, "<span{}>", el.write(self.filter()));
@@ -500,7 +500,7 @@ impl<'a> Renderer<'a> {
 
     /// C2-H-072, C2-H-151, C2-H-168.
     fn math(&mut self, m: &ast::Math, out: &mut String) {
-        let mut el = El::new(m.attrs.as_ref(), m.lang.as_deref());
+        let mut el = El::new(m.attrs.as_deref(), m.lang.as_deref());
         if self.opts.mode == Mode::Static {
             el.base.push("language-math".into());
             let _ = write!(out, "<code{}>", el.write(self.filter()));
@@ -583,7 +583,7 @@ impl<'a> Renderer<'a> {
             self.inlines(e.fallback.as_deref().unwrap_or(&[]), out);
             return;
         }
-        let mut el = El::new(e.attrs.as_ref(), e.lang.as_deref());
+        let mut el = El::new(e.attrs.as_deref(), e.lang.as_deref());
         el.base.push(format!("ext-{}", e.name));
         let _ = write!(out, "<span{}>", el.write(self.filter()));
         self.inlines(&e.children, out);

@@ -166,13 +166,13 @@ impl Builder<'_> {
         let (attrs, lang) = split_attrs(attrs);
         let node = match kind {
             ContainerKind::Quote => Node::BlockQuote(Box::new(ast::BlockQuote {
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 ..Default::default()
             })),
             ContainerKind::List { kind, start } => Node::List(Box::new(ast::List {
                 marker: marker(kind, start),
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 ..Default::default()
             })),
@@ -180,19 +180,19 @@ impl Builder<'_> {
                 let task = task.map(|c| ast::Task { mark: task_mark(c) });
                 Node::ListItem(Box::new(ast::ListItem {
                     task,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     ..Default::default()
                 }))
             }
             ContainerKind::DescList => Node::DefinitionList(Box::new(ast::DefinitionList {
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 ..Default::default()
             })),
             ContainerKind::Desc => {
                 Node::DefinitionDescription(Box::new(ast::DefinitionDescription {
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     ..Default::default()
                 }))
@@ -200,7 +200,7 @@ impl Builder<'_> {
             ContainerKind::Footnote { label } => Node::Footnote(Box::new(ast::Footnote {
                 key: fold_label(&label),
                 namespace: "footnote".into(),
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 ..Default::default()
             })),
@@ -232,7 +232,7 @@ impl Builder<'_> {
         match sigil {
             Some('>') => {
                 return Node::BlockQuote(Box::new(ast::BlockQuote {
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     ..Default::default()
                 }));
@@ -241,7 +241,7 @@ impl Builder<'_> {
                 let mut a = attrs.unwrap_or_default();
                 a.classes.push("hardbreaks".into());
                 return Node::Div(Box::new(ast::Div {
-                    attrs: Some(a),
+                    attrs: Some(Box::new(a)),
                     lang,
                     ..Default::default()
                 }));
@@ -258,7 +258,7 @@ impl Builder<'_> {
                 kind: admonition_kind(&name),
                 title,
                 group_label,
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 ..Default::default()
             })),
@@ -266,13 +266,13 @@ impl Builder<'_> {
                 kind: directive_kind(&name),
                 title,
                 group_label,
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 ..Default::default()
             })),
             Some("figure_group") if title.is_none() && group_label.is_none() => {
                 Node::FigureGroup(Box::new(ast::FigureGroup {
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     ..Default::default()
                 }))
@@ -286,7 +286,7 @@ impl Builder<'_> {
                 Node::Div(Box::new(ast::Div {
                     title,
                     group_label,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     ..Default::default()
                 }))
@@ -313,7 +313,7 @@ impl Builder<'_> {
                 Node::Paragraph(Box::new(ast::Paragraph {
                     children,
                     role,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -324,7 +324,7 @@ impl Builder<'_> {
                 Node::Heading(Box::new(ast::Heading {
                     level: i64::from(level),
                     children,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -334,7 +334,7 @@ impl Builder<'_> {
                 let children = self.inline(ContentKind::Term, &pieces);
                 Node::DefinitionTerm(Box::new(ast::DefinitionTerm {
                     children,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -360,7 +360,7 @@ impl Builder<'_> {
                     return Node::RawBlock(Box::new(ast::RawBlock {
                         format,
                         value,
-                        attrs,
+                        attrs: attrs.map(Box::new),
                         lang,
                         pos,
                         ..Default::default()
@@ -384,7 +384,7 @@ impl Builder<'_> {
                     syntax: info.language,
                     title,
                     group_label: info.label,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -399,14 +399,14 @@ impl Builder<'_> {
                 Node::Comment(Box::new(ast::Comment {
                     form,
                     value,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
                 }))
             }
             LeafKind::Thematic => Node::ThematicBreak(Box::new(ast::ThematicBreak {
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 pos,
                 ..Default::default()
@@ -418,7 +418,7 @@ impl Builder<'_> {
                     namespace: "link".into(),
                     href,
                     tooltip: title,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -429,7 +429,7 @@ impl Builder<'_> {
                     key,
                     expansion,
                     namespace: "abbr".into(),
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -439,7 +439,7 @@ impl Builder<'_> {
                 Node::Frontmatter(Box::new(ast::Frontmatter {
                     format,
                     value,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -455,7 +455,7 @@ impl Builder<'_> {
                     path,
                     section,
                     options,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()
@@ -465,7 +465,7 @@ impl Builder<'_> {
                 let children = lines.into_iter().map(|l| self.line(l)).collect();
                 Node::LineBlock(Box::new(ast::LineBlock {
                     children,
-                    attrs,
+                    attrs: attrs.map(Box::new),
                     lang,
                     pos,
                     ..Default::default()

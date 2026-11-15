@@ -14,7 +14,7 @@ const READ_ONLY_KEYS: &[&str] = &["aligns", "widths", "header-rows", "footer-row
 impl<'a> Renderer<'a> {
     pub(super) fn table(&mut self, n: &'a Node, depth: usize, panel: bool) {
         let Node::Table(t) = n else { return };
-        let mut el = self.el(t.attrs.as_ref(), t.lang.as_deref(), n);
+        let mut el = self.el(t.attrs.as_deref(), t.lang.as_deref(), n);
         el.skip_keys = READ_ONLY_KEYS;
         if panel {
             el.base.push("carve-figure-panel".into());
@@ -96,7 +96,7 @@ impl<'a> Renderer<'a> {
         depth: usize,
     ) {
         let Node::TableRow(row) = r else { return };
-        let el = self.el(row.attrs.as_ref(), row.lang.as_deref(), r);
+        let el = self.el(row.attrs.as_deref(), row.lang.as_deref(), r);
         let mut s = format!("<tr{}>", el.write(self.filter()));
         for c in &row.children {
             self.cell(t, c, kind, columns.get(&addr(c)).copied(), &mut s);
@@ -125,7 +125,7 @@ impl<'a> Renderer<'a> {
                 None
             }
         });
-        let mut el = El::new(x.attrs.as_ref(), x.lang.as_deref());
+        let mut el = El::new(x.attrs.as_deref(), x.lang.as_deref());
         if let Some(v) = x.rowspan.filter(|v| *v > 1) {
             el.structural.push(("rowspan", Some(v.to_string())));
         }

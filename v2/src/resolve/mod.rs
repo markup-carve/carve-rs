@@ -106,7 +106,7 @@ fn heading_ids(
     let mut ids = AddrMap::default();
     for v in &order.visits {
         let Node::Heading(h) = v.node else { continue };
-        if let Some(id) = h.attrs.as_ref().and_then(|a| a.id.clone()) {
+        if let Some(id) = h.attrs.as_deref().and_then(|a| a.id.clone()) {
             ids.insert(addr(v.node), id);
         } else if mode != HeadingIds::Off {
             let id = taken.unique(&slug::slug(&plain::text_of(&h.children), mode));

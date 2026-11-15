@@ -62,7 +62,7 @@ impl Builder<'_> {
         Node::Table(Box::new(ast::Table {
             children: groups,
             columns,
-            attrs,
+            attrs: attrs.map(Box::new),
             lang,
             pos: Some(self.src.pos(start, end)),
             ..Default::default()
@@ -92,7 +92,7 @@ impl Builder<'_> {
         Node::Table(Box::new(ast::Table {
             children,
             columns,
-            attrs,
+            attrs: attrs.map(Box::new),
             lang,
             pos,
             ..Default::default()
@@ -183,7 +183,7 @@ impl Builder<'_> {
                 colspan: (sp.colspan > 1).then(|| i64::try_from(sp.colspan).unwrap_or(1)),
                 rowspan: (sp.rowspan > 1).then(|| i64::try_from(sp.rowspan).unwrap_or(1)),
                 align,
-                attrs,
+                attrs: attrs.map(Box::new),
                 lang,
                 pos: cell_positioned.then(|| self.src.pos(cell.start, cell.end)),
                 ..Default::default()
@@ -193,7 +193,7 @@ impl Builder<'_> {
         let pos = (!row.joined).then(|| self.src.pos(row.start, row.end));
         Node::TableRow(Box::new(ast::TableRow {
             children: cells,
-            attrs,
+            attrs: attrs.map(Box::new),
             lang,
             pos,
             ..Default::default()

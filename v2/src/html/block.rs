@@ -92,7 +92,7 @@ impl<'a> Renderer<'a> {
     fn block_inner_other(&mut self, n: &'a Node, depth: usize) {
         match n {
             Node::ThematicBreak(t) => {
-                let el = self.el(t.attrs.as_ref(), t.lang.as_deref(), n);
+                let el = self.el(t.attrs.as_deref(), t.lang.as_deref(), n);
                 let s = format!("<hr{}>", el.write(self.filter()));
                 self.line(depth, &s);
             }
@@ -102,7 +102,7 @@ impl<'a> Renderer<'a> {
             Node::Include(i) => {
                 let s = format!(
                     "<p{}>{}</p>",
-                    self.el(i.attrs.as_ref(), i.lang.as_deref(), n)
+                    self.el(i.attrs.as_deref(), i.lang.as_deref(), n)
                         .write(self.filter()),
                     esc::text_str(&include_text(i))
                 );
@@ -110,7 +110,7 @@ impl<'a> Renderer<'a> {
                 self.line(depth, &s);
             }
             Node::Section(s) => {
-                let el = self.el(s.attrs.as_ref(), s.lang.as_deref(), n);
+                let el = self.el(s.attrs.as_deref(), s.lang.as_deref(), n);
                 let open = format!("<section{}>", el.write(self.filter()));
                 self.container(&open, "</section>", Vec::new(), &s.children, depth);
             }
@@ -166,11 +166,11 @@ impl<'a> Renderer<'a> {
             return Some(self.leaf(&p.children));
         }
         let static_math = p.role == Some(ParagraphRole::Math) && self.opts.mode == Mode::Static;
-        let mut el = self.el(p.attrs.as_ref(), p.lang.as_deref(), n);
+        let mut el = self.el(p.attrs.as_deref(), p.lang.as_deref(), n);
         if static_math {
             return Some(self.static_display_math(&p.children, el));
         }
-        if bare && !has_attrs(p.attrs.as_ref(), p.lang.as_ref()) {
+        if bare && !has_attrs(p.attrs.as_deref(), p.lang.as_ref()) {
             return Some(self.leaf(&p.children));
         }
         el.align_style = true;
@@ -220,7 +220,7 @@ impl<'a> Renderer<'a> {
     /// opened a section, whose id stands on the section.
     pub(super) fn heading(&mut self, n: &'a Node, depth: usize, own_id: bool) {
         let Node::Heading(h) = n else { return };
-        let mut el = self.el(h.attrs.as_ref(), h.lang.as_deref(), n);
+        let mut el = self.el(h.attrs.as_deref(), h.lang.as_deref(), n);
         el.align_style = true;
         el.id = if own_id {
             super::heading_id(n).map(str::to_string)
@@ -271,7 +271,7 @@ impl<'a> Renderer<'a> {
     /// C2-H-006, C2-H-041.
     fn quote(&mut self, n: &'a Node, children: &'a [Node], depth: usize) {
         let Node::BlockQuote(q) = n else { return };
-        let el = self.el(q.attrs.as_ref(), q.lang.as_deref(), n);
+        let el = self.el(q.attrs.as_deref(), q.lang.as_deref(), n);
         let open = format!("<blockquote{}>", el.write(self.filter()));
         let vis = self.shown(children);
         // C2-H-165 with C2-H-006: a block a profile degrades is a paragraph.
@@ -298,7 +298,7 @@ impl<'a> Renderer<'a> {
     fn list(&mut self, n: &'a Node, depth: usize) {
         let Node::List(l) = n else { return };
         let ordered = l.marker.kind == "ordered";
-        let mut el = self.el(l.attrs.as_ref(), l.lang.as_deref(), n);
+        let mut el = self.el(l.attrs.as_deref(), l.lang.as_deref(), n);
         if ordered {
             if let Some(t) = l.marker.style.as_deref().and_then(html_type) {
                 el.structural.push(("type", Some(t.to_string())));
@@ -347,7 +347,7 @@ impl<'a> Renderer<'a> {
     /// C2-H-007, C2-H-032 to C2-H-035.
     fn item(&mut self, n: &'a Node, depth: usize, tight: bool, ordered: bool) {
         let Node::ListItem(i) = n else { return };
-        let mut el = self.el(i.attrs.as_ref(), i.lang.as_deref(), n);
+        let mut el = self.el(i.attrs.as_deref(), i.lang.as_deref(), n);
         let head = Self::item_task(i, ordered, &mut el);
         let open = format!("<li{}>{head}", el.write(self.filter()));
         let vis = self.shown(&i.children);
@@ -441,14 +441,14 @@ impl<'a> Renderer<'a> {
     /// C2-H-038 to C2-H-040.
     fn definition_list(&mut self, n: &'a Node, depth: usize) {
         let Node::DefinitionList(d) = n else { return };
-        let el = self.el(d.attrs.as_ref(), d.lang.as_deref(), n);
+        let el = self.el(d.attrs.as_deref(), d.lang.as_deref(), n);
         let open = format!("<dl{}>", el.write(self.filter()));
         self.line(depth, &open);
         for c in &d.children {
             self.level += 1;
             match c {
                 Node::DefinitionTerm(t) => {
-                    let el = self.el(t.attrs.as_ref(), t.lang.as_deref(), c);
+                    let el = self.el(t.attrs.as_deref(), t.lang.as_deref(), c);
                     let inner = self.leaf(&t.children);
                     let s = format!("<dt{}>{inner}</dt>", el.write(self.filter()));
                     self.line(depth + 1, &s);
@@ -465,7 +465,7 @@ impl<'a> Renderer<'a> {
         let Node::DefinitionDescription(x) = n else {
             return;
         };
-        let el = self.el(x.attrs.as_ref(), x.lang.as_deref(), n);
+        let el = self.el(x.attrs.as_deref(), x.lang.as_deref(), n);
         let open = format!("<dd{}>", el.write(self.filter()));
         let vis: Vec<&'a Node> = children.iter().filter(|c| visible(c)).collect();
         match vis.as_slice() {
@@ -552,7 +552,7 @@ impl<'a> Renderer<'a> {
     /// C2-H-043, C2-H-136: one `<p>` per stanza.
     fn line_block(&mut self, n: &'a Node, depth: usize) {
         let Node::LineBlock(lb) = n else { return };
-        let mut el = self.el(lb.attrs.as_ref(), lb.lang.as_deref(), n);
+        let mut el = self.el(lb.attrs.as_deref(), lb.lang.as_deref(), n);
         el.trailing.push("line-block".into());
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-line-block", None));
@@ -599,7 +599,7 @@ impl<'a> Renderer<'a> {
     /// C2-H-047, C2-H-048.
     pub(super) fn code_block(&mut self, n: &'a Node, depth: usize) {
         let Node::CodeBlock(c) = n else { return };
-        let mut el = self.el(c.attrs.as_ref(), c.lang.as_deref(), n);
+        let mut el = self.el(c.attrs.as_deref(), c.lang.as_deref(), n);
         if let Some(t) = &c.title {
             el.structural
                 .push(("title", Some(crate::resolve::plain::text_of(t))));
@@ -644,7 +644,7 @@ impl<'a> Renderer<'a> {
     /// C2-H-062 to C2-H-064.
     pub(super) fn figure(&mut self, n: &'a Node, depth: usize, panel: bool) {
         let Node::Figure(f) = n else { return };
-        let mut el = self.el(f.attrs.as_ref(), f.lang.as_deref(), n);
+        let mut el = self.el(f.attrs.as_deref(), f.lang.as_deref(), n);
         if panel {
             el.base.push("carve-figure-panel".into());
         }
@@ -661,7 +661,7 @@ impl<'a> Renderer<'a> {
 
     fn figure_group(&mut self, n: &'a Node, depth: usize) {
         let Node::FigureGroup(g) = n else { return };
-        let mut el = self.el(g.attrs.as_ref(), g.lang.as_deref(), n);
+        let mut el = self.el(g.attrs.as_deref(), g.lang.as_deref(), n);
         el.base.push("carve-figure-group".into());
         let open = format!("<figure{}>", el.write(self.filter()));
         self.line(depth, &open);
@@ -715,21 +715,21 @@ type DivParts<'a> = (
 pub(super) fn div_parts(n: &Node) -> DivParts<'_> {
     match n {
         Node::Div(d) => (
-            d.attrs.as_ref(),
+            d.attrs.as_deref(),
             d.lang.as_deref(),
             &d.children,
             d.title.as_deref(),
             d.group_label.as_deref(),
         ),
         Node::Admonition(d) => (
-            d.attrs.as_ref(),
+            d.attrs.as_deref(),
             d.lang.as_deref(),
             &d.children,
             d.title.as_deref(),
             d.group_label.as_deref(),
         ),
         Node::Directive(d) => (
-            d.attrs.as_ref(),
+            d.attrs.as_deref(),
             d.lang.as_deref(),
             &d.children,
             d.title.as_deref(),

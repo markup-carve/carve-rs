@@ -259,7 +259,7 @@ fn collect_fields(
 }
 
 /// The common fields only a deserialized tree carries.
-const RARE: [&str; 4] = ["data", "dir", "metadata", "segments"];
+const RARE: [&str; 5] = ["attrs", "data", "dir", "metadata", "segments"];
 
 fn common_kind(name: &str) -> FieldKind {
     match name {
@@ -441,7 +441,7 @@ impl Node {{
     }}
 
     /// The attribute slot of the node type, when it has one.
-    pub fn attrs_slot(&mut self) -> Option<&mut Option<crate::ast::Attrs>> {{
+    pub fn attrs_slot(&mut self) -> Option<&mut Option<Box<crate::ast::Attrs>>> {{
         match self {{
 {attrs_mut_arms}            _ => None,
         }}
@@ -515,7 +515,10 @@ fn write_slots(out: &mut String, defs: &Map<String, Value>, slots: &Value) {
             );
         }
         if props.contains_key("attrs") {
-            let _ = writeln!(attrs_arms, "            Self::{ty}(n) => n.attrs.as_ref(),");
+            let _ = writeln!(
+                attrs_arms,
+                "            Self::{ty}(n) => n.attrs.as_deref(),"
+            );
             let _ = writeln!(
                 attrs_mut_arms,
                 "            Self::{ty}(n) => Some(&mut n.attrs),"

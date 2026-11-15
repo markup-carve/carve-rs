@@ -201,7 +201,7 @@ impl<'a> Renderer<'a> {
     fn admonition_ids(&mut self) {
         let placing = self.placing;
         let titled = |v: &crate::resolve::order::Visit<'_>| match v.node {
-            Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs.as_ref()),
+            Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs.as_deref()),
             Node::Directive(d) => d.title.is_some() && placing == Some(addr(v.node)),
             _ => false,
         };
@@ -290,7 +290,7 @@ impl<'a> Renderer<'a> {
         if !self.opts.roundtrip {
             return;
         }
-        if h.attrs.as_ref().is_some_and(|a| a.id.is_some()) {
+        if h.attrs.as_deref().is_some_and(|a| a.id.is_some()) {
             el.carriers.push(("data-carve-explicit-id", None));
         } else if h.generated_id.is_some() {
             el.carriers.push(("data-carve-generated-id", None));

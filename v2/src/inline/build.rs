@@ -123,7 +123,7 @@ fn apply_attrs(node: &mut Node, attrs: Option<AttrBlock>) {
     if !block.attrs.is_empty()
         && let Some(slot) = node.attrs_slot()
     {
-        *slot = Some(block.attrs);
+        *slot = Some(Box::new(block.attrs));
     }
     if block.lang.is_some() {
         set_lang(node, block.lang);
