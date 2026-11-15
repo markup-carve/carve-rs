@@ -6,6 +6,7 @@ use crate::ast::{Node, Table, TableCellScope};
 use crate::resolve::order::addr;
 use crate::resolve::table::{GroupKind, layout, rows};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 /// The table attributes that are read and never written (C2-H-153).
 const READ_ONLY_KEYS: &[&str] = &["aligns", "widths", "header-rows", "footer-rows"];
@@ -146,25 +147,33 @@ impl<'a> Renderer<'a> {
         }
         let align = x
             .align
-            .map(|a| a.as_str())
-            .or_else(|| column.and_then(|c| c.resolved_align).map(|a| a.as_str()));
+            .map(super::super::ast::TableCellAlign::as_str)
+            .or_else(|| {
+                column
+                    .and_then(|c| c.resolved_align)
+                    .map(super::super::ast::TableColumnResolvedAlign::as_str)
+            });
         if let Some(a) = align {
             el.style_after.push(format!("text-align: {a};"));
         }
         let valign = x
             .valign
-            .map(|a| a.as_str())
-            .or_else(|| column.and_then(|c| c.valign).map(|a| a.as_str()));
+            .map(super::super::ast::TableCellValign::as_str)
+            .or_else(|| {
+                column
+                    .and_then(|c| c.valign)
+                    .map(super::super::ast::TableColumnValign::as_str)
+            });
         if let Some(v) = valign {
             el.style_after.push(format!("vertical-align: {v};"));
         }
         let tag = if x.header { "th" } else { "td" };
-        out.push_str(&format!("<{tag}{}>", el.write(self.filter())));
+        let _ = write!(out, "<{tag}{}>", el.write(self.filter()));
         self.level += 1;
         let inner = self.cell_content(&x.children);
         self.level -= 1;
         out.push_str(&inner);
-        out.push_str(&format!("</{tag}>"));
+        let _ = write!(out, "</{tag}>");
     }
 
     fn cell_content(&mut self, children: &'a [Node]) -> String {

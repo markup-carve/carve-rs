@@ -7,8 +7,8 @@ use super::{esc, url};
 use crate::ast::{self, Attrs, ImageRefForm, LinkRefForm, Node};
 use crate::options::Mode;
 use crate::resolve::order::addr;
-use crate::resolve::plain;
 use crate::tables::{PROFILES, SMART_RUNS};
+use std::fmt::Write as _;
 
 impl<'a> Renderer<'a> {
     /// The inline content of a leaf with its comment-only lines and one break
@@ -59,7 +59,7 @@ impl<'a> Renderer<'a> {
                 (Some(e), 0) => {
                     let mut el = El::new(a.attrs.as_ref(), a.lang.as_deref());
                     el.structural.push(("title", Some(e.clone())));
-                    out.push_str(&format!("<abbr{}>", el.write(self.filter())));
+                    let _ = write!(out, "<abbr{}>", el.write(self.filter()));
                     esc::text(&a.key, out);
                     out.push_str("</abbr>");
                 }
@@ -70,7 +70,13 @@ impl<'a> Renderer<'a> {
                 let text = m.label.clone().unwrap_or_else(|| format!("@{}", m.target));
                 self.badge("mention", &text, m.attrs.as_ref(), m.lang.as_deref(), out);
             }
-            Node::Tag(t) => self.badge("tag", &format!("#{}", t.name), t.attrs.as_ref(), t.lang.as_deref(), out),
+            Node::Tag(t) => self.badge(
+                "tag",
+                &format!("#{}", t.name),
+                t.attrs.as_ref(),
+                t.lang.as_deref(),
+                out,
+            ),
             Node::Symbol(s) => {
                 let mut inner = String::new();
                 match self.opts.symbols.get(&s.name) {
@@ -82,10 +88,11 @@ impl<'a> Renderer<'a> {
             Node::RawInline(r) => self.raw_inline(r, out),
             Node::InlineExtension(e) => self.inline_extension(e, out),
             Node::Ruby(r) => {
-                out.push_str(&format!(
+                let _ = write!(
+                    out,
                     "<ruby{}>",
                     El::new(r.attrs.as_ref(), r.lang.as_deref()).write(self.filter())
-                ));
+                );
                 for p in &r.pairs {
                     if let Node::RubyPair(p) = p {
                         self.inlines(&p.base, out);
@@ -129,7 +136,7 @@ impl<'a> Renderer<'a> {
             Node::CitationGroup(c) => esc::text(&c.raw, out),
             Node::CaptionNumber(c) => match c.n {
                 Some(v) if self.opts.roundtrip => {
-                    out.push_str(&format!("<span data-carve-caption-number>{v}</span>"))
+                    let _ = write!(out, "<span data-carve-caption-number>{v}</span>");
                 }
                 Some(v) => out.push_str(&v.to_string()),
                 None => out.push('#'),
@@ -153,7 +160,7 @@ impl<'a> Renderer<'a> {
             Node::Delete(_) => "del",
             Node::Code(c) => {
                 let el = El::new(c.attrs.as_ref(), c.lang.as_deref());
-                out.push_str(&format!("<code{}>", el.write(self.filter())));
+                let _ = write!(out, "<code{}>", el.write(self.filter()));
                 esc::text(&c.value, out);
                 out.push_str("</code>");
                 return;
@@ -179,19 +186,20 @@ impl<'a> Renderer<'a> {
         if matches!(n, Node::SmallCaps(_)) {
             el.base.push("smallcaps".into());
         }
-        out.push_str(&format!("<{tag}{}>", el.write(self.filter())));
+        let _ = write!(out, "<{tag}{}>", el.write(self.filter()));
         if let Some(c) = n.children() {
             self.inlines(c, out);
         }
-        out.push_str(&format!("</{tag}>"));
+        let _ = write!(out, "</{tag}>");
     }
 
     fn wrap_span(&self, attrs: Option<&Attrs>, lang: Option<&str>, inner: &str, out: &mut String) {
         if attrs.is_some_and(|a| !a.is_empty()) || lang.is_some() {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "<span{}>{inner}</span>",
                 El::new(attrs, lang).write(self.filter())
-            ));
+            );
         } else {
             out.push_str(inner);
         }
@@ -271,13 +279,13 @@ impl<'a> Renderer<'a> {
             el.carriers.push(("data-carve-ref", Some(key.clone())));
             match l.ref_form {
                 Some(LinkRefForm::Collapsed) => {
-                    el.carriers.push(("data-carve-ref-collapsed", None))
+                    el.carriers.push(("data-carve-ref-collapsed", None));
                 }
                 Some(LinkRefForm::Shortcut) => el.carriers.push(("data-carve-ref-shortcut", None)),
                 _ => {}
             }
         }
-        out.push_str(&format!("<a{}>", el.write(self.filter())));
+        let _ = write!(out, "<a{}>", el.write(self.filter()));
         self.in_link += 1;
         self.inlines(&l.children, out);
         self.in_link -= 1;
@@ -300,7 +308,7 @@ impl<'a> Renderer<'a> {
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-autolink", None));
         }
-        out.push_str(&format!("<a{}>", el.write(self.filter())));
+        let _ = write!(out, "<a{}>", el.write(self.filter()));
         esc::text(text, out);
         out.push_str("</a>");
     }
@@ -339,13 +347,13 @@ impl<'a> Renderer<'a> {
             el.carriers.push(("data-carve-ref", Some(key.clone())));
             match i.ref_form {
                 Some(ImageRefForm::Collapsed) => {
-                    el.carriers.push(("data-carve-ref-collapsed", None))
+                    el.carriers.push(("data-carve-ref-collapsed", None));
                 }
                 Some(ImageRefForm::Shortcut) => el.carriers.push(("data-carve-ref-shortcut", None)),
                 _ => {}
             }
         }
-        out.push_str(&format!("<img{}>", el.write(self.filter())));
+        let _ = write!(out, "<img{}>", el.write(self.filter()));
     }
 
     /// C2-H-086, C2-H-088.
@@ -393,7 +401,7 @@ impl<'a> Renderer<'a> {
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
         }
-        out.push_str(&format!("<a{}>", el.write(self.filter())));
+        let _ = write!(out, "<a{}>", el.write(self.filter()));
         esc::text(&text, out);
         out.push_str("</a>");
     }
@@ -426,7 +434,7 @@ impl<'a> Renderer<'a> {
         let mut el = El::new(s.attrs.as_ref(), s.lang.as_deref());
         el.skip_keys = &["abbr", "time", "kbd"];
         let Some((outer, rest)) = layers.split_last() else {
-            out.push_str(&format!("<span{}>", el.write(self.filter())));
+            let _ = write!(out, "<span{}>", el.write(self.filter()));
             self.inlines(&s.children, out);
             out.push_str("</span>");
             return;
@@ -442,12 +450,12 @@ impl<'a> Renderer<'a> {
         if abbr.is_some() && time.is_some() {
             el.skip_keys = &["abbr", "time", "kbd", "title", "datetime"];
         }
-        out.push_str(&format!("<{}{}>", outer.0, el.write(self.filter())));
+        let _ = write!(out, "<{}{}>", outer.0, el.write(self.filter()));
         for (tag, a) in rest.iter().rev() {
             out.push('<');
             out.push_str(tag);
             if let Some((k, v)) = a {
-                out.push_str(&format!(" {k}=\"{}\"", attr_str(v)));
+                let _ = write!(out, " {k}=\"{}\"", attr_str(v));
             }
             out.push('>');
         }
@@ -456,9 +464,9 @@ impl<'a> Renderer<'a> {
         self.inlines(&s.children, out);
         self.in_abbr -= abbr_layer;
         for (tag, _) in rest {
-            out.push_str(&format!("</{tag}>"));
+            let _ = write!(out, "</{tag}>");
         }
-        out.push_str(&format!("</{}>", outer.0));
+        let _ = write!(out, "</{}>", outer.0);
     }
 
     /// C2-H-072, C2-H-151, C2-H-168.
@@ -466,7 +474,7 @@ impl<'a> Renderer<'a> {
         let mut el = El::new(m.attrs.as_ref(), m.lang.as_deref());
         if self.opts.mode == Mode::Static {
             el.base.push("language-math".into());
-            out.push_str(&format!("<code{}>", el.write(self.filter())));
+            let _ = write!(out, "<code{}>", el.write(self.filter()));
             esc::text(&m.value, out);
             out.push_str("</code>");
             return;
@@ -480,19 +488,23 @@ impl<'a> Renderer<'a> {
         } else {
             ("\\(", "\\)")
         };
-        out.push_str(&format!("<span{}>{open}", el.write(self.filter())));
+        let _ = write!(out, "<span{}>{open}", el.write(self.filter()));
         esc::text(&m.value, out);
-        out.push_str(&format!("{close}</span>"));
+        let _ = write!(out, "{close}</span>");
         if let (true, Some(n), Some(p)) = (m.display, m.number, &m.number_prefix) {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 " <span class=\"equation-number\">{} {n}</span>",
                 esc::text_str(p)
-            ));
+            );
         }
     }
 
     /// C2-H-100: an inert span without `social`.
-    fn badge(&self, class: &str, text: &str,
+    fn badge(
+        &self,
+        class: &str,
+        text: &str,
         attrs: Option<&Attrs>,
         lang: Option<&str>,
         out: &mut String,
@@ -500,7 +512,7 @@ impl<'a> Renderer<'a> {
         let mut el = El::new(attrs, lang);
         el.base.push(class.to_string());
         el.class_first = true;
-        out.push_str(&format!("<span{}><strong>", el.write(self.filter())));
+        let _ = write!(out, "<span{}><strong>", el.write(self.filter()));
         esc::text(text, out);
         out.push_str("</strong></span>");
     }
@@ -536,7 +548,7 @@ impl<'a> Renderer<'a> {
         }
         let mut el = El::new(e.attrs.as_ref(), e.lang.as_deref());
         el.base.push(format!("ext-{}", e.name));
-        out.push_str(&format!("<span{}>", el.write(self.filter())));
+        let _ = write!(out, "<span{}>", el.write(self.filter()));
         self.inlines(&e.children, out);
         out.push_str("</span>");
     }

@@ -128,7 +128,7 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize) {
         }
         Node::CitationGroup(c) => out.push_str(&c.raw),
         Node::CaptionNumber(c) => {
-            out.push_str(&c.n.map_or_else(|| "#".to_string(), |n| n.to_string()))
+            out.push_str(&c.n.map_or_else(|| "#".to_string(), |n| n.to_string()));
         }
         other => {
             for c in other.children().into_iter().flatten() {
@@ -216,8 +216,9 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
         | Node::Footnote(_) => return,
         other => match other.children() {
             Some(c) if c.iter().any(is_block) => {
-                c.iter()
-                    .for_each(|b| degraded_paragraphs(b, out, depth + 1));
+                for b in c {
+                    degraded_paragraphs(b, out, depth + 1);
+                }
                 return;
             }
             Some(c) => inlines_plain(c),

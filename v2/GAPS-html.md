@@ -171,3 +171,29 @@ engine writes a note only when its mark type (`footnote_ref` or
 "the value for a code or raw block" - the value ends with a line break
 (C2-A-045). The oracle writes `<p>code</p>`, without the break. This engine
 follows the oracle.
+
+## HTML-017 ast-results lists `numberPrefix` as a result, C2-H-151 makes it an input
+
+Nearest clauses: `data/ast-results.json` (`math`: `number`, `numberPrefix`),
+C2-H-151 ("a display `math` node that carries `numberPrefix` takes the next
+number"), C2-A-102.
+
+`numberPrefix` has no source spelling and nothing derives it; resolution reads
+it to pick the sequence. Readings: (a) only `number` is a result and the data
+file lists one field too many; (b) resolution derives the prefix from some
+source the spec does not name. The oracle keeps a supplied `numberPrefix` and
+adds `number`. This engine: (a). `tests/resolve_examples.rs` and
+`tests/oracle_extra.rs` do not strip `numberPrefix` before resolving.
+
+## HTML-018 C2-H-100 has no form for a mention with a `label`
+
+Nearest clauses: C2-H-100 (`<strong>@NAME</strong>`), C2-A-101 ("an optional
+visible `label`").
+
+```json
+{"type": "mention", "kind": "user", "target": "core", "label": "Core Team"}
+```
+
+Readings: (a) the label replaces `@NAME`; (b) `@NAME` stays and the label is
+not written. The oracle writes `<strong>Core Team</strong>`. This engine
+follows the oracle.

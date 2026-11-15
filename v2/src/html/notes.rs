@@ -58,13 +58,15 @@ impl<'a> Renderer<'a> {
         let Some(note) = self.order.notes.get(i) else {
             return;
         };
-        let node = note.node;
+        let def = note.node;
         let back = self.backlinks(i);
-        let mut el = El::default();
-        el.id = Some(format!("fn{}", i + 1));
-        el.id_first = true;
+        let mut el = El {
+            id: Some(format!("fn{}", i + 1)),
+            id_first: true,
+            ..El::default()
+        };
         if self.opts.roundtrip {
-            match node {
+            match def {
                 Node::Footnote(f) => el
                     .carriers
                     .push(("data-carve-footnote-label", Some(f.key.clone()))),
@@ -72,7 +74,7 @@ impl<'a> Renderer<'a> {
             }
         }
         self.line(depth, &format!("<li{}>", el.write(self.filter())));
-        match node {
+        match def {
             Node::Footnote(f) => self.note_body(&f.children, &back, depth + 1),
             Node::InlineFootnote(f) => {
                 let inner = self.leaf(&f.children);

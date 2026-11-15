@@ -117,10 +117,10 @@ impl<'a> Renderer<'a> {
                 )
             })
             .collect();
-        self.placing = if !self.shown.contains(&true) {
-            None
-        } else {
+        self.placing = if self.shown.contains(&true) {
             doc.children.iter().find(|c| matches!(c, Node::Directive(d) if d.kind == crate::ast::DirectiveKind::Footnotes)).map(addr)
+        } else {
+            None
         };
         for (i, note) in self.order.notes.iter().enumerate() {
             for (k, r) in note.refs.iter().enumerate() {
@@ -232,8 +232,10 @@ impl<'a> Renderer<'a> {
                         stack.pop();
                         self.line(stack.len(), "</section>");
                     }
-                    let mut el = El::default();
-                    el.id = heading_id(c).map(str::to_string);
+                    let mut el = El {
+                        id: heading_id(c).map(str::to_string),
+                        ..El::default()
+                    };
                     self.id_carriers(c, &mut el);
                     let open = format!("<section{}>", el.write(self.filter()));
                     self.line(stack.len(), &open);

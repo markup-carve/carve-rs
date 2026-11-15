@@ -13,6 +13,7 @@ pub struct Example {
     pub oracle_tree: Value,
 }
 
+#[must_use]
 pub fn examples() -> Vec<Example> {
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -34,6 +35,7 @@ pub fn examples() -> Vec<Example> {
 }
 
 /// JSON with object keys sorted, for byte comparison.
+#[must_use]
 pub fn sorted(v: &Value) -> String {
     fn walk(v: &Value) -> Value {
         match v {
@@ -54,6 +56,7 @@ pub fn sorted(v: &Value) -> String {
 }
 
 /// The result fields of `ast-results.json` by node type.
+#[must_use]
 pub fn results() -> Vec<(String, String)> {
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -74,7 +77,7 @@ pub fn results() -> Vec<(String, String)> {
     out
 }
 
-fn strip_with(v: &mut Value, fields: &[(String, String)]) {
+fn strip_with(v: &mut Value, fields: &[(String, String)], authored_spans: bool) {
     match v {
         Value::Object(m) => {
             let ty = m
@@ -82,11 +85,16 @@ fn strip_with(v: &mut Value, fields: &[(String, String)]) {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let marks = ty != "table" || m.get("children").is_some_and(|c| c.to_string().contains("\"span\":"));
+            // Counts in a table without span marks are authored (C2-A-093).
+            let authored_spans = if ty == "table" {
+                !m.get("children")
+                    .is_some_and(|c| c.to_string().contains("\"span\":"))
+            } else {
+                authored_spans
+            };
             for (t, f) in fields {
                 // Gap HTML-017: `numberPrefix` is listed as a result but nothing derives it.
-                // Counts without a span mark are authored (C2-A-093).
-                if f == "numberPrefix" || (!marks && (f == "colspan" || f == "rowspan")) {
+                if f == "numberPrefix" || (authored_spans && (f == "colspan" || f == "rowspan")) {
                     continue;
                 }
                 // A direct link or image keeps its destination; only a reference use resolves.
@@ -96,17 +104,19 @@ fn strip_with(v: &mut Value, fields: &[(String, String)]) {
                 }
             }
             for c in m.values_mut() {
-                strip_with(c, fields);
+                strip_with(c, fields, authored_spans);
             }
         }
-        Value::Array(a) => a.iter_mut().for_each(|c| strip_with(c, fields)),
+        Value::Array(a) => a
+            .iter_mut()
+            .for_each(|c| strip_with(c, fields, authored_spans)),
         _ => {}
     }
 }
 
 /// Removes every result field of `ast-results.json` from a tree.
 pub fn strip_results(v: &mut Value) {
-    strip_with(v, &results());
+    strip_with(v, &results(), false);
 }
 
 /// The engine options an example names (`opts` of examples.json).

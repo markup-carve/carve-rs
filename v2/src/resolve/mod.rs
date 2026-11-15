@@ -16,7 +16,7 @@ use crate::options::{HeadingIds, Options};
 
 use order::{Order, Visit, addr, caption_of, mark_of};
 use plain::Symbols;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The bound of every recursive walk over a tree: the nesting cap counts
 /// blocks and inlines together (C2-B-190), and a node's slots can add a level
@@ -117,32 +117,20 @@ fn heading_ids(
     ids
 }
 
-/// A numbered caption: the address of the node that carries it, its label
-/// text and its number.
-struct Numbered {
-    owner: usize,
-    label: String,
-    n: i64,
-}
-
 /// C2-H-149 to C2-H-151 and C2-H-170: one count per sequence key, in
 /// resolution order, a node before the nodes inside it.
 fn caption_numbers(
     order: &Order<'_>,
     opts: &Options,
     res: &mut HashMap<usize, Res>,
-) -> Vec<Numbered> {
+) -> HashSet<usize> {
     let mut counts: HashMap<String, i64> = HashMap::new();
-    let mut out = Vec::new();
+    let mut out = HashSet::new();
     for v in &order.visits {
         if let Some((mark, label)) = caption_mark(v, opts) {
             let n = next(&mut counts, &label);
             res.insert(addr(mark), Res::Number(n));
-            out.push(Numbered {
-                owner: addr(v.node),
-                label,
-                n,
-            });
+            out.insert(addr(v.node));
         } else if let Node::Math(m) = v.node {
             if let (true, Some(prefix), false) = (m.display, &m.number_prefix, v.in_marked_figure) {
                 res.insert(addr(v.node), Res::Number(next(&mut counts, prefix)));
@@ -186,7 +174,7 @@ struct Index<'a> {
     abbrs: HashMap<&'a str, &'a str>,
     /// (folded plain text, folded canonical source, id) of each heading with an id.
     headings: Vec<(String, String, String)>,
-    targets: HashMap<String, ()>,
+    targets: HashSet<String>,
 }
 
 impl<'a> Index<'a> {
@@ -194,7 +182,7 @@ impl<'a> Index<'a> {
         doc: &'a Document,
         order: &Order<'a>,
         ids: &HashMap<usize, String>,
-        captions: &[Numbered],
+        owners: &HashSet<usize>,
     ) -> Self {
         let mut links = HashMap::new();
         let mut abbrs = HashMap::new();
@@ -210,8 +198,7 @@ impl<'a> Index<'a> {
             }
         }
         let mut headings = Vec::new();
-        let mut targets = HashMap::new();
-        let owners: HashMap<usize, &Numbered> = captions.iter().map(|c| (c.owner, c)).collect();
+        let mut targets = HashSet::new();
         for v in &order.visits {
             let a = addr(v.node);
             if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
@@ -222,10 +209,10 @@ impl<'a> Index<'a> {
                     fold_label(&src),
                     id.clone(),
                 ));
-                targets.entry(id.clone()).or_insert(());
-            } else if owners.contains_key(&a) {
+                targets.insert(id.clone());
+            } else if owners.contains(&a) {
                 if let Some(id) = v.node.attrs().and_then(|x| x.id.clone()) {
-                    targets.entry(id).or_insert(());
+                    targets.insert(id);
                 }
             }
         }
@@ -260,7 +247,7 @@ impl<'a> Index<'a> {
                 }
             }
             Node::Xref(x) => {
-                if self.targets.contains_key(&x.key) {
+                if self.targets.contains(&x.key) {
                     res.insert(a, Res::Href(format!("#{}", x.key)));
                 }
             }
