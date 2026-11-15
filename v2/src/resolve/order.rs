@@ -96,6 +96,17 @@ impl<'a> Order<'a> {
         if depth > crate::resolve::WALK_CAP {
             return;
         }
+        // No reader of the order looks at these leaves.
+        if matches!(
+            n,
+            Node::Text(_)
+                | Node::SoftBreak(_)
+                | Node::HardBreak(_)
+                | Node::NonBreakingSpace(_)
+                | Node::SmartPunctuation(_)
+        ) {
+            return;
+        }
         self.visits.push(Visit {
             node: n,
             panel: ctx.panel,
