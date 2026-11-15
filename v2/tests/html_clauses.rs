@@ -50,3 +50,36 @@ fn c2_b_197_destination_with_space_is_no_block_image() {
 fn c2_b_010_c2_i_079_a_lone_cr_is_label_text() {
     assert!(html("x[^\r]\n\n[^\r]: n").contains("doc-noteref"));
 }
+
+fn under(profile: carve2::options::Profile, src: &str) -> String {
+    let opts = carve2::Options {
+        profile,
+        ..carve2::Options::default()
+    };
+    carve2::render(src, &opts)
+}
+
+#[test]
+fn c2_h_165_c2_h_007_a_degraded_block_in_a_tight_item_is_bare() {
+    use carve2::options::Profile;
+    assert_eq!(
+        under(Profile::Comment, "-   - = a"),
+        "<ul>\n  <li>\n    <ul>\n      <li># a</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn c2_h_165_a_degraded_block_that_leaves_no_text_is_dropped() {
+    use carve2::options::Profile;
+    assert_eq!(under(Profile::Minimal, "> %%%% c"), "");
+    assert_eq!(under(Profile::Minimal, "- >"), "<ul>\n  <li></li>\n</ul>");
+}
+
+#[test]
+fn c2_h_166_gap_g_020_children_at_the_bound_keep_their_breaks() {
+    use carve2::options::Profile;
+    assert_eq!(
+        under(Profile::Minimal, "- a\n%% c\n- b"),
+        "<ul>\n  <li>a </li>\n  <li>b</li>\n</ul>"
+    );
+}

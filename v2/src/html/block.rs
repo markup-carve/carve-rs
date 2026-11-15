@@ -261,7 +261,15 @@ impl<'a> Renderer<'a> {
         let Node::BlockQuote(q) = n else { return };
         let el = self.el(q.attrs.as_ref(), q.lang.as_deref(), n);
         let open = format!("<blockquote{}>", el.write(self.filter()));
-        let vis: Vec<&Node> = children.iter().filter(|c| visible(c)).collect();
+        let vis = self.shown(children);
+        // C2-H-165 with C2-H-006: a block a profile degrades is a paragraph.
+        if let [only] = vis.as_slice() {
+            if let Some([p]) = self.degraded(only).as_deref() {
+                self.losses.push("profile-construct-degraded");
+                self.line(depth, &format!("{open}<p>{p}</p></blockquote>"));
+                return;
+            }
+        }
         if let [only @ Node::Paragraph(p)] = vis.as_slice() {
             // A display math paragraph is a paragraph here; a bare image is not.
             if !self.bare_image(p) {
@@ -341,13 +349,32 @@ impl<'a> Renderer<'a> {
             head = Self::task_box(&i.children, state.is_some_and(|s| s.3));
         }
         let open = format!("<li{}>{head}", el.write(self.filter()));
-        let vis: Vec<&'a Node> = i.children.iter().filter(|c| visible(c)).collect();
+        let vis = self.shown(&i.children);
         let Some((first, rest)) = vis.split_first() else {
             self.line(depth, &format!("{open}</li>"));
             return;
         };
+        // C2-H-165 with C2-H-007: a block a profile degrades is paragraphs.
+        if let Some(paras) = self.degraded(first) {
+            self.losses.push("profile-construct-degraded");
+            let mut it = paras.iter();
+            let head = it.next().map_or_else(String::new, |p| {
+                if tight {
+                    p.clone()
+                } else {
+                    format!("<p>{p}</p>")
+                }
+            });
+            if rest.is_empty() && paras.len() < 2 {
+                self.line(depth, &format!("{open}{head}</li>"));
+                return;
+            }
+            self.line(depth, &format!("{open}{head}"));
+            for p in it {
+                self.line(depth + 1, &format!("<p>{p}</p>"));
+            }
         // Gap G-016: a bare block image keeps its own line (C2-H-020).
-        if matches!(first, Node::Paragraph(p) if !self.bare_image(p)) {
+        } else if matches!(first, Node::Paragraph(p) if !self.bare_image(p)) {
             let p = self.paragraph(first, tight).unwrap_or_default();
             if rest.is_empty() {
                 self.line(depth, &format!("{open}{p}</li>"));

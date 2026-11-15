@@ -106,5 +106,31 @@ fn options_from_json(v: Option<&serde_json::Value>) -> carve2::Options {
     {
         o.profile = p;
     }
+    if v.get("mode").and_then(serde_json::Value::as_str) == Some("static") {
+        o.mode = carve2::options::Mode::Static;
+    }
+    for (key, map) in [("labels", &mut o.labels), ("symbols", &mut o.symbols)] {
+        if let Some(m) = v.get(key).and_then(serde_json::Value::as_object) {
+            for (k, val) in m {
+                if let Some(t) = val.as_str() {
+                    map.insert(k.clone(), t.to_string());
+                }
+            }
+        }
+    }
+    if let Some(p) = v.get("urlPolicy") {
+        let list = |k: &str| {
+            p.get(k).and_then(serde_json::Value::as_array).map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+        };
+        if let Some(a) = list("allow") {
+            o.url_policy = carve2::options::UrlPolicy::Allow(a);
+        } else if let Some(d) = list("deny") {
+            o.url_policy = carve2::options::UrlPolicy::Deny(d);
+        }
+    }
     o
 }

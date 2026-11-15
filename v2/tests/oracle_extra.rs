@@ -2,7 +2,7 @@
 //! tree and HTML (tests/data/extra.json). The engine renders the oracle's tree
 //! and resolves it again after stripping the result fields. Where the oracle
 //! contradicts a clause the case carries `expected`, the clause's output
-//! (ORACLE-html.md).
+//! (an oracle defect, kept outside the repository).
 mod common;
 
 use carve2::ast::Node;

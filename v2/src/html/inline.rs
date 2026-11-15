@@ -15,7 +15,10 @@ impl<'a> Renderer<'a> {
     /// The inline content of a leaf with its comment-only lines and one break
     /// beside each left out (C2-H-069).
     pub(super) fn leaf(&mut self, nodes: &'a [Node]) -> String {
-        hide_comment_lines(nodes, &mut self.hidden);
+        // Gap G-020: children degraded at the nesting bound keep their breaks.
+        if !self.past_bound() {
+            hide_comment_lines(nodes, &mut self.hidden);
+        }
         let mut out = String::new();
         self.inlines(nodes, &mut out);
         out

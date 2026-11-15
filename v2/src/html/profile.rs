@@ -1,6 +1,7 @@
 //! Profiles (C2-H-129, C2-H-163 to C2-H-166) and the degraded forms.
 
 use super::Renderer;
+use super::block::visible;
 use super::esc;
 use crate::ast::Node;
 use crate::tables::{PROFILES, ProfileRow};
@@ -24,6 +25,13 @@ impl<'a> Renderer<'a> {
         allows(row, n.type_name(), block)
     }
 
+    /// Whether a node at the current level stands past `max_nesting`.
+    pub(super) fn past_bound(&self) -> bool {
+        self.profile_row()
+            .and_then(|r| r.max_nesting)
+            .is_some_and(|m| self.level > m)
+    }
+
     pub(super) fn profile_allows_type(&self, name: &str, block: bool) -> bool {
         self.profile_row()
             .is_none_or(|row| allows(row, name, block))
@@ -33,11 +41,29 @@ impl<'a> Renderer<'a> {
     /// text behind the mark of its kind.
     pub(super) fn degrade_block(&mut self, n: &'a Node, depth: usize) {
         self.losses.push("profile-construct-degraded");
-        let mut paras = Vec::new();
-        degraded_paragraphs(n, &mut paras, 0);
-        for p in paras.into_iter().filter(|p| !p.is_empty()) {
+        for p in self.degraded(n).unwrap_or_default() {
             self.line(depth, &format!("<p>{p}</p>"));
         }
+    }
+
+    /// The children that render: visible, and not degraded to nothing.
+    pub(super) fn shown(&self, children: &'a [Node]) -> Vec<&'a Node> {
+        children
+            .iter()
+            .filter(|c| visible(c) && self.degraded(c).is_none_or(|p| !p.is_empty()))
+            .collect()
+    }
+
+    /// The escaped paragraphs a block outside the profile leaves, none when
+    /// it leaves no text (C2-H-165); `None` when the block is inside.
+    pub(super) fn degraded(&self, n: &Node) -> Option<Vec<String>> {
+        if matches!(n, Node::Paragraph(_)) || self.profile_allows(n, true) {
+            return None;
+        }
+        let mut paras = Vec::new();
+        degraded_paragraphs(n, &mut paras, 0);
+        paras.retain(|p| !p.is_empty());
+        Some(paras)
     }
 
     /// C2-H-165: an inline node outside the profile becomes its plain text.
@@ -157,7 +183,13 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
             "#".repeat(usize::try_from(h.level).unwrap_or(1)),
             inlines_plain(&h.children)
         ),
-        Node::BlockQuote(q) => format!("> {}", block_text(&q.children)),
+        Node::BlockQuote(q) => {
+            let inner = block_text(&q.children);
+            if inner.is_empty() {
+                return;
+            }
+            format!("> {inner}")
+        }
         Node::List(l) => {
             let items: Vec<String> = l
                 .children
