@@ -8,19 +8,16 @@ use crate::ast::{self, Attrs, ImageRefForm, LinkRefForm, Node};
 use crate::options::Mode;
 use crate::resolve::order::addr;
 use crate::tables::{PROFILES, SMART_RUNS};
+use std::collections::HashSet;
 use std::fmt::Write as _;
 
 impl<'a> Renderer<'a> {
     /// The inline content of a leaf with its comment-only lines and one break
     /// beside each left out (C2-H-069).
     pub(super) fn leaf(&mut self, nodes: &'a [Node]) -> String {
-        let hide = comment_lines(nodes);
+        hide_comment_lines(nodes, &mut self.hidden);
         let mut out = String::new();
-        for (n, h) in nodes.iter().zip(hide) {
-            if !h {
-                self.inline(n, &mut out);
-            }
-        }
+        self.inlines(nodes, &mut out);
         out
     }
 
@@ -31,6 +28,9 @@ impl<'a> Renderer<'a> {
     }
 
     fn inline(&mut self, n: &'a Node, out: &mut String) {
+        if !self.hidden.is_empty() && self.hidden.contains(&addr(n)) {
+            return;
+        }
         if !self.profile_allows(n, false) {
             self.degrade_inline(n, out);
             return;
@@ -572,34 +572,72 @@ fn lang_of(n: &Node) -> Option<&str> {
     }
 }
 
-/// The marks of comment-only lines and the break each takes along (C2-H-069).
-fn comment_lines(nodes: &[Node]) -> Vec<bool> {
-    let mut hide = vec![false; nodes.len()];
-    let is_break = |n: &Node| matches!(n, Node::SoftBreak(_) | Node::HardBreak(_));
-    let mut start = 0;
-    while start <= nodes.len() {
-        let end = nodes
-            .iter()
-            .skip(start)
-            .position(is_break)
-            .map_or(nodes.len(), |p| start + p);
-        let line = nodes.get(start..end).unwrap_or(&[]);
-        let has_comment = line.iter().any(|n| matches!(n, Node::Comment(_)));
-        if has_comment && super::block::comments_only(line) {
-            for h in hide.iter_mut().take(end).skip(start) {
-                *h = true;
+/// One inline node of a leaf in source order, for the line test of C2-H-069.
+enum Item<'n> {
+    Break(&'n Node),
+    /// A comment, or text of spaces and tabs.
+    Quiet(&'n Node, bool),
+    /// Other content, or the edge of a node with children.
+    Loud,
+}
+
+fn flatten<'n>(nodes: &'n [Node], depth: usize, out: &mut Vec<Item<'n>>) {
+    for n in nodes {
+        match n {
+            Node::SoftBreak(_) | Node::HardBreak(_) => out.push(Item::Break(n)),
+            Node::Comment(_) => out.push(Item::Quiet(n, true)),
+            Node::Text(t) if t.value.trim_matches([' ', '\t']).is_empty() => {
+                out.push(Item::Quiet(n, false));
             }
-            if end < nodes.len() {
-                if let Some(h) = hide.get_mut(end) {
-                    *h = true;
+            _ => match n.children() {
+                Some(kids) if depth < crate::resolve::WALK_CAP => {
+                    out.push(Item::Loud);
+                    flatten(kids, depth + 1, out);
+                    out.push(Item::Loud);
                 }
-            } else if let Some(h) = start.checked_sub(1).and_then(|b| hide.get_mut(b)) {
-                *h = true;
+                _ => out.push(Item::Loud),
+            },
+        }
+    }
+}
+
+/// Marks the comments of each comment-only line of a leaf, at any nesting
+/// depth, with the break behind the line, or before it at the end (C2-H-069).
+fn hide_comment_lines(nodes: &[Node], hidden: &mut HashSet<usize>) {
+    let mut items = Vec::new();
+    flatten(nodes, 0, &mut items);
+    let mut prev_break: Option<&Node> = None;
+    let mut line: Vec<&Node> = Vec::new();
+    let (mut comment, mut quiet) = (false, true);
+    let mut it = items.iter().peekable();
+    while let Some(item) = it.next() {
+        match item {
+            Item::Quiet(n, c) => {
+                line.push(n);
+                comment |= *c;
+            }
+            Item::Loud => quiet = false,
+            Item::Break(_) => {}
+        }
+        let at_end = it.peek().is_none();
+        let brk = if let Item::Break(b) = item {
+            Some(*b)
+        } else {
+            None
+        };
+        if brk.is_none() && !at_end {
+            continue;
+        }
+        if comment && quiet {
+            hidden.extend(line.iter().map(|n| addr(n)));
+            if let Some(b) = brk.or(prev_break) {
+                hidden.insert(addr(b));
             }
         }
-        start = end + 1;
+        prev_break = brk;
+        line.clear();
+        (comment, quiet) = (false, true);
     }
-    hide
 }
 
 fn ref_suffix(f: LinkRefForm) -> u8 {

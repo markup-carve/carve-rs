@@ -1,0 +1,47 @@
+//! Renderer clauses proved on small inputs.
+
+fn html(src: &str) -> String {
+    carve2::render(src, &carve2::Options::default())
+}
+
+#[test]
+fn c2_h_069_comment_only_line_inside_an_inline_node_takes_its_break() {
+    assert_eq!(html("*a\n%%\nb*"), "<p><strong>a\nb</strong></p>");
+}
+
+#[test]
+fn c2_h_069_a_line_with_other_content_keeps_both_breaks() {
+    assert_eq!(
+        html("`=`{={%%}\n=}"),
+        "<p><code>=</code><mark>\n</mark></p>"
+    );
+}
+
+#[test]
+fn c2_h_176_u007f_is_replaced() {
+    assert_eq!(html("a\u{7f}b"), "<p>a\u{fffd}b</p>");
+}
+
+#[test]
+fn c2_h_006_display_math_quote_is_one_line() {
+    assert_eq!(
+        html("> $$`x`"),
+        "<blockquote><p><span class=\"math display\" role=\"math\">\\[x\\]</span></p></blockquote>"
+    );
+}
+
+#[test]
+fn c2_h_020_block_image_item_keeps_its_own_line() {
+    assert_eq!(
+        html("- ![a](b.png)"),
+        "<ul>\n  <li>\n    <img src=\"b.png\" alt=\"a\">\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn c2_b_197_destination_with_space_is_no_block_image() {
+    assert_eq!(
+        html("![alt](  *****a.png)\n^ Cap"),
+        "<p>![alt](  *****a.png)\n^ Cap</p>"
+    );
+}

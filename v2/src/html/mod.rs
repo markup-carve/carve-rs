@@ -14,7 +14,7 @@ use crate::options::Options;
 use crate::resolve::order::{Order, addr, caption_of, mark_of};
 use crate::resolve::{label_key, plain, slug};
 use attrs::{El, Filter};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Renders a resolved tree (C2-H-001).
 #[must_use]
@@ -59,6 +59,8 @@ pub(crate) struct Renderer<'a> {
     /// Inside a node that stays while its children are degraded.
     degrading: usize,
     losses: Vec<&'static str>,
+    /// Comments of comment-only lines and the break each takes (C2-H-069).
+    hidden: HashSet<usize>,
 }
 
 impl<'a> Renderer<'a> {
@@ -83,6 +85,7 @@ impl<'a> Renderer<'a> {
             started: false,
             degrading: 0,
             losses: Vec::new(),
+            hidden: HashSet::new(),
         };
         r.index();
         r
