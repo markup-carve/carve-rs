@@ -83,3 +83,11 @@ fn c2_h_166_gap_g_020_children_at_the_bound_keep_their_breaks() {
         "<ul>\n  <li>a </li>\n  <li>b</li>\n</ul>"
     );
 }
+
+#[test]
+fn c2_b_105_a_brace_block_glued_to_a_fence_language_is_no_attribute() {
+    assert_eq!(
+        html("```py{.x}\nc\n```"),
+        "<pre><code class=\"language-py\">c\n</code></pre>"
+    );
+}

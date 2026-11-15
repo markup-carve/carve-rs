@@ -518,7 +518,6 @@ impl Parser<'_> {
     fn open_fence(&mut self, k: &Cursor<'_>, m: usize, e: usize) -> bool {
         let start = k.offset();
         if let Some((len, info)) = shapes::code_fence_opener(k) {
-            let own = info.attrs.clone();
             self.set_leaf(
                 Leaf::Code {
                     len,
@@ -529,7 +528,7 @@ impl Parser<'_> {
                 },
                 start,
                 e,
-                own,
+                None,
             );
             return true;
         }

@@ -385,7 +385,6 @@ pub struct FenceInfo {
     pub raw: Option<String>,
     pub title: Option<(usize, usize)>,
     pub label: Option<String>,
-    pub attrs: Option<AttrBlock>,
 }
 
 /// A code fence opener: the run length and the info (C2-B-108, C2-B-118).
@@ -429,12 +428,7 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
         fi.language = info.get(i..i + n).map(String::from);
         i += n;
     }
-    if b.get(i) == Some(&b'{') {
-        if let Some((block, end)) = parse_glued(info, i) {
-            fi.attrs = Some(block);
-            i = end;
-        }
-    }
+    // C2-B-105: a brace block after the language is further words (C2-B-122).
     title_and_label(info, i, base, &mut fi.title, &mut fi.label);
     fi
 }
