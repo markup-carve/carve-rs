@@ -173,3 +173,8 @@ fn c2_b_030_gap_g_021_a_left_sibling_moves_the_list_column() {
         "<ol start=\"9\">\n  <li>a</li>\n  <li>b\n11. c</li>\n</ol>"
     );
 }
+
+#[test]
+fn c2_i_102_c2_h_019_a_paragraph_of_one_hard_break_is_written() {
+    assert_eq!(html("\\"), "<p><br>\n</p>");
+}

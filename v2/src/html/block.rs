@@ -25,11 +25,13 @@ pub(super) fn visible(n: &Node) -> bool {
 
 /// A node list that holds only comments, breaks and blank text (C2-H-019).
 pub(super) fn comments_only(nodes: &[Node]) -> bool {
-    nodes.iter().all(|n| match n {
-        Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_) => true,
-        Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
-        _ => false,
-    })
+    // C2-H-019: a paragraph with no comment, as one hard break, is written.
+    nodes.iter().any(|n| matches!(n, Node::Comment(_)))
+        && nodes.iter().all(|n| match n {
+            Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_) => true,
+            Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
+            _ => false,
+        })
 }
 
 fn has_attrs(attrs: Option<&Attrs>, lang: Option<&String>) -> bool {
