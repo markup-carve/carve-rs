@@ -620,9 +620,23 @@ fn flatten<'n>(nodes: &'n [Node], depth: usize, out: &mut Vec<Item<'n>>) {
     }
 }
 
+/// True when `flatten` would meet a comment: only then can a line be hidden.
+fn has_comment(nodes: &[Node], depth: usize) -> bool {
+    nodes.iter().any(|n| match n {
+        Node::Comment(_) => true,
+        _ => {
+            depth < crate::resolve::WALK_CAP
+                && n.children().is_some_and(|k| has_comment(k, depth + 1))
+        }
+    })
+}
+
 /// Marks the comments of each comment-only line of a leaf, at any nesting
 /// depth, with the break behind the line, or before it at the end (C2-H-069).
 fn hide_comment_lines(nodes: &[Node], hidden: &mut HashSet<usize>) {
+    if !has_comment(nodes, 0) {
+        return;
+    }
     let mut items = Vec::new();
     flatten(nodes, 0, &mut items);
     let mut prev_break: Option<&Node> = None;
