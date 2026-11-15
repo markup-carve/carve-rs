@@ -118,39 +118,10 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<&str>) {
         out.push_str(text);
         return;
     }
+    if inline_plain_leaf(n, out) {
+        return;
+    }
     match n {
-        Node::Text(t) => out.push_str(&t.value),
-        Node::Image(i) => {
-            out.push_str("[img: ");
-            out.push_str(i.alt.as_deref().unwrap_or(""));
-            out.push(']');
-        }
-        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
-        Node::HardBreak(_) | Node::SoftBreak(_) => out.push(' '),
-        Node::SmartPunctuation(s) => out.push_str(s.glyph.as_deref().unwrap_or(&s.source)),
-        Node::FootnoteRef(r) => {
-            out.push_str("[^");
-            out.push_str(&r.key);
-            out.push(']');
-        }
-        Node::Comment(_) => {}
-        Node::Code(c) => {
-            out.push('`');
-            out.push_str(&c.value);
-            out.push('`');
-        }
-        Node::Math(m) => {
-            out.push_str(if m.display { "$$`" } else { "$`" });
-            out.push_str(&m.value);
-            out.push('`');
-        }
-        Node::LiteralInline(l) => out.push_str(&l.value),
-        Node::RawInline(r) => out.push_str(&r.value),
-        Node::Autolink(a) => {
-            out.push('<');
-            out.push_str(a.text.as_deref().unwrap_or(&a.href));
-            out.push('>');
-        }
         Node::Xref(x) => {
             out.push_str("</#");
             out.push_str(&x.key);
@@ -187,6 +158,45 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<&str>) {
     }
 }
 
+fn inline_plain_leaf(n: &Node, out: &mut String) -> bool {
+    match n {
+        Node::Text(t) => out.push_str(&t.value),
+        Node::Image(i) => {
+            out.push_str("[img: ");
+            out.push_str(i.alt.as_deref().unwrap_or(""));
+            out.push(']');
+        }
+        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
+        Node::HardBreak(_) | Node::SoftBreak(_) => out.push(' '),
+        Node::SmartPunctuation(s) => out.push_str(s.glyph.as_deref().unwrap_or(&s.source)),
+        Node::FootnoteRef(r) => {
+            out.push_str("[^");
+            out.push_str(&r.key);
+            out.push(']');
+        }
+        Node::Comment(_) => {}
+        Node::Code(c) => {
+            out.push('`');
+            out.push_str(&c.value);
+            out.push('`');
+        }
+        Node::Math(m) => {
+            out.push_str(if m.display { "$$`" } else { "$`" });
+            out.push_str(&m.value);
+            out.push('`');
+        }
+        Node::LiteralInline(l) => out.push_str(&l.value),
+        Node::RawInline(r) => out.push_str(&r.value),
+        Node::Autolink(a) => {
+            out.push('<');
+            out.push_str(a.text.as_deref().unwrap_or(&a.href));
+            out.push('>');
+        }
+        _ => return false,
+    }
+    true
+}
+
 pub(super) fn inlines_plain(nodes: &[Node], src: Option<&str>) -> String {
     let mut s = String::new();
     for n in nodes {
@@ -200,12 +210,11 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
     if depth > crate::resolve::WALK_CAP {
         return;
     }
+    if let Some(text) = degraded_simple_text(n, src) {
+        out.push(esc::text_str(&text));
+        return;
+    }
     let text = match n {
-        Node::Heading(h) => format!(
-            "{} {}",
-            "#".repeat(usize::try_from(h.level).unwrap_or(1)),
-            inlines_plain(&h.children, src)
-        ),
         Node::BlockQuote(q) => {
             let inner = block_text(&q.children, src);
             if inner.is_empty() {
@@ -213,65 +222,13 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
             }
             format!("> {inner}")
         }
-        Node::List(l) => {
-            let items: Vec<String> = l
-                .children
-                .iter()
-                .map(|i| {
-                    format!(
-                        "- {}",
-                        block_text(i.children().map_or(&[], Vec::as_slice), src)
-                    )
-                })
-                .collect();
-            items.join(" ")
-        }
-        Node::ThematicBreak(_) => "---".to_string(),
-        // Gap HTML-016: the final line break of the value is not written.
-        Node::CodeBlock(c) => c.value.strip_suffix('\n').unwrap_or(&c.value).to_string(),
-        Node::RawBlock(r) => r.value.strip_suffix('\n').unwrap_or(&r.value).to_string(),
         Node::Figure(_) | Node::FigureGroup(_) => {
-            n.children()
-                .into_iter()
-                .flatten()
-                .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
-            let caption = crate::resolve::order::caption_of(n);
-            caption
-                .and_then(Node::children)
-                .into_iter()
-                .flatten()
-                .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
+            degraded_figure(n, out, depth, src);
             return;
         }
         Node::Table(t) => return out.push(table_text(t, src)),
-        Node::Div(_) | Node::Admonition(_) | Node::Directive(_) => {
-            let (_, _, children, title, _) = super::block::div_parts(n);
-            let mut parts: Vec<String> = Vec::new();
-            if let Some(t) = title {
-                parts.push(inlines_plain(t, src));
-            }
-            parts.push(block_text(children, src));
-            parts.retain(|p| !p.is_empty());
-            parts.join(" ")
-        }
-        Node::Include(i) => super::block::include_text(i),
-        Node::Paragraph(p) => inlines_plain(&p.children, src),
-        // Leaves of inline content: an inline node with children is no block here.
-        Node::CellParagraph(p) => inlines_plain(&p.children, src),
-        Node::Line(l) => inlines_plain(&l.children, src),
         Node::DefinitionList(d) => {
-            for c in &d.children {
-                match c {
-                    Node::DefinitionTerm(t) => {
-                        out.push(esc::text_str(&inlines_plain(&t.children, src)));
-                    }
-                    Node::DefinitionDescription(x) => x
-                        .children
-                        .iter()
-                        .for_each(|b| degraded_paragraphs(b, out, depth + 1, src)),
-                    _ => {}
-                }
-            }
+            degraded_definitions(d, out, depth, src);
             return;
         }
         Node::Comment(_)
@@ -291,6 +248,80 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
         },
     };
     out.push(esc::text_str(&text));
+}
+
+fn degraded_figure(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<&str>) {
+    n.children()
+        .into_iter()
+        .flatten()
+        .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
+    let caption = crate::resolve::order::caption_of(n);
+    caption
+        .and_then(Node::children)
+        .into_iter()
+        .flatten()
+        .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
+}
+
+fn degraded_definitions(
+    d: &crate::ast::DefinitionList,
+    out: &mut Vec<String>,
+    depth: usize,
+    src: Option<&str>,
+) {
+    for c in &d.children {
+        match c {
+            Node::DefinitionTerm(t) => out.push(esc::text_str(&inlines_plain(&t.children, src))),
+            Node::DefinitionDescription(x) => x
+                .children
+                .iter()
+                .for_each(|b| degraded_paragraphs(b, out, depth + 1, src)),
+            _ => {}
+        }
+    }
+}
+
+fn degraded_simple_text(n: &Node, src: Option<&str>) -> Option<String> {
+    Some(match n {
+        Node::Heading(h) => format!(
+            "{} {}",
+            "#".repeat(usize::try_from(h.level).unwrap_or(1)),
+            inlines_plain(&h.children, src)
+        ),
+        Node::List(l) => {
+            let items: Vec<String> = l
+                .children
+                .iter()
+                .map(|i| {
+                    format!(
+                        "- {}",
+                        block_text(i.children().map_or(&[], Vec::as_slice), src)
+                    )
+                })
+                .collect();
+            items.join(" ")
+        }
+        Node::ThematicBreak(_) => "---".to_string(),
+        // Gap HTML-016: the final line break of the value is not written.
+        Node::CodeBlock(c) => c.value.strip_suffix('\n').unwrap_or(&c.value).to_string(),
+        Node::RawBlock(r) => r.value.strip_suffix('\n').unwrap_or(&r.value).to_string(),
+        Node::Div(_) | Node::Admonition(_) | Node::Directive(_) => {
+            let (_, _, children, title, _) = super::block::div_parts(n);
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(t) = title {
+                parts.push(inlines_plain(t, src));
+            }
+            parts.push(block_text(children, src));
+            parts.retain(|p| !p.is_empty());
+            parts.join(" ")
+        }
+        Node::Include(i) => super::block::include_text(i),
+        Node::Paragraph(p) => inlines_plain(&p.children, src),
+        // Leaves of inline content: an inline node with children is no block here.
+        Node::CellParagraph(p) => inlines_plain(&p.children, src),
+        Node::Line(l) => inlines_plain(&l.children, src),
+        _ => return None,
+    })
 }
 
 fn is_block(n: &Node) -> bool {

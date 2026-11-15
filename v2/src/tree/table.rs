@@ -161,31 +161,7 @@ impl Builder<'_> {
                 .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
             let positioned = !cell.joined && !blank && sp.mark.is_none() && !sp.failed;
             let cell_positioned = positioned || (sp.failed && !cell.joined);
-            let children = if sp.mark.is_some() {
-                Vec::new()
-            } else {
-                let inl = self.inline(ContentKind::Cell, &cell.pieces);
-                let ppos = if positioned {
-                    cell.pieces.first().map(|p| {
-                        self.src.pos(
-                            p.start,
-                            crate::block::trim_end(
-                                self.src,
-                                p.start,
-                                cell.pieces.last().map_or(p.end, |l| l.end),
-                            ),
-                        )
-                    })
-                } else {
-                    None
-                };
-                let inl = if positioned { inl } else { strip_pos(inl) };
-                vec![Node::CellParagraph(Box::new(ast::CellParagraph {
-                    children: inl,
-                    pos: ppos,
-                    ..Default::default()
-                }))]
-            };
+            let children = self.cell_children(cell, positioned, sp.mark.is_some());
             let header = if sp.failed {
                 all_header(i)
             } else {
@@ -222,6 +198,39 @@ impl Builder<'_> {
             pos,
             ..Default::default()
         }))
+    }
+    #[inline]
+    fn cell_children(
+        &self,
+        cell: &crate::block::table::Cell,
+        positioned: bool,
+        marked: bool,
+    ) -> Vec<Node> {
+        if marked {
+            Vec::new()
+        } else {
+            let inl = self.inline(ContentKind::Cell, &cell.pieces);
+            let ppos = if positioned {
+                cell.pieces.first().map(|p| {
+                    self.src.pos(
+                        p.start,
+                        crate::block::trim_end(
+                            self.src,
+                            p.start,
+                            cell.pieces.last().map_or(p.end, |l| l.end),
+                        ),
+                    )
+                })
+            } else {
+                None
+            };
+            let inl = if positioned { inl } else { strip_pos(inl) };
+            vec![Node::CellParagraph(Box::new(ast::CellParagraph {
+                children: inl,
+                pos: ppos,
+                ..Default::default()
+            }))]
+        }
     }
 }
 
@@ -268,27 +277,7 @@ fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
         rows.iter().map(|r| vec![None; r.cells.len()]).collect();
     for (r, row) in rows.iter().enumerate() {
         for (c, cell) in row.cells.iter().enumerate() {
-            let origin = match cell.span {
-                Some('<') if c > 0 => grid
-                    .get(r)
-                    .and_then(|g| g.get(c - 1))
-                    .copied()
-                    .flatten()
-                    .filter(|o| o.row == r),
-                Some('^') if r > 0 && !(r == head && head > 0) => grid
-                    .get(r - 1)
-                    .and_then(|g| g.get(c))
-                    .copied()
-                    .flatten()
-                    // Gap G-024: as in the oracle, a cell that spans columns takes no row span.
-                    .filter(|o| o.col == c)
-                    .filter(|o| {
-                        out.get(o.row)
-                            .and_then(|v| v.get(o.col))
-                            .is_some_and(|x| x.colspan == 1)
-                    }),
-                _ => None,
-            };
+            let origin = span_origin(cell.span, r, c, head, &grid, &out);
             let set = match (cell.span, origin) {
                 (Some(m), Some(o)) => {
                     if let Some(res) = out.get_mut(o.row).and_then(|v| v.get_mut(o.col)) {
@@ -317,6 +306,37 @@ fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
         }
     }
     out
+}
+
+fn span_origin(
+    span: Option<char>,
+    r: usize,
+    c: usize,
+    head: usize,
+    grid: &[Vec<Option<Origin>>],
+    out: &[Vec<Resolved>],
+) -> Option<Origin> {
+    match span {
+        Some('<') if c > 0 => grid
+            .get(r)
+            .and_then(|g| g.get(c - 1))
+            .copied()
+            .flatten()
+            .filter(|o| o.row == r),
+        Some('^') if r > 0 && !(r == head && head > 0) => grid
+            .get(r - 1)
+            .and_then(|g| g.get(c))
+            .copied()
+            .flatten()
+            // Gap G-024: as in the oracle, a cell that spans columns takes no row span.
+            .filter(|o| o.col == c)
+            .filter(|o| {
+                out.get(o.row)
+                    .and_then(|v| v.get(o.col))
+                    .is_some_and(|x| x.colspan == 1)
+            }),
+        _ => None,
+    }
 }
 
 /// C2-B-210: a count is one or more decimal digits; an empty value counts 1.

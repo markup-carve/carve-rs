@@ -463,6 +463,8 @@ impl Node {{
     }}
 
     /// Visits every node held in a node-bearing slot, in node-slots.json order.
+    // generated from the schema
+    #[allow(clippy::cognitive_complexity)]
     pub fn for_each_child(&self, f: &mut dyn FnMut(&Node)) {{
         match self {{
 {walk_arms}            _ => {{}}
@@ -470,6 +472,8 @@ impl Node {{
     }}
 
     /// Visits every node held in a node-bearing slot, mutable.
+    // generated from the schema
+    #[allow(clippy::cognitive_complexity)]
     pub fn for_each_child_mut(&mut self, f: &mut dyn FnMut(&mut Node)) {{
         match self {{
 {walk_mut_arms}            _ => {{}}

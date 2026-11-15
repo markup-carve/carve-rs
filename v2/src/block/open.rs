@@ -591,26 +591,8 @@ impl Parser<'_> {
             && info.sigil.is_none()
             && info.title.is_none()
             && info.label.is_none();
-        if bare {
-            if let Some(i) = self
-                .stack
-                .iter()
-                .rposition(|c| matches!(c.kind, Kind::Div { .. }))
-            {
-                if let Some(Kind::Div { len: open_len, .. }) = self.stack.get(i).map(|c| &c.kind) {
-                    if *open_len <= len && i + 1 == self.stack.len() {
-                        // C2-B-192: attribute lines left in the div close inside it.
-                        if let Some(p) = self.pending.take() {
-                            self.pending_to_paragraph(&p);
-                        }
-                        if let Some(top) = self.stack.last_mut() {
-                            top.end = start + k.rest().len();
-                        }
-                        self.pop_container();
-                        return true;
-                    }
-                }
-            }
+        if bare && self.close_bare_div(k, len, start) {
+            return true;
         }
         if !self.room(1) {
             return false;
@@ -645,6 +627,29 @@ impl Parser<'_> {
             top.end = start + k.rest().len();
         }
         true
+    }
+
+    fn close_bare_div(&mut self, k: &Cursor<'_>, len: usize, start: usize) -> bool {
+        if let Some(i) = self
+            .stack
+            .iter()
+            .rposition(|c| matches!(c.kind, Kind::Div { .. }))
+        {
+            if let Some(Kind::Div { len: open_len, .. }) = self.stack.get(i).map(|c| &c.kind) {
+                if *open_len <= len && i + 1 == self.stack.len() {
+                    // C2-B-192: attribute lines left in the div close inside it.
+                    if let Some(p) = self.pending.take() {
+                        self.pending_to_paragraph(&p);
+                    }
+                    if let Some(top) = self.stack.last_mut() {
+                        top.end = start + k.rest().len();
+                    }
+                    self.pop_container();
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn open_table(&mut self, k: &Cursor<'_>, e: usize) -> bool {
@@ -893,6 +898,11 @@ fn paren_tail(s: &str) -> Option<&str> {
         }
         i += 1;
     }
+    paren_title_tail(s, i)
+}
+
+fn paren_title_tail(s: &str, mut i: usize) -> Option<&str> {
+    let b = s.as_bytes();
     while b.get(i) == Some(&b' ') {
         i += 1;
     }

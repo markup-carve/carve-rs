@@ -202,21 +202,7 @@ fn ordered_head(k: &mut Cursor<'_>) -> Option<(MarkerKind, usize)> {
     }
     let digits = b.iter().take_while(|c| c.is_ascii_digit()).count();
     if digits > 0 {
-        let delim = char::from(*b.get(digits)?);
-        if digits > 9 || !matches!(delim, '.' | ')') {
-            return None;
-        }
-        let value = rest.get(..digits)?.parse().ok()?;
-        k.bump_n(digits + 1);
-        return Some((
-            MarkerKind::Ordered {
-                style: Style::Decimal,
-                delim,
-                value: Some(value),
-                letter: None,
-            },
-            1,
-        ));
+        return decimal_head(k, digits);
     }
     let letters = b.iter().take_while(|c| c.is_ascii_alphabetic()).count();
     if letters == 0 || letters > 9 {
@@ -240,6 +226,25 @@ fn ordered_head(k: &mut Cursor<'_>) -> Option<(MarkerKind, usize)> {
             letter,
         },
         min,
+    ))
+}
+
+fn decimal_head(k: &mut Cursor<'_>, digits: usize) -> Option<(MarkerKind, usize)> {
+    let rest = k.rest();
+    let delim = char::from(*rest.as_bytes().get(digits)?);
+    if digits > 9 || !matches!(delim, '.' | ')') {
+        return None;
+    }
+    let value = rest.get(..digits)?.parse().ok()?;
+    k.bump_n(digits + 1);
+    Some((
+        MarkerKind::Ordered {
+            style: Style::Decimal,
+            delim,
+            value: Some(value),
+            letter: None,
+        },
+        1,
     ))
 }
 

@@ -11,6 +11,22 @@ use crate::resolve::order::addr;
 use crate::tables::{PROFILES, SMART_RUNS};
 use std::fmt::Write as _;
 
+fn wrapper_tag(n: &Node) -> Option<&'static str> {
+    Some(match n {
+        Node::Emphasis(_) => "em",
+        Node::Strong(_) => "strong",
+        Node::Underline(_) => "u",
+        Node::Strike(_) => "s",
+        Node::Highlight(_) => "mark",
+        Node::Superscript(_) => "sup",
+        Node::Subscript(_) => "sub",
+        Node::Insert(_) => "ins",
+        Node::Delete(_) => "del",
+        Node::SmallCaps(_) => "span",
+        _ => return None,
+    })
+}
+
 impl<'a> Renderer<'a> {
     /// The inline content of a leaf with its comment-only lines and one break
     /// beside each left out (C2-H-069).
@@ -63,6 +79,13 @@ impl<'a> Renderer<'a> {
             Node::Xref(x) => self.xref(x, out),
             Node::Span(s) => self.span(s, out),
             Node::Math(m) => self.math(m, out),
+            _ => self.inline_inner_other(n, out),
+        }
+    }
+
+    #[inline]
+    fn inline_inner_other(&mut self, n: &'a Node, out: &mut String) {
+        match n {
             Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
                 (Some(e), 0) => {
                     let mut el = El::new(a.attrs.as_ref(), a.lang.as_deref());
@@ -164,39 +187,29 @@ impl<'a> Renderer<'a> {
 
     /// Elements that wrap their children (C2-H-072).
     fn wrapper(&mut self, n: &'a Node, out: &mut String) {
-        let tag = match n {
-            Node::Emphasis(_) => "em",
-            Node::Strong(_) => "strong",
-            Node::Underline(_) => "u",
-            Node::Strike(_) => "s",
-            Node::Highlight(_) => "mark",
-            Node::Superscript(_) => "sup",
-            Node::Subscript(_) => "sub",
-            Node::Insert(_) => "ins",
-            Node::Delete(_) => "del",
-            Node::Code(c) => {
-                let el = El::new(c.attrs.as_ref(), c.lang.as_deref());
-                let _ = write!(out, "<code{}>", el.write(self.filter()));
-                esc::text(&c.value, out);
-                out.push_str("</code>");
-                return;
-            }
-            Node::LiteralInline(l) => {
-                let inner = esc::text_str(&l.value);
-                if l.attrs.as_ref().is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
-                    self.wrap_span(l.attrs.as_ref(), l.lang.as_deref(), &inner, out);
-                } else {
-                    out.push_str(&inner);
+        let Some(tag) = wrapper_tag(n) else {
+            match n {
+                Node::Code(c) => {
+                    let el = El::new(c.attrs.as_ref(), c.lang.as_deref());
+                    let _ = write!(out, "<code{}>", el.write(self.filter()));
+                    esc::text(&c.value, out);
+                    out.push_str("</code>");
                 }
-                return;
-            }
-            Node::SmallCaps(_) => "span",
-            _ => {
-                if let Some(c) = n.children() {
-                    self.inlines(c, out);
+                Node::LiteralInline(l) => {
+                    let inner = esc::text_str(&l.value);
+                    if l.attrs.as_ref().is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
+                        self.wrap_span(l.attrs.as_ref(), l.lang.as_deref(), &inner, out);
+                    } else {
+                        out.push_str(&inner);
+                    }
                 }
-                return;
+                _ => {
+                    if let Some(c) = n.children() {
+                        self.inlines(c, out);
+                    }
+                }
             }
+            return;
         };
         let mut el = El::new(n.attrs(), lang_of(n));
         if matches!(n, Node::SmallCaps(_)) {

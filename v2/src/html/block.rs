@@ -85,6 +85,12 @@ impl<'a> Renderer<'a> {
             Node::LineBlock(_) => self.line_block(n, depth),
             Node::CodeBlock(_) => self.code_block(n, depth),
             Node::RawBlock(r) => self.raw_block(r, depth),
+            _ => self.block_inner_other(n, depth),
+        }
+    }
+
+    fn block_inner_other(&mut self, n: &'a Node, depth: usize) {
+        match n {
             Node::ThematicBreak(t) => {
                 let el = self.el(t.attrs.as_ref(), t.lang.as_deref(), n);
                 let s = format!("<hr{}>", el.write(self.filter()));
@@ -342,18 +348,7 @@ impl<'a> Renderer<'a> {
     fn item(&mut self, n: &'a Node, depth: usize, tight: bool, ordered: bool) {
         let Node::ListItem(i) = n else { return };
         let mut el = self.el(i.attrs.as_ref(), i.lang.as_deref(), n);
-        let mut head = String::new();
-        if let Some(task) = &i.task {
-            let state = TASK_STATES.iter().find(|s| s.1.to_string() == task.mark);
-            if let Some(v) = state.and_then(|s| s.2) {
-                el.structural.push(("data-task-state", Some(v.to_string())));
-            }
-            el.base.push("task".into());
-            if !ordered {
-                el.style_before = Some("list-style: none".into());
-            }
-            head = Self::task_box(&i.children, state.is_some_and(|s| s.3));
-        }
+        let head = Self::item_task(i, ordered, &mut el);
         let open = format!("<li{}>{head}", el.write(self.filter()));
         let vis = self.shown(&i.children);
         let Some((first, rest)) = vis.split_first() else {
@@ -395,6 +390,21 @@ impl<'a> Renderer<'a> {
             self.block(b, depth + 1);
         }
         self.line(depth, "</li>");
+    }
+
+    fn item_task(i: &ast::ListItem, ordered: bool, el: &mut El<'_>) -> String {
+        let Some(task) = &i.task else {
+            return String::new();
+        };
+        let state = TASK_STATES.iter().find(|s| s.1.to_string() == task.mark);
+        if let Some(v) = state.and_then(|s| s.2) {
+            el.structural.push(("data-task-state", Some(v.to_string())));
+        }
+        el.base.push("task".into());
+        if !ordered {
+            el.style_before = Some("list-style: none".into());
+        }
+        Self::task_box(&i.children, state.is_some_and(|s| s.3))
     }
 
     /// The checkbox of a task item (C2-H-032, C2-H-174).

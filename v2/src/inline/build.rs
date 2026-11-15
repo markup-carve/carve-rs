@@ -142,6 +142,13 @@ pub fn set_lang(node: &mut Node, lang: Option<String>) {
         Node::Image(n) => &mut n.lang,
         Node::Span(n) => &mut n.lang,
         Node::Link(n) => &mut n.lang,
+        other => return set_lang_container(other, lang),
+    };
+    *slot = lang;
+}
+
+fn set_lang_container(node: &mut Node, lang: Option<String>) {
+    let slot = match node {
         Node::InlineFootnote(n) => &mut n.lang,
         Node::InlineExtension(n) => &mut n.lang,
         Node::Emphasis(n) => &mut n.lang,

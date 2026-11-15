@@ -181,6 +181,13 @@ impl Scanner<'_, '_> {
             b'{' => self.brace(),
             b'%' => self.line_comment(),
             b'<' => self.angle(),
+            c => self.step_marks(i, c),
+        }
+    }
+
+    #[inline]
+    fn step_marks(&mut self, i: usize, c: u8) -> bool {
+        match c {
             b'@' | b'#' => self.sigil(),
             b':' => self.colon(),
             b'[' => self.open_bracket(),

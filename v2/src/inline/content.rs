@@ -56,11 +56,34 @@ fn trim_end(b: &[u8], start: usize, mut end: usize) -> usize {
     end
 }
 
+#[inline]
+fn piece_bounds(env: &InlineEnv<'_>, p: &Piece, full: &str) -> (usize, usize, usize) {
+    let b = full.as_bytes();
+    let end = p.end.min(full.len());
+    let mut start = p.start.min(end);
+    if env.kind != ContentKind::LineBlockLine {
+        while start < end && b.get(start).copied().is_some_and(is_pad) {
+            start += 1;
+        }
+    }
+    let raw_end = end;
+    let end = if env.kind == ContentKind::Cell {
+        // C2-I-002: the cell padding goes first, so a backslash before it is a hard break (GAP INL-017).
+        let mut e = end;
+        while e > start && b.get(e - 1).copied().is_some_and(is_pad) {
+            e -= 1;
+        }
+        e
+    } else {
+        trim_end(b, start, end)
+    };
+    (start, end, raw_end)
+}
+
 impl<'a> Content<'a> {
     /// Joins the pieces of one content, in the buffers of `s`.
     pub(super) fn new_in(env: &InlineEnv<'a>, pieces: &[Piece], s: &mut super::Scratch) -> Self {
         let full = env.src.text();
-        let b = full.as_bytes();
         let mut text = std::mem::take(&mut s.text);
         text.clear();
         text.reserve(
@@ -74,24 +97,7 @@ impl<'a> Content<'a> {
         let mut joins = std::mem::take(&mut s.joins);
         joins.clear();
         for (n, p) in pieces.iter().enumerate() {
-            let end = p.end.min(full.len());
-            let mut start = p.start.min(end);
-            if env.kind != ContentKind::LineBlockLine {
-                while start < end && b.get(start).copied().is_some_and(is_pad) {
-                    start += 1;
-                }
-            }
-            let raw_end = end;
-            let end = if env.kind == ContentKind::Cell {
-                // C2-I-002: the cell padding goes first, so a backslash before it is a hard break (GAP INL-017).
-                let mut e = end;
-                while e > start && b.get(e - 1).copied().is_some_and(is_pad) {
-                    e -= 1;
-                }
-                e
-            } else {
-                trim_end(b, start, end)
-            };
+            let (start, end, raw_end) = piece_bounds(env, p, full);
             if n > 0 && p.join == Join::Cell && start == end {
                 // C2-B-184: an empty fragment adds nothing.
                 continue;

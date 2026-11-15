@@ -4,55 +4,9 @@ use std::io::{Read, Write};
 
 fn main() {
     let mut opts = carve2::Options::default();
-    let mut tree = false;
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--tree" => tree = true,
-            "--batch" => {
-                batch(it.next(), it.next());
-                return;
-            }
-            "--roundtrip" => opts.roundtrip = true,
-            "--raw-html" => opts.raw_html = true,
-            "--no-sections" => opts.sections = false,
-            "--no-smart-typography" => opts.smart_typography = false,
-            "--source-lines" => opts.source_lines = true,
-            "--strict-losses" => opts.strict_losses = true,
-            "--mention-url" | "--tag-url" => {
-                let social = opts.social.get_or_insert_with(Default::default);
-                let v = it.next().cloned();
-                if a == "--mention-url" {
-                    social.mention_url = v;
-                } else {
-                    social.tag_url = v;
-                }
-            }
-            "--heading-ids" => {
-                if let Some(v) = it
-                    .next()
-                    .and_then(|v| carve2::options::HeadingIds::from_name(v))
-                {
-                    opts.heading_ids = v;
-                }
-            }
-            "--profile" => {
-                if let Some(v) = it
-                    .next()
-                    .and_then(|v| carve2::options::Profile::from_name(v))
-                {
-                    opts.profile = v;
-                }
-            }
-            _ => {
-                eprintln!(
-                    "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--strict-losses] [--mention-url URL] [--tag-url URL] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input"
-                );
-                std::process::exit(2);
-            }
-        }
-    }
+    let Some(tree) = parse_args(&mut opts) else {
+        return;
+    };
     let mut bytes = Vec::new();
     if std::io::stdin().read_to_end(&mut bytes).is_err() {
         std::process::exit(1);
@@ -72,6 +26,68 @@ fn main() {
     let mut stdout = std::io::stdout();
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.write_all(b"\n");
+}
+
+fn parse_args(opts: &mut carve2::Options) -> Option<bool> {
+    let mut tree = false;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--tree" => tree = true,
+            "--batch" => {
+                batch(it.next(), it.next());
+                return None;
+            }
+            "--roundtrip" => opts.roundtrip = true,
+            "--raw-html" => opts.raw_html = true,
+            "--no-sections" => opts.sections = false,
+            "--no-smart-typography" => opts.smart_typography = false,
+            "--source-lines" => opts.source_lines = true,
+            "--strict-losses" => opts.strict_losses = true,
+            "--mention-url" | "--tag-url" | "--heading-ids" | "--profile" => {
+                option_value(opts, a, it.next());
+            }
+            _ => {
+                eprintln!(
+                    "{}",
+                    concat!(
+                        "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] ",
+                        "[--no-smart-typography] [--source-lines] [--strict-losses] ",
+                        "[--mention-url URL] [--tag-url URL] [--heading-ids off|keep-case|lower|ascii] ",
+                        "[--profile full|article|comment|minimal] < input"
+                    )
+                );
+                std::process::exit(2);
+            }
+        }
+    }
+    Some(tree)
+}
+
+fn option_value(opts: &mut carve2::Options, name: &str, value: Option<&String>) {
+    match name {
+        "--mention-url" | "--tag-url" => {
+            let social = opts.social.get_or_insert_with(Default::default);
+            let v = value.cloned();
+            if name == "--mention-url" {
+                social.mention_url = v;
+            } else {
+                social.tag_url = v;
+            }
+        }
+        "--heading-ids" => {
+            if let Some(v) = value.and_then(|v| carve2::options::HeadingIds::from_name(v)) {
+                opts.heading_ids = v;
+            }
+        }
+        "--profile" => {
+            if let Some(v) = value.and_then(|v| carve2::options::Profile::from_name(v)) {
+                opts.profile = v;
+            }
+        }
+        _ => {}
+    }
 }
 
 /// `--batch IN OUT`: IN is a JSON list of `{"input", "opts"}`, OUT gets a

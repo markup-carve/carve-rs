@@ -71,16 +71,7 @@ fn children_text(nodes: &[Node], symbols: Symbols<'_>, out: &mut String, depth: 
 /// The nodes that give a fixed text; true when `n` was one of them.
 fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
     match n {
-        Node::Text(t) => out.push_str(&t.value),
-        Node::Code(t) => out.push_str(&t.value),
-        Node::LiteralInline(t) => out.push_str(&t.value),
-        Node::Math(t) => out.push_str(&t.value),
-        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
-        Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
-        Node::SmartPunctuation(s) => out.push_str(s.glyph.as_deref().unwrap_or(&s.source)),
-        Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
-        Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
-        Node::Abbreviation(a) => out.push_str(&a.key),
+        _ if leaf_text_simple(n, out) => return true,
         Node::Mention(m) => {
             out.push('@');
             out.push_str(&m.target);
@@ -99,6 +90,23 @@ fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
                 symbol_text(map, &s.name, out);
             }
         }
+        _ => return false,
+    }
+    true
+}
+
+fn leaf_text_simple(n: &Node, out: &mut String) -> bool {
+    match n {
+        Node::Text(t) => out.push_str(&t.value),
+        Node::Code(t) => out.push_str(&t.value),
+        Node::LiteralInline(t) => out.push_str(&t.value),
+        Node::Math(t) => out.push_str(&t.value),
+        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
+        Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
+        Node::SmartPunctuation(s) => out.push_str(s.glyph.as_deref().unwrap_or(&s.source)),
+        Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
+        Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
+        Node::Abbreviation(a) => out.push_str(&a.key),
         _ => return false,
     }
     true

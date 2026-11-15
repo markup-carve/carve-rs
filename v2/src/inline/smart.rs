@@ -174,6 +174,18 @@ impl Smart {
         if single && next.is_some_and(|n| n.is_ascii_digit()) {
             return "right_single_quote";
         }
+        let open = self.quote_opens(next);
+        if !single {
+            return if open {
+                "left_double_quote"
+            } else {
+                "right_double_quote"
+            };
+        }
+        self.single_quote(ctx, p, next, open)
+    }
+
+    fn quote_opens(&self, next: Option<char>) -> bool {
         let dashlike = matches!(self.prev, Prev::Char(c) if DASHES.contains(c) || c == '/');
         let closes_after_dash = next.is_none_or(|n| {
             is_flank_space(n) || tables::QUOTE_CLOSES_AFTER_DASH_BEFORE_CHARS.contains(n)
@@ -188,14 +200,16 @@ impl Smart {
                     || OPEN_QUOTES.contains(c)
             }
         };
-        let open = opens_ctx && !(dashlike && closes_after_dash);
-        if !single {
-            return if open {
-                "left_double_quote"
-            } else {
-                "right_double_quote"
-            };
-        }
+        opens_ctx && !(dashlike && closes_after_dash)
+    }
+
+    fn single_quote(
+        &mut self,
+        ctx: &Ctx<'_>,
+        p: usize,
+        next: Option<char>,
+        open: bool,
+    ) -> &'static str {
         if open {
             if let Some(quoted) = apostrophe_word(ctx.t, p + 1) {
                 if !quoted {

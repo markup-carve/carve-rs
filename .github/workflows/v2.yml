@@ -32,11 +32,17 @@ jobs:
         run: |
           cargo fmt --check
           cargo fmt --check --manifest-path bench/Cargo.toml
-      - name: Clippy, pedantic included
-        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
+      # cognitive_complexity is a nursery lint: named here, its threshold of 15 is in clippy.toml.
+      - name: Clippy, pedantic and cognitive complexity included
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::cognitive_complexity
       # The timing program is its own workspace (it depends on the 0.1 crate).
       - name: Clippy of the timing program
         run: cargo clippy --manifest-path bench/Cargo.toml -- -D warnings -W clippy::pedantic
+      - name: Cyclomatic complexity at most 15 per hand-written function
+        run: |
+          python3 -m venv "$RUNNER_TEMP/complexity-venv"
+          "$RUNNER_TEMP/complexity-venv/bin/pip" install --disable-pip-version-check lizard==1.24.3
+          "$RUNNER_TEMP/complexity-venv/bin/python" tools/check_complexity.py
       - name: Tests (every specification example, HTML and tree)
         run: cargo test
 
