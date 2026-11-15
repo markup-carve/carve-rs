@@ -18,22 +18,27 @@ struct Counting;
 
 static ALLOCS: AtomicU64 = AtomicU64::new(0);
 static BYTES: AtomicU64 = AtomicU64::new(0);
-/// The hook only records during the stage runs, so the timed rounds stay unhooked.
+/// Allocations and the inline hook are only counted during the stage runs: the timed
+/// rounds of both engines run without the counters.
 static HOOKED: AtomicBool = AtomicBool::new(false);
 
 // SAFETY: forwards every call to the system allocator unchanged; the counters are side effects only.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
-        ALLOCS.fetch_add(1, Relaxed);
-        BYTES.fetch_add(l.size() as u64, Relaxed);
+        if HOOKED.load(Relaxed) {
+            ALLOCS.fetch_add(1, Relaxed);
+            BYTES.fetch_add(l.size() as u64, Relaxed);
+        }
         unsafe { System.alloc(l) }
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         unsafe { System.dealloc(p, l) }
     }
     unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
-        ALLOCS.fetch_add(1, Relaxed);
-        BYTES.fetch_add(n as u64, Relaxed);
+        if HOOKED.load(Relaxed) {
+            ALLOCS.fetch_add(1, Relaxed);
+            BYTES.fetch_add(n as u64, Relaxed);
+        }
         unsafe { System.realloc(p, l, n) }
     }
 }
@@ -284,9 +289,9 @@ fn main() {
         let reps = u32::try_from((2_000_000 / src.len().max(1)).clamp(3, 200)).unwrap_or(3);
         HOOKED.store(true, Relaxed);
         let st = stages(&src, &opts, reps);
-        HOOKED.store(false, Relaxed);
         let (_, a1) = once(|| carve::parse(&src));
         let (_, a2) = once(|| carve::render_html(&carve::parse(&src)));
+        HOOKED.store(false, Relaxed);
         stage_rows.push((name, st, [a1, a2]));
     }
     println!("\ndoc\tstage\tus\tallocs\tbytes");
