@@ -19,17 +19,22 @@ pub fn bidi(c: char) -> bool {
 
 /// Appends text content (C2-H-002).
 pub fn text(s: &str, out: &mut String) {
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '\u{a0}' => out.push_str("&nbsp;"),
-            c if bidi(c) => {}
-            c if rejected(c) => out.push('\u{FFFD}'),
-            c => out.push(c),
-        }
+    let mut from = 0;
+    for (i, c) in s.char_indices() {
+        let rep = match c {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '\u{a0}' => "&nbsp;",
+            c if bidi(c) => "",
+            c if rejected(c) => "\u{FFFD}",
+            _ => continue,
+        };
+        out.push_str(s.get(from..i).unwrap_or(""));
+        out.push_str(rep);
+        from = i + c.len_utf8();
     }
+    out.push_str(s.get(from..).unwrap_or(""));
 }
 
 /// Text content as a new string.

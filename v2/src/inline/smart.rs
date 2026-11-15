@@ -209,13 +209,20 @@ impl Default for Smart {
 fn starts_smart(c: char) -> bool {
     match u8::try_from(c) {
         Ok(b) => ASCII_STARTS.get(usize::from(b)).copied().unwrap_or(false),
-        Err(_) => starts_smart_slow(c),
+        Err(_) => *WIDE_STARTS && starts_smart_slow(c),
     }
 }
 
 fn starts_smart_slow(c: char) -> bool {
     matches!(c, '-' | '"' | '\'') || tables::SMART_RUNS.iter().any(|r| r.1 && r.0.starts_with(c))
 }
+
+/// Whether any replaced run begins outside ASCII.
+static WIDE_STARTS: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    tables::SMART_RUNS
+        .iter()
+        .any(|r| r.1 && r.0.chars().next().is_some_and(|c| !c.is_ascii()))
+});
 
 static ASCII_STARTS: std::sync::LazyLock<[bool; 128]> = std::sync::LazyLock::new(|| {
     let mut t = [false; 128];
