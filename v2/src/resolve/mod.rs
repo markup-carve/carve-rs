@@ -171,8 +171,11 @@ pub fn label_key(
 struct Index<'a> {
     links: HashMap<&'a str, &'a str>,
     abbrs: HashMap<&'a str, &'a str>,
-    /// (folded plain text, folded canonical source, id) of each heading with an id.
-    headings: Vec<(String, String, String)>,
+    /// The id of each heading with one, and for each folded plain text and
+    /// folded source the first heading that has it.
+    heading_ids: Vec<String>,
+    heading_by_text: HashMap<String, usize>,
+    heading_by_src: HashMap<String, usize>,
     targets: HashSet<String>,
 }
 
@@ -196,18 +199,21 @@ impl<'a> Index<'a> {
                 _ => {}
             }
         }
-        let mut headings = Vec::new();
+        let mut heading_ids = Vec::new();
+        let mut heading_by_text = HashMap::new();
+        let mut heading_by_src = HashMap::new();
         let mut targets = HashSet::new();
         for v in &order.visits {
             let a = addr(v.node);
             if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
                 let mut src = String::new();
                 plain::source_text(&h.children, &mut src, 0);
-                headings.push((
-                    fold_label(&plain::text_of(&h.children)),
-                    fold_label(&src),
-                    id.clone(),
-                ));
+                let i = heading_ids.len();
+                heading_by_text
+                    .entry(fold_label(&plain::text_of(&h.children)))
+                    .or_insert(i);
+                heading_by_src.entry(fold_label(&src)).or_insert(i);
+                heading_ids.push(id.clone());
                 targets.insert(id.clone());
             } else if owners.contains(&a) {
                 if let Some(id) = v.node.attrs().and_then(|x| x.id.clone()) {
@@ -218,7 +224,9 @@ impl<'a> Index<'a> {
         Index {
             links,
             abbrs,
-            headings,
+            heading_ids,
+            heading_by_text,
+            heading_by_src,
             targets,
         }
     }
@@ -233,9 +241,11 @@ impl<'a> Index<'a> {
                     res.insert(a, Res::Href((*href).to_string()));
                 } else if !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut)) {
                     // Gap HTML-002: the heading is matched on its plain text only; the tree has no source.
-                    if let Some((_, _, id)) =
-                        self.headings.iter().find(|(t, s, _)| t == key || s == key)
-                    {
+                    let first = [&self.heading_by_text, &self.heading_by_src]
+                        .iter()
+                        .filter_map(|m| m.get(key).copied())
+                        .min();
+                    if let Some(id) = first.and_then(|i| self.heading_ids.get(i)) {
                         res.insert(a, Res::Href(format!("#{id}")));
                     }
                 }

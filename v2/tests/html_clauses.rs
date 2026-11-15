@@ -91,3 +91,11 @@ fn c2_b_105_a_brace_block_glued_to_a_fence_language_is_no_attribute() {
         "<pre><code class=\"language-py\">c\n</code></pre>"
     );
 }
+
+#[test]
+fn c2_i_084_the_first_heading_matching_by_text_or_source_wins() {
+    assert_eq!(
+        html("# \\*a\\*\n\n# *a*\n\n[x][*a*]\n"),
+        "<section id=\"a\">\n  <h1>*a*</h1>\n</section>\n<section id=\"a-2\">\n  <h1><strong>a</strong></h1>\n  <p><a href=\"#a\">x</a></p>\n</section>"
+    );
+}
