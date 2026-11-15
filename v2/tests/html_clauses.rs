@@ -161,3 +161,15 @@ fn c2_h_130_strict_losses_turns_each_loss_into_an_error() {
         Ok("<p>plain</p>".into())
     );
 }
+
+#[test]
+fn c2_b_030_gap_g_021_a_left_sibling_moves_the_list_column() {
+    assert_eq!(
+        html(" - a\n- b\n 2. c"),
+        "<ul>\n  <li>a</li>\n  <li>b 2. c</li>\n</ul>"
+    );
+    assert_eq!(
+        html(" 9. a\n10. b\n 11. c"),
+        "<ol start=\"9\">\n  <li>a</li>\n  <li>b 11. c</li>\n</ol>"
+    );
+}

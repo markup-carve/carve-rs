@@ -224,12 +224,18 @@ impl Parser<'_> {
             self.pop_container();
         }
         if let Some(c) = self.stack.last_mut() {
-            if let Kind::List { loose, items, .. } = &mut c.kind {
+            if let Kind::List {
+                loose, items, col, ..
+            } = &mut c.kind
+            {
                 // C2-B-062, C2-B-065: a blank line between two items.
                 if blanks > 0 && *items > 0 {
                     *loose = true;
                 }
                 *items += 1;
+                // Gap G-021: a sibling left of the list's column (C2-B-030)
+                // moves the column to its marker.
+                *col = (*col).min(m);
             }
         }
         self.push_item(k, m, mk)
