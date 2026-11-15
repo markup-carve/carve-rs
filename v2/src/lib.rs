@@ -2,6 +2,15 @@
 //! built from the 0.2 specification.
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
+// No panics on any input: the quality bar of the stage, enforced.
+#![deny(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::todo
+)]
 // Open leaves mirror parser state; boxing them would add allocation on every transition.
 #![allow(clippy::large_enum_variant)]
 // Parser offsets and byte markers are clearer as short names in their local scopes.
