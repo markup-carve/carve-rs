@@ -3,7 +3,7 @@
 use crate::chars::is_number;
 use crate::options::HeadingIds;
 use crate::tables::{SLUG_REMOVED, SLUG_REVERSED};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use unicode_normalization::UnicodeNormalization;
 
 /// The slug of a heading's plain text, before any collision suffix.
@@ -76,6 +76,9 @@ fn prefix(s: String) -> String {
 #[derive(Default)]
 pub struct Taken {
     set: HashSet<String>,
+    /// The next suffix to try per base: ids are never released, so the
+    /// search resumes where it stopped (linear time for repeated headings).
+    next: HashMap<String, usize>,
 }
 
 impl Taken {
@@ -95,13 +98,14 @@ impl Taken {
         if self.reserve(base) {
             return base.to_string();
         }
-        let mut k = 2usize;
+        let mut k = self.next.get(base).copied().unwrap_or(2);
         loop {
             let id = format!("{base}-{k}");
+            k += 1;
             if self.reserve(&id) {
+                self.next.insert(base.to_string(), k);
                 return id;
             }
-            k += 1;
         }
     }
 }
