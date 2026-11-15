@@ -26,6 +26,7 @@ pub mod ast;
 pub mod attr;
 pub mod block;
 pub mod chars;
+pub mod hash;
 pub mod html;
 pub mod inline;
 pub mod options;

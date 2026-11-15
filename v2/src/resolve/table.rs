@@ -4,7 +4,7 @@
 use super::Res;
 use super::order::addr;
 use crate::ast::{Node, Table, TableCellAlign, TableCellSpan, TableColumnResolvedAlign};
-use std::collections::HashMap;
+use crate::hash::AddrMap;
 
 /// One cell placed on the grid.
 pub struct Placed<'a> {
@@ -185,7 +185,7 @@ fn convert_column(a: crate::ast::TableColumnAlign) -> TableColumnResolvedAlign {
 }
 
 /// Writes the table results of `n` when it is a table.
-pub(super) fn resolve_table(n: &Node, res: &mut HashMap<usize, Res>) {
+pub(super) fn resolve_table(n: &Node, res: &mut AddrMap<usize, Res>) {
     let Node::Table(t) = n else { return };
     let placed = layout(t);
     let marks = placed.iter().any(|p| p.mark);

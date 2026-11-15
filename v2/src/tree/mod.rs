@@ -9,16 +9,17 @@ use crate::attr::AttrBlock;
 use crate::block::events::{ContainerKind, Event, LeafKind, Role};
 use crate::block::shapes::{DivInfo, MarkerKind};
 use crate::chars::fold_label;
+use crate::hash::AddrMap;
 use crate::inline::{self, ContentKind, InlineEnv, Join, Piece};
 use crate::source::Source;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Builds the document from the events of the block pass.
 #[must_use]
 pub fn build(src: &Source, events: Vec<Event>, own_starts: &[(usize, usize)]) -> ast::Document {
     let (link_keys, abbreviations) = definitions(&events);
     // Keyed by the source offset that `pos` carries.
-    let own_starts: HashMap<usize, usize> = own_starts
+    let own_starts: AddrMap<usize, usize> = own_starts
         .iter()
         .map(|&(k, v)| (src.pos(k, k).start_offset, v))
         .collect();
@@ -77,7 +78,7 @@ struct Frame {
 
 struct Builder<'a> {
     src: &'a Source,
-    own_starts: &'a HashMap<usize, usize>,
+    own_starts: &'a AddrMap<usize, usize>,
     link_keys: HashSet<String>,
     abbreviations: Vec<(String, String)>,
     stack: Vec<Frame>,
@@ -515,7 +516,7 @@ impl Builder<'_> {
 
 fn wrap_caption(
     src: &Source,
-    own: &HashMap<usize, usize>,
+    own: &AddrMap<usize, usize>,
     target: Node,
     cap: Node,
     end: usize,
@@ -555,7 +556,7 @@ fn wrap_caption(
 }
 
 /// The figure takes the attribute lines; the block inside starts at its own markup.
-fn skip_attr_lines(src: &Source, own: &HashMap<usize, usize>, p: &mut ast::Pos) {
+fn skip_attr_lines(src: &Source, own: &AddrMap<usize, usize>, p: &mut ast::Pos) {
     let Some(&at) = own.get(&p.start_offset) else {
         return;
     };

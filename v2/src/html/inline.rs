@@ -5,10 +5,10 @@ use super::attrs::El;
 use super::block::attr_str;
 use super::{esc, url};
 use crate::ast::{self, Attrs, ImageRefForm, LinkRefForm, Node};
+use crate::hash::AddrSet;
 use crate::options::Mode;
 use crate::resolve::order::addr;
 use crate::tables::{PROFILES, SMART_RUNS};
-use std::collections::HashSet;
 use std::fmt::Write as _;
 
 impl<'a> Renderer<'a> {
@@ -633,7 +633,7 @@ fn has_comment(nodes: &[Node], depth: usize) -> bool {
 
 /// Marks the comments of each comment-only line of a leaf, at any nesting
 /// depth, with the break behind the line, or before it at the end (C2-H-069).
-fn hide_comment_lines(nodes: &[Node], hidden: &mut HashSet<usize>) {
+fn hide_comment_lines(nodes: &[Node], hidden: &mut AddrSet<usize>) {
     if !has_comment(nodes, 0) {
         return;
     }

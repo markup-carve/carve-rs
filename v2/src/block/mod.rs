@@ -9,12 +9,12 @@ pub mod shapes;
 pub mod table;
 
 use crate::attr::AttrBlock;
+use crate::hash::AddrMap;
 use crate::inline::{Join, Piece};
 use crate::source::Source;
 use events::{ContainerKind, Event, LeafKind, Role};
 use line::Cursor;
 use shapes::{FenceInfo, MarkerKind};
-use std::collections::HashMap;
 use table::TableData;
 
 /// The result of the block pass.
@@ -186,7 +186,7 @@ pub struct Parser<'a> {
     stack: Vec<Container>,
     leaf: Option<OpenLeaf>,
     pending: Option<Pending>,
-    own_starts: HashMap<usize, usize>,
+    own_starts: AddrMap<usize, usize>,
     blank_run: usize,
     closed: Option<Closed>,
     line_no: usize,
@@ -206,7 +206,7 @@ pub fn scan(src: &Source) -> BlockOutput {
         }],
         leaf: None,
         pending: None,
-        own_starts: HashMap::new(),
+        own_starts: AddrMap::default(),
         line_end: 0,
         blank_run: 0,
         closed: None,

@@ -5,6 +5,7 @@
 //! the order of the notes.
 
 use crate::ast::{Document, Node};
+use crate::hash::AddrMap;
 
 use std::collections::HashMap;
 
@@ -39,7 +40,7 @@ pub struct Order<'a> {
     pub visits: Vec<Visit<'a>>,
     pub notes: Vec<Note<'a>>,
     /// Address of a `footnote_ref` or `inline_footnote` to its number.
-    pub number: HashMap<usize, usize>,
+    pub number: AddrMap<usize, usize>,
     note_of_key: HashMap<&'a str, usize>,
 }
 

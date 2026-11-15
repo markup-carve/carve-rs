@@ -12,6 +12,7 @@ pub mod table;
 
 use crate::ast::{Document, Node, TableColumnResolvedAlign};
 use crate::chars::fold_label;
+use crate::hash::{AddrMap, AddrSet};
 use crate::options::{HeadingIds, Options};
 
 use order::{Order, Visit, addr, caption_of, mark_of};
@@ -40,15 +41,17 @@ enum Res {
 /// Fills every result field of the tree and the root `stages` (C2-A-135).
 pub fn resolve(doc: &mut Document, opts: &Options) {
     let results = compute(doc, opts);
-    for c in &mut doc.children {
-        apply(c, &results, 1);
+    if !results.is_empty() {
+        for c in &mut doc.children {
+            apply(c, &results, 1);
+        }
     }
     doc.stages = Some(STAGES.iter().map(|s| (*s).to_string()).collect());
 }
 
-fn compute(doc: &Document, opts: &Options) -> HashMap<usize, Res> {
+fn compute(doc: &Document, opts: &Options) -> AddrMap<usize, Res> {
     let order = Order::build(doc);
-    let mut res = HashMap::new();
+    let mut res = AddrMap::default();
     for (a, n) in &order.number {
         res.insert(*a, Res::Number(to_i64(*n)));
     }
@@ -92,15 +95,15 @@ fn heading_ids(
     all: &[&Node],
     order: &Order<'_>,
     mode: HeadingIds,
-    res: &mut HashMap<usize, Res>,
-) -> HashMap<usize, String> {
+    res: &mut AddrMap<usize, Res>,
+) -> AddrMap<usize, String> {
     let mut taken = slug::Taken::default();
     for n in all {
         if let Some(id) = n.attrs().and_then(|a| a.id.as_deref()) {
             taken.reserve(id);
         }
     }
-    let mut ids = HashMap::new();
+    let mut ids = AddrMap::default();
     for v in &order.visits {
         let Node::Heading(h) = v.node else { continue };
         if let Some(id) = h.attrs.as_ref().and_then(|a| a.id.clone()) {
@@ -119,10 +122,10 @@ fn heading_ids(
 fn caption_numbers(
     order: &Order<'_>,
     opts: &Options,
-    res: &mut HashMap<usize, Res>,
-) -> HashSet<usize> {
+    res: &mut AddrMap<usize, Res>,
+) -> AddrSet<usize> {
     let mut counts: HashMap<String, i64> = HashMap::new();
-    let mut out = HashSet::new();
+    let mut out = AddrSet::default();
     for v in &order.visits {
         if let Some((mark, label)) = caption_mark(v, opts) {
             let n = next(&mut counts, &label);
@@ -181,8 +184,8 @@ impl<'a> Index<'a> {
     fn new(
         doc: &'a Document,
         order: &Order<'a>,
-        ids: &HashMap<usize, String>,
-        owners: &HashSet<usize>,
+        ids: &AddrMap<usize, String>,
+        owners: &AddrSet<usize>,
     ) -> Self {
         let mut links = HashMap::new();
         let mut abbrs = HashMap::new();
@@ -230,7 +233,7 @@ impl<'a> Index<'a> {
     }
 
     /// C2-I-081 to C2-I-084, C2-A-109, C2-H-095, C2-I-098.
-    fn reference(&self, n: &Node, res: &mut HashMap<usize, Res>) {
+    fn reference(&self, n: &Node, res: &mut AddrMap<usize, Res>) {
         let a = addr(n);
         match n {
             Node::Link(l) if l.namespace.as_deref() == Some("link") => {
@@ -268,7 +271,7 @@ impl<'a> Index<'a> {
     }
 }
 
-fn apply(n: &mut Node, res: &HashMap<usize, Res>, depth: usize) {
+fn apply(n: &mut Node, res: &AddrMap<usize, Res>, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }

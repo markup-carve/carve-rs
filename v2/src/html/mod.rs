@@ -10,11 +10,12 @@ mod table;
 pub mod url;
 
 use crate::ast::{Document, LinkReferenceDefinition, Node};
+use crate::hash::{AddrMap, AddrSet};
 use crate::options::Options;
 use crate::resolve::order::{Order, addr, caption_of, mark_of};
 use crate::resolve::{label_key, plain, slug};
 use attrs::{El, Filter};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Renders a resolved tree (C2-H-001).
 #[must_use]
@@ -53,10 +54,10 @@ pub(crate) struct Renderer<'a> {
     out: String,
     order: Order<'a>,
     /// The anchor id of each note mark (C2-H-088).
-    mark_ids: HashMap<usize, String>,
+    mark_ids: AddrMap<usize, String>,
     links: HashMap<&'a str, &'a LinkReferenceDefinition>,
     xref_text: HashMap<String, String>,
-    adm_ids: HashMap<usize, String>,
+    adm_ids: AddrMap<usize, String>,
     /// The top-level `footnotes` directive that places the section (C2-H-093).
     placing: Option<usize>,
     /// Note marks met inside link text, written after the outermost link.
@@ -74,7 +75,7 @@ pub(crate) struct Renderer<'a> {
     degrading: usize,
     losses: Vec<&'static str>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
-    hidden: HashSet<usize>,
+    hidden: AddrSet<usize>,
 }
 
 impl<'a> Renderer<'a> {
@@ -86,10 +87,10 @@ impl<'a> Renderer<'a> {
             src: None,
             out: String::new(),
             order,
-            mark_ids: HashMap::new(),
+            mark_ids: AddrMap::default(),
             links: HashMap::new(),
             xref_text: HashMap::new(),
-            adm_ids: HashMap::new(),
+            adm_ids: AddrMap::default(),
             placing: None,
             pending: String::new(),
             in_link: 0,
@@ -100,7 +101,7 @@ impl<'a> Renderer<'a> {
             started: false,
             degrading: 0,
             losses: Vec::new(),
-            hidden: HashSet::new(),
+            hidden: AddrSet::default(),
         };
         r.index();
         r
@@ -159,6 +160,14 @@ impl<'a> Renderer<'a> {
 
     /// The text of each cross-reference target (C2-H-096).
     fn targets(&mut self) {
+        if !self
+            .order
+            .visits
+            .iter()
+            .any(|v| matches!(v.node, Node::Xref(_)))
+        {
+            return;
+        }
         for v in &self.order.visits {
             let (id, text) = match v.node {
                 Node::Heading(h) => match heading_id(v.node) {
@@ -190,16 +199,20 @@ impl<'a> Renderer<'a> {
     /// C2-H-156: `adm-N` for titled admonitions and the titled placing
     /// directive, after every authored id and generated heading id.
     fn admonition_ids(&mut self) {
+        let placing = self.placing;
+        let titled = |v: &crate::resolve::order::Visit<'_>| match v.node {
+            Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs.as_ref()),
+            Node::Directive(d) => d.title.is_some() && placing == Some(addr(v.node)),
+            _ => false,
+        };
+        if !self.order.visits.iter().any(titled) {
+            return;
+        }
         let mut taken = slug::Taken::default();
         reserve_ids(&self.doc.children, &mut taken, 0);
         let mut n = 0usize;
         for v in &self.order.visits {
-            let titled = match v.node {
-                Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs.as_ref()),
-                Node::Directive(d) => d.title.is_some() && self.placing == Some(addr(v.node)),
-                _ => false,
-            };
-            if titled {
+            if titled(v) {
                 n += 1;
                 let id = taken.unique(&format!("adm-{n}"));
                 self.adm_ids.insert(addr(v.node), id);

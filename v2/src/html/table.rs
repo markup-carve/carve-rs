@@ -3,9 +3,9 @@
 use super::Renderer;
 use super::attrs::El;
 use crate::ast::{Node, Table, TableCellScope};
+use crate::hash::AddrMap;
 use crate::resolve::order::addr;
 use crate::resolve::table::{GroupKind, layout, rows};
-use std::collections::HashMap;
 use std::fmt::Write as _;
 
 /// The table attributes that are read and never written (C2-H-153).
@@ -69,7 +69,7 @@ impl<'a> Renderer<'a> {
         self.line(depth, "</colgroup>");
     }
 
-    fn group(&mut self, t: &'a Table, g: &'a Node, columns: &HashMap<usize, usize>, depth: usize) {
+    fn group(&mut self, t: &'a Table, g: &'a Node, columns: &AddrMap<usize, usize>, depth: usize) {
         let (tag, kind, children) = match g {
             Node::TableHead(x) => ("thead", GroupKind::Head, &x.children),
             Node::TableBody(x) => ("tbody", GroupKind::Body, &x.children),
@@ -92,7 +92,7 @@ impl<'a> Renderer<'a> {
         t: &'a Table,
         r: &'a Node,
         kind: GroupKind,
-        columns: &HashMap<usize, usize>,
+        columns: &AddrMap<usize, usize>,
         depth: usize,
     ) {
         let Node::TableRow(row) = r else { return };
@@ -197,7 +197,7 @@ impl<'a> Renderer<'a> {
 }
 
 /// The grid column each cell starts in.
-fn cell_columns(t: &Table) -> HashMap<usize, usize> {
+fn cell_columns(t: &Table) -> AddrMap<usize, usize> {
     layout(t).iter().map(|p| (addr(p.node), p.col)).collect()
 }
 
