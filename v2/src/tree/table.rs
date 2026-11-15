@@ -149,7 +149,7 @@ impl Builder<'_> {
             row.cells
                 .iter()
                 .enumerate()
-                .filter(move |&(j, _)| j != i && !spans.get(j).is_some_and(|s| s.mark.is_some()))
+                .filter(move |&(j, _)| j != i && spans.get(j).is_none_or(|s| s.mark.is_none()))
         };
         let all_header = |i: usize| others(i).count() > 0 && others(i).all(|(_, c)| c.header);
         let mut cells = Vec::new();
