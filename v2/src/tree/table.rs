@@ -30,12 +30,18 @@ const TABLE_KEYS: [&str; 4] = ["aligns", "widths", "header-rows", "footer-rows"]
 impl Builder<'_> {
     pub(super) fn table(
         &self,
-        data: TableData,
+        mut data: TableData,
         attrs: Option<Attrs>,
         lang: Option<String>,
         start: usize,
         end: usize,
     ) -> Node {
+        // C2-A-086, gap G-012: comments after the last row belong to the table.
+        let trailing = data
+            .rows
+            .last_mut()
+            .map(|r| std::mem::take(&mut r.comments))
+            .unwrap_or_default();
         let head = head_rows(&data.rows);
         let spans = resolve_spans(&data.rows, head);
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
@@ -50,7 +56,9 @@ impl Builder<'_> {
             }
             groups.push(self.group(&data.rows, &spans, lo, hi, kind));
         }
-        let _ = (start, end);
+        for (s, e, value) in trailing {
+            groups.push(self.comment(s, e, value));
+        }
         Node::Table(ast::Table {
             children: groups,
             columns,
@@ -91,6 +99,15 @@ impl Builder<'_> {
         })
     }
 
+    fn comment(&self, s: usize, e: usize, value: String) -> Node {
+        Node::Comment(ast::Comment {
+            form: ast::CommentForm::Line,
+            value,
+            pos: Some(self.src.pos(s, e)),
+            ..Default::default()
+        })
+    }
+
     fn group(&self, rows: &[Row], spans: &[Vec<Resolved>], lo: usize, hi: usize, kind: u8) -> Node {
         let mut children = Vec::new();
         for (i, row) in rows.iter().enumerate().take(hi).skip(lo) {
@@ -100,12 +117,7 @@ impl Builder<'_> {
                 i < lo + (hi - lo),
             ));
             for (s, e, value) in &row.comments {
-                children.push(Node::Comment(ast::Comment {
-                    form: ast::CommentForm::Line,
-                    value: value.clone(),
-                    pos: Some(self.src.pos(*s, *e)),
-                    ..Default::default()
-                }));
+                children.push(self.comment(*s, *e, value.clone()));
             }
         }
         let first = rows.get(lo).map_or(0, |r| r.start);

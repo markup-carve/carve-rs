@@ -227,6 +227,12 @@ impl<'a> Parser<'a> {
             self.blank_line(&walk, s, e);
             return;
         }
+        // G-011: a quote owns each non-blank line its mark stands on, up to the line end.
+        for c in self.stack.iter_mut().take(walk.matched) {
+            if matches!(c.kind, Kind::Quote) {
+                c.end = c.end.max(e);
+            }
+        }
         let had_opaque = matches!(
             self.leaf.as_ref().map(|l| &l.leaf),
             Some(Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. })
@@ -407,6 +413,8 @@ impl<'a> Parser<'a> {
         };
         *end = e;
         if closes {
+            // C2-B-113 drops trailing blank lines of an unclosed body only.
+            flush_held(leaf);
             let target = matches!(leaf, Leaf::Code { .. });
             self.close_leaf();
             self.closed = Some(Closed {
@@ -677,6 +685,25 @@ impl<'a> Parser<'a> {
         while self.stack.len() > 1 {
             self.pop_container();
         }
+    }
+}
+
+/// Moves the blank lines held back in a fence body into it.
+fn flush_held(leaf: &mut Leaf) {
+    match leaf {
+        Leaf::Code { value, held, .. } => {
+            for h in held.drain(..) {
+                value.push_str(&h);
+                value.push('\n');
+            }
+        }
+        Leaf::CommentBlock { lines, held, .. } => {
+            for _ in 0..*held {
+                lines.push(String::new());
+            }
+            *held = 0;
+        }
+        _ => {}
     }
 }
 

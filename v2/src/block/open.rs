@@ -583,6 +583,10 @@ impl Parser<'_> {
             {
                 if let Some(Kind::Div { len: open_len, .. }) = self.stack.get(i).map(|c| &c.kind) {
                     if *open_len <= len && i + 1 == self.stack.len() {
+                        // C2-B-192: attribute lines left in the div close inside it.
+                        if let Some(p) = self.pending.take() {
+                            self.pending_to_paragraph(p);
+                        }
                         if let Some(top) = self.stack.last_mut() {
                             top.end = start + k.rest().len();
                         }
@@ -853,30 +857,41 @@ fn bracket_end(s: &str) -> Option<usize> {
     None
 }
 
+/// `(destination "title")`: a destination has no space (`data/line-shapes.json`
+/// part `destination`), balanced parentheses, and an optional quoted title.
 fn paren_tail(s: &str) -> Option<&str> {
     let b = s.as_bytes();
     let mut depth = 0usize;
-    let mut i = 0;
-    let mut quote: Option<u8> = None;
-    while let Some(&c) = b.get(i) {
-        match (quote, c) {
-            (Some(_), b'\\') => i += 1,
-            (Some(q), _) if c == q => quote = None,
-            (Some(_), _) => {}
-            (None, b'\\') => i += 1,
-            (None, b'"' | b'\'') if b.get(i.wrapping_sub(1)) == Some(&b' ') => quote = Some(c),
-            (None, b'(') => depth += 1,
-            (None, b')') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return s.get(i + 1..);
-                }
-            }
+    let mut i = 1;
+    loop {
+        match *b.get(i)? {
+            b'\\' => i += 1,
+            b'(' => depth += 1,
+            b')' if depth == 0 => return s.get(i + 1..),
+            b')' => depth -= 1,
+            b' ' => break,
             _ => {}
         }
         i += 1;
     }
-    None
+    while b.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    let q = *b.get(i).filter(|&&c| c == b'"' || c == b'\'')?;
+    i += 1;
+    loop {
+        match *b.get(i)? {
+            b'\\' => i += 1,
+            c if c == q => break,
+            _ => {}
+        }
+        i += 1;
+    }
+    i += 1;
+    while b.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    (b.get(i) == Some(&b')')).then(|| s.get(i + 1..)).flatten()
 }
 
 fn trailing_attrs(mut s: &str) -> bool {
