@@ -39,6 +39,12 @@ fn has_attrs(attrs: Option<&Attrs>, lang: Option<&String>) -> bool {
 impl<'a> Renderer<'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'a Node, depth: usize) {
+        if matches!(n, Node::Paragraph(_)) {
+            if let Some(s) = self.paragraph(n, false) {
+                self.line(depth, &s);
+            }
+            return;
+        }
         if !self.profile_allows(n, true) {
             self.degrade_block(n, depth);
             return;
@@ -114,7 +120,25 @@ impl<'a> Renderer<'a> {
     }
 
     /// The line of a paragraph, bare or wrapped; `None` when it writes nothing.
+    /// A paragraph counts one nesting level (C2-H-166) wherever its container
+    /// writes it; outside the profile it is its plain text (C2-H-165).
     pub(super) fn paragraph(&mut self, n: &'a Node, bare: bool) -> Option<String> {
+        let Node::Paragraph(p) = n else { return None };
+        if !self.profile_allows(n, true) {
+            if comments_only(&p.children) {
+                return None;
+            }
+            self.losses.push("profile-construct-degraded");
+            let t = esc::text_str(&super::profile::inlines_plain(&p.children));
+            return (!t.is_empty()).then(|| if bare { t } else { format!("<p>{t}</p>") });
+        }
+        self.level += 1;
+        let s = self.paragraph_inner(n, bare);
+        self.level -= 1;
+        s
+    }
+
+    fn paragraph_inner(&mut self, n: &'a Node, bare: bool) -> Option<String> {
         let Node::Paragraph(p) = n else { return None };
         if comments_only(&p.children) {
             return None;
@@ -426,7 +450,7 @@ impl<'a> Renderer<'a> {
             }
             _ => {
                 el.align_style = true;
-                if self.opts.roundtrip && attrs.is_none_or(Attrs::is_empty) && lang.is_none() {
+                if self.opts.roundtrip && attrs.is_none_or(only_reserved) && lang.is_none() {
                     el.carriers.push(("data-carve-div", None));
                 }
                 "div"
@@ -646,6 +670,18 @@ pub(super) fn div_parts(n: &Node) -> DivParts<'_> {
         ),
         _ => (None, None, &[], None, None),
     }
+}
+
+/// A div that writes no attribute once the reserved names are dropped
+/// (C2-H-114 `data-carve-div`, C2-H-116).
+fn only_reserved(a: &Attrs) -> bool {
+    a.id.is_none()
+        && a.classes.is_empty()
+        && a.key_values.iter().all(|(k, _)| {
+            super::attrs::RESERVED
+                .iter()
+                .any(|r| r.eq_ignore_ascii_case(k))
+        })
 }
 
 fn capitalize(s: &str) -> String {

@@ -138,7 +138,7 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize) {
     }
 }
 
-fn inlines_plain(nodes: &[Node]) -> String {
+pub(super) fn inlines_plain(nodes: &[Node]) -> String {
     let mut s = String::new();
     for n in nodes {
         inline_plain(n, &mut s, 0);
@@ -167,8 +167,22 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
             items.join(" ")
         }
         Node::ThematicBreak(_) => "---".to_string(),
-        Node::CodeBlock(c) => c.value.clone(),
-        Node::RawBlock(r) => r.value.clone(),
+        // Gap HTML-016: the final line break of the value is not written.
+        Node::CodeBlock(c) => c.value.strip_suffix('\n').unwrap_or(&c.value).to_string(),
+        Node::RawBlock(r) => r.value.strip_suffix('\n').unwrap_or(&r.value).to_string(),
+        Node::Figure(_) | Node::FigureGroup(_) => {
+            n.children()
+                .into_iter()
+                .flatten()
+                .for_each(|b| degraded_paragraphs(b, out, depth + 1));
+            let caption = crate::resolve::order::caption_of(n);
+            caption
+                .and_then(Node::children)
+                .into_iter()
+                .flatten()
+                .for_each(|b| degraded_paragraphs(b, out, depth + 1));
+            return;
+        }
         Node::Table(t) => return out.push(table_text(t)),
         Node::Div(_) | Node::Admonition(_) | Node::Directive(_) => {
             let (_, _, children, title, _) = super::block::div_parts(n);

@@ -151,3 +151,23 @@ C2-H-139 fixes the order of the brace block but not the spelling of a value.
 The oracle writes `{e}` for an empty value and quotes a value with a space
 (`k="v w"`). This engine does the same; a value with other characters outside
 letters, digits and `-_.:/` is quoted.
+
+## HTML-015 C2-H-094/C2-H-165: notes whose marks a profile degrades
+
+```carve
+a[^1]
+
+[^1]: N
+```
+
+With `profile: minimal` the reference degrades to the text `[^1]`. Whether the
+footnote section is still written is not stated: C2-H-094 speaks of "numbered
+footnotes", and the number is a tree fact. The oracle writes no section. This
+engine writes a note only when its mark type (`footnote_ref` or
+`inline_footnote`) is inside the profile, and no section when no note is left.
+
+## HTML-016 C2-H-165: the value of a degraded code or raw block
+
+"the value for a code or raw block" - the value ends with a line break
+(C2-A-045). The oracle writes `<p>code</p>`, without the break. This engine
+follows the oracle.

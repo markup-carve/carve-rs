@@ -50,6 +50,8 @@ pub(crate) struct Renderer<'a> {
     in_link: usize,
     in_abbr: usize,
     level: usize,
+    /// The notes the section writes.
+    shown: Vec<bool>,
     /// A line was written (an empty first line still counts, C2-H-134).
     started: bool,
     /// Inside a node that stays while its children are degraded.
@@ -74,6 +76,7 @@ impl<'a> Renderer<'a> {
             in_link: 0,
             in_abbr: 0,
             level: 0,
+            shown: Vec::new(),
             started: false,
             degrading: 0,
             losses: Vec::new(),
@@ -95,7 +98,23 @@ impl<'a> Renderer<'a> {
                 self.links.entry(d.key.as_str()).or_insert(d);
             }
         }
-        self.placing = if self.order.notes.is_empty() {
+        // Gap HTML-015: a note whose marks the profile degrades is not written.
+        self.shown = self
+            .order
+            .notes
+            .iter()
+            .map(|n| {
+                self.profile_allows_type(
+                    if matches!(n.node, Node::Footnote(_)) {
+                        "footnote_ref"
+                    } else {
+                        "inline_footnote"
+                    },
+                    false,
+                )
+            })
+            .collect();
+        self.placing = if !self.shown.contains(&true) {
             None
         } else {
             doc.children.iter().find(|c| matches!(c, Node::Directive(d) if d.kind == crate::ast::DirectiveKind::Footnotes)).map(addr)
@@ -193,7 +212,7 @@ impl<'a> Renderer<'a> {
                 self.block(c, 0);
             }
         }
-        if self.placing.is_none() && !self.order.notes.is_empty() {
+        if self.placing.is_none() && self.shown.contains(&true) {
             self.footnote_section(0, None);
         }
         // Gap HTML-008: C2-H-114 keeps `data-carve-abbreviations` but places no

@@ -45,7 +45,9 @@ impl<'a> Renderer<'a> {
         let saved = self.level;
         self.level = 1;
         for i in 0..self.order.notes.len() {
-            self.note(i, depth + 2);
+            if self.shown.get(i) == Some(&true) {
+                self.note(i, depth + 2);
+            }
         }
         self.level = saved;
         self.line(depth + 1, "</ol>");
