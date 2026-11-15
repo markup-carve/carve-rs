@@ -42,11 +42,12 @@ fn run(input: &str, o: &Opts<'_>) -> Vec<Node> {
         at += line.len() + 1;
     }
     let keys: HashSet<String> = o.keys.iter().map(|k| (*k).to_string()).collect();
-    let abbrs: Vec<(String, String)> = o
+    let mut abbrs: Vec<(String, String)> = o
         .abbrs
         .iter()
         .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
         .collect();
+    abbrs.sort_by(|a, b| a.0.cmp(&b.0));
     let env = InlineEnv {
         src: &src,
         link_keys: &keys,

@@ -54,7 +54,8 @@ pub struct InlineEnv<'a> {
     pub src: &'a Source,
     /// Folded keys of the link definitions of the document (C2-I-072, C2-I-125).
     pub link_keys: &'a HashSet<String>,
-    /// Abbreviation terms and expansions, first definition of a term only (C2-I-098).
+    /// Abbreviation terms and expansions, first definition of a term only
+    /// (C2-I-098), sorted by term: the matcher binary-searches it.
     pub abbreviations: &'a [(String, String)],
     /// Open block containers around the content, for the depth cap (C2-I-118).
     pub depth: usize,

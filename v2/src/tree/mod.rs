@@ -41,6 +41,7 @@ pub fn build(src: &Source, events: Vec<Event>) -> ast::Document {
 fn definitions(events: &[Event]) -> (HashSet<String>, Vec<(String, String)>) {
     let mut links = HashSet::new();
     let mut abbrs: Vec<(String, String)> = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::new();
     for ev in events {
         match ev {
             Event::Leaf {
@@ -52,12 +53,13 @@ fn definitions(events: &[Event]) -> (HashSet<String>, Vec<(String, String)>) {
             Event::Leaf {
                 kind: LeafKind::AbbrDef { key, expansion },
                 ..
-            } if !abbrs.iter().any(|(k, _)| k == key) => {
+            } if seen.insert(key.as_str()) => {
                 abbrs.push((key.clone(), expansion.clone()));
             }
             _ => {}
         }
     }
+    abbrs.sort_by(|a, b| a.0.cmp(&b.0));
     (links, abbrs)
 }
 

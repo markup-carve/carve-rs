@@ -112,6 +112,7 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
             _ => {}
         }
     }
+    abbrs.sort_by(|a, b| a.0.cmp(&b.0));
     let src = Source::new(input);
     let mut out = Vec::new();
     let ctx = Ctx {
