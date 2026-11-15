@@ -134,7 +134,8 @@ pub fn options_of(opts: &Value) -> Options {
     o
 }
 
-/// JSON without serde_json's nesting limit: trees of deep inputs pass 128 levels.
+/// JSON without `serde_json`'s nesting limit: trees of deep inputs pass 128 levels.
+#[must_use]
 pub fn parse_json(text: &str) -> Value {
     let mut de = serde_json::Deserializer::from_str(text);
     de.disable_recursion_limit();

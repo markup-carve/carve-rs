@@ -190,7 +190,9 @@ impl<'a> El<'a> {
     }
 
     fn classes(&self) -> Vec<String> {
-        let authored = self.attrs.map_or(&[][..], |a| a.classes.as_slice());
+        let authored = self
+            .attrs
+            .map_or(&[] as &[String], |a| a.classes.as_slice());
         let mut out: Vec<String> = Vec::new();
         let all = self
             .base

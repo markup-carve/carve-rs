@@ -39,7 +39,6 @@ enum Kind {
         kind: MarkerKind,
         col: usize,
         loose: bool,
-        next: u64,
         items: usize,
     },
     Item {
@@ -360,7 +359,7 @@ impl<'a> Parser<'a> {
     }
 
     /// A blank line inside a fence body is held back (C2-B-113).
-    fn opaque_blank(&mut self, walk: &Walk<'a>, _s: usize, _e: usize) -> bool {
+    fn opaque_blank(&mut self, walk: &Walk<'a>, s: usize, _e: usize) -> bool {
         let owned = self.leaf.as_ref().is_some_and(|l| l.depth <= walk.matched);
         let Some(open) = &mut self.leaf else {
             return false;
@@ -381,8 +380,8 @@ impl<'a> Parser<'a> {
             }
             Leaf::LineBlock { lines, .. } => {
                 lines.push(Piece {
-                    start: _s,
-                    end: _s,
+                    start: s,
+                    end: s,
                     join: Join::Line,
                 });
                 true
@@ -549,11 +548,10 @@ impl<'a> Parser<'a> {
         let pieces = p
             .lines
             .iter()
-            .enumerate()
-            .map(|(i, &(s, e))| Piece {
+            .map(|&(s, e)| Piece {
                 start: s,
                 end: e,
-                join: if i == 0 { Join::Line } else { Join::Line },
+                join: Join::Line,
             })
             .collect();
         self.push_leaf_event(
@@ -574,9 +572,7 @@ impl<'a> Parser<'a> {
         | LeafKind::Term { pieces }
         | LeafKind::Caption { pieces } = &kind
         {
-            pieces
-                .last()
-                .map_or(open.end, |p| p.end)
+            pieces.last().map_or(open.end, |p| p.end)
         } else {
             open.end
         };

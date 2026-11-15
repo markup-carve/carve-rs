@@ -310,7 +310,13 @@ impl Scanner<'_, '_> {
             && let Some(e) = eq
         {
             let r = self.b.get(e + 1..).map_or(e + 1, |rest| {
-                e + 1 + rest.iter().take_while(|&&c| !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')).count()
+                e + 1
+                    + rest
+                        .iter()
+                        .take_while(|&&c| {
+                            !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
+                        })
+                        .count()
             });
             if r > e + 1 {
                 self.attr_fail = Some((e + 1, r));
@@ -670,7 +676,7 @@ impl Scanner<'_, '_> {
 
     fn fail_pair(&mut self, top: &Bracket) {
         if let Some(t) = self.toks.get_mut(top.tok) {
-            t.to_text(true);
+            t.make_text(true);
         }
         self.text_char();
     }
@@ -847,7 +853,7 @@ impl Scanner<'_, '_> {
     fn finish_brackets(&mut self) {
         for top in std::mem::take(&mut self.brackets) {
             if let Some(t) = self.toks.get_mut(top.tok) {
-                t.to_text(true);
+                t.make_text(true);
             }
         }
     }
@@ -919,7 +925,10 @@ fn key_eq(b: &[u8], i: usize) -> Option<usize> {
         return None;
     }
     k += 1;
-    while b.get(k).is_some_and(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-') {
+    while b
+        .get(k)
+        .is_some_and(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+    {
         k += 1;
     }
     (b.get(k) == Some(&b'=')).then_some(k)

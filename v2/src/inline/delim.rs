@@ -101,7 +101,7 @@ fn group(toks: &mut [Tok], lo: usize, hi: usize, base: usize, ctx: &Ctx<'_>) {
 
 fn text(toks: &mut [Tok], k: usize) {
     if let Some(t) = toks.get_mut(k) {
-        t.to_text(true);
+        t.make_text(true);
     }
 }
 
@@ -228,10 +228,8 @@ fn holds_own_mark(toks: &[Tok], open: usize, close: usize, c: char, ctx: &Ctx<'_
             } => {
                 m = (*e).max(m);
             }
-            K::Text { val: None, .. } | K::Delim(_) => {
-                if mark_between_words(ctx.t, t.v0, t.v1, c) {
-                    return true;
-                }
+            K::Text { val: None, .. } | K::Delim(_) if mark_between_words(ctx.t, t.v0, t.v1, c) => {
+                return true;
             }
             _ => {}
         }
@@ -270,7 +268,8 @@ fn attach(toks: &mut [Tok]) {
                 let v1 = tok.v1;
                 let glued = prev.and_then(|p| toks.get(p)).is_some_and(|t| t.v1 == v0);
                 if let Some(p) = prev.filter(|&p| glued && is_host(toks, p)) {
-                    let block = match std::mem::replace(&mut toks[k].k, K::Skip) {
+                    let Some(t) = toks.get_mut(k) else { break };
+                    let block = match std::mem::replace(&mut t.k, K::Skip) {
                         K::Attr(b) => *b,
                         _ => AttrBlock::default(),
                     };
@@ -282,7 +281,7 @@ fn attach(toks: &mut [Tok]) {
                 }
                 // C2-I-035: an unattached block is printed as written.
                 if let Some(t) = toks.get_mut(k) {
-                    t.to_text(false);
+                    t.make_text(false);
                 }
             }
             _ => {}
@@ -327,7 +326,7 @@ fn caption(toks: &mut [Tok]) {
                     transparent: false,
                 };
             }
-            K::CaptionMark => t.to_text(true),
+            K::CaptionMark => t.make_text(true),
             _ => {}
         }
     }

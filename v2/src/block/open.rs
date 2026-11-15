@@ -99,7 +99,7 @@ impl Parser<'_> {
 
     /// A line while a table is open: a row or a continuation row continues it
     /// (C2-B-170, C2-B-175); a comment-only line is left to the comment rule.
-    pub(super) fn table_line(&mut self, walk: &Walk<'_>, e: usize) -> bool {
+    pub(super) fn table_line(&mut self, walk: &Walk<'_>, _e: usize) -> bool {
         let k = walk.cur.after_blanks();
         if shapes::comment_only(k.rest()) && walk.matched == self.stack.len() {
             return false;
@@ -137,8 +137,7 @@ impl Parser<'_> {
                 {
                     if let Some(row) = data.rows.last_mut() {
                         table::join_continuation(row, text, &frags);
-                        *end =
-                            (k.offset() + k.rest().len()).max(*end);
+                        *end = (k.offset() + k.rest().len()).max(*end);
                     }
                 }
                 return true;
@@ -413,7 +412,6 @@ impl Parser<'_> {
             kind: mk.kind,
             col: m,
             loose: false,
-            next: value.unwrap_or(1) + 1,
             items: 1,
         };
         self.push_container(
@@ -434,12 +432,7 @@ impl Parser<'_> {
         let start = k.offset();
         if shapes::thematic_break(k) {
             let (s, attrs) = self.take_pending(start, None);
-            self.push_leaf_event(
-                LeafKind::Thematic,
-                s,
-                start + r.len(),
-                attrs,
-            );
+            self.push_leaf_event(LeafKind::Thematic, s, start + r.len(), attrs);
             self.closed = None;
             return;
         }

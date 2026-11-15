@@ -113,7 +113,7 @@ impl Builder<'_> {
         for (i, row) in rows.iter().enumerate().take(hi).skip(lo) {
             children.push(self.row(
                 row,
-                spans.get(i).map_or(&[][..], Vec::as_slice),
+                spans.get(i).map_or(&[], Vec::as_slice),
                 i < lo + (hi - lo),
             ));
             for (s, e, value) in &row.comments {

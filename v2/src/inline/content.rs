@@ -91,7 +91,14 @@ impl<'a> Content<'a> {
             }
             let piece = full.get(start..end).unwrap_or("");
             let (line, col) = env.src.line_col(start);
-            segs.push(Seg { v: text.len(), s: start, len: piece.len(), raw_end, line, col });
+            segs.push(Seg {
+                v: text.len(),
+                s: start,
+                len: piece.len(),
+                raw_end,
+                line,
+                col,
+            });
             text.push_str(piece);
         }
         let mut chars = Vec::with_capacity(text.len() + 1);
@@ -103,26 +110,28 @@ impl<'a> Content<'a> {
             }
             chars.push(n);
         }
-        Self { text, segs, joins, chars, src: env.src }
-    }
-
-    /// Source offset of a content offset. The offset of a join character
-    /// maps to the end of the piece before it.
-    #[must_use]
-    pub fn src_off(&self, v: usize) -> usize {
-        let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
-        self.segs
-            .get(i)
-            .map_or(0, |s| s.s + (v.saturating_sub(s.v)).min(s.len))
+        Self {
+            text,
+            segs,
+            joins,
+            chars,
+            src: env.src,
+        }
     }
 
     /// Line, column and source offset of a content offset.
     fn point(&self, v: usize) -> (usize, usize, usize) {
         let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
-        let Some(seg) = self.segs.get(i) else { return (1, 1, 0) };
+        let Some(seg) = self.segs.get(i) else {
+            return (1, 1, 0);
+        };
         let d = v.saturating_sub(seg.v).min(seg.len);
         let count = |x: usize| self.chars.get(x).copied().unwrap_or(0);
-        (seg.line, seg.col + count(seg.v + d) - count(seg.v), seg.s + d)
+        (
+            seg.line,
+            seg.col + count(seg.v + d) - count(seg.v),
+            seg.s + d,
+        )
     }
 
     /// The point at the end of the line before the join at `v`, its
@@ -131,7 +140,9 @@ impl<'a> Content<'a> {
         let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
         let (line, col, off) = self.point(v);
         match self.segs.get(i) {
-            Some(s) if s.v + s.len == v && self.join_at(v).is_some() => (line, col + (s.raw_end - off), s.raw_end),
+            Some(s) if s.v + s.len == v && self.join_at(v).is_some() => {
+                (line, col + (s.raw_end - off), s.raw_end)
+            }
             _ => (line, col, off),
         }
     }

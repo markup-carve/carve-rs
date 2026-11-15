@@ -52,10 +52,8 @@ fn definitions(events: &[Event]) -> (HashSet<String>, Vec<(String, String)>) {
             Event::Leaf {
                 kind: LeafKind::AbbrDef { key, expansion },
                 ..
-            } => {
-                if !abbrs.iter().any(|(k, _)| k == key) {
-                    abbrs.push((key.clone(), expansion.clone()));
-                }
+            } if !abbrs.iter().any(|(k, _)| k == key) => {
+                abbrs.push((key.clone(), expansion.clone()));
             }
             _ => {}
         }

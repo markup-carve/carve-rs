@@ -66,21 +66,19 @@ fn parse_part(s: &str, i: usize, block: &mut AttrBlock) -> Option<usize> {
     match b.get(i)? {
         b'#' => {
             let end = run(b, i + 1, name_char);
-            (end > i + 1).then(|| {
-                block.attrs.id = Some(s[i + 1..end].to_string());
-                end
-            })
+            let name = s.get(i + 1..end).filter(|_| end > i + 1)?;
+            block.attrs.id = Some(name.to_string());
+            Some(end)
         }
         b'.' => {
             let end = run(b, i + 1, name_char);
-            (end > i + 1).then(|| {
-                block.attrs.classes.push(s[i + 1..end].to_string());
-                end
-            })
+            let name = s.get(i + 1..end).filter(|_| end > i + 1)?;
+            block.attrs.classes.push(name.to_string());
+            Some(end)
         }
         b':' => {
             let end = run(b, i + 1, |c| c.is_ascii_alphanumeric() || c == b'-');
-            let tag = &s[i + 1..end];
+            let tag = s.get(i + 1..end)?;
             let ok = tag.is_empty()
                 || (!tag.starts_with('-') && !tag.ends_with('-') && !tag.contains("--"));
             ok.then(|| {
@@ -106,7 +104,7 @@ fn parse_key(s: &str, i: usize, block: &mut AttrBlock) -> Option<usize> {
         return None;
     }
     let end = run(b, i + 1, name_char);
-    let key = &s[i..end];
+    let key = s.get(i..end)?;
     if b.get(end) != Some(&b'=') {
         // C2-I-031: a bare key does not start with `_`.
         if first == b'_' {
@@ -154,7 +152,7 @@ fn parse_value(s: &str, i: usize) -> Option<(String, usize)> {
             let end = run(b, i, |c| {
                 !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
             });
-            (end > i).then(|| (s[i..end].to_string(), end))
+            Some((s.get(i..end).filter(|_| end > i)?.to_string(), end))
         }
     }
 }

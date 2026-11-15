@@ -91,7 +91,7 @@ impl Tok {
     }
 
     /// Turns the token into text of its own source.
-    pub fn to_text(&mut self, plain: bool) {
+    pub fn make_text(&mut self, plain: bool) {
         self.k = K::Text { val: None, plain };
     }
 }

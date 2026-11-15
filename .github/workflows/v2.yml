@@ -1,0 +1,61 @@
+name: v2 engine
+
+# The Carve 0.2 engine in v2/ lives on the next2 branch until it replaces the
+# 0.1 crate. This workflow covers only that crate; ci.yml keeps the 0.1 gates.
+on:
+  push:
+    branches: [next2]
+    paths: ["v2/**", ".github/workflows/v2.yml", "Cargo.toml", "Cargo.lock"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy, pedantic included
+        run: cargo clippy --all-targets -- -D warnings -W clippy::pedantic
+      - name: Tests (every specification example, HTML and tree)
+        run: cargo test
+
+  # The tables are normative and build.rs generates Rust from spec-data/.
+  # Each file there must equal spec/0.2/data/ of the carve repository at the
+  # commit in spec-data/SOURCE_COMMIT, so an edited copy fails here. Moving
+  # the pin is a deliberate commit that updates the copy and the pin together.
+  spec-data-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: markup-carve/carve
+          ref: next2
+          fetch-depth: 0
+          path: carve-spec
+      - name: Compare spec-data with the pinned spec tables
+        run: |
+          pin=$(cat v2/spec-data/SOURCE_COMMIT)
+          git -C carve-spec checkout --quiet "$pin"
+          status=0
+          for f in v2/spec-data/*.json; do
+            cmp "$f" "carve-spec/spec/0.2/data/$(basename "$f")" || status=1
+          done
+          exit $status
