@@ -164,12 +164,16 @@ impl<'a> Renderer<'a> {
         if static_math {
             return Some(self.static_display_math(&p.children, el));
         }
-        let inner = self.leaf(&p.children);
         if bare && !has_attrs(p.attrs.as_ref(), p.lang.as_ref()) {
-            return Some(inner);
+            return Some(self.leaf(&p.children));
         }
         el.align_style = true;
-        Some(format!("<p{}>{inner}</p>", el.write(self.filter())))
+        let mut out = String::from("<p");
+        out.push_str(&el.write(self.filter()));
+        out.push('>');
+        self.leaf_into(&p.children, &mut out);
+        out.push_str("</p>");
+        Some(out)
     }
 
     /// A paragraph written as a bare `<img>` (C2-H-020).

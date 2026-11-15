@@ -107,20 +107,19 @@ impl Smart {
                         plain_before = Some(last);
                     }
                 }
+                Step::One(len, kind, glyph) => {
+                    if text_from < p {
+                        out.push(Out::Text(text_from, p));
+                    }
+                    self.punct(out, &mut p, [(len, kind, glyph)]);
+                    plain_before = None;
+                    text_from = p;
+                }
                 Step::Punct(list) => {
                     if text_from < p {
                         out.push(Out::Text(text_from, p));
                     }
-                    for (len, kind, glyph) in list {
-                        out.push(Out::Punct {
-                            v0: p,
-                            v1: p + len,
-                            kind,
-                            glyph,
-                        });
-                        p += len;
-                        self.prev = glyph.chars().next().map_or(Prev::Word, Prev::Char);
-                    }
+                    self.punct(out, &mut p, list);
                     plain_before = None;
                     text_from = p;
                 }
@@ -128,6 +127,24 @@ impl Smart {
         }
         if text_from < v1 {
             out.push(Out::Text(text_from, v1));
+        }
+    }
+
+    fn punct(
+        &mut self,
+        out: &mut Vec<Out>,
+        p: &mut usize,
+        list: impl IntoIterator<Item = (usize, &'static str, &'static str)>,
+    ) {
+        for (len, kind, glyph) in list {
+            out.push(Out::Punct {
+                v0: *p,
+                v1: *p + len,
+                kind,
+                glyph,
+            });
+            *p += len;
+            self.prev = glyph.chars().next().map_or(Prev::Word, Prev::Char);
         }
     }
 
@@ -250,12 +267,13 @@ fn apostrophe_word(t: &str, i: usize) -> Option<bool> {
 
 enum Step {
     Text(usize),
+    One(usize, &'static str, &'static str),
     Punct(Vec<(usize, &'static str, &'static str)>),
 }
 
 impl Step {
-    fn one(len: usize, kind: &'static str, glyph: &'static str) -> Self {
-        Self::Punct(vec![(len, kind, glyph)])
+    const fn one(len: usize, kind: &'static str, glyph: &'static str) -> Self {
+        Self::One(len, kind, glyph)
     }
 }
 

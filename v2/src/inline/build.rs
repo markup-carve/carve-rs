@@ -37,6 +37,8 @@ struct Builder<'a, 'e> {
     flow_prev: Option<char>,
     /// A line comment ended at this join (GAP INL-011).
     comment_to: Option<usize>,
+    /// The pieces of one smart typography run, kept for the next run.
+    outs: Vec<Out>,
 }
 
 /// Builds the inline nodes of one content.
@@ -56,6 +58,7 @@ pub fn build(c: &Content<'_>, ctx: &Ctx<'_>, env: &InlineEnv<'_>, evs: Vec<Ev>) 
         smart: Smart::new(),
         flow_prev: None,
         comment_to: None,
+        outs: Vec::new(),
     };
     for (i, ev) in evs.into_iter().enumerate() {
         b.event(ev, next_flow.get(i).copied().flatten());
@@ -434,9 +437,9 @@ impl<'a> Builder<'a, '_> {
         if v0 >= v1 {
             return;
         }
-        let mut outs = Vec::new();
+        let mut outs = std::mem::take(&mut self.outs);
         self.smart.run(self.ctx, v0, v1, &mut outs);
-        for o in outs {
+        for o in outs.drain(..) {
             match o {
                 Out::Text(a, b) => {
                     let t = self.src(a, b);
@@ -463,5 +466,6 @@ impl<'a> Builder<'a, '_> {
                 }
             }
         }
+        self.outs = outs;
     }
 }

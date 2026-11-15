@@ -62,9 +62,14 @@ impl<'a> Content<'a> {
     pub fn new(env: &InlineEnv<'a>, pieces: &[Piece]) -> Self {
         let full = env.src.text();
         let b = full.as_bytes();
-        let mut text = String::new();
+        let mut text = String::with_capacity(
+            pieces
+                .iter()
+                .map(|p| p.end.saturating_sub(p.start) + 1)
+                .sum(),
+        );
         let mut segs = Vec::with_capacity(pieces.len());
-        let mut joins = Vec::new();
+        let mut joins = Vec::with_capacity(pieces.len());
         for (n, p) in pieces.iter().enumerate() {
             let end = p.end.min(full.len());
             let mut start = p.start.min(end);

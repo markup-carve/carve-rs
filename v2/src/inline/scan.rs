@@ -72,7 +72,8 @@ pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
         t,
         b: t.as_bytes(),
         env,
-        toks: Vec::new(),
+        // Each byte that starts a form makes about one token and ends a text run.
+        toks: Vec::with_capacity(2 * t.bytes().filter(|&b| FORM_START.has(b)).count() + 1),
         text_from: None,
         brackets: Vec::new(),
         dead: 0,

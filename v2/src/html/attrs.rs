@@ -82,6 +82,9 @@ impl<'a> El<'a> {
     /// Writes ` name="value"` for each attribute.
     #[must_use]
     pub fn write(mut self, f: Filter) -> String {
+        if self.is_bare() {
+            return String::new();
+        }
         let keys = self.keys(f);
         let mut list: Vec<(String, Val)> = Vec::new();
         let classes = self.classes();
@@ -126,6 +129,21 @@ impl<'a> El<'a> {
             }
         }
         out
+    }
+
+    /// No part that writes an attribute: the list is empty.
+    fn is_bare(&self) -> bool {
+        self.attrs.is_none()
+            && self.lang.is_none()
+            && self.id.is_none()
+            && self.structural.is_empty()
+            && self.carriers.is_empty()
+            && self.base.is_empty()
+            && self.trailing.is_empty()
+            && self.generated.is_empty()
+            && self.style_before.is_none()
+            && self.style_after.is_empty()
+            && self.source_line.is_none()
     }
 
     fn merge_style(&self, authored: Option<&str>) -> String {

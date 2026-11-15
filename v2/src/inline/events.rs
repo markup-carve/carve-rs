@@ -53,8 +53,19 @@ pub enum Ev {
 /// Turns the settled tokens into events; plain text runs that touch merge.
 #[must_use]
 pub fn from_tokens(toks: Vec<Tok>) -> Vec<Ev> {
+    // Only inline footnotes need the opener lookup of each closer.
+    let any_note = toks.iter().any(|t| {
+        matches!(
+            t.k,
+            K::Open {
+                kind: Kind::InlineFootnote,
+                ..
+            }
+        )
+    });
     let notes: Vec<bool> = toks
         .iter()
+        .take(if any_note { usize::MAX } else { 0 })
         .map(|t| {
             matches!(
                 t.k,
