@@ -70,7 +70,13 @@ impl<'a> Renderer<'a> {
                 let text = m.label.clone().unwrap_or_else(|| format!("@{}", m.target));
                 self.badge("mention", &text, m.attrs.as_ref(), m.lang.as_deref(), out);
             }
-            Node::Tag(t) => self.badge("tag", &format!("#{}", t.name), t.attrs.as_ref(), t.lang.as_deref(), out),
+            Node::Tag(t) => self.badge(
+                "tag",
+                &format!("#{}", t.name),
+                t.attrs.as_ref(),
+                t.lang.as_deref(),
+                out,
+            ),
             Node::Symbol(s) => {
                 let mut inner = String::new();
                 match self.opts.symbols.get(&s.name) {
@@ -492,7 +498,10 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-100: an inert span without `social`.
-    fn badge(&self, class: &str, text: &str,
+    fn badge(
+        &self,
+        class: &str,
+        text: &str,
         attrs: Option<&Attrs>,
         lang: Option<&str>,
         out: &mut String,

@@ -237,15 +237,15 @@ impl<'a> Renderer<'a> {
         depth: usize,
     ) {
         self.line(depth, open);
-        let any = !first.is_empty() || children.iter().any(visible);
+        let before = self.out.len();
         for f in first {
             self.line(depth + 1, &f);
         }
-        if any {
-            for c in children {
-                self.block(c, depth + 1);
-            }
-        } else {
+        for c in children {
+            self.block(c, depth + 1);
+        }
+        // C2-H-008: judged on the output, as a raw block of another format writes nothing.
+        if self.out.len() == before {
             self.blank();
         }
         self.line(depth, close);

@@ -81,3 +81,16 @@ also breaks C2-A-040 (no two adjacent `text` nodes). The fixture trees of
 `html-31` and `html-32` (tests/data/examples.json) are such trees, so those two
 gate examples do not exercise the profile code of this renderer; the extra
 fixture is generated with trees resolved without the render options.
+
+## ORACLE-006 a supplied shortcut with no definition resolves to a heading
+
+Clause: C2-A-213 ("A supplied `link` or `image` with `refForm` equal to
+`shortcut` and a key with no definition is valid. Resolution leaves it
+unresolved").
+
+Supplied tree: a heading `H` and a paragraph holding a `link` with `refForm`
+`shortcut`, key `H`, no `href`, and no definition.
+
+Oracle: the link takes `href="#H"` and renders `<a href="#H">H</a>`.
+
+Clause: no `href`; the reference is written as its text, `<p>[H]</p>`.
