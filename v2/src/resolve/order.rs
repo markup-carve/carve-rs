@@ -117,9 +117,7 @@ impl<'a> Order<'a> {
         let group = matches!(n, Node::FigureGroup(_));
         let marked = ctx.in_marked_figure
             || (matches!(n, Node::Figure(_) | Node::FigureGroup(_)) && caption_marked(n));
-        let mut list = Vec::new();
-        slots(n, &mut list);
-        for c in list {
+        for c in slots(n) {
             let panel = group && matches!(c, Node::Figure(_) | Node::Table(_));
             self.walk(
                 c,
@@ -201,27 +199,32 @@ pub fn mark_of(caption: &Node) -> Option<(&Node, &[Node])> {
 
 /// The child slots of a node in resolution order: title, children, caption,
 /// then the slots that only some types have.
-pub fn slots<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
-    let title = match n {
+pub fn slots(n: &Node) -> impl Iterator<Item = &Node> {
+    let title: &[Node] = match n {
         Node::Admonition(x) => x.title.as_deref(),
         Node::Directive(x) => x.title.as_deref(),
         Node::Div(x) => x.title.as_deref(),
         Node::CodeBlock(x) => x.title.as_deref(),
         _ => None,
+    }
+    .unwrap_or_default();
+    let main: &[Node] = match n {
+        Node::BlockExtension(x) => &x.fallback,
+        Node::InlineExtension(x) if x.name.contains('.') => {
+            x.fallback.as_deref().unwrap_or_default()
+        }
+        _ => n.children().map_or(&[], Vec::as_slice),
     };
-    out.extend(title.into_iter().flatten());
-    match n {
-        Node::BlockExtension(x) => out.extend(&x.fallback),
-        Node::InlineExtension(x) if x.name.contains('.') => out.extend(x.fallback.iter().flatten()),
-        _ => out.extend(n.children().into_iter().flatten()),
-    }
-    if let Some(c) = caption_of(n) {
-        out.push(c);
-    }
-    match n {
-        Node::Image(x) => out.extend(x.long_description.iter().flatten()),
-        Node::Ruby(x) => out.extend(&x.pairs),
-        Node::RubyPair(x) => out.extend(x.base.iter().chain(&x.annotation)),
-        _ => {}
-    }
+    let (a, b): (&[Node], &[Node]) = match n {
+        Node::Image(x) => (x.long_description.as_deref().unwrap_or_default(), &[]),
+        Node::Ruby(x) => (&x.pairs, &[]),
+        Node::RubyPair(x) => (&x.base, &x.annotation),
+        _ => (&[], &[]),
+    };
+    title
+        .iter()
+        .chain(main)
+        .chain(caption_of(n))
+        .chain(a)
+        .chain(b)
 }

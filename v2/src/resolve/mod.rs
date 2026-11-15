@@ -75,12 +75,11 @@ fn every_node<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>, depth: usize) {
     }
     for n in nodes {
         out.push(n);
-        let mut list = Vec::new();
-        order::slots(n, &mut list);
-        if let Node::Table(t) = n {
-            list.extend(&t.columns);
-        }
-        for c in list {
+        let columns: &[Node] = match n {
+            Node::Table(t) => &t.columns,
+            _ => &[],
+        };
+        for c in order::slots(n).chain(columns) {
             every_node(std::slice::from_ref(c), out, depth + 1);
         }
     }

@@ -87,9 +87,17 @@ impl Smart {
             _ => None,
         };
         while p < v1 {
-            let Some(c) = t.get(p..v1).and_then(|s| s.chars().next()) else {
-                break;
-            };
+            let Some(rest) = t.get(p..v1) else { break };
+            let Some(c) = rest.chars().next() else { break };
+            if !starts_smart(c) {
+                let n = rest.find(starts_smart).unwrap_or(rest.len());
+                p += n;
+                if let Some(last) = rest.get(..n).and_then(|s| s.chars().next_back()) {
+                    self.prev = Prev::Char(last);
+                    plain_before = Some(last);
+                }
+                continue;
+            }
             let found = self.at(ctx, p, v1, c, plain_before);
             match found {
                 Step::Text(len) => {
@@ -195,6 +203,27 @@ impl Default for Smart {
         Self::new()
     }
 }
+
+/// Whether `c` can begin a replacement: a quote, a hyphen or the first
+/// character of a replaced run. Any other character is text as it stands.
+fn starts_smart(c: char) -> bool {
+    match u8::try_from(c) {
+        Ok(b) => ASCII_STARTS.get(usize::from(b)).copied().unwrap_or(false),
+        Err(_) => starts_smart_slow(c),
+    }
+}
+
+fn starts_smart_slow(c: char) -> bool {
+    matches!(c, '-' | '"' | '\'') || tables::SMART_RUNS.iter().any(|r| r.1 && r.0.starts_with(c))
+}
+
+static ASCII_STARTS: std::sync::LazyLock<[bool; 128]> = std::sync::LazyLock::new(|| {
+    let mut t = [false; 128];
+    for (b, slot) in (0u8..).zip(t.iter_mut()) {
+        *slot = starts_smart_slow(char::from(b));
+    }
+    t
+});
 
 /// C2-I-107, C2-I-108: `Some(quoted)` when an apostrophe word follows `i`.
 fn apostrophe_word(t: &str, i: usize) -> Option<bool> {

@@ -301,9 +301,7 @@ fn reserve_ids(nodes: &[Node], taken: &mut slug::Taken, depth: usize) {
                 taken.reserve(id);
             }
         }
-        let mut list = Vec::new();
-        crate::resolve::order::slots(n, &mut list);
-        for c in list {
+        for c in crate::resolve::order::slots(n) {
             reserve_ids(std::slice::from_ref(c), taken, depth + 1);
         }
     }

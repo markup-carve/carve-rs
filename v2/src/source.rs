@@ -15,6 +15,30 @@ pub struct Source {
     nul_at: Vec<usize>,
     /// Length of the byte-order mark at the start, 0 or 3.
     bom: usize,
+    /// For each block of `MARK` bytes, its first character boundary and the
+    /// column there, so a column costs at most one block of counting.
+    marks: Vec<(usize, usize)>,
+}
+
+const MARK: usize = 256;
+
+/// The first character boundary of each `MARK` block with its 0-based
+/// column, counted in code points from the start of its line.
+fn column_marks(text: &str) -> Vec<(usize, usize)> {
+    let mut marks = Vec::with_capacity(text.len() / MARK + 1);
+    let mut col = 0;
+    for (i, c) in text.char_indices() {
+        while marks.len() * MARK <= i {
+            marks.push((i, col));
+        }
+        // Line 0 starts behind a byte-order mark (`line_starts`).
+        col = match c {
+            '\n' => 0,
+            '\u{FEFF}' if i == 0 => 0,
+            _ => col + 1,
+        };
+    }
+    marks
 }
 
 impl Source {
@@ -43,11 +67,17 @@ impl Source {
                 line_starts.push(i + 1);
             }
         }
+        let marks = if text.is_ascii() {
+            Vec::new()
+        } else {
+            column_marks(&text)
+        };
         Self {
             text,
             line_starts,
             nul_at,
             bom,
+            marks,
         }
     }
 
@@ -129,10 +159,22 @@ impl Source {
     pub fn line_col(&self, at: usize) -> (usize, usize) {
         let line = self.line_of(at);
         let start = self.line_starts.get(line).copied().unwrap_or(0);
-        let col = self
-            .text
-            .get(start..at.max(start))
-            .map_or(0, |s| s.chars().count());
+        let at = at.max(start);
+        let (from, base) = if self.marks.is_empty() {
+            (at, at - start)
+        } else {
+            let k = at / MARK;
+            match self
+                .marks
+                .get(k)
+                .filter(|m| m.0 <= at)
+                .or_else(|| k.checked_sub(1).and_then(|j| self.marks.get(j)))
+            {
+                Some(&(b, c)) if b >= start && b <= at => (b, c),
+                _ => (start, 0),
+            }
+        };
+        let col = base + self.text.get(from..at).map_or(0, |s| s.chars().count());
         (line + 1, col + 1)
     }
 
@@ -155,5 +197,30 @@ impl Source {
     #[must_use]
     pub fn original_len(&self) -> usize {
         self.original_offset(self.text.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Source;
+
+    fn slow(text: &str, start: usize, at: usize) -> usize {
+        text.get(start..at).map_or(0, |s| s.chars().count()) + 1
+    }
+
+    #[test]
+    fn c2_a_141_columns_count_code_points_on_long_lines() {
+        let line = "é".repeat(300) + "a" + &"ü".repeat(200);
+        let text = format!("\u{FEFF}x{line}\n{line}\nab");
+        let src = Source::new(&text);
+        for (at, _) in text.char_indices().filter(|&(i, _)| i >= 3) {
+            let line = src.line_of(at);
+            let start = src.line_range(line).0;
+            assert_eq!(
+                src.line_col(at),
+                (line + 1, slow(&text, start, at)),
+                "at {at}"
+            );
+        }
     }
 }
