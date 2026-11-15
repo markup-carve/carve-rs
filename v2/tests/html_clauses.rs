@@ -76,6 +76,24 @@ fn c2_h_165_a_degraded_block_that_leaves_no_text_is_dropped() {
 }
 
 #[test]
+fn c2_h_165_unclosed_math_degrades_to_its_source() {
+    let o = carve2::Options {
+        profile: carve2::options::Profile::Minimal,
+        ..carve2::Options::default()
+    };
+    assert_eq!(carve2::render("$`", &o), "<p>$`</p>");
+}
+
+#[test]
+fn c2_h_165_code_in_a_degraded_cell_keeps_its_run() {
+    let o = carve2::Options {
+        profile: carve2::options::Profile::Comment,
+        ..carve2::Options::default()
+    };
+    assert_eq!(carve2::render("|``a`b``|", &o), "<p>``a`b``</p>");
+}
+
+#[test]
 fn c2_h_166_gap_g_020_children_at_the_bound_keep_their_breaks() {
     use carve2::options::Profile;
     assert_eq!(

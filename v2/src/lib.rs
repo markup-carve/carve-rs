@@ -100,7 +100,7 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         return Err(RenderError::TooLong { profile, limit });
     }
     let doc = parse_resolved(input, opts);
-    let (out, losses) = html::render_with_losses(&doc, opts);
+    let (out, losses) = html::render_with_losses_source(&doc, opts, input);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }

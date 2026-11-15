@@ -61,7 +61,7 @@ impl<'a> Renderer<'a> {
             return None;
         }
         let mut paras = Vec::new();
-        degraded_paragraphs(n, &mut paras, 0);
+        degraded_paragraphs(n, &mut paras, 0, self.src);
         paras.retain(|p| !p.is_empty());
         Some(paras)
     }
@@ -73,7 +73,7 @@ impl<'a> Renderer<'a> {
         }
         self.losses.push("profile-construct-degraded");
         let mut s = String::new();
-        inline_plain(n, &mut s, 0);
+        inline_plain(n, &mut s, 0, self.src);
         esc::text(&s, out);
     }
 }
@@ -91,8 +91,31 @@ fn allows(row: &ProfileRow, ty: &str, block: bool) -> bool {
 }
 
 /// The degraded text of an inline node (C2-H-165), unescaped.
-fn inline_plain(n: &Node, out: &mut String, depth: usize) {
+fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<&str>) {
     if depth > crate::resolve::WALK_CAP {
+        return;
+    }
+    if let Some(text) = src
+        .and_then(|source| {
+            n.pos()
+                .and_then(|pos| source.get(pos.start_offset..pos.end_offset))
+        })
+        .filter(|_| {
+            matches!(
+                n,
+                Node::Code(_)
+                    | Node::Math(_)
+                    | Node::Autolink(_)
+                    | Node::Xref(_)
+                    | Node::Symbol(_)
+                    | Node::Mention(_)
+                    | Node::Tag(_)
+                    | Node::CriticComment(_)
+                    | Node::CitationGroup(_)
+            )
+        })
+    {
+        out.push_str(text);
         return;
     }
     match n {
@@ -158,22 +181,22 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize) {
         }
         other => {
             for c in other.children().into_iter().flatten() {
-                inline_plain(c, out, depth + 1);
+                inline_plain(c, out, depth + 1, src);
             }
         }
     }
 }
 
-pub(super) fn inlines_plain(nodes: &[Node]) -> String {
+pub(super) fn inlines_plain(nodes: &[Node], src: Option<&str>) -> String {
     let mut s = String::new();
     for n in nodes {
-        inline_plain(n, &mut s, 0);
+        inline_plain(n, &mut s, 0, src);
     }
     s
 }
 
 /// The escaped paragraphs a degraded block gives.
-fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
+fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<&str>) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
@@ -181,10 +204,10 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
         Node::Heading(h) => format!(
             "{} {}",
             "#".repeat(usize::try_from(h.level).unwrap_or(1)),
-            inlines_plain(&h.children)
+            inlines_plain(&h.children, src)
         ),
         Node::BlockQuote(q) => {
-            let inner = block_text(&q.children);
+            let inner = block_text(&q.children, src);
             if inner.is_empty() {
                 return;
             }
@@ -194,7 +217,12 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
             let items: Vec<String> = l
                 .children
                 .iter()
-                .map(|i| format!("- {}", block_text(i.children().map_or(&[], Vec::as_slice))))
+                .map(|i| {
+                    format!(
+                        "- {}",
+                        block_text(i.children().map_or(&[], Vec::as_slice), src)
+                    )
+                })
                 .collect();
             items.join(" ")
         }
@@ -206,36 +234,41 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
             n.children()
                 .into_iter()
                 .flatten()
-                .for_each(|b| degraded_paragraphs(b, out, depth + 1));
+                .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
             let caption = crate::resolve::order::caption_of(n);
             caption
                 .and_then(Node::children)
                 .into_iter()
                 .flatten()
-                .for_each(|b| degraded_paragraphs(b, out, depth + 1));
+                .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
             return;
         }
-        Node::Table(t) => return out.push(table_text(t)),
+        Node::Table(t) => return out.push(table_text(t, src)),
         Node::Div(_) | Node::Admonition(_) | Node::Directive(_) => {
             let (_, _, children, title, _) = super::block::div_parts(n);
             let mut parts: Vec<String> = Vec::new();
             if let Some(t) = title {
-                parts.push(inlines_plain(t));
+                parts.push(inlines_plain(t, src));
             }
-            parts.push(block_text(children));
+            parts.push(block_text(children, src));
             parts.retain(|p| !p.is_empty());
             parts.join(" ")
         }
         Node::Include(i) => super::block::include_text(i),
-        Node::Paragraph(p) => inlines_plain(&p.children),
+        Node::Paragraph(p) => inlines_plain(&p.children, src),
+        // Leaves of inline content: an inline node with children is no block here.
+        Node::CellParagraph(p) => inlines_plain(&p.children, src),
+        Node::Line(l) => inlines_plain(&l.children, src),
         Node::DefinitionList(d) => {
             for c in &d.children {
                 match c {
-                    Node::DefinitionTerm(t) => out.push(esc::text_str(&inlines_plain(&t.children))),
+                    Node::DefinitionTerm(t) => {
+                        out.push(esc::text_str(&inlines_plain(&t.children, src)));
+                    }
                     Node::DefinitionDescription(x) => x
                         .children
                         .iter()
-                        .for_each(|b| degraded_paragraphs(b, out, depth + 1)),
+                        .for_each(|b| degraded_paragraphs(b, out, depth + 1, src)),
                     _ => {}
                 }
             }
@@ -249,11 +282,11 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize) {
         other => match other.children() {
             Some(c) if c.iter().any(is_block) => {
                 for b in c {
-                    degraded_paragraphs(b, out, depth + 1);
+                    degraded_paragraphs(b, out, depth + 1, src);
                 }
                 return;
             }
-            Some(c) => inlines_plain(c),
+            Some(c) => inlines_plain(c, src),
             None => String::new(),
         },
     };
@@ -267,11 +300,11 @@ fn is_block(n: &Node) -> bool {
 }
 
 /// The blocks of a container joined by single spaces.
-fn block_text(children: &[Node]) -> String {
+fn block_text(children: &[Node], src: Option<&str>) -> String {
     let mut parts = Vec::new();
     for c in children {
         let mut p = Vec::new();
-        degraded_paragraphs(c, &mut p, 1);
+        degraded_paragraphs(c, &mut p, 1, src);
         parts.extend(p);
     }
     parts.retain(|p| !p.is_empty());
@@ -285,14 +318,14 @@ fn block_text(children: &[Node]) -> String {
 }
 
 /// One line per row, cells joined by ` | `, a hard break between the rows.
-fn table_text(t: &crate::ast::Table) -> String {
+fn table_text(t: &crate::ast::Table, src: Option<&str>) -> String {
     let mut rows = Vec::new();
     for (r, _) in crate::resolve::table::rows(t) {
         let cells: Vec<String> = r
             .children()
             .into_iter()
             .flatten()
-            .map(|c| esc::text_str(&block_text(c.children().map_or(&[], Vec::as_slice))))
+            .map(|c| esc::text_str(&block_text(c.children().map_or(&[], Vec::as_slice), src)))
             .collect();
         rows.push(cells.join(" | "));
     }

@@ -142,7 +142,7 @@ impl<'a> Renderer<'a> {
                 return None;
             }
             self.losses.push("profile-construct-degraded");
-            let t = esc::text_str(&super::profile::inlines_plain(&p.children));
+            let t = esc::text_str(&super::profile::inlines_plain(&p.children, self.src));
             return (!t.is_empty()).then(|| if bare { t } else { format!("<p>{t}</p>") });
         }
         self.level += 1;
@@ -500,7 +500,10 @@ impl<'a> Renderer<'a> {
             }
             _ => {
                 el.align_style = true;
-                if self.opts.roundtrip && attrs.is_none_or(only_reserved) && lang.is_none() {
+                // Gap G-027: as in the oracle, `data-source-line` counts as another attribute.
+                let line = self.opts.source_lines && n.pos().is_some();
+                if self.opts.roundtrip && attrs.is_none_or(only_reserved) && lang.is_none() && !line
+                {
                     el.carriers.push(("data-carve-div", None));
                 }
                 "div"

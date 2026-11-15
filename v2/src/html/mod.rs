@@ -32,10 +32,24 @@ pub fn render_with_losses(doc: &Document, opts: &Options) -> (String, Vec<&'stat
     (r.out, r.losses)
 }
 
+/// Renders with losses while retaining source text for degraded inline nodes.
+#[must_use]
+pub fn render_with_losses_source(
+    doc: &Document,
+    opts: &Options,
+    src: &str,
+) -> (String, Vec<&'static str>) {
+    let mut r = Renderer::new(doc, opts);
+    r.src = Some(src);
+    r.document();
+    (r.out, r.losses)
+}
+
 /// The state of one render.
 pub(crate) struct Renderer<'a> {
     opts: &'a Options,
     doc: &'a Document,
+    src: Option<&'a str>,
     out: String,
     order: Order<'a>,
     /// The anchor id of each note mark (C2-H-088).
@@ -69,6 +83,7 @@ impl<'a> Renderer<'a> {
         let mut r = Renderer {
             opts,
             doc,
+            src: None,
             out: String::new(),
             order,
             mark_ids: HashMap::new(),
