@@ -231,15 +231,13 @@ impl Builder<'_> {
         }
     }
 
-    fn line(&self, piece: Option<Piece>) -> Node {
-        match piece {
-            Some(p) => {
-                let children = self.inline(ContentKind::LineBlockLine, &[p]);
-                let pos = self.pos(p.start, crate::block::trim_end(self.src, p.start, p.end));
-                Node::Line(ast::Line { children, pos, ..Default::default() })
-            }
-            None => Node::Line(ast::Line::default()),
+    fn line(&self, p: Piece) -> Node {
+        if p.start == p.end {
+            return Node::Line(ast::Line { pos: self.pos(p.start, p.end), ..Default::default() });
         }
+        let children = self.inline(ContentKind::LineBlockLine, &[p]);
+        let pos = self.pos(p.start, crate::block::trim_end(self.src, p.start, p.end));
+        Node::Line(ast::Line { children, pos, ..Default::default() })
     }
 
     /// A caption attaches to the block before it (C2-A-082, C2-A-183).

@@ -68,7 +68,7 @@ enum Leaf {
     Code { len: usize, indent: usize, info: FenceInfo, value: String, held: Vec<String> },
     CommentBlock { len: usize, indent: usize, lines: Vec<String>, held: usize },
     Frontmatter { format: String, value: String },
-    LineBlock { len: usize, lines: Vec<Option<Piece>> },
+    LineBlock { len: usize, lines: Vec<Piece> },
     Table { data: TableData },
 }
 
@@ -160,19 +160,21 @@ impl<'a> Parser<'a> {
         if self.frontmatter(text, s, e) {
             return;
         }
-        let blank = cur.is_blank();
-        let walk = self.walk(cur, blank);
-        if blank {
+        let walk = self.walk(cur, false);
+        if walk.cur.is_blank() {
+            let walk = self.walk(cur, true);
             self.blank_line(&walk, s, e);
             return;
         }
+        let had_opaque = matches!(self.leaf.as_ref().map(|l| &l.leaf), Some(Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. }));
         if self.opaque_line(&walk, e) {
             return;
         }
         if self.continue_leaf(&walk, e) {
             return;
         }
-        if self.comment_only(&walk, e) {
+        // C2-B-135: a line that ended an opaque body is not a skipped comment line.
+        if !had_opaque && self.comment_only(&walk, e) {
             return;
         }
         self.blank_run_reset_after(&walk, e);
@@ -281,7 +283,7 @@ impl<'a> Parser<'a> {
                 true
             }
             Leaf::LineBlock { lines, .. } => {
-                lines.push(None);
+                lines.push(Piece { start: _s, end: _s, join: Join::Line });
                 true
             }
             _ => false,
@@ -506,7 +508,7 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
         }
         Leaf::LineBlock { lines, .. } => {
             let k = walk.cur;
-            lines.push(Some(Piece { start: k.offset(), end: k.base + k.text.len(), join: Join::Line }));
+            lines.push(Piece { start: k.offset(), end: k.base + k.text.len(), join: Join::Line });
         }
         _ => {}
     }

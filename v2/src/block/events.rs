@@ -36,8 +36,8 @@ pub enum LeafKind {
     AbbrDef { key: String, expansion: String },
     Frontmatter { format: String, value: String },
     Include { path: String, section: Option<String>, options: serde_json::Map<String, serde_json::Value> },
-    /// One entry per body line; `None` for an empty line (C2-A-069).
-    LineBlock { lines: Vec<Option<Piece>> },
+    /// One entry per body line; an empty piece for an empty line (C2-A-069).
+    LineBlock { lines: Vec<Piece> },
 }
 
 /// A fact set when a paragraph closes (C2-B-157, C2-B-158).

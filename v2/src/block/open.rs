@@ -138,9 +138,6 @@ impl Parser<'_> {
                 }
             }
         }
-        if !matches!(self.leaf.as_ref().map(|l| &l.leaf), Some(Leaf::Table { .. })) {
-            self.closed = None;
-        }
     }
 
     /// Settles a list or description list in the innermost context: a
@@ -177,11 +174,11 @@ impl Parser<'_> {
                 *items += 1;
             }
         }
-        self.push_item(k, m, mk, None)
+        self.push_item(k, m, mk)
     }
 
-    fn push_item<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker, pending: Option<Pending>) -> Cursor<'c> {
-        let start = pending.as_ref().map_or(k.offset(), |p| p.start);
+    fn push_item<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker) -> Cursor<'c> {
+        let start = k.offset();
         let ev = ContainerKind::Item { task: mk.task };
         let item = Kind::Item { marker_col: m, content_col: mk.content_col - (k.col - m) };
         self.push_container(item, ev, start, mk.attrs.clone());
@@ -279,15 +276,17 @@ impl Parser<'_> {
     }
 
     fn open_list<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker) -> Cursor<'c> {
-        let (start, attrs) = self.take_pending(k.offset(), None);
-        let value = match mk.kind {
+        let (start, mut attrs) = self.take_pending(k.offset(), None);
+        let mut value = match mk.kind {
             MarkerKind::Ordered { value, .. } => Some(value.unwrap_or(1)),
             MarkerKind::Bullet(_) => None,
         };
+        if let (Some(v), MarkerKind::Ordered { style, .. }) = (&mut value, mk.kind) {
+            start_attribute(attrs.as_mut(), style, v);
+        }
         let list = Kind::List { kind: mk.kind, col: m, loose: false, next: value.unwrap_or(1) + 1, items: 1 };
         self.push_container(list, ContainerKind::List { kind: mk.kind, start: value }, start, attrs);
-        let p = Pending { attrs: AttrBlock::default(), start, end: start, lines: Vec::new(), depth: 0 };
-        self.push_item(k, m, mk, Some(p))
+        self.push_item(k, m, mk)
     }
 
     /// The leaf openers, and the paragraph when nothing else opens.
@@ -297,6 +296,7 @@ impl Parser<'_> {
         if shapes::thematic_break(k) {
             let (s, attrs) = self.take_pending(start, None);
             self.push_leaf_event(LeafKind::Thematic, s, start + r.trim_end_matches([' ', '\t']).len(), attrs);
+            self.closed = None;
             return;
         }
         if let Some((level, content)) = shapes::heading(k) {
@@ -310,7 +310,8 @@ impl Parser<'_> {
         if self.stack.len() == 1 && k.col == 0 && self.open_definition(r, start, e) {
             return;
         }
-        if !first && shapes::comment_only(r) {
+        if shapes::comment_only(r) {
+            let _ = first;
             // C2-B-136: a comment after a marker or a quote mark is content.
             let value = shapes::line_comment_value(r);
             let end = start + r.trim_end_matches([' ', '\t']).len();
@@ -404,13 +405,13 @@ impl Parser<'_> {
     /// C2-B-146: a caption directly below its block in the same container.
     fn open_caption(&mut self, k: &Cursor<'_>, e: usize) -> bool {
         let Some(content) = shapes::caption(k) else { return false };
-        let ok = matches!(self.closed, Some(Closed { depth, target: true }) if depth == self.stack.len());
-        if !ok {
-            return false;
-        }
         if let Some(p) = self.pending.take() {
             // C2-B-096: a caption takes no attribute line.
             self.pending_to_paragraph(p);
+            return false;
+        }
+        let ok = matches!(self.closed, Some(Closed { depth, target: true }) if depth == self.stack.len());
+        if !ok {
             return false;
         }
         let piece = Piece { start: k.base + content, end: e, join: Join::Line };
@@ -425,12 +426,14 @@ impl Parser<'_> {
             let end = start + r.trim_end_matches([' ', '\t']).len();
             let _ = e;
             self.push_leaf_event(LeafKind::LinkDef { label: d.label, href: d.href, title: d.title }, s, end, attrs);
+            self.closed = None;
             return true;
         }
         if let Some((key, expansion)) = shapes::abbr_def(r) {
             let (s, attrs) = self.take_pending(start, None);
             let end = start + r.trim_end_matches([' ', '\t']).len();
             self.push_leaf_event(LeafKind::AbbrDef { key, expansion }, s, end, attrs);
+            self.closed = None;
             return true;
         }
         false
@@ -459,6 +462,21 @@ fn list_interrupts(f: &Frame, m: usize, mk: &ListMarker) -> bool {
         MarkerKind::Bullet(_) => true,
         MarkerKind::Ordered { value, .. } => value.is_none_or(|v| v == 1),
     }
+}
+
+/// C2-B-045, C2-B-219: `start` on the attribute line of an ordered list sets
+/// its first number and is not kept as a key; another value stays a key.
+fn start_attribute(attrs: Option<&mut AttrBlock>, style: shapes::Style, value: &mut u64) {
+    let Some(a) = attrs else { return };
+    let Some(i) = a.attrs.key_values.iter().position(|(k, _)| k.eq_ignore_ascii_case("start")) else { return };
+    let Some((_, v)) = a.attrs.key_values.get(i) else { return };
+    let ok = !v.is_empty() && v.len() <= 9 && v.bytes().all(|b| b.is_ascii_digit());
+    let Some(n) = v.parse::<u64>().ok().filter(|_| ok) else { return };
+    if n == 0 && style != shapes::Style::Decimal {
+        return;
+    }
+    *value = n;
+    a.attrs.key_values.remove(i);
 }
 
 /// Interrupter (a): a fence line (C2-B-014).
