@@ -8,17 +8,20 @@ pub fn is_word(c: char) -> bool {
     if c.is_ascii() {
         return c.is_ascii_alphanumeric();
     }
-    matches!(
-        get_general_category(c),
+    match get_general_category(c) {
         G::UppercaseLetter
-            | G::LowercaseLetter
-            | G::TitlecaseLetter
-            | G::ModifierLetter
-            | G::OtherLetter
-            | G::DecimalNumber
-            | G::LetterNumber
-            | G::OtherNumber
-    )
+        | G::LowercaseLetter
+        | G::TitlecaseLetter
+        | G::ModifierLetter
+        | G::OtherLetter
+        | G::DecimalNumber
+        | G::LetterNumber
+        | G::OtherNumber => true,
+        // Gap G-015: the table is Unicode 16; std knows 17 (the oracle's
+        // version). Alphabetic approximates L for code points 17 added.
+        G::Unassigned => c.is_alphabetic() || c.is_numeric(),
+        _ => false,
+    }
 }
 
 /// A Unicode number, category N (C2-H-148).

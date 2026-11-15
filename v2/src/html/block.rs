@@ -27,7 +27,7 @@ pub(super) fn visible(n: &Node) -> bool {
 pub(super) fn comments_only(nodes: &[Node]) -> bool {
     nodes.iter().all(|n| match n {
         Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_) => true,
-        Node::Text(t) => t.value.trim().is_empty(),
+        Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
         _ => false,
     })
 }
@@ -170,6 +170,11 @@ impl<'a> Renderer<'a> {
         Some(format!("<p{}>{inner}</p>", el.write(self.filter())))
     }
 
+    /// A paragraph written as a bare `<img>` (C2-H-020).
+    fn bare_image(&self, p: &ast::Paragraph) -> bool {
+        p.role == Some(ParagraphRole::Image) && self.image_block_bare(&p.children)
+    }
+
     /// C2-H-020: a block image is written without `<p>` unless it renders as
     /// the text of an unresolved reference.
     fn image_block_bare(&self, children: &[Node]) -> bool {
@@ -258,7 +263,8 @@ impl<'a> Renderer<'a> {
         let open = format!("<blockquote{}>", el.write(self.filter()));
         let vis: Vec<&Node> = children.iter().filter(|c| visible(c)).collect();
         if let [only @ Node::Paragraph(p)] = vis.as_slice() {
-            if p.role.is_none() {
+            // A display math paragraph is a paragraph here; a bare image is not.
+            if !self.bare_image(p) {
                 if let Some(s) = self.paragraph(only, false) {
                     self.line(depth, &format!("{open}{s}</blockquote>"));
                     return;
@@ -340,7 +346,8 @@ impl<'a> Renderer<'a> {
             self.line(depth, &format!("{open}</li>"));
             return;
         };
-        if matches!(first, Node::Paragraph(_)) {
+        // Gap G-016: a bare block image keeps its own line (C2-H-020).
+        if matches!(first, Node::Paragraph(p) if !self.bare_image(p)) {
             let p = self.paragraph(first, tight).unwrap_or_default();
             if rest.is_empty() {
                 self.line(depth, &format!("{open}{p}</li>"));

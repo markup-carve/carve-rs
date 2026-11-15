@@ -6,7 +6,7 @@
 pub fn rejected(c: char) -> bool {
     let cp = u32::from(c);
     (cp < 0x20 && !matches!(c, '\t' | '\n' | '\x0C' | '\r'))
-        || (0x80..=0x9F).contains(&cp)
+        || (0x7F..=0x9F).contains(&cp)
         || (0xFDD0..=0xFDEF).contains(&cp)
         || (cp & 0xFFFE) == 0xFFFE
 }

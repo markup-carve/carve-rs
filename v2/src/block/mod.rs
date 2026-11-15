@@ -179,6 +179,8 @@ pub struct Parser<'a> {
     blank_run: usize,
     closed: Option<Closed>,
     line_no: usize,
+    /// The end of the line being read.
+    line_end: usize,
 }
 
 /// Runs the block pass over a source.
@@ -193,6 +195,7 @@ pub fn scan(src: &Source) -> BlockOutput {
         }],
         leaf: None,
         pending: None,
+        line_end: 0,
         blank_run: 0,
         closed: None,
         line_no: 0,
@@ -216,6 +219,7 @@ impl<'a> Parser<'a> {
     }
 
     fn line(&mut self, s: usize, e: usize) {
+        self.line_end = e;
         let text = self.src.slice(s, e);
         let cur = Cursor::new(text, s);
         if self.frontmatter(text, s, e) {

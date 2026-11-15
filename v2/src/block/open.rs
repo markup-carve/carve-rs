@@ -351,6 +351,10 @@ impl Parser<'_> {
             }
             let (start, attrs) = self.take_pending(k.offset(), None);
             self.push_container(Kind::Quote, ContainerKind::Quote, start, attrs);
+            // G-011: an empty quote still spans the line of its first mark.
+            if let Some(c) = self.stack.last_mut() {
+                c.end = self.line_end;
+            }
             return Some((after, Some(after.col)));
         }
         if shapes::thematic_break(k) {
