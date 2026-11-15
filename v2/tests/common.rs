@@ -83,7 +83,13 @@ fn strip_with(v: &mut Value, fields: &[(String, String)]) {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            let marks = ty != "table" || m.get("children").is_some_and(|c| c.to_string().contains("\"span\":"));
             for (t, f) in fields {
+                // Gap HTML-017: `numberPrefix` is listed as a result but nothing derives it.
+                // Counts without a span mark are authored (C2-A-093).
+                if f == "numberPrefix" || (!marks && (f == "colspan" || f == "rowspan")) {
+                    continue;
+                }
                 // A direct link or image keeps its destination; only a reference use resolves.
                 let direct = (ty == "link" || ty == "image") && !m.contains_key("key");
                 if *t == ty && !direct {

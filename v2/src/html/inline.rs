@@ -65,22 +65,12 @@ impl<'a> Renderer<'a> {
                 }
                 _ => esc::text(&a.key, out),
             },
-            Node::Mention(m) => self.badge(
-                "mention",
-                '@',
-                &m.target,
-                m.attrs.as_ref(),
-                m.lang.as_deref(),
-                out,
-            ),
-            Node::Tag(t) => self.badge(
-                "tag",
-                '#',
-                &t.name,
-                t.attrs.as_ref(),
-                t.lang.as_deref(),
-                out,
-            ),
+            // Gap HTML-018: a label is the visible text, written without the at-sign.
+            Node::Mention(m) => {
+                let text = m.label.clone().unwrap_or_else(|| format!("@{}", m.target));
+                self.badge("mention", &text, m.attrs.as_ref(), m.lang.as_deref(), out);
+            }
+            Node::Tag(t) => self.badge("tag", &format!("#{}", t.name), t.attrs.as_ref(), t.lang.as_deref(), out),
             Node::Symbol(s) => {
                 let mut inner = String::new();
                 match self.opts.symbols.get(&s.name) {
@@ -316,7 +306,10 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-080, C2-H-084, C2-H-085.
-    fn image(&mut self, i: &ast::Image, out: &mut String) {
+    fn image(&mut self, i: &'a ast::Image, out: &mut String) {
+        if let Some(d) = &i.long_description {
+            self.long_desc.push(d);
+        }
         let alt = if i.decorative == Some(true) {
             ""
         } else {
@@ -499,12 +492,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-100: an inert span without `social`.
-    #[allow(clippy::too_many_arguments)] // the two node types share every part but the sigil
-    fn badge(
-        &self,
-        class: &str,
-        sigil: char,
-        name: &str,
+    fn badge(&self, class: &str, text: &str,
         attrs: Option<&Attrs>,
         lang: Option<&str>,
         out: &mut String,
@@ -512,8 +500,8 @@ impl<'a> Renderer<'a> {
         let mut el = El::new(attrs, lang);
         el.base.push(class.to_string());
         el.class_first = true;
-        out.push_str(&format!("<span{}><strong>{sigil}", el.write(self.filter())));
-        esc::text(name, out);
+        out.push_str(&format!("<span{}><strong>", el.write(self.filter())));
+        esc::text(text, out);
         out.push_str("</strong></span>");
     }
 

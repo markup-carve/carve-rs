@@ -172,6 +172,7 @@ impl<'a> Renderer<'a> {
             return self.leaf(&p.children);
         }
         let saved = std::mem::take(&mut self.out);
+        let started = std::mem::replace(&mut self.started, false);
         for c in children {
             match c {
                 Node::CellParagraph(p) => {
@@ -181,6 +182,7 @@ impl<'a> Renderer<'a> {
                 other => self.block(other, 0),
             }
         }
+        self.started = started;
         std::mem::replace(&mut self.out, saved)
     }
 }

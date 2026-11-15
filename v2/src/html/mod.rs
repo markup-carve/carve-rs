@@ -50,6 +50,8 @@ pub(crate) struct Renderer<'a> {
     in_link: usize,
     in_abbr: usize,
     level: usize,
+    /// The `longDescription` blocks met in the block being written (C2-H-080).
+    long_desc: Vec<&'a [Node]>,
     /// The notes the section writes.
     shown: Vec<bool>,
     /// A line was written (an empty first line still counts, C2-H-134).
@@ -76,6 +78,7 @@ impl<'a> Renderer<'a> {
             in_link: 0,
             in_abbr: 0,
             level: 0,
+            long_desc: Vec::new(),
             shown: Vec::new(),
             started: false,
             degrading: 0,

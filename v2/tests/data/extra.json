@@ -35475,5 +35475,1480 @@
 "tableAlignment"
 ]
 }
+},
+{
+"id": "deep-heading-7",
+"input": "",
+"opts": {},
+"html": "<section id=\"Seven\">\n  <div role=\"heading\" aria-level=\"7\" class=\"c\">Seven</div>\n  <p>x</p>\n</section>\n<section id=\"One\">\n  <h1>One</h1>\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 7,
+"children": [
+{
+"type": "text",
+"value": "Seven"
+}
+],
+"attrs": {
+"classes": [
+"c"
+]
+},
+"generatedId": "Seven"
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "x"
+}
+]
+},
+{
+"type": "heading",
+"level": 1,
+"children": [
+{
+"type": "text",
+"value": "One"
+}
+],
+"generatedId": "One"
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "deep-heading-nosec",
+"input": "",
+"opts": {
+"sections": false
+},
+"html": "<div role=\"heading\" aria-level=\"9\" id=\"Nine\">Nine</div>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 9,
+"children": [
+{
+"type": "text",
+"value": "Nine"
+}
+],
+"generatedId": "Nine"
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "section-node",
+"input": "",
+"opts": {},
+"html": "<section id=\"s\">\n  <p>in</p>\n</section>\n<section>\n\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "section",
+"level": 2,
+"attrs": {
+"id": "s"
+},
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "in"
+}
+]
+}
+]
+},
+{
+"type": "section",
+"children": []
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "smallcaps-ruby",
+"input": "",
+"opts": {},
+"html": "<p><span class=\"smallcaps k\">SC</span> <ruby>漢<rp>(</rp><rt>kan</rt><rp>)</rp>字<rp>(</rp><rt>ji</rt><rp>)</rp></ruby></p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "small_caps",
+"children": [
+{
+"type": "text",
+"value": "SC"
+}
+],
+"attrs": {
+"classes": [
+"k"
+]
+}
+},
+{
+"type": "text",
+"value": " "
+},
+{
+"type": "ruby",
+"pairs": [
+{
+"type": "ruby_pair",
+"base": [
+{
+"type": "text",
+"value": "漢"
+}
+],
+"annotation": [
+{
+"type": "text",
+"value": "kan"
+}
+]
+},
+{
+"type": "ruby_pair",
+"base": [
+{
+"type": "text",
+"value": "字"
+}
+],
+"annotation": [
+{
+"type": "text",
+"value": "ji"
+}
+]
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "ruby-in-heading",
+"input": "",
+"opts": {},
+"html": "<section id=\"A-b-C\">\n  <h1><ruby>A<rp>(</rp><rt>b</rt><rp>)</rp></ruby><span class=\"smallcaps\">C</span></h1>\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 1,
+"children": [
+{
+"type": "ruby",
+"pairs": [
+{
+"type": "ruby_pair",
+"base": [
+{
+"type": "text",
+"value": "A"
+}
+],
+"annotation": [
+{
+"type": "text",
+"value": "b"
+}
+]
+}
+]
+},
+{
+"type": "small_caps",
+"children": [
+{
+"type": "text",
+"value": "C"
+}
+]
+}
+],
+"generatedId": "A-b-C"
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "cell-scope-headers",
+"input": "",
+"opts": {},
+"html": "<table>\n  <colgroup>\n    <col>\n    <col style=\"width: 30.5%;\">\n  </colgroup>\n  <thead>\n    <tr><th scope=\"col\" id=\"h1\" style=\"vertical-align: top;\">h1</th><th scope=\"colgroup\" id=\"h2\" style=\"text-align: center;\">h2</th></tr>\n  </thead>\n  <tbody>\n    <tr><th scope=\"row\" style=\"vertical-align: top;\">r</th><td headers=\"h1 h2\" style=\"text-align: left; vertical-align: bottom;\">d</td></tr>\n  </tbody>\n</table>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "table",
+"columns": [
+{
+"type": "table_column",
+"valign": "top"
+},
+{
+"type": "table_column",
+"width": 0.305,
+"align": "center",
+"resolvedAlign": "center"
+}
+],
+"children": [
+{
+"type": "table_head",
+"children": [
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": true,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "h1"
+}
+]
+}
+],
+"attrs": {
+"id": "h1"
+}
+},
+{
+"type": "table_cell",
+"header": true,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "h2"
+}
+]
+}
+],
+"scope": "colgroup",
+"attrs": {
+"id": "h2"
+}
+}
+]
+}
+]
+},
+{
+"type": "table_body",
+"children": [
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": true,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "r"
+}
+]
+}
+]
+},
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "d"
+}
+]
+}
+],
+"headerIds": [
+"h1",
+"h2"
+],
+"valign": "bottom",
+"align": "left"
+}
+]
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "cell-blocks",
+"input": "",
+"opts": {},
+"html": "<table>\n  <tbody>\n    <tr><td><p>a</p>\n<ul>\n  <li>b</li>\n</ul></td></tr>\n  </tbody>\n</table>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "table",
+"columns": [
+{
+"type": "table_column"
+}
+],
+"children": [
+{
+"type": "table_body",
+"children": [
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "a"
+}
+]
+},
+{
+"type": "list",
+"marker": {
+"kind": "bullet",
+"char": "-"
+},
+"spacing": "tight",
+"children": [
+{
+"type": "list_item",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "b"
+}
+]
+}
+]
+}
+]
+}
+]
+}
+]
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "counts-no-marks",
+"input": "",
+"opts": {},
+"html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a</td></tr>\n    <tr><td rowspan=\"2\">b</td><td>c</td></tr>\n    <tr><td>d</td></tr>\n  </tbody>\n</table>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "table",
+"columns": [
+{
+"type": "table_column"
+},
+{
+"type": "table_column"
+}
+],
+"children": [
+{
+"type": "table_body",
+"children": [
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "a"
+}
+]
+}
+],
+"colspan": 2
+}
+]
+},
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "b"
+}
+]
+}
+],
+"rowspan": 2
+},
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "c"
+}
+]
+}
+]
+}
+]
+},
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "d"
+}
+]
+}
+]
+}
+]
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "image-decorative-longdesc",
+"input": "",
+"opts": {},
+"html": "<p>a <img src=\"x.png\" alt=\"\"> b</p>\n<p>long</p>\n<p><img src=\"\" alt=\"noscr\"></p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "a "
+},
+{
+"type": "image",
+"src": "x.png",
+"decorative": true,
+"longDescription": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "long"
+}
+]
+}
+]
+},
+{
+"type": "text",
+"value": " b"
+}
+]
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "image",
+"alt": "noscr"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "math-number",
+"input": "",
+"opts": {},
+"html": "<p><span class=\"math display\" role=\"math\">\\[x\\]</span> <span class=\"equation-number\">Eq 1</span></p>\n<figure>\n  <p><span class=\"math display\" role=\"math\">\\[y\\]</span></p>\n  <figcaption>Eq 2: c</figcaption>\n</figure>\n<p><span class=\"math display\" role=\"math\">\\[z\\]</span> <span class=\"equation-number\">Eq 3</span></p>\n<p><span class=\"math inline\" role=\"math\">\\(w\\)</span></p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "math",
+"display": true,
+"value": "x",
+"numberPrefix": "Eq",
+"number": 1
+}
+],
+"role": "math"
+},
+{
+"type": "figure",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "math",
+"display": true,
+"value": "y",
+"numberPrefix": "Eq"
+}
+],
+"role": "math"
+}
+],
+"caption": {
+"type": "caption",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "Eq "
+},
+{
+"type": "caption_number",
+"n": 2
+},
+{
+"type": "text",
+"value": ": c"
+}
+]
+}
+]
+}
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "math",
+"display": true,
+"value": "z",
+"numberPrefix": "Eq",
+"number": 3
+}
+],
+"role": "math"
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "math",
+"display": false,
+"value": "w"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "xref-display",
+"input": "",
+"opts": {},
+"html": "<section id=\"h\">\n  <h1>Head</h1>\n  <p><a href=\"#h\">Head</a></p>\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 1,
+"attrs": {
+"id": "h"
+},
+"children": [
+{
+"type": "text",
+"value": "Head"
+}
+]
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "xref",
+"key": "h",
+"namespace": "heading",
+"display": "page",
+"href": "#h"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "citations",
+"input": "",
+"opts": {},
+"html": "<p>see [@doe, p. 1]</p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "see "
+},
+{
+"type": "citation_group",
+"raw": "[@doe, p. 1]",
+"children": [
+{
+"type": "citation",
+"key": "doe",
+"namespace": "citation"
+}
+]
+}
+]
+},
+{
+"type": "citation_definition",
+"key": "doe",
+"namespace": "citation",
+"children": [
+{
+"type": "text",
+"value": "Doe"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "extensions",
+"input": "",
+"opts": {},
+"html": "<p>fb</p>\n<p>ifb</p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "block_extension",
+"name": "org.x.box",
+"version": "1",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "native"
+}
+]
+}
+],
+"fallback": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "fb"
+}
+]
+}
+]
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "inline_extension",
+"name": "org.x.k",
+"version": "1",
+"children": [
+{
+"type": "text",
+"value": "n"
+}
+],
+"fallback": [
+{
+"type": "text",
+"value": "ifb"
+}
+]
+}
+]
+}
+],
+"extensions": [
+{
+"name": "org.x.box",
+"version": "1",
+"required": false,
+"slots": []
+},
+{
+"name": "org.x.k",
+"version": "1",
+"required": false,
+"slots": []
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "caption-short-kind",
+"input": "",
+"opts": {},
+"html": "<figure>\n  <img src=\"a.png\" alt=\"a\">\n  <figcaption>Long</figcaption>\n</figure>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "figure",
+"kind": "table",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "image",
+"src": "a.png",
+"alt": "a"
+}
+],
+"role": "image"
+}
+],
+"caption": {
+"type": "caption",
+"short": [
+{
+"type": "text",
+"value": "S"
+}
+],
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "Long"
+}
+]
+}
+]
+}
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "caption-blocks",
+"input": "",
+"opts": {},
+"html": "<figure>\n  <img src=\"a.png\" alt=\"a\">\n  <figcaption>\n    <p>one</p>\n    <p>two</p>\n  </figcaption>\n</figure>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "figure",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "image",
+"src": "a.png",
+"alt": "a"
+}
+],
+"role": "image"
+}
+],
+"caption": {
+"type": "caption",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "one"
+}
+]
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "two"
+}
+]
+}
+]
+}
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "empty-items",
+"input": "",
+"opts": {},
+"html": "<ul>\n  <li></li>\n</ul>\n<dl>\n  <dt></dt>\n  <dd></dd>\n</dl>\n<section id=\"s\">\n  <h2></h2>\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "list",
+"marker": {
+"kind": "bullet",
+"char": "-"
+},
+"spacing": "tight",
+"children": [
+{
+"type": "list_item",
+"children": []
+}
+]
+},
+{
+"type": "definition_list",
+"children": [
+{
+"type": "definition_term",
+"children": []
+},
+{
+"type": "definition_description",
+"children": []
+}
+]
+},
+{
+"type": "heading",
+"level": 2,
+"children": [],
+"generatedId": "s"
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "lang-dir-supplied",
+"input": "",
+"opts": {},
+"html": "<p lang=\"\">x</p>\n<p lang=\"ar\">y</p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "x"
+}
+],
+"lang": "javascript:x"
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "y"
+}
+],
+"dir": "rtl",
+"lang": "ar"
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "mention-label",
+"input": "",
+"opts": {},
+"html": "<p><span class=\"mention\"><strong>Core Team</strong></span></p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "mention",
+"kind": "team",
+"target": "core",
+"label": "Core Team"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "autolink-noscheme",
+"input": "",
+"opts": {},
+"html": "<p><a href=\"\">x</a></p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "autolink",
+"href": "javascript:alert(1)",
+"text": "x"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "link-supplied",
+"input": "",
+"opts": {},
+"html": "<p><a href=\"/u\" title=\"tip\">w</a> <a href=\"\">nohref</a> [short]</p>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "link",
+"href": "/u",
+"tooltip": "tip",
+"targetKind": "wiki",
+"children": [
+{
+"type": "text",
+"value": "w"
+}
+]
+},
+{
+"type": "text",
+"value": " "
+},
+{
+"type": "link",
+"children": [
+{
+"type": "text",
+"value": "nohref"
+}
+]
+},
+{
+"type": "text",
+"value": " "
+},
+{
+"type": "link",
+"key": "zz",
+"namespace": "link",
+"refForm": "shortcut",
+"children": [
+{
+"type": "text",
+"value": "short"
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "bidi-everywhere",
+"input": "",
+"opts": {},
+"html": "<section id=\"ab\">\n  <h1>ab</h1>\n  <p><code>cd</code> &lt;/#ab&gt;</p>\n  <div>\n    <p class=\"admonition-title\">tt</p>\n    <p class=\"div-label\">ll</p>\n  </div>\n  <p><span title=\"x‮y\">s</span></p>\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 1,
+"children": [
+{
+"type": "text",
+"value": "a‮b"
+}
+],
+"generatedId": "ab"
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "code",
+"value": "c⁦d"
+},
+{
+"type": "text",
+"value": " "
+},
+{
+"type": "xref",
+"key": "a‮b",
+"namespace": "heading"
+}
+]
+},
+{
+"type": "div",
+"title": [
+{
+"type": "text",
+"value": "t‮t"
+}
+],
+"groupLabel": "l‮l",
+"children": []
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "span",
+"attrs": {
+"keyValues": [
+[
+"title",
+"x‮y"
+]
+]
+},
+"children": [
+{
+"type": "text",
+"value": "s"
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "supplied-shortcut-heading",
+"input": "",
+"opts": {},
+"html": "<section id=\"H\">\n  <h1>H</h1>\n  <p><a href=\"#H\">H</a></p>\n</section>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 1,
+"children": [
+{
+"type": "text",
+"value": "H"
+}
+],
+"generatedId": "H"
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "link",
+"key": "H",
+"namespace": "link",
+"refForm": "shortcut",
+"children": [
+{
+"type": "text",
+"value": "H"
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+},
+"expectedTree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "heading",
+"level": 1,
+"children": [
+{
+"type": "text",
+"value": "H"
+}
+],
+"generatedId": "H"
+},
+{
+"type": "paragraph",
+"children": [
+{
+"type": "link",
+"key": "H",
+"namespace": "link",
+"refForm": "shortcut",
+"children": [
+{
+"type": "text",
+"value": "H"
+}
+]
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+},
+"expected": "<section id=\"H\">\n  <h1>H</h1>\n  <p>[H]</p>\n</section>"
+},
+{
+"id": "table-in-figure",
+"input": "",
+"opts": {},
+"html": "<figure id=\"f\">\n  <table>\n    <caption>Table 1: own</caption>\n    <tbody>\n      <tr><td>x</td></tr>\n    </tbody>\n  </table>\n  <figcaption>Figure 1: outer</figcaption>\n</figure>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "figure",
+"kind": "table",
+"attrs": {
+"id": "f"
+},
+"children": [
+{
+"type": "table",
+"columns": [
+{
+"type": "table_column"
+}
+],
+"caption": {
+"type": "caption",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "Table "
+},
+{
+"type": "caption_number",
+"n": 1
+},
+{
+"type": "text",
+"value": ": own"
+}
+]
+}
+]
+},
+"children": [
+{
+"type": "table_body",
+"children": [
+{
+"type": "table_row",
+"children": [
+{
+"type": "table_cell",
+"header": false,
+"children": [
+{
+"type": "cell_paragraph",
+"children": [
+{
+"type": "text",
+"value": "x"
+}
+]
+}
+]
+}
+]
+}
+]
+}
+]
+}
+],
+"caption": {
+"type": "caption",
+"children": [
+{
+"type": "paragraph",
+"children": [
+{
+"type": "text",
+"value": "Figure "
+},
+{
+"type": "caption_number",
+"n": 1
+},
+{
+"type": "text",
+"value": ": outer"
+}
+]
+}
+]
+}
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+}
+},
+{
+"id": "raw-other-block",
+"input": "",
+"opts": {},
+"html": "<div>\n\n</div>",
+"tree": {
+"type": "document",
+"astVersion": "2.0",
+"children": [
+{
+"type": "raw_block",
+"format": "latex",
+"value": "x\n"
+},
+{
+"type": "div",
+"children": [
+{
+"type": "raw_block",
+"format": "latex",
+"value": "y\n"
+}
+]
+}
+],
+"stages": [
+"referenceResolution",
+"tableAlignment"
+]
+},
+"expected": "<div>\n\n</div>"
 }
 ]

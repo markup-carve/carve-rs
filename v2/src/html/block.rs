@@ -43,6 +43,7 @@ impl<'a> Renderer<'a> {
             if let Some(s) = self.paragraph(n, false) {
                 self.line(depth, &s);
             }
+            self.long_descriptions(depth);
             return;
         }
         if !self.profile_allows(n, true) {
@@ -55,6 +56,16 @@ impl<'a> Renderer<'a> {
         self.level += 1;
         self.block_inner(n, depth);
         self.level -= 1;
+        self.long_descriptions(depth);
+    }
+
+    /// C2-H-080: the long descriptions of the images of a block, after it.
+    fn long_descriptions(&mut self, depth: usize) {
+        for d in std::mem::take(&mut self.long_desc) {
+            for b in d {
+                self.block(b, depth);
+            }
+        }
     }
 
     fn block_inner(&mut self, n: &'a Node, depth: usize) {
