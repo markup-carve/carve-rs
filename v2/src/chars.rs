@@ -75,7 +75,7 @@ pub fn fold_label(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut space = false;
     for c in s.chars() {
-        if matches!(c, ' ' | '\t' | '\n' | '\r') {
+        if matches!(c, ' ' | '\t' | '\n') {
             space = true;
         } else {
             if space && !out.is_empty() {

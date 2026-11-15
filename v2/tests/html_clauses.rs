@@ -45,3 +45,8 @@ fn c2_b_197_destination_with_space_is_no_block_image() {
         "<p>![alt](  *****a.png)\n^ Cap</p>"
     );
 }
+
+#[test]
+fn c2_b_010_c2_i_079_a_lone_cr_is_label_text() {
+    assert!(html("x[^\r]\n\n[^\r]: n").contains("doc-noteref"));
+}
