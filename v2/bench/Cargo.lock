@@ -48,6 +48,7 @@ version = "0.0.0"
 dependencies = [
  "carve-lang",
  "carve2",
+ "libc",
 ]
 
 [[package]]

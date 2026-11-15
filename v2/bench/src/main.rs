@@ -2,7 +2,7 @@
 //!
 //! `cargo run --release --manifest-path v2/bench/Cargo.toml -- [--rounds N] [--ms N] [--loop SECS] FILE...`
 //!
-//! Prints, per document: the median time and spread of 0.2 parse, 0.2 parse plus HTML,
+//! Times are CPU time of the thread. Prints, per document: the median time and spread of 0.2 parse, 0.2 parse plus HTML,
 //! 0.1 `parse` and 0.1 `render_html(&parse(src))`, measured alternately; then the 0.2
 //! stages (block pass, inline pass, the rest of the tree builder, resolve, HTML) with
 //! their time, allocation count and allocated bytes.
@@ -50,7 +50,7 @@ struct Stat {
 
 thread_local! {
     static INLINE: Cell<Stat> = const { Cell::new(Stat { ns: 0, allocs: 0, bytes: 0 }) };
-    static ENTER: Cell<(Option<Instant>, u64, u64)> = const { Cell::new((None, 0, 0)) };
+    static ENTER: Cell<(Option<Duration>, u64, u64)> = const { Cell::new((None, 0, 0)) };
 }
 
 fn inline_hook(enter: bool) {
@@ -58,16 +58,12 @@ fn inline_hook(enter: bool) {
         return;
     }
     if enter {
-        ENTER.set((
-            Some(Instant::now()),
-            ALLOCS.load(Relaxed),
-            BYTES.load(Relaxed),
-        ));
+        ENTER.set((Some(cpu_now()), ALLOCS.load(Relaxed), BYTES.load(Relaxed)));
         return;
     }
     let (t, a, b) = ENTER.get();
     let Some(t) = t else { return };
-    let ns = u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    let ns = u64::try_from(cpu_now().saturating_sub(t).as_nanos()).unwrap_or(u64::MAX);
     let mut s = INLINE.get();
     s.ns += ns;
     s.allocs += ALLOCS.load(Relaxed) - a;
@@ -82,9 +78,9 @@ fn counters() -> (u64, u64) {
 /// Runs `f` once and returns its time and allocations.
 fn once<T>(f: impl FnOnce() -> T) -> (T, Stat) {
     let (a, b) = counters();
-    let t = Instant::now();
+    let t = cpu_now();
     let out = f();
-    let ns = u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    let ns = u64::try_from(cpu_now().saturating_sub(t).as_nanos()).unwrap_or(u64::MAX);
     let (a2, b2) = counters();
     (
         out,
@@ -97,14 +93,29 @@ fn once<T>(f: impl FnOnce() -> T) -> (T, Stat) {
 }
 
 /// One round: repeats `f` for at least `ms` and returns microseconds per call.
+/// CPU time of this thread: other processes on a loaded machine do not count.
+fn cpu_now() -> Duration {
+    let mut t = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `t` is a valid, writable timespec for the call.
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &raw mut t) };
+    Duration::new(
+        u64::try_from(t.tv_sec).unwrap_or(0),
+        u32::try_from(t.tv_nsec).unwrap_or(0),
+    )
+}
+
+/// One round: repeats `f` for at least `ms` of CPU time and returns CPU microseconds per call.
 fn round(f: &dyn Fn() -> usize, ms: u64) -> f64 {
-    let t0 = Instant::now();
+    let t0 = cpu_now();
     let mut n = 0u32;
-    while t0.elapsed() < Duration::from_millis(ms) {
+    while cpu_now().saturating_sub(t0) < Duration::from_millis(ms) {
         black_box(f());
         n += 1;
     }
-    t0.elapsed().as_secs_f64() * 1e6 / f64::from(n)
+    cpu_now().saturating_sub(t0).as_secs_f64() * 1e6 / f64::from(n)
 }
 
 fn median(v: &mut [f64]) -> f64 {
