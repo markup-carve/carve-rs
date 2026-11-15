@@ -52,11 +52,11 @@ fn compute(doc: &Document, opts: &Options) -> HashMap<usize, Res> {
     for (a, n) in &order.number {
         res.insert(*a, Res::Number(to_i64(*n)));
     }
-    let ids = heading_ids(doc, &order, opts.heading_ids, &mut res);
-    let captions = caption_numbers(&order, opts, &mut res);
-    let index = Index::new(doc, &order, &ids, &captions);
     let mut all = Vec::new();
     every_node(&doc.children, &mut all, 1);
+    let ids = heading_ids(&all, &order, opts.heading_ids, &mut res);
+    let captions = caption_numbers(&order, opts, &mut res);
+    let index = Index::new(doc, &order, &ids, &captions);
     for n in all {
         index.reference(n, &mut res);
         table::resolve_table(n, &mut res);
@@ -89,15 +89,13 @@ fn every_node<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>, depth: usize) {
 /// generated ids follow in resolution order. Returns the heading id of each
 /// heading address that has one.
 fn heading_ids(
-    doc: &Document,
+    all: &[&Node],
     order: &Order<'_>,
     mode: HeadingIds,
     res: &mut HashMap<usize, Res>,
 ) -> HashMap<usize, String> {
     let mut taken = slug::Taken::default();
-    let mut all = Vec::new();
-    every_node(&doc.children, &mut all, 1);
-    for n in &all {
+    for n in all {
         if let Some(id) = n.attrs().and_then(|a| a.id.as_deref()) {
             taken.reserve(id);
         }
