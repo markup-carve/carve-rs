@@ -3,22 +3,7 @@
 mod common;
 
 use carve2::ast::Node;
-use carve2::options::{HeadingIds, Options, Profile};
-use serde_json::Value;
-
-fn options_of(opts: &Value) -> Options {
-    let mut o = Options::default();
-    if let Some(h) = opts["headingIds"].as_str().and_then(HeadingIds::from_name) {
-        o.heading_ids = h;
-    }
-    if let Some(p) = opts["profile"].as_str().and_then(Profile::from_name) {
-        o.profile = p;
-    }
-    if let Some(r) = opts["roundtrip"].as_bool() {
-        o.roundtrip = r;
-    }
-    o
-}
+use common::options_of;
 
 #[test]
 fn c2_h_001_oracle_trees_render_the_expected_html() {

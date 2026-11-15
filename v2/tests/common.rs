@@ -1,6 +1,7 @@
 //! Shared fixtures for the integration tests.
 #![allow(dead_code)]
 
+use carve2::options::{HeadingIds, Options, Profile};
 use serde_json::Value;
 
 /// One specification example with the oracle's tree (tests/data/examples.json).
@@ -18,9 +19,7 @@ pub fn examples() -> Vec<Example> {
         "/tests/data/examples.json"
     ))
     .unwrap_or_default();
-    let mut de = serde_json::Deserializer::from_str(&text);
-    de.disable_recursion_limit();
-    let v: Value = serde::Deserialize::deserialize(&mut de).unwrap_or(Value::Null);
+    let v = parse_json(&text);
     v.as_array()
         .into_iter()
         .flatten()
@@ -108,4 +107,49 @@ fn strip_with(v: &mut Value, fields: &[(String, String)]) {
 /// Removes every result field of `ast-results.json` from a tree.
 pub fn strip_results(v: &mut Value) {
     strip_with(v, &results());
+}
+
+/// The engine options an example names (`opts` of examples.json).
+pub fn options_of(opts: &Value) -> Options {
+    let mut o = Options::default();
+    if let Some(h) = opts["headingIds"].as_str().and_then(HeadingIds::from_name) {
+        o.heading_ids = h;
+    }
+    if let Some(p) = opts["profile"].as_str().and_then(Profile::from_name) {
+        o.profile = p;
+    }
+    if let Some(r) = opts["roundtrip"].as_bool() {
+        o.roundtrip = r;
+    }
+    o
+}
+
+/// JSON without serde_json's nesting limit: trees of deep inputs pass 128 levels.
+pub fn parse_json(text: &str) -> Value {
+    let mut de = serde_json::Deserializer::from_str(text);
+    de.disable_recursion_limit();
+    serde::Deserialize::deserialize(&mut de).unwrap_or(Value::Null)
+}
+
+/// Oracle defect O-004: the oracle omits `pos` on the text siblings of a
+/// `caption_number`. Applied to the engine's tree before comparing, so the
+/// rest of the tree is still compared.
+pub fn as_oracle_o004(v: &mut Value) {
+    match v {
+        Value::Object(m) => {
+            if let Some(Value::Array(kids)) = m.get_mut("children") {
+                let numbered = kids.iter().any(|k| k["type"] == "caption_number");
+                if numbered {
+                    for k in kids.iter_mut().filter(|k| k["type"] == "text") {
+                        if let Some(o) = k.as_object_mut() {
+                            o.remove("pos");
+                        }
+                    }
+                }
+            }
+            m.values_mut().for_each(as_oracle_o004);
+        }
+        Value::Array(a) => a.iter_mut().for_each(as_oracle_o004),
+        _ => {}
+    }
 }
