@@ -15,6 +15,9 @@ struct Seg {
     len: usize,
     /// Source end of the piece before its trailing spaces were dropped.
     raw_end: usize,
+    /// 1-based line and column of `s`.
+    line: usize,
+    col: usize,
 }
 
 /// The joined content text and its source map.
@@ -23,6 +26,8 @@ pub struct Content<'a> {
     segs: Vec<Seg>,
     /// Content offset of each join character and its kind, in order.
     joins: Vec<(usize, Join)>,
+    /// Number of characters in `text[..i]`, for columns in linear time.
+    chars: Vec<usize>,
     src: &'a Source,
 }
 
@@ -85,20 +90,20 @@ impl<'a> Content<'a> {
                 text.push('\n');
             }
             let piece = full.get(start..end).unwrap_or("");
-            segs.push(Seg {
-                v: text.len(),
-                s: start,
-                len: piece.len(),
-                raw_end,
-            });
+            let (line, col) = env.src.line_col(start);
+            segs.push(Seg { v: text.len(), s: start, len: piece.len(), raw_end, line, col });
             text.push_str(piece);
         }
-        Self {
-            text,
-            segs,
-            joins,
-            src: env.src,
+        let mut chars = Vec::with_capacity(text.len() + 1);
+        let mut n = 0;
+        chars.push(0);
+        for b in text.bytes() {
+            if b & 0xC0 != 0x80 {
+                n += 1;
+            }
+            chars.push(n);
         }
+        Self { text, segs, joins, chars, src: env.src }
     }
 
     /// Source offset of a content offset. The offset of a join character
@@ -111,32 +116,53 @@ impl<'a> Content<'a> {
             .map_or(0, |s| s.s + (v.saturating_sub(s.v)).min(s.len))
     }
 
+    /// Line, column and source offset of a content offset.
+    fn point(&self, v: usize) -> (usize, usize, usize) {
+        let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
+        let Some(seg) = self.segs.get(i) else { return (1, 1, 0) };
+        let d = v.saturating_sub(seg.v).min(seg.len);
+        let count = |x: usize| self.chars.get(x).copied().unwrap_or(0);
+        (seg.line, seg.col + count(seg.v + d) - count(seg.v), seg.s + d)
+    }
+
+    /// The point at the end of the line before the join at `v`, its
+    /// trailing spaces included; `point(v)` when `v` is no join.
+    fn raw_point(&self, v: usize) -> (usize, usize, usize) {
+        let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
+        let (line, col, off) = self.point(v);
+        match self.segs.get(i) {
+            Some(s) if s.v + s.len == v && self.join_at(v).is_some() => (line, col + (s.raw_end - off), s.raw_end),
+            _ => (line, col, off),
+        }
+    }
+
+    fn make(&self, a: (usize, usize, usize), b: (usize, usize, usize)) -> Pos {
+        Pos {
+            start_line: a.0,
+            end_line: b.0,
+            start_column: a.1,
+            end_column: b.1,
+            start_offset: self.src.original_offset(a.2),
+            end_offset: self.src.original_offset(b.2),
+        }
+    }
+
     /// The tree position of a content range.
     #[must_use]
     pub fn pos(&self, v0: usize, v1: usize) -> Pos {
-        self.src.pos(self.src_off(v0), self.src_off(v1))
-    }
-
-    /// The source end of the line before the join at `v`, its trailing
-    /// spaces included; `src_off(v)` when `v` is no join.
-    fn raw_line_end(&self, v: usize) -> usize {
-        let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
-        match self.segs.get(i) {
-            Some(s) if s.v + s.len == v && self.join_at(v).is_some() => s.raw_end,
-            _ => self.src_off(v),
-        }
+        self.make(self.point(v0), self.point(v1))
     }
 
     /// GAP INL-011: a line comment before a join owns the trailing spaces of its line.
     #[must_use]
     pub fn pos_to_line_end(&self, v0: usize, v1: usize) -> Pos {
-        self.src.pos(self.src_off(v0), self.raw_line_end(v1))
+        self.make(self.point(v0), self.raw_point(v1))
     }
 
     /// The break after such a comment starts behind those spaces.
     #[must_use]
     pub fn pos_from_line_end(&self, v0: usize, v1: usize) -> Pos {
-        self.src.pos(self.raw_line_end(v0), self.src_off(v1))
+        self.make(self.raw_point(v0), self.point(v1))
     }
 
     /// The join kind of the line feed at `v`, when `v` is a join.
