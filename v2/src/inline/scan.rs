@@ -52,6 +52,8 @@ struct Scanner<'a, 'e> {
     dead: usize,
     /// No unescaped `]` follows this offset.
     no_label_from: Option<usize>,
+    /// An unquoted value run behind which attribute blocks fail.
+    attr_fail: Option<(usize, usize)>,
     comments: Vec<(usize, usize)>,
     /// Last start of `%}` and of `#}`, to keep the closer search linear.
     last_pct: Option<usize>,
@@ -74,6 +76,7 @@ pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
         brackets: Vec::new(),
         dead: 0,
         no_label_from: None,
+        attr_fail: None,
         comments: Vec::new(),
         last_pct: t.rfind("%}"),
         last_hash: t.rfind("#}"),
@@ -290,10 +293,36 @@ impl Scanner<'_, '_> {
         }
     }
 
+    /// `attr::parse_block` with a memo that keeps the scan linear: a failed
+    /// block whose first part is `key=value` fails behind the end of that
+    /// unquoted run, so every block that starts inside the run and ends its
+    /// first value there fails too (`{k={k={k=...`).
+    fn attr_block(&mut self, i: usize) -> Option<(crate::attr::AttrBlock, usize)> {
+        let eq = key_eq(self.b, i);
+        if let (Some((a, r)), Some(e)) = (self.attr_fail, eq)
+            && i >= a
+            && e < r
+        {
+            return None;
+        }
+        let res = crate::attr::parse_block(self.t, i);
+        if res.is_none()
+            && let Some(e) = eq
+        {
+            let r = self.b.get(e + 1..).map_or(e + 1, |rest| {
+                e + 1 + rest.iter().take_while(|&&c| !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')).count()
+            });
+            if r > e + 1 {
+                self.attr_fail = Some((e + 1, r));
+            }
+        }
+        res
+    }
+
     /// C2-I-043: the opening brace, first rule that matches.
     fn brace(&mut self) -> bool {
         let i = self.i;
-        if let Some((block, end)) = crate::attr::parse_block(self.t, i) {
+        if let Some((block, end)) = self.attr_block(i) {
             if block.empty {
                 return false;
             }
@@ -716,10 +745,10 @@ impl Scanner<'_, '_> {
 
     /// C2-I-064: a bracket pair with a glued attribute run is a span.
     fn span(&mut self, top: &Bracket, i: usize) -> bool {
-        let Some((mut block, mut end)) = crate::attr::parse_block(self.t, i + 1) else {
+        let Some((mut block, mut end)) = self.attr_block(i + 1) else {
             return false;
         };
-        while let Some((next, e)) = crate::attr::parse_block(self.t, end) {
+        while let Some((next, e)) = self.attr_block(end) {
             block.merge(next);
             end = e;
         }
@@ -877,6 +906,23 @@ impl Scanner<'_, '_> {
         self.toks.push(Tok::new(at + 1, at + 2, K::Skip));
         true
     }
+}
+
+/// The `=` of a first part `key=` of the brace block at `i`.
+fn key_eq(b: &[u8], i: usize) -> Option<usize> {
+    let mut k = i + 1;
+    while b.get(k) == Some(&b' ') {
+        k += 1;
+    }
+    let first = *b.get(k)?;
+    if !(first.is_ascii_alphabetic() || first == b'_') {
+        return None;
+    }
+    k += 1;
+    while b.get(k).is_some_and(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-') {
+        k += 1;
+    }
+    (b.get(k) == Some(&b'=')).then_some(k)
 }
 
 #[derive(Clone, Copy)]

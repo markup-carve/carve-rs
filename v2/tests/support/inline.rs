@@ -212,6 +212,9 @@ fn cell(ctx: &Ctx<'_>, c: &Value, out: &mut Vec<(String, String)>) {
         kind: ContentKind::Cell,
         hard_breaks: false,
     };
+    let Some(s) = cell_start(ctx.src.slice(s, e), s) else {
+        return;
+    };
     let nodes = parse(
         &env,
         &[Piece {
@@ -227,4 +230,20 @@ fn cell(ctx: &Ctx<'_>, c: &Value, out: &mut Vec<(String, String)>) {
     strip_results(&mut expected);
     let actual = serde_json::to_value(&nodes).unwrap_or_default();
     out.push(((ctx.sorted)(&expected), (ctx.sorted)(&actual)));
+}
+
+/// Skips the header mark and the alignment mark the block pass strips; a
+/// merge cell (`<` or `^` alone) has no inline content.
+fn cell_start(text: &str, start: usize) -> Option<usize> {
+    let mut rest = text.strip_prefix('=').unwrap_or(text);
+    for m in ["{<}", "{>}", "{~}"] {
+        if let Some(r) = rest.strip_prefix(m) {
+            rest = r;
+            break;
+        }
+    }
+    if matches!(rest.trim(), "<" | "^") {
+        return None;
+    }
+    Some(start + text.len() - rest.len())
 }

@@ -217,3 +217,18 @@ Nearest: C2-I-079 ("a backslash stays in the key"), C2-B-224.
 
 Outside a cell `[a\|b]` keeps the backslash in its key; inside a cell the
 key is `a|b`. Rust does that; the clauses do not say it outright.
+
+## INL-017 Trailing padding of a cell and an escaped space
+
+Nearest: C2-I-002 (trailing spaces are not part of the content), C2-B-169.
+
+```carve
+| a\  |
+```
+
+Readings: the escaped space is a non-breaking space and stays, with the
+plain space after it trimmed; or the cell padding is trimmed before escapes
+are read, so the backslash ends the cell text. The C2-I-002 sentence on a
+backslash before trailing spaces names hard breaks only. The oracle trims
+the cell padding without regard to escapes. Rust follows the oracle for
+`ContentKind::Cell` and is escape-aware elsewhere.
