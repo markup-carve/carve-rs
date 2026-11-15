@@ -87,3 +87,47 @@ pub fn fold_label(s: &str) -> String {
     }
     out
 }
+
+/// A set of bytes as a table, for scans that test every byte.
+pub struct ByteSet([bool; 256]);
+
+impl ByteSet {
+    /// The bytes of `a` and of `b`, plus every byte from `from` up when `from` is set.
+    // Evaluated at compile time only: an index out of range is a build error, not a panic.
+    #[allow(clippy::indexing_slicing)]
+    #[must_use]
+    pub const fn new(a: &[u8], b: &[u8], from: Option<u8>) -> Self {
+        let mut t = [false; 256];
+        let mut i = 0;
+        while i < a.len() {
+            t[a[i] as usize] = true;
+            i += 1;
+        }
+        i = 0;
+        while i < b.len() {
+            t[b[i] as usize] = true;
+            i += 1;
+        }
+        if let Some(f) = from {
+            i = f as usize;
+            while i < 256 {
+                t[i] = true;
+                i += 1;
+            }
+        }
+        Self(t)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn has(&self, b: u8) -> bool {
+        self.0.get(usize::from(b)) == Some(&true)
+    }
+
+    /// The offset of the first byte of `s` in the set.
+    #[inline]
+    #[must_use]
+    pub fn find(&self, s: &[u8]) -> Option<usize> {
+        s.iter().position(|&b| self.has(b))
+    }
+}

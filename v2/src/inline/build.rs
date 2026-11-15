@@ -198,21 +198,26 @@ fn push_node(list: &mut Vec<Node>, node: Node) {
         && let Some(Node::Text(last)) = list.last_mut()
     {
         last.value.push_str(&new.value);
-        last.pos = match (last.pos, new.pos) {
-            (Some(a), Some(b)) if a.end_offset == b.start_offset => Some(Pos {
-                end_line: b.end_line,
-                end_column: b.end_column,
-                end_offset: b.end_offset,
-                ..a
-            }),
-            _ => None,
-        };
+        last.pos = joined(last.pos, new.pos);
         return;
     }
     list.push(node);
 }
 
-impl Builder<'_, '_> {
+/// The position of two adjacent text pieces merged, none when they do not touch.
+fn joined(a: Option<Pos>, b: Option<Pos>) -> Option<Pos> {
+    match (a, b) {
+        (Some(a), Some(b)) if a.end_offset == b.start_offset => Some(Pos {
+            end_line: b.end_line,
+            end_column: b.end_column,
+            end_offset: b.end_offset,
+            ..a
+        }),
+        _ => None,
+    }
+}
+
+impl<'a> Builder<'a, '_> {
     fn out(&mut self) -> &mut Vec<Node> {
         match self.frames.last_mut() {
             Some(f) => &mut f.children,
@@ -230,17 +235,28 @@ impl Builder<'_, '_> {
         (!self.c.cell_joined()).then(|| self.c.pos(v0, v1))
     }
 
-    fn text(&mut self, v0: usize, v1: usize, value: String) {
+    /// Adds text, appended to a text node before it (C2-A-040).
+    fn text(&mut self, v0: usize, v1: usize, value: &str) {
         let pos = if self.c.contiguous(v0, v1) {
             self.pos(v0, v1)
         } else {
             None
         };
-        self.add(Node::Text(Box::new(Text {
-            value,
+        if let Some(Node::Text(last)) = self.out().last_mut() {
+            last.value.push_str(value);
+            last.pos = joined(last.pos, pos);
+            return;
+        }
+        self.out().push(Node::Text(Box::new(Text {
+            value: value.to_string(),
             pos,
             ..Default::default()
         })));
+    }
+
+    /// The source text of a content range.
+    fn src(&self, v0: usize, v1: usize) -> &'a str {
+        self.ctx.t.get(v0..v1).unwrap_or("")
     }
 
     fn slice(&self, v0: usize, v1: usize) -> String {
@@ -263,7 +279,7 @@ impl Builder<'_, '_> {
                 plain: true,
             } => self.plain(v0, v1, next_flow),
             Ev::Text { v0, v1, val, .. } => {
-                let value = val.unwrap_or_else(|| self.slice(v0, v1));
+                let value = val.as_deref().unwrap_or_else(|| self.src(v0, v1));
                 if let Some(last) = value.chars().next_back() {
                     self.smart.prev = Prev::Char(last);
                     self.flow_prev = Some(last);
@@ -346,7 +362,7 @@ impl Builder<'_, '_> {
             self.flow_prev = None;
         }
         if dead {
-            let t = self.slice(v0, v1);
+            let t = self.src(v0, v1);
             self.text(v0, v1, t);
         }
         self.smart.prev = Prev::Start;
@@ -370,7 +386,7 @@ impl Builder<'_, '_> {
             for ch in f.children {
                 self.add(ch);
             }
-            let t = self.slice(v0, v1);
+            let t = self.src(v0, v1);
             self.text(v0, v1, t);
             return;
         }
@@ -423,7 +439,7 @@ impl Builder<'_, '_> {
         for o in outs {
             match o {
                 Out::Text(a, b) => {
-                    let t = self.slice(a, b);
+                    let t = self.src(a, b);
                     self.text(a, b, t);
                 }
                 Out::Punct {

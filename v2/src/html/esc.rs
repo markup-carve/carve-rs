@@ -1,6 +1,8 @@
 //! Escaping (C2-H-002, C2-H-003) and the character filters of C2-H-172 and
 //! C2-H-176.
 
+use crate::chars::ByteSet;
+
 /// A character the HTML input stream rejects (C2-H-176).
 #[must_use]
 pub fn rejected(c: char) -> bool {
@@ -17,28 +19,20 @@ pub fn bidi(c: char) -> bool {
     matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
+/// The C0 controls: the rejected ones and the four whitespace bytes.
+const CONTROLS: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f";
 /// The bytes the text escape looks at: all but plain printable ASCII.
-const fn text_byte(x: u8) -> bool {
-    x >= 0x7F || x < 0x20 || matches!(x, b'&' | b'<' | b'>')
-}
-
+static TEXT_BYTES: ByteSet = ByteSet::new(b"&<>", CONTROLS, Some(0x7F));
 /// The same for attribute values, quotes included.
-const fn attr_byte(x: u8) -> bool {
-    text_byte(x) || matches!(x, b'"' | b'\'')
-}
+static ATTR_BYTES: ByteSet = ByteSet::new(b"&<>\"'", CONTROLS, Some(0x7F));
 
 /// Writes `s` with each character `rep` maps replaced; only the characters
-/// that start at a byte `look` picks are tested.
-fn escape(
-    s: &str,
-    out: &mut String,
-    look: impl Fn(u8) -> bool,
-    rep: impl Fn(char) -> Option<&'static str>,
-) {
+/// that start at a byte of `look` are tested.
+fn escape(s: &str, out: &mut String, look: &ByteSet, rep: impl Fn(char) -> Option<&'static str>) {
     let b = s.as_bytes();
     let mut from = 0;
     let mut i = 0;
-    while let Some(k) = b.get(i..).and_then(|r| r.iter().position(|&x| look(x))) {
+    while let Some(k) = b.get(i..).and_then(|r| look.find(r)) {
         i += k;
         let Some(c) = s.get(i..).and_then(|r| r.chars().next()) else {
             break;
@@ -80,7 +74,7 @@ fn attr_rep(c: char) -> Option<&'static str> {
 
 /// Appends text content (C2-H-002).
 pub fn text(s: &str, out: &mut String) {
-    escape(s, out, text_byte, text_rep);
+    escape(s, out, &TEXT_BYTES, text_rep);
 }
 
 /// Text content as a new string.
@@ -94,7 +88,7 @@ pub fn text_str(s: &str) -> String {
 /// Appends an attribute value (C2-H-003): a no-break space and the
 /// bidirectional controls stay.
 pub fn attr(s: &str, out: &mut String) {
-    escape(s, out, attr_byte, attr_rep);
+    escape(s, out, &ATTR_BYTES, attr_rep);
 }
 
 #[cfg(test)]

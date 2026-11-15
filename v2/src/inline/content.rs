@@ -26,7 +26,8 @@ pub struct Content<'a> {
     segs: Vec<Seg>,
     /// Content offset of each join character and its kind, in order.
     joins: Vec<(usize, Join)>,
-    /// Number of characters in `text[..i]`, for columns in linear time.
+    /// Number of characters in `text[..i]`, for columns in linear time;
+    /// empty when the text is ASCII and the count is `i`.
     chars: Vec<usize>,
     /// A continuation row joined a fragment, computed once (linear time).
     cell_joined: bool,
@@ -107,14 +108,17 @@ impl<'a> Content<'a> {
             });
             text.push_str(piece);
         }
-        let mut chars = Vec::with_capacity(text.len() + 1);
-        let mut n = 0;
-        chars.push(0);
-        for b in text.bytes() {
-            if b & 0xC0 != 0x80 {
-                n += 1;
+        let mut chars = Vec::new();
+        if !text.is_ascii() {
+            chars.reserve(text.len() + 1);
+            let mut n = 0;
+            chars.push(0);
+            for b in text.bytes() {
+                if b & 0xC0 != 0x80 {
+                    n += 1;
+                }
+                chars.push(n);
             }
-            chars.push(n);
         }
         let cell_joined = joins.iter().any(|&(_, j)| j == Join::Cell);
         Self {
@@ -134,7 +138,15 @@ impl<'a> Content<'a> {
             return (1, 1, 0);
         };
         let d = v.saturating_sub(seg.v).min(seg.len);
-        let count = |x: usize| self.chars.get(x).copied().unwrap_or(0);
+        let count = |x: usize| {
+            if !self.chars.is_empty() {
+                self.chars.get(x).copied().unwrap_or(0)
+            } else if x <= self.text.len() {
+                x
+            } else {
+                0
+            }
+        };
         (
             seg.line,
             seg.col + count(seg.v + d) - count(seg.v),

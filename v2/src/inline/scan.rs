@@ -10,7 +10,7 @@ use crate::ast::{
     Autolink, Code, Comment, CommentForm, CriticComment, FootnoteRef, Image, ImageRefForm,
     LinkRefForm, LiteralInline, Math, Mention, Node, RawInline, Symbol, Tag, Xref, XrefNamespace,
 };
-use crate::chars::{fold_label, is_flank_space, is_joining, is_word};
+use crate::chars::{ByteSet, fold_label, is_flank_space, is_joining, is_word};
 use crate::tables;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +87,7 @@ pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
     while s.i < s.b.len() {
         if !s.step() {
             s.text_char();
+            s.skip_plain();
         }
     }
     s.flush();
@@ -96,6 +97,13 @@ pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
         comments: s.comments,
     }
 }
+
+/// The first bytes `Scanner::step` reads a form at.
+static FORM_START: ByteSet = ByteSet::new(
+    b"\\\n`!$\x7b%<@#:[^]*/",
+    tables::BRACED_MARKS.as_bytes(),
+    None,
+);
 
 impl Scanner<'_, '_> {
     fn at(&self, i: usize) -> Option<u8> {
@@ -116,6 +124,12 @@ impl Scanner<'_, '_> {
             self.text_from = Some(self.i);
         }
         self.i += self.char_at(self.i).map_or(1, char::len_utf8);
+    }
+
+    /// Moves over bytes no form starts with: `step` is false on each of them.
+    fn skip_plain(&mut self) {
+        let rest = self.b.get(self.i..).unwrap_or(&[]);
+        self.i += FORM_START.find(rest).unwrap_or(rest.len());
     }
 
     fn flush(&mut self) {
