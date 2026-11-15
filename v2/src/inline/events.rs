@@ -50,9 +50,9 @@ pub enum Ev {
     },
 }
 
-/// Turns the settled tokens into events; plain text runs that touch merge.
-#[must_use]
-pub fn from_tokens(toks: Vec<Tok>) -> Vec<Ev> {
+/// Turns the settled tokens into events (into `out`, `toks` emptied);
+/// plain text runs that touch merge.
+pub fn from_tokens(toks: &mut Vec<Tok>, out: &mut Vec<Ev>) {
     // Only inline footnotes need the opener lookup of each closer.
     let any_note = toks.iter().any(|t| {
         matches!(
@@ -76,8 +76,9 @@ pub fn from_tokens(toks: Vec<Tok>) -> Vec<Ev> {
             )
         })
         .collect();
-    let mut out: Vec<Ev> = Vec::with_capacity(toks.len());
-    for t in toks {
+    out.clear();
+    out.reserve(toks.len());
+    for t in toks.drain(..) {
         let Tok { v0, v1, k } = t;
         let ev = match k {
             K::Skip => continue,
@@ -110,9 +111,8 @@ pub fn from_tokens(toks: Vec<Tok>) -> Vec<Ev> {
                 plain: true,
             },
         };
-        push(&mut out, ev);
+        push(out, ev);
     }
-    out
 }
 
 fn push(out: &mut Vec<Ev>, ev: Ev) {

@@ -13,6 +13,7 @@ mod token;
 
 use crate::ast::Node;
 use crate::source::Source;
+use std::cell::RefCell;
 use std::collections::HashSet;
 
 /// How a piece joins the piece before it.
@@ -64,11 +65,52 @@ pub struct InlineEnv<'a> {
     pub hard_breaks: bool,
 }
 
+/// The buffers of one inline pass, kept for the next content of the thread.
+#[derive(Default)]
+pub(crate) struct Scratch {
+    text: String,
+    segs: Vec<content::Seg>,
+    joins: Vec<(usize, Join)>,
+    chars: Vec<usize>,
+    toks: Vec<token::Tok>,
+    evs: Vec<events::Ev>,
+    outs: Vec<smart::Out>,
+}
+
+/// A buffer this long is not kept: one huge content must not pin its memory.
+const KEEP: usize = 1 << 16;
+
+impl Scratch {
+    fn trim(&mut self) {
+        if self.text.capacity() > KEEP
+            || self.toks.capacity() > KEEP / 16
+            || self.evs.capacity() > KEEP / 16
+        {
+            *self = Self::default();
+        }
+    }
+}
+
+thread_local! {
+    static SCRATCH: RefCell<Scratch> = RefCell::default();
+}
+
 /// Parses one content into inline nodes with positions.
 #[must_use]
 pub fn parse(env: &InlineEnv<'_>, pieces: &[Piece]) -> Vec<Node> {
-    let content = content::Content::new(env, pieces);
-    let scanned = scan::scan(&content, env);
+    SCRATCH.with(|s| match s.try_borrow_mut() {
+        Ok(mut s) => {
+            let out = parse_in(env, pieces, &mut s);
+            s.trim();
+            out
+        }
+        Err(_) => parse_in(env, pieces, &mut Scratch::default()),
+    })
+}
+
+fn parse_in(env: &InlineEnv<'_>, pieces: &[Piece], s: &mut Scratch) -> Vec<Node> {
+    let content = content::Content::new_in(env, pieces, s);
+    let scanned = scan::scan(&content, env, std::mem::take(&mut s.toks));
     let mut toks = scanned.toks;
     let ctx = delim::Ctx {
         t: &content.text,
@@ -76,6 +118,9 @@ pub fn parse(env: &InlineEnv<'_>, pieces: &[Piece]) -> Vec<Node> {
         depth: env.depth,
     };
     delim::resolve(&mut toks, &ctx);
-    let evs = events::from_tokens(toks);
-    build::build(&content, &ctx, env, evs)
+    events::from_tokens(&mut toks, &mut s.evs);
+    s.toks = toks;
+    let out = build::build(&content, &ctx, env, &mut s.evs, &mut s.outs);
+    content.recycle(s);
+    out
 }

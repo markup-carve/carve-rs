@@ -7,7 +7,7 @@ use crate::ast::Pos;
 use crate::source::Source;
 
 #[derive(Debug, Clone, Copy)]
-struct Seg {
+pub(super) struct Seg {
     /// Offset of the piece in the content text.
     v: usize,
     /// Offset of the piece in the source.
@@ -57,19 +57,22 @@ fn trim_end(b: &[u8], start: usize, mut end: usize) -> usize {
 }
 
 impl<'a> Content<'a> {
-    /// Joins the pieces of one content.
-    #[must_use]
-    pub fn new(env: &InlineEnv<'a>, pieces: &[Piece]) -> Self {
+    /// Joins the pieces of one content, in the buffers of `s`.
+    pub(super) fn new_in(env: &InlineEnv<'a>, pieces: &[Piece], s: &mut super::Scratch) -> Self {
         let full = env.src.text();
         let b = full.as_bytes();
-        let mut text = String::with_capacity(
+        let mut text = std::mem::take(&mut s.text);
+        text.clear();
+        text.reserve(
             pieces
                 .iter()
                 .map(|p| p.end.saturating_sub(p.start) + 1)
                 .sum(),
         );
-        let mut segs = Vec::with_capacity(pieces.len());
-        let mut joins = Vec::with_capacity(pieces.len());
+        let mut segs = std::mem::take(&mut s.segs);
+        segs.clear();
+        let mut joins = std::mem::take(&mut s.joins);
+        joins.clear();
         for (n, p) in pieces.iter().enumerate() {
             let end = p.end.min(full.len());
             let mut start = p.start.min(end);
@@ -113,7 +116,8 @@ impl<'a> Content<'a> {
             });
             text.push_str(piece);
         }
-        let mut chars = Vec::new();
+        let mut chars = std::mem::take(&mut s.chars);
+        chars.clear();
         if !text.is_ascii() {
             chars.reserve(text.len() + 1);
             let mut n = 0;
@@ -134,6 +138,14 @@ impl<'a> Content<'a> {
             cell_joined,
             src: env.src,
         }
+    }
+
+    /// Hands the buffers back for the next content.
+    pub(super) fn recycle(self, s: &mut super::Scratch) {
+        s.text = self.text;
+        s.segs = self.segs;
+        s.joins = self.joins;
+        s.chars = self.chars;
     }
 
     /// Line, column and source offset of a content offset.

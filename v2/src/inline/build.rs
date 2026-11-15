@@ -43,11 +43,17 @@ struct Builder<'a, 'e> {
 
 /// Builds the inline nodes of one content.
 #[must_use]
-pub fn build(c: &Content<'_>, ctx: &Ctx<'_>, env: &InlineEnv<'_>, evs: Vec<Ev>) -> Vec<Node> {
+pub fn build(
+    c: &Content<'_>,
+    ctx: &Ctx<'_>,
+    env: &InlineEnv<'_>,
+    evs: &mut Vec<Ev>,
+    outs: &mut Vec<Out>,
+) -> Vec<Node> {
     let next_flow = if env.abbreviations.is_empty() {
         Vec::new()
     } else {
-        next_flow(ctx.t, &evs)
+        next_flow(ctx.t, evs)
     };
     let mut b = Builder {
         c,
@@ -58,15 +64,16 @@ pub fn build(c: &Content<'_>, ctx: &Ctx<'_>, env: &InlineEnv<'_>, evs: Vec<Ev>) 
         smart: Smart::new(),
         flow_prev: None,
         comment_to: None,
-        outs: Vec::new(),
+        outs: std::mem::take(outs),
     };
-    for (i, ev) in evs.into_iter().enumerate() {
+    for (i, ev) in evs.drain(..).enumerate() {
         b.event(ev, next_flow.get(i).copied().flatten());
     }
     while let Some(f) = b.frames.pop() {
         let end = f.v1;
         b.exit(f, end, end, None);
     }
+    *outs = b.outs;
     b.root
 }
 

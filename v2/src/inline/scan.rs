@@ -65,15 +65,17 @@ struct Scanner<'a, 'e> {
 
 /// Runs the scan over one content.
 #[must_use]
-pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
+pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>, mut toks: Vec<Tok>) -> Scanned {
     let t = c.text.as_str();
+    toks.clear();
+    // Each byte that starts a form makes about one token and ends a text run.
+    toks.reserve(2 * t.bytes().filter(|&b| FORM_START.has(b)).count() + 1);
     let mut s = Scanner {
         c,
         t,
         b: t.as_bytes(),
         env,
-        // Each byte that starts a form makes about one token and ends a text run.
-        toks: Vec::with_capacity(2 * t.bytes().filter(|&b| FORM_START.has(b)).count() + 1),
+        toks,
         text_from: None,
         brackets: Vec::new(),
         dead: 0,
