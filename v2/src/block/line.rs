@@ -65,9 +65,10 @@ impl<'a> Cursor<'a> {
         Some(c)
     }
 
-    /// Advances `n` bytes of ASCII.
+    /// Advances `n` bytes, a character at a time so the column stays right.
     pub fn bump_n(&mut self, n: usize) {
-        for _ in 0..n {
+        let end = self.pos + n;
+        while self.pos < end {
             if self.bump().is_none() {
                 break;
             }

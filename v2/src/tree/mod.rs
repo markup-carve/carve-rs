@@ -11,14 +11,20 @@ use crate::block::shapes::{DivInfo, MarkerKind};
 use crate::chars::fold_label;
 use crate::inline::{self, ContentKind, InlineEnv, Join, Piece};
 use crate::source::Source;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Builds the document from the events of the block pass.
 #[must_use]
-pub fn build(src: &Source, events: Vec<Event>) -> ast::Document {
+pub fn build(src: &Source, events: Vec<Event>, own_starts: &[(usize, usize)]) -> ast::Document {
     let (link_keys, abbreviations) = definitions(&events);
+    // Keyed by the source offset that `pos` carries.
+    let own_starts: HashMap<usize, usize> = own_starts
+        .iter()
+        .map(|&(k, v)| (src.pos(k, k).start_offset, v))
+        .collect();
     let mut b = Builder {
         src,
+        own_starts: &own_starts,
         link_keys,
         abbreviations,
         stack: Vec::new(),
@@ -71,6 +77,7 @@ struct Frame {
 
 struct Builder<'a> {
     src: &'a Source,
+    own_starts: &'a HashMap<usize, usize>,
     link_keys: HashSet<String>,
     abbreviations: Vec<(String, String)>,
     stack: Vec<Frame>,
@@ -494,13 +501,20 @@ impl Builder<'_> {
             ..Default::default()
         }));
         let src = self.src;
+        let own = self.own_starts;
         let list = self.children();
         let Some(target) = list.pop() else { return };
-        list.push(wrap_caption(src, target, cap, end));
+        list.push(wrap_caption(src, own, target, cap, end));
     }
 }
 
-fn wrap_caption(src: &Source, target: Node, cap: Node, end: usize) -> Node {
+fn wrap_caption(
+    src: &Source,
+    own: &HashMap<usize, usize>,
+    target: Node,
+    cap: Node,
+    end: usize,
+) -> Node {
     if let Node::Table(mut t) = target {
         t.caption = Some(Box::new(cap));
         if let Some(p) = &mut t.pos {
@@ -520,7 +534,7 @@ fn wrap_caption(src: &Source, target: Node, cap: Node, end: usize) -> Node {
     let mut pos = target.pos().copied();
     if attrs.is_some() {
         if let Some(p) = target.pos_slot().and_then(Option::as_mut) {
-            skip_attr_lines(src, p);
+            skip_attr_lines(src, own, p);
         }
     }
     if let Some(p) = &mut pos {
@@ -536,13 +550,11 @@ fn wrap_caption(src: &Source, target: Node, cap: Node, end: usize) -> Node {
 }
 
 /// The figure takes the attribute lines; the block inside starts at its own markup.
-fn skip_attr_lines(src: &Source, p: &mut ast::Pos) {
-    let mut i = p.start_line.saturating_sub(1);
-    let last = p.end_line.saturating_sub(1);
-    while i < last && src.line(i).trim_start_matches([' ', '\t']).starts_with('{') {
-        i += 1;
-    }
-    let s = src.pos(src.line_range(i).0, src.line_range(i).0);
+fn skip_attr_lines(src: &Source, own: &HashMap<usize, usize>, p: &mut ast::Pos) {
+    let Some(&at) = own.get(&p.start_offset) else {
+        return;
+    };
+    let s = src.pos(at, at);
     p.start_line = s.start_line;
     p.start_column = s.start_column;
     p.start_offset = s.start_offset;

@@ -41,7 +41,7 @@ pub use options::Options;
 pub fn parse(input: &str) -> ast::Document {
     let src = source::Source::new(input);
     let out = block::scan(&src);
-    tree::build(&src, out.events)
+    tree::build(&src, out.events, &out.own_starts)
 }
 
 /// Parses and resolves: the tree `--tree` prints.

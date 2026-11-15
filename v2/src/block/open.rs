@@ -332,6 +332,7 @@ impl Parser<'_> {
                 if let Some(own) = attrs {
                     a.merge(own);
                 }
+                self.own_starts.insert(p.start, start);
                 (p.start, Some(a))
             }
             None => (start, attrs),
@@ -608,6 +609,8 @@ impl Parser<'_> {
                 leaf: Leaf::LineBlock {
                     len,
                     lines: Vec::new(),
+                    held: Vec::new(),
+                    col: k.col,
                 },
                 start: s,
                 end: e,

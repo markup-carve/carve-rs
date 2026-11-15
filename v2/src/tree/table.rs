@@ -282,7 +282,13 @@ fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
                     .and_then(|g| g.get(c))
                     .copied()
                     .flatten()
-                    .filter(|o| o.col == c),
+                    // Gap G-024: as in the oracle, a cell that spans columns takes no row span.
+                    .filter(|o| o.col == c)
+                    .filter(|o| {
+                        out.get(o.row)
+                            .and_then(|v| v.get(o.col))
+                            .is_some_and(|x| x.colspan == 1)
+                    }),
                 _ => None,
             };
             let set = match (cell.span, origin) {

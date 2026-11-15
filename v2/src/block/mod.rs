@@ -14,12 +14,16 @@ use crate::source::Source;
 use events::{ContainerKind, Event, LeafKind, Role};
 use line::Cursor;
 use shapes::{FenceInfo, MarkerKind};
+use std::collections::HashMap;
 use table::TableData;
 
 /// The result of the block pass.
 #[derive(Debug, Default)]
 pub struct BlockOutput {
     pub events: Vec<Event>,
+    /// For a block that took attribute lines: its start, which is the start
+    /// of the first attribute line, mapped to the start of its own markup.
+    pub own_starts: Vec<(usize, usize)>,
 }
 
 /// An open container.
@@ -123,6 +127,10 @@ enum Leaf {
     LineBlock {
         len: usize,
         lines: Vec<Piece>,
+        /// Blank lines held back (gap G-025).
+        held: Vec<(usize, usize)>,
+        /// The opener's column: a blank line's range starts there.
+        col: usize,
     },
     Table {
         data: TableData,
@@ -178,6 +186,7 @@ pub struct Parser<'a> {
     stack: Vec<Container>,
     leaf: Option<OpenLeaf>,
     pending: Option<Pending>,
+    own_starts: HashMap<usize, usize>,
     blank_run: usize,
     closed: Option<Closed>,
     line_no: usize,
@@ -197,6 +206,7 @@ pub fn scan(src: &Source) -> BlockOutput {
         }],
         leaf: None,
         pending: None,
+        own_starts: HashMap::new(),
         line_end: 0,
         blank_run: 0,
         closed: None,
@@ -212,7 +222,10 @@ pub fn scan(src: &Source) -> BlockOutput {
         p.line(s, e);
     }
     p.finish();
-    BlockOutput { events: p.events }
+    BlockOutput {
+        events: p.events,
+        own_starts: p.own_starts.into_iter().collect(),
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -362,7 +375,7 @@ impl<'a> Parser<'a> {
     }
 
     /// A blank line inside a fence body is held back (C2-B-113).
-    fn opaque_blank(&mut self, walk: &Walk<'a>, s: usize, _e: usize) -> bool {
+    fn opaque_blank(&mut self, walk: &Walk<'a>, s: usize, e: usize) -> bool {
         let owned = self.leaf.as_ref().is_some_and(|l| l.depth <= walk.matched);
         let Some(open) = &mut self.leaf else {
             return false;
@@ -381,12 +394,13 @@ impl<'a> Parser<'a> {
                 *held += 1;
                 true
             }
-            Leaf::LineBlock { lines, .. } => {
-                lines.push(Piece {
-                    start: s,
-                    end: s,
-                    join: Join::Line,
-                });
+            Leaf::LineBlock { held, col, .. } => {
+                // Gap G-025: as in the oracle, trailing blank lines of an
+                // unclosed line block are dropped, as C2-B-113 does for a fence.
+                let _ = s;
+                let mut k = walk.cur;
+                k.strip_to(*col);
+                held.push((k.offset(), e.max(k.offset())));
                 true
             }
             _ => false,
@@ -704,6 +718,13 @@ fn flush_held(leaf: &mut Leaf) {
                 value.push('\n');
             }
         }
+        Leaf::LineBlock { lines, held, .. } => {
+            lines.extend(held.drain(..).map(|(start, end)| Piece {
+                start,
+                end,
+                join: Join::Line,
+            }));
+        }
         Leaf::CommentBlock { lines, held, .. } => {
             for _ in 0..*held {
                 lines.push(String::new());
@@ -747,7 +768,12 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
             k.strip_to(walk.qbase + *indent);
             lines.push(k.rest().to_string());
         }
-        Leaf::LineBlock { lines, .. } => {
+        Leaf::LineBlock { lines, held, .. } => {
+            lines.extend(held.drain(..).map(|(start, end)| Piece {
+                start,
+                end,
+                join: Join::Line,
+            }));
             let k = walk.cur;
             lines.push(Piece {
                 start: k.offset(),

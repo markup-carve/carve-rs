@@ -268,3 +268,43 @@ fn g_008_one_empty_last_line_of_a_delimited_body_is_no_record() {
         "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><td></td></tr>\n  </tbody>\n</table>"
     );
 }
+
+#[test]
+fn c2_b_082_a_footnote_label_outside_ascii_keeps_its_body() {
+    assert!(html("[^\u{e9}]: T\n\n[^\u{e9}]").contains("<p>T<a href=\"#fnref1\""));
+}
+
+#[test]
+fn g_024_a_cell_that_spans_columns_takes_no_row_span() {
+    assert_eq!(
+        html("|a|<|\n|^|b|"),
+        "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a</td></tr>\n    <tr><td></td><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn g_004_the_block_inside_a_figure_starts_at_its_own_markup() {
+    let doc = carve2::parse("> {l}\n> ```\n> ```\n> ^ i");
+    let Some(carve2::ast::Node::BlockQuote(q)) = doc.children.first() else {
+        panic!("no quote");
+    };
+    let Some(carve2::ast::Node::Figure(f)) = q.children.first() else {
+        panic!("no figure");
+    };
+    let inner = f.children.first().and_then(|n| n.pos().copied());
+    assert_eq!(inner.map(|p| p.start_offset), Some(8));
+}
+
+#[test]
+fn g_025_trailing_blank_lines_of_an_unclosed_line_block_are_dropped() {
+    let doc = carve2::parse("::: |\na\n\n\n");
+    let Some(carve2::ast::Node::LineBlock(b)) = doc.children.first() else {
+        panic!("no line block");
+    };
+    assert_eq!(b.children.len(), 1);
+    let doc = carve2::parse("::: |\na\n\nb\n:::");
+    let Some(carve2::ast::Node::LineBlock(b)) = doc.children.first() else {
+        panic!("no line block");
+    };
+    assert_eq!(b.children.len(), 3);
+}
