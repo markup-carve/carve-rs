@@ -467,7 +467,7 @@ impl Builder<'_> {
             });
         }
         let children = self.inline(ContentKind::LineBlockLine, &[p]);
-        let pos = self.pos(p.start, crate::block::trim_end(self.src, p.start, p.end));
+        let pos = self.pos(p.start, p.end);
         Node::Line(ast::Line {
             children,
             pos,

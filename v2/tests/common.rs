@@ -13,7 +13,11 @@ pub struct Example {
 }
 
 pub fn examples() -> Vec<Example> {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/examples.json")).unwrap_or_default();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/examples.json"
+    ))
+    .unwrap_or_default();
     let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     v.as_array()
         .into_iter()

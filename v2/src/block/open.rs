@@ -108,7 +108,7 @@ impl Parser<'_> {
         let text = self.src.text();
         if owned {
             if let Some((s, z, attrs)) = shapes::table_row(&k) {
-                let line_end = k.offset() + k.rest().trim_end_matches([' ', '\t']).len();
+                let line_end = k.offset() + k.rest().len();
                 let row = Row {
                     cells: table::parse_cells(text, k.base + s, k.base + z),
                     start: k.offset(),
@@ -138,7 +138,7 @@ impl Parser<'_> {
                     if let Some(row) = data.rows.last_mut() {
                         table::join_continuation(row, text, &frags);
                         *end =
-                            (k.offset() + k.rest().trim_end_matches([' ', '\t']).len()).max(*end);
+                            (k.offset() + k.rest().len()).max(*end);
                     }
                 }
                 return true;
@@ -433,7 +433,7 @@ impl Parser<'_> {
             self.push_leaf_event(
                 LeafKind::Thematic,
                 s,
-                start + r.trim_end_matches([' ', '\t']).len(),
+                start + r.len(),
                 attrs,
             );
             self.closed = None;
@@ -463,7 +463,7 @@ impl Parser<'_> {
             .flatten()
         {
             let (s, attrs) = self.take_pending(start, None);
-            let end = start + r.trim_end_matches([' ', '\t']).len();
+            let end = start + r.len();
             self.push_leaf_event(
                 LeafKind::Include {
                     path: inc.path,
@@ -491,7 +491,7 @@ impl Parser<'_> {
             let _ = first;
             // C2-B-136: a comment after a marker or a quote mark is content.
             let value = shapes::line_comment_value(r);
-            let end = start + r.trim_end_matches([' ', '\t']).len();
+            let end = start + r.len();
             self.push_leaf_event(
                 LeafKind::Comment {
                     block: false,
@@ -584,7 +584,7 @@ impl Parser<'_> {
                 if let Some(Kind::Div { len: open_len, .. }) = self.stack.get(i).map(|c| &c.kind) {
                     if *open_len <= len && i + 1 == self.stack.len() {
                         if let Some(top) = self.stack.last_mut() {
-                            top.end = start + k.rest().trim_end_matches([' ', '\t']).len();
+                            top.end = start + k.rest().len();
                         }
                         self.pop_container();
                         return true;
@@ -620,7 +620,7 @@ impl Parser<'_> {
             attrs,
         );
         if let Some(top) = self.stack.last_mut() {
-            top.end = start + k.rest().trim_end_matches([' ', '\t']).len();
+            top.end = start + k.rest().len();
         }
         true
     }
@@ -631,7 +631,7 @@ impl Parser<'_> {
         };
         let _ = e;
         let text = self.src.text();
-        let line_end = k.offset() + k.rest().trim_end_matches([' ', '\t']).len();
+        let line_end = k.offset() + k.rest().len();
         let row = Row {
             cells: table::parse_cells(text, k.base + s, k.base + z),
             start: k.offset(),
@@ -650,7 +650,7 @@ impl Parser<'_> {
             return false;
         };
         let start = k.offset();
-        let end = start + k.rest().trim_end_matches([' ', '\t']).len();
+        let end = start + k.rest().len();
         let _ = e;
         match &mut self.pending {
             Some(p) => {
@@ -706,7 +706,7 @@ impl Parser<'_> {
     fn open_definition(&mut self, r: &str, start: usize, e: usize) -> bool {
         if let Some(d) = shapes::link_def(r) {
             let (s, attrs) = self.take_pending(start, None);
-            let end = start + r.trim_end_matches([' ', '\t']).len();
+            let end = start + r.len();
             let _ = e;
             self.push_leaf_event(
                 LeafKind::LinkDef {
@@ -723,7 +723,7 @@ impl Parser<'_> {
         }
         if let Some((key, expansion)) = shapes::abbr_def(r) {
             let (s, attrs) = self.take_pending(start, None);
-            let end = start + r.trim_end_matches([' ', '\t']).len();
+            let end = start + r.len();
             self.push_leaf_event(LeafKind::AbbrDef { key, expansion }, s, end, attrs);
             self.closed = None;
             return true;

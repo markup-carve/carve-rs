@@ -474,7 +474,7 @@ impl<'a> Parser<'a> {
         }
         let value = shapes::line_comment_value(k.rest());
         let start = k.offset();
-        let end = start + k.rest().trim_end_matches([' ', '\t']).len();
+        let end = start + k.rest().len();
         if let Some(OpenLeaf {
             leaf: Leaf::Table { data },
             end: tend,
@@ -564,7 +564,7 @@ impl<'a> Parser<'a> {
         {
             pieces
                 .last()
-                .map_or(open.end, |p| trim_end(self.src, p.start, p.end))
+                .map_or(open.end, |p| p.end)
         } else {
             open.end
         };
