@@ -122,3 +122,42 @@ fn c2_a_035_a_later_key_takes_the_first_place_in_a_long_block() {
         )
     );
 }
+
+#[test]
+fn c2_h_163_an_input_over_max_length_is_refused() {
+    use carve2::options::Profile;
+    let opts = carve2::Options {
+        profile: Profile::Minimal,
+        ..carve2::Options::default()
+    };
+    assert!(carve2::try_render(&"a".repeat(10_000), &opts).is_ok());
+    assert_eq!(
+        carve2::try_render(&"é".repeat(5_001), &opts),
+        Err(carve2::RenderError::TooLong {
+            profile: "minimal",
+            limit: 10_000
+        })
+    );
+    assert_eq!(carve2::render(&"a".repeat(10_001), &opts), "");
+}
+
+#[test]
+fn c2_h_130_strict_losses_turns_each_loss_into_an_error() {
+    use carve2::options::Profile;
+    let opts = carve2::Options {
+        profile: Profile::Comment,
+        strict_losses: true,
+        ..carve2::Options::default()
+    };
+    assert_eq!(
+        carve2::try_render("![i](b.png) ![j](c.png)", &opts),
+        Err(carve2::RenderError::Losses(vec![
+            "profile-construct-degraded",
+            "profile-construct-degraded"
+        ]))
+    );
+    assert_eq!(
+        carve2::try_render("plain", &opts),
+        Ok("<p>plain</p>".into())
+    );
+}

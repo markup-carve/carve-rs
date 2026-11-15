@@ -19,6 +19,7 @@ fn main() {
             "--no-sections" => opts.sections = false,
             "--no-smart-typography" => opts.smart_typography = false,
             "--source-lines" => opts.source_lines = true,
+            "--strict-losses" => opts.strict_losses = true,
             "--heading-ids" => {
                 if let Some(v) = it
                     .next()
@@ -37,7 +38,7 @@ fn main() {
             }
             _ => {
                 eprintln!(
-                    "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input"
+                    "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--strict-losses] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input"
                 );
                 std::process::exit(2);
             }
@@ -51,7 +52,13 @@ fn main() {
     let out = if tree {
         carve2::to_json(&carve2::parse_resolved(&input, &opts))
     } else {
-        carve2::render(&input, &opts)
+        match carve2::try_render(&input, &opts) {
+            Ok(html) => html,
+            Err(e) => {
+                eprintln!("carve2: {e}");
+                std::process::exit(1);
+            }
+        }
     };
     let mut stdout = std::io::stdout();
     let _ = stdout.write_all(out.as_bytes());
@@ -74,10 +81,14 @@ fn batch(input: Option<&String>, output: Option<&String>) {
             .unwrap_or("");
         let opts = options_from_json(c.get("opts"));
         let t0 = std::time::Instant::now();
-        let html = carve2::render(src, &opts);
+        let html = carve2::try_render(src, &opts);
         let ns = t0.elapsed().as_nanos();
         let tree = carve2::to_json(&carve2::parse_resolved(src, &opts));
-        out.push(serde_json::json!({ "html": html, "tree": tree, "ns": u64::try_from(ns).unwrap_or(u64::MAX) }));
+        let ns = u64::try_from(ns).unwrap_or(u64::MAX);
+        out.push(match html {
+            Ok(html) => serde_json::json!({ "html": html, "tree": tree, "ns": ns }),
+            Err(e) => serde_json::json!({ "htmlError": e.to_string(), "tree": tree, "ns": ns }),
+        });
     }
     let _ = std::fs::write(output, serde_json::Value::Array(out).to_string());
 }
@@ -92,6 +103,7 @@ fn options_from_json(v: Option<&serde_json::Value>) -> carve2::Options {
     o.sections = flag("sections", o.sections);
     o.smart_typography = flag("smartTypography", o.smart_typography);
     o.source_lines = flag("sourceLines", o.source_lines);
+    o.strict_losses = flag("strictLosses", o.strict_losses);
     if let Some(h) = v
         .get("headingIds")
         .and_then(serde_json::Value::as_str)
