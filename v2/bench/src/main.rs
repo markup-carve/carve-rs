@@ -63,12 +63,12 @@ fn inline_hook(enter: bool) {
         return;
     }
     if enter {
-        ENTER.set((Some(cpu_now()), ALLOCS.load(Relaxed), BYTES.load(Relaxed)));
+        ENTER.set((Some(stage_now()), ALLOCS.load(Relaxed), BYTES.load(Relaxed)));
         return;
     }
     let (t, a, b) = ENTER.get();
     let Some(t) = t else { return };
-    let ns = u64::try_from(cpu_now().saturating_sub(t).as_nanos()).unwrap_or(u64::MAX);
+    let ns = u64::try_from(stage_now().saturating_sub(t).as_nanos()).unwrap_or(u64::MAX);
     let mut s = INLINE.get();
     s.ns += ns;
     s.allocs += ALLOCS.load(Relaxed) - a;
@@ -83,9 +83,9 @@ fn counters() -> (u64, u64) {
 /// Runs `f` once and returns its time and allocations.
 fn once<T>(f: impl FnOnce() -> T) -> (T, Stat) {
     let (a, b) = counters();
-    let t = cpu_now();
+    let t = stage_now();
     let out = f();
-    let ns = u64::try_from(cpu_now().saturating_sub(t).as_nanos()).unwrap_or(u64::MAX);
+    let ns = u64::try_from(stage_now().saturating_sub(t).as_nanos()).unwrap_or(u64::MAX);
     let (a2, b2) = counters();
     (
         out,
@@ -99,6 +99,12 @@ fn once<T>(f: impl FnOnce() -> T) -> (T, Stat) {
 
 /// One round: repeats `f` for at least `ms` and returns microseconds per call.
 /// CPU time of this thread: other processes on a loaded machine do not count.
+/// The stage clock: the thread CPU clock is a system call, which the inline hook would pay twice per content.
+fn stage_now() -> Duration {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    START.get_or_init(Instant::now).elapsed()
+}
+
 fn cpu_now() -> Duration {
     let mut t = libc::timespec {
         tv_sec: 0,
