@@ -1,0 +1,137 @@
+//! Heading slugs (C2-H-143 to C2-H-148) and the id reservation of C2-H-024.
+
+use crate::chars::is_number;
+use crate::options::HeadingIds;
+use crate::tables::{SLUG_REMOVED, SLUG_REVERSED};
+use std::collections::HashSet;
+use unicode_normalization::UnicodeNormalization;
+
+/// The slug of a heading's plain text, before any collision suffix.
+#[must_use]
+pub fn slug(plain: &str, mode: HeadingIds) -> String {
+    let mut s = hyphenate(&reverse(plain));
+    match mode {
+        HeadingIds::Lower => s = lower(&s),
+        HeadingIds::Ascii => s = lower(&hyphenate(&transliterate(&s))),
+        HeadingIds::KeepCase | HeadingIds::Off => {}
+    }
+    prefix(s)
+}
+
+/// C2-H-144 and C2-H-145: NFC, removed characters, reversed glyphs.
+fn reverse(plain: &str) -> String {
+    let mut out = String::with_capacity(plain.len());
+    for c in plain.nfc() {
+        if SLUG_REMOVED.contains(&c) {
+            continue;
+        }
+        match SLUG_REVERSED.iter().find(|(g, _)| *g == c) {
+            Some((_, ascii)) => out.push_str(ascii),
+            None => out.push(c),
+        }
+    }
+    out
+}
+
+/// C2-H-146: each run of other ASCII characters becomes one hyphen, and the
+/// hyphens at the ends go.
+fn hyphenate(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut pending = false;
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() || !c.is_ascii() {
+            if pending && !out.is_empty() {
+                out.push('-');
+            }
+            pending = false;
+            out.push(c);
+        } else {
+            pending = true;
+        }
+    }
+    out
+}
+
+/// C2-H-147: each character lowered on its own, with no context.
+fn lower(s: &str) -> String {
+    s.chars().flat_map(char::to_lowercase).collect()
+}
+
+/// C2-H-147 leaves the transliteration to the host: this host decomposes and
+/// keeps the ASCII part (gap HTML-006).
+fn transliterate(s: &str) -> String {
+    s.nfkd().filter(char::is_ascii).collect()
+}
+
+/// C2-H-148: a leading number takes `s-`, an empty slug is `s`.
+fn prefix(s: String) -> String {
+    match s.chars().next() {
+        None => "s".to_string(),
+        Some(c) if is_number(c) => format!("s-{s}"),
+        Some(_) => s,
+    }
+}
+
+/// The ids already taken, and the suffix search of C2-H-024.
+#[derive(Default)]
+pub struct Taken {
+    set: HashSet<String>,
+}
+
+impl Taken {
+    /// Reserves an id; false when it was taken already.
+    pub fn reserve(&mut self, id: &str) -> bool {
+        self.set.insert(id.to_string())
+    }
+
+    /// True when `id` is taken.
+    #[must_use]
+    pub fn contains(&self, id: &str) -> bool {
+        self.set.contains(id)
+    }
+
+    /// The first free id of `base`, `base-2`, `base-3`, ..., reserved.
+    pub fn unique(&mut self, base: &str) -> String {
+        if self.reserve(base) {
+            return base.to_string();
+        }
+        let mut k = 2usize;
+        loop {
+            let id = format!("{base}-{k}");
+            if self.reserve(&id) {
+                return id;
+            }
+            k += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn c2_h_146_runs_become_one_hyphen() {
+        assert_eq!(slug("Hello, World!", HeadingIds::KeepCase), "Hello-World");
+        assert_eq!(slug("Don’t stop – go", HeadingIds::KeepCase), "Don-t-stop-go");
+    }
+
+    #[test]
+    fn c2_h_148_number_prefix_and_empty() {
+        assert_eq!(slug("2nd try", HeadingIds::KeepCase), "s-2nd-try");
+        assert_eq!(slug("***", HeadingIds::KeepCase), "s");
+    }
+
+    #[test]
+    fn c2_h_147_lower_has_no_context() {
+        assert_eq!(slug("Ärger mit ΣΑΣ", HeadingIds::Lower), "ärger-mit-σασ");
+        assert_eq!(slug("İstanbul", HeadingIds::Lower), "i\u{307}stanbul");
+    }
+
+    #[test]
+    fn c2_h_024_suffix_follows_the_prefix() {
+        let mut t = Taken::default();
+        assert_eq!(t.unique("s-1"), "s-1");
+        assert_eq!(t.unique("s-1"), "s-1-2");
+    }
+}

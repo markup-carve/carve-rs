@@ -14,7 +14,9 @@ pub struct Example {
 
 pub fn examples() -> Vec<Example> {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/examples.json")).unwrap_or_default();
-    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    let mut de = serde_json::Deserializer::from_str(&text);
+    de.disable_recursion_limit();
+    let v: Value = serde::Deserialize::deserialize(&mut de).unwrap_or(Value::Null);
     v.as_array()
         .into_iter()
         .flatten()

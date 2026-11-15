@@ -1,0 +1,145 @@
+//! The plain text of inline content (C2-H-143), shared by heading slugs,
+//! caption keys, cross-reference text and task labels.
+
+use crate::ast::Node;
+use crate::tables::DEPTH_CAP;
+use std::collections::BTreeMap;
+
+/// How a symbol contributes: nothing (C2-H-143) or the text the caption
+/// writes for it (C2-B-208).
+#[derive(Clone, Copy)]
+pub enum Symbols<'a> {
+    Nothing,
+    Written(&'a BTreeMap<String, String>),
+}
+
+/// Appends the plain text of `nodes` to `out`.
+pub fn inline_text(nodes: &[Node], symbols: Symbols<'_>, out: &mut String) {
+    for n in nodes {
+        node_text(n, symbols, out, 0);
+    }
+}
+
+/// The plain text of `nodes` as a new string.
+#[must_use]
+pub fn text_of(nodes: &[Node]) -> String {
+    let mut s = String::new();
+    inline_text(nodes, Symbols::Nothing, &mut s);
+    s
+}
+
+fn node_text(n: &Node, symbols: Symbols<'_>, out: &mut String, depth: usize) {
+    if depth > DEPTH_CAP {
+        return;
+    }
+    if leaf_text(n, symbols, out) {
+        return;
+    }
+    match n {
+        Node::Ruby(r) => {
+            for p in &r.pairs {
+                if let Node::RubyPair(p) = p {
+                    children_text(&p.base, symbols, out, depth);
+                    out.push('(');
+                    children_text(&p.annotation, symbols, out, depth);
+                    out.push(')');
+                }
+            }
+        }
+        Node::InlineExtension(e) if e.name == "index" => {}
+        Node::FootnoteRef(_)
+        | Node::InlineFootnote(_)
+        | Node::Xref(_)
+        | Node::RawInline(_)
+        | Node::CriticComment(_)
+        | Node::Comment(_)
+        | Node::CitationGroup(_) => {}
+        other => {
+            if let Some(c) = other.children() {
+                children_text(c, symbols, out, depth);
+            }
+        }
+    }
+}
+
+fn children_text(nodes: &[Node], symbols: Symbols<'_>, out: &mut String, depth: usize) {
+    for c in nodes {
+        node_text(c, symbols, out, depth + 1);
+    }
+}
+
+/// The nodes that give a fixed text; true when `n` was one of them.
+fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
+    match n {
+        Node::Text(t) => out.push_str(&t.value),
+        Node::Code(t) => out.push_str(&t.value),
+        Node::LiteralInline(t) => out.push_str(&t.value),
+        Node::Math(t) => out.push_str(&t.value),
+        Node::NonBreakingSpace(_) => out.push('\u{a0}'),
+        Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
+        Node::SmartPunctuation(s) => out.push_str(s.glyph.as_deref().unwrap_or(&s.source)),
+        Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
+        Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
+        Node::Abbreviation(a) => out.push_str(&a.key),
+        Node::Mention(m) => {
+            out.push('@');
+            out.push_str(&m.target);
+        }
+        Node::Tag(t) => {
+            out.push('#');
+            out.push_str(&t.name);
+        }
+        Node::CaptionNumber(c) => {
+            if let Some(n) = c.n {
+                out.push_str(&n.to_string());
+            }
+        }
+        Node::Symbol(s) => {
+            if let Symbols::Written(map) = symbols {
+                symbol_text(map, &s.name, out);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// The text a symbol is written as (C2-H-101).
+pub fn symbol_text(map: &BTreeMap<String, String>, name: &str, out: &mut String) {
+    if let Some(v) = map.get(name) {
+        out.push_str(v);
+    } else {
+        out.push(':');
+        out.push_str(name);
+        out.push(':');
+    }
+}
+
+/// A canonical source spelling of inline content, for the heading match of
+/// C2-I-084 on a tree without its source (gap HTML-002): delimiter pairs in
+/// their bare form, code spans in one backtick, every other node as its plain
+/// text.
+pub fn source_text(nodes: &[Node], out: &mut String, depth: usize) {
+    if depth > DEPTH_CAP {
+        return;
+    }
+    for n in nodes {
+        let mark = match n {
+            Node::Strong(_) => "*",
+            Node::Emphasis(_) => "/",
+            Node::Code(c) => {
+                out.push('`');
+                out.push_str(&c.value);
+                out.push('`');
+                continue;
+            }
+            _ => {
+                node_text(n, Symbols::Nothing, out, depth);
+                continue;
+            }
+        };
+        out.push_str(mark);
+        source_text(n.children().map_or(&[], Vec::as_slice), out, depth + 1);
+        out.push_str(mark);
+    }
+}
