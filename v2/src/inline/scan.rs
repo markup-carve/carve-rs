@@ -55,9 +55,10 @@ struct Scanner<'a, 'e> {
     /// An unquoted value run behind which attribute blocks fail.
     attr_fail: Option<(usize, usize)>,
     comments: Vec<(usize, usize)>,
-    /// Last start of `%}` and of `#}`, to keep the closer search linear.
-    last_pct: Option<usize>,
-    last_hash: Option<usize>,
+    /// Last start of `%}` and of `#}`, to keep the closer search linear;
+    /// searched when the first opener asks.
+    last_pct: Option<Option<usize>>,
+    last_hash: Option<Option<usize>>,
     caption_done: bool,
     i: usize,
 }
@@ -78,8 +79,8 @@ pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>) -> Scanned {
         no_label_from: None,
         attr_fail: None,
         comments: Vec::new(),
-        last_pct: t.rfind("%}"),
-        last_hash: t.rfind("#}"),
+        last_pct: None,
+        last_hash: None,
         caption_done: env.kind != ContentKind::Caption,
         i: 0,
     };
@@ -353,7 +354,12 @@ impl Scanner<'_, '_> {
 
     fn braced_comment(&mut self) -> bool {
         let i = self.i;
-        if self.last_pct.is_none_or(|l| l < i + 2) {
+        let t = self.t;
+        if self
+            .last_pct
+            .get_or_insert_with(|| t.rfind("%}"))
+            .is_none_or(|l| l < i + 2)
+        {
             return false;
         }
         let Some(k) = self
@@ -387,7 +393,12 @@ impl Scanner<'_, '_> {
 
     fn editorial(&mut self) -> bool {
         let i = self.i;
-        if self.last_hash.is_none_or(|l| l < i + 2) {
+        let t = self.t;
+        if self
+            .last_hash
+            .get_or_insert_with(|| t.rfind("#}"))
+            .is_none_or(|l| l < i + 2)
+        {
             return false;
         }
         let Some(k) = self
