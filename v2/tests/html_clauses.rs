@@ -178,3 +178,33 @@ fn c2_b_030_gap_g_021_a_left_sibling_moves_the_list_column() {
 fn c2_i_102_c2_h_019_a_paragraph_of_one_hard_break_is_written() {
     assert_eq!(html("\\"), "<p><br>\n</p>");
 }
+
+fn social() -> carve2::Options {
+    carve2::Options {
+        social: Some(carve2::options::Social {
+            mention_url: Some("https://m/{name}?x={name}".into()),
+            tag_url: Some("https://t/{name}".into()),
+        }),
+        ..carve2::Options::default()
+    }
+}
+
+#[test]
+fn c2_h_100_gap_g_022_social_makes_mentions_and_tags_links() {
+    assert_eq!(
+        carve2::render("@ann #topic", &social()),
+        "<p><a class=\"mention\" href=\"https://m/ann?x=ann\"><strong>@ann</strong></a> <a class=\"tag\" href=\"https://t/topic\"><strong>#topic</strong></a></p>"
+    );
+    assert_eq!(
+        carve2::render("[x @ann](/u)", &social()),
+        "<p><a href=\"/u\">x <span class=\"mention\"><strong>@ann</strong></span></a></p>"
+    );
+}
+
+#[test]
+fn c2_h_126_without_social_a_mention_is_an_inert_span() {
+    assert_eq!(
+        html("@ann"),
+        "<p><span class=\"mention\"><strong>@ann</strong></span></p>"
+    );
+}

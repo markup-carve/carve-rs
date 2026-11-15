@@ -20,6 +20,15 @@ fn main() {
             "--no-smart-typography" => opts.smart_typography = false,
             "--source-lines" => opts.source_lines = true,
             "--strict-losses" => opts.strict_losses = true,
+            "--mention-url" | "--tag-url" => {
+                let social = opts.social.get_or_insert_with(Default::default);
+                let v = it.next().cloned();
+                if a == "--mention-url" {
+                    social.mention_url = v;
+                } else {
+                    social.tag_url = v;
+                }
+            }
             "--heading-ids" => {
                 if let Some(v) = it
                     .next()
@@ -38,7 +47,7 @@ fn main() {
             }
             _ => {
                 eprintln!(
-                    "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--strict-losses] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input"
+                    "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] [--no-smart-typography] [--source-lines] [--strict-losses] [--mention-url URL] [--tag-url URL] [--heading-ids off|keep-case|lower|ascii] [--profile full|article|comment|minimal] < input"
                 );
                 std::process::exit(2);
             }
@@ -104,6 +113,17 @@ fn options_from_json(v: Option<&serde_json::Value>) -> carve2::Options {
     o.smart_typography = flag("smartTypography", o.smart_typography);
     o.source_lines = flag("sourceLines", o.source_lines);
     o.strict_losses = flag("strictLosses", o.strict_losses);
+    if let Some(s) = v.get("social") {
+        let url = |k: &str| {
+            s.get(k)
+                .and_then(serde_json::Value::as_str)
+                .map(String::from)
+        };
+        o.social = Some(carve2::options::Social {
+            mention_url: url("mentionUrl"),
+            tag_url: url("tagUrl"),
+        });
+    }
     if let Some(h) = v
         .get("headingIds")
         .and_then(serde_json::Value::as_str)

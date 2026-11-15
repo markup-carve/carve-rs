@@ -105,6 +105,17 @@ pub struct Options {
     pub url_policy: UrlPolicy,
     pub profile: Profile,
     pub strict_losses: bool,
+    pub social: Option<Social>,
+}
+
+/// URL templates for mentions and tags (C2-H-126). Gap G-022: the
+/// specification names no template syntax; as in the oracle, every
+/// `{name}` in a template is replaced by the mention's target or the tag's
+/// name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Social {
+    pub mention_url: Option<String>,
+    pub tag_url: Option<String>,
 }
 
 impl Default for Options {
@@ -125,6 +136,7 @@ impl Default for Options {
             url_policy: UrlPolicy::default(),
             profile: Profile::default(),
             strict_losses: tables::DEFAULT_STRICT_LOSSES,
+            social: None,
         }
     }
 }

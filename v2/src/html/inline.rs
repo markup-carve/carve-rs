@@ -71,15 +71,23 @@ impl<'a> Renderer<'a> {
             // Gap HTML-018: a label is the visible text, written without the at-sign.
             Node::Mention(m) => {
                 let text = m.label.clone().unwrap_or_else(|| format!("@{}", m.target));
-                self.badge("mention", &text, m.attrs.as_ref(), m.lang.as_deref(), out);
+                let b = Badge {
+                    class: "mention",
+                    name: &m.target,
+                    attrs: m.attrs.as_ref(),
+                    lang: m.lang.as_deref(),
+                };
+                self.badge(&b, &text, out);
             }
-            Node::Tag(t) => self.badge(
-                "tag",
-                &format!("#{}", t.name),
-                t.attrs.as_ref(),
-                t.lang.as_deref(),
-                out,
-            ),
+            Node::Tag(t) => {
+                let b = Badge {
+                    class: "tag",
+                    name: &t.name,
+                    attrs: t.attrs.as_ref(),
+                    lang: t.lang.as_deref(),
+                };
+                self.badge(&b, &format!("#{}", t.name), out);
+            }
             Node::Symbol(s) => {
                 let mut inner = String::new();
                 match self.opts.symbols.get(&s.name) {
@@ -503,21 +511,29 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// C2-H-100: an inert span without `social`.
-    fn badge(
-        &self,
-        class: &str,
-        text: &str,
-        attrs: Option<&Attrs>,
-        lang: Option<&str>,
-        out: &mut String,
-    ) {
-        let mut el = El::new(attrs, lang);
-        el.base.push(class.to_string());
+    /// C2-H-100, C2-H-126: an inert span, or a link when `social` gives a
+    /// URL template for the kind.
+    fn badge(&mut self, b: &Badge<'_>, text: &str, out: &mut String) {
+        let mut el = El::new(b.attrs, b.lang);
+        el.base.push(b.class.to_string());
         el.class_first = true;
-        let _ = write!(out, "<span{}><strong>", el.write(self.filter()));
+        let template = self.opts.social.as_ref().and_then(|s| match b.class {
+            "mention" => s.mention_url.as_deref(),
+            _ => s.tag_url.as_deref(),
+        });
+        // Gap G-022: inside a link the badge stays a span, as no anchor nests.
+        let tag = match template.filter(|_| self.in_link == 0) {
+            Some(t) => {
+                let href = self.destination(&t.replace("{name}", b.name));
+                el.structural.push(("href", Some(href)));
+                self.rel(&mut el);
+                "a"
+            }
+            None => "span",
+        };
+        let _ = write!(out, "<{tag}{}><strong>", el.write(self.filter()));
         esc::text(text, out);
-        out.push_str("</strong></span>");
+        let _ = write!(out, "</strong></{tag}>");
     }
 
     /// C2-H-051, C2-H-053, C2-H-054.
@@ -730,4 +746,12 @@ fn merge_def(def: Option<&Attrs>, own: Option<&Attrs>) -> Option<Attrs> {
         }
         (None, Some(o)) => Some(o.clone()),
     }
+}
+
+/// A mention or a tag as C2-H-100 writes it.
+struct Badge<'n> {
+    class: &'static str,
+    name: &'n str,
+    attrs: Option<&'n Attrs>,
+    lang: Option<&'n str>,
 }
