@@ -503,7 +503,7 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
     }
     let b = rest.as_bytes();
     let sp = b.iter().take_while(|&&x| x == b' ').count();
-    if sp == 0 && b.first() != Some(&b'[') {
+    if sp == 0 {
         return None;
     }
     let i = sp;
@@ -518,17 +518,7 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
     } else if let Some(&s @ (b'>' | b'\\' | b'|')) = b.get(i) {
         info.sigil = Some(char::from(s));
     } else {
-        title_and_label(
-            rest,
-            if sp > 1 && b.get(i) == Some(&b'"') {
-                i
-            } else {
-                0
-            },
-            base,
-            &mut info.title,
-            &mut info.label,
-        );
+        title_and_label(rest, i, base, &mut info.title, &mut info.label);
     }
     Some((n, info))
 }
@@ -537,7 +527,14 @@ fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) {
     let mut j = i;
     if rest.as_bytes().get(j) == Some(&b'{') {
         if let Some((block, end)) = parse_glued(rest, j) {
-            info.attrs = Some(block);
+            let admonition = info.name.as_deref().is_some_and(|name| {
+                crate::tables::DIV_NAMES
+                    .iter()
+                    .any(|&(candidate, kind)| candidate == name && kind == "admonition")
+            });
+            if !admonition {
+                info.attrs = Some(block);
+            }
             j = end;
         }
     }
