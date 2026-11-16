@@ -2,7 +2,7 @@
 //! from an oracle tree and comparing the inline pass with it.
 #![allow(dead_code)]
 
-use carve2::inline::{ContentKind, InlineEnv, Join, Piece, parse};
+use carve2::inline::{ContentKind, InlineEnv, Join, Piece, Scratch, parse};
 use carve2::source::Source;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -114,6 +114,7 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
     }
     abbrs.sort_by(|a, b| a.0.cmp(&b.0));
     let src = Source::new(input);
+    let arena = carve2::Arena::new();
     let mut out = Vec::new();
     let ctx = Ctx {
         src: &src,
@@ -138,6 +139,7 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
         };
         let env = InlineEnv {
             src: &src,
+            arena: &arena,
             link_keys: &keys,
             abbreviations: &abbrs,
             depth: 0,
@@ -148,7 +150,7 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
             },
             hard_breaks: false,
         };
-        let nodes = parse(&env, &pieces);
+        let nodes = parse(&env, &pieces, &mut Scratch::default());
         let mut expected = c
             .get("children")
             .cloned()
@@ -161,7 +163,7 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
 }
 
 struct Ctx<'a> {
-    src: &'a Source,
+    src: &'a Source<'a>,
     keys: &'a HashSet<String>,
     abbrs: &'a [(String, String)],
     sorted: fn(&Value) -> String,
@@ -204,8 +206,10 @@ fn cell(ctx: &Ctx<'_>, c: &Value, out: &mut Vec<(String, String)>) {
     {
         return;
     }
+    let arena = carve2::Arena::new();
     let env = InlineEnv {
         src: ctx.src,
+        arena: &arena,
         link_keys: ctx.keys,
         // OR-INL-003: the oracle reads no abbreviation in a cell.
         abbreviations: &[],
@@ -223,13 +227,14 @@ fn cell(ctx: &Ctx<'_>, c: &Value, out: &mut Vec<(String, String)>) {
             end: e,
             join: Join::Line,
         }],
+        &mut Scratch::default(),
     );
     let mut expected = para
         .get("children")
         .cloned()
         .unwrap_or(Value::Array(Vec::new()));
     strip_results(&mut expected);
-    let actual = serde_json::to_value(&nodes).unwrap_or_default();
+    let actual = serde_json::to_value(nodes).unwrap_or_default();
     out.push(((ctx.sorted)(&expected), (ctx.sorted)(&actual)));
 }
 

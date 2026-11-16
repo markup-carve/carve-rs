@@ -6,16 +6,16 @@ use super::block::{attr_str, visible};
 use crate::ast::{Node, ParagraphRole};
 use crate::resolve::order::addr;
 
-impl<'a> Renderer<'a> {
+impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-158, C2-H-169: the directive's blocks, then the section with its
     /// title and label.
-    pub(super) fn placing_directive(&mut self, n: &'a Node, depth: usize) {
+    pub(super) fn placing_directive(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::Directive(d) = n else { return };
-        for c in &d.children {
+        for c in d.children.iter() {
             self.block(c, depth);
         }
         let id = self.adm_ids.get(&addr(n)).cloned();
-        let first = self.title_lines(d.title.as_deref(), d.group_label.as_deref(), id.clone());
+        let first = self.title_lines(d.title.as_deref(), d.group_label, id.clone());
         self.footnote_section(depth, Some((first, id)));
     }
 
@@ -69,15 +69,15 @@ impl<'a> Renderer<'a> {
             match def {
                 Node::Footnote(f) => el
                     .carriers
-                    .push(("data-carve-footnote-label", Some(f.key.clone()))),
+                    .push(("data-carve-footnote-label", Some(f.key.to_string()))),
                 _ => el.carriers.push(("data-carve-inline-footnote", None)),
             }
         }
         self.line(depth, &format!("<li{}>", el.write(self.filter())));
         match def {
-            Node::Footnote(f) => self.note_body(&f.children, &back, depth + 1),
+            Node::Footnote(f) => self.note_body(&*f.children, &back, depth + 1),
             Node::InlineFootnote(f) => {
-                let inner = self.leaf(&f.children);
+                let inner = self.leaf(f.children);
                 self.line(depth + 1, &format!("<p>{inner}{back}</p>"));
             }
             _ => {}
@@ -87,7 +87,7 @@ impl<'a> Renderer<'a> {
 
     /// C2-H-090, C2-H-091: every paragraph gets `<p>`; the backlinks join the
     /// last paragraph or stand in one of their own.
-    fn note_body(&mut self, children: &'a [Node], back: &str, depth: usize) {
+    fn note_body(&mut self, children: &'r [Node<'a>], back: &str, depth: usize) {
         let last = children.iter().rposition(visible);
         let ends_in_paragraph = last.and_then(|i| children.get(i)).is_some_and(
             |c| matches!(c, Node::Paragraph(p) if p.role != Some(ParagraphRole::Image)),

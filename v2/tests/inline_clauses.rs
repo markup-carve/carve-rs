@@ -1,7 +1,7 @@
 //! Unit tests of the inline pass, one or more per clause. Each parses one
 //! paragraph and compares a compact rendering of the tree.
 
-use carve2::ast::Node;
+use carve2::ast::owned::Node;
 use carve2::inline::{ContentKind, InlineEnv, Join, Piece, parse};
 use carve2::source::Source;
 use serde_json::Value;
@@ -48,15 +48,20 @@ fn run(input: &str, o: &Opts<'_>) -> Vec<Node> {
         .map(|(a, b)| ((*a).to_string(), (*b).to_string()))
         .collect();
     abbrs.sort_by(|a, b| a.0.cmp(&b.0));
+    let arena = carve2::Arena::new();
     let env = InlineEnv {
         src: &src,
+        arena: &arena,
         link_keys: &keys,
         abbreviations: &abbrs,
         depth: o.depth,
         kind: o.kind.unwrap_or(ContentKind::Paragraph),
         hard_breaks: o.hard,
     };
-    parse(&env, &pieces)
+    parse(&env, &pieces, &mut carve2::inline::Scratch::default())
+        .iter()
+        .map(carve2::ast::Node::owned)
+        .collect()
 }
 
 /// Compact form: `type(field=value ...)[children]`, text as its quoted value.

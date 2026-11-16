@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 /// Renders a resolved tree (C2-H-001).
 #[must_use]
-pub fn render(doc: &Document, opts: &Options) -> String {
+pub fn render(doc: &Document<'_>, opts: &Options) -> String {
     let mut r = Renderer::new(doc, opts);
     r.document();
     r.out
@@ -27,7 +27,7 @@ pub fn render(doc: &Document, opts: &Options) -> String {
 
 /// Renders and returns the render losses beside the HTML (C2-H-132).
 #[must_use]
-pub fn render_with_losses(doc: &Document, opts: &Options) -> (String, Vec<&'static str>) {
+pub fn render_with_losses(doc: &Document<'_>, opts: &Options) -> (String, Vec<&'static str>) {
     let mut r = Renderer::new(doc, opts);
     r.document();
     (r.out, r.losses)
@@ -36,7 +36,7 @@ pub fn render_with_losses(doc: &Document, opts: &Options) -> (String, Vec<&'stat
 /// Renders with losses while retaining source text for degraded inline nodes.
 #[must_use]
 pub fn render_with_losses_source(
-    doc: &Document,
+    doc: &Document<'_>,
     opts: &Options,
     src: &str,
 ) -> (String, Vec<&'static str>) {
@@ -47,15 +47,15 @@ pub fn render_with_losses_source(
 }
 
 /// The state of one render.
-pub(crate) struct Renderer<'a> {
-    opts: &'a Options,
-    doc: &'a Document,
-    src: Option<&'a str>,
+pub(crate) struct Renderer<'r, 'a> {
+    opts: &'r Options,
+    doc: &'r Document<'a>,
+    src: Option<&'r str>,
     out: String,
-    order: Order<'a>,
+    order: Order<'r, 'a>,
     /// The anchor id of each note mark (C2-H-088).
     mark_ids: AddrMap<usize, String>,
-    links: HashMap<&'a str, &'a LinkReferenceDefinition>,
+    links: HashMap<&'a str, &'r LinkReferenceDefinition<'a>>,
     xref_text: HashMap<String, String>,
     adm_ids: AddrMap<usize, String>,
     /// The top-level `footnotes` directive that places the section (C2-H-093).
@@ -66,7 +66,7 @@ pub(crate) struct Renderer<'a> {
     in_abbr: usize,
     level: usize,
     /// The `longDescription` blocks met in the block being written (C2-H-080).
-    long_desc: Vec<&'a [Node]>,
+    long_desc: Vec<&'r [Node<'a>]>,
     /// The notes the section writes.
     shown: Vec<bool>,
     /// A line was written (an empty first line still counts, C2-H-134).
@@ -78,8 +78,8 @@ pub(crate) struct Renderer<'a> {
     hidden: AddrSet<usize>,
 }
 
-impl<'a> Renderer<'a> {
-    fn new(doc: &'a Document, opts: &'a Options) -> Self {
+impl<'r, 'a> Renderer<'r, 'a> {
+    fn new(doc: &'r Document<'a>, opts: &'r Options) -> Self {
         let order = Order::build(doc);
         let mut r = Renderer {
             opts,
@@ -115,9 +115,9 @@ impl<'a> Renderer<'a> {
 
     fn index(&mut self) {
         let doc = self.doc;
-        for c in &doc.children {
+        for c in doc.children.iter() {
             if let Node::LinkReferenceDefinition(d) = c {
-                self.links.entry(d.key.as_str()).or_insert(d);
+                self.links.entry(d.key).or_insert(d);
             }
         }
         // Gap HTML-015: a note whose marks the profile degrades is not written.
@@ -143,7 +143,7 @@ impl<'a> Renderer<'a> {
         };
         for (i, note) in self.order.notes.iter().enumerate() {
             for (k, r) in note.refs.iter().enumerate() {
-                let authored = r.attrs().and_then(|a| a.id.clone());
+                let authored = r.attrs().and_then(|a| a.id).map(str::to_string);
                 let id = authored.unwrap_or_else(|| {
                     if k == 0 {
                         format!("fnref{}", i + 1)
@@ -171,7 +171,7 @@ impl<'a> Renderer<'a> {
         for v in &self.order.visits {
             let (id, text) = match v.node {
                 Node::Heading(h) => match heading_id(v.node) {
-                    Some(id) => (id.to_string(), plain::text_of(&h.children)),
+                    Some(id) => (id.to_string(), plain::text_of(h.children)),
                     None => continue,
                 },
                 n => {
@@ -179,8 +179,7 @@ impl<'a> Renderer<'a> {
                     else {
                         continue;
                     };
-                    let (Some(num), Some(id)) = (c.n, n.attrs().and_then(|a| a.id.as_deref()))
-                    else {
+                    let (Some(num), Some(id)) = (c.n, n.attrs().and_then(|a| a.id)) else {
                         continue;
                     };
                     let label = label_key(before, Some(&self.opts.symbols));
@@ -200,8 +199,8 @@ impl<'a> Renderer<'a> {
     /// directive, after every authored id and generated heading id.
     fn admonition_ids(&mut self) {
         let placing = self.placing;
-        let titled = |v: &crate::resolve::order::Visit<'_>| match v.node {
-            Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs.as_deref()),
+        let titled = |v: &crate::resolve::order::Visit<'_, '_>| match v.node {
+            Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs),
             Node::Directive(d) => d.title.is_some() && placing == Some(addr(v.node)),
             _ => false,
         };
@@ -209,7 +208,7 @@ impl<'a> Renderer<'a> {
             return;
         }
         let mut taken = slug::Taken::default();
-        reserve_ids(&self.doc.children, &mut taken, 0);
+        reserve_ids(self.doc.children, &mut taken, 0);
         let mut n = 0usize;
         for v in &self.order.visits {
             if titled(v) {
@@ -240,9 +239,9 @@ impl<'a> Renderer<'a> {
     fn document(&mut self) {
         let doc = self.doc;
         if self.opts.sections {
-            self.sectioned(&doc.children);
+            self.sectioned(doc.children);
         } else {
-            for c in &doc.children {
+            for c in doc.children.iter() {
                 self.block(c, 0);
             }
         }
@@ -254,7 +253,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-026 to C2-H-028: each top-level heading opens a section.
-    fn sectioned(&mut self, children: &'a [Node]) {
+    fn sectioned(&mut self, children: &'r [Node<'a>]) {
         let mut stack: Vec<i64> = Vec::new();
         for c in children {
             if let Node::Heading(h) = c {
@@ -290,7 +289,7 @@ impl<'a> Renderer<'a> {
         if !self.opts.roundtrip {
             return;
         }
-        if h.attrs.as_deref().is_some_and(|a| a.id.is_some()) {
+        if h.attrs.is_some_and(|a| a.id.is_some()) {
             el.carriers.push(("data-carve-explicit-id", None));
         } else if h.generated_id.is_some() {
             el.carriers.push(("data-carve-generated-id", None));
@@ -299,12 +298,9 @@ impl<'a> Renderer<'a> {
 }
 
 /// The id a heading carries: authored, else generated.
-fn heading_id(n: &Node) -> Option<&str> {
+fn heading_id<'a>(n: &Node<'a>) -> Option<&'a str> {
     let Node::Heading(h) = n else { return None };
-    h.attrs
-        .as_ref()
-        .and_then(|a| a.id.as_deref())
-        .or(h.generated_id.as_deref())
+    h.attrs.as_ref().and_then(|a| a.id).or(h.generated_id)
 }
 
 /// An authored `aria-label` or `aria-labelledby` (C2-H-155).
@@ -321,7 +317,7 @@ fn reserve_ids(nodes: &[Node], taken: &mut slug::Taken, depth: usize) {
         return;
     }
     for n in nodes {
-        if let Some(id) = n.attrs().and_then(|a| a.id.as_deref()) {
+        if let Some(id) = n.attrs().and_then(|a| a.id) {
             taken.reserve(id);
         }
         if let Node::Heading(h) = n {

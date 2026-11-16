@@ -37,11 +37,11 @@ fn node_text(n: &Node, symbols: Symbols<'_>, out: &mut String, depth: usize) {
     }
     match n {
         Node::Ruby(r) => {
-            for p in &r.pairs {
+            for p in r.pairs.iter() {
                 if let Node::RubyPair(p) = p {
-                    children_text(&p.base, symbols, out, depth);
+                    children_text(p.base, symbols, out, depth);
                     out.push('(');
-                    children_text(&p.annotation, symbols, out, depth);
+                    children_text(p.annotation, symbols, out, depth);
                     out.push(')');
                 }
             }
@@ -74,11 +74,11 @@ fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
         _ if leaf_text_simple(n, out) => return true,
         Node::Mention(m) => {
             out.push('@');
-            out.push_str(&m.target);
+            out.push_str(m.target);
         }
         Node::Tag(t) => {
             out.push('#');
-            out.push_str(&t.name);
+            out.push_str(t.name);
         }
         Node::CaptionNumber(c) => {
             if let Some(n) = c.n {
@@ -87,7 +87,7 @@ fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
         }
         Node::Symbol(s) => {
             if let Symbols::Written(map) = symbols {
-                symbol_text(map, &s.name, out);
+                symbol_text(map, s.name, out);
             }
         }
         _ => return false,
@@ -97,16 +97,16 @@ fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
 
 fn leaf_text_simple(n: &Node, out: &mut String) -> bool {
     match n {
-        Node::Text(t) => out.push_str(&t.value),
-        Node::Code(t) => out.push_str(&t.value),
-        Node::LiteralInline(t) => out.push_str(&t.value),
-        Node::Math(t) => out.push_str(&t.value),
+        Node::Text(t) => out.push_str(t.value),
+        Node::Code(t) => out.push_str(t.value),
+        Node::LiteralInline(t) => out.push_str(t.value),
+        Node::Math(t) => out.push_str(t.value),
         Node::NonBreakingSpace(_) => out.push('\u{a0}'),
         Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
-        Node::SmartPunctuation(s) => out.push_str(s.glyph.as_deref().unwrap_or(&s.source)),
-        Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
-        Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
-        Node::Abbreviation(a) => out.push_str(&a.key),
+        Node::SmartPunctuation(s) => out.push_str(s.glyph.unwrap_or(s.source)),
+        Node::Image(i) => out.push_str(i.alt.unwrap_or("")),
+        Node::Autolink(a) => out.push_str(a.text.unwrap_or(a.href)),
+        Node::Abbreviation(a) => out.push_str(a.key),
         _ => return false,
     }
     true
@@ -136,12 +136,12 @@ pub fn source_text(nodes: &[Node], out: &mut String, depth: usize) {
             Node::Strong(_) => "*",
             Node::Emphasis(_) => "/",
             Node::SmartPunctuation(s) => {
-                out.push_str(&s.source);
+                out.push_str(s.source);
                 continue;
             }
             Node::Code(c) => {
                 out.push('`');
-                out.push_str(&c.value);
+                out.push_str(c.value);
                 out.push('`');
                 continue;
             }
@@ -151,7 +151,7 @@ pub fn source_text(nodes: &[Node], out: &mut String, depth: usize) {
             }
         };
         out.push_str(mark);
-        source_text(n.children().map_or(&[], Vec::as_slice), out, depth + 1);
+        source_text(n.children().unwrap_or_default(), out, depth + 1);
         out.push_str(mark);
     }
 }

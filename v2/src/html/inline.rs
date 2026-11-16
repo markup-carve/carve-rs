@@ -27,17 +27,17 @@ fn wrapper_tag(n: &Node) -> Option<&'static str> {
     })
 }
 
-impl<'a> Renderer<'a> {
+impl<'r, 'a> Renderer<'r, 'a> {
     /// The inline content of a leaf with its comment-only lines and one break
     /// beside each left out (C2-H-069).
-    pub(super) fn leaf(&mut self, nodes: &'a [Node]) -> String {
+    pub(super) fn leaf(&mut self, nodes: &'r [Node<'a>]) -> String {
         let mut out = String::new();
         self.leaf_into(nodes, &mut out);
         out
     }
 
     /// `leaf`, appended to `out`.
-    pub(super) fn leaf_into(&mut self, nodes: &'a [Node], out: &mut String) {
+    pub(super) fn leaf_into(&mut self, nodes: &'r [Node<'a>], out: &mut String) {
         // Gap G-020: children degraded at the nesting bound keep their breaks.
         if !self.past_bound() {
             hide_comment_lines(nodes, &mut self.hidden);
@@ -45,13 +45,13 @@ impl<'a> Renderer<'a> {
         self.inlines(nodes, out);
     }
 
-    pub(super) fn inlines(&mut self, nodes: &'a [Node], out: &mut String) {
+    pub(super) fn inlines(&mut self, nodes: &'r [Node<'a>], out: &mut String) {
         for n in nodes {
             self.inline(n, out);
         }
     }
 
-    fn inline(&mut self, n: &'a Node, out: &mut String) {
+    fn inline(&mut self, n: &'r Node<'a>, out: &mut String) {
         if !self.hidden.is_empty() && self.hidden.contains(&addr(n)) {
             return;
         }
@@ -67,7 +67,7 @@ impl<'a> Renderer<'a> {
         self.level -= 1;
     }
 
-    fn inline_inner(&mut self, n: &'a Node, out: &mut String) {
+    fn inline_inner(&mut self, n: &'r Node<'a>, out: &mut String) {
         if self.simple_inline(n, out) {
             return;
         }
@@ -84,45 +84,47 @@ impl<'a> Renderer<'a> {
     }
 
     #[inline]
-    fn inline_inner_other(&mut self, n: &'a Node, out: &mut String) {
+    fn inline_inner_other(&mut self, n: &'r Node<'a>, out: &mut String) {
         match n {
             Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
                 (Some(e), 0) => {
-                    let mut el = El::new(a.attrs.as_deref(), a.lang.as_deref());
-                    el.structural.push(("title", Some(e.clone())));
+                    let mut el = El::new(a.attrs, a.lang);
+                    el.structural.push(("title", Some(e.to_string())));
                     let _ = write!(out, "<abbr{}>", el.write(self.filter()));
-                    esc::text(&a.key, out);
+                    esc::text(a.key, out);
                     out.push_str("</abbr>");
                 }
-                _ => esc::text(&a.key, out),
+                _ => esc::text(a.key, out),
             },
             // Gap HTML-018: a label is the visible text, written without the at-sign.
             Node::Mention(m) => {
-                let text = m.label.clone().unwrap_or_else(|| format!("@{}", m.target));
+                let text = m
+                    .label
+                    .map_or_else(|| format!("@{}", m.target), str::to_string);
                 let b = Badge {
                     class: "mention",
-                    name: &m.target,
-                    attrs: m.attrs.as_deref(),
-                    lang: m.lang.as_deref(),
+                    name: m.target,
+                    attrs: m.attrs,
+                    lang: m.lang,
                 };
                 self.badge(&b, &text, out);
             }
             Node::Tag(t) => {
                 let b = Badge {
                     class: "tag",
-                    name: &t.name,
-                    attrs: t.attrs.as_deref(),
-                    lang: t.lang.as_deref(),
+                    name: t.name,
+                    attrs: t.attrs,
+                    lang: t.lang,
                 };
                 self.badge(&b, &format!("#{}", t.name), out);
             }
             Node::Symbol(s) => {
                 let mut inner = String::new();
-                match self.opts.symbols.get(&s.name) {
+                match self.opts.symbols.get(s.name) {
                     Some(v) => inner.push_str(v),
                     None => esc::text(&format!(":{}:", s.name), &mut inner),
                 }
-                self.wrap_span(s.attrs.as_deref(), s.lang.as_deref(), &inner, out);
+                self.wrap_span(s.attrs, s.lang, &inner, out);
             }
             Node::RawInline(r) => self.raw_inline(r, out),
             Node::InlineExtension(e) => self.inline_extension(e, out),
@@ -130,13 +132,13 @@ impl<'a> Renderer<'a> {
                 let _ = write!(
                     out,
                     "<ruby{}>",
-                    El::new(r.attrs.as_deref(), r.lang.as_deref()).write(self.filter())
+                    El::new(r.attrs, r.lang).write(self.filter())
                 );
-                for p in &r.pairs {
+                for p in r.pairs.iter() {
                     if let Node::RubyPair(p) = p {
-                        self.inlines(&p.base, out);
+                        self.inlines(p.base, out);
                         out.push_str("<rp>(</rp><rt>");
-                        self.inlines(&p.annotation, out);
+                        self.inlines(p.annotation, out);
                         out.push_str("</rt><rp>)</rp>");
                     }
                 }
@@ -149,30 +151,30 @@ impl<'a> Renderer<'a> {
     /// The nodes without children or attributes of their own.
     fn simple_inline(&mut self, n: &Node, out: &mut String) -> bool {
         match n {
-            Node::Text(t) => esc::text(&t.value, out),
+            Node::Text(t) => esc::text(t.value, out),
             Node::SoftBreak(_) => out.push('\n'),
             Node::HardBreak(_) => out.push_str("<br>\n"),
             Node::NonBreakingSpace(_) => out.push_str("&nbsp;"),
             Node::SmartPunctuation(s) => {
                 if self.opts.smart_typography {
-                    let glyph = s.glyph.as_deref().or_else(|| {
+                    let glyph = s.glyph.or_else(|| {
                         SMART_RUNS
                             .iter()
                             .find(|r| r.2 == s.kind.as_str())
                             .map(|r| r.3)
                     });
-                    esc::text(glyph.unwrap_or(&s.source), out);
+                    esc::text(glyph.unwrap_or(s.source), out);
                 } else {
-                    esc::text(&s.source, out);
+                    esc::text(s.source, out);
                 }
             }
             Node::Comment(_) => {}
             Node::CriticComment(c) => {
                 out.push_str("<span class=\"critic-comment\">");
-                esc::text(&c.value, out);
+                esc::text(c.value, out);
                 out.push_str("</span>");
             }
-            Node::CitationGroup(c) => esc::text(&c.raw, out),
+            Node::CitationGroup(c) => esc::text(c.raw, out),
             Node::CaptionNumber(c) => match c.n {
                 Some(v) if self.opts.roundtrip => {
                     let _ = write!(out, "<span data-carve-caption-number>{v}</span>");
@@ -186,19 +188,19 @@ impl<'a> Renderer<'a> {
     }
 
     /// Elements that wrap their children (C2-H-072).
-    fn wrapper(&mut self, n: &'a Node, out: &mut String) {
+    fn wrapper(&mut self, n: &'r Node<'a>, out: &mut String) {
         let Some(tag) = wrapper_tag(n) else {
             match n {
                 Node::Code(c) => {
-                    let el = El::new(c.attrs.as_deref(), c.lang.as_deref());
+                    let el = El::new(c.attrs, c.lang);
                     let _ = write!(out, "<code{}>", el.write(self.filter()));
-                    esc::text(&c.value, out);
+                    esc::text(c.value, out);
                     out.push_str("</code>");
                 }
                 Node::LiteralInline(l) => {
-                    let inner = esc::text_str(&l.value);
-                    if l.attrs.as_deref().is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
-                        self.wrap_span(l.attrs.as_deref(), l.lang.as_deref(), &inner, out);
+                    let inner = esc::text_str(l.value);
+                    if l.attrs.is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
+                        self.wrap_span(l.attrs, l.lang, &inner, out);
                     } else {
                         out.push_str(&inner);
                     }
@@ -276,18 +278,18 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-079, C2-H-081, C2-H-083, C2-H-085, C2-H-088, C2-H-141.
-    fn link(&mut self, n: &'a Node, l: &'a ast::Link, out: &mut String) {
+    fn link(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, out: &mut String) {
         if self.in_link > 0 {
-            self.inlines(&l.children, out);
+            self.inlines(&*l.children, out);
             return;
         }
         let Some(href) = &l.href else {
             if let Some(key) = &l.key {
                 out.push('[');
-                self.inlines(&l.children, out);
+                self.inlines(&*l.children, out);
                 out.push(']');
                 push_label(out, l.ref_form.map(ref_suffix), key);
-                out.push_str(&attr_text(l.attrs.as_deref(), l.lang.as_deref()));
+                out.push_str(&attr_text(l.attrs, l.lang));
                 return;
             }
             return self.anchor(n, l, "", out);
@@ -295,17 +297,18 @@ impl<'a> Renderer<'a> {
         self.anchor(n, l, href, out);
     }
 
-    fn anchor(&mut self, _n: &'a Node, l: &'a ast::Link, href: &str, out: &mut String) {
-        let def = l.key.as_deref().and_then(|k| self.links.get(k)).copied();
-        let merged = merge_def(def.and_then(|d| d.attrs.as_deref()), l.attrs.as_deref());
-        let mut el = El::new(merged.as_ref(), l.lang.as_deref());
+    fn anchor(&mut self, _n: &'r Node<'a>, l: &'r ast::Link<'a>, href: &str, out: &mut String) {
+        let def = l.key.and_then(|k| self.links.get(k)).copied();
+        let merged = merge_def(def.and_then(|d| d.attrs), l.attrs);
+        let merged = merged.as_ref().map(Merged::attrs);
+        let mut el = El::new(merged.as_ref(), l.lang);
         el.structural.push(("href", Some(self.destination(href))));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
-            el.structural.push(("title", Some(t.clone())));
+            el.structural.push(("title", Some(t.to_string())));
         }
         self.rel(&mut el);
         if let (true, Some(key)) = (self.opts.roundtrip, &l.key) {
-            el.carriers.push(("data-carve-ref", Some(key.clone())));
+            el.carriers.push(("data-carve-ref", Some(key.to_string())));
             match l.ref_form {
                 Some(LinkRefForm::Collapsed) => {
                     el.carriers.push(("data-carve-ref-collapsed", None));
@@ -316,7 +319,7 @@ impl<'a> Renderer<'a> {
         }
         let _ = write!(out, "<a{}>", el.write(self.filter()));
         self.in_link += 1;
-        self.inlines(&l.children, out);
+        self.inlines(&*l.children, out);
         self.in_link -= 1;
         out.push_str("</a>");
         if self.in_link == 0 {
@@ -325,14 +328,13 @@ impl<'a> Renderer<'a> {
     }
 
     fn autolink(&mut self, a: &ast::Autolink, out: &mut String) {
-        let text = a.text.as_deref().unwrap_or(&a.href);
+        let text = a.text.unwrap_or(a.href);
         if self.in_link > 0 {
             esc::text(text, out);
             return;
         }
-        let mut el = El::new(a.attrs.as_deref(), a.lang.as_deref());
-        el.structural
-            .push(("href", Some(self.destination(&a.href))));
+        let mut el = El::new(a.attrs, a.lang);
+        el.structural.push(("href", Some(self.destination(a.href))));
         self.rel(&mut el);
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-autolink", None));
@@ -343,37 +345,34 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-080, C2-H-084, C2-H-085.
-    fn image(&mut self, i: &'a ast::Image, out: &mut String) {
+    fn image(&mut self, i: &'r ast::Image<'a>, out: &mut String) {
         if let Some(d) = &i.long_description {
             self.long_desc.push(d);
         }
         let alt = if i.decorative == Some(true) {
             ""
         } else {
-            i.alt.as_deref().unwrap_or("")
+            i.alt.unwrap_or("")
         };
-        let Some(src) = i.src.as_deref().or(i.key.is_none().then_some("")) else {
+        let Some(src) = i.src.or(i.key.is_none().then_some("")) else {
             out.push_str("![");
             esc::text(alt, out);
             out.push(']');
-            push_label(
-                out,
-                i.ref_form.map(image_suffix),
-                i.key.as_deref().unwrap_or(""),
-            );
-            out.push_str(&attr_text(i.attrs.as_deref(), i.lang.as_deref()));
+            push_label(out, i.ref_form.map(image_suffix), i.key.unwrap_or(""));
+            out.push_str(&attr_text(i.attrs, i.lang));
             return;
         };
-        let def = i.key.as_deref().and_then(|k| self.links.get(k)).copied();
-        let merged = merge_def(def.and_then(|d| d.attrs.as_deref()), i.attrs.as_deref());
-        let mut el = El::new(merged.as_ref(), i.lang.as_deref());
+        let def = i.key.and_then(|k| self.links.get(k)).copied();
+        let merged = merge_def(def.and_then(|d| d.attrs), i.attrs);
+        let merged = merged.as_ref().map(Merged::attrs);
+        let mut el = El::new(merged.as_ref(), i.lang);
         el.structural.push(("src", Some(self.destination(src))));
         el.structural.push(("alt", Some(alt.to_string())));
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
-            el.structural.push(("title", Some(t.clone())));
+            el.structural.push(("title", Some(t.to_string())));
         }
         if let (true, Some(key)) = (self.opts.roundtrip, &i.key) {
-            el.carriers.push(("data-carve-ref", Some(key.clone())));
+            el.carriers.push(("data-carve-ref", Some(key.to_string())));
             match i.ref_form {
                 Some(ImageRefForm::Collapsed) => {
                     el.carriers.push(("data-carve-ref-collapsed", None));
@@ -386,7 +385,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-086, C2-H-088.
-    fn note_mark(&mut self, n: &'a Node, out: &mut String) {
+    fn note_mark(&mut self, n: &'r Node<'a>, out: &mut String) {
         let Some(num) = self.order.number.get(&addr(n)).copied() else {
             if let Node::FootnoteRef(r) = n {
                 esc::text(&format!("[^{}]", r.key), out);
@@ -400,7 +399,7 @@ impl<'a> Renderer<'a> {
         el.structural.push(("role", Some("doc-noteref".into())));
         if let (true, Node::FootnoteRef(r)) = (self.opts.roundtrip, n) {
             el.carriers
-                .push(("data-carve-footnote-label", Some(r.key.clone())));
+                .push(("data-carve-footnote-label", Some(r.key.to_string())));
         }
         let s = format!("<a{}><sup>{num}</sup></a>", el.write(self.filter()));
         if self.in_link > 0 {
@@ -418,14 +417,14 @@ impl<'a> Renderer<'a> {
         };
         let text = self
             .xref_text
-            .get(&x.key)
+            .get(x.key)
             .cloned()
-            .unwrap_or_else(|| x.key.clone());
+            .unwrap_or_else(|| x.key.to_string());
         if self.in_link > 0 {
             esc::text(&text, out);
             return;
         }
-        let mut el = El::new(x.attrs.as_deref(), x.lang.as_deref());
+        let mut el = El::new(x.attrs, x.lang);
         el.structural.push(("href", Some(self.destination(href))));
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
@@ -436,7 +435,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-075, C2-H-099, C2-H-175.
-    fn span(&mut self, s: &'a ast::Span, out: &mut String) {
+    fn span(&mut self, s: &'r ast::Span<'a>, out: &mut String) {
         let get = |k: &str| {
             s.attrs
                 .as_ref()
@@ -447,7 +446,7 @@ impl<'a> Renderer<'a> {
         let mut layers: Vec<(&'static str, Option<(&'static str, String)>)> = Vec::new();
         if let Some(v) = abbr.as_ref() {
             // Gap HTML-010: emptiness is tested before the value filter, as the oracle does.
-            let raw = s.attrs.as_deref().and_then(|a| a.get("abbr")).unwrap_or("");
+            let raw = s.attrs.and_then(|a| a.get("abbr")).unwrap_or("");
             let title = get("title").or_else(|| (!raw.is_empty()).then(|| v.clone()));
             layers.push(("abbr", title.map(|t| ("title", t))));
         }
@@ -460,11 +459,11 @@ impl<'a> Renderer<'a> {
         if kbd.is_some() {
             layers.push(("kbd", None));
         }
-        let mut el = El::new(s.attrs.as_deref(), s.lang.as_deref());
+        let mut el = El::new(s.attrs, s.lang);
         el.skip_keys = &["abbr", "time", "kbd"];
         let Some((outer, rest)) = layers.split_last() else {
             let _ = write!(out, "<span{}>", el.write(self.filter()));
-            self.inlines(&s.children, out);
+            self.inlines(&*s.children, out);
             out.push_str("</span>");
             return;
         };
@@ -490,7 +489,7 @@ impl<'a> Renderer<'a> {
         }
         let abbr_layer = usize::from(abbr.is_some());
         self.in_abbr += abbr_layer;
-        self.inlines(&s.children, out);
+        self.inlines(&*s.children, out);
         self.in_abbr -= abbr_layer;
         for (tag, _) in rest {
             let _ = write!(out, "</{tag}>");
@@ -500,11 +499,11 @@ impl<'a> Renderer<'a> {
 
     /// C2-H-072, C2-H-151, C2-H-168.
     fn math(&mut self, m: &ast::Math, out: &mut String) {
-        let mut el = El::new(m.attrs.as_deref(), m.lang.as_deref());
+        let mut el = El::new(m.attrs, m.lang);
         if self.opts.mode == Mode::Static {
             el.base.push("language-math".into());
             let _ = write!(out, "<code{}>", el.write(self.filter()));
-            esc::text(&m.value, out);
+            esc::text(m.value, out);
             out.push_str("</code>");
             return;
         }
@@ -518,7 +517,7 @@ impl<'a> Renderer<'a> {
             ("\\(", "\\)")
         };
         let _ = write!(out, "<span{}>{open}", el.write(self.filter()));
-        esc::text(&m.value, out);
+        esc::text(m.value, out);
         let _ = write!(out, "{close}</span>");
         if let (true, Some(n), Some(p)) = (m.display, m.number, &m.number_prefix) {
             let _ = write!(
@@ -567,9 +566,9 @@ impl<'a> Renderer<'a> {
         };
         out.push_str(open);
         if self.opts.raw_html {
-            out.push_str(&r.value);
+            out.push_str(r.value);
         } else {
-            esc::text(&r.value, out);
+            esc::text(r.value, out);
         }
         if self.opts.roundtrip {
             out.push_str("</span>");
@@ -577,48 +576,48 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-076.
-    fn inline_extension(&mut self, e: &'a ast::InlineExtension, out: &mut String) {
+    fn inline_extension(&mut self, e: &'r ast::InlineExtension<'a>, out: &mut String) {
         if e.name.contains('.') {
             self.losses.push("extension-fallback-rendered");
             self.inlines(e.fallback.as_deref().unwrap_or(&[]), out);
             return;
         }
-        let mut el = El::new(e.attrs.as_deref(), e.lang.as_deref());
+        let mut el = El::new(e.attrs, e.lang);
         el.base.push(format!("ext-{}", e.name));
         let _ = write!(out, "<span{}>", el.write(self.filter()));
-        self.inlines(&e.children, out);
+        self.inlines(&*e.children, out);
         out.push_str("</span>");
     }
 }
 
-fn lang_of(n: &Node) -> Option<&str> {
+fn lang_of<'a>(n: &Node<'a>) -> Option<&'a str> {
     match n {
-        Node::Emphasis(x) => x.lang.as_deref(),
-        Node::Strong(x) => x.lang.as_deref(),
-        Node::Underline(x) => x.lang.as_deref(),
-        Node::Strike(x) => x.lang.as_deref(),
-        Node::Highlight(x) => x.lang.as_deref(),
-        Node::Superscript(x) => x.lang.as_deref(),
-        Node::Subscript(x) => x.lang.as_deref(),
-        Node::Insert(x) => x.lang.as_deref(),
-        Node::Delete(x) => x.lang.as_deref(),
-        Node::SmallCaps(x) => x.lang.as_deref(),
-        Node::FootnoteRef(x) => x.lang.as_deref(),
-        Node::InlineFootnote(x) => x.lang.as_deref(),
+        Node::Emphasis(x) => x.lang,
+        Node::Strong(x) => x.lang,
+        Node::Underline(x) => x.lang,
+        Node::Strike(x) => x.lang,
+        Node::Highlight(x) => x.lang,
+        Node::Superscript(x) => x.lang,
+        Node::Subscript(x) => x.lang,
+        Node::Insert(x) => x.lang,
+        Node::Delete(x) => x.lang,
+        Node::SmallCaps(x) => x.lang,
+        Node::FootnoteRef(x) => x.lang,
+        Node::InlineFootnote(x) => x.lang,
         _ => None,
     }
 }
 
 /// One inline node of a leaf in source order, for the line test of C2-H-069.
-enum Item<'n> {
-    Break(&'n Node),
+enum Item<'n, 'a> {
+    Break(&'n Node<'a>),
     /// A comment, or text of spaces and tabs.
-    Quiet(&'n Node, bool),
+    Quiet(&'n Node<'a>, bool),
     /// Other content, or the edge of a node with children.
     Loud,
 }
 
-fn flatten<'n>(nodes: &'n [Node], depth: usize, out: &mut Vec<Item<'n>>) {
+fn flatten<'n, 'a>(nodes: &'n [Node<'a>], depth: usize, out: &mut Vec<Item<'n, 'a>>) {
     for n in nodes {
         match n {
             Node::SoftBreak(_) | Node::HardBreak(_) => out.push(Item::Break(n)),
@@ -729,9 +728,9 @@ fn attr_text(attrs: Option<&Attrs>, lang: Option<&str>) -> String {
         parts.push(format!(":{l}"));
     }
     if let Some(a) = attrs {
-        for (k, v) in &a.key_values {
+        for (k, v) in a.key_values {
             if v.is_empty() {
-                parts.push(k.clone());
+                parts.push((*k).to_string());
             } else {
                 parts.push(format!("{k}={}", bare_or_quoted(v)));
             }
@@ -754,29 +753,50 @@ fn bare_or_quoted(v: &str) -> String {
     }
 }
 
+/// The attributes of a reference merged with its definition's.
+struct Merged<'a> {
+    id: Option<&'a str>,
+    classes: Vec<&'a str>,
+    key_values: Vec<(&'a str, &'a str)>,
+}
+
+impl Merged<'_> {
+    fn attrs(&self) -> Attrs<'_> {
+        Attrs {
+            id: self.id,
+            classes: &self.classes,
+            key_values: &self.key_values,
+        }
+    }
+}
+
 /// C2-H-141: the definition's attributes, then the reference's.
-fn merge_def(def: Option<&Attrs>, own: Option<&Attrs>) -> Option<Attrs> {
+fn merge_def<'a>(def: Option<&Attrs<'a>>, own: Option<&Attrs<'a>>) -> Option<Merged<'a>> {
     match (def, own) {
         (None, None) => None,
         // Gap HTML-011: the definition's keys that the reference does not
         // replace come first, then the reference's keys, as the oracle does.
         (Some(d), o) => {
-            let own = o.cloned().unwrap_or_default();
-            let mut key_values: Vec<(String, String)> = d
+            let own = o.copied().unwrap_or_default();
+            let mut key_values: Vec<(&str, &str)> = d
                 .key_values
                 .iter()
                 .filter(|(k, _)| own.get(k).is_none())
-                .cloned()
+                .copied()
                 .collect();
             key_values.extend(own.key_values);
-            let classes = d.classes.iter().chain(&own.classes).cloned().collect();
-            Some(Attrs {
-                id: own.id.or_else(|| d.id.clone()),
+            let classes = d.classes.iter().chain(own.classes).copied().collect();
+            Some(Merged {
+                id: own.id.or(d.id),
                 classes,
                 key_values,
             })
         }
-        (None, Some(o)) => Some(o.clone()),
+        (None, Some(o)) => Some(Merged {
+            id: o.id,
+            classes: o.classes.to_vec(),
+            key_values: o.key_values.to_vec(),
+        }),
     }
 }
 
@@ -784,6 +804,6 @@ fn merge_def(def: Option<&Attrs>, own: Option<&Attrs>) -> Option<Attrs> {
 struct Badge<'n> {
     class: &'static str,
     name: &'n str,
-    attrs: Option<&'n Attrs>,
+    attrs: Option<&'n Attrs<'n>>,
     lang: Option<&'n str>,
 }

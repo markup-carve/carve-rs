@@ -11,9 +11,9 @@ mod scan;
 mod smart;
 mod token;
 
+use crate::Arena;
 use crate::ast::Node;
 use crate::source::Source;
-use std::cell::RefCell;
 use std::collections::HashSet;
 
 /// How a piece joins the piece before it.
@@ -51,13 +51,15 @@ pub enum ContentKind {
 }
 
 /// What the inline pass needs from the rest of the document.
-pub struct InlineEnv<'a> {
-    pub src: &'a Source,
+pub struct InlineEnv<'e, 'a> {
+    pub src: &'e Source<'a>,
+    /// Where the nodes and the strings that are no slice of the source go.
+    pub arena: &'a Arena,
     /// Folded keys of the link definitions of the document (C2-I-072, C2-I-125).
-    pub link_keys: &'a HashSet<String>,
+    pub link_keys: &'e HashSet<String>,
     /// Abbreviation terms and expansions, first definition of a term only
     /// (C2-I-098), sorted by term: the matcher binary-searches it.
-    pub abbreviations: &'a [(String, String)],
+    pub abbreviations: &'e [(String, String)],
     /// Open block containers around the content, for the depth cap (C2-I-118).
     pub depth: usize,
     pub kind: ContentKind,
@@ -65,22 +67,26 @@ pub struct InlineEnv<'a> {
     pub hard_breaks: bool,
 }
 
-/// The buffers of one inline pass, kept for the next content of the thread.
+/// The buffers of one inline pass, kept for the next content of the document.
 #[derive(Default)]
-pub(crate) struct Scratch {
+pub struct Scratch<'a> {
     text: String,
     segs: Vec<content::Seg>,
     joins: Vec<(usize, Join)>,
     chars: Vec<usize>,
-    toks: Vec<token::Tok>,
-    evs: Vec<events::Ev>,
+    toks: Vec<token::Tok<'a>>,
+    evs: Vec<events::Ev<'a>>,
+    /// Child lists of closed inline frames.
+    lists: Vec<Vec<Node<'a>>>,
+    /// Text pieces gathered for one text node.
+    join: String,
     outs: Vec<smart::Out>,
 }
 
 /// A buffer this long is not kept: one huge content must not pin its memory.
 const KEEP: usize = 1 << 16;
 
-impl Scratch {
+impl Scratch<'_> {
     fn trim(&mut self) {
         if self.text.capacity() > KEEP
             || self.toks.capacity() > KEEP / 16
@@ -91,24 +97,23 @@ impl Scratch {
     }
 }
 
-thread_local! {
-    static SCRATCH: RefCell<Scratch> = RefCell::default();
-}
-
 /// Parses one content into inline nodes with positions.
 #[must_use]
-pub fn parse(env: &InlineEnv<'_>, pieces: &[Piece]) -> Vec<Node> {
-    SCRATCH.with(|s| match s.try_borrow_mut() {
-        Ok(mut s) => {
-            let out = parse_in(env, pieces, &mut s);
-            s.trim();
-            out
-        }
-        Err(_) => parse_in(env, pieces, &mut Scratch::default()),
-    })
+pub fn parse<'a>(
+    env: &InlineEnv<'_, 'a>,
+    pieces: &[Piece],
+    s: &mut Scratch<'a>,
+) -> &'a mut [Node<'a>] {
+    let out = parse_in(env, pieces, s);
+    s.trim();
+    out
 }
 
-fn parse_in(env: &InlineEnv<'_>, pieces: &[Piece], s: &mut Scratch) -> Vec<Node> {
+fn parse_in<'a>(
+    env: &InlineEnv<'_, 'a>,
+    pieces: &[Piece],
+    s: &mut Scratch<'a>,
+) -> &'a mut [Node<'a>] {
     let content = content::Content::new_in(env, pieces, s);
     let scanned = scan::scan(&content, env, std::mem::take(&mut s.toks));
     let mut toks = scanned.toks;
@@ -117,10 +122,10 @@ fn parse_in(env: &InlineEnv<'_>, pieces: &[Piece], s: &mut Scratch) -> Vec<Node>
         comments: &scanned.comments,
         depth: env.depth,
     };
-    delim::resolve(&mut toks, &ctx);
+    delim::resolve(&mut toks, &ctx, env.arena);
     events::from_tokens(&mut toks, &mut s.evs);
     s.toks = toks;
-    let out = build::build(&content, &ctx, env, &mut s.evs, &mut s.outs);
+    let out = build::build(&content, &ctx, env, s);
     content.recycle(s);
     out
 }

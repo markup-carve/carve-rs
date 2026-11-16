@@ -5,8 +5,8 @@ use super::token::{K, Kind, Tok};
 use crate::ast::Node;
 use crate::attr::AttrBlock;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Ev {
+#[derive(Debug, PartialEq)]
+pub enum Ev<'a> {
     /// A container opens; `v0..v1` is its opening markup.
     Enter {
         kind: Kind,
@@ -45,14 +45,14 @@ pub enum Ev {
     Leaf {
         v0: usize,
         v1: usize,
-        node: Box<Node>,
+        node: Node<'a>,
         transparent: bool,
     },
 }
 
 /// Turns the settled tokens into events (into `out`, `toks` emptied);
 /// plain text runs that touch merge.
-pub fn from_tokens(toks: &mut Vec<Tok>, out: &mut Vec<Ev>) {
+pub fn from_tokens<'a>(toks: &mut Vec<Tok<'a>>, out: &mut Vec<Ev<'a>>) {
     // Only inline footnotes need the opener lookup of each closer.
     let any_note = toks.iter().any(|t| {
         matches!(
@@ -115,7 +115,7 @@ pub fn from_tokens(toks: &mut Vec<Tok>, out: &mut Vec<Ev>) {
     }
 }
 
-fn push(out: &mut Vec<Ev>, ev: Ev) {
+fn push<'a>(out: &mut Vec<Ev<'a>>, ev: Ev<'a>) {
     if let Ev::Text {
         v0,
         v1,

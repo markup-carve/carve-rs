@@ -2,7 +2,8 @@
 //! (C2-B-180, C2-B-181, C2-B-209, C2-B-221, C2-A-215). The record syntax is
 //! not stated by the clauses (gap G-008): fields follow RFC 4180 quoting.
 
-use crate::ast::{self, Attrs, Node};
+use crate::Arena;
+use crate::ast::{self, Node, owned::Attrs};
 
 /// Is this code fence a delimited table, and with which separator?
 pub(super) fn separator(language: Option<&str>, attrs: Option<&Attrs>) -> Option<char> {
@@ -73,41 +74,39 @@ fn quoted(it: &mut std::iter::Peekable<std::str::Chars<'_>>, cur: &mut String) {
     }
 }
 
-fn row(cells: &[String], header: bool) -> Node {
-    let children = cells
-        .iter()
-        .map(|v| {
-            let text = if v.is_empty() {
-                Vec::new()
-            } else {
-                vec![Node::Text(Box::new(ast::Text {
-                    value: v.clone(),
-                    ..Default::default()
-                }))]
-            };
-            Node::TableCell(Box::new(ast::TableCell {
-                header,
-                children: vec![Node::CellParagraph(Box::new(ast::CellParagraph {
-                    children: text,
-                    ..Default::default()
-                }))],
+fn row<'a>(a: &'a Arena, cells: &[String], header: bool) -> Node<'a> {
+    let children = a.fill(cells.iter().map(|v| {
+        let text = if v.is_empty() {
+            &mut []
+        } else {
+            a.one(Node::Text(a.alloc(ast::Text {
+                value: a.str(v),
                 ..Default::default()
-            }))
-        })
-        .collect();
-    Node::TableRow(Box::new(ast::TableRow {
+            })))
+        };
+        Node::TableCell(a.alloc(ast::TableCell {
+            header,
+            children: a.one(Node::CellParagraph(a.alloc(ast::CellParagraph {
+                children: text,
+                ..Default::default()
+            }))),
+            ..Default::default()
+        }))
+    }));
+    Node::TableRow(a.alloc(ast::TableRow {
         children,
         ..Default::default()
     }))
 }
 
 /// The table node; `declared` is the `header-rows` count when it is one (C2-B-210).
-pub(super) fn table(
+pub(super) fn table<'a>(
+    a: &'a Arena,
     body: &str,
     sep: char,
     declared: Option<usize>,
     footer: usize,
-) -> (Vec<Node>, usize) {
+) -> (&'a mut [Node<'a>], usize) {
     let rows = records(body, sep);
     let n = rows.len();
     let ncols = rows.iter().map(Vec::len).max().unwrap_or(0);
@@ -120,34 +119,34 @@ pub(super) fn table(
     let foot = footer.min(n - head);
     let mut groups = Vec::new();
     if head > 0 {
-        let children = rows.iter().take(head).map(|r| row(r, true)).collect();
-        groups.push(Node::TableHead(Box::new(ast::TableHead {
+        let children = a.fill(rows.iter().take(head).map(|r| row(a, r, true)));
+        groups.push(Node::TableHead(a.alloc(ast::TableHead {
             children,
             ..Default::default()
         })));
     }
     if n - foot > head {
-        let children = rows
-            .iter()
-            .take(n - foot)
-            .skip(head)
-            .map(|r| row(r, over))
-            .collect();
+        let children = a.fill(
+            rows.iter()
+                .take(n - foot)
+                .skip(head)
+                .map(|r| row(a, r, over)),
+        );
         let head_rows = declared.and_then(|d| i64::try_from(d).ok());
-        groups.push(Node::TableBody(Box::new(ast::TableBody {
+        groups.push(Node::TableBody(a.alloc(ast::TableBody {
             children,
             head_rows,
             ..Default::default()
         })));
     }
     if foot > 0 {
-        let children = rows.iter().skip(n - foot).map(|r| row(r, false)).collect();
-        groups.push(Node::TableFoot(Box::new(ast::TableFoot {
+        let children = a.fill(rows.iter().skip(n - foot).map(|r| row(a, r, false)));
+        groups.push(Node::TableFoot(a.alloc(ast::TableFoot {
             children,
             ..Default::default()
         })));
     }
-    (groups, ncols)
+    (a.nodes(&mut groups), ncols)
 }
 
 #[cfg(test)]

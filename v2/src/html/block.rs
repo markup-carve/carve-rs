@@ -18,7 +18,7 @@ pub(super) fn visible(n: &Node) -> bool {
         | Node::AbbreviationDef(_)
         | Node::Footnote(_)
         | Node::CitationDefinition(_) => false,
-        Node::Paragraph(p) => !comments_only(&p.children),
+        Node::Paragraph(p) => !comments_only(p.children),
         _ => true,
     }
 }
@@ -34,13 +34,13 @@ pub(super) fn comments_only(nodes: &[Node]) -> bool {
         })
 }
 
-fn has_attrs(attrs: Option<&Attrs>, lang: Option<&String>) -> bool {
+fn has_attrs(attrs: Option<&Attrs<'_>>, lang: Option<&str>) -> bool {
     attrs.is_some_and(|a| !a.is_empty()) || lang.is_some()
 }
 
-impl<'a> Renderer<'a> {
+impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
-    pub(super) fn block(&mut self, n: &'a Node, depth: usize) {
+    pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
         if matches!(n, Node::Paragraph(_)) {
             if let Some(s) = self.paragraph(n, false) {
                 self.line(depth, &s);
@@ -70,7 +70,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn block_inner(&mut self, n: &'a Node, depth: usize) {
+    fn block_inner(&mut self, n: &'r Node<'a>, depth: usize) {
         match n {
             Node::Paragraph(_) => {
                 if let Some(s) = self.paragraph(n, false) {
@@ -80,7 +80,7 @@ impl<'a> Renderer<'a> {
             Node::Heading(_) => self.heading(n, depth, true),
             Node::List(_) => self.list(n, depth),
             Node::DefinitionList(_) => self.definition_list(n, depth),
-            Node::BlockQuote(q) => self.quote(n, &q.children, depth),
+            Node::BlockQuote(q) => self.quote(n, &*q.children, depth),
             Node::Div(_) | Node::Admonition(_) | Node::Directive(_) => self.div_like(n, depth),
             Node::LineBlock(_) => self.line_block(n, depth),
             Node::CodeBlock(_) => self.code_block(n, depth),
@@ -89,10 +89,10 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn block_inner_other(&mut self, n: &'a Node, depth: usize) {
+    fn block_inner_other(&mut self, n: &'r Node<'a>, depth: usize) {
         match n {
             Node::ThematicBreak(t) => {
-                let el = self.el(t.attrs.as_deref(), t.lang.as_deref(), n);
+                let el = self.el(t.attrs, t.lang, n);
                 let s = format!("<hr{}>", el.write(self.filter()));
                 self.line(depth, &s);
             }
@@ -102,21 +102,20 @@ impl<'a> Renderer<'a> {
             Node::Include(i) => {
                 let s = format!(
                     "<p{}>{}</p>",
-                    self.el(i.attrs.as_deref(), i.lang.as_deref(), n)
-                        .write(self.filter()),
+                    self.el(i.attrs, i.lang, n).write(self.filter()),
                     esc::text_str(&include_text(i))
                 );
                 self.losses.push("include-unresolved");
                 self.line(depth, &s);
             }
             Node::Section(s) => {
-                let el = self.el(s.attrs.as_deref(), s.lang.as_deref(), n);
+                let el = self.el(s.attrs, s.lang, n);
                 let open = format!("<section{}>", el.write(self.filter()));
-                self.container(&open, "</section>", Vec::new(), &s.children, depth);
+                self.container(&open, "</section>", Vec::new(), &*s.children, depth);
             }
             Node::BlockExtension(e) => {
                 self.losses.push("extension-fallback-rendered");
-                for c in &e.fallback {
+                for c in e.fallback.iter() {
                     self.block(c, depth);
                 }
             }
@@ -141,14 +140,14 @@ impl<'a> Renderer<'a> {
     /// The line of a paragraph, bare or wrapped; `None` when it writes nothing.
     /// A paragraph counts one nesting level (C2-H-166) wherever its container
     /// writes it; outside the profile it is its plain text (C2-H-165).
-    pub(super) fn paragraph(&mut self, n: &'a Node, bare: bool) -> Option<String> {
+    pub(super) fn paragraph(&mut self, n: &'r Node<'a>, bare: bool) -> Option<String> {
         let Node::Paragraph(p) = n else { return None };
         if !self.profile_allows(n, true) {
-            if comments_only(&p.children) {
+            if comments_only(p.children) {
                 return None;
             }
             self.losses.push("profile-construct-degraded");
-            let t = esc::text_str(&super::profile::inlines_plain(&p.children, self.src));
+            let t = esc::text_str(&super::profile::inlines_plain(&*p.children, self.src));
             return (!t.is_empty()).then(|| if bare { t } else { format!("<p>{t}</p>") });
         }
         self.level += 1;
@@ -157,34 +156,34 @@ impl<'a> Renderer<'a> {
         s
     }
 
-    fn paragraph_inner(&mut self, n: &'a Node, bare: bool) -> Option<String> {
+    fn paragraph_inner(&mut self, n: &'r Node<'a>, bare: bool) -> Option<String> {
         let Node::Paragraph(p) = n else { return None };
-        if comments_only(&p.children) {
+        if comments_only(p.children) {
             return None;
         }
-        if p.role == Some(ParagraphRole::Image) && self.image_block_bare(&p.children) {
-            return Some(self.leaf(&p.children));
+        if p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children) {
+            return Some(self.leaf(p.children));
         }
         let static_math = p.role == Some(ParagraphRole::Math) && self.opts.mode == Mode::Static;
-        let mut el = self.el(p.attrs.as_deref(), p.lang.as_deref(), n);
+        let mut el = self.el(p.attrs, p.lang, n);
         if static_math {
-            return Some(self.static_display_math(&p.children, el));
+            return Some(self.static_display_math(&*p.children, el));
         }
-        if bare && !has_attrs(p.attrs.as_deref(), p.lang.as_ref()) {
-            return Some(self.leaf(&p.children));
+        if bare && !has_attrs(p.attrs, p.lang) {
+            return Some(self.leaf(p.children));
         }
         el.align_style = true;
         let mut out = String::from("<p");
         out.push_str(&el.write(self.filter()));
         out.push('>');
-        self.leaf_into(&p.children, &mut out);
+        self.leaf_into(&*p.children, &mut out);
         out.push_str("</p>");
         Some(out)
     }
 
     /// A paragraph written as a bare `<img>` (C2-H-020).
     fn bare_image(&self, p: &ast::Paragraph) -> bool {
-        p.role == Some(ParagraphRole::Image) && self.image_block_bare(&p.children)
+        p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children)
     }
 
     /// C2-H-020: a block image is written without `<p>` unless it renders as
@@ -203,7 +202,7 @@ impl<'a> Renderer<'a> {
             .iter()
             .find_map(|c| {
                 if let Node::Math(m) = c {
-                    Some(m.value.as_str())
+                    Some(m.value)
                 } else {
                     None
                 }
@@ -218,9 +217,9 @@ impl<'a> Renderer<'a> {
 
     /// C2-H-021, C2-H-027, C2-H-028. `own_id` is false for a heading that
     /// opened a section, whose id stands on the section.
-    pub(super) fn heading(&mut self, n: &'a Node, depth: usize, own_id: bool) {
+    pub(super) fn heading(&mut self, n: &'r Node<'a>, depth: usize, own_id: bool) {
         let Node::Heading(h) = n else { return };
-        let mut el = self.el(h.attrs.as_deref(), h.lang.as_deref(), n);
+        let mut el = self.el(h.attrs, h.lang, n);
         el.align_style = true;
         el.id = if own_id {
             super::heading_id(n).map(str::to_string)
@@ -238,7 +237,7 @@ impl<'a> Renderer<'a> {
                 .push(("aria-level", Some(h.level.to_string())));
             "div".to_string()
         };
-        let inner = self.leaf(&h.children);
+        let inner = self.leaf(h.children);
         let s = format!("<{tag}{}>{inner}</{tag}>", el.write(self.filter()));
         self.line(depth, &s);
     }
@@ -250,7 +249,7 @@ impl<'a> Renderer<'a> {
         open: &str,
         close: &str,
         first: Vec<String>,
-        children: &'a [Node],
+        children: &'r [Node<'a>],
         depth: usize,
     ) {
         self.line(depth, open);
@@ -269,9 +268,9 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-006, C2-H-041.
-    fn quote(&mut self, n: &'a Node, children: &'a [Node], depth: usize) {
+    fn quote(&mut self, n: &'r Node<'a>, children: &'r [Node<'a>], depth: usize) {
         let Node::BlockQuote(q) = n else { return };
-        let el = self.el(q.attrs.as_deref(), q.lang.as_deref(), n);
+        let el = self.el(q.attrs, q.lang, n);
         let open = format!("<blockquote{}>", el.write(self.filter()));
         let vis = self.shown(children);
         // C2-H-165 with C2-H-006: a block a profile degrades is a paragraph.
@@ -295,23 +294,23 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-029 to C2-H-037.
-    fn list(&mut self, n: &'a Node, depth: usize) {
+    fn list(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::List(l) = n else { return };
         let ordered = l.marker.kind == "ordered";
-        let mut el = self.el(l.attrs.as_deref(), l.lang.as_deref(), n);
+        let mut el = self.el(l.attrs, l.lang, n);
         if ordered {
-            if let Some(t) = l.marker.style.as_deref().and_then(html_type) {
+            if let Some(t) = l.marker.style.and_then(html_type) {
                 el.structural.push(("type", Some(t.to_string())));
             }
             if let Some(s) = l.marker.start.filter(|s| *s != 1) {
                 el.structural.push(("start", Some(s.to_string())));
             }
-            if l.marker.delimiter.as_deref() == Some(")") {
+            if l.marker.delimiter == Some(")") {
                 el.structural.push(("data-delim", Some(")".into())));
             }
         }
         if self.opts.roundtrip {
-            if let (false, Some(c)) = (ordered, l.marker.bullet.as_deref().filter(|c| *c != "-")) {
+            if let (false, Some(c)) = (ordered, l.marker.bullet.filter(|c| *c != "-")) {
                 el.carriers.push(("data-marker", Some(c.to_string())));
             }
             if l.spacing == ListSpacing::Tight {
@@ -328,7 +327,7 @@ impl<'a> Renderer<'a> {
         let open = format!("<{tag}{}>", el.write(self.filter()));
         self.line(depth, &open);
         let tight = l.spacing == ListSpacing::Tight;
-        for item in &l.children {
+        for item in l.children.iter() {
             if self.profile_allows(item, true) {
                 self.level += 1;
                 self.item(item, depth + 1, tight, ordered);
@@ -345,12 +344,12 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-007, C2-H-032 to C2-H-035.
-    fn item(&mut self, n: &'a Node, depth: usize, tight: bool, ordered: bool) {
+    fn item(&mut self, n: &'r Node<'a>, depth: usize, tight: bool, ordered: bool) {
         let Node::ListItem(i) = n else { return };
-        let mut el = self.el(i.attrs.as_deref(), i.lang.as_deref(), n);
+        let mut el = self.el(i.attrs, i.lang, n);
         let head = Self::item_task(i, ordered, &mut el);
         let open = format!("<li{}>{head}", el.write(self.filter()));
-        let vis = self.shown(&i.children);
+        let vis = self.shown(i.children);
         let Some((first, rest)) = vis.split_first() else {
             self.line(depth, &format!("{open}</li>"));
             return;
@@ -404,7 +403,7 @@ impl<'a> Renderer<'a> {
         if !ordered {
             el.style_before = Some("list-style: none".into());
         }
-        Self::task_box(&i.children, state.is_some_and(|s| s.3))
+        Self::task_box(&*i.children, state.is_some_and(|s| s.3))
     }
 
     /// The checkbox of a task item (C2-H-032, C2-H-174).
@@ -439,21 +438,21 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-038 to C2-H-040.
-    fn definition_list(&mut self, n: &'a Node, depth: usize) {
+    fn definition_list(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::DefinitionList(d) = n else { return };
-        let el = self.el(d.attrs.as_deref(), d.lang.as_deref(), n);
+        let el = self.el(d.attrs, d.lang, n);
         let open = format!("<dl{}>", el.write(self.filter()));
         self.line(depth, &open);
-        for c in &d.children {
+        for c in d.children.iter() {
             self.level += 1;
             match c {
                 Node::DefinitionTerm(t) => {
-                    let el = self.el(t.attrs.as_deref(), t.lang.as_deref(), c);
-                    let inner = self.leaf(&t.children);
+                    let el = self.el(t.attrs, t.lang, c);
+                    let inner = self.leaf(t.children);
                     let s = format!("<dt{}>{inner}</dt>", el.write(self.filter()));
                     self.line(depth + 1, &s);
                 }
-                Node::DefinitionDescription(x) => self.description(c, &x.children, depth + 1),
+                Node::DefinitionDescription(x) => self.description(c, &*x.children, depth + 1),
                 _ => {}
             }
             self.level -= 1;
@@ -461,13 +460,13 @@ impl<'a> Renderer<'a> {
         self.line(depth, "</dl>");
     }
 
-    fn description(&mut self, n: &'a Node, children: &'a [Node], depth: usize) {
+    fn description(&mut self, n: &'r Node<'a>, children: &'r [Node<'a>], depth: usize) {
         let Node::DefinitionDescription(x) = n else {
             return;
         };
-        let el = self.el(x.attrs.as_deref(), x.lang.as_deref(), n);
+        let el = self.el(x.attrs, x.lang, n);
         let open = format!("<dd{}>", el.write(self.filter()));
-        let vis: Vec<&'a Node> = children.iter().filter(|c| visible(c)).collect();
+        let vis: Vec<&'r Node<'a>> = children.iter().filter(|c| visible(c)).collect();
         match vis.as_slice() {
             [] => self.line(depth, &format!("{open}</dd>")),
             [p @ Node::Paragraph(_)] => {
@@ -485,7 +484,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// Divs, admonitions and directives (C2-H-042, C2-H-154 to C2-H-158).
-    fn div_like(&mut self, n: &'a Node, depth: usize) {
+    fn div_like(&mut self, n: &'r Node<'a>, depth: usize) {
         if self.placing == Some(addr(n)) {
             self.placing_directive(n, depth);
             return;
@@ -531,7 +530,7 @@ impl<'a> Renderer<'a> {
     /// The title and label paragraphs of a div (C2-H-154).
     pub(super) fn title_lines(
         &mut self,
-        title: Option<&'a [Node]>,
+        title: Option<&'r [Node<'a>]>,
         label: Option<&str>,
         id: Option<String>,
     ) -> Vec<String> {
@@ -550,22 +549,22 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-043, C2-H-136: one `<p>` per stanza.
-    fn line_block(&mut self, n: &'a Node, depth: usize) {
+    fn line_block(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::LineBlock(lb) = n else { return };
-        let mut el = self.el(lb.attrs.as_deref(), lb.lang.as_deref(), n);
+        let mut el = self.el(lb.attrs, lb.lang, n);
         el.trailing.push("line-block".into());
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-line-block", None));
         }
         let open = format!("<div{}>", el.write(self.filter()));
         let mut stanzas: Vec<Vec<String>> = vec![Vec::new()];
-        for l in &lb.children {
+        for l in lb.children.iter() {
             let Node::Line(line) = l else { continue };
             if line.children.is_empty() {
                 stanzas.push(Vec::new());
                 continue;
             }
-            let s = self.line_text(&line.children);
+            let s = self.line_text(line.children);
             if let Some(last) = stanzas.last_mut() {
                 last.push(s);
             }
@@ -586,7 +585,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// One line of a line block: leading spaces become `&nbsp;`.
-    fn line_text(&mut self, children: &'a [Node]) -> String {
+    fn line_text(&mut self, children: &'r [Node<'a>]) -> String {
         let s = self.leaf(children);
         let spaces = s.chars().take_while(|c| *c == ' ').count();
         format!(
@@ -597,9 +596,9 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-047, C2-H-048.
-    pub(super) fn code_block(&mut self, n: &'a Node, depth: usize) {
+    pub(super) fn code_block(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::CodeBlock(c) = n else { return };
-        let mut el = self.el(c.attrs.as_deref(), c.lang.as_deref(), n);
+        let mut el = self.el(c.attrs, c.lang, n);
         if let Some(t) = &c.title {
             el.structural
                 .push(("title", Some(crate::resolve::plain::text_of(t))));
@@ -607,18 +606,17 @@ impl<'a> Renderer<'a> {
         }
         if self.opts.roundtrip {
             if let Some(l) = &c.group_label {
-                el.carriers.push(("data-carve-label", Some(l.clone())));
+                el.carriers.push(("data-carve-label", Some(l.to_string())));
             }
         }
         let class = c
             .syntax
-            .as_deref()
             .map(|s| format!(" class=\"language-{}\"", attr_str(s)))
             .unwrap_or_default();
         let s = format!(
             "<pre{}><code{class}>{}</code></pre>",
             el.write(self.filter()),
-            esc::text_str(&c.value)
+            esc::text_str(c.value)
         );
         self.line(depth, &s);
     }
@@ -630,27 +628,27 @@ impl<'a> Renderer<'a> {
             return;
         }
         if self.opts.raw_html {
-            let v = r.value.strip_suffix('\n').unwrap_or(&r.value);
+            let v = r.value.strip_suffix('\n').unwrap_or(r.value);
             self.line(0, v);
             return;
         }
         let s = format!(
             "<pre><code class=\"language-html\">{}</code></pre>",
-            esc::text_str(&r.value)
+            esc::text_str(r.value)
         );
         self.line(depth, &s);
     }
 
     /// C2-H-062 to C2-H-064.
-    pub(super) fn figure(&mut self, n: &'a Node, depth: usize, panel: bool) {
+    pub(super) fn figure(&mut self, n: &'r Node<'a>, depth: usize, panel: bool) {
         let Node::Figure(f) = n else { return };
-        let mut el = self.el(f.attrs.as_deref(), f.lang.as_deref(), n);
+        let mut el = self.el(f.attrs, f.lang, n);
         if panel {
             el.base.push("carve-figure-panel".into());
         }
         let open = format!("<figure{}>", el.write(self.filter()));
         self.line(depth, &open);
-        for c in &f.children {
+        for c in f.children.iter() {
             self.block(c, depth + 1);
         }
         if let Some(c) = &f.caption {
@@ -659,14 +657,14 @@ impl<'a> Renderer<'a> {
         self.line(depth, "</figure>");
     }
 
-    fn figure_group(&mut self, n: &'a Node, depth: usize) {
+    fn figure_group(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::FigureGroup(g) = n else { return };
-        let mut el = self.el(g.attrs.as_deref(), g.lang.as_deref(), n);
+        let mut el = self.el(g.attrs, g.lang, n);
         el.base.push("carve-figure-group".into());
         let open = format!("<figure{}>", el.write(self.filter()));
         self.line(depth, &open);
         let any = g.children.iter().any(visible) || g.caption.is_some();
-        for c in &g.children {
+        for c in g.children.iter() {
             if let Node::Figure(_) = c {
                 if self.profile_allows(c, true) {
                     self.level += 1;
@@ -687,16 +685,16 @@ impl<'a> Renderer<'a> {
     }
 
     /// C2-H-065: one paragraph is written bare inside the caption element.
-    pub(super) fn caption(&mut self, c: &'a Node, tag: &str, depth: usize) {
+    pub(super) fn caption(&mut self, c: &'r Node<'a>, tag: &str, depth: usize) {
         let Node::Caption(cap) = c else { return };
-        let vis: Vec<&'a Node> = cap.children.iter().filter(|x| visible(x)).collect();
+        let vis: Vec<&'r Node<'a>> = cap.children.iter().filter(|x| visible(x)).collect();
         if let [p @ Node::Paragraph(_)] = vis.as_slice() {
             let s = self.paragraph(p, true).unwrap_or_default();
             self.line(depth, &format!("<{tag}>{s}</{tag}>"));
             return;
         }
         self.line(depth, &format!("<{tag}>"));
-        for b in &cap.children {
+        for b in cap.children.iter() {
             self.block(b, depth + 1);
         }
         self.line(depth, &format!("</{tag}>"));
@@ -704,36 +702,36 @@ impl<'a> Renderer<'a> {
 }
 
 /// The parts of a div-like node.
-type DivParts<'a> = (
-    Option<&'a Attrs>,
+type DivParts<'r, 'a> = (
+    Option<&'a Attrs<'a>>,
     Option<&'a str>,
-    &'a [Node],
-    Option<&'a [Node]>,
+    &'r [Node<'a>],
+    Option<&'r [Node<'a>]>,
     Option<&'a str>,
 );
 
-pub(super) fn div_parts(n: &Node) -> DivParts<'_> {
+pub(super) fn div_parts<'r, 'a>(n: &'r Node<'a>) -> DivParts<'r, 'a> {
     match n {
         Node::Div(d) => (
-            d.attrs.as_deref(),
-            d.lang.as_deref(),
-            &d.children,
+            d.attrs,
+            d.lang,
+            &*d.children,
             d.title.as_deref(),
-            d.group_label.as_deref(),
+            d.group_label,
         ),
         Node::Admonition(d) => (
-            d.attrs.as_deref(),
-            d.lang.as_deref(),
-            &d.children,
+            d.attrs,
+            d.lang,
+            &*d.children,
             d.title.as_deref(),
-            d.group_label.as_deref(),
+            d.group_label,
         ),
         Node::Directive(d) => (
-            d.attrs.as_deref(),
-            d.lang.as_deref(),
-            &d.children,
+            d.attrs,
+            d.lang,
+            &*d.children,
             d.title.as_deref(),
-            d.group_label.as_deref(),
+            d.group_label,
         ),
         _ => (None, None, &[], None, None),
     }
@@ -775,7 +773,7 @@ fn html_type(style: &str) -> Option<&'static str> {
 /// The directive text of an unexpanded include (C2-H-133, C2-H-171).
 pub(super) fn include_text(i: &ast::Include) -> String {
     let mut s = String::from("{{ ");
-    s.push_str(&quoted_path(&i.path));
+    s.push_str(&quoted_path(i.path));
     if let Some(sec) = &i.section {
         s.push_str(" #");
         s.push_str(sec);

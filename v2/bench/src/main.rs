@@ -153,20 +153,22 @@ fn stages(src: &str, opts: &carve2::Options, reps: u32) -> [Stat; 5] {
     let mut acc = [Stat::default(); 5];
     for _ in 0..reps {
         INLINE.set(Stat::default());
+        let arena = carve2::Arena::for_input(src);
         let (s, sb) = once(|| {
             let s = carve2::source::Source::new(src);
             let out = carve2::block::scan(&s);
             (s, out)
         });
         let (source, out) = s;
-        let (mut doc, st) = once(|| carve2::tree::build(&source, out.events, &out.own_starts));
+        let (mut doc, st) =
+            once(|| carve2::tree::build(&source, &arena, out.events, &out.own_starts));
         let inl = INLINE.get();
         let tree = Stat {
             ns: st.ns - inl.ns,
             allocs: st.allocs - inl.allocs,
             bytes: st.bytes - inl.bytes,
         };
-        let ((), sr) = once(|| carve2::resolve::resolve(&mut doc, opts));
+        let ((), sr) = once(|| carve2::resolve::resolve(&mut doc, opts, &arena));
         let (html, sh) = once(|| carve2::html::render_with_losses_source(&doc, opts, src));
         black_box(html);
         for (a, s) in acc.iter_mut().zip([sb, inl, tree, sr, sh]) {
@@ -194,8 +196,10 @@ fn run_loop(secs: u64, path: &str) {
 
 /// Times the four measures alternately and prints one row per measure.
 fn time_document(name: &str, src: &str, opts: &carve2::Options, rounds: u64, ms: u64) {
+    // The normal path: a fresh arena per parse, freed with the tree.
     let p2 = || {
-        black_box(carve2::parse(src));
+        let arena = carve2::Arena::for_input(src);
+        black_box(carve2::parse_in(src, &arena));
         1_usize
     };
     let h2 = || carve2::render(src, opts).len();

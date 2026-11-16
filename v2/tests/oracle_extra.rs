@@ -5,7 +5,7 @@
 //! (an oracle defect, kept outside the repository).
 mod common;
 
-use carve2::ast::Node;
+use carve2::ast::owned::Node;
 use carve2::options::{HeadingIds, Mode, Options, Profile, UrlPolicy};
 use serde_json::Value;
 
@@ -81,9 +81,12 @@ fn c2_h_extra_inputs_match_the_oracle() {
         let opts = options_of(&c["opts"]);
         let mut stripped = c["tree"].clone();
         common::strip_results(&mut stripped);
-        if let Ok(Node::Document(mut again)) = serde_json::from_value::<Node>(stripped) {
-            carve2::resolve::resolve(&mut again, &opts);
-            let back = serde_json::to_value(Node::Document(again)).unwrap_or_default();
+        let arena = carve2::Arena::new();
+        if let Ok(Node::Document(again)) = serde_json::from_value::<Node>(stripped) {
+            let mut again = again.in_arena(&arena);
+            carve2::resolve::resolve(&mut again, &opts, &arena);
+            let back =
+                serde_json::to_value(Node::Document(Box::new(again.owned()))).unwrap_or_default();
             let want = c.get("expectedTree").unwrap_or(&c["tree"]);
             if common::sorted(&back) != common::sorted(want) {
                 failures.push(format!(
@@ -94,7 +97,7 @@ fn c2_h_extra_inputs_match_the_oracle() {
                 ));
             }
         }
-        let html = carve2::html::render(&doc, &opts);
+        let html = carve2::html::render(&doc.in_arena(&arena), &opts);
         let want = c["expected"].as_str().or(c["html"].as_str()).unwrap_or("");
         if html != want {
             failures.push(format!(

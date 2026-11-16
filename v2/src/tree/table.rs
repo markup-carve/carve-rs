@@ -3,7 +3,8 @@
 //! (C2-B-211, C2-B-212, C2-B-220).
 
 use super::Builder;
-use crate::ast::{self, Attrs, Node};
+use crate::Arena;
+use crate::ast::{self, Node, owned::Attrs};
 use crate::block::table::{Row, TableData};
 use crate::inline::ContentKind;
 
@@ -27,15 +28,15 @@ struct Resolved {
 
 const TABLE_KEYS: [&str; 4] = ["aligns", "widths", "header-rows", "footer-rows"];
 
-impl Builder<'_> {
+impl<'a> Builder<'_, 'a> {
     pub(super) fn table(
         &self,
         mut data: TableData,
         attrs: Option<Attrs>,
-        lang: Option<String>,
+        lang: Option<&'a str>,
         start: usize,
         end: usize,
-    ) -> Node {
+    ) -> Node<'a> {
         // C2-A-086, gap G-012: comments after the last row belong to the table.
         let trailing = data
             .rows
@@ -47,8 +48,8 @@ impl Builder<'_> {
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let n = data.rows.len();
         let foot = footer_count(attrs.as_ref()).min(n - head);
-        let (columns, attrs) = columns(ncols, attrs);
-        let mut groups: Vec<Node> = Vec::new();
+        let (columns, attrs) = columns(self.arena, ncols, attrs);
+        let mut groups: Vec<Node<'a>> = Vec::new();
         let bounds = [(0, head, 0u8), (head, n - foot, 1), (n - foot, n, 2)];
         for (lo, hi, kind) in bounds {
             if lo >= hi {
@@ -57,12 +58,12 @@ impl Builder<'_> {
             groups.push(self.group(&data.rows, &spans, lo, hi, kind));
         }
         for (s, e, value) in trailing {
-            groups.push(self.comment(s, e, value));
+            groups.push(self.comment(s, e, &value));
         }
-        Node::Table(Box::new(ast::Table {
-            children: groups,
+        Node::Table(self.arena.alloc(ast::Table {
+            children: self.arena.nodes(&mut groups),
             columns,
-            attrs: attrs.map(Box::new),
+            attrs: self.at(attrs),
             lang,
             pos: Some(self.src.pos(start, end)),
             ..Default::default()
@@ -71,44 +72,52 @@ impl Builder<'_> {
 
     /// C2-B-209, C2-B-221: the head count of a delimited table and its partition.
     pub(super) fn delimited_table(
+        &self,
         value: &str,
         sep: char,
         attrs: Option<Attrs>,
-        lang: Option<String>,
+        lang: Option<&'a str>,
         pos: Option<ast::Pos>,
-    ) -> Node {
+    ) -> Node<'a> {
         let declared = attrs
             .as_ref()
             .and_then(|a| a.get("header-rows"))
             .and_then(count);
         let footer = footer_count(attrs.as_ref());
-        let (children, ncols) = super::delimited::table(value, sep, declared, footer);
+        let (children, ncols) = super::delimited::table(self.arena, value, sep, declared, footer);
         let attrs = attrs.map(|mut a| {
             a.key_values
                 .retain(|(k, _)| !k.eq_ignore_ascii_case("table"));
             a
         });
-        let (columns, attrs) = columns(ncols, attrs.filter(|a| !a.is_empty()));
-        Node::Table(Box::new(ast::Table {
+        let (columns, attrs) = columns(self.arena, ncols, attrs.filter(|a| !a.is_empty()));
+        Node::Table(self.arena.alloc(ast::Table {
             children,
             columns,
-            attrs: attrs.map(Box::new),
+            attrs: self.at(attrs),
             lang,
             pos,
             ..Default::default()
         }))
     }
 
-    fn comment(&self, s: usize, e: usize, value: String) -> Node {
-        Node::Comment(Box::new(ast::Comment {
+    fn comment(&self, s: usize, e: usize, value: &str) -> Node<'a> {
+        Node::Comment(self.arena.alloc(ast::Comment {
             form: ast::CommentForm::Line,
-            value,
+            value: self.s(value),
             pos: Some(self.src.pos(s, e)),
             ..Default::default()
         }))
     }
 
-    fn group(&self, rows: &[Row], spans: &[Vec<Resolved>], lo: usize, hi: usize, kind: u8) -> Node {
+    fn group(
+        &self,
+        rows: &[Row],
+        spans: &[Vec<Resolved>],
+        lo: usize,
+        hi: usize,
+        kind: u8,
+    ) -> Node<'a> {
         let mut children = Vec::new();
         for (i, row) in rows.iter().enumerate().take(hi).skip(lo) {
             children.push(self.row(
@@ -117,24 +126,25 @@ impl Builder<'_> {
                 i < lo + (hi - lo),
             ));
             for (s, e, value) in &row.comments {
-                children.push(self.comment(*s, *e, value.clone()));
+                children.push(self.comment(*s, *e, value));
             }
         }
         let first = rows.get(lo).map_or(0, |r| r.start);
         let last = rows.get(hi.saturating_sub(1)).map_or(0, |r| r.end);
         let pos = Some(self.src.pos(first, last));
+        let children = self.arena.nodes(&mut children);
         match kind {
-            0 => Node::TableHead(Box::new(ast::TableHead {
+            0 => Node::TableHead(self.arena.alloc(ast::TableHead {
                 children,
                 pos,
                 ..Default::default()
             })),
-            1 => Node::TableBody(Box::new(ast::TableBody {
+            1 => Node::TableBody(self.arena.alloc(ast::TableBody {
                 children,
                 pos,
                 ..Default::default()
             })),
-            _ => Node::TableFoot(Box::new(ast::TableFoot {
+            _ => Node::TableFoot(self.arena.alloc(ast::TableFoot {
                 children,
                 pos,
                 ..Default::default()
@@ -142,7 +152,7 @@ impl Builder<'_> {
         }
     }
 
-    fn row(&self, row: &Row, spans: &[Resolved], _in_group: bool) -> Node {
+    fn row(&self, row: &Row, spans: &[Resolved], _in_group: bool) -> Node<'a> {
         // C2-B-173, gap G-005: "every other cell" needs at least one other cell.
         // A span-mark cell is no cell of its own for this test.
         let others = |i: usize| {
@@ -167,7 +177,7 @@ impl Builder<'_> {
             } else {
                 cell.header
             };
-            let (attrs, lang) = super::split_attrs(cell.attrs.clone());
+            let (attrs, lang) = self.split_attrs(cell.attrs.clone());
             let span = sp.mark.map(|m| {
                 if m == '<' {
                     ast::TableCellSpan::Colspan
@@ -176,24 +186,24 @@ impl Builder<'_> {
                 }
             });
             let align = cell.align.and_then(ast::TableCellAlign::from_name);
-            cells.push(Node::TableCell(Box::new(ast::TableCell {
+            cells.push(Node::TableCell(self.arena.alloc(ast::TableCell {
                 children,
                 header,
                 span,
                 colspan: (sp.colspan > 1).then(|| i64::try_from(sp.colspan).unwrap_or(1)),
                 rowspan: (sp.rowspan > 1).then(|| i64::try_from(sp.rowspan).unwrap_or(1)),
                 align,
-                attrs: attrs.map(Box::new),
+                attrs: self.at(attrs),
                 lang,
                 pos: cell_positioned.then(|| self.src.pos(cell.start, cell.end)),
                 ..Default::default()
             })));
         }
-        let (attrs, lang) = super::split_attrs(row.attrs.clone());
+        let (attrs, lang) = self.split_attrs(row.attrs.clone());
         let pos = (!row.joined).then(|| self.src.pos(row.start, row.end));
-        Node::TableRow(Box::new(ast::TableRow {
-            children: cells,
-            attrs: attrs.map(Box::new),
+        Node::TableRow(self.arena.alloc(ast::TableRow {
+            children: self.arena.nodes(&mut cells),
+            attrs: self.at(attrs),
             lang,
             pos,
             ..Default::default()
@@ -205,9 +215,9 @@ impl Builder<'_> {
         cell: &crate::block::table::Cell,
         positioned: bool,
         marked: bool,
-    ) -> Vec<Node> {
+    ) -> &'a mut [Node<'a>] {
         if marked {
-            Vec::new()
+            &mut []
         } else {
             let inl = self.inline(ContentKind::Cell, &cell.pieces);
             let ppos = if positioned {
@@ -224,24 +234,26 @@ impl Builder<'_> {
             } else {
                 None
             };
-            let inl = if positioned { inl } else { strip_pos(inl) };
-            vec![Node::CellParagraph(Box::new(ast::CellParagraph {
-                children: inl,
-                pos: ppos,
-                ..Default::default()
-            }))]
+            if !positioned {
+                strip_pos(inl);
+            }
+            self.arena
+                .one(Node::CellParagraph(self.arena.alloc(ast::CellParagraph {
+                    children: inl,
+                    pos: ppos,
+                    ..Default::default()
+                })))
         }
     }
 }
 
-fn strip_pos(mut nodes: Vec<Node>) -> Vec<Node> {
-    for n in &mut nodes {
+fn strip_pos(nodes: &mut [Node<'_>]) {
+    for n in nodes {
         clear_pos(n, 0);
     }
-    nodes
 }
 
-fn clear_pos(n: &mut Node, depth: usize) {
+fn clear_pos(n: &mut Node<'_>, depth: usize) {
     if let Some(p) = n.pos_slot() {
         *p = None;
     }
@@ -352,15 +364,22 @@ fn count(v: &str) -> Option<usize> {
 }
 
 /// The columns and the table attributes that are read, not kept (gap G-003).
-fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
-    let mut cols: Vec<ast::TableColumn> = (0..ncols).map(|_| ast::TableColumn::default()).collect();
+fn columns<'a>(
+    arena: &'a Arena,
+    ncols: usize,
+    attrs: Option<Attrs>,
+) -> (&'a mut [Node<'a>], Option<Attrs>) {
+    let mut cols: Vec<ast::TableColumn<'a>> =
+        (0..ncols).map(|_| ast::TableColumn::default()).collect();
+    let nodes = |cols: Vec<ast::TableColumn<'a>>| -> &'a mut [Node<'a>] {
+        let mut v: Vec<Node<'a>> = cols
+            .into_iter()
+            .map(|col| Node::TableColumn(arena.alloc(col)))
+            .collect();
+        arena.nodes(&mut v)
+    };
     let Some(mut a) = attrs else {
-        return (
-            cols.into_iter()
-                .map(|col| Node::TableColumn(Box::new(col)))
-                .collect(),
-            None,
-        );
+        return (nodes(cols), None);
     };
     if let Some(v) = a.get("aligns") {
         for (i, entry) in v.split(',').enumerate() {
@@ -384,12 +403,7 @@ fn columns(ncols: usize, attrs: Option<Attrs>) -> (Vec<Node>, Option<Attrs>) {
     a.key_values
         .retain(|(k, _)| !TABLE_KEYS.iter().any(|t| t.eq_ignore_ascii_case(k)));
     let attrs = (!a.is_empty()).then_some(a);
-    (
-        cols.into_iter()
-            .map(|col| Node::TableColumn(Box::new(col)))
-            .collect(),
-        attrs,
-    )
+    (nodes(cols), attrs)
 }
 
 /// C2-B-212, C2-B-220: a decimal number greater than 0 and at most 100.

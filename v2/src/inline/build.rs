@@ -7,31 +7,40 @@ use super::delim::Ctx;
 use super::events::Ev;
 use super::smart::{Out, Prev, Smart};
 use super::token::Kind;
-use super::{InlineEnv, abbr};
+use super::{InlineEnv, Scratch, abbr};
+use crate::Arena;
 use crate::ast::{
-    Abbreviation, CommentForm, HardBreak, InlineExtension, Link, Node, NonBreakingSpace, Pos,
-    SmartPunctuation, SoftBreak, Text,
+    Abbreviation, CommentForm, HardBreak, InlineExtension, InlineFootnote, Link, Node,
+    NonBreakingSpace, Pos, SmartPunctuation, SoftBreak, Span, Text,
 };
 use crate::attr::AttrBlock;
 use crate::tables;
 
-struct Frame {
+struct Frame<'a> {
     kind: Kind,
     v0: usize,
     v1: usize,
-    children: Vec<Node>,
+    children: Vec<Node<'a>>,
     /// Past the depth cap (C2-I-118): written as its source.
     dead: bool,
     /// The single-quote state outside an inline footnote (C2-I-109).
     saved_single: Option<bool>,
 }
 
-struct Builder<'a, 'e> {
-    c: &'a Content<'e>,
-    ctx: &'a Ctx<'a>,
-    env: &'a InlineEnv<'e>,
-    root: Vec<Node>,
-    frames: Vec<Frame>,
+struct Builder<'r, 'e, 'a> {
+    c: &'r Content<'e, 'a>,
+    ctx: &'r Ctx<'r>,
+    env: &'r InlineEnv<'e, 'a>,
+    a: &'a Arena,
+    root: Vec<Node<'a>>,
+    frames: Vec<Frame<'a>>,
+    /// Child lists of closed frames, kept for the next frame.
+    lists: Vec<Vec<Node<'a>>>,
+    /// While set, the value of the last text node of the open list is `join`:
+    /// pieces that are no one slice of the source gather here and are written
+    /// once, so merging stays linear (C2-A-040).
+    joining: bool,
+    join: String,
     smart: Smart,
     /// The flow character before the current event, for abbreviations.
     flow_prev: Option<char>,
@@ -43,41 +52,53 @@ struct Builder<'a, 'e> {
 
 /// Builds the inline nodes of one content.
 #[must_use]
-pub fn build(
-    c: &Content<'_>,
+pub(super) fn build<'a>(
+    c: &Content<'_, 'a>,
     ctx: &Ctx<'_>,
-    env: &InlineEnv<'_>,
-    evs: &mut Vec<Ev>,
-    outs: &mut Vec<Out>,
-) -> Vec<Node> {
+    env: &InlineEnv<'_, 'a>,
+    s: &mut Scratch<'a>,
+) -> &'a mut [Node<'a>] {
+    let mut evs = std::mem::take(&mut s.evs);
     let next_flow = if env.abbreviations.is_empty() {
         Vec::new()
     } else {
-        next_flow(ctx.t, evs)
+        next_flow(ctx.t, &evs)
     };
+    let mut lists = std::mem::take(&mut s.lists);
     let mut b = Builder {
         c,
         ctx,
         env,
-        root: Vec::new(),
+        a: env.arena,
+        root: lists.pop().unwrap_or_default(),
         frames: Vec::new(),
+        lists,
+        joining: false,
+        join: std::mem::take(&mut s.join),
         smart: Smart::new(),
         flow_prev: None,
         comment_to: None,
-        outs: std::mem::take(outs),
+        outs: std::mem::take(&mut s.outs),
     };
     for (i, ev) in evs.drain(..).enumerate() {
         b.event(ev, next_flow.get(i).copied().flatten());
     }
+    b.flush();
     while let Some(f) = b.frames.pop() {
         let end = f.v1;
         b.exit(f, end, end, None);
+        b.flush();
     }
-    *outs = b.outs;
-    b.root
+    let out = b.a.nodes(&mut b.root);
+    b.lists.push(b.root);
+    s.evs = evs;
+    s.lists = b.lists;
+    s.join = b.join;
+    s.outs = b.outs;
+    out
 }
 
-fn first_char(t: &str, ev: &Ev) -> Option<Option<char>> {
+fn first_char(t: &str, ev: &Ev<'_>) -> Option<Option<char>> {
     match ev {
         Ev::Text { v0, v1, val, .. } => Some(
             val.as_deref()
@@ -98,7 +119,7 @@ fn first_char(t: &str, ev: &Ev) -> Option<Option<char>> {
 }
 
 /// For each event, the first flow character after it (C2-I-099).
-fn next_flow(t: &str, evs: &[Ev]) -> Vec<Option<char>> {
+fn next_flow(t: &str, evs: &[Ev<'_>]) -> Vec<Option<char>> {
     let mut out = vec![None; evs.len()];
     let mut next = None;
     for (i, ev) in evs.iter().enumerate().rev() {
@@ -112,26 +133,26 @@ fn next_flow(t: &str, evs: &[Ev]) -> Vec<Option<char>> {
     out
 }
 
-fn set_pos(node: &mut Node, pos: Option<Pos>) {
+fn set_pos(node: &mut Node<'_>, pos: Option<Pos>) {
     if let Some(slot) = node.pos_slot() {
         *slot = pos;
     }
 }
 
-fn apply_attrs(node: &mut Node, attrs: Option<AttrBlock>) {
+fn apply_attrs<'a>(a: &'a Arena, node: &mut Node<'a>, attrs: Option<AttrBlock>) {
     let Some(block) = attrs else { return };
     if !block.attrs.is_empty()
         && let Some(slot) = node.attrs_slot()
     {
-        *slot = Some(Box::new(block.attrs));
+        *slot = Some(a.attrs(&block.attrs));
     }
-    if block.lang.is_some() {
-        set_lang(node, block.lang);
+    if let Some(lang) = block.lang {
+        set_lang(node, Some(a.str(&lang)));
     }
 }
 
 /// The `lang` part of an attribute block on a host (C2-I-029, C2-I-036).
-pub fn set_lang(node: &mut Node, lang: Option<String>) {
+pub fn set_lang<'a>(node: &mut Node<'a>, lang: Option<&'a str>) {
     let slot = match node {
         Node::Code(n) => &mut n.lang,
         Node::LiteralInline(n) => &mut n.lang,
@@ -147,7 +168,7 @@ pub fn set_lang(node: &mut Node, lang: Option<String>) {
     *slot = lang;
 }
 
-fn set_lang_container(node: &mut Node, lang: Option<String>) {
+fn set_lang_container<'a>(node: &mut Node<'a>, lang: Option<&'a str>) {
     let slot = match node {
         Node::InlineFootnote(n) => &mut n.lang,
         Node::InlineExtension(n) => &mut n.lang,
@@ -166,59 +187,48 @@ fn set_lang_container(node: &mut Node, lang: Option<String>) {
 }
 
 /// An empty node of a delimiter span type (`tables::DELIMITERS`).
-fn styled(name: &str) -> Option<Node> {
+fn styled<'a>(a: &'a Arena, name: &str) -> Option<Node<'a>> {
     Some(match name {
-        "delete" => Node::Delete(Box::default()),
-        "emphasis" => Node::Emphasis(Box::default()),
-        "highlight" => Node::Highlight(Box::default()),
-        "insert" => Node::Insert(Box::default()),
-        "strike" => Node::Strike(Box::default()),
-        "strong" => Node::Strong(Box::default()),
-        "subscript" => Node::Subscript(Box::default()),
-        "superscript" => Node::Superscript(Box::default()),
-        "underline" => Node::Underline(Box::default()),
+        "delete" => Node::Delete(a.alloc(crate::ast::Delete::default())),
+        "emphasis" => Node::Emphasis(a.alloc(crate::ast::Emphasis::default())),
+        "highlight" => Node::Highlight(a.alloc(crate::ast::Highlight::default())),
+        "insert" => Node::Insert(a.alloc(crate::ast::Insert::default())),
+        "strike" => Node::Strike(a.alloc(crate::ast::Strike::default())),
+        "strong" => Node::Strong(a.alloc(crate::ast::Strong::default())),
+        "subscript" => Node::Subscript(a.alloc(crate::ast::Subscript::default())),
+        "superscript" => Node::Superscript(a.alloc(crate::ast::Superscript::default())),
+        "underline" => Node::Underline(a.alloc(crate::ast::Underline::default())),
         _ => return None,
     })
 }
 
 /// A container node of `kind`, empty.
-fn container(kind: Kind) -> Option<Node> {
+fn container(a: &Arena, kind: Kind) -> Option<Node<'_>> {
     Some(match kind {
-        Kind::Styled(name) => styled(name)?,
-        Kind::Span => Node::Span(Box::default()),
+        Kind::Styled(name) => styled(a, name)?,
+        Kind::Span => Node::Span(a.alloc(Span::default())),
         Kind::Link {
             href,
             tooltip,
             key,
             form,
         } => {
-            let namespace = key.as_ref().map(|_| "link".to_string());
-            Node::Link(Box::new(Link {
-                href,
-                tooltip,
-                key,
+            let namespace = key.as_ref().map(|_| "link");
+            Node::Link(a.alloc(Link {
+                href: href.map(|h| a.str(&h)),
+                tooltip: tooltip.map(|t| a.str(&t)),
+                key: key.map(|k| a.str(&k)),
                 namespace,
                 ref_form: form,
                 ..Default::default()
             }))
         }
-        Kind::InlineFootnote => Node::InlineFootnote(Box::default()),
-        Kind::Extension(name) => Node::InlineExtension(Box::new(InlineExtension {
-            name,
+        Kind::InlineFootnote => Node::InlineFootnote(a.alloc(InlineFootnote::default())),
+        Kind::Extension(name) => Node::InlineExtension(a.alloc(InlineExtension {
+            name: a.str(&name),
             ..Default::default()
         })),
     })
-}
-
-fn push_node(list: &mut Vec<Node>, node: Node) {
-    if let Node::Text(new) = &node
-        && let Some(Node::Text(last)) = list.last_mut()
-    {
-        last.value.push_str(&new.value);
-        last.pos = joined(last.pos, new.pos);
-        return;
-    }
-    list.push(node);
 }
 
 /// The position of two adjacent text pieces merged, none when they do not touch.
@@ -234,16 +244,65 @@ fn joined(a: Option<Pos>, b: Option<Pos>) -> Option<Pos> {
     }
 }
 
-impl<'a> Builder<'a, '_> {
-    fn out(&mut self) -> &mut Vec<Node> {
+impl<'r, 'a> Builder<'r, '_, 'a> {
+    fn out(&mut self) -> &mut Vec<Node<'a>> {
         match self.frames.last_mut() {
             Some(f) => &mut f.children,
             None => &mut self.root,
         }
     }
 
-    fn add(&mut self, node: Node) {
-        push_node(self.out(), node);
+    fn add(&mut self, node: Node<'a>) {
+        if let Node::Text(new) = &node
+            && matches!(self.out().last(), Some(Node::Text(_)))
+        {
+            self.merge(new.value, new.pos);
+            return;
+        }
+        self.flush();
+        self.out().push(node);
+    }
+
+    /// Appends `value` to the text node that ends the open list (C2-A-040).
+    fn merge(&mut self, value: &str, pos: Option<Pos>) {
+        let (c, src) = (self.c, self.env.src);
+        let joining = self.joining;
+        let list = match self.frames.last_mut() {
+            Some(f) => &mut f.children,
+            None => &mut self.root,
+        };
+        let Some(Node::Text(tail)) = list.last_mut() else {
+            return;
+        };
+        tail.pos = joined(tail.pos, pos);
+        if joining {
+            self.join.push_str(value);
+            return;
+        }
+        let next = c.borrow(value);
+        if let (Some(at), Some(next)) = (src.offset_of(tail.value), next)
+            && src.offset_of(next) == Some(at + tail.value.len())
+            && let Some(both) = src.borrowed(at, at + tail.value.len() + next.len())
+        {
+            tail.value = both;
+            return;
+        }
+        self.join.clear();
+        self.join.push_str(tail.value);
+        self.join.push_str(value);
+        self.joining = true;
+    }
+
+    /// Writes the gathered text into its node.
+    fn flush(&mut self) {
+        if !std::mem::take(&mut self.joining) {
+            return;
+        }
+        let a = self.a;
+        let value = a.str(&self.join);
+        if let Some(Node::Text(last)) = self.out().last_mut() {
+            last.value = value;
+        }
     }
 
     /// C2-A-158: the inline nodes of a cell that a continuation row joined
@@ -259,32 +318,32 @@ impl<'a> Builder<'a, '_> {
         } else {
             None
         };
-        if let Some(Node::Text(last)) = self.out().last_mut() {
-            last.value.push_str(value);
-            last.pos = joined(last.pos, pos);
+        if matches!(self.out().last(), Some(Node::Text(_))) {
+            self.merge(value, pos);
             return;
         }
-        self.out().push(Node::Text(Box::new(Text {
-            value: value.to_string(),
+        let node = Node::Text(self.a.alloc(Text {
+            value: self.c.keep(value),
             pos,
             ..Default::default()
-        })));
+        }));
+        self.out().push(node);
     }
 
     /// The source text of a content range.
-    fn src(&self, v0: usize, v1: usize) -> &'a str {
+    fn src(&self, v0: usize, v1: usize) -> &'r str {
         self.ctx.t.get(v0..v1).unwrap_or("")
     }
 
-    fn slice(&self, v0: usize, v1: usize) -> String {
-        self.ctx.t.get(v0..v1).unwrap_or("").to_string()
-    }
-
-    fn event(&mut self, ev: Ev, next_flow: Option<char>) {
+    fn event(&mut self, ev: Ev<'a>, next_flow: Option<char>) {
         let comment_to = self.comment_to.take();
         match ev {
-            Ev::Enter { kind, v0, v1 } => self.enter(kind, v0, v1),
+            Ev::Enter { kind, v0, v1 } => {
+                self.flush();
+                self.enter(kind, v0, v1);
+            }
             Ev::Exit { v0, v1, attrs, .. } => {
+                self.flush();
                 if let Some(f) = self.frames.pop() {
                     self.exit(f, v0, v1, attrs);
                 }
@@ -306,7 +365,7 @@ impl<'a> Builder<'a, '_> {
             Ev::Nbsp { v0, v1 } => {
                 self.space_prev('\u{a0}');
                 let pos = self.pos(v0, v1);
-                self.add(Node::NonBreakingSpace(Box::new(NonBreakingSpace {
+                self.add(Node::NonBreakingSpace(self.a.alloc(NonBreakingSpace {
                     pos,
                     ..Default::default()
                 })));
@@ -319,12 +378,12 @@ impl<'a> Builder<'a, '_> {
                     self.pos(v0, v1)
                 };
                 self.add(if hard {
-                    Node::HardBreak(Box::new(HardBreak {
+                    Node::HardBreak(self.a.alloc(HardBreak {
                         pos,
                         ..Default::default()
                     }))
                 } else {
-                    Node::SoftBreak(Box::new(SoftBreak {
+                    Node::SoftBreak(self.a.alloc(SoftBreak {
                         pos,
                         ..Default::default()
                     }))
@@ -332,8 +391,8 @@ impl<'a> Builder<'a, '_> {
             }
             Ev::CellJoin { .. } => {
                 self.space_prev(' ');
-                self.add(Node::Text(Box::new(Text {
-                    value: " ".to_string(),
+                self.add(Node::Text(self.a.alloc(Text {
+                    value: " ",
                     ..Default::default()
                 })));
             }
@@ -342,7 +401,7 @@ impl<'a> Builder<'a, '_> {
                 v1,
                 node,
                 transparent,
-            } => self.leaf(*node, v0, v1, transparent),
+            } => self.leaf(node, v0, v1, transparent),
         }
     }
 
@@ -351,7 +410,7 @@ impl<'a> Builder<'a, '_> {
         self.flow_prev = Some(c);
     }
 
-    fn leaf(&mut self, mut node: Node, v0: usize, v1: usize, transparent: bool) {
+    fn leaf(&mut self, mut node: Node<'a>, v0: usize, v1: usize, transparent: bool) {
         if !transparent {
             self.smart.prev = Prev::Word;
             self.flow_prev = None;
@@ -381,40 +440,43 @@ impl<'a> Builder<'a, '_> {
         if dead {
             let t = self.src(v0, v1);
             self.text(v0, v1, t);
+            self.flush();
         }
         self.smart.prev = Prev::Start;
+        let children = self.lists.pop().unwrap_or_default();
         self.frames.push(Frame {
             kind,
             v0,
             v1,
-            children: Vec::new(),
+            children,
             dead,
             saved_single,
         });
     }
 
-    fn exit(&mut self, f: Frame, v0: usize, v1: usize, attrs: Option<AttrBlock>) {
+    fn exit(&mut self, mut f: Frame<'a>, v0: usize, v1: usize, attrs: Option<AttrBlock>) {
         if let Some(s) = f.saved_single {
             self.smart.single_open = s;
             self.flow_prev = None;
         }
         self.smart.prev = Prev::Word;
         if f.dead {
-            for ch in f.children {
+            for ch in f.children.drain(..) {
                 self.add(ch);
             }
+            self.lists.push(f.children);
             let t = self.src(v0, v1);
             self.text(v0, v1, t);
             return;
         }
         let pos = self.pos(f.v0, v1);
-        let Some(mut node) = container(f.kind) else {
+        let Some(mut node) = container(self.a, f.kind) else {
+            self.lists.push(f.children);
             return;
         };
-        if let Some(ch) = node.children_mut() {
-            *ch = f.children;
-        }
-        apply_attrs(&mut node, attrs);
+        node.set_children(self.a.nodes(&mut f.children));
+        self.lists.push(f.children);
+        apply_attrs(self.a, &mut node, attrs);
         set_pos(&mut node, pos);
         self.add(node);
     }
@@ -426,16 +488,20 @@ impl<'a> Builder<'a, '_> {
         let mut from = v0;
         for (a, b, idx) in hits {
             self.smart_text(from, v0 + a);
-            let (key, expansion) = self.env.abbreviations.get(idx).cloned().unwrap_or_default();
+            let (key, expansion) = self
+                .env
+                .abbreviations
+                .get(idx)
+                .map_or(("", ""), |(k, e)| (k.as_str(), e.as_str()));
             let pos = self.pos(v0 + a, v0 + b);
             let node = Abbreviation {
-                key,
-                expansion: Some(expansion),
-                namespace: "abbr".to_string(),
+                key: self.a.str(key),
+                expansion: Some(self.a.str(expansion)),
+                namespace: "abbr",
                 pos,
                 ..Default::default()
             };
-            self.add(Node::Abbreviation(Box::new(node)));
+            self.add(Node::Abbreviation(self.a.alloc(node)));
             if let Some(last) = s.get(..b).and_then(|x| x.chars().next_back()) {
                 self.smart.prev = Prev::Char(last);
             }
@@ -471,12 +537,12 @@ impl<'a> Builder<'a, '_> {
                     let pos = self.pos(v0, v1);
                     let node = SmartPunctuation {
                         kind,
-                        glyph: Some(glyph.to_string()),
-                        source: self.slice(v0, v1),
+                        glyph: Some(glyph),
+                        source: self.c.slice(v0, v1),
                         pos,
                         ..Default::default()
                     };
-                    self.add(Node::SmartPunctuation(Box::new(node)));
+                    self.add(Node::SmartPunctuation(self.a.alloc(node)));
                 }
             }
         }

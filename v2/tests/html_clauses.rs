@@ -250,8 +250,8 @@ fn c2_b_192_attribute_lines_no_block_takes_stay_before_a_comment_line() {
         .children
         .iter()
         .map(|n| match n {
-            carve2::ast::Node::Paragraph(_) => "paragraph",
-            carve2::ast::Node::Comment(_) => "comment",
+            carve2::ast::owned::Node::Paragraph(_) => "paragraph",
+            carve2::ast::owned::Node::Comment(_) => "comment",
             _ => "other",
         })
         .collect();
@@ -303,10 +303,10 @@ fn g_024_a_cell_that_spans_columns_takes_no_row_span() {
 #[test]
 fn g_004_the_block_inside_a_figure_starts_at_its_own_markup() {
     let doc = carve2::parse("> {l}\n> ```\n> ```\n> ^ i");
-    let Some(carve2::ast::Node::BlockQuote(q)) = doc.children.first() else {
+    let Some(carve2::ast::owned::Node::BlockQuote(q)) = doc.children.first() else {
         panic!("no quote");
     };
-    let Some(carve2::ast::Node::Figure(f)) = q.children.first() else {
+    let Some(carve2::ast::owned::Node::Figure(f)) = q.children.first() else {
         panic!("no figure");
     };
     let inner = f.children.first().and_then(|n| n.pos().copied());
@@ -316,12 +316,12 @@ fn g_004_the_block_inside_a_figure_starts_at_its_own_markup() {
 #[test]
 fn g_025_trailing_blank_lines_of_an_unclosed_line_block_are_dropped() {
     let doc = carve2::parse("::: |\na\n\n\n");
-    let Some(carve2::ast::Node::LineBlock(b)) = doc.children.first() else {
+    let Some(carve2::ast::owned::Node::LineBlock(b)) = doc.children.first() else {
         panic!("no line block");
     };
     assert_eq!(b.children.len(), 1);
     let doc = carve2::parse("::: |\na\n\nb\n:::");
-    let Some(carve2::ast::Node::LineBlock(b)) = doc.children.first() else {
+    let Some(carve2::ast::owned::Node::LineBlock(b)) = doc.children.first() else {
         panic!("no line block");
     };
     assert_eq!(b.children.len(), 3);

@@ -1,7 +1,7 @@
 //! The attribute block grammar (C2-I-028 to C2-I-042, `attribute-block.json`),
 //! shared by attribute lines, marker attributes, cell prefixes and inline hosts.
 
-use crate::ast::Attrs;
+use crate::ast::owned::Attrs;
 
 /// One parsed brace block.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub fn parse_block(s: &str, at: usize) -> Option<(AttrBlock, usize)> {
         match b.get(i) {
             Some(b'}') => {
                 block.empty = parts == 0;
-                crate::ast::dedupe_keys(&mut block.attrs.key_values);
+                crate::ast::owned::dedupe_keys(&mut block.attrs.key_values);
                 return Some((block, i + 1));
             }
             None | Some(b'\n') => return None,

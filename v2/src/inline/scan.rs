@@ -34,18 +34,18 @@ struct Bracket {
 }
 
 /// The result of the scan.
-pub struct Scanned {
-    pub toks: Vec<Tok>,
+pub struct Scanned<'a> {
+    pub toks: Vec<Tok<'a>>,
     /// Content ranges of braced comments, in order (C2-I-026).
     pub comments: Vec<(usize, usize)>,
 }
 
-struct Scanner<'a, 'e> {
-    c: &'a Content<'e>,
-    t: &'a str,
-    b: &'a [u8],
-    env: &'a InlineEnv<'e>,
-    toks: Vec<Tok>,
+struct Scanner<'r, 'e, 'a> {
+    c: &'r Content<'e, 'a>,
+    t: &'r str,
+    b: &'r [u8],
+    env: &'r InlineEnv<'e, 'a>,
+    toks: Vec<Tok<'a>>,
     text_from: Option<usize>,
     brackets: Vec<Bracket>,
     /// How many entries of `brackets` are past the depth cap.
@@ -65,7 +65,11 @@ struct Scanner<'a, 'e> {
 
 /// Runs the scan over one content.
 #[must_use]
-pub fn scan(c: &Content<'_>, env: &InlineEnv<'_>, mut toks: Vec<Tok>) -> Scanned {
+pub fn scan<'a>(
+    c: &Content<'_, 'a>,
+    env: &InlineEnv<'_, 'a>,
+    mut toks: Vec<Tok<'a>>,
+) -> Scanned<'a> {
     let t = c.text.as_str();
     toks.clear();
     // Each byte that starts a form makes about one token and ends a text run.
@@ -108,7 +112,7 @@ static FORM_START: ByteSet = ByteSet::new(
     None,
 );
 
-impl Scanner<'_, '_> {
+impl<'a> Scanner<'_, '_, 'a> {
     fn at(&self, i: usize) -> Option<u8> {
         self.b.get(i).copied()
     }
@@ -150,19 +154,19 @@ impl Scanner<'_, '_> {
         }
     }
 
-    fn push(&mut self, v0: usize, v1: usize, k: K) -> usize {
+    fn push(&mut self, v0: usize, v1: usize, k: K<'a>) -> usize {
         self.flush();
         self.toks.push(Tok::new(v0, v1, k));
         self.i = v1;
         self.toks.len() - 1
     }
 
-    fn leaf(&mut self, v0: usize, v1: usize, node: Node, host: bool) -> usize {
+    fn leaf(&mut self, v0: usize, v1: usize, node: Node<'a>, host: bool) -> usize {
         self.push(
             v0,
             v1,
             K::Leaf {
-                node: Box::new(node),
+                node,
                 host,
                 transparent: false,
             },
@@ -262,26 +266,26 @@ impl Scanner<'_, '_> {
                     self.leaf(
                         v0,
                         e,
-                        Node::RawInline(Box::new(RawInline {
-                            format,
-                            value,
+                        Node::RawInline(self.c.arena().alloc(RawInline {
+                            format: self.c.keep(&format),
+                            value: self.c.keep(&value),
                             ..Default::default()
                         })),
                         false,
                     );
                     return true;
                 }
-                Node::Code(Box::new(Code {
-                    value,
+                Node::Code(self.c.arena().alloc(Code {
+                    value: self.c.keep(&value),
                     ..Default::default()
                 }))
             }
-            CodeKind::Literal => Node::LiteralInline(Box::new(LiteralInline {
-                value,
+            CodeKind::Literal => Node::LiteralInline(self.c.arena().alloc(LiteralInline {
+                value: self.c.keep(&value),
                 ..Default::default()
             })),
-            CodeKind::Math(display) => Node::Math(Box::new(Math {
-                value,
+            CodeKind::Math(display) => Node::Math(self.c.arena().alloc(Math {
+                value: self.c.keep(&value),
                 display,
                 ..Default::default()
             })),
@@ -397,16 +401,16 @@ impl Scanner<'_, '_> {
         let raw = self.t.get(i + 2..k).unwrap_or("");
         let raw = raw.strip_prefix(' ').unwrap_or(raw);
         let raw = raw.strip_suffix(' ').unwrap_or(raw);
-        let node = Node::Comment(Box::new(Comment {
+        let node = Node::Comment(self.c.arena().alloc(Comment {
             form: CommentForm::Braced,
-            value: raw.to_string(),
+            value: self.c.keep(raw),
             ..Default::default()
         }));
         self.push(
             i,
             k + 2,
             K::Leaf {
-                node: Box::new(node),
+                node,
                 host: false,
                 transparent: true,
             },
@@ -436,11 +440,11 @@ impl Scanner<'_, '_> {
         if k == i + 2 {
             return false;
         }
-        let value = self.t.get(i + 2..k).unwrap_or("").to_string();
+        let value = self.c.slice(i + 2, k);
         self.leaf(
             i,
             k + 2,
-            Node::CriticComment(Box::new(CriticComment {
+            Node::CriticComment(self.c.arena().alloc(CriticComment {
                 value,
                 ..Default::default()
             })),
@@ -471,9 +475,9 @@ impl Scanner<'_, '_> {
             .strip_prefix(' ')
             .unwrap_or(raw)
             .trim_end_matches([' ', '\t']);
-        let node = Node::Comment(Box::new(Comment {
+        let node = Node::Comment(self.c.arena().alloc(Comment {
             form: CommentForm::Line,
-            value: raw.to_string(),
+            value: self.c.keep(raw),
             ..Default::default()
         }));
         self.i = start;
@@ -485,8 +489,8 @@ impl Scanner<'_, '_> {
         let i = self.i;
         match atoms::angle(self.t, i) {
             Some(Angle::Xref { key, end }) => {
-                let node = Node::Xref(Box::new(Xref {
-                    key,
+                let node = Node::Xref(self.c.arena().alloc(Xref {
+                    key: self.c.keep(&key),
                     namespace: XrefNamespace::Heading,
                     ..Default::default()
                 }));
@@ -495,12 +499,12 @@ impl Scanner<'_, '_> {
             }
             Some(Angle::Autolink { href, body, end }) => {
                 // GAP INL-001: `text` only where the visible text differs from `href`.
-                let text = (body != href).then_some(body);
+                let text = (body != href).then(|| self.c.keep(&body));
                 self.leaf(
                     i,
                     end,
-                    Node::Autolink(Box::new(Autolink {
-                        href,
+                    Node::Autolink(self.c.arena().alloc(Autolink {
+                        href: self.c.keep(&href),
                         text,
                         ..Default::default()
                     })),
@@ -529,15 +533,15 @@ impl Scanner<'_, '_> {
         let Some(end) = atoms::sigil_name(self.t, i + 1) else {
             return false;
         };
-        let name = self.t.get(i + 1..end).unwrap_or("").to_string();
+        let name = self.c.slice(i + 1, end);
         let node = if at {
-            Node::Mention(Box::new(Mention {
+            Node::Mention(self.c.arena().alloc(Mention {
                 target: name,
-                kind: "user".to_string(),
+                kind: "user",
                 ..Default::default()
             }))
         } else {
-            Node::Tag(Box::new(Tag {
+            Node::Tag(self.c.arena().alloc(Tag {
                 name,
                 ..Default::default()
             }))
@@ -564,11 +568,11 @@ impl Scanner<'_, '_> {
             return false;
         }
         if let Some(end) = atoms::symbol(self.t, i) {
-            let name = self.t.get(i + 1..end).unwrap_or("").to_string();
+            let name = self.c.slice(i + 1, end);
             self.leaf(
                 i,
                 end + 1,
-                Node::Symbol(Box::new(Symbol {
+                Node::Symbol(self.c.arena().alloc(Symbol {
                     name,
                     ..Default::default()
                 })),
@@ -596,9 +600,9 @@ impl Scanner<'_, '_> {
         if let Label::Ok(e, end) = self.label(i + 2) {
             let key = self.label_key(i + 2, e);
             if !key.is_empty() {
-                let node = Node::FootnoteRef(Box::new(FootnoteRef {
-                    key,
-                    namespace: "footnote".to_string(),
+                let node = Node::FootnoteRef(self.c.arena().alloc(FootnoteRef {
+                    key: self.c.keep(&key),
+                    namespace: "footnote",
                     ..Default::default()
                 }));
                 self.leaf(i, end, node, true);
@@ -844,22 +848,24 @@ impl Scanner<'_, '_> {
     /// An image is one leaf; its alt is the source of the bracket content.
     fn image(&mut self, top: &Bracket, bang: usize, i: usize, end: usize, target: Target) {
         self.flush();
-        let mut alt = self.t.get(top.inner..i).unwrap_or("").to_string();
-        if self.env.kind == ContentKind::Cell {
-            alt = alt.replace("\\|", "|");
-        }
+        let alt = self.t.get(top.inner..i).unwrap_or("");
+        let alt = if self.env.kind == ContentKind::Cell && alt.contains("\\|") {
+            self.c.arena().str(&alt.replace("\\|", "|"))
+        } else {
+            self.c.keep(alt)
+        };
         let mut img = Image {
             alt: Some(alt),
             ..Default::default()
         };
         match target {
             Target::Direct { href, tooltip } => {
-                img.src = Some(href);
-                img.tooltip = tooltip;
+                img.src = Some(self.c.keep(&href));
+                img.tooltip = tooltip.map(|t| self.c.keep(&t));
             }
             Target::Ref { key, form } => {
-                img.key = Some(key);
-                img.namespace = Some("link".to_string());
+                img.key = Some(self.c.keep(&key));
+                img.namespace = Some("link");
                 img.ref_form = Some(match form {
                     LinkRefForm::Full => ImageRefForm::Full,
                     LinkRefForm::Collapsed => ImageRefForm::Collapsed,
@@ -876,7 +882,7 @@ impl Scanner<'_, '_> {
                 v0,
                 end,
                 K::Leaf {
-                    node: Box::new(Node::Image(Box::new(img))),
+                    node: Node::Image(self.c.arena().alloc(img)),
                     host: true,
                     transparent: false,
                 },

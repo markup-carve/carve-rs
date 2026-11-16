@@ -11,14 +11,14 @@ use std::collections::HashMap;
 
 /// The address of a node, the key of every per-node result.
 #[must_use]
-pub fn addr(n: &Node) -> usize {
+pub fn addr(n: &Node<'_>) -> usize {
     std::ptr::from_ref(n).addr()
 }
 
 /// One visited node and the facts of its place that numbering reads.
 #[derive(Clone, Copy)]
-pub struct Visit<'a> {
-    pub node: &'a Node,
+pub struct Visit<'r, 'a> {
+    pub node: &'r Node<'a>,
     /// A `figure` or `table` directly inside a `figure_group` (C2-H-066).
     pub panel: bool,
     /// Inside a `figure` or `figure_group` whose caption has a mark (C2-H-151).
@@ -29,16 +29,16 @@ pub struct Visit<'a> {
 
 /// A note of the footnote sequence: a `footnote` definition or an
 /// `inline_footnote`, with the references that use it in order.
-pub struct Note<'a> {
-    pub node: &'a Node,
-    pub refs: Vec<&'a Node>,
+pub struct Note<'r, 'a> {
+    pub node: &'r Node<'a>,
+    pub refs: Vec<&'r Node<'a>>,
 }
 
 /// The resolution order and the footnote sequence.
 #[derive(Default)]
-pub struct Order<'a> {
-    pub visits: Vec<Visit<'a>>,
-    pub notes: Vec<Note<'a>>,
+pub struct Order<'r, 'a> {
+    pub visits: Vec<Visit<'r, 'a>>,
+    pub notes: Vec<Note<'r, 'a>>,
     /// Address of a `footnote_ref` or `inline_footnote` to its number.
     pub number: AddrMap<usize, usize>,
     note_of_key: HashMap<&'a str, usize>,
@@ -46,20 +46,20 @@ pub struct Order<'a> {
 
 /// The first `footnote` definition of each key (C2-A-080).
 #[must_use]
-pub fn footnote_defs(doc: &Document) -> HashMap<&str, &Node> {
+pub fn footnote_defs<'r, 'a>(doc: &'r Document<'a>) -> HashMap<&'a str, &'r Node<'a>> {
     let mut defs = HashMap::new();
-    for c in &doc.children {
+    for c in doc.children.iter() {
         if let Node::Footnote(f) = c {
-            defs.entry(f.key.as_str()).or_insert(c);
+            defs.entry(f.key).or_insert(c);
         }
     }
     defs
 }
 
-impl<'a> Order<'a> {
+impl<'r, 'a> Order<'r, 'a> {
     /// Builds the order of `doc`.
     #[must_use]
-    pub fn build(doc: &'a Document) -> Self {
+    pub fn build(doc: &'r Document<'a>) -> Self {
         let defs = footnote_defs(doc);
         let mut o = Order::default();
         let top = Ctx {
@@ -67,16 +67,16 @@ impl<'a> Order<'a> {
             in_marked_figure: false,
             note: 0,
         };
-        for c in &doc.children {
+        for c in doc.children.iter() {
             if !matches!(c, Node::Footnote(_)) {
                 o.walk(c, &defs, top, 1);
             }
         }
         let mut i = 0;
         while let Some(note) = o.notes.get(i) {
-            let content: &'a [Node] = match note.node {
-                Node::Footnote(f) => &f.children,
-                Node::InlineFootnote(f) => &f.children,
+            let content: &'r [Node<'a>] = match note.node {
+                Node::Footnote(f) => &*f.children,
+                Node::InlineFootnote(f) => &*f.children,
                 _ => &[],
             };
             i += 1;
@@ -92,7 +92,13 @@ impl<'a> Order<'a> {
         o
     }
 
-    fn walk(&mut self, n: &'a Node, defs: &HashMap<&str, &'a Node>, ctx: Ctx, depth: usize) {
+    fn walk(
+        &mut self,
+        n: &'r Node<'a>,
+        defs: &HashMap<&'a str, &'r Node<'a>>,
+        ctx: Ctx,
+        depth: usize,
+    ) {
         if depth > crate::resolve::WALK_CAP {
             return;
         }
@@ -115,8 +121,8 @@ impl<'a> Order<'a> {
         });
         match n {
             Node::FootnoteRef(r) => {
-                if let Some(def) = defs.get(r.key.as_str()) {
-                    self.use_note(n, def, Some(r.key.as_str()));
+                if let Some(def) = defs.get(r.key) {
+                    self.use_note(n, def, Some(r.key));
                 }
                 return;
             }
@@ -144,7 +150,7 @@ impl<'a> Order<'a> {
         }
     }
 
-    fn use_note(&mut self, r: &'a Node, note: &'a Node, key: Option<&'a str>) {
+    fn use_note(&mut self, r: &'r Node<'a>, note: &'r Node<'a>, key: Option<&'a str>) {
         let existing = key.and_then(|k| self.note_of_key.get(k).copied());
         let idx = existing.unwrap_or_else(|| {
             self.notes.push(Note {
@@ -173,13 +179,13 @@ struct Ctx {
 
 /// True when the caption of a figure, figure group or table holds a mark.
 #[must_use]
-pub fn caption_marked(n: &Node) -> bool {
+pub fn caption_marked(n: &Node<'_>) -> bool {
     caption_of(n).is_some_and(|c| mark_of(c).is_some())
 }
 
 /// The caption slot of a node.
 #[must_use]
-pub fn caption_of(n: &Node) -> Option<&Node> {
+pub fn caption_of<'r, 'a>(n: &'r Node<'a>) -> Option<&'r Node<'a>> {
     match n {
         Node::Figure(f) => f.caption.as_deref(),
         Node::FigureGroup(f) => f.caption.as_deref(),
@@ -191,11 +197,11 @@ pub fn caption_of(n: &Node) -> Option<&Node> {
 /// The caption number node of a caption and the inline nodes before it: the
 /// mark stands in the top-level inline content (C2-B-207).
 #[must_use]
-pub fn mark_of(caption: &Node) -> Option<(&Node, &[Node])> {
+pub fn mark_of<'r, 'a>(caption: &'r Node<'a>) -> Option<(&'r Node<'a>, &'r [Node<'a>])> {
     let Node::Caption(c) = caption else {
         return None;
     };
-    for p in &c.children {
+    for p in c.children.iter() {
         if let Node::Paragraph(p) = p {
             if let Some(i) = p
                 .children
@@ -211,8 +217,8 @@ pub fn mark_of(caption: &Node) -> Option<(&Node, &[Node])> {
 
 /// The child slots of a node in resolution order: title, children, caption,
 /// then the slots that only some types have.
-pub fn slots(n: &Node) -> impl Iterator<Item = &Node> {
-    let title: &[Node] = match n {
+pub fn slots<'r, 'a>(n: &'r Node<'a>) -> impl Iterator<Item = &'r Node<'a>> {
+    let title: &[Node<'a>] = match n {
         Node::Admonition(x) => x.title.as_deref(),
         Node::Directive(x) => x.title.as_deref(),
         Node::Div(x) => x.title.as_deref(),
@@ -220,17 +226,17 @@ pub fn slots(n: &Node) -> impl Iterator<Item = &Node> {
         _ => None,
     }
     .unwrap_or_default();
-    let main: &[Node] = match n {
-        Node::BlockExtension(x) => &x.fallback,
+    let main: &[Node<'a>] = match n {
+        Node::BlockExtension(x) => &*x.fallback,
         Node::InlineExtension(x) if x.name.contains('.') => {
             x.fallback.as_deref().unwrap_or_default()
         }
-        _ => n.children().map_or(&[], Vec::as_slice),
+        _ => n.children().unwrap_or_default(),
     };
-    let (a, b): (&[Node], &[Node]) = match n {
+    let (a, b): (&[Node<'a>], &[Node<'a>]) = match n {
         Node::Image(x) => (x.long_description.as_deref().unwrap_or_default(), &[]),
-        Node::Ruby(x) => (&x.pairs, &[]),
-        Node::RubyPair(x) => (&x.base, &x.annotation),
+        Node::Ruby(x) => (&*x.pairs, &[]),
+        Node::RubyPair(x) => (&*x.base, &*x.annotation),
         _ => (&[], &[]),
     };
     title

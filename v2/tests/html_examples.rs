@@ -2,7 +2,7 @@
 //! expected HTML.
 mod common;
 
-use carve2::ast::Node;
+use carve2::ast::owned::Node;
 use common::options_of;
 
 #[test]
@@ -16,7 +16,8 @@ fn c2_h_001_oracle_trees_render_the_expected_html() {
             failures.push(format!("{}: no document", ex.id));
             continue;
         };
-        let html = carve2::html::render(&doc, &options_of(&ex.opts));
+        let arena = carve2::Arena::new();
+        let html = carve2::html::render(&doc.in_arena(&arena), &options_of(&ex.opts));
         if html == ex.html {
             pass += 1;
         } else {

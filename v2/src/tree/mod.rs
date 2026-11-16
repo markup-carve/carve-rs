@@ -4,7 +4,8 @@
 mod delimited;
 mod table;
 
-use crate::ast::{self, Attrs, Node};
+use crate::Arena;
+use crate::ast::{self, Node, owned::Attrs};
 use crate::attr::AttrBlock;
 use crate::block::events::{ContainerKind, Event, LeafKind, Role};
 use crate::block::shapes::{DivInfo, MarkerKind};
@@ -16,7 +17,12 @@ use std::collections::HashSet;
 
 /// Builds the document from the events of the block pass.
 #[must_use]
-pub fn build(src: &Source, events: Vec<Event>, own_starts: &[(usize, usize)]) -> ast::Document {
+pub fn build<'a>(
+    src: &Source<'a>,
+    arena: &'a Arena,
+    events: Vec<Event>,
+    own_starts: &[(usize, usize)],
+) -> ast::Document<'a> {
     let (link_keys, abbreviations) = definitions(&events);
     // Keyed by the source offset that `pos` carries.
     let own_starts: AddrMap<usize, usize> = own_starts
@@ -25,20 +31,23 @@ pub fn build(src: &Source, events: Vec<Event>, own_starts: &[(usize, usize)]) ->
         .collect();
     let mut b = Builder {
         src,
+        arena,
         own_starts: &own_starts,
         link_keys,
         abbreviations,
         stack: Vec::new(),
         root: Vec::new(),
         hard: 0,
+        spare: Vec::new(),
+        scratch: std::cell::RefCell::default(),
     };
     for ev in events {
         b.event(ev);
     }
     while b.stack.pop().is_some() {}
     ast::Document {
-        children: b.root,
-        ast_version: "2.0".into(),
+        children: arena.nodes(&mut b.root),
+        ast_version: "2.0",
         src_byte_length: i64::try_from(src.original_len()).ok(),
         ..ast::Document::default()
     }
@@ -70,38 +79,60 @@ fn definitions(events: &[Event]) -> (HashSet<String>, Vec<(String, String)>) {
     (links, abbrs)
 }
 
-struct Frame {
-    node: Node,
+struct Frame<'a> {
+    node: Node<'a>,
+    /// The children so far, set into the node when it closes.
+    kids: Vec<Node<'a>>,
     start: usize,
     hard: bool,
 }
 
-struct Builder<'a> {
-    src: &'a Source,
-    own_starts: &'a AddrMap<usize, usize>,
+struct Builder<'s, 'a> {
+    src: &'s Source<'a>,
+    arena: &'a Arena,
+    own_starts: &'s AddrMap<usize, usize>,
     link_keys: HashSet<String>,
     abbreviations: Vec<(String, String)>,
-    stack: Vec<Frame>,
-    root: Vec<Node>,
+    stack: Vec<Frame<'a>>,
+    root: Vec<Node<'a>>,
     hard: usize,
+    /// Child lists of closed frames, kept for the next frame.
+    spare: Vec<Vec<Node<'a>>>,
+    scratch: std::cell::RefCell<inline::Scratch<'a>>,
 }
 
-/// Splits an attribute block into the node's `attrs` and `lang`.
-fn split_attrs(a: Option<AttrBlock>) -> (Option<Attrs>, Option<String>) {
-    match a {
-        Some(b) => ((!b.attrs.is_empty()).then_some(b.attrs), b.lang),
-        None => (None, None),
-    }
-}
-
-impl Builder<'_> {
+impl<'a> Builder<'_, 'a> {
     fn pos(&self, s: usize, e: usize) -> ast::Pos {
         self.src.pos(s, e)
     }
 
-    fn inline(&self, kind: ContentKind, pieces: &[Piece]) -> Vec<Node> {
+    /// Splits an attribute block into the node's `attrs` and `lang`.
+    fn split_attrs(&self, a: Option<AttrBlock>) -> (Option<Attrs>, Option<&'a str>) {
+        match a {
+            Some(b) => (
+                (!b.attrs.is_empty()).then_some(b.attrs),
+                self.os(b.lang.as_deref()),
+            ),
+            None => (None, None),
+        }
+    }
+
+    fn s(&self, v: &str) -> &'a str {
+        self.arena.str(v)
+    }
+
+    fn os(&self, v: Option<&str>) -> Option<&'a str> {
+        v.map(|v| self.arena.str(v))
+    }
+
+    fn at(&self, a: Option<Attrs>) -> Option<&'a ast::Attrs<'a>> {
+        a.map(|a| self.arena.attrs(&a))
+    }
+
+    fn inline(&self, kind: ContentKind, pieces: &[Piece]) -> &'a mut [Node<'a>] {
         let env = InlineEnv {
             src: self.src,
+            arena: self.arena,
             link_keys: &self.link_keys,
             abbreviations: &self.abbreviations,
             depth: self.stack.len(),
@@ -110,16 +141,16 @@ impl Builder<'_> {
         };
         #[cfg(feature = "profile")]
         crate::profile::inline(true);
-        let out = inline::parse(&env, pieces);
+        let out = inline::parse(&env, pieces, &mut self.scratch.borrow_mut());
         #[cfg(feature = "profile")]
         crate::profile::inline(false);
         out
     }
 
-    fn children(&mut self) -> &mut Vec<Node> {
-        match self.stack.last_mut().and_then(|f| f.node.children_mut()) {
-            Some(c) => c,
-            None => &mut self.root,
+    fn children(&mut self) -> &mut Vec<Node<'a>> {
+        match self.stack.last_mut() {
+            Some(f) if f.node.children().is_some() => &mut f.kids,
+            _ => &mut self.root,
         }
     }
 
@@ -130,7 +161,13 @@ impl Builder<'_> {
                 if hard {
                     self.hard += 1;
                 }
-                self.stack.push(Frame { node, start, hard });
+                let kids = self.spare.pop().unwrap_or_default();
+                self.stack.push(Frame {
+                    node,
+                    kids,
+                    start,
+                    hard,
+                });
             }
             Event::Exit { end, loose } => self.exit(end, loose),
             Event::Leaf {
@@ -159,48 +196,54 @@ impl Builder<'_> {
         if let Some(slot) = f.node.pos_slot() {
             *slot = Some(self.src.pos(f.start, end));
         }
+        f.node.set_children(self.arena.nodes(&mut f.kids));
+        self.spare.push(f.kids);
         self.children().push(f.node);
     }
 
-    fn container(&self, kind: ContainerKind, attrs: Option<AttrBlock>) -> (Node, bool) {
-        let (attrs, lang) = split_attrs(attrs);
+    fn container(&self, kind: ContainerKind, attrs: Option<AttrBlock>) -> (Node<'a>, bool) {
+        let (attrs, lang) = self.split_attrs(attrs);
         let node = match kind {
-            ContainerKind::Quote => Node::BlockQuote(Box::new(ast::BlockQuote {
-                attrs: attrs.map(Box::new),
+            ContainerKind::Quote => Node::BlockQuote(self.arena.alloc(ast::BlockQuote {
+                attrs: self.at(attrs),
                 lang,
                 ..Default::default()
             })),
-            ContainerKind::List { kind, start } => Node::List(Box::new(ast::List {
-                marker: marker(kind, start),
-                attrs: attrs.map(Box::new),
+            ContainerKind::List { kind, start } => Node::List(self.arena.alloc(ast::List {
+                marker: marker(self.arena, kind, start),
+                attrs: self.at(attrs),
                 lang,
                 ..Default::default()
             })),
             ContainerKind::Item { task } => {
-                let task = task.map(|c| ast::Task { mark: task_mark(c) });
-                Node::ListItem(Box::new(ast::ListItem {
+                let task = task.map(|c| ast::Task {
+                    mark: self.s(&task_mark(c)),
+                });
+                Node::ListItem(self.arena.alloc(ast::ListItem {
                     task,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     ..Default::default()
                 }))
             }
-            ContainerKind::DescList => Node::DefinitionList(Box::new(ast::DefinitionList {
-                attrs: attrs.map(Box::new),
-                lang,
-                ..Default::default()
-            })),
+            ContainerKind::DescList => {
+                Node::DefinitionList(self.arena.alloc(ast::DefinitionList {
+                    attrs: self.at(attrs),
+                    lang,
+                    ..Default::default()
+                }))
+            }
             ContainerKind::Desc => {
-                Node::DefinitionDescription(Box::new(ast::DefinitionDescription {
-                    attrs: attrs.map(Box::new),
+                Node::DefinitionDescription(self.arena.alloc(ast::DefinitionDescription {
+                    attrs: self.at(attrs),
                     lang,
                     ..Default::default()
                 }))
             }
-            ContainerKind::Footnote { label } => Node::Footnote(Box::new(ast::Footnote {
-                key: fold_label(&label),
-                namespace: "footnote".into(),
-                attrs: attrs.map(Box::new),
+            ContainerKind::Footnote { label } => Node::Footnote(self.arena.alloc(ast::Footnote {
+                key: self.s(&fold_label(&label)),
+                namespace: "footnote",
+                attrs: self.at(attrs),
                 lang,
                 ..Default::default()
             })),
@@ -216,8 +259,8 @@ impl Builder<'_> {
         info: DivInfo,
         sigil: Option<char>,
         attrs: Option<Attrs>,
-        lang: Option<String>,
-    ) -> Node {
+        lang: Option<&'a str>,
+    ) -> Node<'a> {
         let title = info.title.map(|(s, e)| {
             self.inline(
                 ContentKind::Paragraph,
@@ -228,11 +271,11 @@ impl Builder<'_> {
                 }],
             )
         });
-        let group_label = info.label;
+        let group_label = self.os(info.label.as_deref());
         match sigil {
             Some('>') => {
-                return Node::BlockQuote(Box::new(ast::BlockQuote {
-                    attrs: attrs.map(Box::new),
+                return Node::BlockQuote(self.arena.alloc(ast::BlockQuote {
+                    attrs: self.at(attrs),
                     lang,
                     ..Default::default()
                 }));
@@ -240,8 +283,8 @@ impl Builder<'_> {
             Some('\\') => {
                 let mut a = attrs.unwrap_or_default();
                 a.classes.push("hardbreaks".into());
-                return Node::Div(Box::new(ast::Div {
-                    attrs: Some(Box::new(a)),
+                return Node::Div(self.arena.alloc(ast::Div {
+                    attrs: Some(self.arena.attrs(&a)),
                     lang,
                     ..Default::default()
                 }));
@@ -254,25 +297,25 @@ impl Builder<'_> {
             .find(|(n, _)| *n == name)
             .map(|(_, k)| *k);
         match kind {
-            Some("admonition") => Node::Admonition(Box::new(ast::Admonition {
+            Some("admonition") => Node::Admonition(self.arena.alloc(ast::Admonition {
                 kind: admonition_kind(&name),
                 title,
                 group_label,
-                attrs: attrs.map(Box::new),
+                attrs: self.at(attrs),
                 lang,
                 ..Default::default()
             })),
-            Some("directive") => Node::Directive(Box::new(ast::Directive {
+            Some("directive") => Node::Directive(self.arena.alloc(ast::Directive {
                 kind: directive_kind(&name),
                 title,
                 group_label,
-                attrs: attrs.map(Box::new),
+                attrs: self.at(attrs),
                 lang,
                 ..Default::default()
             })),
             Some("figure_group") if title.is_none() && group_label.is_none() => {
-                Node::FigureGroup(Box::new(ast::FigureGroup {
-                    attrs: attrs.map(Box::new),
+                Node::FigureGroup(self.arena.alloc(ast::FigureGroup {
+                    attrs: self.at(attrs),
                     lang,
                     ..Default::default()
                 }))
@@ -283,10 +326,10 @@ impl Builder<'_> {
                     a.classes.insert(0, name);
                 }
                 let attrs = (!a.is_empty()).then_some(a);
-                Node::Div(Box::new(ast::Div {
+                Node::Div(self.arena.alloc(ast::Div {
                     title,
                     group_label,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     ..Default::default()
                 }))
@@ -302,7 +345,7 @@ impl Builder<'_> {
             self.caption(children, start, content, end);
             return;
         }
-        let (attrs, lang) = split_attrs(attrs);
+        let (attrs, lang) = self.split_attrs(attrs);
         let node = match kind {
             LeafKind::Paragraph { pieces, role } => {
                 let children = self.inline(ContentKind::Paragraph, &pieces);
@@ -310,10 +353,10 @@ impl Builder<'_> {
                     Role::Image => ast::ParagraphRole::Image,
                     Role::Math => ast::ParagraphRole::Math,
                 });
-                Node::Paragraph(Box::new(ast::Paragraph {
+                Node::Paragraph(self.arena.alloc(ast::Paragraph {
                     children,
                     role,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
@@ -321,10 +364,10 @@ impl Builder<'_> {
             }
             LeafKind::Heading { level, pieces } => {
                 let children = self.inline(ContentKind::Heading, &pieces);
-                Node::Heading(Box::new(ast::Heading {
+                Node::Heading(self.arena.alloc(ast::Heading {
                     level: i64::from(level),
                     children,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
@@ -332,9 +375,9 @@ impl Builder<'_> {
             }
             LeafKind::Term { pieces } => {
                 let children = self.inline(ContentKind::Term, &pieces);
-                Node::DefinitionTerm(Box::new(ast::DefinitionTerm {
+                Node::DefinitionTerm(self.arena.alloc(ast::DefinitionTerm {
                     children,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
@@ -349,25 +392,25 @@ impl Builder<'_> {
         &self,
         kind: LeafKind,
         attrs: Option<Attrs>,
-        lang: Option<String>,
+        lang: Option<&'a str>,
         pos: Option<ast::Pos>,
         start: usize,
         end: usize,
-    ) -> Node {
+    ) -> Node<'a> {
         match kind {
             LeafKind::Code { value, info } => {
                 if let Some(format) = info.raw {
-                    return Node::RawBlock(Box::new(ast::RawBlock {
-                        format,
-                        value,
-                        attrs: attrs.map(Box::new),
+                    return Node::RawBlock(self.arena.alloc(ast::RawBlock {
+                        format: self.s(&format),
+                        value: self.s(&value),
+                        attrs: self.at(attrs),
                         lang,
                         pos,
                         ..Default::default()
                     }));
                 }
                 if let Some(sep) = delimited::separator(info.language.as_deref(), attrs.as_ref()) {
-                    return Self::delimited_table(&value, sep, attrs, lang, pos);
+                    return self.delimited_table(&value, sep, attrs, lang, pos);
                 }
                 let title = info.title.map(|(s, e)| {
                     self.inline(
@@ -379,12 +422,12 @@ impl Builder<'_> {
                         }],
                     )
                 });
-                Node::CodeBlock(Box::new(ast::CodeBlock {
-                    value,
-                    syntax: info.language,
+                Node::CodeBlock(self.arena.alloc(ast::CodeBlock {
+                    value: self.s(&value),
+                    syntax: self.os(info.language.as_deref()),
                     title,
-                    group_label: info.label,
-                    attrs: attrs.map(Box::new),
+                    group_label: self.os(info.label.as_deref()),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
@@ -396,50 +439,50 @@ impl Builder<'_> {
                 } else {
                     ast::CommentForm::Line
                 };
-                Node::Comment(Box::new(ast::Comment {
+                Node::Comment(self.arena.alloc(ast::Comment {
                     form,
-                    value,
-                    attrs: attrs.map(Box::new),
+                    value: self.s(&value),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
                 }))
             }
-            LeafKind::Thematic => Node::ThematicBreak(Box::new(ast::ThematicBreak {
-                attrs: attrs.map(Box::new),
+            LeafKind::Thematic => Node::ThematicBreak(self.arena.alloc(ast::ThematicBreak {
+                attrs: self.at(attrs),
                 lang,
                 pos,
                 ..Default::default()
             })),
             LeafKind::Table(data) => self.table(*data, attrs, lang, start, end),
             LeafKind::LinkDef { label, href, title } => {
-                Node::LinkReferenceDefinition(Box::new(ast::LinkReferenceDefinition {
-                    key: fold_label(&label),
-                    namespace: "link".into(),
-                    href,
-                    tooltip: title,
-                    attrs: attrs.map(Box::new),
+                Node::LinkReferenceDefinition(self.arena.alloc(ast::LinkReferenceDefinition {
+                    key: self.s(&fold_label(&label)),
+                    namespace: "link",
+                    href: self.s(&href),
+                    tooltip: self.os(title.as_deref()),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
                 }))
             }
             LeafKind::AbbrDef { key, expansion } => {
-                Node::AbbreviationDef(Box::new(ast::AbbreviationDef {
-                    key,
-                    expansion,
-                    namespace: "abbr".into(),
-                    attrs: attrs.map(Box::new),
+                Node::AbbreviationDef(self.arena.alloc(ast::AbbreviationDef {
+                    key: self.s(&key),
+                    expansion: self.s(&expansion),
+                    namespace: "abbr",
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
                 }))
             }
             LeafKind::Frontmatter { format, value } => {
-                Node::Frontmatter(Box::new(ast::Frontmatter {
-                    format,
-                    value,
-                    attrs: attrs.map(Box::new),
+                Node::Frontmatter(self.arena.alloc(ast::Frontmatter {
+                    format: self.s(&format),
+                    value: self.s(&value),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
@@ -450,22 +493,23 @@ impl Builder<'_> {
                 section,
                 options,
             } => {
-                let options = (!options.is_empty()).then_some(serde_json::Value::Object(options));
-                Node::Include(Box::new(ast::Include {
-                    path,
-                    section,
+                let options = (!options.is_empty())
+                    .then(|| self.arena.json(serde_json::Value::Object(options)));
+                Node::Include(self.arena.alloc(ast::Include {
+                    path: self.s(&path),
+                    section: self.os(section.as_deref()),
                     options,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
                 }))
             }
             LeafKind::LineBlock { lines } => {
-                let children = lines.into_iter().map(|l| self.line(l)).collect();
-                Node::LineBlock(Box::new(ast::LineBlock {
+                let children = self.arena.fill(lines.into_iter().map(|l| self.line(l)));
+                Node::LineBlock(self.arena.alloc(ast::LineBlock {
                     children,
-                    attrs: attrs.map(Box::new),
+                    attrs: self.at(attrs),
                     lang,
                     pos,
                     ..Default::default()
@@ -474,20 +518,22 @@ impl Builder<'_> {
             LeafKind::Paragraph { .. }
             | LeafKind::Heading { .. }
             | LeafKind::Term { .. }
-            | LeafKind::Caption { .. } => Node::ThematicBreak(Box::default()),
+            | LeafKind::Caption { .. } => {
+                Node::ThematicBreak(self.arena.alloc(ast::ThematicBreak::default()))
+            }
         }
     }
 
-    fn line(&self, p: Piece) -> Node {
+    fn line(&self, p: Piece) -> Node<'a> {
         if p.start == p.end {
-            return Node::Line(Box::new(ast::Line {
+            return Node::Line(self.arena.alloc(ast::Line {
                 pos: Some(self.pos(p.start, p.end)),
                 ..Default::default()
             }));
         }
         let children = self.inline(ContentKind::LineBlockLine, &[p]);
         let pos = Some(self.pos(p.start, p.end));
-        Node::Line(Box::new(ast::Line {
+        Node::Line(self.arena.alloc(ast::Line {
             children,
             pos,
             ..Default::default()
@@ -495,41 +541,41 @@ impl Builder<'_> {
     }
 
     /// A caption attaches to the block before it (C2-A-082, C2-A-183).
-    fn caption(&mut self, children: Vec<Node>, start: usize, content: usize, end: usize) {
-        let para = Node::Paragraph(Box::new(ast::Paragraph {
+    fn caption(&mut self, children: &'a mut [Node<'a>], start: usize, content: usize, end: usize) {
+        let para = Node::Paragraph(self.arena.alloc(ast::Paragraph {
             children,
             pos: Some(self.pos(content, end)),
             ..Default::default()
         }));
-        let cap = Node::Caption(Box::new(ast::Caption {
-            children: vec![para],
+        let cap = Node::Caption(self.arena.alloc(ast::Caption {
+            children: self.arena.one(para),
             pos: Some(self.pos(start, end)),
             ..Default::default()
         }));
-        let src = self.src;
-        let own = self.own_starts;
+        let (src, own, arena) = (self.src, self.own_starts, self.arena);
         let list = self.children();
         let Some(target) = list.pop() else { return };
-        list.push(wrap_caption(src, own, target, cap, end));
+        list.push(wrap_caption(src, own, arena, target, cap, end));
     }
 }
 
-fn wrap_caption(
-    src: &Source,
+fn wrap_caption<'a>(
+    src: &Source<'_>,
     own: &AddrMap<usize, usize>,
-    target: Node,
-    cap: Node,
+    arena: &'a Arena,
+    target: Node<'a>,
+    cap: Node<'a>,
     end: usize,
-) -> Node {
-    if let Node::Table(mut t) = target {
-        t.caption = Some(Box::new(cap));
+) -> Node<'a> {
+    if let Node::Table(t) = target {
+        t.caption = Some(arena.alloc(cap));
         if let Some(p) = &mut t.pos {
             extend(src, p, end);
         }
         return Node::Table(t);
     }
-    if let Node::FigureGroup(mut g) = target {
-        g.caption = Some(Box::new(cap));
+    if let Node::FigureGroup(g) = target {
+        g.caption = Some(arena.alloc(cap));
         if let Some(p) = &mut g.pos {
             extend(src, p, end);
         }
@@ -546,9 +592,9 @@ fn wrap_caption(
     if let Some(p) = &mut pos {
         extend(src, p, end);
     }
-    Node::Figure(Box::new(ast::Figure {
-        children: vec![target],
-        caption: Some(Box::new(cap)),
+    Node::Figure(arena.alloc(ast::Figure {
+        children: arena.one(target),
+        caption: Some(arena.alloc(cap)),
         attrs,
         pos,
         ..Default::default()
@@ -556,7 +602,7 @@ fn wrap_caption(
 }
 
 /// The figure takes the attribute lines; the block inside starts at its own markup.
-fn skip_attr_lines(src: &Source, own: &AddrMap<usize, usize>, p: &mut ast::Pos) {
+fn skip_attr_lines(src: &Source<'_>, own: &AddrMap<usize, usize>, p: &mut ast::Pos) {
     let Some(&at) = own.get(&p.start_offset) else {
         return;
     };
@@ -566,24 +612,25 @@ fn skip_attr_lines(src: &Source, own: &AddrMap<usize, usize>, p: &mut ast::Pos) 
     p.start_offset = s.start_offset;
 }
 
-fn extend(src: &Source, p: &mut ast::Pos, end: usize) {
+fn extend(src: &Source<'_>, p: &mut ast::Pos, end: usize) {
     let e = src.pos(end, end);
     p.end_line = e.end_line;
     p.end_column = e.end_column;
     p.end_offset = e.end_offset;
 }
 
-fn marker(kind: MarkerKind, start: Option<u64>) -> ast::Marker {
+fn marker(arena: &Arena, kind: MarkerKind, start: Option<u64>) -> ast::Marker<'_> {
+    let ch = |c: char| arena.str(c.encode_utf8(&mut [0; 4]));
     match kind {
         MarkerKind::Bullet(c) => ast::Marker {
-            kind: "bullet".into(),
-            bullet: Some(c.to_string()),
+            kind: "bullet",
+            bullet: Some(ch(c)),
             ..Default::default()
         },
         MarkerKind::Ordered { style, delim, .. } => ast::Marker {
-            kind: "ordered".into(),
-            style: Some(style.code().into()),
-            delimiter: Some(delim.to_string()),
+            kind: "ordered",
+            style: Some(style.code()),
+            delimiter: Some(ch(delim)),
             start: start
                 .filter(|&s| s != 1)
                 .and_then(|s| i64::try_from(s).ok()),

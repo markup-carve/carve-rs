@@ -4,6 +4,7 @@
 
 use super::scan::is_space;
 use super::token::{Delim, K, Kind, Sort, Tok};
+use crate::Arena;
 use crate::ast::Node;
 use crate::attr::AttrBlock;
 use crate::chars::is_word;
@@ -65,10 +66,10 @@ struct Entry {
 }
 
 /// Pairs delimiters, attaches attribute blocks and settles the caption mark.
-pub fn resolve(toks: &mut [Tok], ctx: &Ctx<'_>) {
+pub fn resolve<'a>(toks: &mut [Tok<'a>], ctx: &Ctx<'_>, arena: &'a Arena) {
     group(toks, 0, toks.len(), ctx.depth, ctx);
-    attach(toks);
-    caption(toks);
+    attach(toks, arena);
+    caption(toks, arena);
 }
 
 fn group(toks: &mut [Tok], lo: usize, hi: usize, base: usize, ctx: &Ctx<'_>) {
@@ -257,7 +258,7 @@ fn is_host(toks: &[Tok], p: usize) -> bool {
 }
 
 /// C2-I-036, C2-I-039: glued blocks attach to the host they follow.
-fn attach(toks: &mut [Tok]) {
+fn attach<'a>(toks: &mut [Tok<'a>], arena: &'a Arena) {
     let mut prev: Option<usize> = None;
     for k in 0..toks.len() {
         let Some(tok) = toks.get(k) else { break };
@@ -274,7 +275,7 @@ fn attach(toks: &mut [Tok]) {
                         _ => AttrBlock::default(),
                     };
                     if let Some(host) = toks.get_mut(p) {
-                        add_attrs(host, block);
+                        add_attrs(host, block, arena);
                         host.v1 = v1;
                     }
                     continue;
@@ -290,7 +291,7 @@ fn attach(toks: &mut [Tok]) {
     }
 }
 
-fn add_attrs(host: &mut Tok, block: AttrBlock) {
+fn add_attrs<'a>(host: &mut Tok<'a>, block: AttrBlock, arena: &'a Arena) {
     match &mut host.k {
         K::Close { attrs, .. } => match attrs {
             Some(a) => a.merge(block),
@@ -298,12 +299,15 @@ fn add_attrs(host: &mut Tok, block: AttrBlock) {
         },
         K::Leaf { node, .. } => {
             if let Some(slot) = node.attrs_slot() {
-                let mut a = slot.take().unwrap_or_default();
+                let mut a = slot
+                    .take()
+                    .map(super::super::ast::Attrs::owned)
+                    .unwrap_or_default();
                 a.merge(block.attrs);
-                *slot = (!a.is_empty()).then_some(a);
+                *slot = (!a.is_empty()).then(|| arena.attrs(&a));
             }
-            if block.lang.is_some() {
-                super::build::set_lang(node, block.lang);
+            if let Some(lang) = block.lang {
+                super::build::set_lang(node, Some(arena.str(&lang)));
             }
         }
         _ => {}
@@ -311,7 +315,7 @@ fn add_attrs(host: &mut Tok, block: AttrBlock) {
 }
 
 /// C2-B-207: the first bare `#` outside inline markup is the caption mark.
-fn caption(toks: &mut [Tok]) {
+fn caption<'a>(toks: &mut [Tok<'a>], arena: &'a Arena) {
     let mut depth = 0usize;
     let mut done = false;
     for t in toks.iter_mut() {
@@ -321,7 +325,7 @@ fn caption(toks: &mut [Tok]) {
             K::CaptionMark if depth == 0 && !done => {
                 done = true;
                 t.k = K::Leaf {
-                    node: Box::new(Node::CaptionNumber(Box::default())),
+                    node: Node::CaptionNumber(arena.alloc(crate::ast::CaptionNumber::default())),
                     host: false,
                     transparent: false,
                 };

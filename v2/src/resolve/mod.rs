@@ -10,6 +10,7 @@ pub mod plain;
 pub mod slug;
 pub mod table;
 
+use crate::Arena;
 use crate::ast::{Document, Node, TableColumnResolvedAlign};
 use crate::chars::fold_label;
 use crate::hash::{AddrMap, AddrSet};
@@ -28,40 +29,40 @@ pub const WALK_CAP: usize = 2 * crate::tables::DEPTH_CAP;
 pub const STAGES: [&str; 2] = ["referenceResolution", "tableAlignment"];
 
 /// One result field.
-enum Res {
+enum Res<'a> {
     Number(i64),
-    GeneratedId(String),
-    Href(String),
-    Src(String),
-    Expansion(String),
+    GeneratedId(&'a str),
+    Href(&'a str),
+    Src(&'a str),
+    Expansion(&'a str),
     Spans(Option<i64>, Option<i64>),
     Align(TableColumnResolvedAlign),
 }
 
 /// Fills every result field of the tree and the root `stages` (C2-A-135).
-pub fn resolve(doc: &mut Document, opts: &Options) {
-    let results = compute(doc, opts);
+pub fn resolve<'a>(doc: &mut Document<'a>, opts: &Options, arena: &'a Arena) {
+    let results = compute(doc, opts, arena);
     if !results.is_empty() {
-        for c in &mut doc.children {
+        for c in doc.children.iter_mut() {
             apply(c, &results, 1);
         }
     }
-    doc.stages = Some(STAGES.iter().map(|s| (*s).to_string()).collect());
+    doc.stages = Some(&STAGES);
 }
 
-fn compute(doc: &Document, opts: &Options) -> AddrMap<usize, Res> {
+fn compute<'a>(doc: &Document<'a>, opts: &Options, arena: &'a Arena) -> AddrMap<usize, Res<'a>> {
     let order = Order::build(doc);
     let mut res = AddrMap::default();
     for (a, n) in &order.number {
         res.insert(*a, Res::Number(to_i64(*n)));
     }
     let mut all = Vec::new();
-    every_node(&doc.children, &mut all, 1);
-    let ids = heading_ids(&all, &order, opts.heading_ids, &mut res);
+    every_node(&*doc.children, &mut all, 1);
+    let ids = heading_ids(&all, &order, opts.heading_ids, &mut res, arena);
     let captions = caption_numbers(&order, opts, &mut res);
     let index = Index::new(doc, &order, &ids, &captions);
     for n in all {
-        index.reference(n, &mut res);
+        index.reference(n, &mut res, arena);
         table::resolve_table(n, &mut res);
     }
     res
@@ -72,14 +73,14 @@ fn to_i64(n: usize) -> i64 {
 }
 
 /// Every node of the tree in document order, for the order-free results.
-fn every_node<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>, depth: usize) {
+fn every_node<'r, 'a>(nodes: &'r [Node<'a>], out: &mut Vec<&'r Node<'a>>, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
     for n in nodes {
         out.push(n);
-        let columns: &[Node] = match n {
-            Node::Table(t) => &t.columns,
+        let columns: &[Node<'a>] = match n {
+            Node::Table(t) => &*t.columns,
             _ => &[],
         };
         for c in order::slots(n).chain(columns) {
@@ -91,26 +92,27 @@ fn every_node<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>, depth: usize) {
 /// C2-H-022 to C2-H-025: authored ids are reserved first, in document order;
 /// generated ids follow in resolution order. Returns the heading id of each
 /// heading address that has one.
-fn heading_ids(
-    all: &[&Node],
-    order: &Order<'_>,
+fn heading_ids<'a>(
+    all: &[&Node<'a>],
+    order: &Order<'_, 'a>,
     mode: HeadingIds,
-    res: &mut AddrMap<usize, Res>,
-) -> AddrMap<usize, String> {
+    res: &mut AddrMap<usize, Res<'a>>,
+    arena: &'a Arena,
+) -> AddrMap<usize, &'a str> {
     let mut taken = slug::Taken::default();
     for n in all {
-        if let Some(id) = n.attrs().and_then(|a| a.id.as_deref()) {
+        if let Some(id) = n.attrs().and_then(|a| a.id) {
             taken.reserve(id);
         }
     }
     let mut ids = AddrMap::default();
     for v in &order.visits {
         let Node::Heading(h) = v.node else { continue };
-        if let Some(id) = h.attrs.as_deref().and_then(|a| a.id.clone()) {
+        if let Some(id) = h.attrs.and_then(|a| a.id) {
             ids.insert(addr(v.node), id);
         } else if mode != HeadingIds::Off {
-            let id = taken.unique(&slug::slug(&plain::text_of(&h.children), mode));
-            ids.insert(addr(v.node), id.clone());
+            let id = arena.str(&taken.unique(&slug::slug(&plain::text_of(h.children), mode)));
+            ids.insert(addr(v.node), id);
             res.insert(addr(v.node), Res::GeneratedId(id));
         }
     }
@@ -120,9 +122,9 @@ fn heading_ids(
 /// C2-H-149 to C2-H-151 and C2-H-170: one count per sequence key, in
 /// resolution order, a node before the nodes inside it.
 fn caption_numbers(
-    order: &Order<'_>,
+    order: &Order<'_, '_>,
     opts: &Options,
-    res: &mut AddrMap<usize, Res>,
+    res: &mut AddrMap<usize, Res<'_>>,
 ) -> AddrSet<usize> {
     let mut counts: HashMap<String, i64> = HashMap::new();
     let mut out = AddrSet::default();
@@ -147,7 +149,7 @@ fn next(counts: &mut HashMap<String, i64>, key: &str) -> i64 {
 }
 
 /// The mark of a numbered caption and its sequence key (C2-B-208).
-fn caption_mark<'a>(v: &Visit<'a>, opts: &Options) -> Option<(&'a Node, String)> {
+fn caption_mark<'r, 'a>(v: &Visit<'r, 'a>, opts: &Options) -> Option<(&'r Node<'a>, String)> {
     if v.panel {
         return None;
     }
@@ -159,7 +161,7 @@ fn caption_mark<'a>(v: &Visit<'a>, opts: &Options) -> Option<(&'a Node, String)>
 /// their written text (C2-B-208).
 #[must_use]
 pub fn label_key(
-    before: &[Node],
+    before: &[Node<'_>],
     symbols: Option<&std::collections::BTreeMap<String, String>>,
 ) -> String {
     let mut s = String::new();
@@ -174,28 +176,28 @@ struct Index<'a> {
     abbrs: HashMap<&'a str, &'a str>,
     /// The id of each heading with one, and for each folded plain text and
     /// folded source the first heading that has it.
-    heading_ids: Vec<String>,
+    heading_ids: Vec<&'a str>,
     heading_by_text: HashMap<String, usize>,
     heading_by_src: HashMap<String, usize>,
-    targets: HashSet<String>,
+    targets: HashSet<&'a str>,
 }
 
 impl<'a> Index<'a> {
     fn new(
-        doc: &'a Document,
-        order: &Order<'a>,
-        ids: &AddrMap<usize, String>,
+        doc: &Document<'a>,
+        order: &Order<'_, 'a>,
+        ids: &AddrMap<usize, &'a str>,
         owners: &AddrSet<usize>,
     ) -> Self {
         let mut links = HashMap::new();
         let mut abbrs = HashMap::new();
-        for c in &doc.children {
+        for c in doc.children.iter() {
             match c {
                 Node::LinkReferenceDefinition(d) => {
-                    links.entry(d.key.as_str()).or_insert(d.href.as_str());
+                    links.entry(d.key).or_insert(d.href);
                 }
                 Node::AbbreviationDef(d) => {
-                    abbrs.entry(d.key.as_str()).or_insert(d.expansion.as_str());
+                    abbrs.entry(d.key).or_insert(d.expansion);
                 }
                 _ => {}
             }
@@ -208,16 +210,16 @@ impl<'a> Index<'a> {
             let a = addr(v.node);
             if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
                 let mut src = String::new();
-                plain::source_text(&h.children, &mut src, 0);
+                plain::source_text(h.children, &mut src, 0);
                 let i = heading_ids.len();
                 heading_by_text
-                    .entry(fold_label(&plain::text_of(&h.children)))
+                    .entry(fold_label(&plain::text_of(h.children)))
                     .or_insert(i);
                 heading_by_src.entry(fold_label(&src)).or_insert(i);
-                heading_ids.push(id.clone());
-                targets.insert(id.clone());
+                heading_ids.push(*id);
+                targets.insert(*id);
             } else if owners.contains(&a) {
-                if let Some(id) = v.node.attrs().and_then(|x| x.id.clone()) {
+                if let Some(id) = v.node.attrs().and_then(|x| x.id) {
                     targets.insert(id);
                 }
             }
@@ -233,13 +235,13 @@ impl<'a> Index<'a> {
     }
 
     /// C2-I-081 to C2-I-084, C2-A-109, C2-H-095, C2-I-098.
-    fn reference(&self, n: &Node, res: &mut AddrMap<usize, Res>) {
+    fn reference(&self, n: &Node<'a>, res: &mut AddrMap<usize, Res<'a>>, arena: &'a Arena) {
         let a = addr(n);
         match n {
-            Node::Link(l) if l.namespace.as_deref() == Some("link") => {
-                let Some(key) = l.key.as_deref() else { return };
+            Node::Link(l) if l.namespace == Some("link") => {
+                let Some(key) = l.key else { return };
                 if let Some(href) = self.links.get(key) {
-                    res.insert(a, Res::Href((*href).to_string()));
+                    res.insert(a, Res::Href(href));
                 } else if !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut)) {
                     // Gap HTML-002: the heading is matched on its plain text only; the tree has no source.
                     let first = [&self.heading_by_text, &self.heading_by_src]
@@ -247,23 +249,23 @@ impl<'a> Index<'a> {
                         .filter_map(|m| m.get(key).copied())
                         .min();
                     if let Some(id) = first.and_then(|i| self.heading_ids.get(i)) {
-                        res.insert(a, Res::Href(format!("#{id}")));
+                        res.insert(a, Res::Href(arena.str(&format!("#{id}"))));
                     }
                 }
             }
-            Node::Image(i) if i.namespace.as_deref() == Some("link") => {
-                if let Some(src) = i.key.as_deref().and_then(|k| self.links.get(k)) {
-                    res.insert(a, Res::Src((*src).to_string()));
+            Node::Image(i) if i.namespace == Some("link") => {
+                if let Some(src) = i.key.and_then(|k| self.links.get(k)) {
+                    res.insert(a, Res::Src(src));
                 }
             }
             Node::Xref(x) => {
-                if self.targets.contains(&x.key) {
-                    res.insert(a, Res::Href(format!("#{}", x.key)));
+                if self.targets.contains(x.key) {
+                    res.insert(a, Res::Href(arena.str(&format!("#{}", x.key))));
                 }
             }
             Node::Abbreviation(x) => {
-                if let Some(e) = self.abbrs.get(x.key.as_str()) {
-                    res.insert(a, Res::Expansion((*e).to_string()));
+                if let Some(e) = self.abbrs.get(x.key) {
+                    res.insert(a, Res::Expansion(e));
                 }
             }
             _ => {}
@@ -271,7 +273,7 @@ impl<'a> Index<'a> {
     }
 }
 
-fn apply(n: &mut Node, res: &AddrMap<usize, Res>, depth: usize) {
+fn apply<'a>(n: &mut Node<'a>, res: &AddrMap<usize, Res<'a>>, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
@@ -281,17 +283,17 @@ fn apply(n: &mut Node, res: &AddrMap<usize, Res>, depth: usize) {
     n.for_each_child_mut(&mut |c| apply(c, res, depth + 1));
 }
 
-fn set(n: &mut Node, r: &Res) {
+fn set<'a>(n: &mut Node<'a>, r: &Res<'a>) {
     match (n, r) {
         (Node::FootnoteRef(x), Res::Number(v)) => x.number = Some(*v),
         (Node::InlineFootnote(x), Res::Number(v)) => x.number = Some(*v),
         (Node::CaptionNumber(x), Res::Number(v)) => x.n = Some(*v),
         (Node::Math(x), Res::Number(v)) => x.number = Some(*v),
-        (Node::Heading(x), Res::GeneratedId(v)) => x.generated_id = Some(v.clone()),
-        (Node::Link(x), Res::Href(v)) => x.href = Some(v.clone()),
-        (Node::Xref(x), Res::Href(v)) => x.href = Some(v.clone()),
-        (Node::Image(x), Res::Src(v)) => x.src = Some(v.clone()),
-        (Node::Abbreviation(x), Res::Expansion(v)) => x.expansion = Some(v.clone()),
+        (Node::Heading(x), Res::GeneratedId(v)) => x.generated_id = Some(*v),
+        (Node::Link(x), Res::Href(v)) => x.href = Some(*v),
+        (Node::Xref(x), Res::Href(v)) => x.href = Some(*v),
+        (Node::Image(x), Res::Src(v)) => x.src = Some(*v),
+        (Node::Abbreviation(x), Res::Expansion(v)) => x.expansion = Some(*v),
         (Node::TableCell(x), Res::Spans(c, r)) => {
             x.colspan = *c;
             x.rowspan = *r;

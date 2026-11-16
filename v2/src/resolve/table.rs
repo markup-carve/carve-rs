@@ -7,8 +7,8 @@ use crate::ast::{Node, Table, TableCellAlign, TableCellSpan, TableColumnResolved
 use crate::hash::AddrMap;
 
 /// One cell placed on the grid.
-pub struct Placed<'a> {
-    pub node: &'a Node,
+pub struct Placed<'r, 'a> {
+    pub node: &'r Node<'a>,
     pub row: usize,
     pub col: usize,
     pub colspan: i64,
@@ -21,13 +21,13 @@ pub struct Placed<'a> {
 
 /// The rows of a table in group order, with the group kind of each.
 #[must_use]
-pub fn rows(t: &Table) -> Vec<(&Node, GroupKind)> {
+pub fn rows<'r, 'a>(t: &'r Table<'a>) -> Vec<(&'r Node<'a>, GroupKind)> {
     let mut out = Vec::new();
-    for g in &t.children {
+    for g in t.children.iter() {
         let (kind, rows) = match g {
-            Node::TableHead(x) => (GroupKind::Head, &x.children),
-            Node::TableBody(x) => (GroupKind::Body, &x.children),
-            Node::TableFoot(x) => (GroupKind::Foot, &x.children),
+            Node::TableHead(x) => (GroupKind::Head, &*x.children),
+            Node::TableBody(x) => (GroupKind::Body, &*x.children),
+            Node::TableFoot(x) => (GroupKind::Foot, &*x.children),
             _ => continue,
         };
         out.extend(
@@ -50,13 +50,13 @@ pub enum GroupKind {
 /// Places every cell of `t` on the grid. Where the table holds span marks the
 /// counts derive from the marks; otherwise the counts of the tree stand.
 #[must_use]
-pub fn layout(t: &Table) -> Vec<Placed<'_>> {
+pub fn layout<'r, 'a>(t: &'r Table<'a>) -> Vec<Placed<'r, 'a>> {
     let rows = rows(t);
     let marks = rows
         .iter()
         .any(|(r, _)| cells(r).any(|c| matches!(c, Node::TableCell(x) if x.span.is_some())));
     let mut grid: Vec<Vec<Option<usize>>> = vec![Vec::new(); rows.len()];
-    let mut placed: Vec<Placed<'_>> = Vec::new();
+    let mut placed: Vec<Placed<'r, 'a>> = Vec::new();
     for (r, (row, kind)) in rows.iter().enumerate() {
         let mut c = 0usize;
         for cell in cells(row) {
@@ -108,7 +108,7 @@ pub fn layout(t: &Table) -> Vec<Placed<'_>> {
     placed
 }
 
-fn cells(row: &Node) -> impl Iterator<Item = &Node> {
+fn cells<'r, 'a>(row: &'r Node<'a>) -> impl Iterator<Item = &'r Node<'a>> {
     row.children().into_iter().flatten()
 }
 
@@ -133,7 +133,7 @@ fn fill(grid: &mut [Vec<Option<usize>>], r: usize, c: usize, w: usize, h: usize,
 
 /// A valid mark adds one to the count of the cell it joins; several marks of
 /// one row under a wide cell extend its row span once.
-fn extend(placed: &mut [Placed<'_>], owner: Option<usize>, span: TableCellSpan, r: usize) {
+fn extend(placed: &mut [Placed<'_, '_>], owner: Option<usize>, span: TableCellSpan, r: usize) {
     let Some(o) = owner.and_then(|o| placed.get_mut(o)) else {
         return;
     };
@@ -151,7 +151,10 @@ fn extend(placed: &mut [Placed<'_>], owner: Option<usize>, span: TableCellSpan, 
 /// The resolved alignment of each column: the mark of the last head cell that
 /// starts in it, else the authored `align` (C2-A-089, C2-B-213).
 #[must_use]
-pub fn resolved_aligns(t: &Table, placed: &[Placed<'_>]) -> Vec<Option<TableColumnResolvedAlign>> {
+pub fn resolved_aligns(
+    t: &Table<'_>,
+    placed: &[Placed<'_, '_>],
+) -> Vec<Option<TableColumnResolvedAlign>> {
     let mut out: Vec<Option<TableColumnResolvedAlign>> = vec![None; t.columns.len()];
     for p in placed.iter().filter(|p| p.head && !p.mark) {
         if let (Node::TableCell(x), Some(slot)) = (p.node, out.get_mut(p.col)) {
@@ -160,7 +163,7 @@ pub fn resolved_aligns(t: &Table, placed: &[Placed<'_>]) -> Vec<Option<TableColu
             }
         }
     }
-    for (slot, col) in out.iter_mut().zip(&t.columns) {
+    for (slot, col) in out.iter_mut().zip(t.columns.iter()) {
         if let (None, Node::TableColumn(c)) = (&slot, col) {
             *slot = c.align.map(convert_column);
         }

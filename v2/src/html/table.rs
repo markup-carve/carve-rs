@@ -11,10 +11,10 @@ use std::fmt::Write as _;
 /// The table attributes that are read and never written (C2-H-153).
 const READ_ONLY_KEYS: &[&str] = &["aligns", "widths", "header-rows", "footer-rows"];
 
-impl<'a> Renderer<'a> {
-    pub(super) fn table(&mut self, n: &'a Node, depth: usize, panel: bool) {
+impl<'r, 'a> Renderer<'r, 'a> {
+    pub(super) fn table(&mut self, n: &'r Node<'a>, depth: usize, panel: bool) {
         let Node::Table(t) = n else { return };
-        let mut el = self.el(t.attrs.as_deref(), t.lang.as_deref(), n);
+        let mut el = self.el(t.attrs, t.lang, n);
         el.skip_keys = READ_ONLY_KEYS;
         if panel {
             el.base.push("carve-figure-panel".into());
@@ -33,7 +33,7 @@ impl<'a> Renderer<'a> {
             }
             self.line(depth + 1, "</tbody>");
         } else {
-            for g in &t.children {
+            for g in t.children.iter() {
                 self.group(t, g, &columns, depth + 1);
             }
         }
@@ -69,7 +69,13 @@ impl<'a> Renderer<'a> {
         self.line(depth, "</colgroup>");
     }
 
-    fn group(&mut self, t: &'a Table, g: &'a Node, columns: &AddrMap<usize, usize>, depth: usize) {
+    fn group(
+        &mut self,
+        t: &'r Table<'a>,
+        g: &'r Node<'a>,
+        columns: &AddrMap<usize, usize>,
+        depth: usize,
+    ) {
         let (tag, kind, children) = match g {
             Node::TableHead(x) => ("thead", GroupKind::Head, &x.children),
             Node::TableBody(x) => ("tbody", GroupKind::Body, &x.children),
@@ -81,7 +87,7 @@ impl<'a> Renderer<'a> {
         }
         let el = self.el(g.attrs(), None, g);
         self.line(depth, &format!("<{tag}{}>", el.write(self.filter())));
-        for r in children {
+        for r in children.iter() {
             self.row(t, r, kind, columns, depth + 1);
         }
         self.line(depth, &format!("</{tag}>"));
@@ -89,16 +95,16 @@ impl<'a> Renderer<'a> {
 
     fn row(
         &mut self,
-        t: &'a Table,
-        r: &'a Node,
+        t: &'r Table<'a>,
+        r: &'r Node<'a>,
         kind: GroupKind,
         columns: &AddrMap<usize, usize>,
         depth: usize,
     ) {
         let Node::TableRow(row) = r else { return };
-        let el = self.el(row.attrs.as_deref(), row.lang.as_deref(), r);
+        let el = self.el(row.attrs, row.lang, r);
         let mut s = format!("<tr{}>", el.write(self.filter()));
-        for c in &row.children {
+        for c in row.children.iter() {
             self.cell(t, c, kind, columns.get(&addr(c)).copied(), &mut s);
         }
         s.push_str("</tr>");
@@ -109,7 +115,7 @@ impl<'a> Renderer<'a> {
     fn cell(
         &mut self,
         t: &Table,
-        c: &'a Node,
+        c: &'r Node<'a>,
         kind: GroupKind,
         col: Option<usize>,
         out: &mut String,
@@ -125,7 +131,7 @@ impl<'a> Renderer<'a> {
                 None
             }
         });
-        let mut el = El::new(x.attrs.as_deref(), x.lang.as_deref());
+        let mut el = El::new(x.attrs, x.lang);
         if let Some(v) = x.rowspan.filter(|v| *v > 1) {
             el.structural.push(("rowspan", Some(v.to_string())));
         }
@@ -170,22 +176,22 @@ impl<'a> Renderer<'a> {
         let tag = if x.header { "th" } else { "td" };
         let _ = write!(out, "<{tag}{}>", el.write(self.filter()));
         self.level += 1;
-        let inner = self.cell_content(&x.children);
+        let inner = self.cell_content(x.children);
         self.level -= 1;
         out.push_str(&inner);
         let _ = write!(out, "</{tag}>");
     }
 
-    fn cell_content(&mut self, children: &'a [Node]) -> String {
+    fn cell_content(&mut self, children: &'r [Node<'a>]) -> String {
         if let [Node::CellParagraph(p)] = children {
-            return self.leaf(&p.children);
+            return self.leaf(p.children);
         }
         let saved = std::mem::take(&mut self.out);
         let started = std::mem::replace(&mut self.started, false);
         for c in children {
             match c {
                 Node::CellParagraph(p) => {
-                    let s = self.leaf(&p.children);
+                    let s = self.leaf(p.children);
                     self.line(0, &s);
                 }
                 other => self.block(other, 0),

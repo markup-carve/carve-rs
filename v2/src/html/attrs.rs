@@ -44,7 +44,7 @@ pub struct El<'a> {
     pub class_first: bool,
     pub base: Vec<String>,
     pub trailing: Vec<String>,
-    pub attrs: Option<&'a Attrs>,
+    pub attrs: Option<&'a Attrs<'a>>,
     pub lang: Option<&'a str>,
     /// Generated attributes after the keys; an authored key replaces one.
     pub generated: Vec<(&'static str, Val)>,
@@ -70,11 +70,11 @@ pub struct Filter {
 impl<'a> El<'a> {
     /// An element with the node's authored attributes and language.
     #[must_use]
-    pub fn new(attrs: Option<&'a Attrs>, lang: Option<&'a str>) -> Self {
+    pub fn new(attrs: Option<&'a Attrs<'a>>, lang: Option<&'a str>) -> Self {
         El {
             attrs,
             lang,
-            id: attrs.and_then(|a| a.id.clone()),
+            id: attrs.and_then(|a| a.id).map(str::to_string),
             ..El::default()
         }
     }
@@ -174,7 +174,7 @@ impl<'a> El<'a> {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for (k, v) in &attrs.key_values {
+        for (k, v) in attrs.key_values {
             if self.lang.is_some() && k.eq_ignore_ascii_case("lang") {
                 continue;
             }
@@ -186,7 +186,7 @@ impl<'a> El<'a> {
             }
             if self.align_style
                 && k.eq_ignore_ascii_case("align")
-                && matches!(v.as_str(), "left" | "right" | "center")
+                && matches!(*v, "left" | "right" | "center")
             {
                 self.style_after.push(format!("text-align: {v};"));
                 continue;
@@ -202,31 +202,30 @@ impl<'a> El<'a> {
                 self.structural.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
             }
             self.generated.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
-            out.push((k.clone(), Some(url::filter_value(k, v))));
+            out.push(((*k).to_string(), Some(url::filter_value(k, v))));
         }
         out
     }
 
     fn classes(&self) -> Vec<String> {
-        let authored = self
-            .attrs
-            .map_or(&[] as &[String], |a| a.classes.as_slice());
+        let authored = self.attrs.map_or(&[] as &[&str], |a| a.classes);
         let mut keep: Vec<&str> = Vec::new();
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let all = self
             .base
             .iter()
-            .chain(authored.iter().filter(|c| !url::value_fails(c)))
-            .chain(&self.trailing);
+            .map(String::as_str)
+            .chain(authored.iter().copied().filter(|c| !url::value_fails(c)))
+            .chain(self.trailing.iter().map(String::as_str));
         for c in all {
             // A short list is searched; a long one goes through the set.
             if keep.len() == 16 && seen.is_empty() {
                 seen.extend(keep.iter().copied());
             }
             let new = if seen.is_empty() {
-                !keep.contains(&c.as_str())
+                !keep.contains(&c)
             } else {
-                seen.insert(c.as_str())
+                seen.insert(c)
             };
             if new {
                 keep.push(c);
@@ -252,11 +251,11 @@ fn push_class(list: &mut Vec<(String, Val)>, classes: &[String]) {
 mod tests {
     use super::*;
 
-    fn attrs() -> Attrs {
+    fn attrs() -> Attrs<'static> {
         Attrs {
-            id: Some("i".into()),
-            classes: vec!["c".into()],
-            key_values: vec![("k".into(), "v".into())],
+            id: Some("i"),
+            classes: &["c"],
+            key_values: &[("k", "v")],
         }
     }
 
@@ -273,10 +272,7 @@ mod tests {
     #[test]
     fn c2_h_015_align_follows_authored_style() {
         let a = Attrs {
-            key_values: vec![
-                ("align".into(), "left".into()),
-                ("style".into(), "color: red".into()),
-            ],
+            key_values: &[("align", "left"), ("style", "color: red")],
             ..Attrs::default()
         };
         let el = El {
@@ -292,7 +288,7 @@ mod tests {
     #[test]
     fn c2_h_116_reserved_names_drop_under_roundtrip() {
         let a = Attrs {
-            key_values: vec![("data-carve-div".into(), String::new())],
+            key_values: &[("data-carve-div", "")],
             ..Attrs::default()
         };
         assert_eq!(

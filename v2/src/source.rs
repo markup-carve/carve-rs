@@ -2,13 +2,15 @@
 //! conversion from byte offsets to tree positions (C2-A-140, C2-A-141).
 
 use crate::ast::Pos;
+use std::borrow::Cow;
 
 /// The normalized source: U+0000 read as U+FFFD, the byte-order mark kept in
 /// place but skipped by the line scan. Offsets into `text` are converted back
 /// to offsets of the original bytes when a position is built.
 #[derive(Debug)]
-pub struct Source {
-    text: String,
+pub struct Source<'a> {
+    /// The input itself unless it holds U+0000.
+    text: Cow<'a, str>,
     /// Byte offset of the first character of each line in `text`.
     line_starts: Vec<usize>,
     /// Offsets in `text` of each U+FFFD that stood for a U+0000 (two extra bytes each).
@@ -41,10 +43,10 @@ fn column_marks(text: &str) -> Vec<(usize, usize)> {
     marks
 }
 
-impl Source {
+impl<'a> Source<'a> {
     /// Reads `input` (C2-B-218: U+0000 is read as U+FFFD).
     #[must_use]
-    pub fn new(input: &str) -> Self {
+    pub fn new(input: &'a str) -> Self {
         let mut nul_at = Vec::new();
         let text = if input.contains('\0') {
             let mut t = String::with_capacity(input.len() + 16);
@@ -56,9 +58,9 @@ impl Source {
                     t.push(c);
                 }
             }
-            t
+            Cow::Owned(t)
         } else {
-            input.to_owned()
+            Cow::Borrowed(input)
         };
         let bom = if text.starts_with('\u{FEFF}') { 3 } else { 0 };
         let mut line_starts = vec![bom];
@@ -85,6 +87,26 @@ impl Source {
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// A slice of the normalized text that lives as long as the input: none
+    /// when the range is out of bounds or the text is a normalized copy.
+    #[must_use]
+    pub fn borrowed(&self, start: usize, end: usize) -> Option<&'a str> {
+        match self.text {
+            Cow::Borrowed(t) => t.get(start..end),
+            Cow::Owned(_) => None,
+        }
+    }
+
+    /// The offset of `s` in the text, when `s` is a slice of a borrowed text.
+    #[must_use]
+    pub fn offset_of(&self, s: &str) -> Option<usize> {
+        let Cow::Borrowed(t) = self.text else {
+            return None;
+        };
+        let at = s.as_ptr().addr().checked_sub(t.as_ptr().addr())?;
+        (at + s.len() <= t.len()).then_some(at)
     }
 
     /// Length of a leading byte-order mark (C2-B-165).

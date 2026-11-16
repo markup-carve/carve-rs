@@ -3,6 +3,7 @@
 //! offsets.
 
 use super::{ContentKind, InlineEnv, Join, Piece};
+use crate::Arena;
 use crate::ast::Pos;
 use crate::source::Source;
 
@@ -21,7 +22,7 @@ pub(super) struct Seg {
 }
 
 /// The joined content text and its source map.
-pub struct Content<'a> {
+pub struct Content<'e, 'a> {
     pub text: String,
     segs: Vec<Seg>,
     /// Content offset of each join character and its kind, in order.
@@ -31,7 +32,8 @@ pub struct Content<'a> {
     chars: Vec<usize>,
     /// A continuation row joined a fragment, computed once (linear time).
     cell_joined: bool,
-    src: &'a Source,
+    src: &'e Source<'a>,
+    arena: &'a Arena,
 }
 
 const fn is_pad(b: u8) -> bool {
@@ -57,7 +59,7 @@ fn trim_end(b: &[u8], start: usize, mut end: usize) -> usize {
 }
 
 #[inline]
-fn piece_bounds(env: &InlineEnv<'_>, p: &Piece, full: &str) -> (usize, usize, usize) {
+fn piece_bounds(env: &InlineEnv<'_, '_>, p: &Piece, full: &str) -> (usize, usize, usize) {
     let b = full.as_bytes();
     let end = p.end.min(full.len());
     let mut start = p.start.min(end);
@@ -80,9 +82,13 @@ fn piece_bounds(env: &InlineEnv<'_>, p: &Piece, full: &str) -> (usize, usize, us
     (start, end, raw_end)
 }
 
-impl<'a> Content<'a> {
+impl<'e, 'a> Content<'e, 'a> {
     /// Joins the pieces of one content, in the buffers of `s`.
-    pub(super) fn new_in(env: &InlineEnv<'a>, pieces: &[Piece], s: &mut super::Scratch) -> Self {
+    pub(super) fn new_in(
+        env: &InlineEnv<'e, 'a>,
+        pieces: &[Piece],
+        s: &mut super::Scratch<'a>,
+    ) -> Self {
         let full = env.src.text();
         let mut text = std::mem::take(&mut s.text);
         text.clear();
@@ -143,11 +149,12 @@ impl<'a> Content<'a> {
             chars,
             cell_joined,
             src: env.src,
+            arena: env.arena,
         }
     }
 
     /// Hands the buffers back for the next content.
-    pub(super) fn recycle(self, s: &mut super::Scratch) {
+    pub(super) fn recycle(self, s: &mut super::Scratch<'a>) {
         s.text = self.text;
         s.segs = self.segs;
         s.joins = self.joins;
@@ -230,6 +237,40 @@ impl<'a> Content<'a> {
     #[must_use]
     pub const fn cell_joined(&self) -> bool {
         self.cell_joined
+    }
+
+    /// A string that lives as long as the tree: the source itself when `s`
+    /// is a slice of the content text that lies in one piece, else a copy.
+    #[must_use]
+    pub fn keep(&self, s: &str) -> &'a str {
+        self.borrow(s).unwrap_or_else(|| self.arena.str(s))
+    }
+
+    pub(super) fn borrow(&self, s: &str) -> Option<&'a str> {
+        let v = s.as_ptr().addr().checked_sub(self.text.as_ptr().addr())?;
+        let end = v + s.len();
+        if end > self.text.len() {
+            return None;
+        }
+        let i = self.segs.partition_point(|g| g.v <= v).checked_sub(1)?;
+        let g = self.segs.get(i)?;
+        if end > g.v + g.len {
+            return None;
+        }
+        let at = g.s + (v - g.v);
+        self.src.borrowed(at, at + s.len())
+    }
+
+    /// The arena of the tree.
+    #[must_use]
+    pub const fn arena(&self) -> &'a Arena {
+        self.arena
+    }
+
+    /// The source text of `v0..v1` as `keep` gives it.
+    #[must_use]
+    pub fn slice(&self, v0: usize, v1: usize) -> &'a str {
+        self.keep(self.text.get(v0..v1).unwrap_or(""))
     }
 
     /// True when the source of `v0..v1` is one contiguous slice.

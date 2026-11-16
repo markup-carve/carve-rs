@@ -181,7 +181,7 @@ struct Walk<'a> {
 
 /// The block parser state.
 pub struct Parser<'a> {
-    src: &'a Source,
+    src: &'a Source<'a>,
     events: Vec<Event>,
     stack: Vec<Container>,
     leaf: Option<OpenLeaf>,

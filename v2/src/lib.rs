@@ -22,6 +22,7 @@
 // Generated AST constructors preserve their current field grouping.
 #![allow(clippy::inconsistent_struct_constructor)]
 
+mod arena;
 pub mod ast;
 pub mod attr;
 pub mod block;
@@ -37,22 +38,42 @@ pub mod source;
 pub mod tables;
 pub mod tree;
 
+pub use arena::Arena;
 pub use options::Options;
 
-/// Parses source into the pre-resolve tree (stage parse).
+/// Parses source into the pre-resolve tree (stage parse), in `arena`. Text
+/// values that are slices of the input borrow it.
 #[must_use]
-pub fn parse(input: &str) -> ast::Document {
+pub fn parse_in<'a>(input: &'a str, arena: &'a Arena) -> ast::Document<'a> {
     let src = source::Source::new(input);
     let out = block::scan(&src);
-    tree::build(&src, out.events, &out.own_starts)
+    tree::build(&src, arena, out.events, &out.own_starts)
 }
 
-/// Parses and resolves: the tree `--tree` prints.
+/// Parses and resolves in `arena`: the tree `--tree` prints.
 #[must_use]
-pub fn parse_resolved(input: &str, opts: &Options) -> ast::Document {
-    let mut doc = parse(input);
-    resolve::resolve(&mut doc, opts);
+pub fn parse_resolved_in<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+) -> ast::Document<'a> {
+    let mut doc = parse_in(input, arena);
+    resolve::resolve(&mut doc, opts, arena);
     doc
+}
+
+/// Parses source into an owned pre-resolve tree.
+#[must_use]
+pub fn parse(input: &str) -> ast::owned::Document {
+    let arena = Arena::for_input(input);
+    parse_in(input, &arena).owned()
+}
+
+/// Parses and resolves into an owned tree.
+#[must_use]
+pub fn parse_resolved(input: &str, opts: &Options) -> ast::owned::Document {
+    let arena = Arena::for_input(input);
+    parse_resolved_in(input, opts, &arena).owned()
 }
 
 /// Parses, resolves and renders HTML. A refused render (`try_render`)
@@ -102,7 +123,8 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
     if let Some(limit) = limit.filter(|&l| input.len() > l) {
         return Err(RenderError::TooLong { profile, limit });
     }
-    let doc = parse_resolved(input, opts);
+    let arena = Arena::for_input(input);
+    let doc = parse_resolved_in(input, opts, &arena);
     let (out, losses) = html::render_with_losses_source(&doc, opts, input);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
@@ -112,6 +134,12 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
 
 /// The JSON of a tree (C2-A-165).
 #[must_use]
-pub fn to_json(doc: &ast::Document) -> String {
-    serde_json::to_string(&ast::Node::Document(Box::new(doc.clone()))).unwrap_or_default()
+pub fn to_json(doc: &ast::Document<'_>) -> String {
+    #[derive(serde::Serialize)]
+    #[serde(tag = "type")]
+    enum Root<'r, 'a> {
+        #[serde(rename = "document")]
+        Document(&'r ast::Document<'a>),
+    }
+    serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
 }

@@ -13,7 +13,11 @@ fn main() {
     }
     let input = String::from_utf8_lossy(&bytes);
     let out = if tree {
-        carve2::to_json(&carve2::parse_resolved(&input, &opts))
+        carve2::to_json(&carve2::parse_resolved_in(
+            &input,
+            &opts,
+            &carve2::Arena::new(),
+        ))
     } else {
         match carve2::try_render(&input, &opts) {
             Ok(html) => html,
@@ -108,7 +112,11 @@ fn batch(input: Option<&String>, output: Option<&String>) {
         let t0 = std::time::Instant::now();
         let html = carve2::try_render(src, &opts);
         let ns = t0.elapsed().as_nanos();
-        let tree = carve2::to_json(&carve2::parse_resolved(src, &opts));
+        let tree = carve2::to_json(&carve2::parse_resolved_in(
+            src,
+            &opts,
+            &carve2::Arena::new(),
+        ));
         let ns = u64::try_from(ns).unwrap_or(u64::MAX);
         out.push(match html {
             Ok(html) => serde_json::json!({ "html": html, "tree": tree, "ns": ns }),

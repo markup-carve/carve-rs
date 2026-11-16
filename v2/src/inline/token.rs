@@ -40,8 +40,8 @@ pub enum Delim {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum K {
+#[derive(Debug, PartialEq)]
+pub enum K<'a> {
     /// Text; `val` is `None` when the value is the content slice. `plain`
     /// text is open to smart typography and abbreviations.
     Text {
@@ -56,7 +56,7 @@ pub enum K {
     CellJoin,
     /// An atom node. `transparent` is the braced comment (C2-I-026).
     Leaf {
-        node: Box<Node>,
+        node: Node<'a>,
         host: bool,
         transparent: bool,
     },
@@ -77,16 +77,16 @@ pub enum K {
     Skip,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Tok {
+#[derive(Debug, PartialEq)]
+pub struct Tok<'a> {
     pub v0: usize,
     pub v1: usize,
-    pub k: K,
+    pub k: K<'a>,
 }
 
-impl Tok {
+impl<'a> Tok<'a> {
     #[must_use]
-    pub const fn new(v0: usize, v1: usize, k: K) -> Self {
+    pub const fn new(v0: usize, v1: usize, k: K<'a>) -> Self {
         Self { v0, v1, k }
     }
 

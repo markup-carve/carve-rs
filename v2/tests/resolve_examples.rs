@@ -2,7 +2,7 @@
 //! the oracle tree back.
 mod common;
 
-use carve2::ast::Node;
+use carve2::ast::owned::Node;
 use carve2::options::Options;
 use serde_json::Value;
 
@@ -26,12 +26,14 @@ fn c2_a_133_resolve_restores_the_oracle_results() {
     for ex in &all {
         let mut stripped = ex.oracle_tree.clone();
         common::strip_results(&mut stripped);
-        let Ok(Node::Document(mut doc)) = serde_json::from_value::<Node>(stripped) else {
+        let Ok(Node::Document(doc)) = serde_json::from_value::<Node>(stripped) else {
             failures.push(format!("{}: no document", ex.id));
             continue;
         };
-        carve2::resolve::resolve(&mut doc, &options_of(&ex.opts));
-        let back = serde_json::to_value(Node::Document(doc)).unwrap_or_default();
+        let arena = carve2::Arena::new();
+        let mut doc = doc.in_arena(&arena);
+        carve2::resolve::resolve(&mut doc, &options_of(&ex.opts), &arena);
+        let back = serde_json::to_value(Node::Document(Box::new(doc.owned()))).unwrap_or_default();
         if common::sorted(&back) == common::sorted(&ex.oracle_tree) {
             pass += 1;
         } else {

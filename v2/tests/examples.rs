@@ -34,7 +34,8 @@ fn c2_a_examples_give_the_oracle_tree() {
     let all = common::examples();
     let mut failures = Vec::new();
     for ex in &all {
-        let doc = carve2::parse_resolved(&ex.input, &options_of(&ex.opts));
+        let arena = carve2::Arena::new();
+        let doc = carve2::parse_resolved_in(&ex.input, &options_of(&ex.opts), &arena);
         let mut got = parse_json(&carve2::to_json(&doc));
         as_oracle_o004(&mut got);
         let (want, got) = (sorted(&ex.oracle_tree), sorted(&got));
