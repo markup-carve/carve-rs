@@ -148,3 +148,21 @@ fn c2_h_165_whole_block_degradation_uses_code_and_math_values() {
         "<p>[img: i]</p>\n<p>a x b m</p>\n<p>&gt; q c n</p>"
     );
 }
+
+#[test]
+fn c2_h_126_social_template_respects_profile_and_encoding() {
+    let mut options = Options::default();
+    options.social = Some(carve2::options::Social {
+        mention_url: Some("https://x.org/u/{name}".into()),
+        ..Default::default()
+    });
+    assert_eq!(
+        render("@ann.b and #topic", &options),
+        "<p><a class=\"mention\" href=\"https://x.org/u/ann.b\"><strong>@ann.b</strong></a> and <span class=\"tag\"><strong>#topic</strong></span></p>"
+    );
+    options.profile = carve2::options::Profile::Minimal;
+    assert_eq!(
+        render("@ann", &options),
+        "<p><span class=\"mention\"><strong>@ann</strong></span></p>"
+    );
+}

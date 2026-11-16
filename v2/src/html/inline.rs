@@ -569,9 +569,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             _ => s.tag_url.as_deref(),
         });
         // Gap G-022: inside a link the badge stays a span, as no anchor nests.
-        let tag = match template.filter(|_| self.in_link == 0) {
+        let tag = match template.filter(|t| {
+            !t.is_empty() && self.in_link == 0 && self.profile_allows_type("link", false)
+        }) {
             Some(t) => {
-                let full = t.replace("{name}", b.name);
+                let full = t.replace("{name}", &encode_social_name(b.name));
                 let href = self.destination(&full).into_owned();
                 el.structural.push(("href", Some(href.into())));
                 self.rel(&mut el);
@@ -620,6 +622,32 @@ impl<'r, 'a> Renderer<'r, 'a> {
         out.push('>');
         self.inlines(&*e.children, out);
         out.push_str("</span>");
+    }
+}
+
+/// C2-H-126: the unescaped set of JavaScript's encodeURIComponent.
+fn encode_social_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for b in name.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(char::from(b));
+        } else {
+            let _ = write!(out, "%{b:02X}");
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod social_tests {
+    use super::encode_social_name;
+
+    #[test]
+    fn c2_h_126_encodes_utf8_and_preserves_the_allowed_ascii_set() {
+        assert_eq!(
+            encode_social_name("A-é /-_.!~*'()"),
+            "A-%C3%A9%20%2F-_.!~*'()"
+        );
     }
 }
 
