@@ -20,6 +20,10 @@ pub fn slug(plain: &str, mode: HeadingIds) -> String {
 
 /// C2-H-144 and C2-H-145: NFC, removed characters, reversed glyphs.
 fn reverse(plain: &str) -> String {
+    // ASCII is its own NFC and holds no removed or reversed character.
+    if plain.is_ascii() {
+        return plain.to_string();
+    }
     let mut out = String::with_capacity(plain.len());
     for c in plain.nfc() {
         if SLUG_REMOVED.contains(&c) {

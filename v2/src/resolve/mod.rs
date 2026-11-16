@@ -72,13 +72,25 @@ fn to_i64(n: usize) -> i64 {
     i64::try_from(n).unwrap_or(i64::MAX)
 }
 
-/// Every node of the tree in document order, for the order-free results.
+/// The nodes of the tree the order-free results read (an authored id,
+/// references, tables), in document order.
 fn every_node<'r, 'a>(nodes: &'r [Node<'a>], out: &mut Vec<&'r Node<'a>>, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
     for n in nodes {
-        out.push(n);
+        if n.attrs().is_some()
+            || matches!(
+                n,
+                Node::Link(_)
+                    | Node::Image(_)
+                    | Node::Xref(_)
+                    | Node::Abbreviation(_)
+                    | Node::Table(_)
+            )
+        {
+            out.push(n);
+        }
         let columns: &[Node<'a>] = match n {
             Node::Table(t) => &*t.columns,
             _ => &[],
@@ -277,10 +289,30 @@ fn apply<'a>(n: &mut Node<'a>, res: &AddrMap<usize, Res<'a>>, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
-    if let Some(r) = res.get(&std::ptr::from_ref::<Node>(n).addr()) {
+    if takes_result(n)
+        && let Some(r) = res.get(&std::ptr::from_ref::<Node>(n).addr())
+    {
         set(n, r);
     }
     n.for_each_child_mut(&mut |c| apply(c, res, depth + 1));
+}
+
+/// The node types `set` writes.
+fn takes_result(n: &Node<'_>) -> bool {
+    matches!(
+        n,
+        Node::FootnoteRef(_)
+            | Node::InlineFootnote(_)
+            | Node::CaptionNumber(_)
+            | Node::Math(_)
+            | Node::Heading(_)
+            | Node::Link(_)
+            | Node::Xref(_)
+            | Node::Image(_)
+            | Node::Abbreviation(_)
+            | Node::TableCell(_)
+            | Node::TableColumn(_)
+    )
 }
 
 fn set<'a>(n: &mut Node<'a>, r: &Res<'a>) {
