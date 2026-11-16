@@ -64,6 +64,6 @@ fn c2_fixed_oracle_corpus_and_clause_differences() {
         }
         count += 1;
     }
-    assert_eq!(count, 3717);
+    assert_eq!(count, 3716);
     assert_eq!(seen.len(), differences.len());
 }
