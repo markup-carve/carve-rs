@@ -323,3 +323,44 @@ fn c2_b_218_byte_source_replaces_maximal_subparts_with_original_offsets() {
         );
     }
 }
+
+#[test]
+fn c2_b_226_delimited_records_keep_quotes_spaces_and_empty_rows() {
+    let t = tree("{table}\n```csv\na,\"b \"\"q\"\"\"x, d\n*x*,\n\n\"m\nn\"x,y\n\n```");
+    let groups = &t["children"][0]["children"];
+    let rows: Vec<_> = groups
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|g| g["children"].as_array().unwrap())
+        .collect();
+    let value = |row: usize, cell: usize| {
+        rows[row]["children"][cell]["children"][0]["children"][0]["value"].clone()
+    };
+    assert_eq!(value(0, 0), "a");
+    assert_eq!(value(0, 1), "b \"q\"x");
+    assert_eq!(value(0, 2), " d");
+    assert_eq!(value(1, 0), "*x*");
+    assert!(
+        rows[1]["children"][1]["children"][0]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        rows[2]["children"][0]["children"][0]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(value(3, 0), "m\nnx");
+    assert_eq!(rows.len(), 4);
+    assert_eq!(
+        tree("{table}\n```CSV\na,b\n```")["children"][0]["type"],
+        "code_block"
+    );
+    assert_eq!(
+        tree("{table}\n```tsv\na\tb,c\n```")["children"][0]["type"],
+        "table"
+    );
+}
