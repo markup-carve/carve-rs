@@ -129,8 +129,6 @@ enum Leaf {
         lines: Vec<Piece>,
         /// Blank lines held back (gap G-025).
         held: Vec<(usize, usize)>,
-        /// The opener's column: a blank line's range starts there.
-        col: usize,
     },
     Table {
         data: TableData,
@@ -394,12 +392,11 @@ impl<'a> Parser<'a> {
                 *held += 1;
                 true
             }
-            Leaf::LineBlock { held, col, .. } => {
+            Leaf::LineBlock { held, .. } => {
                 // Gap G-025: as in the oracle, trailing blank lines of an
                 // unclosed line block are dropped, as C2-B-113 does for a fence.
                 let _ = s;
-                let mut k = walk.cur;
-                k.strip_to(*col);
+                let k = walk.cur;
                 held.push((k.offset(), e.max(k.offset())));
                 true
             }

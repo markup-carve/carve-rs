@@ -364,3 +364,18 @@ fn c2_b_226_delimited_records_keep_quotes_spaces_and_empty_rows() {
         "table"
     );
 }
+
+#[test]
+fn c2_b_130_line_block_keeps_lead_after_container_strip() {
+    let t = tree(" ::: |\n \n x\n :::");
+    let lines = &t["children"][0]["children"];
+    assert_eq!(lines[0]["type"], "line");
+    assert_eq!(lines[0]["pos"]["startOffset"], 7);
+    assert_eq!(lines[0]["pos"]["endOffset"], 8);
+    assert!(lines[0]["children"].as_array().unwrap().is_empty());
+    assert_eq!(lines[1]["children"][0]["value"], " x");
+
+    let t = tree("- > a\n  > \t::: |\n  > \tx\n  > \t:::");
+    let line = &t["children"][0]["children"][0]["children"][0]["children"][1]["children"][0];
+    assert_eq!(line["children"][0]["value"], "\tx");
+}

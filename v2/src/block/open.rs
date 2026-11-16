@@ -598,7 +598,6 @@ impl Parser<'_> {
                     len,
                     lines: Vec::new(),
                     held: Vec::new(),
-                    col: k.col,
                 },
                 start: s,
                 end: e,
