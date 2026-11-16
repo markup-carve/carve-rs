@@ -196,8 +196,10 @@ fn c2_i_126_capped_bracket_opener_never_takes_a_closer() {
 
 #[test]
 fn c2_h_178_roundtrip_abbreviation_runs_keep_every_definition() {
-    let mut options = Options::default();
-    options.roundtrip = true;
+    let options = Options {
+        roundtrip: true,
+        ..Options::default()
+    };
     let src = "*[A]: First\n*[A]: Second\n*[U]: Unused\n\nA.";
     let html = render(src, &options);
     assert!(html.starts_with(
@@ -208,8 +210,10 @@ fn c2_h_178_roundtrip_abbreviation_runs_keep_every_definition() {
 
 #[test]
 fn c2_h_179_abbreviation_template_writes_attrs_and_escapes_text() {
-    let mut options = Options::default();
-    options.roundtrip = true;
+    let options = Options {
+        roundtrip: true,
+        ..Options::default()
+    };
     let html = render("{#x .c}\n*[A]: R&D <research> \"and\"\n\nA.", &options);
     assert!(html.starts_with(
         "<template data-carve-abbreviations>{#x .c}\n*[A]: R&amp;D &lt;research&gt; \"and\"</template>"

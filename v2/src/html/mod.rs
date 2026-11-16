@@ -321,7 +321,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             let mut i = 0;
             while let Some(c) = doc.children.get(i) {
                 if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
-                    i += self.abbreviation_run(&doc.children[i..], 0);
+                    i += self.abbreviation_run(doc.children.get(i..).unwrap_or(&[]), 0);
                 } else {
                     self.block(c, 0);
                     i += 1;
@@ -339,7 +339,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut i = 0;
         while let Some(c) = children.get(i) {
             if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
-                i += self.abbreviation_run(&children[i..], stack.len());
+                i += self.abbreviation_run(children.get(i..).unwrap_or(&[]), stack.len());
                 continue;
             }
             if let Node::Heading(h) = c {

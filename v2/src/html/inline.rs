@@ -638,19 +638,6 @@ fn encode_social_name(name: &str) -> String {
     out
 }
 
-#[cfg(test)]
-mod social_tests {
-    use super::encode_social_name;
-
-    #[test]
-    fn c2_h_126_encodes_utf8_and_preserves_the_allowed_ascii_set() {
-        assert_eq!(
-            encode_social_name("A-é /-_.!~*'()"),
-            "A-%C3%A9%20%2F-_.!~*'()"
-        );
-    }
-}
-
 fn lang_of<'a>(n: &Node<'a>) -> Option<&'a str> {
     match n {
         Node::Emphasis(x) => x.lang,
@@ -867,4 +854,17 @@ struct Badge<'n> {
     name: &'n str,
     attrs: Option<&'n Attrs<'n>>,
     lang: Option<&'n str>,
+}
+
+#[cfg(test)]
+mod social_tests {
+    use super::encode_social_name;
+
+    #[test]
+    fn c2_h_126_encodes_utf8_and_preserves_the_allowed_ascii_set() {
+        assert_eq!(
+            encode_social_name("A-é /-_.!~*'()"),
+            "A-%C3%A9%20%2F-_.!~*'()"
+        );
+    }
 }
