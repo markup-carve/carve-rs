@@ -2,9 +2,9 @@
 //! offset and returns what it matched, without touching the token list.
 
 /// A code span (C2-I-014 to C2-I-017).
-pub struct CodeSpan {
+pub struct CodeSpan<'t> {
     pub end: usize,
-    pub value: String,
+    pub value: &'t str,
     pub closed: bool,
 }
 
@@ -15,7 +15,7 @@ fn run_len(b: &[u8], i: usize, c: u8) -> usize {
 
 /// Reads a code span whose backtick run starts at `i`.
 #[must_use]
-pub fn code_span(t: &str, i: usize) -> CodeSpan {
+pub fn code_span(t: &str, i: usize) -> CodeSpan<'_> {
     let b = t.as_bytes();
     let n = run_len(b, i, b'`');
     let start = i + n;
@@ -40,8 +40,7 @@ pub fn code_span(t: &str, i: usize) -> CodeSpan {
     let value = t
         .get(start..)
         .unwrap_or("")
-        .trim_end_matches([' ', '\t', '\n'])
-        .to_string();
+        .trim_end_matches([' ', '\t', '\n']);
     CodeSpan {
         end: b.len(),
         value,
@@ -50,11 +49,11 @@ pub fn code_span(t: &str, i: usize) -> CodeSpan {
 }
 
 /// C2-I-016: one space off each end when both are spaces and not all is space.
-fn trim_code(s: &str) -> String {
+fn trim_code(s: &str) -> &str {
     if s.len() >= 2 && s.starts_with(' ') && s.ends_with(' ') && s.bytes().any(|c| c != b' ') {
-        s.get(1..s.len() - 1).unwrap_or(s).to_string()
+        s.get(1..s.len() - 1).unwrap_or(s)
     } else {
-        s.to_string()
+        s
     }
 }
 

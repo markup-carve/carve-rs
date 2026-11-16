@@ -57,14 +57,14 @@ pub(crate) fn render_source(
     (r.out, r.losses)
 }
 
-/// About the output length: the source length the tree covers, and half again.
+/// About the output length: twice the source length the tree covers.
 fn out_estimate(doc: &Document<'_>) -> usize {
     let end = doc
         .children
         .last()
         .and_then(Node::pos)
         .map_or(0, |p| p.end_offset);
-    end + end / 2
+    2 * end
 }
 
 /// The state of one render.

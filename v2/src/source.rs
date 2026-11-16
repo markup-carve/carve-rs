@@ -63,12 +63,9 @@ impl<'a> Source<'a> {
             Cow::Borrowed(input)
         };
         let bom = if text.starts_with('\u{FEFF}') { 3 } else { 0 };
-        let mut line_starts = vec![bom];
-        for (i, b) in text.bytes().enumerate() {
-            if b == b'\n' {
-                line_starts.push(i + 1);
-            }
-        }
+        let mut line_starts = Vec::with_capacity(text.len() / 32 + 1);
+        line_starts.push(bom);
+        line_starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
         let marks = if text.is_ascii() {
             Vec::new()
         } else {
