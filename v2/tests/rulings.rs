@@ -395,3 +395,50 @@ fn c2_i_002_line_end_spaces_are_removed_before_inline_forms() {
         assert_eq!(node["value"], "a\nb", "{src}");
     }
 }
+
+#[test]
+fn c2_h_032_task_label_reads_all_direct_paragraphs() {
+    let html = render(
+        "- [ ] first *a*\n\n  second\n\n  > quote",
+        &Options::default(),
+    );
+    assert!(html.contains("aria-label=\"first a second\""));
+    assert!(!html.contains("aria-label=\"first a second quote\""));
+}
+
+#[test]
+fn c2_b_040_uppercase_roman_marker_needs_two_spaces() {
+    assert_eq!(tree("II. Background")["children"][0]["type"], "paragraph");
+    assert_eq!(tree("II.  Background")["children"][0]["type"], "list");
+}
+
+#[test]
+fn c2_a_109_heading_ids_are_read_by_resolution() {
+    let arena = carve2::Arena::new();
+    let off = Options {
+        heading_ids: carve2::options::HeadingIds::Off,
+        ..Options::default()
+    };
+    let doc = carve2::parse_resolved_in("# Mixed Name", &off, &arena);
+    let t: serde_json::Value = serde_json::from_str(&carve2::to_json(&doc)).unwrap();
+    assert!(t["children"][0].get("generatedId").is_none());
+
+    let lower = Options {
+        heading_ids: carve2::options::HeadingIds::Lower,
+        ..Options::default()
+    };
+    let doc = carve2::parse_resolved_in("# Mixed Name", &lower, &arena);
+    let t: serde_json::Value = serde_json::from_str(&carve2::to_json(&doc)).unwrap();
+    assert_eq!(t["children"][0]["generatedId"], "mixed-name");
+}
+
+#[test]
+fn c2_b_122_two_spaces_leave_fence_without_language() {
+    let t = tree("```  b\ntext\n```");
+    assert_eq!(t["children"][0]["type"], "code_block");
+    assert!(t["children"][0].get("syntax").is_none());
+    assert_eq!(
+        render("```  b\ntext\n```", &Options::default()),
+        "<pre><code>text\n</code></pre>"
+    );
+}
