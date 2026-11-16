@@ -8,6 +8,7 @@ use crate::ast::{self, Attrs, ListSpacing, Node, ParagraphRole};
 use crate::options::Mode;
 use crate::resolve::order::addr;
 use crate::tables::TASK_STATES;
+use std::borrow::Cow;
 
 /// True when a block writes something (C2-H-008, C2-H-019, C2-H-070, C2-H-071).
 pub(super) fn visible(n: &Node) -> bool {
@@ -42,9 +43,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
         if matches!(n, Node::Paragraph(_)) {
-            if let Some(s) = self.paragraph(n, false) {
-                self.line(depth, &s);
-            }
+            self.line_with(depth, |r, out| r.paragraph_into(n, false, out));
             self.long_descriptions(depth);
             return;
         }
@@ -73,9 +72,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn block_inner(&mut self, n: &'r Node<'a>, depth: usize) {
         match n {
             Node::Paragraph(_) => {
-                if let Some(s) = self.paragraph(n, false) {
-                    self.line(depth, &s);
-                }
+                self.line_with(depth, |r, out| r.paragraph_into(n, false, out));
             }
             Node::Heading(_) => self.heading(n, depth, true),
             Node::List(_) => self.list(n, depth),
@@ -141,44 +138,63 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// A paragraph counts one nesting level (C2-H-166) wherever its container
     /// writes it; outside the profile it is its plain text (C2-H-165).
     pub(super) fn paragraph(&mut self, n: &'r Node<'a>, bare: bool) -> Option<String> {
-        let Node::Paragraph(p) = n else { return None };
+        let mut s = String::new();
+        self.paragraph_into(n, bare, &mut s).then_some(s)
+    }
+
+    /// `paragraph`, appended to `out`; false when it writes nothing.
+    pub(super) fn paragraph_into(&mut self, n: &'r Node<'a>, bare: bool, out: &mut String) -> bool {
+        let Node::Paragraph(p) = n else { return false };
         if !self.profile_allows(n, true) {
             if comments_only(p.children) {
-                return None;
+                return false;
             }
             self.losses.push("profile-construct-degraded");
             let t = esc::text_str(&super::profile::inlines_plain(&*p.children, self.src));
-            return (!t.is_empty()).then(|| if bare { t } else { format!("<p>{t}</p>") });
+            if t.is_empty() {
+                return false;
+            }
+            if bare {
+                out.push_str(&t);
+            } else {
+                out.push_str("<p>");
+                out.push_str(&t);
+                out.push_str("</p>");
+            }
+            return true;
         }
         self.level += 1;
-        let s = self.paragraph_inner(n, bare);
+        let s = self.paragraph_inner(n, bare, out);
         self.level -= 1;
         s
     }
 
-    fn paragraph_inner(&mut self, n: &'r Node<'a>, bare: bool) -> Option<String> {
-        let Node::Paragraph(p) = n else { return None };
+    fn paragraph_inner(&mut self, n: &'r Node<'a>, bare: bool, out: &mut String) -> bool {
+        let Node::Paragraph(p) = n else { return false };
         if comments_only(p.children) {
-            return None;
+            return false;
         }
         if p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children) {
-            return Some(self.leaf(p.children));
+            self.leaf_into(p.children, out);
+            return true;
         }
         let static_math = p.role == Some(ParagraphRole::Math) && self.opts.mode == Mode::Static;
         let mut el = self.el(p.attrs, p.lang, n);
         if static_math {
-            return Some(self.static_display_math(&*p.children, el));
+            out.push_str(&self.static_display_math(&*p.children, el));
+            return true;
         }
         if bare && !has_attrs(p.attrs, p.lang) {
-            return Some(self.leaf(p.children));
+            self.leaf_into(p.children, out);
+            return true;
         }
         el.align_style = true;
-        let mut out = String::from("<p");
-        out.push_str(&el.write(self.filter()));
+        out.push_str("<p");
+        el.write_into(self.filter(), out);
         out.push('>');
-        self.leaf_into(&*p.children, &mut out);
+        self.leaf_into(&*p.children, out);
         out.push_str("</p>");
-        Some(out)
+        true
     }
 
     /// A paragraph written as a bare `<img>` (C2-H-020).
@@ -222,24 +238,39 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = self.el(h.attrs, h.lang, n);
         el.align_style = true;
         el.id = if own_id {
-            super::heading_id(n).map(str::to_string)
+            super::heading_id(n).map(Cow::Borrowed)
         } else {
             None
         };
         if own_id {
             self.id_carriers(n, &mut el);
         }
-        let tag = if (1..=6).contains(&h.level) {
-            format!("h{}", h.level)
-        } else {
-            el.structural.push(("role", Some("heading".into())));
-            el.structural
-                .push(("aria-level", Some(h.level.to_string())));
-            "div".to_string()
+        let tag = match h.level {
+            1 => "h1",
+            2 => "h2",
+            3 => "h3",
+            4 => "h4",
+            5 => "h5",
+            6 => "h6",
+            _ => {
+                el.structural.push(("role", Some("heading".into())));
+                el.structural
+                    .push(("aria-level", Some(h.level.to_string().into())));
+                "div"
+            }
         };
-        let inner = self.leaf(h.children);
-        let s = format!("<{tag}{}>{inner}</{tag}>", el.write(self.filter()));
-        self.line(depth, &s);
+        let f = self.filter();
+        self.line_with(depth, |r, out| {
+            out.push('<');
+            out.push_str(tag);
+            el.write_into(f, out);
+            out.push('>');
+            r.leaf_into(h.children, out);
+            out.push_str("</");
+            out.push_str(tag);
+            out.push('>');
+            true
+        });
     }
 
     /// Opens `open`, writes `first` lines and the blocks one level deeper,
@@ -300,10 +331,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = self.el(l.attrs, l.lang, n);
         if ordered {
             if let Some(t) = l.marker.style.and_then(html_type) {
-                el.structural.push(("type", Some(t.to_string())));
+                el.structural.push(("type", Some(t.into())));
             }
             if let Some(s) = l.marker.start.filter(|s| *s != 1) {
-                el.structural.push(("start", Some(s.to_string())));
+                el.structural.push(("start", Some(s.to_string().into())));
             }
             if l.marker.delimiter == Some(")") {
                 el.structural.push(("data-delim", Some(")".into())));
@@ -311,7 +342,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         if self.opts.roundtrip {
             if let (false, Some(c)) = (ordered, l.marker.bullet.filter(|c| *c != "-")) {
-                el.carriers.push(("data-marker", Some(c.to_string())));
+                el.carriers.push(("data-marker", Some(c.into())));
             }
             if l.spacing == ListSpacing::Tight {
                 el.carriers.push(("data-carve-tight", None));
@@ -324,8 +355,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.base.push("task-list".into());
         }
         let tag = if ordered { "ol" } else { "ul" };
-        let open = format!("<{tag}{}>", el.write(self.filter()));
-        self.line(depth, &open);
+        let f = self.filter();
+        self.line_with(depth, |_, out| {
+            out.push('<');
+            out.push_str(tag);
+            el.write_into(f, out);
+            out.push('>');
+            true
+        });
         let tight = l.spacing == ListSpacing::Tight;
         for item in l.children.iter() {
             if self.profile_allows(item, true) {
@@ -340,7 +377,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.degrading -= 1;
             }
         }
-        self.line(depth, &format!("</{tag}>"));
+        self.line(depth, if ordered { "</ol>" } else { "</ul>" });
     }
 
     /// C2-H-007, C2-H-032 to C2-H-035.
@@ -348,7 +385,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let Node::ListItem(i) = n else { return };
         let mut el = self.el(i.attrs, i.lang, n);
         let head = Self::item_task(i, ordered, &mut el);
-        let open = format!("<li{}>{head}", el.write(self.filter()));
+        let mut open = String::from("<li");
+        el.write_into(self.filter(), &mut open);
+        open.push('>');
+        open.push_str(&head);
         let vis = self.shown(i.children);
         let Some((first, rest)) = vis.split_first() else {
             self.line(depth, &format!("{open}</li>"));
@@ -375,12 +415,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
         // Gap G-016: a bare block image keeps its own line (C2-H-020).
         } else if matches!(first, Node::Paragraph(p) if !self.bare_image(p)) {
-            let p = self.paragraph(first, tight).unwrap_or_default();
-            if rest.is_empty() {
-                self.line(depth, &format!("{open}{p}</li>"));
+            let last = rest.is_empty();
+            self.line_with(depth, |r, out| {
+                out.push_str(&open);
+                r.paragraph_into(first, tight, out);
+                if last {
+                    out.push_str("</li>");
+                }
+                true
+            });
+            if last {
                 return;
             }
-            self.line(depth, &format!("{open}{p}"));
         } else {
             self.line(depth, &open);
             self.block(first, depth + 1);
@@ -397,7 +443,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         };
         let state = TASK_STATES.iter().find(|s| s.1.to_string() == task.mark);
         if let Some(v) = state.and_then(|s| s.2) {
-            el.structural.push(("data-task-state", Some(v.to_string())));
+            el.structural
+                .push(("data-task-state", Some(v.to_string().into())));
         }
         el.base.push("task".into());
         if !ordered {
@@ -496,11 +543,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 el.base = vec!["admonition".into(), a.kind.as_str().into()];
                 if !super::authored_name(attrs) {
                     match self.adm_ids.get(&addr(n)) {
-                        Some(id) => el.generated.push(("aria-labelledby", Some(id.clone()))),
+                        Some(id) => el
+                            .generated
+                            .push(("aria-labelledby", Some(id.clone().into()))),
                         None if title.is_none() => {
                             let key = format!("admonition{}", capitalize(a.kind.as_str()));
                             el.generated
-                                .push(("aria-label", Some(self.opts.label(&key).to_string())));
+                                .push(("aria-label", Some(self.opts.label(&key).into())));
                         }
                         None => {}
                     }
@@ -601,12 +650,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = self.el(c.attrs, c.lang, n);
         if let Some(t) = &c.title {
             el.structural
-                .push(("title", Some(crate::resolve::plain::text_of(t))));
+                .push(("title", Some(crate::resolve::plain::text_of(t).into())));
             el.authored_wins = &["title"];
         }
         if self.opts.roundtrip {
             if let Some(l) = &c.group_label {
-                el.carriers.push(("data-carve-label", Some(l.to_string())));
+                el.carriers.push(("data-carve-label", Some((*l).into())));
             }
         }
         let class = c

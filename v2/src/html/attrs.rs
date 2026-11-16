@@ -3,6 +3,8 @@
 
 use super::{esc, url};
 use crate::ast::Attrs;
+use std::borrow::Cow;
+use std::fmt::Write as _;
 
 /// The 18 names a roundtrip render reserves (C2-H-115, gap HTML-001).
 pub const RESERVED: [&str; 18] = [
@@ -27,17 +29,17 @@ pub const RESERVED: [&str; 18] = [
 ];
 
 /// An attribute value; `None` is a bare name (C2-H-117).
-pub type Val = Option<String>;
+pub type Val<'a> = Option<Cow<'a, str>>;
 
 /// The parts of an element's attribute list, written in the order of
 /// C2-H-009.
 #[derive(Default)]
 pub struct El<'a> {
-    pub structural: Vec<(&'static str, Val)>,
-    pub carriers: Vec<(&'static str, Val)>,
+    pub structural: Vec<(&'static str, Val<'a>)>,
+    pub carriers: Vec<(&'static str, Val<'a>)>,
     /// The id the element carries: authored, or the one it owns (a section,
     /// a note mark).
-    pub id: Option<String>,
+    pub id: Option<Cow<'a, str>>,
     /// C2-H-011: the id stands before the structural attributes.
     pub id_first: bool,
     /// C2-H-011: the class stands first.
@@ -47,7 +49,7 @@ pub struct El<'a> {
     pub attrs: Option<&'a Attrs<'a>>,
     pub lang: Option<&'a str>,
     /// Generated attributes after the keys; an authored key replaces one.
-    pub generated: Vec<(&'static str, Val)>,
+    pub generated: Vec<(&'static str, Val<'a>)>,
     /// A generated style declaration before an authored style (C2-H-032).
     pub style_before: Option<String>,
     /// Generated declarations after an authored style (C2-H-015, C2-H-057).
@@ -74,61 +76,75 @@ impl<'a> El<'a> {
         El {
             attrs,
             lang,
-            id: attrs.and_then(|a| a.id).map(str::to_string),
+            id: attrs.and_then(|a| a.id).map(Cow::Borrowed),
             ..El::default()
         }
     }
 
     /// Writes ` name="value"` for each attribute.
     #[must_use]
-    pub fn write(mut self, f: Filter) -> String {
+    pub fn write(self, f: Filter) -> String {
+        let mut out = String::new();
+        self.write_into(f, &mut out);
+        out
+    }
+
+    /// `write`, appended to `out`.
+    pub fn write_into(mut self, f: Filter, out: &mut String) {
         if self.is_bare() {
-            return String::new();
+            return;
         }
         let keys = self.keys(f);
-        let mut list: Vec<(String, Val)> = Vec::new();
-        let classes = self.classes();
         if self.class_first {
-            push_class(&mut list, &classes);
+            self.write_class(out);
         }
         if self.id_first {
-            push_id(&mut list, self.id.take());
+            attr(out, "id", self.id.take().as_deref());
         }
-        list.extend(self.structural.drain(..).map(|(k, v)| (k.to_string(), v)));
-        list.extend(self.carriers.drain(..).map(|(k, v)| (k.to_string(), v)));
-        push_id(&mut list, self.id.take());
+        for (k, v) in self.structural.iter().chain(&self.carriers) {
+            attr(out, k, v.as_deref());
+        }
+        if let Some(id) = self.id.take() {
+            attr(out, "id", Some(&id));
+        }
         if !self.class_first {
-            push_class(&mut list, &classes);
+            self.write_class(out);
         }
         if let Some(lang) = self.lang {
-            list.push(("lang".to_string(), Some(url::filter_value("lang", lang))));
+            attr(out, "lang", Some(url::filter_value("lang", lang)));
         }
         let has_style = keys.iter().any(|(k, _)| k.eq_ignore_ascii_case("style"));
         for (k, v) in keys {
             if k.eq_ignore_ascii_case("style") {
-                list.push((k, Some(self.merge_style(v.as_deref()))));
+                attr(out, k, Some(&self.merge_style(Some(v))));
             } else {
-                list.push((k, v));
+                attr(out, k, Some(v));
             }
         }
         if !has_style && (self.style_before.is_some() || !self.style_after.is_empty()) {
-            list.push(("style".to_string(), Some(self.merge_style(None))));
+            attr(out, "style", Some(&self.merge_style(None)));
         }
-        list.extend(self.generated.drain(..).map(|(k, v)| (k.to_string(), v)));
+        for (k, v) in &self.generated {
+            attr(out, k, v.as_deref());
+        }
         if let Some(n) = self.source_line {
-            list.push(("data-source-line".to_string(), Some(n.to_string())));
+            out.push_str(" data-source-line=\"");
+            let _ = write!(out, "{n}");
+            out.push('"');
         }
-        let mut out = String::new();
-        for (k, v) in list {
-            out.push(' ');
-            out.push_str(&k);
-            if let Some(v) = v {
-                out.push_str("=\"");
-                esc::attr(&v, &mut out);
-                out.push('"');
+    }
+
+    fn write_class(&self, out: &mut String) {
+        let classes = self.classes();
+        if let Some((first, rest)) = classes.split_first() {
+            out.push_str(" class=\"");
+            esc::attr(first, out);
+            for c in rest {
+                out.push(' ');
+                esc::attr(c, out);
             }
+            out.push('"');
         }
-        out
     }
 
     /// No part that writes an attribute: the list is empty.
@@ -169,7 +185,7 @@ impl<'a> El<'a> {
 
     /// The authored keys that are written, filtered and with collisions
     /// settled (C2-H-013, C2-H-116, C2-H-161).
-    fn keys(&mut self, f: Filter) -> Vec<(String, Val)> {
+    fn keys(&mut self, f: Filter) -> Vec<(&'a str, &'a str)> {
         let Some(attrs) = self.attrs else {
             return Vec::new();
         };
@@ -202,12 +218,12 @@ impl<'a> El<'a> {
                 self.structural.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
             }
             self.generated.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
-            out.push(((*k).to_string(), Some(url::filter_value(k, v))));
+            out.push((*k, url::filter_value(k, v)));
         }
         out
     }
 
-    fn classes(&self) -> Vec<String> {
+    fn classes(&self) -> Vec<&str> {
         let authored = self.attrs.map_or(&[] as &[&str], |a| a.classes);
         let mut keep: Vec<&str> = Vec::new();
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -231,19 +247,17 @@ impl<'a> El<'a> {
                 keep.push(c);
             }
         }
-        keep.into_iter().map(String::from).collect()
+        keep
     }
 }
 
-fn push_id(list: &mut Vec<(String, Val)>, id: Option<String>) {
-    if let Some(id) = id {
-        list.push(("id".to_string(), Some(id)));
-    }
-}
-
-fn push_class(list: &mut Vec<(String, Val)>, classes: &[String]) {
-    if !classes.is_empty() {
-        list.push(("class".to_string(), Some(classes.join(" "))));
+fn attr(out: &mut String, k: &str, v: Option<&str>) {
+    out.push(' ');
+    out.push_str(k);
+    if let Some(v) = v {
+        out.push_str("=\"");
+        esc::attr(v, out);
+        out.push('"');
     }
 }
 

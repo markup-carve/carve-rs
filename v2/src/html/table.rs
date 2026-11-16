@@ -5,8 +5,7 @@ use super::attrs::El;
 use crate::ast::{Node, Table, TableCellScope};
 use crate::hash::AddrMap;
 use crate::resolve::order::addr;
-use crate::resolve::table::{GroupKind, layout, rows};
-use std::fmt::Write as _;
+use crate::resolve::table::{GroupKind, Placed, layout, rows};
 
 /// The table attributes that are read and never written (C2-H-153).
 const READ_ONLY_KEYS: &[&str] = &["aligns", "widths", "header-rows", "footer-rows"];
@@ -25,8 +24,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.caption(c, "caption", depth + 1);
         }
         self.colgroup(t, depth + 1);
-        let columns = cell_columns(t);
-        if crosses_groups(t) {
+        let placed = layout(t);
+        let columns: AddrMap<usize, usize> = placed.iter().map(|p| (addr(p.node), p.col)).collect();
+        if crosses_groups(t, &placed) {
             self.line(depth + 1, "<tbody>");
             for (row, kind) in rows(t) {
                 self.row(t, row, kind, &columns, depth + 2);
@@ -86,11 +86,23 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let el = self.el(g.attrs(), None, g);
-        self.line(depth, &format!("<{tag}{}>", el.write(self.filter())));
+        let f = self.filter();
+        self.line_with(depth, |_, out| {
+            out.push('<');
+            out.push_str(tag);
+            el.write_into(f, out);
+            out.push('>');
+            true
+        });
         for r in children.iter() {
             self.row(t, r, kind, columns, depth + 1);
         }
-        self.line(depth, &format!("</{tag}>"));
+        self.line_with(depth, |_, out| {
+            out.push_str("</");
+            out.push_str(tag);
+            out.push('>');
+            true
+        });
     }
 
     fn row(
@@ -103,12 +115,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
     ) {
         let Node::TableRow(row) = r else { return };
         let el = self.el(row.attrs, row.lang, r);
-        let mut s = format!("<tr{}>", el.write(self.filter()));
-        for c in row.children.iter() {
-            self.cell(t, c, kind, columns.get(&addr(c)).copied(), &mut s);
-        }
-        s.push_str("</tr>");
-        self.line(depth, &s);
+        let f = self.filter();
+        self.line_with(depth, |r, out| {
+            out.push_str("<tr");
+            el.write_into(f, out);
+            out.push('>');
+            for c in row.children.iter() {
+                r.cell(t, c, kind, columns.get(&addr(c)).copied(), out);
+            }
+            out.push_str("</tr>");
+            true
+        });
     }
 
     /// C2-H-056 to C2-H-058.
@@ -133,10 +150,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         });
         let mut el = El::new(x.attrs, x.lang);
         if let Some(v) = x.rowspan.filter(|v| *v > 1) {
-            el.structural.push(("rowspan", Some(v.to_string())));
+            el.structural.push(("rowspan", Some(v.to_string().into())));
         }
         if let Some(v) = x.colspan.filter(|v| *v > 1) {
-            el.structural.push(("colspan", Some(v.to_string())));
+            el.structural.push(("colspan", Some(v.to_string().into())));
         }
         let scope = x.scope.map(TableCellScope::as_str).or_else(|| {
             x.header.then_some(if kind == GroupKind::Head {
@@ -146,10 +163,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
             })
         });
         if let Some(s) = scope {
-            el.structural.push(("scope", Some(s.to_string())));
+            el.structural.push(("scope", Some(s.into())));
         }
         if let Some(ids) = &x.header_ids {
-            el.structural.push(("headers", Some(ids.join(" "))));
+            el.structural.push(("headers", Some(ids.join(" ").into())));
         }
         let align = x
             .align
@@ -174,18 +191,28 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.style_after.push(format!("vertical-align: {v};"));
         }
         let tag = if x.header { "th" } else { "td" };
-        let _ = write!(out, "<{tag}{}>", el.write(self.filter()));
+        out.push('<');
+        out.push_str(tag);
+        el.write_into(self.filter(), out);
+        out.push('>');
         self.level += 1;
-        let inner = self.cell_content(x.children);
+        self.cell_into(x.children, out);
         self.level -= 1;
-        out.push_str(&inner);
-        let _ = write!(out, "</{tag}>");
+        out.push_str("</");
+        out.push_str(tag);
+        out.push('>');
+    }
+
+    fn cell_into(&mut self, children: &'r [Node<'a>], out: &mut String) {
+        if let [Node::CellParagraph(p)] = children {
+            self.leaf_into(p.children, out);
+        } else {
+            let inner = self.cell_content(children);
+            out.push_str(&inner);
+        }
     }
 
     fn cell_content(&mut self, children: &'r [Node<'a>]) -> String {
-        if let [Node::CellParagraph(p)] = children {
-            return self.leaf(p.children);
-        }
         let saved = std::mem::take(&mut self.out);
         let started = std::mem::replace(&mut self.started, false);
         for c in children {
@@ -202,15 +229,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 }
 
-/// The grid column each cell starts in.
-fn cell_columns(t: &Table) -> AddrMap<usize, usize> {
-    layout(t).iter().map(|p| (addr(p.node), p.col)).collect()
-}
-
 /// C2-H-060: a row span that reaches past the end of its group.
-fn crosses_groups(t: &Table) -> bool {
+fn crosses_groups(t: &Table, placed: &[Placed]) -> bool {
     let all = rows(t);
-    let placed = layout(t);
     placed.iter().any(|p| {
         let last = p.row + usize::try_from(p.rowspan.max(1)).unwrap_or(1) - 1;
         let kind = all.get(p.row).map(|r| r.1);

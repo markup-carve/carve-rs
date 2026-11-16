@@ -9,6 +9,7 @@ use crate::hash::AddrSet;
 use crate::options::Mode;
 use crate::resolve::order::addr;
 use crate::tables::{PROFILES, SMART_RUNS};
+use std::borrow::Cow;
 use std::fmt::Write as _;
 
 fn wrapper_tag(n: &Node) -> Option<&'static str> {
@@ -89,8 +90,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
                 (Some(e), 0) => {
                     let mut el = El::new(a.attrs, a.lang);
-                    el.structural.push(("title", Some(e.to_string())));
-                    let _ = write!(out, "<abbr{}>", el.write(self.filter()));
+                    el.structural.push(("title", Some((*e).into())));
+                    out.push_str("<abbr");
+                    el.write_into(self.filter(), out);
+                    out.push('>');
                     esc::text(a.key, out);
                     out.push_str("</abbr>");
                 }
@@ -193,7 +196,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             match n {
                 Node::Code(c) => {
                     let el = El::new(c.attrs, c.lang);
-                    let _ = write!(out, "<code{}>", el.write(self.filter()));
+                    out.push_str("<code");
+                    el.write_into(self.filter(), out);
+                    out.push('>');
                     esc::text(c.value, out);
                     out.push_str("</code>");
                 }
@@ -217,11 +222,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if matches!(n, Node::SmallCaps(_)) {
             el.base.push("smallcaps".into());
         }
-        let _ = write!(out, "<{tag}{}>", el.write(self.filter()));
+        out.push('<');
+        out.push_str(tag);
+        el.write_into(self.filter(), out);
+        out.push('>');
         if let Some(c) = n.children() {
             self.inlines(c, out);
         }
-        let _ = write!(out, "</{tag}>");
+        out.push_str("</");
+        out.push_str(tag);
+        out.push('>');
     }
 
     fn wrap_span(&self, attrs: Option<&Attrs>, lang: Option<&str>, inner: &str, out: &mut String) {
@@ -263,17 +273,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.skip_keys = &["rel"];
         }
         if !words.is_empty() {
-            el.structural.push(("rel", Some(words.join(" "))));
+            el.structural.push(("rel", Some(words.join(" ").into())));
         }
     }
 
     /// A destination through the URL policy (C2-H-082, C2-H-160).
-    fn destination(&mut self, dest: &str) -> String {
+    fn destination<'d>(&mut self, dest: &'d str) -> Cow<'d, str> {
         if url::allowed(dest, &self.opts.url_policy) {
-            dest.to_string()
+            Cow::Borrowed(dest)
         } else {
             self.losses.push("destination-denied");
-            String::new()
+            Cow::Borrowed("")
         }
     }
 
@@ -304,11 +314,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::new(merged.as_ref(), l.lang);
         el.structural.push(("href", Some(self.destination(href))));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
-            el.structural.push(("title", Some(t.to_string())));
+            el.structural.push(("title", Some((*t).into())));
         }
         self.rel(&mut el);
         if let (true, Some(key)) = (self.opts.roundtrip, &l.key) {
-            el.carriers.push(("data-carve-ref", Some(key.to_string())));
+            el.carriers.push(("data-carve-ref", Some((*key).into())));
             match l.ref_form {
                 Some(LinkRefForm::Collapsed) => {
                     el.carriers.push(("data-carve-ref-collapsed", None));
@@ -317,7 +327,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 _ => {}
             }
         }
-        let _ = write!(out, "<a{}>", el.write(self.filter()));
+        out.push_str("<a");
+        el.write_into(self.filter(), out);
+        out.push('>');
         self.in_link += 1;
         self.inlines(&*l.children, out);
         self.in_link -= 1;
@@ -339,7 +351,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-autolink", None));
         }
-        let _ = write!(out, "<a{}>", el.write(self.filter()));
+        out.push_str("<a");
+        el.write_into(self.filter(), out);
+        out.push('>');
         esc::text(text, out);
         out.push_str("</a>");
     }
@@ -367,12 +381,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), i.lang);
         el.structural.push(("src", Some(self.destination(src))));
-        el.structural.push(("alt", Some(alt.to_string())));
+        el.structural.push(("alt", Some(alt.into())));
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
-            el.structural.push(("title", Some(t.to_string())));
+            el.structural.push(("title", Some((*t).into())));
         }
         if let (true, Some(key)) = (self.opts.roundtrip, &i.key) {
-            el.carriers.push(("data-carve-ref", Some(key.to_string())));
+            el.carriers.push(("data-carve-ref", Some((*key).into())));
             match i.ref_form {
                 Some(ImageRefForm::Collapsed) => {
                     el.carriers.push(("data-carve-ref-collapsed", None));
@@ -381,7 +395,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 _ => {}
             }
         }
-        let _ = write!(out, "<img{}>", el.write(self.filter()));
+        out.push_str("<img");
+        el.write_into(self.filter(), out);
+        out.push('>');
     }
 
     /// C2-H-086, C2-H-088.
@@ -393,13 +409,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         };
         let mut el = El::new(n.attrs(), lang_of(n));
-        el.id = self.mark_ids.get(&addr(n)).cloned();
+        el.id = self
+            .mark_ids
+            .get(&addr(n))
+            .map(|s| Cow::Borrowed(s.as_str()));
         el.id_first = true;
-        el.structural.push(("href", Some(format!("#fn{num}"))));
+        el.structural
+            .push(("href", Some(format!("#fn{num}").into())));
         el.structural.push(("role", Some("doc-noteref".into())));
         if let (true, Node::FootnoteRef(r)) = (self.opts.roundtrip, n) {
             el.carriers
-                .push(("data-carve-footnote-label", Some(r.key.to_string())));
+                .push(("data-carve-footnote-label", Some(r.key.into())));
         }
         let s = format!("<a{}><sup>{num}</sup></a>", el.write(self.filter()));
         if self.in_link > 0 {
@@ -429,7 +449,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
         }
-        let _ = write!(out, "<a{}>", el.write(self.filter()));
+        out.push_str("<a");
+        el.write_into(self.filter(), out);
+        out.push('>');
         esc::text(&text, out);
         out.push_str("</a>");
     }
@@ -440,7 +462,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             s.attrs
                 .as_ref()
                 .and_then(|a| a.key_values.iter().find(|(x, _)| x.eq_ignore_ascii_case(k)))
-                .map(|(x, v)| url::filter_value(x, v))
+                .map(|(x, v)| url::filter_value(x, v).to_string())
         };
         let (abbr, time, kbd) = (get("abbr"), get("time"), get("kbd"));
         let mut layers: Vec<(&'static str, Option<(&'static str, String)>)> = Vec::new();
@@ -462,13 +484,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::new(s.attrs, s.lang);
         el.skip_keys = &["abbr", "time", "kbd"];
         let Some((outer, rest)) = layers.split_last() else {
-            let _ = write!(out, "<span{}>", el.write(self.filter()));
+            out.push_str("<span");
+            el.write_into(self.filter(), out);
+            out.push('>');
             self.inlines(&*s.children, out);
             out.push_str("</span>");
             return;
         };
         if let Some((k, v)) = &outer.1 {
-            el.structural.push((k, Some(v.clone())));
+            el.structural.push((k, Some(v.clone().into())));
             el.skip_keys = if *k == "title" {
                 &["abbr", "time", "kbd", "title"]
             } else {
@@ -492,7 +516,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.inlines(&*s.children, out);
         self.in_abbr -= abbr_layer;
         for (tag, _) in rest {
-            let _ = write!(out, "</{tag}>");
+            out.push_str("</");
+            out.push_str(tag);
+            out.push('>');
         }
         let _ = write!(out, "</{}>", outer.0);
     }
@@ -502,7 +528,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::new(m.attrs, m.lang);
         if self.opts.mode == Mode::Static {
             el.base.push("language-math".into());
-            let _ = write!(out, "<code{}>", el.write(self.filter()));
+            out.push_str("<code");
+            el.write_into(self.filter(), out);
+            out.push('>');
             esc::text(m.value, out);
             out.push_str("</code>");
             return;
@@ -541,8 +569,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         // Gap G-022: inside a link the badge stays a span, as no anchor nests.
         let tag = match template.filter(|_| self.in_link == 0) {
             Some(t) => {
-                let href = self.destination(&t.replace("{name}", b.name));
-                el.structural.push(("href", Some(href)));
+                let full = t.replace("{name}", b.name);
+                let href = self.destination(&full).into_owned();
+                el.structural.push(("href", Some(href.into())));
                 self.rel(&mut el);
                 "a"
             }
@@ -584,7 +613,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         let mut el = El::new(e.attrs, e.lang);
         el.base.push(format!("ext-{}", e.name));
-        let _ = write!(out, "<span{}>", el.write(self.filter()));
+        out.push_str("<span");
+        el.write_into(self.filter(), out);
+        out.push('>');
         self.inlines(&*e.children, out);
         out.push_str("</span>");
     }

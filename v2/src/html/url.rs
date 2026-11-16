@@ -5,6 +5,7 @@ use crate::options::UrlPolicy;
 use crate::tables::{
     DEFAULT_DENIED_SCHEMES, DROPPED_ATTRIBUTES, PROBE_REMOVES, STYLE_PATTERNS, URL_LIST_ATTRIBUTES,
 };
+use std::borrow::Cow;
 
 fn probe_removed(c: char) -> bool {
     PROBE_REMOVES
@@ -15,23 +16,25 @@ fn probe_removed(c: char) -> bool {
 /// The scheme of a destination, lowered, after the probe removals of
 /// C2-H-159; `None` for a destination with no scheme.
 #[must_use]
-pub fn scheme(dest: &str) -> Option<String> {
-    let mut out = String::new();
-    for c in dest.chars().filter(|c| !probe_removed(*c)) {
-        if c == ':' {
-            return (!out.is_empty()).then_some(out);
-        }
-        let ok = if out.is_empty() {
-            c.is_ascii_alphabetic()
-        } else {
-            c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')
-        };
-        if !ok {
-            return None;
-        }
-        out.push(c.to_ascii_lowercase());
+pub fn scheme(dest: &str) -> Option<Cow<'_, str>> {
+    let head = dest.get(..dest.find(':')?)?;
+    let mut kept = head.chars().filter(|c| !probe_removed(*c)).peekable();
+    kept.next_if(char::is_ascii_alphabetic)?;
+    if !kept.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) {
+        return None;
     }
-    None
+    if head
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'+' | b'-' | b'.'))
+    {
+        return Some(Cow::Borrowed(head));
+    }
+    Some(Cow::Owned(
+        head.chars()
+            .filter(|c| !probe_removed(*c))
+            .map(|c| c.to_ascii_lowercase())
+            .collect(),
+    ))
 }
 
 /// True when `dest` passes `policy` (C2-H-160).
@@ -47,12 +50,13 @@ pub fn allowed(dest: &str, policy: &UrlPolicy) -> bool {
 /// An attribute name that is never written (C2-H-161).
 #[must_use]
 pub fn dropped_name(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
     DROPPED_ATTRIBUTES.iter().any(|(n, how)| {
         if *how == "prefix" {
-            lower.starts_with(n)
+            name.as_bytes()
+                .get(..n.len())
+                .is_some_and(|h| h.eq_ignore_ascii_case(n.as_bytes()))
         } else {
-            lower == *n
+            name.eq_ignore_ascii_case(n)
         }
     })
 }
@@ -77,21 +81,19 @@ pub fn value_fails(value: &str) -> bool {
 /// The value an authored attribute is written with: emptied when it fails
 /// C2-H-161 or C2-H-162.
 #[must_use]
-pub fn filter_value(name: &str, value: &str) -> String {
-    let lower = name.to_ascii_lowercase();
+pub fn filter_value<'v>(name: &str, value: &'v str) -> &'v str {
     let mut fails = value_fails(value);
-    if let Some((_, commas)) = URL_LIST_ATTRIBUTES.iter().find(|(n, _)| *n == lower) {
+    if let Some((_, commas)) = URL_LIST_ATTRIBUTES
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+    {
         let split = value.split(|c: char| c.is_ascii_whitespace() || (*commas && c == ','));
         fails = fails || split.filter(|t| !t.is_empty()).any(value_fails);
     }
-    if lower == "style" {
+    if name.eq_ignore_ascii_case("style") {
         fails = fails || style_fails(value);
     }
-    if fails {
-        String::new()
-    } else {
-        value.to_string()
-    }
+    if fails { "" } else { value }
 }
 
 /// C2-H-162: a style value that holds a pattern after decoding.

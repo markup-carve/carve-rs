@@ -46,6 +46,16 @@ pub fn render_with_losses_source(
     (r.out, r.losses)
 }
 
+/// About the output length: the source length the tree covers, and half again.
+fn out_estimate(doc: &Document<'_>) -> usize {
+    let end = doc
+        .children
+        .last()
+        .and_then(Node::pos)
+        .map_or(0, |p| p.end_offset);
+    end + end / 2
+}
+
 /// The state of one render.
 pub(crate) struct Renderer<'r, 'a> {
     opts: &'r Options,
@@ -85,7 +95,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             opts,
             doc,
             src: None,
-            out: String::new(),
+            out: String::with_capacity(out_estimate(doc)),
             order,
             mark_ids: AddrMap::default(),
             links: HashMap::new(),
@@ -231,6 +241,25 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.out.push_str(s);
     }
 
+    /// One line at `depth` that `f` writes into the output; left out when
+    /// `f` returns false.
+    fn line_with(&mut self, depth: usize, f: impl FnOnce(&mut Self, &mut String) -> bool) {
+        let mut out = std::mem::take(&mut self.out);
+        let (mark, was) = (out.len(), self.started);
+        if self.started {
+            out.push('\n');
+        }
+        self.started = true;
+        for _ in 0..depth {
+            out.push_str("  ");
+        }
+        if !f(self, &mut out) {
+            out.truncate(mark);
+            self.started = was;
+        }
+        self.out = out;
+    }
+
     /// The empty line of an empty container body (C2-H-008).
     fn blank(&mut self) {
         self.out.push('\n');
@@ -263,12 +292,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
                         self.line(stack.len(), "</section>");
                     }
                     let mut el = El {
-                        id: heading_id(c).map(str::to_string),
+                        id: heading_id(c).map(std::borrow::Cow::Borrowed),
                         ..El::default()
                     };
                     self.id_carriers(c, &mut el);
-                    let open = format!("<section{}>", el.write(self.filter()));
-                    self.line(stack.len(), &open);
+                    let f = self.filter();
+                    self.line_with(stack.len(), |_, out| {
+                        out.push_str("<section");
+                        el.write_into(f, out);
+                        out.push('>');
+                        true
+                    });
                     stack.push(h.level);
                     self.level += 1;
                     self.heading(c, stack.len(), false);

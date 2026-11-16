@@ -30,10 +30,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let mut el = El::default();
         el.structural.push(("role", Some("doc-endnotes".into())));
         match id {
-            Some(id) => el.generated.push(("aria-labelledby", Some(id))),
+            Some(id) => el.generated.push(("aria-labelledby", Some(id.into()))),
             None => el
                 .generated
-                .push(("aria-label", Some(self.opts.label("endnotes").to_string()))),
+                .push(("aria-label", Some(self.opts.label("endnotes").into()))),
         }
         let open = format!("<section{}>", el.write(self.filter()));
         self.line(depth, &open);
@@ -61,7 +61,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let def = note.node;
         let back = self.backlinks(i);
         let mut el = El {
-            id: Some(format!("fn{}", i + 1)),
+            id: Some(format!("fn{}", i + 1).into()),
             id_first: true,
             ..El::default()
         };
@@ -69,7 +69,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             match def {
                 Node::Footnote(f) => el
                     .carriers
-                    .push(("data-carve-footnote-label", Some(f.key.to_string()))),
+                    .push(("data-carve-footnote-label", Some(f.key.into()))),
                 _ => el.carriers.push(("data-carve-inline-footnote", None)),
             }
         }
