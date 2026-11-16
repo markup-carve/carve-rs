@@ -104,7 +104,11 @@ fn c2_h_020_attributed_block_image_keeps_paragraph() {
     let src = "{.c #i}\n![a](x.png)\n\n{:de}\n![b](y.png)\n\n![c](z.png)";
     assert_eq!(
         render(src, &Options::default()),
-        "<p id=\"i\" class=\"c\"><img src=\"x.png\" alt=\"a\"></p>\n<p lang=\"de\"><img src=\"y.png\" alt=\"b\"></p>\n<img src=\"z.png\" alt=\"c\">"
+        concat!(
+            "<p id=\"i\" class=\"c\"><img src=\"x.png\" alt=\"a\"></p>\n",
+            "<p lang=\"de\"><img src=\"y.png\" alt=\"b\"></p>\n",
+            "<img src=\"z.png\" alt=\"c\">"
+        )
     );
 }
 
@@ -158,7 +162,10 @@ fn c2_h_126_social_template_respects_profile_and_encoding() {
     });
     assert_eq!(
         render("@ann.b and #topic", &options),
-        "<p><a class=\"mention\" href=\"https://x.org/u/ann.b\"><strong>@ann.b</strong></a> and <span class=\"tag\"><strong>#topic</strong></span></p>"
+        concat!(
+            "<p><a class=\"mention\" href=\"https://x.org/u/ann.b\"><strong>@ann.b</strong></a>",
+            " and <span class=\"tag\"><strong>#topic</strong></span></p>"
+        )
     );
     options.profile = carve2::options::Profile::Minimal;
     assert_eq!(
@@ -185,4 +192,26 @@ fn c2_i_126_capped_bracket_opener_never_takes_a_closer() {
     let html = render(&src, &Options::default());
     assert!(html.contains("<span class=\"ext-n\">[</span>"));
     assert!(!html.contains("<span class=\"ext-n\">[]</span>"));
+}
+
+#[test]
+fn c2_h_178_roundtrip_abbreviation_runs_keep_every_definition() {
+    let mut options = Options::default();
+    options.roundtrip = true;
+    let src = "*[A]: First\n*[A]: Second\n*[U]: Unused\n\nA.";
+    let html = render(src, &options);
+    assert!(html.starts_with(
+        "<template data-carve-abbreviations>*[A]: First\n\n*[A]: Second\n\n*[U]: Unused</template>"
+    ));
+    assert!(html.contains("<abbr title=\"First\">A</abbr>"));
+}
+
+#[test]
+fn c2_h_179_abbreviation_template_writes_attrs_and_escapes_text() {
+    let mut options = Options::default();
+    options.roundtrip = true;
+    let html = render("{#x .c}\n*[A]: R&D <research> \"and\"\n\nA.", &options);
+    assert!(html.starts_with(
+        "<template data-carve-abbreviations>{#x .c}\n*[A]: R&amp;D &lt;research&gt; \"and\"</template>"
+    ));
 }

@@ -1,5 +1,6 @@
 //! The HTML renderer (C2-H): a resolved tree to an HTML fragment.
 
+mod abbreviation;
 pub mod attrs;
 mod block;
 pub mod esc;
@@ -317,21 +318,30 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if self.opts.sections {
             self.sectioned(doc.children);
         } else {
-            for c in doc.children.iter() {
-                self.block(c, 0);
+            let mut i = 0;
+            while let Some(c) = doc.children.get(i) {
+                if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
+                    i += self.abbreviation_run(&doc.children[i..], 0);
+                } else {
+                    self.block(c, 0);
+                    i += 1;
+                }
             }
         }
         if self.placing.is_none() && self.shown.contains(&true) {
             self.footnote_section(0, None);
         }
-        // Gap HTML-008: C2-H-114 keeps `data-carve-abbreviations` but places no
-        // template, and the oracle writes none.
     }
 
     /// C2-H-026 to C2-H-028: each top-level heading opens a section.
     fn sectioned(&mut self, children: &'r [Node<'a>]) {
         let mut stack: Vec<i64> = Vec::new();
-        for c in children {
+        let mut i = 0;
+        while let Some(c) = children.get(i) {
+            if self.opts.roundtrip && matches!(c, Node::AbbreviationDef(_)) {
+                i += self.abbreviation_run(&children[i..], stack.len());
+                continue;
+            }
             if let Node::Heading(h) = c {
                 if self.profile_allows(c, true) {
                     while stack.last().is_some_and(|l| *l >= h.level) {
@@ -354,10 +364,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     self.level += 1;
                     self.heading(c, stack.len(), false);
                     self.level -= 1;
+                    i += 1;
                     continue;
                 }
             }
             self.block(c, stack.len());
+            i += 1;
         }
         while stack.pop().is_some() {
             self.line(stack.len(), "</section>");
