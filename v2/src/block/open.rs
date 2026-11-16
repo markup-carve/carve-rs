@@ -552,8 +552,7 @@ impl Parser<'_> {
                 .rest()
                 .get(n..)
                 .unwrap_or("")
-                .trim_start_matches([' ', '\t'])
-                .trim_end_matches([' ', '\t']);
+                .trim_start_matches([' ', '\t']);
             let lines = if first.is_empty() {
                 Vec::new()
             } else {

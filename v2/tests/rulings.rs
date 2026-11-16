@@ -44,6 +44,12 @@ fn c2_b_117_fence_metadata_can_follow_the_run_without_a_language() {
 }
 
 #[test]
+fn c2_b_108_comment_fence_keeps_trailing_space_on_its_opener() {
+    assert_eq!(tree("%%%> ")["children"][0]["value"], "> ");
+    assert_eq!(tree("%%%  a\t ")["children"][0]["value"], "a\t ");
+}
+
+#[test]
 fn c2_b_129_last_hardbreaks_class_forces_hard_breaks() {
     let html = render("{.hardbreaks}\n:::\na\nb\n:::", &Options::default());
     assert!(html.contains("a<br>\n"), "{html}");
