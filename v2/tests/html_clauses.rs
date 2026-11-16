@@ -85,12 +85,12 @@ fn c2_h_165_unclosed_math_degrades_to_its_source() {
 }
 
 #[test]
-fn c2_h_165_code_in_a_degraded_cell_keeps_its_run() {
+fn c2_h_165_code_in_a_degraded_cell_uses_its_value() {
     let o = carve2::Options {
         profile: carve2::options::Profile::Comment,
         ..carve2::Options::default()
     };
-    assert_eq!(carve2::render("|``a`b``|", &o), "<p>``a`b``</p>");
+    assert_eq!(carve2::render("|``a`b``|", &o), "<p>a`b</p>");
 }
 
 #[test]
@@ -111,10 +111,10 @@ fn c2_b_105_a_brace_block_glued_to_a_fence_language_is_no_attribute() {
 }
 
 #[test]
-fn c2_i_084_the_first_heading_matching_by_text_or_source_wins() {
+fn c2_i_084_heading_lookup_uses_plain_text() {
     assert_eq!(
         html("# \\*a\\*\n\n# *a*\n\n[x][*a*]\n"),
-        "<section id=\"a\">\n  <h1>*a*</h1>\n</section>\n<section id=\"a-2\">\n  <h1><strong>a</strong></h1>\n  <p><a href=\"#a\">x</a></p>\n</section>"
+        "<section id=\"a\">\n  <h1>*a*</h1>\n</section>\n<section id=\"a-2\">\n  <h1><strong>a</strong></h1>\n  <p><a href=\"#a-2\">x</a></p>\n</section>"
     );
 }
 
