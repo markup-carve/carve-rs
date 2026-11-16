@@ -14,7 +14,6 @@ use crate::tables;
 pub struct Ctx<'a> {
     pub t: &'a str,
     pub comments: &'a [(usize, usize)],
-    pub depth: usize,
 }
 
 impl Ctx<'_> {
@@ -67,7 +66,7 @@ struct Entry {
 
 /// Pairs delimiters, attaches attribute blocks and settles the caption mark.
 pub fn resolve<'a>(toks: &mut [Tok<'a>], ctx: &Ctx<'_>, arena: &'a Arena) {
-    group(toks, 0, toks.len(), ctx.depth, ctx);
+    group(toks, 0, toks.len(), 0, ctx);
     attach(toks, arena);
     caption(toks, arena);
 }
@@ -122,7 +121,7 @@ fn delimiter(
     base: usize,
     ctx: &Ctx<'_>,
 ) {
-    let room = base + stack.len() < tables::DEPTH_CAP;
+    let room = base + stack.len() < tables::INLINE_DEPTH;
     match d {
         Delim::Bare(c) => bare(toks, stack, k, c, room, ctx),
         Delim::BracedOpen(c) if room => stack.push(Entry {
@@ -229,7 +228,7 @@ fn holds_own_mark(toks: &[Tok], open: usize, close: usize, c: char, ctx: &Ctx<'_
             } => {
                 m = (*e).max(m);
             }
-            K::Text { val: None, .. } | K::Delim(_) if mark_between_words(ctx.t, t.v0, t.v1, c) => {
+            K::Text { val: None, .. } | K::Delim(_) if mark_between_words(ctx, t.v0, t.v1, c) => {
                 return true;
             }
             _ => {}
@@ -239,12 +238,14 @@ fn holds_own_mark(toks: &[Tok], open: usize, close: usize, c: char, ctx: &Ctx<'_
     false
 }
 
-fn mark_between_words(t: &str, v0: usize, v1: usize, c: char) -> bool {
-    let Some(s) = t.get(v0..v1) else { return false };
+fn mark_between_words(ctx: &Ctx<'_>, v0: usize, v1: usize, c: char) -> bool {
+    let Some(s) = ctx.t.get(v0..v1) else {
+        return false;
+    };
     s.match_indices(c).any(|(p, _)| {
         let p = v0 + p;
-        let before = t.get(..p).and_then(|x| x.chars().next_back());
-        let after = t.get(p + c.len_utf8()..).and_then(|x| x.chars().next());
+        let before = ctx.before(p);
+        let after = ctx.after(p + c.len_utf8());
         before.is_some_and(is_word) && after.is_some_and(is_word)
     })
 }

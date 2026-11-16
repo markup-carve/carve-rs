@@ -95,7 +95,7 @@ fn c2_h_165_unclosed_math_degrades_to_writer_spelling() {
         profile: carve2::options::Profile::Minimal,
         ..carve2::Options::default()
     };
-    assert_eq!(carve2::render("$`", &o), "<p>$``</p>");
+    assert_eq!(carve2::render("$`", &o), "<p>$`</p>");
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn c2_b_082_a_footnote_label_outside_ascii_keeps_its_body() {
 fn g_024_a_cell_that_spans_columns_takes_no_row_span() {
     assert_eq!(
         html("|a|<|\n|^|b|"),
-        "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a</td></tr>\n    <tr><td></td><td>b</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a</td></tr>\n    <tr><td>^</td><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -326,11 +326,11 @@ fn g_004_the_block_inside_a_figure_starts_at_its_own_markup() {
     let Some(carve2::ast::owned::Node::BlockQuote(q)) = doc.children.first() else {
         panic!("no quote");
     };
-    let Some(carve2::ast::owned::Node::Figure(f)) = q.children.first() else {
-        panic!("no figure");
+    let Some(carve2::ast::owned::Node::CodeBlock(f)) = q.children.first() else {
+        panic!("no captioned code block");
     };
-    let inner = f.children.first().and_then(|n| n.pos().copied());
-    assert_eq!(inner.map(|p| p.start_offset), Some(8));
+    assert!(f.caption.is_some());
+    assert_eq!(f.pos.map(|p| p.start_offset), Some(2));
 }
 
 #[test]

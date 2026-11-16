@@ -147,9 +147,6 @@ fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
             join: Join::Line,
         });
     }
-    if cell.span.is_some() {
-        cell.pieces.clear();
-    }
     cell
 }
 
@@ -188,8 +185,7 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
     row.joined = true;
     for (col, &(s, e)) in frags.iter().enumerate() {
         let (a, z) = trim(text, s, e);
-        let target = covering_col(row, col);
-        match row.cells.get_mut(target) {
+        match row.cells.get_mut(col) {
             // C2-B-184: an empty fragment adds nothing to a cell.
             Some(_) if a >= z => {}
             Some(cell) => {
@@ -222,13 +218,4 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
             }),
         }
     }
-}
-
-/// A fragment under a `<` mark joins the cell the mark joins (C2-B-184).
-fn covering_col(row: &Row, col: usize) -> usize {
-    let mut c = col;
-    while c > 0 && row.cells.get(c).is_some_and(|x| x.span == Some('<')) {
-        c -= 1;
-    }
-    c
 }

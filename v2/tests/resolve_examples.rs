@@ -22,7 +22,7 @@ fn c2_a_133_resolve_restores_the_oracle_results() {
     let mut pass = 0;
     let mut failures = Vec::new();
     let all = common::examples();
-    assert_eq!(all.len(), 411, "fixture not read");
+    assert_eq!(all.len(), 434, "fixture not read");
     for ex in &all {
         let expected = ex.spec_tree.as_ref().unwrap_or(&ex.oracle_tree);
         let mut stripped = expected.clone();

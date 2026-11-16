@@ -30,22 +30,15 @@ struct Bracket {
     /// Offset behind the opener markup.
     inner: usize,
     delim_base: usize,
-}
-
-#[derive(Clone, Copy)]
-struct FormRecord {
-    open: usize,
-    close: usize,
-    start: usize,
-    end: usize,
-    delim_base: usize,
-    image_bracket: Option<usize>,
+    last_star: Option<usize>,
+    last_slash: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
 struct DepthMark {
     mark: char,
     braced: bool,
+    at: usize,
 }
 
 /// The result of the scan.
@@ -64,8 +57,8 @@ struct Scanner<'r, 'e, 'a> {
     text_from: Option<usize>,
     brackets: Vec<Bracket>,
     open_delims: Vec<DepthMark>,
-    forms: Vec<FormRecord>,
-    depth_risk: bool,
+    last_star: Option<usize>,
+    last_slash: Option<usize>,
     /// No unescaped `]` follows this offset.
     no_label_from: Option<usize>,
     /// An unquoted value run behind which attribute blocks fail.
@@ -99,8 +92,8 @@ pub fn scan<'a>(
         text_from: None,
         brackets: Vec::new(),
         open_delims: Vec::new(),
-        forms: Vec::new(),
-        depth_risk: false,
+        last_star: None,
+        last_slash: None,
         no_label_from: None,
         attr_fail: None,
         comments: Vec::new(),
@@ -117,7 +110,6 @@ pub fn scan<'a>(
     }
     s.flush();
     s.finish_brackets();
-    s.resolve_form_depth();
     Scanned {
         toks: s.toks,
         comments: s.comments,
@@ -263,8 +255,8 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn code(&mut self, v0: usize, at: usize, kind: CodeKind) -> bool {
         let span = atoms::code_span(self.t, at);
-        if !span.closed && self.env.kind == ContentKind::Cell {
-            // C2-B-223: an unclosed code span at the end of a cell is text.
+        if !span.closed {
+            // C2-I-017: an unclosed run is text in every content.
             let run = self
                 .b
                 .get(at..)
@@ -392,8 +384,12 @@ impl<'a> Scanner<'_, '_, 'a> {
             b'%' if self.braced_comment() => true,
             b'#' if self.editorial() => true,
             m if tables::BRACED_MARKS.as_bytes().contains(&m) => {
-                self.push(i, i + 2, K::Delim(Delim::BracedOpen(char::from(m))));
-                self.depth_open(char::from(m));
+                let tok = self.push(i, i + 2, K::Delim(Delim::BracedOpen(char::from(m))));
+                if !self.depth_open(char::from(m), i) {
+                    if let Some(token) = self.toks.get_mut(tok) {
+                        token.make_text(true);
+                    }
+                }
                 true
             }
             _ => false,
@@ -659,11 +655,11 @@ impl<'a> Scanner<'_, '_, 'a> {
         }
     }
 
-    /// C2-I-126: a capped opener is text and takes no closer.
+    /// C2-I-118: a capped opener is text and takes no closer.
     fn push_bracket(&mut self, v0: usize, v1: usize, kind: BKind) -> bool {
-        let open = self.brackets.len();
+        let open = self.brackets.len() + self.open_delims.len();
         let delim_base = self.open_delims.len();
-        if self.env.depth + open >= tables::DEPTH_CAP {
+        if open >= tables::INLINE_DEPTH {
             self.flush();
             self.text_from = Some(v0);
             self.i = v1;
@@ -675,6 +671,8 @@ impl<'a> Scanner<'_, '_, 'a> {
             kind,
             inner: v1,
             delim_base,
+            last_star: self.last_star.take(),
+            last_slash: self.last_slash.take(),
         });
         true
     }
@@ -683,9 +681,8 @@ impl<'a> Scanner<'_, '_, 'a> {
         let Some(top) = self.brackets.pop() else {
             return false;
         };
-        self.open_delims.truncate(top.delim_base);
         let i = self.i;
-        match top.kind.clone() {
+        let consumed = match top.kind.clone() {
             BKind::Footnote => {
                 self.form(&top, i, i + 1, Kind::InlineFootnote, None);
                 true
@@ -698,7 +695,20 @@ impl<'a> Scanner<'_, '_, 'a> {
                 self.close_pair(&top, i);
                 true
             }
+        };
+        if self
+            .toks
+            .get(top.tok)
+            .is_some_and(|t| matches!(t.k, K::Open { .. }))
+        {
+            self.open_delims.truncate(top.delim_base);
+            self.last_star = top.last_star;
+            self.last_slash = top.last_slash;
+        } else {
+            self.last_star = self.last_star.or(top.last_star);
+            self.last_slash = self.last_slash.or(top.last_slash);
         }
+        consumed
     }
 
     fn form(
@@ -709,10 +719,6 @@ impl<'a> Scanner<'_, '_, 'a> {
         kind: Kind,
         attrs: Option<crate::attr::AttrBlock>,
     ) {
-        if self.form_over_cap(top) {
-            self.fail_pair(top);
-            return;
-        }
         let close = self.push(
             v0,
             v1,
@@ -728,27 +734,6 @@ impl<'a> Scanner<'_, '_, 'a> {
                 close,
             };
         }
-        if self.depth_risk {
-            self.forms.push(FormRecord {
-                open: top.tok,
-                close,
-                start: self.toks.get(top.tok).map_or(v0, |t| t.v0),
-                end: v1,
-                delim_base: top.delim_base,
-                image_bracket: None,
-            });
-        }
-    }
-
-    fn form_over_cap(&mut self, top: &Bracket) -> bool {
-        let count = self.env.depth + top.delim_base;
-        if count >= tables::DEPTH_CAP {
-            return true;
-        }
-        if count + self.brackets.len() >= tables::DEPTH_CAP {
-            self.depth_risk = true;
-        }
-        false
     }
 
     fn fail_pair(&mut self, top: &Bracket) {
@@ -863,10 +848,6 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn link(&mut self, top: &Bracket, i: usize, end: usize, target: Target) {
         if let BKind::Image { bang } = top.kind {
-            if self.form_over_cap(top) {
-                self.fail_pair(top);
-                return;
-            }
             self.image(top, bang, i, end, target);
             return;
         }
@@ -916,23 +897,8 @@ impl<'a> Scanner<'_, '_, 'a> {
             }
         }
         let v0 = self.toks.get(bang).map_or(i, |t| t.v0);
-        let close = if self.depth_risk {
-            Some(self.push(i, end, K::Skip))
-        } else {
-            for t in self.toks.iter_mut().skip(bang) {
-                t.k = K::Skip;
-            }
-            None
-        };
-        if let Some(close) = close {
-            self.forms.push(FormRecord {
-                open: bang,
-                close,
-                start: v0,
-                end,
-                delim_base: top.delim_base,
-                image_bracket: Some(top.tok),
-            });
+        for t in self.toks.iter_mut().skip(bang) {
+            t.k = K::Skip;
         }
         if let Some(t) = self.toks.get_mut(bang) {
             *t = Tok::new(
@@ -951,61 +917,6 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn finish_brackets(&mut self) {
         for top in std::mem::take(&mut self.brackets) {
             if let Some(t) = self.toks.get_mut(top.tok) {
-                t.make_text(true);
-            }
-        }
-    }
-
-    fn resolve_form_depth(&mut self) {
-        if !self.depth_risk {
-            return;
-        }
-        let mut forms = std::mem::take(&mut self.forms);
-        forms.sort_unstable_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
-        let mut active: Vec<(usize, bool, bool)> = Vec::new();
-        for form in forms {
-            while active.last().is_some_and(|a| a.0 <= form.start) {
-                active.pop();
-            }
-            let suppressed = active.iter().any(|a| a.1 && a.2);
-            let enclosing = active.iter().filter(|a| a.1 && !a.2).count();
-            let keep =
-                !suppressed && self.env.depth + form.delim_base + enclosing < tables::DEPTH_CAP;
-            if !suppressed {
-                self.apply_form_depth(form, keep);
-            }
-            active.push((form.end, keep, form.image_bracket.is_some()));
-        }
-    }
-
-    fn apply_form_depth(&mut self, form: FormRecord, keep: bool) {
-        if let Some(bracket) = form.image_bracket {
-            if keep {
-                for t in self
-                    .toks
-                    .iter_mut()
-                    .take(form.close + 1)
-                    .skip(form.open + 1)
-                {
-                    t.k = K::Skip;
-                }
-            } else {
-                if let Some(t) = self.toks.get_mut(form.open) {
-                    t.v1 = t.v0 + 1;
-                    t.make_text(true);
-                }
-                if let Some(t) = self.toks.get_mut(bracket) {
-                    t.make_text(true);
-                }
-                if let Some(t) = self.toks.get_mut(form.close) {
-                    t.make_text(true);
-                }
-            }
-        } else if !keep {
-            if let Some(t) = self.toks.get_mut(form.open) {
-                t.make_text(true);
-            }
-            if let Some(t) = self.toks.get_mut(form.close) {
                 t.make_text(true);
             }
         }
@@ -1031,8 +942,12 @@ impl<'a> Scanner<'_, '_, 'a> {
         if self.char_at(i + 1).is_some_and(is_joining) {
             return false;
         }
-        self.push(i, i + 1, K::Delim(Delim::Bare(char::from(c))));
-        self.depth_bare(i, char::from(c));
+        let tok = self.push(i, i + 1, K::Delim(Delim::Bare(char::from(c))));
+        if !self.depth_bare(i, char::from(c)) {
+            if let Some(token) = self.toks.get_mut(tok) {
+                token.make_text(true);
+            }
+        }
         true
     }
 
@@ -1054,7 +969,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             self.text_char();
         }
         let at = i + n - 1;
-        self.push(
+        let tok = self.push(
             at,
             at + 2,
             K::Delim(Delim::BracedClose {
@@ -1062,9 +977,20 @@ impl<'a> Scanner<'_, '_, 'a> {
                 alone: n == 1,
             }),
         );
-        self.depth_close(char::from(c), true);
+        let closed = self.depth_close(char::from(c), true, at);
+        let capped =
+            !closed && n == 1 && matches!(c, b'*' | b'/') && !self.depth_bare(at, char::from(c));
         // The slot the `}` takes when the mark falls back to the bare rules.
         self.toks.push(Tok::new(at + 1, at + 2, K::Skip));
+        if capped {
+            if let Some(token) = self.toks.get_mut(tok) {
+                token.v1 = at + 1;
+                token.make_text(true);
+            }
+            if let Some(brace) = self.toks.last_mut() {
+                brace.make_text(true);
+            }
+        }
         true
     }
 
@@ -1073,29 +999,55 @@ impl<'a> Scanner<'_, '_, 'a> {
     }
 
     fn depth_room(&self) -> bool {
-        self.env.depth + self.brackets.len() + self.open_delims.len() < tables::DEPTH_CAP
+        self.brackets.len() + self.open_delims.len() < tables::INLINE_DEPTH
     }
 
-    fn depth_open(&mut self, mark: char) {
+    fn depth_open(&mut self, mark: char, at: usize) -> bool {
         if self.depth_room() {
-            self.open_delims.push(DepthMark { mark, braced: true });
+            self.open_delims.push(DepthMark {
+                mark,
+                braced: true,
+                at,
+            });
+            true
+        } else {
+            false
         }
     }
 
-    fn depth_close(&mut self, mark: char, braced: bool) {
+    fn depth_close(&mut self, mark: char, braced: bool, at: usize) -> bool {
         let base = self.depth_base();
         if let Some(j) = self.open_delims.get(base..).and_then(|marks| {
             marks
                 .iter()
                 .rposition(|m| m.mark == mark && m.braced == braced)
         }) {
-            self.open_delims.truncate(base + j);
+            if self
+                .open_delims
+                .get(base + j)
+                .is_some_and(|opener| opener.at + 2 == at)
+            {
+                self.open_delims.remove(base + j);
+            } else {
+                self.open_delims.truncate(base + j);
+            }
+            true
+        } else {
+            false
         }
     }
 
-    fn depth_bare(&mut self, at: usize, mark: char) {
+    fn depth_bare(&mut self, at: usize, mark: char) -> bool {
         let before = self.char_before(at);
-        let after = self.char_at(at + 1);
+        let after = self.depth_after(at + 1);
+        if before.is_some_and(is_word) && after.is_some_and(is_word) {
+            if mark == '*' {
+                self.last_star = Some(at);
+            } else {
+                self.last_slash = Some(at);
+            }
+            return true;
+        }
         let can_close = !is_flank_space(before.unwrap_or(' ')) && after.is_none_or(|a| !is_word(a));
         let can_open = before.is_none_or(|b| !is_word(b)) && !is_flank_space(after.unwrap_or(' '));
         let base = self.depth_base();
@@ -1103,14 +1055,103 @@ impl<'a> Scanner<'_, '_, 'a> {
             .open_delims
             .get(base..)
             .and_then(|marks| marks.iter().rposition(|m| m.mark == mark && !m.braced));
+        if can_close && pair.is_none() && !self.depth_room() && self.transparent_unformed_bracket()
+        {
+            return self.depth_bare(at, mark);
+        }
         if can_close && let Some(j) = pair {
-            self.open_delims.truncate(base + j);
+            let opener = self.open_delims.get(base + j).map_or(at, |entry| entry.at);
+            let between = if mark == '*' {
+                self.last_star
+            } else {
+                self.last_slash
+            };
+            if between.is_some_and(|pos| pos > opener) {
+                self.open_delims.remove(base + j);
+            } else {
+                self.open_delims.truncate(base + j);
+            }
+            true
         } else if can_open && self.depth_room() {
             self.open_delims.push(DepthMark {
                 mark,
                 braced: false,
+                at,
             });
+            true
+        } else {
+            !can_open
         }
+    }
+
+    /// C2-I-026: a comment to the right has not entered `comments` yet.
+    fn depth_after(&self, mut i: usize) -> Option<char> {
+        loop {
+            if let Some(body) = self.t.get(i..)?.strip_prefix("{%") {
+                if let Some(end) = body.find("%}") {
+                    i += end + 4;
+                    continue;
+                }
+            }
+            return super::delim::Ctx {
+                t: self.t,
+                comments: &self.comments,
+            }
+            .after(i);
+        }
+    }
+
+    /// C2-I-006: a simple bracket that forms no construct bounds no delimiter.
+    fn transparent_unformed_bracket(&mut self) -> bool {
+        let Some(top) = self.brackets.last() else {
+            return false;
+        };
+        let inherited = self
+            .brackets
+            .iter()
+            .rev()
+            .nth(1)
+            .map_or(0, |b| b.delim_base);
+        if inherited >= top.delim_base || !self.simple_unformed_bracket(top.inner) {
+            return false;
+        }
+        let saved = (top.last_star, top.last_slash);
+        if let Some(top) = self.brackets.last_mut() {
+            top.delim_base = inherited;
+        }
+        self.last_star = self.last_star.or(saved.0);
+        self.last_slash = self.last_slash.or(saved.1);
+        true
+    }
+
+    /// A conservative lookahead used only at the depth cap.
+    fn simple_unformed_bracket(&self, inner: usize) -> bool {
+        if self
+            .b
+            .get(inner..)
+            .is_some_and(|tail| !tail.contains(&b']'))
+        {
+            return true;
+        }
+        let mut i = inner;
+        while let Some(&byte) = self.b.get(i) {
+            match byte {
+                b'[' | b'\\' | b'`' | b'{' => return false,
+                b']' => {
+                    if matches!(self.at(i + 1), Some(b'(' | b'[' | b'{')) {
+                        return false;
+                    }
+                    let raw = self.t.get(inner..i).unwrap_or("");
+                    if raw.starts_with('@') {
+                        return true;
+                    }
+                    let key = self.label_key(inner, i);
+                    return key.is_empty() || !self.env.link_keys.contains(&key);
+                }
+                _ => i += 1,
+            }
+        }
+        true
     }
 }
 

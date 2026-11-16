@@ -9,6 +9,7 @@ pub struct Include {
     pub path: String,
     pub section: Option<String>,
     pub options: Map<String, Value>,
+    pub invalid: Vec<String>,
 }
 
 struct Scan<'a> {
@@ -107,6 +108,8 @@ pub fn parse(line: &str) -> Option<Include> {
     let path = path(&mut sc)?;
     let mut section = None;
     let mut options = Map::new();
+    let mut invalid = Vec::new();
+    let mut seen = Vec::new();
     loop {
         let gap = sc.spaces();
         match sc.peek()? {
@@ -119,8 +122,9 @@ pub fn parse(line: &str) -> Option<Include> {
                 }
             }
             '@' => {
+                let start = sc.i;
                 sc.i += 1;
-                option(&mut sc, &mut options)?;
+                option(&mut sc, &mut options, &mut invalid, &mut seen, start)?;
             }
             _ => return None,
         }
@@ -129,6 +133,7 @@ pub fn parse(line: &str) -> Option<Include> {
         path,
         section,
         options,
+        invalid,
     })
 }
 
@@ -156,37 +161,34 @@ struct Written {
     dquoted_raw: Option<String>,
 }
 
-/// C2-B-204 to C2-B-206: reads one option into `out`; `None` sends the line to text.
-fn option(sc: &mut Scan<'_>, out: &mut Map<String, Value>) -> Option<()> {
+/// C2-B-204 to C2-B-206: keeps an invalid option in its source spelling.
+fn option(
+    sc: &mut Scan<'_>,
+    out: &mut Map<String, Value>,
+    invalid: &mut Vec<String>,
+    seen: &mut Vec<String>,
+    start: usize,
+) -> Option<()> {
     let key = sc.name(is_ident_start)?;
-    let &(_, _, shape, without, outside, repeated) =
-        INCLUDE_OPTIONS.iter().find(|row| row.1 == key)?;
+    let repeated = seen.contains(&key);
+    seen.push(key.clone());
     let written = if sc.peek() == Some(':') {
         sc.i += 1;
         Some(value(sc)?)
     } else {
         None
     };
-    let decoded = match written {
-        None => match without {
-            "paragraph" => return None,
-            "valid" => Value::Bool(true),
-            _ => Value::String(String::new()),
-        },
-        Some(w) => match shaped(shape, &w) {
-            Some(v) => v,
-            None if outside == "paragraph" => return None,
-            None => Value::String(w.text),
-        },
+    let row = INCLUDE_OPTIONS.iter().find(|row| row.1 == key);
+    let decoded = match (row, written) {
+        (Some(&(_, _, _, false)), None) => Some(Value::Bool(true)),
+        (Some(&(_, _, shape, _)), Some(w)) => shaped(shape, &w),
+        _ => None,
     };
-    if out.contains_key(&key) {
-        return if repeated == "paragraph" {
-            None
-        } else {
-            Some(())
-        };
+    if repeated || decoded.is_none() {
+        invalid.push(sc.s.get(start..sc.i)?.to_owned());
+    } else if let Some(decoded) = decoded {
+        out.insert(key, decoded);
     }
-    out.insert(key, decoded);
     Some(())
 }
 
@@ -313,15 +315,24 @@ mod tests {
             assert!(parse(&format!("{{{{ a.crv @shift:{value} }}}}")).is_some());
         }
         for value in ["1234567890", "+1234567890", "-1234567890"] {
-            assert!(parse(&format!("{{{{ a.crv @shift:{value} }}}}")).is_none());
+            assert_eq!(
+                parse(&format!("{{{{ a.crv @shift:{value} }}}}")).map(|i| i.invalid.len()),
+                Some(1)
+            );
         }
     }
 
     #[test]
     fn c2_b_206_option_table() {
-        assert!(parse("{{ a.crv @x }}").is_none());
+        assert_eq!(
+            parse("{{ a.crv @x }}").map(|i| i.invalid),
+            Some(vec!["@x".to_owned()])
+        );
         assert!(parse("{{ a.crv #s#t }}").is_none());
-        assert!(parse("{{ a.crv @code:js @code:ts }}").is_none());
+        assert_eq!(
+            parse("{{ a.crv @code:js @code:ts }}").map(|i| i.invalid),
+            Some(vec!["@code:ts".to_owned()])
+        );
         let inc = parse("{{ a.crv @rows:1-2 @rows:3-4 @code }}");
         assert_eq!(
             inc.map(|i| serde_json::Value::Object(i.options).to_string()),

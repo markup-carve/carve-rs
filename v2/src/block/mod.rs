@@ -259,6 +259,13 @@ impl<'a> Parser<'a> {
         if self.opaque_line(&walk, e) {
             return;
         }
+        if matches!(
+            self.leaf.as_ref().map(|l| &l.leaf),
+            Some(Leaf::Heading { .. } | Leaf::Table { .. })
+        ) && self.comment_only(&walk, e)
+        {
+            return;
+        }
         if self.continue_leaf(&walk, e) {
             return;
         }
@@ -432,7 +439,7 @@ impl<'a> Parser<'a> {
         if closes {
             // C2-B-113 drops trailing blank lines of an unclosed body only.
             flush_held(leaf);
-            let target = matches!(leaf, Leaf::Code { .. });
+            let target = matches!(leaf, Leaf::Code { info, .. } if info.raw.is_none());
             self.close_leaf();
             self.closed = Some(Closed {
                 depth: self.stack.len(),
@@ -491,15 +498,23 @@ impl<'a> Parser<'a> {
         if !shapes::comment_only(k.rest()) {
             return false;
         }
-        if matches!(
-            self.leaf.as_ref().map(|l| &l.leaf),
-            Some(Leaf::Heading { .. })
-        ) {
-            self.close_leaf();
-        }
         let value = shapes::line_comment_value(k.rest());
         let start = k.offset();
         let end = start + k.rest().len();
+        if let Some(OpenLeaf {
+            leaf: Leaf::Heading { pieces, .. },
+            end: hend,
+            ..
+        }) = &mut self.leaf
+        {
+            pieces.push(Piece {
+                start,
+                end,
+                join: Join::Line,
+            });
+            *hend = end;
+            return true;
+        }
         if let Some(OpenLeaf {
             leaf: Leaf::Table { data },
             end: tend,
@@ -586,7 +601,6 @@ impl<'a> Parser<'a> {
         let Some(open) = self.leaf.take() else { return };
         let (kind, target) = self.finish_leaf(open.leaf, open.start);
         let end = if let LeafKind::Paragraph { pieces, .. }
-        | LeafKind::Heading { pieces, .. }
         | LeafKind::Term { pieces }
         | LeafKind::Caption { pieces } = &kind
         {
@@ -615,13 +629,16 @@ impl<'a> Parser<'a> {
             Leaf::Heading { level, pieces, .. } => (LeafKind::Heading { level, pieces }, false),
             Leaf::Term { pieces } => (LeafKind::Term { pieces }, false),
             Leaf::Caption { pieces } => (LeafKind::Caption { pieces }, false),
-            Leaf::Code { info, value, .. } => (
-                LeafKind::Code {
-                    value,
-                    info: Box::new(info),
-                },
-                true,
-            ),
+            Leaf::Code { info, value, .. } => {
+                let target = info.raw.is_none();
+                (
+                    LeafKind::Code {
+                        value,
+                        info: Box::new(info),
+                    },
+                    target,
+                )
+            }
             Leaf::CommentBlock { lines, .. } => (
                 LeafKind::Comment {
                     block: true,

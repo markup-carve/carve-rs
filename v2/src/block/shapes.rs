@@ -603,7 +603,7 @@ fn row_tail(tail: &str) -> Option<(Option<AttrBlock>, Option<usize>)> {
     if trimmed.is_empty() {
         return Some((attrs, None));
     }
-    if trimmed.starts_with("%%") && trimmed.len() < rest.len() {
+    if comment_only(trimmed) && trimmed.len() < rest.len() {
         return Some((attrs, Some(i)));
     }
     None

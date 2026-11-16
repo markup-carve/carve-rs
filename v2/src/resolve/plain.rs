@@ -16,7 +16,7 @@ pub enum Symbols<'a> {
 /// Appends the plain text of `nodes` to `out`.
 pub fn inline_text(nodes: &[Node], symbols: Symbols<'_>, out: &mut String) {
     for n in nodes {
-        node_text(n, symbols, out, 0);
+        node_text(n, symbols, out, 0, false);
     }
 }
 
@@ -28,20 +28,30 @@ pub fn text_of(nodes: &[Node]) -> String {
     s
 }
 
-fn node_text(n: &Node, symbols: Symbols<'_>, out: &mut String, depth: usize) {
+/// C2-H-165: block degradation keeps an image's fallback spelling.
+#[must_use]
+pub fn text_of_degraded_block(nodes: &[Node]) -> String {
+    let mut s = String::new();
+    for n in nodes {
+        node_text(n, Symbols::Nothing, &mut s, 0, true);
+    }
+    s
+}
+
+fn node_text(n: &Node, symbols: Symbols<'_>, out: &mut String, depth: usize, image_spelling: bool) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
-    if leaf_text(n, symbols, out) {
+    if leaf_text(n, symbols, out, image_spelling) {
         return;
     }
     match n {
         Node::Ruby(r) => {
             for p in r.pairs.iter() {
                 if let Node::RubyPair(p) = p {
-                    children_text(p.base, symbols, out, depth);
+                    children_text(p.base, symbols, out, depth, image_spelling);
                     out.push('(');
-                    children_text(p.annotation, symbols, out, depth);
+                    children_text(p.annotation, symbols, out, depth, image_spelling);
                     out.push(')');
                 }
             }
@@ -56,22 +66,28 @@ fn node_text(n: &Node, symbols: Symbols<'_>, out: &mut String, depth: usize) {
         | Node::CitationGroup(_) => {}
         other => {
             if let Some(c) = other.children() {
-                children_text(c, symbols, out, depth);
+                children_text(c, symbols, out, depth, image_spelling);
             }
         }
     }
 }
 
-fn children_text(nodes: &[Node], symbols: Symbols<'_>, out: &mut String, depth: usize) {
+fn children_text(
+    nodes: &[Node],
+    symbols: Symbols<'_>,
+    out: &mut String,
+    depth: usize,
+    image_spelling: bool,
+) {
     for c in nodes {
-        node_text(c, symbols, out, depth + 1);
+        node_text(c, symbols, out, depth + 1, image_spelling);
     }
 }
 
 /// The nodes that give a fixed text; true when `n` was one of them.
-fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
+fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String, image_spelling: bool) -> bool {
     match n {
-        _ if leaf_text_simple(n, out) => return true,
+        _ if leaf_text_simple(n, out, image_spelling) => return true,
         Node::Mention(m) => {
             out.push('@');
             out.push_str(m.target);
@@ -95,7 +111,7 @@ fn leaf_text(n: &Node, symbols: Symbols<'_>, out: &mut String) -> bool {
     true
 }
 
-fn leaf_text_simple(n: &Node, out: &mut String) -> bool {
+fn leaf_text_simple(n: &Node, out: &mut String, image_spelling: bool) -> bool {
     match n {
         Node::Text(t) => out.push_str(t.value),
         Node::Code(t) => out.push_str(t.value),
@@ -104,7 +120,15 @@ fn leaf_text_simple(n: &Node, out: &mut String) -> bool {
         Node::NonBreakingSpace(_) => out.push('\u{a0}'),
         Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
         Node::SmartPunctuation(s) => out.push_str(s.glyph.unwrap_or(s.source)),
-        Node::Image(i) => out.push_str(i.alt.unwrap_or("")),
+        Node::Image(i) => {
+            if image_spelling {
+                out.push_str("[img: ");
+                out.push_str(i.alt.unwrap_or(""));
+                out.push(']');
+            } else {
+                out.push_str(i.alt.unwrap_or(""));
+            }
+        }
         Node::Autolink(a) => out.push_str(a.text.unwrap_or(a.href)),
         Node::Abbreviation(a) => out.push_str(a.key),
         _ => return false,
@@ -146,7 +170,7 @@ pub fn source_text(nodes: &[Node], out: &mut String, depth: usize) {
                 continue;
             }
             _ => {
-                node_text(n, Symbols::Nothing, out, depth);
+                node_text(n, Symbols::Nothing, out, depth, false);
                 continue;
             }
         };

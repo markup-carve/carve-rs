@@ -35,7 +35,7 @@ pub(super) fn comments_only_with_critic(nodes: &[Node], critic: bool) -> bool {
         .iter()
         .any(|n| matches!(n, Node::Comment(_)) || (critic && matches!(n, Node::CriticComment(_))))
         && nodes.iter().all(|n| match n {
-            Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_) => true,
+            Node::Comment(_) | Node::SoftBreak(_) => true,
             Node::CriticComment(_) => critic,
             Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
             _ => false,
@@ -49,6 +49,19 @@ fn has_attrs(attrs: Option<&Attrs<'_>>, lang: Option<&str>) -> bool {
 impl<'r, 'a> Renderer<'r, 'a> {
     /// Renders one block at `depth`.
     pub(super) fn block(&mut self, n: &'r Node<'a>, depth: usize) {
+        if matches!(
+            n,
+            Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_)
+        ) && crate::resolve::order::caption_of(n).is_some()
+        {
+            if !self.profile_allows_type("figure", true) || self.past_bound() {
+                self.degrade_captioned(n, depth);
+            } else {
+                self.figure(n, depth, false);
+            }
+            self.long_descriptions(depth);
+            return;
+        }
         if matches!(n, Node::Paragraph(_)) {
             self.line_with(depth, |r, out| r.paragraph_into(n, false, out));
             self.long_descriptions(depth);
@@ -101,7 +114,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.line(depth, &s);
             }
             Node::Table(_) => self.table(n, depth, false),
-            Node::Figure(_) => self.figure(n, depth, false),
             Node::FigureGroup(_) => self.figure_group(n, depth),
             Node::Include(i) => {
                 let s = format!(
@@ -134,11 +146,39 @@ impl<'r, 'a> Renderer<'r, 'a> {
         lang: Option<&'b str>,
         n: &Node,
     ) -> El<'b> {
-        let mut el = El::new(attrs, lang);
+        let mut el = if self.caption_inner == Some(crate::resolve::order::addr(n)) {
+            El::new(None, None)
+        } else {
+            El::new(attrs, lang)
+        };
         if self.opts.source_lines {
-            el.source_line = n.pos().map(|p| p.start_line);
+            el.source_line = if self.caption_inner == Some(crate::resolve::order::addr(n)) {
+                self.caption_inner_line(n)
+            } else {
+                n.pos().map(|p| p.start_line)
+            };
         }
         el
+    }
+
+    /// C2-H-062: the inner block starts after its attribute and comment lines.
+    fn caption_inner_line(&self, n: &Node) -> Option<u32> {
+        let pos = n.pos()?;
+        let skipped = self
+            .src
+            .and_then(|source| source.slice(*pos))
+            .map_or(0, |text| {
+                text.lines()
+                    .take_while(|line| {
+                        let trimmed = line.trim_start_matches([' ', '\t']);
+                        trimmed.starts_with('{') || trimmed.starts_with("%%")
+                    })
+                    .count()
+            });
+        Some(
+            pos.start_line
+                .saturating_add(u32::try_from(skipped).unwrap_or(u32::MAX)),
+        )
     }
 
     /// The line of a paragraph, bare or wrapped; `None` when it writes nothing.
@@ -184,7 +224,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return false;
         }
         if p.role == Some(ParagraphRole::Image)
-            && !has_attrs(p.attrs, p.lang)
+            && (self.caption_inner == Some(crate::resolve::order::addr(n))
+                || !has_attrs(p.attrs, p.lang))
             && self.image_block_bare(p.children)
         {
             self.leaf_into(p.children, out);
@@ -320,7 +361,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.report_suppressed(children);
         let vis = self.shown(children);
         // C2-H-165 with C2-H-006: a block a profile degrades is a paragraph.
-        if let [only] = vis.as_slice() {
+        if let [only] = vis.as_slice()
+            && crate::resolve::order::caption_of(only).is_none()
+        {
             if let Some([p]) = self.degraded(only).as_deref() {
                 self.losses.push("profile-construct-degraded");
                 self.line(depth, &format!("{open}<p>{p}</p></blockquote>"));
@@ -329,7 +372,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         if let [only @ Node::Paragraph(p)] = vis.as_slice() {
             // A display math paragraph is a paragraph here; a bare image is not.
-            if !self.bare_image(p) {
+            if crate::resolve::order::caption_of(only).is_none() && !self.bare_image(p) {
                 if let Some(s) = self.paragraph(only, false) {
                     self.line(depth, &format!("{open}{s}</blockquote>"));
                     return;
@@ -452,7 +495,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.line(depth + 1, &format!("<p>{p}</p>"));
             }
         // Gap G-016: a bare block image keeps its own line (C2-H-020).
-        } else if matches!(first, Node::Paragraph(p) if !self.bare_image(p)) {
+        } else if matches!(first, Node::Paragraph(p) if crate::resolve::order::caption_of(first).is_none() && !self.bare_image(p))
+        {
             let last = rest.is_empty();
             self.line_with(depth, |r, out| {
                 out.push_str(&open);
@@ -554,7 +598,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let vis: Vec<&'r Node<'a>> = children.iter().filter(|c| visible(c)).collect();
         match vis.as_slice() {
             [] => self.line(depth, &format!("{open}</dd>")),
-            [p @ Node::Paragraph(_)] => {
+            [p @ Node::Paragraph(_)] if crate::resolve::order::caption_of(p).is_none() => {
                 let s = self.paragraph(p, true).unwrap_or_default();
                 self.line(depth, &format!("{open}{s}</dd>"));
             }
@@ -730,19 +774,29 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-062 to C2-H-064.
     pub(super) fn figure(&mut self, n: &'r Node<'a>, depth: usize, panel: bool) {
-        let Node::Figure(f) = n else { return };
-        let mut el = self.el(f.attrs, f.lang, n);
+        let Some(c) = crate::resolve::order::caption_of(n) else {
+            return;
+        };
+        let lang = match n {
+            Node::Paragraph(p) => p.lang,
+            Node::CodeBlock(c) => c.lang,
+            Node::BlockQuote(q) => q.lang,
+            _ => None,
+        };
+        let mut el = self.el(n.attrs(), lang, n);
         if panel {
             el.base.push("carve-figure-panel".into());
         }
         let open = format!("<figure{}>", el.write(self.filter()));
         self.line(depth, &open);
-        for c in f.children.iter() {
-            self.block(c, depth + 1);
+        self.caption_inner = Some(crate::resolve::order::addr(n));
+        if matches!(n, Node::Paragraph(_)) {
+            self.line_with(depth + 1, |r, out| r.paragraph_into(n, false, out));
+        } else {
+            self.block_inner(n, depth + 1);
         }
-        if let Some(c) = &f.caption {
-            self.caption(c, "figcaption", depth + 1);
-        }
+        self.caption_inner = None;
+        self.caption(c, "figcaption", depth + 1);
         self.line(depth, "</figure>");
     }
 
@@ -754,13 +808,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.line(depth, &open);
         let any = g.children.iter().any(visible) || g.caption.is_some();
         for c in g.children.iter() {
-            if let Node::Figure(_) = c {
-                if self.profile_allows(c, true) {
-                    self.level += 1;
-                    self.figure(c, depth + 1, true);
-                    self.level -= 1;
-                    continue;
-                }
+            if matches!(
+                c,
+                Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_)
+            ) && crate::resolve::order::caption_of(c).is_some()
+                && self.profile_allows(c, true)
+            {
+                self.level += 1;
+                self.figure(c, depth + 1, true);
+                self.level -= 1;
+                continue;
             }
             if let Node::Table(_) = c {
                 if self.profile_allows(c, true) {
@@ -897,6 +954,12 @@ pub(super) fn include_text(i: &ast::Include) -> String {
                 s.push(':');
                 s.push_str(&v);
             }
+        }
+    }
+    if let Some(invalid) = i.invalid {
+        for option in invalid {
+            s.push(' ');
+            s.push_str(option);
         }
     }
     s.push_str(" }}");

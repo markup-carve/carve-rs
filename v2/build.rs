@@ -1231,19 +1231,19 @@ fn gen_delims(out: &mut String, v: &Value, braces: &Value) {
 
 fn gen_includes(out: &mut String, v: &Value) {
     out.push_str(concat!(
-        "/// (rank, key, value shape, without value, outside shape, repeated)\npub const ",
-        "INCLUDE_OPTIONS: &[(u64, &str, &str, &str, &str, &str)] = &[\n",
+        "/// (rank, key, value shape, needs value)\npub const ",
+        "INCLUDE_OPTIONS: &[(u64, &str, &str, bool)] = &[\n",
     ));
     for row in arr(v, "options") {
         let rank = row.get("rank").and_then(Value::as_u64).unwrap_or(0);
         let _ = writeln!(
             out,
-            "    ({rank}, {:?}, {:?}, {:?}, {:?}, {:?}),",
+            "    ({rank}, {:?}, {:?}, {}),",
             s(row, "name"),
             s(row, "value"),
-            s(row, "without_value"),
-            s(row, "outside_shape"),
-            s(row, "repeated")
+            row.get("needs_value")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
         );
     }
     out.push_str("];\n\n");

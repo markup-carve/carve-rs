@@ -142,7 +142,6 @@ pub fn compare(input: &str, tree: &Value, sorted: fn(&Value) -> String) -> Vec<(
             arena: &arena,
             link_keys: &keys,
             abbreviations: &abbrs,
-            depth: 0,
             kind: if heading {
                 ContentKind::Heading
             } else {
@@ -213,7 +212,6 @@ fn cell(ctx: &Ctx<'_>, c: &Value, out: &mut Vec<(String, String)>) {
         link_keys: ctx.keys,
         // OR-INL-003: the oracle reads no abbreviation in a cell.
         abbreviations: &[],
-        depth: 0,
         kind: ContentKind::Cell,
         hard_breaks: false,
     };

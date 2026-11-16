@@ -3,7 +3,7 @@
 //! `smart-punctuation.json`.
 
 use super::delim::Ctx;
-use crate::chars::{is_flank_space, is_word};
+use crate::chars::is_flank_space;
 use crate::tables;
 
 /// What stands before the current position for the quote rules.
@@ -31,11 +31,7 @@ pub enum Out {
 /// The state kept per content (C2-I-109).
 pub struct Smart {
     pub prev: Prev,
-    pub single_open: bool,
 }
-
-const DASHES: &str = "-\u{2013}\u{2014}";
-const OPEN_QUOTES: &str = "\u{201c}\u{2018}";
 
 fn quote_row(kind: &str) -> (&'static str, &'static str) {
     tables::SMART_QUOTES
@@ -54,26 +50,7 @@ fn dash_row(kind: &str) -> (&'static str, &'static str, usize) {
 impl Smart {
     #[must_use]
     pub const fn new() -> Self {
-        Self {
-            prev: Prev::Start,
-            single_open: false,
-        }
-    }
-
-    fn prev_space(&self) -> bool {
-        match self.prev {
-            Prev::Start => true,
-            Prev::Word => false,
-            Prev::Char(c) => is_flank_space(c),
-        }
-    }
-
-    fn prev_word(&self) -> bool {
-        match self.prev {
-            Prev::Word => true,
-            Prev::Start => false,
-            Prev::Char(c) => is_word(c),
-        }
+        Self { prev: Prev::Start }
     }
 
     /// Splits the plain text `v0..v1` of `ctx.t` into text and punctuation.
@@ -194,7 +171,7 @@ impl Smart {
         if single && next.is_some_and(|n| n.is_ascii_digit()) {
             return "right_single_quote";
         }
-        let open = self.quote_opens(next);
+        let open = self.quote_opens();
         if !single {
             return if open {
                 "left_double_quote"
@@ -202,50 +179,23 @@ impl Smart {
                 "right_double_quote"
             };
         }
-        self.single_quote(ctx, p, next, open)
+        if open {
+            "left_single_quote"
+        } else {
+            "right_single_quote"
+        }
     }
 
-    fn quote_opens(&self, next: Option<char>) -> bool {
-        let dashlike = matches!(self.prev, Prev::Char(c) if DASHES.contains(c) || c == '/');
-        let closes_after_dash = next.is_none_or(|n| {
-            is_flank_space(n) || tables::QUOTE_CLOSES_AFTER_DASH_BEFORE_CHARS.contains(n)
-        });
-        let opens_ctx = match self.prev {
+    fn quote_opens(&self) -> bool {
+        match self.prev {
             Prev::Start => true,
             Prev::Word => false,
             Prev::Char(c) => {
                 is_flank_space(c)
                     || tables::QUOTE_OPENS_AFTER_CHARS.contains(c)
-                    || DASHES.contains(c)
-                    || OPEN_QUOTES.contains(c)
+                    || matches!(c, '\u{201c}' | '\u{2018}')
             }
-        };
-        opens_ctx && !(dashlike && closes_after_dash)
-    }
-
-    fn single_quote(
-        &mut self,
-        ctx: &Ctx<'_>,
-        p: usize,
-        next: Option<char>,
-        open: bool,
-    ) -> &'static str {
-        if open {
-            if let Some(quoted) = apostrophe_word(ctx.t, p + 1) {
-                if !quoted {
-                    return "right_single_quote";
-                }
-            } else if self.single_open && next.is_some_and(is_word) {
-                return "right_single_quote";
-            }
-            self.single_open = true;
-            return "left_single_quote";
         }
-        let inside_word = self.prev_word() && next.is_some_and(is_word);
-        if !self.prev_space() && !inside_word {
-            self.single_open = false;
-        }
-        "right_single_quote"
     }
 }
 
@@ -304,22 +254,6 @@ static ASCII_STARTS: std::sync::LazyLock<[bool; 128]> = std::sync::LazyLock::new
     }
     t
 });
-
-/// C2-I-107, C2-I-108: `Some(quoted)` when an apostrophe word follows `i`.
-fn apostrophe_word(t: &str, i: usize) -> Option<bool> {
-    let rest = t.get(i..)?;
-    let len = rest.bytes().take_while(u8::is_ascii_alphabetic).count();
-    let word = rest.get(..len)?.to_ascii_lowercase();
-    if len == 0 || !tables::APOSTROPHE_WORDS.contains(&word.as_str()) {
-        return None;
-    }
-    let mut after = rest.get(len..)?.chars();
-    match after.next() {
-        Some(c) if !c.is_ascii() && c.is_alphabetic() => None,
-        Some('\'') if word != "n" => Some(!after.next().is_some_and(is_word)),
-        _ => Some(false),
-    }
-}
 
 enum Step {
     Text(usize),

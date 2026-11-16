@@ -130,6 +130,9 @@ pub fn options_of(opts: &Value) -> Options {
     if let Some(p) = opts["profile"].as_str().and_then(Profile::from_name) {
         o.profile = p;
     }
+    if let Some(source_lines) = opts["sourceLines"].as_bool() {
+        o.source_lines = source_lines;
+    }
     if let Some(r) = opts["roundtrip"].as_bool() {
         o.roundtrip = r;
     }

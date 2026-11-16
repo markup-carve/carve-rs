@@ -89,9 +89,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// last paragraph or stand in one of their own.
     fn note_body(&mut self, children: &'r [Node<'a>], back: &str, depth: usize) {
         let last = children.iter().rposition(visible);
-        let ends_in_paragraph = last.and_then(|i| children.get(i)).is_some_and(
-            |c| matches!(c, Node::Paragraph(p) if p.role != Some(ParagraphRole::Image)),
-        );
+        let ends_in_paragraph = last.and_then(|i| children.get(i)).is_some_and(|c| {
+            matches!(c, Node::Paragraph(p) if p.role != Some(ParagraphRole::Image))
+                && crate::resolve::order::caption_of(c).is_none()
+        });
         for (i, c) in children.iter().enumerate() {
             if ends_in_paragraph && Some(i) == last {
                 if let Some(s) = self.paragraph(c, false) {

@@ -134,9 +134,19 @@ impl<'r, 'a> Order<'r, 'a> {
         }
         let group = matches!(n, Node::FigureGroup(_));
         let marked = ctx.in_marked_figure
-            || (matches!(n, Node::Figure(_) | Node::FigureGroup(_)) && caption_marked(n));
+            || (matches!(
+                n,
+                Node::Paragraph(_)
+                    | Node::CodeBlock(_)
+                    | Node::BlockQuote(_)
+                    | Node::FigureGroup(_)
+            ) && caption_marked(n));
         for c in slots(n) {
-            let panel = group && matches!(c, Node::Figure(_) | Node::Table(_));
+            let panel = group
+                && matches!(
+                    c,
+                    Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) | Node::Table(_)
+                );
             self.walk(
                 c,
                 defs,
@@ -187,7 +197,9 @@ pub fn caption_marked(n: &Node<'_>) -> bool {
 #[must_use]
 pub fn caption_of<'r, 'a>(n: &'r Node<'a>) -> Option<&'r Node<'a>> {
     match n {
-        Node::Figure(f) => f.caption.as_deref(),
+        Node::Paragraph(p) => p.caption.as_deref(),
+        Node::CodeBlock(c) => c.caption.as_deref(),
+        Node::BlockQuote(q) => q.caption.as_deref(),
         Node::FigureGroup(f) => f.caption.as_deref(),
         Node::Table(t) => t.caption.as_deref(),
         _ => None,

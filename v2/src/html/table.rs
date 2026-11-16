@@ -1,11 +1,11 @@
-//! Tables (C2-H-055 to C2-H-061, C2-H-152, C2-H-153).
+//! Tables (C2-H-055 to C2-H-059, C2-H-061, C2-H-152, C2-H-153).
 
 use super::Renderer;
 use super::attrs::El;
 use crate::ast::{Node, Table, TableCellScope};
 use crate::hash::AddrMap;
 use crate::resolve::order::addr;
-use crate::resolve::table::{GroupKind, Placed, layout, rows};
+use crate::resolve::table::{GroupKind, layout};
 
 /// The table attributes that are read and never written (C2-H-153).
 const READ_ONLY_KEYS: &[&str] = &["aligns", "widths", "header-rows", "footer-rows"];
@@ -26,16 +26,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.colgroup(t, depth + 1);
         let placed = layout(t);
         let columns: AddrMap<usize, usize> = placed.iter().map(|p| (addr(p.node), p.col)).collect();
-        if crosses_groups(t, &placed) {
-            self.line(depth + 1, "<tbody>");
-            for (row, kind) in rows(t) {
-                self.row(t, row, kind, &columns, depth + 2);
-            }
-            self.line(depth + 1, "</tbody>");
-        } else {
-            for g in t.children.iter() {
-                self.group(t, g, &columns, depth + 1);
-            }
+        for g in t.children.iter() {
+            self.group(t, g, &columns, depth + 1);
         }
         self.line(depth, "</table>");
     }
@@ -227,16 +219,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.started = started;
         std::mem::replace(&mut self.out, saved)
     }
-}
-
-/// C2-H-060: a row span that reaches past the end of its group.
-fn crosses_groups(t: &Table, placed: &[Placed]) -> bool {
-    let all = rows(t);
-    placed.iter().any(|p| {
-        let last = p.row + usize::try_from(p.rowspan.max(1)).unwrap_or(1) - 1;
-        let kind = all.get(p.row).map(|r| r.1);
-        (p.row..=last).any(|r| all.get(r).is_some_and(|x| Some(x.1) != kind))
-    })
 }
 
 /// A width as a percentage without trailing zeros (C2-H-152).

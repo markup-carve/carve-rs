@@ -14,7 +14,6 @@ struct Opts<'a> {
     kind: Option<ContentKind>,
     keys: &'a [&'a str],
     abbrs: &'a [(&'a str, &'a str)],
-    depth: usize,
     hard: bool,
     cell_join: bool,
 }
@@ -54,7 +53,6 @@ fn run(input: &str, o: &Opts<'_>) -> Vec<Node> {
         arena: &arena,
         link_keys: &keys,
         abbreviations: &abbrs,
-        depth: o.depth,
         kind: o.kind.unwrap_or(ContentKind::Paragraph),
         hard_breaks: o.hard,
     };
@@ -152,7 +150,7 @@ fn c2_i_003_c2_i_103_lines_join_with_soft_break() {
 
 #[test]
 fn c2_i_005_atom_that_starts_first_wins() {
-    assert_eq!(p("*a `b* c"), "\"*a \" code(value=b* c)");
+    assert_eq!(p("*a `b* c"), "strong[\"a `b\"] \" c\"");
     assert_eq!(p("`a %% b` x"), "code(value=a %% b) \" x\"");
 }
 
@@ -186,11 +184,8 @@ fn c2_i_014_to_c2_i_016_code_spans() {
 }
 
 #[test]
-fn c2_i_017_unclosed_code_runs_to_the_end() {
-    assert_eq!(
-        p("see `unclosed *x*  "),
-        "\"see \" code(value=unclosed *x*)"
-    );
+fn c2_i_017_unclosed_code_run_is_text() {
+    assert_eq!(p("see `unclosed *x*  "), "\"see `unclosed \" strong[\"x\"]");
 }
 
 #[test]
@@ -207,7 +202,7 @@ fn c2_i_019_c2_i_020_math() {
         p("$`x` $$`y` $5"),
         "math(display=false value=x) \" \" math(display=true value=y) \" $5\""
     );
-    assert_eq!(p("$`a + b"), "math(display=false value=a + b)");
+    assert_eq!(p("$`a + b"), "\"$`a + b\"");
 }
 
 #[test]
@@ -276,7 +271,10 @@ fn c2_i_029_language_part_goes_to_lang() {
 fn c2_i_035_unattached_block_is_printed_as_written() {
     assert_eq!(
         p("word{k=\"v\"} and \"v\""),
-        "\"word{k=\\\"v\\\"} and \" smart_punctuation(glyph=“ kind=left_double_quote source=\") \"v\" smart_punctuation(glyph=” kind=right_double_quote source=\")"
+        concat!(
+            "\"word{k=\\\"v\\\"} and \" smart_punctuation(glyph=“ kind=left_double_quote source=\") \"v\" ",
+            "smart_punctuation(glyph=” kind=right_double_quote source=\")",
+        )
     );
 }
 
@@ -408,7 +406,11 @@ fn c2_i_072_reference_forms() {
     };
     assert_eq!(
         po("[t][ref] [ref][] [ref] [no]", &o),
-        "link(key=ref namespace=link refForm=full)[\"t\"] \" \" link(key=ref namespace=link refForm=collapsed)[\"ref\"] \" \" link(key=ref namespace=link refForm=shortcut)[\"ref\"] \" [no]\""
+        concat!(
+            "link(key=ref namespace=link refForm=full)[\"t\"] \" \" link(key=ref namespace=link ",
+            "refForm=collapsed)[\"ref\"] \" \" link(key=ref namespace=link refForm=shortcut)[\"ref\"] \" ",
+            "[no]\"",
+        )
     );
     assert_eq!(p("[ ][]"), "\"[ ][]\"");
 }
@@ -503,7 +505,10 @@ fn c2_i_098_to_c2_i_100_abbreviations() {
     };
     assert_eq!(
         po("HTML HTMLs *HTML* `HTML`", &o),
-        "abbreviation(expansion=H key=HTML namespace=abbr) \" HTMLs \" strong[abbreviation(expansion=H key=HTML namespace=abbr)] \" \" code(value=HTML)"
+        concat!(
+            "abbreviation(expansion=H key=HTML namespace=abbr) \" HTMLs \" strong[abbreviation(expansion=H ",
+            "key=HTML namespace=abbr)] \" \" code(value=HTML)",
+        )
     );
     assert_eq!(po("{*HTML*}s", &o), "strong[\"HTML\"] \"s\"");
 }
@@ -539,20 +544,24 @@ fn c2_i_102_backslash_at_line_end_is_hard_break() {
 fn c2_i_104_quotes() {
     assert_eq!(
         p("\"a\" it's '90s"),
-        "smart_punctuation(glyph=“ kind=left_double_quote source=\") \"a\" smart_punctuation(glyph=” kind=right_double_quote source=\") \" it\" smart_punctuation(glyph=’ kind=right_single_quote source=') \"s \" smart_punctuation(glyph=’ kind=right_single_quote source=') \"90s\""
+        concat!(
+            "smart_punctuation(glyph=“ kind=left_double_quote source=\") \"a\" smart_punctuation(glyph=” ",
+            "kind=right_double_quote source=\") \" it\" smart_punctuation(glyph=’ kind=right_single_quote ",
+            "source=') \"s \" smart_punctuation(glyph=’ kind=right_single_quote source=') \"90s\"",
+        )
     );
 }
 
 #[test]
-fn c2_i_107_c2_i_108_apostrophe_words() {
+fn c2_i_104_quotes_follow_local_neighbors() {
     let s = p("'tis 'em' 'n'");
-    assert_eq!(s.matches("left_single_quote").count(), 1, "{s}");
+    assert_eq!(s.matches("left_single_quote").count(), 3, "{s}");
 }
 
 #[test]
-fn c2_i_109_single_quotes_do_not_nest() {
+fn c2_i_104_single_quotes_do_not_pair() {
     let s = p("'I said 'yes' twice'");
-    assert_eq!(s.matches("left_single_quote").count(), 1, "{s}");
+    assert_eq!(s.matches("left_single_quote").count(), 2, "{s}");
 }
 
 #[test]
@@ -588,20 +597,12 @@ fn c2_i_118_depth_cap_makes_the_opener_text() {
         "{}",
         &s[s.len().saturating_sub(40)..]
     );
-    let o = Opts {
-        depth: 199,
-        ..Default::default()
-    };
-    assert_eq!(po("*a *b* c*", &o), "strong[\"a *b\"] \" c*\"");
 }
 
 #[test]
-fn c2_i_126_capped_bracket_closer_is_text() {
-    let o = Opts {
-        depth: 200,
-        ..Default::default()
-    };
-    assert_eq!(po("[a]{.c}", &o), "\"[a]{.c}\"");
+fn c2_i_118_capped_bracket_closer_is_text() {
+    let input = format!("{}[x](u)", "[".repeat(200));
+    assert!(!p(&input).contains("link["));
 }
 
 #[test]

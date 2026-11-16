@@ -62,8 +62,6 @@ pub struct InlineEnv<'e, 'a> {
     /// Abbreviation terms and expansions, first definition of a term only
     /// (C2-I-098), sorted by term: the matcher binary-searches it.
     pub abbreviations: &'e [(String, String)],
-    /// Open block containers around the content, for the depth cap (C2-I-118).
-    pub depth: usize,
     pub kind: ContentKind,
     /// Inside a hard-break block: every line break is a hard break (C2-A-068).
     pub hard_breaks: bool,
@@ -126,7 +124,6 @@ fn parse_in<'a>(
     let ctx = delim::Ctx {
         t: &content.text,
         comments: &scanned.comments,
-        depth: env.depth,
     };
     delim::resolve(&mut toks, &ctx, env.arena);
     events::from_tokens(&mut toks, &mut s.evs);

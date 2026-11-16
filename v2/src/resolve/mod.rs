@@ -20,10 +20,9 @@ use order::{Order, Visit, addr, caption_of, mark_of};
 use plain::Symbols;
 use std::collections::{HashMap, HashSet};
 
-/// The bound of every recursive walk over a tree: the nesting cap counts
-/// blocks and inlines together (C2-B-190), and a node's slots can add a level
-/// the cap does not count, so the walk allows twice the cap.
-pub const WALK_CAP: usize = 2 * crate::tables::DEPTH_CAP;
+/// C2-B-190, C2-I-118: the separate caps can occur on one path, and node
+/// slots can add levels that neither cap counts.
+pub const WALK_CAP: usize = 2 * (crate::tables::BLOCK_DEPTH + crate::tables::INLINE_DEPTH);
 
 /// The names of the stages this resolver completes (C2-A-135).
 pub const STAGES: [&str; 2] = ["referenceResolution", "tableAlignment"];
@@ -316,7 +315,6 @@ fn heading_key_plain(key: &str, arena: &Arena) -> String {
         arena,
         link_keys: &links,
         abbreviations: &[],
-        depth: 0,
         kind: crate::inline::ContentKind::Paragraph,
         hard_breaks: false,
     };

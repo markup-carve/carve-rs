@@ -231,6 +231,17 @@
       "clauses": ["C2-W-106"]
     },
     {
+      "id": "comment-splits-table-row",
+      "severity": "hint",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": ["This comment stands between a table row and its continuation, so it belongs after the whole row. Move it above the row or below the continuation."],
+      "message_origin": "data_file",
+      "reports": "a comment-only line, or the trailing comment of a row, between a table row and its continuation row (C2-A-086, C2-B-175)",
+      "clauses": ["C2-A-086", "C2-B-175", "C2-W-135", "C2-W-137"]
+    },
+    {
       "id": "consumed-key-near-miss",
       "severity": "warning",
       "channel": "lint",
@@ -366,9 +377,9 @@
         "This indented line directly below a heading is part of the heading in 0.2; in 0.1 it started a paragraph. Remove the indent to make it a separate block again; if it then reads as a list marker or another opener and a paragraph is meant, escape its first character."
       ],
       "message_origin": "design",
-      "reports": "a line directly below a heading line that is indented past the heading marker and so continues the heading",
+      "reports": "a line directly below a heading line, or below it across comment-only lines, that is indented past the heading marker and so continues the heading",
       "change": "added with the heading continuation rule",
-      "clauses": ["C2-B-154"]
+      "clauses": ["C2-B-137", "C2-B-154"]
     },
     {
       "id": "deprecated-loose-attribute",
@@ -914,6 +925,17 @@
       "clauses": ["C2-W-106"]
     },
     {
+      "id": "include-option-invalid",
+      "severity": "warning",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": ["The include option ${option} ${reason}, so it has no effect. Correct it or remove it."],
+      "message_origin": "data_file",
+      "reports": "an include option with an unknown key, a value outside its shape, a missing value or a repeated key, which the node keeps as written (C2-B-206)",
+      "clauses": ["C2-A-181", "C2-B-206"]
+    },
+    {
       "id": "include-unresolved",
       "severity": "warning",
       "channel": "render-loss",
@@ -1298,6 +1320,17 @@
       "clauses": ["C2-W-106"]
     },
     {
+      "id": "table-row-count-clamped",
+      "severity": "hint",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": ["${key}=${count} asks for more rows than the table has, so it takes ${effective}. Write ${key}=${effective}."],
+      "message_origin": "data_file",
+      "reports": "a valid `header-rows` or `footer-rows` count larger than the rows it can take, which the table clamps (C2-B-187, C2-B-209)",
+      "clauses": ["C2-B-187", "C2-B-209", "C2-B-227"]
+    },
+    {
       "id": "table-row-without-closing-pipe",
       "severity": "hint",
       "channel": "lint",
@@ -1328,17 +1361,30 @@
       "clauses": ["C2-B-168"]
     },
     {
+      "id": "table-span-marker-attribute",
+      "severity": "warning",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": [
+        "This \"${marker}\" joins the cell ${direction}, so its attribute block applies to no cell and carve fmt drops it. Move the attributes to the cell it joins, or remove them."
+      ],
+      "message_origin": "data_file",
+      "reports": "a brace block in the cell prefix of a span mark that joins a cell, which is kept nowhere (C2-B-174)",
+      "clauses": ["C2-B-174"]
+    },
+    {
       "id": "table-span-marker-blocked",
       "severity": "warning",
       "channel": "lint",
       "status": "kept",
       "default": "on",
       "messages": [
-        "The \"${marker}\" span marker cannot extend a cell. ${reason} It renders as a cell of its own; escape it as \"\\${marker}\" to keep the character as text, or remove it."
+        "The \"${marker}\" span marker cannot extend a cell. ${reason} It is a cell that holds \"${marker}\" as text; escape it as \"\\${marker}\" to say so, or remove it."
       ],
-      "message_origin": "engine_0_1",
-      "change": "also a row span stopped at the head boundary (C2-B-174)",
-      "clauses": ["C2-B-174"]
+      "message_origin": "data_file",
+      "change": "a mark that joins nothing is now the text of its cell, also at a group boundary: head, body or foot (C2-B-173, C2-B-174)",
+      "clauses": ["C2-B-172", "C2-B-173", "C2-B-174"]
     },
     {
       "id": "table-width-total",

@@ -44,7 +44,7 @@ macro_rules! clause_case {
 
 #[test]
 fn decided_clause_table_has_a_test_for_each_row() {
-    assert_eq!(cases().len(), 49);
+    assert_eq!(cases().len(), 91);
 }
 
 clause_case!(c2_b_130_r1, "R1", "C2-B-130");
@@ -73,6 +73,12 @@ clause_case!(c2_i_076_p4, "P4", "C2-I-076");
 clause_case!(c2_b_084_p5, "P5", "C2-B-084");
 clause_case!(c2_i_118_n1, "N1", "C2-I-118");
 clause_case!(c2_i_118_n2, "N2", "C2-I-118");
+clause_case!(c2_b_190_nested_marker, "S7-B-190-nested-marker", "C2-B-190");
+clause_case!(
+    c2_b_174_first_row_mark,
+    "S7-B-174-first-row-mark",
+    "C2-B-174"
+);
 clause_case!(c2_h_165_n3, "N3", "C2-H-165");
 clause_case!(c2_h_166_n4, "N4", "C2-H-166");
 clause_case!(c2_i_002_a_o1_space, "A-O1-space", "C2-I-002");
@@ -96,3 +102,72 @@ clause_case!(c2_i_017_g_s1, "G-S1", "C2-I-017");
 clause_case!(c2_b_119_g_s4_a, "G-S4-a", "C2-B-119");
 clause_case!(c2_b_101_g_s4_b, "G-S4-b", "C2-B-101");
 clause_case!(c2_i_111_g_s4_c, "G-S4-c", "C2-I-111");
+clause_case!(c2_b_015_s7, "S7-B-015", "C2-B-015");
+clause_case!(c2_b_084_s7, "S7-B-084", "C2-B-084");
+clause_case!(c2_b_137_s7, "S7-B-137", "C2-B-137");
+clause_case!(c2_b_173_s7, "S7-B-173", "C2-B-173");
+clause_case!(c2_b_174_s7, "S7-B-174", "C2-B-174");
+clause_case!(c2_b_184_s7, "S7-B-184", "C2-B-184");
+clause_case!(c2_b_209_s7, "S7-B-209", "C2-B-209");
+clause_case!(c2_b_228_s7, "S7-B-228", "C2-B-228");
+clause_case!(c2_b_229_s7, "S7-B-229", "C2-B-229");
+clause_case!(c2_b_206_s7, "S7-B-206", "C2-B-206");
+clause_case!(c2_i_017_s7, "S7-I-017", "C2-I-017");
+clause_case!(c2_i_104_s7, "S7-I-104", "C2-I-104");
+clause_case!(c2_i_119_s7, "S7-I-119", "C2-I-119");
+clause_case!(c2_a_082_s7, "S7-A-082", "C2-A-082");
+clause_case!(c2_h_016_s7, "S7-H-016", "C2-H-016");
+clause_case!(
+    c2_h_062_nested_math_caption,
+    "S7-H-062-nested-math-caption",
+    "C2-H-062"
+);
+clause_case!(c2_b_148_lazy_caption, "S7-B-148-lazy-caption", "C2-B-148");
+clause_case!(
+    c2_b_206_repeat_invalid,
+    "S7-B-206-repeat-invalid",
+    "C2-B-206"
+);
+clause_case!(
+    c2_i_053_comment_neighbor,
+    "S7-I-053-comment-neighbor",
+    "C2-I-053"
+);
+clause_case!(
+    c2_b_167_block_comment_tail,
+    "S7-B-167-block-comment-tail",
+    "C2-B-167"
+);
+clause_case!(
+    c2_h_019_hard_break_comment,
+    "S7-H-019-hard-break-comment",
+    "C2-H-019"
+);
+clause_case!(
+    c2_h_019_two_braced_comments,
+    "S7-H-019-two-braced-comments",
+    "C2-H-019"
+);
+clause_case!(c2_b_117_title_tab, "S7-B-117-title-tab", "C2-B-117");
+clause_case!(
+    c2_a_025_duplicate_footnote_walk,
+    "S7-A-025-duplicate-footnote-walk",
+    "C2-A-025"
+);
+clause_case!(c2_b_024_comment_lazy, "S7-B-024-comment-lazy", "C2-B-024");
+clause_case!(c2_i_118_fallback_room, "S7-I-118-fallback-room", "C2-I-118");
+clause_case!(c2_i_118_fallback_cap, "S7-I-118-fallback-cap", "C2-I-118");
+
+clause_case!(c2_b_228_example_258, "S7-syntax-blocks-258", "C2-B-228");
+clause_case!(c2_b_120_example_254, "S7-syntax-blocks-254", "C2-B-120");
+clause_case!(c2_b_137_example_257, "S7-syntax-blocks-257", "C2-B-137");
+clause_case!(c2_b_197_example_255, "S7-syntax-blocks-255", "C2-B-197");
+clause_case!(c2_b_205_example_259, "S7-syntax-blocks-259", "C2-B-205");
+clause_case!(c2_b_172_example_252, "S7-syntax-blocks-252", "C2-B-172");
+clause_case!(c2_b_178_example_260, "S7-syntax-blocks-260", "C2-B-178");
+clause_case!(c2_b_174_example_251, "S7-syntax-blocks-251", "C2-B-174");
+clause_case!(c2_b_174_example_253, "S7-syntax-blocks-253", "C2-B-174");
+clause_case!(c2_h_165_example_53, "S7-html-53", "C2-H-165");
+clause_case!(c2_h_034_example_54, "S7-html-54", "C2-H-034");
+clause_case!(c2_b_137_example_256, "S7-syntax-blocks-256", "C2-B-137");
+clause_case!(c2_b_171_glued_prefix, "S7-B-171-glued-prefix", "C2-B-171");

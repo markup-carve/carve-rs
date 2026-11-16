@@ -22,7 +22,7 @@ struct Resolved {
     rowspan: usize,
     /// A valid span mark: the cell stays empty (C2-A-092).
     mark: Option<char>,
-    /// A failed mark leaves an empty cell (C2-B-173).
+    /// C2-B-173: a failed mark remains the cell's text.
     failed: bool,
     origin: Option<Origin>,
 }
@@ -42,11 +42,18 @@ impl<'a> Builder<'_, 'a> {
             r.comments.split_off(split)
         });
         let head = head_rows(&data.rows);
-        let spans = resolve_spans(&data.rows, head);
-        move_joined_marks(&mut data.rows, &spans);
-        let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let n = data.rows.len();
         let foot = footer_count(attrs.as_ref()).min(n - head);
+        let spans = resolve_spans(&data.rows, head, n - foot);
+        for (row, resolved) in data.rows.iter_mut().zip(&spans) {
+            for (cell, mark) in row.cells.iter_mut().zip(resolved) {
+                if mark.mark.is_some() && !cell.pieces.is_empty() {
+                    cell.pieces.remove(0);
+                }
+            }
+        }
+        move_joined_marks(&mut data.rows, &spans);
+        let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let (columns, attrs) = columns(self.arena, ncols, attrs, false);
         let mut groups: Vec<Node<'a>> = Vec::new();
         let bounds = [(0, head, 0u8), (head, n - foot, 1), (n - foot, n, 2)];
@@ -152,31 +159,23 @@ impl<'a> Builder<'_, 'a> {
     }
 
     fn row(&self, row: &Row, spans: &[Resolved], _in_group: bool) -> Node<'a> {
-        // C2-B-173, gap G-005: "every other cell" needs at least one other cell.
-        // A span-mark cell is no cell of its own for this test.
-        let others = |i: usize| {
-            row.cells
-                .iter()
-                .enumerate()
-                .filter(move |&(j, _)| j != i && spans.get(j).is_none_or(|s| s.mark.is_none()))
-        };
-        let all_header = |i: usize| others(i).count() > 0 && others(i).all(|(_, c)| c.header);
         let mut cells = Vec::new();
-        for (i, (cell, sp)) in row.cells.iter().zip(spans).enumerate() {
+        for (cell, sp) in row.cells.iter().zip(spans) {
             // Gap G-009: a cell with no content has no position.
             let blank = cell
                 .pieces
                 .iter()
                 .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
-            let positioned = !cell.joined && !blank && sp.mark.is_none() && !sp.failed;
-            let cell_positioned = !cell.joined;
-            let children = self.cell_children(cell, positioned, sp.mark.is_some());
-            let header = if sp.failed {
-                all_header(i)
+            let positioned = !cell.joined && !blank && sp.mark.is_none();
+            let marked = sp.mark.is_some();
+            let cell_positioned = !cell.joined && !marked;
+            let children = self.cell_children(cell, positioned, marked);
+            let header = cell.header && !marked;
+            let (attrs, lang) = if marked {
+                (None, None)
             } else {
-                cell.header
+                self.split_attrs(cell.attrs.clone())
             };
-            let (attrs, lang) = self.split_attrs(cell.attrs.clone());
             let span = sp.mark.map(|m| {
                 if m == '<' {
                     ast::TableCellSpan::Colspan
@@ -184,7 +183,11 @@ impl<'a> Builder<'_, 'a> {
                     ast::TableCellSpan::Rowspan
                 }
             });
-            let align = cell.align.and_then(ast::TableCellAlign::from_name);
+            let align = if marked {
+                None
+            } else {
+                cell.align.and_then(ast::TableCellAlign::from_name)
+            };
             cells.push(Node::TableCell(self.arena.alloc(ast::TableCell {
                 children,
                 header,
@@ -218,7 +221,7 @@ impl<'a> Builder<'_, 'a> {
         if marked {
             &mut []
         } else {
-            let inl = self.inline(ContentKind::Cell, &cell.pieces);
+            let inl = self.inline_cell(&cell.pieces);
             let ppos = if positioned {
                 cell.pieces.first().map(|p| {
                     self.src.pos(
@@ -241,18 +244,72 @@ impl<'a> Builder<'_, 'a> {
                 })))
         }
     }
+
+    /// C2-B-184: each physical row fragment is a separate inline content.
+    fn inline_cell(&self, pieces: &[Piece]) -> &'a mut [Node<'a>] {
+        if pieces.len() <= 1 {
+            return self.inline(ContentKind::Cell, pieces);
+        }
+        let mut out = Vec::new();
+        for piece in pieces {
+            let nodes = self.inline(ContentKind::Cell, std::slice::from_ref(piece));
+            if nodes.is_empty() {
+                continue;
+            }
+            if !out.is_empty() {
+                append_text(&mut out, self.arena, " ");
+            }
+            for node in nodes {
+                let node =
+                    std::mem::replace(node, Node::Text(self.arena.alloc(ast::Text::default())));
+                if let Node::Text(t) = &node {
+                    if matches!(out.last(), Some(Node::Text(_))) {
+                        append_text(&mut out, self.arena, t.value);
+                    } else {
+                        out.push(node);
+                    }
+                } else {
+                    out.push(node);
+                }
+            }
+        }
+        self.arena.nodes(&mut out)
+    }
 }
 
-/// C2-B-178: the leading rows made only of header cells (span marks count with them).
+fn append_text<'a>(out: &mut Vec<Node<'a>>, arena: &'a Arena, value: &str) {
+    if let Some(Node::Text(t)) = out.last_mut() {
+        t.value = arena.str(&format!("{}{value}", t.value));
+        t.pos = None;
+    } else {
+        out.push(Node::Text(arena.alloc(ast::Text {
+            value: arena.str(value),
+            ..Default::default()
+        })));
+    }
+}
+
+/// C2-B-178: leading rows with a header cell and no other cell.
 fn head_rows(rows: &[Row]) -> usize {
+    let provisional = resolve_spans(rows, rows.len(), rows.len());
     rows.iter()
-        .take_while(|r| {
-            r.cells.iter().any(|c| c.header) && r.cells.iter().all(|c| c.header || c.span.is_some())
+        .zip(&provisional)
+        .take_while(|(row, spans)| {
+            let mut has_header = false;
+            let mut has_other = false;
+            for (cell, span) in row.cells.iter().zip(*spans) {
+                if cell.header {
+                    has_header = true;
+                } else if span.mark.is_none() {
+                    has_other = true;
+                }
+            }
+            has_header && !has_other
         })
         .count()
 }
 
-fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
+fn resolve_spans(rows: &[Row], head: usize, foot_start: usize) -> Vec<Vec<Resolved>> {
     let mut out: Vec<Vec<Resolved>> = rows
         .iter()
         .map(|r| {
@@ -270,7 +327,7 @@ fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
         rows.iter().map(|r| vec![None; r.cells.len()]).collect();
     for (r, row) in rows.iter().enumerate() {
         for (c, cell) in row.cells.iter().enumerate() {
-            let origin = span_origin(cell.span, r, c, head, &grid, &out);
+            let origin = span_origin(cell.span, r, c, head, foot_start, &grid, &out);
             let set = match (cell.span, origin) {
                 (Some(m), Some(o)) => {
                     if let Some(res) = out.get_mut(o.row).and_then(|v| v.get_mut(o.col)) {
@@ -334,6 +391,7 @@ fn span_origin(
     r: usize,
     c: usize,
     head: usize,
+    foot_start: usize,
     grid: &[Vec<Option<Origin>>],
     out: &[Vec<Resolved>],
 ) -> Option<Origin> {
@@ -344,7 +402,7 @@ fn span_origin(
             .copied()
             .flatten()
             .filter(|o| o.row == r),
-        Some('^') if r > 0 && !(r == head && head > 0) => grid
+        Some('^') if r > 0 && !(r == head && head > 0) && r != foot_start => grid
             .get(r - 1)
             .and_then(|g| g.get(c))
             .copied()

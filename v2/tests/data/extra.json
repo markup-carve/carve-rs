@@ -6586,9 +6586,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -6608,14 +6605,12 @@
 "role": "image",
 "pos": {
 "startLine": 35,
-"endLine": 35,
+"endLine": 36,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 16,
 "startOffset": 190,
-"endOffset": 201
-}
-}
-],
+"endOffset": 217
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -6653,14 +6648,6 @@
 "startOffset": 202,
 "endOffset": 217
 }
-},
-"pos": {
-"startLine": 35,
-"endLine": 36,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 190,
-"endOffset": 217
 }
 },
 {
@@ -7631,9 +7618,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -7653,14 +7637,12 @@
 "role": "image",
 "pos": {
 "startLine": 35,
-"endLine": 35,
+"endLine": 36,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 16,
 "startOffset": 190,
-"endOffset": 201
-}
-}
-],
+"endOffset": 217
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -7698,14 +7680,6 @@
 "startOffset": 202,
 "endOffset": 217
 }
-},
-"pos": {
-"startLine": 35,
-"endLine": 36,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 190,
-"endOffset": 217
 }
 },
 {
@@ -15414,9 +15388,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -15436,14 +15407,12 @@
 "role": "math",
 "pos": {
 "startLine": 6,
-"endLine": 6,
+"endLine": 7,
 "startColumn": 1,
-"endColumn": 6,
+"endColumn": 16,
 "startOffset": 36,
-"endOffset": 41
-}
-}
-],
+"endOffset": 57
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -15481,14 +15450,6 @@
 "startOffset": 42,
 "endOffset": 57
 }
-},
-"pos": {
-"startLine": 6,
-"endLine": 7,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 36,
-"endOffset": 57
 }
 }
 ],
@@ -16005,21 +15966,16 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "code_block",
 "value": "x\n",
 "pos": {
 "startLine": 18,
-"endLine": 20,
+"endLine": 21,
 "startColumn": 1,
-"endColumn": 4,
+"endColumn": 15,
 "startOffset": 67,
-"endOffset": 76
-}
-}
-],
+"endOffset": 91
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -16057,21 +16013,10 @@
 "startOffset": 77,
 "endOffset": 91
 }
-},
-"pos": {
-"startLine": 18,
-"endLine": 21,
-"startColumn": 1,
-"endColumn": 15,
-"startOffset": 67,
-"endOffset": 91
 }
 },
 {
 "type": "figure_group",
-"children": [
-{
-"type": "figure",
 "children": [
 {
 "type": "paragraph",
@@ -16093,14 +16038,12 @@
 "role": "image",
 "pos": {
 "startLine": 24,
-"endLine": 24,
+"endLine": 25,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 6,
 "startOffset": 104,
-"endOffset": 115
-}
-}
-],
+"endOffset": 121
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -16138,14 +16081,6 @@
 "startOffset": 116,
 "endOffset": 121
 }
-},
-"pos": {
-"startLine": 24,
-"endLine": 25,
-"startColumn": 1,
-"endColumn": 6,
-"startOffset": 104,
-"endOffset": 121
 }
 }
 ],
@@ -18454,9 +18389,6 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -18476,14 +18408,12 @@
 "role": "image",
 "pos": {
 "startLine": 1,
-"endLine": 1,
+"endLine": 2,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 11,
 "startOffset": 0,
-"endOffset": 11
-}
-}
-],
+"endOffset": 22
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -18517,19 +18447,8 @@
 "startOffset": 12,
 "endOffset": 22
 }
-},
-"pos": {
-"startLine": 1,
-"endLine": 2,
-"startColumn": 1,
-"endColumn": 11,
-"startOffset": 0,
-"endOffset": 22
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "paragraph",
 "children": [
@@ -18550,14 +18469,12 @@
 "role": "image",
 "pos": {
 "startLine": 4,
-"endLine": 4,
+"endLine": 5,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 13,
 "startOffset": 24,
-"endOffset": 35
-}
-}
-],
+"endOffset": 48
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -18607,19 +18524,8 @@
 "startOffset": 36,
 "endOffset": 48
 }
-},
-"pos": {
-"startLine": 4,
-"endLine": 5,
-"startColumn": 1,
-"endColumn": 13,
-"startOffset": 24,
-"endOffset": 48
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "paragraph",
 "children": [
@@ -18640,14 +18546,12 @@
 "role": "image",
 "pos": {
 "startLine": 7,
-"endLine": 7,
+"endLine": 8,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 14,
 "startOffset": 50,
-"endOffset": 61
-}
-}
-],
+"endOffset": 75
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -18697,19 +18601,8 @@
 "startOffset": 62,
 "endOffset": 75
 }
-},
-"pos": {
-"startLine": 7,
-"endLine": 8,
-"startColumn": 1,
-"endColumn": 14,
-"startOffset": 50,
-"endOffset": 75
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "block_quote",
 "children": [
@@ -18741,14 +18634,12 @@
 ],
 "pos": {
 "startLine": 10,
-"endLine": 10,
+"endLine": 11,
 "startColumn": 1,
-"endColumn": 4,
+"endColumn": 16,
 "startOffset": 77,
-"endOffset": 80
-}
-}
-],
+"endOffset": 96
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -18786,32 +18677,19 @@
 "startOffset": 81,
 "endOffset": 96
 }
-},
-"pos": {
-"startLine": 10,
-"endLine": 11,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 77,
-"endOffset": 96
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "code_block",
 "value": "c\n",
 "pos": {
 "startLine": 13,
-"endLine": 15,
+"endLine": 16,
 "startColumn": 1,
-"endColumn": 4,
+"endColumn": 17,
 "startOffset": 98,
-"endOffset": 107
-}
-}
-],
+"endOffset": 124
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -18849,14 +18727,6 @@
 "startOffset": 108,
 "endOffset": 124
 }
-},
-"pos": {
-"startLine": 13,
-"endLine": 16,
-"startColumn": 1,
-"endColumn": 17,
-"startOffset": 98,
-"endOffset": 124
 }
 },
 {
@@ -19046,9 +18916,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -19068,14 +18935,12 @@
 "role": "image",
 "pos": {
 "startLine": 25,
-"endLine": 25,
+"endLine": 26,
 "startColumn": 5,
-"endColumn": 16,
+"endColumn": 22,
 "startOffset": 163,
-"endOffset": 174
-}
-}
-],
+"endOffset": 196
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19113,14 +18978,6 @@
 "startOffset": 179,
 "endOffset": 196
 }
-},
-"pos": {
-"startLine": 25,
-"endLine": 26,
-"startColumn": 5,
-"endColumn": 22,
-"startOffset": 163,
-"endOffset": 196
 }
 }
 ],
@@ -19133,9 +18990,6 @@
 "endOffset": 196
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "paragraph",
 "children": [
@@ -19156,14 +19010,12 @@
 "role": "image",
 "pos": {
 "startLine": 28,
-"endLine": 28,
+"endLine": 29,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 18,
 "startOffset": 198,
-"endOffset": 209
-}
-}
-],
+"endOffset": 227
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19201,14 +19053,6 @@
 "startOffset": 210,
 "endOffset": 227
 }
-},
-"pos": {
-"startLine": 28,
-"endLine": 29,
-"startColumn": 1,
-"endColumn": 18,
-"startOffset": 198,
-"endOffset": 227
 }
 }
 ],
@@ -19227,9 +19071,6 @@
 "tree": {
 "type": "document",
 "astVersion": "2.0",
-"children": [
-{
-"type": "figure",
 "children": [
 {
 "type": "paragraph",
@@ -19251,14 +19092,12 @@
 "role": "image",
 "pos": {
 "startLine": 1,
-"endLine": 1,
+"endLine": 2,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 17,
 "startOffset": 0,
-"endOffset": 11
-}
-}
-],
+"endOffset": 28
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19321,19 +19160,8 @@
 "startOffset": 12,
 "endOffset": 28
 }
-},
-"pos": {
-"startLine": 1,
-"endLine": 2,
-"startColumn": 1,
-"endColumn": 17,
-"startOffset": 0,
-"endOffset": 28
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "paragraph",
 "children": [
@@ -19354,14 +19182,12 @@
 "role": "image",
 "pos": {
 "startLine": 4,
-"endLine": 4,
+"endLine": 5,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 21,
 "startOffset": 30,
-"endOffset": 41
-}
-}
-],
+"endOffset": 62
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19399,19 +19225,8 @@
 "startOffset": 42,
 "endOffset": 62
 }
-},
-"pos": {
-"startLine": 4,
-"endLine": 5,
-"startColumn": 1,
-"endColumn": 21,
-"startOffset": 30,
-"endOffset": 62
 }
 },
-{
-"type": "figure",
-"children": [
 {
 "type": "paragraph",
 "children": [
@@ -19432,14 +19247,12 @@
 "role": "image",
 "pos": {
 "startLine": 7,
-"endLine": 7,
+"endLine": 8,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 21,
 "startOffset": 64,
-"endOffset": 75
-}
-}
-],
+"endOffset": 96
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19502,14 +19315,6 @@
 "startOffset": 76,
 "endOffset": 96
 }
-},
-"pos": {
-"startLine": 7,
-"endLine": 8,
-"startColumn": 1,
-"endColumn": 21,
-"startOffset": 64,
-"endOffset": 96
 }
 }
 ],
@@ -19530,9 +19335,6 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -19551,15 +19353,13 @@
 ],
 "role": "image",
 "pos": {
-"startLine": 2,
-"endLine": 2,
+"startLine": 1,
+"endLine": 3,
 "startColumn": 1,
-"endColumn": 12,
-"startOffset": 5,
-"endOffset": 16
-}
-}
-],
+"endColumn": 14,
+"startOffset": 0,
+"endOffset": 30
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19600,14 +19400,6 @@
 },
 "attrs": {
 "id": "f"
-},
-"pos": {
-"startLine": 1,
-"endLine": 3,
-"startColumn": 1,
-"endColumn": 14,
-"startOffset": 0,
-"endOffset": 30
 }
 },
 {
@@ -19735,9 +19527,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -19756,15 +19545,13 @@
 ],
 "role": "image",
 "pos": {
-"startLine": 10,
-"endLine": 10,
+"startLine": 9,
+"endLine": 11,
 "startColumn": 1,
 "endColumn": 12,
-"startOffset": 62,
-"endOffset": 73
-}
-}
-],
+"startOffset": 57,
+"endOffset": 85
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19805,21 +19592,10 @@
 },
 "attrs": {
 "id": "n"
-},
-"pos": {
-"startLine": 9,
-"endLine": 11,
-"startColumn": 1,
-"endColumn": 12,
-"startOffset": 57,
-"endOffset": 85
 }
 },
 {
 "type": "figure_group",
-"children": [
-{
-"type": "figure",
 "children": [
 {
 "type": "paragraph",
@@ -19841,14 +19617,12 @@
 "role": "image",
 "pos": {
 "startLine": 15,
-"endLine": 15,
+"endLine": 16,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 8,
 "startOffset": 103,
-"endOffset": 114
-}
-}
-],
+"endOffset": 122
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -19886,14 +19660,6 @@
 "startOffset": 115,
 "endOffset": 122
 }
-},
-"pos": {
-"startLine": 15,
-"endLine": 16,
-"startColumn": 1,
-"endColumn": 8,
-"startOffset": 103,
-"endOffset": 122
 }
 }
 ],
@@ -19948,9 +19714,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -19969,15 +19732,13 @@
 ],
 "role": "image",
 "pos": {
-"startLine": 21,
-"endLine": 21,
+"startLine": 20,
+"endLine": 22,
 "startColumn": 1,
-"endColumn": 12,
-"startOffset": 146,
-"endOffset": 157
-}
-}
-],
+"endColumn": 11,
+"startOffset": 141,
+"endOffset": 168
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -20014,14 +19775,6 @@
 },
 "attrs": {
 "id": "e"
-},
-"pos": {
-"startLine": 20,
-"endLine": 22,
-"startColumn": 1,
-"endColumn": 11,
-"startOffset": 141,
-"endOffset": 168
 }
 },
 {
@@ -24430,22 +24183,17 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"children": [
-{
 "type": "code_block",
 "value": "x\n",
 "syntax": "js",
 "pos": {
-"startLine": 2,
-"endLine": 4,
+"startLine": 1,
+"endLine": 5,
 "startColumn": 1,
-"endColumn": 4,
-"startOffset": 12,
-"endOffset": 23
-}
-}
-],
+"endColumn": 15,
+"startOffset": 0,
+"endOffset": 38
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -24495,14 +24243,6 @@
 "v"
 ]
 ]
-},
-"pos": {
-"startLine": 1,
-"endLine": 5,
-"startColumn": 1,
-"endColumn": 15,
-"startOffset": 0,
-"endOffset": 38
 }
 }
 ],
@@ -25935,9 +25675,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -25957,14 +25694,12 @@
 "role": "image",
 "pos": {
 "startLine": 30,
-"endLine": 30,
+"endLine": 31,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 16,
 "startOffset": 147,
-"endOffset": 158
-}
-}
-],
+"endOffset": 174
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -26002,14 +25737,6 @@
 "startOffset": 159,
 "endOffset": 174
 }
-},
-"pos": {
-"startLine": 30,
-"endLine": 31,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 147,
-"endOffset": 174
 }
 },
 {
@@ -26531,7 +26258,7 @@
 "tableAlignment"
 ]
 },
-"expected": "<p># Head x</p>\n<blockquote><p>quote <strong>q</strong>\nmore</p></blockquote>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<pre><code class=\"language-js\">code\n</code></pre>\n<p>—</p>\n<p>i</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] <a href=\"https://a.b\" rel=\"nofollow ugc\">https://a.b</a> <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t </p>"
+"expected": "<p># Head x</p>\n<blockquote><p>quote <strong>q</strong>\nmore</p></blockquote>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<pre><code class=\"language-js\">code\n</code></pre>\n<p>—</p>\n<p>[img: i]</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] <a href=\"https://a.b\" rel=\"nofollow ugc\">https://a.b</a> <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t </p>"
 },
 {
 "id": "degrade-minimal",
@@ -27181,9 +26908,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -27203,14 +26927,12 @@
 "role": "image",
 "pos": {
 "startLine": 30,
-"endLine": 30,
+"endLine": 31,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 16,
 "startOffset": 147,
-"endOffset": 158
-}
-}
-],
+"endOffset": 174
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -27248,14 +26970,6 @@
 "startOffset": 159,
 "endOffset": 174
 }
-},
-"pos": {
-"startLine": 30,
-"endLine": 31,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 147,
-"endOffset": 174
 }
 },
 {
@@ -27777,7 +27491,7 @@
 "tableAlignment"
 ]
 },
-"expected": "<p># Head x</p>\n<p>&gt; quote q more</p>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<p>code</p>\n<p>—</p>\n<p>i</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] &lt;https://a.b&gt; <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t </p>"
+"expected": "<p># Head x</p>\n<p>&gt; quote q more</p>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<p>code</p>\n<p>—</p>\n<p>[img: i]</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] &lt;https://a.b&gt; <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t </p>"
 },
 {
 "id": "degrade-article",
@@ -28427,9 +28141,6 @@
 }
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -28449,14 +28160,12 @@
 "role": "image",
 "pos": {
 "startLine": 30,
-"endLine": 30,
+"endLine": 31,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 16,
 "startOffset": 147,
-"endOffset": 158
-}
-}
-],
+"endOffset": 174
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -28494,14 +28203,6 @@
 "startOffset": 159,
 "endOffset": 174
 }
-},
-"pos": {
-"startLine": 30,
-"endLine": 31,
-"startColumn": 1,
-"endColumn": 16,
-"startOffset": 147,
-"endOffset": 174
 }
 },
 {
@@ -32011,9 +31712,6 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -32033,14 +31731,12 @@
 "role": "image",
 "pos": {
 "startLine": 1,
-"endLine": 1,
+"endLine": 2,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 14,
 "startOffset": 0,
-"endOffset": 11
-}
-}
-],
+"endOffset": 25
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -32078,21 +31774,10 @@
 "startOffset": 12,
 "endOffset": 25
 }
-},
-"pos": {
-"startLine": 1,
-"endLine": 2,
-"startColumn": 1,
-"endColumn": 14,
-"startOffset": 0,
-"endOffset": 25
 }
 },
 {
 "type": "figure_group",
-"children": [
-{
-"type": "figure",
 "children": [
 {
 "type": "paragraph",
@@ -32114,14 +31799,12 @@
 "role": "image",
 "pos": {
 "startLine": 5,
-"endLine": 5,
+"endLine": 6,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 8,
 "startOffset": 38,
-"endOffset": 49
-}
-}
-],
+"endOffset": 57
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -32154,14 +31837,6 @@
 "startOffset": 50,
 "endOffset": 57
 }
-},
-"pos": {
-"startLine": 5,
-"endLine": 6,
-"startColumn": 1,
-"endColumn": 8,
-"startOffset": 38,
-"endOffset": 57
 }
 }
 ],
@@ -33685,9 +33360,6 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -33707,14 +33379,12 @@
 "role": "image",
 "pos": {
 "startLine": 1,
-"endLine": 1,
+"endLine": 2,
 "startColumn": 1,
-"endColumn": 12,
+"endColumn": 18,
 "startOffset": 0,
-"endOffset": 11
-}
-}
-],
+"endOffset": 29
+},
 "caption": {
 "type": "caption",
 "children": [
@@ -33766,14 +33436,6 @@
 "startOffset": 12,
 "endOffset": 29
 }
-},
-"pos": {
-"startLine": 1,
-"endLine": 2,
-"startColumn": 1,
-"endColumn": 18,
-"startOffset": 0,
-"endOffset": 29
 }
 },
 {
@@ -36114,9 +35776,6 @@
 "role": "math"
 },
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -36126,9 +35785,7 @@
 "numberPrefix": "Eq"
 }
 ],
-"role": "math"
-}
-],
+"role": "math",
 "caption": {
 "type": "caption",
 "children": [
@@ -36359,10 +36016,6 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"kind": "table",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -36371,9 +36024,7 @@
 "alt": "a"
 }
 ],
-"role": "image"
-}
-],
+"role": "image",
 "caption": {
 "type": "caption",
 "short": [
@@ -36412,9 +36063,6 @@
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"children": [
-{
 "type": "paragraph",
 "children": [
 {
@@ -36423,9 +36071,7 @@
 "alt": "a"
 }
 ],
-"role": "image"
-}
-],
+"role": "image",
 "caption": {
 "type": "caption",
 "children": [
@@ -36823,14 +36469,13 @@
 "id": "table-in-figure",
 "input": "",
 "opts": {},
-"html": "<figure id=\"f\">\n  <table>\n    <caption>Table 1: own</caption>\n    <tbody>\n      <tr><td>x</td></tr>\n    </tbody>\n  </table>\n  <figcaption>Figure 1: outer</figcaption>\n</figure>",
+"html": "<figure id=\"f\" class=\"carve-figure-group\">\n  <figure class=\"carve-figure-panel\">\n    <table>\n      <caption>Table #: own</caption>\n      <tbody>\n        <tr><td>x</td></tr>\n      </tbody>\n    </table>\n  </figure>\n  <figcaption>Figure 1: outer</figcaption>\n</figure>",
 "tree": {
 "type": "document",
 "astVersion": "2.0",
 "children": [
 {
-"type": "figure",
-"kind": "table",
+"type": "figure_group",
 "attrs": {
 "id": "f"
 },
@@ -36853,8 +36498,7 @@
 "value": "Table "
 },
 {
-"type": "caption_number",
-"n": 1
+"type": "caption_number"
 },
 {
 "type": "text",

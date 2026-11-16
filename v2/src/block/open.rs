@@ -7,7 +7,7 @@ use super::table::{self, Row};
 use super::{Closed, Container, Kind, Leaf, OpenLeaf, Parser, Pending, Walk};
 use crate::attr::AttrBlock;
 use crate::inline::{Join, Piece};
-use crate::tables::{DEPTH_CAP, LIST_END_BLANK_LINES};
+use crate::tables::{BLOCK_DEPTH, LIST_END_BLANK_LINES};
 
 /// The lists, description lists and marker owners a line can reach:
 /// those inside the innermost quote whose mark it carries and outside every
@@ -72,6 +72,11 @@ impl Parser<'_> {
         }
         let f = self.frame(walk, m);
         if let Some(marker) = shapes::list_marker(&k) {
+            // C2-B-190: a nested marker that cannot open is paragraph text.
+            let can_replace = f.lists.iter().any(|&col| m <= col);
+            if !can_replace && !self.room(2) {
+                return false;
+            }
             return list_interrupts(&f, m, &marker);
         }
         if let Some((_, _, _)) = shapes::desc_mark(&k) {
@@ -85,14 +90,14 @@ impl Parser<'_> {
         if let Some(q) = walk.missing_quote {
             // Gap G-026: C2-B-018 interrupts an open paragraph; an open term
             // takes the caret line as a lazy line, as in the oracle.
-            let term = matches!(
+            let lazy = matches!(
                 self.leaf,
                 Some(OpenLeaf {
-                    leaf: Leaf::Term { .. },
+                    leaf: Leaf::Term { .. } | Leaf::Caption { .. },
                     ..
                 })
             );
-            if walk.matched == q && !term {
+            if walk.matched == q && !lazy {
                 return true;
             }
         }
@@ -108,7 +113,7 @@ impl Parser<'_> {
         else {
             return false;
         };
-        super::paragraph_role(self.src, pieces).is_some() && pieces.len() == 1
+        super::paragraph_role(self.src, pieces).is_some()
     }
 
     /// A line while a table is open: a row or a continuation row continues it
@@ -347,7 +352,7 @@ impl Parser<'_> {
     }
 
     fn room(&self, n: usize) -> bool {
-        self.depth_used() + n <= DEPTH_CAP
+        self.depth_used() + n <= BLOCK_DEPTH
     }
 
     /// A container opener: a quote mark, a list marker, a term or a
@@ -481,6 +486,7 @@ impl Parser<'_> {
                     path: inc.path,
                     section: inc.section,
                     options: inc.options,
+                    invalid: inc.invalid,
                 },
                 s,
                 end,
@@ -754,10 +760,6 @@ impl Parser<'_> {
 
 /// Interrupter (b) on the frame of the line (C2-B-015, C2-B-054, C2-B-055, C2-B-056).
 fn list_interrupts(f: &Frame, m: usize, mk: &ListMarker) -> bool {
-    if f.desc_lists.contains(&m) && !f.lists.contains(&m) {
-        // C2-B-022: a description list is not a list for interrupter (b).
-        return false;
-    }
     if f.lists.contains(&m) {
         return true;
     }
@@ -765,6 +767,10 @@ fn list_interrupts(f: &Frame, m: usize, mk: &ListMarker) -> bool {
         if m < inner {
             return true;
         }
+    }
+    if f.desc_lists.contains(&m) {
+        // C2-B-022: without a list to close, a description stays lazy.
+        return false;
     }
     if !f.owner {
         return false;

@@ -120,6 +120,7 @@ pub(crate) struct Renderer<'r, 'a> {
     in_link: usize,
     in_abbr: usize,
     level: usize,
+    caption_inner: Option<usize>,
     /// The `longDescription` blocks met in the block being written (C2-H-080).
     long_desc: Vec<&'r [Node<'a>]>,
     /// The notes the section writes.
@@ -180,6 +181,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             in_link: 0,
             in_abbr: 0,
             level: 0,
+            caption_inner: None,
             long_desc: Vec::new(),
             shown: Vec::new(),
             started: false,

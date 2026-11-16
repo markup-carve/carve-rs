@@ -10,7 +10,6 @@ use crate::attr::AttrBlock;
 use crate::block::events::{ContainerKind, Event, LeafKind, Role};
 use crate::block::shapes::{DivInfo, MarkerKind};
 use crate::chars::fold_label;
-use crate::hash::AddrMap;
 use crate::inline::{self, ContentKind, InlineEnv, Join, Piece};
 use crate::source::Source;
 use std::collections::HashSet;
@@ -21,18 +20,12 @@ pub fn build<'a>(
     src: &Source<'a>,
     arena: &'a Arena,
     events: Vec<Event>,
-    own_starts: &[(usize, usize)],
+    _own_starts: &[(usize, usize)],
 ) -> ast::Document<'a> {
     let (link_keys, abbreviations) = definitions(&events);
-    // Keyed by the source offset that `pos` carries.
-    let own_starts: AddrMap<usize, usize> = own_starts
-        .iter()
-        .map(|&(k, v)| (src.pos(k, k).start(), v))
-        .collect();
     let mut b = Builder {
         src,
         arena,
-        own_starts: &own_starts,
         link_keys,
         abbreviations,
         stack: Vec::new(),
@@ -90,7 +83,6 @@ struct Frame<'a> {
 struct Builder<'s, 'a> {
     src: &'s Source<'a>,
     arena: &'a Arena,
-    own_starts: &'s AddrMap<usize, usize>,
     link_keys: HashSet<String>,
     abbreviations: Vec<(String, String)>,
     stack: Vec<Frame<'a>>,
@@ -135,7 +127,6 @@ impl<'a> Builder<'_, 'a> {
             arena: self.arena,
             link_keys: &self.link_keys,
             abbreviations: &self.abbreviations,
-            depth: self.stack.len(),
             kind,
             hard_breaks: self.hard > 0,
         };
@@ -409,40 +400,7 @@ impl<'a> Builder<'_, 'a> {
         end: usize,
     ) -> Node<'a> {
         match kind {
-            LeafKind::Code { value, info } => {
-                if let Some(format) = info.raw {
-                    return Node::RawBlock(self.arena.alloc(ast::RawBlock {
-                        format: self.s(&format),
-                        value: self.s(&value),
-                        attrs: self.at(attrs),
-                        lang,
-                        pos,
-                        ..Default::default()
-                    }));
-                }
-                if let Some(sep) = delimited::separator(info.language.as_deref(), attrs.as_ref()) {
-                    return self.delimited_table(&value, sep, attrs, lang, pos);
-                }
-                let title = info.title.map(|(s, e)| {
-                    let raw = self.src.slice(s, e);
-                    let value = crate::block::include::unescape(raw);
-                    self.arena.one(Node::Text(self.arena.alloc(ast::Text {
-                        value: self.arena.str(&value),
-                        pos: (value == raw).then(|| self.src.pos(s, e)),
-                        ..Default::default()
-                    })))
-                });
-                Node::CodeBlock(self.arena.alloc(ast::CodeBlock {
-                    value: self.s(&value),
-                    syntax: self.os(info.language.as_deref()),
-                    title,
-                    group_label: self.os(info.label.as_deref()),
-                    attrs: self.at(attrs),
-                    lang,
-                    pos,
-                    ..Default::default()
-                }))
-            }
+            LeafKind::Code { value, info } => self.code_leaf(&value, *info, attrs, lang, pos),
             LeafKind::Comment { block, value } => {
                 let form = if block {
                     ast::CommentForm::Block
@@ -502,6 +460,7 @@ impl<'a> Builder<'_, 'a> {
                 path,
                 section,
                 options,
+                invalid,
             } => {
                 let options = (!options.is_empty())
                     .then(|| self.arena.json(serde_json::Value::Object(options)));
@@ -509,6 +468,7 @@ impl<'a> Builder<'_, 'a> {
                     path: self.s(&path),
                     section: self.os(section.as_deref()),
                     options,
+                    invalid: (!invalid.is_empty()).then(|| self.arena.strs(&invalid)),
                     attrs: self.at(attrs),
                     lang,
                     pos,
@@ -532,6 +492,48 @@ impl<'a> Builder<'_, 'a> {
                 Node::ThematicBreak(self.arena.alloc(ast::ThematicBreak::default()))
             }
         }
+    }
+
+    fn code_leaf(
+        &self,
+        value: &str,
+        info: crate::block::shapes::FenceInfo,
+        attrs: Option<Attrs>,
+        lang: Option<&'a str>,
+        pos: Option<ast::Pos>,
+    ) -> Node<'a> {
+        if let Some(format) = info.raw {
+            return Node::RawBlock(self.arena.alloc(ast::RawBlock {
+                format: self.s(&format),
+                value: self.s(value),
+                attrs: self.at(attrs),
+                lang,
+                pos,
+                ..Default::default()
+            }));
+        }
+        if let Some(sep) = delimited::separator(info.language.as_deref(), attrs.as_ref()) {
+            return self.delimited_table(value, sep, attrs, lang, pos);
+        }
+        let title = info.title.map(|(s, e)| {
+            let raw = self.src.slice(s, e);
+            let value = crate::block::include::unescape(raw);
+            self.arena.one(Node::Text(self.arena.alloc(ast::Text {
+                value: self.arena.str(&value),
+                pos: (value == raw).then(|| self.src.pos(s, e)),
+                ..Default::default()
+            })))
+        });
+        Node::CodeBlock(self.arena.alloc(ast::CodeBlock {
+            value: self.s(value),
+            syntax: self.os(info.language.as_deref()),
+            title,
+            group_label: self.os(info.label.as_deref()),
+            attrs: self.at(attrs),
+            lang,
+            pos,
+            ..Default::default()
+        }))
     }
 
     fn line(&self, p: Piece) -> Node<'a> {
@@ -562,64 +564,64 @@ impl<'a> Builder<'_, 'a> {
             pos: Some(self.pos(start, end)),
             ..Default::default()
         }));
-        let (src, own, arena) = (self.src, self.own_starts, self.arena);
+        let (src, arena) = (self.src, self.arena);
         let list = self.children();
-        let Some(target) = list.pop() else { return };
-        list.push(wrap_caption(src, own, arena, target, cap, end));
+        let Some(index) = list.iter().rposition(|n| !matches!(n, Node::Comment(_))) else {
+            return;
+        };
+        if list.len() > index + 1
+            && matches!(
+                list.get(index),
+                Some(Node::BlockQuote(_) | Node::FigureGroup(_))
+            )
+        {
+            let comments = list.split_off(index + 1);
+            if let Some(target) = list.get_mut(index) {
+                append_comments(arena, target, comments);
+            }
+        }
+        let Some(target) = list.get_mut(index) else {
+            return;
+        };
+        attach_caption(src, arena, target, cap, end);
     }
 }
 
-fn wrap_caption<'a>(
+fn append_comments<'a>(arena: &'a Arena, target: &mut Node<'a>, comments: Vec<Node<'a>>) {
+    let children = match target {
+        Node::BlockQuote(q) => &mut q.children,
+        Node::FigureGroup(g) => &mut g.children,
+        _ => return,
+    };
+    let mut joined = Vec::with_capacity(children.len() + comments.len());
+    for node in children.iter_mut() {
+        joined.push(std::mem::replace(
+            node,
+            Node::Text(arena.alloc(ast::Text::default())),
+        ));
+    }
+    joined.extend(comments);
+    *children = arena.nodes(&mut joined);
+}
+
+fn attach_caption<'a>(
     src: &Source<'_>,
-    own: &AddrMap<usize, usize>,
     arena: &'a Arena,
-    target: Node<'a>,
+    target: &mut Node<'a>,
     cap: Node<'a>,
     end: usize,
-) -> Node<'a> {
-    if let Node::Table(t) = target {
-        t.caption = Some(arena.alloc(cap));
-        if let Some(p) = &mut t.pos {
-            extend(src, p, end);
-        }
-        return Node::Table(t);
+) {
+    match target {
+        Node::Paragraph(p) => p.caption = Some(arena.alloc(cap)),
+        Node::CodeBlock(c) => c.caption = Some(arena.alloc(cap)),
+        Node::BlockQuote(q) => q.caption = Some(arena.alloc(cap)),
+        Node::Table(t) => t.caption = Some(arena.alloc(cap)),
+        Node::FigureGroup(g) => g.caption = Some(arena.alloc(cap)),
+        _ => return,
     }
-    if let Node::FigureGroup(g) = target {
-        g.caption = Some(arena.alloc(cap));
-        if let Some(p) = &mut g.pos {
-            extend(src, p, end);
-        }
-        return Node::FigureGroup(g);
-    }
-    let mut target = target;
-    let attrs = target.attrs_slot().and_then(Option::take);
-    let mut pos = target.pos().copied();
-    if attrs.is_some() {
-        if let Some(p) = target.pos_slot().and_then(Option::as_mut) {
-            skip_attr_lines(src, own, p);
-        }
-    }
-    if let Some(p) = &mut pos {
+    if let Some(p) = target.pos_slot().and_then(Option::as_mut) {
         extend(src, p, end);
     }
-    Node::Figure(arena.alloc(ast::Figure {
-        children: arena.one(target),
-        caption: Some(arena.alloc(cap)),
-        attrs,
-        pos,
-        ..Default::default()
-    }))
-}
-
-/// The figure takes the attribute lines; the block inside starts at its own markup.
-fn skip_attr_lines(src: &Source<'_>, own: &AddrMap<usize, usize>, p: &mut ast::Pos) {
-    let Some(&at) = own.get(&p.start()) else {
-        return;
-    };
-    let s = src.pos(at, at);
-    p.start_line = s.start_line;
-    p.start_column = s.start_column;
-    p.start_offset = s.start_offset;
 }
 
 fn extend(src: &Source<'_>, p: &mut ast::Pos, end: usize) {

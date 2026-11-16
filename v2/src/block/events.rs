@@ -75,6 +75,7 @@ pub enum LeafKind {
         path: String,
         section: Option<String>,
         options: serde_json::Map<String, serde_json::Value>,
+        invalid: Vec<String>,
     },
     /// One entry per body line; an empty piece for an empty line (C2-A-069).
     LineBlock {

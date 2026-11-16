@@ -23,8 +23,6 @@ pub(super) struct Frame<'a> {
     children: Vec<Node<'a>>,
     /// Past the depth cap (C2-I-118): written as its source.
     dead: bool,
-    /// The single-quote state outside an inline footnote (C2-I-109).
-    saved_single: Option<bool>,
 }
 
 struct Builder<'r, 'e, 'a> {
@@ -428,10 +426,8 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
 
     fn enter(&mut self, kind: Kind, v0: usize, v1: usize) {
         let open = self.frames.iter().filter(|f| !f.dead).count();
-        let dead = self.env.depth + open >= tables::DEPTH_CAP;
-        let saved_single = (kind == Kind::InlineFootnote)
-            .then(|| std::mem::replace(&mut self.smart.single_open, false));
-        if saved_single.is_some() {
+        let dead = open >= tables::INLINE_DEPTH;
+        if kind == Kind::InlineFootnote {
             // GAP INL-013: an inline footnote's edges bound abbreviations.
             self.flow_prev = None;
         }
@@ -448,13 +444,11 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
             v1,
             children,
             dead,
-            saved_single,
         });
     }
 
     fn exit(&mut self, mut f: Frame<'a>, v0: usize, v1: usize, attrs: Option<AttrBlock>) {
-        if let Some(s) = f.saved_single {
-            self.smart.single_open = s;
+        if f.kind == Kind::InlineFootnote {
             self.flow_prev = None;
         }
         self.smart.prev = Prev::Word;

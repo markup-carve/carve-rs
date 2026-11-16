@@ -110,12 +110,7 @@ pub(super) fn table<'a>(
     let rows = records(body, sep);
     let n = rows.len();
     let ncols = rows.iter().map(Vec::len).max().unwrap_or(0);
-    let over = declared.is_some_and(|d| d > n);
-    let head = if over {
-        0
-    } else {
-        declared.unwrap_or(1).min(n)
-    };
+    let head = declared.unwrap_or(1).min(n);
     let foot = footer.min(n - head);
     let mut groups = Vec::new();
     if head > 0 {
@@ -130,9 +125,9 @@ pub(super) fn table<'a>(
             rows.iter()
                 .take(n - foot)
                 .skip(head)
-                .map(|r| row(a, r, over)),
+                .map(|r| row(a, r, false)),
         );
-        let head_rows = declared.and_then(|d| i64::try_from(d).ok());
+        let head_rows = declared.and_then(|_| i64::try_from(head).ok());
         groups.push(Node::TableBody(a.alloc(ast::TableBody {
             children,
             head_rows,

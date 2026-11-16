@@ -83,6 +83,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
     }
 
+    pub(super) fn degrade_captioned(&mut self, n: &'r Node<'a>, depth: usize) {
+        self.losses.push("profile-construct-degraded");
+        let mut paras = Vec::new();
+        degraded_paragraphs(n, &mut paras, 0, self.src);
+        for p in paras.into_iter().filter(|p| !p.is_empty()) {
+            self.line(depth, &format!("<p>{p}</p>"));
+        }
+    }
+
     /// The children that render: visible, and not degraded to nothing.
     pub(super) fn shown(&self, children: &'r [Node<'a>]) -> Vec<&'r Node<'a>> {
         children
@@ -98,7 +107,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// The escaped paragraphs a block outside the profile leaves, none when
     /// it leaves no text (C2-H-165); `None` when the block is inside.
     pub(super) fn degraded(&self, n: &Node) -> Option<Vec<String>> {
-        if matches!(n, Node::Paragraph(_)) || self.profile_allows(n, true) {
+        let figure = matches!(
+            n,
+            Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_)
+        ) && crate::resolve::order::caption_of(n).is_some();
+        if figure {
+            if self.profile_allows_type("figure", true) && !self.past_bound() {
+                return None;
+            }
+        } else if matches!(n, Node::Paragraph(_)) || self.profile_allows(n, true) {
             return None;
         }
         let mut paras = Vec::new();
@@ -261,7 +278,7 @@ fn code_spelling(value: &str, out: &mut String) {
 
 /// C2-H-165: inside a degraded block, childless code and math give their values.
 fn inlines_block_plain(nodes: &[Node]) -> String {
-    crate::resolve::plain::text_of(nodes)
+    crate::resolve::plain::text_of_degraded_block(nodes)
 }
 
 /// The escaped paragraphs a degraded block gives.
@@ -269,6 +286,15 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
     if depth > crate::resolve::WALK_CAP {
         return;
     }
+    degraded_body(n, out, depth, src);
+    if let Some(caption) = crate::resolve::order::caption_of(n) {
+        for block in caption.children().into_iter().flatten() {
+            degraded_paragraphs(block, out, depth + 1, src);
+        }
+    }
+}
+
+fn degraded_body(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<SourceView<'_>>) {
     if let Some(text) = degraded_simple_text(n, src) {
         out.push(esc::text_str(&text));
         return;
@@ -281,17 +307,12 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
             }
             format!("> {inner}")
         }
-        Node::Figure(_) | Node::FigureGroup(_) => {
+        Node::FigureGroup(_) => {
             degraded_figure(n, out, depth, src);
             return;
         }
         Node::Table(t) => {
             out.push(table_text(t, src));
-            if let Some(caption) = &t.caption {
-                for block in caption.children().into_iter().flatten() {
-                    degraded_paragraphs(block, out, depth + 1, src);
-                }
-            }
             return;
         }
         Node::DefinitionList(d) => {
@@ -319,12 +340,6 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
 
 fn degraded_figure(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<SourceView<'_>>) {
     n.children()
-        .into_iter()
-        .flatten()
-        .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
-    let caption = crate::resolve::order::caption_of(n);
-    caption
-        .and_then(Node::children)
         .into_iter()
         .flatten()
         .for_each(|b| degraded_paragraphs(b, out, depth + 1, src));
