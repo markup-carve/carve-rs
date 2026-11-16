@@ -145,7 +145,8 @@ impl Parser<'_> {
                 {
                     if let Some(row) = data.rows.last_mut() {
                         table::join_continuation(row, text, &frags);
-                        *end = (k.offset() + k.rest().len()).max(*end);
+                        row.end = (k.offset() + k.rest().len()).max(row.end);
+                        *end = row.end.max(*end);
                     }
                 }
                 return true;
@@ -563,7 +564,7 @@ impl Parser<'_> {
                     len: n,
                     indent: m,
                     lines,
-                    held: 0,
+                    held: Vec::new(),
                 },
                 start,
                 e,
@@ -626,24 +627,25 @@ impl Parser<'_> {
     }
 
     fn close_bare_div(&mut self, k: &Cursor<'_>, len: usize, start: usize) -> bool {
-        if let Some(i) = self
+        let mut reachable = self
             .stack
             .iter()
-            .rposition(|c| matches!(c.kind, Kind::Div { .. }))
+            .rev()
+            .take_while(|c| matches!(c.kind, Kind::Div { .. }));
+        if let Some(depth) = reachable
+            .position(|c| matches!(c.kind, Kind::Div { len: open_len, .. } if open_len <= len))
         {
-            if let Some(Kind::Div { len: open_len, .. }) = self.stack.get(i).map(|c| &c.kind) {
-                if *open_len <= len && i + 1 == self.stack.len() {
-                    // C2-B-192: attribute lines left in the div close inside it.
-                    if let Some(p) = self.pending.take() {
-                        self.pending_to_paragraph(&p);
-                    }
-                    if let Some(top) = self.stack.last_mut() {
-                        top.end = start + k.rest().len();
-                    }
-                    self.pop_container();
-                    return true;
-                }
+            let i = self.stack.len() - depth - 1;
+            // C2-B-192: attribute lines left in the div close inside it.
+            if let Some(p) = self.pending.take() {
+                self.pending_to_paragraph(&p);
             }
+            self.close_to(i + 1);
+            if let Some(top) = self.stack.last_mut() {
+                top.end = start + k.rest().len();
+            }
+            self.pop_container();
+            return true;
         }
         false
     }
@@ -837,38 +839,67 @@ fn continuation(k: &Cursor<'_>) -> Option<Vec<(usize, usize)>> {
 /// C2-B-197: one image form, glued attribute blocks, trailing spaces.
 #[must_use]
 pub fn block_image_line(line: &str) -> bool {
-    let Some(rest) = line.strip_prefix("![") else {
+    if !line.starts_with("![") {
+        return false;
+    }
+    let Some(close) = bracket_end(line, 2) else {
         return false;
     };
-    let Some(close) = bracket_end(rest) else {
-        return false;
-    };
-    let Some(after) = rest.get(close + 1..) else {
+    let Some(after) = line.get(close + 1..) else {
         return false;
     };
     let after = match after.as_bytes().first() {
         Some(b'(') => paren_tail(after),
-        Some(b'[') => after.find(']').and_then(|i| after.get(i + 1..)),
+        Some(b'[') => label_tail(line, close + 1),
         _ => None,
     };
     after.is_some_and(trailing_attrs)
 }
 
-fn bracket_end(s: &str) -> Option<usize> {
+fn bracket_end(s: &str, start: usize) -> Option<usize> {
     let b = s.as_bytes();
     let mut depth = 0usize;
-    let mut i = 0;
+    let mut i = start;
     while let Some(&c) = b.get(i) {
         match c {
             b'\\' => i += 1,
             b'[' => depth += 1,
             b']' if depth == 0 => return Some(i),
             b']' => depth -= 1,
+            b'%' if crate::inline::comment_start(s, i) => return None,
+            b'`' => {
+                let span = crate::inline::code_span(s, i);
+                if !span.closed {
+                    return None;
+                }
+                i = span.end;
+                continue;
+            }
             _ => {}
         }
         i += 1;
     }
     None
+}
+
+fn label_tail(s: &str, start: usize) -> Option<&str> {
+    let b = s.as_bytes();
+    let alt = s.get(2..start.saturating_sub(1))?;
+    if b.get(start + 1) == Some(&b']') {
+        return (!crate::chars::fold_label(alt).is_empty())
+            .then(|| s.get(start + 2..))
+            .flatten();
+    }
+    if matches!(b.get(start + 1), Some(b'@' | b'^')) {
+        return None;
+    }
+    let crate::inline::Label::Ok(close, end) = crate::inline::label(s, start + 1, true) else {
+        return None;
+    };
+    let key = s.get(start + 1..close)?;
+    (!crate::chars::fold_label(key).is_empty())
+        .then(|| s.get(end..))
+        .flatten()
 }
 
 /// `(destination "title")`: a destination has no space (`data/line-shapes.json`
@@ -879,23 +910,30 @@ fn paren_tail(s: &str) -> Option<&str> {
     let mut i = 1;
     loop {
         match *b.get(i)? {
-            b'\\' => i += 1,
+            b'\\' => {
+                if matches!(b.get(i + 1), Some(b'(' | b')' | b'\\')) {
+                    i += 1;
+                }
+            }
             b'(' => depth += 1,
             b')' if depth == 0 => return s.get(i + 1..),
             b')' => depth -= 1,
-            b' ' => break,
+            b' ' | b'\t' => break,
+            c if c >= 0x80 => {
+                let ch = s.get(i..)?.chars().next()?;
+                i += ch.len_utf8() - 1;
+            }
             _ => {}
         }
         i += 1;
     }
-    paren_title_tail(s, i)
+    (depth == 0 && b.get(i) == Some(&b' '))
+        .then(|| paren_title_tail(s, i + 1))
+        .flatten()
 }
 
 fn paren_title_tail(s: &str, mut i: usize) -> Option<&str> {
     let b = s.as_bytes();
-    while b.get(i) == Some(&b' ') {
-        i += 1;
-    }
     let q = *b.get(i).filter(|&&c| c == b'"' || c == b'\'')?;
     i += 1;
     loop {

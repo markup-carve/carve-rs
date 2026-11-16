@@ -6,7 +6,7 @@ use super::Builder;
 use crate::Arena;
 use crate::ast::{self, Node, owned::Attrs};
 use crate::block::table::{Row, TableData};
-use crate::inline::ContentKind;
+use crate::inline::{ContentKind, Join, Piece};
 
 /// Where the cell at a grid place came from.
 #[derive(Debug, Clone, Copy)]
@@ -24,6 +24,7 @@ struct Resolved {
     mark: Option<char>,
     /// A failed mark leaves an empty cell (C2-B-173).
     failed: bool,
+    origin: Option<Origin>,
 }
 
 impl<'a> Builder<'_, 'a> {
@@ -36,13 +37,13 @@ impl<'a> Builder<'_, 'a> {
         end: usize,
     ) -> Node<'a> {
         // C2-A-086, gap G-012: comments after the last row belong to the table.
-        let trailing = data
-            .rows
-            .last_mut()
-            .map(|r| std::mem::take(&mut r.comments))
-            .unwrap_or_default();
+        let trailing = data.rows.last_mut().map_or_else(Vec::new, |r| {
+            let split = r.comments.partition_point(|(start, _, _)| *start < r.end);
+            r.comments.split_off(split)
+        });
         let head = head_rows(&data.rows);
         let spans = resolve_spans(&data.rows, head);
+        move_joined_marks(&mut data.rows, &spans);
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let n = data.rows.len();
         let foot = footer_count(attrs.as_ref()).min(n - head);
@@ -281,6 +282,7 @@ fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
                     }
                     if let Some(res) = out.get_mut(r).and_then(|v| v.get_mut(c)) {
                         res.mark = Some(m);
+                        res.origin = Some(o);
                     }
                     o
                 }
@@ -298,6 +300,33 @@ fn resolve_spans(rows: &[Row], head: usize) -> Vec<Vec<Resolved>> {
         }
     }
     out
+}
+
+fn move_joined_marks(rows: &mut [Row], spans: &[Vec<Resolved>]) {
+    let mut moves: Vec<(Origin, Vec<Piece>)> = Vec::new();
+    for (r, row) in rows.iter_mut().enumerate() {
+        for (c, cell) in row.cells.iter_mut().enumerate() {
+            let origin = spans.get(r).and_then(|v| v.get(c)).and_then(|sp| sp.origin);
+            if let Some(origin) = origin.filter(|_| !cell.pieces.is_empty()) {
+                moves.push((origin, std::mem::take(&mut cell.pieces)));
+                cell.joined = false;
+            }
+        }
+    }
+    for (origin, mut pieces) in moves {
+        if let Some(cell) = rows
+            .get_mut(origin.row)
+            .and_then(|r| r.cells.get_mut(origin.col))
+        {
+            if !cell.pieces.is_empty() {
+                if let Some(first) = pieces.first_mut() {
+                    first.join = Join::Cell;
+                }
+            }
+            cell.pieces.append(&mut pieces);
+            cell.joined = true;
+        }
+    }
 }
 
 fn span_origin(

@@ -112,7 +112,8 @@ fn after_spaces(c: &Cursor<'_>, min: usize) -> Option<(usize, usize)> {
         k.bump();
         n += 1;
     }
-    (n >= min && !k.is_blank() && k.peek_byte() != Some(b'\t')).then_some((k.pos, k.col))
+    k = k.after_blanks();
+    (n >= min && !k.is_blank()).then_some((k.pos, k.col))
 }
 
 fn glued_attrs(c: &mut Cursor<'_>) -> Option<Option<AttrBlock>> {
@@ -156,7 +157,9 @@ pub fn list_marker(c: &Cursor<'_>) -> Option<ListMarker> {
             return None;
         }
     }
-    task_box(&k, &mut m);
+    if pos == k.pos + min_spaces {
+        task_box(&k, &mut m);
+    }
     Some(m)
 }
 
@@ -442,7 +445,19 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
     fi
 }
 
-/// An optional quoted title and an optional bracket label after spaces.
+/// C2-I-033: a backslash escapes a quote inside a title.
+fn closing_quote(s: &str, mut i: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    loop {
+        match *bytes.get(i)? {
+            b'\\' => i += 2,
+            b'"' => return Some(i),
+            _ => i += 1,
+        }
+    }
+}
+
+/// C2-B-119: an optional title and label follow the opener.
 pub fn title_and_label(
     s: &str,
     mut i: usize,
@@ -456,10 +471,10 @@ pub fn title_and_label(
         .get(i..)
         .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
     if (sp > 0 || allow_glued_first) && b.get(i + sp) == Some(&b'"') {
-        if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find('"')) {
-            let start = i + sp + 1;
-            *title = Some((base + start, base + start + close));
-            i = start + close + 1;
+        let start = i + sp + 1;
+        if let Some(close) = closing_quote(s, start) {
+            *title = Some((base + start, base + close));
+            i = close + 1;
         }
     }
     let sp = b

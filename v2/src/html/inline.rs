@@ -708,13 +708,13 @@ fn hide_comment_lines(nodes: &[Node], hidden: &mut AddrSet<usize>) {
         return;
     }
     let mut prev_break: Option<&Node> = None;
-    let mut line: Vec<&Node> = Vec::new();
+    let mut line: Vec<(&Node, bool)> = Vec::new();
     let (mut comment, mut quiet) = (false, true);
     let mut it = items.iter().peekable();
     while let Some(item) = it.next() {
         match item {
             Item::Quiet(n, c) => {
-                line.push(n);
+                line.push((n, *c));
                 comment |= *c;
             }
             Item::Loud => quiet = false,
@@ -730,7 +730,7 @@ fn hide_comment_lines(nodes: &[Node], hidden: &mut AddrSet<usize>) {
             continue;
         }
         if comment && quiet {
-            hidden.extend(line.iter().map(|n| addr(n)));
+            hidden.extend(line.iter().filter(|(_, c)| *c).map(|(n, _)| addr(n)));
             if let Some(b) = brk.or(prev_break) {
                 hidden.insert(addr(b));
             }

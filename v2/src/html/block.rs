@@ -732,7 +732,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
             if let Node::Table(_) = c {
                 if self.profile_allows(c, true) {
                     self.level += 1;
-                    self.line(depth + 1, "<figure class=\"carve-figure-panel\">");
+                    let mut panel = self.el(None, None, c);
+                    panel.base.push("carve-figure-panel".into());
+                    self.line(
+                        depth + 1,
+                        &format!("<figure{}>", panel.write(self.filter())),
+                    );
                     self.table(c, depth + 2, false);
                     self.line(depth + 1, "</figure>");
                     self.level -= 1;

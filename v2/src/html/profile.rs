@@ -103,6 +103,7 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<SourceView
                 n,
                 Node::Code(_)
                     | Node::Math(_)
+                    | Node::RawInline(_)
                     | Node::Autolink(_)
                     | Node::Xref(_)
                     | Node::Symbol(_)
@@ -385,6 +386,7 @@ fn table_text(t: &crate::ast::Table, src: Option<SourceView<'_>>) -> String {
             .children()
             .into_iter()
             .flatten()
+            .filter(|c| !matches!(c, Node::TableCell(cell) if cell.span.is_some()))
             .map(|c| esc::text_str(&block_text(c.children().unwrap_or_default(), src)))
             .collect();
         rows.push(cells.join(" | "));

@@ -70,7 +70,7 @@ impl Scan<'_> {
 }
 
 /// C2-I-033: a backslash before ASCII punctuation is dropped, before anything else it stays.
-fn unescape(raw: &str) -> String {
+pub(crate) fn unescape(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut it = raw.chars().peekable();
     while let Some(c) = it.next() {

@@ -66,6 +66,62 @@ fn c2_b_125_only_a_bare_colon_run_closes_a_div() {
 }
 
 #[test]
+fn c2_b_033_tab_after_required_list_space_is_content_indent() {
+    assert_eq!(
+        render("- \ta", &Options::default()),
+        "<ul>\n  <li>a</li>\n</ul>"
+    );
+    assert_eq!(tree("- \ta")["children"][0]["type"], "list");
+}
+
+#[test]
+fn c2_b_046_task_box_must_follow_only_the_required_spaces() {
+    assert_eq!(
+        render("-  [ ] q", &Options::default()),
+        "<ul>\n  <li>[ ] q</li>\n</ul>"
+    );
+    assert_eq!(
+        tree("-  [ ] q")["children"][0]["children"][0]["task"],
+        serde_json::Value::Null
+    );
+}
+
+#[test]
+fn c2_a_073_code_title_is_one_literal_text_node_even_when_empty() {
+    let t = tree("```python \"\"\ncode\n```");
+    assert_eq!(t["children"][0]["title"].as_array().unwrap().len(), 1);
+    assert_eq!(t["children"][0]["title"][0]["value"], "");
+
+    let t = tree("```python \"src/*a* \\!\"\ncode\n```");
+    assert_eq!(t["children"][0]["title"].as_array().unwrap().len(), 1);
+    assert_eq!(t["children"][0]["title"][0]["value"], "src/*a* !");
+}
+
+#[test]
+fn c2_h_016_table_panel_carries_source_line() {
+    let opts = Options {
+        source_lines: true,
+        ..Options::default()
+    };
+    let html = render(
+        ":::: figure\n![a](a.png)\n^ First\n\n| t |\n^ Second\n::::",
+        &opts,
+    );
+    assert!(
+        html.contains("<figure class=\"carve-figure-panel\" data-source-line=\"5\">"),
+        "{html}"
+    );
+}
+
+#[test]
+fn c2_b_197_invalid_image_tail_is_not_a_block_image() {
+    let t = tree("![i](a.png\t)\n^ cap");
+    assert_eq!(t["children"][0]["type"], "paragraph");
+    assert!(t["children"][0].get("role").is_none());
+    assert_eq!(t["children"][0]["children"][1]["type"], "soft_break");
+}
+
+#[test]
 fn c2_i_040_empty_block_after_a_cell_attribute_is_text() {
     assert!(render("|{c}{}|", &Options::default()).contains("<td c=\"\">{}</td>"));
 }
@@ -303,6 +359,40 @@ fn c2_a_158_joined_cell_keeps_positions_within_one_piece() {
 }
 
 #[test]
+fn c2_a_151_table_group_owns_continuation_line() {
+    let t = tree("| 1 | 2 |\n+ a | b | c |");
+    let body = &t["children"][0]["children"][0];
+    assert_eq!(body["pos"]["endOffset"], 23);
+
+    let t = tree("| *a* | b |\n+ c | d |");
+    let body = &t["children"][0]["children"][0];
+    assert_eq!(body["pos"]["endOffset"], 21);
+}
+
+#[test]
+fn c2_b_184_continuation_under_row_span_joins_origin_cell() {
+    let src = "| a | b |\n| ^ | c |\n+ x | d |";
+    let html = render(src, &Options::default());
+    assert!(html.contains(">a x</td>"), "{html}");
+    let t = tree(src);
+    let rows = &t["children"][0]["children"][0]["children"];
+    let origin = &rows[0]["children"][0];
+    assert_eq!(origin["children"][0]["children"][0]["value"], "a x");
+    assert!(origin.get("pos").is_none());
+    assert_eq!(rows[1]["children"][0]["span"], "rowspan");
+    assert!(rows[1]["children"][0].get("pos").is_some());
+}
+
+#[test]
+fn c2_a_086_comment_before_continuation_stays_in_group() {
+    let t = tree("| a |\n%% x\n+ b |");
+    let table = &t["children"][0];
+    assert_eq!(table["children"].as_array().unwrap().len(), 1);
+    assert_eq!(table["children"][0]["children"][1]["type"], "comment");
+    assert_eq!(table["children"][0]["children"][1]["value"], "x");
+}
+
+#[test]
 fn c2_a_151_final_line_comment_owns_dropped_spaces() {
     let t = tree("c %% z  ");
     let p = &t["children"][0];
@@ -499,4 +589,143 @@ fn c2_b_122_two_spaces_leave_fence_without_language() {
         render("```  b\ntext\n```", &Options::default()),
         "<pre><code>text\n</code></pre>"
     );
+}
+
+#[test]
+fn c2_h_069_comment_only_line_preserves_neighboring_spaces() {
+    let html = render("^[ {%\n%}\n]", &Options::default());
+    assert!(html.contains("<p> <a href=\"#fnref1\""));
+}
+
+#[test]
+fn c2_b_125_bare_run_closes_innermost_div_it_reaches() {
+    let html = render("::: spoiler\nx\n:::: spoiler\nx\n:::", &Options::default());
+    assert_eq!(
+        html,
+        "<div class=\"spoiler\">\n  <p>x</p>\n  <div class=\"spoiler\">\n    <p>x</p>\n  </div>\n</div>"
+    );
+}
+
+#[test]
+fn c2_b_109_bare_div_closer_stays_in_its_container() {
+    let src = "::: a\n- x\n  :::\ny";
+    let t = tree(src);
+    assert_eq!(t["children"].as_array().unwrap().len(), 1);
+    assert_eq!(t["children"][0]["type"], "div");
+    assert_eq!(t["children"][0]["children"].as_array().unwrap().len(), 2);
+    assert_eq!(t["children"][0]["children"][0]["type"], "list");
+    assert_eq!(t["children"][0]["children"][1]["type"], "paragraph");
+}
+
+#[test]
+fn c2_b_197_block_image_tail_keeps_multibyte_destination() {
+    for src in ["![i](a\\é.png)\n^ cap", "![i](a\u{a0}b.png)\n^ cap"] {
+        assert_eq!(tree(src)["children"][0]["type"], "figure", "{src}");
+    }
+    assert_eq!(
+        tree("![i](a.png\t)\n^ cap")["children"][0]["type"],
+        "paragraph"
+    );
+}
+
+#[test]
+fn c2_a_156_unescaped_code_title_has_no_source_slice_position() {
+    let changed = tree("```python \"src/*a* \\!\"\ncode\n```");
+    let title = &changed["children"][0]["title"][0];
+    assert_eq!(title["value"], "src/*a* !");
+    assert!(title.get("pos").is_none());
+
+    let literal = tree("```python \"src/app.py\"\ncode\n```");
+    assert!(literal["children"][0]["title"][0].get("pos").is_some());
+}
+
+#[test]
+fn c2_i_033_code_title_reads_escaped_quote() {
+    let src = "```py \"a \\\" d\"\ncode\n```";
+    let title = &tree(src)["children"][0]["title"][0];
+    assert_eq!(title["value"], "a \" d");
+    assert!(title.get("pos").is_none());
+    assert!(render(src, &Options::default()).contains("title=\"a &quot; d\""));
+}
+
+#[test]
+fn c2_i_013_destination_backslash_does_not_hide_whitespace() {
+    for src in [
+        "![i](a\\ b.png)\n^ cap",
+        "![i](a\\\tb.png)\n^ cap",
+        "![a](\\ )\n^ cap",
+    ] {
+        assert_eq!(tree(src)["children"][0]["type"], "paragraph", "{src}");
+    }
+}
+
+#[test]
+fn c2_i_068_image_title_needs_exactly_one_space() {
+    assert_eq!(
+        tree("![i](a.png  \"t\")\n^ cap")["children"][0]["type"],
+        "paragraph"
+    );
+    assert_eq!(
+        tree("![i](a \"t\"\t)\n^ cap")["children"][0]["type"],
+        "paragraph"
+    );
+}
+
+#[test]
+fn c2_i_067_image_destination_balances_before_title() {
+    assert_eq!(
+        tree("![i](a(b.png \"t\")\n^ cap")["children"][0]["type"],
+        "paragraph"
+    );
+}
+
+#[test]
+fn c2_b_197_image_reference_label_reads_escaped_bracket() {
+    assert_eq!(tree("![a][b\\]c]\n^ cap")["children"][0]["type"], "figure");
+    assert_eq!(tree("![a][b[c]\n^ cap")["children"][0]["type"], "figure");
+}
+
+#[test]
+fn c2_b_197_invalid_image_forms_do_not_promote() {
+    for src in [
+        "![a][ ]\n^ cap",
+        "![a][@x]\n^ cap",
+        "![a][b %% c]\n^ cap",
+        "![a %% b](x)\n^ cap",
+    ] {
+        let t = tree(src);
+        assert_eq!(t["children"][0]["type"], "paragraph", "{src}");
+    }
+    assert_eq!(tree("![a][]\n^ cap")["children"][0]["type"], "figure");
+    assert_eq!(
+        tree("![`a %% b`](x)\n^ cap")["children"][0]["type"],
+        "figure"
+    );
+}
+
+#[test]
+fn c2_b_108_comment_fence_keeps_blank_body_spaces() {
+    let t = tree("%%%\n \n-");
+    assert_eq!(t["children"][0]["value"], " \n-");
+}
+
+#[test]
+fn c2_h_165_degraded_raw_inline_keeps_source() {
+    let opts = Options {
+        profile: carve2::options::Profile::Comment,
+        ..Options::default()
+    };
+    assert_eq!(
+        render("a `<br>`{=html} b", &opts),
+        "<p>a `&lt;br&gt;`{=html} b</p>"
+    );
+}
+
+#[test]
+fn c2_h_165_degraded_table_omits_span_mark_cells() {
+    let opts = Options {
+        profile: carve2::options::Profile::Minimal,
+        ..Options::default()
+    };
+    assert_eq!(render("| 1 | 2 | < |", &opts), "<p>1 | 2</p>");
 }

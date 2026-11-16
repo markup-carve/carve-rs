@@ -424,14 +424,13 @@ impl<'a> Builder<'_, 'a> {
                     return self.delimited_table(&value, sep, attrs, lang, pos);
                 }
                 let title = info.title.map(|(s, e)| {
-                    self.inline(
-                        ContentKind::Paragraph,
-                        &[Piece {
-                            start: s,
-                            end: e,
-                            join: Join::Line,
-                        }],
-                    )
+                    let raw = self.src.slice(s, e);
+                    let value = crate::block::include::unescape(raw);
+                    self.arena.one(Node::Text(self.arena.alloc(ast::Text {
+                        value: self.arena.str(&value),
+                        pos: (value == raw).then(|| self.src.pos(s, e)),
+                        ..Default::default()
+                    })))
                 });
                 Node::CodeBlock(self.arena.alloc(ast::CodeBlock {
                     value: self.s(&value),

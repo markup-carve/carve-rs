@@ -118,7 +118,7 @@ enum Leaf {
         len: usize,
         indent: usize,
         lines: Vec<String>,
-        held: usize,
+        held: Vec<String>,
     },
     Frontmatter {
         format: String,
@@ -386,14 +386,10 @@ impl<'a> Parser<'a> {
             return false;
         }
         match &mut open.leaf {
-            Leaf::Code { indent, held, .. } => {
+            Leaf::Code { indent, held, .. } | Leaf::CommentBlock { indent, held, .. } => {
                 let mut k = walk.body;
                 k.strip_to(walk.qbase + *indent);
                 held.push(k.rest().to_string());
-                true
-            }
-            Leaf::CommentBlock { held, .. } => {
-                *held += 1;
                 true
             }
             Leaf::LineBlock { held, .. } => {
@@ -733,10 +729,7 @@ fn flush_held(leaf: &mut Leaf) {
             }));
         }
         Leaf::CommentBlock { lines, held, .. } => {
-            for _ in 0..*held {
-                lines.push(String::new());
-            }
-            *held = 0;
+            lines.append(held);
         }
         _ => {}
     }
@@ -767,10 +760,7 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
             held,
             ..
         } => {
-            for _ in 0..*held {
-                lines.push(String::new());
-            }
-            *held = 0;
+            lines.append(held);
             let mut k = walk.body;
             k.strip_to(walk.qbase + *indent);
             lines.push(k.rest().to_string());

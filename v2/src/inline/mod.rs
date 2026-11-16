@@ -11,6 +11,8 @@ mod scan;
 mod smart;
 mod token;
 
+pub(crate) use atoms::{Label, code_span, comment_start, label};
+
 use crate::Arena;
 use crate::ast::Node;
 use crate::source::Source;
