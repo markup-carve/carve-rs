@@ -37,6 +37,13 @@ fn c2_b_116_raw_format_needs_initial_ascii_letter() {
 }
 
 #[test]
+fn c2_b_117_fence_metadata_can_follow_the_run_without_a_language() {
+    assert_eq!(tree("```[]")["children"][0]["groupLabel"], "");
+    assert!(tree("```\"T\"")["children"][0].get("title").is_some());
+    assert!(tree("```py[]")["children"][0].get("groupLabel").is_none());
+}
+
+#[test]
 fn c2_b_129_last_hardbreaks_class_forces_hard_breaks() {
     let html = render("{.hardbreaks}\n:::\na\nb\n:::", &Options::default());
     assert!(html.contains("a<br>\n"), "{html}");

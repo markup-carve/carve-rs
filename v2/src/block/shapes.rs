@@ -438,7 +438,7 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
         i += n;
     }
     // C2-B-105: a brace block after the language is further words (C2-B-122).
-    title_and_label(info, i, base, &mut fi.title, &mut fi.label);
+    title_and_label(info, i, base, n == 0, &mut fi.title, &mut fi.label);
     fi
 }
 
@@ -447,6 +447,7 @@ pub fn title_and_label(
     s: &str,
     mut i: usize,
     base: usize,
+    allow_glued_first: bool,
     title: &mut Option<(usize, usize)>,
     label: &mut Option<String>,
 ) {
@@ -454,7 +455,7 @@ pub fn title_and_label(
     let sp = b
         .get(i..)
         .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
-    if sp > 0 && b.get(i + sp) == Some(&b'"') {
+    if (sp > 0 || allow_glued_first) && b.get(i + sp) == Some(&b'"') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find('"')) {
             let start = i + sp + 1;
             *title = Some((base + start, base + start + close));
@@ -464,7 +465,7 @@ pub fn title_and_label(
     let sp = b
         .get(i..)
         .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
-    if sp > 0 && b.get(i + sp) == Some(&b'[') {
+    if (sp > 0 || (allow_glued_first && title.is_none())) && b.get(i + sp) == Some(&b'[') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find(']')) {
             *label = s.get(i + sp + 1..i + sp + 1 + close).map(String::from);
         }
@@ -522,7 +523,7 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
     } else if let Some(&s @ (b'>' | b'\\' | b'|')) = b.get(i) {
         info.sigil = Some(char::from(s));
     } else {
-        title_and_label(rest, 0, base, &mut info.title, &mut info.label);
+        title_and_label(rest, 0, base, false, &mut info.title, &mut info.label);
     }
     Some((n, info))
 }
@@ -542,7 +543,7 @@ fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) {
             j = end;
         }
     }
-    title_and_label(rest, j, base, &mut info.title, &mut info.label);
+    title_and_label(rest, j, base, false, &mut info.title, &mut info.label);
 }
 
 /// A table row (C2-B-166, C2-B-167): returns the cell area `(start, end)`
