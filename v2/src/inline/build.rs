@@ -306,10 +306,9 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
         }
     }
 
-    /// C2-A-158: the inline nodes of a cell that a continuation row joined
-    /// omit `pos` (GAP INL-010: the oracle omits it on every one of them).
+    /// C2-A-158: joined cell nodes crossing source pieces omit their positions.
     fn pos(&self, v0: usize, v1: usize) -> Option<Pos> {
-        (!self.c.cell_joined()).then(|| self.c.pos(v0, v1))
+        (!self.c.cell_joined() || self.c.contiguous(v0, v1)).then(|| self.c.pos(v0, v1))
     }
 
     /// Adds text, appended to a text node before it (C2-A-040).
@@ -416,9 +415,7 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
             self.smart.prev = Prev::Word;
             self.flow_prev = None;
         }
-        // C2-A-158: a caption number has no source text of its own.
         let pos = match &node {
-            Node::CaptionNumber(_) => None,
             Node::Comment(c) if c.form == CommentForm::Line && self.pos(v0, v1).is_some() => {
                 self.comment_to = Some(v1);
                 Some(self.c.pos_to_line_end(v0, v1))

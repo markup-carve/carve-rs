@@ -168,7 +168,7 @@ impl<'a> Builder<'_, 'a> {
                 .iter()
                 .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
             let positioned = !cell.joined && !blank && sp.mark.is_none() && !sp.failed;
-            let cell_positioned = positioned || (sp.failed && !cell.joined);
+            let cell_positioned = !cell.joined;
             let children = self.cell_children(cell, positioned, sp.mark.is_some());
             let header = if sp.failed {
                 all_header(i)
@@ -232,9 +232,6 @@ impl<'a> Builder<'_, 'a> {
             } else {
                 None
             };
-            if !positioned {
-                strip_pos(inl);
-            }
             self.arena
                 .one(Node::CellParagraph(self.arena.alloc(ast::CellParagraph {
                     children: inl,
@@ -242,21 +239,6 @@ impl<'a> Builder<'_, 'a> {
                     ..Default::default()
                 })))
         }
-    }
-}
-
-fn strip_pos(nodes: &mut [Node<'_>]) {
-    for n in nodes {
-        clear_pos(n, 0);
-    }
-}
-
-fn clear_pos(n: &mut Node<'_>, depth: usize) {
-    if let Some(p) = n.pos_slot() {
-        *p = None;
-    }
-    if depth < crate::tables::DEPTH_CAP {
-        n.for_each_child_mut(&mut |c| clear_pos(c, depth + 1));
     }
 }
 

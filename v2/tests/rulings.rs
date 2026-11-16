@@ -215,3 +215,35 @@ fn c2_h_179_abbreviation_template_writes_attrs_and_escapes_text() {
         "<template data-carve-abbreviations>{#x .c}\n*[A]: R&amp;D &lt;research&gt; \"and\"</template>"
     ));
 }
+
+#[test]
+fn c2_a_158_caption_mark_and_empty_or_span_cells_have_positions() {
+    let t = tree("![i](a.png)\n^ Figure #: cap");
+    let children = &t["children"][0]["caption"]["children"][0]["children"];
+    assert_eq!(children[0]["pos"]["startOffset"], 14);
+    assert_eq!(children[1]["pos"]["startOffset"], 21);
+    assert_eq!(children[1]["pos"]["endOffset"], 22);
+    assert_eq!(children[2]["pos"]["startOffset"], 22);
+
+    let t = tree("| a | |\n| b | < |");
+    let rows = &t["children"][0]["children"][0]["children"];
+    let empty = &rows[0]["children"][1];
+    assert_eq!(empty["pos"]["startOffset"], 5);
+    assert_eq!(empty["pos"]["endOffset"], 6);
+    assert!(empty["children"][0].get("pos").is_none());
+    let span = &rows[1]["children"][1];
+    assert_eq!(span["pos"]["startOffset"], 13);
+    assert_eq!(span["pos"]["endOffset"], 16);
+}
+
+#[test]
+fn c2_a_158_joined_cell_keeps_positions_within_one_piece() {
+    let t = tree("| *a* | b |\n+ c | d |");
+    let cell = &t["children"][0]["children"][0]["children"][0]["children"][0];
+    assert!(cell.get("pos").is_none());
+    let para = &cell["children"][0];
+    assert!(para.get("pos").is_none());
+    assert_eq!(para["children"][0]["pos"]["startOffset"], 2);
+    assert_eq!(para["children"][0]["children"][0]["pos"]["startOffset"], 3);
+    assert!(para["children"][1].get("pos").is_none());
+}
