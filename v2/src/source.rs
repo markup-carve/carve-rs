@@ -13,8 +13,8 @@ pub struct Source<'a> {
     text: Cow<'a, str>,
     /// Byte offset of the first character of each line in `text`.
     line_starts: Vec<usize>,
-    /// Offsets in `text` of each U+FFFD that stood for a U+0000 (two extra bytes each).
-    nul_at: Vec<usize>,
+    /// Decoded end and cumulative extra bytes after each replacement.
+    replacements: Vec<(usize, usize)>,
     /// Length of the byte-order mark at the start, 0 or 3.
     bom: usize,
     /// For each block of `MARK` bytes, its first character boundary and the
@@ -43,25 +43,71 @@ fn column_marks(text: &str) -> Vec<(usize, usize)> {
     marks
 }
 
+fn append_valid(
+    valid: &str,
+    text: &mut String,
+    replacements: &mut Vec<(usize, usize)>,
+    extra: &mut usize,
+) {
+    if !valid.contains('\0') {
+        text.push_str(valid);
+        return;
+    }
+    for c in valid.chars() {
+        if c == '\0' {
+            text.push('\u{FFFD}');
+            *extra += 2;
+            replacements.push((text.len(), *extra));
+        } else {
+            text.push(c);
+        }
+    }
+}
+
 impl<'a> Source<'a> {
     /// Reads `input` (C2-B-218: U+0000 is read as U+FFFD).
     #[must_use]
     pub fn new(input: &'a str) -> Self {
-        let mut nul_at = Vec::new();
-        let text = if input.contains('\0') {
-            let mut t = String::with_capacity(input.len() + 16);
-            for c in input.chars() {
-                if c == '\0' {
-                    nul_at.push(t.len());
-                    t.push('\u{FFFD}');
-                } else {
-                    t.push(c);
-                }
+        if !input.contains('\0') {
+            return Self::from_parts(Cow::Borrowed(input), Vec::new());
+        }
+        let mut text = String::with_capacity(input.len() + 16);
+        let mut replacements = Vec::new();
+        let mut extra = 0;
+        append_valid(input, &mut text, &mut replacements, &mut extra);
+        Self::from_parts(Cow::Owned(text), replacements)
+    }
+
+    /// C2-B-218: decode maximal ill-formed UTF-8 subparts to one U+FFFD each.
+    #[must_use]
+    pub fn from_bytes(input: &'a [u8]) -> Self {
+        if let Ok(valid) = std::str::from_utf8(input) {
+            return Self::new(valid);
+        }
+        let mut text = String::with_capacity(input.len());
+        let mut replacements = Vec::new();
+        let mut extra = 0;
+        let mut rest = input;
+        while let Err(error) = std::str::from_utf8(rest) {
+            let valid = error.valid_up_to();
+            if let Ok(prefix) = std::str::from_utf8(rest.get(..valid).unwrap_or_default()) {
+                append_valid(prefix, &mut text, &mut replacements, &mut extra);
             }
-            Cow::Owned(t)
-        } else {
-            Cow::Borrowed(input)
-        };
+            let bad = error
+                .error_len()
+                .unwrap_or(rest.len().saturating_sub(valid));
+            text.push('\u{FFFD}');
+            extra += 3usize.saturating_sub(bad);
+            replacements.push((text.len(), extra));
+            rest = rest.get(valid + bad..).unwrap_or_default();
+        }
+        if let Ok(tail) = std::str::from_utf8(rest) {
+            append_valid(tail, &mut text, &mut replacements, &mut extra);
+        }
+        Self::from_parts(Cow::Owned(text), replacements)
+    }
+
+    fn from_parts(text: Cow<'a, str>, replacements: Vec<(usize, usize)>) -> Self {
         let bom = if text.starts_with('\u{FEFF}') { 3 } else { 0 };
         let mut line_starts = Vec::with_capacity(text.len() / 32 + 1);
         line_starts.push(bom);
@@ -74,7 +120,7 @@ impl<'a> Source<'a> {
         Self {
             text,
             line_starts,
-            nul_at,
+            replacements,
             bom,
             marks,
         }
@@ -158,11 +204,12 @@ impl<'a> Source<'a> {
     /// Offset in the original bytes for an offset into `text`.
     #[must_use]
     pub fn original_offset(&self, at: usize) -> usize {
-        if self.nul_at.is_empty() {
-            return at;
-        }
-        let before = self.nul_at.partition_point(|&n| n < at);
-        at - 2 * before
+        let before = self.replacements.partition_point(|&(end, _)| end <= at);
+        let extra = before
+            .checked_sub(1)
+            .and_then(|i| self.replacements.get(i))
+            .map_or(0, |&(_, extra)| extra);
+        at.saturating_sub(extra)
     }
 
     /// 0-based line index of a byte offset.
@@ -241,5 +288,21 @@ mod tests {
                 "at {at}"
             );
         }
+    }
+
+    #[test]
+    fn c2_b_218_replacement_spans_original_bytes() {
+        let src = Source::from_bytes(b"a\xffb");
+        assert_eq!(src.text(), "a\u{FFFD}b");
+        assert_eq!(src.original_len(), 3);
+        assert_eq!(src.pos(1, 4).start_offset, 1);
+        assert_eq!(src.pos(1, 4).end_offset, 2);
+
+        let src = Source::from_bytes(b"a\xe2\x82b");
+        assert_eq!(src.text(), "a\u{FFFD}b");
+        assert_eq!(src.original_len(), 4);
+        assert_eq!(src.pos(1, 4).start_offset, 1);
+        assert_eq!(src.pos(1, 4).end_offset, 3);
+        assert_eq!(src.pos(4, 5).start_offset, 3);
     }
 }

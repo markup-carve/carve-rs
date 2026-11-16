@@ -302,3 +302,24 @@ fn c2_a_086_trailing_table_row_comments_are_siblings() {
     );
     assert_eq!(tree("||%%")["children"][0]["type"], "paragraph");
 }
+
+#[test]
+fn c2_b_218_byte_source_replaces_maximal_subparts_with_original_offsets() {
+    let opts = Options::default();
+    for input in [&b"a\xffb"[..], &b"a\xe2\x82b"[..]] {
+        let arena = carve2::Arena::new();
+        let doc = carve2::try_parse_resolved_bytes_in(input, &opts, &arena).unwrap();
+        let t: serde_json::Value = serde_json::from_str(&carve2::to_json(&doc)).unwrap();
+        assert_eq!(t["srcByteLength"], input.len());
+        assert_eq!(t["children"][0]["children"][0]["value"], "a�b");
+        assert_eq!(t["children"][0]["pos"]["endOffset"], input.len());
+        assert_eq!(
+            carve2::try_render_bytes(input, &opts).unwrap(),
+            "<p>a�b</p>"
+        );
+        assert_eq!(
+            t["children"][0]["children"][0]["pos"]["endOffset"],
+            input.len()
+        );
+    }
+}

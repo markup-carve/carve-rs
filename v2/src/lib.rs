@@ -70,6 +70,29 @@ pub fn parse_resolved_in<'a>(
     doc
 }
 
+/// C2-B-218: parses bytes with replacement of malformed UTF-8 and original byte offsets.
+///
+/// # Errors
+///
+/// [`RenderError::TooLong`] when positions cannot fit in `u32`.
+pub fn try_parse_resolved_bytes_in<'a>(
+    input: &'a [u8],
+    opts: &Options,
+    arena: &'a Arena,
+) -> Result<ast::Document<'a>, RenderError> {
+    if input.len() > u32::MAX as usize {
+        return Err(RenderError::TooLong {
+            profile: "source",
+            limit: u32::MAX as usize,
+        });
+    }
+    let src = source::Source::from_bytes(input);
+    let out = block::scan(&src);
+    let mut doc = tree::build(&src, arena, out.events, &out.own_starts);
+    resolve::resolve(&mut doc, opts, arena);
+    Ok(doc)
+}
+
 /// Parses source into an owned pre-resolve tree.
 #[must_use]
 pub fn parse(input: &str) -> ast::owned::Document {
@@ -128,13 +151,45 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         .iter()
         .find(|p| p.name == profile)
         .and_then(|p| p.max_length);
-    if let Some(limit) = limit.filter(|&l| input.len() > l) {
+    let limit = limit.unwrap_or(u32::MAX as usize).min(u32::MAX as usize);
+    if input.len() > limit {
         return Err(RenderError::TooLong { profile, limit });
     }
     let arena = Arena::for_input(input);
     let mut doc = parse_in(input, &arena);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
     let (out, losses) = html::render_source(&doc, opts, input, ordered);
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    Ok(out)
+}
+
+/// C2-B-218: renders bytes after replacing malformed UTF-8 subparts.
+///
+/// # Errors
+///
+/// [`RenderError::TooLong`] and [`RenderError::Losses`].
+pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderError> {
+    if let Ok(valid) = std::str::from_utf8(input) {
+        return try_render(valid, opts);
+    }
+    let src = source::Source::from_bytes(input);
+    let profile = opts.profile.name();
+    let limit = tables::PROFILES
+        .iter()
+        .find(|p| p.name == profile)
+        .and_then(|p| p.max_length)
+        .unwrap_or(u32::MAX as usize)
+        .min(u32::MAX as usize);
+    if src.text().len() > limit {
+        return Err(RenderError::TooLong { profile, limit });
+    }
+    let arena = Arena::for_input(src.text());
+    let out = block::scan(&src);
+    let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
+    let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
+    let (out, losses) = html::render_source(&doc, opts, src.text(), ordered);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }

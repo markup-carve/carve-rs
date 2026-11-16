@@ -11,15 +11,16 @@ fn main() {
     if std::io::stdin().read_to_end(&mut bytes).is_err() {
         std::process::exit(1);
     }
-    let input = String::from_utf8_lossy(&bytes);
     let out = if tree {
-        carve2::to_json(&carve2::parse_resolved_in(
-            &input,
-            &opts,
-            &carve2::Arena::new(),
-        ))
+        match carve2::try_parse_resolved_bytes_in(&bytes, &opts, &carve2::Arena::new()) {
+            Ok(doc) => carve2::to_json(&doc),
+            Err(e) => {
+                eprintln!("carve2: {e}");
+                std::process::exit(1);
+            }
+        }
     } else {
-        match carve2::try_render(&input, &opts) {
+        match carve2::try_render_bytes(&bytes, &opts) {
             Ok(html) => html,
             Err(e) => {
                 eprintln!("carve2: {e}");
