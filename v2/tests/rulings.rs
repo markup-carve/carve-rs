@@ -1,5 +1,11 @@
 use carve2::{Options, render};
 
+fn tree(src: &str) -> serde_json::Value {
+    let arena = carve2::Arena::new();
+    let document = carve2::parse_resolved_in(src, &Options::default(), &arena);
+    serde_json::from_str(&carve2::to_json(&document)).unwrap()
+}
+
 #[test]
 fn c2_b_105_admonition_glued_attrs_are_reported_and_dropped() {
     assert_eq!(
@@ -32,4 +38,53 @@ fn c2_i_117_closing_mark_is_not_a_plus_minus_neighbor() {
         "<p><ins>±</ins> and <ins>±1</ins> and a±b</p>"
     );
     assert_eq!(render("+-{%x%}-", &Options::default()), "<p>+--</p>");
+}
+
+#[test]
+fn c2_b_211_invalid_column_lists_have_no_effect_and_stay_in_attrs() {
+    let src = "{aligns=right,x widths=25,x}\n| a | b |";
+    let t = tree(src);
+    let table = &t["children"][0];
+    assert_eq!(
+        table["attrs"]["keyValues"],
+        serde_json::json!([["aligns", "right,x"], ["widths", "25,x"]])
+    );
+    assert!(
+        table["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c.get("align").is_none() && c.get("width").is_none())
+    );
+    assert!(!render(src, &Options::default()).contains("<colgroup>"));
+}
+
+#[test]
+fn c2_b_227_invalid_and_inapplicable_counts_stay_in_attrs() {
+    let src = "{header-rows=2 footer-rows=x}\n| a | b |\n| c | d |";
+    let t = tree(src);
+    assert_eq!(
+        t["children"][0]["attrs"]["keyValues"],
+        serde_json::json!([["header-rows", "2"], ["footer-rows", "x"]])
+    );
+    let html = render(src, &Options::default());
+    assert!(!html.contains("header-rows=") && !html.contains("footer-rows="));
+}
+
+#[test]
+fn c2_b_211_short_valid_list_applies_and_invalid_tail_cancels_all() {
+    let valid = tree("{aligns=right widths=25}\n| a | b |");
+    let columns = &valid["children"][0]["columns"];
+    assert_eq!(columns[0]["align"], "right");
+    assert_eq!(columns[0]["width"], 0.25);
+    assert!(columns[1].get("align").is_none());
+    assert!(valid["children"][0].get("attrs").is_none());
+
+    let invalid = tree("{aligns=right,left,x widths=25,50,0}\n| a | b |");
+    let columns = invalid["children"][0]["columns"].as_array().unwrap();
+    assert!(
+        columns
+            .iter()
+            .all(|c| c.get("align").is_none() && c.get("width").is_none())
+    );
 }

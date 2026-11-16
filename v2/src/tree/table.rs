@@ -26,8 +26,6 @@ struct Resolved {
     failed: bool,
 }
 
-const TABLE_KEYS: [&str; 4] = ["aligns", "widths", "header-rows", "footer-rows"];
-
 impl<'a> Builder<'_, 'a> {
     pub(super) fn table(
         &self,
@@ -48,7 +46,7 @@ impl<'a> Builder<'_, 'a> {
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let n = data.rows.len();
         let foot = footer_count(attrs.as_ref()).min(n - head);
-        let (columns, attrs) = columns(self.arena, ncols, attrs);
+        let (columns, attrs) = columns(self.arena, ncols, attrs, false);
         let mut groups: Vec<Node<'a>> = Vec::new();
         let bounds = [(0, head, 0u8), (head, n - foot, 1), (n - foot, n, 2)];
         for (lo, hi, kind) in bounds {
@@ -90,7 +88,7 @@ impl<'a> Builder<'_, 'a> {
                 .retain(|(k, _)| !k.eq_ignore_ascii_case("table"));
             a
         });
-        let (columns, attrs) = columns(self.arena, ncols, attrs.filter(|a| !a.is_empty()));
+        let (columns, attrs) = columns(self.arena, ncols, attrs.filter(|a| !a.is_empty()), true);
         Node::Table(self.arena.alloc(ast::Table {
             children,
             columns,
@@ -363,11 +361,12 @@ fn count(v: &str) -> Option<usize> {
     }
 }
 
-/// The columns and the table attributes that are read, not kept (gap G-003).
+/// The columns and the table attributes that are valid and consumed (C2-B-227).
 fn columns<'a>(
     arena: &'a Arena,
     ncols: usize,
     attrs: Option<Attrs>,
+    header_applies: bool,
 ) -> (&'a mut [Node<'a>], Option<Attrs>) {
     let mut cols: Vec<ast::TableColumn<'a>> =
         (0..ncols).map(|_| ast::TableColumn::default()).collect();
@@ -381,27 +380,36 @@ fn columns<'a>(
     let Some(mut a) = attrs else {
         return (nodes(cols), None);
     };
-    if let Some(v) = a.get("aligns") {
-        for (i, entry) in v.split(',').enumerate() {
-            if let (Some(col), Some(al)) = (
-                cols.get_mut(i),
-                ast::TableColumnAlign::from_name(entry.trim()),
-            ) {
-                col.align = Some(al);
-                col.authored = Some(true);
-            }
+    let aligns = a.get("aligns").and_then(|v| {
+        v.split(',')
+            .map(|entry| ast::TableColumnAlign::from_name(entry.trim()))
+            .collect::<Option<Vec<_>>>()
+    });
+    let widths = a.get("widths").and_then(|v| {
+        v.split(',')
+            .map(|entry| width(entry.trim()))
+            .collect::<Option<Vec<_>>>()
+    });
+    if let Some(values) = aligns.as_ref() {
+        for (col, align) in cols.iter_mut().zip(values) {
+            col.align = Some(*align);
+            col.authored = Some(true);
         }
     }
-    if let Some(v) = a.get("widths") {
-        for (i, entry) in v.split(',').enumerate() {
-            if let (Some(col), Some(w)) = (cols.get_mut(i), width(entry.trim())) {
-                col.width = Some(w);
-                col.authored = Some(true);
-            }
+    if let Some(values) = widths.as_ref() {
+        for (col, &width) in cols.iter_mut().zip(values) {
+            col.width = Some(width);
+            col.authored = Some(true);
         }
     }
-    a.key_values
-        .retain(|(k, _)| !TABLE_KEYS.iter().any(|t| t.eq_ignore_ascii_case(k)));
+    let header_valid = header_applies && a.get("header-rows").is_some_and(|v| count(v).is_some());
+    let footer_valid = a.get("footer-rows").is_some_and(|v| count(v).is_some());
+    a.key_values.retain(|(key, _)| {
+        !((key.eq_ignore_ascii_case("aligns") && aligns.is_some())
+            || (key.eq_ignore_ascii_case("widths") && widths.is_some())
+            || (key.eq_ignore_ascii_case("header-rows") && header_valid)
+            || (key.eq_ignore_ascii_case("footer-rows") && footer_valid))
+    });
     let attrs = (!a.is_empty()).then_some(a);
     (nodes(cols), attrs)
 }
