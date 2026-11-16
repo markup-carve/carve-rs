@@ -293,7 +293,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.inlines(&*l.children, out);
             return;
         }
-        let Some(href) = &l.href else {
+        let Some(href) = l.href.filter(|href| {
+            l.key.is_none_or(|key| self.links.contains_key(key)) || !self.hidden_heading(href)
+        }) else {
             if let Some(key) = &l.key {
                 out.push('[');
                 self.inlines(&*l.children, out);
@@ -431,7 +433,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-095 to C2-H-097.
     fn xref(&mut self, x: &ast::Xref, out: &mut String) {
-        let Some(href) = &x.href else {
+        let Some(href) = x.href.filter(|href| !self.hidden_heading(href)) else {
             esc::text(&format!("</#{}>", x.key), out);
             return;
         };

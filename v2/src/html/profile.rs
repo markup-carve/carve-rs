@@ -202,6 +202,34 @@ pub(super) fn inlines_plain(nodes: &[Node], src: Option<&str>) -> String {
     s
 }
 
+/// C2-H-165: inside a degraded block, childless code and math give their values.
+fn inlines_block_plain(nodes: &[Node]) -> String {
+    fn append(n: &Node, out: &mut String, depth: usize) {
+        if depth > crate::resolve::WALK_CAP {
+            return;
+        }
+        match n {
+            Node::Code(c) => out.push_str(c.value),
+            Node::Math(m) => out.push_str(m.value),
+            Node::LiteralInline(l) => out.push_str(l.value),
+            other => {
+                if let Some(children) = other.children().filter(|c| !c.is_empty()) {
+                    for child in children {
+                        append(child, out, depth + 1);
+                    }
+                } else {
+                    inline_plain(other, out, depth, None);
+                }
+            }
+        }
+    }
+    let mut out = String::new();
+    for n in nodes {
+        append(n, &mut out, 0);
+    }
+    out
+}
+
 /// The escaped paragraphs a degraded block gives.
 fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<&str>) {
     if depth > crate::resolve::WALK_CAP {
@@ -291,7 +319,7 @@ fn degraded_simple_text(n: &Node, src: Option<&str>) -> Option<String> {
         Node::Heading(h) => format!(
             "{} {}",
             "#".repeat(usize::try_from(h.level).unwrap_or(1)),
-            inlines_plain(&*h.children, src)
+            inlines_block_plain(&*h.children)
         ),
         Node::List(l) => {
             let items: Vec<String> = l
@@ -316,10 +344,10 @@ fn degraded_simple_text(n: &Node, src: Option<&str>) -> Option<String> {
             parts.join(" ")
         }
         Node::Include(i) => super::block::include_text(i),
-        Node::Paragraph(p) => inlines_plain(&*p.children, src),
+        Node::Paragraph(p) => inlines_block_plain(&*p.children),
         // Leaves of inline content: an inline node with children is no block here.
-        Node::CellParagraph(p) => inlines_plain(&*p.children, src),
-        Node::Line(l) => inlines_plain(&*l.children, src),
+        Node::CellParagraph(p) => inlines_block_plain(&*p.children),
+        Node::Line(l) => inlines_block_plain(&*l.children),
         _ => return None,
     })
 }

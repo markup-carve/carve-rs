@@ -15,7 +15,7 @@ use crate::options::Options;
 use crate::resolve::order::{Order, addr, caption_of, mark_of};
 use crate::resolve::{label_key, plain, slug};
 use attrs::{El, Filter};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Renders a resolved tree (C2-H-001).
 #[must_use]
@@ -77,6 +77,7 @@ pub(crate) struct Renderer<'r, 'a> {
     /// The anchor id of each note mark (C2-H-088).
     mark_ids: AddrMap<usize, String>,
     links: HashMap<&'a str, &'r LinkReferenceDefinition<'a>>,
+    hidden_heading_ids: HashSet<&'a str>,
     xref_text: HashMap<String, String>,
     adm_ids: AddrMap<usize, String>,
     /// The top-level `footnotes` directive that places the section (C2-H-093).
@@ -107,10 +108,28 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     fn with_order(doc: &'r Document<'a>, opts: &'r Options, ordered: bool) -> Self {
-        let order = if ordered {
+        let profile = crate::tables::PROFILES
+            .iter()
+            .find(|p| p.name == opts.profile.name());
+        let hides_headings = profile.is_some_and(|row| {
+            row.denied_block.contains(&"heading")
+                || row
+                    .allowed_block
+                    .is_some_and(|allow| !allow.contains(&"heading"))
+        });
+        let order = if ordered || hides_headings {
             Order::build(doc)
         } else {
             Order::default()
+        };
+        let hidden_heading_ids = if hides_headings {
+            order
+                .visits
+                .iter()
+                .filter_map(|v| heading_id(v.node))
+                .collect()
+        } else {
+            HashSet::new()
         };
         let mut r = Renderer {
             opts,
@@ -120,6 +139,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             order,
             mark_ids: AddrMap::default(),
             links: HashMap::new(),
+            hidden_heading_ids,
             xref_text: HashMap::new(),
             adm_ids: AddrMap::default(),
             placing: None,
@@ -133,12 +153,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
             degrading: 0,
             losses: Vec::new(),
             hidden: AddrSet::default(),
-            profile: crate::tables::PROFILES
-                .iter()
-                .find(|p| p.name == opts.profile.name()),
+            profile,
         };
         r.index();
         r
+    }
+
+    fn hidden_heading(&self, href: &str) -> bool {
+        href.strip_prefix('#')
+            .is_some_and(|id| self.hidden_heading_ids.contains(id))
     }
 
     fn filter(&self) -> Filter {

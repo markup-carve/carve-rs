@@ -124,3 +124,27 @@ fn c2_h_165_degraded_table_keeps_caption_number() {
     let src = "| t |\n^ Table #: tc";
     assert_eq!(render(src, &options), "<p>t</p>\n<p>Table 1: tc</p>");
 }
+
+#[test]
+fn c2_h_177_references_to_degraded_heading_render_unresolved() {
+    let mut options = Options::default();
+    options.profile = carve2::options::Profile::Comment;
+    let src = "## Sub *em* code\n\n[Sub em code][] and </#Sub-em-code>";
+    let html = render(src, &options);
+    assert_eq!(
+        html,
+        "<p>## Sub em code</p>\n<p>[Sub em code][] and &lt;/#Sub-em-code&gt;</p>"
+    );
+    assert!(tree(src).to_string().contains("#Sub-em-code"));
+}
+
+#[test]
+fn c2_h_165_whole_block_degradation_uses_code_and_math_values() {
+    let mut options = Options::default();
+    options.profile = carve2::options::Profile::Minimal;
+    let src = "![i](a.png)\n^ a `x` b $`m`\n\n> q `c` $`n`";
+    assert_eq!(
+        render(src, &options),
+        "<p>[img: i]</p>\n<p>a x b m</p>\n<p>&gt; q c n</p>"
+    );
+}
