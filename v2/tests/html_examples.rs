@@ -8,11 +8,15 @@ use common::options_of;
 #[test]
 fn c2_h_001_oracle_trees_render_the_expected_html() {
     let all = common::examples();
-    assert_eq!(all.len(), 374, "fixture not read");
+    assert_eq!(all.len(), 404, "fixture not read");
     let mut pass = 0;
     let mut failures = Vec::new();
     for ex in &all {
-        let Ok(Node::Document(doc)) = serde_json::from_value::<Node>(ex.oracle_tree.clone()) else {
+        let Ok(Node::Document(doc)) = serde_json::from_value::<Node>(
+            ex.spec_tree
+                .clone()
+                .unwrap_or_else(|| ex.oracle_tree.clone()),
+        ) else {
             failures.push(format!("{}: no document", ex.id));
             continue;
         };
