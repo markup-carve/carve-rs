@@ -98,3 +98,12 @@ fn c2_i_084_heading_lookup_reads_markup_in_the_key() {
     let t = tree(src);
     assert!(t.to_string().contains("#A-bold-title"));
 }
+
+#[test]
+fn c2_h_020_attributed_block_image_keeps_paragraph() {
+    let src = "{.c #i}\n![a](x.png)\n\n{:de}\n![b](y.png)\n\n![c](z.png)";
+    assert_eq!(
+        render(src, &Options::default()),
+        "<p id=\"i\" class=\"c\"><img src=\"x.png\" alt=\"a\"></p>\n<p lang=\"de\"><img src=\"y.png\" alt=\"b\"></p>\n<img src=\"z.png\" alt=\"c\">"
+    );
+}

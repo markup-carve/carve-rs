@@ -174,7 +174,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if comments_only(p.children) {
             return false;
         }
-        if p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children) {
+        if p.role == Some(ParagraphRole::Image)
+            && !has_attrs(p.attrs, p.lang)
+            && self.image_block_bare(p.children)
+        {
             self.leaf_into(p.children, out);
             return true;
         }
@@ -199,7 +202,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// A paragraph written as a bare `<img>` (C2-H-020).
     fn bare_image(&self, p: &ast::Paragraph) -> bool {
-        p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children)
+        p.role == Some(ParagraphRole::Image)
+            && !has_attrs(p.attrs, p.lang)
+            && self.image_block_bare(p.children)
     }
 
     /// C2-H-020: a block image is written without `<p>` unless it renders as
