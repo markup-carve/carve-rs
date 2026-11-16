@@ -379,3 +379,19 @@ fn c2_b_130_line_block_keeps_lead_after_container_strip() {
     let line = &t["children"][0]["children"][0]["children"][0]["children"][1]["children"][0];
     assert_eq!(line["children"][0]["value"], "\tx");
 }
+
+#[test]
+fn c2_i_002_line_end_spaces_are_removed_before_inline_forms() {
+    for (src, kind) in [
+        ("`a  \n  b`", "code"),
+        ("!`a  \n  b`", "literal_inline"),
+        ("$`a  \n  b`", "math"),
+        ("`a  \n  b`{=html}", "raw_inline"),
+        ("{%a  \n  b%}", "comment"),
+    ] {
+        let t = tree(src);
+        let node = &t["children"][0]["children"][0];
+        assert_eq!(node["type"], kind, "{src}");
+        assert_eq!(node["value"], "a\nb", "{src}");
+    }
+}
