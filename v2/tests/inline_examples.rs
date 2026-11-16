@@ -16,12 +16,12 @@ fn inline_examples_match_oracle_paragraphs() {
         if ex.opts.get("profile").is_some() {
             continue;
         }
-        let is_single = ex
-            .oracle_tree
+        let expected_tree = ex.spec_tree.as_ref().unwrap_or(&ex.oracle_tree);
+        let is_single = expected_tree
             .get("children")
             .and_then(|c| c.as_array())
             .is_some_and(|c| c.len() == 1);
-        for (want, got) in support::compare(&ex.input, &ex.oracle_tree, common::sorted) {
+        for (want, got) in support::compare(&ex.input, expected_tree, common::sorted) {
             total += 1;
             single += usize::from(is_single);
             if want != got {

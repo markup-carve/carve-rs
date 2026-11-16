@@ -79,7 +79,15 @@ fn piece_bounds(env: &InlineEnv<'_, '_>, p: &Piece, full: &str) -> (usize, usize
     } else {
         trim_end(b, start, end)
     };
-    (start, end, raw_end)
+    (
+        start,
+        end,
+        if env.kind == ContentKind::Cell {
+            end
+        } else {
+            raw_end
+        },
+    )
 }
 
 impl<'e, 'a> Content<'e, 'a> {
