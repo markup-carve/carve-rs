@@ -28,3 +28,4 @@ path = "src/main.rs"
 [dev-dependencies]
 # The fixture trees nest past serde_json's default recursion limit of 128.
 serde_json = { version = "1", features = ["unbounded_depth"] }
+flate2 = "1"
