@@ -128,7 +128,7 @@ fn offsets(nodes: &[Node]) -> Vec<(String, usize, usize)> {
         .map(|n| {
             let pos = n
                 .pos()
-                .map_or((usize::MAX, usize::MAX), |p| (p.start_offset, p.end_offset));
+                .map_or((usize::MAX, usize::MAX), |p| (p.start(), p.end()));
             (n.type_name().to_string(), pos.0, pos.1)
         })
         .collect()

@@ -203,12 +203,12 @@ impl<'a> Source<'a> {
         let (start_line, start_column) = self.line_col(start);
         let (end_line, end_column) = self.line_col(end);
         Pos {
-            start_line,
-            end_line,
-            start_column,
-            end_column,
-            start_offset: self.original_offset(start),
-            end_offset: self.original_offset(end),
+            start_line: Pos::at(start_line),
+            end_line: Pos::at(end_line),
+            start_column: Pos::at(start_column),
+            end_column: Pos::at(end_column),
+            start_offset: Pos::at(self.original_offset(start)),
+            end_offset: Pos::at(self.original_offset(end)),
         }
     }
 

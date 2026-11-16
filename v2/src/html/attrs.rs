@@ -58,7 +58,7 @@ pub struct El<'a> {
     pub authored_wins: &'static [&'static str],
     /// Turns an authored `align` into a style declaration (C2-H-015).
     pub align_style: bool,
-    pub source_line: Option<usize>,
+    pub source_line: Option<u32>,
     /// Keys left out, beside the reserved ones.
     pub skip_keys: &'static [&'static str],
 }

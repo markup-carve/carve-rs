@@ -27,7 +27,7 @@ pub fn build<'a>(
     // Keyed by the source offset that `pos` carries.
     let own_starts: AddrMap<usize, usize> = own_starts
         .iter()
-        .map(|&(k, v)| (src.pos(k, k).start_offset, v))
+        .map(|&(k, v)| (src.pos(k, k).start(), v))
         .collect();
     let mut b = Builder {
         src,
@@ -603,7 +603,7 @@ fn wrap_caption<'a>(
 
 /// The figure takes the attribute lines; the block inside starts at its own markup.
 fn skip_attr_lines(src: &Source<'_>, own: &AddrMap<usize, usize>, p: &mut ast::Pos) {
-    let Some(&at) = own.get(&p.start_offset) else {
+    let Some(&at) = own.get(&p.start()) else {
         return;
     };
     let s = src.pos(at, at);

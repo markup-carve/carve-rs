@@ -96,10 +96,7 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<&str>) {
         return;
     }
     if let Some(text) = src
-        .and_then(|source| {
-            n.pos()
-                .and_then(|pos| source.get(pos.start_offset..pos.end_offset))
-        })
+        .and_then(|source| n.pos().and_then(|pos| source.get(pos.start()..pos.end())))
         .filter(|_| {
             matches!(
                 n,

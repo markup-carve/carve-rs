@@ -6,16 +6,37 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A source range (C2-A-140).
+/// A source range (C2-A-140). The fields are `u32`, which halves the size
+/// of every position; a value past `u32::MAX` saturates (see [`Pos::at`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pos {
-    pub start_line: usize,
-    pub end_line: usize,
-    pub start_column: usize,
-    pub end_column: usize,
-    pub start_offset: usize,
-    pub end_offset: usize,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub start_column: u32,
+    pub end_column: u32,
+    pub start_offset: u32,
+    pub end_offset: u32,
+}
+
+impl Pos {
+    /// A field value from a count, saturated at `u32::MAX`.
+    #[must_use]
+    pub fn at(n: usize) -> u32 {
+        u32::try_from(n).unwrap_or(u32::MAX)
+    }
+
+    /// The start offset as an index.
+    #[must_use]
+    pub fn start(&self) -> usize {
+        usize::try_from(self.start_offset).unwrap_or(usize::MAX)
+    }
+
+    /// The end offset as an index.
+    #[must_use]
+    pub fn end(&self) -> usize {
+        usize::try_from(self.end_offset).unwrap_or(usize::MAX)
+    }
 }
 
 fn empty<T>(s: &&[T]) -> bool {

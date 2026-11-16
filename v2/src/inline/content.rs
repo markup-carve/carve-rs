@@ -199,12 +199,12 @@ impl<'e, 'a> Content<'e, 'a> {
 
     fn make(&self, a: (usize, usize, usize), b: (usize, usize, usize)) -> Pos {
         Pos {
-            start_line: a.0,
-            end_line: b.0,
-            start_column: a.1,
-            end_column: b.1,
-            start_offset: self.src.original_offset(a.2),
-            end_offset: self.src.original_offset(b.2),
+            start_line: Pos::at(a.0),
+            end_line: Pos::at(b.0),
+            start_column: Pos::at(a.1),
+            end_column: Pos::at(b.1),
+            start_offset: Pos::at(self.src.original_offset(a.2)),
+            end_offset: Pos::at(self.src.original_offset(b.2)),
         }
     }
 
