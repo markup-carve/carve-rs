@@ -274,13 +274,13 @@ fn names(raw: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
-/// `auto` or a decimal integer with an optional sign. The clauses set no range (gap G-007).
+/// `auto` or a decimal integer with an optional sign (C2-B-205).
 fn integer_or_auto(t: &str) -> Option<Value> {
     if t == "auto" {
         return Some(Value::String(t.into()));
     }
     let digits = t.strip_prefix(['+', '-']).unwrap_or(t);
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     let t = t.strip_prefix('+').unwrap_or(t);
@@ -305,6 +305,16 @@ mod tests {
         assert!(parse("{{ a.crv@code:js}}").is_none());
         assert!(parse("{{ a.crv }} %% c").is_none());
         assert!(parse("{{ a.crv#s@shift:1 }}").is_some());
+    }
+
+    #[test]
+    fn c2_b_205_signed_shift_has_nine_digit_limit() {
+        for value in ["123456789", "+123456789", "-123456789"] {
+            assert!(parse(&format!("{{{{ a.crv @shift:{value} }}}}")).is_some());
+        }
+        for value in ["1234567890", "+1234567890", "-1234567890"] {
+            assert!(parse(&format!("{{{{ a.crv @shift:{value} }}}}")).is_none());
+        }
     }
 
     #[test]
