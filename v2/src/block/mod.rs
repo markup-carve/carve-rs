@@ -171,6 +171,8 @@ struct Walk<'a> {
     /// Containers of the stack that own the line, from the outside.
     matched: usize,
     cur: Cursor<'a>,
+    /// C2-B-029: source after quote marks, before an item strips to its content column.
+    body: Cursor<'a>,
     /// Column behind the innermost matched quote mark (C2-B-003).
     qbase: usize,
     /// The index of the first quote whose mark the line lacks.
@@ -320,6 +322,7 @@ impl<'a> Parser<'a> {
         let mut w = Walk {
             matched: 1,
             cur,
+            body: cur,
             qbase: 0,
             missing_quote: None,
         };
@@ -329,6 +332,7 @@ impl<'a> Parser<'a> {
                     let k = w.cur.after_blanks();
                     if let Some(after) = shapes::quote_mark(&k) {
                         w.cur = after;
+                        w.body = after;
                         w.qbase = after.col;
                     } else {
                         w.missing_quote = Some(i);
@@ -383,7 +387,7 @@ impl<'a> Parser<'a> {
         }
         match &mut open.leaf {
             Leaf::Code { indent, held, .. } => {
-                let mut k = walk.cur;
+                let mut k = walk.body;
                 k.strip_to(walk.qbase + *indent);
                 held.push(k.rest().to_string());
                 true
@@ -752,7 +756,7 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
                 value.push_str(&h);
                 value.push('\n');
             }
-            let mut k = walk.cur;
+            let mut k = walk.body;
             k.strip_to(walk.qbase + *indent);
             value.push_str(k.rest());
             value.push('\n');
@@ -767,7 +771,7 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
                 lines.push(String::new());
             }
             *held = 0;
-            let mut k = walk.cur;
+            let mut k = walk.body;
             k.strip_to(walk.qbase + *indent);
             lines.push(k.rest().to_string());
         }

@@ -414,6 +414,18 @@ fn c2_b_130_line_block_keeps_lead_after_container_strip() {
 }
 
 #[test]
+fn c2_b_029_fence_body_uses_opener_indent_left_of_item_content() {
+    let src = " - [\n  ```!\n    a";
+    assert!(render(src, &Options::default()).contains("<code>  a\n</code>"));
+    let quoted = src
+        .lines()
+        .map(|line| format!("> {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(render(&quoted, &Options::default()).contains("<code>  a\n</code>"));
+}
+
+#[test]
 fn c2_i_002_line_end_spaces_are_removed_before_inline_forms() {
     for (src, kind) in [
         ("`a  \n  b`", "code"),
