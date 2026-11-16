@@ -88,3 +88,13 @@ fn c2_b_211_short_valid_list_applies_and_invalid_tail_cancels_all() {
             .all(|c| c.get("align").is_none() && c.get("width").is_none())
     );
 }
+
+#[test]
+fn c2_i_084_heading_lookup_reads_markup_in_the_key() {
+    let src = "# A bold title\n\n[A *bold* title][] and [x][A {*bold*} title]";
+    let html = render(src, &Options::default());
+    assert!(html.contains("<a href=\"#A-bold-title\">A <strong>bold</strong> title</a>"));
+    assert!(html.contains("<a href=\"#A-bold-title\">x</a>"));
+    let t = tree(src);
+    assert!(t.to_string().contains("#A-bold-title"));
+}

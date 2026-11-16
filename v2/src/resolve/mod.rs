@@ -208,11 +208,9 @@ pub fn label_key(
 struct Index<'a> {
     links: HashMap<&'a str, &'a str>,
     abbrs: HashMap<&'a str, &'a str>,
-    /// The id of each heading with one, and for each folded plain text and
-    /// folded source the first heading that has it.
+    /// The id of each heading with one, and the first heading for each folded plain text.
     heading_ids: Vec<&'a str>,
     heading_by_text: HashMap<String, usize>,
-    heading_by_src: HashMap<String, usize>,
     targets: HashSet<&'a str>,
 }
 
@@ -238,18 +236,14 @@ impl<'a> Index<'a> {
         }
         let mut heading_ids = Vec::new();
         let mut heading_by_text = HashMap::new();
-        let mut heading_by_src = HashMap::new();
         let mut targets = HashSet::new();
         for v in &order.visits {
             let a = addr(v.node);
             if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
-                let mut src = String::new();
-                plain::source_text(h.children, &mut src, 0);
                 let i = heading_ids.len();
                 heading_by_text
                     .entry(fold_label(&plain::text_of(h.children)))
                     .or_insert(i);
-                heading_by_src.entry(fold_label(&src)).or_insert(i);
                 heading_ids.push(*id);
                 targets.insert(*id);
             } else if owners.contains(&a) {
@@ -263,7 +257,6 @@ impl<'a> Index<'a> {
             abbrs,
             heading_ids,
             heading_by_text,
-            heading_by_src,
             targets,
         }
     }
@@ -277,12 +270,16 @@ impl<'a> Index<'a> {
                 if let Some(href) = self.links.get(key) {
                     res.insert(a, Res::Href(href));
                 } else if !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut)) {
-                    // Gap HTML-002: the heading is matched on its plain text only; the tree has no source.
-                    let first = [&self.heading_by_text, &self.heading_by_src]
-                        .iter()
-                        .filter_map(|m| m.get(key).copied())
-                        .min();
-                    if let Some(id) = first.and_then(|i| self.heading_ids.get(i)) {
+                    let plain_key = if key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b' ') {
+                        std::borrow::Cow::Borrowed(key)
+                    } else {
+                        std::borrow::Cow::Owned(heading_key_plain(key, arena))
+                    };
+                    if let Some(id) = self
+                        .heading_by_text
+                        .get(plain_key.as_ref())
+                        .and_then(|i| self.heading_ids.get(*i))
+                    {
                         res.insert(a, Res::Href(arena.str(&format!("#{id}"))));
                     }
                 }
@@ -305,6 +302,28 @@ impl<'a> Index<'a> {
             _ => {}
         }
     }
+}
+
+/// C2-I-084: read a reference key as inline content without resolving references.
+fn heading_key_plain(key: &str, arena: &Arena) -> String {
+    let src = crate::source::Source::new(key);
+    let links = HashSet::new();
+    let env = crate::inline::InlineEnv {
+        src: &src,
+        arena,
+        link_keys: &links,
+        abbreviations: &[],
+        depth: 0,
+        kind: crate::inline::ContentKind::Paragraph,
+        hard_breaks: false,
+    };
+    let pieces = [crate::inline::Piece {
+        start: 0,
+        end: key.len(),
+        join: crate::inline::Join::Line,
+    }];
+    let nodes = crate::inline::parse(&env, &pieces, &mut crate::inline::Scratch::default());
+    fold_label(&plain::text_of(nodes))
 }
 
 fn apply<'a>(n: &mut Node<'a>, res: &AddrMap<usize, Res<'a>>, depth: usize) {
