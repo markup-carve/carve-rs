@@ -4,11 +4,11 @@ use super::Renderer;
 use super::block::visible;
 use super::esc;
 use crate::ast::Node;
-use crate::tables::{PROFILES, ProfileRow};
+use crate::tables::ProfileRow;
 
 impl<'r, 'a> Renderer<'r, 'a> {
     fn profile_row(&self) -> Option<&'static ProfileRow> {
-        PROFILES.iter().find(|p| p.name == self.opts.profile.name())
+        self.profile
     }
 
     /// C2-H-163: the type on its axis, and the nesting bound of C2-H-166.

@@ -97,6 +97,8 @@ pub(crate) struct Renderer<'r, 'a> {
     losses: Vec<&'static str>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
     hidden: AddrSet<usize>,
+    /// The row of `opts.profile` in the profile table.
+    profile: Option<&'static crate::tables::ProfileRow>,
 }
 
 impl<'r, 'a> Renderer<'r, 'a> {
@@ -131,6 +133,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             degrading: 0,
             losses: Vec::new(),
             hidden: AddrSet::default(),
+            profile: crate::tables::PROFILES
+                .iter()
+                .find(|p| p.name == opts.profile.name()),
         };
         r.index();
         r

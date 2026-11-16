@@ -90,7 +90,7 @@ impl Smart {
             let Some(rest) = t.get(p..v1) else { break };
             let Some(c) = rest.chars().next() else { break };
             if !starts_smart(c) {
-                let n = rest.find(starts_smart).unwrap_or(rest.len());
+                let n = find_smart(rest);
                 p += n;
                 if let Some(last) = rest.get(..n).and_then(|s| s.chars().next_back()) {
                     self.prev = Prev::Char(last);
@@ -242,6 +242,28 @@ fn starts_smart(c: char) -> bool {
         Ok(b) => ASCII_STARTS.get(usize::from(b)).copied().unwrap_or(false),
         Err(_) => *WIDE_STARTS && starts_smart_slow(c),
     }
+}
+
+/// The offset of the first character of `s` that `starts_smart`, or its length.
+fn find_smart(s: &str) -> usize {
+    let ascii = &*ASCII_STARTS;
+    let b = s.as_bytes();
+    let mut i = 0;
+    while let Some(&x) = b.get(i) {
+        if x.is_ascii() {
+            if ascii.get(usize::from(x)).copied().unwrap_or(false) {
+                return i;
+            }
+            i += 1;
+        } else {
+            let c = s.get(i..).and_then(|r| r.chars().next()).unwrap_or('\0');
+            if starts_smart(c) {
+                return i;
+            }
+            i += c.len_utf8();
+        }
+    }
+    b.len()
 }
 
 fn starts_smart_slow(c: char) -> bool {
