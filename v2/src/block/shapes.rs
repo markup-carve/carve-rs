@@ -546,15 +546,7 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
 fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) {
     let mut j = i;
     if rest.as_bytes().get(j) == Some(&b'{') {
-        if let Some((block, end)) = parse_glued(rest, j) {
-            let admonition = info.name.as_deref().is_some_and(|name| {
-                crate::tables::DIV_NAMES
-                    .iter()
-                    .any(|&(candidate, kind)| candidate == name && kind == "admonition")
-            });
-            if !admonition {
-                info.attrs = Some(block);
-            }
+        if let Some((_, end)) = parse_glued(rest, j) {
             j = end;
         }
     }

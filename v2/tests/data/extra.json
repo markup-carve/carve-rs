@@ -3564,6 +3564,7 @@
 "profile": "article"
 },
 "html": "<p>&lt;b&gt;x&lt;/b&gt;</p>\n<p>a &lt;i&gt; b</p>",
+"expected": "<p>&lt;b&gt;x&lt;/b&gt;</p>\n<p>a `&lt;i&gt;`{=html} b</p>",
 "tree": {
 "type": "document",
 "astVersion": "2.0",
@@ -26530,7 +26531,7 @@
 "tableAlignment"
 ]
 },
-"expected": "<p># Head x</p>\n<blockquote><p>quote <strong>q</strong>\nmore</p></blockquote>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<pre><code class=\"language-js\">code\n</code></pre>\n<p>—</p>\n<p>[img: i]</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] <a href=\"https://a.b\" rel=\"nofollow ugc\">https://a.b</a> <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t {#cc#}</p>"
+"expected": "<p># Head x</p>\n<blockquote><p>quote <strong>q</strong>\nmore</p></blockquote>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<pre><code class=\"language-js\">code\n</code></pre>\n<p>—</p>\n<p>i</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] <a href=\"https://a.b\" rel=\"nofollow ugc\">https://a.b</a> <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t </p>"
 },
 {
 "id": "degrade-minimal",
@@ -27776,7 +27777,7 @@
 "tableAlignment"
 ]
 },
-"expected": "<p># Head x</p>\n<p>&gt; quote q more</p>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<p>code</p>\n<p>—</p>\n<p>[img: i]</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] &lt;https://a.b&gt; <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t {#cc#}</p>"
+"expected": "<p># Head x</p>\n<p>&gt; quote q more</p>\n<p>a | b<br>\nc | d</p>\n<p>T body b second</p>\n<p>div</p>\n<p>term</p>\n<p>desc</p>\n<p>desc2</p>\n<p>code</p>\n<p>—</p>\n<p>i</p>\n<p>Figure 1: cap</p>\n<p>l1</p>\n<p>l2</p>\n<p>{{ inc.crv }}</p>\n<p>$$`m`</p>\n<p>text <br>\nbreak a&nbsp;b “q” [^1] &lt;https://a.b&gt; <code>c</code> :sym: <span class=\"ext-ext\">e</span> $`m` &lt;/#x&gt; <span class=\"mention\"><strong>@u</strong></span> #t </p>"
 },
 {
 "id": "degrade-article",
@@ -29878,6 +29879,7 @@
 "rawHtml": true
 },
 "html": "<p>&lt;b&gt;</p>\n<p>&lt;i&gt;</p>",
+"expected": "<p>&lt;b&gt;</p>\n<p>`&lt;i&gt;`{=html}</p>",
 "tree": {
 "type": "document",
 "astVersion": "2.0",

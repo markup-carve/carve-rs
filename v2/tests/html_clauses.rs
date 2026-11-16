@@ -90,12 +90,12 @@ fn c2_h_165_a_degraded_block_that_leaves_no_text_is_dropped() {
 }
 
 #[test]
-fn c2_h_165_unclosed_math_degrades_to_its_source() {
+fn c2_h_165_unclosed_math_degrades_to_writer_spelling() {
     let o = carve2::Options {
         profile: carve2::options::Profile::Minimal,
         ..carve2::Options::default()
     };
-    assert_eq!(carve2::render("$`", &o), "<p>$`</p>");
+    assert_eq!(carve2::render("$`", &o), "<p>$``</p>");
 }
 
 #[test]
@@ -128,7 +128,10 @@ fn c2_b_105_a_brace_block_glued_to_a_fence_language_is_no_attribute() {
 fn c2_i_084_heading_lookup_uses_plain_text() {
     assert_eq!(
         html("# \\*a\\*\n\n# *a*\n\n[x][*a*]\n"),
-        "<section id=\"a\">\n  <h1>*a*</h1>\n</section>\n<section id=\"a-2\">\n  <h1><strong>a</strong></h1>\n  <p><a href=\"#a-2\">x</a></p>\n</section>"
+        concat!(
+            "<section id=\"a\">\n  <h1>*a*</h1>\n</section>\n",
+            "<section id=\"a-2\">\n  <h1><strong>a</strong></h1>\n  <p><a href=\"#a-2\">x</a></p>\n</section>"
+        )
     );
 }
 
@@ -225,7 +228,10 @@ fn social() -> carve2::Options {
 fn c2_h_100_gap_g_022_social_makes_mentions_and_tags_links() {
     assert_eq!(
         carve2::render("@ann #topic", &social()),
-        "<p><a class=\"mention\" href=\"https://m/ann?x=ann\"><strong>@ann</strong></a> <a class=\"tag\" href=\"https://t/topic\"><strong>#topic</strong></a></p>"
+        concat!(
+            "<p><a class=\"mention\" href=\"https://m/ann?x=ann\"><strong>@ann</strong></a> ",
+            "<a class=\"tag\" href=\"https://t/topic\"><strong>#topic</strong></a></p>"
+        )
     );
     assert_eq!(
         carve2::render("[x @ann](/u)", &social()),

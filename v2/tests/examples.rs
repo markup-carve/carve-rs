@@ -14,7 +14,7 @@ fn report(name: &str, pass: usize, total: usize, failures: &[String]) {
 #[test]
 fn c2_examples_render_the_expected_html() {
     let all = common::examples();
-    assert_eq!(all.len(), 404, "fixture not read");
+    assert_eq!(all.len(), 411, "fixture not read");
     let mut failures = Vec::new();
     for ex in &all {
         let html = carve2::render(&ex.input, &options_of(&ex.opts));

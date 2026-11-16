@@ -47,6 +47,7 @@ fn c2_fixed_oracle_corpus_and_clause_differences() {
         );
         if let Some(d) = difference {
             assert!(d["clause"].as_str().is_some_and(|s| s.starts_with("C2-")));
+            assert!(d["caseId"].as_str().is_some_and(|s| !s.is_empty()));
             let rewrite = d["rewrite"].as_str().unwrap();
             assert_eq!(
                 carve2::render(rewrite, &opts),

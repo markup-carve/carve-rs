@@ -8,6 +8,42 @@ use crate::source::SourceView;
 use crate::tables::ProfileRow;
 
 impl<'r, 'a> Renderer<'r, 'a> {
+    pub(super) fn only_comments(&self, nodes: &[Node]) -> bool {
+        super::block::comments_only_with_critic(
+            nodes,
+            !self.profile_allows_type("critic_comment", false),
+        )
+    }
+
+    // C2-H-129, C2-H-165: a degraded node still reports when it leaves no text.
+    pub(super) fn report_empty_paragraph(&mut self, n: &Node) {
+        if !self.profile_allows(n, true) {
+            self.losses.push("profile-construct-degraded");
+        } else if let Node::Paragraph(p) = n {
+            for child in p.children.iter() {
+                if matches!(child, Node::CriticComment(_)) && !self.profile_allows(child, false) {
+                    self.losses.push("profile-construct-degraded");
+                }
+            }
+        }
+    }
+
+    // C2-H-165: containers omit empty degraded children, but still report them.
+    pub(super) fn report_suppressed(&mut self, children: &[Node]) {
+        for child in children {
+            if !visible(child) {
+                continue;
+            }
+            if let Node::Paragraph(p) = child {
+                if self.only_comments(p.children) {
+                    self.report_empty_paragraph(child);
+                }
+            } else if self.degraded(child).is_some_and(|paras| paras.is_empty()) {
+                self.losses.push("profile-construct-degraded");
+            }
+        }
+    }
+
     fn profile_row(&self) -> Option<&'static ProfileRow> {
         self.profile
     }
@@ -51,7 +87,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn shown(&self, children: &'r [Node<'a>]) -> Vec<&'r Node<'a>> {
         children
             .iter()
-            .filter(|c| visible(c) && self.degraded(c).is_none_or(|p| !p.is_empty()))
+            .filter(|c| {
+                visible(c)
+                    && !matches!(c, Node::Paragraph(p) if self.only_comments(p.children))
+                    && self.degraded(c).is_none_or(|p| !p.is_empty())
+            })
             .collect()
     }
 
@@ -96,23 +136,23 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<SourceView
     if depth > crate::resolve::WALK_CAP {
         return;
     }
-    if let Some(text) = src
-        .and_then(|source| n.pos().and_then(|pos| source.slice(*pos)))
-        .filter(|_| {
-            matches!(
-                n,
-                Node::Code(_)
-                    | Node::Math(_)
-                    | Node::RawInline(_)
-                    | Node::Autolink(_)
-                    | Node::Xref(_)
-                    | Node::Symbol(_)
-                    | Node::Mention(_)
-                    | Node::Tag(_)
-                    | Node::CriticComment(_)
-                    | Node::CitationGroup(_)
-            )
-        })
+    if depth > 0
+        && let Some(text) = src
+            .and_then(|source| n.pos().and_then(|pos| source.slice(*pos)))
+            .filter(|_| {
+                matches!(
+                    n,
+                    Node::Code(_)
+                        | Node::Math(_)
+                        | Node::RawInline(_)
+                        | Node::Autolink(_)
+                        | Node::Xref(_)
+                        | Node::Symbol(_)
+                        | Node::Mention(_)
+                        | Node::Tag(_)
+                        | Node::CitationGroup(_)
+                )
+            })
     {
         out.push_str(text);
         return;
@@ -140,11 +180,7 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<SourceView
             out.push_str(t.name);
         }
         Node::Abbreviation(a) => out.push_str(a.key),
-        Node::CriticComment(c) => {
-            out.push_str("{#");
-            out.push_str(c.value);
-            out.push_str("#}");
-        }
+        Node::CriticComment(_) => {}
         Node::CitationGroup(c) => out.push_str(c.raw),
         Node::CaptionNumber(c) => {
             out.push_str(&c.n.map_or_else(|| "#".to_string(), |n| n.to_string()));
@@ -175,17 +211,19 @@ fn inline_plain_leaf(n: &Node, out: &mut String) -> bool {
         }
         Node::Comment(_) => {}
         Node::Code(c) => {
-            out.push('`');
-            out.push_str(c.value);
-            out.push('`');
+            code_spelling(c.value, out);
         }
         Node::Math(m) => {
-            out.push_str(if m.display { "$$`" } else { "$`" });
-            out.push_str(m.value);
-            out.push('`');
+            out.push_str(if m.display { "$$" } else { "$" });
+            code_spelling(m.value, out);
         }
         Node::LiteralInline(l) => out.push_str(l.value),
-        Node::RawInline(r) => out.push_str(r.value),
+        Node::RawInline(r) => {
+            code_spelling(r.value, out);
+            out.push_str("{=");
+            out.push_str(r.format);
+            out.push('}');
+        }
         Node::Autolink(a) => {
             out.push('<');
             out.push_str(a.text.unwrap_or(a.href));
@@ -196,40 +234,34 @@ fn inline_plain_leaf(n: &Node, out: &mut String) -> bool {
     true
 }
 
-pub(super) fn inlines_plain(nodes: &[Node], src: Option<SourceView<'_>>) -> String {
-    let mut s = String::new();
-    for n in nodes {
-        inline_plain(n, &mut s, 0, src);
+fn code_spelling(value: &str, out: &mut String) {
+    let runs: std::collections::HashSet<usize> = value
+        .split(|c| c != '`')
+        .map(str::len)
+        .filter(|len| *len > 0)
+        .collect();
+    let mut tick_count = 1;
+    while runs.contains(&tick_count) {
+        tick_count += 1;
     }
-    s
+    let ticks = "`".repeat(tick_count);
+    let padded = value.starts_with('`')
+        || value.ends_with('`')
+        || (value.starts_with(' ') && value.ends_with(' ') && value.bytes().any(|b| b != b' '));
+    out.push_str(&ticks);
+    if padded {
+        out.push(' ');
+    }
+    out.push_str(value);
+    if padded {
+        out.push(' ');
+    }
+    out.push_str(&ticks);
 }
 
 /// C2-H-165: inside a degraded block, childless code and math give their values.
 fn inlines_block_plain(nodes: &[Node]) -> String {
-    fn append(n: &Node, out: &mut String, depth: usize) {
-        if depth > crate::resolve::WALK_CAP {
-            return;
-        }
-        match n {
-            Node::Code(c) => out.push_str(c.value),
-            Node::Math(m) => out.push_str(m.value),
-            Node::LiteralInline(l) => out.push_str(l.value),
-            other => {
-                if let Some(children) = other.children().filter(|c| !c.is_empty()) {
-                    for child in children {
-                        append(child, out, depth + 1);
-                    }
-                } else {
-                    inline_plain(other, out, depth, None);
-                }
-            }
-        }
-    }
-    let mut out = String::new();
-    for n in nodes {
-        append(n, &mut out, 0);
-    }
-    out
+    crate::resolve::plain::text_of(nodes)
 }
 
 /// The escaped paragraphs a degraded block gives.
@@ -278,7 +310,7 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
                 }
                 return;
             }
-            Some(c) => inlines_plain(c, src),
+            Some(c) => inlines_block_plain(c),
             None => String::new(),
         },
     };
@@ -306,7 +338,7 @@ fn degraded_definitions(
 ) {
     for c in d.children.iter() {
         match c {
-            Node::DefinitionTerm(t) => out.push(esc::text_str(&inlines_plain(&*t.children, src))),
+            Node::DefinitionTerm(t) => out.push(esc::text_str(&inlines_block_plain(&*t.children))),
             Node::DefinitionDescription(x) => x
                 .children
                 .iter()
@@ -327,7 +359,10 @@ fn degraded_simple_text(n: &Node, src: Option<SourceView<'_>>) -> Option<String>
             let items: Vec<String> = l
                 .children
                 .iter()
-                .map(|i| format!("- {}", block_text(i.children().unwrap_or_default(), src)))
+                .filter_map(|i| {
+                    let text = block_text(i.children().unwrap_or_default(), src);
+                    (!text.is_empty()).then(|| format!("- {text}"))
+                })
                 .collect();
             items.join(" ")
         }
@@ -339,7 +374,7 @@ fn degraded_simple_text(n: &Node, src: Option<SourceView<'_>>) -> Option<String>
             let (_, _, children, title, _) = super::block::div_parts(n);
             let mut parts: Vec<String> = Vec::new();
             if let Some(t) = title {
-                parts.push(inlines_plain(t, src));
+                parts.push(inlines_block_plain(t));
             }
             parts.push(block_text(children, src));
             parts.retain(|p| !p.is_empty());
@@ -392,4 +427,23 @@ fn table_text(t: &crate::ast::Table, src: Option<SourceView<'_>>) -> String {
         rows.push(cells.join(" | "));
     }
     rows.join("<br>\n")
+}
+
+#[cfg(test)]
+mod code_spelling_tests {
+    use super::code_spelling;
+
+    #[test]
+    fn c2_w_077_one_sided_space_needs_no_padding() {
+        let mut out = String::new();
+        code_spelling(" a", &mut out);
+        assert_eq!(out, "` a`");
+    }
+
+    #[test]
+    fn c2_w_077_uses_shortest_absent_backtick_run() {
+        let mut out = String::new();
+        code_spelling("a`b```c", &mut out);
+        assert_eq!(out, "``a`b```c``");
+    }
 }

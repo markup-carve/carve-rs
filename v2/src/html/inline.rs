@@ -592,7 +592,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.losses.push("raw-format-dropped");
             return;
         }
-        let open = if self.opts.roundtrip {
+        let open = if self.opts.roundtrip && !self.opts.raw_html {
             "<span data-carve-raw=\"html\">"
         } else {
             ""
@@ -603,7 +603,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         } else {
             esc::text(r.value, out);
         }
-        if self.opts.roundtrip {
+        if self.opts.roundtrip && !self.opts.raw_html {
             out.push_str("</span>");
         }
     }

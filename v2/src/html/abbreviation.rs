@@ -18,7 +18,8 @@ impl Renderer<'_, '_> {
             if !def.key.bytes().all(|b| b.is_ascii_alphanumeric())
                 || def.key.is_empty()
                 || def.expansion.is_empty()
-                || def.expansion.contains(['\n', '\r'])
+                || def.expansion.contains('\n')
+                || def.expansion.ends_with([' ', '\t'])
             {
                 self.losses.push("field-unspellable");
             }
@@ -45,7 +46,7 @@ fn definition(def: &AbbreviationDef<'_>) -> String {
     out.push_str("*[");
     out.push_str(def.key);
     out.push_str("]: ");
-    out.push_str(def.expansion);
+    out.push_str(&def.expansion.replace("\r\n", "\n").replace('\n', " "));
     out
 }
 

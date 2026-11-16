@@ -328,12 +328,6 @@ pub fn comment_start(t: &str, j: usize) -> bool {
     if b.get(j) != Some(&b'%') || b.get(j + 1) != Some(&b'%') {
         return false;
     }
-    if t.get(j + 2..)
-        .and_then(|s| s.chars().next())
-        .is_some_and(crate::chars::is_joining)
-    {
-        return false;
-    }
     j == 0
         || t.get(..j)
             .and_then(|s| s.chars().next_back())

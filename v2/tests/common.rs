@@ -133,6 +133,9 @@ pub fn options_of(opts: &Value) -> Options {
     if let Some(r) = opts["roundtrip"].as_bool() {
         o.roundtrip = r;
     }
+    if let Some(r) = opts["rawHtml"].as_bool() {
+        o.raw_html = r;
+    }
     if let Some(s) = opts["social"].as_object() {
         o.social = Some(carve2::options::Social {
             mention_url: s

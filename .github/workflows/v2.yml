@@ -45,6 +45,8 @@ jobs:
           "$RUNNER_TEMP/complexity-venv/bin/python" tools/check_complexity.py
       - name: Specification examples and clause tests
         run: cargo test -- --skip c2_fixed_oracle_corpus_and_clause_differences
+      - name: Decided clause cases without an oracle
+        run: cargo test --test decided_clauses
       - name: Fixed oracle corpus and recorded clause differences
         run: cargo test --test corpus
 

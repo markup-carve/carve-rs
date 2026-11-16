@@ -255,7 +255,7 @@ fn c2_h_165_whole_block_degradation_uses_code_and_math_values() {
     let src = "![i](a.png)\n^ a `x` b $`m`\n\n> q `c` $`n`";
     assert_eq!(
         render(src, &options),
-        "<p>[img: i]</p>\n<p>a x b m</p>\n<p>&gt; q c n</p>"
+        "<p>i</p>\n<p>a x b m</p>\n<p>&gt; q c n</p>"
     );
 }
 

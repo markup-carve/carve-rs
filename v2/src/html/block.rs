@@ -26,10 +26,17 @@ pub(super) fn visible(n: &Node) -> bool {
 
 /// A node list that holds only comments, breaks and blank text (C2-H-019).
 pub(super) fn comments_only(nodes: &[Node]) -> bool {
+    comments_only_with_critic(nodes, false)
+}
+
+pub(super) fn comments_only_with_critic(nodes: &[Node], critic: bool) -> bool {
     // C2-H-019: a paragraph with no comment, as one hard break, is written.
-    nodes.iter().any(|n| matches!(n, Node::Comment(_)))
+    nodes
+        .iter()
+        .any(|n| matches!(n, Node::Comment(_)) || (critic && matches!(n, Node::CriticComment(_))))
         && nodes.iter().all(|n| match n {
             Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_) => true,
+            Node::CriticComment(_) => critic,
             Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
             _ => false,
         })
@@ -146,11 +153,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn paragraph_into(&mut self, n: &'r Node<'a>, bare: bool, out: &mut String) -> bool {
         let Node::Paragraph(p) = n else { return false };
         if !self.profile_allows(n, true) {
-            if comments_only(p.children) {
+            if self.only_comments(p.children) {
+                self.report_empty_paragraph(n);
                 return false;
             }
             self.losses.push("profile-construct-degraded");
-            let t = esc::text_str(&super::profile::inlines_plain(&*p.children, self.src));
+            let t = esc::text_str(&crate::resolve::plain::text_of(&*p.children));
             if t.is_empty() {
                 return false;
             }
@@ -171,7 +179,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     fn paragraph_inner(&mut self, n: &'r Node<'a>, bare: bool, out: &mut String) -> bool {
         let Node::Paragraph(p) = n else { return false };
-        if comments_only(p.children) {
+        if self.only_comments(p.children) {
+            self.report_empty_paragraph(n);
             return false;
         }
         if p.role == Some(ParagraphRole::Image)
@@ -308,6 +317,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let Node::BlockQuote(q) = n else { return };
         let el = self.el(q.attrs, q.lang, n);
         let open = format!("<blockquote{}>", el.write(self.filter()));
+        self.report_suppressed(children);
         let vis = self.shown(children);
         // C2-H-165 with C2-H-006: a block a profile degrades is a paragraph.
         if let [only] = vis.as_slice() {
@@ -370,19 +380,41 @@ impl<'r, 'a> Renderer<'r, 'a> {
         });
         let tight = l.spacing == ListSpacing::Tight;
         for item in l.children.iter() {
-            if self.profile_allows(item, true) {
-                self.level += 1;
-                self.item(item, depth + 1, tight, ordered);
-                self.level -= 1;
-            } else {
-                // Gap HTML-007: an item past the bound keeps its `<li>` and degrades its blocks.
-                self.losses.push("profile-construct-degraded");
-                self.degrading += 1;
-                self.item(item, depth + 1, tight, ordered);
-                self.degrading -= 1;
-            }
+            self.list_item_at_depth(item, depth, tight, ordered);
         }
         self.line(depth, if ordered { "</ol>" } else { "</ul>" });
+    }
+
+    fn list_item_at_depth(&mut self, item: &'r Node<'a>, depth: usize, tight: bool, ordered: bool) {
+        if !self.show_item(item) {
+            if let Node::ListItem(i) = item {
+                let outside = !self.profile_allows(item, true);
+                self.level += 1;
+                self.degrading += usize::from(outside);
+                self.report_suppressed(i.children);
+                self.degrading -= usize::from(outside);
+                self.level -= 1;
+            }
+            return;
+        }
+        if self.profile_allows(item, true) {
+            self.level += 1;
+            self.item(item, depth + 1, tight, ordered);
+            self.level -= 1;
+        } else {
+            // Gap HTML-007: an item past the bound keeps its `<li>` and degrades its blocks.
+            self.degrading += 1;
+            self.item(item, depth + 1, tight, ordered);
+            self.degrading -= 1;
+        }
+    }
+
+    fn show_item(&self, n: &'r Node<'a>) -> bool {
+        if self.profile_allows(n, true) {
+            return true;
+        }
+        let Node::ListItem(i) = n else { return true };
+        i.task.is_some() || !self.shown(i.children).is_empty()
     }
 
     /// C2-H-007, C2-H-032 to C2-H-035.
@@ -394,6 +426,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         el.write_into(self.filter(), &mut open);
         open.push('>');
         open.push_str(&head);
+        self.report_suppressed(i.children);
         let vis = self.shown(i.children);
         let Some((first, rest)) = vis.split_first() else {
             self.line(depth, &format!("{open}</li>"));

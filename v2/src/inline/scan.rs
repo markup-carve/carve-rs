@@ -33,6 +33,16 @@ struct Bracket {
 }
 
 #[derive(Clone, Copy)]
+struct FormRecord {
+    open: usize,
+    close: usize,
+    start: usize,
+    end: usize,
+    delim_base: usize,
+    image_bracket: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
 struct DepthMark {
     mark: char,
     braced: bool,
@@ -54,6 +64,8 @@ struct Scanner<'r, 'e, 'a> {
     text_from: Option<usize>,
     brackets: Vec<Bracket>,
     open_delims: Vec<DepthMark>,
+    forms: Vec<FormRecord>,
+    depth_risk: bool,
     /// No unescaped `]` follows this offset.
     no_label_from: Option<usize>,
     /// An unquoted value run behind which attribute blocks fail.
@@ -87,6 +99,8 @@ pub fn scan<'a>(
         text_from: None,
         brackets: Vec::new(),
         open_delims: Vec::new(),
+        forms: Vec::new(),
+        depth_risk: false,
         no_label_from: None,
         attr_fail: None,
         comments: Vec::new(),
@@ -103,6 +117,7 @@ pub fn scan<'a>(
     }
     s.flush();
     s.finish_brackets();
+    s.resolve_form_depth();
     Scanned {
         toks: s.toks,
         comments: s.comments,
@@ -648,7 +663,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn push_bracket(&mut self, v0: usize, v1: usize, kind: BKind) -> bool {
         let open = self.brackets.len();
         let delim_base = self.open_delims.len();
-        if self.env.depth + open + delim_base >= tables::DEPTH_CAP {
+        if self.env.depth + open >= tables::DEPTH_CAP {
             self.flush();
             self.text_from = Some(v0);
             self.i = v1;
@@ -694,6 +709,10 @@ impl<'a> Scanner<'_, '_, 'a> {
         kind: Kind,
         attrs: Option<crate::attr::AttrBlock>,
     ) {
+        if self.form_over_cap(top) {
+            self.fail_pair(top);
+            return;
+        }
         let close = self.push(
             v0,
             v1,
@@ -709,6 +728,27 @@ impl<'a> Scanner<'_, '_, 'a> {
                 close,
             };
         }
+        if self.depth_risk {
+            self.forms.push(FormRecord {
+                open: top.tok,
+                close,
+                start: self.toks.get(top.tok).map_or(v0, |t| t.v0),
+                end: v1,
+                delim_base: top.delim_base,
+                image_bracket: None,
+            });
+        }
+    }
+
+    fn form_over_cap(&mut self, top: &Bracket) -> bool {
+        let count = self.env.depth + top.delim_base;
+        if count >= tables::DEPTH_CAP {
+            return true;
+        }
+        if count + self.brackets.len() >= tables::DEPTH_CAP {
+            self.depth_risk = true;
+        }
+        false
     }
 
     fn fail_pair(&mut self, top: &Bracket) {
@@ -823,6 +863,10 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn link(&mut self, top: &Bracket, i: usize, end: usize, target: Target) {
         if let BKind::Image { bang } = top.kind {
+            if self.form_over_cap(top) {
+                self.fail_pair(top);
+                return;
+            }
             self.image(top, bang, i, end, target);
             return;
         }
@@ -872,8 +916,23 @@ impl<'a> Scanner<'_, '_, 'a> {
             }
         }
         let v0 = self.toks.get(bang).map_or(i, |t| t.v0);
-        for t in self.toks.iter_mut().skip(bang) {
-            t.k = K::Skip;
+        let close = if self.depth_risk {
+            Some(self.push(i, end, K::Skip))
+        } else {
+            for t in self.toks.iter_mut().skip(bang) {
+                t.k = K::Skip;
+            }
+            None
+        };
+        if let Some(close) = close {
+            self.forms.push(FormRecord {
+                open: bang,
+                close,
+                start: v0,
+                end,
+                delim_base: top.delim_base,
+                image_bracket: Some(top.tok),
+            });
         }
         if let Some(t) = self.toks.get_mut(bang) {
             *t = Tok::new(
@@ -892,6 +951,61 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn finish_brackets(&mut self) {
         for top in std::mem::take(&mut self.brackets) {
             if let Some(t) = self.toks.get_mut(top.tok) {
+                t.make_text(true);
+            }
+        }
+    }
+
+    fn resolve_form_depth(&mut self) {
+        if !self.depth_risk {
+            return;
+        }
+        let mut forms = std::mem::take(&mut self.forms);
+        forms.sort_unstable_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
+        let mut active: Vec<(usize, bool, bool)> = Vec::new();
+        for form in forms {
+            while active.last().is_some_and(|a| a.0 <= form.start) {
+                active.pop();
+            }
+            let suppressed = active.iter().any(|a| a.1 && a.2);
+            let enclosing = active.iter().filter(|a| a.1 && !a.2).count();
+            let keep =
+                !suppressed && self.env.depth + form.delim_base + enclosing < tables::DEPTH_CAP;
+            if !suppressed {
+                self.apply_form_depth(form, keep);
+            }
+            active.push((form.end, keep, form.image_bracket.is_some()));
+        }
+    }
+
+    fn apply_form_depth(&mut self, form: FormRecord, keep: bool) {
+        if let Some(bracket) = form.image_bracket {
+            if keep {
+                for t in self
+                    .toks
+                    .iter_mut()
+                    .take(form.close + 1)
+                    .skip(form.open + 1)
+                {
+                    t.k = K::Skip;
+                }
+            } else {
+                if let Some(t) = self.toks.get_mut(form.open) {
+                    t.v1 = t.v0 + 1;
+                    t.make_text(true);
+                }
+                if let Some(t) = self.toks.get_mut(bracket) {
+                    t.make_text(true);
+                }
+                if let Some(t) = self.toks.get_mut(form.close) {
+                    t.make_text(true);
+                }
+            }
+        } else if !keep {
+            if let Some(t) = self.toks.get_mut(form.open) {
+                t.make_text(true);
+            }
+            if let Some(t) = self.toks.get_mut(form.close) {
                 t.make_text(true);
             }
         }
