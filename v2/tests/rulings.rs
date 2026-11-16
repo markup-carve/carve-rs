@@ -378,17 +378,13 @@ fn c2_b_226_delimited_records_keep_quotes_spaces_and_empty_rows() {
     assert_eq!(value(0, 1), "b \"q\"x");
     assert_eq!(value(0, 2), " d");
     assert_eq!(value(1, 0), "*x*");
-    assert!(
-        rows[1]["children"][1]["children"][0]["children"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        rows[1]["children"][1]["children"][0]["children"],
+        serde_json::json!([])
     );
-    assert!(
-        rows[2]["children"][0]["children"][0]["children"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        rows[2]["children"][0]["children"][0]["children"],
+        serde_json::json!([])
     );
     assert_eq!(value(3, 0), "m\nnx");
     assert_eq!(rows.len(), 4);
@@ -409,7 +405,7 @@ fn c2_b_130_line_block_keeps_lead_after_container_strip() {
     assert_eq!(lines[0]["type"], "line");
     assert_eq!(lines[0]["pos"]["startOffset"], 7);
     assert_eq!(lines[0]["pos"]["endOffset"], 8);
-    assert!(lines[0]["children"].as_array().unwrap().is_empty());
+    assert_eq!(lines[0]["children"], serde_json::json!([]));
     assert_eq!(lines[1]["children"][0]["value"], " x");
 
     let t = tree("- > a\n  > \t::: |\n  > \tx\n  > \t:::");
