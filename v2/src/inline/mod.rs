@@ -81,6 +81,7 @@ pub struct Scratch<'a> {
     /// Text pieces gathered for one text node.
     join: String,
     outs: Vec<smart::Out>,
+    frames: Vec<build::Frame<'a>>,
 }
 
 /// A buffer this long is not kept: one huge content must not pin its memory.

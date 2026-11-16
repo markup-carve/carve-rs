@@ -619,7 +619,10 @@ impl Parser<'_> {
         let sigil = info.sigil;
         self.push_container(
             Kind::Div { len, sigil, figure },
-            ContainerKind::Div { info, sigil },
+            ContainerKind::Div {
+                info: Box::new(info),
+                sigil,
+            },
             s,
             attrs,
         );

@@ -24,7 +24,7 @@ pub enum ContainerKind {
         label: String,
     },
     Div {
-        info: DivInfo,
+        info: Box<DivInfo>,
         sigil: Option<char>,
     },
 }
@@ -49,7 +49,7 @@ pub enum LeafKind {
     },
     Code {
         value: String,
-        info: FenceInfo,
+        info: Box<FenceInfo>,
     },
     /// `%%%` block or a comment-only line outside a leaf (C2-A-074).
     Comment {
@@ -95,7 +95,7 @@ pub enum Event {
     Enter {
         kind: ContainerKind,
         start: usize,
-        attrs: Option<AttrBlock>,
+        attrs: Option<Box<AttrBlock>>,
     },
     /// `loose` is the tightness of a list (C2-B-062); `None` for other containers.
     Exit { end: usize, loose: Option<bool> },
@@ -103,6 +103,6 @@ pub enum Event {
         kind: LeafKind,
         start: usize,
         end: usize,
-        attrs: Option<AttrBlock>,
+        attrs: Option<Box<AttrBlock>>,
     },
 }

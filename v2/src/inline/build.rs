@@ -16,7 +16,7 @@ use crate::ast::{
 use crate::attr::AttrBlock;
 use crate::tables;
 
-struct Frame<'a> {
+pub(super) struct Frame<'a> {
     kind: Kind,
     v0: usize,
     v1: usize,
@@ -71,7 +71,7 @@ pub(super) fn build<'a>(
         env,
         a: env.arena,
         root: lists.pop().unwrap_or_default(),
-        frames: Vec::new(),
+        frames: std::mem::take(&mut s.frames),
         lists,
         joining: false,
         join: std::mem::take(&mut s.join),
@@ -95,6 +95,7 @@ pub(super) fn build<'a>(
     s.lists = b.lists;
     s.join = b.join;
     s.outs = b.outs;
+    s.frames = b.frames;
     out
 }
 

@@ -157,7 +157,7 @@ impl<'a> Builder<'_, 'a> {
     fn event(&mut self, ev: Event) {
         match ev {
             Event::Enter { kind, start, attrs } => {
-                let (node, hard) = self.container(kind, attrs);
+                let (node, hard) = self.container(kind, attrs.map(|b| *b));
                 if hard {
                     self.hard += 1;
                 }
@@ -175,7 +175,7 @@ impl<'a> Builder<'_, 'a> {
                 start,
                 end,
                 attrs,
-            } => self.leaf(kind, start, end, attrs),
+            } => self.leaf(kind, start, end, attrs.map(|b| *b)),
         }
     }
 
@@ -248,7 +248,7 @@ impl<'a> Builder<'_, 'a> {
                 ..Default::default()
             })),
             ContainerKind::Div { info, sigil } => {
-                return (self.div(info, sigil, attrs, lang), sigil == Some('\\'));
+                return (self.div(*info, sigil, attrs, lang), sigil == Some('\\'));
             }
         };
         (node, false)

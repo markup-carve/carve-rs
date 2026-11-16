@@ -542,7 +542,7 @@ impl<'a> Parser<'a> {
             kind,
             start,
             end,
-            attrs,
+            attrs: attrs.map(Box::new),
         });
     }
 
@@ -618,7 +618,13 @@ impl<'a> Parser<'a> {
             Leaf::Heading { level, pieces, .. } => (LeafKind::Heading { level, pieces }, false),
             Leaf::Term { pieces } => (LeafKind::Term { pieces }, false),
             Leaf::Caption { pieces } => (LeafKind::Caption { pieces }, false),
-            Leaf::Code { info, value, .. } => (LeafKind::Code { value, info }, true),
+            Leaf::Code { info, value, .. } => (
+                LeafKind::Code {
+                    value,
+                    info: Box::new(info),
+                },
+                true,
+            ),
             Leaf::CommentBlock { lines, .. } => (
                 LeafKind::Comment {
                     block: true,
@@ -692,7 +698,7 @@ impl<'a> Parser<'a> {
         self.events.push(Event::Enter {
             kind: ev,
             start,
-            attrs,
+            attrs: attrs.map(Box::new),
         });
         self.stack.push(Container { kind, end });
         self.closed = None;
