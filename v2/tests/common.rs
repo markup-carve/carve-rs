@@ -11,6 +11,7 @@ pub struct Example {
     pub html: String,
     pub opts: Value,
     pub oracle_tree: Value,
+    pub spec_tree: Option<Value>,
 }
 
 #[must_use]
@@ -30,6 +31,7 @@ pub fn examples() -> Vec<Example> {
             html: e["html"].as_str().unwrap_or("").to_string(),
             opts: e["opts"].clone(),
             oracle_tree: e["oracleTree"].clone(),
+            spec_tree: e.get("specTree").cloned(),
         })
         .collect()
 }
@@ -149,27 +151,4 @@ pub fn parse_json(text: &str) -> Value {
     let mut de = serde_json::Deserializer::from_str(text);
     de.disable_recursion_limit();
     serde::Deserialize::deserialize(&mut de).unwrap_or(Value::Null)
-}
-
-/// Oracle defect O-004: the oracle omits `pos` on the text siblings of a
-/// `caption_number`. Applied to the engine's tree before comparing, so the
-/// rest of the tree is still compared.
-pub fn as_oracle_o004(v: &mut Value) {
-    match v {
-        Value::Object(m) => {
-            if let Some(Value::Array(kids)) = m.get_mut("children") {
-                let numbered = kids.iter().any(|k| k["type"] == "caption_number");
-                if numbered {
-                    for k in kids.iter_mut().filter(|k| k["type"] == "text") {
-                        if let Some(o) = k.as_object_mut() {
-                            o.remove("pos");
-                        }
-                    }
-                }
-            }
-            m.values_mut().for_each(as_oracle_o004);
-        }
-        Value::Array(a) => a.iter_mut().for_each(as_oracle_o004),
-        _ => {}
-    }
 }

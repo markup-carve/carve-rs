@@ -2,7 +2,7 @@
 //! expected HTML of examples.json, and the tree equals the oracle's.
 mod common;
 
-use common::{as_oracle_o004, options_of, parse_json, sorted};
+use common::{options_of, parse_json, sorted};
 
 fn report(name: &str, pass: usize, total: usize, failures: &[String]) {
     println!("{name}: {pass}/{total} pass");
@@ -30,15 +30,15 @@ fn c2_examples_render_the_expected_html() {
 }
 
 #[test]
-fn c2_a_examples_give_the_oracle_tree() {
+fn c2_a_examples_give_the_spec_tree() {
     let all = common::examples();
     let mut failures = Vec::new();
     for ex in &all {
         let arena = carve2::Arena::new();
         let doc = carve2::parse_resolved_in(&ex.input, &options_of(&ex.opts), &arena);
-        let mut got = parse_json(&carve2::to_json(&doc));
-        as_oracle_o004(&mut got);
-        let (want, got) = (sorted(&ex.oracle_tree), sorted(&got));
+        let got = parse_json(&carve2::to_json(&doc));
+        let want = ex.spec_tree.as_ref().unwrap_or(&ex.oracle_tree);
+        let (want, got) = (sorted(want), sorted(&got));
         if want != got {
             failures.push(format!(
                 "=== {}\n{}\n--- expected\n{want}\n--- got\n{got}",
