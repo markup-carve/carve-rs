@@ -1,6 +1,15 @@
 //! Character classes the clauses name.
 
-use unicode_general_category::{GeneralCategory as G, get_general_category};
+use crate::tables::{UNICODE_CF, UNICODE_L, UNICODE_M, UNICODE_N};
+
+#[inline]
+fn in_ranges(c: char, ranges: &[(u32, u32)]) -> bool {
+    let code = u32::from(c);
+    let at = ranges.partition_point(|&(start, _)| start <= code);
+    at.checked_sub(1)
+        .and_then(|i| ranges.get(i))
+        .is_some_and(|&(_, end)| code <= end)
+}
 
 /// A word character: a Unicode letter or number, category L or N (inline preliminaries).
 #[must_use]
@@ -8,29 +17,17 @@ pub fn is_word(c: char) -> bool {
     if c.is_ascii() {
         return c.is_ascii_alphanumeric();
     }
-    match get_general_category(c) {
-        G::UppercaseLetter
-        | G::LowercaseLetter
-        | G::TitlecaseLetter
-        | G::ModifierLetter
-        | G::OtherLetter
-        | G::DecimalNumber
-        | G::LetterNumber
-        | G::OtherNumber => true,
-        // Gap G-015: the table is Unicode 16; std knows 17 (the oracle's
-        // version). Alphabetic approximates L for code points 17 added.
-        G::Unassigned => c.is_alphabetic() || c.is_numeric(),
-        _ => false,
-    }
+    in_ranges(c, UNICODE_L) || in_ranges(c, UNICODE_N)
 }
 
 /// A Unicode number, category N (C2-H-148).
 #[must_use]
 pub fn is_number(c: char) -> bool {
-    matches!(
-        get_general_category(c),
-        G::DecimalNumber | G::LetterNumber | G::OtherNumber
-    )
+    if c.is_ascii() {
+        c.is_ascii_digit()
+    } else {
+        in_ranges(c, UNICODE_N)
+    }
 }
 
 /// Whitespace for the tests of the character before or after a position:
@@ -44,16 +41,17 @@ pub const fn is_flank_space(c: char) -> bool {
 #[must_use]
 pub fn is_joining(c: char) -> bool {
     matches!(c, '\u{200D}' | '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
-        || matches!(
-            get_general_category(c),
-            G::NonspacingMark | G::SpacingMark | G::EnclosingMark
-        )
+        || in_ranges(c, UNICODE_M)
 }
 
 /// A control (Cc) or format (Cf) character (C2-I-122).
 #[must_use]
 pub fn is_control_or_format(c: char) -> bool {
-    matches!(get_general_category(c), G::Control | G::Format)
+    if c <= '\u{009f}' {
+        c <= '\u{001f}' || c >= '\u{007f}'
+    } else {
+        in_ranges(c, UNICODE_CF)
+    }
 }
 
 /// Space or tab.
