@@ -15,6 +15,7 @@ use crate::hash::{AddrMap, AddrSet};
 use crate::options::Options;
 use crate::resolve::order::{Order, addr, caption_of, mark_of};
 use crate::resolve::{label_key, plain, slug};
+use crate::source::SourceView;
 use attrs::{El, Filter};
 use std::collections::{HashMap, HashSet};
 
@@ -34,14 +35,33 @@ pub fn render_with_losses(doc: &Document<'_>, opts: &Options) -> (String, Vec<&'
     (r.out, r.losses)
 }
 
-/// Renders with losses while retaining source text for degraded inline nodes.
+/// Renders with losses while retaining the matching UTF-8 source text for
+/// degraded inline nodes. For a tree parsed from bytes, use
+/// [`render_with_losses_source_bytes`] (C2-B-218).
 #[must_use]
 pub fn render_with_losses_source(
     doc: &Document<'_>,
     opts: &Options,
     src: &str,
 ) -> (String, Vec<&'static str>) {
-    render_source(doc, opts, src, true)
+    if opts.profile != crate::options::Profile::Full && src.contains('\0') {
+        let normalized = crate::source::Source::new(src);
+        render_mapped_source(doc, opts, normalized.render_view(), true)
+    } else {
+        render_source(doc, opts, src, true)
+    }
+}
+
+/// C2-B-218: renders a tree parsed from the same byte source, retaining its
+/// original byte positions when a profile degrades inline nodes.
+#[must_use]
+pub fn render_with_losses_source_bytes(
+    doc: &Document<'_>,
+    opts: &Options,
+    src: &[u8],
+) -> (String, Vec<&'static str>) {
+    let normalized = crate::source::Source::from_bytes(src);
+    render_mapped_source(doc, opts, normalized.render_view(), true)
 }
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
@@ -50,6 +70,18 @@ pub(crate) fn render_source(
     doc: &Document<'_>,
     opts: &Options,
     src: &str,
+    ordered: bool,
+) -> (String, Vec<&'static str>) {
+    let mut r = Renderer::with_order(doc, opts, ordered);
+    r.src = Some(SourceView::direct(src));
+    r.document();
+    (r.out, r.losses)
+}
+
+pub(crate) fn render_mapped_source(
+    doc: &Document<'_>,
+    opts: &Options,
+    src: SourceView<'_>,
     ordered: bool,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
@@ -72,7 +104,7 @@ fn out_estimate(doc: &Document<'_>) -> usize {
 pub(crate) struct Renderer<'r, 'a> {
     opts: &'r Options,
     doc: &'r Document<'a>,
-    src: Option<&'r str>,
+    src: Option<SourceView<'r>>,
     out: String,
     order: Order<'r, 'a>,
     /// The anchor id of each note mark (C2-H-088).

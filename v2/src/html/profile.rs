@@ -4,6 +4,7 @@ use super::Renderer;
 use super::block::visible;
 use super::esc;
 use crate::ast::Node;
+use crate::source::SourceView;
 use crate::tables::ProfileRow;
 
 impl<'r, 'a> Renderer<'r, 'a> {
@@ -91,12 +92,12 @@ fn allows(row: &ProfileRow, ty: &str, block: bool) -> bool {
 }
 
 /// The degraded text of an inline node (C2-H-165), unescaped.
-fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<&str>) {
+fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<SourceView<'_>>) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
     if let Some(text) = src
-        .and_then(|source| n.pos().and_then(|pos| source.get(pos.start()..pos.end())))
+        .and_then(|source| n.pos().and_then(|pos| source.slice(*pos)))
         .filter(|_| {
             matches!(
                 n,
@@ -194,7 +195,7 @@ fn inline_plain_leaf(n: &Node, out: &mut String) -> bool {
     true
 }
 
-pub(super) fn inlines_plain(nodes: &[Node], src: Option<&str>) -> String {
+pub(super) fn inlines_plain(nodes: &[Node], src: Option<SourceView<'_>>) -> String {
     let mut s = String::new();
     for n in nodes {
         inline_plain(n, &mut s, 0, src);
@@ -231,7 +232,7 @@ fn inlines_block_plain(nodes: &[Node]) -> String {
 }
 
 /// The escaped paragraphs a degraded block gives.
-fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<&str>) {
+fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<SourceView<'_>>) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
@@ -283,7 +284,7 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
     out.push(esc::text_str(&text));
 }
 
-fn degraded_figure(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<&str>) {
+fn degraded_figure(n: &Node, out: &mut Vec<String>, depth: usize, src: Option<SourceView<'_>>) {
     n.children()
         .into_iter()
         .flatten()
@@ -300,7 +301,7 @@ fn degraded_definitions(
     d: &crate::ast::DefinitionList,
     out: &mut Vec<String>,
     depth: usize,
-    src: Option<&str>,
+    src: Option<SourceView<'_>>,
 ) {
     for c in d.children.iter() {
         match c {
@@ -314,7 +315,7 @@ fn degraded_definitions(
     }
 }
 
-fn degraded_simple_text(n: &Node, src: Option<&str>) -> Option<String> {
+fn degraded_simple_text(n: &Node, src: Option<SourceView<'_>>) -> Option<String> {
     Some(match n {
         Node::Heading(h) => format!(
             "{} {}",
@@ -359,7 +360,7 @@ fn is_block(n: &Node) -> bool {
 }
 
 /// The blocks of a container joined by single spaces.
-fn block_text(children: &[Node], src: Option<&str>) -> String {
+fn block_text(children: &[Node], src: Option<SourceView<'_>>) -> String {
     let mut parts = Vec::new();
     for c in children {
         let mut p = Vec::new();
@@ -377,7 +378,7 @@ fn block_text(children: &[Node], src: Option<&str>) -> String {
 }
 
 /// One line per row, cells joined by ` | `, a hard break between the rows.
-fn table_text(t: &crate::ast::Table, src: Option<&str>) -> String {
+fn table_text(t: &crate::ast::Table, src: Option<SourceView<'_>>) -> String {
     let mut rows = Vec::new();
     for (r, _) in crate::resolve::table::rows(t) {
         let cells: Vec<String> = r

@@ -179,7 +179,12 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
     let arena = Arena::for_input(input);
     let mut doc = parse_in(input, &arena)?;
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
-    let (out, losses) = html::render_source(&doc, opts, input, ordered);
+    let (out, losses) = if opts.profile != options::Profile::Full && input.contains('\0') {
+        let src = source::Source::new(input);
+        html::render_mapped_source(&doc, opts, src.render_view(), ordered)
+    } else {
+        html::render_source(&doc, opts, input, ordered)
+    };
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }
@@ -196,7 +201,6 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     if let Ok(valid) = std::str::from_utf8(input) {
         return try_render(valid, opts);
     }
-    let src = source::Source::from_bytes(input);
     let profile = opts.profile.name();
     let limit = tables::PROFILES
         .iter()
@@ -204,14 +208,15 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
         .and_then(|p| p.max_length)
         .unwrap_or(u32::MAX as usize)
         .min(u32::MAX as usize);
-    if src.text().len() > limit {
+    if input.len() > limit {
         return Err(RenderError::TooLong { profile, limit });
     }
+    let src = source::Source::from_bytes(input);
     let arena = Arena::for_input(src.text());
     let out = block::scan(&src);
     let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
-    let (out, losses) = html::render_source(&doc, opts, src.text(), ordered);
+    let (out, losses) = html::render_mapped_source(&doc, opts, src.render_view(), ordered);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }

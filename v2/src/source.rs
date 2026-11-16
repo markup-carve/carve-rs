@@ -4,6 +4,38 @@
 use crate::ast::Pos;
 use std::borrow::Cow;
 
+#[derive(Clone, Copy)]
+pub(crate) struct SourceView<'a> {
+    text: &'a str,
+    replacements: &'a [(usize, usize)],
+}
+
+impl<'a> SourceView<'a> {
+    pub(crate) const fn direct(text: &'a str) -> Self {
+        Self {
+            text,
+            replacements: &[],
+        }
+    }
+
+    fn decoded_offset(self, original: usize) -> usize {
+        let before = self
+            .replacements
+            .partition_point(|&(end, extra)| end.saturating_sub(extra) <= original);
+        let extra = before
+            .checked_sub(1)
+            .and_then(|i| self.replacements.get(i))
+            .map_or(0, |&(_, extra)| extra);
+        original.saturating_add(extra)
+    }
+
+    pub(crate) fn slice(self, pos: Pos) -> Option<&'a str> {
+        let start = self.decoded_offset(pos.start());
+        let end = self.decoded_offset(pos.end());
+        self.text.get(start..end)
+    }
+}
+
 /// The normalized source: U+0000 read as U+FFFD, the byte-order mark kept in
 /// place but skipped by the line scan. Offsets into `text` are converted back
 /// to offsets of the original bytes when a position is built.
@@ -130,6 +162,13 @@ impl<'a> Source<'a> {
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    pub(crate) fn render_view(&self) -> SourceView<'_> {
+        SourceView {
+            text: self.text(),
+            replacements: &self.replacements,
+        }
     }
 
     /// A slice of the normalized text that lives as long as the input: none
