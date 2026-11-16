@@ -107,3 +107,12 @@ fn c2_h_020_attributed_block_image_keeps_paragraph() {
         "<p id=\"i\" class=\"c\"><img src=\"x.png\" alt=\"a\"></p>\n<p lang=\"de\"><img src=\"y.png\" alt=\"b\"></p>\n<img src=\"z.png\" alt=\"c\">"
     );
 }
+
+#[test]
+fn c2_h_064_table_panel_has_figure_wrapper() {
+    let src = ":::: figure\n![a](a.png)\n^ First\n\n| t |\n^ Second\n::::";
+    let html = render(src, &Options::default());
+    assert!(html.contains("  <figure class=\"carve-figure-panel\">\n    <table>"));
+    assert!(html.contains("      <caption>Second</caption>"));
+    assert!(html.contains("    </table>\n  </figure>"));
+}

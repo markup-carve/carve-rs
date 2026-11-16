@@ -727,6 +727,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     continue;
                 }
             }
+            if let Node::Table(_) = c {
+                if self.profile_allows(c, true) {
+                    self.level += 1;
+                    self.line(depth + 1, "<figure class=\"carve-figure-panel\">");
+                    self.table(c, depth + 2, false);
+                    self.line(depth + 1, "</figure>");
+                    self.level -= 1;
+                    continue;
+                }
+            }
             self.block(c, depth + 1);
         }
         if let Some(c) = &g.caption {
