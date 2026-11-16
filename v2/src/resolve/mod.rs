@@ -270,16 +270,7 @@ impl<'a> Index<'a> {
                 if let Some(href) = self.links.get(key) {
                     res.insert(a, Res::Href(href));
                 } else if !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut)) {
-                    let plain_key = if key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b' ') {
-                        std::borrow::Cow::Borrowed(key)
-                    } else {
-                        std::borrow::Cow::Owned(heading_key_plain(key, arena))
-                    };
-                    if let Some(id) = self
-                        .heading_by_text
-                        .get(plain_key.as_ref())
-                        .and_then(|i| self.heading_ids.get(*i))
-                    {
+                    if let Some(id) = self.heading_target(key, arena) {
                         res.insert(a, Res::Href(arena.str(&format!("#{id}"))));
                     }
                 }
@@ -301,6 +292,18 @@ impl<'a> Index<'a> {
             }
             _ => {}
         }
+    }
+
+    fn heading_target(&self, key: &str, arena: &Arena) -> Option<&'a str> {
+        let plain_key = if key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b' ') {
+            std::borrow::Cow::Borrowed(key)
+        } else {
+            std::borrow::Cow::Owned(heading_key_plain(key, arena))
+        };
+        self.heading_by_text
+            .get(plain_key.as_ref())
+            .and_then(|i| self.heading_ids.get(*i))
+            .copied()
     }
 }
 

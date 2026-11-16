@@ -166,3 +166,23 @@ fn c2_h_126_social_template_respects_profile_and_encoding() {
         "<p><span class=\"mention\"><strong>@ann</strong></span></p>"
     );
 }
+
+#[test]
+fn c2_i_118_open_delimiter_counts_at_link_and_image_cap() {
+    let at_cap = format!("{}*[x](u) ![y](v){}", "{^".repeat(199), "^}".repeat(199));
+    let html = render(&at_cap, &Options::default());
+    assert!(html.contains("*[x](u) ![y](v)"));
+    assert!(!html.contains("<a href=") && !html.contains("<img "));
+
+    let below = format!("{}*[x](u) ![y](v){}", "{^".repeat(198), "^}".repeat(198));
+    let html = render(&below, &Options::default());
+    assert!(html.contains("*<a href=\"u\">x</a> <img src=\"v\" alt=\"y\">"));
+}
+
+#[test]
+fn c2_i_126_capped_bracket_opener_never_takes_a_closer() {
+    let src = format!("{}:n[[]{}", "[".repeat(199), "]".repeat(199));
+    let html = render(&src, &Options::default());
+    assert!(html.contains("<span class=\"ext-n\">[</span>"));
+    assert!(!html.contains("<span class=\"ext-n\">[]</span>"));
+}

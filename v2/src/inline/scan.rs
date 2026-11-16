@@ -22,8 +22,6 @@ enum BKind {
     },
     Footnote,
     Ext(String),
-    /// An opener past the depth cap (C2-I-126): its closer is text.
-    Dead,
 }
 
 struct Bracket {
@@ -31,6 +29,13 @@ struct Bracket {
     kind: BKind,
     /// Offset behind the opener markup.
     inner: usize,
+    delim_base: usize,
+}
+
+#[derive(Clone, Copy)]
+struct DepthMark {
+    mark: char,
+    braced: bool,
 }
 
 /// The result of the scan.
@@ -48,8 +53,7 @@ struct Scanner<'r, 'e, 'a> {
     toks: Vec<Tok<'a>>,
     text_from: Option<usize>,
     brackets: Vec<Bracket>,
-    /// How many entries of `brackets` are past the depth cap.
-    dead: usize,
+    open_delims: Vec<DepthMark>,
     /// No unescaped `]` follows this offset.
     no_label_from: Option<usize>,
     /// An unquoted value run behind which attribute blocks fail.
@@ -82,7 +86,7 @@ pub fn scan<'a>(
         toks,
         text_from: None,
         brackets: Vec::new(),
-        dead: 0,
+        open_delims: Vec::new(),
         no_label_from: None,
         attr_fail: None,
         comments: Vec::new(),
@@ -374,6 +378,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             b'#' if self.editorial() => true,
             m if tables::BRACED_MARKS.as_bytes().contains(&m) => {
                 self.push(i, i + 2, K::Delim(Delim::BracedOpen(char::from(m))));
+                self.depth_open(char::from(m));
                 true
             }
             _ => false,
@@ -639,16 +644,11 @@ impl<'a> Scanner<'_, '_, 'a> {
         }
     }
 
-    /// C2-I-118: an opener past the cap is text, and its closer too (C2-I-126).
+    /// C2-I-126: a capped opener is text and takes no closer.
     fn push_bracket(&mut self, v0: usize, v1: usize, kind: BKind) -> bool {
-        let open = self.brackets.len() - self.dead;
-        if self.env.depth + open >= tables::DEPTH_CAP {
-            self.dead += 1;
-            self.brackets.push(Bracket {
-                tok: usize::MAX,
-                kind: BKind::Dead,
-                inner: v1,
-            });
+        let open = self.brackets.len();
+        let delim_base = self.open_delims.len();
+        if self.env.depth + open + delim_base >= tables::DEPTH_CAP {
             self.flush();
             self.text_from = Some(v0);
             self.i = v1;
@@ -659,6 +659,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             tok,
             kind,
             inner: v1,
+            delim_base,
         });
         true
     }
@@ -667,12 +668,9 @@ impl<'a> Scanner<'_, '_, 'a> {
         let Some(top) = self.brackets.pop() else {
             return false;
         };
+        self.open_delims.truncate(top.delim_base);
         let i = self.i;
         match top.kind.clone() {
-            BKind::Dead => {
-                self.dead -= 1;
-                false
-            }
             BKind::Footnote => {
                 self.form(&top, i, i + 1, Kind::InlineFootnote, None);
                 true
@@ -920,6 +918,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             return false;
         }
         self.push(i, i + 1, K::Delim(Delim::Bare(char::from(c))));
+        self.depth_bare(i, char::from(c));
         true
     }
 
@@ -949,9 +948,55 @@ impl<'a> Scanner<'_, '_, 'a> {
                 alone: n == 1,
             }),
         );
+        self.depth_close(char::from(c), true);
         // The slot the `}` takes when the mark falls back to the bare rules.
         self.toks.push(Tok::new(at + 1, at + 2, K::Skip));
         true
+    }
+
+    fn depth_base(&self) -> usize {
+        self.brackets.last().map_or(0, |b| b.delim_base)
+    }
+
+    fn depth_room(&self) -> bool {
+        self.env.depth + self.brackets.len() + self.open_delims.len() < tables::DEPTH_CAP
+    }
+
+    fn depth_open(&mut self, mark: char) {
+        if self.depth_room() {
+            self.open_delims.push(DepthMark { mark, braced: true });
+        }
+    }
+
+    fn depth_close(&mut self, mark: char, braced: bool) {
+        let base = self.depth_base();
+        if let Some(j) = self.open_delims.get(base..).and_then(|marks| {
+            marks
+                .iter()
+                .rposition(|m| m.mark == mark && m.braced == braced)
+        }) {
+            self.open_delims.truncate(base + j);
+        }
+    }
+
+    fn depth_bare(&mut self, at: usize, mark: char) {
+        let before = self.char_before(at);
+        let after = self.char_at(at + 1);
+        let can_close = !is_flank_space(before.unwrap_or(' ')) && after.is_none_or(|a| !is_word(a));
+        let can_open = before.is_none_or(|b| !is_word(b)) && !is_flank_space(after.unwrap_or(' '));
+        let base = self.depth_base();
+        let pair = self
+            .open_delims
+            .get(base..)
+            .and_then(|marks| marks.iter().rposition(|m| m.mark == mark && !m.braced));
+        if can_close && let Some(j) = pair {
+            self.open_delims.truncate(base + j);
+        } else if can_open && self.depth_room() {
+            self.open_delims.push(DepthMark {
+                mark,
+                braced: false,
+            });
+        }
     }
 }
 
