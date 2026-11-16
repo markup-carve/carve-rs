@@ -31,6 +31,12 @@ fn c2_h_050_escaped_raw_html_keeps_pre_attributes() {
 }
 
 #[test]
+fn c2_h_069_braced_comment_keeps_same_line_space_in_inline_note() {
+    let html = html("^[{%%} ]");
+    assert!(html.contains("<p> <a href=\"#fnref1\""), "{html}");
+}
+
+#[test]
 fn c2_h_006_display_math_quote_is_one_line() {
     assert_eq!(
         html("> $$`x`"),

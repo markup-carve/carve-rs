@@ -704,6 +704,9 @@ fn hide_comment_lines(nodes: &[Node], hidden: &mut AddrSet<usize>) {
     }
     let mut items = Vec::new();
     flatten(nodes, 0, &mut items);
+    if !items.iter().any(|item| matches!(item, Item::Break(_))) {
+        return;
+    }
     let mut prev_break: Option<&Node> = None;
     let mut line: Vec<&Node> = Vec::new();
     let (mut comment, mut quiet) = (false, true);

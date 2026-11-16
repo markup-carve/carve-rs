@@ -182,11 +182,14 @@ fn add_key(block: &mut AttrBlock, key: &str, value: String) {
 }
 
 /// Parses a run of glued brace blocks at `at`. Returns the merged block, the
-/// end of the run, and whether any block of the run was the empty one.
+/// end of the run. An empty block stops the run outside a bracket span.
 #[must_use]
 pub fn parse_glued(s: &str, at: usize) -> Option<(AttrBlock, usize)> {
     let (mut block, mut end) = parse_block(s, at)?;
     while let Some((next, e)) = parse_block(s, end) {
+        if next.empty {
+            break;
+        }
         block.merge(next);
         end = e;
     }

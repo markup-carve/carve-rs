@@ -581,7 +581,8 @@ impl Parser<'_> {
             return false;
         };
         let start = k.offset();
-        let bare = info.name.is_none()
+        let bare = k.rest().get(len..).is_some_and(crate::chars::is_blank_line)
+            && info.name.is_none()
             && info.sigil.is_none()
             && info.title.is_none()
             && info.label.is_none();

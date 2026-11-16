@@ -43,6 +43,21 @@ fn c2_b_129_last_hardbreaks_class_forces_hard_breaks() {
 }
 
 #[test]
+fn c2_b_125_only_a_bare_colon_run_closes_a_div() {
+    let html = render(":::\n::: %", &Options::default());
+    assert_eq!(html, "<div>\n  <div>\n\n  </div>\n</div>");
+    assert_eq!(
+        tree(":::\n::: :")["children"][0]["children"][0]["type"],
+        "div"
+    );
+}
+
+#[test]
+fn c2_i_040_empty_block_after_a_cell_attribute_is_text() {
+    assert!(render("|{c}{}|", &Options::default()).contains("<td c=\"\">{}</td>"));
+}
+
+#[test]
 fn c2_b_205_shift_has_at_most_nine_digits() {
     assert_eq!(
         render(
