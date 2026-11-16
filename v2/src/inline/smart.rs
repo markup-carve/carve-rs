@@ -77,8 +77,20 @@ impl Smart {
     }
 
     /// Splits the plain text `v0..v1` of `ctx.t` into text and punctuation.
-    pub fn run(&mut self, ctx: &Ctx<'_>, v0: usize, v1: usize, out: &mut Vec<Out>) {
+    pub fn run(
+        &mut self,
+        ctx: &Ctx<'_>,
+        v0: usize,
+        v1: usize,
+        next_flow: Option<char>,
+        out: &mut Vec<Out>,
+    ) {
         let t = ctx.t;
+        let next_flow = ctx
+            .comments
+            .binary_search_by_key(&v1, |&(start, _)| start)
+            .ok()
+            .and(next_flow);
         let mut p = v0;
         let mut text_from = v0;
         // GAP INL-012: the exact-run tests see only unreplaced text of this run.
@@ -98,7 +110,7 @@ impl Smart {
                 }
                 continue;
             }
-            let found = self.at(ctx, p, v1, c, plain_before);
+            let found = self.at(ctx, p, v1, c, plain_before, next_flow);
             match found {
                 Step::Text(len) => {
                     p += len;
@@ -148,9 +160,17 @@ impl Smart {
         }
     }
 
-    fn at(&mut self, ctx: &Ctx<'_>, p: usize, v1: usize, c: char, before: Option<char>) -> Step {
+    fn at(
+        &mut self,
+        ctx: &Ctx<'_>,
+        p: usize,
+        v1: usize,
+        c: char,
+        before: Option<char>,
+        next_flow: Option<char>,
+    ) -> Step {
         let t = ctx.t;
-        if let Some((len, row)) = run_at(t, p, v1, before) {
+        if let Some((len, row)) = run_at(t, p, v1, before, next_flow) {
             return match row {
                 Some((kind, glyph)) => Step::one(len, kind, glyph),
                 None => Step::Text(len),
@@ -320,6 +340,7 @@ fn run_at(
     p: usize,
     v1: usize,
     before: Option<char>,
+    next_flow: Option<char>,
 ) -> Option<(usize, Option<(&'static str, &'static str)>)> {
     let rest = t.get(p..v1)?;
     let mut best: Option<(usize, Option<(&'static str, &'static str)>)> = None;
@@ -329,13 +350,10 @@ fn run_at(
             continue;
         }
         let edge: &str = if src == "+-" { "+-" } else { "-" };
-        // GAP INL-012: `+-` reads the source after it, an arrow only its own text.
-        let after = if src == "+-" {
-            t.get(p + src.len()..)
-        } else {
-            rest.get(src.len()..)
-        }
-        .and_then(|s| s.chars().next());
+        let after = rest
+            .get(src.len()..)
+            .and_then(|s| s.chars().next())
+            .or_else(|| (p + src.len() == v1).then_some(next_flow).flatten());
         let first = src.chars().next().unwrap_or(' ');
         let last = src.chars().next_back().unwrap_or(' ');
         if (edge.contains(first) && before.is_some_and(|b| edge.contains(b)))

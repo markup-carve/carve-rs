@@ -59,7 +59,7 @@ pub(super) fn build<'a>(
     s: &mut Scratch<'a>,
 ) -> &'a mut [Node<'a>] {
     let mut evs = std::mem::take(&mut s.evs);
-    let next_flow = if env.abbreviations.is_empty() {
+    let next_flow = if env.abbreviations.is_empty() && ctx.comments.is_empty() {
         Vec::new()
     } else {
         next_flow(ctx.t, &evs)
@@ -488,7 +488,7 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
         let hits = abbr::find(s, self.flow_prev, next_flow, self.env.abbreviations);
         let mut from = v0;
         for (a, b, idx) in hits {
-            self.smart_text(from, v0 + a);
+            self.smart_text(from, v0 + a, None);
             let (key, expansion) = self
                 .env
                 .abbreviations
@@ -508,18 +508,18 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
             }
             from = v0 + b;
         }
-        self.smart_text(from, v1);
+        self.smart_text(from, v1, next_flow);
         if let Some(last) = s.chars().next_back() {
             self.flow_prev = Some(last);
         }
     }
 
-    fn smart_text(&mut self, v0: usize, v1: usize) {
+    fn smart_text(&mut self, v0: usize, v1: usize, next_flow: Option<char>) {
         if v0 >= v1 {
             return;
         }
         let mut outs = std::mem::take(&mut self.outs);
-        self.smart.run(self.ctx, v0, v1, &mut outs);
+        self.smart.run(self.ctx, v0, v1, next_flow, &mut outs);
         for o in outs.drain(..) {
             match o {
                 Out::Text(a, b) => {

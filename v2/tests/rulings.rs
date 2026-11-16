@@ -24,3 +24,12 @@ fn c2_b_205_shift_has_at_most_nine_digits() {
         "<p>{{ a.crv @shift:-123456789 }}</p>\n<p>{{ a.crv <span class=\"mention\"><strong>@shift</strong></span>:1234567890 }}</p>"
     );
 }
+
+#[test]
+fn c2_i_117_closing_mark_is_not_a_plus_minus_neighbor() {
+    assert_eq!(
+        render("{++-+} and {++-1+} and a{%x%}+-b", &Options::default()),
+        "<p><ins>±</ins> and <ins>±1</ins> and a±b</p>"
+    );
+    assert_eq!(render("+-{%x%}-", &Options::default()), "<p>+--</p>");
+}
