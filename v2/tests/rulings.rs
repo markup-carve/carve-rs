@@ -247,3 +247,26 @@ fn c2_a_158_joined_cell_keeps_positions_within_one_piece() {
     assert_eq!(para["children"][0]["children"][0]["pos"]["startOffset"], 3);
     assert!(para["children"][1].get("pos").is_none());
 }
+
+#[test]
+fn c2_a_151_final_line_comment_owns_dropped_spaces() {
+    let t = tree("c %% z  ");
+    let p = &t["children"][0];
+    assert_eq!(p["pos"]["endOffset"], 8);
+    assert_eq!(p["children"][1]["pos"]["startOffset"], 1);
+    assert_eq!(p["children"][1]["pos"]["endOffset"], 8);
+
+    let t = tree("a %% x  \nb");
+    let nodes = &t["children"][0]["children"];
+    assert_eq!(nodes[1]["pos"]["startOffset"], 1);
+    assert_eq!(nodes[1]["pos"]["endOffset"], 8);
+    assert_eq!(nodes[2]["pos"]["startOffset"], 8);
+    assert_eq!(nodes[2]["pos"]["endOffset"], 9);
+
+    let t = tree("{{ a.crv }}  \n");
+    assert_eq!(t["children"][0]["pos"]["endOffset"], 13);
+
+    let t = tree("a  \nb");
+    assert_eq!(t["children"][0]["children"][1]["pos"]["startOffset"], 1);
+    assert_eq!(t["children"][0]["children"][1]["pos"]["endOffset"], 4);
+}

@@ -190,7 +190,7 @@ impl<'e, 'a> Content<'e, 'a> {
         let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
         let (line, col, off) = self.point(v);
         match self.segs.get(i) {
-            Some(s) if s.v + s.len == v && self.join_at(v).is_some() => {
+            Some(s) if s.v + s.len == v && (self.join_at(v).is_some() || v == self.text.len()) => {
                 (line, col + (s.raw_end - off), s.raw_end)
             }
             _ => (line, col, off),
