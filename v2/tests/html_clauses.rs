@@ -23,6 +23,14 @@ fn c2_h_176_u007f_is_replaced() {
 }
 
 #[test]
+fn c2_h_050_escaped_raw_html_keeps_pre_attributes() {
+    assert_eq!(
+        html("{f}\n```=html\n<p>x</p>\n```"),
+        "<pre f=\"\"><code class=\"language-html\">&lt;p&gt;x&lt;/p&gt;\n</code></pre>"
+    );
+}
+
+#[test]
 fn c2_h_006_display_math_quote_is_one_line() {
     assert_eq!(
         html("> $$`x`"),

@@ -21,6 +21,28 @@ fn c2_b_119_title_and_label_need_space_behind_div_run() {
 }
 
 #[test]
+fn c2_b_119_title_and_label_need_space_after_name() {
+    let glued = tree("::: v\"\"\n:::");
+    assert!(glued["children"][0].get("title").is_none());
+    let spaced = tree("::: v \"\"\n:::");
+    assert!(spaced["children"][0].get("title").is_some());
+}
+
+#[test]
+fn c2_b_116_raw_format_needs_initial_ascii_letter() {
+    let invalid = tree("```=/\n``` ");
+    assert_eq!(invalid["children"][0]["type"], "code_block");
+    let valid = tree("```=Html_2\n```");
+    assert_eq!(valid["children"][0]["type"], "raw_block");
+}
+
+#[test]
+fn c2_b_129_last_hardbreaks_class_forces_hard_breaks() {
+    let html = render("{.hardbreaks}\n:::\na\nb\n:::", &Options::default());
+    assert!(html.contains("a<br>\n"), "{html}");
+}
+
+#[test]
 fn c2_b_205_shift_has_at_most_nine_digits() {
     assert_eq!(
         render(

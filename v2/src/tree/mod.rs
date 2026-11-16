@@ -248,7 +248,18 @@ impl<'a> Builder<'_, 'a> {
                 ..Default::default()
             })),
             ContainerKind::Div { info, sigil } => {
-                return (self.div(*info, sigil, attrs, lang), sigil == Some('\\'));
+                let bare_hard = sigil.is_none()
+                    && info.name.is_none()
+                    && info.title.is_none()
+                    && info.label.is_none()
+                    && attrs
+                        .as_ref()
+                        .and_then(|a| a.classes.last())
+                        .is_some_and(|c| c == "hardbreaks");
+                return (
+                    self.div(*info, sigil, attrs, lang),
+                    sigil == Some('\\') || bare_hard,
+                );
             }
         };
         (node, false)

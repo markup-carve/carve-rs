@@ -81,7 +81,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::Div(_) | Node::Admonition(_) | Node::Directive(_) => self.div_like(n, depth),
             Node::LineBlock(_) => self.line_block(n, depth),
             Node::CodeBlock(_) => self.code_block(n, depth),
-            Node::RawBlock(r) => self.raw_block(r, depth),
+            Node::RawBlock(_) => self.raw_block(n, depth),
             _ => self.block_inner_other(n, depth),
         }
     }
@@ -676,7 +676,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// C2-H-050, C2-H-053, C2-H-054, C2-H-134.
-    fn raw_block(&mut self, r: &ast::RawBlock, depth: usize) {
+    fn raw_block(&mut self, n: &'r Node<'a>, depth: usize) {
+        let Node::RawBlock(r) = n else { return };
         if r.format != "html" {
             self.losses.push("raw-format-dropped");
             return;
@@ -687,7 +688,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let s = format!(
-            "<pre><code class=\"language-html\">{}</code></pre>",
+            "<pre{}><code class=\"language-html\">{}</code></pre>",
+            self.el(r.attrs, r.lang, n).write(self.filter()),
             esc::text_str(r.value)
         );
         self.line(depth, &s);

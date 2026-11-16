@@ -410,6 +410,10 @@ fn is_lang_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'#' | b'+' | b'-' | b'.' | b'/' | b'_')
 }
 
+fn is_raw_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')
+}
+
 fn fence_info(info: &str, base: usize) -> FenceInfo {
     let mut fi = FenceInfo::default();
     let b = info.as_bytes();
@@ -420,8 +424,8 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
     if b.get(i) == Some(&b'=') {
         let n = b
             .get(i + 1..)
-            .map_or(0, |r| r.iter().take_while(|&&x| is_lang_char(x)).count());
-        if n > 0 {
+            .map_or(0, |r| r.iter().take_while(|&&x| is_raw_char(x)).count());
+        if n > 0 && b[i + 1].is_ascii_alphabetic() {
             fi.raw = info.get(i + 1..i + 1 + n).map(String::from);
             return fi;
         }
@@ -450,7 +454,7 @@ pub fn title_and_label(
     let sp = b
         .get(i..)
         .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
-    if b.get(i + sp) == Some(&b'"') {
+    if sp > 0 && b.get(i + sp) == Some(&b'"') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find('"')) {
             let start = i + sp + 1;
             *title = Some((base + start, base + start + close));
@@ -460,7 +464,7 @@ pub fn title_and_label(
     let sp = b
         .get(i..)
         .map_or(0, |r| r.iter().take_while(|&&x| x == b' ').count());
-    if b.get(i + sp) == Some(&b'[') {
+    if sp > 0 && b.get(i + sp) == Some(&b'[') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find(']')) {
             *label = s.get(i + sp + 1..i + sp + 1 + close).map(String::from);
         }
@@ -518,7 +522,7 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
     } else if let Some(&s @ (b'>' | b'\\' | b'|')) = b.get(i) {
         info.sigil = Some(char::from(s));
     } else {
-        title_and_label(rest, i, base, &mut info.title, &mut info.label);
+        title_and_label(rest, 0, base, &mut info.title, &mut info.label);
     }
     Some((n, info))
 }
