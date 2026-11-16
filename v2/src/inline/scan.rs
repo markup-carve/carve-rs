@@ -268,7 +268,7 @@ impl<'a> Scanner<'_, '_, 'a> {
                         e,
                         Node::RawInline(self.c.arena().alloc(RawInline {
                             format: self.c.keep(&format),
-                            value: self.c.keep(&value),
+                            value: self.c.keep(value),
                             ..Default::default()
                         })),
                         false,
@@ -276,16 +276,16 @@ impl<'a> Scanner<'_, '_, 'a> {
                     return true;
                 }
                 Node::Code(self.c.arena().alloc(Code {
-                    value: self.c.keep(&value),
+                    value: self.c.keep(value),
                     ..Default::default()
                 }))
             }
             CodeKind::Literal => Node::LiteralInline(self.c.arena().alloc(LiteralInline {
-                value: self.c.keep(&value),
+                value: self.c.keep(value),
                 ..Default::default()
             })),
             CodeKind::Math(display) => Node::Math(self.c.arena().alloc(Math {
-                value: self.c.keep(&value),
+                value: self.c.keep(value),
                 display,
                 ..Default::default()
             })),

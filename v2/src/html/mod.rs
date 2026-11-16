@@ -63,7 +63,7 @@ fn out_estimate(doc: &Document<'_>) -> usize {
         .children
         .last()
         .and_then(Node::pos)
-        .map_or(0, |p| p.end());
+        .map_or(0, crate::ast::Pos::end);
     2 * end
 }
 
