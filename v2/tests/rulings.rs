@@ -116,3 +116,11 @@ fn c2_h_064_table_panel_has_figure_wrapper() {
     assert!(html.contains("      <caption>Second</caption>"));
     assert!(html.contains("    </table>\n  </figure>"));
 }
+
+#[test]
+fn c2_h_165_degraded_table_keeps_caption_number() {
+    let mut options = Options::default();
+    options.profile = carve2::options::Profile::Comment;
+    let src = "| t |\n^ Table #: tc";
+    assert_eq!(render(src, &options), "<p>t</p>\n<p>Table 1: tc</p>");
+}

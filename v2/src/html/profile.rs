@@ -223,7 +223,15 @@ fn degraded_paragraphs(n: &Node, out: &mut Vec<String>, depth: usize, src: Optio
             degraded_figure(n, out, depth, src);
             return;
         }
-        Node::Table(t) => return out.push(table_text(t, src)),
+        Node::Table(t) => {
+            out.push(table_text(t, src));
+            if let Some(caption) = &t.caption {
+                for block in caption.children().into_iter().flatten() {
+                    degraded_paragraphs(block, out, depth + 1, src);
+                }
+            }
+            return;
+        }
         Node::DefinitionList(d) => {
             degraded_definitions(d, out, depth, src);
             return;
