@@ -115,6 +115,9 @@ fn parse_in<'a>(
     pieces: &[Piece],
     s: &mut Scratch<'a>,
 ) -> &'a mut [Node<'a>] {
+    if let Some(nodes) = plain_piece(env, pieces) {
+        return nodes;
+    }
     let content = content::Content::new_in(env, pieces, s);
     let scanned = scan::scan(&content, env, std::mem::take(&mut s.toks));
     let mut toks = scanned.toks;
@@ -129,4 +132,70 @@ fn parse_in<'a>(
     let out = build::build(&content, &ctx, env, s);
     content.recycle(s);
     out
+}
+
+/// Plain lines (`plain_span`) with no abbreviation defined and no hard break
+/// block: text nodes with a soft break between them, as the full pass builds.
+fn plain_piece<'a>(env: &InlineEnv<'_, 'a>, pieces: &[Piece]) -> Option<&'a mut [Node<'a>]> {
+    let multi = pieces.len() > 1;
+    if !env.abbreviations.is_empty()
+        || (multi && (env.hard_breaks || env.kind == ContentKind::Cell))
+        || pieces.iter().any(|p| p.join != Join::Line)
+    {
+        return None;
+    }
+    let mut spans = [(0, ""); 8];
+    if pieces.is_empty() || pieces.len() > spans.len() {
+        return None;
+    }
+    for (slot, p) in spans.iter_mut().zip(pieces) {
+        *slot = plain_span(env, p)?;
+    }
+    let spans = spans.get(..pieces.len())?;
+    let (src, a) = (env.src, env.arena);
+    Some(a.fill((0..spans.len() * 2 - 1).map(|i| {
+        let (start, t) = spans.get(i / 2).copied().unwrap_or_default();
+        let end = start + t.len();
+        if i % 2 == 0 {
+            let pos = Some(src.pos(start, end));
+            Node::Text(a.alloc(crate::ast::Text {
+                value: t,
+                pos,
+                ..Default::default()
+            }))
+        } else {
+            let next = spans.get(i / 2 + 1).map_or(end, |s| s.0);
+            let pos = Some(src.pos(end, next));
+            Node::SoftBreak(a.alloc(crate::ast::SoftBreak {
+                pos,
+                ..Default::default()
+            }))
+        }
+    })))
+}
+
+/// The start and text of a piece of ASCII letters, digits, inner spaces and
+/// a few punctuation marks: nothing in it starts a construct.
+fn plain_span<'a>(env: &InlineEnv<'_, 'a>, p: &Piece) -> Option<(usize, &'a str)> {
+    let t = env.src.borrowed(p.start, p.end)?;
+    let trimmed = if env.kind == ContentKind::Cell {
+        t.trim_matches([' ', '\t'])
+    } else {
+        t.trim_end_matches([' ', '\t'])
+    };
+    let b = trimmed.as_bytes();
+    // `.` starts only the `...` run (smart typography); the others start nothing.
+    let plain =
+        |c: &u8| c.is_ascii_alphanumeric() || matches!(c, b' ' | b'.' | b',' | b';' | b'?' | b')');
+    if !b.first().is_some_and(u8::is_ascii_alphanumeric)
+        || b.last() == Some(&b' ')
+        || !b.iter().all(plain)
+        || trimmed.contains("..")
+    {
+        return None;
+    }
+    Some((
+        p.start + (t.len() - t.trim_start_matches([' ', '\t']).len()),
+        trimmed,
+    ))
 }
