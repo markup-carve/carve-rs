@@ -1,5 +1,13 @@
 //! Carve 0.2 engine, stage 1: parse (source to tree), resolve and render HTML,
 //! built from the 0.2 specification.
+//!
+//! The tree has two faces. [`parse_in`] and [`parse_resolved_in`] build it in
+//! an [`Arena`]: nodes and child lists live in the arena, and text that is a
+//! slice of the input borrows the input, so the tree lives as long as both.
+//! This is the fast path, and [`render`] takes it. [`parse`] and
+//! [`parse_resolved`] return an owned copy ([`ast::owned`]) for callers that
+//! keep trees or deserialize them; `in_arena` and `owned` convert between the
+//! two. Both serialize to the same JSON.
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
 // No panics on any input: the quality bar of the stage, enforced.
