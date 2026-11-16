@@ -113,11 +113,8 @@ fn batch(input: Option<&String>, output: Option<&String>) {
         let t0 = std::time::Instant::now();
         let html = carve2::try_render(src, &opts);
         let ns = t0.elapsed().as_nanos();
-        let tree = carve2::to_json(&carve2::parse_resolved_in(
-            src,
-            &opts,
-            &carve2::Arena::new(),
-        ));
+        let tree = carve2::parse_resolved_in(src, &opts, &carve2::Arena::new())
+            .map_or_else(|e| e.to_string(), |doc| carve2::to_json(&doc));
         let ns = u64::try_from(ns).unwrap_or(u64::MAX);
         out.push(match html {
             Ok(html) => serde_json::json!({ "html": html, "tree": tree, "ns": ns }),

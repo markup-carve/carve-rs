@@ -425,7 +425,7 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
         let n = b
             .get(i + 1..)
             .map_or(0, |r| r.iter().take_while(|&&x| is_raw_char(x)).count());
-        if n > 0 && b[i + 1].is_ascii_alphabetic() {
+        if n > 0 && b.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
             fi.raw = info.get(i + 1..i + 1 + n).map(String::from);
             return fi;
         }

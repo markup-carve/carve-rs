@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader};
 
 fn tree(input: &str, opts: &carve2::Options) -> Value {
     let arena = carve2::Arena::new();
-    let doc = carve2::parse_resolved_in(input, opts, &arena);
+    let doc = carve2::parse_resolved_in(input, opts, &arena).unwrap();
     common::parse_json(&carve2::to_json(&doc))
 }
 

@@ -2,7 +2,7 @@ use carve2::{Options, render};
 
 fn tree(src: &str) -> serde_json::Value {
     let arena = carve2::Arena::new();
-    let document = carve2::parse_resolved_in(src, &Options::default(), &arena);
+    let document = carve2::parse_resolved_in(src, &Options::default(), &arena).unwrap();
     serde_json::from_str(&carve2::to_json(&document)).unwrap()
 }
 
@@ -456,7 +456,7 @@ fn c2_a_109_heading_ids_are_read_by_resolution() {
         heading_ids: carve2::options::HeadingIds::Off,
         ..Options::default()
     };
-    let doc = carve2::parse_resolved_in("# Mixed Name", &off, &arena);
+    let doc = carve2::parse_resolved_in("# Mixed Name", &off, &arena).unwrap();
     let t: serde_json::Value = serde_json::from_str(&carve2::to_json(&doc)).unwrap();
     assert!(t["children"][0].get("generatedId").is_none());
 
@@ -464,7 +464,7 @@ fn c2_a_109_heading_ids_are_read_by_resolution() {
         heading_ids: carve2::options::HeadingIds::Lower,
         ..Options::default()
     };
-    let doc = carve2::parse_resolved_in("# Mixed Name", &lower, &arena);
+    let doc = carve2::parse_resolved_in("# Mixed Name", &lower, &arena).unwrap();
     let t: serde_json::Value = serde_json::from_str(&carve2::to_json(&doc)).unwrap();
     assert_eq!(t["children"][0]["generatedId"], "mixed-name");
 }

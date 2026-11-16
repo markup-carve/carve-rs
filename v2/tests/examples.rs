@@ -35,7 +35,7 @@ fn c2_a_examples_give_the_spec_tree() {
     let mut failures = Vec::new();
     for ex in &all {
         let arena = carve2::Arena::new();
-        let doc = carve2::parse_resolved_in(&ex.input, &options_of(&ex.opts), &arena);
+        let doc = carve2::parse_resolved_in(&ex.input, &options_of(&ex.opts), &arena).unwrap();
         let got = parse_json(&carve2::to_json(&doc));
         let want = ex.spec_tree.as_ref().unwrap_or(&ex.oracle_tree);
         let (want, got) = (sorted(want), sorted(&got));
