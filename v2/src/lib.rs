@@ -124,8 +124,9 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         return Err(RenderError::TooLong { profile, limit });
     }
     let arena = Arena::for_input(input);
-    let doc = parse_resolved_in(input, opts, &arena);
-    let (out, losses) = html::render_with_losses_source(&doc, opts, input);
+    let mut doc = parse_in(input, &arena);
+    let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
+    let (out, losses) = html::render_source(&doc, opts, input, ordered);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }

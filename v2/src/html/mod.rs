@@ -40,7 +40,18 @@ pub fn render_with_losses_source(
     opts: &Options,
     src: &str,
 ) -> (String, Vec<&'static str>) {
-    let mut r = Renderer::new(doc, opts);
+    render_source(doc, opts, src, true)
+}
+
+/// `render_with_losses_source`; `ordered` false when resolve found no note,
+/// cross-reference or titled block, so the renderer needs no order of its own.
+pub(crate) fn render_source(
+    doc: &Document<'_>,
+    opts: &Options,
+    src: &str,
+    ordered: bool,
+) -> (String, Vec<&'static str>) {
+    let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(src);
     r.document();
     (r.out, r.losses)
@@ -90,7 +101,15 @@ pub(crate) struct Renderer<'r, 'a> {
 
 impl<'r, 'a> Renderer<'r, 'a> {
     fn new(doc: &'r Document<'a>, opts: &'r Options) -> Self {
-        let order = Order::build(doc);
+        Self::with_order(doc, opts, true)
+    }
+
+    fn with_order(doc: &'r Document<'a>, opts: &'r Options, ordered: bool) -> Self {
+        let order = if ordered {
+            Order::build(doc)
+        } else {
+            Order::default()
+        };
         let mut r = Renderer {
             opts,
             doc,

@@ -41,17 +41,39 @@ enum Res<'a> {
 
 /// Fills every result field of the tree and the root `stages` (C2-A-135).
 pub fn resolve<'a>(doc: &mut Document<'a>, opts: &Options, arena: &'a Arena) {
-    let results = compute(doc, opts, arena);
+    resolve_ordered(doc, opts, arena);
+}
+
+/// `resolve`; true when the order holds a note, a cross-reference or a
+/// titled block, the parts of the order the HTML renderer reads.
+pub(crate) fn resolve_ordered<'a>(
+    doc: &mut Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+) -> bool {
+    let (results, ordered) = compute(doc, opts, arena);
     if !results.is_empty() {
         for c in doc.children.iter_mut() {
             apply(c, &results, 1);
         }
     }
     doc.stages = Some(&STAGES);
+    ordered
 }
 
-fn compute<'a>(doc: &Document<'a>, opts: &Options, arena: &'a Arena) -> AddrMap<usize, Res<'a>> {
+fn compute<'a>(
+    doc: &Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+) -> (AddrMap<usize, Res<'a>>, bool) {
     let order = Order::build(doc);
+    let ordered = !order.notes.is_empty()
+        || order.visits.iter().any(|v| match v.node {
+            Node::Xref(_) => true,
+            Node::Admonition(a) => a.title.is_some(),
+            Node::Directive(d) => d.title.is_some(),
+            _ => false,
+        });
     let mut res = AddrMap::default();
     for (a, n) in &order.number {
         res.insert(*a, Res::Number(to_i64(*n)));
@@ -65,7 +87,7 @@ fn compute<'a>(doc: &Document<'a>, opts: &Options, arena: &'a Arena) -> AddrMap<
         index.reference(n, &mut res, arena);
         table::resolve_table(n, &mut res);
     }
-    res
+    (res, ordered)
 }
 
 fn to_i64(n: usize) -> i64 {
