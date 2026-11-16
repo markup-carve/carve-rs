@@ -199,7 +199,7 @@ fn time_document(name: &str, src: &str, opts: &carve2::Options, rounds: u64, ms:
     // The normal path: a fresh arena per parse, freed with the tree.
     let p2 = || {
         let arena = carve2::Arena::for_input(src);
-        black_box(carve2::parse_in(src, &arena));
+        let _ = black_box(carve2::parse_in(src, &arena));
         1_usize
     };
     let h2 = || carve2::render(src, opts).len();
