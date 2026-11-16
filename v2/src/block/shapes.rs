@@ -545,7 +545,7 @@ fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) {
 /// (byte offsets in the line, excluding the outer pipes), the row
 /// attribute and the start of a trailing line comment.
 #[must_use]
-pub fn table_row(c: &Cursor<'_>) -> Option<(usize, usize, Option<AttrBlock>)> {
+pub fn table_row(c: &Cursor<'_>) -> Option<(usize, usize, Option<AttrBlock>, Option<usize>)> {
     let r = c.rest();
     if !r.starts_with('|') {
         return None;
@@ -556,13 +556,18 @@ pub fn table_row(c: &Cursor<'_>) -> Option<(usize, usize, Option<AttrBlock>)> {
         return None;
     }
     let tail = r.get(last + 1..)?;
-    let attrs = row_tail(tail)?;
-    Some((c.pos + 1, c.pos + last, attrs))
+    let (attrs, comment) = row_tail(tail)?;
+    Some((
+        c.pos + 1,
+        c.pos + last,
+        attrs,
+        comment.map(|p| c.pos + last + 1 + p),
+    ))
 }
 
 /// After the closing pipe: a row attribute glued or one space after it, then
 /// a line comment, then nothing else (C2-B-167).
-fn row_tail(tail: &str) -> Option<Option<AttrBlock>> {
+fn row_tail(tail: &str) -> Option<(Option<AttrBlock>, Option<usize>)> {
     let mut i = 0;
     let b = tail.as_bytes();
     let mut attrs = None;
@@ -583,8 +588,11 @@ fn row_tail(tail: &str) -> Option<Option<AttrBlock>> {
     }
     let rest = tail.get(i..)?;
     let trimmed = rest.trim_start_matches([' ', '\t']);
-    if trimmed.is_empty() || (trimmed.starts_with("%%") && trimmed.len() < rest.len()) {
-        return Some(attrs);
+    if trimmed.is_empty() {
+        return Some((attrs, None));
+    }
+    if trimmed.starts_with("%%") && trimmed.len() < rest.len() {
+        return Some((attrs, Some(i)));
     }
     None
 }

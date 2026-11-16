@@ -121,15 +121,9 @@ impl Parser<'_> {
         let owned = walk.matched == self.stack.len();
         let text = self.src.text();
         if owned {
-            if let Some((s, z, attrs)) = shapes::table_row(&k) {
+            if let Some(parsed) = shapes::table_row(&k) {
                 let line_end = k.offset() + k.rest().len();
-                let row = Row {
-                    cells: table::parse_cells(text, k.base + s, k.base + z),
-                    start: k.offset(),
-                    end: line_end,
-                    attrs,
-                    ..Row::default()
-                };
+                let row = table_row_data(text, &k, parsed);
                 if let Some(OpenLeaf {
                     leaf: Leaf::Table { data },
                     end,
@@ -656,19 +650,13 @@ impl Parser<'_> {
     }
 
     fn open_table(&mut self, k: &Cursor<'_>, e: usize) -> bool {
-        let Some((s, z, attrs)) = shapes::table_row(k) else {
+        let Some(parsed) = shapes::table_row(k) else {
             return false;
         };
         let _ = e;
         let text = self.src.text();
         let line_end = k.offset() + k.rest().len();
-        let row = Row {
-            cells: table::parse_cells(text, k.base + s, k.base + z),
-            start: k.offset(),
-            end: line_end,
-            attrs,
-            ..Row::default()
-        };
+        let row = table_row_data(text, k, parsed);
         let data = table::TableData { rows: vec![row] };
         self.set_leaf(Leaf::Table { data }, k.offset(), line_end, None);
         true
@@ -962,4 +950,30 @@ pub fn display_math_line(line: &str) -> bool {
         }
     }
     false
+}
+
+/// C2-A-086: a row's trailing comment is a sibling after the row.
+fn table_row_data(
+    text: &str,
+    k: &Cursor<'_>,
+    (s, z, attrs, comment): (usize, usize, Option<crate::attr::AttrBlock>, Option<usize>),
+) -> Row {
+    let line_end = k.offset() + k.rest().len();
+    let comments = comment.map_or_else(Vec::new, |at| {
+        let value = shapes::line_comment_value(
+            k.text
+                .get(at..)
+                .unwrap_or("")
+                .trim_start_matches([' ', '\t']),
+        );
+        vec![(k.base + at, line_end, value)]
+    });
+    Row {
+        cells: table::parse_cells(text, k.base + s, k.base + z),
+        start: k.offset(),
+        end: comment.map_or(line_end, |at| k.base + at),
+        attrs,
+        comments,
+        ..Row::default()
+    }
 }

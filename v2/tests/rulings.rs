@@ -270,3 +270,31 @@ fn c2_a_151_final_line_comment_owns_dropped_spaces() {
     assert_eq!(t["children"][0]["children"][1]["pos"]["startOffset"], 1);
     assert_eq!(t["children"][0]["children"][1]["pos"]["endOffset"], 4);
 }
+
+#[test]
+fn c2_a_086_trailing_table_row_comments_are_siblings() {
+    let t = tree("| 1 | 2 | %% note\n| 3 | 4 |");
+    let body = &t["children"][0]["children"][0];
+    assert_eq!(body["children"][0]["type"], "table_row");
+    assert_eq!(body["children"][0]["pos"]["endOffset"], 9);
+    assert_eq!(body["children"][1]["type"], "comment");
+    assert_eq!(body["children"][1]["value"], "note");
+    assert_eq!(body["children"][1]["pos"]["startOffset"], 9);
+    assert_eq!(body["children"][1]["pos"]["endOffset"], 17);
+    assert_eq!(body["children"][2]["type"], "table_row");
+
+    let t = tree("| 1 | 2 |{.r} %% note\n| 3 | 4 | %% n2");
+    let table = &t["children"][0];
+    assert_eq!(
+        table["children"][0]["children"][0]["attrs"]["classes"][0],
+        "r"
+    );
+    assert_eq!(table["children"][0]["children"][1]["value"], "note");
+    assert_eq!(table["children"][1]["value"], "n2");
+
+    assert_eq!(
+        tree("| a | b | %% note | x")["children"][0]["type"],
+        "paragraph"
+    );
+    assert_eq!(tree("||%%")["children"][0]["type"], "paragraph");
+}
