@@ -6850,7 +6850,9 @@
 "referenceResolution",
 "tableAlignment"
 ]
-}
+},
+"expected": "<section data-carve-generated-id id=\"H\">\n  <h1>H</h1>\n</section>\n<section data-carve-explicit-id id=\"me\">\n  <h1>I</h1>\n  <ul data-marker=\"*\" data-carve-tight>\n    <li>star</li>\n    <li>list</li>\n  </ul>\n  <ul>\n    <li><p>loose</p></li>\n    <li><p>list</p></li>\n  </ul>\n  <ol data-carve-tight>\n    <li>a</li>\n    <li>b</li>\n  </ol>\n  <p><a href=\"/u\" data-carve-ref=\"r\">x</a> <a href=\"/u\" data-carve-ref=\"r\" data-carve-ref-collapsed>r</a> <a href=\"/u\" data-carve-ref=\"r\" data-carve-ref-shortcut>r</a> <img src=\"/u\" alt=\"i\" data-carve-ref=\"r\"> <img src=\"/u\" alt=\"r\" data-carve-ref=\"r\" data-carve-ref-collapsed> <a href=\"#H\" data-carve-xref>H</a> <a href=\"https://e.org\" data-carve-autolink>https://e.org</a> a<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\" data-carve-footnote-label=\"n\"><sup>1</sup></a> <a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p>\n  <div data-carve-div>\n    <p>in</p>\n  </div>\n  <div class=\"c\">\n    <p>c</p>\n  </div>\n  <div data-carve-line-block class=\"line-block\">\n    <p>line</p>\n  </div>\n  <pre data-carve-label=\"lbl\"><code class=\"language-js\">x\n</code></pre>\n  <figure>\n    <img src=\"a.png\" alt=\"a\">\n    <figcaption>Figure <span data-carve-caption-number>1</span>: Cap</figcaption>\n  </figure>\n  <p>raw <span data-carve-raw=\"html\">&lt;b&gt;</span></p>\n  <template data-carve-abbreviations>*[HTML]: Hyper</template>\n  <p><abbr title=\"Hyper\">HTML</abbr> here</p>\n  <p data-carve-other=\"2\">P</p>\n</section>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\" data-carve-footnote-label=\"n\">\n      <p>N.<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\" data-carve-inline-footnote>\n      <p>inl<a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+"expectedClause": "C2-H-179"
 },
 {
 "id": "roundtrip-off",
