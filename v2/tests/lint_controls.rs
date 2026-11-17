@@ -10,8 +10,14 @@ fn lines(source: &str) -> Vec<u32> {
 
 #[test]
 fn c2_b_215_c2_b_216_line_and_document_scopes() {
-    assert!(lines("<x> %% carve-lint-disable-line bare-html-tag\n").is_empty());
-    assert!(lines("%% carve-lint-disable-next-line bare-html-tag\n<x>\n").is_empty());
+    assert_eq!(
+        lines("<x> %% carve-lint-disable-line bare-html-tag\n"),
+        Vec::<u32>::new()
+    );
+    assert_eq!(
+        lines("%% carve-lint-disable-next-line bare-html-tag\n<x>\n"),
+        Vec::<u32>::new()
+    );
     assert_eq!(
         lines(
             "%% carve-lint-disable bare-html-tag\n<x>\n%% carve-lint-enable bare-html-tag\n<x>\n"
