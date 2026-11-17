@@ -185,7 +185,7 @@ pub(super) fn region_range(
     skip: &dyn Fn(usize) -> bool,
 ) -> Result<LineRange, &'static str> {
     let mut stack: Vec<(usize, &str)> = Vec::new();
-    let mut seen: Vec<&str> = Vec::new();
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let mut range = None;
     for i in 0..lines.len() {
         if skip(i) {
@@ -195,10 +195,9 @@ pub(super) fn region_range(
             (Kind::None, _) => {}
             (Kind::Malformed, _) => return Err(REGION_MALFORMED),
             (Kind::Opener, n) => {
-                if seen.contains(&n) {
+                if !seen.insert(n) {
                     return Err(REGION_MALFORMED);
                 }
-                seen.push(n);
                 stack.push((i, n));
             }
             (Kind::Closer, n) => {

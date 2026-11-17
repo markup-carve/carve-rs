@@ -1,0 +1,19 @@
+{
+  "name": "i01-section-only-no-path-literal",
+  "description": "A #section with no path is not a directive.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-002",
+    "C2-B-202"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ #intro }}</p>",
+    "fmt": "{{ #intro }}\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "note": "_VECTORS.md lists it unchanged; a directive with no path is text, which the 0.2 inline chapter reads with no tag in it",
+  "entry": "{{ #intro }}",
+  "files": {}
+}

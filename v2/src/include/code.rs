@@ -87,20 +87,26 @@ fn longest_backticks(s: &str) -> usize {
     best
 }
 
-/// The block a fence with the include's attribute line, language and payload gives.
-fn fenced<'a>(node: &ast::Include<'_>, payload: &str, arena: &'a Arena) -> Option<Node<'a>> {
+/// The block a fence with the include's attribute line, language and payload
+/// gives, and whether its quoting is malformed (C2-B-181).
+fn fenced<'a>(
+    node: &ast::Include<'_>,
+    payload: &str,
+    arena: &'a Arena,
+) -> Option<(Node<'a>, bool)> {
     let fence = "`".repeat(3.max(longest_backticks(payload) + 1));
     let lang = option(node, "code").and_then(Value::as_str).unwrap_or("");
     let source = format!("{}{fence}{lang}\n{payload}{fence}\n", brace(node));
-    let (doc, _) = parse_file(&source, &Scope::default(), arena, None);
+    let (doc, scope) = parse_file(&source, &Scope::default(), arena, None);
     let first = doc.children.first_mut()?;
     if !matches!(first, Node::CodeBlock(_) | Node::Table(_)) {
         return None;
     }
-    Some(std::mem::replace(
+    let node = std::mem::replace(
         first,
         Node::SoftBreak(arena.alloc(ast::SoftBreak::default())),
-    ))
+    );
+    Some((node, !scope.findings.is_empty()))
 }
 
 fn strip_positions(n: &mut Node<'_>) {
@@ -145,7 +151,7 @@ pub(super) fn child<'a>(
     lines: &FileLines,
     range: LineRange,
     arena: &'a Arena,
-) -> Result<Option<Node<'a>>, Failure> {
+) -> Result<Option<(Node<'a>, bool)>, Failure> {
     let table = is_table(node);
     let quoted = if table {
         quoted_lines(text, lines, node)
@@ -169,7 +175,7 @@ pub(super) fn child<'a>(
         payload.push_str(lines.line(text, i));
         payload.push('\n');
     }
-    let Some(mut child) = fenced(node, &payload, arena) else {
+    let Some((mut child, malformed)) = fenced(node, &payload, arena) else {
         return Ok(None);
     };
     strip_positions(&mut child);
@@ -192,7 +198,7 @@ pub(super) fn child<'a>(
             _ => {}
         }
     }
-    Ok(Some(child))
+    Ok(Some((child, malformed)))
 }
 
 fn take<'a>(n: &mut Node<'a>, arena: &'a Arena) -> Node<'a> {

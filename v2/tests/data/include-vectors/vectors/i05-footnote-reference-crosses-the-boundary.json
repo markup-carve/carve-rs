@@ -1,0 +1,26 @@
+{
+  "name": "i05-footnote-reference-crosses-the-boundary",
+  "description": "A child referring to a note the parent defines resolves, and so does the reverse.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-054",
+    "C2-N-055"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>See [^c].</p>\n<p>Child sees <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>Parent note.<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    "fmt": "[^p]: Parent note.\n\nSee [^c].\n\n{{ c.crv }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "c.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "the child reaching the parent note stays; the parent reference to the child-only note is unresolved and renders `[^c]` (C2-N-054, C2-N-055)",
+  "entry": "[^p]: Parent note.\n\nSee [^c].\n\n{{ c.crv }}\n",
+  "files": {
+    "c.crv": "Child sees [^p].\n\n[^c]: Child note.\n"
+  }
+}

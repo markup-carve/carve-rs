@@ -1,0 +1,38 @@
+{
+  "name": "i07-resolver-throws-no-leak",
+  "description": "A throwing resolver yields a normalized warning; the raw error (with an absolute path) never reaches the message.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-013",
+    "C2-N-068"
+  ],
+  "resolver": "throws",
+  "expected": {
+    "html": "<p>{{ child.crv }}</p>",
+    "fmt": "{{ child.crv }}\n",
+    "warnings": [
+      {
+        "code": "include-unreadable"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "a throwing resolver is `include-unreadable` (C2-N-013, C2-N-068)",
+  "entry": "{{ child.crv }}",
+  "files": {},
+  "options": {
+    "throws": "ENOENT: no such file or directory, open '/home/someone/private/vault/child.crv'"
+  },
+  "forbiddenSubstrings": [
+    "/home/someone/private/vault",
+    "ENOENT"
+  ]
+}

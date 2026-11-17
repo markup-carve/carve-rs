@@ -1,0 +1,30 @@
+{
+  "name": "i05-footnote-rename",
+  "description": "Duplicate footnote labels across includes: first wins, later renamed, each ref stays with its definition.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-055"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>First<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n<p>Second<a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a>.</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>one<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\">\n      <p>two<a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    "fmt": "{{ a }}\n\n{{ b }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "a",
+        "read": true
+      },
+      {
+        "id": "b",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename: two notes with one label, each reference reaches the note of its own file (C2-N-055)",
+  "entry": "{{ a }}\n\n{{ b }}",
+  "files": {
+    "a": "First[^a].\n\n[^a]: one",
+    "b": "Second[^a].\n\n[^a]: two"
+  }
+}

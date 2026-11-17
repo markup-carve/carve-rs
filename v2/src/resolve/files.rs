@@ -22,6 +22,7 @@ pub fn inner(n: &Node<'_>) -> usize {
 
 #[derive(Default)]
 struct File<'a> {
+    id: Option<&'a str>,
     parent: Option<usize>,
     links: HashMap<&'a str, &'a str>,
     abbrs: HashMap<&'a str, &'a str>,
@@ -31,8 +32,10 @@ struct File<'a> {
 /// File 0 is the top-level document.
 #[derive(Default)]
 pub struct Files<'a> {
-    files: Vec<File<'a>>,
+    list: Vec<File<'a>>,
     of: AddrMap<usize, usize>,
+    /// The file of each node with an authored id, by the address of its `pos`.
+    ids: AddrMap<usize, usize>,
 }
 
 impl<'a> Files<'a> {
@@ -40,12 +43,13 @@ impl<'a> Files<'a> {
     #[must_use]
     pub fn build(doc: &Document<'a>) -> Self {
         let mut f = Files::default();
-        f.add(&*doc.children, None);
+        f.add(&*doc.children, None, None);
         f
     }
 
-    fn add(&mut self, top: &[Node<'a>], parent: Option<usize>) {
+    fn add(&mut self, top: &[Node<'a>], parent: Option<usize>, id: Option<&'a str>) {
         let mut file = File {
+            id,
             parent,
             ..File::default()
         };
@@ -63,8 +67,8 @@ impl<'a> Files<'a> {
                 _ => {}
             }
         }
-        let at = self.files.len();
-        self.files.push(file);
+        let at = self.list.len();
+        self.list.push(file);
         for c in top {
             self.walk(c, at, 1);
         }
@@ -76,9 +80,14 @@ impl<'a> Files<'a> {
         }
         if let Node::Include(i) = n {
             if let Some(children) = i.children.as_deref() {
-                self.add(children, Some(file));
+                self.add(children, Some(file), i.file);
             }
             return;
+        }
+        if n.attrs().is_some_and(|a| a.id.is_some()) {
+            if let Some(p) = n.pos() {
+                self.ids.insert(std::ptr::from_ref(p).addr(), file);
+            }
         }
         if matches!(
             n,
@@ -97,13 +106,20 @@ impl<'a> Files<'a> {
             at = Some(0);
         }
         while let Some(i) = at {
-            let file = self.files.get(i)?;
+            let file = self.list.get(i)?;
             if let Some(v) = get(file) {
                 return Some(v);
             }
             at = file.parent;
         }
         None
+    }
+
+    /// C2-N-063: the id of the included file a node with an authored id
+    /// stands in, by the address of its `pos`; `None` at the top level.
+    #[must_use]
+    pub fn file_at(&self, pos: usize) -> Option<&'a str> {
+        self.list.get(*self.ids.get(&pos)?)?.id
     }
 
     /// C2-N-054: the destination of a link key, own file first, then outward.

@@ -1,0 +1,33 @@
+{
+  "name": "i01c-code-language-must-be-a-language-token",
+  "description": "A language value that is not a `language_info` token is a malformed option.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-025",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ a.js @code:=html }}</p>",
+    "fmt": "{{ a.js @code:=html }}\n",
+    "warnings": [
+      {
+        "code": "include-option-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.js",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` (C2-N-025)",
+  "entry": "{{ a.js @code:=html }}",
+  "files": {
+    "a.js": "x()\n"
+  }
+}

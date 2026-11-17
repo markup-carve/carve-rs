@@ -140,8 +140,10 @@ fn fail(exp: &mut Exp<'_, '_>, node: &ast::Include<'_>, frame: &Frame<'_>, f: &F
         .map_or("include-unreadable", |c| c.1);
     let mut values: Vec<(&str, &str)> = vec![("path", node.path)];
     values.extend(f.values.iter().map(|(k, v)| (*k, v.as_str())));
+    // C2-N-063: a finding names an included file only; the top level has no file.
+    let file = frame.file.filter(|_| frame.depth > 0);
     exp.diags
-        .push(Diagnostic::new(code, &values, frame.file, node.pos));
+        .push(Diagnostic::new(code, &values, file, node.pos));
 }
 
 fn expand_one<'a>(node: &mut ast::Include<'a>, exp: &mut Exp<'_, 'a>, frame: &Frame<'_>) {
@@ -360,7 +362,18 @@ fn select<'a>(
     let range = selected_lines(node, text, &lines)?;
     if option(node, "code").is_some() {
         let children = match code::child(node, text, &lines, range, exp.arena)? {
-            Some(child) => exp.arena.one(child),
+            Some((child, malformed)) => {
+                if malformed {
+                    let pos = child.pos().copied();
+                    exp.diags.push(Diagnostic::new(
+                        "delimited-table-malformed",
+                        &[],
+                        Some(id),
+                        pos,
+                    ));
+                }
+                exp.arena.one(child)
+            }
             None => &mut [],
         };
         return Ok(Selected {
@@ -391,14 +404,12 @@ pub(super) fn parse_file<'a>(
     let text = arena.str(text);
     let src = crate::source::Source::new(text);
     let out = crate::block::scan(&src);
+    let (doc, inner) = crate::tree::build_scoped(&src, arena, out.events, Some(scope));
     if let Some((diags, file)) = report {
-        diags.extend(
-            out.findings
-                .iter()
-                .map(|f| Diagnostic::from_finding(f, &src, Some(file))),
-        );
+        let found = out.findings.iter().chain(&inner.findings);
+        diags.extend(found.map(|f| Diagnostic::from_finding(f, &src, Some(file))));
     }
-    crate::tree::build_scoped(&src, arena, out.events, Some(scope))
+    (doc, inner)
 }
 
 /// C2-N-020, C2-N-036: the selected lines with every earlier line blanked to

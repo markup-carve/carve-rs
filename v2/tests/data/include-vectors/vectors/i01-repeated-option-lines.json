@@ -1,0 +1,35 @@
+{
+  "name": "i01-repeated-option-lines",
+  "description": "Two line ranges are an error, not \"the last one wins\".",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-025",
+    "C2-H-133",
+    "C2-W-058",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ a.js @lines:1-1 @code @lines:3-3 }}</p>",
+    "fmt": "{{ a.js @lines:1-1 @code @lines:3-3 }}\n",
+    "warnings": [
+      {
+        "code": "include-option-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.js",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` (C2-N-025)",
+  "entry": "{{ a.js @lines:1-1 @lines:3-3 @code }}",
+  "files": {
+    "a.js": "one()\ntwo()\nthree()\n"
+  }
+}

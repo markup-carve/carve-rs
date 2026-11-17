@@ -1,0 +1,30 @@
+{
+  "name": "i05-two-paragraphs-sharing-an-id",
+  "description": "A child paragraph whose explicit id collides with a parent paragraph is renamed, one warning.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p id=\"tip\">Parent tip.</p>\n<p id=\"tip\">Child tip.</p>",
+    "fmt": "{#tip}\nParent tip.\n\n{{ a.crv }}\n",
+    "warnings": [
+      {
+        "code": "duplicate-id",
+        "file": "a.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename: `duplicate-id` (C2-N-058)",
+  "entry": "{#tip}\nParent tip.\n\n{{ a.crv }}\n",
+  "files": {
+    "a.crv": "{#tip}\nChild tip.\n"
+  }
+}

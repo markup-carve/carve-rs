@@ -1,0 +1,31 @@
+{
+  "name": "i04-attribution-omitted-without-sourcepath",
+  "description": "With no sourcePath the top-level document has no identity, so no file is attributed.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-061",
+    "C2-N-063"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ missing }}</p>",
+    "fmt": "{{ missing }}\n",
+    "warnings": [
+      {
+        "code": "include-not-found"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "missing",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-not-found` (C2-N-061); attribution is the tree path (C2-N-063)",
+  "entry": "{{ missing }}",
+  "files": {}
+}

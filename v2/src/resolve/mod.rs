@@ -26,7 +26,8 @@ use std::collections::{HashMap, HashSet};
 pub const WALK_CAP: usize = 2 * (crate::tables::BLOCK_DEPTH + crate::tables::INLINE_DEPTH);
 
 /// An authored id that stood earlier in the tree, and where it stands again.
-pub(crate) type Duplicate = (String, Option<crate::ast::Pos>);
+/// The last part is the address of its `pos`, for the file it stands in.
+pub(crate) type Duplicate = (String, Option<crate::ast::Pos>, usize);
 
 /// The names of the stages this resolver completes (C2-A-135).
 pub const STAGES: [&str; 2] = ["referenceResolution", "tableAlignment"];
@@ -161,7 +162,8 @@ fn heading_ids<'a>(
         if let Some(id) = n.attrs().and_then(|a| a.id) {
             if !taken.reserve(id) {
                 // C2-A-039, C2-N-058: the later occurrence is the duplicate.
-                dups.push((id.to_string(), n.pos().copied()));
+                let at = n.pos().map_or(0, |p| std::ptr::from_ref(p).addr());
+                dups.push((id.to_string(), n.pos().copied(), at));
             }
         }
     }

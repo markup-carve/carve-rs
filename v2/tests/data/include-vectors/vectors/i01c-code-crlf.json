@@ -1,0 +1,26 @@
+{
+  "name": "i01c-code-crlf",
+  "description": "CRLF and lone CR line endings become line feeds in the payload.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-043",
+    "C2-B-010"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre><code class=\"language-js\">a()\nb()\rc()\n</code></pre>",
+    "fmt": "{{ a.js @code:js }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "a.js",
+        "read": true
+      }
+    ]
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-N-043 keeps a lone CR as content of its line, where 0.1 read it as a line end",
+  "entry": "{{ a.js @code:js }}",
+  "files": {
+    "a.js": "a()\r\nb()\rc()\r\n"
+  }
+}

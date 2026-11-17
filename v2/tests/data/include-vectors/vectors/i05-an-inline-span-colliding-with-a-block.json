@@ -1,0 +1,30 @@
+{
+  "name": "i05-an-inline-span-colliding-with-a-block",
+  "description": "An inline span id in the child colliding with a parent block id is renamed like a block id.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p id=\"tip\">Parent.</p>\n<p>A <span id=\"tip\">span</span> here.</p>",
+    "fmt": "{#tip}\nParent.\n\n{{ a.crv }}\n",
+    "warnings": [
+      {
+        "code": "duplicate-id",
+        "file": "a.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename: `duplicate-id` (C2-N-058)",
+  "entry": "{#tip}\nParent.\n\n{{ a.crv }}\n",
+  "files": {
+    "a.crv": "A [span]{#tip} here.\n"
+  }
+}

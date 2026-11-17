@@ -91,6 +91,16 @@ impl<'a> Builder<'_, 'a> {
             .and_then(count);
         let footer = footer_count(attrs.as_ref());
         let (children, ncols) = super::delimited::table(self.arena, value, sep, declared, footer);
+        if super::delimited::unclosed_quote(value, sep) {
+            let (start, end) = pos.map_or((0, 0), |p| (p.start(), p.end()));
+            self.findings.borrow_mut().push(crate::block::Finding {
+                code: "delimited-table-malformed",
+                message: 0,
+                start,
+                end,
+                values: Vec::new(),
+            });
+        }
         let attrs = attrs.map(|mut a| {
             a.key_values
                 .retain(|(k, _)| !k.eq_ignore_ascii_case("table"));

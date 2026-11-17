@@ -180,7 +180,7 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
     }
     let arena = Arena::for_input(input);
     let mut diags = Vec::new();
-    let (out, losses) = render_parts(input, opts, &arena, &mut diags)?;
+    let (out, losses) = render_parts(input, opts, &arena, &mut diags, &mut Vec::new())?;
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }
@@ -204,6 +204,12 @@ fn prepare<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
+    diags.extend(
+        scope
+            .findings
+            .iter()
+            .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
+    );
     let expanded = opts.includes.is_some();
     if let Some(cfg) = &opts.includes {
         if input.contains("{{") {
@@ -215,11 +221,12 @@ fn prepare<'a>(
     let files = (expanded && input.contains("{{")).then(|| resolve::files::Files::build(&doc));
     let mut dups = Vec::new();
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
-    for (id, pos) in dups {
+    for (id, pos, at) in dups {
+        let file = files.as_ref().and_then(|f| f.file_at(at));
         diags.push(diagnostic::Diagnostic::new(
             "duplicate-id",
             &[("explicit", &id)],
-            None,
+            file,
             pos,
         ));
     }
@@ -229,14 +236,17 @@ fn prepare<'a>(
     Ok((doc, ordered, files))
 }
 
+/// `places` gets the file of each unexpanded include of an expanded tree.
 fn render_parts(
     input: &str,
     opts: &Options,
     arena: &Arena,
     diags: &mut Vec<diagnostic::Diagnostic>,
+    places: &mut Vec<Option<String>>,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
     if let Some(files) = files {
+        include::unexpanded(doc.children, None, places);
         let extra = if opts.roundtrip {
             include::roundtrip_losses(doc.children)
         } else {
@@ -286,13 +296,19 @@ impl Rendered {
 pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     let arena = Arena::for_input(input);
     let mut diags = Vec::new();
-    let html = match render_parts(input, opts, &arena, &mut diags) {
+    let mut places = Vec::new();
+    let html = match render_parts(input, opts, &arena, &mut diags, &mut places) {
         Ok((html, losses)) => {
-            diags.extend(
-                losses
-                    .iter()
-                    .map(|c| diagnostic::Diagnostic::new(c, &[], None, None)),
-            );
+            let mut places = places.into_iter();
+            diags.extend(losses.iter().map(|c| {
+                // C2-N-063: the loss of an unexpanded include names its file.
+                let file = if *c == "include-unresolved" {
+                    places.next().flatten()
+                } else {
+                    None
+                };
+                diagnostic::Diagnostic::new(c, &[], file.as_deref(), None)
+            }));
             if opts.strict_losses && !losses.is_empty() {
                 String::new()
             } else {
@@ -305,6 +321,20 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
         html,
         diagnostics: diags,
     }
+}
+
+/// C2-N-083: the dependencies of a document: its include nodes in tree
+/// order, each with its path as written, its including file and, when the
+/// file was read, its id. With no resolver every directive is unread.
+#[must_use]
+pub fn dependencies(input: &str, opts: &Options) -> Vec<include::Dependency> {
+    let arena = Arena::for_input(input);
+    let mut out = Vec::new();
+    if let Ok((doc, _, _)) = prepare(input, opts, &arena, &mut Vec::new()) {
+        let top = opts.includes.as_ref().and_then(|c| c.file.as_deref());
+        include::dependencies(doc.children, top, &mut out);
+    }
+    out
 }
 
 /// The JSON of the expanded and resolved tree (C2-A-165), every position of

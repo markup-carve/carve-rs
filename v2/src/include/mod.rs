@@ -102,6 +102,25 @@ pub struct Dependency {
     pub file: Option<String>,
 }
 
+/// C2-N-083: the include nodes of an expanded tree in tree order; `top` is
+/// the id of the top-level document.
+pub(crate) fn dependencies(nodes: &[Node<'_>], from: Option<&str>, out: &mut Vec<Dependency>) {
+    for n in nodes {
+        if let Node::Include(i) = n {
+            out.push(Dependency {
+                path: i.path.to_string(),
+                from: from.map(str::to_string),
+                file: i.file.map(str::to_string),
+            });
+            if let Some(children) = i.children.as_deref() {
+                dependencies(children, i.file, out);
+            }
+        } else if expand::holds_blocks(n) || matches!(n, Node::List(_) | Node::DefinitionList(_)) {
+            n.for_each_child(&mut |c| dependencies(std::slice::from_ref(c), from, out));
+        }
+    }
+}
+
 use crate::Arena;
 use crate::ast::{Document, Node};
 
@@ -161,6 +180,21 @@ fn flatten_node<'a>(n: &mut Node<'a>, arena: &'a Arena) {
     let new = n.children_mut().and_then(|c| flatten_list(c, arena));
     if let Some(new) = new {
         n.set_children(new);
+    }
+}
+
+/// The file of each unexpanded include in tree order, `None` at the top
+/// level, for the `include-unresolved` the render reports (C2-N-070).
+pub(crate) fn unexpanded(nodes: &[Node<'_>], file: Option<&str>, out: &mut Vec<Option<String>>) {
+    for n in nodes {
+        if let Node::Include(i) = n {
+            match i.children.as_deref() {
+                Some(children) => unexpanded(children, i.file, out),
+                None => out.push(file.map(str::to_string)),
+            }
+        } else if expand::holds_blocks(n) || matches!(n, Node::List(_) | Node::DefinitionList(_)) {
+            n.for_each_child(&mut |c| unexpanded(std::slice::from_ref(c), file, out));
+        }
     }
 }
 

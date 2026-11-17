@@ -1,0 +1,36 @@
+{
+  "name": "i01-lines-start-past-the-end-code",
+  "description": "The carve#3349 example: a line range starting past the last line is an error in a code include, and the file stays a resolved dependency.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035",
+    "C2-N-061",
+    "C2-N-068"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ two.txt @lines:3-3 @code }}</p>",
+    "fmt": "{{ two.txt @lines:3-3 @code }}\n",
+    "warnings": [
+      {
+        "code": "include-lines-out-of-range"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "two.txt",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ two.txt @lines:3-3 @code }}",
+  "files": {
+    "two.txt": "one\ntwo\n"
+  }
+}

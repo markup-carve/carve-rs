@@ -1,0 +1,27 @@
+{
+  "name": "i15-carve-target-keeps-a-selector-and-options",
+  "description": "The Carve target returns a directive with its selector and options intact.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-005",
+    "C2-N-080",
+    "C2-N-081",
+    "C2-N-002"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"Intro\">\n  <h2>Intro</h2>\n  <p>Body.</p>\n</section>",
+    "fmt": "{{ chapters/one.crv #Intro @shift:1 }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "chapters/one.crv",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ chapters/one.crv #Intro @shift:1 }}\n",
+  "files": {
+    "chapters/one.crv": "# Intro\n\nBody.\n"
+  }
+}

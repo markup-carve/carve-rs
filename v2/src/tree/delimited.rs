@@ -58,6 +58,27 @@ fn records(body: &str, sep: char) -> Vec<Vec<String>> {
     rows
 }
 
+/// C2-B-181: whether a quote of the body is left open, which runs to the end.
+pub(super) fn unclosed_quote(body: &str, sep: char) -> bool {
+    let mut inside = false;
+    let mut at_start = true;
+    let mut it = body.chars().peekable();
+    while let Some(c) = it.next() {
+        if inside {
+            if c == '"' && it.next_if_eq(&'"').is_none() {
+                inside = false;
+            }
+        } else if at_start && c == '"' {
+            inside = true;
+        } else {
+            at_start = c == sep || c == '\n';
+            continue;
+        }
+        at_start = false;
+    }
+    inside
+}
+
 /// A quoted field: `""` is one quote; an unclosed quote runs to the end (C2-B-181).
 fn quoted(it: &mut std::iter::Peekable<std::str::Chars<'_>>, cur: &mut String) {
     while let Some(c) = it.next() {
@@ -152,6 +173,13 @@ mod tests {
             records("a,b\n1,\"2\n3,4\n", ','),
             vec![vec!["a", "b"], vec!["1", "2\n3,4"]]
         );
+    }
+
+    #[test]
+    fn c2_b_181_unclosed_quote_is_found() {
+        assert!(super::unclosed_quote("a,b\n1,\"2\n3,4\n", ','));
+        assert!(!super::unclosed_quote("a,\"b \"\"q\"\" c\"\n", ','));
+        assert!(!super::unclosed_quote("a\"b\n", ','));
     }
 
     #[test]

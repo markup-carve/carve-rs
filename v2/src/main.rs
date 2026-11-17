@@ -2,16 +2,39 @@
 
 use std::io::{Read, Write};
 
+/// The entry file and the include settings of the command line (C2-N-004).
+#[derive(Default)]
+struct Entry {
+    file: Option<String>,
+    root: Option<String>,
+    no_includes: bool,
+}
+
 fn main() {
     let mut opts = carve2::Options::default();
-    let Some(tree) = parse_args(&mut opts) else {
+    let mut entry = Entry::default();
+    let Some(tree) = parse_args(&mut opts, &mut entry) else {
         return;
     };
-    let mut bytes = Vec::new();
-    if std::io::stdin().read_to_end(&mut bytes).is_err() {
-        std::process::exit(1);
-    }
-    let out = if tree {
+    let bytes = if let Some(f) = &entry.file {
+        std::fs::read(f).unwrap_or_else(|_| {
+            eprintln!("carve2: cannot read the entry file");
+            std::process::exit(1)
+        })
+    } else {
+        let mut bytes = Vec::new();
+        if std::io::stdin().read_to_end(&mut bytes).is_err() {
+            std::process::exit(1);
+        }
+        bytes
+    };
+    includes(&entry, &mut opts);
+    let text = std::str::from_utf8(&bytes)
+        .ok()
+        .filter(|_| opts.includes.is_some());
+    let out = if let (true, Some(text)) = (tree, text) {
+        carve2::tree_json(text, &opts)
+    } else if tree {
         match carve2::try_parse_resolved_bytes_in(&bytes, &opts, &carve2::Arena::new()) {
             Ok(doc) => carve2::to_json(&doc),
             Err(e) => {
@@ -33,9 +56,38 @@ fn main() {
     let _ = stdout.write_all(b"\n");
 }
 
-fn parse_args(opts: &mut carve2::Options) -> Option<bool> {
+/// C2-N-004, C2-N-010, C2-N-014: an entry file expands against its own
+/// directory unless another root is named; standard input expands only
+/// against a named root.
+fn includes(entry: &Entry, opts: &mut carve2::Options) {
+    if entry.no_includes {
+        return;
+    }
+    let file = entry
+        .file
+        .as_deref()
+        .and_then(|f| std::fs::canonicalize(f).ok());
+    let root = match (&entry.root, &file) {
+        (Some(r), _) => std::fs::canonicalize(r).ok(),
+        (None, Some(f)) => f.parent().map(std::path::Path::to_path_buf),
+        (None, None) => None,
+    };
+    let Some(root) = root else { return };
+    let Ok(resolver) = carve2::include::fs::resolver(&root) else {
+        eprintln!("carve2: the include root is refused");
+        std::process::exit(2)
+    };
+    let mut inc = carve2::include::Includes::new(resolver);
+    inc.file = file
+        .as_deref()
+        .and_then(|f| f.strip_prefix(&root).ok())
+        .map(|p| p.to_string_lossy().replace('\\', "/"));
+    opts.includes = Some(inc);
+}
+
+fn parse_args(opts: &mut carve2::Options, entry: &mut Entry) -> Option<bool> {
     let mut tree = false;
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = entry_args(std::env::args().skip(1).collect(), entry);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -60,7 +112,8 @@ fn parse_args(opts: &mut carve2::Options) -> Option<bool> {
                         "usage: carve2 [--tree] [--roundtrip] [--raw-html] [--no-sections] ",
                         "[--no-smart-typography] [--source-lines] [--strict-losses] ",
                         "[--mention-url URL] [--tag-url URL] [--heading-ids off|keep-case|lower|ascii] ",
-                        "[--profile full|article|comment|minimal] < input"
+                        "[--profile full|article|comment|minimal] [--include-root DIR] [--no-includes] ",
+                        "[FILE | < input]"
                     )
                 );
                 std::process::exit(2);
@@ -68,6 +121,37 @@ fn parse_args(opts: &mut carve2::Options) -> Option<bool> {
         }
     }
     Some(tree)
+}
+
+/// Takes the entry file and the include flags out of the arguments.
+fn entry_args(args: Vec<String>, entry: &mut Entry) -> Vec<String> {
+    let mut rest = Vec::new();
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--no-includes" => entry.no_includes = true,
+            "--include-root" => entry.root = it.next(),
+            "--batch" => {
+                rest.push(a);
+                rest.extend(it.by_ref());
+            }
+            f if !f.starts_with("--")
+                && entry.file.is_none()
+                && !rest.last().is_some_and(|p| takes_value(p)) =>
+            {
+                entry.file = Some(a);
+            }
+            _ => rest.push(a),
+        }
+    }
+    rest
+}
+
+fn takes_value(flag: &str) -> bool {
+    matches!(
+        flag,
+        "--mention-url" | "--tag-url" | "--heading-ids" | "--profile"
+    )
 }
 
 fn option_value(opts: &mut carve2::Options, name: &str, value: Option<&String>) {

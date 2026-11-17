@@ -1,0 +1,36 @@
+{
+  "name": "i01c-code-span-cr-region",
+  "description": "A lone-CR region keeps its source offsets and blank line.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-010",
+    "C2-N-034",
+    "C2-N-040",
+    "C2-N-041"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ q.js @region:a @code }}</p>",
+    "fmt": "{{ q.js @region:a @code }}\n",
+    "warnings": [
+      {
+        "code": "include-region-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "q.js",
+        "read": true
+      }
+    ],
+    "positions": []
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-B-010 and C2-N-043 end a line only at LF, so the file is one line and its region marker is malformed",
+  "entry": "{{ q.js @region:a @code }}\n",
+  "files": {
+    "q.js": "// #region a\rx\r\ryy\r// #endregion a\r"
+  }
+}

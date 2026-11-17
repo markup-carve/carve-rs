@@ -1,0 +1,21 @@
+{
+  "name": "i01-two-section-names-conflict",
+  "description": "Two section names select nothing: the directive stays literal and the conflict is warned.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-203",
+    "C2-N-002"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child #Alpha #Beta }}</p>",
+    "fmt": "{{ child #Alpha #Beta }}\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "note": "two sections are outside the directive shape (C2-B-203), so the line is a paragraph, not an include: no warning code of this document",
+  "entry": "{{ child #Alpha #Beta }}",
+  "files": {
+    "child": "{#Alpha}\nfirst\n\n{#Beta}\nsecond"
+  }
+}

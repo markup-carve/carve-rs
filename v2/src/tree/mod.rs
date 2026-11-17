@@ -32,6 +32,8 @@ pub struct Scope {
     pub link_keys: HashSet<String>,
     /// Sorted by key; a term the file defines keeps its own expansion.
     pub abbreviations: Vec<(String, String)>,
+    /// Findings of the tree pass (C2-B-181); never passed on to another file.
+    pub findings: Vec<crate::block::Finding>,
 }
 
 /// `build` with the scope of the including files; returns the scope of this file.
@@ -65,6 +67,7 @@ pub fn build_scoped<'a>(
         hard: 0,
         spare: Vec::new(),
         scratch: std::cell::RefCell::default(),
+        findings: std::cell::RefCell::default(),
     };
     for ev in events {
         b.event(ev);
@@ -79,6 +82,7 @@ pub fn build_scoped<'a>(
     let scope = Scope {
         link_keys: b.link_keys,
         abbreviations: b.abbreviations,
+        findings: b.findings.into_inner(),
     };
     (doc, scope)
 }
@@ -128,6 +132,8 @@ struct Builder<'s, 'a> {
     /// Child lists of closed frames, kept for the next frame.
     spare: Vec<Vec<Node<'a>>>,
     scratch: std::cell::RefCell<inline::Scratch<'a>>,
+    /// Findings of the tree pass, as byte offsets of the source.
+    findings: std::cell::RefCell<Vec<crate::block::Finding>>,
 }
 
 impl<'a> Builder<'_, 'a> {

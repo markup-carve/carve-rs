@@ -1,0 +1,31 @@
+{
+  "name": "i01c-code-table-malformed-quoting",
+  "description": "Malformed quoting in a `{table}` csv code include keeps the code block, as on an authored fence.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-181",
+    "C2-N-045"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>bad</td></tr>\n  </tbody>\n</table>",
+    "fmt": "{table}\n{{ data.csv @code:csv }}\n",
+    "warnings": [
+      {
+        "code": "delimited-table-malformed",
+        "file": "data.csv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "data.csv",
+        "read": true
+      }
+    ]
+  },
+  "note": "a `{table}` include with malformed quoting is a table, as an authored fence is (C2-B-181, C2-N-045)",
+  "entry": "{table}\n{{ data.csv @code:csv }}",
+  "files": {
+    "data.csv": "a,b\n\"bad\n"
+  }
+}

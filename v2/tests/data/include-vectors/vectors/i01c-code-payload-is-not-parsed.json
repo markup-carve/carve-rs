@@ -1,0 +1,28 @@
+{
+  "name": "i01c-code-payload-is-not-parsed",
+  "description": "The payload is not Carve: markup, a directive and a fence line stay text.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-016",
+    "C2-N-042",
+    "C2-N-080"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre><code class=\"language-text\">*not strong*\n{{ other.crv }}\n```\n&lt;b&gt;&amp;&lt;/b&gt;\n</code></pre>",
+    "fmt": "{{ a.txt @code:text }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "a.txt",
+        "read": true
+      }
+    ]
+  },
+  "note": "HTML unchanged; the `flattened` golden has no 0.2 counterpart (C2-N-016, C2-N-080)",
+  "entry": "{{ a.txt @code:text }}",
+  "files": {
+    "a.txt": "*not strong*\n{{ other.crv }}\n```\n<b>&</b>\n",
+    "other.crv": "Never read."
+  }
+}

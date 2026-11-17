@@ -1,0 +1,36 @@
+{
+  "name": "i06-budget-limit",
+  "description": "Once the byte budget is exceeded the directive degrades to literal with a warning.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-064",
+    "C2-N-065",
+    "C2-N-066"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ a }}</p>",
+    "fmt": "{{ a }}\n",
+    "warnings": [
+      {
+        "code": "include-budget"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ a }}",
+  "files": {
+    "a": "too large"
+  },
+  "options": {
+    "bytes": 1
+  }
+}

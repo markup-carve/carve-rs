@@ -1,0 +1,33 @@
+{
+  "name": "i07-binary-content-non-text",
+  "description": "Binary (NUL-bearing) content is not text: warn and stay literal.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-011",
+    "C2-N-070"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ child }}</p>",
+    "fmt": "{{ child }}\n",
+    "warnings": [
+      {
+        "code": "include-non-text"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": false
+      }
+    ]
+  },
+  "note": "warning unchanged; the render adds `include-unresolved` (C2-N-070)",
+  "entry": "{{ child }}",
+  "files": {
+    "child": "binary\u0000payload"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "i05-merged-footnote-definitions-collect-at-the-end",
+  "description": "A definition an include brought in lands where parsing the equivalent flat file puts it.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-016",
+    "C2-N-056"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"A\">\n  <h1>A</h1>\n  <p>body <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>.</p>\n</section>\n<section id=\"B\">\n  <h1>B</h1>\n  <p>body <a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a>.</p>\n</section>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note a<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n    <li id=\"fn2\">\n      <p>note b<a href=\"#fnref2\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+    "fmt": "{{ a.crv }}\n\n{{ b.crv }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      },
+      {
+        "id": "b.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "HTML unchanged; the `flattened` golden has no 0.2 counterpart: the definitions stay in the children of their include (C2-N-016)",
+  "entry": "{{ a.crv }}\n\n{{ b.crv }}\n",
+  "files": {
+    "a.crv": "# A\n\nbody [^n].\n\n[^n]: note a\n",
+    "b.crv": "# B\n\nbody [^m].\n\n[^m]: note b\n"
+  }
+}

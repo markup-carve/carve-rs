@@ -1,0 +1,34 @@
+{
+  "name": "i01-repeated-option-bare-code-and-language",
+  "description": "A bare `@code` and `@code:lang` share one key, so together they repeat it.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-025",
+    "C2-H-133",
+    "C2-N-083"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ a.js @code @code:js }}</p>",
+    "fmt": "{{ a.js @code @code:js }}\n",
+    "warnings": [
+      {
+        "code": "include-option-invalid"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.js",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-option-invalid` replaces `include-duplicate-option` (C2-N-025)",
+  "entry": "{{ a.js @code @code:js }}",
+  "files": {
+    "a.js": "one()\n"
+  }
+}

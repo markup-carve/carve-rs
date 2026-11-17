@@ -1,0 +1,33 @@
+{
+  "name": "i01-lines-start-past-the-end-carve",
+  "description": "A line range starting past the last line is an error in a Carve include too.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-H-133",
+    "C2-W-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ two.txt @lines:3-4 }}</p>",
+    "fmt": "{{ two.txt @lines:3-4 }}\n",
+    "warnings": [
+      {
+        "code": "include-lines-out-of-range"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "two.txt",
+        "read": true
+      }
+    ]
+  },
+  "note": "_VECTORS.md lists it unchanged; C2-H-133 writes the directive as text, the options in the order of C2-W-058",
+  "entry": "{{ two.txt @lines:3-4 }}",
+  "files": {
+    "two.txt": "one\ntwo\n"
+  }
+}
