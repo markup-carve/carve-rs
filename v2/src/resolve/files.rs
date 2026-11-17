@@ -36,6 +36,8 @@ pub struct Files<'a> {
     of: AddrMap<usize, usize>,
     /// The file of each node with an authored id, by the address of its `pos`.
     ids: AddrMap<usize, usize>,
+    /// The `pos` address of every node an included file produced.
+    inside: crate::hash::AddrSet<usize>,
 }
 
 impl<'a> Files<'a> {
@@ -84,9 +86,13 @@ impl<'a> Files<'a> {
             }
             return;
         }
-        if n.attrs().is_some_and(|a| a.id.is_some()) {
-            if let Some(p) = n.pos() {
-                self.ids.insert(std::ptr::from_ref(p).addr(), file);
+        if let Some(p) = n.pos() {
+            let at = std::ptr::from_ref(p).addr();
+            if n.attrs().is_some_and(|a| a.id.is_some()) {
+                self.ids.insert(at, file);
+            }
+            if file > 0 {
+                self.inside.insert(at);
             }
         }
         if matches!(
@@ -120,6 +126,13 @@ impl<'a> Files<'a> {
     #[must_use]
     pub fn file_at(&self, pos: usize) -> Option<&'a str> {
         self.list.get(*self.ids.get(&pos)?)?.id
+    }
+
+    /// True when an included file produced `n`, whose offsets count in that file.
+    #[must_use]
+    pub fn included(&self, n: &Node<'_>) -> bool {
+        n.pos()
+            .is_some_and(|p| self.inside.contains(&std::ptr::from_ref(p).addr()))
     }
 
     /// C2-N-054: the destination of a link key, own file first, then outward.

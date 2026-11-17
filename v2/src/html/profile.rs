@@ -86,7 +86,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn degrade_captioned(&mut self, n: &'r Node<'a>, depth: usize) {
         self.losses.push("profile-construct-degraded");
         let mut paras = Vec::new();
-        degraded_paragraphs(n, &mut paras, 0, self.src);
+        degraded_paragraphs(n, &mut paras, 0, self.src_of(n));
         for p in paras.into_iter().filter(|p| !p.is_empty()) {
             self.line(depth, &format!("<p>{p}</p>"));
         }
@@ -96,7 +96,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn degraded_caption(&mut self, caption: &Node<'_>, depth: usize) {
         let mut paras = Vec::new();
         for block in caption.children().into_iter().flatten() {
-            degraded_paragraphs(block, &mut paras, 1, self.src);
+            degraded_paragraphs(block, &mut paras, 1, self.src_of(block));
         }
         for p in paras.into_iter().filter(|p| !p.is_empty()) {
             self.line(depth, &format!("<p>{p}</p>"));
@@ -130,7 +130,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return None;
         }
         let mut paras = Vec::new();
-        degraded_paragraphs(n, &mut paras, 0, self.src);
+        degraded_paragraphs(n, &mut paras, 0, self.src_of(n));
         paras.retain(|p| !p.is_empty());
         Some(paras)
     }
@@ -142,7 +142,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         self.losses.push("profile-construct-degraded");
         let mut s = String::new();
-        inline_plain(n, &mut s, 0, self.src);
+        inline_plain(n, &mut s, 0, self.src_of(n));
         esc::text(&s, out);
     }
 }

@@ -118,6 +118,8 @@ pub(crate) struct Renderer<'r, 'a> {
     opts: &'r Options,
     doc: &'r Document<'a>,
     src: Option<SourceView<'r>>,
+    /// The files of an expanded tree: an included node reads no top-level source.
+    files: Option<&'r crate::resolve::files::Files<'a>>,
     out: String,
     order: Order<'r, 'a>,
     /// The anchor id of each note mark (C2-H-088).
@@ -162,7 +164,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         doc: &'r Document<'a>,
         opts: &'r Options,
         ordered: bool,
-        files: Option<&crate::resolve::files::Files<'a>>,
+        files: Option<&'r crate::resolve::files::Files<'a>>,
     ) -> Self {
         let profile = crate::tables::PROFILES
             .iter()
@@ -191,6 +193,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             opts,
             doc,
             src: None,
+            files,
             out: String::with_capacity(out_estimate(doc)),
             order,
             mark_ids: AddrMap::default(),
@@ -214,6 +217,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         };
         r.index();
         r
+    }
+
+    /// The source of the file `n` stands in, when the renderer holds it.
+    fn src_of(&self, n: &Node<'_>) -> Option<SourceView<'r>> {
+        self.src
+            .filter(|_| !self.files.is_some_and(|f| f.included(n)))
     }
 
     fn hidden_heading(&self, href: &str) -> bool {

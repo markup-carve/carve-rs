@@ -381,16 +381,59 @@ fn select<'a>(
             scope: None,
         });
     }
+    // C2-N-020, C2-N-036: the selected lines are a document of their own,
+    // positioned in the file.
+    let (start, end) = slice(text, &lines, range);
+    let mut found = Vec::new();
     let (doc, inner) = parse_file(
-        &padded(text, &lines, range),
+        text.get(start..end).unwrap_or(""),
         scope,
         exp.arena,
-        Some((&mut *exp.diags, id)),
+        Some((&mut found, id)),
     );
+    if start > 0 {
+        let lines_before = u32::try_from(range.from).unwrap_or(u32::MAX);
+        let bytes = u32::try_from(start).unwrap_or(u32::MAX);
+        for n in doc.children.iter_mut() {
+            shift_node(n, lines_before, bytes);
+        }
+        for p in found.iter_mut().filter_map(|d| d.pos.as_mut()) {
+            shift_pos(p, lines_before, bytes);
+        }
+    }
+    exp.diags.extend(found);
     Ok(Selected {
         children: doc.children,
         scope: Some(inner),
     })
+}
+
+/// The byte range of the selected lines; a slice from line 1 keeps a U+FEFF.
+fn slice(text: &str, lines: &FileLines, range: LineRange) -> (usize, usize) {
+    if range.from >= range.to {
+        return (0, 0);
+    }
+    let start = if range.from == 0 {
+        0
+    } else {
+        lines.starts.get(range.from).copied().unwrap_or(0)
+    };
+    let end = lines.nexts.get(range.to - 1).copied().unwrap_or(text.len());
+    (start, end)
+}
+
+fn shift_pos(p: &mut crate::ast::Pos, lines: u32, bytes: u32) {
+    p.start_line = p.start_line.saturating_add(lines);
+    p.end_line = p.end_line.saturating_add(lines);
+    p.start_offset = p.start_offset.saturating_add(bytes);
+    p.end_offset = p.end_offset.saturating_add(bytes);
+}
+
+fn shift_node(n: &mut Node<'_>, lines: u32, bytes: u32) {
+    if let Some(Some(p)) = n.pos_slot() {
+        shift_pos(p, lines, bytes);
+    }
+    n.for_each_child_mut(&mut |c| shift_node(c, lines, bytes));
 }
 
 /// C2-N-015: a file parsed as a document of its own, with the scope of the
@@ -410,27 +453,4 @@ pub(super) fn parse_file<'a>(
         diags.extend(found.map(|f| Diagnostic::from_finding(f, &src, Some(file))));
     }
     (doc, inner)
-}
-
-/// C2-N-020, C2-N-036: the selected lines with every earlier line blanked to
-/// spaces of its length, so the positions of the parse are those of the file.
-fn padded(text: &str, lines: &FileLines, range: LineRange) -> String {
-    if range.from == 0 && range.to == lines.len() {
-        return text.to_string();
-    }
-    if range.from >= range.to {
-        return String::new();
-    }
-    let start = lines.starts.get(range.from).copied().unwrap_or(0);
-    let end = lines.nexts.get(range.to - 1).copied().unwrap_or(text.len());
-    let mut out = String::with_capacity(end);
-    for c in text.get(..start).unwrap_or("").chars() {
-        match c {
-            '\n' => out.push('\n'),
-            '\u{FEFF}' if out.is_empty() => out.push(c),
-            _ => out.extend(std::iter::repeat_n(' ', c.len_utf8())),
-        }
-    }
-    out.push_str(text.get(start..end).unwrap_or(""));
-    out
 }

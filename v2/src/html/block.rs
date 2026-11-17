@@ -194,7 +194,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn caption_inner_line(&self, n: &Node) -> Option<u32> {
         let pos = n.pos()?;
         let skipped = self
-            .src
+            .src_of(n)
             .and_then(|source| source.slice(*pos))
             .map_or(0, |text| {
                 text.lines()
