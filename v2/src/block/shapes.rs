@@ -393,6 +393,8 @@ pub struct FenceInfo {
     pub raw: Option<String>,
     pub title: Option<(usize, usize)>,
     pub label: Option<String>,
+    /// C2-B-122: further words after the opener's parts, which it does not read.
+    pub further: bool,
 }
 
 /// A code fence opener: the run length and the info (C2-B-108, C2-B-118).
@@ -441,7 +443,8 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
         i += n;
     }
     // C2-B-105: a brace block after the language is further words (C2-B-122).
-    title_and_label(info, i, base, n == 0, &mut fi.title, &mut fi.label);
+    let end = title_and_label(info, i, base, n == 0, &mut fi.title, &mut fi.label);
+    fi.further = !info.get(end..).is_none_or(crate::chars::is_blank_line);
     fi
 }
 
@@ -457,7 +460,8 @@ fn closing_quote(s: &str, mut i: usize) -> Option<usize> {
     }
 }
 
-/// C2-B-119: an optional title and label follow the opener.
+/// C2-B-119: an optional title and label follow the opener; returns the
+/// offset behind what they took.
 pub fn title_and_label(
     s: &str,
     mut i: usize,
@@ -465,7 +469,7 @@ pub fn title_and_label(
     allow_glued_first: bool,
     title: &mut Option<(usize, usize)>,
     label: &mut Option<String>,
-) {
+) -> usize {
     let b = s.as_bytes();
     let sp = b
         .get(i..)
@@ -483,8 +487,10 @@ pub fn title_and_label(
     if (sp > 0 || (allow_glued_first && title.is_none())) && b.get(i + sp) == Some(&b'[') {
         if let Some(close) = s.get(i + sp + 1..).and_then(|r| r.find(']')) {
             *label = s.get(i + sp + 1..i + sp + 1 + close).map(String::from);
+            i += sp + close + 2;
         }
     }
+    i
 }
 
 /// A bare closer run: the character run and nothing but trailing whitespace.
@@ -506,6 +512,8 @@ pub struct DivInfo {
     pub title: Option<(usize, usize)>,
     pub label: Option<String>,
     pub attrs: Option<AttrBlock>,
+    /// C2-B-122: further words after the opener's parts.
+    pub further: bool,
 }
 
 /// A div opener or a bare colon run (C2-B-119, C2-B-125, C2-B-196).
@@ -532,25 +540,27 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
             .take_while(|&&x| x.is_ascii_alphanumeric() || x == b'_' || x == b'-')
             .count()
     });
-    if name_len > 0 {
+    let end = if name_len > 0 {
         info.name = rest.get(i..i + name_len).map(String::from);
-        after_div_name(rest, i + name_len, base, &mut info);
+        after_div_name(rest, i + name_len, base, &mut info)
     } else if let Some(&s @ (b'>' | b'\\' | b'|')) = b.get(i) {
         info.sigil = Some(char::from(s));
+        i + 1
     } else {
-        title_and_label(rest, 0, base, false, &mut info.title, &mut info.label);
-    }
+        title_and_label(rest, 0, base, false, &mut info.title, &mut info.label)
+    };
+    info.further = !rest.get(end..).is_none_or(crate::chars::is_blank_line);
     Some((n, info))
 }
 
-fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) {
+fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) -> usize {
     let mut j = i;
     if rest.as_bytes().get(j) == Some(&b'{') {
         if let Some((_, end)) = parse_glued(rest, j) {
             j = end;
         }
     }
-    title_and_label(rest, j, base, false, &mut info.title, &mut info.label);
+    title_and_label(rest, j, base, false, &mut info.title, &mut info.label)
 }
 
 /// A table row (C2-B-166, C2-B-167): returns the cell area `(start, end)`
@@ -603,7 +613,9 @@ fn row_tail(tail: &str) -> Option<(Option<AttrBlock>, Option<usize>)> {
     if trimmed.is_empty() {
         return Some((attrs, None));
     }
-    if comment_only(trimmed) && trimmed.len() < rest.len() {
+    // C2-B-133: after whitespace `%%` is a line comment, `%%%` included; only a
+    // `%%%` that starts a line opens a comment block.
+    if trimmed.starts_with("%%") && trimmed.len() < rest.len() {
         return Some((attrs, Some(i)));
     }
     None
@@ -719,7 +731,8 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
     if dlen == 0 {
         return None;
     }
-    let href = rest.get(..dlen)?.to_string();
+    // C2-B-083, C2-I-013: the destination of a link tail reads its escapes.
+    let href = crate::block::include::unescape(rest.get(..dlen)?);
     let tail = rest.get(dlen..)?;
     let title = if crate::chars::is_blank_line(tail) {
         None

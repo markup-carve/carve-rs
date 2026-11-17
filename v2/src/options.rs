@@ -106,6 +106,8 @@ pub struct Options {
     pub profile: Profile,
     pub strict_losses: bool,
     pub social: Option<Social>,
+    /// C2-N-003: the resolver and limits of include expansion; `None` expands nothing.
+    pub includes: Option<crate::include::Includes>,
 }
 
 /// URL templates for mentions and tags (C2-H-126). Gap G-022: the
@@ -137,6 +139,7 @@ impl Default for Options {
             profile: Profile::default(),
             strict_losses: tables::DEFAULT_STRICT_LOSSES,
             social: None,
+            includes: None,
         }
     }
 }

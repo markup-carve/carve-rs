@@ -92,6 +92,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
     }
 
+    /// C2-N-074: a caption written as the paragraphs of a degraded block (C2-H-165).
+    pub(super) fn degraded_caption(&mut self, caption: &Node<'_>, depth: usize) {
+        let mut paras = Vec::new();
+        for block in caption.children().into_iter().flatten() {
+            degraded_paragraphs(block, &mut paras, 1, self.src);
+        }
+        for p in paras.into_iter().filter(|p| !p.is_empty()) {
+            self.line(depth, &format!("<p>{p}</p>"));
+        }
+    }
+
     /// The children that render: visible, and not degraded to nothing.
     pub(super) fn shown(&self, children: &'r [Node<'a>]) -> Vec<&'r Node<'a>> {
         children

@@ -22,7 +22,39 @@ pub fn build<'a>(
     events: Vec<Event>,
     _own_starts: &[(usize, usize)],
 ) -> ast::Document<'a> {
-    let (link_keys, abbreviations) = definitions(&events);
+    build_scoped(src, arena, events, None).0
+}
+
+/// The definition keys a file's inline pass sees: its own, then those of the
+/// files that include it (C2-N-023, C2-N-054).
+#[derive(Debug, Clone, Default)]
+pub struct Scope {
+    pub link_keys: HashSet<String>,
+    /// Sorted by key; a term the file defines keeps its own expansion.
+    pub abbreviations: Vec<(String, String)>,
+}
+
+/// `build` with the scope of the including files; returns the scope of this file.
+#[must_use]
+pub fn build_scoped<'a>(
+    src: &Source<'a>,
+    arena: &'a Arena,
+    events: Vec<Event>,
+    outer: Option<&Scope>,
+) -> (ast::Document<'a>, Scope) {
+    let (mut link_keys, mut abbreviations) = definitions(&events);
+    if let Some(outer) = outer {
+        link_keys.extend(outer.link_keys.iter().cloned());
+        let own: HashSet<String> = abbreviations.iter().map(|(k, _)| k.clone()).collect();
+        abbreviations.extend(
+            outer
+                .abbreviations
+                .iter()
+                .filter(|(k, _)| !own.contains(k))
+                .cloned(),
+        );
+        abbreviations.sort_by(|a, b| a.0.cmp(&b.0));
+    }
     let mut b = Builder {
         src,
         arena,
@@ -38,12 +70,17 @@ pub fn build<'a>(
         b.event(ev);
     }
     while b.stack.pop().is_some() {}
-    ast::Document {
+    let doc = ast::Document {
         children: arena.nodes(&mut b.root),
         ast_version: "2.0",
         src_byte_length: i64::try_from(src.original_len()).ok(),
         ..ast::Document::default()
-    }
+    };
+    let scope = Scope {
+        link_keys: b.link_keys,
+        abbreviations: b.abbreviations,
+    };
+    (doc, scope)
 }
 
 /// The definition keys the inline pass needs (C2-I-125, C2-I-098).
@@ -537,14 +574,12 @@ impl<'a> Builder<'_, 'a> {
     }
 
     fn line(&self, p: Piece) -> Node<'a> {
+        // C2-A-158: a line with no children has no source character and no `pos`.
         if p.start == p.end {
-            return Node::Line(self.arena.alloc(ast::Line {
-                pos: Some(self.pos(p.start, p.end)),
-                ..Default::default()
-            }));
+            return Node::Line(self.arena.alloc(ast::Line::default()));
         }
         let children = self.inline(ContentKind::LineBlockLine, &[p]);
-        let pos = Some(self.pos(p.start, p.end));
+        let pos = (!children.is_empty()).then(|| self.pos(p.start, p.end));
         Node::Line(self.arena.alloc(ast::Line {
             children,
             pos,
@@ -617,6 +652,10 @@ fn attach_caption<'a>(
         Node::BlockQuote(q) => q.caption = Some(arena.alloc(cap)),
         Node::Table(t) => t.caption = Some(arena.alloc(cap)),
         Node::FigureGroup(g) => g.caption = Some(arena.alloc(cap)),
+        // C2-B-147: a code include takes a caption, which its expansion gives its child.
+        Node::Include(i) if i.options.is_some_and(|o| o.get("code").is_some()) => {
+            i.caption = Some(arena.alloc(cap));
+        }
         _ => return,
     }
     if let Some(p) = target.pos_slot().and_then(Option::as_mut) {

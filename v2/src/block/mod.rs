@@ -21,9 +21,22 @@ use table::TableData;
 #[derive(Debug, Default)]
 pub struct BlockOutput {
     pub events: Vec<Event>,
+    /// Findings of the parse channel, in the order they were made.
+    pub findings: Vec<Finding>,
     /// For a block that took attribute lines: its start, which is the start
     /// of the first attribute line, mapped to the start of its own markup.
     pub own_starts: Vec<(usize, usize)>,
+}
+
+/// A finding of the block pass: its code, which message of the code, its
+/// source range and the values its message names.
+#[derive(Debug, Clone)]
+pub struct Finding {
+    pub code: &'static str,
+    pub message: usize,
+    pub start: usize,
+    pub end: usize,
+    pub values: Vec<(&'static str, String)>,
 }
 
 /// An open container.
@@ -160,9 +173,9 @@ struct Pending {
 
 /// What closed directly above, for a caption (C2-B-146).
 #[derive(Debug, Clone, Copy)]
-struct Closed {
-    depth: usize,
-    target: bool,
+pub(super) struct Closed {
+    pub(super) depth: usize,
+    pub(super) target: bool,
 }
 
 /// The result of reading the prefixes of a line.
@@ -192,6 +205,9 @@ pub struct Parser<'a> {
     line_no: usize,
     /// The end of the line being read.
     line_end: usize,
+    findings: Vec<Finding>,
+    /// True while a fence leaf closes at its closing fence.
+    fence_closes: bool,
 }
 
 /// Runs the block pass over a source.
@@ -211,6 +227,8 @@ pub fn scan(src: &Source) -> BlockOutput {
         blank_run: 0,
         closed: None,
         line_no: 0,
+        findings: Vec::new(),
+        fence_closes: false,
     };
     let n = src.line_count();
     for i in 0..n {
@@ -224,6 +242,7 @@ pub fn scan(src: &Source) -> BlockOutput {
     p.finish();
     BlockOutput {
         events: p.events,
+        findings: p.findings,
         own_starts: p.own_starts.into_iter().collect(),
     }
 }
@@ -440,7 +459,9 @@ impl<'a> Parser<'a> {
             // C2-B-113 drops trailing blank lines of an unclosed body only.
             flush_held(leaf);
             let target = matches!(leaf, Leaf::Code { info, .. } if info.raw.is_none());
+            self.fence_closes = true;
             self.close_leaf();
+            self.fence_closes = false;
             self.closed = Some(Closed {
                 depth: self.stack.len(),
                 target,
@@ -599,6 +620,9 @@ impl<'a> Parser<'a> {
     /// Closes the open leaf and emits it (facts set at close, C2-B-191).
     fn close_leaf(&mut self) {
         let Some(open) = self.leaf.take() else { return };
+        if !self.fence_closes {
+            self.unclosed(&open);
+        }
         let (kind, target) = self.finish_leaf(open.leaf, open.start);
         let end = if let LeafKind::Paragraph { pieces, .. }
         | LeafKind::Term { pieces }
@@ -616,6 +640,50 @@ impl<'a> Parser<'a> {
         self.closed = Some(Closed {
             depth: self.stack.len(),
             target,
+        });
+    }
+
+    /// C2-B-113: a fence body that ends without its closing fence.
+    fn unclosed(&mut self, open: &OpenLeaf) {
+        let (code, ch) = match open.leaf {
+            Leaf::Code { .. } => ("unclosed-code-fence", b'`'),
+            Leaf::CommentBlock { .. } => ("unclosed-comment-fence", b'%'),
+            _ => return,
+        };
+        let text = self.src.text();
+        let run: String = text
+            .get(open.start..)
+            .unwrap_or("")
+            .bytes()
+            .take_while(|&b| b == ch)
+            .map(char::from)
+            .collect();
+        let to_end = text.get(open.end..).is_none_or(|r| r.trim().is_empty());
+        let ending = if to_end {
+            "it runs to the end of the document".to_string()
+        } else {
+            format!(
+                "it ends at the end of its container on line {}",
+                self.src.pos(open.end, open.end).end_line
+            )
+        };
+        self.findings.push(Finding {
+            code,
+            message: 0,
+            start: open.start,
+            end: open.end,
+            values: vec![("marker", run.clone()), ("opener", run), ("ending", ending)],
+        });
+    }
+
+    /// C2-B-122: further words after an opener's parts are not read.
+    pub(super) fn further_words(&mut self, start: usize, end: usize) {
+        self.findings.push(Finding {
+            code: "fence-title-syntax",
+            message: 1,
+            start,
+            end,
+            values: Vec::new(),
         });
     }
 

@@ -65,8 +65,10 @@ pub struct El<'a> {
 
 /// The render switches the filter reads.
 #[derive(Clone, Copy)]
-pub struct Filter {
+pub struct Filter<'p> {
     pub roundtrip: bool,
+    /// C2-H-161: the tokens of a URL list attribute meet the policy too.
+    pub policy: Option<&'p crate::options::UrlPolicy>,
 }
 
 impl<'a> El<'a> {
@@ -83,14 +85,14 @@ impl<'a> El<'a> {
 
     /// Writes ` name="value"` for each attribute.
     #[must_use]
-    pub fn write(self, f: Filter) -> String {
+    pub fn write(self, f: Filter<'_>) -> String {
         let mut out = String::new();
         self.write_into(f, &mut out);
         out
     }
 
     /// `write`, appended to `out`.
-    pub fn write_into(mut self, f: Filter, out: &mut String) {
+    pub fn write_into(mut self, f: Filter<'_>, out: &mut String) {
         if self.is_bare() {
             return;
         }
@@ -185,7 +187,7 @@ impl<'a> El<'a> {
 
     /// The authored keys that are written, filtered and with collisions
     /// settled (C2-H-013, C2-H-116, C2-H-161).
-    fn keys(&mut self, f: Filter) -> Vec<(&'a str, &'a str)> {
+    fn keys(&mut self, f: Filter<'_>) -> Vec<(&'a str, &'a str)> {
         let Some(attrs) = self.attrs else {
             return Vec::new();
         };
@@ -218,7 +220,7 @@ impl<'a> El<'a> {
                 self.structural.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
             }
             self.generated.retain(|(s, _)| !s.eq_ignore_ascii_case(k));
-            out.push((*k, url::filter_value(k, v)));
+            out.push((*k, url::filter_value_in(k, v, f.policy)));
         }
         out
     }
@@ -278,7 +280,10 @@ mod tests {
         let a = attrs();
         let el = El::new(Some(&a), Some("en"));
         assert_eq!(
-            el.write(Filter { roundtrip: false }),
+            el.write(Filter {
+                roundtrip: false,
+                policy: None
+            }),
             r#" id="i" class="c" lang="en" k="v""#
         );
     }
@@ -294,7 +299,10 @@ mod tests {
             ..El::new(Some(&a), None)
         };
         assert_eq!(
-            el.write(Filter { roundtrip: false }),
+            el.write(Filter {
+                roundtrip: false,
+                policy: None
+            }),
             r#" style="color: red; text-align: left;""#
         );
     }
@@ -306,11 +314,17 @@ mod tests {
             ..Attrs::default()
         };
         assert_eq!(
-            El::new(Some(&a), None).write(Filter { roundtrip: true }),
+            El::new(Some(&a), None).write(Filter {
+                roundtrip: true,
+                policy: None
+            }),
             ""
         );
         assert_eq!(
-            El::new(Some(&a), None).write(Filter { roundtrip: false }),
+            El::new(Some(&a), None).write(Filter {
+                roundtrip: false,
+                policy: None
+            }),
             r#" data-carve-div="""#
         );
     }

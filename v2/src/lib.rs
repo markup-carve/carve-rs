@@ -35,8 +35,10 @@ pub mod ast;
 pub mod attr;
 pub mod block;
 pub mod chars;
+pub mod diagnostic;
 pub mod hash;
 pub mod html;
+pub mod include;
 pub mod inline;
 pub mod options;
 #[cfg(feature = "profile")]
@@ -177,18 +179,151 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         return Err(RenderError::TooLong { profile, limit });
     }
     let arena = Arena::for_input(input);
-    let mut doc = parse_in(input, &arena)?;
-    let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
+    let mut diags = Vec::new();
+    let (out, losses) = render_parts(input, opts, &arena, &mut diags)?;
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    Ok(out)
+}
+
+/// Parses, expands (C2-N-006) and resolves; true in the second place when
+/// the resolution order is needed, in the third when an include was expanded.
+fn prepare<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    check_source_length(input.len())?;
+    let src = source::Source::new(input);
+    let out = block::scan(&src);
+    diags.extend(
+        out.findings
+            .iter()
+            .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
+    );
+    let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
+    let expanded = opts.includes.is_some();
+    if let Some(cfg) = &opts.includes {
+        if input.contains("{{") {
+            include::expand(&mut doc, &scope, cfg, opts, arena, diags);
+        }
+    } else if input.contains("{{") {
+        include::no_resolver(doc.children, diags);
+    }
+    let files = (expanded && input.contains("{{")).then(|| resolve::files::Files::build(&doc));
+    let mut dups = Vec::new();
+    let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
+    for (id, pos) in dups {
+        diags.push(diagnostic::Diagnostic::new(
+            "duplicate-id",
+            &[("explicit", &id)],
+            None,
+            pos,
+        ));
+    }
+    if expanded {
+        doc.stages = Some(&resolve::STAGES_EXPANDED);
+    }
+    Ok((doc, ordered, files))
+}
+
+fn render_parts(
+    input: &str,
+    opts: &Options,
+    arena: &Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Result<(String, Vec<&'static str>), RenderError> {
+    let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
+    if let Some(files) = files {
+        let extra = if opts.roundtrip {
+            include::roundtrip_losses(doc.children)
+        } else {
+            Vec::new()
+        };
+        if matches!(
+            opts.profile,
+            options::Profile::Full | options::Profile::Article
+        ) {
+            include::flatten(&mut doc, arena);
+        }
+        let src = source::Source::new(input);
+        let (out, mut losses) = html::render_files(&doc, opts, src.text(), &files);
+        losses.extend(extra);
+        return Ok((out, losses));
+    }
     let (out, losses) = if opts.profile != options::Profile::Full && input.contains('\0') {
         let src = source::Source::new(input);
         html::render_mapped_source(&doc, opts, src.render_view(), ordered)
     } else {
         html::render_source(&doc, opts, input, ordered)
     };
-    if opts.strict_losses && !losses.is_empty() {
-        return Err(RenderError::Losses(losses));
+    Ok((out, losses))
+}
+
+/// The HTML of a render and the findings of its parse and its render.
+#[derive(Debug, Clone, Default)]
+pub struct Rendered {
+    pub html: String,
+    pub diagnostics: Vec<diagnostic::Diagnostic>,
+}
+
+impl Rendered {
+    /// The codes of the findings, in order.
+    #[must_use]
+    pub fn codes(&self) -> Vec<String> {
+        self.diagnostics
+            .iter()
+            .map(|d| d.code.to_string())
+            .collect()
     }
-    Ok(out)
+}
+
+/// Renders as [`render`] does and returns the findings of the parse
+/// channel (C2-N-061) and the render losses (C2-H-130) beside the HTML.
+#[must_use]
+pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
+    let arena = Arena::for_input(input);
+    let mut diags = Vec::new();
+    let html = match render_parts(input, opts, &arena, &mut diags) {
+        Ok((html, losses)) => {
+            diags.extend(
+                losses
+                    .iter()
+                    .map(|c| diagnostic::Diagnostic::new(c, &[], None, None)),
+            );
+            if opts.strict_losses && !losses.is_empty() {
+                String::new()
+            } else {
+                html
+            }
+        }
+        Err(_) => String::new(),
+    };
+    Rendered {
+        html,
+        diagnostics: diags,
+    }
+}
+
+/// The JSON of the expanded and resolved tree (C2-A-165), every position of
+/// an included node naming its file (C2-N-019).
+#[must_use]
+pub fn tree_json(input: &str, opts: &Options) -> String {
+    let arena = Arena::for_input(input);
+    let Ok((doc, _, files)) = prepare(input, opts, &arena, &mut Vec::new()) else {
+        return String::new();
+    };
+    if files.is_none() && opts.includes.is_none() {
+        return to_json(&doc);
+    }
+    let mut v = serde_json::to_value(&doc).unwrap_or_default();
+    if let Some(m) = v.as_object_mut() {
+        m.insert("type".into(), "document".into());
+    }
+    include::stamp_files(&mut v, None);
+    v.to_string()
 }
 
 /// C2-B-218: renders bytes after replacing malformed UTF-8 subparts.

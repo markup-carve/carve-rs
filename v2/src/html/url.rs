@@ -82,13 +82,23 @@ pub fn value_fails(value: &str) -> bool {
 /// C2-H-161 or C2-H-162.
 #[must_use]
 pub fn filter_value<'v>(name: &str, value: &'v str) -> &'v str {
+    filter_value_in(name, value, None)
+}
+
+/// `filter_value` where each token of a URL list attribute also meets
+/// `policy` (C2-H-160, C2-H-161).
+#[must_use]
+pub fn filter_value_in<'v>(name: &str, value: &'v str, policy: Option<&UrlPolicy>) -> &'v str {
     let mut fails = value_fails(value);
     if let Some((_, commas)) = URL_LIST_ATTRIBUTES
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(name))
     {
         let split = value.split(|c: char| c.is_ascii_whitespace() || (*commas && c == ','));
-        fails = fails || split.filter(|t| !t.is_empty()).any(value_fails);
+        fails = fails
+            || split
+                .filter(|t| !t.is_empty())
+                .any(|t| value_fails(t) || policy.is_some_and(|p| !allowed(t, p)));
     }
     if name.eq_ignore_ascii_case("style") {
         fails = fails || style_fails(value);

@@ -168,7 +168,8 @@ impl<'a> Builder<'_, 'a> {
                 .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
             let positioned = !cell.joined && !blank && sp.mark.is_none();
             let marked = sp.mark.is_some();
-            let cell_positioned = !cell.joined && !marked;
+            // C2-A-158: a cell that holds a span mark spans the text between its pipes.
+            let cell_positioned = !cell.joined;
             let children = self.cell_children(cell, positioned, marked);
             let header = cell.header && !marked;
             let (attrs, lang) = if marked {
@@ -462,13 +463,11 @@ fn columns<'a>(
     if let Some(values) = aligns.as_ref() {
         for (col, align) in cols.iter_mut().zip(values) {
             col.align = Some(*align);
-            col.authored = Some(true);
         }
     }
     if let Some(values) = widths.as_ref() {
         for (col, &width) in cols.iter_mut().zip(values) {
             col.width = Some(width);
-            col.authored = Some(true);
         }
     }
     let header_valid = header_applies && a.get("header-rows").is_some_and(|v| count(v).is_some());

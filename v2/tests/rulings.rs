@@ -341,8 +341,10 @@ fn c2_a_158_caption_mark_and_empty_cells_have_positions() {
     assert_eq!(empty["pos"]["startOffset"], 5);
     assert_eq!(empty["pos"]["endOffset"], 6);
     assert!(empty["children"][0].get("pos").is_none());
+    // A cell that holds a span mark spans the text between its pipes.
     let span = &rows[1]["children"][1];
-    assert!(span.get("pos").is_none());
+    assert_eq!(span["pos"]["startOffset"], 13);
+    assert_eq!(span["pos"]["endOffset"], 16);
 }
 
 #[test]
@@ -379,7 +381,8 @@ fn c2_b_184_continuation_under_row_span_joins_origin_cell() {
     assert_eq!(origin["children"][0]["children"][0]["value"], "a x");
     assert!(origin.get("pos").is_none());
     assert_eq!(rows[1]["children"][0]["span"], "rowspan");
-    assert!(rows[1]["children"][0].get("pos").is_none());
+    // C2-A-158: the mark cell takes no piece of the continuation and spans its pipes.
+    assert_eq!(rows[1]["children"][0]["pos"]["startOffset"], 11);
 }
 
 #[test]
@@ -505,8 +508,8 @@ fn c2_b_130_line_block_keeps_lead_after_container_strip() {
     let t = tree(" ::: |\n \n x\n :::");
     let lines = &t["children"][0]["children"];
     assert_eq!(lines[0]["type"], "line");
-    assert_eq!(lines[0]["pos"]["startOffset"], 7);
-    assert_eq!(lines[0]["pos"]["endOffset"], 8);
+    // C2-A-158: a line with no children has no `pos`.
+    assert!(lines[0].get("pos").is_none());
     assert_eq!(lines[0]["children"], serde_json::json!([]));
     assert_eq!(lines[1]["children"][0]["value"], " x");
 

@@ -43,17 +43,18 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/complexity-venv"
           "$RUNNER_TEMP/complexity-venv/bin/pip" install --disable-pip-version-check lizard==1.24.3
           "$RUNNER_TEMP/complexity-venv/bin/python" tools/check_complexity.py
+      - name: Conformance corpus of the specification and tree fixtures
+        run: cargo test --test conformance
       - name: Specification examples and clause tests
         run: cargo test -- --skip c2_fixed_oracle_corpus_and_clause_differences
-      - name: Decided clause cases without an oracle
-        run: cargo test --test decided_clauses
       - name: Fixed oracle corpus and recorded clause differences
         run: cargo test --test corpus
 
   # The tables are normative and build.rs generates Rust from spec-data/.
   # Each file there must equal spec/0.2/data/ of the carve repository at the
-  # commit in spec-data/SOURCE_COMMIT, so an edited copy fails here. Moving
-  # the pin is a deliberate commit that updates the copy and the pin together.
+  # commit in spec-data/SOURCE_COMMIT, and spec-conformance/ and spec-trees/
+  # must equal its conformance/ and trees/, so an edited copy fails here.
+  # Moving the pin is a deliberate commit that updates copies and pin together.
   spec-data-drift:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -73,4 +74,7 @@ jobs:
           for f in v2/spec-data/*.json; do
             cmp "$f" "carve-spec/spec/0.2/data/$(basename "$f")" || status=1
           done
+          # The conformance corpus and the tree fixtures are the gate of the engine.
+          diff -r v2/spec-conformance carve-spec/spec/0.2/conformance || status=1
+          diff -r v2/spec-trees carve-spec/spec/0.2/trees || status=1
           exit $status

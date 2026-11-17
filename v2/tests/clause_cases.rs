@@ -180,7 +180,7 @@ fn c2_h_165_degraded_block_image_uses_fallback_spelling() {
 }
 
 #[test]
-fn c2_a_092_joined_span_mark_discards_its_prefix_and_position() {
+fn c2_a_092_joined_span_mark_discards_its_prefix() {
     let arena = carve2::Arena::new();
     let doc = carve2::parse_resolved_in("|= H |\n|={.x} ^ |\n| a |", &Options::default(), &arena)
         .unwrap();
@@ -189,9 +189,11 @@ fn c2_a_092_joined_span_mark_discards_its_prefix_and_position() {
     assert_eq!(mark["header"], false);
     assert_eq!(mark["span"], "rowspan");
     assert_eq!(mark["children"], serde_json::json!([]));
-    for field in ["attrs", "lang", "align", "pos"] {
+    for field in ["attrs", "lang", "align"] {
         assert!(mark.get(field).is_none(), "{field}: {mark}");
     }
+    // C2-A-158 over the older sentence of C2-A-092: the mark cell spans its pipes.
+    assert_eq!(mark["pos"]["startOffset"], 8);
 }
 
 #[test]

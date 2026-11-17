@@ -5,6 +5,7 @@
 //! Every result is computed on the immutable tree, keyed by node address, and
 //! then written in one mutable pass.
 
+pub mod files;
 pub mod order;
 pub mod plain;
 pub mod slug;
@@ -24,8 +25,15 @@ use std::collections::{HashMap, HashSet};
 /// slots can add levels that neither cap counts.
 pub const WALK_CAP: usize = 2 * (crate::tables::BLOCK_DEPTH + crate::tables::INLINE_DEPTH);
 
+/// An authored id that stood earlier in the tree, and where it stands again.
+pub(crate) type Duplicate = (String, Option<crate::ast::Pos>);
+
 /// The names of the stages this resolver completes (C2-A-135).
 pub const STAGES: [&str; 2] = ["referenceResolution", "tableAlignment"];
+
+/// The stages of a tree in which expansion ran (C2-N-006).
+pub const STAGES_EXPANDED: [&str; 3] =
+    ["includeExpansion", "referenceResolution", "tableAlignment"];
 
 /// One result field.
 enum Res<'a> {
@@ -50,7 +58,18 @@ pub(crate) fn resolve_ordered<'a>(
     opts: &Options,
     arena: &'a Arena,
 ) -> bool {
-    let (results, ordered) = compute(doc, opts, arena);
+    resolve_files(doc, opts, arena, None, &mut Vec::new())
+}
+
+/// `resolve_ordered` over a tree whose includes were expanded (C2-N-053).
+pub(crate) fn resolve_files<'a>(
+    doc: &mut Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+    files: Option<&files::Files<'a>>,
+    dups: &mut Vec<Duplicate>,
+) -> bool {
+    let (results, ordered) = compute(doc, opts, arena, files, dups);
     if !results.is_empty() {
         for c in doc.children.iter_mut() {
             apply(c, &results, 1);
@@ -64,8 +83,10 @@ fn compute<'a>(
     doc: &Document<'a>,
     opts: &Options,
     arena: &'a Arena,
+    files: Option<&files::Files<'a>>,
+    dups: &mut Vec<Duplicate>,
 ) -> (AddrMap<usize, Res<'a>>, bool) {
-    let order = Order::build(doc);
+    let order = Order::build_with(doc, files);
     let ordered = !order.notes.is_empty()
         || order.visits.iter().any(|v| match v.node {
             Node::Xref(_) => true,
@@ -79,9 +100,10 @@ fn compute<'a>(
     }
     let mut all = Vec::new();
     every_node(&*doc.children, &mut all, 1);
-    let ids = heading_ids(&all, &order, opts.heading_ids, &mut res, arena);
+    let ids = heading_ids(&all, &order, opts.heading_ids, &mut res, arena, dups);
     let captions = caption_numbers(&order, opts, &mut res);
-    let index = Index::new(doc, &order, &ids, &captions);
+    let mut index = Index::new(doc, &order, &ids, &captions);
+    index.files = files;
     for n in all {
         index.reference(n, &mut res, arena);
         table::resolve_table(n, &mut res);
@@ -131,11 +153,16 @@ fn heading_ids<'a>(
     mode: HeadingIds,
     res: &mut AddrMap<usize, Res<'a>>,
     arena: &'a Arena,
+    dups: &mut Vec<Duplicate>,
 ) -> AddrMap<usize, &'a str> {
     let mut taken = slug::Taken::default();
-    for n in all {
+    // C2-N-072: an include's own id is no anchor and is not reserved.
+    for n in all.iter().filter(|n| !matches!(n, Node::Include(_))) {
         if let Some(id) = n.attrs().and_then(|a| a.id) {
-            taken.reserve(id);
+            if !taken.reserve(id) {
+                // C2-A-039, C2-N-058: the later occurrence is the duplicate.
+                dups.push((id.to_string(), n.pos().copied()));
+            }
         }
     }
     let mut ids = AddrMap::default();
@@ -150,6 +177,25 @@ fn heading_ids<'a>(
         }
     }
     ids
+}
+
+/// C2-N-027: the heading ids of one file's own parse, before it meets any other file.
+pub(crate) fn heading_ids_alone<'a>(
+    doc: &Document<'a>,
+    mode: HeadingIds,
+    arena: &'a Arena,
+) -> AddrMap<usize, &'a str> {
+    let order = Order::build(doc);
+    let mut all = Vec::new();
+    every_node(&*doc.children, &mut all, 1);
+    heading_ids(
+        &all,
+        &order,
+        mode,
+        &mut AddrMap::default(),
+        arena,
+        &mut Vec::new(),
+    )
 }
 
 /// C2-H-149 to C2-H-151 and C2-H-170: one count per sequence key, in
@@ -204,7 +250,9 @@ pub fn label_key(
 }
 
 /// The lookup tables of reference resolution.
-struct Index<'a> {
+struct Index<'a, 'f> {
+    /// C2-N-054, C2-N-055: the definitions by file, for an expanded tree.
+    files: Option<&'f files::Files<'a>>,
     links: HashMap<&'a str, &'a str>,
     abbrs: HashMap<&'a str, &'a str>,
     /// The id of each heading with one, and the first heading for each folded plain text.
@@ -213,7 +261,7 @@ struct Index<'a> {
     targets: HashSet<&'a str>,
 }
 
-impl<'a> Index<'a> {
+impl<'a> Index<'a, '_> {
     fn new(
         doc: &Document<'a>,
         order: &Order<'_, 'a>,
@@ -245,13 +293,14 @@ impl<'a> Index<'a> {
                     .or_insert(i);
                 heading_ids.push(*id);
                 targets.insert(*id);
-            } else if owners.contains(&a) {
+            } else if owners.contains(&a) && !matches!(v.node, Node::Include(_)) {
                 if let Some(id) = v.node.attrs().and_then(|x| x.id) {
                     targets.insert(id);
                 }
             }
         }
         Index {
+            files: None,
             links,
             abbrs,
             heading_ids,
@@ -266,7 +315,7 @@ impl<'a> Index<'a> {
         match n {
             Node::Link(l) if l.namespace == Some("link") => {
                 let Some(key) = l.key else { return };
-                if let Some(href) = self.links.get(key) {
+                if let Some(href) = self.link(n, key) {
                     res.insert(a, Res::Href(href));
                 } else if !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut)) {
                     if let Some(id) = self.heading_target(key, arena) {
@@ -275,7 +324,7 @@ impl<'a> Index<'a> {
                 }
             }
             Node::Image(i) if i.namespace == Some("link") => {
-                if let Some(src) = i.key.and_then(|k| self.links.get(k)) {
+                if let Some(src) = i.key.and_then(|k| self.link(n, k)) {
                     res.insert(a, Res::Src(src));
                 }
             }
@@ -285,11 +334,25 @@ impl<'a> Index<'a> {
                 }
             }
             Node::Abbreviation(x) => {
-                if let Some(e) = self.abbrs.get(x.key) {
+                if let Some(e) = self.abbr(n, x.key) {
                     res.insert(a, Res::Expansion(e));
                 }
             }
             _ => {}
+        }
+    }
+
+    fn link(&self, n: &Node<'_>, key: &str) -> Option<&'a str> {
+        match self.files {
+            Some(f) => f.link(n, key),
+            None => self.links.get(key).copied(),
+        }
+    }
+
+    fn abbr(&self, n: &Node<'_>, key: &str) -> Option<&'a str> {
+        match self.files {
+            Some(f) => f.abbr(n, key),
+            None => self.abbrs.get(key).copied(),
         }
     }
 

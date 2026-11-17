@@ -30,16 +30,41 @@ pub(super) fn comments_only(nodes: &[Node]) -> bool {
 }
 
 pub(super) fn comments_only_with_critic(nodes: &[Node], critic: bool) -> bool {
+    let comment =
+        |n: &Node| matches!(n, Node::Comment(_)) || (critic && matches!(n, Node::CriticComment(_)));
     // C2-H-019: a paragraph with no comment, as one hard break, is written.
-    nodes
-        .iter()
-        .any(|n| matches!(n, Node::Comment(_)) || (critic && matches!(n, Node::CriticComment(_))))
+    nodes.iter().any(comment)
         && nodes.iter().all(|n| match n {
-            Node::Comment(_) | Node::SoftBreak(_) => true,
+            Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_) => true,
             Node::CriticComment(_) => critic,
             Node::Text(t) => t.value.trim_matches([' ', '\t', '\n']).is_empty(),
             _ => false,
         })
+        && hard_breaks_dropped(nodes, &comment)
+}
+
+/// C2-H-069, C2-H-019: every hard break is one a comment-only line takes
+/// with it: the break behind it, or the break before it at the end.
+fn hard_breaks_dropped(nodes: &[Node], comment: &dyn Fn(&Node) -> bool) -> bool {
+    let mut lines: Vec<(bool, Option<bool>)> = Vec::new();
+    let mut has_comment = false;
+    for n in nodes {
+        match n {
+            Node::SoftBreak(_) | Node::HardBreak(_) => {
+                lines.push((has_comment, Some(matches!(n, Node::HardBreak(_)))));
+                has_comment = false;
+            }
+            _ => has_comment |= comment(n),
+        }
+    }
+    lines.push((has_comment, None));
+    let last = lines.len() - 1;
+    (0..last).all(|i| {
+        let hard = lines.get(i).and_then(|l| l.1) == Some(true);
+        let behind = lines.get(i).is_some_and(|l| l.0);
+        let before_last = i + 1 == last && lines.get(last).is_some_and(|l| l.0);
+        !hard || behind || before_last
+    })
 }
 
 fn has_attrs(attrs: Option<&Attrs<'_>>, lang: Option<&str>) -> bool {
@@ -115,14 +140,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             Node::Table(_) => self.table(n, depth, false),
             Node::FigureGroup(_) => self.figure_group(n, depth),
+            // C2-N-072: an include's own attributes are not written.
             Node::Include(i) => {
                 let s = format!(
                     "<p{}>{}</p>",
-                    self.el(i.attrs, i.lang, n).write(self.filter()),
+                    self.el(None, None, n).write(self.filter()),
                     esc::text_str(&include_text(i))
                 );
                 self.losses.push("include-unresolved");
                 self.line(depth, &s);
+                if let Some(caption) = i.caption.as_deref().filter(|_| i.children.is_none()) {
+                    self.degraded_caption(caption, depth);
+                }
             }
             Node::Section(s) => {
                 let el = self.el(s.attrs, s.lang, n);
@@ -717,8 +746,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// One line of a line block: leading spaces become `&nbsp;`.
     fn line_text(&mut self, children: &'r [Node<'a>]) -> String {
+        // C2-B-130: only spaces the line starts with lead it, not those behind a comment.
+        let lead = match children.first() {
+            Some(Node::Text(t)) => t.value.bytes().take_while(|&b| b == b' ').count(),
+            _ => 0,
+        };
         let s = self.leaf(children);
-        let spaces = s.chars().take_while(|c| *c == ' ').count();
+        let spaces = s.bytes().take(lead).take_while(|&b| b == b' ').count();
         format!(
             "{}{}",
             "&nbsp;".repeat(spaces),

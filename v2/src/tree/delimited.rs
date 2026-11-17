@@ -127,10 +127,8 @@ pub(super) fn table<'a>(
                 .skip(head)
                 .map(|r| row(a, r, false)),
         );
-        let head_rows = declared.and_then(|_| i64::try_from(head).ok());
         groups.push(Node::TableBody(a.alloc(ast::TableBody {
             children,
-            head_rows,
             ..Default::default()
         })));
     }

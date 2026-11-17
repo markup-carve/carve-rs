@@ -79,8 +79,16 @@ impl Parser<'_> {
             }
             return list_interrupts(&f, m, &marker);
         }
-        if let Some((_, _, _)) = shapes::desc_mark(&k) {
-            return f.desc_lists.contains(&m);
+        if let Some((term, _, _)) = shapes::desc_mark(&k) {
+            // C2-B-190: a description that cannot open is text of the term.
+            let replaces = matches!(
+                self.stack.last(),
+                Some(Container {
+                    kind: Kind::Desc { .. },
+                    ..
+                })
+            );
+            return f.desc_lists.contains(&m) && (term || replaces || self.room(1));
         }
         walk.qbase == 0 && k.col == 0 && f.footnote && is_definition(k.rest())
     }
@@ -217,6 +225,10 @@ impl Parser<'_> {
                     Some((term, pos, ccol))
                         if col == m && (term || has_term) && blanks < LIST_END_BLANK_LINES =>
                     {
+                        // C2-B-190: a description that cannot open is text.
+                        if !term && !self.room(1) {
+                            return None;
+                        }
                         return Some(self.desc_entry(k, m, term, pos, ccol, e));
                     }
                     _ => self.pop_container(),
@@ -481,6 +493,8 @@ impl Parser<'_> {
         {
             let (s, attrs) = self.take_pending(start, None);
             let end = start + r.len();
+            // C2-B-147: a code include, whose valid options hold `code`, takes a caption.
+            let target = inc.options.contains_key("code");
             self.push_leaf_event(
                 LeafKind::Include {
                     path: inc.path,
@@ -492,7 +506,10 @@ impl Parser<'_> {
                 end,
                 attrs,
             );
-            self.closed = None;
+            self.closed = Some(super::Closed {
+                depth: self.stack.len(),
+                target,
+            });
             return;
         }
         if self.open_fence(k, m, e)
@@ -539,6 +556,9 @@ impl Parser<'_> {
     fn open_fence(&mut self, k: &Cursor<'_>, m: usize, e: usize) -> bool {
         let start = k.offset();
         if let Some((len, info)) = shapes::code_fence_opener(k) {
+            if info.further {
+                self.further_words(start, e);
+            }
             self.set_leaf(
                 Leaf::Code {
                     len,
@@ -587,6 +607,9 @@ impl Parser<'_> {
             return false;
         };
         let start = k.offset();
+        if info.further {
+            self.further_words(start, e);
+        }
         let bare = k.rest().get(len..).is_some_and(crate::chars::is_blank_line)
             && info.name.is_none()
             && info.sigil.is_none()

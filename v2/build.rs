@@ -813,8 +813,17 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
     out.push_str("}\n");
 }
 
-fn slot_arms(a: &mut Arms, ty: &str, props: &Map<String, Value>, fam: Fam) {
+fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
     let arena = fam == Fam::Arena;
+    let props = def
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let required = def
+        .get("required")
+        .and_then(Value::as_array)
+        .is_some_and(|r| r.iter().any(|x| x == "children"));
     if props.contains_key("pos") {
         let _ = writeln!(a.pos, "            Self::{ty}(n) => n.pos.as_ref(),");
         let _ = writeln!(a.pos_mut, "            Self::{ty}(n) => Some(&mut n.pos),");
@@ -832,16 +841,22 @@ fn slot_arms(a: &mut Arms, ty: &str, props: &Map<String, Value>, fam: Fam) {
         );
     }
     if props.get("children").is_some_and(is_node_list) {
-        let (get, get_mut) = if arena {
-            ("Some(&*n.children)", "Some(&mut *n.children)")
-        } else {
-            ("Some(&n.children)", "Some(&mut n.children)")
+        // C2-N-017: an include has `children` only once it is expanded.
+        let (get, get_mut, set) = match (arena, required) {
+            (true, true) => ("Some(&*n.children)", "Some(&mut *n.children)", "kids"),
+            (false, true) => ("Some(&n.children)", "Some(&mut n.children)", "kids"),
+            (true, false) => (
+                "n.children.as_deref()",
+                "n.children.as_deref_mut()",
+                "Some(kids)",
+            ),
+            (false, false) => ("n.children.as_ref()", "n.children.as_mut()", "Some(kids)"),
         };
         let _ = writeln!(a.children, "            Self::{ty}(n) => {get},");
         let _ = writeln!(a.children_mut, "            Self::{ty}(n) => {get_mut},");
         let _ = writeln!(
             a.children_slot,
-            "            Self::{ty}(n) => n.children = kids,"
+            "            Self::{ty}(n) => n.children = {set},"
         );
     }
 }
@@ -862,7 +877,7 @@ fn write_slots(out: &mut String, defs: &Map<String, Value>, slots: &Value, fam: 
             .and_then(Value::as_object)
             .cloned()
             .unwrap_or_default();
-        slot_arms(&mut a, &ty, &props, fam);
+        slot_arms(&mut a, &ty, def, fam);
         let order: Vec<String> = slot_map
             .get(name)
             .and_then(Value::as_array)
@@ -922,6 +937,11 @@ fn gen_tables(dir: &Path) -> String {
         &load(dir, "inline-braces.json"),
     );
     gen_includes(&mut out, &load(dir, "include-options.json"));
+    gen_include_rules(
+        &mut out,
+        &load(dir, "includes.json"),
+        &load(dir, "lint-rules.json"),
+    );
     gen_dispatch(&mut out, &load(dir, "line-shapes.json"));
     gen_ordered(&mut out, &load(dir, "ordered-styles.json"));
     out
@@ -960,6 +980,46 @@ fn gen_limits(out: &mut String, v: &Value) {
         let _ = writeln!(out, "pub const {name}: usize = {value};");
     }
     out.push('\n');
+}
+
+/// C2-N-024, C2-N-061: the failure causes in test order, the conflict rows,
+/// and the message of each code outside the lint channel.
+fn gen_include_rules(out: &mut String, includes: &Value, rules: &Value) {
+    out.push_str("/// (cause, code) in the order they are tested\npub const INCLUDE_CAUSES: &[(&str, &str)] = &[\n");
+    for row in arr(includes, "causes") {
+        let _ = writeln!(out, "    ({:?}, {:?}),", s(row, "name"), s(row, "code"));
+    }
+    out.push_str(
+        "];\n\n/// (rule, options)\npub const INCLUDE_CONFLICTS: &[(&str, &[&str])] = &[\n",
+    );
+    for row in arr(includes, "conflicts") {
+        let names: Vec<String> = arr(row, "options")
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|n| format!("{n:?}"))
+            .collect();
+        let _ = writeln!(out, "    ({:?}, &[{}]),", s(row, "rule"), names.join(", "));
+    }
+    out.push_str("];\n\n/// (code, channel, severity, messages)\npub const MESSAGES: &[(&str, &str, &str, &[&str])] = &[\n");
+    for row in arr(rules, "rules") {
+        let channel = row.get("channel").and_then(Value::as_str).unwrap_or("");
+        if channel != "parse" && channel != "render-loss" {
+            continue;
+        }
+        let messages: Vec<String> = arr(row, "messages")
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|m| format!("{m:?}"))
+            .collect();
+        let _ = writeln!(
+            out,
+            "    ({:?}, {channel:?}, {:?}, &[{}]),",
+            s(row, "id"),
+            s(row, "severity"),
+            messages.join(", ")
+        );
+    }
+    out.push_str("];\n\n");
 }
 
 fn gen_tasks(out: &mut String, v: &Value) {

@@ -78,6 +78,19 @@ pub(crate) fn render_source(
     (r.out, r.losses)
 }
 
+/// `render_source` of a tree whose includes were expanded and flattened.
+pub(crate) fn render_files<'a>(
+    doc: &Document<'a>,
+    opts: &Options,
+    src: &str,
+    files: &crate::resolve::files::Files<'a>,
+) -> (String, Vec<&'static str>) {
+    let mut r = Renderer::build(doc, opts, true, Some(files));
+    r.src = Some(SourceView::direct(src));
+    r.document();
+    (r.out, r.losses)
+}
+
 pub(crate) fn render_mapped_source(
     doc: &Document<'_>,
     opts: &Options,
@@ -142,6 +155,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     fn with_order(doc: &'r Document<'a>, opts: &'r Options, ordered: bool) -> Self {
+        Self::build(doc, opts, ordered, None)
+    }
+
+    fn build(
+        doc: &'r Document<'a>,
+        opts: &'r Options,
+        ordered: bool,
+        files: Option<&crate::resolve::files::Files<'a>>,
+    ) -> Self {
         let profile = crate::tables::PROFILES
             .iter()
             .find(|p| p.name == opts.profile.name());
@@ -152,7 +174,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     .is_some_and(|allow| !allow.contains(&"heading"))
         });
         let order = if ordered || hides_headings {
-            Order::build(doc)
+            Order::build_with(doc, files)
         } else {
             Order::default()
         };
@@ -199,9 +221,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .is_some_and(|id| self.hidden_heading_ids.contains(id))
     }
 
-    fn filter(&self) -> Filter {
+    fn filter(&self) -> Filter<'r> {
         Filter {
             roundtrip: self.opts.roundtrip,
+            policy: Some(&self.opts.url_policy),
         }
     }
 

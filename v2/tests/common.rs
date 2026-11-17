@@ -4,7 +4,7 @@
 use carve2::options::{HeadingIds, Options, Profile};
 use serde_json::Value;
 
-/// One specification example with the oracle's tree (tests/data/examples.json).
+/// One specification example with its expected tree.
 pub struct Example {
     pub id: String,
     pub input: String,
@@ -14,24 +14,28 @@ pub struct Example {
     pub spec_tree: Option<Value>,
 }
 
+/// The render examples of the shared corpus (`spec-conformance/examples.json`)
+/// that carry a tree.
 #[must_use]
 pub fn examples() -> Vec<Example> {
     let text = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/data/examples.json"
+        "/spec-conformance/examples.json"
     ))
     .unwrap_or_default();
     let v = parse_json(&text);
-    v.as_array()
+    v["examples"]
+        .as_array()
         .into_iter()
         .flatten()
+        .filter(|e| e["kind"] == "render" && e["expected"].get("tree").is_some())
         .map(|e| Example {
             id: e["id"].as_str().unwrap_or("").to_string(),
             input: e["input"].as_str().unwrap_or("").to_string(),
-            html: e["html"].as_str().unwrap_or("").to_string(),
-            opts: e["opts"].clone(),
-            oracle_tree: e["oracleTree"].clone(),
-            spec_tree: e.get("specTree").cloned(),
+            html: e["expected"]["html"].as_str().unwrap_or("").to_string(),
+            opts: e["options"].clone(),
+            oracle_tree: e["expected"]["tree"].clone(),
+            spec_tree: None,
         })
         .collect()
 }
@@ -138,6 +142,14 @@ pub fn options_of(opts: &Value) -> Options {
     }
     if let Some(r) = opts["rawHtml"].as_bool() {
         o.raw_html = r;
+    }
+    if let Some(a) = opts["urlPolicy"]["allow"].as_array() {
+        let allow = a
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        o.url_policy = carve2::options::UrlPolicy::Allow(allow);
     }
     if let Some(s) = opts["social"].as_object() {
         o.social = Some(carve2::options::Social {

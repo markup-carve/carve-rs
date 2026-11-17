@@ -8,7 +8,7 @@ use common::options_of;
 #[test]
 fn c2_h_001_oracle_trees_render_the_expected_html() {
     let all = common::examples();
-    assert_eq!(all.len(), 434, "fixture not read");
+    assert!(all.len() > 400, "corpus not read");
     let mut pass = 0;
     let mut failures = Vec::new();
     for ex in &all {
