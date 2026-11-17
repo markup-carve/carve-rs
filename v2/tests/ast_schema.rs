@@ -27,3 +27,29 @@ fn c2_a_165_generated_types_round_trip_oracle_trees() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// The supplied trees of the tree gate (`spec-trees/nodes.json`) read into the
+/// generated types and write back unchanged.
+#[test]
+fn c2_a_165_generated_types_round_trip_supplied_trees() {
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/spec-trees/nodes.json"
+    ))
+    .unwrap();
+    let v = common::parse_json(&text);
+    let mut failures = Vec::new();
+    for t in v["trees"].as_array().into_iter().flatten() {
+        let id = t["id"].as_str().unwrap_or("");
+        match serde_json::from_value::<Node>(t["tree"].clone()) {
+            Ok(node) => {
+                let back = serde_json::to_value(&node).unwrap_or_default();
+                if common::sorted(&back) != common::sorted(&t["tree"]) {
+                    failures.push(format!("{id}: differs"));
+                }
+            }
+            Err(e) => failures.push(format!("{id}: {e}")),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

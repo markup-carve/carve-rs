@@ -169,3 +169,38 @@ fn c2_n_064_a_chain_stops_at_the_depth_limit() {
 fn c2_n_014_a_root_that_is_not_absolute_is_refused() {
     assert!(fs::resolver(Path::new("relative/root")).is_err());
 }
+
+/// C2-N-004, C2-N-010: the command line expands an entry file against its own
+/// directory, standard input only under a named root, and nothing with `--no-includes`.
+#[test]
+fn c2_n_004_command_line_roots() {
+    use std::io::Write as _;
+    let t = Tree::new("cli");
+    t.file("root/main.crv", b"{{ ch/a.crv }}\n")
+        .file("root/ch/a.crv", b"A.\n\n{{ ../../outside/secret.crv }}\n");
+    let bin = env!("CARGO_BIN_EXE_carve2");
+    let main = t.root().join("main.crv");
+    let run = |args: &[&str], stdin: Option<&[u8]>| {
+        let mut child = std::process::Command::new(bin)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        if let Some(input) = stdin {
+            child.stdin.take().unwrap().write_all(input).unwrap();
+        }
+        drop(child.stdin.take());
+        String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
+    };
+    let file = main.to_str().unwrap();
+    let root = t.root();
+    let root = root.to_str().unwrap();
+    assert!(run(&[file], None).starts_with("<p>A.</p>\n<p>{{ ../../outside/secret.crv }}</p>"));
+    assert_eq!(
+        run(&["--no-includes", file], None),
+        "<p>{{ ch/a.crv }}</p>\n"
+    );
+    assert_eq!(run(&[], Some(b"{{ ch/a.crv }}")), "<p>{{ ch/a.crv }}</p>\n");
+    assert!(run(&["--include-root", root], Some(b"{{ ch/a.crv }}")).starts_with("<p>A.</p>"));
+}
