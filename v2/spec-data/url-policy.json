@@ -21,6 +21,7 @@
   ],
   "url_list_attributes": [
     { "name": "attributionsrc", "separators": ["ascii_whitespace"], "clauses": ["C2-H-159", "C2-H-160", "C2-H-161"] },
+    { "name": "background", "separators": ["ascii_whitespace"], "clauses": ["C2-H-159", "C2-H-160", "C2-H-161"] },
     { "name": "imagesrcset", "separators": ["comma", "ascii_whitespace"], "clauses": ["C2-H-159", "C2-H-160", "C2-H-161"] },
     { "name": "ping", "separators": ["ascii_whitespace"], "clauses": ["C2-H-159", "C2-H-160", "C2-H-161"] },
     { "name": "srcset", "separators": ["comma", "ascii_whitespace"], "clauses": ["C2-H-159", "C2-H-160", "C2-H-161"] }
@@ -30,6 +31,9 @@
     { "text": "@import", "clauses": ["C2-H-162"] },
     { "text": "behavior:", "clauses": ["C2-H-162"] },
     { "text": "expression(", "clauses": ["C2-H-162"] },
+    { "text": "image(", "clauses": ["C2-H-162"] },
+    { "text": "image-set(", "clauses": ["C2-H-162"] },
+    { "text": "src(", "clauses": ["C2-H-162"] },
     { "text": "url(", "clauses": ["C2-H-162"] }
   ],
   "profiles": [

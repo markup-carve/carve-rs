@@ -674,6 +674,7 @@ struct Arms {
     pos_mut: String,
     attrs: String,
     attrs_mut: String,
+    dir: String,
     children: String,
     children_mut: String,
     children_slot: String,
@@ -742,6 +743,14 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         }}
     }}
 
+    /// The direction field of the node, when present.
+    #[must_use]
+    pub fn dir(&self) -> Option<&str> {{
+        match self {{
+{}            _ => None,
+        }}
+    }}
+
     /// The attribute slot of the node type, when it has one.
     pub fn attrs_slot(&mut self) -> {} {{
         match self {{
@@ -786,6 +795,7 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         a.pos_mut,
         s.attrs,
         a.attrs,
+        a.dir,
         s.attrs_slot,
         a.attrs_mut,
         s.children,
@@ -839,6 +849,14 @@ fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
             a.attrs_mut,
             "            Self::{ty}(n) => Some(&mut n.attrs),"
         );
+    }
+    if props.contains_key("dir") {
+        let get = if arena {
+            "n.dir"
+        } else {
+            "n.dir.as_deref().map(String::as_str)"
+        };
+        let _ = writeln!(a.dir, "            Self::{ty}(n) => {get},");
     }
     if props.get("children").is_some_and(is_node_list) {
         // C2-N-017: an include has `children` only once it is expanded.
@@ -983,7 +1001,7 @@ fn gen_limits(out: &mut String, v: &Value) {
 }
 
 /// C2-N-024, C2-N-061: the failure causes in test order, the conflict rows,
-/// and the message of each code outside the lint channel.
+/// and every catalog message.
 fn gen_include_rules(out: &mut String, includes: &Value, rules: &Value) {
     out.push_str("/// (cause, code) in the order they are tested\npub const INCLUDE_CAUSES: &[(&str, &str)] = &[\n");
     for row in arr(includes, "causes") {
@@ -1002,10 +1020,7 @@ fn gen_include_rules(out: &mut String, includes: &Value, rules: &Value) {
     }
     out.push_str("];\n\n/// (code, channel, severity, messages)\npub const MESSAGES: &[(&str, &str, &str, &[&str])] = &[\n");
     for row in arr(rules, "rules") {
-        let channel = row.get("channel").and_then(Value::as_str).unwrap_or("");
-        if channel != "parse" && channel != "render-loss" {
-            continue;
-        }
+        let channel = row.get("channel").and_then(Value::as_str).unwrap_or("lint");
         let messages: Vec<String> = arr(row, "messages")
             .iter()
             .filter_map(Value::as_str)

@@ -113,7 +113,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.write_into(f, out);
             out.push('>');
             for c in row.children.iter() {
-                r.cell(t, c, kind, columns.get(&addr(c)).copied(), out);
+                r.cell(t, c, kind, columns.get(&addr(c)).copied(), depth, out);
             }
             out.push_str("</tr>");
             true
@@ -127,6 +127,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         c: &'r Node<'a>,
         kind: GroupKind,
         col: Option<usize>,
+        depth: usize,
         out: &mut String,
     ) {
         let Node::TableCell(x) = c else { return };
@@ -141,6 +142,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
         });
         let mut el = El::new(x.attrs, x.lang);
+        el.dir = x.dir;
         if let Some(v) = x.rowspan.filter(|v| *v > 1) {
             el.structural.push(("rowspan", Some(v.to_string().into())));
         }
@@ -188,32 +190,74 @@ impl<'r, 'a> Renderer<'r, 'a> {
         el.write_into(self.filter(), out);
         out.push('>');
         self.level += 1;
-        self.cell_into(x.children, out);
+        self.cell_into(x.children, depth, out);
         self.level -= 1;
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
     }
 
-    fn cell_into(&mut self, children: &'r [Node<'a>], out: &mut String) {
+    fn cell_into(&mut self, children: &'r [Node<'a>], depth: usize, out: &mut String) {
         if let [Node::CellParagraph(p)] = children {
             self.leaf_into(p.children, out);
         } else {
-            let inner = self.cell_content(children);
-            out.push_str(&inner);
+            let rest = self.cell_first(children, out);
+            let inner = self.cell_content(rest, depth + 1);
+            if !inner.is_empty() {
+                out.push('\n');
+                out.push_str(&inner);
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+            }
         }
     }
 
-    fn cell_content(&mut self, children: &'r [Node<'a>]) -> String {
+    fn cell_first(&mut self, children: &'r [Node<'a>], out: &mut String) -> &'r [Node<'a>] {
+        let Some(first) = children.first() else {
+            return children;
+        };
+        match first {
+            p @ Node::Paragraph(_) if crate::resolve::order::caption_of(p).is_none() => {
+                out.push_str(&self.cell_paragraph(p));
+            }
+            Node::Include(i) if i.caption.is_none() => {
+                self.losses.push("include-unresolved");
+                out.push_str("<p>");
+                out.push_str(&super::esc::text_str(&super::block::include_text(i)));
+                out.push_str("</p>");
+            }
+            _ => return children,
+        }
+        children.get(1..).unwrap_or_default()
+    }
+
+    fn cell_paragraph(&mut self, node: &'r Node<'a>) -> String {
+        let html = self.paragraph(node, false).unwrap_or_default();
+        if html.is_empty() || html.starts_with("<p") {
+            html
+        } else {
+            format!("<p>{html}</p>")
+        }
+    }
+
+    fn cell_content(&mut self, children: &'r [Node<'a>], depth: usize) -> String {
         let saved = std::mem::take(&mut self.out);
         let started = std::mem::replace(&mut self.started, false);
         for c in children {
             match c {
                 Node::CellParagraph(p) => {
                     let s = self.leaf(p.children);
-                    self.line(0, &s);
+                    self.line(depth, &s);
                 }
-                other => self.block(other, 0),
+                p @ Node::Paragraph(_) if crate::resolve::order::caption_of(p).is_none() => {
+                    let html = self.cell_paragraph(p);
+                    if !html.is_empty() {
+                        self.line(depth, &html);
+                    }
+                }
+                other => self.block(other, depth),
             }
         }
         self.started = started;

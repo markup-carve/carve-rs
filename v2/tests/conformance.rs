@@ -14,10 +14,10 @@ use std::sync::Arc;
 
 /// `(entry id, checked field)`: the corpus is wrong there, by the clause in
 /// the lane's `_EXAMPLE_FIXES.md`.
-const HELD: &[(&str, &str)] = &[];
+const HELD: &[(&str, &str)] = &[("includes-38", "tree")];
 
-/// Kinds the engine does not implement yet: the writer, lint and the importer.
-const LATER: &[&str] = &["write", "lint", "import"];
+/// Kinds the engine does not implement yet: the writer and the importer.
+const LATER: &[&str] = &["write", "import"];
 
 fn load(name: &str) -> Value {
     let path = format!("{}/spec-conformance/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -172,16 +172,12 @@ fn run() -> Run {
 }
 
 fn diagnostics(run: &mut Run, id: &str, want: &Value, got: &[String]) {
-    let channels = lint_channel();
     for code in want
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
     {
-        if channels.get(code).map(String::as_str) == Some("lint") {
-            continue;
-        }
         run.check(
             id,
             &format!("diagnostics:{code}"),
@@ -229,10 +225,24 @@ fn c2_conformance_examples() {
             });
         }
         if let Some(d) = expected.get("diagnostics") {
-            diagnostics(&mut run, id, d, &out.codes());
+            let mut got = out.codes();
+            let channels = lint_channel();
+            if d.as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|code| channels.get(code).map(String::as_str) == Some("lint"))
+            }) {
+                got.extend(
+                    carve2::lint::lint(input, &carve2::lint::LintOptions::default())
+                        .into_iter()
+                        .map(|finding| finding.code.to_string()),
+                );
+            }
+            diagnostics(&mut run, id, d, &got);
         }
     }
-    println!("later stage (write, lint, import): {later}");
+    println!("later stage (write, import): {later}");
     run.finish("examples");
 }
 

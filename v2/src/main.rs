@@ -2,6 +2,8 @@
 
 use std::io::{Read, Write};
 
+mod lint_cli;
+
 /// The entry file and the include settings of the command line (C2-N-004).
 #[derive(Default)]
 struct Entry {
@@ -11,6 +13,10 @@ struct Entry {
 }
 
 fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().map(String::as_str) == Some("lint") {
+        std::process::exit(lint_cli::run(&arguments[1..]));
+    }
     let mut opts = carve2::Options::default();
     let mut entry = Entry::default();
     let Some(tree) = parse_args(&mut opts, &mut entry) else {

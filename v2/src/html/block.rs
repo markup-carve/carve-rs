@@ -173,13 +173,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         &self,
         attrs: Option<&'b Attrs>,
         lang: Option<&'b str>,
-        n: &Node,
+        n: &'b Node<'a>,
     ) -> El<'b> {
         let mut el = if self.caption_inner == Some(crate::resolve::order::addr(n)) {
             El::new(None, None)
         } else {
             El::new(attrs, lang)
         };
+        if self.caption_inner != Some(crate::resolve::order::addr(n)) {
+            el.dir = n.dir();
+        }
         if self.opts.source_lines {
             el.source_line = if self.caption_inner == Some(crate::resolve::order::addr(n)) {
                 self.caption_inner_line(n)
@@ -408,6 +411,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 }
             }
         }
+        if let [Node::Include(i)] = vis.as_slice()
+            && i.caption.is_none()
+        {
+            self.losses.push("include-unresolved");
+            let text = esc::text_str(&include_text(i));
+            self.line(depth, &format!("{open}<p>{text}</p></blockquote>"));
+            return;
+        }
         self.container(&open, "</blockquote>", Vec::new(), children, depth);
     }
 
@@ -504,6 +515,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.line(depth, &format!("{open}</li>"));
             return;
         };
+        self.item_visible(first, rest, &open, depth, tight);
+    }
+
+    fn item_visible(
+        &mut self,
+        first: &'r Node<'a>,
+        rest: &[&'r Node<'a>],
+        open: &str,
+        depth: usize,
+        tight: bool,
+    ) {
         // C2-H-165 with C2-H-007: a block a profile degrades is paragraphs.
         if let Some(paras) = self.degraded(first) {
             self.losses.push("profile-construct-degraded");
@@ -523,12 +545,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
             for p in it {
                 self.line(depth + 1, &format!("<p>{p}</p>"));
             }
+        } else if let Node::Include(i) = first {
+            if self.item_include(i, open, depth, tight, rest.is_empty()) {
+                return;
+            }
         // Gap G-016: a bare block image keeps its own line (C2-H-020).
         } else if matches!(first, Node::Paragraph(p) if crate::resolve::order::caption_of(first).is_none() && !self.bare_image(p))
         {
             let last = rest.is_empty();
             self.line_with(depth, |r, out| {
-                out.push_str(&open);
+                out.push_str(open);
                 r.paragraph_into(first, tight, out);
                 if last {
                     out.push_str("</li>");
@@ -539,13 +565,39 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 return;
             }
         } else {
-            self.line(depth, &open);
+            self.line(depth, open);
             self.block(first, depth + 1);
         }
         for b in rest {
             self.block(b, depth + 1);
         }
         self.line(depth, "</li>");
+    }
+
+    fn item_include(
+        &mut self,
+        include: &'r ast::Include<'a>,
+        open: &str,
+        depth: usize,
+        tight: bool,
+        only: bool,
+    ) -> bool {
+        self.losses.push("include-unresolved");
+        let body = esc::text_str(&include_text(include));
+        let head = if tight {
+            body
+        } else {
+            format!("<p>{body}</p>")
+        };
+        if only && include.caption.is_none() {
+            self.line(depth, &format!("{open}{head}</li>"));
+            return true;
+        }
+        self.line(depth, &format!("{open}{head}"));
+        if let Some(caption) = include.caption.as_deref() {
+            self.degraded_caption(caption, depth + 1);
+        }
+        false
     }
 
     fn item_task(i: &ast::ListItem, ordered: bool, el: &mut El<'_>) -> String {
@@ -627,9 +679,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let vis: Vec<&'r Node<'a>> = children.iter().filter(|c| visible(c)).collect();
         match vis.as_slice() {
             [] => self.line(depth, &format!("{open}</dd>")),
-            [p @ Node::Paragraph(_)] if crate::resolve::order::caption_of(p).is_none() => {
+            [p @ Node::Paragraph(_)]
+                if crate::resolve::order::caption_of(p).is_none()
+                    && !matches!(p, Node::Paragraph(x) if self.bare_image(x)) =>
+            {
                 let s = self.paragraph(p, true).unwrap_or_default();
                 self.line(depth, &format!("{open}{s}</dd>"));
+            }
+            [Node::Include(i)] if i.caption.is_none() => {
+                self.losses.push("include-unresolved");
+                let text = esc::text_str(&include_text(i));
+                self.line(depth, &format!("{open}{text}</dd>"));
             }
             _ => {
                 self.line(depth, &open);

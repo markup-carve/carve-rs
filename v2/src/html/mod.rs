@@ -381,6 +381,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     fn document(&mut self) {
         let doc = self.doc;
+        for node in doc.children.iter() {
+            reserved_losses(node, &mut self.losses, 1);
+        }
         if self.opts.sections {
             self.sectioned(doc.children);
         } else {
@@ -454,6 +457,27 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.carriers.push(("data-carve-generated-id", None));
         }
     }
+}
+
+/// C2-H-116: each authored reserved carrier is a render loss.
+fn reserved_losses(node: &Node<'_>, losses: &mut Vec<&'static str>, depth: usize) {
+    if depth > crate::resolve::WALK_CAP {
+        return;
+    }
+    if let Some(attrs) = node
+        .attrs()
+        .filter(|_| !matches!(node, Node::AbbreviationDef(_)))
+    {
+        for (key, _) in attrs.key_values {
+            if attrs::RESERVED
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(key))
+            {
+                losses.push("carrier-attribute-dropped");
+            }
+        }
+    }
+    node.for_each_child(&mut |child| reserved_losses(child, losses, depth + 1));
 }
 
 /// The id a heading carries: authored, else generated.

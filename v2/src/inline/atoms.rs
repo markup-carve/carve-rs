@@ -65,7 +65,7 @@ pub fn raw_marker(t: &str, i: usize) -> Option<(String, usize)> {
         return None;
     }
     let first = *b.get(i + 2)?;
-    if !(first.is_ascii_alphabetic() || first == b'_') {
+    if !first.is_ascii_alphabetic() {
         return None;
     }
     let mut j = i + 3;

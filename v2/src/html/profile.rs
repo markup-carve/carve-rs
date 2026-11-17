@@ -231,7 +231,7 @@ fn inline_plain_leaf(n: &Node, out: &mut String) -> bool {
         }
         Node::NonBreakingSpace(_) => out.push('\u{a0}'),
         Node::HardBreak(_) | Node::SoftBreak(_) => out.push(' '),
-        Node::SmartPunctuation(s) => out.push_str(s.glyph.unwrap_or(s.source)),
+        Node::SmartPunctuation(s) => out.push_str(s.glyph),
         Node::FootnoteRef(r) => {
             out.push_str("[^");
             out.push_str(r.key);

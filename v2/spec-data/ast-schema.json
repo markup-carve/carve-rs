@@ -90,7 +90,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -99,7 +100,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -108,10 +109,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -261,7 +264,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -270,7 +274,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -279,10 +283,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -615,7 +621,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -624,7 +631,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -633,10 +640,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -783,7 +792,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -792,7 +802,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -801,10 +811,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -1289,7 +1301,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -1298,7 +1311,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -1307,10 +1320,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -1861,7 +1876,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -1870,7 +1886,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -1879,10 +1895,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -2198,7 +2216,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -2207,7 +2226,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -2216,10 +2235,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -2364,7 +2385,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -2373,7 +2395,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -2382,10 +2404,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -2639,7 +2663,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -2648,7 +2673,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -2657,10 +2682,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -3152,7 +3179,6 @@
         },
         "mode": {
           "enum": [
-            "normal",
             "author-in-text",
             "suppress-author"
           ]
@@ -3179,7 +3205,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -3188,7 +3215,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -3197,10 +3224,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -3462,7 +3491,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -3471,7 +3501,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -3480,10 +3510,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -3638,7 +3670,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -3647,7 +3680,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -3656,10 +3689,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -3803,7 +3838,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -3812,7 +3848,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -3821,10 +3857,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -4091,7 +4129,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -4100,7 +4139,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -4109,10 +4148,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -4262,7 +4303,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -4271,7 +4313,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -4280,10 +4322,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -4427,7 +4471,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -4436,7 +4481,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -4445,10 +4490,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -4649,7 +4696,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -4658,7 +4706,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -4667,10 +4715,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -4826,7 +4876,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -4835,7 +4886,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -4844,10 +4895,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -5102,7 +5155,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -5111,7 +5165,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -5120,10 +5174,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -5378,7 +5434,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -5387,7 +5444,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -5396,10 +5453,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -5736,7 +5795,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -5745,7 +5805,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -5754,10 +5814,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -6077,7 +6139,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -6086,7 +6149,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -6095,10 +6158,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -6398,7 +6463,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -6407,7 +6473,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -6416,10 +6482,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -6675,7 +6743,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -6684,7 +6753,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -6693,10 +6762,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -6900,7 +6971,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -6909,7 +6981,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -6918,10 +6990,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -7128,7 +7202,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -7137,7 +7212,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -7146,10 +7221,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -7302,7 +7379,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -7311,7 +7389,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -7320,10 +7398,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -7470,7 +7550,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -7479,7 +7560,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -7488,10 +7569,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -7632,7 +7715,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -7641,7 +7725,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -7650,10 +7734,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -7915,7 +8001,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -7924,7 +8011,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -7933,10 +8020,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -8192,7 +8281,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -8201,7 +8291,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -8210,10 +8300,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -8383,7 +8475,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -8392,7 +8485,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -8401,10 +8494,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -8826,7 +8921,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -8835,7 +8931,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -8844,10 +8940,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -8969,7 +9067,9 @@
         "path"
       ],
       "additionalProperties": false,
-      "dependentRequired": { "children": ["file"] }
+      "dependentRequired": { "children": ["file"] },
+      "if": { "required": ["caption"], "properties": { "caption": {} } },
+      "then": { "required": ["options"], "properties": { "options": { "type": "object", "required": ["code"], "properties": { "code": {} } } } }
     },
     "inline_extension": {
       "type": "object",
@@ -9375,7 +9475,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -9384,7 +9485,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -9393,10 +9494,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -9740,7 +9843,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -9749,7 +9853,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -9758,10 +9862,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -10016,7 +10122,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -10025,7 +10132,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -10034,10 +10141,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -10292,7 +10401,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -10301,7 +10411,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -10310,10 +10420,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -10463,7 +10575,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -10472,7 +10585,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -10481,10 +10594,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -10760,7 +10875,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -10769,7 +10885,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -10778,10 +10894,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -10951,7 +11069,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -10960,7 +11079,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -10969,10 +11088,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -11167,7 +11288,9 @@
                 }
               },
               "required": [
-                "kind"
+                "kind",
+                "style",
+                "delimiter"
               ],
               "additionalProperties": false
             }
@@ -11189,7 +11312,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -11198,7 +11322,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -11207,10 +11331,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -11434,7 +11560,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -11443,7 +11570,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -11452,10 +11579,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -11598,7 +11727,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -11607,7 +11737,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -11616,10 +11746,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -11773,7 +11905,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -11782,7 +11915,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -11791,10 +11924,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -11920,9 +12055,6 @@
       "dependentRequired": {
         "number": [
           "numberPrefix"
-        ],
-        "numberPrefix": [
-          "number"
         ]
       },
       "allOf": [
@@ -11946,19 +12078,26 @@
         },
         {
           "if": {
-            "required": [
-              "numberPrefix"
-            ],
             "properties": {
-              "numberPrefix": {}
+              "display": {
+                "const": false
+              }
             }
           },
           "then": {
-            "required": [
-              "number"
-            ],
-            "properties": {
-              "number": {}
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "numberPrefix"
+                  ]
+                },
+                {
+                  "required": [
+                    "number"
+                  ]
+                }
+              ]
             }
           }
         }
@@ -11990,7 +12129,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -11999,7 +12139,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -12008,10 +12148,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -12152,7 +12294,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -12161,7 +12304,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -12170,10 +12313,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -12430,7 +12575,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -12439,7 +12585,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -12448,10 +12594,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -12579,12 +12727,120 @@
         "children"
       ],
       "additionalProperties": false,
-      "dependentRequired": { "caption": ["role"] },
+      "dependentRequired": {
+        "caption": [
+          "role"
+        ]
+      },
       "allOf": [
-        { "if": { "type": "object", "properties": { "role": { "const": "image" } }, "required": ["role"] },
-          "then": { "type": "object", "properties": { "children": { "type": "array", "contains": { "$ref": "#/$defs/image" }, "minContains": 1, "maxContains": 1, "items": { "oneOf": [{ "$ref": "#/$defs/image" }, { "$ref": "#/$defs/soft_break" }, { "$ref": "#/$defs/comment" }] } } } } },
-        { "if": { "type": "object", "properties": { "role": { "const": "math" } }, "required": ["role"] },
-          "then": { "type": "object", "properties": { "children": { "type": "array", "contains": { "allOf": [{ "$ref": "#/$defs/math" }, { "type": "object", "properties": { "display": { "const": true } }, "required": ["display"] }] }, "minContains": 1, "maxContains": 1, "items": { "oneOf": [{ "allOf": [{ "$ref": "#/$defs/math" }, { "type": "object", "properties": { "display": { "const": true } }, "required": ["display"] }] }, { "$ref": "#/$defs/soft_break" }, { "$ref": "#/$defs/comment" }] } } } } }
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "image"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "children": {
+                "type": "array",
+                "contains": {
+                  "$ref": "#/$defs/image"
+                },
+                "minContains": 1,
+                "maxContains": 1,
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/image"
+                    },
+                    {
+                      "$ref": "#/$defs/soft_break"
+                    },
+                    {
+                      "$ref": "#/$defs/comment"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "math"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "children": {
+                "type": "array",
+                "contains": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/math"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "display": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "display"
+                      ]
+                    }
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1,
+                "items": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/math"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "display": {
+                              "const": true
+                            }
+                          },
+                          "required": [
+                            "display"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "$ref": "#/$defs/soft_break"
+                    },
+                    {
+                      "$ref": "#/$defs/comment"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
       ]
     },
     "raw_block": {
@@ -12610,7 +12866,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -12619,7 +12876,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -12628,10 +12885,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -12778,7 +13037,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -12787,7 +13047,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -12796,10 +13056,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -12946,7 +13208,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -12955,7 +13218,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -12964,10 +13227,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -13172,7 +13437,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -13181,7 +13447,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -13190,10 +13456,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -13448,7 +13716,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -13457,7 +13726,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -13466,10 +13735,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -13637,7 +13908,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -13646,7 +13918,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -13655,10 +13927,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -13778,7 +14052,8 @@
       "required": [
         "type",
         "kind",
-        "source"
+        "source",
+        "glyph"
       ],
       "additionalProperties": false
     },
@@ -13799,7 +14074,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -13808,7 +14084,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -13817,10 +14093,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -14074,7 +14352,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -14083,7 +14362,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -14092,10 +14371,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -14350,7 +14631,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -14359,7 +14641,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -14368,10 +14650,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -14626,7 +14910,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -14635,7 +14920,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -14644,10 +14929,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -14902,7 +15189,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -14911,7 +15199,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -14920,10 +15208,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -15178,7 +15468,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -15187,7 +15478,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -15196,10 +15487,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -15342,7 +15635,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -15351,7 +15645,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -15360,10 +15654,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -15531,7 +15827,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -15540,7 +15837,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -15549,10 +15846,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -15710,7 +16009,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -15719,7 +16019,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -15728,10 +16028,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -15969,7 +16271,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -15978,7 +16281,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -15987,10 +16290,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -16173,7 +16478,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -16182,7 +16488,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -16191,10 +16497,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -16346,7 +16654,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -16355,7 +16664,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -16364,10 +16673,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -16520,7 +16831,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -16529,7 +16841,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -16538,10 +16850,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -16691,7 +17005,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -16700,7 +17015,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -16709,10 +17024,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -16855,7 +17172,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -16864,7 +17182,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -16873,10 +17191,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -17019,7 +17339,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -17028,7 +17349,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -17037,10 +17358,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -17180,7 +17503,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -17189,7 +17513,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -17198,10 +17522,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -17455,7 +17781,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -17464,7 +17791,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -17473,10 +17800,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -17632,7 +17961,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -17641,7 +17971,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -17650,10 +17980,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",
@@ -18032,7 +18364,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "keyValues": {
               "type": "array",
@@ -18041,7 +18374,7 @@
                 "prefixItems": [
                   {
                     "type": "string",
-                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$).*$"
+                    "pattern": "^(?![iI][dD]$|[cC][lL][aA][sS][sS]$)[A-Za-z_][A-Za-z0-9_-]*$"
                   },
                   {
                     "type": "string"
@@ -18050,10 +18383,12 @@
                 "minItems": 2,
                 "maxItems": 2,
                 "items": false
-              }
+              },
+              "minItems": 1
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "minProperties": 1
         },
         "data": {
           "type": "object",

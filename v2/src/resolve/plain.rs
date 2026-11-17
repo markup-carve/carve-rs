@@ -119,7 +119,7 @@ fn leaf_text_simple(n: &Node, out: &mut String, image_spelling: bool) -> bool {
         Node::Math(t) => out.push_str(t.value),
         Node::NonBreakingSpace(_) => out.push('\u{a0}'),
         Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
-        Node::SmartPunctuation(s) => out.push_str(s.glyph.unwrap_or(s.source)),
+        Node::SmartPunctuation(s) => out.push_str(s.glyph),
         Node::Image(i) => {
             if image_spelling {
                 out.push_str("[img: ");

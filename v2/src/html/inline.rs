@@ -8,7 +8,7 @@ use crate::ast::{self, Attrs, ImageRefForm, LinkRefForm, Node};
 use crate::hash::AddrSet;
 use crate::options::Mode;
 use crate::resolve::order::addr;
-use crate::tables::{PROFILES, SMART_RUNS};
+use crate::tables::PROFILES;
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
@@ -89,7 +89,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         match n {
             Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
                 (Some(e), 0) => {
-                    let mut el = El::new(a.attrs, a.lang);
+                    let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
                     el.structural.push(("title", Some((*e).into())));
                     out.push_str("<abbr");
                     el.write_into(self.filter(), out);
@@ -109,6 +109,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     name: m.target,
                     attrs: m.attrs,
                     lang: m.lang,
+                    dir: m.dir,
                 };
                 self.badge(&b, &text, out);
             }
@@ -118,6 +119,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     name: t.name,
                     attrs: t.attrs,
                     lang: t.lang,
+                    dir: t.dir,
                 };
                 self.badge(&b, &format!("#{}", t.name), out);
             }
@@ -127,7 +129,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     Some(v) => inner.push_str(v),
                     None => esc::text(&format!(":{}:", s.name), &mut inner),
                 }
-                self.wrap_span(s.attrs, s.lang, &inner, out);
+                self.wrap_span(s.attrs, s.lang, s.dir, &inner, out);
             }
             Node::RawInline(r) => self.raw_inline(r, out),
             Node::InlineExtension(e) => self.inline_extension(e, out),
@@ -135,7 +137,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 let _ = write!(
                     out,
                     "<ruby{}>",
-                    El::new(r.attrs, r.lang).write(self.filter())
+                    El::new(r.attrs, r.lang)
+                        .with_dir(r.dir)
+                        .write(self.filter())
                 );
                 for p in r.pairs.iter() {
                     if let Node::RubyPair(p) = p {
@@ -160,13 +164,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::NonBreakingSpace(_) => out.push_str("&nbsp;"),
             Node::SmartPunctuation(s) => {
                 if self.opts.smart_typography {
-                    let glyph = s.glyph.or_else(|| {
-                        SMART_RUNS
-                            .iter()
-                            .find(|r| r.2 == s.kind.as_str())
-                            .map(|r| r.3)
-                    });
-                    esc::text(glyph.unwrap_or(s.source), out);
+                    esc::text(s.glyph, out);
                 } else {
                     esc::text(s.source, out);
                 }
@@ -195,7 +193,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let Some(tag) = wrapper_tag(n) else {
             match n {
                 Node::Code(c) => {
-                    let el = El::new(c.attrs, c.lang);
+                    let el = El::new(c.attrs, c.lang).with_dir(c.dir);
                     out.push_str("<code");
                     el.write_into(self.filter(), out);
                     out.push('>');
@@ -204,8 +202,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 }
                 Node::LiteralInline(l) => {
                     let inner = esc::text_str(l.value);
-                    if l.attrs.is_some_and(|a| !a.is_empty()) || l.lang.is_some() {
-                        self.wrap_span(l.attrs, l.lang, &inner, out);
+                    if l.attrs.is_some_and(|a| !a.is_empty()) || l.lang.is_some() || l.dir.is_some()
+                    {
+                        self.wrap_span(l.attrs, l.lang, l.dir, &inner, out);
                     } else {
                         out.push_str(&inner);
                     }
@@ -218,7 +217,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return;
         };
-        let mut el = El::new(n.attrs(), lang_of(n));
+        let mut el = El::new(n.attrs(), lang_of(n)).with_dir(n.dir());
         if matches!(n, Node::SmallCaps(_)) {
             el.base.push("smallcaps".into());
         }
@@ -234,12 +233,19 @@ impl<'r, 'a> Renderer<'r, 'a> {
         out.push('>');
     }
 
-    fn wrap_span(&self, attrs: Option<&Attrs>, lang: Option<&str>, inner: &str, out: &mut String) {
-        if attrs.is_some_and(|a| !a.is_empty()) || lang.is_some() {
+    fn wrap_span(
+        &self,
+        attrs: Option<&Attrs>,
+        lang: Option<&str>,
+        dir: Option<&str>,
+        inner: &str,
+        out: &mut String,
+    ) {
+        if attrs.is_some_and(|a| !a.is_empty()) || lang.is_some() || dir.is_some() {
             let _ = write!(
                 out,
                 "<span{}>{inner}</span>",
-                El::new(attrs, lang).write(self.filter())
+                El::new(attrs, lang).with_dir(dir).write(self.filter())
             );
         } else {
             out.push_str(inner);
@@ -313,7 +319,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let def = l.key.and_then(|k| self.links.get(k)).copied();
         let merged = merge_def(def.and_then(|d| d.attrs), l.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
-        let mut el = El::new(merged.as_ref(), l.lang);
+        let mut el = El::new(merged.as_ref(), l.lang).with_dir(l.dir);
         el.structural.push(("href", Some(self.destination(href))));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
@@ -347,7 +353,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             esc::text(text, out);
             return;
         }
-        let mut el = El::new(a.attrs, a.lang);
+        let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
         el.structural.push(("href", Some(self.destination(a.href))));
         self.rel(&mut el);
         if self.opts.roundtrip {
@@ -381,7 +387,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let def = i.key.and_then(|k| self.links.get(k)).copied();
         let merged = merge_def(def.and_then(|d| d.attrs), i.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
-        let mut el = El::new(merged.as_ref(), i.lang);
+        let mut el = El::new(merged.as_ref(), i.lang).with_dir(i.dir);
         el.structural.push(("src", Some(self.destination(src))));
         el.structural.push(("alt", Some(alt.into())));
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
@@ -410,7 +416,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return;
         };
-        let mut el = El::new(n.attrs(), lang_of(n));
+        let mut el = El::new(n.attrs(), lang_of(n)).with_dir(n.dir());
         el.id = self
             .mark_ids
             .get(&addr(n))
@@ -446,7 +452,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             esc::text(&text, out);
             return;
         }
-        let mut el = El::new(x.attrs, x.lang);
+        let mut el = El::new(x.attrs, x.lang).with_dir(x.dir);
         el.structural.push(("href", Some(self.destination(href))));
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
@@ -483,7 +489,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if kbd.is_some() {
             layers.push(("kbd", None));
         }
-        let mut el = El::new(s.attrs, s.lang);
+        let mut el = El::new(s.attrs, s.lang).with_dir(s.dir);
         el.skip_keys = &["abbr", "time", "kbd"];
         let Some((outer, rest)) = layers.split_last() else {
             out.push_str("<span");
@@ -527,7 +533,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-072, C2-H-151, C2-H-168.
     fn math(&mut self, m: &ast::Math, out: &mut String) {
-        let mut el = El::new(m.attrs, m.lang);
+        let mut el = El::new(m.attrs, m.lang).with_dir(m.dir);
         if self.opts.mode == Mode::Static {
             el.base.push("language-math".into());
             out.push_str("<code");
@@ -561,7 +567,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-100, C2-H-126: an inert span, or a link when `social` gives a
     /// URL template for the kind.
     fn badge(&mut self, b: &Badge<'_>, text: &str, out: &mut String) {
-        let mut el = El::new(b.attrs, b.lang);
+        let mut el = El::new(b.attrs, b.lang).with_dir(b.dir);
         el.base.push(b.class.to_string());
         el.class_first = true;
         let template = self.opts.social.as_ref().and_then(|s| match b.class {
@@ -615,7 +621,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.inlines(e.fallback.as_deref().unwrap_or(&[]), out);
             return;
         }
-        let mut el = El::new(e.attrs, e.lang);
+        let mut el = El::new(e.attrs, e.lang).with_dir(e.dir);
         el.base.push(format!("ext-{}", e.name));
         out.push_str("<span");
         el.write_into(self.filter(), out);
@@ -857,6 +863,7 @@ struct Badge<'n> {
     name: &'n str,
     attrs: Option<&'n Attrs<'n>>,
     lang: Option<&'n str>,
+    dir: Option<&'n str>,
 }
 
 #[cfg(test)]

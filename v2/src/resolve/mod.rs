@@ -52,6 +52,53 @@ pub fn resolve<'a>(doc: &mut Document<'a>, opts: &Options, arena: &'a Arena) {
     resolve_ordered(doc, opts, arena);
 }
 
+/// C2-A-135: a supplied tree's resolution results are never render inputs.
+pub fn clear_results(doc: &mut Document<'_>) {
+    doc.stages = None;
+    for node in doc.children.iter_mut() {
+        clear_node(node, 1);
+    }
+}
+
+fn clear_node(node: &mut Node<'_>, depth: usize) {
+    if depth > WALK_CAP {
+        return;
+    }
+    clear_inline_result(node);
+    clear_block_result(node);
+    node.for_each_child_mut(&mut |child| clear_node(child, depth + 1));
+}
+
+fn clear_inline_result(node: &mut Node<'_>) {
+    match node {
+        Node::Abbreviation(x) => x.expansion = None,
+        Node::CaptionNumber(x) => x.n = None,
+        Node::Citation(x) => {
+            x.number = None;
+            x.use_index = None;
+        }
+        Node::FootnoteRef(x) => x.number = None,
+        Node::Heading(x) => x.generated_id = None,
+        Node::Image(x) if x.ref_form.is_some() => x.src = None,
+        Node::InlineFootnote(x) => x.number = None,
+        Node::Link(x) if x.ref_form.is_some() => x.href = None,
+        Node::Math(x) => x.number = None,
+        _ => {}
+    }
+}
+
+fn clear_block_result(node: &mut Node<'_>) {
+    match node {
+        Node::TableCell(x) if x.span.is_some() => {
+            x.colspan = None;
+            x.rowspan = None;
+        }
+        Node::TableColumn(x) => x.resolved_align = None,
+        Node::Xref(x) => x.href = None,
+        _ => {}
+    }
+}
+
 /// `resolve`; true when the order holds a note, a cross-reference or a
 /// titled block, the parts of the order the HTML renderer reads.
 pub(crate) fn resolve_ordered<'a>(

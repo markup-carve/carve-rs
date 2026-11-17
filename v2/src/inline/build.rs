@@ -529,7 +529,7 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
                     let pos = self.pos(v0, v1);
                     let node = SmartPunctuation {
                         kind,
-                        glyph: Some(glyph),
+                        glyph,
                         source: self.c.slice(v0, v1),
                         pos,
                         ..Default::default()

@@ -27,6 +27,14 @@ fn c2_fixed_oracle_corpus_and_clause_differences() {
         .iter()
         .map(|d| (d["id"].as_str().unwrap(), d))
         .collect();
+    let candidate3: Vec<Value> = serde_json::from_str(
+        &std::fs::read_to_string(format!("{data}corpus-candidate3.json")).unwrap(),
+    )
+    .unwrap();
+    let candidate_by_id: BTreeMap<&str, &Value> = candidate3
+        .iter()
+        .map(|d| (d["id"].as_str().unwrap(), d))
+        .collect();
     let file = std::fs::File::open(format!("{data}corpus.jsonl.gz")).unwrap();
     let reader = BufReader::new(GzDecoder::new(file));
     let mut seen = BTreeSet::new();
@@ -38,7 +46,13 @@ fn c2_fixed_oracle_corpus_and_clause_differences() {
         let input = row["input"].as_str().unwrap();
         let opts = common::options_of(&row["opts"]);
         let difference = by_id.get(id).copied();
-        let html = difference.map_or(&row["html"], |d| &d["expectedHtml"]);
+        let html = candidate_by_id.get(id).map_or_else(
+            || difference.map_or(&row["html"], |d| &d["expectedHtml"]),
+            |d| {
+                assert_eq!(d["clause"], "C2-H-133");
+                &d["expectedHtml"]
+            },
+        );
         let expected_json = difference.map_or(&row["tree"], |d| &d["expectedTree"]);
         if carve2::render(input, &opts) != html.as_str().unwrap() {
             failures.push(format!("HTML: {id}"));

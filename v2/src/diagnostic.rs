@@ -14,6 +14,18 @@ pub struct Diagnostic {
     /// The id of the included file the range is counted in; `None` for the top-level document.
     pub file: Option<String>,
     pub pos: Option<Pos>,
+    /// JSON pointer to the node or source container that caused the finding.
+    pub path: Option<String>,
+    /// C2-N-087: include sites from the entry document to this file.
+    pub included_by: Vec<IncludeSite>,
+}
+
+/// C2-N-087: a source location of a directive that reached an included file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncludeSite {
+    pub file: Option<String>,
+    pub line: u32,
+    pub column: u32,
 }
 
 impl Diagnostic {
@@ -55,6 +67,8 @@ impl Diagnostic {
             message: fill(template, values),
             file: file.map(str::to_string),
             pos,
+            path: None,
+            included_by: Vec::new(),
         }
     }
 }

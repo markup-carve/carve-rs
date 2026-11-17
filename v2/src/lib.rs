@@ -40,9 +40,11 @@ pub mod hash;
 pub mod html;
 pub mod include;
 pub mod inline;
+pub mod lint;
 pub mod options;
 #[cfg(feature = "profile")]
 pub mod profile;
+pub mod reader;
 pub mod resolve;
 pub mod source;
 pub mod tables;
@@ -130,6 +132,23 @@ pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Documen
     Ok(parse_resolved_in(input, opts, &arena)?.owned())
 }
 
+/// Renders a supplied tree after running resolution anew (C2-A-135).
+///
+/// # Errors
+///
+/// [`RenderError::Losses`] under `strictLosses`.
+pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String, RenderError> {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    let (html, losses) = html::render_with_losses(&doc, opts);
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    Ok(html)
+}
+
 /// Parses, resolves and renders HTML. A refused render (`try_render`)
 /// gives no output, the empty string.
 #[must_use]
@@ -204,6 +223,7 @@ fn prepare<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
+    duplicate_definitions(&doc, diags);
     diags.extend(
         scope
             .findings
@@ -234,6 +254,40 @@ fn prepare<'a>(
         doc.stages = Some(&resolve::STAGES_EXPANDED);
     }
     Ok((doc, ordered, files))
+}
+
+pub(crate) fn parse_diagnostics(input: &str, opts: &Options) -> Vec<diagnostic::Diagnostic> {
+    let arena = Arena::for_input(input);
+    let mut diagnostics = Vec::new();
+    let _ = prepare(input, opts, &arena, &mut diagnostics);
+    diagnostics
+}
+
+/// C2-B-083, C2-B-085: only the first definition of each label wins.
+fn duplicate_definitions(doc: &ast::Document<'_>, diags: &mut Vec<diagnostic::Diagnostic>) {
+    let mut links = std::collections::HashSet::new();
+    let mut abbreviations = std::collections::HashSet::new();
+    for node in doc.children.iter() {
+        let code = match node {
+            ast::Node::LinkReferenceDefinition(x)
+                if !links.insert(crate::chars::fold_label(x.key)) =>
+            {
+                "duplicate-link-reference-definition"
+            }
+            ast::Node::AbbreviationDef(x)
+                if !abbreviations.insert(crate::chars::fold_label(x.key)) =>
+            {
+                "duplicate-abbreviation-definition"
+            }
+            _ => continue,
+        };
+        diags.push(diagnostic::Diagnostic::new(
+            code,
+            &[],
+            None,
+            node.pos().copied(),
+        ));
+    }
 }
 
 /// `places` gets the file of each unexpanded include of an expanded tree.

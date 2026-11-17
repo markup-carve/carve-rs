@@ -233,7 +233,7 @@
     },
     {
       "id": "U-025",
-      "kind": "rewrite",
+      "kind": "report",
       "group": "lists",
       "from": "1234567890. x\n",
       "to": "{start=1234567890}\n. x\n",
@@ -627,7 +627,7 @@
       "group": "inline emphasis and typography",
       "from": "an _underlined_ word and snake_case and _id\n",
       "to": "an {_underlined_} word and snake_case and _id\n",
-      "meaning02": "<p>an _underlined_ word and snake_case and _id</p> A slash immediately after the braced underline can become bare emphasis under C2-I-046 through C2-I-048 and must be escaped when 0.1 left it literal.",
+      "meaning02": "<p>an _underlined_ word and snake_case and _id</p> A slash immediately after the braced underline can become bare emphasis under C2-I-046 through C2-I-048 and must be escaped when 0.1 left it literal. Where the underlined text starts with `name=`, see U-267.",
       "toolEntry": "U-065",
       "silent": true
     },
@@ -937,7 +937,7 @@
       "group": "later rulings",
       "from": "- [ ] a\n- b\n",
       "to": "- [ ] a\n\n\n\n- b\n",
-      "meaning02": "<ul class=\"task-list\">\n  <li class=\"task\"><input type=\"checkbox\" disabled aria-label=\"a\"> a</li>\n  <li>b</li>\n</ul>",
+      "meaning02": "<ul class=\"task-list\">\n  <li class=\"task\" style=\"list-style: none\"><input type=\"checkbox\" disabled aria-label=\"a\"> a</li>\n  <li>b</li>\n</ul>",
       "toolEntry": "U-117",
       "silent": true
     },
@@ -1295,9 +1295,9 @@
       "id": "U-154",
       "kind": "report",
       "group": "measured rendering changes",
-      "from": "^[ [^1]]\n[^1]: n",
+      "from": "[see this[^1] page](/u)\n\n[^1]: n\n",
       "to": "",
-      "meaning02": "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a>\n[^1]: n</p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p> [^1]<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>",
+      "meaning02": "<p><a href=\"/u\">see this page</a><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p> C2-H-088: a note mark in link text is written after the closing anchor of the outermost link; 0.1 wrote it inside the anchor.",
       "toolEntry": "U-154",
       "silent": true
     },
@@ -1327,7 +1327,7 @@
       "group": "measured rendering changes",
       "from": "[\\[][]",
       "to": "",
-      "meaning02": "<p>[[][]</p> On an unresolved reference, following attribute blocks can be folded into a reordered literal attribute sequence.",
+      "meaning02": "<p>[[][]</p> C2-H-085 renders the children of an unresolved reference, so an escape in its text is gone; 0.1 wrote the reference as typed.",
       "toolEntry": "U-158",
       "silent": true
     },
@@ -1585,9 +1585,9 @@
       "id": "U-185",
       "kind": "escape",
       "group": "measured ownership and inline rewrites",
-      "from": "|=|",
-      "to": "|\\=|",
-      "meaning02": "<table>\n  <thead>\n    <tr><th scope=\"col\"></th></tr>\n  </thead>\n</table>",
+      "from": "| total |=SUM(A1:A3) |\n",
+      "to": "| total |\\=SUM(A1:A3) |\n",
+      "meaning02": "<table>\n  <tbody>\n    <tr><td>total</td><th scope=\"row\">SUM(A1:A3)</th></tr>\n  </tbody>\n</table> A cell whose text starts with `=` directly behind its pipe is a header cell under C2-B-171, and the `=` is gone; the bare mark `|=|` behaves the same.",
       "toolEntry": "U-185",
       "silent": true
     },
@@ -1887,7 +1887,7 @@
       "group": "wrapped link or image title",
       "from": "[a](/u \"t\nu\")\n",
       "to": "[a](/u \"t\nu\")\n",
-      "meaning02": "The current parser writes the wrapped title as text. C2-I-068 does not decide whether a quoted title may cross a line ending.",
+      "meaning02": "The tail holds a line break and is no tail (C2-I-069), so the source is paragraph text.",
       "toolEntry": "U-221",
       "silent": true
     },
@@ -2260,6 +2260,96 @@
       "meaning02": "C2-B-173 and C2-B-174 make a span mark that cannot join the text of its cell; an empty cell keeps the 0.1 <th scope=\"col\"></th>.",
       "toolEntry": "U-259",
       "silent": false
+    },
+    {
+      "id": "U-260",
+      "kind": "report",
+      "group": "third review",
+      "from": "{valigns=\"top,bottom\"}\n| a | b |\n",
+      "to": "",
+      "meaning02": "<table valigns=\"top,bottom\">\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table> C2-B-213: `valigns` is an ordinary key, and 0.2 has no source that sets a vertical alignment.",
+      "toolEntry": "U-260",
+      "silent": true
+    },
+    {
+      "id": "U-261",
+      "kind": "report",
+      "group": "third review",
+      "from": "|={>^} Qty |\n",
+      "to": "",
+      "meaning02": "<table>\n  <thead>\n    <tr><th scope=\"col\">{&gt;^} Qty</th></tr>\n  </thead>\n</table> C2-B-182 and data/table-marks.json define no vertical mark, so the braced mark is cell text.",
+      "toolEntry": "U-261",
+      "silent": true
+    },
+    {
+      "id": "U-262",
+      "kind": "report",
+      "group": "third review",
+      "from": "[t]{data-carve-raw=html}\n",
+      "to": "",
+      "meaning02": "<p><span>t</span></p> C2-H-116: an authored attribute with a reserved carrier name is dropped with `roundtrip` on or off, and `carrier-attribute-dropped` reports it.",
+      "toolEntry": "U-262",
+      "silent": true
+    },
+    {
+      "id": "U-263",
+      "kind": "report",
+      "group": "third review",
+      "from": "::: \\\n> a\n> b\n:::\n",
+      "to": "",
+      "meaning02": "<div class=\"hardbreaks\">\n  <blockquote><p>a<br>\nb</p></blockquote>\n</div> C2-A-068: every line end in the block is a hard break, also in a nested quote, item, description, admonition or caption; 0.1 broke only the lines of its direct paragraphs. `{.hardbreaks}` on a div gives the same block.",
+      "toolEntry": "U-263",
+      "silent": true
+    },
+    {
+      "id": "U-264",
+      "kind": "report",
+      "group": "third review",
+      "from": "::: |\n*Roses are red\nViolets are blue*\n:::\n",
+      "to": "::: |\n*Roses are red*\n*Violets are blue*\n:::\n",
+      "meaning02": "<div class=\"line-block\">\n  <p>*Roses are red<br>\nViolets are blue*</p>\n</div> Inline content is read in each line of a line block on its own (syntax-inline.md, Preliminaries), so a span across two lines is text. The rewrite closes and reopens the span on each line, which gives two strong spans instead of one.",
+      "toolEntry": "U-264",
+      "silent": true
+    },
+    {
+      "id": "U-265",
+      "kind": "rewrite",
+      "group": "third review",
+      "from": "::: |\nRoses  are red\n:::\n",
+      "to": "::: |\nRoses\\ \\ are red\n:::\n",
+      "meaning02": "<div class=\"line-block\">\n  <p>Roses  are red</p>\n</div> C2-H-043 writes only the leading spaces of a line as `&nbsp;`; 0.1 wrote every run of spaces in the line that way. A non-breaking space escape keeps the 0.1 HTML.",
+      "toolEntry": "U-265",
+      "silent": true
+    },
+    {
+      "id": "U-266",
+      "kind": "rewrite",
+      "group": "third review",
+      "from": "![5 \\* 3](/i.png)\n",
+      "to": "![5 * 3](/i.png)\n",
+      "meaning02": "<img src=\"/i.png\" alt=\"5 \\* 3\"> C2-I-074: the alt text is the source of the bracket content, so an escape stays in it; 0.1 removed the backslash. Where the escape is needed, before a bracket, no spelling keeps the 0.1 alt text: `![a \\] b](/i.png)` gives `alt=\"a \\] b\"`.",
+      "toolEntry": "U-266",
+      "silent": true
+    },
+    {
+      "id": "U-267",
+      "kind": "rewrite",
+      "group": "third review",
+      "from": "an _a=b_ word\n",
+      "to": "an {_a\\=b_} word\n",
+      "meaning02": "<p>an _a=b_ word</p> The U-065 rewrite `{_a=b_}` is a valid attribute block with the key `_a` (C2-I-043, C2-I-030) and renders as text. Escaping the equals sign keeps the underline.",
+      "toolEntry": "U-267",
+      "silent": true
+    },
+    {
+      "id": "U-268",
+      "kind": "report",
+      "group": "third review",
+      "from": "{#fig-x}\n::: figure\n{#fig-x-a}\n![a](a.png)\n^ (a) One\n:::\n^ Figure #: Both\n\nSee </#fig-x-a>.\n",
+      "to": "",
+      "meaning02": "<p>See &lt;/#fig-x-a&gt;.</p> C2-H-095 resolves a cross-reference against headings and numbered captions only, and a panel caption takes no number (C2-H-066), so a reference to a panel is unresolved; 0.1 wrote `Figure 1a`.",
+      "toolEntry": "U-268",
+      "silent": true
     }
   ],
   "tree": [

@@ -48,6 +48,7 @@ pub struct El<'a> {
     pub trailing: Vec<String>,
     pub attrs: Option<&'a Attrs<'a>>,
     pub lang: Option<&'a str>,
+    pub dir: Option<&'a str>,
     /// Generated attributes after the keys; an authored key replaces one.
     pub generated: Vec<(&'static str, Val<'a>)>,
     /// A generated style declaration before an authored style (C2-H-032).
@@ -83,6 +84,13 @@ impl<'a> El<'a> {
         }
     }
 
+    /// C2-H-009: the direction follows the language on the same element.
+    #[must_use]
+    pub fn with_dir(mut self, dir: Option<&'a str>) -> Self {
+        self.dir = dir;
+        self
+    }
+
     /// Writes ` name="value"` for each attribute.
     #[must_use]
     pub fn write(self, f: Filter<'_>) -> String {
@@ -97,6 +105,12 @@ impl<'a> El<'a> {
             return;
         }
         let keys = self.keys(f);
+        self.write_prefix(out);
+        self.write_keys(keys, out);
+        self.write_generated(out);
+    }
+
+    fn write_prefix(&mut self, out: &mut String) {
         if self.class_first {
             self.write_class(out);
         }
@@ -115,6 +129,12 @@ impl<'a> El<'a> {
         if let Some(lang) = self.lang {
             attr(out, "lang", Some(url::filter_value("lang", lang)));
         }
+        if let Some(dir) = self.dir {
+            attr(out, "dir", Some(url::filter_value("dir", dir)));
+        }
+    }
+
+    fn write_keys(&self, keys: Vec<(&str, &str)>, out: &mut String) {
         let has_style = keys.iter().any(|(k, _)| k.eq_ignore_ascii_case("style"));
         for (k, v) in keys {
             if k.eq_ignore_ascii_case("style") {
@@ -126,6 +146,9 @@ impl<'a> El<'a> {
         if !has_style && (self.style_before.is_some() || !self.style_after.is_empty()) {
             attr(out, "style", Some(&self.merge_style(None)));
         }
+    }
+
+    fn write_generated(&self, out: &mut String) {
         for (k, v) in &self.generated {
             attr(out, k, v.as_deref());
         }
@@ -153,6 +176,7 @@ impl<'a> El<'a> {
     fn is_bare(&self) -> bool {
         self.attrs.is_none()
             && self.lang.is_none()
+            && self.dir.is_none()
             && self.id.is_none()
             && self.structural.is_empty()
             && self.carriers.is_empty()
@@ -196,10 +220,13 @@ impl<'a> El<'a> {
             if self.lang.is_some() && k.eq_ignore_ascii_case("lang") {
                 continue;
             }
+            if self.dir.is_some() && k.eq_ignore_ascii_case("dir") {
+                continue;
+            }
             if url::dropped_name(k) || self.skip_keys.iter().any(|s| s.eq_ignore_ascii_case(k)) {
                 continue;
             }
-            if f.roundtrip && RESERVED.iter().any(|r| r.eq_ignore_ascii_case(k)) {
+            if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(k)) {
                 continue;
             }
             if self.align_style
@@ -289,6 +316,26 @@ mod tests {
     }
 
     #[test]
+    fn c2_h_009_merged_style_keeps_authored_key_position() {
+        let a = Attrs {
+            key_values: &[("title", "t"), ("style", "color: red"), ("data-z", "z")],
+            ..Attrs::default()
+        };
+        let el = El {
+            dir: Some("rtl"),
+            style_after: vec!["text-align: left;".into()],
+            ..El::new(Some(&a), Some("ar"))
+        };
+        assert_eq!(
+            el.write(Filter {
+                roundtrip: false,
+                policy: None
+            }),
+            " lang=\"ar\" dir=\"rtl\" title=\"t\" style=\"color: red; text-align: left;\" data-z=\"z\""
+        );
+    }
+
+    #[test]
     fn c2_h_015_align_follows_authored_style() {
         let a = Attrs {
             key_values: &[("align", "left"), ("style", "color: red")],
@@ -325,7 +372,7 @@ mod tests {
                 roundtrip: false,
                 policy: None
             }),
-            r#" data-carve-div="""#
+            ""
         );
     }
 }

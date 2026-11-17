@@ -39,10 +39,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "carve-lang"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88eea74f39e1bd6187a0150d6d61d955cfc777b8871696966dbe3cafc29635f9"
+dependencies = [
+ "html5ever",
+ "markup5ever_rcdom",
+ "memchr",
+ "pulldown-cmark",
+ "regex",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "carve2"
 version = "0.0.0"
 dependencies = [
  "bumpalo",
+ "carve-lang 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex",
  "serde",
  "serde_json",
  "typed-arena",
@@ -53,7 +72,7 @@ dependencies = [
 name = "carve2-bench"
 version = "0.0.0"
 dependencies = [
- "carve-lang",
+ "carve-lang 0.1.14",
  "carve2",
  "libc",
 ]
