@@ -282,6 +282,22 @@ fn c2_h_075_semantic_range_finds_an_earlier_glued_attribute_block() {
 }
 
 #[test]
+fn c2_h_075_semantic_value_range_ends_before_following_attributes() {
+    for (source, expected) in [
+        ("[x]{kbd=v .c}", "kbd=v"),
+        ("[x]{kbd=\"v w\" .c}", "kbd=\"v w\""),
+    ] {
+        let findings = findings(source, "semantic-attribute-value-ignored");
+        assert_eq!(findings.len(), 1, "{source}");
+        let pos = findings[0].pos.expect("value range");
+        assert_eq!(
+            &source[pos.start_offset as usize..pos.end_offset as usize],
+            expected
+        );
+    }
+}
+
+#[test]
 fn c2_h_082_denied_destination_uses_catalog_range_and_message() {
     let rendered = carve2::render_with_diagnostics("[](\u{202e}javascript:)", &Options::default());
     let loss = rendered

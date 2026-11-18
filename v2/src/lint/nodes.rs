@@ -1066,18 +1066,36 @@ fn semantic_attr_range(raw: &str, name: &str, with_value: bool) -> Option<(usize
                 })
             {
                 let at = open + 1 + key;
-                return Some((
-                    at,
-                    if with_value {
-                        open + close
-                    } else {
-                        at + name.len()
-                    },
-                ));
+                let end = if with_value {
+                    let value = body.get(key + name.len() + 1..)?;
+                    at + name.len() + 1 + attribute_value_end(value)
+                } else {
+                    at + name.len()
+                };
+                return Some((at, end));
             }
         }
     }
     None
+}
+
+fn attribute_value_end(value: &str) -> usize {
+    let mut quote = None;
+    let mut escaped = false;
+    for (offset, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if quote == Some(ch) {
+            quote = None;
+        } else if quote.is_none() && matches!(ch, '\'' | '"') {
+            quote = Some(ch);
+        } else if quote.is_none() && ch.is_whitespace() {
+            return offset;
+        }
+    }
+    value.len()
 }
 
 fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
