@@ -90,6 +90,24 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         {
             continue;
         }
+        if warning.rule == "list-item-block-overindented"
+            && !positions.iter().any(|range| {
+                range.start == warning.start
+                    && matches!(
+                        range.kind.as_str(),
+                        "heading"
+                            | "block_quote"
+                            | "code_block"
+                            | "definition_term"
+                            | "div"
+                            | "image"
+                            | "thematic_break"
+                            | "table"
+                    )
+            })
+        {
+            continue;
+        }
         if matches!(
             warning.rule,
             "deprecated-cell-alignment"
@@ -122,6 +140,9 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
                 | "markdown-definition-paragraph"
                 | "block-opener-without-blank-line"
                 | "list-marker-without-blank-line"
+                | "semantic-attribute-outside-span"
+                | "empty-include-path"
+                | "heading-trailing-attribute"
         ) {
             continue;
         }
@@ -231,12 +252,18 @@ fn normalize_root_message(
                 .unwrap_or(' ');
             let marker = marker.to_string();
             let spelling = format!("{block}{marker}");
+            let contents = block
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+                .unwrap_or("");
+            let corrected_prefix = format!("{{{marker} {contents}}}");
             diagnostic.message = Diagnostic::new(
                 "table-marker-run-padding",
                 &[
                     ("spelling", &spelling),
                     ("marker", &marker),
                     ("block", &block),
+                    ("correctedPrefix", &corrected_prefix),
                 ],
                 None,
                 None,
@@ -271,8 +298,16 @@ fn normalize_root_message(
                     .map_or(0, |at| at + 1)
                 + 1)
             .to_string();
-            diagnostic.message = Diagnostic::new(
+            let variant = if authored.parse::<usize>().unwrap_or(0)
+                > expected.parse::<usize>().unwrap_or(0)
+            {
+                2
+            } else {
+                0
+            };
+            diagnostic.message = Diagnostic::nth(
                 "colon-fence-length-mismatch",
+                variant,
                 &[
                     ("authoredWidth", &authored),
                     ("expectedWidth", &expected),
@@ -296,6 +331,17 @@ fn normalize_root_message(
                     ("baseColumn", &base.to_string()),
                     ("contentColumn", &content.to_string()),
                 ],
+                None,
+                None,
+            )
+            .message;
+            return;
+        }
+        "list-item-block-overindented" => {
+            let content = list_columns(source, ranges, start).2.to_string();
+            diagnostic.message = Diagnostic::new(
+                "list-item-block-overindented",
+                &[("contentColumn", &content)],
                 None,
                 None,
             )

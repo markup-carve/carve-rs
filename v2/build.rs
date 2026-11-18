@@ -1023,7 +1023,11 @@ fn gen_include_rules(out: &mut String, includes: &Value, rules: &Value) {
         let channel = row.get("channel").and_then(Value::as_str).unwrap_or("lint");
         let messages: Vec<String> = arr(row, "messages")
             .iter()
-            .filter_map(Value::as_str)
+            .filter_map(|message| {
+                message
+                    .as_str()
+                    .or_else(|| message.get("text").and_then(Value::as_str))
+            })
             .map(|m| format!("{m:?}"))
             .collect();
         let _ = writeln!(

@@ -215,6 +215,7 @@ fn ids(items: &[Item<'_>]) -> HashSet<String> {
 }
 
 fn check_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
+    semantic(item, sink);
     check_block_node(item, ids, root, sink);
     check_inline_node(item, sink);
 }
@@ -250,11 +251,8 @@ fn check_leaf_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     match item.node["type"].as_str().unwrap_or("") {
         "table" => table(item, sink),
         "include" => include(item, sink),
-        "span" => semantic(item, sink),
-        "code" => {
-            semantic(item, sink);
-            bidi(item, sink);
-        }
+        "code" => bidi(item, sink),
+        "math" => bidi(item, sink),
         _ => {}
     }
 }
@@ -863,20 +861,14 @@ fn cell_blocked(
     if (text == "^" && row_index == 0 || text == "<" && cell_index == 0)
         && cell.get("span").is_none()
     {
-        let marker = text;
-        let reason = if marker == "^" {
-            "There is no cell of one column above it in its group: head, body or foot."
-        } else {
-            "There is no cell to its left in this row."
-        };
         if let Some((from, to)) = bounds(cell) {
             sink.emit_range(
                 "table-span-marker-blocked",
                 from,
                 to,
                 path,
-                &[("marker", marker), ("reason", reason)],
-                0,
+                &[],
+                if text == "^" { 2 } else { 0 },
             );
         }
     }
@@ -944,20 +936,44 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
         }
         if kind == "span" {
             if name == "kbd" && !value.is_empty() {
-                sink.emit(
-                    "semantic-attribute-value-ignored",
-                    item,
-                    &[("name", name)],
+                if let Some((from, _)) = bounds(item.node)
+                    && let Some(at) = sink.raw(item).find(&format!("{name}="))
+                    && let Some(end) = sink.raw(item).get(at..).and_then(|raw| raw.find('}'))
+                {
+                    sink.emit_range(
+                        "semantic-attribute-value-ignored",
+                        from + at,
+                        from + at + end,
+                        &item.path,
+                        &[("name", name)],
+                        0,
+                    );
+                }
+            }
+        } else {
+            if let Some((from, _)) = bounds(item.node)
+                && let Some(open) = sink.raw(item).find('{')
+                && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
+                && let Some(key) = sink
+                    .raw(item)
+                    .get(open..open + close)
+                    .and_then(|raw| raw.find(name))
+            {
+                let at = open + key;
+                let end = sink
+                    .raw(item)
+                    .get(at..)
+                    .and_then(|raw| raw.find(|ch: char| matches!(ch, ' ' | '\t' | '}')))
+                    .unwrap_or(name.len());
+                sink.emit_range(
+                    "semantic-attribute-outside-span",
+                    from + at,
+                    from + at + end,
+                    &item.path,
+                    &[("name", name), ("type", kind), ("value", value)],
                     0,
                 );
             }
-        } else {
-            sink.emit(
-                "semantic-attribute-outside-span",
-                item,
-                &[("name", name), ("type", kind), ("value", value)],
-                0,
-            );
         }
     }
 }
@@ -1068,7 +1084,7 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         }
     }
     djot_text(item, sink, &value, from);
-    unclosed_emphasis(item, sink, &value, from);
+    unclosed_emphasis(item, sink, from);
     let parent = item.parents.last().map_or("", String::as_str);
     let delimiter = if parent == "strong" {
         "{*"
@@ -1097,14 +1113,17 @@ fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: 
         if !matches!(ch, '*' | '/') || raw.as_bytes().get(at + 1) != Some(&b'{') {
             continue;
         }
-        let Some(end) = raw.get(at + 2..).and_then(|rest| rest.find('}')) else {
+        let Some((_, end)) = crate::attr::parse_glued(raw, at + 1) else {
             continue;
         };
+        if end <= at + 1 {
+            continue;
+        }
         let marker = if ch == '*' { "*" } else { "/" };
         sink.emit_range(
             "emphasis-marker-before-attributes",
             from + at,
-            from + at + end + 3,
+            from + at + 1,
             &item.path,
             &[("ch", marker)],
             0,
@@ -1140,22 +1159,26 @@ fn sigils(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
     }
 }
 
-fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    let bytes = value.as_bytes();
+fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, from: usize) {
+    let raw = sink.raw(item).to_string();
+    let bytes = raw.as_bytes();
     for at in 0..bytes.len().saturating_sub(1) {
-        if bytes.get(at) != Some(&b'*')
+        let mark = bytes[at];
+        if !matches!(mark, b'*' | b'/')
+            || escaped(bytes, at)
             || !bytes.get(at + 1).is_some_and(u8::is_ascii_alphanumeric)
-            || at > 0 && bytes.get(at - 1).is_some_and(u8::is_ascii_alphanumeric)
-            || bytes.get(at + 1..).is_some_and(|tail| tail.contains(&b'*'))
+            || at > 0 && !matches!(bytes[at - 1], b' ' | b'\t' | b'(' | b'[' | b'{')
+            || bytes.get(at + 1..).is_some_and(|tail| tail.contains(&mark))
         {
             continue;
         }
+        let span = if mark == b'*' { "strong" } else { "emphasis" };
         sink.emit_range(
             "unclosed-inline-emphasis",
             from + at,
             from + at + 1,
             &item.path,
-            &[],
+            &[("span", span)],
             0,
         );
         break;
@@ -1236,6 +1259,7 @@ fn emphasis(item: &Item<'_>, sink: &mut Sink<'_>) {
     if sink.raw(item).starts_with("/*") && sink.raw(item).ends_with("*/") {
         sink.emit("comment-shaped-emphasis", item, &[], 0);
     }
+    span_before_attrs(item, sink, '/', "emphasis");
 }
 
 fn paragraph(item: &Item<'_>, sink: &mut Sink<'_>) {
@@ -1266,6 +1290,44 @@ fn strong(item: &Item<'_>, sink: &mut Sink<'_>) {
     if sink.raw(item).starts_with("{*") && sink.raw(item).contains("{**}") {
         sink.emit("braced-span-opener-as-text", item, &[], 0);
     }
+    span_before_attrs(item, sink, '*', "strong");
+}
+
+fn span_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, marker: char, name: &str) {
+    if item.node.get("attrs").is_none() {
+        return;
+    }
+    let raw = sink.raw(item).to_string();
+    if !raw.starts_with(marker) || raw.starts_with("{*") || raw.starts_with("{/") {
+        return;
+    }
+    let Some(close) = raw.rfind(&format!("{marker}{{")) else {
+        return;
+    };
+    let inner = raw.get(1..close).unwrap_or("");
+    if !inner
+        .char_indices()
+        .any(|(at, ch)| ch == marker && !escaped(inner.as_bytes(), at))
+    {
+        return;
+    }
+    let Some((from, _)) = bounds(item.node) else {
+        return;
+    };
+    let opening = sink.positions.pos(from, from);
+    sink.emit_range(
+        "emphasis-marker-before-attributes",
+        from + close,
+        from + close + marker.len_utf8(),
+        &item.path,
+        &[
+            ("marker", &marker.to_string()),
+            ("name", name),
+            ("line", &opening.start_line.to_string()),
+            ("column", &opening.start_column.to_string()),
+        ],
+        1,
+    );
 }
 
 fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {

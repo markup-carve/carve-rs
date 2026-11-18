@@ -443,7 +443,12 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
                         None
                     };
                     let pos = loss_position(c, &source, opts, diags.as_slice());
-                    diagnostic::Diagnostic::new(c, &[], file.as_deref(), pos)
+                    let (variant, values) = loss_message(c, source.text(), pos);
+                    let values: Vec<_> = values
+                        .iter()
+                        .map(|(name, value)| (*name, value.as_str()))
+                        .collect();
+                    diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos)
                 })
                 .collect();
             diags.extend(loss_diags);
@@ -458,6 +463,58 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     Rendered {
         html,
         diagnostics: diags,
+    }
+}
+
+fn loss_message(
+    code: &str,
+    source: &str,
+    pos: Option<ast::Pos>,
+) -> (usize, Vec<(&'static str, String)>) {
+    match code {
+        "carrier-attribute-dropped" => {
+            let key = pos
+                .and_then(|position| {
+                    source.get(
+                        usize::try_from(position.start_offset).ok()?
+                            ..usize::try_from(position.end_offset).ok()?,
+                    )
+                })
+                .and_then(|attribute| attribute.split_once('='))
+                .map_or_else(String::new, |(key, _)| key.to_string());
+            (0, vec![("key", key)])
+        }
+        "destination-denied" => {
+            let image = pos.is_some_and(|position| {
+                usize::try_from(position.start_offset)
+                    .ok()
+                    .and_then(|at| source.get(..at))
+                    .and_then(|prefix| prefix.rfind('[').map(|at| prefix.get(..at)))
+                    .flatten()
+                    .is_some_and(|prefix| prefix.ends_with('!'))
+            });
+            (usize::from(image), Vec::new())
+        }
+        "raw-format-dropped" => {
+            let block = source.find("```=").or_else(|| source.find("~~~="));
+            let kind = if block.is_some() { "block" } else { "inline" };
+            let format = block
+                .and_then(|at| source.get(at + 4..))
+                .or_else(|| source.split_once("{=").map(|(_, tail)| tail))
+                .unwrap_or("")
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+                .collect::<String>();
+            (
+                0,
+                vec![
+                    ("kind", kind.to_string()),
+                    ("format", format),
+                    ("target", "HTML".to_string()),
+                ],
+            )
+        }
+        _ => (0, Vec::new()),
     }
 }
 

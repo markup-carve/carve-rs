@@ -72,6 +72,16 @@ impl Parser<'_> {
         }
         let f = self.frame(walk, m);
         if let Some(marker) = shapes::list_marker(&k) {
+            if matches!(
+                self.leaf,
+                Some(super::OpenLeaf {
+                    leaf: super::Leaf::Term { .. },
+                    ..
+                })
+            ) && f.desc_lists.iter().any(|&column| m >= column)
+            {
+                return false;
+            }
             // C2-B-190: a nested marker that cannot open is paragraph text.
             let can_replace = f.lists.iter().any(|&col| m <= col);
             if !can_replace && !self.room(2) {

@@ -27,7 +27,7 @@
     "id": "block-marker-as-text",
     "origin": "../carve/tests/corpus/276-a-fence-opened-on-a-list-marker-line-body-below-the-content-column-5.crv",
     "trigger": "- ~~~\nx\n~~~\n",
-    "near": "- ~~~\nx\n\n",
+    "near": "\\~~~\nx\n",
     "fragment": "~~~",
     "message": "This line begins like a tilde fence but parsed as plain text - the block did not open. Check this line's syntax and any unterminated fence above it."
   },
@@ -45,7 +45,7 @@
     "trigger": "- a\n# H\n",
     "near": "- a\n\n",
     "fragment": "# H",
-    "message": "This line looks like a (kind) but directly follows text, so it is part of the paragraph or caption above it. Add a blank line before it."
+    "message": "This line looks like a heading but directly follows text, so it is part of the paragraph or caption above it. Add a blank line before it."
   },
   {
     "id": "blockquote-marker-without-space",
@@ -509,7 +509,7 @@
     "trigger": "|= H |\n| ^ |\n| a |",
     "near": "|= H |\n||\n| a |",
     "fragment": " ^ ",
-    "message": "The \"^\" span marker cannot extend a cell. There is no cell of one column above it in its group: head, body or foot. It is a cell that holds \"^\" as text; escape it as \"\\^\" to say so, or remove it."
+    "message": "The \"^\" span marker cannot extend a cell. It stands in the first row of its group: head, body or foot. It is a cell that holds \"^\" as text; escape it as \"\\^\" to say so, or remove it."
   },
   {
     "id": "table-span-marker-attribute",
