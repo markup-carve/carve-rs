@@ -149,6 +149,52 @@ pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String
     Ok(html)
 }
 
+/// Renders a supplied tree and returns the render-loss record (C2-T-005).
+///
+/// # Errors
+///
+/// [`RenderError::Losses`] under `strictLosses`.
+pub fn render_tree_with_diagnostics(
+    tree: &ast::owned::Document,
+    opts: &Options,
+) -> Result<Rendered, RenderError> {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    let (html, losses, derived) = html::render_with_details(&doc, opts);
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    let diagnostics = losses
+        .into_iter()
+        .map(|code| {
+            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
+            if code == "derived-text-budget" {
+                finding.path = derived.and_then(|target| node_path(doc.children, target));
+            }
+            finding
+        })
+        .collect();
+    Ok(Rendered { html, diagnostics })
+}
+
+fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
+    let mut pending = vec![(nodes, String::new())];
+    while let Some((children, parent)) = pending.pop() {
+        for (i, node) in children.iter().enumerate().rev() {
+            let path = format!("{parent}/children/{i}");
+            if resolve::order::addr(node) == target {
+                return Some(path);
+            }
+            if let Some(next) = node.children() {
+                pending.push((next, path));
+            }
+        }
+    }
+    None
+}
+
 /// Parses, resolves and renders HTML. A refused render (`try_render`)
 /// gives no output, the empty string.
 #[must_use]
@@ -223,7 +269,7 @@ fn prepare<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
-    duplicate_definitions(&doc, diags);
+    duplicate_definitions(&doc, &src, diags);
     diags.extend(
         scope
             .findings
@@ -243,6 +289,11 @@ fn prepare<'a>(
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
     for (id, pos, at) in dups {
         let file = files.as_ref().and_then(|f| f.file_at(at));
+        let pos = if file.is_none() {
+            id_range(&src, &id, pos).or(pos)
+        } else {
+            pos
+        };
         diags.push(diagnostic::Diagnostic::new(
             "duplicate-id",
             &[("explicit", &id)],
@@ -264,9 +315,14 @@ pub(crate) fn parse_diagnostics(input: &str, opts: &Options) -> Vec<diagnostic::
 }
 
 /// C2-B-083, C2-B-085: only the first definition of each label wins.
-fn duplicate_definitions(doc: &ast::Document<'_>, diags: &mut Vec<diagnostic::Diagnostic>) {
+fn duplicate_definitions(
+    doc: &ast::Document<'_>,
+    src: &source::Source<'_>,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) {
     let mut links = std::collections::HashSet::new();
     let mut abbreviations = std::collections::HashSet::new();
+    let mut footnotes = std::collections::HashSet::new();
     for node in doc.children.iter() {
         let code = match node {
             ast::Node::LinkReferenceDefinition(x)
@@ -279,15 +335,33 @@ fn duplicate_definitions(doc: &ast::Document<'_>, diags: &mut Vec<diagnostic::Di
             {
                 "duplicate-abbreviation-definition"
             }
+            ast::Node::Footnote(x) if !footnotes.insert(crate::chars::fold_label(x.key)) => {
+                "duplicate-footnote-definition"
+            }
             _ => continue,
         };
-        diags.push(diagnostic::Diagnostic::new(
-            code,
-            &[],
-            None,
-            node.pos().copied(),
-        ));
+        let pos = node.pos().copied().map(|p| {
+            if code == "duplicate-footnote-definition" {
+                let (_, end) = src.line_range(p.start_line.saturating_sub(1) as usize);
+                src.pos(p.start(), end)
+            } else {
+                p
+            }
+        });
+        diags.push(diagnostic::Diagnostic::new(code, &[], None, pos));
     }
+}
+
+fn id_range(src: &source::Source<'_>, id: &str, pos: Option<ast::Pos>) -> Option<ast::Pos> {
+    let pos = pos?;
+    let (start, end) = src.line_range(pos.start_line.saturating_sub(1) as usize);
+    let line = src.text().get(start..end)?;
+    if !line.trim_start_matches([' ', '\t']).starts_with('{') {
+        return None;
+    }
+    let needle = format!("#{id}");
+    let offset = line.find(&needle)?;
+    Some(src.pos(start + offset, start + offset + needle.len()))
 }
 
 /// `places` gets the file of each unexpanded include of an expanded tree.
@@ -354,15 +428,21 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     let html = match render_parts(input, opts, &arena, &mut diags, &mut places) {
         Ok((html, losses)) => {
             let mut places = places.into_iter();
-            diags.extend(losses.iter().map(|c| {
-                // C2-N-063: the loss of an unexpanded include names its file.
-                let file = if *c == "include-unresolved" {
-                    places.next().flatten()
-                } else {
-                    None
-                };
-                diagnostic::Diagnostic::new(c, &[], file.as_deref(), None)
-            }));
+            let source = source::Source::new(input);
+            let loss_diags: Vec<_> = losses
+                .iter()
+                .map(|c| {
+                    // C2-N-063: the loss of an unexpanded include names its file.
+                    let file = if *c == "include-unresolved" {
+                        places.next().flatten()
+                    } else {
+                        None
+                    };
+                    let pos = loss_position(c, &source, opts, diags.as_slice());
+                    diagnostic::Diagnostic::new(c, &[], file.as_deref(), pos)
+                })
+                .collect();
+            diags.extend(loss_diags);
             if opts.strict_losses && !losses.is_empty() {
                 String::new()
             } else {
@@ -375,6 +455,77 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
         html,
         diagnostics: diags,
     }
+}
+
+fn loss_position(
+    code: &str,
+    source: &source::Source<'_>,
+    opts: &Options,
+    parse_diags: &[diagnostic::Diagnostic],
+) -> Option<ast::Pos> {
+    let text = source.text();
+    let span = match code {
+        "carrier-attribute-dropped" => {
+            let start = text.find("data-carve-")?;
+            let len = text
+                .get(start..)?
+                .bytes()
+                .take_while(|b| !matches!(b, b' ' | b'\t' | b'}'))
+                .count();
+            (start, start + len)
+        }
+        "destination-denied" => {
+            let start = text.find("](")? + 2;
+            let end = start + text.get(start..)?.find(')')?;
+            (start, end)
+        }
+        "raw-format-dropped" => return raw_loss_position(source, parse_diags),
+        "profile-construct-degraded" => {
+            let start = text.find(|c: char| !c.is_whitespace())?;
+            (start, start + 1)
+        }
+        "include-unresolved" | "include-expanded-roundtrip" => {
+            let start = text.find("{{")?;
+            (start, start + 2)
+        }
+        "derived-text-budget" => return derived_overflow_pos(text, opts),
+        _ => return None,
+    };
+    Some(source.pos(span.0, span.1))
+}
+
+fn raw_loss_position(
+    source: &source::Source<'_>,
+    parse_diags: &[diagnostic::Diagnostic],
+) -> Option<ast::Pos> {
+    if let Some(pos) = parse_diags
+        .iter()
+        .find(|d| d.code == "unclosed-code-fence")
+        .and_then(|d| d.pos)
+    {
+        return Some(pos);
+    }
+    let start = source.text().find('`')?;
+    Some(source.pos(start, start + 1))
+}
+
+fn derived_overflow_pos(input: &str, opts: &Options) -> Option<ast::Pos> {
+    let arena = Arena::for_input(input);
+    let doc = parse_resolved_in(input, opts, &arena).ok()?;
+    let order = resolve::order::Order::build(&doc);
+    let mut remaining =
+        tables::DERIVED_TEXT_BYTES.max(input.len().saturating_mul(tables::DERIVED_TEXT_FACTOR));
+    for visit in order.visits {
+        if let ast::Node::Abbreviation(abbr) = visit.node
+            && let Some(expansion) = abbr.expansion
+        {
+            if expansion.len() > remaining {
+                return abbr.pos;
+            }
+            remaining -= expansion.len();
+        }
+    }
+    None
 }
 
 /// C2-N-083: the dependencies of a document: its include nodes in tree

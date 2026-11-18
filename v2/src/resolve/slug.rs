@@ -110,6 +110,11 @@ pub struct Taken {
 }
 
 impl Taken {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty()
+    }
+
     /// Reserves an id; false when it was taken already.
     pub fn reserve(&mut self, id: &str) -> bool {
         self.set.insert(id.to_string())

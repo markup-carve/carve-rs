@@ -59,24 +59,29 @@ fn records(body: &str, sep: char) -> Vec<Vec<String>> {
 }
 
 /// C2-B-181: whether a quote of the body is left open, which runs to the end.
-pub(super) fn unclosed_quote(body: &str, sep: char) -> bool {
+pub(super) fn unclosed_quote_offset(body: &str, sep: char) -> Option<usize> {
     let mut inside = false;
     let mut at_start = true;
-    let mut it = body.chars().peekable();
-    while let Some(c) = it.next() {
+    let mut opened = None;
+    let mut it = body.char_indices().peekable();
+    while let Some((offset, c)) = it.next() {
         if inside {
-            if c == '"' && it.next_if_eq(&'"').is_none() {
+            if c == '"' && it.peek().is_some_and(|(_, next)| *next == '"') {
+                it.next();
+            } else if c == '"' {
                 inside = false;
+                opened = None;
             }
         } else if at_start && c == '"' {
             inside = true;
+            opened = Some(offset);
         } else {
             at_start = c == sep || c == '\n';
             continue;
         }
         at_start = false;
     }
-    inside
+    if inside { opened } else { None }
 }
 
 /// A quoted field: `""` is one quote; an unclosed quote runs to the end (C2-B-181).
@@ -177,9 +182,9 @@ mod tests {
 
     #[test]
     fn c2_b_181_unclosed_quote_is_found() {
-        assert!(super::unclosed_quote("a,b\n1,\"2\n3,4\n", ','));
-        assert!(!super::unclosed_quote("a,\"b \"\"q\"\" c\"\n", ','));
-        assert!(!super::unclosed_quote("a\"b\n", ','));
+        assert!(super::unclosed_quote_offset("a,b\n1,\"2\n3,4\n", ',').is_some());
+        assert!(super::unclosed_quote_offset("a,\"b \"\"q\"\" c\"\n", ',').is_none());
+        assert!(super::unclosed_quote_offset("a\"b\n", ',').is_none());
     }
 
     #[test]

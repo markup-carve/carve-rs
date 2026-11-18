@@ -444,7 +444,8 @@ pub struct FenceInfo {
     pub title: Option<(usize, usize)>,
     pub label: Option<String>,
     /// C2-B-122: further words after the opener's parts, which it does not read.
-    pub further: bool,
+    pub further: Option<usize>,
+    pub glued: Option<(usize, usize)>,
 }
 
 /// A code fence opener: the run length and the info (C2-B-108, C2-B-118).
@@ -482,6 +483,8 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
             .map_or(0, |r| r.iter().take_while(|&&x| is_raw_char(x)).count());
         if n > 0 && b.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
             fi.raw = info.get(i + 1..i + 1 + n).map(String::from);
+            let end = skip_glued(info, i + 1 + n, base, &mut fi.glued);
+            fi.further = further_start(info, end, base);
             return fi;
         }
     }
@@ -493,9 +496,39 @@ fn fence_info(info: &str, base: usize) -> FenceInfo {
         i += n;
     }
     // C2-B-105: a brace block after the language is further words (C2-B-122).
+    i = skip_glued(info, i, base, &mut fi.glued);
     let end = title_and_label(info, i, base, n == 0, &mut fi.title, &mut fi.label);
-    fi.further = !info.get(end..).is_none_or(crate::chars::is_blank_line);
+    fi.further = if info.starts_with('\t') {
+        Some(base)
+    } else {
+        further_start(info, end, base)
+    };
     fi
+}
+
+fn skip_glued(s: &str, at: usize, base: usize, range: &mut Option<(usize, usize)>) -> usize {
+    if s.as_bytes().get(at) == Some(&b'{')
+        && let Some((_, end)) = parse_glued(s, at)
+    {
+        *range = Some((base + at, base + end));
+        return end;
+    }
+    at
+}
+
+fn further_start(s: &str, at: usize, base: usize) -> Option<usize> {
+    let rest = s.get(at..)?;
+    if rest.is_empty() {
+        return None;
+    }
+    let skipped = rest
+        .bytes()
+        .take_while(|b| matches!(b, b' ' | b'\t'))
+        .count();
+    if skipped == rest.len() {
+        return (at == 1 && s.starts_with("  ")).then_some(base + 1);
+    }
+    Some(base + at + skipped)
 }
 
 /// C2-I-033: a backslash escapes a quote inside a title.
@@ -563,7 +596,8 @@ pub struct DivInfo {
     pub label: Option<String>,
     pub attrs: Option<AttrBlock>,
     /// C2-B-122: further words after the opener's parts.
-    pub further: bool,
+    pub further: Option<usize>,
+    pub glued: Option<(usize, usize)>,
 }
 
 /// A div opener or a bare colon run (C2-B-119, C2-B-125, C2-B-196).
@@ -599,17 +633,12 @@ pub fn div_opener(c: &Cursor<'_>) -> Option<(usize, DivInfo)> {
     } else {
         title_and_label(rest, 0, base, false, &mut info.title, &mut info.label)
     };
-    info.further = !rest.get(end..).is_none_or(crate::chars::is_blank_line);
+    info.further = further_start(rest, end, base);
     Some((n, info))
 }
 
 fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) -> usize {
-    let mut j = i;
-    if rest.as_bytes().get(j) == Some(&b'{') {
-        if let Some((_, end)) = parse_glued(rest, j) {
-            j = end;
-        }
-    }
+    let j = skip_glued(rest, i, base, &mut info.glued);
     title_and_label(rest, j, base, false, &mut info.title, &mut info.label)
 }
 

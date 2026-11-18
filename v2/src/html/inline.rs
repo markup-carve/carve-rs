@@ -93,7 +93,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::Autolink(a) => self.autolink(a, out),
             Node::Image(i) => self.image(i, None, None, out),
             Node::FootnoteRef(_) | Node::InlineFootnote(_) => self.note_mark(n, out),
-            Node::Xref(x) => self.xref(x, out),
+            Node::Xref(x) => self.xref(n, x, out),
             Node::Span(s) => self.span(s, out),
             Node::Math(m) => self.math(m, out),
             _ => self.inline_inner_other(n, out),
@@ -104,7 +104,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn inline_inner_other(&mut self, n: &'r Node<'a>, out: &mut String) {
         match n {
             Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
-                (Some(e), 0) if self.charge_derived(e.len()) => {
+                (Some(e), 0) if self.charge_derived(e.len(), n) => {
                     let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
                     el.structural.push(("title", Some((*e).into())));
                     out.push_str("<abbr");
@@ -458,8 +458,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .get(&addr(n))
             .map(|s| Cow::Borrowed(s.as_str()));
         el.id_first = true;
+        let note_id = self
+            .note_ids
+            .get(num - 1)
+            .cloned()
+            .unwrap_or_else(|| format!("fn{num}"));
         el.structural
-            .push(("href", Some(format!("#fn{num}").into())));
+            .push(("href", Some(format!("#{note_id}").into())));
         el.structural.push(("role", Some("doc-noteref".into())));
         if let (true, Node::FootnoteRef(r)) = (self.opts.roundtrip, n) {
             el.carriers
@@ -474,14 +479,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// C2-H-095 to C2-H-097.
-    fn xref(&mut self, x: &ast::Xref, out: &mut String) {
+    fn xref(&mut self, n: &'r Node<'a>, x: &ast::Xref, out: &mut String) {
         let Some(href) = x.href.filter(|href| !self.hidden_heading(href)) else {
             esc::text(&format!("</#{}>", x.key), out);
             return;
         };
         let target = href.strip_prefix('#').unwrap_or(x.key);
         let cost = self.xref_text.get(target).map_or(x.key.len(), String::len);
-        let generated = self.charge_derived(cost);
+        let generated = self.charge_derived(cost, n);
         if self.in_link > 0 {
             self.xref_label(target, x.key, generated, out);
             return;

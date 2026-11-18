@@ -45,7 +45,7 @@ An unverified example is still the expected result: where an engine differs, the
 
 ## Clause cases
 
-Each entry has `id` (`CC-nnn`), `clauses`, `why`, `summary`, `options`, `expected` and `from`, the engine case files it was merged from (`js:ID`, `php:ID`, `rs:ID`; empty for a case written from the clauses). `why` quotes the sentence that decides the case, as `C2-B-130: ...`; several quotes follow one another, and ` ... ` joins two pieces of one clause. `corrected`, where present, says what the engine files expected before the clause corrected it.
+Each entry has `id` (`CC-nnn`), `clauses`, `why`, `summary`, `options`, `expected` and `from`, the engine case files it was merged from (`js:ID`, `php:ID`, `rs:ID`; empty for a case written from the clauses). `why` quotes the sentence that decides the case, as `C2-B-130: ...`; several quotes follow one another, and ` ... ` joins two pieces of one clause. A catalog trigger may be quoted as `Catalog rule-id: reports fragment`; the gate checks it against that row. `corrected`, where present, says what the engine files expected before the clause corrected it.
 
 `kind` names the call the case runs (`tooling.md`, C2-T-005). An entry without `kind` is a render whose `expected` states both `html` and `children`, the children of the document without positions; that is the shape of every case up to CC-359.
 
@@ -66,7 +66,7 @@ Each entry has `id` (`CC-nnn`), `clauses`, `why`, `summary`, `options`, `expecte
 
 ### Diagnostics
 
-`expected.diagnostics` lists entries of the record the call returns. An entry is a code, or an object with `code` and any of `line`, `column`, `endLine`, `endColumn`, `severity`, `channel`, `path` and `file`. `line` and `column` are the start of the entry's `range`, counted as `pos` counts them (C2-A-141): lines from 1 at each line feed, columns in code points from 1. They are counted in the file the entry names (`file`, C2-N-063) and in the input otherwise; the end is exclusive, as in `pos`. A field the object does not state is not compared.
+`expected.diagnostics` lists entries of the record the call returns. An entry is a code, or an object with `code` and any of `line`, `column`, `endLine`, `endColumn`, `severity`, `channel`, `path` and `file`. `line` and `column` are the start of the entry's `range`, counted as `pos` counts them (C2-A-141): lines from 1 at each line feed, columns in code points from 1. They are counted in the file the entry names (`file`, C2-N-063) and in the input otherwise; the end is exclusive, as in `pos`. A field the object does not state is not compared. `messageWhen`, when present, is the exact `when` text of the selected message variant in `data/lint-rules.json`; the runner compares that variant, and the corpus check verifies that the row lists it.
 
 `expected.diagnosticsComplete` set to `true` says the record holds the listed entries and no others; otherwise it holds at least them, in any order. `expected.notReported` lists codes the record must not hold: the near miss of a rule. `expected.suppressed` is the `suppressedDiagnostics` of the result (C2-T-024).
 

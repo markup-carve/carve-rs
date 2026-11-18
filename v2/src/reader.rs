@@ -422,6 +422,7 @@ fn read_tree_value_inner(
     json_bytes: Option<usize>,
 ) -> Result<ReadTree, TreeError> {
     check_depth(&value)?;
+    replace_nul(&mut value);
     check_known_types(&value)?;
     schema::validate(&value, definitions()?)?;
     let wire = value.clone();
@@ -455,6 +456,18 @@ fn read_tree_value_inner(
         *source = (*source).min(i64::try_from(bytes).unwrap_or(i64::MAX));
     }
     Ok(ReadTree { document, wire })
+}
+
+fn replace_nul(value: &mut Value) {
+    let mut pending = vec![value];
+    while let Some(item) = pending.pop() {
+        match item {
+            Value::String(s) if s.contains('\0') => *s = s.replace('\0', "\u{fffd}"),
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            Value::Object(items) => pending.extend(items.values_mut()),
+            _ => {}
+        }
+    }
 }
 
 fn envelope(value: &Value) -> Result<(), TreeError> {

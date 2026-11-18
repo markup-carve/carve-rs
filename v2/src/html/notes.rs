@@ -61,7 +61,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let def = note.node;
         let back = self.backlinks(i);
         let mut el = El {
-            id: Some(format!("fn{}", i + 1).into()),
+            id: Some(
+                self.note_ids
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("fn{}", i + 1))
+                    .into(),
+            ),
             id_first: true,
             ..El::default()
         };

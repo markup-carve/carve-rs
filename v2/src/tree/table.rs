@@ -168,13 +168,18 @@ impl<'a> Builder<'_, 'a> {
             .and_then(count);
         let footer = footer_count(attrs.as_ref());
         let (children, ncols) = super::delimited::table(self.arena, value, sep, declared, footer);
-        if super::delimited::unclosed_quote(value, sep) {
-            let (start, end) = pos.map_or((0, 0), |p| (p.start(), p.end()));
+        if let Some(quote) = super::delimited::unclosed_quote_offset(value, sep) {
+            let start = pos.map_or(0, |p| p.start());
+            let text = self.src.text().get(start..).unwrap_or("");
+            let body = text
+                .find("```")
+                .and_then(|fence| text.get(fence..)?.find('\n').map(|line| fence + line + 1));
+            let start = start + body.unwrap_or(0) + quote;
             self.findings.borrow_mut().push(crate::block::Finding {
                 code: "delimited-table-malformed",
                 message: 0,
                 start,
-                end,
+                end: start + 1,
                 values: Vec::new(),
             });
         }

@@ -599,8 +599,11 @@ impl Parser<'_> {
     fn open_fence(&mut self, k: &Cursor<'_>, m: usize, e: usize) -> bool {
         let start = k.offset();
         if let Some((len, info)) = shapes::code_fence_opener(k) {
-            if info.further {
-                self.further_words(start, e);
+            if let Some((begin, end)) = info.glued {
+                self.fence_opener_fallback(begin, end);
+            }
+            if let Some(begin) = info.further {
+                self.further_words(begin, e);
             }
             self.set_leaf(
                 Leaf::Code {
@@ -650,8 +653,11 @@ impl Parser<'_> {
             return false;
         };
         let start = k.offset();
-        if info.further {
-            self.further_words(start, e);
+        if let Some((begin, end)) = info.glued {
+            self.fence_opener_fallback(begin, end);
+        }
+        if let Some(begin) = info.further {
+            self.further_words(begin, e);
         }
         let bare = k.rest().get(len..).is_some_and(crate::chars::is_blank_line)
             && info.name.is_none()
@@ -718,7 +724,9 @@ impl Parser<'_> {
             if let Some(top) = self.stack.last_mut() {
                 top.end = start + k.rest().len();
             }
+            self.fence_closes = true;
             self.pop_container();
+            self.fence_closes = false;
             return true;
         }
         false

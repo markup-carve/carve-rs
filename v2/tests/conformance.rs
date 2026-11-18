@@ -12,10 +12,19 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// `(entry id, checked field)`: the corpus is wrong there, by the clause in
-/// the lane's `_EXAMPLE_FIXES.md`.
+/// C2-T-005: `(entry id, checked field)` held outside the core stage.
 const HELD: &[(&str, &str)] = &[
-    ("includes-38", "tree"),
+    ("CC-454", "diagnostic:extension-fallback-rendered"),
+    ("CC-455", "diagnostic:extension-fallback-rendered"),
+    ("CC-456", "diagnostic:extension-fallback-rendered"),
+    ("CC-457", "diagnostic:extension-fallback-rendered"),
+    ("CC-458", "diagnostic:extension-fallback-rendered"),
+    ("CC-459", "diagnostic:extension-fallback-rendered"),
+    ("CC-459", "diagnostic:destination-denied"),
+    ("CC-468", "refusal"),
+    ("CC-474", "refusal"),
+    ("CC-663", "diagnostic:extension-fallback-rendered"),
+    ("CC-664", "notReported"),
     ("CC-439", "children"),
     ("CC-440", "children"),
     ("CC-441", "children"),
@@ -31,8 +40,10 @@ const HELD: &[(&str, &str)] = &[
     ("CC-1089", "html"),
 ];
 
-/// Kinds the engine does not implement yet: the writer and the importer.
-const LATER: &[&str] = &["write", "import"];
+/// C2-T-005: operations outside this core gate.
+const LATER: &[&str] = &[
+    "write", "import", "lint", "format", "layout", "migrate", "cli",
+];
 
 fn load(name: &str) -> Value {
     let path = format!("{}/spec-conformance/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -103,6 +114,10 @@ pub fn options(v: &Value, files: Option<&Value>) -> Options {
         if let Some(d) = v["includes"]["depth"].as_u64() {
             inc.depth = usize::try_from(d).unwrap_or(0);
         }
+        if let Some(b) = v["includes"]["bytes"].as_u64() {
+            inc.bytes = usize::try_from(b).unwrap_or(0);
+        }
+        inc.file = v["includes"]["file"].as_str().map(str::to_string);
         o.includes = Some(inc);
     }
     o
@@ -139,6 +154,20 @@ fn without_pos(v: &mut Value) {
             m.values_mut().for_each(without_pos);
         }
         Value::Array(a) => a.iter_mut().for_each(without_pos),
+        _ => {}
+    }
+}
+
+fn without_include_payload(v: &mut Value) {
+    match v {
+        Value::Object(m) => {
+            if m.get("type") == Some(&Value::String("include".into())) {
+                m.remove("children");
+                m.remove("file");
+            }
+            m.values_mut().for_each(without_include_payload);
+        }
+        Value::Array(a) => a.iter_mut().for_each(without_include_payload),
         _ => {}
     }
 }
@@ -279,7 +308,7 @@ fn c2_conformance_clause_cases() {
         }
         let id = c["id"].as_str().unwrap_or("");
         let input = c["input"].as_str().unwrap_or("");
-        let opts = options(&c["options"], None);
+        let opts = options(&c["options"], c.get("files"));
         if let Some(html) = c["expected"]["html"].as_str() {
             let got = if let Some(tree) = c.get("tree") {
                 let read = carve2::reader::read_tree_value(tree.clone()).unwrap();
@@ -293,16 +322,178 @@ fn c2_conformance_clause_cases() {
         }
         if let Some(children) = c["expected"].get("children") {
             let mut got = parse_json(&carve2::tree_json(input, &opts));
+            let mut want = children.clone();
             if !has_pos(children) {
                 without_pos(&mut got);
             }
-            let (want, got) = (sorted(children), sorted(&got["children"]));
+            without_include_payload(&mut got);
+            without_include_payload(&mut want);
+            let (want, got) = (sorted(&want), sorted(&got["children"]));
             run.check(id, "children", want == got, || {
                 format!("{input}\n--- expected\n{want}\n--- got\n{got}")
             });
         }
     }
     run.finish("clause-cases");
+}
+
+#[test]
+fn c2_t_005_tree_clause_cases() {
+    let corpus = load("clause-cases.json");
+    let mut run = run();
+    for c in corpus["cases"].as_array().into_iter().flatten() {
+        if c["kind"] != "tree" {
+            continue;
+        }
+        let id = c["id"].as_str().unwrap_or("");
+        let result = if let Some(json) = c["json"].as_str() {
+            carve2::reader::read_tree_json(json)
+        } else {
+            carve2::reader::read_tree_value(c["tree"].clone())
+        };
+        if let Some(want) = c["expected"].get("refusal") {
+            let path = want["path"].as_str();
+            let ok = match &result {
+                Err(
+                    carve2::reader::TreeError::Schema { path: got, .. }
+                    | carve2::reader::TreeError::Reader { path: got, .. }
+                    | carve2::reader::TreeError::Decode { path: got, .. },
+                ) => path.is_none_or(|p| {
+                    got == p
+                        || got.starts_with(&format!("{p}/"))
+                        || p.starts_with(&format!("{got}/"))
+                }),
+                Err(carve2::reader::TreeError::Json(_)) => path.is_none(),
+                Ok(_) => false,
+            };
+            run.check(id, "refusal", ok, || {
+                format!("expected {want}; got {result:?}")
+            });
+        } else {
+            run.check(id, "accepted", result.is_ok(), || format!("{result:?}"));
+            if let (Ok(read), Some(want)) = (&result, c["expected"].get("tree")) {
+                let got = parse_json(&carve2::reader::write_tree_json(read));
+                run.check(id, "tree", sorted(&got) == sorted(want), || {
+                    format!("expected {want}; got {got}")
+                });
+            }
+        }
+    }
+    run.finish("tree-clause-cases");
+}
+
+fn diagnostic_agrees(want: &Value, got: &carve2::diagnostic::Diagnostic) -> bool {
+    let code = want.as_str().or_else(|| want["code"].as_str());
+    code == Some(got.code)
+        && want["channel"].as_str().is_none_or(|v| v == got.channel)
+        && want["severity"].as_str().is_none_or(|v| v == got.severity)
+        && want["file"]
+            .as_str()
+            .is_none_or(|v| Some(v) == got.file.as_deref())
+        && want["path"]
+            .as_str()
+            .is_none_or(|v| Some(v) == got.path.as_deref())
+        && want["line"].as_u64().is_none_or(|v| {
+            got.pos
+                .as_ref()
+                .is_some_and(|p| u64::from(p.start_line) == v)
+        })
+        && want["column"].as_u64().is_none_or(|v| {
+            got.pos
+                .as_ref()
+                .is_some_and(|p| u64::from(p.start_column) == v)
+        })
+        && want["endLine"]
+            .as_u64()
+            .is_none_or(|v| got.pos.as_ref().is_some_and(|p| u64::from(p.end_line) == v))
+        && want["endColumn"].as_u64().is_none_or(|v| {
+            got.pos
+                .as_ref()
+                .is_some_and(|p| u64::from(p.end_column) == v)
+        })
+}
+
+#[test]
+fn c2_t_005_parse_and_render_clause_diagnostics() {
+    let corpus = load("clause-cases.json");
+    let mut run = run();
+    for c in corpus["cases"].as_array().into_iter().flatten() {
+        let kind = c["kind"].as_str().unwrap_or("render");
+        if kind != "parse" && kind != "render" {
+            continue;
+        }
+        if c["expected"].get("refusal").is_some() {
+            continue;
+        }
+        let id = c["id"].as_str().unwrap_or("");
+        let opts = options(&c["options"], c.get("files"));
+        let out = if let Some(tree) = c.get("tree") {
+            let read = carve2::reader::read_tree_value(tree.clone())
+                .unwrap_or_else(|e| panic!("{id}: {e}"));
+            carve2::render_tree_with_diagnostics(read.document(), &opts).unwrap()
+        } else {
+            carve2::render_with_diagnostics(c["input"].as_str().unwrap_or(""), &opts)
+        };
+        let expected = &c["expected"];
+        for d in expected["diagnostics"].as_array().into_iter().flatten() {
+            run.check(
+                id,
+                &format!(
+                    "diagnostic:{}",
+                    d.as_str().or_else(|| d["code"].as_str()).unwrap_or("")
+                ),
+                out.diagnostics.iter().any(|got| diagnostic_agrees(d, got)),
+                || format!("expected {d}; got {:?}", out.diagnostics),
+            );
+        }
+        for code in expected["notReported"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            run.check(
+                id,
+                "notReported",
+                !out.diagnostics.iter().any(|got| got.code == code),
+                || format!("unexpected {code}; got {:?}", out.diagnostics),
+            );
+        }
+        if expected["diagnosticsComplete"] == true {
+            let wanted = expected["diagnostics"].as_array().map_or(0, Vec::len);
+            run.check(
+                id,
+                "diagnosticsComplete",
+                out.diagnostics.len() == wanted,
+                || format!("expected {wanted} findings; got {:?}", out.diagnostics),
+            );
+        }
+    }
+    run.finish("clause-diagnostics");
+}
+
+#[test]
+fn c2_t_005_core_render_refusals() {
+    let corpus = load("clause-cases.json");
+    let mut run = run();
+    for id in ["CC-512", "CC-513", "CC-514"] {
+        let c = corpus["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == id)
+            .unwrap();
+        let opts = options(&c["options"], None);
+        let ok = if let Some(tree) = c.get("tree") {
+            carve2::reader::read_tree_value(tree.clone()).is_err()
+        } else {
+            carve2::try_render(c["input"].as_str().unwrap_or(""), &opts).is_err()
+        };
+        run.check(id, "refusal", ok, || {
+            format!("expected {}", c["expected"]["refusal"])
+        });
+    }
+    run.finish("core-refusals");
 }
 
 /// The fixtures of `spec/0.2/trees/` (copied to `spec-trees/`), as the tree

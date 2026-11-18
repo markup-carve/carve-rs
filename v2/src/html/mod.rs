@@ -30,9 +30,17 @@ pub fn render(doc: &Document<'_>, opts: &Options) -> String {
 /// Renders and returns the render losses beside the HTML (C2-H-132).
 #[must_use]
 pub fn render_with_losses(doc: &Document<'_>, opts: &Options) -> (String, Vec<&'static str>) {
+    let (html, losses, _) = render_with_details(doc, opts);
+    (html, losses)
+}
+
+pub(crate) fn render_with_details(
+    doc: &Document<'_>,
+    opts: &Options,
+) -> (String, Vec<&'static str>, Option<usize>) {
     let mut r = Renderer::new(doc, opts);
     r.document();
-    (r.out, r.losses)
+    (r.out, r.losses, r.derived_failure)
 }
 
 /// Renders with losses while retaining the matching UTF-8 source text for
@@ -124,11 +132,14 @@ pub(crate) struct Renderer<'r, 'a> {
     order: Order<'r, 'a>,
     /// The anchor id of each note mark (C2-H-088).
     mark_ids: AddrMap<usize, String>,
+    /// The anchor id of each note, in number order (C2-H-202).
+    note_ids: Vec<String>,
     links: HashMap<&'a str, &'r LinkReferenceDefinition<'a>>,
     hidden_heading_ids: HashSet<&'a str>,
     xref_text: HashMap<String, String>,
     derived_remaining: usize,
     derived_exhausted: bool,
+    derived_failure: Option<usize>,
     adm_ids: AddrMap<usize, String>,
     /// The top-level `footnotes` directive that places the section (C2-H-093).
     placing: Option<usize>,
@@ -199,6 +210,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             out: String::with_capacity(out_estimate(doc)),
             order,
             mark_ids: AddrMap::default(),
+            note_ids: Vec::new(),
             links: HashMap::new(),
             hidden_heading_ids,
             xref_text: HashMap::new(),
@@ -208,6 +220,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     .saturating_mul(crate::tables::DERIVED_TEXT_FACTOR),
             ),
             derived_exhausted: false,
+            derived_failure: None,
             adm_ids: AddrMap::default(),
             placing: None,
             pending: String::new(),
@@ -238,7 +251,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .is_some_and(|id| self.hidden_heading_ids.contains(id))
     }
 
-    fn charge_derived(&mut self, bytes: usize) -> bool {
+    fn charge_derived(&mut self, bytes: usize, node: &Node<'_>) -> bool {
         if bytes <= self.derived_remaining {
             self.derived_remaining -= bytes;
             return true;
@@ -246,6 +259,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if !self.derived_exhausted {
             self.losses.push("derived-text-budget");
             self.derived_exhausted = true;
+            self.derived_failure = Some(addr(node));
         }
         false
     }
@@ -285,21 +299,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         } else {
             None
         };
-        for (i, note) in self.order.notes.iter().enumerate() {
-            for (k, r) in note.refs.iter().enumerate() {
-                let authored = r.attrs().and_then(|a| a.id).map(str::to_string);
-                let id = authored.unwrap_or_else(|| {
-                    if k == 0 {
-                        format!("fnref{}", i + 1)
-                    } else {
-                        format!("fnref{}-{}", i + 1, k + 1)
-                    }
-                });
-                self.mark_ids.insert(addr(r), id);
-            }
-        }
         self.targets();
-        self.admonition_ids();
+        self.generated_ids();
     }
 
     /// The text of each cross-reference target (C2-H-096).
@@ -350,7 +351,23 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-156: `adm-N` for titled admonitions and the titled placing
     /// directive, after every authored id and generated heading id.
-    fn admonition_ids(&mut self) {
+    fn generated_ids(&mut self) {
+        if self.order.notes.is_empty()
+            && !self.order.visits.iter().any(|visit| {
+                matches!(visit.node, Node::Admonition(a) if a.title.is_some())
+                    || matches!(visit.node, Node::Directive(d) if d.title.is_some())
+            })
+        {
+            return;
+        }
+        let mut taken = slug::Taken::default();
+        reserve_ids(self.doc.children, &mut taken, 0);
+        let collisions = !taken.is_empty();
+        self.admonition_ids(&mut taken, collisions);
+        self.note_ids(&mut taken, collisions);
+    }
+
+    fn admonition_ids(&mut self, taken: &mut slug::Taken, collisions: bool) {
         let placing = self.placing;
         let titled = |v: &crate::resolve::order::Visit<'_, '_>| match v.node {
             Node::Admonition(a) => a.title.is_some() && !authored_name(a.attrs),
@@ -360,15 +377,43 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if !self.order.visits.iter().any(titled) {
             return;
         }
-        let mut taken = slug::Taken::default();
-        reserve_ids(self.doc.children, &mut taken, 0);
         let mut n = 0usize;
         for v in &self.order.visits {
             if titled(v) {
                 n += 1;
-                let id = taken.unique(&format!("adm-{n}"));
+                let id = allocated_id(taken, format!("adm-{n}"), collisions);
                 self.adm_ids.insert(addr(v.node), id);
             }
+        }
+    }
+
+    fn note_ids(&mut self, taken: &mut slug::Taken, collisions: bool) {
+        self.note_ids = vec![String::new(); self.order.notes.len()];
+        let mut counts = vec![0usize; self.order.notes.len()];
+        for visit in &self.order.visits {
+            let Some(num) = self.order.number.get(&addr(visit.node)).copied() else {
+                continue;
+            };
+            let Some(count) = counts.get_mut(num.saturating_sub(1)) else {
+                continue;
+            };
+            if *count == 0 {
+                if let Some(slot) = self.note_ids.get_mut(num - 1) {
+                    *slot = allocated_id(taken, format!("fn{num}"), collisions);
+                }
+            }
+            *count += 1;
+            let base = if *count == 1 {
+                format!("fnref{num}")
+            } else {
+                format!("fnref{num}-{count}")
+            };
+            let id = visit
+                .node
+                .attrs()
+                .and_then(|a| a.id)
+                .map_or_else(|| allocated_id(taken, base, collisions), str::to_string);
+            self.mark_ids.insert(addr(visit.node), id);
         }
     }
 
@@ -585,15 +630,27 @@ fn reserve_ids(nodes: &[Node], taken: &mut slug::Taken, depth: usize) {
     }
     for n in nodes {
         if let Some(id) = n.attrs().and_then(|a| a.id) {
-            taken.reserve(id);
+            if id.starts_with("fn") || id.starts_with("adm-") {
+                taken.reserve(id);
+            }
         }
         if let Node::Heading(h) = n {
             if let Some(id) = &h.generated_id {
-                taken.reserve(id);
+                if id.starts_with("fn") || id.starts_with("adm-") {
+                    taken.reserve(id);
+                }
             }
         }
         for c in crate::resolve::order::slots(n) {
             reserve_ids(std::slice::from_ref(c), taken, depth + 1);
         }
+    }
+}
+
+fn allocated_id(taken: &mut slug::Taken, base: String, collisions: bool) -> String {
+    if collisions {
+        taken.unique(&base)
+    } else {
+        base
     }
 }

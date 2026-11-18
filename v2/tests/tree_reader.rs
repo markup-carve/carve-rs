@@ -12,6 +12,16 @@ fn load(name: &str) -> Value {
 }
 
 #[test]
+fn c2_a_044_reader_replaces_nul_in_ingested_strings() {
+    let json = r#"{"type":"document","astVersion":"2.0","children":[
+        {"type":"paragraph","children":[{"type":"text","value":"a\u0000b"}]}
+    ]}"#;
+    let read = read_tree_json(json).expect("tree");
+    let written: Value = serde_json::from_str(&write_tree_json(&read)).expect("JSON");
+    assert_eq!(written["children"][0]["children"][0]["value"], "a\u{fffd}b");
+}
+
+#[test]
 fn c2_a_165_positive_trees_round_trip() {
     for name in [
         "nodes.json",

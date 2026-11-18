@@ -5,6 +5,25 @@ fn html(src: &str) -> String {
 }
 
 #[test]
+fn c2_h_202_note_and_mark_ids_share_the_document_namespace() {
+    let heading = html("= fn1\n\na[^x]\n\n[^x]: n");
+    assert!(heading.contains("id=\"fn1-2\""), "{heading}");
+    assert!(heading.contains("href=\"#fn1-2\""), "{heading}");
+
+    let authored = html("a^[x] and b[^n]{#fn1}\n\n[^n]: y");
+    assert!(authored.contains("id=\"fn1-2\""), "{authored}");
+    assert!(authored.contains("id=\"fn1\" href=\"#fn2\""), "{authored}");
+
+    let mark = html("a^[x]{#fnref2} b^[y]");
+    assert!(mark.contains("id=\"fnref2-2\""), "{mark}");
+    assert!(mark.contains("href=\"#fnref2-2\""), "{mark}");
+
+    let repeated = html("a[^x] b[^x]\n\n[^x]: n\n\n{#fnref1-2}\np");
+    assert!(repeated.contains("id=\"fnref1-2-2\""), "{repeated}");
+    assert!(repeated.contains("href=\"#fnref1-2-2\""), "{repeated}");
+}
+
+#[test]
 fn c2_h_069_comment_only_line_inside_an_inline_node_takes_its_break() {
     assert_eq!(html("*a\n%%\nb*"), "<p><strong>a\nb</strong></p>");
 }

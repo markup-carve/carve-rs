@@ -83,7 +83,7 @@ macro_rules! rule {
 macro_rules! held_rule {
     ($name:ident, $code:literal, $data:literal) => {
         #[test]
-        #[ignore = "candidate 12 lint behavior is held outside the core stage"]
+        #[ignore = "lint behavior is held outside the core stage"]
         fn $name() {
             check($code, include_str!($data));
         }
@@ -136,7 +136,7 @@ held_rule!(
     "broken-fragment-link",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_colon_fence_length_mismatch,
     "colon-fence-length-mismatch",
     "data/lint-cases.json"
@@ -396,7 +396,7 @@ held_rule!(
     "table-row-cell-count",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_table_shaped_paragraph,
     "table-shaped-paragraph",
     "data/lint-cases.json"

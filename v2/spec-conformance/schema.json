@@ -76,7 +76,8 @@
         "severity": { "enum": ["hint", "warning", "error"] },
         "channel": { "enum": ["parse", "render-loss", "lint"] },
         "path": { "type": "string" },
-        "file": { "type": "string" }
+        "file": { "type": "string" },
+        "messageWhen": { "type": "string", "description": "Exact when condition of the selected catalog message variant." }
       },
       "dependentRequired": { "column": ["line"], "line": ["column"], "endColumn": ["endLine"], "endLine": ["endColumn"] },
       "additionalProperties": false

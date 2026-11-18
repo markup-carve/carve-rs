@@ -59,8 +59,8 @@
       ],
       "message_origin": "engine_0_1",
       "change": "also a brace line that is not a valid one-line attribute line",
-      "reports": "a paragraph whose first text, after leading spaces and tabs, starts with a run of three or more colons or with `{.` or `{#`, a div opener or an attribute line that did not open, as `:::note` with the name glued to the run (C2-B-119), once per paragraph on its first line; and, by the row's change, a paragraph line that, after leading spaces and tabs, starts with `{` followed by `.`, `#`, `_` or an ASCII letter and is no valid attribute line, as `{a=}` (C2-B-090), once per line; a colon line that `fence-title-syntax` reports and a line that a list-indent rule reports are left to those rules (C2-B-119, C2-B-090)",
-      "clauses": ["C2-B-119", "C2-B-090"]
+      "reports": "a paragraph whose first text, after leading spaces and tabs, starts with a run of three or more colons, a run of three or more tildes (a refused code fence candidate under C2-B-108), or with `{.` or `{#`, a div opener or an attribute line that did not open, as `:::note` with the name glued to the run (C2-B-119), once per paragraph on its first line; and, by the row's change, a paragraph line that, after leading spaces and tabs, starts with `{` followed by `.`, `#`, `_` or an ASCII letter and is no valid attribute line, as `{a=}` (C2-B-090), once per line; a colon line that `fence-title-syntax` reports and a line that a list-indent rule reports are left to those rules (C2-B-108, C2-B-119, C2-B-090)",
+      "clauses": ["C2-B-108", "C2-B-119", "C2-B-090"]
     },
     {
       "id": "block-opener-overindented",
@@ -96,9 +96,9 @@
       "channel": "lint",
       "status": "kept",
       "default": "on",
-      "messages": [{"when": "the line is paragraph text outside frontmatter", "text": "A blockquote marker must be bare `>` or followed by a space. This line is literal paragraph text; write `> ${text}` to quote it."}, {"when": "the line is inside frontmatter", "text": "This line is frontmatter content, not a blockquote. Close frontmatter before a quote and write `> ${text}`."}],
+      "messages": [{"when": "the line is paragraph, heading, cell, term, caption or line-block text outside frontmatter", "text": "A blockquote marker must be bare `>` or followed by a space. This line is literal text; write `> ${text}` to quote it."}, {"when": "the line is inside frontmatter", "text": "This line is frontmatter content, not a blockquote. Close frontmatter before a quote and write `> ${text}`."}],
       "message_origin": "data_file",
-      "reports": "a line of paragraph, heading, cell, term or caption text, or expressly a frontmatter line, whose first character, at column 1 with no indent and no container prefix before it, is `>` followed by a character that is not a space, so `>a`, `>>a` and `>` followed by a tab, which are text; a bare `>` is not reported; once per line (C2-B-031)",
+      "reports": "a line of paragraph, heading, cell, term, caption or line of a line block text, or expressly a frontmatter line, whose first character, at column 1 with no indent and no container prefix before it, is `>` followed by a character that is not a space, so `>a`, `>>a` and `>` followed by a tab, which are text; a bare `>` is not reported; once per line (C2-B-031)",
       "clauses": ["C2-B-031"]
     },
     {
@@ -135,6 +135,7 @@
       "default": "on",
       "messages": [{"when": "the target id exists exactly but belongs to a node that is not a heading or numbered caption", "text": "Cross-reference </#${target}> names the id \"${id}\", which is on a ${kind}; a cross-reference reaches only headings and numbered captions, so it renders as the literal text \"</#${target}>\". Link to it with [text](#${id})."}, {"when": "no qualifying id matches exactly, but one or more qualifying ids differ only in case", "text": "Cross-reference </#${target}> matches no id; ${caseOnlyPhrase}, and cross-references are case-sensitive, so it renders as the literal text \"</#${target}>\"."}, {"when": "no qualifying id matches exactly or only by case, and no exact id belongs to a nonqualifying node", "text": "Cross-reference </#${target}> has no matching heading id; it renders as the literal text \"</#${target}>\"."}],
       "message_origin": "engine_0_1",
+      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id \"X\" differs only in case` for one candidate, `the ids \"X\" and \"Y\" differ only in case` for two, and `the ids \"X\", \"Y\", and \"Z\" differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id."],
       "reports": "a cross-reference whose id, normalized to NFC, matches no heading id, authored or generated, and no id of a table, a figure or a figure group whose caption has a number mark, nor of a panel of such a group; matching is exact, so an id that differs only in case is reported; once per cross-reference, in footnote bodies too (C2-I-096, C2-I-097, C2-B-207, C2-H-022)",
       "clauses": ["C2-I-096", "C2-I-097", "C2-B-207", "C2-H-022"]
     },
@@ -144,8 +145,9 @@
       "channel": "lint",
       "status": "kept",
       "default": "on",
-      "messages": [{"when": "a rendered id differs from the fragment only in case", "text": "Link to \"${href}\" matches no id; the id \"${caseOnly}\" differs only in case, and fragment links are case-sensitive, so the link goes nowhere."}, {"when": "no rendered id matches the fragment, even by case", "text": "Link to \"${href}\" matches no id in this document, so the link goes nowhere."}],
+      "messages": [{"when": "a rendered id differs only in case from the fragment as written or percent-decoded", "text": "Link to \"${href}\" matches no id; the id \"${caseOnly}\" differs only in case, and fragment links are case-sensitive, so the link goes nowhere."}, {"when": "no rendered id differs only in case from either the fragment as written or percent-decoded", "text": "Link to \"${href}\" matches no id in this document, so the link goes nowhere."}],
       "message_origin": "engine_0_1",
+      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id \"X\" differs only in case` for one candidate, `the ids \"X\" and \"Y\" differ only in case` for two, and `the ids \"X\", \"Y\", and \"Z\" differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id.", "For case-only comparison, test both the source fragment and its percent-decoded spelling. `${caseOnly}` names the first qualifying rendered id in source order; if both spellings find candidates, use the same order across their union."],
       "reports": "a link whose destination starts with `#` and whose fragment, the part before any `:~:` and tested both as written and percent-decoded, is not empty, is not `top` in any letter case, and is no `id` (and no `name` of an `a` element) in the rendered HTML of the document, heading, footnote, note mark and raw HTML ids included; once per link; not reported at all while an extension that generates ids is registered for the run, whether or not the document contains a node of that extension (C2-I-066, C2-H-022, C2-H-088, C2-H-089)",
       "clauses": ["C2-I-066", "C2-H-022", "C2-H-088", "C2-H-089"]
     },
@@ -155,7 +157,7 @@
       "channel": "lint",
       "status": "kept",
       "default": "on",
-      "messages": [{"when": "a pipe table starts one or two lines below this paragraph line", "text": "This caption-looking paragraph is above the table. Move it directly below the table and start it with `^ ` to make a caption."}, {"when": "no pipe table starts one or two lines below, and a pipe table row or an image marker `![` occurs in one of the two lines above", "text": "This caption-looking paragraph sits next to a table or image; use a ^ caption line."}],
+      "messages": [{"when": "a pipe table starts one or two lines below this paragraph line", "text": "This caption-looking paragraph is above the table. Move it directly below the table and start it with `^ ` to make a caption."}, {"when": "no pipe table starts one or two lines below, and a pipe table row or an image marker `![` occurs in one of the two lines above", "text": "This caption-looking paragraph sits next to a table or image-looking marker; use a ^ caption line."}],
       "message_origin": "engine_0_1",
       "reports": "a paragraph line whose text, after container prefixes and indent, matches case-insensitively `^(?:\\*?\\s*(?:Caption|Table|Tabelle|Figure|Image)(?:\\s+\\d+)?\\s*:|:\\s+\\S)`; the optional number needs whitespace before its digits, so `Caption 2:` matches and `Caption2:` does not; a match reports when a pipe table row starts one or two lines above or below it or one of the two lines above holds `![`; once per line, the range is the first character of the matched line (C2-B-146, C2-B-149)",
       "clauses": ["C2-B-146", "C2-B-149"]
@@ -165,7 +167,7 @@
       "severity": "warning",
       "channel": "render-loss",
       "status": "kept",
-      "messages": ["Dropped the authored attribute ${key}: the name is reserved for roundtrip import"],
+      "messages": [{"when": "every finding of this code", "text": "Dropped the authored attribute ${key}: the name is reserved for roundtrip import"}],
       "message_origin": "engine_0_1",
       "reports": "an authored attribute with a reserved carrier name (C2-H-116)",
       "clauses": ["C2-H-116", "C2-H-132"]
@@ -190,7 +192,14 @@
       "status": "kept",
       "default": "on",
       "messages": [
-        "Bare ${authoredWidth}-colon fence does not close the innermost ${expectedWidth}-colon ${kind} opened at ${line}:${column}; it ${outcome}."
+        {
+          "when": "the bare run is shorter than the innermost opener",
+          "text": "Bare ${authoredWidth}-colon fence does not close the innermost ${expectedWidth}-colon ${kind} opened at ${line}:${column}; it ${outcome}."
+        },
+        {
+          "when": "the bare run is longer than the innermost opener",
+          "text": "Bare ${authoredWidth}-colon fence has a different width from the innermost ${expectedWidth}-colon ${kind} opened at ${line}:${column}; it ${outcome}."
+        }
       ],
       "message_origin": "engine_0_1",
       "reports": "a bare colon run, three or more colons and nothing after them but spaces and tabs, inside an open colon container (a div, an admonition, a figure group, a line block or a hard-break block) whose innermost opener run has another length; the run closes the innermost open container it is long enough for and every one inside it, or opens an anonymous div when it is long enough for none, and the message names that outcome; once per run (C2-B-108, C2-B-109, C2-B-125)",
@@ -446,7 +455,7 @@
         "The substitution arrow was removed in 0.2; this is a strike span. Write a deletion directly followed by an insertion."
       ],
       "message_origin": "design",
-      "reports": "a braced strike span whose own content holds `~>`, which 0.1 read as a substitution of the text before by the text after and which 0.2 reads as text in the strike (C2-I-062): the first `~>` not behind a backslash in the strike's own inline content, outside a nested braced span, while a bare span around it does not hide it; once per strike span, the range is the strike span (C2-I-062)",
+      "reports": "a braced strike span whose own content holds `~>`, which 0.1 read as a substitution of the text before by the text after and which 0.2 reads as text in the strike (C2-I-062): the first `~>` not behind a backslash in the strike's own inline content, outside a nested braced span or bracket construct, while a bare span around it does not hide it; once per strike span, the range is the strike span (C2-I-062)",
       "clauses": ["C2-I-062"]
     },
     {
@@ -621,7 +630,7 @@
       "severity": "warning",
       "channel": "parse",
       "status": "kept",
-      "messages": ["Duplicate footnote definition [^${label}] is ignored; the first definition for a label wins."],
+      "messages": [{"when": "every finding of this code", "text": "Duplicate footnote definition [^${label}] is ignored; the first definition for a label wins."}],
       "message_origin": "engine_0_1",
       "channel_reports": "a second footnote definition for a key (C2-B-085)",
       "reports": "a footnote definition whose key, folded as C2-I-079 says, is the key of an earlier footnote definition of the same file, once per later definition; the first one wins, keys that differ only in case are different keys, and a definition-shaped line inside a container is text and takes no part (C2-B-085, C2-I-079, C2-B-081, C2-N-060)",
@@ -633,7 +642,7 @@
       "channel": "parse",
       "status": "renamed",
       "renamed_from": "duplicate-heading-id",
-      "messages": ["Duplicate authored id \"${explicit}\": the first node in document order wins id lookup. Change one id."],
+      "messages": [{"when": "every finding of this code", "text": "Duplicate authored id \"${explicit}\": the first node in document order wins id lookup. Change one id."}],
       "message_origin": "data_file",
       "channel_reports": "a second node with one authored id (C2-A-039)",
       "change": "renamed from `duplicate-heading-id`; covers a duplicate authored id on every node (C2-A-039)",
@@ -776,11 +785,11 @@
       "severity": "warning",
       "channel": "parse",
       "status": "kept",
-      "messages": [{"when": "a code fence type is followed by typographic quotation marks around a title", "text": "The title after \"${type}\" uses typographic quotes. Check whether a smart quote filter changed the source; a fence title needs straight double quotes: ${fence} ${type} \"${title}\"${label}."}, {"when": "a code fence type is followed by unquoted title text", "text": "Text after \"${type}\" must be a quoted title or a [label]; it is not read as a title. Write ${fence} ${type} \"${title}\"${label}."}, {"when": "further words after a raw format, div name or sigil, a title after a label, a spaced brace block, or a character glued to a type that is no valid attribute block", "text": "These further words are not read as a title, label or attributes. The block opens without them. Use \"${correctedOpener}\" for the same block with only valid opener parts; put attributes on their own line above it."}, {"when": "a second space follows the backtick fence run, or a tab immediately behind that run leaves the language empty", "text": "The whitespace in this fence opener is invalid: at most one space follows the fence, and info-string parts use spaces, never tabs. The block opens with no language; write \"${respaced}\"."}, {"when": "a tab separates a parsed language or div name from later info-string parts", "text": "The tab does not separate valid info-string parts; the block keeps its language or div name, but does not keep the later title or label. Use \"${respaced}\" with spaces between parts."}],
-      "message_notes": ["`${label}` is a space followed by the bracketed label when one is present, and the empty string otherwise.", "`${correctedOpener}` keeps the fence run and any valid type, title and label before the further words, omitting the further words; attributes go on their own line above it.", "`${respaced}` has one space after the fence run and between valid info-string parts, with no tab; where no info-string part is valid it is the fence run alone."],
+      "messages": [{"when": "an anonymous div opener has unrecognized further words after the fence run", "text": "These words are not part of the anonymous div opener; it opens without them. Remove the words or use a named div."}, {"when": "a code fence has a valid quoted title followed by further words", "text": "These words follow a valid title and are not part of the code fence opener. Remove them or put them in the block body."}, {"when": "a code fence type is followed by typographic quotation marks around a title", "text": "The title after \"${type}\" uses typographic quotes. Check whether a smart quote filter changed the source; a fence title needs straight double quotes: ${fence} ${type} \"${title}\"${label}."}, {"when": "a code fence type is followed by unquoted title text", "text": "Text after \"${type}\" must be a quoted title or a [label]; it is not read as a title. Write ${fence} ${type} \"${title}\"${label}."}, {"when": "further words after a raw format, div name (including a tab before later words) or sigil, a title after a label, a spaced brace block, or a character glued to a type that is no valid attribute block", "text": "These further words are not read as a title, label or attributes. The block opens without them. Use \"${correctedOpener}\" for the same block with only valid opener parts; put attributes on their own line above it."}, {"when": "a second space follows the backtick fence run, or a tab immediately behind that run leaves the language empty", "text": "The whitespace in this fence opener is invalid: at most one space follows the fence, and info-string parts use spaces, never tabs. The block opens with no language; write \"${respaced}\"."}, {"when": "a tab separates a parsed code-fence language from later info-string parts", "text": "The tab does not separate valid info-string parts; the block keeps its language, but does not keep the later title or label. Use \"${respaced}\" with spaces between parts."}],
+      "message_notes": ["`${label}` is a space followed by the bracketed label when one is present, and the empty string otherwise.", "`${correctedOpener}` keeps the fence run and any valid type, title and label before the further words, omitting the further words; attributes go on their own line above it.", "`${respaced}` has one space after the fence run and between valid info-string parts, with no tab; where no info-string part is valid it is the fence run alone.", "`${fence}` is the authored fence run; `${type}` is the parsed code-fence language; `${title}` is the authored title text without its surrounding quotes when quoted, otherwise the later text proposed as a title. These values come from the reported opener; if a value is absent, substitute the empty string."],
       "message_origin": "data_file",
       "channel_reports": "an unquoted title or further words in an info string (C2-B-117)",
-      "reports": "the further words of a code fence or div opener, once per opener: what follows the run and the optional language word, raw format, div name or sigil and is not a title in straight double quotes and then a label in brackets, in that order, such as an unquoted or typographically quoted title, a title after the label, a brace block after a space, a character glued to the word that starts no valid attribute block, any text after the format of a raw fence or after a sigil, and the text after a second space behind a backtick run; the range runs from the first character of the further words to the end of the opener line text (C2-B-122, C2-B-117, C2-B-225)",
+      "reports": "the further words of a code fence or div opener, once per opener: what follows the run and the optional language word, raw format, div name or sigil and is not a title in straight double quotes and then a label in brackets, in that order, such as an unquoted or typographically quoted title, a title after the label, a brace block after a space, a character glued to the word that starts no valid attribute block, any text after the format of a raw fence or after a sigil, and the text after a second space or a tab behind a bare backtick run; the range runs from the first character of the further words (the tab itself for a bare-run tab) to the end of the opener line text (C2-B-122, C2-B-117, C2-B-225)",
       "clauses": ["C2-B-122", "C2-B-117", "C2-B-225"]
     },
     {
@@ -1230,7 +1239,7 @@
       "status": "new",
       "messages": ["Include \"${path}\" was not expanded: the path leads outside the include root."],
       "message_origin": "data_file",
-      "reports": "a target whose canonical path lies outside the containment root, whether or not it exists (C2-N-012, C2-N-013)",
+      "reports": "a URI-scheme path or a target whose canonical path lies outside the containment root, whether or not it exists (C2-N-012, C2-N-013)",
       "change": "0.1 reported it as include-unresolved",
       "clauses": ["C2-N-012", "C2-N-013", "C2-N-061"]
     },
@@ -1308,7 +1317,7 @@
       "messages": ["Include \"${path}\" could not be resolved."],
       "message_origin": "engine_0_1",
       "reports": "an include directive that was not expanded, whatever the cause (C2-H-133, C2-N-070)",
-      "change": "a render loss only; the cause is reported by its own code in the parse channel (C2-N-061)",
+      "change": "a render loss only; the cause is reported by its own code in the parse channel (C2-N-061), so a render of an unexpanded include without a resolver reports both include-no-resolver and include-unresolved in their separate channels",
       "clauses": ["C2-H-133", "C2-N-070"]
     },
     {
@@ -1489,7 +1498,7 @@
         "${host} re-linkifies a hash-number in published output, so \"${text}\" becomes a link that notifies or references something unrelated; move the example into a fenced code block, or rewrite it as \"item 1\" / \"point 1\"."
       ],
       "message_origin": "engine_0_1",
-      "reports": "with the platform `github` selected, a `#` followed by one or more ASCII digits, where the character before the `#` is not an ASCII letter, digit, `_`, `#` or `/` and the character after the digits is none of those nor `-`, in paragraph, heading, cell, term or caption text, with inline code expressly included; bare URLs are masked; once per run (C2-W-109, C2-I-092)",
+      "reports": "with the platform `github` selected, a `#` followed by one or more ASCII digits, where the character before the `#` is not an ASCII letter, digit, `_`, `#` or `/` and the character after the digits is none of those nor `-`, in paragraph, heading, cell, term, caption or line of a line block text, with inline code expressly included; bare URLs and unreferenced footnote definitions are masked; once per run (C2-W-109, C2-I-092)",
       "clauses": ["C2-W-109", "C2-I-092"]
     },
     {
@@ -1502,7 +1511,7 @@
         "${host} re-linkifies an at-prefixed word in published output, so \"${text}\" becomes a link that notifies or references something unrelated; move the example into a fenced code block, or strip the sigil and rephrase."
       ],
       "message_origin": "engine_0_1",
-      "reports": "with the platform `github` selected, an at-sign followed by a name, which is an ASCII letter, digit or `_` and then letters, digits, `_` and `-`, with interior dots each followed by such a character, where the character before the at-sign is not an ASCII letter, digit, `_`, at-sign, `.`, `-` or `/`, in paragraph, heading, cell, term or caption text, with inline code expressly included; bare URLs are masked; the range is the at-sign and the name, once per token (C2-W-109, C2-I-090, C2-I-092)",
+      "reports": "with the platform `github` selected, an at-sign followed by a name, which is an ASCII letter, digit or `_` and then letters, digits, `_` and `-`, with interior dots each followed by such a character, where the character before the at-sign is not an ASCII letter, digit, `_`, at-sign, `.`, `-` or `/`, in paragraph, heading, cell, term, caption or line of a line block text, with inline code expressly included; bare URLs and unreferenced footnote definitions are masked; the range is the at-sign and the name, once per token (C2-W-109, C2-I-090, C2-I-092)",
       "clauses": ["C2-W-109", "C2-I-090", "C2-I-092"]
     },
     {
@@ -1531,7 +1540,7 @@
       "severity": "warning",
       "channel": "render-loss",
       "status": "kept",
-      "messages": ["Dropped ${kind} raw format \"${format}\" while rendering ${target}"],
+      "messages": [{"when": "every finding of this code", "text": "Dropped ${kind} raw format \"${format}\" while rendering ${target}"}],
       "message_origin": "engine_0_1",
       "reports": "raw content in a format the target does not write (C2-H-054)",
       "clauses": ["C2-H-054", "C2-H-132"]
@@ -1574,11 +1583,11 @@
       "status": "kept",
       "default": "on",
       "messages": [
-        "\"${name}\" is a semantic span attribute (PART 9 §10) and only applies to an ordinary [content]{attrs} span; on ${type} it stays a raw attribute and renders as ${name}=\"${value}\"."
+        "\"${name}\" is a semantic span attribute (PART 9 §10) and only applies to an ordinary [content]{attrs} span; on ${type} it stays a raw attribute and is subject to HTML attribute filtering."
       ],
       "message_origin": "engine_0_1",
       "change": "it fires for each of the keys `abbr`, `time` and `kbd` (C2-H-075) on a node that is not a span",
-      "reports": "a key `abbr`, `time` or `kbd`, in lower case, in the attributes of a node that is not a span, as a heading, a paragraph, a list, a quote, a table, a code span, a link or an image, which stays an ordinary attribute there, once per key; a key in another case is not reported; the range is the key (C2-H-075)",
+      "reports": "an authored key `abbr`, `time` or `kbd`, in lower case before attribute merging, in the attributes of a node that is not a span, as a heading, a paragraph, a list, a quote, a table, a code span, a link or an image, which stays an ordinary attribute there, once per key; a key in another case is not reported; the range is the key (C2-H-075)",
       "clauses": ["C2-H-075"]
     },
     {
@@ -1737,9 +1746,10 @@
       "channel": "lint",
       "status": "kept",
       "default": "on",
-      "messages": ["This table-shaped line lacks a closing pipe and renders as paragraph text; close the table row."],
+      "messages": ["This table-shaped line lacks a closing pipe and stays as ${owner} text. If a table row was intended, write a complete row where a table can start."],
       "message_origin": "engine_0_1",
       "change": "stays: a line that starts with a pipe and does not end with one is text (C2-B-168)",
+      "message_notes": ["`${owner}` is the parsed text owner of this source line: `paragraph`, `heading`, `cell`, `term`, `caption`, or `line-block line`. For `# H` followed by `  | a`, it is `heading`."],
       "reports": "a line of text that starts with a pipe after its quote marks and indent and does not end with a closing pipe as C2-B-166 and C2-B-167 say, once per line: its last pipe is escaped or stands in a code span, or something other than a row attribute, a line comment after whitespace and trailing spaces and tabs follows it; a line that is a single pipe is not reported; the range runs from the pipe to the end of the line text (C2-B-168, C2-B-166, C2-B-167)",
       "clauses": ["C2-B-168", "C2-B-166", "C2-B-167"]
     },
@@ -1810,7 +1820,7 @@
       "channel": "lint",
       "status": "kept",
       "default": "on",
-      "messages": [{"when": "the attribute line reaches the end of its container or document", "text": "This attribute line reaches no block: a blank line or the end of its container follows, so the line is text (C2-B-192). Move it directly above the block it describes, or delete it."}, {"when": "a blank line follows the attribute line in its container", "text": "This attribute line is separated from its block by a blank line, so it is text. Remove the blank line."}],
+      "messages": [{"when": "the attribute line reaches the end of its container or document without a following blank line", "text": "This attribute line reaches no block: a blank line or the end of its container follows, so the line is text (C2-B-192). Move it directly above the block it describes, or delete it."}, {"when": "a blank line follows the attribute line in its container, whether or not a block follows that blank line", "text": "A blank line follows this attribute line, so it is text. Remove the blank line if you mean to attach it to a following block."}],
       "message_origin": "data_file",
       "change": "also an attribute line separated from its block by a blank line, which is text",
       "reports": "an attribute line, or a run of consecutive attribute lines reported once at its first line, that no block takes because the end of its container or of the document follows, and since 0.2 also one that a blank line follows; once per run, the range is the attribute line (C2-B-090, C2-B-092, C2-B-192)",
@@ -1878,9 +1888,7 @@
       "severity": "error",
       "channel": "parse",
       "status": "kept",
-      "messages": [
-        "The ${opener} comment fence opened here has no closing fence and hides everything to the end of its container (or: the document). Add a closing ${opener} where the comment should stop."
-      ],
+      "messages": [{"when": "every finding of this code", "text": "The ${opener} comment fence opened here has no closing fence and hides everything to the end of its container (or: the document). Add a closing ${opener} where the comment should stop."}],
       "message_origin": "engine_0_1",
       "channel_reports": "a comment block that runs to the end of its container (C2-B-111)",
       "change": "severity error; the block ends with its container (C2-B-111)",
@@ -1953,9 +1961,10 @@
       "channel": "lint",
       "status": "kept",
       "default": "on",
-      "messages": [{"when": "the unresolved reference is a link and a label or heading differs from its key only in case", "text": "Reference link ${rawRef} matches no link definition or heading; ${caseOnlyPhrase}, and reference labels are case-sensitive, so it renders as literal text."}, {"when": "the unresolved reference is a link with no label or heading that differs only in case", "text": "Reference link ${rawRef} has no matching link definition or heading; it renders as literal text."}, {"when": "the unresolved reference is an image and a link definition label differs from its key only in case", "text": "Reference image ${rawRef} matches no link definition; ${caseOnlyPhrase}, and reference labels are case-sensitive, so it renders as literal text."}, {"when": "the unresolved reference is an image with no link definition label that differs only in case", "text": "Reference image ${rawRef} has no matching link definition; it renders as literal text."}],
+      "messages": [{"when": "the unresolved reference is a link and a label or heading differs from its key only in case", "text": "Reference link ${rawRef} matches no link definition or heading; ${caseOnlyPhrase}, and reference labels are case-sensitive, so its brackets and label remain literal, while link-text children render normally."}, {"when": "the unresolved reference is a link with no label or heading that differs only in case", "text": "Reference link ${rawRef} has no matching link definition or heading; its brackets and label remain literal, while link-text children render normally."}, {"when": "the unresolved reference is an image and a link definition label differs from its key only in case", "text": "Reference image ${rawRef} matches no link definition; ${caseOnlyPhrase}, and reference labels are case-sensitive, so its marker, brackets, label and alt text render as literal text."}, {"when": "the unresolved reference is an image with no link definition label that differs only in case", "text": "Reference image ${rawRef} has no matching link definition; its marker, brackets, label and alt text render as literal text."}],
       "message_origin": "engine_0_1",
       "change": "the full form and a wrapped label now reach the heading lookup (C2-I-080, C2-I-081)",
+      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id \"X\" differs only in case` for one candidate, `the ids \"X\" and \"Y\" differ only in case` for two, and `the ids \"X\", \"Y\", and \"Z\" differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id."],
       "reports": "a full or collapsed reference, link or image, whose key matches no link definition and, for a link, no heading by the lookup of C2-I-084, once per reference; a shortcut forms only from a definition and is text otherwise, so it is never reported, and a wrapped label folds its line break to one space; the range is the reference (C2-I-081, C2-I-080, C2-A-109)",
       "clauses": ["C2-I-081", "C2-I-080", "C2-A-109", "C2-I-084"]
     },

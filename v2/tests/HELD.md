@@ -1,4 +1,24 @@
-# Held tests at freeze candidate 12
+# Held tests at freeze candidate 14
+
+- `lint_rules::lint_colon_fence_length_mismatch` - Candidate 14 catalog message changed; lint is outside the core stage.
+- `lint_rules::lint_table_shaped_paragraph` - Candidate 14 catalog message changed; lint is outside the core stage.
+- `conformance::CC-506` - Generic render option rejection is a tooling API contract outside the core stage.
+- `conformance::CC-509` - Generic parse option rejection is a tooling API contract outside the core stage.
+- `conformance::CC-510` - Generic render option rejection is a tooling API contract outside the core stage.
+- `conformance::CC-511` - Generic render option rejection is a tooling API contract outside the core stage.
+- `conformance::CC-557` - Suppressed diagnostic accounting is a tooling API contract outside the core stage.
+- `conformance::CC-617` - Suppressed diagnostic accounting is a tooling API contract outside the core stage.
+- `conformance::CC-618` - Suppressed diagnostic accounting is a tooling API contract outside the core stage.
+- `conformance::CC-454` - Supplied extension fallback loss path is outside the core stage.
+- `conformance::CC-455` - Supplied extension fallback loss path is outside the core stage.
+- `conformance::CC-456` - Nested extension fallback loss path is outside the core stage.
+- `conformance::CC-457` - Supplied extension fallback loss path is outside the core stage.
+- `conformance::CC-458` - Extension fallback and profile loss paths are outside the core stage.
+- `conformance::CC-459` - Extension fallback and nested destination loss paths are outside the core stage.
+- `conformance::CC-468` - Standard tab placement validation is outside the core stage.
+- `conformance::CC-474` - Extension slot nesting validation is outside the core stage.
+- `conformance::CC-663` - Extension fallback loss path is outside the core stage.
+- `conformance::CC-664` - Extension renderer registration is outside the core stage.
 
 - `lint_rules::lint_block_opener_overindented` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
 - `lint_rules::lint_blockquote_marker_without_space` — Lint reporting or message changed at candidate 12; lint is outside the core stage.

@@ -43,6 +43,7 @@ pub struct Finding {
 #[derive(Debug, Clone)]
 struct Container {
     kind: Kind,
+    start: usize,
     /// Offset of the end of the last thing it holds, for its position.
     end: usize,
 }
@@ -233,6 +234,7 @@ pub(crate) fn scan_with_frontmatter(src: &Source, allow_frontmatter: bool) -> Bl
         events: Vec::new(),
         stack: vec![Container {
             kind: Kind::Document,
+            start: 0,
             end: 0,
         }],
         leaf: None,
@@ -381,7 +383,9 @@ impl<'a> Parser<'a> {
         };
         *end = e;
         if shapes::frontmatter_closer(text) {
+            self.fence_closes = true;
             self.close_leaf();
+            self.fence_closes = false;
         } else {
             value.push_str(text);
             value.push('\n');
@@ -837,6 +841,8 @@ impl<'a> Parser<'a> {
         let (code, ch) = match open.leaf {
             Leaf::Code { .. } => ("unclosed-code-fence", b'`'),
             Leaf::CommentBlock { .. } => ("unclosed-comment-fence", b'%'),
+            Leaf::Frontmatter { .. } => ("unclosed-frontmatter", b'-'),
+            Leaf::LineBlock { .. } => ("unclosed-container-fence", b':'),
             _ => return,
         };
         let text = self.src.text();
@@ -870,6 +876,16 @@ impl<'a> Parser<'a> {
         self.findings.push(Finding {
             code: "fence-title-syntax",
             message: 1,
+            start,
+            end,
+            values: Vec::new(),
+        });
+    }
+
+    pub(super) fn fence_opener_fallback(&mut self, start: usize, end: usize) {
+        self.findings.push(Finding {
+            code: "fence-opener-fallback",
+            message: 0,
             start,
             end,
             values: Vec::new(),
@@ -935,6 +951,17 @@ impl<'a> Parser<'a> {
             self.stack.push(c);
             return;
         }
+        if !self.fence_closes
+            && let Kind::Div { len, .. } = c.kind
+        {
+            self.findings.push(Finding {
+                code: "unclosed-container-fence",
+                message: 0,
+                start: c.start,
+                end: c.start + len,
+                values: vec![("width", len.to_string()), ("kind", "container".into())],
+            });
+        }
         let loose = match c.kind {
             Kind::List { loose, .. } => Some(loose),
             _ => None,
@@ -974,7 +1001,7 @@ impl<'a> Parser<'a> {
             start,
             attrs: attrs.map(Box::new),
         });
-        self.stack.push(Container { kind, end });
+        self.stack.push(Container { kind, start, end });
         self.closed = None;
     }
 
