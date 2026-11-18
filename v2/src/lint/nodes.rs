@@ -363,21 +363,23 @@ fn link(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_
         sink.emit("empty-link-destination", item, &[], 0);
     }
     if let Some(href) = node["href"].as_str() {
-        if href.starts_with('#')
-            && sink.options.extensions.is_empty()
-            && !href[1..].eq_ignore_ascii_case("top")
-            && !ids.contains(&href[1..])
-        {
-            let case_only = ids.iter().find(|id| id.eq_ignore_ascii_case(&href[1..]));
-            if let Some(case_only) = case_only {
-                sink.emit(
-                    "broken-fragment-link",
-                    item,
-                    &[("href", href), ("caseOnly", case_only)],
-                    0,
-                );
-            } else {
-                sink.emit("broken-fragment-link", item, &[("href", href)], 1);
+        if let Some(raw_fragment) = href.strip_prefix('#') {
+            let fragment = percent_decode_fragment(raw_fragment);
+            if sink.options.extensions.is_empty()
+                && !fragment.eq_ignore_ascii_case("top")
+                && !ids.contains(&fragment)
+            {
+                let case_only = ids.iter().find(|id| id.eq_ignore_ascii_case(&fragment));
+                if let Some(case_only) = case_only {
+                    sink.emit(
+                        "broken-fragment-link",
+                        item,
+                        &[("href", href), ("caseOnly", case_only)],
+                        0,
+                    );
+                } else {
+                    sink.emit("broken-fragment-link", item, &[("href", href)], 1);
+                }
             }
         }
     }
@@ -418,6 +420,28 @@ fn link(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_
     if node.get("key").is_some() && node.get("href").is_none() {
         unresolved_reference(item, root, sink);
     }
+}
+
+fn percent_decode_fragment(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes.get(at) == Some(&b'%')
+            && let (Some(a), Some(b)) = (bytes.get(at + 1), bytes.get(at + 2))
+            && let (Some(high), Some(low)) =
+                (char::from(*a).to_digit(16), char::from(*b).to_digit(16))
+        {
+            decoded.push(u8::try_from(high * 16 + low).unwrap_or_default());
+            at += 3;
+        } else {
+            if let Some(byte) = bytes.get(at) {
+                decoded.push(*byte);
+            }
+            at += 1;
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
 }
 
 fn unresolved_reference(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
