@@ -433,6 +433,8 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
         Ok((html, losses)) => {
             let mut places = places.into_iter();
             let source = source::Source::new(input);
+            let raw_losses = raw_loss_nodes(input, opts);
+            let mut raw_losses = raw_losses.iter();
             let loss_diags: Vec<_> = losses
                 .iter()
                 .map(|c| {
@@ -442,8 +444,15 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
                     } else {
                         None
                     };
-                    let pos = loss_position(c, &source, opts, diags.as_slice());
-                    let (variant, values) = loss_message(c, source.text(), pos);
+                    let raw = if *c == "raw-format-dropped" {
+                        raw_losses.next()
+                    } else {
+                        None
+                    };
+                    let pos = raw
+                        .and_then(|r| r.pos)
+                        .or_else(|| loss_position(c, &source, opts, diags.as_slice()));
+                    let (variant, values) = loss_message(c, source.text(), pos, raw);
                     let values: Vec<_> = values
                         .iter()
                         .map(|(name, value)| (*name, value.as_str()))
@@ -466,10 +475,45 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     }
 }
 
+struct RawLoss {
+    kind: &'static str,
+    format: String,
+    pos: Option<ast::Pos>,
+}
+
+fn raw_loss_nodes(input: &str, opts: &Options) -> Vec<RawLoss> {
+    fn visit(nodes: &[ast::Node<'_>], out: &mut Vec<RawLoss>) {
+        for node in nodes {
+            match node {
+                ast::Node::RawBlock(raw) if raw.format != "html" => out.push(RawLoss {
+                    kind: "block",
+                    format: raw.format.to_string(),
+                    pos: raw.pos,
+                }),
+                ast::Node::RawInline(raw) if raw.format != "html" => out.push(RawLoss {
+                    kind: "inline",
+                    format: raw.format.to_string(),
+                    pos: raw.pos,
+                }),
+                _ => {}
+            }
+            node.for_each_child(&mut |child| visit(std::slice::from_ref(child), out));
+        }
+    }
+    let arena = Arena::for_input(input);
+    let Ok(doc) = parse_resolved_in(input, opts, &arena) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    visit(doc.children, &mut out);
+    out
+}
+
 fn loss_message(
     code: &str,
     source: &str,
     pos: Option<ast::Pos>,
+    raw: Option<&RawLoss>,
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
         "carrier-attribute-dropped" => {
@@ -495,25 +539,14 @@ fn loss_message(
             });
             (usize::from(image), Vec::new())
         }
-        "raw-format-dropped" => {
-            let block = source.find("```=").or_else(|| source.find("~~~="));
-            let kind = if block.is_some() { "block" } else { "inline" };
-            let format = block
-                .and_then(|at| source.get(at + 4..))
-                .or_else(|| source.split_once("{=").map(|(_, tail)| tail))
-                .unwrap_or("")
-                .chars()
-                .take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
-                .collect::<String>();
-            (
-                0,
-                vec![
-                    ("kind", kind.to_string()),
-                    ("format", format),
-                    ("target", "HTML".to_string()),
-                ],
-            )
-        }
+        "raw-format-dropped" => (
+            0,
+            vec![
+                ("kind", raw.map_or("", |r| r.kind).to_string()),
+                ("format", raw.map_or("", |r| r.format.as_str()).to_string()),
+                ("target", "HTML".to_string()),
+            ],
+        ),
         _ => (0, Vec::new()),
     }
 }

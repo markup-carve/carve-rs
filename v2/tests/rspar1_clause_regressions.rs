@@ -123,6 +123,26 @@ fn c2_h_054_raw_format_loss_uses_catalog_message() {
 }
 
 #[test]
+fn c2_h_054_multiple_raw_losses_keep_each_kind_and_format() {
+    let source = "`one`{=tex} and `two`{=latex}\n\n```=svg\nimage\n```\n";
+    let rendered = carve2::render_with_diagnostics(source, &Options::default());
+    let messages: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .filter(|finding| finding.code == "raw-format-dropped")
+        .map(|finding| finding.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "Dropped inline raw format \"tex\" while rendering HTML",
+            "Dropped inline raw format \"latex\" while rendering HTML",
+            "Dropped block raw format \"svg\" while rendering HTML",
+        ]
+    );
+}
+
+#[test]
 fn c2_h_075_semantic_attribute_range_is_the_key_and_value() {
     let attribute = findings("[x]{kbd=\"V\"}", "semantic-attribute-value-ignored");
     assert_eq!(attribute.len(), 1);
