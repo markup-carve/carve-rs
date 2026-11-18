@@ -163,7 +163,7 @@ pub(crate) struct RawLoss {
 pub(crate) struct CarrierLoss {
     pub key: String,
     pub pos: Option<crate::ast::Pos>,
-    pub search_start: u32,
+    pub regions: Vec<(u32, u32)>,
 }
 
 /// About the output length: twice the source length the tree covers.
@@ -671,7 +671,7 @@ fn reserved_losses(
                 carriers.push(CarrierLoss {
                     key: key.to_string(),
                     pos: node.pos().copied(),
-                    search_start: carrier_attribute_start(node),
+                    regions: carrier_attribute_regions(node),
                 });
             }
             if !url::filter_value_in(key, value, None).is_empty()
@@ -692,14 +692,29 @@ fn reserved_losses(
     });
 }
 
-fn carrier_attribute_start(node: &Node<'_>) -> u32 {
-    let mut start = node.pos().map_or(0, |pos| pos.start_offset);
+fn carrier_attribute_regions(node: &Node<'_>) -> Vec<(u32, u32)> {
+    let Some(span) = node.pos() else {
+        return Vec::new();
+    };
+    let mut children = Vec::new();
     node.for_each_child(&mut |child| {
         if let Some(pos) = child.pos() {
-            start = start.max(pos.end_offset);
+            children.push(*pos);
         }
     });
-    start
+    children.sort_by_key(|pos| pos.start_offset);
+    let mut regions = Vec::new();
+    let mut cursor = span.start_offset;
+    for child in children {
+        if cursor < child.start_offset {
+            regions.push((cursor, child.start_offset));
+        }
+        cursor = cursor.max(child.end_offset);
+    }
+    if cursor < span.end_offset {
+        regions.push((cursor, span.end_offset));
+    }
+    regions
 }
 
 /// The id a heading carries: authored, else generated.

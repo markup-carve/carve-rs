@@ -560,14 +560,20 @@ fn carrier_loss_position(
 ) -> Option<ast::Pos> {
     let node = loss.pos?;
     let id = (node.start_offset, node.end_offset);
-    let start = usize::try_from(loss.search_start)
-        .ok()?
-        .max(cursors.get(&id).copied().unwrap_or(0));
+    let cursor = cursors.get(&id).copied().unwrap_or(0);
+    let at = loss.regions.iter().find_map(|(from, to)| {
+        let start = usize::try_from(*from).ok()?.max(cursor);
+        let end = usize::try_from(*to).ok()?;
+        source
+            .text()
+            .get(start..end)?
+            .find(&loss.key)
+            .map(|at| at + start)
+    })?;
     let end = usize::try_from(node.end_offset).ok()?;
-    let at = source.text().get(start..end)?.find(&loss.key)? + start;
     let tail = source.text().get(at..end)?;
     let length = if tail.get(loss.key.len()..)?.starts_with('=') {
-        tail.find([' ', '\t', '}']).unwrap_or(tail.len())
+        tail.find([' ', '\t', '\n', '}']).unwrap_or(tail.len())
     } else {
         loss.key.len()
     };
