@@ -1013,23 +1013,16 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
         if !matches!(name, "abbr" | "time" | "kbd") {
             continue;
         }
-        if kind == "span"
-            && name == "kbd"
-            && !value.is_empty()
-            && let Some((from, _)) = bounds(item.node)
-            && let Some((at, end)) = semantic_attr_range(sink.raw(item), name, true)
-        {
-            sink.emit_range(
+        if kind == "span" && name == "kbd" && !value.is_empty() {
+            sink.emit(
                 "semantic-attribute-value-ignored",
-                from + at,
-                from + end,
-                &item.path,
+                item,
                 &[("name", name)],
                 0,
             );
         } else if kind != "span"
             && let Some((from, _)) = bounds(item.node)
-            && let Some((at, end)) = semantic_attr_range(sink.raw(item), name, false)
+            && let Some((at, end)) = semantic_attr_key_range(sink.raw(item), name)
         {
             sink.emit_range(
                 "semantic-attribute-outside-span",
@@ -1043,7 +1036,7 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
-fn semantic_attr_range(raw: &str, name: &str, with_value: bool) -> Option<(usize, usize)> {
+fn semantic_attr_key_range(raw: &str, name: &str) -> Option<(usize, usize)> {
     for (open, _) in raw.rmatch_indices('{') {
         let Some(close) = raw.get(open..).and_then(|tail| tail.find('}')) else {
             continue;
@@ -1059,43 +1052,14 @@ fn semantic_attr_range(raw: &str, name: &str, with_value: bool) -> Option<(usize
                 .get(key + name.len()..)
                 .and_then(|tail| tail.chars().next());
             if before.is_none_or(char::is_whitespace)
-                && (if with_value {
-                    after == Some('=')
-                } else {
-                    after.is_none_or(|c| c == '=' || c.is_whitespace())
-                })
+                && after.is_none_or(|c| c == '=' || c.is_whitespace())
             {
                 let at = open + 1 + key;
-                let end = if with_value {
-                    let value = body.get(key + name.len() + 1..)?;
-                    at + name.len() + 1 + attribute_value_end(value)
-                } else {
-                    at + name.len()
-                };
-                return Some((at, end));
+                return Some((at, at + name.len()));
             }
         }
     }
     None
-}
-
-fn attribute_value_end(value: &str) -> usize {
-    let mut quote = None;
-    let mut escaped = false;
-    for (offset, ch) in value.char_indices() {
-        if escaped {
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else if quote == Some(ch) {
-            quote = None;
-        } else if quote.is_none() && matches!(ch, '\'' | '"') {
-            quote = Some(ch);
-        } else if quote.is_none() && ch.is_whitespace() {
-            return offset;
-        }
-    }
-    value.len()
 }
 
 fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {

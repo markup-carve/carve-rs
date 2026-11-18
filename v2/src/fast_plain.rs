@@ -271,9 +271,7 @@ mod tests {
             opts,
             &arena,
             &mut Vec::new(),
-            &mut Vec::new(),
-            &mut Vec::new(),
-            &mut Vec::new(),
+            &mut super::super::RenderDetails::default(),
         )
         .map_or_else(|_| "render error".to_string(), |(html, _)| html)
     }

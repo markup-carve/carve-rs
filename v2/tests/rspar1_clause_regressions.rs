@@ -130,6 +130,32 @@ fn c2_h_116_reserved_carrier_names_appear_in_loss_messages() {
 }
 
 #[test]
+fn c2_h_116_multiple_carrier_losses_keep_their_own_keys() {
+    let source = "[a]{data-carve-raw=html} [b]{data-carve-ref=x}";
+    let rendered = carve2::render_with_diagnostics(source, &Options::default());
+    let losses: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .filter(|finding| finding.code == "carrier-attribute-dropped")
+        .collect();
+    assert_eq!(losses.len(), 2);
+    for (loss, expected) in losses
+        .iter()
+        .zip(["data-carve-raw=html", "data-carve-ref=x"])
+    {
+        assert!(
+            loss.message
+                .contains(expected.split('=').next().unwrap_or(""))
+        );
+        let pos = loss.pos.expect("carrier range");
+        assert_eq!(
+            &source[pos.start_offset as usize..pos.end_offset as usize],
+            expected
+        );
+    }
+}
+
+#[test]
 fn c2_h_054_raw_format_loss_uses_catalog_message() {
     let rendered = carve2::render_with_diagnostics("before\n\n```=latex\nx\n", &Options::default());
     let loss = rendered
@@ -247,22 +273,26 @@ fn c2_h_082_denied_destination_range_stays_before_trailing_attributes() {
 }
 
 #[test]
-fn c2_h_075_semantic_attribute_range_is_the_key_and_value() {
-    let attribute = findings("[x]{kbd=\"V\"}", "semantic-attribute-value-ignored");
+fn c2_h_075_semantic_value_finding_covers_the_span_as_clause_case_813() {
+    let source = "[x]{kbd=\"V\"}";
+    let attribute = findings(source, "semantic-attribute-value-ignored");
     assert_eq!(attribute.len(), 1);
     let pos = attribute[0].pos.expect("range");
-    assert_eq!((pos.start_offset, pos.end_offset), (4, 11));
+    assert_eq!(
+        (pos.start_offset, pos.end_offset),
+        (0, u32::try_from(source.len()).expect("small source"))
+    );
 }
 
 #[test]
-fn c2_h_075_semantic_attribute_range_skips_matching_span_text() {
+fn c2_h_075_semantic_value_finding_covers_matching_span_text() {
     let source = "[kbd=x]{kbd=v}";
     let findings = findings(source, "semantic-attribute-value-ignored");
     assert_eq!(findings.len(), 1);
     let pos = findings[0].pos.expect("attribute range");
     assert_eq!(
         &source[pos.start_offset as usize..pos.end_offset as usize],
-        "kbd=v"
+        source
     );
 }
 
@@ -284,7 +314,7 @@ fn c2_h_075_semantic_range_finds_an_earlier_glued_attribute_block() {
         (
             "[x]{kbd=v}{.c}",
             "semantic-attribute-value-ignored",
-            "kbd=v",
+            "[x]{kbd=v}{.c}",
         ),
         (
             "[x](u){kbd=v}{.c}",
@@ -303,17 +333,14 @@ fn c2_h_075_semantic_range_finds_an_earlier_glued_attribute_block() {
 }
 
 #[test]
-fn c2_h_075_semantic_value_range_ends_before_following_attributes() {
-    for (source, expected) in [
-        ("[x]{kbd=v .c}", "kbd=v"),
-        ("[x]{kbd=\"v w\" .c}", "kbd=\"v w\""),
-    ] {
+fn c2_h_075_semantic_value_finding_covers_the_span_with_later_attributes() {
+    for source in ["[x]{kbd=v .c}", "[x]{kbd=\"v w\" .c}"] {
         let findings = findings(source, "semantic-attribute-value-ignored");
         assert_eq!(findings.len(), 1, "{source}");
         let pos = findings[0].pos.expect("value range");
         assert_eq!(
             &source[pos.start_offset as usize..pos.end_offset as usize],
-            expected
+            source
         );
     }
 }

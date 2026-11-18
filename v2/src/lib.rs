@@ -254,9 +254,7 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         opts,
         &arena,
         &mut diags,
-        &mut Vec::new(),
-        &mut Vec::new(),
-        &mut Vec::new(),
+        &mut RenderDetails::default(),
     )?;
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
@@ -377,18 +375,24 @@ fn id_range(src: &source::Source<'_>, id: &str, pos: Option<ast::Pos>) -> Option
 }
 
 /// `places` gets the file of each unexpanded include of an expanded tree.
+#[derive(Default)]
+struct RenderDetails {
+    places: Vec<Option<String>>,
+    destinations: Vec<html::DestinationLoss>,
+    raws: Vec<html::RawLoss>,
+    carriers: Vec<html::CarrierLoss>,
+}
+
 fn render_parts(
     input: &str,
     opts: &Options,
     arena: &Arena,
     diags: &mut Vec<diagnostic::Diagnostic>,
-    places: &mut Vec<Option<String>>,
-    destinations: &mut Vec<html::DestinationLoss>,
-    raws: &mut Vec<html::RawLoss>,
+    details: &mut RenderDetails,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
     if let Some(files) = files {
-        include::unexpanded(doc.children, None, places);
+        include::unexpanded(doc.children, None, &mut details.places);
         let extra = if opts.roundtrip {
             include::roundtrip_losses(doc.children)
         } else {
@@ -406,8 +410,9 @@ fn render_parts(
             opts,
             src.text(),
             &files,
-            Some(destinations),
-            Some(raws),
+            Some(&mut details.destinations),
+            Some(&mut details.raws),
+            Some(&mut details.carriers),
         );
         losses.extend(extra);
         return Ok((out, losses));
@@ -419,11 +424,20 @@ fn render_parts(
             opts,
             src.render_view(),
             ordered,
-            Some(destinations),
-            Some(raws),
+            Some(&mut details.destinations),
+            Some(&mut details.raws),
+            Some(&mut details.carriers),
         )
     } else {
-        html::render_source(&doc, opts, input, ordered, Some(destinations), Some(raws))
+        html::render_source(
+            &doc,
+            opts,
+            input,
+            ordered,
+            Some(&mut details.destinations),
+            Some(&mut details.raws),
+            Some(&mut details.carriers),
+        )
     };
     Ok((out, losses))
 }
@@ -452,23 +466,15 @@ impl Rendered {
 pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     let arena = Arena::for_input(input);
     let mut diags = Vec::new();
-    let mut places = Vec::new();
-    let mut destinations = Vec::new();
-    let mut raws = Vec::new();
-    let html = match render_parts(
-        input,
-        opts,
-        &arena,
-        &mut diags,
-        &mut places,
-        &mut destinations,
-        &mut raws,
-    ) {
+    let mut details = RenderDetails::default();
+    let html = match render_parts(input, opts, &arena, &mut diags, &mut details) {
         Ok((html, losses)) => {
-            let mut places = places.into_iter();
+            let mut places = details.places.into_iter();
             let source = source::Source::new(input);
-            let mut raw_losses = raws.iter();
-            let mut destination_losses = destinations.iter();
+            let mut raw_losses = details.raws.iter();
+            let mut destination_losses = details.destinations.iter();
+            let mut carrier_losses = details.carriers.iter();
+            let mut carrier_cursor = 0;
             let loss_diags: Vec<_> = losses
                 .iter()
                 .map(|c| {
@@ -488,12 +494,23 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
                     } else {
                         None
                     };
+                    let carrier = if *c == "carrier-attribute-dropped" {
+                        carrier_losses.next()
+                    } else {
+                        None
+                    };
                     let pos = raw
                         .and_then(|r| r.pos)
                         .or_else(|| destination.and_then(|d| destination_loss_position(&source, d)))
                         .or_else(|| destination.and_then(|d| d.pos))
+                        .or_else(|| {
+                            carrier.and_then(|c| {
+                                carrier_loss_position(&source, c, &mut carrier_cursor)
+                            })
+                        })
+                        .or_else(|| carrier.and_then(|c| c.pos))
                         .or_else(|| loss_position(c, &source, opts, diags.as_slice()));
-                    let (variant, values) = loss_message(c, source.text(), pos, raw, destination);
+                    let (variant, values) = loss_message(c, raw, destination, carrier);
                     let values: Vec<_> = values
                         .iter()
                         .map(|(name, value)| (*name, value.as_str()))
@@ -536,24 +553,31 @@ fn destination_loss_position(
     Some(source.pos(at, at + loss.value.len()))
 }
 
+fn carrier_loss_position(
+    source: &source::Source<'_>,
+    loss: &html::CarrierLoss,
+    cursor: &mut usize,
+) -> Option<ast::Pos> {
+    let node = loss.pos?;
+    let start = usize::try_from(node.start_offset).ok()?.max(*cursor);
+    let end = usize::try_from(node.end_offset).ok()?;
+    let needle = format!("{}=", loss.key);
+    let at = source.text().get(start..end)?.find(&needle)? + start;
+    let tail = source.text().get(at..end)?;
+    let length = tail.find([' ', '\t', '}']).unwrap_or(tail.len());
+    *cursor = at + length;
+    Some(source.pos(at, at + length))
+}
+
 fn loss_message(
     code: &str,
-    source: &str,
-    pos: Option<ast::Pos>,
     raw: Option<&html::RawLoss>,
     destination: Option<&html::DestinationLoss>,
+    carrier: Option<&html::CarrierLoss>,
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
         "carrier-attribute-dropped" => {
-            let key = pos
-                .and_then(|position| {
-                    source.get(
-                        usize::try_from(position.start_offset).ok()?
-                            ..usize::try_from(position.end_offset).ok()?,
-                    )
-                })
-                .and_then(|attribute| attribute.split_once('='))
-                .map_or_else(String::new, |(key, _)| key.to_string());
+            let key = carrier.map_or_else(String::new, |loss| loss.key.clone());
             (0, vec![("key", key)])
         }
         "destination-denied" => (
@@ -702,7 +726,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
     let (out, losses) =
-        html::render_mapped_source(&doc, opts, src.render_view(), ordered, None, None);
+        html::render_mapped_source(&doc, opts, src.render_view(), ordered, None, None, None);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }
