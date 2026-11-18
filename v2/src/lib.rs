@@ -362,8 +362,12 @@ fn duplicate_definitions(
                 let marker_end = src
                     .text()
                     .get(start..end)
-                    .and_then(|line| line.find("]:"))
-                    .map_or(end, |at| start + at + 2);
+                    .and_then(|line| {
+                        let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+                        block::shapes::footnote_marker_len(&line[indent..])
+                            .map(|marker| start + indent + marker)
+                    })
+                    .unwrap_or(end);
                 src.pos(p.start(), marker_end)
             } else {
                 p

@@ -79,3 +79,24 @@ fn duplicate_ids_on_a_container_and_its_child_keep_distinct_ranges() {
         .collect();
     assert_eq!(found, [(4, 2, 4, 4), (6, 5, 6, 7)]);
 }
+
+#[test]
+fn duplicate_footnote_range_skips_escaped_closing_bracket() {
+    let input = "[^a\\]:b]: first\n\n[^a\\]:b]: second\n";
+    let out = carve2::render_with_diagnostics(input, &Options::default());
+    let finding = out
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "duplicate-footnote-definition")
+        .expect("duplicate footnote");
+    let pos = finding.pos.unwrap();
+    assert_eq!(
+        (
+            pos.start_line,
+            pos.start_column,
+            pos.end_line,
+            pos.end_column
+        ),
+        (3, 1, 3, 10)
+    );
+}
