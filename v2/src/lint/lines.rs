@@ -308,7 +308,12 @@ fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
 fn table_line(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.trim();
     if line.paragraph && text.starts_with('|') && !text.ends_with('|') {
-        sink.whole("table-shaped-paragraph", line, &[]);
+        let owner = match line.kind.as_str() {
+            "caption" => "caption",
+            "definition_term" => "term",
+            _ => "paragraph",
+        };
+        sink.whole("table-shaped-paragraph", line, &[("owner", owner)]);
         if text.matches('|').count() >= 2 {
             sink.whole("table-row-without-closing-pipe", line, &[]);
         }

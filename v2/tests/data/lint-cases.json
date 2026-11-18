@@ -503,7 +503,7 @@
     "trigger": "| a\n| b |\n",
     "near": "\n| b |\n",
     "fragment": "| a",
-    "message": "This table-shaped line lacks a closing pipe and stays as  text. If a table row was intended, write a complete row where a table can start."
+    "message": "This table-shaped line lacks a closing pipe and stays as paragraph text. If a table row was intended, write a complete row where a table can start."
   },
   {
     "id": "table-span-marker-blocked",

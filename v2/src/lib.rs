@@ -588,10 +588,10 @@ fn destination_loss_position(
 fn carrier_loss_position(
     source: &source::Source<'_>,
     loss: &html::CarrierLoss,
-    cursors: &mut std::collections::HashMap<(u32, u32), usize>,
+    cursors: &mut std::collections::HashMap<(Option<String>, u32, u32), usize>,
 ) -> Option<ast::Pos> {
     let node = loss.pos?;
-    let id = (node.start_offset, node.end_offset);
+    let id = (loss.file.clone(), node.start_offset, node.end_offset);
     let cursor = cursors.get(&id).copied().unwrap_or(0);
     let at = loss.regions.iter().find_map(|(from, to)| {
         let start = usize::try_from(*from).ok()?.max(cursor);

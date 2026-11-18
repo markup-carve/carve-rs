@@ -178,23 +178,18 @@ fn crossref(item: &Item<'_>, targets: &[IdTarget<'_>], sink: &mut Sink<'_>) {
             "broken-crossref",
             item,
             &[("target", key), ("id", target.id), ("kind", target.kind)],
-            1,
+            0,
         );
     } else if let Some(target) = targets
         .iter()
         .find(|target| target.eligible && target.id.eq_ignore_ascii_case(key))
     {
-        let noun = if target.kind == "heading" {
-            "heading"
-        } else {
-            "caption"
-        };
-        let phrase = format!("the {noun} \"{}\" differs only in case", target.id);
+        let phrase = format!("the id \"{}\" differs only in case", target.id);
         sink.emit(
             "broken-crossref",
             item,
             &[("target", key), ("caseOnlyPhrase", &phrase)],
-            0,
+            1,
         );
     } else {
         sink.emit("broken-crossref", item, &[("target", key)], 2);

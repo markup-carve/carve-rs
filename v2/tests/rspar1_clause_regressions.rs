@@ -305,6 +305,65 @@ fn c2_n_063_render_losses_use_the_expanded_files_positions() {
 }
 
 #[test]
+fn c2_n_063_carrier_ranges_do_not_collide_across_included_files() {
+    let included = "[x]{data-carve-ref}";
+    let resolver = Arc::new(move |request: &Request<'_>| {
+        if matches!(request.path, "one.crv" | "two.crv") {
+            Ok((included.as_bytes().to_vec(), request.path.to_string()))
+        } else {
+            Err(Cause::NotFound)
+        }
+    });
+    let opts = Options {
+        includes: Some(Includes::new(resolver)),
+        ..Options::default()
+    };
+    let rendered = carve2::render_with_diagnostics("{{ one.crv }}\n\n{{ two.crv }}", &opts);
+    let losses: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .filter(|finding| finding.code == "carrier-attribute-dropped")
+        .collect();
+    assert_eq!(losses.len(), 2);
+    for (loss, file) in losses.iter().zip(["one.crv", "two.crv"]) {
+        assert_eq!(loss.file.as_deref(), Some(file));
+        let pos = loss.pos.expect("included carrier range");
+        assert_eq!(
+            &included[pos.start_offset as usize..pos.end_offset as usize],
+            "data-carve-ref"
+        );
+    }
+}
+
+#[test]
+fn c2_i_096_crossref_case_variant_uses_the_catalog_phrase() {
+    let source = "{#intro}\n# Intro\n\nSee </#Intro>";
+    let crossrefs = findings(source, "broken-crossref");
+    assert_eq!(crossrefs.len(), 1);
+    assert_eq!(
+        crossrefs[0].message,
+        "Cross-reference </#Intro> matches no id; the id \"intro\" differs only in case, and cross-references are case-sensitive, so it renders as the literal text \"</#Intro>\"."
+    );
+}
+
+#[test]
+fn c2_w_103_nested_footnote_message_names_the_first_label() {
+    let footnotes = findings(
+        "- [^a b]: x\n  > [^a  b]: y",
+        "footnote-labels-differ-only-in-whitespace",
+    );
+    assert_eq!(footnotes.len(), 1);
+    assert!(footnotes[0].message.contains("same key as [^a b]"));
+}
+
+#[test]
+fn c2_b_168_table_shaped_paragraph_names_its_owner() {
+    let paragraphs = findings("| a | b |\n| c | d\n| e | f |", "table-shaped-paragraph");
+    assert_eq!(paragraphs.len(), 1);
+    assert!(paragraphs[0].message.contains("stays as paragraph text"));
+}
+
+#[test]
 fn c2_h_082_nested_image_alt_keeps_image_loss_variant() {
     let rendered = carve2::render_with_diagnostics("![a [b]](javascript:)", &Options::default());
     let loss = rendered

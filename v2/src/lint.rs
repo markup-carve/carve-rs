@@ -446,7 +446,7 @@ fn last_colon_opener(before: &str) -> usize {
 
 fn footnote_twin(before: &str, key: &str) -> Option<String> {
     before.lines().find_map(|line| {
-        let label = line.trim_start().strip_prefix("[^")?.split_once("]:")?.0;
+        let label = line.split_once("[^")?.1.split_once("]:")?.0;
         (crate::chars::fold_label(label) == key).then(|| label.to_string())
     })
 }
