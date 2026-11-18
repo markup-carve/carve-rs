@@ -223,6 +223,18 @@ fn c2_h_075_semantic_attribute_range_is_the_key_and_value() {
 }
 
 #[test]
+fn c2_h_075_semantic_attribute_range_skips_matching_span_text() {
+    let source = "[kbd=x]{kbd=v}";
+    let findings = findings(source, "semantic-attribute-value-ignored");
+    assert_eq!(findings.len(), 1);
+    let pos = findings[0].pos.expect("attribute range");
+    assert_eq!(
+        &source[pos.start_offset as usize..pos.end_offset as usize],
+        "kbd=v"
+    );
+}
+
+#[test]
 fn c2_h_082_denied_destination_uses_catalog_range_and_message() {
     let rendered = carve2::render_with_diagnostics("[](\u{202e}javascript:)", &Options::default());
     let loss = rendered

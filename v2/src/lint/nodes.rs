@@ -1017,13 +1017,17 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
             && name == "kbd"
             && !value.is_empty()
             && let Some((from, _)) = bounds(item.node)
-            && let Some(at) = sink.raw(item).find(&format!("{name}="))
-            && let Some(end) = sink.raw(item).get(at..).and_then(|raw| raw.find('}'))
+            && let Some(open) = sink.raw(item).rfind('{')
+            && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
+            && let Some(key) = sink
+                .raw(item)
+                .get(open + 1..open + close)
+                .and_then(|raw| raw.find(&format!("{name}=")))
         {
             sink.emit_range(
                 "semantic-attribute-value-ignored",
-                from + at,
-                from + at + end,
+                from + open + 1 + key,
+                from + open + close,
                 &item.path,
                 &[("name", name)],
                 0,
