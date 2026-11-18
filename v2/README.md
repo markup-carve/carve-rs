@@ -102,7 +102,7 @@ A request names the call with its `tooling.md` spelling:
 {"call": "renderWithDiagnostics", "source": "Hi *there*", "options": {"profile": "comment"}}
 ```
 
-Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`. In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` take host code (C2-T-010), so only their empty defaults are accepted.
+Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` take host code (C2-T-010), so only their empty defaults are accepted.
 
 The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 
@@ -160,7 +160,7 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 ## Spec gaps and engine choices
 
 - `tooling.md` gives `parse` a `positions` parameter. Here the tree in memory always carries positions, and `encode_tree_with(..., EncodeOptions { positions: false })` and the JSON request field `positions` drop them on output.
-- `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`.
-- `parse_with_diagnostics` and `render_with_diagnostics` on bytes with malformed UTF-8 replace the bad sequences first, so their ranges count the replaced text, not the input bytes. `parse` and `render` count input bytes.
+- `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`, or set with `Tree::set_file` on a decoded tree.
+- On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
 - The engine does not yet implement `parseWithLayout`, `importDocument`, `migrateTree`, the Carve writer (`format`, `write`) or the extension host. Each returns `Error::Unsupported`.
 - The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.

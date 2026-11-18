@@ -379,3 +379,27 @@ fn json_boundary_typed_failures() {
         assert_eq!(out["error"]["category"], "usage", "{name}");
     }
 }
+
+#[test]
+fn diagnostics_of_malformed_bytes_count_input_offsets() {
+    let text = "\u{FFFD}\u{FFFD}\n\n{{ a.crv }}\n";
+    let bytes: &[u8] = b"\xff\xfe\n\n{{ a.crv }}\n";
+    let from_text = api::parse_with_diagnostics(text, &opts()).unwrap();
+    let from_bytes = api::parse_with_diagnostics(bytes, &opts()).unwrap();
+    let start = |p: &api::Parsed| p.diagnostics[0].range.unwrap().start_offset;
+    assert_eq!(start(&from_text), 8);
+    assert_eq!(start(&from_bytes), 4);
+    let rendered = api::render_with_diagnostics(bytes, &opts()).unwrap();
+    assert_eq!(rendered.diagnostics[0].range.unwrap().start_offset, 4);
+}
+
+#[test]
+fn json_include_dependencies_take_the_top_level_file() {
+    let source = "{{ a.crv }}\n";
+    let tree = call(&json!({"call": "parse", "source": source}))["ok"]["tree"].clone();
+    let deps = call(&json!({"call": "includeDependencies", "tree": tree, "file": "main.crv"}));
+    assert_eq!(
+        deps["ok"]["dependencies"],
+        json!([{"path": "a.crv", "from": "main.crv", "read": false}])
+    );
+}

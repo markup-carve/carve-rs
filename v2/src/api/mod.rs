@@ -103,6 +103,40 @@ impl Input<'_> {
             Self::Bytes(b) => String::from_utf8_lossy(b),
         }
     }
+
+    /// C2-B-218: moves the ranges of entries found in [`Input::text`] back
+    /// to offsets of the input bytes.
+    fn remap(&self, entries: &mut [Entry]) {
+        let Self::Bytes(bytes) = self else { return };
+        if std::str::from_utf8(bytes).is_ok() {
+            return;
+        }
+        // (offset in the replaced text, offset in the input) at each chunk start
+        let mut marks = Vec::new();
+        let (mut text, mut raw) = (0usize, 0usize);
+        for chunk in bytes.utf8_chunks() {
+            marks.push((text, raw));
+            text += chunk.valid().len();
+            raw += chunk.valid().len();
+            if !chunk.invalid().is_empty() {
+                marks.push((text, raw));
+                text += '\u{FFFD}'.len_utf8();
+                raw += chunk.invalid().len();
+            }
+        }
+        marks.push((text, raw));
+        let map = |at: usize| {
+            let i = marks.partition_point(|m| m.0 <= at).saturating_sub(1);
+            marks.get(i).map_or(at, |&(t, r)| {
+                let next = marks.get(i + 1).map_or(usize::MAX, |m| m.1);
+                (r + (at - t)).min(next)
+            })
+        };
+        for range in entries.iter_mut().filter_map(|e| e.range.as_mut()) {
+            range.start_offset = map(range.start_offset);
+            range.end_offset = map(range.end_offset);
+        }
+    }
 }
 
 /// A resolved 2.0 tree that passed the reader checks (C2-A-188), with its
@@ -119,6 +153,13 @@ impl Tree {
     #[must_use]
     pub fn document(&self) -> &Document {
         &self.document
+    }
+
+    /// The id of the top-level document, which [`include_dependencies`]
+    /// gives as `from` of a top-level include. [`parse`] takes it from
+    /// `Includes::file`; a decoded tree has none until it is set here.
+    pub fn set_file(&mut self, file: Option<String>) {
+        self.top = file;
     }
 
     /// Takes the owned AST.
@@ -352,8 +393,9 @@ pub fn parse_with_diagnostics<'a>(
 ) -> Result<Parsed, Error> {
     let input = input.into();
     let tree = parse(input, opts)?;
-    let (diagnostics, suppressed_diagnostics) =
+    let (mut diagnostics, suppressed_diagnostics) =
         record::cap_includes(&crate::parse_diagnostics(&input.text(), opts));
+    input.remap(&mut diagnostics);
     Ok(Parsed {
         tree,
         diagnostics,
@@ -410,7 +452,9 @@ pub fn render_with_diagnostics<'a>(
     let input = input.into();
     check_length(input.len(), opts)?;
     let rendered = crate::render_with_diagnostics(&input.text(), opts);
-    finish_render(rendered, opts)
+    let mut rendered = finish_render(rendered, opts)?;
+    input.remap(&mut rendered.diagnostics);
+    Ok(rendered)
 }
 
 /// `renderWithDiagnostics` of a supplied tree.
@@ -452,10 +496,12 @@ fn finish_render(rendered: crate::Rendered, opts: &Options) -> Result<Rendered, 
 pub fn lint<'a>(input: impl Into<Input<'a>>, opts: &LintOptions) -> Result<Vec<Entry>, Error> {
     options::check_lint(opts)?;
     let input = input.into();
-    Ok(crate::lint::lint(&input.text(), opts)
+    let mut entries: Vec<Entry> = crate::lint::lint(&input.text(), opts)
         .iter()
         .map(Entry::from)
-        .collect())
+        .collect();
+    input.remap(&mut entries);
+    Ok(entries)
 }
 
 /// `importDocument` (C2-M-001): not available in this engine yet.
