@@ -6,6 +6,9 @@ on:
   push:
     branches: [next2]
     paths: ["v2/**", ".github/workflows/v2.yml", "Cargo.toml", "Cargo.lock"]
+  pull_request:
+    branches: [next2]
+    paths: ["v2/**", ".github/workflows/v2.yml", "Cargo.toml", "Cargo.lock"]
   workflow_dispatch:
 
 env:
@@ -49,6 +52,40 @@ jobs:
         run: cargo test -- --skip c2_fixed_oracle_corpus_and_clause_differences
       - name: Fixed oracle corpus and recorded clause differences
         run: cargo test --test corpus
+
+  # The public API as downstreams consume it: the packaged crate from a path
+  # dependency, the wasm32-wasip1 command that carve-go and hugo-carve run,
+  # and the wasm32 library that carve-wasm wraps.
+  api-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1, wasm32-unknown-unknown
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Format of the consumer
+        run: cargo fmt --check --manifest-path consumer-smoke/Cargo.toml
+      - name: Packaged crate in a downstream consumer
+        run: sh tools/consumer-smoke.sh "$RUNNER_TEMP/consumer"
+      - name: WASI command
+        run: |
+          cargo build --release --target wasm32-wasip1 --bin carve2
+          node tools/wasi-smoke.mjs ../target/wasm32-wasip1/release/carve2.wasm
+      - name: wasm32 library for wasm-bindgen
+        run: cargo build --release --target wasm32-unknown-unknown --lib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: carve2-wasm32-wasip1
+          path: target/wasm32-wasip1/release/carve2.wasm
 
   # The tables are normative and build.rs generates Rust from spec-data/.
   # Each file there must equal spec/0.2/data/ of the carve repository at the

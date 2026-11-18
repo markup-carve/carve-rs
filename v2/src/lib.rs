@@ -8,6 +8,12 @@
 //! [`parse_resolved`] return an owned copy ([`ast::owned`]) for callers that
 //! keep trees or deserialize them; `in_arena` and `owned` convert between the
 //! two. Both serialize to the same JSON.
+//!
+//! The public, stable library is the module [`api`]: the calls of
+//! `tooling.md`, typed errors, option validation, the writer registry and the
+//! JSON boundary for bindings. Every other module and item of the crate root
+//! is an engine internal that the engine's own tests reach; it is hidden from
+//! the documentation and may change without notice.
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
 // No panics on any input: the quality bar of the stage, enforced.
@@ -30,30 +36,55 @@
 // Generated AST constructors preserve their current field grouping.
 #![allow(clippy::inconsistent_struct_constructor)]
 
+pub mod api;
 mod arena;
+#[doc(hidden)]
 pub mod ast;
+#[doc(hidden)]
 pub mod attr;
+#[doc(hidden)]
 pub mod block;
+#[doc(hidden)]
 pub mod chars;
+#[doc(hidden)]
 pub mod diagnostic;
 mod fast_plain;
+#[doc(hidden)]
 pub mod hash;
+#[doc(hidden)]
 pub mod html;
+#[doc(hidden)]
 pub mod include;
+#[doc(hidden)]
 pub mod inline;
+#[doc(hidden)]
 pub mod lint;
+#[doc(hidden)]
 pub mod options;
 #[cfg(feature = "profile")]
 pub mod profile;
+#[doc(hidden)]
 pub mod reader;
+#[doc(hidden)]
 pub mod resolve;
+#[doc(hidden)]
 pub mod source;
+#[doc(hidden)]
 pub mod tables;
+#[doc(hidden)]
 pub mod tree;
 
+#[doc(hidden)]
 pub use arena::Arena;
+
+// The examples of README.md run as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;
+#[doc(hidden)]
 pub use options::Options;
 
+#[doc(hidden)]
 /// Parses source into the pre-resolve tree (stage parse), in `arena`. Text
 /// values that are slices of the input borrow it.
 ///
@@ -67,6 +98,7 @@ pub fn parse_in<'a>(input: &'a str, arena: &'a Arena) -> Result<ast::Document<'a
     Ok(tree::build(&src, arena, out.events, &out.own_starts))
 }
 
+#[doc(hidden)]
 /// Parses and resolves in `arena`: the tree `--tree` prints.
 ///
 /// # Errors
@@ -92,6 +124,7 @@ fn check_source_length(len: usize) -> Result<(), RenderError> {
     Ok(())
 }
 
+#[doc(hidden)]
 /// C2-B-218: parses bytes with replacement of malformed UTF-8 and original byte offsets.
 ///
 /// # Errors
@@ -111,6 +144,7 @@ pub fn try_parse_resolved_bytes_in<'a>(
     Ok(doc)
 }
 
+#[doc(hidden)]
 /// Parses source into an owned pre-resolve tree.
 ///
 /// # Errors
@@ -122,6 +156,7 @@ pub fn parse(input: &str) -> Result<ast::owned::Document, RenderError> {
     Ok(parse_in(input, &arena)?.owned())
 }
 
+#[doc(hidden)]
 /// Parses and resolves into an owned tree.
 ///
 /// # Errors
@@ -133,6 +168,7 @@ pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Documen
     Ok(parse_resolved_in(input, opts, &arena)?.owned())
 }
 
+#[doc(hidden)]
 /// Renders a supplied tree after running resolution anew (C2-A-135).
 ///
 /// # Errors
@@ -150,6 +186,7 @@ pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String
     Ok(html)
 }
 
+#[doc(hidden)]
 /// Renders a supplied tree and returns the render-loss record (C2-T-005).
 ///
 /// # Errors
@@ -196,6 +233,7 @@ fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
     None
 }
 
+#[doc(hidden)]
 /// Parses, resolves and renders HTML. A refused render (`try_render`)
 /// gives no output, the empty string.
 #[must_use]
@@ -203,6 +241,7 @@ pub fn render(input: &str, opts: &Options) -> String {
     try_render(input, opts).unwrap_or_default()
 }
 
+#[doc(hidden)]
 /// Why a render returned no output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderError {
@@ -227,6 +266,7 @@ impl std::fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
+#[doc(hidden)]
 /// Parses, resolves and renders HTML, or says why the render gives no
 /// output: an input over `max_length` is refused before it is parsed
 /// (C2-H-163), and under `strictLosses` a render loss is an error (C2-H-130).
@@ -538,6 +578,7 @@ fn render_parts(
     Ok((out, losses))
 }
 
+#[doc(hidden)]
 /// The HTML of a render and the findings of its parse and its render.
 #[derive(Debug, Clone, Default)]
 pub struct Rendered {
@@ -556,6 +597,7 @@ impl Rendered {
     }
 }
 
+#[doc(hidden)]
 /// Renders as [`render`] does and returns the findings of the parse
 /// channel (C2-N-061) and the render losses (C2-H-130) beside the HTML.
 #[must_use]
@@ -799,6 +841,7 @@ fn derived_overflow_pos(input: &str, opts: &Options) -> Option<ast::Pos> {
     None
 }
 
+#[doc(hidden)]
 /// C2-N-083: the dependencies of a document: its include nodes in tree
 /// order, each with its path as written, its including file and, when the
 /// file was read, its id. With no resolver every directive is unread.
@@ -813,6 +856,7 @@ pub fn dependencies(input: &str, opts: &Options) -> Vec<include::Dependency> {
     out
 }
 
+#[doc(hidden)]
 /// The JSON of the expanded and resolved tree (C2-A-165), every position of
 /// an included node naming its file (C2-N-019).
 #[must_use]
@@ -832,6 +876,7 @@ pub fn tree_json(input: &str, opts: &Options) -> String {
     v.to_string()
 }
 
+#[doc(hidden)]
 /// C2-B-218: renders bytes after replacing malformed UTF-8 subparts.
 ///
 /// # Errors
@@ -865,6 +910,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     Ok(out)
 }
 
+#[doc(hidden)]
 /// The JSON of a tree (C2-A-165).
 #[must_use]
 pub fn to_json(doc: &ast::Document<'_>) -> String {

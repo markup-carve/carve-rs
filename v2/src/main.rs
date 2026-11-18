@@ -17,6 +17,9 @@ fn main() {
     if arguments.first().map(String::as_str) == Some("lint") {
         std::process::exit(lint_cli::run(&arguments[1..]));
     }
+    if arguments.first().map(String::as_str) == Some("call") {
+        std::process::exit(call());
+    }
     let mut opts = carve2::Options::default();
     let mut entry = Entry::default();
     let Some(tree) = parse_args(&mut opts, &mut entry) else {
@@ -60,6 +63,20 @@ fn main() {
     let mut stdout = std::io::stdout();
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.write_all(b"\n");
+}
+
+/// `carve2 call`: one JSON request of `carve2::api::json` on standard
+/// input, its response on standard output; the status of its error.
+fn call() -> i32 {
+    let mut request = String::new();
+    if std::io::stdin().read_to_string(&mut request).is_err() {
+        return 2;
+    }
+    let response = carve2::api::json::call(&request);
+    let mut stdout = std::io::stdout();
+    let _ = stdout.write_all(response.as_bytes());
+    let _ = stdout.write_all(b"\n");
+    carve2::api::json::status(&response)
 }
 
 /// C2-N-004, C2-N-010, C2-N-014: an entry file expands against its own
