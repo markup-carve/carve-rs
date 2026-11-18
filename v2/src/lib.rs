@@ -371,19 +371,75 @@ fn duplicate_definitions(
 
 fn id_range(src: &source::Source<'_>, id: &str, pos: Option<ast::Pos>) -> Option<ast::Pos> {
     let pos = pos?;
-    let needle = format!("#{id}");
-    if let Some(offset) = src.text().get(pos.start()..pos.end())?.find(&needle) {
-        let start = pos.start() + offset;
-        return Some(src.pos(start, start + needle.len()));
+    if let Some(range) = id_attribute_range(src, id, pos.start(), pos.end()) {
+        return Some(range);
     }
     let previous = pos.start_line.saturating_sub(2) as usize;
     let (start, end) = src.line_range(previous);
     let line = src.text().get(start..end)?;
     if line.trim_start_matches([' ', '\t']).starts_with('{') {
-        let offset = line.find(&needle)?;
-        return Some(src.pos(start + offset, start + offset + needle.len()));
+        return id_attribute_range(src, id, start, end);
     }
     None
+}
+
+fn id_attribute_range(
+    src: &source::Source<'_>,
+    id: &str,
+    start: usize,
+    end: usize,
+) -> Option<ast::Pos> {
+    let raw = src.text().get(start..end)?;
+    let mut found = None;
+    for (open, _) in raw.match_indices('{') {
+        let Some((block, close)) = attr::parse_block(raw, open) else {
+            continue;
+        };
+        if block.attrs.id.as_deref() != Some(id) {
+            continue;
+        }
+        let body = raw.get(open + 1..close - 1)?;
+        if let Some((from, to)) = authored_id_token(body) {
+            found = Some(src.pos(start + open + 1 + from, start + open + 1 + to));
+        }
+    }
+    found
+}
+
+fn authored_id_token(body: &str) -> Option<(usize, usize)> {
+    let bytes = body.as_bytes();
+    let mut index = 0;
+    let mut found = None;
+    while index < bytes.len() {
+        while bytes.get(index) == Some(&b' ') {
+            index += 1;
+        }
+        let start = index;
+        let mut quoted = false;
+        let mut escaped = false;
+        while let Some(&byte) = bytes.get(index) {
+            if byte == b' ' && !quoted {
+                break;
+            }
+            if byte == b'"' && !escaped {
+                quoted = !quoted;
+            }
+            escaped = byte == b'\\' && !escaped;
+            index += 1;
+        }
+        if start == index {
+            break;
+        }
+        let token = body.get(start..index)?;
+        if token.starts_with('#')
+            || token
+                .split_once('=')
+                .is_some_and(|(key, _)| key.eq_ignore_ascii_case("id"))
+        {
+            found = Some((start, index));
+        }
+    }
+    found
 }
 
 /// `places` gets the file of each unexpanded include of an expanded tree.
