@@ -28,6 +28,10 @@ carve fmt README.crv
 carve migrate --from html page.html
 ```
 
+## Carve 0.2 library
+
+The Carve 0.2 engine is the crate `carve2` in [`v2/`](v2) on the `next2` branch. Its public API is the module `carve2::api`: the calls of the 0.2 tooling specification, typed errors, a writer registry, and a JSON boundary that bindings and the `wasm32-wasip1` command `carve2 call` share. See [the 0.2 API guide](v2/README.md), which also maps every 0.1 call the bindings use to its 0.2 counterpart.
+
 ## Documentation
 
 - [Carve documentation](https://markup-carve.github.io/carve/)

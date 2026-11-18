@@ -12,6 +12,7 @@ Start with the [Carve documentation](https://markup-carve.github.io/carve/) for 
 - [HTML import fanout measurements](html-import-fanout-performance.md)
 - [File inclusion](includes.md)
 - [Rust library API](library.md)
+- [Carve 0.2 library API and migration from 0.1](../v2/README.md)
 - [Linting](linting.md)
 - [Shared migration results](migration-result.md)
 - [Migrating into Carve](migration.md)

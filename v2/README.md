@@ -1,0 +1,166 @@
+# Carve 0.2 library API (`carve2::api`)
+
+The Carve 0.2 engine lives in this directory (`v2/`) on the `next2` branch, as the crate `carve2`. Its public library is the module `carve2::api`. The rest of the crate is engine internals: those modules are hidden from rustdoc and may change in any commit.
+
+The calls follow `spec/0.2/tooling.md` (C2-T-005), spelled the Rust way (C2-T-001): `parseWithDiagnostics` becomes `parse_with_diagnostics`, `strictLosses` becomes `strict_losses`. Run `cargo doc -p carve2 --open` for the full reference.
+
+## Calls
+
+| `tooling.md` | Rust | Status |
+|---|---|---|
+| `parse` | `api::parse(input, &Options) -> Result<Tree, Error>` | available |
+| `parseWithDiagnostics` | `api::parse_with_diagnostics` returns `Parsed { tree, diagnostics, suppressed_diagnostics }` | available |
+| `parseWithLayout` | `api::parse_with_layout` | `Error::Unsupported` for now |
+| `render` | `api::render(input, &Options)`, `api::render_tree(&Tree, &Options)` | available |
+| `renderWithDiagnostics` | `api::render_with_diagnostics`, `api::render_tree_with_diagnostics` return `Rendered { html, diagnostics, suppressed_diagnostics }` | available |
+| `format`, `formatWithDiagnostics` | `Carve::format`, `Carve::format_with_diagnostics` | `Error::Unsupported` until a `carve` writer is registered |
+| `write`, `writeWithDiagnostics` | `Carve::write`, `Carve::write_with_diagnostics`, `Carve::write_to(target, ...)` | `html` built in; `carve` pending |
+| `lint` | `api::lint(input, &LintOptions) -> Result<Vec<Entry>, Error>` | available |
+| `importDocument` | `api::import_document` | `Error::Unsupported` for now |
+| `includeDependencies` | `api::include_dependencies(&Tree)` | available |
+| `encodeTree`, `encodeEnvelope` | `api::encode_tree`, `api::encode_tree_with(&Tree, EncodeOptions { positions })`, `api::encode_envelope` | available |
+| `decodeTree`, `validateTree` | `api::decode_tree(&str)`, `api::validate_tree(&Tree)` | available |
+| `migrateTree` | `api::migrate_tree` | `Error::Unsupported` for now |
+
+`input` is anything that converts into `api::Input`: `&str`, `&String`, `&[u8]` or `&Vec<u8>`. Bytes are never refused for their encoding (C2-B-218).
+
+```rust
+use carve2::api::{self, Options};
+
+let opts = Options::default();
+let html = api::render("Hello *world*", &opts)?;
+let tree = api::parse("# Title", &opts)?;
+let json = api::encode_tree(&tree);
+let again = api::decode_tree(&json)?;
+assert_eq!(api::render_tree(&again, &opts)?, api::render("# Title", &opts)?);
+# Ok::<(), carve2::api::Error>(())
+```
+
+## Options
+
+`api::Options` holds the parse, resolution and render options of `data/options.json` (`heading_ids`, `mode`, `profile`, `raw_html`, `url_policy`, `includes` and the rest). `api::LintOptions` holds `rules`, `platforms` and `includes`, and `api::WriteOptions` holds `align_tables`, `normalize` and the render options a writer reads.
+
+Typed structs cannot carry an unknown option, so the refusals of C2-H-137 happen where options arrive as data: the JSON boundary refuses an unknown option, a value outside the option's range, and an option that no stage of the call reads (`alignTables` on `render`, for example). `api::lint` checks rule ids against `data/lint-rules.json` and platforms against `data/options.json` in both forms.
+
+Includes use the resolver of `includes.md`:
+
+```rust,no_run
+use carve2::api::{self, Includes, Options};
+use carve2::include::fs::resolver;
+
+let root = std::path::Path::new("docs");
+let opts = Options {
+    includes: Some(Includes::new(resolver(root).expect("readable root"))),
+    ..Options::default()
+};
+let tree = api::parse("{{ intro.crv }}", &opts)?;
+for dependency in api::include_dependencies(&tree) {
+    println!("{} read={}", dependency.path, dependency.file.is_some());
+}
+# Ok::<(), carve2::api::Error>(())
+```
+
+A host with its own storage passes any `Resolver`, a function from an `api::Request` to the file's bytes and id, or an `api::Cause`.
+
+## Errors
+
+Every call returns `api::Error`. Its variants are the library errors of C2-T-040, and `spec_name()`, `category()` and `status()` give the matching row:
+
+| Variant | `spec_name()` | `category()` | `status()` |
+|---|---|---|---|
+| `Option` | `CarveOptionError` | `usage` | 2 |
+| `Input` | `CarveInputError` | `input-invalid` | 2 |
+| `Render` | `CarveRenderError` | `render-loss` | 1 |
+| `Tree` | `CarveTreeError` | `ast-json-invalid` | 2 |
+| `Write` | `CarveWriteError` | `writer-refused` | 1 |
+| `ImportInput` | `ImportInputError` | `import-input-invalid` | 2 |
+| `Unsupported` | `CarveOptionError` | `usage` | 2 |
+
+`Unsupported` is not a row of C2-T-040. It marks a 0.2 call that this engine does not offer yet, so a host can test for it instead of matching a message.
+
+## Diagnostics
+
+A record entry is `api::Entry` with the library fields of C2-T-020: `code`, `severity`, `channel`, `message`, and, where they apply, `path`, `range` (`start_offset` and `end_offset` in UTF-8 bytes), `file` and `foreign_type`. It serializes with the spec's camelCase names. Include entries past `include_diagnostics` (100) are held back and counted in `suppressed_diagnostics` (C2-T-024).
+
+## Writers
+
+`api::Writer` is one interface for every output format that writes a resolved tree: a target name and `write(&Tree, &WriteOptions) -> Result<Written, Error>`. `Carve::new()` has the built-in `html` writer. Register more with `Carve::register_writer`; a second writer for the same target is refused.
+
+The 0.1 Markdown, plain-text and ANSI writers are coming to 0.2 (maintainer ruling, 2026-11-18). They will register as the targets `markdown`, `plain` and `ansi` on this interface, and the Carve writer as `carve`, so callers will not see an API break when they land.
+
+## Extensions (provisional)
+
+`api::extension` names what a host registers under `extensions.md`: an `ExtensionDeclaration`, renderers per `Channel` (interactive or build time, C2-X-052) and a `DocumentTransform` (C2-X-053). This engine does not run host renderers or transforms yet, so `Carve::register_extension` returns `Error::Unsupported`. These types may change before 0.2 is final.
+
+## Bindings and the JSON boundary
+
+`api::json::call(&str) -> String` takes one JSON request and returns one JSON response. Bindings (carve-py with PyO3, carve-rb with magnus, carve-wasm with wasm-bindgen) can wrap this single function instead of mirroring every Rust type, and hosts that run the WASI build use it through `carve2 call`.
+
+A request names the call with its `tooling.md` spelling:
+
+```json
+{"call": "renderWithDiagnostics", "source": "Hi *there*", "options": {"profile": "comment"}}
+```
+
+Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` take host code (C2-T-010), so only their empty defaults are accepted.
+
+The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
+
+```json
+{"error": {"name": "CarveOptionError", "category": "usage", "status": 2, "message": "option nope: unknown option"}}
+```
+
+## WASI command
+
+`carve2` builds for `wasm32-wasip1`:
+
+```sh
+cargo build --release --target wasm32-wasip1 --bin carve2
+echo '{"call":"render","source":"Hi"}' | wasmtime target/wasm32-wasip1/release/carve2.wasm call
+```
+
+`carve2 call` reads one request on standard input, writes the response and a line feed on standard output, and exits with the status of the error, or 0. carve-go and hugo-carve can run it under any WASI runtime. CI runs the build under Node's WASI runtime (`v2/tools/wasi-smoke.mjs`).
+
+## Migrating from 0.1 (`carve-lang`)
+
+The table maps the 0.1 calls that the bindings (carve-py, carve-rb, carve-wasm) use today. `pending` means the 0.2 call exists and returns `Error::Unsupported` until the engine implements it. `gone` means 0.2 has no counterpart.
+
+| 0.1 call | 0.2 call |
+|---|---|
+| `parse`, `parse_with_options` | `api::parse` |
+| `prepare_document_for_render` | `api::parse`: the tree it returns is resolved |
+| `to_html`, `to_html_with_options`, `try_to_html_with_options` | `api::render` |
+| `render_html`, `render_html_with_options` | `api::render_tree` |
+| `to_html_with_report`, `with_render_loss_report` | `api::render_with_diagnostics` |
+| `apply_profile_with_typography` | `Options::profile` and `Options::smart_typography` on `api::render` |
+| `to_json`, `try_to_json_with_options` | `api::parse` then `api::encode_tree` |
+| `from_json` | `api::decode_tree` (2.0 trees only) |
+| `expand_includes` | `Options::includes` on `api::parse` and `api::render` |
+| `select_include_region` | include options on the directive (`includes.md`), expanded by `api::parse` |
+| `lint_carve`, `lint_carve_with_options` | `api::lint` |
+| `lint_accessibility` | `api::lint`: `a11y/image-alt` and `heading-level-skip` are catalog rules |
+| `extensions::registry::by_key`, `extensions::registry::keys` | `Carve::register_extension` (provisional) |
+| `to_carve`, `render_carve`, `try_to_carve_with_options`, `to_carve_with_report` | `Carve::format`, `Carve::write` (pending) |
+| `to_markdown`, `render_markdown`, `render_markdown_with_options`, `try_to_markdown_with_options`, `to_markdown_with_report` | writer target `markdown` (pending port) |
+| `to_plain_text`, `render_plain_text`, `render_plain_text_with_options`, `try_to_plain_text_with_options`, `to_plain_text_with_report` | writer target `plain` (pending port) |
+| `to_ansi`, `render_ansi`, `render_ansi_with_options`, `try_to_ansi_with_options`, `to_ansi_with_report` | writer target `ansi` (pending port) |
+| `html_to_ast`, `migrate_html` | `api::import_document` (pending) |
+| `parse_with_source_layout` | `api::parse_with_layout` (pending) |
+| `djot_to_carve`, `migrate_djot`, `bbcode_to_carve`, `migrate_bbcode`, `try_migrate_markdown`, `try_markdown_to_ast` | gone: 0.2 specifies no Markdown, Djot or BBCode importer (C2-T-003) |
+| `create_ast_patch`, `apply_ast_patch`, `ast_patch_to_json`, `ast_patch_from_json`, `create_reversible_ast_patch`, `apply_reversible_ast_patch` | gone: 0.2 has no patch API (`UPGRADING.md`, Part 2) |
+| `merge_ast`, `merge_ast_with_resolver` | gone: no merge API in 0.2 |
+| `parse_snapshot`, `reparse` | gone: no incremental or editor API in 0.2 |
+| `to_prosemirror`, `from_prosemirror` | gone: not part of 0.2 |
+| `decision_trace`, `parse_locator` | gone: 0.1 debugging aids |
+| `stamp_carve`, `read_stamp`, `needs_review` | gone: version stamps belong to the 0.1 upgrade flow; the rewrite tool is part of carve-js |
+| `sanitize_svg` | gone from the core; an extension renderer's job under the extension host |
+
+Option types: `carve::Options::new()` and `Options::default()` become `api::Options::default()`. `Profile`, `Mode` and the heading-id setting (`AsciiHeadingIds` in 0.1, `HeadingIds` in 0.2) keep their roles. `IncludeOptions`, `IncludeContext` and `IncludeResolved` become `api::Includes` with an `api::Resolver`.
+
+## Spec gaps and engine choices
+
+- `tooling.md` gives `parse` a `positions` parameter. Here the tree in memory always carries positions, and `encode_tree_with(..., EncodeOptions { positions: false })` and the JSON request field `positions` drop them on output.
+- `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`, or set with `Tree::set_file` on a decoded tree.
+- On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
+- The engine does not yet implement `parseWithLayout`, `importDocument`, `migrateTree`, the Carve writer (`format`, `write`) or the extension host. Each returns `Error::Unsupported`.
+- The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.

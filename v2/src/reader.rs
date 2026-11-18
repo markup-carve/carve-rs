@@ -356,6 +356,10 @@ fn schema_include(node: &Value, path: &str) -> Result<(), TreeError> {
 /// A typed syntax, schema, reader or owned-type error.
 pub fn read_tree_json(input: &str) -> Result<ReadTree, TreeError> {
     check_json_depth(input)?;
+    // wasm32 targets have no threads; the default stack of the host applies.
+    if cfg!(target_family = "wasm") {
+        return read_tree_json_inner(input);
+    }
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(128 * 1024 * 1024)
@@ -407,6 +411,9 @@ fn check_json_depth(input: &str) -> Result<(), TreeError> {
 /// A typed schema, reader or owned-type error.
 pub fn read_tree_value(value: Value) -> Result<ReadTree, TreeError> {
     check_depth(&value)?;
+    if cfg!(target_family = "wasm") {
+        return read_tree_value_inner(value, None);
+    }
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(128 * 1024 * 1024)

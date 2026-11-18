@@ -1,0 +1,46 @@
+// Runs the wasm32-wasip1 build of carve2 the way carve-go and hugo-carve do:
+// `carve2 call` with one JSON request on standard input.
+// Usage: node tools/wasi-smoke.mjs path/to/carve2.wasm
+import { readFile, writeFile, mkdtemp } from "node:fs/promises";
+import { openSync, closeSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { WASI } from "node:wasi";
+
+const wasm = await WebAssembly.compile(await readFile(process.argv[2]));
+
+async function call(request) {
+  const dir = await mkdtemp(join(tmpdir(), "carve2-wasi-"));
+  await writeFile(join(dir, "in.json"), JSON.stringify(request));
+  const stdin = openSync(join(dir, "in.json"), "r");
+  const stdout = openSync(join(dir, "out.json"), "w");
+  const wasi = new WASI({ version: "preview1", args: ["carve2", "call"], stdin, stdout, returnOnExit: true });
+  const instance = await WebAssembly.instantiate(wasm, wasi.getImportObject());
+  const status = wasi.start(instance);
+  closeSync(stdin);
+  closeSync(stdout);
+  return { status, response: JSON.parse(readFileSync(join(dir, "out.json"), "utf8")) };
+}
+
+const checks = [
+  [{ call: "render", source: "Hi *there*" }, 0, (r) => r.ok.html === "<p>Hi <strong>there</strong></p>"],
+  [{ call: "parse", source: "x", positions: false }, 0, (r) => r.ok.tree.type === "document"],
+  [{ call: "lint", source: "# A\n\n# A\n" }, 0, (r) => Array.isArray(r.ok.diagnostics)],
+  [{ call: "render", source: "x", options: { nope: 1 } }, 2, (r) => r.error.category === "usage"],
+];
+let failed = 0;
+for (const [request, status, ok] of checks) {
+  const got = await call(request);
+  if (got.status !== status || !ok(got.response)) {
+    failed++;
+    console.error("FAIL", JSON.stringify(request), got.status, JSON.stringify(got.response));
+  }
+}
+const tree = (await call({ call: "parse", source: "# T" })).response.ok.tree;
+const round = await call({ call: "decodeTree", json: JSON.stringify(tree) });
+if (round.status !== 0 || round.response.ok.tree.type !== "document") {
+  failed++;
+  console.error("FAIL decodeTree", JSON.stringify(round.response));
+}
+console.log(failed ? `wasi smoke: ${failed} failed` : "wasi smoke: ok");
+process.exit(failed ? 1 : 0);
