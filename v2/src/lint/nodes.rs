@@ -1017,41 +1017,67 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
             && name == "kbd"
             && !value.is_empty()
             && let Some((from, _)) = bounds(item.node)
-            && let Some(open) = sink.raw(item).rfind('{')
-            && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
-            && let Some(key) = sink
-                .raw(item)
-                .get(open + 1..open + close)
-                .and_then(|raw| raw.find(&format!("{name}=")))
+            && let Some((at, end)) = semantic_attr_range(sink.raw(item), name, true)
         {
             sink.emit_range(
                 "semantic-attribute-value-ignored",
-                from + open + 1 + key,
-                from + open + close,
+                from + at,
+                from + end,
                 &item.path,
                 &[("name", name)],
                 0,
             );
         } else if kind != "span"
             && let Some((from, _)) = bounds(item.node)
-            && let Some(open) = sink.raw(item).rfind('{')
-            && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
-            && let Some(key) = sink
-                .raw(item)
-                .get(open + 1..open + close)
-                .and_then(|raw| raw.find(name))
+            && let Some((at, end)) = semantic_attr_range(sink.raw(item), name, false)
         {
-            let at = open + 1 + key;
             sink.emit_range(
                 "semantic-attribute-outside-span",
                 from + at,
-                from + at + name.len(),
+                from + end,
                 &item.path,
                 &[("name", name), ("type", kind), ("value", value)],
                 0,
             );
         }
     }
+}
+
+fn semantic_attr_range(raw: &str, name: &str, with_value: bool) -> Option<(usize, usize)> {
+    for (open, _) in raw.rmatch_indices('{') {
+        let Some(close) = raw.get(open..).and_then(|tail| tail.find('}')) else {
+            continue;
+        };
+        let Some(body) = raw.get(open + 1..open + close) else {
+            continue;
+        };
+        for (key, _) in body.match_indices(name) {
+            let before = body
+                .get(..key)
+                .and_then(|prefix| prefix.chars().next_back());
+            let after = body
+                .get(key + name.len()..)
+                .and_then(|tail| tail.chars().next());
+            if before.is_none_or(char::is_whitespace)
+                && (if with_value {
+                    after == Some('=')
+                } else {
+                    after.is_none_or(|c| c == '=' || c.is_whitespace())
+                })
+            {
+                let at = open + 1 + key;
+                return Some((
+                    at,
+                    if with_value {
+                        open + close
+                    } else {
+                        at + name.len()
+                    },
+                ));
+            }
+        }
+    }
+    None
 }
 
 fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {

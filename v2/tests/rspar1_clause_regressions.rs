@@ -247,6 +247,30 @@ fn c2_h_075_non_span_semantic_range_is_only_the_authored_key() {
 }
 
 #[test]
+fn c2_h_075_semantic_range_finds_an_earlier_glued_attribute_block() {
+    for (source, code, expected) in [
+        (
+            "[x]{kbd=v}{.c}",
+            "semantic-attribute-value-ignored",
+            "kbd=v",
+        ),
+        (
+            "[x](u){kbd=v}{.c}",
+            "semantic-attribute-outside-span",
+            "kbd",
+        ),
+    ] {
+        let findings = findings(source, code);
+        assert_eq!(findings.len(), 1, "{source}");
+        let pos = findings[0].pos.expect("attribute range");
+        assert_eq!(
+            &source[pos.start_offset as usize..pos.end_offset as usize],
+            expected
+        );
+    }
+}
+
+#[test]
 fn c2_h_082_denied_destination_uses_catalog_range_and_message() {
     let rendered = carve2::render_with_diagnostics("[](\u{202e}javascript:)", &Options::default());
     let loss = rendered
