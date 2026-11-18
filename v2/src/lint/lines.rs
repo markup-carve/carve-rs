@@ -252,8 +252,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     }
     marker_as_text(line, content_start, content, sink);
     attribute_line_like(line, sink);
-    if line.text.trim_start_matches([' ', '\t']).starts_with('>')
-        && text.starts_with('>')
+    if line.text.starts_with('>')
         && text.len() > 1
         && !text.starts_with("> ")
         && !text.starts_with(">\t")
@@ -307,6 +306,22 @@ fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
 
 fn table_line(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.trim();
+    for (at, _) in line.text.match_indices("|=") {
+        if let Some(mark) = line.text.as_bytes().get(at + 2)
+            && matches!(mark, b'<' | b'>' | b'~')
+            && line.text.as_bytes().get(at + 3) == Some(&b' ')
+        {
+            let prefix = (*mark as char).to_string();
+            let braced = format!("{{{prefix}}}");
+            sink.emit(
+                "deprecated-cell-alignment",
+                line.start + at + 2,
+                line.start + at + 3,
+                &line.path,
+                &[("prefix", &prefix), ("braced", &braced)],
+            );
+        }
+    }
     if line.paragraph && text.starts_with('|') && !text.ends_with('|') {
         let owner = match line.kind.as_str() {
             "caption" => "caption",
@@ -353,6 +368,7 @@ fn legacy_layout(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         && line.text.starts_with("    ")
         && !text.is_empty()
         && line.path.matches('/').count() <= 2
+        && previous.is_some_and(|p| p.text.trim().is_empty())
     {
         sink.whole("indented-code-block", line, &[]);
     }
@@ -367,7 +383,15 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         && previous.is_some_and(|p| p.text.starts_with("# "))
         && !line.text.starts_with(' ')
     {
-        sink.whole("djot-heading-continuation", line, &[]);
+        if let Some(previous) = previous {
+            sink.emit(
+                "djot-heading-continuation",
+                previous.start,
+                line.start + line.text.trim_end().len(),
+                &previous.path,
+                &[],
+            );
+        }
     }
     if line.paragraph
         && line.text.find('[').is_some_and(|at| {
@@ -390,11 +414,24 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
             &[],
         );
     }
+    term_folded(line, sink);
+}
+
+fn term_folded(line: &Line, sink: &mut Sink<'_>) {
+    let text = line.text.trim();
     if line.kind == "definition_term"
-        && previous.is_some_and(|p| p.path == line.path)
-        && starts_block(text)
+        && let Some(body) = text.strip_prefix(":: ")
+        && (body.starts_with("> ") || list_marker(body))
     {
-        sink.whole("definition-term-block-folded", line, &[]);
+        let prefix = line.text.find(":: ").unwrap_or(0) + 3;
+        let marker = body.find(' ').unwrap_or(body.len());
+        sink.emit(
+            "definition-term-block-folded",
+            line.start + prefix,
+            line.start + prefix + marker,
+            &line.path,
+            &[],
+        );
     }
 }
 
@@ -449,23 +486,22 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
             );
         }
     }
-    if let Some(at) = text.find("] (")
-        && line.paragraph
-    {
-        sink.emit(
-            "link-gap-before-destination",
-            line.start + at,
-            line.start + at + 3,
-            &line.path,
-            &[],
-        );
-    }
+    link_gap(line, sink);
+    empty_include_path(line, sink);
+}
+
+fn empty_include_path(line: &Line, sink: &mut Sink<'_>) {
+    let text = line.text.as_str();
     if let Some(at) = text.find("{{")
         && line.paragraph
         && let Some(end) = text.get(at + 2..).and_then(|s| s.find("}}"))
-        && text
-            .get(at + 2..at + 2 + end)
-            .is_some_and(|s| s.trim().is_empty() || s.trim_start().starts_with(['#', '@']))
+        && text.get(at + 2..at + 2 + end).is_some_and(|s| {
+            let path = s.trim();
+            path.is_empty()
+                || matches!(path, "\"\"" | "''")
+                || path.starts_with('@')
+                || (s.starts_with(char::is_whitespace) && path.starts_with('#'))
+        })
     {
         let token = text.get(at..at + end + 4).unwrap_or("");
         sink.emit(
@@ -474,6 +510,47 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
             line.start + at + end + 4,
             &line.path,
             &[("text", token)],
+        );
+    }
+}
+
+fn link_gap(line: &Line, sink: &mut Sink<'_>) {
+    if !line.paragraph {
+        return;
+    }
+    let text = line.text.as_str();
+    for (open, _) in text.match_indices('[') {
+        if open > 0 && text.as_bytes().get(open - 1) == Some(&b'\\') {
+            continue;
+        }
+        let Some(close) = text[open + 1..].find(']').map(|at| open + 1 + at) else {
+            continue;
+        };
+        if close == open + 1 {
+            continue;
+        }
+        let gap = text[close + 1..]
+            .bytes()
+            .take_while(u8::is_ascii_whitespace)
+            .count();
+        if gap == 0 || text.as_bytes().get(close + 1 + gap) != Some(&b'(') {
+            continue;
+        }
+        let Some(end) = text[close + gap + 2..]
+            .find(')')
+            .map(|at| close + gap + 2 + at)
+        else {
+            continue;
+        };
+        if text[close + gap + 2..end].trim().is_empty() {
+            continue;
+        }
+        sink.emit(
+            "link-gap-before-destination",
+            line.start + open,
+            line.start + end + 1,
+            &line.path,
+            &[],
         );
     }
 }
@@ -579,7 +656,17 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     if let Some(at) = line.text.find("[!")
-        && line.text.get(at..).is_some_and(|s| s.contains(']'))
+        && line.text.get(at..).is_some_and(|s| {
+            [
+                "[!NOTE]",
+                "[!TIP]",
+                "[!IMPORTANT]",
+                "[!WARNING]",
+                "[!CAUTION]",
+            ]
+            .iter()
+            .any(|token| s.starts_with(token))
+        })
     {
         sink.emit(
             "github-alert-marker",
@@ -598,11 +685,44 @@ fn caption_looking(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &
             .rev()
             .find(|p| p.start < line.start && !p.text.trim().is_empty())
     });
-    if !line.paragraph || !above.is_some_and(|p| p.text.trim_start().starts_with('|')) {
+    if !line.paragraph
+        || !above.is_some_and(|p| {
+            p.text.trim_start().starts_with('|') || p.text.trim_start().starts_with("![")
+        })
+    {
         return;
     }
-    if line.text.trim_start().starts_with("Table:") || line.text.trim_start().starts_with("Figure:")
-    {
+    if caption_like(line.text.trim_start()) {
         sink.whole("caption-looking-paragraph", line, &[]);
     }
+}
+
+fn caption_like(text: &str) -> bool {
+    let text = text.strip_prefix('*').unwrap_or(text).trim_start();
+    if text.starts_with(": ") && !text[2..].trim().is_empty() {
+        return true;
+    }
+    for name in ["Caption", "Table", "Tabelle", "Figure", "Image"] {
+        let Some(prefix) = text.get(..name.len()) else {
+            continue;
+        };
+        if !prefix.eq_ignore_ascii_case(name) {
+            continue;
+        }
+        let rest = &text[name.len()..];
+        if rest.trim_start().starts_with(':') {
+            return true;
+        }
+        if rest.starts_with(char::is_whitespace) {
+            let digits = rest
+                .trim_start()
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            if digits > 0 && rest.trim_start()[digits..].trim_start().starts_with(':') {
+                return true;
+            }
+        }
+    }
+    false
 }
