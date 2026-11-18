@@ -354,8 +354,13 @@ fn duplicate_definitions(
         };
         let pos = node.pos().copied().map(|p| {
             if code == "duplicate-footnote-definition" {
-                let (_, end) = src.line_range(p.start_line.saturating_sub(1) as usize);
-                src.pos(p.start(), end)
+                let (start, end) = src.line_range(p.start_line.saturating_sub(1) as usize);
+                let marker_end = src
+                    .text()
+                    .get(start..end)
+                    .and_then(|line| line.find("]:"))
+                    .map_or(end, |at| start + at + 2);
+                src.pos(p.start(), marker_end)
             } else {
                 p
             }
@@ -366,14 +371,19 @@ fn duplicate_definitions(
 
 fn id_range(src: &source::Source<'_>, id: &str, pos: Option<ast::Pos>) -> Option<ast::Pos> {
     let pos = pos?;
-    let (start, end) = src.line_range(pos.start_line.saturating_sub(1) as usize);
-    let line = src.text().get(start..end)?;
-    if !line.trim_start_matches([' ', '\t']).starts_with('{') {
-        return None;
-    }
     let needle = format!("#{id}");
-    let offset = line.find(&needle)?;
-    Some(src.pos(start + offset, start + offset + needle.len()))
+    if let Some(offset) = src.text().get(pos.start()..pos.end())?.find(&needle) {
+        let start = pos.start() + offset;
+        return Some(src.pos(start, start + needle.len()));
+    }
+    let previous = pos.start_line.saturating_sub(2) as usize;
+    let (start, end) = src.line_range(previous);
+    let line = src.text().get(start..end)?;
+    if line.trim_start_matches([' ', '\t']).starts_with('{') {
+        let offset = line.find(&needle)?;
+        return Some(src.pos(start + offset, start + offset + needle.len()));
+    }
+    None
 }
 
 /// `places` gets the file of each unexpanded include of an expanded tree.
