@@ -163,6 +163,7 @@ pub(crate) struct RawLoss {
 pub(crate) struct CarrierLoss {
     pub key: String,
     pub pos: Option<crate::ast::Pos>,
+    pub search_start: u32,
 }
 
 /// About the output length: twice the source length the tree covers.
@@ -670,6 +671,7 @@ fn reserved_losses(
                 carriers.push(CarrierLoss {
                     key: key.to_string(),
                     pos: node.pos().copied(),
+                    search_start: carrier_attribute_start(node),
                 });
             }
             if !url::filter_value_in(key, value, None).is_empty()
@@ -688,6 +690,16 @@ fn reserved_losses(
     node.for_each_child(&mut |child| {
         reserved_losses(child, losses, destinations, carriers, policy, depth + 1);
     });
+}
+
+fn carrier_attribute_start(node: &Node<'_>) -> u32 {
+    let mut start = node.pos().map_or(0, |pos| pos.start_offset);
+    node.for_each_child(&mut |child| {
+        if let Some(pos) = child.pos() {
+            start = start.max(pos.end_offset);
+        }
+    });
+    start
 }
 
 /// The id a heading carries: authored, else generated.

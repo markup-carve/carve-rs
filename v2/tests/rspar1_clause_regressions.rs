@@ -178,6 +178,22 @@ fn c2_h_116_nested_carrier_losses_use_each_nodes_attribute_range() {
 }
 
 #[test]
+fn c2_h_116_valueless_carrier_loss_uses_the_authored_key_range() {
+    let source = "[x]{data-carve-ref}";
+    let rendered = carve2::render_with_diagnostics(source, &Options::default());
+    let loss = rendered
+        .diagnostics
+        .iter()
+        .find(|finding| finding.code == "carrier-attribute-dropped")
+        .expect("carrier loss");
+    let pos = loss.pos.expect("carrier key range");
+    assert_eq!(
+        &source[pos.start_offset as usize..pos.end_offset as usize],
+        "data-carve-ref"
+    );
+}
+
+#[test]
 fn c2_h_054_raw_format_loss_uses_catalog_message() {
     let rendered = carve2::render_with_diagnostics("before\n\n```=latex\nx\n", &Options::default());
     let loss = rendered
