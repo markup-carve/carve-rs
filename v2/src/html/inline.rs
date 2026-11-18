@@ -305,6 +305,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         dest: &'d str,
         pos: Option<ast::Pos>,
         image: bool,
+        file: Option<String>,
     ) -> Cow<'d, str> {
         if url::allowed(dest, &self.opts.url_policy) {
             Cow::Borrowed(dest)
@@ -315,6 +316,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 attribute: false,
                 pos,
                 value: dest.to_string(),
+                file,
             });
             Cow::Borrowed("")
         }
@@ -346,6 +348,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 attribute: false,
                 pos: l.pos,
                 value: href.to_string(),
+                file: self.file_of(l.pos.as_ref()),
             });
             esc::text(
                 &crate::resolve::plain::text_of_degraded_block(&*l.children),
@@ -361,8 +364,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let merged = merge_def(def.and_then(|d| d.attrs), l.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), l.lang).with_dir(l.dir);
+        let file = self.file_of(l.pos.as_ref());
         el.structural
-            .push(("href", Some(self.destination(href, l.pos, false))));
+            .push(("href", Some(self.destination(href, l.pos, false, file))));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
         }
@@ -398,6 +402,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 attribute: false,
                 pos: a.pos,
                 value: a.href.to_string(),
+                file: self.file_of(a.pos.as_ref()),
             });
             esc::text(text, out);
             return;
@@ -407,8 +412,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
+        let file = self.file_of(a.pos.as_ref());
         el.structural
-            .push(("href", Some(self.destination(a.href, a.pos, false))));
+            .push(("href", Some(self.destination(a.href, a.pos, false, file))));
         self.rel(&mut el);
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-autolink", None));
@@ -448,8 +454,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let merged = merge_image_attrs(def.and_then(|d| d.attrs), paragraph_attrs, i.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), i.lang.or(paragraph_lang)).with_dir(i.dir);
+        let file = self.file_of(i.pos.as_ref());
         el.structural
-            .push(("src", Some(self.destination(src, i.pos, true))));
+            .push(("src", Some(self.destination(src, i.pos, true, file))));
         el.structural.push(("alt", Some(alt.into())));
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
@@ -518,8 +525,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let mut el = El::new(x.attrs, x.lang).with_dir(x.dir);
+        let file = self.file_of(x.pos.as_ref());
         el.structural
-            .push(("href", Some(self.destination(href, x.pos, false))));
+            .push(("href", Some(self.destination(href, x.pos, false, file))));
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
         }
@@ -652,7 +660,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }) {
             Some(t) => {
                 let full = t.replace("{name}", &encode_social_name(b.name));
-                let href = self.destination(&full, None, false).into_owned();
+                let href = self.destination(&full, None, false, None).into_owned();
                 el.structural.push(("href", Some(href.into())));
                 self.rel(&mut el);
                 "a"
@@ -678,6 +686,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 kind: "inline",
                 format: r.format.to_string(),
                 pos: r.pos,
+                file: self.file_of(r.pos.as_ref()),
             });
             return;
         }

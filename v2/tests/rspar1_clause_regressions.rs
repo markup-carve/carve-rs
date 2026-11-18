@@ -267,6 +267,41 @@ fn c2_h_054_raw_loss_in_expanded_include_keeps_its_format() {
         loss.message,
         "Dropped block raw format \"tex\" while rendering HTML"
     );
+    assert_eq!(loss.file.as_deref(), Some("raw.crv"));
+    assert_eq!(loss.pos.expect("raw range").start_offset, 0);
+}
+
+#[test]
+fn c2_n_063_render_losses_use_the_expanded_files_positions() {
+    let included = "[x](javascript:) [y]{data-carve-ref}";
+    let resolver = Arc::new(move |request: &Request<'_>| {
+        if request.path == "child.crv" {
+            Ok((included.as_bytes().to_vec(), "child.crv".to_string()))
+        } else {
+            Err(Cause::NotFound)
+        }
+    });
+    let opts = Options {
+        includes: Some(Includes::new(resolver)),
+        ..Options::default()
+    };
+    let rendered = carve2::render_with_diagnostics("{{ child.crv }}", &opts);
+    for (code, expected) in [
+        ("destination-denied", "javascript:"),
+        ("carrier-attribute-dropped", "data-carve-ref"),
+    ] {
+        let loss = rendered
+            .diagnostics
+            .iter()
+            .find(|finding| finding.code == code)
+            .unwrap_or_else(|| panic!("missing {code}"));
+        assert_eq!(loss.file.as_deref(), Some("child.crv"));
+        let pos = loss.pos.expect("included range");
+        assert_eq!(
+            &included[pos.start_offset as usize..pos.end_offset as usize],
+            expected
+        );
+    }
 }
 
 #[test]

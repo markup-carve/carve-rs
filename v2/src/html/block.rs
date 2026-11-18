@@ -913,6 +913,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 kind: "block",
                 format: r.format.to_string(),
                 pos: r.pos,
+                file: self.file_of(r.pos.as_ref()),
             });
             return;
         }

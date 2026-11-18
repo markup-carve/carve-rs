@@ -152,18 +152,21 @@ pub(crate) struct DestinationLoss {
     pub attribute: bool,
     pub pos: Option<crate::ast::Pos>,
     pub value: String,
+    pub file: Option<String>,
 }
 
 pub(crate) struct RawLoss {
     pub kind: &'static str,
     pub format: String,
     pub pos: Option<crate::ast::Pos>,
+    pub file: Option<String>,
 }
 
 pub(crate) struct CarrierLoss {
     pub key: String,
     pub pos: Option<crate::ast::Pos>,
     pub regions: Vec<(u32, u32)>,
+    pub file: Option<String>,
 }
 
 /// About the output length: twice the source length the tree covers.
@@ -305,6 +308,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn src_of(&self, n: &Node<'_>) -> Option<SourceView<'r>> {
         self.src
             .filter(|_| !self.files.is_some_and(|f| f.included(n)))
+    }
+
+    fn file_of(&self, pos: Option<&crate::ast::Pos>) -> Option<String> {
+        self.files
+            .and_then(|files| pos.and_then(|pos| files.file_of_pos(pos)))
+            .map(str::to_string)
     }
 
     fn hidden_heading(&self, href: &str) -> bool {
@@ -523,6 +532,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 &mut self.destination_losses,
                 &mut self.carrier_losses,
                 &self.opts.url_policy,
+                self.files,
                 1,
             );
         }
@@ -653,6 +663,7 @@ fn reserved_losses(
     destinations: &mut Vec<DestinationLoss>,
     carriers: &mut Vec<CarrierLoss>,
     policy: &crate::options::UrlPolicy,
+    files: Option<&crate::resolve::files::Files<'_>>,
     depth: usize,
 ) {
     if depth > crate::resolve::WALK_CAP {
@@ -672,6 +683,9 @@ fn reserved_losses(
                     key: key.to_string(),
                     pos: node.pos().copied(),
                     regions: carrier_attribute_regions(node),
+                    file: files
+                        .and_then(|files| node.pos().and_then(|pos| files.file_of_pos(pos)))
+                        .map(str::to_string),
                 });
             }
             if !url::filter_value_in(key, value, None).is_empty()
@@ -683,12 +697,23 @@ fn reserved_losses(
                     attribute: true,
                     pos: node.pos().copied(),
                     value: value.to_string(),
+                    file: files
+                        .and_then(|files| node.pos().and_then(|pos| files.file_of_pos(pos)))
+                        .map(str::to_string),
                 });
             }
         }
     }
     node.for_each_child(&mut |child| {
-        reserved_losses(child, losses, destinations, carriers, policy, depth + 1);
+        reserved_losses(
+            child,
+            losses,
+            destinations,
+            carriers,
+            policy,
+            files,
+            depth + 1,
+        );
     });
 }
 

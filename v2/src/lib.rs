@@ -287,14 +287,16 @@ fn prepare<'a>(
             .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
     let expanded = opts.includes.is_some();
+    let mut included_sources = std::collections::HashMap::new();
     if let Some(cfg) = &opts.includes {
         if input.contains("{{") {
-            include::expand(&mut doc, &scope, cfg, opts, arena, diags);
+            included_sources = include::expand(&mut doc, &scope, cfg, opts, arena, diags);
         }
     } else if input.contains("{{") {
         include::no_resolver(doc.children, diags);
     }
-    let files = (expanded && input.contains("{{")).then(|| resolve::files::Files::build(&doc));
+    let files = (expanded && input.contains("{{"))
+        .then(|| resolve::files::Files::build(&doc, included_sources));
     let mut dups = Vec::new();
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
     for (id, pos, at) in dups {
@@ -381,6 +383,7 @@ struct RenderDetails {
     destinations: Vec<html::DestinationLoss>,
     raws: Vec<html::RawLoss>,
     carriers: Vec<html::CarrierLoss>,
+    included_sources: std::collections::HashMap<String, String>,
 }
 
 fn render_parts(
@@ -392,6 +395,11 @@ fn render_parts(
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
     if let Some(files) = files {
+        details.included_sources.extend(
+            files
+                .sources()
+                .map(|(id, text)| (id.to_string(), text.to_string())),
+        );
         include::unexpanded(doc.children, None, &mut details.places);
         let extra = if opts.roundtrip {
             include::roundtrip_losses(doc.children)
@@ -469,56 +477,7 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     let mut details = RenderDetails::default();
     let html = match render_parts(input, opts, &arena, &mut diags, &mut details) {
         Ok((html, losses)) => {
-            let mut places = details.places.into_iter();
-            let source = source::Source::new(input);
-            let mut raw_losses = details.raws.iter();
-            let mut destination_losses = details.destinations.iter();
-            let mut carrier_losses = details.carriers.iter();
-            let mut carrier_cursors = std::collections::HashMap::new();
-            let loss_diags: Vec<_> = losses
-                .iter()
-                .map(|c| {
-                    // C2-N-063: the loss of an unexpanded include names its file.
-                    let file = if *c == "include-unresolved" {
-                        places.next().flatten()
-                    } else {
-                        None
-                    };
-                    let raw = if *c == "raw-format-dropped" {
-                        raw_losses.next()
-                    } else {
-                        None
-                    };
-                    let destination = if *c == "destination-denied" {
-                        destination_losses.next()
-                    } else {
-                        None
-                    };
-                    let carrier = if *c == "carrier-attribute-dropped" {
-                        carrier_losses.next()
-                    } else {
-                        None
-                    };
-                    let pos = raw
-                        .and_then(|r| r.pos)
-                        .or_else(|| destination.and_then(|d| destination_loss_position(&source, d)))
-                        .or_else(|| destination.and_then(|d| d.pos))
-                        .or_else(|| {
-                            carrier.and_then(|c| {
-                                carrier_loss_position(&source, c, &mut carrier_cursors)
-                            })
-                        })
-                        .or_else(|| carrier.and_then(|c| c.pos))
-                        .or_else(|| loss_position(c, &source, opts, diags.as_slice()));
-                    let (variant, values) = loss_message(c, raw, destination, carrier);
-                    let values: Vec<_> = values
-                        .iter()
-                        .map(|(name, value)| (*name, value.as_str()))
-                        .collect();
-                    diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos)
-                })
-                .collect();
-            diags.extend(loss_diags);
+            diags.extend(loss_diagnostics(input, opts, &diags, &details, &losses));
             if opts.strict_losses && !losses.is_empty() {
                 String::new()
             } else {
@@ -531,6 +490,79 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
         html,
         diagnostics: diags,
     }
+}
+
+fn loss_diagnostics(
+    input: &str,
+    opts: &Options,
+    parse_diags: &[diagnostic::Diagnostic],
+    details: &RenderDetails,
+    losses: &[&'static str],
+) -> Vec<diagnostic::Diagnostic> {
+    let mut places = details.places.iter().cloned();
+    let source = source::Source::new(input);
+    let mut raw_losses = details.raws.iter();
+    let mut destination_losses = details.destinations.iter();
+    let mut carrier_losses = details.carriers.iter();
+    let mut carrier_cursors = std::collections::HashMap::new();
+    let included_sources = &details.included_sources;
+    let loss_diags: Vec<_> = losses
+        .iter()
+        .map(|c| {
+            // C2-N-063: the loss of an unexpanded include names its file.
+            let include_file = if *c == "include-unresolved" {
+                places.next().flatten()
+            } else {
+                None
+            };
+            let raw = if *c == "raw-format-dropped" {
+                raw_losses.next()
+            } else {
+                None
+            };
+            let destination = if *c == "destination-denied" {
+                destination_losses.next()
+            } else {
+                None
+            };
+            let carrier = if *c == "carrier-attribute-dropped" {
+                carrier_losses.next()
+            } else {
+                None
+            };
+            let file = include_file.or_else(|| {
+                raw.and_then(|r| r.file.clone())
+                    .or_else(|| destination.and_then(|d| d.file.clone()))
+                    .or_else(|| carrier.and_then(|c| c.file.clone()))
+            });
+            let included_source = file
+                .as_deref()
+                .and_then(|id| included_sources.get(id))
+                .map(|text| source::Source::new(text));
+            let loss_source = included_source.as_ref().unwrap_or(&source);
+            let pos = raw
+                .and_then(|r| r.pos)
+                .or_else(|| destination.and_then(|d| destination_loss_position(loss_source, d)))
+                .or_else(|| destination.and_then(|d| d.pos))
+                .or_else(|| {
+                    carrier
+                        .and_then(|c| carrier_loss_position(loss_source, c, &mut carrier_cursors))
+                })
+                .or_else(|| carrier.and_then(|c| c.pos))
+                .or_else(|| {
+                    file.is_none()
+                        .then(|| loss_position(c, &source, opts, parse_diags))
+                        .flatten()
+                });
+            let (variant, values) = loss_message(c, raw, destination, carrier);
+            let values: Vec<_> = values
+                .iter()
+                .map(|(name, value)| (*name, value.as_str()))
+                .collect();
+            diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos)
+        })
+        .collect();
+    loss_diags
 }
 
 fn destination_loss_position(
