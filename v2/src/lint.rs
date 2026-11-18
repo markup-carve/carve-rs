@@ -4,7 +4,7 @@ use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use serde::Deserialize as _;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 mod controls;
@@ -19,6 +19,8 @@ pub struct LintOptions {
     pub rules: HashMap<String, String>,
     /// Platform names, currently `github`.
     pub platforms: Vec<String>,
+    /// Registered extensions that may contribute generated IDs.
+    pub extensions: Vec<String>,
     /// Include expansion for lint of an entry document (C2-N-085).
     pub includes: Option<crate::include::Includes>,
 }
@@ -58,22 +60,22 @@ fn active(code: &str, opts: &LintOptions) -> bool {
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let mut out = lint_core(source, opts);
-    if source.contains("{{") {
-        let parse = crate::Options {
-            includes: opts.includes.clone(),
-            ..crate::Options::default()
-        };
-        out.extend(
-            crate::parse_diagnostics(source, &parse)
-                .into_iter()
-                .filter(|finding| {
-                    finding.channel == "parse" && finding.code.starts_with("include-")
-                }),
-        );
-    }
+    let parse = crate::Options {
+        includes: opts.includes.clone(),
+        ..crate::Options::default()
+    };
+    out.extend(crate::parse_diagnostics(source, &parse));
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
     }
+    out.retain(|finding| {
+        finding.code != "table-shaped-paragraph"
+            || !finding.pos.is_some_and(|pos| {
+                source
+                    .get(pos.start_offset as usize..pos.end_offset as usize)
+                    .is_some_and(|span| span.contains("%%"))
+            })
+    });
     out
 }
 
@@ -82,93 +84,271 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let positions = node_ranges(source);
     let mut out = Vec::new();
     for warning in carve::lint_carve(source) {
-        if !active(warning.rule, opts) {
+        if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
             continue;
         }
-        if warning.rule == "table-marker-run-padding"
-            && !table_marker_run_padding(source, warning.start)
-        {
-            continue;
-        }
-        if warning.rule == "list-item-block-overindented"
-            && !positions.iter().any(|range| {
-                range.start == warning.start
-                    && matches!(
-                        range.kind.as_str(),
-                        "heading"
-                            | "block_quote"
-                            | "code_block"
-                            | "definition_term"
-                            | "div"
-                            | "image"
-                            | "thematic_break"
-                            | "table"
-                    )
-            })
-        {
-            continue;
-        }
-        if matches!(
-            warning.rule,
-            "deprecated-cell-alignment"
-                | "carve-version-unsupported"
-                | "table-attribute-invalid"
-                | "table-row-cell-count"
-                | "thematic-break-spelling"
-                | "unclosed-inline-emphasis"
-                | "unresolved-footnote"
-                | "unresolved-reference-link"
-                | "broken-crossref"
-                | "markdown-strong-double-star"
-                | "blockquote-marker-without-space"
-                | "bidi-control-in-source"
-                | "table-shaped-paragraph"
-                | "unattached-block-attribute"
-                | "deprecated-bare-highlight"
-                | "deprecated-bare-strike"
-                | "deprecated-bare-underline"
-                | "fence-closer-indented"
-                | "block-opener-overindented"
-                | "block-marker-as-text"
-                | "comment-shaped-emphasis"
-                | "unused-link-reference-definition"
-                | "unused-footnote-definition"
-                | "unattached-inline-attribute"
-                | "emphasis-marker-before-attributes"
-                | "comment-in-reference-label"
-                | "uneven-list-indent"
-                | "markdown-definition-paragraph"
-                | "block-opener-without-blank-line"
-                | "list-marker-without-blank-line"
-                | "semantic-attribute-outside-span"
-                | "empty-include-path"
-                | "heading-trailing-attribute"
-        ) {
-            continue;
-        }
-        let mut diagnostic = Diagnostic::new(
-            warning.rule,
-            &[],
-            warning.file.as_deref(),
-            Some(parsed.pos(warning.start, warning.end)),
-        );
-        if diagnostic.message.is_empty() || catalog_message_has_slots(warning.rule) {
-            diagnostic.message = warning.message;
-        }
-        normalize_root_message(
-            &mut diagnostic,
-            source,
-            &positions,
-            warning.start,
-            warning.end,
-        );
-        diagnostic.path = path_at(&positions, warning.start, warning.end);
-        out.push(diagnostic);
+        out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
     lines::scan(source, opts, &positions, &mut out);
     nodes::scan(source, opts, &mut out);
+    referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
+    let invalid_tables: Vec<_> = out
+        .iter()
+        .filter(|finding| finding.code == "table-attribute-invalid")
+        .filter_map(|finding| finding.path.as_deref())
+        .map(str::to_string)
+        .collect();
+    out.retain(|finding| {
+        !matches!(
+            finding.code,
+            "table-column-arity" | "table-column-overlap" | "table-width-total"
+        ) || !invalid_tables.iter().any(|path| {
+            finding
+                .path
+                .as_deref()
+                .is_some_and(|actual| actual.starts_with(path))
+        })
+    });
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
     controls::filter(source, out)
+}
+
+fn skip_legacy_warning(
+    warning: &carve::LintWarning,
+    source: &str,
+    opts: &LintOptions,
+    parsed: &Source<'_>,
+    positions: &[Range],
+) -> bool {
+    if !active(warning.rule, opts) {
+        return true;
+    }
+    if warning.rule == "broken-fragment-link" && !opts.extensions.is_empty() {
+        return true;
+    }
+    if warning.rule == "table-shaped-paragraph"
+        && source
+            .get(warning.start..warning.end)
+            .is_some_and(|line| line.contains("%%"))
+    {
+        return true;
+    }
+    if warning.rule == "table-marker-run-padding"
+        && !table_marker_run_padding(source, warning.start)
+    {
+        return true;
+    }
+    if warning.rule == "list-item-block-overindented"
+        && !positions.iter().any(|range| {
+            range.start == warning.start
+                && matches!(
+                    range.kind.as_str(),
+                    "heading"
+                        | "block_quote"
+                        | "code_block"
+                        | "definition_term"
+                        | "div"
+                        | "image"
+                        | "list"
+                        | "thematic_break"
+                        | "table"
+                )
+        })
+    {
+        return true;
+    }
+    skip_legacy_context(warning, source, parsed, positions)
+}
+
+fn skip_legacy_context(
+    warning: &carve::LintWarning,
+    source: &str,
+    parsed: &Source<'_>,
+    positions: &[Range],
+) -> bool {
+    if warning.rule == "footnote-labels-differ-only-in-whitespace"
+        && parsed
+            .text()
+            .get(parsed.line_range(parsed.line_of(warning.start)).0..warning.start)
+            .is_some_and(|prefix| prefix.trim_start().starts_with('>'))
+    {
+        return true;
+    }
+    if warning.rule == "bidi-control-in-source"
+        && positions.iter().any(|range| {
+            range.kind == "code_block"
+                && range.start_line == parsed.line_of(warning.start) + 1
+                && range.start <= warning.start
+                && warning.start < range.end
+        })
+    {
+        return true;
+    }
+    if warning.rule == "table-column-overlap"
+        && overlap_in_centered_table(source, warning, positions)
+    {
+        return true;
+    }
+    if [
+        "deprecated-cell-alignment",
+        "empty-reference-definition",
+        "carve-version-unsupported",
+        "table-attribute-invalid",
+        "table-row-cell-count",
+        "thematic-break-spelling",
+        "unclosed-inline-emphasis",
+        "unresolved-footnote",
+        "unresolved-reference-link",
+        "broken-crossref",
+        "markdown-strong-double-star",
+        "blockquote-marker-without-space",
+        "bidi-control-in-source",
+        "table-shaped-paragraph",
+        "unattached-block-attribute",
+        "deprecated-bare-highlight",
+        "deprecated-bare-strike",
+        "deprecated-bare-underline",
+        "fence-closer-indented",
+        "block-opener-overindented",
+        "block-marker-as-text",
+        "comment-shaped-emphasis",
+        "unused-link-reference-definition",
+        "unused-footnote-definition",
+        "unattached-inline-attribute",
+        "emphasis-marker-before-attributes",
+        "comment-in-reference-label",
+        "uneven-list-indent",
+        "markdown-definition-paragraph",
+        "block-opener-without-blank-line",
+        "list-marker-without-blank-line",
+        "semantic-attribute-outside-span",
+        "empty-include-path",
+        "heading-trailing-attribute",
+    ]
+    .contains(&warning.rule)
+    {
+        return true;
+    }
+    false
+}
+
+fn overlap_in_centered_table(
+    source: &str,
+    warning: &carve::LintWarning,
+    positions: &[Range],
+) -> bool {
+    positions.iter().any(|range| {
+        range.kind == "table"
+            && range.start <= warning.start
+            && warning.start < range.end
+            && source.get(range.start..range.end).is_some_and(|table| {
+                table.contains("|={~}") && !table.contains("|={<}") && !table.contains("|={>}")
+            })
+    })
+}
+
+fn convert_legacy_warning(
+    warning: carve::LintWarning,
+    source: &str,
+    parsed: &Source<'_>,
+    positions: &[Range],
+) -> Diagnostic {
+    let mut diagnostic = Diagnostic::new(
+        warning.rule,
+        &[],
+        warning.file.as_deref(),
+        Some(parsed.pos(warning.start, warning.end)),
+    );
+    if diagnostic.message.is_empty() || catalog_message_has_slots(warning.rule) {
+        diagnostic.message = warning.message;
+    }
+    normalize_root_message(
+        &mut diagnostic,
+        source,
+        positions,
+        warning.start,
+        warning.end,
+    );
+    diagnostic.path = path_at(positions, warning.start, warning.end);
+    if warning.rule == "delimited-table-wide-row"
+        && let Some(table) = positions.iter().find(|range| {
+            range.kind == "table" && range.start <= warning.start && warning.end <= range.end
+        })
+    {
+        diagnostic.pos = Some(parsed.pos(table.start, table.end));
+    }
+    if warning.rule == "figure-group-panel-number"
+        && let Some(panel) = positions
+            .iter()
+            .filter(|range| range.kind == "image" && range.start < warning.start)
+            .max_by_key(|range| range.start)
+    {
+        diagnostic.pos = Some(parsed.pos(panel.start, panel.start + 1));
+    }
+    diagnostic
+}
+fn referenced_footnote_platform_tokens(
+    source: &str,
+    opts: &LintOptions,
+    ranges: &[Range],
+    output: &mut Vec<Diagnostic>,
+) {
+    if !opts.platforms.iter().any(|platform| platform == "github") {
+        return;
+    }
+    let positions = Source::new(source);
+    let references: HashSet<&str> = ranges
+        .iter()
+        .filter_map(|range| range.footnote_key.as_deref())
+        .collect();
+    let mut offset = 0;
+    for piece in source.split_inclusive('\n') {
+        let line = piece.trim_end_matches('\n');
+        if let Some(rest) = line.strip_prefix("[^")
+            && let Some((label, body)) = rest.split_once("]:")
+            && references.contains(label)
+            && !opaque_definition(ranges, offset)
+        {
+            let body_start = offset + 2 + label.len() + 2;
+            let trimmed = body.trim_start();
+            let start = body_start + body.len() - trimmed.len();
+            let (code, token) = if let Some(after_hash) = trimmed.strip_prefix('#') {
+                (
+                    "platform-issue-reference",
+                    trimmed
+                        .get(..1 + after_hash.bytes().take_while(u8::is_ascii_digit).count())
+                        .unwrap_or(""),
+                )
+            } else if trimmed.starts_with('@') {
+                (
+                    "platform-mention-token",
+                    trimmed.split_whitespace().next().unwrap_or(""),
+                )
+            } else {
+                offset += piece.len();
+                continue;
+            };
+            if token.len() > 1 && active(code, opts) {
+                let mut diagnostic = Diagnostic::new(
+                    code,
+                    &[("host", "GitHub"), ("text", token), ("what", "a mention")],
+                    None,
+                    Some(positions.pos(start, start + token.len())),
+                );
+                diagnostic.path = Some(String::new());
+                output.push(diagnostic);
+            }
+        }
+        offset += piece.len();
+    }
+}
+
+fn opaque_definition(ranges: &[Range], offset: usize) -> bool {
+    ranges.iter().any(|range| {
+        ["code_block", "raw_block", "frontmatter", "comment"].contains(&range.kind.as_str())
+            && range.start <= offset
+            && offset < range.end
+    })
 }
 
 fn table_marker_run_padding(source: &str, at: usize) -> bool {
@@ -471,6 +651,7 @@ struct Range {
     start_line: usize,
     end_line: usize,
     has_attrs: bool,
+    footnote_key: Option<String>,
 }
 
 fn node_ranges(source: &str) -> Vec<Range> {
@@ -499,6 +680,9 @@ fn node_ranges(source: &str) -> Vec<Range> {
                         start_line,
                         end_line,
                         has_attrs: value.get("attrs").is_some(),
+                        footnote_key: (kind == "footnote_ref")
+                            .then(|| value["key"].as_str().map(str::to_string))
+                            .flatten(),
                     });
                 }
                 pending.extend(map.iter().map(|(k, v)| (v, format!("{path}/{k}"))));

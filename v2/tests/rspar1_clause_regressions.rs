@@ -347,13 +347,12 @@ fn c2_i_096_crossref_case_variant_uses_the_catalog_phrase() {
 }
 
 #[test]
-fn c2_w_103_nested_footnote_message_names_the_first_label() {
+fn c2_b_081_nested_footnote_shapes_are_text() {
     let footnotes = findings(
         "- [^a b]: x\n  > [^a  b]: y",
         "footnote-labels-differ-only-in-whitespace",
     );
-    assert_eq!(footnotes.len(), 1);
-    assert!(footnotes[0].message.contains("same key as [^a b]"));
+    assert_eq!(footnotes, Vec::new());
 }
 
 #[test]
@@ -435,26 +434,26 @@ fn c2_h_082_denied_destination_range_stays_before_trailing_attributes() {
 }
 
 #[test]
-fn c2_h_075_semantic_value_finding_covers_the_span_as_clause_case_813() {
+fn c2_w_138_semantic_value_finding_covers_the_authored_token() {
     let source = "[x]{kbd=\"V\"}";
     let attribute = findings(source, "semantic-attribute-value-ignored");
     assert_eq!(attribute.len(), 1);
     let pos = attribute[0].pos.expect("range");
     assert_eq!(
-        (pos.start_offset, pos.end_offset),
-        (0, u32::try_from(source.len()).expect("small source"))
+        &source[pos.start_offset as usize..pos.end_offset as usize],
+        "kbd=\"V\""
     );
 }
 
 #[test]
-fn c2_h_075_semantic_value_finding_covers_matching_span_text() {
+fn c2_w_138_semantic_value_finding_skips_matching_span_text() {
     let source = "[kbd=x]{kbd=v}";
     let findings = findings(source, "semantic-attribute-value-ignored");
     assert_eq!(findings.len(), 1);
     let pos = findings[0].pos.expect("attribute range");
     assert_eq!(
         &source[pos.start_offset as usize..pos.end_offset as usize],
-        source
+        "kbd=v"
     );
 }
 
@@ -476,7 +475,7 @@ fn c2_h_075_semantic_range_finds_an_earlier_glued_attribute_block() {
         (
             "[x]{kbd=v}{.c}",
             "semantic-attribute-value-ignored",
-            "[x]{kbd=v}{.c}",
+            "kbd=v",
         ),
         (
             "[x](u){kbd=v}{.c}",
@@ -495,14 +494,17 @@ fn c2_h_075_semantic_range_finds_an_earlier_glued_attribute_block() {
 }
 
 #[test]
-fn c2_h_075_semantic_value_finding_covers_the_span_with_later_attributes() {
-    for source in ["[x]{kbd=v .c}", "[x]{kbd=\"v w\" .c}"] {
+fn c2_w_138_semantic_value_finding_covers_only_the_key_and_value() {
+    for (source, expected) in [
+        ("[x]{kbd=v .c}", "kbd=v"),
+        ("[x]{kbd=\"v w\" .c}", "kbd=\"v w\""),
+    ] {
         let findings = findings(source, "semantic-attribute-value-ignored");
         assert_eq!(findings.len(), 1, "{source}");
         let pos = findings[0].pos.expect("value range");
         assert_eq!(
             &source[pos.start_offset as usize..pos.end_offset as usize],
-            source
+            expected
         );
     }
 }
