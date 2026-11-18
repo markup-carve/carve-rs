@@ -215,9 +215,98 @@ fn ids(items: &[Item<'_>]) -> HashSet<String> {
 }
 
 fn check_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
+    overindented_opener(item, sink);
     semantic(item, sink);
     check_block_node(item, ids, root, sink);
     check_inline_node(item, sink);
+}
+
+fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if item.parents.iter().any(|parent| parent == "list_item") {
+        return;
+    }
+    let kind = match item.node["type"].as_str().unwrap_or("") {
+        "block_quote" => "quote",
+        "heading" => "heading",
+        "definition_term" => "term",
+        "div" | "admonition" | "directive" => "div",
+        "code_block" => "code fence",
+        "line_block" => "line block",
+        "thematic_break" => "thematic break",
+        "table" => "table row",
+        _ => return,
+    };
+    let Some((from, _)) = bounds(item.node) else {
+        return;
+    };
+    let before = sink.source.get(..from).unwrap_or("");
+    let prefix = before.rsplit('\n').next().unwrap_or("");
+    let raw = sink.source.get(from..).unwrap_or("");
+    let marker = raw
+        .bytes()
+        .take_while(|byte| match kind {
+            "quote" => *byte == b'>',
+            "heading" => matches!(byte, b'#' | b'='),
+            "term" | "div" | "line block" => *byte == b':',
+            "code fence" => matches!(byte, b'`' | b'~'),
+            "thematic break" => matches!(byte, b'-' | b'*' | b'_'),
+            "table row" => *byte == b'|',
+            _ => false,
+        })
+        .count();
+    if marker == 0 || kind == "code fence" && marker < 3 {
+        return;
+    }
+    let quote = item
+        .parents
+        .iter()
+        .rev()
+        .any(|parent| parent == "block_quote");
+    let (owner, standard) = if quote {
+        ("a quote", prefix.rfind('>').map_or(0, |at| at + 2))
+    } else if item.parents.iter().any(|parent| {
+        matches!(
+            parent.as_str(),
+            "div" | "admonition" | "directive" | "figure_group"
+        )
+    }) {
+        ("a div", 0)
+    } else if item
+        .parents
+        .iter()
+        .any(|parent| parent == "footnote_definition")
+    {
+        ("a footnote body", 0)
+    } else if item
+        .parents
+        .iter()
+        .any(|parent| parent == "definition_description")
+    {
+        ("a description", 0)
+    } else {
+        ("document", 0)
+    };
+    if prefix.len() <= standard
+        || !prefix
+            .get(standard..)
+            .is_some_and(|rest| rest.bytes().all(|byte| matches!(byte, b' ' | b'\t')))
+    {
+        return;
+    }
+    let past = prefix.len() - standard;
+    sink.emit_range(
+        "block-opener-overindented",
+        from,
+        from + marker,
+        &item.path,
+        &[
+            ("kind", kind),
+            ("past", &past.to_string()),
+            ("columns", if past == 1 { "column" } else { "columns" }),
+            ("owner", owner),
+        ],
+        0,
+    );
 }
 
 fn check_block_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
@@ -251,8 +340,7 @@ fn check_leaf_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     match item.node["type"].as_str().unwrap_or("") {
         "table" => table(item, sink),
         "include" => include(item, sink),
-        "code" => bidi(item, sink),
-        "math" => bidi(item, sink),
+        "code" | "math" => bidi(item, sink),
         _ => {}
     }
 }
@@ -373,16 +461,7 @@ fn list_nested(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
             .unwrap_or(0);
         let column = field(item.node, "/pos/startColumn").as_u64().unwrap_or(0);
         if content > 0 && column > content {
-            let past = (column - content).to_string();
             let content = content.to_string();
-            sink.emit_range(
-                "block-opener-overindented",
-                from,
-                to,
-                &item.path,
-                &[("kind", "list"), ("past", &past), ("owner", "list item")],
-                0,
-            );
             sink.emit_range(
                 "list-item-block-overindented",
                 from,
@@ -934,46 +1013,44 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
         if !matches!(name, "abbr" | "time" | "kbd") {
             continue;
         }
-        if kind == "span" {
-            if name == "kbd" && !value.is_empty() {
-                if let Some((from, _)) = bounds(item.node)
-                    && let Some(at) = sink.raw(item).find(&format!("{name}="))
-                    && let Some(end) = sink.raw(item).get(at..).and_then(|raw| raw.find('}'))
-                {
-                    sink.emit_range(
-                        "semantic-attribute-value-ignored",
-                        from + at,
-                        from + at + end,
-                        &item.path,
-                        &[("name", name)],
-                        0,
-                    );
-                }
-            }
-        } else {
-            if let Some((from, _)) = bounds(item.node)
-                && let Some(open) = sink.raw(item).find('{')
-                && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
-                && let Some(key) = sink
-                    .raw(item)
-                    .get(open..open + close)
-                    .and_then(|raw| raw.find(name))
-            {
-                let at = open + key;
-                let end = sink
-                    .raw(item)
-                    .get(at..)
-                    .and_then(|raw| raw.find(|ch: char| matches!(ch, ' ' | '\t' | '}')))
-                    .unwrap_or(name.len());
-                sink.emit_range(
-                    "semantic-attribute-outside-span",
-                    from + at,
-                    from + at + end,
-                    &item.path,
-                    &[("name", name), ("type", kind), ("value", value)],
-                    0,
-                );
-            }
+        if kind == "span"
+            && name == "kbd"
+            && !value.is_empty()
+            && let Some((from, _)) = bounds(item.node)
+            && let Some(at) = sink.raw(item).find(&format!("{name}="))
+            && let Some(end) = sink.raw(item).get(at..).and_then(|raw| raw.find('}'))
+        {
+            sink.emit_range(
+                "semantic-attribute-value-ignored",
+                from + at,
+                from + at + end,
+                &item.path,
+                &[("name", name)],
+                0,
+            );
+        } else if kind != "span"
+            && let Some((from, _)) = bounds(item.node)
+            && let Some(open) = sink.raw(item).find('{')
+            && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
+            && let Some(key) = sink
+                .raw(item)
+                .get(open..open + close)
+                .and_then(|raw| raw.find(name))
+        {
+            let at = open + key;
+            let end = sink
+                .raw(item)
+                .get(at..)
+                .and_then(|raw| raw.find([' ', '\t', '}']))
+                .unwrap_or(name.len());
+            sink.emit_range(
+                "semantic-attribute-outside-span",
+                from + at,
+                from + at + end,
+                &item.path,
+                &[("name", name), ("type", kind), ("value", value)],
+                0,
+            );
         }
     }
 }
@@ -1163,11 +1240,14 @@ fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, from: usize) {
     let raw = sink.raw(item).to_string();
     let bytes = raw.as_bytes();
     for at in 0..bytes.len().saturating_sub(1) {
-        let mark = bytes[at];
+        let mark = bytes.get(at).copied().unwrap_or_default();
         if !matches!(mark, b'*' | b'/')
             || escaped(bytes, at)
             || !bytes.get(at + 1).is_some_and(u8::is_ascii_alphanumeric)
-            || at > 0 && !matches!(bytes[at - 1], b' ' | b'\t' | b'(' | b'[' | b'{')
+            || at > 0
+                && !bytes
+                    .get(at - 1)
+                    .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'(' | b'[' | b'{'))
             || bytes.get(at + 1..).is_some_and(|tail| tail.contains(&mark))
         {
             continue;

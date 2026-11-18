@@ -10,8 +10,7 @@ struct Line {
     path: String,
     kind: String,
     paragraph: bool,
-    content_start: usize,
-    first_paragraph_line: bool,
+    content_start: Option<usize>,
     opaque: bool,
     attached_attribute: bool,
     scope: Scope,
@@ -125,8 +124,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             paragraph: paragraph.is_some(),
             content_start: paragraph
                 .filter(|range| range.start_line == number)
-                .map_or(0, |range| range.start.saturating_sub(start).min(raw.len())),
-            first_paragraph_line: paragraph.is_some_and(|range| range.start_line == number),
+                .map(|range| range.start.saturating_sub(start).min(raw.len())),
             opaque,
             attached_attribute: paragraph
                 .is_some_and(|range| range.has_attrs && range.start_line == number),
@@ -141,8 +139,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: String::new(),
             kind: String::new(),
             paragraph: false,
-            content_start: 0,
-            first_paragraph_line: false,
+            content_start: None,
             opaque: false,
             attached_attribute: false,
             scope: Scope {
@@ -236,11 +233,8 @@ fn starts_block(text: &str) -> bool {
 
 fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.trim();
-    let content = line
-        .text
-        .get(line.content_start..)
-        .unwrap_or("")
-        .trim_start();
+    let content_start = line.content_start.unwrap_or(0);
+    let content = line.text.get(content_start..).unwrap_or("").trim_start();
     if text == "+" {
         sink.whole("deprecated-continuation-marker", line, &[]);
     }
@@ -256,7 +250,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     if spaced_run(text) {
         sink.whole("deprecated-spaced-thematic-break", line, &[]);
     }
-    if line.first_paragraph_line && (content.starts_with("~~~") || content.starts_with(":::")) {
+    if line.content_start.is_some() && (content.starts_with("~~~") || content.starts_with(":::")) {
         let what = if content.starts_with("~~~") {
             "a tilde fence"
         } else {
@@ -264,7 +258,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         };
         sink.emit(
             "block-marker-as-text",
-            line.start + line.content_start,
+            line.start + content_start,
             line.start + line.text.trim_end().len(),
             &line.path,
             &[("what", what)],
@@ -371,18 +365,16 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
             .find("]:")
             .is_some_and(|at| at > 1 && at + 2 < text.len())
         && (line.text.starts_with([' ', '\t']) || line.scope.in_container)
+        && let Some(start) = line.text.find('[')
+        && let Some(end) = line.text.get(start..).and_then(|rest| rest.find("]:"))
     {
-        if let Some(start) = line.text.find('[')
-            && let Some(end) = line.text.get(start..).and_then(|rest| rest.find("]:"))
-        {
-            sink.emit(
-                "definition-in-container",
-                line.start + start,
-                line.start + start + end + 2,
-                &line.path,
-                &[],
-            );
-        }
+        sink.emit(
+            "definition-in-container",
+            line.start + start,
+            line.start + start + end + 2,
+            &line.path,
+            &[],
+        );
     }
     if line.kind == "definition_term"
         && previous.is_some_and(|p| p.path == line.path)

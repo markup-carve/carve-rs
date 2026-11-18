@@ -17,15 +17,23 @@ fn c2_b_022_list_marker_inside_term_stays_lazy() {
 }
 
 #[test]
+fn c2_b_119_space_then_tab_opens_anonymous_div() {
+    assert_eq!(
+        carve2::render("::: \tnote\nx\n:::", &Options::default()),
+        "<div>\n  <p>x</p>\n</div>"
+    );
+}
+
+#[test]
 fn c2_w_107_escaped_mark_is_no_unclosed_emphasis() {
-    assert!(findings("a\\*b", "unclosed-inline-emphasis").is_empty());
-    assert!(findings("a\\/b", "unclosed-inline-emphasis").is_empty());
+    assert_eq!(findings("a\\*b", "unclosed-inline-emphasis"), Vec::new());
+    assert_eq!(findings("a\\/b", "unclosed-inline-emphasis"), Vec::new());
 }
 
 #[test]
 fn c2_b_024_lazy_heading_is_no_overindented_block() {
     let source = "- a\n   # b";
-    assert!(findings(source, "list-item-block-overindented").is_empty());
+    assert_eq!(findings(source, "list-item-block-overindented"), Vec::new());
     let heading = findings(source, "block-opener-without-blank-line");
     assert_eq!(heading.len(), 1);
     assert!(heading[0].message.contains("a heading"));
@@ -37,6 +45,20 @@ fn c2_b_081_definition_in_quote_reports_label_and_colon() {
     assert_eq!(definition.len(), 1);
     let pos = definition[0].pos.expect("range");
     assert_eq!((pos.start_offset, pos.end_offset), (2, 6));
+}
+
+#[test]
+fn c2_b_028_structural_openers_report_indent_in_each_owner() {
+    for (source, offset, owner) in [
+        (" > a", 1, "document"),
+        (">  # h", 3, "a quote"),
+        ("::: note\n  # h\n:::", 11, "a div"),
+    ] {
+        let findings = findings(source, "block-opener-overindented");
+        assert_eq!(findings.len(), 1, "{source:?}: {findings:?}");
+        assert_eq!(findings[0].pos.expect("range").start_offset, offset);
+        assert!(findings[0].message.contains(owner));
+    }
 }
 
 #[test]
