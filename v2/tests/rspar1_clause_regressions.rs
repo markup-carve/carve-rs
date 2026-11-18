@@ -74,6 +74,17 @@ fn c2_b_119_refused_div_marker_reports_inside_containers() {
 }
 
 #[test]
+fn c2_b_125_short_colon_fence_names_its_enclosing_close() {
+    let findings = findings("::: a\n:::: b\nx\n:::\n", "colon-fence-length-mismatch");
+    assert_eq!(findings.len(), 1);
+    assert!(
+        findings[0]
+            .message
+            .contains("closes an enclosing container")
+    );
+}
+
+#[test]
 fn c2_h_172_math_bidi_control_is_reported() {
     let bidi = findings("$`x\u{2066}y`\n", "bidi-control-in-source");
     assert_eq!(bidi.len(), 1);

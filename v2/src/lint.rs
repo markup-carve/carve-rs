@@ -298,12 +298,27 @@ fn normalize_root_message(
                     .map_or(0, |at| at + 1)
                 + 1)
             .to_string();
-            let variant = if authored.parse::<usize>().unwrap_or(0)
-                > expected.parse::<usize>().unwrap_or(0)
-            {
+            let authored_width = authored.parse::<usize>().unwrap_or(0);
+            let expected_width = expected.parse::<usize>().unwrap_or(0);
+            let closes_enclosing = ranges.iter().any(|range| {
+                range.start < opener
+                    && range.end >= end
+                    && matches!(
+                        range.kind.as_str(),
+                        "div" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
+                    )
+                    && source
+                        .get(range.start..)
+                        .unwrap_or("")
+                        .bytes()
+                        .take_while(|byte| *byte == b':')
+                        .count()
+                        <= authored_width
+            });
+            let variant = if authored_width > expected_width {
                 2
             } else {
-                0
+                usize::from(closes_enclosing)
             };
             diagnostic.message = Diagnostic::nth(
                 "colon-fence-length-mismatch",
