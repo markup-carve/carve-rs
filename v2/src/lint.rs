@@ -91,7 +91,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     }
     lines::scan(source, opts, &positions, &mut out);
     nodes::scan(source, opts, &mut out);
-    referenced_footnote_platform_tokens(source, opts, &mut out);
+    referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     let invalid_tables: Vec<_> = out
         .iter()
         .filter(|finding| finding.code == "table-attribute-invalid")
@@ -149,6 +149,7 @@ fn skip_legacy_warning(
                         | "definition_term"
                         | "div"
                         | "image"
+                        | "list"
                         | "thematic_break"
                         | "table"
                 )
@@ -289,18 +290,21 @@ fn convert_legacy_warning(
 fn referenced_footnote_platform_tokens(
     source: &str,
     opts: &LintOptions,
+    ranges: &[Range],
     output: &mut Vec<Diagnostic>,
 ) {
     if !opts.platforms.iter().any(|platform| platform == "github") {
         return;
     }
     let positions = Source::new(source);
+    let mentions = footnote_mentions(source);
     let mut offset = 0;
     for piece in source.split_inclusive('\n') {
         let line = piece.trim_end_matches('\n');
         if let Some(rest) = line.strip_prefix("[^")
             && let Some((label, body)) = rest.split_once("]:")
-            && source.matches(&format!("[^{label}]")).count() > 1
+            && mentions.get(label).is_some_and(|count| *count > 1)
+            && !opaque_definition(ranges, offset)
         {
             let body_start = offset + 2 + label.len() + 2;
             let trimmed = body.trim_start();
@@ -334,6 +338,27 @@ fn referenced_footnote_platform_tokens(
         }
         offset += piece.len();
     }
+}
+
+fn footnote_mentions(source: &str) -> HashMap<&str, usize> {
+    let mut counts = HashMap::new();
+    for (at, _) in source.match_indices("[^") {
+        if let Some(tail) = source.get(at + 2..)
+            && let Some(end) = tail.find(']')
+            && let Some(label) = tail.get(..end)
+        {
+            *counts.entry(label).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn opaque_definition(ranges: &[Range], offset: usize) -> bool {
+    ranges.iter().any(|range| {
+        ["code_block", "raw_block", "frontmatter", "comment"].contains(&range.kind.as_str())
+            && range.start <= offset
+            && offset < range.end
+    })
 }
 
 fn table_marker_run_padding(source: &str, at: usize) -> bool {

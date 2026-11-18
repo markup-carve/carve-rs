@@ -476,8 +476,8 @@
   {
     "id": "sigil-after-letter",
     "origin": "../carve/tests/corpus/855-an-email-autolink-takes-every-email-character-in-its-domain-4.crv",
-    "trigger": "<a@b.c1>\n",
-    "near": "<ab.c1>\n",
+    "trigger": "ü@bob\n",
+    "near": "ü @bob\n",
     "fragment": "@",
     "message": "A mention or tag does not start directly after a letter or number. Put a space or punctuation before it."
   },

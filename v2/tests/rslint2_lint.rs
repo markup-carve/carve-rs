@@ -246,6 +246,23 @@ fn frontmatter_quote_lint_respects_disabled_rule() {
 }
 
 #[test]
+fn platform_tokens_ignore_opaque_footnote_shaped_lines() {
+    let mut options = LintOptions::default();
+    options.platforms.push("github".to_string());
+    let source = "```\n[^n]: #12\n```\n\n[^n]\n";
+    assert!(
+        lint(source, &options)
+            .iter()
+            .all(|finding| finding.code != "platform-issue-reference")
+    );
+    assert!(
+        lint("[^n]: #12\n\n[^n]\n", &options)
+            .iter()
+            .any(|finding| finding.code == "platform-issue-reference")
+    );
+}
+
+#[test]
 fn paragraph_and_strike_rules_respect_visible_nodes() {
     assert_eq!(first_position("*Title*\n", "emphasis-as-heading"), (1, 1));
     for input in ["{~a\\~>b~}\n", "{~`a~>b`~}\n", "{~[a~>b](/u)~}\n"] {

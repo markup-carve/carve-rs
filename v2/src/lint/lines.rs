@@ -530,7 +530,8 @@ fn legacy_layout(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         && line.text.starts_with("    ")
         && !text.is_empty()
         && line.path.matches('/').count() <= 2
-        && previous.is_some_and(|p| p.text.trim().is_empty())
+        && previous
+            .is_some_and(|p| p.text.trim().is_empty() || p.text.trim_start().starts_with('{'))
     {
         sink.whole("indented-code-block", line, &[]);
     }
@@ -576,11 +577,18 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
             &[],
         );
     }
-    term_folded(line, sink);
+    term_folded(line, previous, sink);
 }
 
-fn term_folded(line: &Line, sink: &mut Sink<'_>) {
+fn term_folded(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.trim();
+    if line.kind == "definition_term"
+        && previous.is_some_and(|p| p.path == line.path)
+        && starts_block(text)
+        && line.text == text
+    {
+        sink.whole("definition-term-block-folded", line, &[]);
+    }
     if line.kind == "definition_term"
         && let Some(body) = text.strip_prefix(":: ")
         && (body.starts_with("> ") || list_marker(body))
