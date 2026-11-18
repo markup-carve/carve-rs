@@ -793,6 +793,12 @@ pub fn footnote_def(r: &str) -> Option<(String, usize)> {
     Some((label.to_string(), after + skip))
 }
 
+/// Offset just past the parsed `[^label]:` marker.
+#[must_use]
+pub fn footnote_marker_len(r: &str) -> Option<usize> {
+    def_label(r, true).map(|(_, after)| after)
+}
+
 /// A link definition line (C2-B-083, C2-B-089).
 #[must_use]
 pub fn link_def(r: &str) -> Option<LinkDef> {
