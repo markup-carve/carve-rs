@@ -268,15 +268,20 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 }
 
 fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut Sink<'_>) {
-    if line.content_start.is_some() && (content.starts_with("~~~") || content.starts_with(":::")) {
+    if line.paragraph && (content.starts_with("~~~") || content.starts_with(":::")) {
         let what = if content.starts_with("~~~") {
             "a tilde fence"
         } else {
             "a div fence"
         };
+        let marker = line
+            .text
+            .get(content_start..)
+            .and_then(|tail| tail.find(content))
+            .map_or(content_start, |at| content_start + at);
         sink.emit(
             "block-marker-as-text",
-            line.start + content_start,
+            line.start + marker,
             line.start + line.text.trim_end().len(),
             &line.path,
             &[("what", what)],
