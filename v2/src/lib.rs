@@ -435,6 +435,8 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
             let source = source::Source::new(input);
             let raw_losses = raw_loss_nodes(input, opts);
             let mut raw_losses = raw_losses.iter();
+            let destination_losses = destination_loss_nodes(input, opts);
+            let mut destination_losses = destination_losses.iter();
             let loss_diags: Vec<_> = losses
                 .iter()
                 .map(|c| {
@@ -449,10 +451,16 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
                     } else {
                         None
                     };
+                    let destination = if *c == "destination-denied" {
+                        destination_losses.next()
+                    } else {
+                        None
+                    };
                     let pos = raw
                         .and_then(|r| r.pos)
+                        .or_else(|| destination.and_then(|d| d.pos))
                         .or_else(|| loss_position(c, &source, opts, diags.as_slice()));
-                    let (variant, values) = loss_message(c, source.text(), pos, raw);
+                    let (variant, values) = loss_message(c, source.text(), pos, raw, destination);
                     let values: Vec<_> = values
                         .iter()
                         .map(|(name, value)| (*name, value.as_str()))
@@ -479,6 +487,72 @@ struct RawLoss {
     kind: &'static str,
     format: String,
     pos: Option<ast::Pos>,
+}
+
+struct DestinationLoss {
+    image: bool,
+    pos: Option<ast::Pos>,
+}
+
+fn destination_loss_nodes(input: &str, opts: &Options) -> Vec<DestinationLoss> {
+    fn span(source: &source::Source<'_>, node: Option<ast::Pos>, dest: &str) -> Option<ast::Pos> {
+        let node = node?;
+        let start = usize::try_from(node.start_offset).ok()?;
+        let end = usize::try_from(node.end_offset).ok()?;
+        let at = source.text().get(start..end)?.rfind(dest)? + start;
+        Some(source.pos(at, at + dest.len()))
+    }
+    fn visit_attrs(node: &ast::Node<'_>, opts: &Options, out: &mut Vec<DestinationLoss>) {
+        if let Some(attrs) = node.attrs() {
+            for (key, value) in attrs.key_values {
+                if !html::url::filter_value_in(key, value, None).is_empty()
+                    && html::url::filter_value_in(key, value, Some(&opts.url_policy)).is_empty()
+                {
+                    out.push(DestinationLoss {
+                        image: false,
+                        pos: node.pos().copied(),
+                    });
+                }
+            }
+        }
+        node.for_each_child(&mut |child| visit_attrs(child, opts, out));
+    }
+    fn visit_render(
+        node: &ast::Node<'_>,
+        source: &source::Source<'_>,
+        opts: &Options,
+        out: &mut Vec<DestinationLoss>,
+    ) {
+        let target = match node {
+            ast::Node::Link(link) => link.href.map(|dest| (dest, link.pos, false)),
+            ast::Node::Image(image) => image.src.map(|dest| (dest, image.pos, true)),
+            ast::Node::Autolink(link) => Some((link.href, link.pos, false)),
+            ast::Node::Xref(link) => link.href.map(|dest| (dest, link.pos, false)),
+            _ => None,
+        };
+        if let Some((dest, node_pos, image)) = target
+            && !html::url::allowed(dest, &opts.url_policy)
+        {
+            out.push(DestinationLoss {
+                image,
+                pos: span(source, node_pos, dest).or(node_pos),
+            });
+        }
+        node.for_each_child(&mut |child| visit_render(child, source, opts, out));
+    }
+    let arena = Arena::for_input(input);
+    let Ok(doc) = parse_resolved_in(input, opts, &arena) else {
+        return Vec::new();
+    };
+    let source = source::Source::new(input);
+    let mut out = Vec::new();
+    for node in doc.children.iter() {
+        visit_attrs(node, opts, &mut out);
+    }
+    for node in doc.children.iter() {
+        visit_render(node, &source, opts, &mut out);
+    }
+    out
 }
 
 fn raw_loss_nodes(input: &str, opts: &Options) -> Vec<RawLoss> {
@@ -514,6 +588,7 @@ fn loss_message(
     source: &str,
     pos: Option<ast::Pos>,
     raw: Option<&RawLoss>,
+    destination: Option<&DestinationLoss>,
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
         "carrier-attribute-dropped" => {
@@ -528,10 +603,10 @@ fn loss_message(
                 .map_or_else(String::new, |(key, _)| key.to_string());
             (0, vec![("key", key)])
         }
-        "destination-denied" => {
-            let image = pos.is_some_and(|position| image_at_destination(source, position));
-            (usize::from(image), Vec::new())
-        }
+        "destination-denied" => (
+            usize::from(destination.is_some_and(|d| d.image)),
+            Vec::new(),
+        ),
         "raw-format-dropped" => (
             0,
             vec![
@@ -542,31 +617,6 @@ fn loss_message(
         ),
         _ => (0, Vec::new()),
     }
-}
-
-fn image_at_destination(source: &str, position: ast::Pos) -> bool {
-    fn contains(nodes: &[ast::Node<'_>], position: ast::Pos) -> bool {
-        for node in nodes {
-            if let ast::Node::Image(image) = node
-                && image.pos.is_some_and(|span| {
-                    span.start_offset <= position.start_offset
-                        && span.end_offset >= position.end_offset
-                })
-            {
-                return true;
-            }
-            let mut child_has_image = false;
-            node.for_each_child(&mut |child| {
-                child_has_image |= contains(std::slice::from_ref(child), position);
-            });
-            if child_has_image {
-                return true;
-            }
-        }
-        false
-    }
-    let arena = Arena::for_input(source);
-    parse_in(source, &arena).is_ok_and(|doc| contains(doc.children, position))
 }
 
 fn loss_position(
