@@ -54,9 +54,9 @@ pub fn render_with_losses_source(
 ) -> (String, Vec<&'static str>) {
     if opts.profile != crate::options::Profile::Full && src.contains('\0') {
         let normalized = crate::source::Source::new(src);
-        render_mapped_source(doc, opts, normalized.render_view(), true, None)
+        render_mapped_source(doc, opts, normalized.render_view(), true, None, None)
     } else {
-        render_source(doc, opts, src, true, None)
+        render_source(doc, opts, src, true, None, None)
     }
 }
 
@@ -69,7 +69,7 @@ pub fn render_with_losses_source_bytes(
     src: &[u8],
 ) -> (String, Vec<&'static str>) {
     let normalized = crate::source::Source::from_bytes(src);
-    render_mapped_source(doc, opts, normalized.render_view(), true, None)
+    render_mapped_source(doc, opts, normalized.render_view(), true, None, None)
 }
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
@@ -80,12 +80,16 @@ pub(crate) fn render_source(
     src: &str,
     ordered: bool,
     destinations: Option<&mut Vec<DestinationLoss>>,
+    raws: Option<&mut Vec<RawLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(SourceView::direct(src));
     r.document();
     if let Some(destinations) = destinations {
         destinations.extend(r.destination_losses);
+    }
+    if let Some(raws) = raws {
+        raws.extend(r.raw_losses);
     }
     (r.out, r.losses)
 }
@@ -97,12 +101,16 @@ pub(crate) fn render_files<'a>(
     src: &str,
     files: &crate::resolve::files::Files<'a>,
     destinations: Option<&mut Vec<DestinationLoss>>,
+    raws: Option<&mut Vec<RawLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::build(doc, opts, true, Some(files));
     r.src = Some(SourceView::direct(src));
     r.document();
     if let Some(destinations) = destinations {
         destinations.extend(r.destination_losses);
+    }
+    if let Some(raws) = raws {
+        raws.extend(r.raw_losses);
     }
     (r.out, r.losses)
 }
@@ -113,12 +121,16 @@ pub(crate) fn render_mapped_source(
     src: SourceView<'_>,
     ordered: bool,
     destinations: Option<&mut Vec<DestinationLoss>>,
+    raws: Option<&mut Vec<RawLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(src);
     r.document();
     if let Some(destinations) = destinations {
         destinations.extend(r.destination_losses);
+    }
+    if let Some(raws) = raws {
+        raws.extend(r.raw_losses);
     }
     (r.out, r.losses)
 }
@@ -127,6 +139,12 @@ pub(crate) struct DestinationLoss {
     pub image: bool,
     pub pos: Option<crate::ast::Pos>,
     pub value: String,
+}
+
+pub(crate) struct RawLoss {
+    pub kind: &'static str,
+    pub format: String,
+    pub pos: Option<crate::ast::Pos>,
 }
 
 /// About the output length: twice the source length the tree covers.
@@ -177,6 +195,7 @@ pub(crate) struct Renderer<'r, 'a> {
     degrading: usize,
     losses: Vec<&'static str>,
     destination_losses: Vec<DestinationLoss>,
+    raw_losses: Vec<RawLoss>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
     hidden: AddrSet<usize>,
     /// The row of `opts.profile` in the profile table.
@@ -253,6 +272,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             degrading: 0,
             losses: Vec::new(),
             destination_losses: Vec::new(),
+            raw_losses: Vec::new(),
             hidden: AddrSet::default(),
             profile,
         };

@@ -273,6 +273,7 @@ mod tests {
             &mut Vec::new(),
             &mut Vec::new(),
             &mut Vec::new(),
+            &mut Vec::new(),
         )
         .map_or_else(|_| "render error".to_string(), |(html, _)| html)
     }

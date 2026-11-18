@@ -671,6 +671,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn raw_inline(&mut self, r: &ast::RawInline, out: &mut String) {
         if r.format != "html" {
             self.losses.push("raw-format-dropped");
+            self.raw_losses.push(super::RawLoss {
+                kind: "inline",
+                format: r.format.to_string(),
+                pos: r.pos,
+            });
             return;
         }
         let open = if self.opts.roundtrip && !self.opts.raw_html {

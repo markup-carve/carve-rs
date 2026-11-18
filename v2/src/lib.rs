@@ -256,6 +256,7 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         &mut diags,
         &mut Vec::new(),
         &mut Vec::new(),
+        &mut Vec::new(),
     )?;
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
@@ -383,6 +384,7 @@ fn render_parts(
     diags: &mut Vec<diagnostic::Diagnostic>,
     places: &mut Vec<Option<String>>,
     destinations: &mut Vec<html::DestinationLoss>,
+    raws: &mut Vec<html::RawLoss>,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
     if let Some(files) = files {
@@ -399,16 +401,29 @@ fn render_parts(
             include::flatten(&mut doc, arena);
         }
         let src = source::Source::new(input);
-        let (out, mut losses) =
-            html::render_files(&doc, opts, src.text(), &files, Some(destinations));
+        let (out, mut losses) = html::render_files(
+            &doc,
+            opts,
+            src.text(),
+            &files,
+            Some(destinations),
+            Some(raws),
+        );
         losses.extend(extra);
         return Ok((out, losses));
     }
     let (out, losses) = if opts.profile != options::Profile::Full && input.contains('\0') {
         let src = source::Source::new(input);
-        html::render_mapped_source(&doc, opts, src.render_view(), ordered, Some(destinations))
+        html::render_mapped_source(
+            &doc,
+            opts,
+            src.render_view(),
+            ordered,
+            Some(destinations),
+            Some(raws),
+        )
     } else {
-        html::render_source(&doc, opts, input, ordered, Some(destinations))
+        html::render_source(&doc, opts, input, ordered, Some(destinations), Some(raws))
     };
     Ok((out, losses))
 }
@@ -439,6 +454,7 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     let mut diags = Vec::new();
     let mut places = Vec::new();
     let mut destinations = Vec::new();
+    let mut raws = Vec::new();
     let html = match render_parts(
         input,
         opts,
@@ -446,12 +462,12 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
         &mut diags,
         &mut places,
         &mut destinations,
+        &mut raws,
     ) {
         Ok((html, losses)) => {
             let mut places = places.into_iter();
             let source = source::Source::new(input);
-            let raw_losses = raw_loss_nodes(input, opts);
-            let mut raw_losses = raw_losses.iter();
+            let mut raw_losses = raws.iter();
             let mut destination_losses = destinations.iter();
             let loss_diags: Vec<_> = losses
                 .iter()
@@ -500,12 +516,6 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     }
 }
 
-struct RawLoss {
-    kind: &'static str,
-    format: String,
-    pos: Option<ast::Pos>,
-}
-
 fn destination_loss_position(
     source: &source::Source<'_>,
     loss: &html::DestinationLoss,
@@ -517,39 +527,11 @@ fn destination_loss_position(
     Some(source.pos(at, at + loss.value.len()))
 }
 
-fn raw_loss_nodes(input: &str, opts: &Options) -> Vec<RawLoss> {
-    fn visit(nodes: &[ast::Node<'_>], out: &mut Vec<RawLoss>) {
-        for node in nodes {
-            match node {
-                ast::Node::RawBlock(raw) if raw.format != "html" => out.push(RawLoss {
-                    kind: "block",
-                    format: raw.format.to_string(),
-                    pos: raw.pos,
-                }),
-                ast::Node::RawInline(raw) if raw.format != "html" => out.push(RawLoss {
-                    kind: "inline",
-                    format: raw.format.to_string(),
-                    pos: raw.pos,
-                }),
-                _ => {}
-            }
-            node.for_each_child(&mut |child| visit(std::slice::from_ref(child), out));
-        }
-    }
-    let arena = Arena::for_input(input);
-    let Ok(doc) = parse_resolved_in(input, opts, &arena) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    visit(doc.children, &mut out);
-    out
-}
-
 fn loss_message(
     code: &str,
     source: &str,
     pos: Option<ast::Pos>,
-    raw: Option<&RawLoss>,
+    raw: Option<&html::RawLoss>,
     destination: Option<&html::DestinationLoss>,
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
@@ -710,7 +692,8 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     let out = block::scan(&src);
     let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
-    let (out, losses) = html::render_mapped_source(&doc, opts, src.render_view(), ordered, None);
+    let (out, losses) =
+        html::render_mapped_source(&doc, opts, src.render_view(), ordered, None, None);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }

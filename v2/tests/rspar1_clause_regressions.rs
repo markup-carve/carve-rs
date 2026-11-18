@@ -1,5 +1,7 @@
 use carve2::Options;
+use carve2::include::{Cause, Includes, Request};
 use carve2::lint::{LintOptions, lint};
+use std::sync::Arc;
 
 fn findings(source: &str, code: &str) -> Vec<carve2::diagnostic::Diagnostic> {
     lint(source, &LintOptions::default())
@@ -139,6 +141,31 @@ fn c2_h_054_multiple_raw_losses_keep_each_kind_and_format() {
             "Dropped inline raw format \"latex\" while rendering HTML",
             "Dropped block raw format \"svg\" while rendering HTML",
         ]
+    );
+}
+
+#[test]
+fn c2_h_054_raw_loss_in_expanded_include_keeps_its_format() {
+    let resolver = Arc::new(|request: &Request<'_>| {
+        if request.path == "raw.crv" {
+            Ok((b"```=tex\nx\n```\n".to_vec(), "raw.crv".to_string()))
+        } else {
+            Err(Cause::NotFound)
+        }
+    });
+    let opts = Options {
+        includes: Some(Includes::new(resolver)),
+        ..Options::default()
+    };
+    let rendered = carve2::render_with_diagnostics("{{ raw.crv }}", &opts);
+    let loss = rendered
+        .diagnostics
+        .iter()
+        .find(|finding| finding.code == "raw-format-dropped")
+        .expect("raw loss in included file");
+    assert_eq!(
+        loss.message,
+        "Dropped block raw format \"tex\" while rendering HTML"
     );
 }
 
