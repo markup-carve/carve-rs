@@ -21,8 +21,6 @@ const HELD: &[(&str, &str)] = &[
     ("CC-458", "diagnostic:extension-fallback-rendered"),
     ("CC-459", "diagnostic:extension-fallback-rendered"),
     ("CC-459", "diagnostic:destination-denied"),
-    ("CC-468", "refusal"),
-    ("CC-474", "refusal"),
     ("CC-663", "diagnostic:extension-fallback-rendered"),
     ("CC-664", "notReported"),
     ("CC-439", "children"),

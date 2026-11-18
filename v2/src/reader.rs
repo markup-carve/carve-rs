@@ -10,6 +10,7 @@ fn field<'a>(value: &'a Value, path: &str) -> &'a Value {
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+mod registered;
 mod schema;
 
 /// A refused supplied tree, with its JSON path and the gate that refused it.
@@ -617,6 +618,7 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
     let declarations = extension_names(root)?;
     check_annotation_ids(root)?;
     check_unqualified_depth(root)?;
+    registered::validate(root)?;
     let resources = resource_ids(root)?;
     let header_ids = header_ids(root);
     let mut pending = vec![(root, String::new())];
