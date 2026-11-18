@@ -6,7 +6,6 @@ use super::block::attr_str;
 use super::{esc, url};
 use crate::ast::{self, Attrs, ImageRefForm, LinkRefForm, Node};
 use crate::hash::AddrSet;
-use crate::options::Mode;
 use crate::options::Profile;
 use crate::resolve::order::addr;
 use crate::tables::PROFILES;
@@ -614,15 +613,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-072, C2-H-151, C2-H-168.
     fn math(&mut self, m: &ast::Math, out: &mut String) {
         let mut el = El::new(m.attrs, m.lang).with_dir(m.dir);
-        if self.opts.mode == Mode::Static {
-            el.base.push("language-math".into());
-            out.push_str("<code");
-            el.write_into(self.filter(), out);
-            out.push('>');
-            esc::text(m.value, out);
-            out.push_str("</code>");
-            return;
-        }
         el.base.push("math".into());
         el.base
             .push(if m.display { "display" } else { "inline" }.into());

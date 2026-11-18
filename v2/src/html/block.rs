@@ -5,7 +5,6 @@ use super::Renderer;
 use super::attrs::El;
 use super::esc;
 use crate::ast::{self, Attrs, ListSpacing, Node, ParagraphRole};
-use crate::options::Mode;
 use crate::resolve::order::addr;
 use crate::tables::TASK_STATES;
 use std::borrow::Cow;
@@ -281,12 +280,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return true;
         }
-        let static_math = p.role == Some(ParagraphRole::Math) && self.opts.mode == Mode::Static;
         let mut el = self.el(p.attrs, p.lang, n);
-        if static_math {
-            out.push_str(&self.static_display_math(&*p.children, el));
-            return true;
-        }
         if bare && !has_attrs(p.attrs, p.lang) {
             self.leaf_into(p.children, out);
             return true;
@@ -313,25 +307,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::Comment(_) | Node::SoftBreak(_) => true,
             _ => false,
         }) && self.profile_allows_type("image", false)
-    }
-
-    fn static_display_math(&mut self, children: &[Node], mut el: El<'_>) -> String {
-        el.source_line = None;
-        let value = children
-            .iter()
-            .find_map(|c| {
-                if let Node::Math(m) = c {
-                    Some(m.value)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
-        format!(
-            "<pre{}><code class=\"language-math\">{}\n</code></pre>",
-            el.write(self.filter()),
-            esc::text_str(value)
-        )
     }
 
     /// C2-H-021, C2-H-027, C2-H-028. `own_id` is false for a heading that

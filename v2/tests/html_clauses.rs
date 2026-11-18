@@ -5,6 +5,40 @@ fn html(src: &str) -> String {
 }
 
 #[test]
+fn c2_h_168_static_math_keeps_the_core_span_in_every_host() {
+    let cases = [
+        (
+            "a $`x<y` b",
+            "<p>a <span class=\"math inline\" role=\"math\">\\(x&lt;y\\)</span> b</p>",
+        ),
+        (
+            "{.m}\n$$`x`",
+            "<p class=\"m\"><span class=\"math display\" role=\"math\">\\[x\\]</span></p>",
+        ),
+        (
+            "> $`x`",
+            "<blockquote><p><span class=\"math inline\" role=\"math\">\\(x\\)</span></p></blockquote>",
+        ),
+        (
+            "| $`x` |",
+            "<table>\n  <tbody>\n    <tr><td><span class=\"math inline\" role=\"math\">\\(x\\)</span></td></tr>\n  </tbody>\n</table>",
+        ),
+        (
+            "$`x`{.c}",
+            "<p><span class=\"math inline c\" role=\"math\">\\(x\\)</span></p>",
+        ),
+    ];
+    let opts = carve2::Options {
+        mode: carve2::options::Mode::Static,
+        ..carve2::Options::default()
+    };
+    for (source, expected) in cases {
+        assert_eq!(carve2::render(source, &opts), expected, "{source}");
+        assert_eq!(carve2::render(source, &opts), html(source), "{source}");
+    }
+}
+
+#[test]
 fn c2_h_202_note_and_mark_ids_share_the_document_namespace() {
     let heading = html("= fn1\n\na[^x]\n\n[^x]: n");
     assert!(heading.contains("id=\"fn1-2\""), "{heading}");
