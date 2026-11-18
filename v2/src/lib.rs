@@ -529,14 +529,7 @@ fn loss_message(
             (0, vec![("key", key)])
         }
         "destination-denied" => {
-            let image = pos.is_some_and(|position| {
-                usize::try_from(position.start_offset)
-                    .ok()
-                    .and_then(|at| source.get(..at))
-                    .and_then(|prefix| prefix.rfind('[').map(|at| prefix.get(..at)))
-                    .flatten()
-                    .is_some_and(|prefix| prefix.ends_with('!'))
-            });
+            let image = pos.is_some_and(|position| image_at_destination(source, position));
             (usize::from(image), Vec::new())
         }
         "raw-format-dropped" => (
@@ -549,6 +542,31 @@ fn loss_message(
         ),
         _ => (0, Vec::new()),
     }
+}
+
+fn image_at_destination(source: &str, position: ast::Pos) -> bool {
+    fn contains(nodes: &[ast::Node<'_>], position: ast::Pos) -> bool {
+        for node in nodes {
+            if let ast::Node::Image(image) = node
+                && image.pos.is_some_and(|span| {
+                    span.start_offset <= position.start_offset
+                        && span.end_offset >= position.end_offset
+                })
+            {
+                return true;
+            }
+            let mut child_has_image = false;
+            node.for_each_child(&mut |child| {
+                child_has_image |= contains(std::slice::from_ref(child), position);
+            });
+            if child_has_image {
+                return true;
+            }
+        }
+        false
+    }
+    let arena = Arena::for_input(source);
+    parse_in(source, &arena).is_ok_and(|doc| contains(doc.children, position))
 }
 
 fn loss_position(

@@ -143,6 +143,17 @@ fn c2_h_054_multiple_raw_losses_keep_each_kind_and_format() {
 }
 
 #[test]
+fn c2_h_082_nested_image_alt_keeps_image_loss_variant() {
+    let rendered = carve2::render_with_diagnostics("![a [b]](javascript:)", &Options::default());
+    let loss = rendered
+        .diagnostics
+        .iter()
+        .find(|finding| finding.code == "destination-denied")
+        .expect("denied destination");
+    assert_eq!(loss.message, "Blanked a denied image source");
+}
+
+#[test]
 fn c2_h_075_semantic_attribute_range_is_the_key_and_value() {
     let attribute = findings("[x]{kbd=\"V\"}", "semantic-attribute-value-ignored");
     assert_eq!(attribute.len(), 1);
