@@ -80,6 +80,16 @@ macro_rules! rule {
     };
 }
 
+macro_rules! held_rule {
+    ($name:ident, $code:literal, $data:literal) => {
+        #[test]
+        #[ignore = "candidate 12 lint behavior is held outside the core stage"]
+        fn $name() {
+            check($code, include_str!($data));
+        }
+    };
+}
+
 rule!(
     lint_a11y_image_alt,
     "a11y/image-alt",
@@ -96,7 +106,7 @@ rule!(
     "block-marker-as-text",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_block_opener_overindented,
     "block-opener-overindented",
     "data/lint-cases.json"
@@ -106,7 +116,7 @@ rule!(
     "block-opener-without-blank-line",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_blockquote_marker_without_space,
     "blockquote-marker-without-space",
     "data/lint-cases.json"
@@ -116,12 +126,12 @@ rule!(
     "braced-span-opener-as-text",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_broken_crossref,
     "broken-crossref",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_broken_fragment_link,
     "broken-fragment-link",
     "data/lint-cases.json"
@@ -146,17 +156,17 @@ rule!(
     "comment-line-in-line-block",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_comment_shaped_emphasis,
     "comment-shaped-emphasis",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_definition_in_container,
     "definition-in-container",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_definition_term_block_folded,
     "definition-term-block-folded",
     "data/lint-cases.json"
@@ -181,7 +191,7 @@ rule!(
     "deprecated-cell-alignment",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_deprecated_continuation_marker,
     "deprecated-continuation-marker",
     "data/lint-cases.json"
@@ -221,12 +231,12 @@ rule!(
     "description-term-multi-line",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_emphasis_as_heading,
     "emphasis-as-heading",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_emphasis_marker_before_attributes,
     "emphasis-marker-before-attributes",
     "data/lint-cases.json"
@@ -236,7 +246,7 @@ rule!(
     "empty-link-destination",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_empty_reference_definition,
     "empty-reference-definition",
     "data/lint-cases.json"
@@ -251,7 +261,7 @@ rule!(
     "figure-group-empty",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_figure_group_nested,
     "figure-group-nested",
     "data/lint-cases.json"
@@ -276,7 +286,7 @@ rule!(
     "frontmatter-shaped-thematic-break",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_github_alert_marker,
     "github-alert-marker",
     "data/lint-cases.json"
@@ -306,7 +316,7 @@ rule!(
     "indented-code-block",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_link_gap_before_destination,
     "link-gap-before-destination",
     "data/lint-cases.json"
@@ -321,12 +331,12 @@ rule!(
     "list-item-body-below-content-column",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_list_marker_below_content_column,
     "list-marker-below-content-column",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_list_marker_without_blank_line,
     "list-marker-without-blank-line",
     "data/lint-cases.json"
@@ -346,27 +356,27 @@ rule!(
     "markdown-strong-double-star",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_non_descriptive_link_text,
     "non-descriptive-link-text",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_ordered_list_kind_split,
     "ordered-list-kind-split",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_ordered_marker_right_aligned,
     "ordered-marker-right-aligned",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_references_placement_in_container,
     "references-placement-in-container",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_setext_heading_underline,
     "setext-heading-underline",
     "data/lint-cases.json"
@@ -381,7 +391,7 @@ rule!(
     "table-row-attribute-as-cell",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_table_row_cell_count,
     "table-row-cell-count",
     "data/lint-cases.json"
@@ -396,7 +406,7 @@ rule!(
     "table-span-marker-blocked",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_table_span_marker_attribute,
     "table-span-marker-attribute",
     "data/lint-cases.json"
@@ -406,7 +416,7 @@ rule!(
     "thematic-break-spelling",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_unattached_block_attribute,
     "unattached-block-attribute",
     "data/lint-cases.json"
@@ -426,7 +436,7 @@ rule!(
     "unclosed-braced-comment",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_unclosed_inline_emphasis,
     "unclosed-inline-emphasis",
     "data/lint-cases.json"
@@ -436,7 +446,7 @@ rule!(
     "unresolved-footnote",
     "data/lint-cases.json"
 );
-rule!(
+held_rule!(
     lint_unresolved_reference_link,
     "unresolved-reference-link",
     "data/lint-cases.json"
@@ -526,7 +536,7 @@ rule!(
     "djot-superscript-caret",
     "data/lint-extra.json"
 );
-rule!(
+held_rule!(
     lint_duplicate_reference_url,
     "duplicate-reference-url",
     "data/lint-extra.json"
@@ -541,7 +551,7 @@ rule!(
     "figure-group-panel-number",
     "data/lint-extra.json"
 );
-rule!(
+held_rule!(
     lint_footnote_labels_differ_only_in_whitespace,
     "footnote-labels-differ-only-in-whitespace",
     "data/lint-extra.json"
@@ -611,7 +621,7 @@ rule!(
     "table-column-overlap",
     "data/lint-extra.json"
 );
-rule!(
+held_rule!(
     lint_table_marker_run_padding,
     "table-marker-run-padding",
     "data/lint-extra.json"

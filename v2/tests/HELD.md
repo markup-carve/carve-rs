@@ -1,0 +1,52 @@
+# Held tests at freeze candidate 12
+
+- `lint_rules::lint_block_opener_overindented` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_blockquote_marker_without_space` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_broken_crossref` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_broken_fragment_link` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_comment_shaped_emphasis` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_definition_in_container` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_definition_term_block_folded` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_deprecated_continuation_marker` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_duplicate_reference_url` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_emphasis_as_heading` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_emphasis_marker_before_attributes` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_empty_reference_definition` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_figure_group_nested` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_footnote_labels_differ_only_in_whitespace` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_github_alert_marker` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_link_gap_before_destination` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_list_marker_below_content_column` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_list_marker_without_blank_line` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_non_descriptive_link_text` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_ordered_list_kind_split` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_ordered_marker_right_aligned` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_references_placement_in_container` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_setext_heading_underline` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_table_marker_run_padding` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_table_row_cell_count` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_table_span_marker_attribute` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_unattached_block_attribute` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_unclosed_inline_emphasis` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_rules::lint_unresolved_reference_link` — Lint reporting or message changed at candidate 12; lint is outside the core stage.
+- `lint_controls::c2_w_106_broken_crossref_message_variants` — Lint message changed at candidate 12; lint is outside the core stage.
+- `lint_controls::c2_i_080_c2_i_081_unresolved_reference_message_variants` — Lint message changed at candidate 12; lint is outside the core stage.
+- `conformance::CC-907` — HTML importer footnote section case; importer is outside the core stage.
+- `conformance::CC-908` — HTML importer titled footnotes case; importer is outside the core stage.
+- `conformance::CC-909` — HTML importer labeled footnotes case; importer is outside the core stage.
+- `conformance::CC-439` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-440` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-441` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-442` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-443` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-451` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-452` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-453` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-1032` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-1033` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-1034` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-1048` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `conformance::CC-1089` — Standard tabs extension under provisional C2-X; extensions are outside the frozen core stage.
+- `corpus::c2_fixed_oracle_corpus_and_clause_differences` — Candidate 3 JavaScript differential oracle conflicts with the candidate 12 specification; the pinned specification corpus is the core gate.
+- `inline_examples::inline_examples_match_oracle_paragraphs` — Candidate 3 example tree oracle conflicts with the candidate 12 specification; the pinned tree fixtures are the core gate.
+- `oracle_extra::c2_h_extra_inputs_match_the_oracle` — Candidate 3 JavaScript HTML oracle conflicts with the candidate 12 specification; the pinned conformance corpus is the core gate.

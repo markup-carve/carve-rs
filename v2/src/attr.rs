@@ -48,7 +48,7 @@ pub fn parse_block(s: &str, at: usize) -> Option<(AttrBlock, usize)> {
         match b.get(i) {
             Some(b'}') => {
                 block.empty = parts == 0;
-                crate::ast::owned::dedupe_keys(&mut block.attrs.key_values);
+                crate::ast::owned::dedupe_keys_semantic(&mut block.attrs.key_values);
                 return Some((block, i + 1));
             }
             None | Some(b'\n') => return None,

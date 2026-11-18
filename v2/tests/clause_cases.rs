@@ -64,16 +64,13 @@ fn c2_b_010_crlf_dropped_and_lone_cr_kept_in_degraded_text() {
 }
 
 #[test]
-fn r13_undecided_child_source_reading_is_unchanged() {
+fn c2_h_165_degraded_link_child_uses_plain_raw_text() {
     let opts = Options {
         profile: Profile::Minimal,
         ..Options::default()
     };
     let input = "[a `<br>`{=html}](u) b";
-    assert_eq!(
-        carve2::render(input, &opts),
-        "<p>a `&lt;br&gt;`{=html} b</p>"
-    );
+    assert_eq!(carve2::render(input, &opts), "<p>a &lt;br&gt; b</p>");
 }
 
 #[test]
@@ -91,12 +88,12 @@ fn c2_h_016_r11_kept_nested_item_has_source_line() {
 }
 
 #[test]
-fn c2_h_165_childless_raw_uses_writer_spelling() {
+fn c2_h_165_childless_raw_uses_plain_value() {
     let article = Options {
         profile: Profile::Article,
         ..Options::default()
     };
-    assert_eq!(carve2::render("`x`{=html}", &article), "<p>`x`{=html}</p>");
+    assert_eq!(carve2::render("`x`{=html}", &article), "<p>x</p>");
 }
 
 #[test]
@@ -139,14 +136,14 @@ fn c2_h_181_supplied_abbreviation_line_break_is_spelled_as_space() {
 }
 
 #[test]
-fn c2_w_077_degraded_child_code_uses_shortest_absent_run() {
+fn c2_h_165_degraded_child_code_uses_plain_value() {
     let opts = Options {
         profile: Profile::Comment,
         ..Options::default()
     };
     assert_eq!(
         carve2::render("*{+{-{=```a``b```=}-}+}*", &opts),
-        "<p><strong><ins><del><mark>`a``b`</mark></del></ins></strong></p>"
+        "<p><strong><ins><del><mark>a``b</mark></del></ins></strong></p>"
     );
 }
 

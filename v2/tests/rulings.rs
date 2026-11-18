@@ -50,7 +50,7 @@ fn c2_b_108_comment_fence_keeps_trailing_space_on_its_opener() {
 }
 
 #[test]
-fn c2_b_129_last_hardbreaks_class_forces_hard_breaks() {
+fn c2_a_068_last_hardbreaks_class_forces_hard_breaks() {
     let html = render("{.hardbreaks}\n:::\na\nb\n:::", &Options::default());
     assert!(html.contains("a<br>\n"), "{html}");
 }
@@ -206,13 +206,13 @@ fn c2_i_084_heading_lookup_reads_markup_in_the_key() {
 }
 
 #[test]
-fn c2_h_020_attributed_block_image_keeps_paragraph() {
+fn c2_h_020_attributed_block_image_merges_paragraph_attrs() {
     let src = "{.c #i}\n![a](x.png)\n\n{:de}\n![b](y.png)\n\n![c](z.png)";
     assert_eq!(
         render(src, &Options::default()),
         concat!(
-            "<p id=\"i\" class=\"c\"><img src=\"x.png\" alt=\"a\"></p>\n",
-            "<p lang=\"de\"><img src=\"y.png\" alt=\"b\"></p>\n",
+            "<img src=\"x.png\" alt=\"a\" id=\"i\" class=\"c\">\n",
+            "<img src=\"y.png\" alt=\"b\" lang=\"de\">\n",
             "<img src=\"z.png\" alt=\"c\">"
         )
     );
@@ -243,7 +243,7 @@ fn c2_h_177_references_to_degraded_heading_render_unresolved() {
     let html = render(src, &options);
     assert_eq!(
         html,
-        "<p>## Sub em code</p>\n<p>[Sub em code][] and &lt;/#Sub-em-code&gt;</p>"
+        "<p>## Sub em code</p>\n<p>[Sub em code][] and Sub em code</p>"
     );
     assert!(tree(src).to_string().contains("#Sub-em-code"));
 }
@@ -269,7 +269,7 @@ fn c2_h_126_social_template_respects_profile_and_encoding() {
     assert_eq!(
         render("@ann.b and #topic", &options),
         concat!(
-            "<p><a class=\"mention\" href=\"https://x.org/u/ann.b\"><strong>@ann.b</strong></a>",
+            "<p><a class=\"mention\" href=\"https://x.org/u/ann.b\">@ann.b</a>",
             " and <span class=\"tag\"><strong>#topic</strong></span></p>"
         )
     );
@@ -717,15 +717,12 @@ fn c2_b_108_comment_fence_keeps_blank_body_spaces() {
 }
 
 #[test]
-fn c2_h_165_degraded_raw_inline_keeps_source() {
+fn c2_h_165_degraded_raw_inline_uses_plain_value() {
     let opts = Options {
         profile: carve2::options::Profile::Comment,
         ..Options::default()
     };
-    assert_eq!(
-        render("a `<br>`{=html} b", &opts),
-        "<p>a `&lt;br&gt;`{=html} b</p>"
-    );
+    assert_eq!(render("a `<br>`{=html} b", &opts), "<p>a &lt;br&gt; b</p>");
 }
 
 #[test]

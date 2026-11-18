@@ -12,6 +12,7 @@ mod smart;
 mod token;
 
 pub(crate) use atoms::{Label, code_span, comment_start, label};
+pub(crate) use scan::{find_braced_comment_close, find_bracket_comment_close};
 
 use crate::Arena;
 use crate::ast::Node;

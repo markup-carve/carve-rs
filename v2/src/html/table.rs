@@ -8,7 +8,40 @@ use crate::resolve::order::addr;
 use crate::resolve::table::{GroupKind, layout};
 
 /// The table attributes that are read and never written (C2-H-153).
-const READ_ONLY_KEYS: &[&str] = &["aligns", "widths", "header-rows", "footer-rows"];
+const READ_ONLY_KEYS: &[&str] = &[
+    "aligns",
+    "valigns",
+    "widths",
+    "header-rows",
+    "footer-rows",
+    "body-rows",
+    "body-header-rows",
+    "body-header-cols",
+];
+
+#[derive(Clone, Copy)]
+struct CellPlace {
+    kind: GroupKind,
+    row_heads: Option<i64>,
+    col: Option<usize>,
+    depth: usize,
+}
+
+fn row_head_column(col: Option<usize>, count: Option<i64>) -> bool {
+    col.and_then(|i| i64::try_from(i).ok())
+        .zip(count)
+        .is_some_and(|(i, n)| i < n)
+}
+
+fn table_column<'r, 'a>(
+    table: &'r Table<'a>,
+    col: Option<usize>,
+) -> Option<&'r crate::ast::TableColumn<'a>> {
+    match col.and_then(|i| table.columns.get(i)) {
+        Some(Node::TableColumn(column)) => Some(column),
+        _ => None,
+    }
+}
 
 impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn table(&mut self, n: &'r Node<'a>, depth: usize, panel: bool) {
@@ -68,10 +101,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         columns: &AddrMap<usize, usize>,
         depth: usize,
     ) {
-        let (tag, kind, children) = match g {
-            Node::TableHead(x) => ("thead", GroupKind::Head, &x.children),
-            Node::TableBody(x) => ("tbody", GroupKind::Body, &x.children),
-            Node::TableFoot(x) => ("tfoot", GroupKind::Foot, &x.children),
+        let (tag, kind, children, row_heads) = match g {
+            Node::TableHead(x) => ("thead", GroupKind::Head, &x.children, None),
+            Node::TableBody(x) => ("tbody", GroupKind::Body, &x.children, x.row_head_columns),
+            Node::TableFoot(x) => ("tfoot", GroupKind::Foot, &x.children, None),
             _ => return,
         };
         if !children.iter().any(|r| matches!(r, Node::TableRow(_))) {
@@ -87,7 +120,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             true
         });
         for r in children.iter() {
-            self.row(t, r, kind, columns, depth + 1);
+            self.row(t, r, kind, row_heads, columns, depth + 1);
         }
         self.line_with(depth, |_, out| {
             out.push_str("</");
@@ -102,6 +135,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         t: &'r Table<'a>,
         r: &'r Node<'a>,
         kind: GroupKind,
+        row_heads: Option<i64>,
         columns: &AddrMap<usize, usize>,
         depth: usize,
     ) {
@@ -113,7 +147,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.write_into(f, out);
             out.push('>');
             for c in row.children.iter() {
-                r.cell(t, c, kind, columns.get(&addr(c)).copied(), depth, out);
+                r.cell(
+                    t,
+                    c,
+                    CellPlace {
+                        kind,
+                        row_heads,
+                        col: columns.get(&addr(c)).copied(),
+                        depth,
+                    },
+                    out,
+                );
             }
             out.push_str("</tr>");
             true
@@ -121,36 +165,30 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// C2-H-056 to C2-H-058.
-    fn cell(
-        &mut self,
-        t: &Table,
-        c: &'r Node<'a>,
-        kind: GroupKind,
-        col: Option<usize>,
-        depth: usize,
-        out: &mut String,
-    ) {
+    fn cell(&mut self, t: &Table, c: &'r Node<'a>, place: CellPlace, out: &mut String) {
         let Node::TableCell(x) = c else { return };
         if x.span.is_some() {
             return;
         }
-        let column = col.and_then(|i| t.columns.get(i)).and_then(|c| {
-            if let Node::TableColumn(c) = c {
-                Some(c)
-            } else {
-                None
-            }
-        });
+        let CellPlace {
+            kind,
+            row_heads,
+            col,
+            depth,
+        } = place;
+        let column = table_column(t, col);
         let mut el = El::new(x.attrs, x.lang);
         el.dir = x.dir;
+        el.skip_keys = &["rowspan", "colspan"];
         if let Some(v) = x.rowspan.filter(|v| *v > 1) {
             el.structural.push(("rowspan", Some(v.to_string().into())));
         }
         if let Some(v) = x.colspan.filter(|v| *v > 1) {
             el.structural.push(("colspan", Some(v.to_string().into())));
         }
+        let header = x.header || row_head_column(col, row_heads);
         let scope = x.scope.map(TableCellScope::as_str).or_else(|| {
-            x.header.then_some(if kind == GroupKind::Head {
+            header.then_some(if kind == GroupKind::Head {
                 "col"
             } else {
                 "row"
@@ -178,13 +216,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .map(super::super::ast::TableCellValign::as_str)
             .or_else(|| {
                 column
-                    .and_then(|c| c.valign)
-                    .map(super::super::ast::TableColumnValign::as_str)
+                    .and_then(|c| c.resolved_valign)
+                    .map(super::super::ast::TableColumnResolvedValign::as_str)
             });
         if let Some(v) = valign {
             el.style_after.push(format!("vertical-align: {v};"));
         }
-        let tag = if x.header { "th" } else { "td" };
+        let tag = if header { "th" } else { "td" };
         out.push('<');
         out.push_str(tag);
         el.write_into(self.filter(), out);
@@ -267,7 +305,5 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
 /// A width as a percentage without trailing zeros (C2-H-152).
 fn percent(w: f64) -> String {
-    let s = format!("{:.6}", w * 100.0);
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    s.to_string()
+    (w * 100.0).to_string()
 }

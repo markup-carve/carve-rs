@@ -167,6 +167,10 @@ fn read_marker(line: &str, code: bool) -> (Kind, &str) {
     marker_tail(line, end, closer, kind)
 }
 
+pub(crate) fn is_carve_region_marker(line: &str) -> bool {
+    matches!(read_marker(line, false).0, Kind::Opener | Kind::Closer)
+}
+
 /// C2-N-046: a well-formed marker line of a code include.
 pub(super) fn is_marker_line(line: &str) -> bool {
     matches!(read_marker(line, true).0, Kind::Opener | Kind::Closer)

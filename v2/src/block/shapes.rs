@@ -330,6 +330,56 @@ pub fn marker_matches(list: MarkerKind, m: MarkerKind) -> bool {
     }
 }
 
+/// C2-B-042: settle the first one-letter roman-shaped marker from the next marker.
+#[must_use]
+pub fn settle_first(first: MarkerKind, next: MarkerKind) -> MarkerKind {
+    let MarkerKind::Ordered {
+        delim,
+        letter: Some(letter),
+        ..
+    } = first
+    else {
+        return first;
+    };
+    if !matches!(
+        letter.to_ascii_lowercase(),
+        'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'
+    ) {
+        return first;
+    }
+    let MarkerKind::Ordered {
+        style: next_style,
+        value: next_value,
+        letter: next_letter,
+        ..
+    } = next
+    else {
+        return first;
+    };
+    let upper = letter.is_ascii_uppercase();
+    let same_case = matches!(next_style, Style::UpperAlpha | Style::UpperRoman) == upper;
+    if !same_case {
+        return first;
+    }
+    let roman = roman_value(&letter.to_string()).is_some_and(|v| {
+        next_value == Some(v + 1) && matches!(next_style, Style::LowerRoman | Style::UpperRoman)
+    });
+    let alpha = next_letter.is_some_and(|c| u32::from(c) == u32::from(letter) + 1);
+    let style = match (roman, alpha, upper) {
+        (true, _, false) => Style::LowerRoman,
+        (true, _, true) => Style::UpperRoman,
+        (false, true, false) => Style::LowerAlpha,
+        (false, true, true) => Style::UpperAlpha,
+        _ => return first,
+    };
+    MarkerKind::Ordered {
+        style,
+        delim,
+        value: letter_value(letter, style),
+        letter: Some(letter),
+    }
+}
+
 /// Quote mark (C2-B-031): `>` followed by a space or by the end of the line.
 /// Returns the cursor behind the mark and its one space.
 #[must_use]
@@ -573,12 +623,14 @@ pub fn table_row(c: &Cursor<'_>) -> Option<(usize, usize, Option<AttrBlock>, Opt
         return None;
     }
     let seps = super::table::separators(r);
-    let last = *seps.last()?;
     if seps.len() < 2 || seps.first() != Some(&0) {
         return None;
     }
-    let tail = r.get(last + 1..)?;
-    let (attrs, comment) = row_tail(tail)?;
+    let (last, attrs, comment) = seps.iter().skip(1).rev().find_map(|&last| {
+        let tail = r.get(last + 1..)?;
+        let (attrs, comment) = row_tail(tail)?;
+        Some((last, attrs, comment))
+    })?;
     Some((
         c.pos + 1,
         c.pos + last,
@@ -615,7 +667,7 @@ fn row_tail(tail: &str) -> Option<(Option<AttrBlock>, Option<usize>)> {
     }
     // C2-B-133: after whitespace `%%` is a line comment, `%%%` included; only a
     // `%%%` that starts a line opens a comment block.
-    if trimmed.starts_with("%%") && trimmed.len() < rest.len() {
+    if trimmed.starts_with("%%") && trimmed.len() < rest.len() && !trimmed.contains('|') {
         return Some((attrs, Some(i)));
     }
     None
@@ -669,6 +721,7 @@ pub struct LinkDef {
     pub label: String,
     pub href: String,
     pub title: Option<String>,
+    pub attrs: Option<AttrBlock>,
 }
 
 /// The label of `[label]:` or `[^label]:` at the start of `r`, with the
@@ -734,20 +787,45 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
     // C2-B-083, C2-I-013: the destination of a link tail reads its escapes.
     let href = crate::block::include::unescape(rest.get(..dlen)?);
     let tail = rest.get(dlen..)?;
-    let title = if crate::chars::is_blank_line(tail) {
-        None
-    } else {
-        Some(def_title(tail)?)
-    };
+    let (title, attrs) = def_tail(tail)?;
     Some(LinkDef {
         label: label.to_string(),
         href,
         title,
+        attrs,
     })
 }
 
-fn def_title(tail: &str) -> Option<String> {
-    let t = tail.strip_prefix(' ')?;
+fn def_tail(tail: &str) -> Option<(Option<String>, Option<AttrBlock>)> {
+    if crate::chars::is_blank_line(tail) {
+        return Some((None, None));
+    }
+    let tail = tail.strip_prefix(' ')?;
+    if tail.starts_with(' ') || tail.starts_with('\t') {
+        return None;
+    }
+    let (title, rest) = if matches!(tail.as_bytes().first(), Some(b'\'' | b'"')) {
+        let (title, end) = def_title(tail)?;
+        (Some(title), tail.get(end..)?)
+    } else {
+        (None, tail)
+    };
+    if crate::chars::is_blank_line(rest) {
+        return Some((title, None));
+    }
+    let rest = if title.is_some() {
+        rest.strip_prefix(' ')?
+    } else {
+        rest
+    };
+    let (attrs, end) = parse_block(rest, 0)?;
+    if attrs.empty || !rest.get(end..).is_some_and(crate::chars::is_blank_line) {
+        return None;
+    }
+    Some((title, Some(attrs)))
+}
+
+fn def_title(t: &str) -> Option<(String, usize)> {
     let q = t.chars().next()?;
     if q != '"' && q != '\'' {
         return None;
@@ -765,10 +843,7 @@ fn def_title(tail: &str) -> Option<String> {
                 None => out.push('\\'),
             }
         } else if c == q {
-            return t
-                .get(i + 1..)
-                .filter(|r| crate::chars::is_blank_line(r))
-                .map(|_| out);
+            return Some((out, i + 1));
         } else {
             out.push(c);
         }
@@ -802,9 +877,7 @@ pub fn frontmatter_opener(line: &str) -> Option<String> {
     }
     let word = rest.strip_prefix(' ').unwrap_or(rest);
     let b = word.as_bytes();
-    let ok = b.first().is_some_and(u8::is_ascii_lowercase)
-        && b.iter()
-            .all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-');
+    let ok = !b.is_empty() && b.iter().all(u8::is_ascii_alphanumeric);
     ok.then(|| word.to_string())
 }
 

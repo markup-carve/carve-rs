@@ -135,7 +135,7 @@ fn offsets(nodes: &[Node]) -> Vec<(String, usize, usize)> {
 #[test]
 fn c2_i_002_trailing_spaces_dropped_escaped_space_kept() {
     assert_eq!(p("a  \nb"), "\"a\" soft_break \"b\"");
-    assert_eq!(p("a\\ "), "\"a\" non_breaking_space");
+    assert_eq!(p("a\\ "), "\"a\" hard_break");
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn c2_i_019_c2_i_020_math() {
 }
 
 #[test]
-fn c2_i_021_c2_i_022_raw_inline_only_after_plain_code() {
+fn c2_i_021_raw_inline_only_after_plain_code() {
     assert_eq!(
         p("`<br>`{=html} $`x`{=html}"),
         "raw_inline(format=html value=<br>) \" \" math(display=false value=x) \"{=html}\""
@@ -234,7 +234,7 @@ fn c2_i_024_line_comment_takes_the_closers_of_its_line() {
     );
     assert_eq!(
         p("[a %% b](/u) c"),
-        "\"[a\" comment(form=line value=b](/u) c)"
+        "link(href=/u)[\"a\" comment(form=line value=b)] \" c\""
     );
 }
 
@@ -656,7 +656,7 @@ fn c2_b_224_escaped_pipe_in_cell_destination() {
 }
 
 #[test]
-fn c2_b_144_line_block_line_keeps_spaces_and_reads_comment_as_text() {
+fn c2_b_135_line_block_line_keeps_spaces_and_reads_comment_as_text() {
     let o = Opts {
         kind: Some(ContentKind::LineBlockLine),
         ..Default::default()

@@ -10,6 +10,7 @@ mod section;
 mod shift;
 
 pub(crate) use expand::{expand, holds_blocks, no_resolver};
+pub(crate) use lines::is_carve_region_marker;
 
 use std::sync::Arc;
 

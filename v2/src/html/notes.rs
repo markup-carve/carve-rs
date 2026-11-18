@@ -3,7 +3,7 @@
 use super::Renderer;
 use super::attrs::El;
 use super::block::{attr_str, visible};
-use crate::ast::{Node, ParagraphRole};
+use crate::ast::Node;
 use crate::resolve::order::addr;
 
 impl<'r, 'a> Renderer<'r, 'a> {
@@ -90,7 +90,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn note_body(&mut self, children: &'r [Node<'a>], back: &str, depth: usize) {
         let last = children.iter().rposition(visible);
         let ends_in_paragraph = last.and_then(|i| children.get(i)).is_some_and(|c| {
-            matches!(c, Node::Paragraph(p) if p.role != Some(ParagraphRole::Image))
+            matches!(c, Node::Paragraph(p) if !self.bare_image(p))
                 && crate::resolve::order::caption_of(c).is_none()
         });
         for (i, c) in children.iter().enumerate() {

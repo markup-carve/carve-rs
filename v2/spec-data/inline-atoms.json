@@ -48,7 +48,7 @@
             "a-z",
             "~"
           ],
-          "non_ascii": "any_but_format_and_control",
+          "non_ascii": "any_but_white_space_format_and_control",
           "min": 1
         }
       },
@@ -81,7 +81,7 @@
       "unclosed": "text",
       "host": false,
       "transparent_to_neighbors": true,
-      "clauses": ["C2-I-005", "C2-I-013", "C2-I-025", "C2-I-026", "C2-I-027", "C2-I-037", "C2-I-043", "C2-I-050"]
+      "clauses": ["C2-B-141", "C2-I-005", "C2-I-013", "C2-I-025", "C2-I-026", "C2-I-036", "C2-I-043", "C2-I-050"]
     },
     {
       "name": "code_span",
@@ -106,7 +106,7 @@
       "reads_escapes": false,
       "unclosed": "text",
       "host": false,
-      "clauses": ["C2-I-005", "C2-I-013", "C2-I-037", "C2-I-096", "C2-I-097"]
+      "clauses": ["C2-I-005", "C2-I-013", "C2-I-036", "C2-I-096", "C2-I-097"]
     },
     {
       "name": "editorial_comment",
@@ -117,37 +117,36 @@
       "reads_escapes": false,
       "unclosed": "text",
       "host": false,
-      "clauses": ["C2-I-005", "C2-I-013", "C2-I-037", "C2-I-043", "C2-I-063"]
+      "clauses": ["C2-I-005", "C2-I-013", "C2-I-036", "C2-I-043", "C2-I-063"]
     },
     {
       "name": "hard_break",
       "opener": "\\",
-      "followed_by": "line_end_or_content_end",
+      "followed_by": "optional_space_then_line_end_or_content_end",
       "result": "hard_break",
-      "clauses": ["C2-I-005", "C2-I-012", "C2-I-102"]
+      "clauses": ["C2-I-005", "C2-I-002", "C2-I-011", "C2-I-012", "C2-I-102"]
     },
     {
       "name": "line_comment",
       "opener": "%%",
       "closer": "line_end",
-      "at": ["line_start", "after_whitespace"],
+      "at": ["line_start", "after_whitespace", "content_start"],
       "content": "hidden",
       "reads_escapes": false,
       "crosses_lines": false,
       "host": false,
       "not_in": ["opaque_body", "line_block"],
-      "ends_at": ["line_end", "cell_end"],
+      "ends_at": ["line_end", "cell_end", "innermost_open_closer"],
       "clauses": [
         "C2-I-005",
         "C2-I-013",
         "C2-I-023",
         "C2-I-024",
-        "C2-I-037",
+        "C2-I-036",
+        "C2-B-024",
         "C2-B-133",
-        "C2-B-134",
         "C2-B-135",
-        "C2-B-143",
-        "C2-B-144"
+        "C2-B-169"
       ]
     },
     {
@@ -195,12 +194,12 @@
       "name": "mention",
       "file": "inline-sigils.json",
       "host": false,
-      "clauses": ["C2-I-005", "C2-I-037", "C2-I-095"]
+      "clauses": ["C2-I-005", "C2-I-036", "C2-I-095"]
     },
     {
       "name": "no_break_space",
       "opener": "\\",
-      "followed_by": "space",
+      "followed_by": "space_not_at_line_end",
       "result": "no_break_space",
       "clauses": ["C2-I-005", "C2-I-011"]
     },
@@ -209,12 +208,12 @@
       "base": "code_span",
       "suffix_opener": "{=",
       "suffix_closer": "}",
-      "suffix_name": { "first": ["A-Z", "_", "a-z"], "rest": ["-", "0-9", "A-Z", "_", "a-z"] },
+      "suffix_name": { "first": ["A-Z", "a-z"], "rest": ["-", "0-9", "A-Z", "_", "a-z"] },
       "requires": "closed_plain_code_span",
       "host": false,
-      "clauses": ["C2-I-005", "C2-I-021", "C2-I-022", "C2-I-037", "C2-I-045"]
+      "clauses": ["C2-I-005", "C2-I-021", "C2-I-036"]
     },
     { "name": "symbol", "file": "inline-sigils.json", "host": true, "clauses": ["C2-I-005", "C2-I-036", "C2-I-095"] },
-    { "name": "tag", "file": "inline-sigils.json", "host": false, "clauses": ["C2-I-005", "C2-I-037", "C2-I-095"] }
+    { "name": "tag", "file": "inline-sigils.json", "host": false, "clauses": ["C2-I-005", "C2-I-036", "C2-I-095"] }
   ]
 }

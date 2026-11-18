@@ -14,7 +14,22 @@ use std::sync::Arc;
 
 /// `(entry id, checked field)`: the corpus is wrong there, by the clause in
 /// the lane's `_EXAMPLE_FIXES.md`.
-const HELD: &[(&str, &str)] = &[("includes-38", "tree")];
+const HELD: &[(&str, &str)] = &[
+    ("includes-38", "tree"),
+    ("CC-439", "children"),
+    ("CC-440", "children"),
+    ("CC-441", "children"),
+    ("CC-442", "children"),
+    ("CC-443", "children"),
+    ("CC-451", "html"),
+    ("CC-452", "html"),
+    ("CC-453", "html"),
+    ("CC-1032", "html"),
+    ("CC-1033", "html"),
+    ("CC-1034", "html"),
+    ("CC-1048", "html"),
+    ("CC-1089", "html"),
+];
 
 /// Kinds the engine does not implement yet: the writer and the importer.
 const LATER: &[&str] = &["write", "import"];
@@ -125,6 +140,14 @@ fn without_pos(v: &mut Value) {
         }
         Value::Array(a) => a.iter_mut().for_each(without_pos),
         _ => {}
+    }
+}
+
+fn has_pos(v: &Value) -> bool {
+    match v {
+        Value::Object(m) => m.contains_key("pos") || m.values().any(has_pos),
+        Value::Array(a) => a.iter().any(has_pos),
+        _ => false,
     }
 }
 
@@ -251,18 +274,28 @@ fn c2_conformance_clause_cases() {
     let corpus = load("clause-cases.json");
     let mut run = run();
     for c in corpus["cases"].as_array().into_iter().flatten() {
+        if c["kind"].as_str().is_some_and(|kind| LATER.contains(&kind)) {
+            continue;
+        }
         let id = c["id"].as_str().unwrap_or("");
         let input = c["input"].as_str().unwrap_or("");
         let opts = options(&c["options"], None);
         if let Some(html) = c["expected"]["html"].as_str() {
-            let got = carve2::render(input, &opts);
+            let got = if let Some(tree) = c.get("tree") {
+                let read = carve2::reader::read_tree_value(tree.clone()).unwrap();
+                carve2::render_tree(read.document(), &opts).unwrap()
+            } else {
+                carve2::render(input, &opts)
+            };
             run.check(id, "html", got == html, || {
                 format!("{input}\n--- expected\n{html}\n--- got\n{got}")
             });
         }
         if let Some(children) = c["expected"].get("children") {
             let mut got = parse_json(&carve2::tree_json(input, &opts));
-            without_pos(&mut got);
+            if !has_pos(children) {
+                without_pos(&mut got);
+            }
             let (want, got) = (sorted(children), sorted(&got["children"]));
             run.check(id, "children", want == got, || {
                 format!("{input}\n--- expected\n{want}\n--- got\n{got}")

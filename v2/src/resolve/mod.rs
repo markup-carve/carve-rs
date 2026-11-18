@@ -20,6 +20,7 @@ use crate::options::{HeadingIds, Options};
 use order::{Order, Visit, addr, caption_of, mark_of};
 use plain::Symbols;
 use std::collections::{HashMap, HashSet};
+use unicode_normalization::UnicodeNormalization as _;
 
 /// C2-B-190, C2-I-118: the separate caps can occur on one path, and node
 /// slots can add levels that neither cap counts.
@@ -44,7 +45,10 @@ enum Res<'a> {
     Src(&'a str),
     Expansion(&'a str),
     Spans(Option<i64>, Option<i64>),
-    Align(TableColumnResolvedAlign),
+    Aligns(
+        Option<TableColumnResolvedAlign>,
+        Option<crate::ast::TableColumnResolvedValign>,
+    ),
 }
 
 /// Fills every result field of the tree and the root `stages` (C2-A-135).
@@ -93,7 +97,10 @@ fn clear_block_result(node: &mut Node<'_>) {
             x.colspan = None;
             x.rowspan = None;
         }
-        Node::TableColumn(x) => x.resolved_align = None,
+        Node::TableColumn(x) => {
+            x.resolved_align = None;
+            x.resolved_valign = None;
+        }
         Node::Xref(x) => x.href = None,
         _ => {}
     }
@@ -307,7 +314,7 @@ struct Index<'a, 'f> {
     /// The id of each heading with one, and the first heading for each folded plain text.
     heading_ids: Vec<&'a str>,
     heading_by_text: HashMap<String, usize>,
-    targets: HashSet<&'a str>,
+    targets: HashMap<String, &'a str>,
 }
 
 impl<'a> Index<'a, '_> {
@@ -332,19 +339,36 @@ impl<'a> Index<'a, '_> {
         }
         let mut heading_ids = Vec::new();
         let mut heading_by_text = HashMap::new();
-        let mut targets = HashSet::new();
+        let mut targets = HashMap::new();
         for v in &order.visits {
             let a = addr(v.node);
+            if let Node::FigureGroup(group) = v.node {
+                if owners.contains(&a) {
+                    for panel in group.children.iter().filter(|node| {
+                        matches!(
+                            node,
+                            Node::Paragraph(_)
+                                | Node::CodeBlock(_)
+                                | Node::BlockQuote(_)
+                                | Node::Table(_)
+                        )
+                    }) {
+                        if let Some(id) = panel.attrs().and_then(|attrs| attrs.id) {
+                            targets.entry(id.nfc().collect()).or_insert(id);
+                        }
+                    }
+                }
+            }
             if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
                 let i = heading_ids.len();
                 heading_by_text
-                    .entry(fold_label(&plain::text_of(h.children)))
+                    .entry(fold_label(&plain::text_of(h.children)).nfc().collect())
                     .or_insert(i);
                 heading_ids.push(*id);
-                targets.insert(*id);
+                targets.entry(id.nfc().collect()).or_insert(*id);
             } else if owners.contains(&a) && !matches!(v.node, Node::Include(_)) {
                 if let Some(id) = v.node.attrs().and_then(|x| x.id) {
-                    targets.insert(id);
+                    targets.entry(id.nfc().collect()).or_insert(id);
                 }
             }
         }
@@ -378,8 +402,8 @@ impl<'a> Index<'a, '_> {
                 }
             }
             Node::Xref(x) => {
-                if self.targets.contains(x.key) {
-                    res.insert(a, Res::Href(arena.str(&format!("#{}", x.key))));
+                if let Some(id) = self.targets.get(&x.key.nfc().collect::<String>()) {
+                    res.insert(a, Res::Href(arena.str(&format!("#{id}"))));
                 }
             }
             Node::Abbreviation(x) => {
@@ -411,6 +435,9 @@ impl<'a> Index<'a, '_> {
         } else {
             std::borrow::Cow::Owned(heading_key_plain(key, arena))
         };
+        if plain_key.is_empty() {
+            return None;
+        }
         self.heading_by_text
             .get(plain_key.as_ref())
             .and_then(|i| self.heading_ids.get(*i))
@@ -436,7 +463,7 @@ fn heading_key_plain(key: &str, arena: &Arena) -> String {
         join: crate::inline::Join::Line,
     }];
     let nodes = crate::inline::parse(&env, &pieces, &mut crate::inline::Scratch::default());
-    fold_label(&plain::text_of(nodes))
+    fold_label(&plain::text_of(nodes)).nfc().collect()
 }
 
 fn apply<'a>(n: &mut Node<'a>, res: &AddrMap<usize, Res<'a>>, depth: usize) {
@@ -484,7 +511,10 @@ fn set<'a>(n: &mut Node<'a>, r: &Res<'a>) {
             x.colspan = *c;
             x.rowspan = *r;
         }
-        (Node::TableColumn(x), Res::Align(v)) => x.resolved_align = Some(*v),
+        (Node::TableColumn(x), Res::Aligns(align, valign)) => {
+            x.resolved_align = *align;
+            x.resolved_valign = *valign;
+        }
         _ => {}
     }
 }

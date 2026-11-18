@@ -74,7 +74,7 @@
       "first": ["%"],
       "role": "skipped",
       "sequence": [{ "part": "literal", "text": "%%" }, { "part": "content", "min": 0 }],
-      "clauses": ["C2-B-133", "C2-B-137", "C2-B-139"]
+      "clauses": ["C2-B-133", "C2-B-137"]
     },
     {
       "name": "abbreviation_definition",
@@ -100,7 +100,7 @@
         { "part": "space", "min": 1 },
         { "part": "content", "min": 1, "has_non_space": true }
       ],
-      "clauses": ["C2-B-006", "C2-B-033", "C2-B-034", "C2-B-100", "C2-B-101"]
+      "clauses": ["C2-B-033", "C2-B-034", "C2-B-100", "C2-B-101"]
     },
     {
       "name": "thematic_break",
@@ -121,10 +121,11 @@
         { "part": "literal", "text": "+" },
         { "part": "content", "min": 0 },
         { "part": "literal", "text": "|" },
+        { "part": "trailing_whitespace" },
         { "part": "end" }
       ],
       "requires": ["below_table_row_or_continuation_row"],
-      "clauses": ["C2-B-059", "C2-B-175", "C2-B-176", "C2-B-177", "C2-B-184", "C2-B-185"]
+      "clauses": ["C2-B-059", "C2-B-175", "C2-B-176", "C2-B-184", "C2-B-185"]
     },
     {
       "name": "frontmatter_closer",
@@ -195,7 +196,7 @@
         },
         { "part": "content", "min": 1, "has_non_space": true }
       ],
-      "clauses": ["C2-B-006", "C2-B-033", "C2-B-036", "C2-B-040", "C2-B-043", "C2-B-100", "C2-B-101"]
+      "clauses": ["C2-B-033", "C2-B-036", "C2-B-040", "C2-B-043", "C2-B-100", "C2-B-101"]
     },
     {
       "name": "description",
@@ -207,7 +208,7 @@
         { "part": "content", "min": 1, "has_non_space": true }
       ],
       "requires": ["term_above"],
-      "clauses": ["C2-B-006", "C2-B-033", "C2-B-067", "C2-B-072", "C2-B-074", "C2-B-194"]
+      "clauses": ["C2-B-033", "C2-B-067", "C2-B-072", "C2-B-074", "C2-B-194"]
     },
     {
       "name": "div_bare_run",
@@ -274,7 +275,7 @@
         { "part": "space", "min": 1 },
         { "part": "content", "min": 1, "has_non_space": true }
       ],
-      "clauses": ["C2-B-006", "C2-B-033", "C2-B-067", "C2-B-069", "C2-B-075", "C2-B-194"]
+      "clauses": ["C2-B-033", "C2-B-067", "C2-B-069", "C2-B-075", "C2-B-194"]
     },
     {
       "name": "quote",
@@ -284,7 +285,7 @@
         { "part": "literal", "text": ">" },
         { "part": "choice", "options": [[{ "part": "space", "min": 1, "max": 1 }], [{ "part": "end" }]] }
       ],
-      "clauses": ["C2-B-006", "C2-B-031"]
+      "clauses": ["C2-B-031"]
     },
     {
       "name": "footnote_definition",
@@ -315,10 +316,14 @@
           "part": "optional",
           "sequence": [{ "part": "space", "min": 1, "max": 1 }, { "part": "ref", "ref": "link_title" }]
         },
+        {
+          "part": "optional",
+          "sequence": [{ "part": "space", "min": 1, "max": 1 }, { "part": "ref", "ref": "brace_block" }]
+        },
         { "part": "trailing_spaces" },
         { "part": "end" }
       ],
-      "clauses": ["C2-B-081", "C2-B-083", "C2-B-089"]
+      "clauses": ["C2-B-081", "C2-B-083", "C2-B-089", "C2-B-106"]
     },
     {
       "name": "caption",
@@ -384,7 +389,7 @@
       "first": ["{"],
       "role": "attribute",
       "sequence": [{ "part": "ref", "ref": "brace_blocks" }, { "part": "trailing_whitespace" }, { "part": "end" }],
-      "clauses": ["C2-B-002", "C2-B-090", "C2-B-091", "C2-B-092", "C2-B-102", "C2-B-192", "C2-B-193"]
+      "clauses": ["C2-B-092", "C2-B-090", "C2-B-091", "C2-B-102", "C2-B-192", "C2-B-193"]
     },
     {
       "name": "include",
@@ -430,6 +435,7 @@
           ]
         },
         { "part": "optional", "sequence": [{ "part": "ref", "ref": "line_comment" }] },
+        { "part": "trailing_whitespace" },
         { "part": "end" }
       ],
       "clauses": ["C2-B-166", "C2-B-167", "C2-B-168", "C2-B-170"]
@@ -451,7 +457,7 @@
       "excluded": ["]"],
       "clauses": ["C2-B-117", "C2-B-119", "C2-B-121"]
     },
-    { "name": "destination", "excluded": [" "], "clauses": ["C2-B-083"] },
+    { "name": "destination", "excluded": ["\t", " "], "clauses": ["C2-B-083"] },
     { "name": "display_math_span", "file": "inline-atoms.json", "clauses": ["C2-B-198", "C2-I-121"] },
     {
       "name": "div_name",
@@ -461,8 +467,8 @@
       "clauses": ["C2-B-119", "C2-B-127", "C2-B-225"]
     },
     { "name": "div_sigil", "values": [">", "\\", "|"], "file": "div-names.json", "clauses": ["C2-B-196"] },
-    { "name": "format_name", "forms": ["a lowercase ASCII letter, then lowercase ASCII letters, digits and hyphens"], "clauses": ["C2-B-164"] },
-    { "name": "image_form", "forms": ["![alt](destination)", "![alt][label]"], "clauses": ["C2-B-197"] },
+    { "name": "format_name", "forms": ["one or more ASCII letters and digits, in any case"], "clauses": ["C2-B-164"] },
+    { "name": "image_form", "forms": ["![alt](destination)", "![alt][label]", "![alt][]"], "clauses": ["C2-B-197"] },
     {
       "name": "include_options",
       "file": "include-options.json",
@@ -490,6 +496,7 @@
     {
       "name": "label",
       "excluded": ["\n", "]"],
+      "reads_escapes": true,
       "min": 1,
       "clauses": ["C2-B-082", "C2-B-083", "C2-I-079", "C2-I-087"]
     },
@@ -539,8 +546,8 @@
       "opener": "\"",
       "closer": "\"",
       "excluded": ["\""],
-      "reads_escapes": false,
-      "clauses": ["C2-B-117", "C2-B-119", "C2-B-120"]
+      "reads_escapes": true,
+      "clauses": ["C2-A-073", "C2-B-117", "C2-B-119", "C2-B-120", "C2-I-033"]
     },
     { "name": "raw_format", "opener": "=", "chars": ["-", "0-9", "A-Z", "_", "a-z"], "not_first": ["-", "0-9", "_"], "min": 1, "clauses": ["C2-B-116", "C2-B-225"] }
   ]

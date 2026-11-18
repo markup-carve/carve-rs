@@ -3,7 +3,10 @@
 
 use super::Res;
 use super::order::addr;
-use crate::ast::{Node, Table, TableCellAlign, TableCellSpan, TableColumnResolvedAlign};
+use crate::ast::{
+    Node, Table, TableCellAlign, TableCellSpan, TableCellValign, TableColumnResolvedAlign,
+    TableColumnResolvedValign,
+};
 use crate::hash::AddrMap;
 
 /// One cell placed on the grid.
@@ -187,6 +190,37 @@ fn convert_column(a: crate::ast::TableColumnAlign) -> TableColumnResolvedAlign {
     }
 }
 
+#[must_use]
+pub fn resolved_valigns(
+    t: &Table<'_>,
+    placed: &[Placed<'_, '_>],
+) -> Vec<Option<TableColumnResolvedValign>> {
+    let mut out = vec![None; t.columns.len()];
+    for p in placed.iter().filter(|p| p.head && !p.mark) {
+        if let (Node::TableCell(cell), Some(slot)) = (p.node, out.get_mut(p.col)) {
+            if let Some(valign) = cell.valign {
+                *slot = Some(match valign {
+                    TableCellValign::Top => TableColumnResolvedValign::Top,
+                    TableCellValign::Middle => TableColumnResolvedValign::Middle,
+                    TableCellValign::Bottom => TableColumnResolvedValign::Bottom,
+                    TableCellValign::Baseline => TableColumnResolvedValign::Baseline,
+                });
+            }
+        }
+    }
+    for (slot, col) in out.iter_mut().zip(t.columns.iter()) {
+        if let (None, Node::TableColumn(col)) = (&slot, col) {
+            *slot = col.valign.map(|valign| match valign {
+                crate::ast::TableColumnValign::Top => TableColumnResolvedValign::Top,
+                crate::ast::TableColumnValign::Middle => TableColumnResolvedValign::Middle,
+                crate::ast::TableColumnValign::Bottom => TableColumnResolvedValign::Bottom,
+                crate::ast::TableColumnValign::Baseline => TableColumnResolvedValign::Baseline,
+            });
+        }
+    }
+    out
+}
+
 /// Writes the table results of `n` when it is a table.
 pub(super) fn resolve_table(n: &Node, res: &mut AddrMap<usize, Res>) {
     let Node::Table(t) = n else { return };
@@ -199,9 +233,14 @@ pub(super) fn resolve_table(n: &Node, res: &mut AddrMap<usize, Res>) {
             res.insert(addr(p.node), Res::Spans(c, r));
         }
     }
-    for (col, a) in t.columns.iter().zip(resolved_aligns(t, &placed)) {
-        if let Some(a) = a {
-            res.insert(addr(col), Res::Align(a));
+    for ((col, align), valign) in t
+        .columns
+        .iter()
+        .zip(resolved_aligns(t, &placed))
+        .zip(resolved_valigns(t, &placed))
+    {
+        if align.is_some() || valign.is_some() {
+            res.insert(addr(col), Res::Aligns(align, valign));
         }
     }
 }

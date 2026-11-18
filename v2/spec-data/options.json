@@ -12,18 +12,18 @@
     {
       "name": "extensions",
       "kind": "parse",
-      "read_by": "parse",
+      "read_by": ["format", "lint", "parse", "tree"],
       "type": "list",
       "items": "extension",
       "default": [],
-      "clauses": ["C2-H-137"]
+      "clauses": ["C2-H-137", "C2-T-005", "C2-X-038"]
     },
     {
       "name": "headingIds",
       "kind": "resolution",
       "read_by": "resolve",
       "type": "enum",
-      "values": ["off", "keep-case", "lower", "ascii"],
+      "values": ["off", "keep-case", "lower", "ascii", "ascii-lower", "ascii-strict", "ascii-strict-lower"],
       "default": "keep-case",
       "clauses": ["C2-H-131", "C2-H-137"]
     },
@@ -59,7 +59,7 @@
         "admonitionExample": "Example",
         "admonitionQuote": "Quote"
       },
-      "clauses": ["C2-H-125", "C2-H-137", "C2-H-155"]
+      "clauses": ["C2-H-091", "C2-H-125", "C2-H-137", "C2-H-155"]
     },
     {
       "name": "mode",
@@ -154,7 +154,7 @@
       "kind": "render",
       "read_by": "render",
       "type": "structure",
-      "holds": "mentionUrl and tagUrl, URL templates in which {name} stands for the percent-encoded name, and resolveMention and resolveTag, host functions from a name to a URL",
+      "holds": "mentionUrl and tagUrl, URL templates in which {name} stands for the percent-encoded name and any other placeholder of letters, digits or underscores in braces is an option error; resolveMention and resolveTag, host functions from an object with kind, name and context to a URL, which replace the template of their pair; and context, a host value passed to the resolvers unchanged",
       "default": null,
       "clauses": ["C2-H-126", "C2-H-137"]
     },
@@ -169,10 +169,10 @@
     {
       "name": "strictLosses",
       "kind": "render",
-      "read_by": "render",
+      "read_by": ["import", "render"],
       "type": "boolean",
       "default": false,
-      "clauses": ["C2-H-130", "C2-H-137"]
+      "clauses": ["C2-H-130", "C2-H-137", "C2-M-082"]
     },
     {
       "name": "symbols",

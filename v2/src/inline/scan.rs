@@ -64,6 +64,8 @@ struct Scanner<'r, 'e, 'a> {
     /// An unquoted value run behind which attribute blocks fail.
     attr_fail: Option<(usize, usize)>,
     comments: Vec<(usize, usize)>,
+    /// A comment-only line ends an atom opened above it (C2-B-138).
+    barriers: Vec<usize>,
     /// Last start of `%}` and of `#}`, to keep the closer search linear;
     /// searched when the first opener asks.
     last_pct: Option<Option<usize>>,
@@ -97,6 +99,7 @@ pub fn scan<'a>(
         no_label_from: None,
         attr_fail: None,
         comments: Vec::new(),
+        barriers: comment_only_starts(t),
         last_pct: None,
         last_hash: None,
         caption_done: env.kind != ContentKind::Caption,
@@ -114,6 +117,18 @@ pub fn scan<'a>(
         toks: s.toks,
         comments: s.comments,
     }
+}
+
+fn comment_only_starts(text: &str) -> Vec<usize> {
+    let mut starts = Vec::new();
+    let mut at = 0;
+    for line in text.split_inclusive('\n') {
+        if crate::block::shapes::comment_only(line.trim_start_matches([' ', '\t'])) {
+            starts.push(at);
+        }
+        at += line.len();
+    }
+    starts
 }
 
 /// The first bytes `Scanner::step` reads a form at.
@@ -206,7 +221,9 @@ impl<'a> Scanner<'_, '_, 'a> {
             b'@' | b'#' => self.sigil(),
             b':' => self.colon(),
             b'[' => self.open_bracket(),
-            b'^' if self.at(i + 1) == Some(b'[') => self.push_bracket(i, i + 2, BKind::Footnote),
+            b'^' if self.at(i + 1) == Some(b'[') && !self.in_inline_note() => {
+                self.push_bracket(i, i + 2, BKind::Footnote)
+            }
             b']' => self.close_bracket(),
             b'*' | b'/' => self.bare(),
             c if tables::BRACED_MARKS.as_bytes().contains(&c) => self.mark_run(c),
@@ -224,7 +241,13 @@ impl<'a> Scanner<'_, '_, 'a> {
                 self.push(i, i + 2, K::Break { hard: true });
             }
             Some(' ') => {
-                self.push(i, i + 2, K::Nbsp);
+                if self.char_at(i + 2) == Some('\n') {
+                    self.push(i, i + 3, K::Break { hard: true });
+                } else if self.char_at(i + 2).is_none() {
+                    self.push(i, i + 2, K::Break { hard: true });
+                } else {
+                    self.push(i, i + 2, K::Nbsp);
+                }
             }
             Some(p) if p.is_ascii_punctuation() => {
                 self.push(
@@ -254,7 +277,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     }
 
     fn code(&mut self, v0: usize, at: usize, kind: CodeKind) -> bool {
-        let span = atoms::code_span(self.t, at);
+        let span = atoms::code_span(self.t.get(..self.atom_limit(at)).unwrap_or(self.t), at);
         if !span.closed {
             // C2-I-017: an unclosed run is text in every content.
             let run = self
@@ -399,6 +422,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn braced_comment(&mut self) -> bool {
         let i = self.i;
         let t = self.t;
+        let limit = self.atom_limit(i);
         if self
             .last_pct
             .get_or_insert_with(|| t.rfind("%}"))
@@ -408,7 +432,7 @@ impl<'a> Scanner<'_, '_, 'a> {
         }
         let Some(k) = self
             .t
-            .get(i + 2..)
+            .get(i + 2..limit)
             .and_then(|s| s.find("%}"))
             .map(|k| k + i + 2)
         else {
@@ -433,6 +457,11 @@ impl<'a> Scanner<'_, '_, 'a> {
         );
         self.comments.push((i, k + 2));
         true
+    }
+
+    fn atom_limit(&self, at: usize) -> usize {
+        let i = self.barriers.partition_point(|&start| start <= at);
+        self.barriers.get(i).copied().unwrap_or(self.t.len())
     }
 
     fn editorial(&mut self) -> bool {
@@ -472,14 +501,34 @@ impl<'a> Scanner<'_, '_, 'a> {
     /// C2-I-023: a line comment takes the spaces before it and the rest of its line.
     fn line_comment(&mut self) -> bool {
         let i = self.i;
-        if self.env.kind == ContentKind::LineBlockLine || !atoms::comment_start(self.t, i) {
+        let at_content_start = self
+            .brackets
+            .last()
+            .is_some_and(|bracket| bracket.inner == i)
+            || self
+                .open_delims
+                .last()
+                .is_some_and(|mark| mark.braced && mark.at + 2 == i);
+        if self.env.kind == ContentKind::LineBlockLine
+            || !(atoms::comment_start(self.t, i) || at_content_start)
+        {
             return false;
         }
-        let end = self
+        let line_end = self
             .t
             .get(i..)
             .and_then(|s| s.find('\n'))
             .map_or(self.t.len(), |e| e + i);
+        let in_reference_label = self
+            .brackets
+            .last()
+            .and_then(|bracket| self.toks.get(bracket.tok))
+            .is_some_and(|token| token.v0 > 0 && self.at(token.v0 - 1) == Some(b']'));
+        let end = if in_reference_label {
+            line_end
+        } else {
+            self.comment_closer(i + 2, line_end).unwrap_or(line_end)
+        };
         let mut start = i;
         if let Some(f) = self.text_from {
             while start > f && matches!(self.at(start - 1), Some(b' ' | b'\t')) {
@@ -499,6 +548,19 @@ impl<'a> Scanner<'_, '_, 'a> {
         self.i = start;
         self.leaf(start, end, node, false);
         true
+    }
+
+    fn comment_closer(&self, from: usize, end: usize) -> Option<usize> {
+        let bracket = self.brackets.last();
+        let braced = self.open_delims.iter().rev().find(|mark| mark.braced);
+        match (bracket, braced) {
+            (Some(b), Some(m)) if m.at >= b.inner => {
+                find_braced_comment_close(self.t, from, end, m.mark)
+            }
+            (Some(_), _) => find_bracket_comment_close(self.t, from, end),
+            (None, Some(m)) => find_braced_comment_close(self.t, from, end, m.mark),
+            (None, None) => None,
+        }
     }
 
     fn angle(&mut self) -> bool {
@@ -605,10 +667,16 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn open_bracket(&mut self) -> bool {
         let i = self.i;
-        if self.at(i + 1) == Some(b'^') {
+        if self.at(i + 1) == Some(b'^') && !self.in_inline_note() {
             return self.footnote_ref(i);
         }
         self.push_bracket(i, i + 1, BKind::Plain)
+    }
+
+    fn in_inline_note(&self) -> bool {
+        self.brackets
+            .iter()
+            .any(|bracket| matches!(bracket.kind, BKind::Footnote))
     }
 
     /// C2-I-087: `[^label]`; with no label the `[` is text.
@@ -872,8 +940,8 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn image(&mut self, top: &Bracket, bang: usize, i: usize, end: usize, target: Target) {
         self.flush();
         let alt = self.t.get(top.inner..i).unwrap_or("");
-        let alt = if self.env.kind == ContentKind::Cell && alt.contains("\\|") {
-            self.c.arena().str(&alt.replace("\\|", "|"))
+        let alt = if alt.contains('\\') {
+            self.c.arena().str(&unescape_alt(alt))
         } else {
             self.c.keep(alt)
         };
@@ -1153,6 +1221,79 @@ impl<'a> Scanner<'_, '_, 'a> {
         }
         true
     }
+}
+
+/// C2-I-074: alt text keeps source spelling except escapes of ASCII punctuation.
+fn unescape_alt(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut chars = source.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek().is_some_and(char::is_ascii_punctuation) {
+            out.push(chars.next().unwrap_or('\\'));
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn comment_scan_step(source: &str, at: usize, end: usize) -> usize {
+    let bytes = source.as_bytes();
+    match bytes.get(at) {
+        Some(b'\\') => (at + 2).min(end),
+        Some(b'`') => {
+            let code = atoms::code_span(source, at);
+            if code.closed && code.end <= end {
+                code.end
+            } else {
+                end
+            }
+        }
+        _ => at + 1,
+    }
+}
+
+pub(crate) fn find_bracket_comment_close(source: &str, from: usize, end: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth = 0usize;
+    let mut at = from;
+    while at < end {
+        match bytes.get(at).copied().unwrap_or_default() {
+            b'[' => depth += 1,
+            b']' if depth == 0 => return Some(at),
+            b']' => depth -= 1,
+            _ => {}
+        }
+        at = comment_scan_step(source, at, end);
+    }
+    None
+}
+
+pub(crate) fn find_braced_comment_close(
+    source: &str,
+    from: usize,
+    end: usize,
+    mark: char,
+) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mark = u8::try_from(u32::from(mark)).ok()?;
+    let mut depth = 0usize;
+    let mut at = from;
+    while at < end {
+        if bytes.get(at) == Some(&b'{') && bytes.get(at + 1) == Some(&mark) {
+            depth += 1;
+            at += 2;
+        } else if bytes.get(at) == Some(&mark) && bytes.get(at + 1) == Some(&b'}') {
+            if depth == 0 {
+                return Some(at);
+            }
+            depth -= 1;
+            at += 2;
+        } else {
+            at = comment_scan_step(source, at, end);
+        }
+    }
+    None
 }
 
 /// The `=` of a first part `key=` of the brace block at `i`.

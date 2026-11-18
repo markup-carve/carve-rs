@@ -433,29 +433,72 @@ impl Parser<'_> {
 
     fn open_list<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker) -> Cursor<'c> {
         let (start, mut attrs) = self.take_pending(k.offset(), None);
-        let mut value = match mk.kind {
+        let kind = self.settle_first_list_marker(m, mk.kind);
+        let mut value = match kind {
             MarkerKind::Ordered { value, .. } => Some(value.unwrap_or(1)),
             MarkerKind::Bullet(_) => None,
         };
-        if let (Some(v), MarkerKind::Ordered { style, .. }) = (&mut value, mk.kind) {
+        if let (Some(v), MarkerKind::Ordered { style, .. }) = (&mut value, kind) {
             start_attribute(attrs.as_mut(), style, v);
         }
         let list = Kind::List {
-            kind: mk.kind,
+            kind,
             col: m,
             loose: false,
             items: 1,
         };
         self.push_container(
             list,
-            ContainerKind::List {
-                kind: mk.kind,
-                start: value,
-            },
+            ContainerKind::List { kind, start: value },
             start,
             attrs,
         );
         self.push_item(k, m, mk)
+    }
+
+    fn settle_first_list_marker(&self, m: usize, first: MarkerKind) -> MarkerKind {
+        let MarkerKind::Ordered {
+            letter: Some(letter),
+            ..
+        } = first
+        else {
+            return first;
+        };
+        if !matches!(
+            letter.to_ascii_lowercase(),
+            'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'
+        ) {
+            return first;
+        }
+        let mut blanks = 0usize;
+        for i in self.line_no + 1..self.src.line_count() {
+            let (start, end) = self.src.line_range(i);
+            let walk = self.walk(Cursor::new(self.src.slice(start, end), start), false);
+            if walk.matched < self.stack.len() || walk.missing_quote.is_some() {
+                break;
+            }
+            let cur = walk.cur.after_blanks();
+            if cur.is_blank() {
+                blanks += 1;
+                if blanks >= LIST_END_BLANK_LINES {
+                    break;
+                }
+                continue;
+            }
+            let text = cur.rest();
+            if text.starts_with("%%")
+                && !text.starts_with("%% #region")
+                && !text.starts_with("%% #endregion")
+            {
+                continue;
+            }
+            if cur.col.saturating_sub(walk.qbase) > m {
+                continue;
+            }
+            return shapes::list_marker(&cur)
+                .map_or(first, |next| shapes::settle_first(first, next.kind));
+        }
+        first
     }
 
     /// The leaf openers, and the paragraph when nothing else opens.
@@ -626,7 +669,9 @@ impl Parser<'_> {
             self.leaf = Some(OpenLeaf {
                 leaf: Leaf::LineBlock {
                     len,
-                    lines: Vec::new(),
+                    entries: Vec::new(),
+                    comment: None,
+                    stanza_open: false,
                     held: Vec::new(),
                 },
                 start: s,
@@ -754,7 +799,7 @@ impl Parser<'_> {
     /// Link and abbreviation definitions at column 0 (C2-B-081 to C2-B-084).
     fn open_definition(&mut self, r: &str, start: usize, e: usize) -> bool {
         if let Some(d) = shapes::link_def(r) {
-            let (s, attrs) = self.take_pending(start, None);
+            let (s, attrs) = self.take_pending(start, d.attrs);
             let end = start + r.len();
             let _ = e;
             self.push_leaf_event(
@@ -888,20 +933,26 @@ pub fn block_image_line(line: &str) -> bool {
 fn bracket_end(s: &str, start: usize) -> Option<usize> {
     let b = s.as_bytes();
     let mut depth = 0usize;
+    let mut braced: Vec<(u8, usize)> = Vec::new();
     let mut i = start;
     while let Some(&c) = b.get(i) {
+        if let Some(next) = bracket_opaque_end(s, i, start, &braced) {
+            i = next?;
+            continue;
+        }
         match c {
             b'\\' => i += 1,
             b'[' => depth += 1,
             b']' if depth == 0 => return Some(i),
             b']' => depth -= 1,
-            b'%' if crate::inline::comment_start(s, i) => return None,
-            b'`' => {
-                let span = crate::inline::code_span(s, i);
-                if !span.closed {
-                    return None;
-                }
-                i = span.end;
+            b'{' if braced_open_mark(b, i).is_some() => {
+                braced.push((braced_open_mark(b, i)?, i + 2));
+                i += 2;
+                continue;
+            }
+            _ if braced_closes(b, i, &braced) => {
+                braced.pop();
+                i += 2;
                 continue;
             }
             _ => {}
@@ -909,6 +960,44 @@ fn bracket_end(s: &str, start: usize) -> Option<usize> {
         i += 1;
     }
     None
+}
+
+fn braced_open_mark(bytes: &[u8], i: usize) -> Option<u8> {
+    bytes
+        .get(i + 1)
+        .copied()
+        .filter(|mark| crate::tables::BRACED_MARKS.as_bytes().contains(mark))
+}
+
+fn braced_closes(bytes: &[u8], i: usize, braced: &[(u8, usize)]) -> bool {
+    braced
+        .last()
+        .is_some_and(|&(mark, _)| bytes.get(i) == Some(&mark) && bytes.get(i + 1) == Some(&b'}'))
+}
+
+fn bracket_opaque_end(
+    source: &str,
+    i: usize,
+    start: usize,
+    braced: &[(u8, usize)],
+) -> Option<Option<usize>> {
+    let bytes = source.as_bytes();
+    if bytes.get(i) == Some(&b'`') {
+        let span = crate::inline::code_span(source, i);
+        return Some(span.closed.then_some(span.end));
+    }
+    if bytes.get(i) != Some(&b'%') || bytes.get(i + 1) != Some(&b'%') {
+        return None;
+    }
+    let at_content = braced.last().is_some_and(|&(_, content)| content == i);
+    if !crate::inline::comment_start(source, i) && i != start && !at_content {
+        return None;
+    }
+    Some(if let Some(&(mark, _)) = braced.last() {
+        crate::inline::find_braced_comment_close(source, i + 2, source.len(), char::from(mark))
+    } else {
+        crate::inline::find_bracket_comment_close(source, i + 2, source.len())
+    })
 }
 
 fn label_tail(s: &str, start: usize) -> Option<&str> {

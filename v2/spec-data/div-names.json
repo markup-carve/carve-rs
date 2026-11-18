@@ -4,7 +4,7 @@
     { "name": "bibliography", "kind": "directive", "clauses": ["C2-B-127"] },
     { "name": "danger", "kind": "admonition", "clauses": ["C2-B-127"] },
     { "name": "example", "kind": "admonition", "clauses": ["C2-B-127"] },
-    { "name": "figure", "kind": "figure_group", "when": "no_title_and_no_label", "clauses": ["C2-B-127"] },
+    { "name": "figure", "kind": "figure_group", "when": "no_title_and_no_label_outside_a_figure_group", "clauses": ["C2-B-127"] },
     { "name": "footnotes", "kind": "directive", "clauses": ["C2-B-127"] },
     { "name": "glossary", "kind": "directive", "clauses": ["C2-B-127"] },
     { "name": "index", "kind": "directive", "clauses": ["C2-B-127"] },
@@ -24,7 +24,7 @@
       "name": "hardbreak_block",
       "sigil": "\\",
       "class": "hardbreaks",
-      "clauses": ["C2-B-124", "C2-B-128", "C2-B-129", "C2-B-196"]
+      "clauses": ["C2-B-124", "C2-B-128", "C2-A-068", "C2-B-196"]
     },
     { "name": "line_block", "sigil": "|", "class": "line-block", "clauses": ["C2-B-123", "C2-B-128", "C2-B-196"] }
   ]

@@ -11,6 +11,7 @@ pub struct Cell {
     pub attrs: Option<AttrBlock>,
     /// Alignment mark of the cell prefix (C2-B-182).
     pub align: Option<&'static str>,
+    pub valign: Option<&'static str>,
     /// A span mark `<` or `^` (C2-B-172).
     pub span: Option<char>,
     pub pieces: Vec<Piece>,
@@ -123,14 +124,22 @@ fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
         ..Cell::default()
     };
     let mut i = start;
-    if text.as_bytes().get(i) == Some(&b'=') && i < end {
+    if text.as_bytes().get(i) == Some(&b'=')
+        && i < end
+        && (i + 1 == end
+            || matches!(
+                text.as_bytes().get(i + 1),
+                Some(b' ' | b'\t' | b'{' | b'<' | b'>' | b'?' | b'~')
+            ))
+    {
         cell.header = true;
         i += 1;
     }
     if text.as_bytes().get(i) == Some(&b'{') {
-        if let Some((block, mark, after)) = cell_brace(text, i, end) {
+        if let Some((block, mark, valign, after)) = cell_brace(text, i, end) {
             cell.attrs = block;
             cell.align = mark;
+            cell.valign = valign;
             i = after;
         }
     }
@@ -152,11 +161,14 @@ fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
 
 /// The brace block of a cell prefix: an alignment mark first (C2-B-182),
 /// then the parts of an attribute block.
-fn cell_brace(
-    text: &str,
-    i: usize,
-    end: usize,
-) -> Option<(Option<AttrBlock>, Option<&'static str>, usize)> {
+type CellBrace = (
+    Option<AttrBlock>,
+    Option<&'static str>,
+    Option<&'static str>,
+    usize,
+);
+
+fn cell_brace(text: &str, i: usize, end: usize) -> Option<CellBrace> {
     let b = text.as_bytes();
     let mark = match b.get(i + 1) {
         Some(b'<') => Some("left"),
@@ -164,19 +176,32 @@ fn cell_brace(
         Some(b'~') => Some("center"),
         _ => None,
     };
-    if mark.is_some() {
-        if b.get(i + 2) == Some(&b'}') {
-            return Some((None, mark, i + 3));
+    if mark.is_some() || b.get(i + 1) == Some(&b'?') {
+        let mut prefix_end = i + 2;
+        let valign = match b.get(prefix_end) {
+            Some(b'^') => Some("top"),
+            Some(b'~') => Some("middle"),
+            Some(b'v') => Some("bottom"),
+            _ => None,
+        };
+        if valign.is_some() {
+            prefix_end += 1;
         }
-        let inner = format!("{{{}", text.get(i + 2..end)?);
+        if mark.is_none() && valign.is_none() {
+            return None;
+        }
+        if b.get(prefix_end) == Some(&b'}') {
+            return Some((None, mark, valign, prefix_end + 1));
+        }
+        let inner = format!("{{{}", text.get(prefix_end..end)?);
         let (block, e) = parse_glued(&inner, 0)?;
-        return Some((Some(block), mark, i + 2 + e - 1));
+        return Some((Some(block), mark, valign, prefix_end + e - 1));
     }
     let (block, e) = parse_glued(text, i)?;
     if e > end || block.empty {
         return None;
     }
-    Some((Some(block), None, e))
+    Some((Some(block), None, None, e))
 }
 
 /// Joins the fragments of a continuation row into the row above (C2-B-184).
@@ -185,6 +210,10 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
     row.joined = true;
     for (col, &(s, e)) in frags.iter().enumerate() {
         let (a, z) = trim(text, s, e);
+        let header = row
+            .cells
+            .iter()
+            .all(|cell| cell.header || cell.span == Some('<'));
         match row.cells.get_mut(col) {
             // C2-B-184: an empty fragment adds nothing to a cell.
             Some(_) if a >= z => {}
@@ -208,6 +237,7 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
             None => row.cells.push(Cell {
                 start: s,
                 end: e,
+                header,
                 joined: true,
                 pieces: vec![Piece {
                     start: a,

@@ -160,8 +160,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             Node::BlockExtension(e) => {
                 self.losses.push("extension-fallback-rendered");
+                let wrapped = e.attrs.is_some_and(|attrs| !attrs.is_empty());
+                if wrapped {
+                    let el = self.el(e.attrs, e.lang, n);
+                    self.line(depth, &format!("<div{}>", el.write(self.filter())));
+                }
                 for c in e.fallback.iter() {
-                    self.block(c, depth);
+                    self.block(c, depth + usize::from(wrapped));
+                }
+                if wrapped {
+                    self.line(depth, "</div>");
                 }
             }
             _ => {}
@@ -255,12 +263,22 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.report_empty_paragraph(n);
             return false;
         }
-        if p.role == Some(ParagraphRole::Image)
-            && (self.caption_inner == Some(crate::resolve::order::addr(n))
-                || !has_attrs(p.attrs, p.lang))
-            && self.image_block_bare(p.children)
-        {
-            self.leaf_into(p.children, out);
+        if self.empty_after_degrade(p.children) {
+            self.losses.push("profile-construct-degraded");
+            return false;
+        }
+        if p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children) {
+            if has_attrs(p.attrs, p.lang)
+                && self.caption_inner != Some(crate::resolve::order::addr(n))
+            {
+                for child in p.children.iter() {
+                    if let Node::Image(image) = child {
+                        self.image(image, p.attrs, p.lang, out);
+                    }
+                }
+            } else {
+                self.leaf_into(p.children, out);
+            }
             return true;
         }
         let static_math = p.role == Some(ParagraphRole::Math) && self.opts.mode == Mode::Static;
@@ -283,10 +301,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// A paragraph written as a bare `<img>` (C2-H-020).
-    fn bare_image(&self, p: &ast::Paragraph) -> bool {
-        p.role == Some(ParagraphRole::Image)
-            && !has_attrs(p.attrs, p.lang)
-            && self.image_block_bare(p.children)
+    pub(super) fn bare_image(&self, p: &ast::Paragraph) -> bool {
+        p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children)
     }
 
     /// C2-H-020: a block image is written without `<p>` unless it renders as
@@ -526,6 +542,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         depth: usize,
         tight: bool,
     ) {
+        if self.item_captioned_include(first, rest, open, depth, tight) {
+            return;
+        }
         // C2-H-165 with C2-H-007: a block a profile degrades is paragraphs.
         if let Some(paras) = self.degraded(first) {
             self.losses.push("profile-construct-degraded");
@@ -568,10 +587,36 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.line(depth, open);
             self.block(first, depth + 1);
         }
-        for b in rest {
-            self.block(b, depth + 1);
+        self.item_rest(rest, depth);
+    }
+
+    fn item_rest(&mut self, rest: &[&'r Node<'a>], depth: usize) {
+        for block in rest {
+            self.block(block, depth + 1);
         }
         self.line(depth, "</li>");
+    }
+
+    fn item_captioned_include(
+        &mut self,
+        first: &'r Node<'a>,
+        rest: &[&'r Node<'a>],
+        open: &str,
+        depth: usize,
+        tight: bool,
+    ) -> bool {
+        let Node::Include(include) = first else {
+            return false;
+        };
+        if include.children.is_some() || include.caption.is_none() {
+            return false;
+        }
+        self.item_include(include, open, depth, tight, false);
+        for block in rest {
+            self.block(block, depth + 1);
+        }
+        self.line(depth, "</li>");
+        true
     }
 
     fn item_include(
@@ -584,7 +629,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
     ) -> bool {
         self.losses.push("include-unresolved");
         let body = esc::text_str(&include_text(include));
-        let head = if tight {
+        if let Some(caption) = include.caption.as_deref() {
+            self.line(depth, open);
+            self.line(depth + 1, &format!("<p>{body}</p>"));
+            self.degraded_caption(caption, depth + 1);
+            return false;
+        }
+        let head = if tight && include.caption.is_none() {
             body
         } else {
             format!("<p>{body}</p>")
@@ -594,9 +645,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return true;
         }
         self.line(depth, &format!("{open}{head}"));
-        if let Some(caption) = include.caption.as_deref() {
-            self.degraded_caption(caption, depth + 1);
-        }
         false
     }
 
@@ -772,22 +820,32 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn line_block(&mut self, n: &'r Node<'a>, depth: usize) {
         let Node::LineBlock(lb) = n else { return };
         let mut el = self.el(lb.attrs, lb.lang, n);
+        el.align_style = true;
         el.trailing.push("line-block".into());
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-line-block", None));
         }
         let open = format!("<div{}>", el.write(self.filter()));
         let mut stanzas: Vec<Vec<String>> = vec![Vec::new()];
+        let mut previous_hard = false;
         for l in lb.children.iter() {
             let Node::Line(line) = l else { continue };
             if line.children.is_empty() {
                 stanzas.push(Vec::new());
+                previous_hard = false;
                 continue;
             }
             let s = self.line_text(line.children);
             if let Some(last) = stanzas.last_mut() {
+                if previous_hard
+                    && let Some(previous) = last.last_mut()
+                    && previous.ends_with("<br>\n")
+                {
+                    previous.truncate(previous.len() - 5);
+                }
                 last.push(s);
             }
+            previous_hard = matches!(line.children.last(), Some(Node::HardBreak(_)));
         }
         let paras: Vec<String> = stanzas
             .into_iter()

@@ -170,8 +170,43 @@ pub mod owned {
             }
             self.classes.extend(later.classes);
             self.key_values.extend(later.key_values);
-            dedupe_keys(&mut self.key_values);
+            dedupe_keys_semantic(&mut self.key_values);
         }
+    }
+
+    /// A lower-case semantic span key is distinct from its ordinary upper-case spelling (C2-H-013).
+    pub fn dedupe_keys_semantic(kv: &mut Vec<(String, String)>) {
+        let mut out: Vec<(String, String)> = Vec::with_capacity(kv.len());
+        if kv.len() <= 16 {
+            for (key, value) in kv.drain(..) {
+                let folded = key.to_ascii_lowercase();
+                let semantic = ["abbr", "time", "kbd"].contains(&folded.as_str());
+                let exact = key == folded;
+                let slot = out.iter_mut().find(|(old, _)| {
+                    old.eq_ignore_ascii_case(&key)
+                        && (!semantic || (old == &old.to_ascii_lowercase()) == exact)
+                });
+                match slot {
+                    Some((_, old_value)) => *old_value = value,
+                    None => out.push((key, value)),
+                }
+            }
+        } else {
+            let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for (key, value) in kv.drain(..) {
+                let mut folded = key.to_ascii_lowercase();
+                if ["abbr", "time", "kbd"].contains(&folded.as_str()) && key != folded {
+                    folded.push('~');
+                }
+                if let Some(slot) = at.get(&folded).and_then(|&i| out.get_mut(i)) {
+                    slot.1 = value;
+                } else {
+                    at.insert(folded, out.len());
+                    out.push((key, value));
+                }
+            }
+        }
+        *kv = out;
     }
 
     /// Merges keys that are equal without ASCII case: the later value at the

@@ -11,7 +11,7 @@
       "body": "opaque",
       "strip": "opener_indent",
       "unclosed_report": "unclosed-code-fence",
-      "clauses": ["C2-B-007", "C2-B-029", "C2-B-109", "C2-B-110", "C2-B-111", "C2-B-112", "C2-B-113", "C2-B-114", "C2-B-135"]
+      "clauses": ["C2-B-007", "C2-B-029", "C2-B-109", "C2-B-110", "C2-B-111", "C2-B-112", "C2-B-113", "C2-B-135"]
     },
     {
       "name": "comment_block",
@@ -23,7 +23,7 @@
       "body": "opaque",
       "strip": "opener_indent",
       "unclosed_report": "unclosed-comment-fence",
-      "clauses": ["C2-B-029", "C2-B-109", "C2-B-110", "C2-B-111", "C2-B-112", "C2-B-113", "C2-B-114", "C2-B-135", "C2-B-195"]
+      "clauses": ["C2-B-029", "C2-B-109", "C2-B-110", "C2-B-111", "C2-B-112", "C2-B-113", "C2-B-135", "C2-B-195"]
     },
     {
       "name": "description",
@@ -85,7 +85,7 @@
       "strip": "content_column",
       "bare_paragraph": "never",
       "counts_toward_depth": true,
-      "clauses": ["C2-B-025", "C2-B-026", "C2-B-027", "C2-B-086", "C2-B-087", "C2-B-190", "C2-B-228"]
+      "clauses": ["C2-B-025", "C2-B-026", "C2-B-027", "C2-B-087", "C2-B-190", "C2-B-228", "C2-H-018"]
     },
     {
       "name": "frontmatter",
@@ -109,7 +109,7 @@
       "body": "blocks",
       "counts_toward_depth": true,
       "unclosed_report": "unclosed-container-fence",
-      "clauses": ["C2-B-109", "C2-B-111", "C2-B-124", "C2-B-129", "C2-B-190", "C2-B-196"]
+      "clauses": ["C2-B-109", "C2-B-111", "C2-B-124", "C2-A-068", "C2-B-190", "C2-B-196"]
     },
     {
       "name": "line_block",
@@ -121,8 +121,9 @@
       "closes_on": ["closer", "container_end"],
       "body": "lines",
       "strip": "content_column",
+      "counts_toward_depth": true,
       "unclosed_report": "unclosed-container-fence",
-      "clauses": ["C2-B-109", "C2-B-111", "C2-B-123", "C2-B-130", "C2-B-131", "C2-B-144", "C2-B-196"]
+      "clauses": ["C2-B-109", "C2-B-111", "C2-B-123", "C2-B-130", "C2-B-131", "C2-B-135", "C2-B-190", "C2-B-196"]
     },
     {
       "name": "list",
@@ -143,7 +144,6 @@
         "C2-B-054",
         "C2-B-055",
         "C2-B-097",
-        "C2-B-142",
         "C2-B-190"
       ]
     },
@@ -159,17 +159,17 @@
       "counts_toward_depth": true,
       "clauses": [
         "C2-B-009",
+        "C2-B-015",
         "C2-B-025",
         "C2-B-026",
         "C2-B-027",
         "C2-B-028",
-        "C2-B-056",
         "C2-B-057",
         "C2-B-058",
         "C2-B-061",
         "C2-B-062",
-        "C2-B-063",
-        "C2-B-064",
+        "C2-H-034",
+        "C2-H-035",
         "C2-B-190"
       ]
     },

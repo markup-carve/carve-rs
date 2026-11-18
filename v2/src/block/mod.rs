@@ -12,7 +12,7 @@ use crate::attr::AttrBlock;
 use crate::hash::AddrMap;
 use crate::inline::{Join, Piece};
 use crate::source::Source;
-use events::{ContainerKind, Event, LeafKind, Role};
+use events::{ContainerKind, Event, LeafKind, LineBlockEntry, Role};
 use line::Cursor;
 use shapes::{FenceInfo, MarkerKind};
 use table::TableData;
@@ -139,13 +139,24 @@ enum Leaf {
     },
     LineBlock {
         len: usize,
-        lines: Vec<Piece>,
+        entries: Vec<LineBlockEntry>,
+        comment: Option<LineCommentFence>,
+        stanza_open: bool,
         /// Blank lines held back (gap G-025).
         held: Vec<(usize, usize)>,
     },
     Table {
         data: TableData,
     },
+}
+
+#[derive(Debug, Clone)]
+struct LineCommentFence {
+    len: usize,
+    indent: usize,
+    start: usize,
+    end: usize,
+    lines: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -213,6 +224,10 @@ pub struct Parser<'a> {
 /// Runs the block pass over a source.
 #[must_use]
 pub fn scan(src: &Source) -> BlockOutput {
+    scan_with_frontmatter(src, true)
+}
+
+pub(crate) fn scan_with_frontmatter(src: &Source, allow_frontmatter: bool) -> BlockOutput {
     let mut p = Parser {
         src,
         events: Vec::new(),
@@ -237,7 +252,7 @@ pub fn scan(src: &Source) -> BlockOutput {
         if i + 1 == n && s == e && i > 0 {
             break;
         }
-        p.line(s, e);
+        p.line_with_frontmatter(s, e, allow_frontmatter);
     }
     p.finish();
     BlockOutput {
@@ -252,11 +267,11 @@ impl<'a> Parser<'a> {
         self.stack.iter().filter(|c| c.kind.counts()).count()
     }
 
-    fn line(&mut self, s: usize, e: usize) {
+    fn line_with_frontmatter(&mut self, s: usize, e: usize, allow_frontmatter: bool) {
         self.line_end = e;
         let text = self.src.slice(s, e);
         let cur = Cursor::new(text, s);
-        if self.frontmatter(text, s, e) {
+        if allow_frontmatter && self.frontmatter(text, s, e) {
             return;
         }
         let walk = self.walk(cur, false);
@@ -278,6 +293,9 @@ impl<'a> Parser<'a> {
         if self.opaque_line(&walk, e) {
             return;
         }
+        if self.region_marker(&walk) {
+            return;
+        }
         if matches!(
             self.leaf.as_ref().map(|l| &l.leaf),
             Some(Leaf::Heading { .. } | Leaf::Table { .. })
@@ -293,6 +311,34 @@ impl<'a> Parser<'a> {
             return;
         }
         self.blank_run_reset_after(&walk, e);
+    }
+
+    fn region_marker(&mut self, walk: &Walk<'a>) -> bool {
+        let k = walk.cur.after_blanks();
+        if !crate::include::is_carve_region_marker(k.rest()) {
+            return false;
+        }
+        self.close_leaf();
+        self.close_to(walk.matched);
+        while self
+            .stack
+            .last()
+            .is_some_and(|c| matches!(c.kind, Kind::List { .. } | Kind::DescList { .. }))
+        {
+            self.pop_container();
+        }
+        self.closed = None;
+        self.blank_run = 0;
+        self.push_leaf_event(
+            LeafKind::Comment {
+                block: false,
+                value: shapes::line_comment_value(k.rest()),
+            },
+            k.offset(),
+            k.offset() + k.rest().len(),
+            None,
+        );
+        true
     }
 
     /// The rest of a line that no open leaf took: close what does not own it,
@@ -418,7 +464,12 @@ impl<'a> Parser<'a> {
                 held.push(k.rest().to_string());
                 true
             }
-            Leaf::LineBlock { held, .. } => {
+            Leaf::LineBlock { held, comment, .. } => {
+                if let Some(fence) = comment {
+                    fence.lines.push(String::new());
+                    fence.end = e;
+                    return true;
+                }
                 // Gap G-025: as in the oracle, trailing blank lines of an
                 // unclosed line block are dropped, as C2-B-113 does for a fence.
                 let _ = s;
@@ -439,19 +490,33 @@ impl<'a> Parser<'a> {
         ) {
             return false;
         }
+        if matches!(open.leaf, Leaf::LineBlock { .. }) {
+            return self.line_block_line(walk, e);
+        }
+        let k = walk.cur.after_blanks();
+        if let Leaf::CommentBlock { len, .. } = open.leaf {
+            if shapes::bare_run(&k, b'%') >= len {
+                if let Some(leaf) = &mut self.leaf {
+                    leaf.end = e;
+                    flush_held(&mut leaf.leaf);
+                }
+                self.fence_closes = true;
+                self.close_leaf();
+                self.fence_closes = false;
+                return true;
+            }
+        }
         if open.depth > walk.matched || walk.matched < self.stack.len() {
             // C2-B-111: the container ends, and the fence with it.
             self.close_leaf();
             return false;
         }
-        let k = walk.cur.after_blanks();
         let Some(OpenLeaf { leaf, end, .. }) = &mut self.leaf else {
             return false;
         };
         let closes = match leaf {
             Leaf::Code { len, .. } => shapes::bare_run(&k, b'`') >= *len,
             Leaf::CommentBlock { len, .. } => shapes::bare_run(&k, b'%') >= *len,
-            Leaf::LineBlock { len, .. } => shapes::bare_run(&k, b':') >= *len,
             _ => false,
         };
         *end = e;
@@ -470,6 +535,130 @@ impl<'a> Parser<'a> {
         }
         opaque_push(leaf, walk);
         true
+    }
+
+    /// A stanza can keep lazy text and a comment fence (C2-B-024, C2-B-123).
+    fn line_block_line(&mut self, walk: &Walk<'a>, e: usize) -> bool {
+        let k = walk.cur.after_blanks();
+        let owned = self.owns_line(walk);
+        let lazy_end = self.lazy_stanza_ends(walk, &k);
+        let Some(OpenLeaf {
+            leaf:
+                Leaf::LineBlock {
+                    len,
+                    comment,
+                    entries,
+                    held,
+                    stanza_open,
+                },
+            end,
+            ..
+        }) = &mut self.leaf
+        else {
+            return false;
+        };
+        if comment.is_some() {
+            let parent_closes = line_block_comment_line(comment, entries, *len, walk, &k, e, owned);
+            *end = e;
+            if parent_closes {
+                self.fence_closes = true;
+                self.close_leaf();
+                self.fence_closes = false;
+                self.closed = Some(Closed {
+                    depth: self.stack.len(),
+                    target: false,
+                });
+            }
+            return true;
+        }
+        if owned && shapes::bare_run(&k, b':') >= *len {
+            *end = e;
+            entries.extend(held.drain(..).map(|(start, end)| LineBlockEntry::Line {
+                piece: Piece {
+                    start,
+                    end,
+                    join: Join::Line,
+                },
+                comments: Vec::new(),
+            }));
+            self.fence_closes = true;
+            self.close_leaf();
+            self.fence_closes = false;
+            self.closed = Some(Closed {
+                depth: self.stack.len(),
+                target: false,
+            });
+            return true;
+        }
+        if owned && shapes::bare_run(&k, b'%') >= 3 {
+            entries.extend(held.drain(..).map(|(start, end)| LineBlockEntry::Line {
+                piece: Piece {
+                    start,
+                    end,
+                    join: Join::Line,
+                },
+                comments: Vec::new(),
+            }));
+            *comment = Some(LineCommentFence {
+                len: shapes::bare_run(&k, b'%'),
+                indent: k.col - walk.qbase,
+                start: k.offset(),
+                end: e,
+                lines: Vec::new(),
+            });
+            *end = e;
+            return true;
+        }
+        if !owned {
+            if shapes::comment_only(k.rest()) && *stanza_open {
+                if let Some(LineBlockEntry::Line { comments, .. }) = entries.last_mut() {
+                    comments.push((k.offset(), e, shapes::line_comment_value(k.rest())));
+                }
+                *end = e;
+                return true;
+            }
+            if !*stanza_open || lazy_end {
+                self.close_leaf();
+                return false;
+            }
+        }
+        entries.extend(held.drain(..).map(|(start, end)| LineBlockEntry::Line {
+            piece: Piece {
+                start,
+                end,
+                join: Join::Line,
+            },
+            comments: Vec::new(),
+        }));
+        let body = walk.cur;
+        entries.push(LineBlockEntry::Line {
+            piece: Piece {
+                start: body.offset(),
+                end: body.base + body.text.len(),
+                join: Join::Line,
+            },
+            comments: Vec::new(),
+        });
+        *stanza_open = true;
+        *end = e;
+        true
+    }
+
+    fn lazy_stanza_ends(&self, walk: &Walk<'_>, k: &Cursor<'_>) -> bool {
+        shapes::heading(k).is_some()
+            || shapes::quote_mark(k).is_some()
+            || shapes::attribute_line(k).is_some()
+            || shapes::footnote_def(k.rest()).is_some()
+            || shapes::link_def(k.rest()).is_some()
+            || shapes::abbr_def(k.rest()).is_some()
+            || crate::include::is_carve_region_marker(k.rest())
+            || self.interrupts(walk)
+    }
+
+    fn owns_line(&self, walk: &Walk<'_>) -> bool {
+        self.leaf
+            .as_ref()
+            .is_some_and(|open| open.depth <= walk.matched)
     }
 
     /// Continues the open paragraph-like leaf with a lazy line, or a heading
@@ -715,7 +904,7 @@ impl<'a> Parser<'a> {
                 false,
             ),
             Leaf::Frontmatter { format, value } => (LeafKind::Frontmatter { format, value }, false),
-            Leaf::LineBlock { lines, .. } => (LeafKind::LineBlock { lines }, false),
+            Leaf::LineBlock { entries, .. } => (LeafKind::LineBlock { entries }, false),
             Leaf::Table { data } => {
                 let _ = start;
                 (LeafKind::Table(Box::new(data)), true)
@@ -750,6 +939,10 @@ impl<'a> Parser<'a> {
             Kind::List { loose, .. } => Some(loose),
             _ => None,
         };
+        let nested_figure = self
+            .stack
+            .iter()
+            .any(|frame| matches!(frame.kind, Kind::Div { figure: true, .. }));
         let target = matches!(
             c.kind,
             Kind::Quote
@@ -757,8 +950,7 @@ impl<'a> Parser<'a> {
                     sigil: Some('>'),
                     ..
                 }
-                | Kind::Div { figure: true, .. }
-        );
+        ) || matches!(c.kind, Kind::Div { figure: true, .. }) && !nested_figure;
         self.events.push(Event::Exit { end: c.end, loose });
         if let Some(top) = self.stack.last_mut() {
             top.end = top.end.max(c.end);
@@ -797,6 +989,37 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// C2-B-123: a comment block hides its body but does not end the stanza.
+fn line_block_comment_line(
+    comment: &mut Option<LineCommentFence>,
+    entries: &mut Vec<LineBlockEntry>,
+    opener_len: usize,
+    walk: &Walk<'_>,
+    k: &Cursor<'_>,
+    end: usize,
+    owned: bool,
+) -> bool {
+    let Some(fence) = comment.as_mut() else {
+        return false;
+    };
+    let inner_closes = shapes::bare_run(k, b'%') >= fence.len;
+    let parent_closes = owned && shapes::bare_run(k, b':') >= opener_len;
+    if inner_closes || parent_closes {
+        entries.push(LineBlockEntry::BlockComment {
+            start: fence.start,
+            end: if inner_closes { end } else { fence.end },
+            value: fence.lines.join("\n"),
+        });
+        *comment = None;
+        return parent_closes;
+    }
+    let mut body = walk.body;
+    body.strip_to(walk.qbase + fence.indent);
+    fence.lines.push(body.rest().to_string());
+    fence.end = end;
+    false
+}
+
 /// Moves the blank lines held back in a fence body into it.
 fn flush_held(leaf: &mut Leaf) {
     match leaf {
@@ -806,11 +1029,14 @@ fn flush_held(leaf: &mut Leaf) {
                 value.push('\n');
             }
         }
-        Leaf::LineBlock { lines, held, .. } => {
-            lines.extend(held.drain(..).map(|(start, end)| Piece {
-                start,
-                end,
-                join: Join::Line,
+        Leaf::LineBlock { entries, held, .. } => {
+            entries.extend(held.drain(..).map(|(start, end)| LineBlockEntry::Line {
+                piece: Piece {
+                    start,
+                    end,
+                    join: Join::Line,
+                },
+                comments: Vec::new(),
             }));
         }
         Leaf::CommentBlock { lines, held, .. } => {
@@ -850,17 +1076,23 @@ fn opaque_push(leaf: &mut Leaf, walk: &Walk<'_>) {
             k.strip_to(walk.qbase + *indent);
             lines.push(k.rest().to_string());
         }
-        Leaf::LineBlock { lines, held, .. } => {
-            lines.extend(held.drain(..).map(|(start, end)| Piece {
-                start,
-                end,
-                join: Join::Line,
+        Leaf::LineBlock { entries, held, .. } => {
+            entries.extend(held.drain(..).map(|(start, end)| LineBlockEntry::Line {
+                piece: Piece {
+                    start,
+                    end,
+                    join: Join::Line,
+                },
+                comments: Vec::new(),
             }));
             let k = walk.cur;
-            lines.push(Piece {
-                start: k.offset(),
-                end: k.base + k.text.len(),
-                join: Join::Line,
+            entries.push(LineBlockEntry::Line {
+                piece: Piece {
+                    start: k.offset(),
+                    end: k.base + k.text.len(),
+                    join: Join::Line,
+                },
+                comments: Vec::new(),
             });
         }
         _ => {}

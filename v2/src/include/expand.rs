@@ -350,7 +350,8 @@ fn select<'a>(
     id: &str,
 ) -> Result<Selected<'a>, Failure> {
     if let Some(name) = node.section {
-        let (mut doc, inner) = parse_file(text, scope, exp.arena, Some((&mut *exp.diags, id)));
+        let (mut doc, inner) =
+            parse_file(text, scope, exp.arena, Some((&mut *exp.diags, id)), true);
         let children = section::select(&mut doc, name, exp.opts.heading_ids, exp.arena)
             .ok_or_else(|| Failure::with("section_missing", "name", name))?;
         return Ok(Selected {
@@ -361,35 +362,19 @@ fn select<'a>(
     let lines = file_lines(text);
     let range = selected_lines(node, text, &lines)?;
     if option(node, "code").is_some() {
-        let children = match code::child(node, text, &lines, range, exp.arena)? {
-            Some((child, malformed)) => {
-                if malformed {
-                    let pos = child.pos().copied();
-                    exp.diags.push(Diagnostic::new(
-                        "delimited-table-malformed",
-                        &[],
-                        Some(id),
-                        pos,
-                    ));
-                }
-                exp.arena.one(child)
-            }
-            None => &mut [],
-        };
-        return Ok(Selected {
-            children,
-            scope: None,
-        });
+        return select_code(exp, node, text, id, &lines, range);
     }
     // C2-N-020, C2-N-036: the selected lines are a document of their own,
     // positioned in the file.
     let (start, end) = slice(text, &lines, range);
     let mut found = Vec::new();
-    let (doc, inner) = parse_file(
+    let (whole, whole_scope) = parse_file(text, scope, exp.arena, None, true);
+    let (doc, _) = parse_file(
         text.get(start..end).unwrap_or(""),
-        scope,
+        &whole_scope,
         exp.arena,
         Some((&mut found, id)),
+        range.from == 0,
     );
     if start > 0 {
         let lines_before = u32::try_from(range.from).unwrap_or(u32::MAX);
@@ -401,11 +386,64 @@ fn select<'a>(
             shift_pos(p, lines_before, bytes);
         }
     }
+    let mut all = doc
+        .children
+        .iter_mut()
+        .map(|n| std::mem::replace(n, empty_node(exp.arena)))
+        .collect::<Vec<_>>();
+    for n in whole.children.iter_mut() {
+        if !matches!(
+            n,
+            Node::LinkReferenceDefinition(_)
+                | Node::Footnote(_)
+                | Node::AbbreviationDef(_)
+                | Node::CitationDefinition(_)
+        ) {
+            continue;
+        }
+        let offset = n.pos().map_or(0, |p| p.start_offset as usize);
+        if offset < start || offset >= end {
+            all.push(std::mem::replace(n, empty_node(exp.arena)));
+        }
+    }
     exp.diags.extend(found);
     Ok(Selected {
-        children: doc.children,
-        scope: Some(inner),
+        children: exp.arena.fill(all.into_iter()),
+        scope: Some(whole_scope),
     })
+}
+
+fn select_code<'a>(
+    exp: &mut Exp<'_, 'a>,
+    node: &ast::Include<'a>,
+    text: &str,
+    id: &str,
+    lines: &FileLines,
+    range: LineRange,
+) -> Result<Selected<'a>, Failure> {
+    let children = match code::child(node, text, lines, range, exp.arena)? {
+        Some((child, malformed)) => {
+            if malformed {
+                let pos = child.pos().copied();
+                exp.diags.push(Diagnostic::new(
+                    "delimited-table-malformed",
+                    &[],
+                    Some(id),
+                    pos,
+                ));
+            }
+            exp.arena.one(child)
+        }
+        None => &mut [],
+    };
+    Ok(Selected {
+        children,
+        scope: None,
+    })
+}
+
+fn empty_node(arena: &Arena) -> Node<'_> {
+    Node::SoftBreak(arena.alloc(ast::SoftBreak::default()))
 }
 
 /// The byte range of the selected lines; a slice from line 1 keeps a U+FEFF.
@@ -443,10 +481,11 @@ pub(super) fn parse_file<'a>(
     scope: &Scope,
     arena: &'a Arena,
     report: Option<(&mut Vec<Diagnostic>, &str)>,
+    allow_frontmatter: bool,
 ) -> (Document<'a>, Scope) {
     let text = arena.str(text);
     let src = crate::source::Source::new(text);
-    let out = crate::block::scan(&src);
+    let out = crate::block::scan_with_frontmatter(&src, allow_frontmatter);
     let (doc, inner) = crate::tree::build_scoped(&src, arena, out.events, Some(scope));
     if let Some((diags, file)) = report {
         let found = out.findings.iter().chain(&inner.findings);

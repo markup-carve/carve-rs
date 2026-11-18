@@ -15,6 +15,19 @@ impl<'r, 'a> Renderer<'r, 'a> {
         )
     }
 
+    pub(super) fn empty_after_degrade(&self, nodes: &[Node]) -> bool {
+        self.profile_row().is_some()
+            && !nodes.is_empty()
+            && nodes.iter().all(|node| {
+                if self.profile_allows(node, false) {
+                    return false;
+                }
+                let mut text = String::new();
+                inline_plain(node, &mut text, 0);
+                text.is_empty()
+            })
+    }
+
     // C2-H-129, C2-H-165: a degraded node still reports when it leaves no text.
     pub(super) fn report_empty_paragraph(&mut self, n: &Node) {
         if !self.profile_allows(n, true) {
@@ -141,8 +154,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         self.losses.push("profile-construct-degraded");
+        if let Node::Xref(x) = n {
+            let target = x.href.and_then(|href| href.strip_prefix('#'));
+            if let Some(text) = target.and_then(|id| self.xref_text.get(id)) {
+                out.push_str(text);
+                return;
+            }
+        }
         let mut s = String::new();
-        inline_plain(n, &mut s, 0, self.src_of(n));
+        inline_plain(n, &mut s, 0);
         esc::text(&s, out);
     }
 }
@@ -160,29 +180,8 @@ fn allows(row: &ProfileRow, ty: &str, block: bool) -> bool {
 }
 
 /// The degraded text of an inline node (C2-H-165), unescaped.
-fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<SourceView<'_>>) {
+fn inline_plain(n: &Node, out: &mut String, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
-        return;
-    }
-    if depth > 0
-        && let Some(text) = src
-            .and_then(|source| n.pos().and_then(|pos| source.slice(*pos)))
-            .filter(|_| {
-                matches!(
-                    n,
-                    Node::Code(_)
-                        | Node::Math(_)
-                        | Node::RawInline(_)
-                        | Node::Autolink(_)
-                        | Node::Xref(_)
-                        | Node::Symbol(_)
-                        | Node::Mention(_)
-                        | Node::Tag(_)
-                        | Node::CitationGroup(_)
-                )
-            })
-    {
-        out.push_str(text);
         return;
     }
     if inline_plain_leaf(n, out) {
@@ -215,7 +214,7 @@ fn inline_plain(n: &Node, out: &mut String, depth: usize, src: Option<SourceView
         }
         other => {
             for c in other.children().into_iter().flatten() {
-                inline_plain(c, out, depth + 1, src);
+                inline_plain(c, out, depth + 1);
             }
         }
     }
@@ -238,30 +237,17 @@ fn inline_plain_leaf(n: &Node, out: &mut String) -> bool {
             out.push(']');
         }
         Node::Comment(_) => {}
-        Node::Code(c) => {
-            code_spelling(c.value, out);
-        }
-        Node::Math(m) => {
-            out.push_str(if m.display { "$$" } else { "$" });
-            code_spelling(m.value, out);
-        }
+        Node::Code(c) => out.push_str(c.value),
+        Node::Math(m) => out.push_str(m.value),
         Node::LiteralInline(l) => out.push_str(l.value),
-        Node::RawInline(r) => {
-            code_spelling(r.value, out);
-            out.push_str("{=");
-            out.push_str(r.format);
-            out.push('}');
-        }
-        Node::Autolink(a) => {
-            out.push('<');
-            out.push_str(a.text.unwrap_or(a.href));
-            out.push('>');
-        }
+        Node::RawInline(r) => out.push_str(r.value),
+        Node::Autolink(a) => out.push_str(a.text.unwrap_or(a.href)),
         _ => return false,
     }
     true
 }
 
+#[cfg(test)]
 fn code_spelling(value: &str, out: &mut String) {
     let runs: std::collections::HashSet<usize> = value
         .split(|c| c != '`')

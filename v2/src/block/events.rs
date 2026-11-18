@@ -79,7 +79,20 @@ pub enum LeafKind {
     },
     /// One entry per body line; an empty piece for an empty line (C2-A-069).
     LineBlock {
-        lines: Vec<Piece>,
+        entries: Vec<LineBlockEntry>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum LineBlockEntry {
+    Line {
+        piece: Piece,
+        comments: Vec<(usize, usize, String)>,
+    },
+    BlockComment {
+        start: usize,
+        end: usize,
+        value: String,
     },
 }
 

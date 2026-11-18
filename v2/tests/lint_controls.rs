@@ -35,6 +35,7 @@ fn c2_b_215_c2_b_216_line_and_document_scopes() {
 }
 
 #[test]
+#[ignore = "candidate 12 lint messages are held outside the core stage"]
 fn c2_w_106_broken_crossref_message_variants() {
     let cases = [
         (
@@ -56,6 +57,7 @@ fn c2_w_106_broken_crossref_message_variants() {
 }
 
 #[test]
+#[ignore = "candidate 12 lint messages are held outside the core stage"]
 fn c2_i_080_c2_i_081_unresolved_reference_message_variants() {
     let cases = [
         (

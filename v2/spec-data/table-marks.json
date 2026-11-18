@@ -4,7 +4,7 @@
     "separator": "|",
     "not_a_separator": ["escaped_pipe", "pipe_between_backtick_run_and_matching_run_on_same_line"],
     "before": "reading_cell_content",
-    "clauses": ["C2-B-134", "C2-B-169"]
+    "clauses": ["C2-B-169", "C2-B-223"]
   },
   "cell_prefix": {
     "sequence": [
@@ -14,7 +14,7 @@
     ],
     "clauses": ["C2-B-093", "C2-B-171"]
   },
-  "header_cell_mark": { "mark": "|=", "head": "leading_rows_with_a_header_cell_and_no_other_cell", "clauses": ["C2-B-171", "C2-B-178"] },
+  "header_cell_mark": { "mark": "|=", "followed_by": ["<", ">", "?", "cell_end", "space", "tab", "{", "~"], "otherwise": "equals_sign_is_cell_text", "head": "leading_rows_with_a_header_cell_and_no_other_cell", "clauses": ["C2-B-171", "C2-B-178"] },
   "span_marks": [
     {
       "mark": "<",
@@ -44,7 +44,13 @@
   "alignment_marks": [
     { "mark": "<", "alignment": "left", "clauses": ["C2-B-182"] },
     { "mark": ">", "alignment": "right", "clauses": ["C2-B-182"] },
+    { "mark": "?", "alignment": "none", "only_before": "vertical_mark", "clauses": ["C2-B-182", "C2-B-213"] },
     { "mark": "~", "alignment": "center", "clauses": ["C2-B-182"] }
+  ],
+  "vertical_marks": [
+    { "mark": "^", "alignment": "top", "after": "alignment_mark", "clauses": ["C2-B-182"] },
+    { "mark": "v", "alignment": "bottom", "after": "alignment_mark", "clauses": ["C2-B-182"] },
+    { "mark": "~", "alignment": "middle", "after": "alignment_mark", "clauses": ["C2-B-182"] }
   ],
   "attributes": [
     {
@@ -54,8 +60,34 @@
       "entries": ["center", "left", "right"],
       "sets": "table_column.align",
       "written_to_html": false,
-      "report": "table-column-arity",
+      "report": "table-attribute-invalid",
       "clauses": ["C2-B-187", "C2-B-211", "C2-B-213", "C2-B-227", "C2-H-153"]
+    },
+    {
+      "name": "body-header-cols",
+      "applies_to": ["delimited_table", "pipe_table"],
+      "value": "count_list",
+      "sets": "table_body.rowHeadColumns",
+      "written_to_html": false,
+      "report": "table-attribute-invalid",
+      "clauses": ["C2-B-227", "C2-B-230", "C2-H-056", "C2-H-153"]
+    },
+    {
+      "name": "body-header-rows",
+      "applies_to": ["delimited_table", "pipe_table"],
+      "value": "count_list",
+      "sets": "table_cell.header",
+      "written_to_html": false,
+      "report": "table-attribute-invalid",
+      "clauses": ["C2-B-227", "C2-B-230", "C2-H-153"]
+    },
+    {
+      "name": "body-rows",
+      "applies_to": ["delimited_table", "pipe_table"],
+      "value": "count_list",
+      "written_to_html": false,
+      "report": "table-attribute-invalid",
+      "clauses": ["C2-B-174", "C2-B-227", "C2-B-230", "C2-H-055", "C2-H-153"]
     },
     {
       "name": "footer-rows",
@@ -66,7 +98,7 @@
     },
     {
       "name": "header-cols",
-      "applies_to": ["list_table"],
+      "applies_to": [],
       "no_effect_on": ["delimited_table", "pipe_table"],
       "value": "count",
       "written_to_html": true,
@@ -74,7 +106,7 @@
     },
     {
       "name": "header-rows",
-      "applies_to": ["delimited_table", "list_table"],
+      "applies_to": ["delimited_table"],
       "no_effect_on": ["pipe_table"],
       "value": "count",
       "written_to_html": false,
@@ -90,13 +122,23 @@
       "clauses": ["C2-B-180", "C2-B-181"]
     },
     {
+      "name": "valigns",
+      "applies_to": ["delimited_table", "pipe_table"],
+      "value": "alignment_list",
+      "entries": ["bottom", "middle", "top"],
+      "sets": "table_column.valign",
+      "written_to_html": false,
+      "report": "table-attribute-invalid",
+      "clauses": ["C2-B-187", "C2-B-211", "C2-B-213", "C2-B-227", "C2-H-153"]
+    },
+    {
       "name": "widths",
       "applies_to": ["delimited_table", "pipe_table"],
       "value": "width_list",
       "sets": "table_column.width",
       "written_to_html": false,
       "report": "table-width-total",
-      "clauses": ["C2-B-187", "C2-B-212", "C2-B-227", "C2-H-059", "C2-H-153"]
+      "clauses": ["C2-B-187", "C2-B-212", "C2-B-227", "C2-H-152", "C2-H-153"]
     }
   ]
 }

@@ -62,6 +62,8 @@ pub struct El<'a> {
     pub source_line: Option<u32>,
     /// Keys left out, beside the reserved ones.
     pub skip_keys: &'static [&'static str],
+    /// Semantic span keys match only the authored lower-case spelling (C2-H-075).
+    pub skip_exact_keys: &'static [&'static str],
 }
 
 /// The render switches the filter reads.
@@ -217,24 +219,17 @@ impl<'a> El<'a> {
         };
         let mut out = Vec::new();
         for (k, v) in attrs.key_values {
-            if self.lang.is_some() && k.eq_ignore_ascii_case("lang") {
+            if self.skip_key(k) {
                 continue;
             }
-            if self.dir.is_some() && k.eq_ignore_ascii_case("dir") {
-                continue;
-            }
-            if url::dropped_name(k) || self.skip_keys.iter().any(|s| s.eq_ignore_ascii_case(k)) {
-                continue;
-            }
-            if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(k)) {
-                continue;
-            }
-            if self.align_style
-                && k.eq_ignore_ascii_case("align")
-                && matches!(*v, "left" | "right" | "center")
-            {
-                self.style_after.push(format!("text-align: {v};"));
-                continue;
+            if self.align_style && k.eq_ignore_ascii_case("align") {
+                let folded = v
+                    .trim_matches(|c: char| c.is_ascii_whitespace())
+                    .to_ascii_lowercase();
+                if matches!(folded.as_str(), "left" | "right" | "center") {
+                    self.style_after.push(format!("text-align: {folded};"));
+                    continue;
+                }
             }
             if self
                 .structural
@@ -250,6 +245,15 @@ impl<'a> El<'a> {
             out.push((*k, url::filter_value_in(k, v, f.policy)));
         }
         out
+    }
+
+    fn skip_key(&self, key: &str) -> bool {
+        (self.lang.is_some() && key.eq_ignore_ascii_case("lang"))
+            || (self.dir.is_some() && key.eq_ignore_ascii_case("dir"))
+            || url::dropped_name(key)
+            || self.skip_keys.iter().any(|s| s.eq_ignore_ascii_case(key))
+            || self.skip_exact_keys.contains(&key)
+            || RESERVED.iter().any(|r| r.eq_ignore_ascii_case(key))
     }
 
     fn classes(&self) -> Vec<&str> {

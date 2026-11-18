@@ -4,7 +4,7 @@ use carve2::{Options, parse_resolved, render, render_tree};
 use std::sync::Arc;
 
 #[test]
-fn c2_a_135_c2_h_023_renderer_resolves_supplied_results() {
+fn c2_a_135_c2_a_134_renderer_resolves_supplied_results() {
     let source = "# Title\n\n[t][zz] a[^n]\n\n[^n]: note\n";
     let mut tree = parse_resolved(source, &Options::default()).expect("tree");
     tree.stages = Some(vec!["referenceResolution".into(), "tableAlignment".into()]);
@@ -158,7 +158,8 @@ fn table_with_one_cell(children: &[serde_json::Value]) -> serde_json::Value {
 
 #[test]
 fn c2_h_200_empty_cell_stays_on_the_row() {
-    let tree = carve2::reader::read_tree_value(table_with_one_cell(&[])).expect("tree");
+    let empty = serde_json::json!({"type":"cell_paragraph","children":[]});
+    let tree = carve2::reader::read_tree_value(table_with_one_cell(&[empty])).expect("tree");
     let html = render_tree(tree.document(), &Options::default()).expect("render");
     assert!(html.contains("<tr><td></td></tr>"), "{html}");
 }

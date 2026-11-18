@@ -12,6 +12,9 @@ pub enum HeadingIds {
     KeepCase,
     Lower,
     Ascii,
+    AsciiStrict,
+    AsciiLower,
+    AsciiStrictLower,
 }
 
 impl HeadingIds {
@@ -23,6 +26,9 @@ impl HeadingIds {
             "keep-case" => Some(Self::KeepCase),
             "lower" => Some(Self::Lower),
             "ascii" => Some(Self::Ascii),
+            "ascii-strict" => Some(Self::AsciiStrict),
+            "ascii-lower" => Some(Self::AsciiLower),
+            "ascii-strict-lower" => Some(Self::AsciiStrictLower),
             _ => None,
         }
     }

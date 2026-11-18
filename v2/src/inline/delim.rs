@@ -299,12 +299,16 @@ fn add_attrs<'a>(host: &mut Tok<'a>, block: AttrBlock, arena: &'a Arena) {
             None => *attrs = Some(Box::new(block)),
         },
         K::Leaf { node, .. } => {
+            let ordinary = !matches!(node, crate::ast::Node::Span(_));
             if let Some(slot) = node.attrs_slot() {
                 let mut a = slot
                     .take()
                     .map(super::super::ast::Attrs::owned)
                     .unwrap_or_default();
                 a.merge(block.attrs);
+                if ordinary {
+                    crate::ast::owned::dedupe_keys(&mut a.key_values);
+                }
                 *slot = (!a.is_empty()).then(|| arena.attrs(&a));
             }
             if let Some(lang) = block.lang {

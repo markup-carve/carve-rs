@@ -28,10 +28,10 @@ fn c2_n_020_a_line_selection_is_a_document_positioned_in_its_file() {
     let opts = with(&[("a.crv", "x\n---\na: 1\n---\nbody\n")]);
     let t = tree("{{ a.crv @lines:2-5 }}", &opts);
     let kids = &t["children"][0]["children"];
-    assert_eq!(kids[0]["type"], "frontmatter");
+    assert_eq!(kids[0]["type"], "paragraph");
     assert_eq!(kids[0]["pos"]["startLine"], 2);
-    assert_eq!(kids[1]["children"][0]["pos"]["startOffset"], 15);
-    assert_eq!(kids[1]["pos"]["file"], "a.crv");
+    assert_eq!(kids[0]["children"][0]["pos"]["startOffset"], 2);
+    assert_eq!(kids[0]["pos"]["file"], "a.crv");
 }
 
 #[test]

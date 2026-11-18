@@ -229,8 +229,8 @@ fn c2_h_100_gap_g_022_social_makes_mentions_and_tags_links() {
     assert_eq!(
         carve2::render("@ann #topic", &social()),
         concat!(
-            "<p><a class=\"mention\" href=\"https://m/ann?x=ann\"><strong>@ann</strong></a> ",
-            "<a class=\"tag\" href=\"https://t/topic\"><strong>#topic</strong></a></p>"
+            "<p><a class=\"mention\" href=\"https://m/ann?x=ann\">@ann</a> ",
+            "<a class=\"tag\" href=\"https://t/topic\">#topic</a></p>"
         )
     );
     assert_eq!(

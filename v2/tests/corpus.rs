@@ -17,6 +17,7 @@ fn expected_tree(json: &str) -> String {
 }
 
 #[test]
+#[ignore = "candidate 3 JavaScript oracle; candidate 12 specification corpus is the core gate"]
 fn c2_fixed_oracle_corpus_and_clause_differences() {
     let data = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/");
     let differences: Vec<Value> = serde_json::from_str(

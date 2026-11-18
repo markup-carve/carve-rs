@@ -127,6 +127,8 @@ pub(crate) struct Renderer<'r, 'a> {
     links: HashMap<&'a str, &'r LinkReferenceDefinition<'a>>,
     hidden_heading_ids: HashSet<&'a str>,
     xref_text: HashMap<String, String>,
+    derived_remaining: usize,
+    derived_exhausted: bool,
     adm_ids: AddrMap<usize, String>,
     /// The top-level `footnotes` directive that places the section (C2-H-093).
     placing: Option<usize>,
@@ -200,6 +202,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
             links: HashMap::new(),
             hidden_heading_ids,
             xref_text: HashMap::new(),
+            derived_remaining: crate::tables::DERIVED_TEXT_BYTES.max(
+                usize::try_from(doc.src_byte_length.unwrap_or(0))
+                    .unwrap_or(0)
+                    .saturating_mul(crate::tables::DERIVED_TEXT_FACTOR),
+            ),
+            derived_exhausted: false,
             adm_ids: AddrMap::default(),
             placing: None,
             pending: String::new(),
@@ -228,6 +236,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn hidden_heading(&self, href: &str) -> bool {
         href.strip_prefix('#')
             .is_some_and(|id| self.hidden_heading_ids.contains(id))
+    }
+
+    fn charge_derived(&mut self, bytes: usize) -> bool {
+        if bytes <= self.derived_remaining {
+            self.derived_remaining -= bytes;
+            return true;
+        }
+        if !self.derived_exhausted {
+            self.losses.push("derived-text-budget");
+            self.derived_exhausted = true;
+        }
+        false
     }
 
     fn filter(&self) -> Filter<'r> {
@@ -293,6 +313,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         for v in &self.order.visits {
+            if let Node::FigureGroup(group) = v.node {
+                for (id, text) in panel_targets(group, self.opts) {
+                    self.xref_text.entry(id).or_insert(text);
+                }
+            }
             let (id, text) = match v.node {
                 Node::Heading(h) => match heading_id(v.node) {
                     Some(id) => (id.to_string(), plain::text_of(h.children)),
@@ -315,7 +340,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     (id.to_string(), text)
                 }
             };
-            self.xref_text.entry(id).or_insert(text);
+            self.xref_text.entry(id).or_insert_with(|| {
+                let mut escaped = String::new();
+                esc::text(&text, &mut escaped);
+                escaped
+            });
         }
     }
 
@@ -382,7 +411,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn document(&mut self) {
         let doc = self.doc;
         for node in doc.children.iter() {
-            reserved_losses(node, &mut self.losses, 1);
+            reserved_losses(node, &mut self.losses, &self.opts.url_policy, 1);
         }
         if self.opts.sections {
             self.sectioned(doc.children);
@@ -459,8 +488,58 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 }
 
+fn panel_targets(group: &crate::ast::FigureGroup<'_>, opts: &Options) -> Vec<(String, String)> {
+    let Some((Node::CaptionNumber(number), before)) = group.caption.as_deref().and_then(mark_of)
+    else {
+        return Vec::new();
+    };
+    let Some(number) = number.n else {
+        return Vec::new();
+    };
+    let label = label_key(before, Some(&opts.symbols));
+    group
+        .children
+        .iter()
+        .filter(|node| {
+            matches!(
+                node,
+                Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) | Node::Table(_)
+            )
+        })
+        .enumerate()
+        .filter_map(|(index, panel)| {
+            let id = panel.attrs().and_then(|attrs| attrs.id)?;
+            let letter = panel_letter(index);
+            let text = if label.is_empty() {
+                format!("{number}{letter}")
+            } else {
+                format!("{label} {number}{letter}")
+            };
+            Some((id.to_string(), esc::text_str(&text)))
+        })
+        .collect()
+}
+
+fn panel_letter(mut index: usize) -> String {
+    let mut letters = Vec::new();
+    loop {
+        let letter = u8::try_from(index % 26).unwrap_or(0);
+        letters.push(char::from(b'a' + letter));
+        if index < 26 {
+            break;
+        }
+        index = index / 26 - 1;
+    }
+    letters.into_iter().rev().collect()
+}
+
 /// C2-H-116: each authored reserved carrier is a render loss.
-fn reserved_losses(node: &Node<'_>, losses: &mut Vec<&'static str>, depth: usize) {
+fn reserved_losses(
+    node: &Node<'_>,
+    losses: &mut Vec<&'static str>,
+    policy: &crate::options::UrlPolicy,
+    depth: usize,
+) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
@@ -468,16 +547,21 @@ fn reserved_losses(node: &Node<'_>, losses: &mut Vec<&'static str>, depth: usize
         .attrs()
         .filter(|_| !matches!(node, Node::AbbreviationDef(_)))
     {
-        for (key, _) in attrs.key_values {
+        for (key, value) in attrs.key_values {
             if attrs::RESERVED
                 .iter()
                 .any(|name| name.eq_ignore_ascii_case(key))
             {
                 losses.push("carrier-attribute-dropped");
             }
+            if !url::filter_value_in(key, value, None).is_empty()
+                && url::filter_value_in(key, value, Some(policy)).is_empty()
+            {
+                losses.push("destination-denied");
+            }
         }
     }
-    node.for_each_child(&mut |child| reserved_losses(child, losses, depth + 1));
+    node.for_each_child(&mut |child| reserved_losses(child, losses, policy, depth + 1));
 }
 
 /// The id a heading carries: authored, else generated.

@@ -12,7 +12,22 @@ pub fn slug(plain: &str, mode: HeadingIds) -> String {
     let mut s = hyphenate(&reverse(plain));
     match mode {
         HeadingIds::Lower => s = lower(&s),
-        HeadingIds::Ascii => s = lower(&hyphenate(&transliterate(&s))),
+        HeadingIds::Ascii | HeadingIds::AsciiLower => {
+            s = hyphenate(&transliterate(&s));
+            if mode == HeadingIds::AsciiLower {
+                s = lower(&s);
+            }
+        }
+        HeadingIds::AsciiStrict | HeadingIds::AsciiStrictLower => {
+            let ascii = transliterate(&s)
+                .chars()
+                .map(|c| if c.is_ascii() { c } else { ' ' })
+                .collect::<String>();
+            s = hyphenate(&ascii);
+            if mode == HeadingIds::AsciiStrictLower {
+                s = lower(&s);
+            }
+        }
         HeadingIds::KeepCase | HeadingIds::Off => {}
     }
     prefix(s)
@@ -64,7 +79,16 @@ fn lower(s: &str) -> String {
 /// C2-H-147 leaves the transliteration to the host: this host decomposes and
 /// keeps the ASCII part (gap HTML-006).
 fn transliterate(s: &str) -> String {
-    s.nfkd().filter(char::is_ascii).collect()
+    let mut out = String::new();
+    for c in s.chars() {
+        let ascii: String = c.to_string().nfkd().filter(char::is_ascii).collect();
+        if ascii.is_empty() {
+            out.push(c);
+        } else {
+            out.push_str(&ascii);
+        }
+    }
+    out
 }
 
 /// C2-H-148: a leading number takes `s-`, an empty slug is `s`.

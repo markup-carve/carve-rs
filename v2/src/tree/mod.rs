@@ -7,7 +7,7 @@ mod table;
 use crate::Arena;
 use crate::ast::{self, Node, owned::Attrs};
 use crate::attr::AttrBlock;
-use crate::block::events::{ContainerKind, Event, LeafKind, Role};
+use crate::block::events::{ContainerKind, Event, LeafKind, LineBlockEntry, Role};
 use crate::block::shapes::{DivInfo, MarkerKind};
 use crate::chars::fold_label;
 use crate::inline::{self, ContentKind, InlineEnv, Join, Piece};
@@ -144,10 +144,13 @@ impl<'a> Builder<'_, 'a> {
     /// Splits an attribute block into the node's `attrs` and `lang`.
     fn split_attrs(&self, a: Option<AttrBlock>) -> (Option<Attrs>, Option<&'a str>) {
         match a {
-            Some(b) => (
-                (!b.attrs.is_empty()).then_some(b.attrs),
-                self.os(b.lang.as_deref()),
-            ),
+            Some(mut b) => {
+                crate::ast::owned::dedupe_keys(&mut b.attrs.key_values);
+                (
+                    (!b.attrs.is_empty()).then_some(b.attrs),
+                    self.os(b.lang.as_deref()),
+                )
+            }
             None => (None, None),
         }
     }
@@ -358,7 +361,14 @@ impl<'a> Builder<'_, 'a> {
                 lang,
                 ..Default::default()
             })),
-            Some("figure_group") if title.is_none() && group_label.is_none() => {
+            Some("figure_group")
+                if title.is_none()
+                    && group_label.is_none()
+                    && !self
+                        .stack
+                        .iter()
+                        .any(|frame| matches!(frame.node, Node::FigureGroup(_))) =>
+            {
                 Node::FigureGroup(self.arena.alloc(ast::FigureGroup {
                     attrs: self.at(attrs),
                     lang,
@@ -518,8 +528,22 @@ impl<'a> Builder<'_, 'a> {
                     ..Default::default()
                 }))
             }
-            LeafKind::LineBlock { lines } => {
-                let children = self.arena.fill(lines.into_iter().map(|l| self.line(l)));
+            LeafKind::LineBlock { entries } => {
+                let children = self
+                    .arena
+                    .fill(entries.into_iter().map(|entry| match entry {
+                        LineBlockEntry::Line { piece, comments } => {
+                            self.line_with_comments(piece, comments)
+                        }
+                        LineBlockEntry::BlockComment { start, end, value } => {
+                            Node::Comment(self.arena.alloc(ast::Comment {
+                                form: ast::CommentForm::Block,
+                                value: self.s(&value),
+                                pos: Some(self.pos(start, end)),
+                                ..Default::default()
+                            }))
+                        }
+                    }));
                 Node::LineBlock(self.arena.alloc(ast::LineBlock {
                     children,
                     attrs: self.at(attrs),
@@ -589,6 +613,36 @@ impl<'a> Builder<'_, 'a> {
         Node::Line(self.arena.alloc(ast::Line {
             children,
             pos,
+            ..Default::default()
+        }))
+    }
+
+    fn line_with_comments(&self, piece: Piece, comments: Vec<(usize, usize, String)>) -> Node<'a> {
+        if comments.is_empty() {
+            return self.line(piece);
+        }
+        let mut children = self
+            .inline(ContentKind::LineBlockLine, &[piece])
+            .iter_mut()
+            .map(|node| {
+                std::mem::replace(
+                    node,
+                    Node::ThematicBreak(self.arena.alloc(ast::ThematicBreak::default())),
+                )
+            })
+            .collect::<Vec<_>>();
+        let last = comments.last().map_or(piece.end, |(_, end, _)| *end);
+        for (start, end, value) in comments {
+            children.push(Node::Comment(self.arena.alloc(ast::Comment {
+                form: ast::CommentForm::Line,
+                value: self.s(&value),
+                pos: Some(self.pos(start, end)),
+                ..Default::default()
+            })));
+        }
+        Node::Line(self.arena.alloc(ast::Line {
+            children: self.arena.fill(children.into_iter()),
+            pos: Some(self.pos(piece.start, last)),
             ..Default::default()
         }))
     }

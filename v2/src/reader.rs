@@ -371,7 +371,7 @@ fn read_tree_json_inner(input: &str) -> Result<ReadTree, TreeError> {
     parser.disable_recursion_limit();
     let value = Value::deserialize(&mut parser).map_err(|e| TreeError::Json(e.to_string()))?;
     parser.end().map_err(|e| TreeError::Json(e.to_string()))?;
-    read_tree_value_inner(value)
+    read_tree_value_inner(value, Some(input.len()))
 }
 
 fn check_json_depth(input: &str) -> Result<(), TreeError> {
@@ -410,14 +410,17 @@ pub fn read_tree_value(value: Value) -> Result<ReadTree, TreeError> {
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(128 * 1024 * 1024)
-            .spawn_scoped(scope, move || read_tree_value_inner(value))
+            .spawn_scoped(scope, move || read_tree_value_inner(value, None))
             .map_err(|e| TreeError::Json(e.to_string()))?
             .join()
             .map_err(|_| TreeError::Json("tree decoding failed".into()))?
     })
 }
 
-fn read_tree_value_inner(mut value: Value) -> Result<ReadTree, TreeError> {
+fn read_tree_value_inner(
+    mut value: Value,
+    json_bytes: Option<usize>,
+) -> Result<ReadTree, TreeError> {
     check_depth(&value)?;
     check_known_types(&value)?;
     schema::validate(&value, definitions()?)?;
@@ -443,10 +446,14 @@ fn read_tree_value_inner(mut value: Value) -> Result<ReadTree, TreeError> {
     check_schema(&value)?;
     check_reader(&value)?;
     value.as_object_mut().map(|m| m.remove("type"));
-    let document = serde_json::from_value(value).map_err(|e| TreeError::Decode {
-        path: String::new(),
-        reason: e.to_string(),
-    })?;
+    let mut document: owned::Document =
+        serde_json::from_value(value).map_err(|e| TreeError::Decode {
+            path: String::new(),
+            reason: e.to_string(),
+        })?;
+    if let (Some(bytes), Some(source)) = (json_bytes, document.src_byte_length.as_mut()) {
+        *source = (*source).min(i64::try_from(bytes).unwrap_or(i64::MAX));
+    }
     Ok(ReadTree { document, wire })
 }
 
@@ -588,6 +595,8 @@ fn check_known_types(root: &Value) -> Result<(), TreeError> {
 
 fn check_reader(root: &Value) -> Result<(), TreeError> {
     let declarations = extension_names(root)?;
+    check_annotation_ids(root)?;
+    check_unqualified_depth(root)?;
     let resources = resource_ids(root)?;
     let header_ids = header_ids(root);
     let mut pending = vec![(root, String::new())];
@@ -607,6 +616,81 @@ fn check_reader(root: &Value) -> Result<(), TreeError> {
                     map.iter()
                         .filter(|(key, _)| !matches!(key.as_str(), "data" | "props"))
                         .map(|(k, v)| (v, format!("{path}/{k}"))),
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn check_unqualified_depth(root: &Value) -> Result<(), TreeError> {
+    let mut pending = vec![(root, 0usize, String::new())];
+    while let Some((value, depth, path)) = pending.pop() {
+        match value {
+            Value::Array(items) => pending.extend(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| (item, depth, format!("{path}/{i}"))),
+            ),
+            Value::Object(map) => {
+                let here = value["type"] == "inline_extension"
+                    && value["name"]
+                        .as_str()
+                        .is_some_and(|name| !name.contains('.'));
+                let depth = depth + usize::from(here);
+                if depth > 32 {
+                    return Err(reader(
+                        &path,
+                        "unqualified extension fallback exceeds 32 levels",
+                    ));
+                }
+                pending.extend(map.iter().filter(|(key, _)| key.as_str() != "data").map(
+                    |(key, child)| {
+                        (
+                            child,
+                            if key == "children" { depth } else { 0 },
+                            format!("{path}/{key}"),
+                        )
+                    },
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn check_annotation_ids(root: &Value) -> Result<(), TreeError> {
+    let mut seen = HashSet::new();
+    let mut pending = vec![(root, String::new())];
+    while let Some((value, path)) = pending.pop() {
+        match value {
+            Value::Array(items) => pending.extend(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| (item, format!("{path}/{i}"))),
+            ),
+            Value::Object(map) => {
+                if let Some(ids) = value
+                    .pointer("/data/carve.annotation/ids")
+                    .and_then(Value::as_array)
+                {
+                    for id in ids.iter().filter_map(Value::as_str) {
+                        if !seen.insert(id) {
+                            return Err(reader(
+                                &format!("{path}/data/carve.annotation"),
+                                "annotation id repeats",
+                            ));
+                        }
+                    }
+                }
+                pending.extend(
+                    map.iter()
+                        .filter(|(key, _)| key.as_str() != "data")
+                        .map(|(key, item)| (item, format!("{path}/{key}"))),
                 );
             }
             _ => {}
@@ -662,7 +746,7 @@ fn check_object(
     header_ids: &HashSet<String>,
 ) -> Result<(), TreeError> {
     if let Some(attrs) = value.get("attrs") {
-        check_attrs(attrs, &format!("{path}/attrs"))?;
+        check_attrs(attrs, &format!("{path}/attrs"), value["type"] == "span")?;
     }
     if let Some(data) = value.get("data") {
         check_data(data, &format!("{path}/data"), declarations)?;
@@ -676,6 +760,7 @@ fn check_object(
     match value["type"].as_str() {
         Some("document") => check_frontmatter(value, path),
         Some("table") => check_groups(value, path),
+        Some("table_cell") => check_cell(value, path),
         Some("autolink")
             if value.get("text") == value.get("href") && value.get("text").is_some() =>
         {
@@ -694,8 +779,8 @@ fn check_object(
     }
 }
 
-fn check_attrs(attrs: &Value, path: &str) -> Result<(), TreeError> {
-    let mut keys = HashSet::new();
+fn check_attrs(attrs: &Value, path: &str, span: bool) -> Result<(), TreeError> {
+    let mut keys: Vec<&str> = Vec::new();
     for (i, pair) in attrs["keyValues"]
         .as_array()
         .into_iter()
@@ -703,12 +788,58 @@ fn check_attrs(attrs: &Value, path: &str) -> Result<(), TreeError> {
         .enumerate()
     {
         let key = pair.get(0).and_then(Value::as_str).unwrap_or("");
-        if !keys.insert(key.to_ascii_lowercase()) {
+        if keys
+            .iter()
+            .any(|previous| same_attr_key(previous, key, span))
+        {
             return Err(reader(
                 &format!("{path}/keyValues/{i}"),
                 "duplicate attribute key",
             ));
         }
+        keys.push(key);
+    }
+    Ok(())
+}
+
+fn same_attr_key(left: &str, right: &str, span: bool) -> bool {
+    if span
+        && ["abbr", "time", "kbd"].contains(&left.to_ascii_lowercase().as_str())
+        && (left == left.to_ascii_lowercase()) != (right == right.to_ascii_lowercase())
+    {
+        return false;
+    }
+    left.eq_ignore_ascii_case(right)
+}
+
+fn check_cell(cell: &Value, path: &str) -> Result<(), TreeError> {
+    let children = cell["children"]
+        .as_array()
+        .ok_or_else(|| reader(path, "cell children are required"))?;
+    if children.is_empty() && cell.get("span").is_none() {
+        return Err(reader(
+            &format!("{path}/children"),
+            "cell without a span needs content",
+        ));
+    }
+    if cell.get("span").is_some() && !children.is_empty() {
+        return Err(reader(
+            &format!("{path}/children"),
+            "span mark cell has no content",
+        ));
+    }
+    if children
+        .iter()
+        .any(|child| child["type"] == "cell_paragraph")
+        && (children.len() != 1
+            || children
+                .first()
+                .is_none_or(|child| child["type"] != "cell_paragraph"))
+    {
+        return Err(reader(
+            &format!("{path}/children"),
+            "cell paragraph must be the only child",
+        ));
     }
     Ok(())
 }
@@ -879,6 +1010,26 @@ fn check_extension(
     declarations: &HashMap<String, Value>,
 ) -> Result<(), TreeError> {
     let name = node["name"].as_str().unwrap_or("");
+    if !name.contains('.') {
+        let allowed = [
+            "type", "name", "children", "attrs", "data", "pos", "segments", "metadata", "dir",
+            "lang",
+        ];
+        if let Some(key) = node
+            .as_object()
+            .into_iter()
+            .flat_map(|map| map.keys())
+            .find(|key| !allowed.contains(&key.as_str()))
+        {
+            return Err(reader(
+                &format!("{path}/{key}"),
+                "unqualified extension has a noncore field",
+            ));
+        }
+    } else if !declarations.contains_key(name) {
+        return Err(reader(path, "qualified extension is not declared"));
+    }
+    check_extension_source(node, path)?;
     if let Some(decl) = declarations.get(name) {
         if node["version"] != decl["version"] {
             return Err(reader(
@@ -920,6 +1071,58 @@ fn check_extension(
     Ok(())
 }
 
+fn check_extension_source(node: &Value, path: &str) -> Result<(), TreeError> {
+    let Some(source) = node.get("source") else {
+        return Ok(());
+    };
+    let name = source["name"].as_str().unwrap_or("");
+    let form = source["form"].as_str().unwrap_or("");
+    let valid = match form {
+        "inline" => {
+            name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+        }
+        "fence" => {
+            !name.starts_with('=')
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+        }
+        "div" => {
+            !name.is_empty()
+                && ![
+                    "note",
+                    "tip",
+                    "warning",
+                    "danger",
+                    "info",
+                    "success",
+                    "example",
+                    "quote",
+                    "figure",
+                    "bibliography",
+                    "footnotes",
+                    "glossary",
+                    "index",
+                    "references",
+                    "toc",
+                ]
+                .contains(&name)
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(reader(
+            &format!("{path}/source"),
+            "source name cannot claim this form",
+        ))
+    }
+}
+
 fn check_groups(table: &Value, path: &str) -> Result<(), TreeError> {
     let mut phase = 0;
     let mut heads = 0;
@@ -953,6 +1156,33 @@ fn check_groups(table: &Value, path: &str) -> Result<(), TreeError> {
             _ => {}
         }
     }
+    check_rowspans(table, path)
+}
+
+fn check_rowspans(table: &Value, path: &str) -> Result<(), TreeError> {
+    for (g, group) in table["children"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let Some(rows) = group["children"].as_array() else {
+            continue;
+        };
+        for (r, row) in rows.iter().enumerate() {
+            for (c, cell) in row["children"].as_array().into_iter().flatten().enumerate() {
+                if cell["rowspan"]
+                    .as_u64()
+                    .is_some_and(|span| span > (rows.len() - r) as u64)
+                {
+                    return Err(reader(
+                        &format!("{path}/children/{g}/children/{r}/children/{c}"),
+                        "rowspan crosses group end",
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -962,23 +1192,25 @@ fn check_glyph(node: &Value, path: &str) -> Result<(), TreeError> {
     let expected = crate::tables::SMART_RUNS
         .iter()
         .find(|row| row.2 == kind)
-        .map(|row| row.3)
+        .map(|row| (row.0, row.3))
         .or_else(|| {
             crate::tables::SMART_QUOTES
                 .iter()
                 .find(|row| row.0 == kind)
-                .map(|row| row.2)
+                .map(|row| (row.1, row.2))
         })
         .or_else(|| {
             crate::tables::SMART_DASHES
                 .iter()
                 .find(|row| row.0 == kind)
-                .map(|row| row.2)
+                .map(|row| (row.1, row.2))
         });
-    if expected != Some(glyph) {
+    if expected
+        .is_none_or(|(source, expected_glyph)| node["source"] != source || glyph != expected_glyph)
+    {
         return Err(reader(
-            &format!("{path}/glyph"),
-            "glyph differs from its kind",
+            path,
+            "smart punctuation source or glyph differs from its kind",
         ));
     }
     Ok(())

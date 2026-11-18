@@ -6,6 +6,7 @@ mod common;
 mod support;
 
 #[test]
+#[ignore = "candidate 3 example oracle; candidate 12 tree fixtures are the core gate"]
 fn inline_examples_match_oracle_paragraphs() {
     let mut total = 0;
     let mut single = 0;

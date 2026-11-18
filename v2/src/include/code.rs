@@ -97,7 +97,7 @@ fn fenced<'a>(
     let fence = "`".repeat(3.max(longest_backticks(payload) + 1));
     let lang = option(node, "code").and_then(Value::as_str).unwrap_or("");
     let source = format!("{}{fence}{lang}\n{payload}{fence}\n", brace(node));
-    let (doc, scope) = parse_file(&source, &Scope::default(), arena, None);
+    let (doc, scope) = parse_file(&source, &Scope::default(), arena, None, true);
     let first = doc.children.first_mut()?;
     if !matches!(first, Node::CodeBlock(_) | Node::Table(_)) {
         return None;

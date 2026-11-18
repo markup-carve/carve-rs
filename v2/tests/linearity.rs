@@ -139,3 +139,21 @@ fn long_line() {
         "a *b* `c` [d](e) \"f\" -- g... ".repeat(200 * k)
     });
 }
+
+#[test]
+fn c2_b_024_lazy_comments_in_line_block_stay_linear() {
+    check("lazy line-block comments", &|k| {
+        format!("- ::: |\n  a\n{}", "%% c\nb\n".repeat(1000 * k))
+    });
+}
+
+#[test]
+fn c2_h_201_derived_text_after_budget_stays_linear() {
+    check("derived text after budget", &|k| {
+        let heading = "H".repeat(1000 * k);
+        format!(
+            "{{#target}}\n= {heading}\n\n{}",
+            "</#target> ".repeat(1000 * k)
+        )
+    });
+}
