@@ -1034,23 +1034,18 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
             );
         } else if kind != "span"
             && let Some((from, _)) = bounds(item.node)
-            && let Some(open) = sink.raw(item).find('{')
+            && let Some(open) = sink.raw(item).rfind('{')
             && let Some(close) = sink.raw(item).get(open..).and_then(|raw| raw.find('}'))
             && let Some(key) = sink
                 .raw(item)
-                .get(open..open + close)
+                .get(open + 1..open + close)
                 .and_then(|raw| raw.find(name))
         {
-            let at = open + key;
-            let end = sink
-                .raw(item)
-                .get(at..)
-                .and_then(|raw| raw.find([' ', '\t', '}']))
-                .unwrap_or(name.len());
+            let at = open + 1 + key;
             sink.emit_range(
                 "semantic-attribute-outside-span",
                 from + at,
-                from + at + end,
+                from + at + name.len(),
                 &item.path,
                 &[("name", name), ("type", kind), ("value", value)],
                 0,
