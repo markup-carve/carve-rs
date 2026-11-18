@@ -352,7 +352,7 @@ fn c2_b_081_nested_footnote_shapes_are_text() {
         "- [^a b]: x\n  > [^a  b]: y",
         "footnote-labels-differ-only-in-whitespace",
     );
-    assert!(footnotes.is_empty());
+    assert_eq!(footnotes, Vec::new());
 }
 
 #[test]

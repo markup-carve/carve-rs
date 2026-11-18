@@ -264,11 +264,11 @@ fn convert_legacy_warning(
     normalize_root_message(
         &mut diagnostic,
         source,
-        &positions,
+        positions,
         warning.start,
         warning.end,
     );
-    diagnostic.path = path_at(&positions, warning.start, warning.end);
+    diagnostic.path = path_at(positions, warning.start, warning.end);
     if warning.rule == "delimited-table-wide-row"
         && let Some(table) = positions.iter().find(|range| {
             range.kind == "table" && range.start <= warning.start && warning.end <= range.end
