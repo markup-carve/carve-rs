@@ -36,6 +36,7 @@ pub mod attr;
 pub mod block;
 pub mod chars;
 pub mod diagnostic;
+mod fast_plain;
 pub mod hash;
 pub mod html;
 pub mod include;
@@ -242,6 +243,9 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
     let limit = limit.unwrap_or(u32::MAX as usize).min(u32::MAX as usize);
     if input.len() > limit {
         return Err(RenderError::TooLong { profile, limit });
+    }
+    if let Some(html) = fast_plain::render(input, opts) {
+        return Ok(html);
     }
     let arena = Arena::for_input(input);
     let mut diags = Vec::new();
