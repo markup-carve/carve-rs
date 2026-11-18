@@ -4,7 +4,7 @@ use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use serde::Deserialize as _;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 mod controls;
@@ -297,13 +297,16 @@ fn referenced_footnote_platform_tokens(
         return;
     }
     let positions = Source::new(source);
-    let mentions = footnote_mentions(source);
+    let references: HashSet<&str> = ranges
+        .iter()
+        .filter_map(|range| range.footnote_key.as_deref())
+        .collect();
     let mut offset = 0;
     for piece in source.split_inclusive('\n') {
         let line = piece.trim_end_matches('\n');
         if let Some(rest) = line.strip_prefix("[^")
             && let Some((label, body)) = rest.split_once("]:")
-            && mentions.get(label).is_some_and(|count| *count > 1)
+            && references.contains(label)
             && !opaque_definition(ranges, offset)
         {
             let body_start = offset + 2 + label.len() + 2;
@@ -338,19 +341,6 @@ fn referenced_footnote_platform_tokens(
         }
         offset += piece.len();
     }
-}
-
-fn footnote_mentions(source: &str) -> HashMap<&str, usize> {
-    let mut counts = HashMap::new();
-    for (at, _) in source.match_indices("[^") {
-        if let Some(tail) = source.get(at + 2..)
-            && let Some(end) = tail.find(']')
-            && let Some(label) = tail.get(..end)
-        {
-            *counts.entry(label).or_insert(0) += 1;
-        }
-    }
-    counts
 }
 
 fn opaque_definition(ranges: &[Range], offset: usize) -> bool {
@@ -661,6 +651,7 @@ struct Range {
     start_line: usize,
     end_line: usize,
     has_attrs: bool,
+    footnote_key: Option<String>,
 }
 
 fn node_ranges(source: &str) -> Vec<Range> {
@@ -689,6 +680,9 @@ fn node_ranges(source: &str) -> Vec<Range> {
                         start_line,
                         end_line,
                         has_attrs: value.get("attrs").is_some(),
+                        footnote_key: (kind == "footnote_ref")
+                            .then(|| value["key"].as_str().map(str::to_string))
+                            .flatten(),
                     });
                 }
                 pending.extend(map.iter().map(|(k, v)| (v, format!("{path}/{k}"))));

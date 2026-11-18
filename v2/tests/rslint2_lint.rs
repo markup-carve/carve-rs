@@ -260,6 +260,11 @@ fn platform_tokens_ignore_opaque_footnote_shaped_lines() {
             .iter()
             .any(|finding| finding.code == "platform-issue-reference")
     );
+    assert!(
+        lint("[^n]: #12\n\n```\n[^n]\n```\n", &options)
+            .iter()
+            .all(|finding| finding.code != "platform-issue-reference")
+    );
 }
 
 #[test]
