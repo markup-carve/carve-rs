@@ -58,19 +58,11 @@ fn active(code: &str, opts: &LintOptions) -> bool {
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let mut out = lint_core(source, opts);
-    if source.contains("{{") {
-        let parse = crate::Options {
-            includes: opts.includes.clone(),
-            ..crate::Options::default()
-        };
-        out.extend(
-            crate::parse_diagnostics(source, &parse)
-                .into_iter()
-                .filter(|finding| {
-                    finding.channel == "parse" && finding.code.starts_with("include-")
-                }),
-        );
-    }
+    let parse = crate::Options {
+        includes: opts.includes.clone(),
+        ..crate::Options::default()
+    };
+    out.extend(crate::parse_diagnostics(source, &parse));
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
     }
