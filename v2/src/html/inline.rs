@@ -312,6 +312,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.losses.push("destination-denied");
             self.destination_losses.push(super::DestinationLoss {
                 image,
+                attribute: false,
                 pos,
                 value: dest.to_string(),
             });
@@ -342,6 +343,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.losses.push("destination-denied");
             self.destination_losses.push(super::DestinationLoss {
                 image: false,
+                attribute: false,
                 pos: l.pos,
                 value: href.to_string(),
             });
@@ -393,6 +395,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.losses.push("destination-denied");
             self.destination_losses.push(super::DestinationLoss {
                 image: false,
+                attribute: false,
                 pos: a.pos,
                 value: a.href.to_string(),
             });

@@ -523,7 +523,16 @@ fn destination_loss_position(
     let node = loss.pos?;
     let start = usize::try_from(node.start_offset).ok()?;
     let end = usize::try_from(node.end_offset).ok()?;
-    let at = source.text().get(start..end)?.rfind(&loss.value)? + start;
+    let raw = source.text().get(start..end)?;
+    let at = if loss.attribute {
+        raw.rfind(&loss.value)?
+    } else if let Some(mark) = raw.rfind("](") {
+        let from = mark + 2;
+        let to = from + raw.get(from..)?.find(')')?;
+        from + raw.get(from..to)?.find(&loss.value)?
+    } else {
+        raw.find(&loss.value)?
+    } + start;
     Some(source.pos(at, at + loss.value.len()))
 }
 

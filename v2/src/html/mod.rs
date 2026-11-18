@@ -137,6 +137,7 @@ pub(crate) fn render_mapped_source(
 
 pub(crate) struct DestinationLoss {
     pub image: bool,
+    pub attribute: bool,
     pub pos: Option<crate::ast::Pos>,
     pub value: String,
 }
@@ -652,6 +653,7 @@ fn reserved_losses(
                 losses.push("destination-denied");
                 destinations.push(DestinationLoss {
                     image: false,
+                    attribute: true,
                     pos: node.pos().copied(),
                     value: value.to_string(),
                 });

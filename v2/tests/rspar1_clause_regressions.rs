@@ -226,6 +226,19 @@ fn c2_h_082_suppressed_nested_link_does_not_shift_a_later_image_loss() {
 }
 
 #[test]
+fn c2_h_082_denied_destination_range_stays_before_trailing_attributes() {
+    let source = "[x](javascript:){note=javascript:}";
+    let rendered = carve2::render_with_diagnostics(source, &Options::default());
+    let loss = rendered
+        .diagnostics
+        .iter()
+        .find(|finding| finding.code == "destination-denied")
+        .expect("denied destination");
+    let pos = loss.pos.expect("destination range");
+    assert_eq!((pos.start_offset, pos.end_offset), (4, 15));
+}
+
+#[test]
 fn c2_h_075_semantic_attribute_range_is_the_key_and_value() {
     let attribute = findings("[x]{kbd=\"V\"}", "semantic-attribute-value-ignored");
     assert_eq!(attribute.len(), 1);
