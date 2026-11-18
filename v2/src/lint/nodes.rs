@@ -1032,29 +1032,55 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn semantic_attr_key_range(raw: &str, name: &str) -> Option<(usize, usize)> {
-    for (open, _) in raw.rmatch_indices('{') {
-        let Some(close) = raw.get(open..).and_then(|tail| tail.find('}')) else {
+    let mut at = 0;
+    let mut found = None;
+    while let Some(offset) = raw.get(at..)?.find('{') {
+        let open = at + offset;
+        let Some((_, end)) = crate::attr::parse_block(raw, open) else {
+            at = open + 1;
             continue;
         };
-        let Some(body) = raw.get(open + 1..open + close) else {
-            continue;
-        };
-        for (key, _) in body.match_indices(name) {
-            let before = body
-                .get(..key)
-                .and_then(|prefix| prefix.chars().next_back());
-            let after = body
-                .get(key + name.len()..)
-                .and_then(|tail| tail.chars().next());
-            if before.is_none_or(char::is_whitespace)
-                && after.is_none_or(|c| c == '=' || c.is_whitespace())
-            {
-                let at = open + 1 + key;
-                return Some((at, at + name.len()));
+        found = semantic_key_in_block(raw, open, end, name).or(found);
+        at = end;
+    }
+    found
+}
+
+fn semantic_key_in_block(raw: &str, open: usize, end: usize, name: &str) -> Option<(usize, usize)> {
+    let mut part = open + 1;
+    let mut found = None;
+    while part < end - 1 {
+        while raw.as_bytes().get(part) == Some(&b' ') {
+            part += 1;
+        }
+        let start = part;
+        let mut quote = None;
+        while part < end - 1 {
+            let Some(&byte) = raw.as_bytes().get(part) else {
+                break;
+            };
+            if byte == b'\\' && quote.is_some() {
+                part += 2;
+                continue;
             }
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                if matches!(byte, b'\'' | b'"') {
+                    quote = Some(byte);
+                } else if byte == b' ' {
+                    break;
+                }
+            }
+            part += 1;
+        }
+        let token = raw.get(start..part)?;
+        let key = token.split_once('=').map_or(token, |(key, _)| key);
+        if key == name {
+            found = Some((start, start + name.len()));
         }
     }
-    None
+    found
 }
 
 fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {

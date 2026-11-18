@@ -364,6 +364,19 @@ fn c2_b_168_table_shaped_paragraph_names_its_owner() {
 }
 
 #[test]
+fn c2_h_075_semantic_key_ignores_quoted_value_text() {
+    let source = "[x](u){note=\"see kbd=x\" kbd=y}";
+    let finding = findings(source, "semantic-attribute-outside-span");
+    assert_eq!(finding.len(), 1);
+    let pos = finding[0].pos.expect("semantic key range");
+    assert_eq!(
+        &source[pos.start_offset as usize..pos.end_offset as usize],
+        "kbd"
+    );
+    assert_eq!(pos.start_offset as usize, source.rfind("kbd").unwrap());
+}
+
+#[test]
 fn c2_h_082_nested_image_alt_keeps_image_loss_variant() {
     let rendered = carve2::render_with_diagnostics("![a [b]](javascript:)", &Options::default());
     let loss = rendered
