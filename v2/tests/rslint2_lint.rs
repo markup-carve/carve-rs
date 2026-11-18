@@ -232,6 +232,20 @@ fn frontmatter_quote_lint_uses_the_frontmatter_message() {
 }
 
 #[test]
+fn frontmatter_quote_lint_respects_disabled_rule() {
+    let mut options = LintOptions::default();
+    options.rules.insert(
+        "blockquote-marker-without-space".to_string(),
+        "off".to_string(),
+    );
+    assert!(
+        lint("---\n>foo\n---\n", &options)
+            .iter()
+            .all(|finding| finding.code != "blockquote-marker-without-space")
+    );
+}
+
+#[test]
 fn paragraph_and_strike_rules_respect_visible_nodes() {
     assert_eq!(first_position("*Title*\n", "emphasis-as-heading"), (1, 1));
     for input in ["{~a\\~>b~}\n", "{~`a~>b`~}\n", "{~[a~>b](/u)~}\n"] {

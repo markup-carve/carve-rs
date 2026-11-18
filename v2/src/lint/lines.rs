@@ -118,6 +118,9 @@ pub(super) fn scan(
 }
 
 fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
+    if !active("blockquote-marker-without-space", sink.options) {
+        return;
+    }
     let raw = sink
         .source
         .text()
