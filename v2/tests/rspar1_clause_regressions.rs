@@ -170,6 +170,24 @@ fn c2_h_082_multiple_destinations_keep_their_ranges_and_variants() {
 }
 
 #[test]
+fn c2_h_082_suppressed_nested_link_does_not_shift_a_later_image_loss() {
+    let source = "[outer [inner](javascript:)](/safe) ![image](javascript:)";
+    let rendered = carve2::render_with_diagnostics(source, &Options::default());
+    let losses: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .filter(|finding| finding.code == "destination-denied")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message, "Blanked a denied image source");
+    let pos = losses[0].pos.expect("image source range");
+    assert_eq!(
+        &source[pos.start_offset as usize..pos.end_offset as usize],
+        "javascript:"
+    );
+}
+
+#[test]
 fn c2_h_075_semantic_attribute_range_is_the_key_and_value() {
     let attribute = findings("[x]{kbd=\"V\"}", "semantic-attribute-value-ignored");
     assert_eq!(attribute.len(), 1);

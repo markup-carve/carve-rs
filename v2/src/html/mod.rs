@@ -54,9 +54,9 @@ pub fn render_with_losses_source(
 ) -> (String, Vec<&'static str>) {
     if opts.profile != crate::options::Profile::Full && src.contains('\0') {
         let normalized = crate::source::Source::new(src);
-        render_mapped_source(doc, opts, normalized.render_view(), true)
+        render_mapped_source(doc, opts, normalized.render_view(), true, None)
     } else {
-        render_source(doc, opts, src, true)
+        render_source(doc, opts, src, true, None)
     }
 }
 
@@ -69,7 +69,7 @@ pub fn render_with_losses_source_bytes(
     src: &[u8],
 ) -> (String, Vec<&'static str>) {
     let normalized = crate::source::Source::from_bytes(src);
-    render_mapped_source(doc, opts, normalized.render_view(), true)
+    render_mapped_source(doc, opts, normalized.render_view(), true, None)
 }
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
@@ -79,10 +79,14 @@ pub(crate) fn render_source(
     opts: &Options,
     src: &str,
     ordered: bool,
+    destinations: Option<&mut Vec<DestinationLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(SourceView::direct(src));
     r.document();
+    if let Some(destinations) = destinations {
+        destinations.extend(r.destination_losses);
+    }
     (r.out, r.losses)
 }
 
@@ -92,10 +96,14 @@ pub(crate) fn render_files<'a>(
     opts: &Options,
     src: &str,
     files: &crate::resolve::files::Files<'a>,
+    destinations: Option<&mut Vec<DestinationLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::build(doc, opts, true, Some(files));
     r.src = Some(SourceView::direct(src));
     r.document();
+    if let Some(destinations) = destinations {
+        destinations.extend(r.destination_losses);
+    }
     (r.out, r.losses)
 }
 
@@ -104,11 +112,21 @@ pub(crate) fn render_mapped_source(
     opts: &Options,
     src: SourceView<'_>,
     ordered: bool,
+    destinations: Option<&mut Vec<DestinationLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(src);
     r.document();
+    if let Some(destinations) = destinations {
+        destinations.extend(r.destination_losses);
+    }
     (r.out, r.losses)
+}
+
+pub(crate) struct DestinationLoss {
+    pub image: bool,
+    pub pos: Option<crate::ast::Pos>,
+    pub value: String,
 }
 
 /// About the output length: twice the source length the tree covers.
@@ -158,6 +176,7 @@ pub(crate) struct Renderer<'r, 'a> {
     /// Inside a node that stays while its children are degraded.
     degrading: usize,
     losses: Vec<&'static str>,
+    destination_losses: Vec<DestinationLoss>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
     hidden: AddrSet<usize>,
     /// The row of `opts.profile` in the profile table.
@@ -233,6 +252,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             started: false,
             degrading: 0,
             losses: Vec::new(),
+            destination_losses: Vec::new(),
             hidden: AddrSet::default(),
             profile,
         };
@@ -456,7 +476,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn document(&mut self) {
         let doc = self.doc;
         for node in doc.children.iter() {
-            reserved_losses(node, &mut self.losses, &self.opts.url_policy, 1);
+            reserved_losses(
+                node,
+                &mut self.losses,
+                &mut self.destination_losses,
+                &self.opts.url_policy,
+                1,
+            );
         }
         if self.opts.sections {
             self.sectioned(doc.children);
@@ -582,6 +608,7 @@ fn panel_letter(mut index: usize) -> String {
 fn reserved_losses(
     node: &Node<'_>,
     losses: &mut Vec<&'static str>,
+    destinations: &mut Vec<DestinationLoss>,
     policy: &crate::options::UrlPolicy,
     depth: usize,
 ) {
@@ -603,10 +630,17 @@ fn reserved_losses(
                 && url::filter_value_in(key, value, Some(policy)).is_empty()
             {
                 losses.push("destination-denied");
+                destinations.push(DestinationLoss {
+                    image: false,
+                    pos: node.pos().copied(),
+                    value: value.to_string(),
+                });
             }
         }
     }
-    node.for_each_child(&mut |child| reserved_losses(child, losses, policy, depth + 1));
+    node.for_each_child(&mut |child| {
+        reserved_losses(child, losses, destinations, policy, depth + 1);
+    });
 }
 
 /// The id a heading carries: authored, else generated.

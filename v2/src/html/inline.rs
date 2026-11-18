@@ -300,11 +300,21 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// A destination through the URL policy (C2-H-082, C2-H-160).
-    fn destination<'d>(&mut self, dest: &'d str) -> Cow<'d, str> {
+    fn destination<'d>(
+        &mut self,
+        dest: &'d str,
+        pos: Option<ast::Pos>,
+        image: bool,
+    ) -> Cow<'d, str> {
         if url::allowed(dest, &self.opts.url_policy) {
             Cow::Borrowed(dest)
         } else {
             self.losses.push("destination-denied");
+            self.destination_losses.push(super::DestinationLoss {
+                image,
+                pos,
+                value: dest.to_string(),
+            });
             Cow::Borrowed("")
         }
     }
@@ -330,6 +340,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         };
         if self.opts.profile == Profile::Comment && !url::allowed(href, &self.opts.url_policy) {
             self.losses.push("destination-denied");
+            self.destination_losses.push(super::DestinationLoss {
+                image: false,
+                pos: l.pos,
+                value: href.to_string(),
+            });
             esc::text(
                 &crate::resolve::plain::text_of_degraded_block(&*l.children),
                 out,
@@ -344,7 +359,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let merged = merge_def(def.and_then(|d| d.attrs), l.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), l.lang).with_dir(l.dir);
-        el.structural.push(("href", Some(self.destination(href))));
+        el.structural
+            .push(("href", Some(self.destination(href, l.pos, false))));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
         }
@@ -375,6 +391,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let text = a.text.unwrap_or(a.href);
         if self.opts.profile == Profile::Comment && !url::allowed(a.href, &self.opts.url_policy) {
             self.losses.push("destination-denied");
+            self.destination_losses.push(super::DestinationLoss {
+                image: false,
+                pos: a.pos,
+                value: a.href.to_string(),
+            });
             esc::text(text, out);
             return;
         }
@@ -383,7 +404,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
-        el.structural.push(("href", Some(self.destination(a.href))));
+        el.structural
+            .push(("href", Some(self.destination(a.href, a.pos, false))));
         self.rel(&mut el);
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-autolink", None));
@@ -423,7 +445,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let merged = merge_image_attrs(def.and_then(|d| d.attrs), paragraph_attrs, i.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), i.lang.or(paragraph_lang)).with_dir(i.dir);
-        el.structural.push(("src", Some(self.destination(src))));
+        el.structural
+            .push(("src", Some(self.destination(src, i.pos, true))));
         el.structural.push(("alt", Some(alt.into())));
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
@@ -492,7 +515,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         let mut el = El::new(x.attrs, x.lang).with_dir(x.dir);
-        el.structural.push(("href", Some(self.destination(href))));
+        el.structural
+            .push(("href", Some(self.destination(href, x.pos, false))));
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
         }
@@ -625,7 +649,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }) {
             Some(t) => {
                 let full = t.replace("{name}", &encode_social_name(b.name));
-                let href = self.destination(&full).into_owned();
+                let href = self.destination(&full, None, false).into_owned();
                 el.structural.push(("href", Some(href.into())));
                 self.rel(&mut el);
                 "a"
