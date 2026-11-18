@@ -205,10 +205,22 @@ fn batch(input: Option<&String>, output: Option<&String>) {
         let ns = t0.elapsed().as_nanos();
         let tree = carve2::parse_resolved_in(src, &opts, &carve2::Arena::new())
             .map_or_else(|e| e.to_string(), |doc| carve2::to_json(&doc));
+        let lint: Vec<_> = carve2::lint::lint(src, &carve2::lint::LintOptions::default())
+            .into_iter()
+            .map(|finding| {
+                serde_json::json!({
+                    "code": finding.code,
+                    "severity": finding.severity,
+                    "start": finding.pos.map(|pos| pos.start_offset),
+                    "end": finding.pos.map(|pos| pos.end_offset),
+                    "message": finding.message,
+                })
+            })
+            .collect();
         let ns = u64::try_from(ns).unwrap_or(u64::MAX);
         out.push(match html {
-            Ok(html) => serde_json::json!({ "html": html, "tree": tree, "ns": ns }),
-            Err(e) => serde_json::json!({ "htmlError": e.to_string(), "tree": tree, "ns": ns }),
+            Ok(html) => serde_json::json!({ "html": html, "tree": tree, "lint": lint, "ns": ns }),
+            Err(e) => serde_json::json!({ "htmlError": e.to_string(), "tree": tree, "lint": lint, "ns": ns }),
         });
     }
     let _ = std::fs::write(output, serde_json::Value::Array(out).to_string());

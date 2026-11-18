@@ -27,17 +27,17 @@
     "id": "block-marker-as-text",
     "origin": "../carve/tests/corpus/276-a-fence-opened-on-a-list-marker-line-body-below-the-content-column-5.crv",
     "trigger": "- ~~~\nx\n~~~\n",
-    "near": "- ~~~\nx\n\n",
+    "near": "\\~~~\nx\n",
     "fragment": "~~~",
     "message": "This line begins like a tilde fence but parsed as plain text - the block did not open. Check this line's syntax and any unterminated fence above it."
   },
   {
     "id": "block-opener-overindented",
-    "origin": "../carve/tests/corpus/81-paragraph-interruption-15.crv",
-    "trigger": "- a\n   - b\n",
-    "near": "- a\n   \n",
-    "fragment": "- b",
-    "message": "This list is indented 1 column(s) past the content column of list item, and it still opens a list, measured from its own line. Remove the indentation to make the structure explicit, or escape the opener to keep the line as text."
+    "origin": "syntax-blocks.md:C2-B-028",
+    "trigger": " > a",
+    "near": "> a",
+    "fragment": ">",
+    "message": "This quote is indented 1 column past the content column of document, and it still opens a quote, measured from its own line. Remove the indentation to make the structure explicit, or escape the opener to keep the line as text."
   },
   {
     "id": "block-opener-without-blank-line",
@@ -45,7 +45,7 @@
     "trigger": "- a\n# H\n",
     "near": "- a\n\n",
     "fragment": "# H",
-    "message": "This line looks like a (kind) but directly follows text, so it is part of the paragraph or caption above it. Add a blank line before it."
+    "message": "This line looks like a heading but directly follows text, so it is part of the paragraph or caption above it. Add a blank line before it."
   },
   {
     "id": "blockquote-marker-without-space",
@@ -53,7 +53,7 @@
     "trigger": ">+\nq\n",
     "near": "\nq\n",
     "fragment": ">+",
-    "message": "A blockquote marker must be either bare \">\" or followed by a space. This line renders as literal text; write \"> +\" to quote it."
+    "message": "A blockquote marker must be bare `>` or followed by a space. This line is literal text; write `> +` to quote it."
   },
   {
     "id": "braced-span-opener-as-text",
@@ -85,7 +85,7 @@
     "trigger": "- :::\n  :::e\n  ::::\nl\n",
     "near": "- :::\n  :::e\n\nl\n",
     "fragment": "  ::::",
-    "message": "Bare 4-colon fence does not close the innermost 3-colon div opened at 1:3; it closes the container."
+    "message": "Bare 4-colon fence has a different width from the innermost 3-colon div opened at 1:3; it closes the container."
   },
   {
     "id": "comment-fence-closer-with-text",
@@ -117,7 +117,7 @@
     "trigger": "/*a*/ b\n",
     "near": " b\n",
     "fragment": "/*a*/",
-    "message": "This emphasis looks like a C comment; use Carve comment syntax if you meant a comment."
+    "message": "This span looks like a C comment; use Carve comment syntax if you meant a comment."
   },
   {
     "id": "definition-in-container",
@@ -125,7 +125,7 @@
     "trigger": "1. x\n [r]: /u\n",
     "near": "1. x\n \n",
     "fragment": "[r]: /u",
-    "message": "A definition is recognized only at column 0 outside every container, so this line is text. Move it to the top level."
+    "message": "A definition is recognized only at column 0 outside every container, so this line is text. Put it at column 0 outside every container."
   },
   {
     "id": "definition-term-block-folded",
@@ -133,7 +133,7 @@
     "trigger": ":: c\n# H\n",
     "near": ":: c\n\n",
     "fragment": "# H",
-    "message": "This block opener is indented under a definition term, which has no content column, so it folds into the term as text (a fence line or a table row does not fold: it closes the description list). Dedent it to the container's content column to open the block, or put it in the term's \": \" description."
+    "message": "A quote mark or list marker after the term mark is term text. Put the intended block on a `: ` description line at the list column, such as `: > text` or `: - item`."
   },
   {
     "id": "deprecated-bare-highlight",
@@ -173,7 +173,7 @@
     "trigger": "> q\n+\n",
     "near": "> q\n\n",
     "fragment": "+",
-    "message": "The plus continuation marker was removed in 0.2 and is text here. Put the block after a blank line, indented past the list marker."
+    "message": "The plus continuation marker was removed in 0.2 and is text here. If a block was intended, write that block after a blank line."
   },
   {
     "id": "deprecated-indented-line-under-heading",
@@ -233,6 +233,7 @@
   },
   {
     "id": "emphasis-as-heading",
+    "options": { "rules": { "emphasis-as-heading": "on" } },
     "origin": "../carve/tests/html-import/definition-description-without-term/expected.crv",
     "trigger": "{#p}\n::: noprint\n/x/\n:::\n\na\n\n:: t\n: d\n",
     "near": "{#p}\n::: noprint\n\n:::\n\na\n\n:: t\n: d\n",
@@ -261,7 +262,7 @@
     "trigger": "[^a]:\n  body",
     "near": "\n  body",
     "fragment": "[^a]:",
-    "message": "This line is a label and a colon with nothing after it, so it is text and defines nothing. Add a destination, or remove the line."
+    "message": "This line is a label and colon with no destination, so it is text and defines no link. Add a destination after the colon, or remove the line."
   },
   {
     "id": "fence-closer-indented",
@@ -285,7 +286,7 @@
     "trigger": "::: figure\n:::: figure\n![one](a.png)\n^ (a) One\n::::\n:::\n^ Figure #: Outer only\n",
     "near": "::: figure\n\n:::\n^ Figure #: Outer only\n",
     "fragment": ":::: figure\n![one](a.png)\n^ (a) One\n::::",
-    "message": "A \"::: figure\" inside a figure group is a figure group of its own and not a panel of the outer group. Move it out of the enclosing group."
+    "message": "A \"::: figure\" inside a composite figure does not nest; it renders as a generic container. Move it out of the enclosing group."
   },
   {
     "id": "figure-group-opener-metadata",
@@ -325,7 +326,7 @@
     "trigger": "# Troubleshooting a 502 Response\n\nA 502 response from nginx usually means it could not get a valid response from the upstream application.\n\n> [!WARNING]\n> Reload nginx only after validating the configuration. An invalid configuration can interrupt traffic.\n\n```nginx\nlocation / {\n    proxy_pass http://127.0.0.1:3000;\n    proxy_set_header Host $host;\n}\n```\n\n## Checks\n\n- Confirm the application is running and listening on `127.0.0.1:3000`.\n- Check the nginx error log for connection failures or upstream timeouts.\n\nAfter making a change, repeat the [Checks](#checks).",
     "near": "# Troubleshooting a 502 Response\n\nA 502 response from nginx usually means it could not get a valid response from the upstream application.\n\n> \n> Reload nginx only after validating the configuration. An invalid configuration can interrupt traffic.\n\n```nginx\nlocation / {\n    proxy_pass http://127.0.0.1:3000;\n    proxy_set_header Host $host;\n}\n```\n\n## Checks\n\n- Confirm the application is running and listening on `127.0.0.1:3000`.\n- Check the nginx error log for connection failures or upstream timeouts.\n\nAfter making a change, repeat the [Checks](#checks).",
     "fragment": "[!WARNING]",
-    "message": "This github alert marker stays literal in a Carve quote; use an admonition fence."
+    "message": "This spelling does not create a GitHub alert in Carve; use an admonition fence for an alert."
   },
   {
     "id": "glob-shaped-strong",
@@ -373,7 +374,7 @@
     "trigger": "[a]\\(b) and f(x) and (see above) and [a] (b) and [a](b c)\n\n[[a]\\(u)]{.c}\n\n[`a`]\\(b)\n\n\\[/a](b)/\n\n[a]\\(b(xy)d) and [a]\\()\n",
     "near": "[a]\\(b) and f(x) and (see above) and [ab) and [a](b c)\n\n[[a]\\(u)]{.c}\n\n[`a`]\\(b)\n\n\\[/a](b)/\n\n[a]\\(b(xy)d) and [a]\\()\n",
     "fragment": "] (",
-    "message": "The gap after this link label keeps the link as text; write ]( with no space."
+    "message": "The gap after this label prevents the parenthesized destination from attaching; write `](` with no space for an inline link. A defined shortcut reference can still resolve the label."
   },
   {
     "id": "list-item-block-overindented",
@@ -397,7 +398,7 @@
     "trigger": "1. a\n\n 1. b\n",
     "near": "1. a\n\n \n",
     "fragment": "1. b",
-    "message": "This list marker starts at column 2, between the columns of two open lists, so it joins the deeper list. Start it at column 4 to make that explicit, or at column 1 to put it in the outer list."
+    "message": "This list marker starts at column 2, between the columns of two open lists, so it is read at the column of the deeper list. Start it at column 4 to make that explicit, or at column 1 to put it in the outer list."
   },
   {
     "id": "list-marker-without-blank-line",
@@ -433,6 +434,7 @@
   },
   {
     "id": "non-descriptive-link-text",
+    "options": { "rules": { "non-descriptive-link-text": "on" } },
     "origin": "../carve/tests/html-import/destination-less-link/expected.crv",
     "trigger": "[click here]() and [a named one]{#k}\n\n![logo]()\n",
     "near": " and [a named one]{#k}\n\n![logo]()\n",
@@ -445,7 +447,7 @@
     "trigger": "i.  x\nb.  y\n",
     "near": "i.  x\n\n",
     "fragment": "b.  y",
-    "message": "A lone i starts a roman list and any other single letter an alphabetic one, so this list splits after its first item."
+    "message": "Nothing after this one-letter marker settles its style, so a lone i reads as roman and any other letter as alphabetic, and the list splits after its first item."
   },
   {
     "id": "ordered-marker-right-aligned",
@@ -453,7 +455,7 @@
     "trigger": " 9. a\n10. b",
     "near": " \n10. b",
     "fragment": "9. a",
-    "message": "This marker sits left of its list and is text of the item above. Ordered markers are left-aligned in 0.2."
+    "message": "This marker sits left of its list, so it is a sibling item that moves the list's column. Write the ordered markers left-aligned, as the formatter does."
   },
   {
     "id": "references-placement-in-container",
@@ -469,7 +471,7 @@
     "trigger": "x\n\n---\n---\n",
     "near": "x\n\n---\n\n",
     "fragment": "---",
-    "message": "Carve has no underline heading: this run of hyphens is text. Write the heading with a leading `=`."
+    "message": "Carve has no underline heading: this marker run is text. Write the heading with a leading `=`."
   },
   {
     "id": "sigil-after-letter",
@@ -493,7 +495,7 @@
     "trigger": "|= h |\n| |x |\n",
     "near": "|= h |\n\n",
     "fragment": "| |x |",
-    "message": "This table row has 2 cells; the header has 1. Add or remove a cell to match the table."
+    "message": "This table row has 2 cells; the first row has 1. Add or remove a cell to match the table."
   },
   {
     "id": "table-shaped-paragraph",
@@ -501,7 +503,7 @@
     "trigger": "| a\n| b |\n",
     "near": "\n| b |\n",
     "fragment": "| a",
-    "message": "This table-shaped line lacks a closing pipe and renders as paragraph text; close the table row."
+    "message": "This table-shaped line lacks a closing pipe and stays as paragraph text. If a table row was intended, write a complete row where a table can start."
   },
   {
     "id": "table-span-marker-blocked",
@@ -509,7 +511,7 @@
     "trigger": "|= H |\n| ^ |\n| a |",
     "near": "|= H |\n||\n| a |",
     "fragment": " ^ ",
-    "message": "The \"^\" span marker cannot extend a cell. There is no cell of one column above it in its group: head, body or foot. It is a cell that holds \"^\" as text; escape it as \"\\^\" to say so, or remove it."
+    "message": "The \"^\" span marker cannot extend a cell. It stands in the first row of its group: head, body or foot. It is a cell that holds \"^\" as text; escape it as \"\\^\" to say so, or remove it."
   },
   {
     "id": "table-span-marker-attribute",
@@ -565,7 +567,7 @@
     "trigger": "*a `b` c\n",
     "near": "a `b` c\n",
     "fragment": "*",
-    "message": "This strong (or: emphasis) opener is unclosed in its paragraph; add a closer."
+    "message": "This strong opener is unclosed in its paragraph; add a closer."
   },
   {
     "id": "unresolved-footnote",
@@ -581,7 +583,7 @@
     "trigger": "# [g][h]\\\n",
     "near": "# \\\n",
     "fragment": "[g][h]",
-    "message": "Reference link [g][h] has no matching link definition or heading; it renders as literal text."
+    "message": "Reference link [g][h] has no matching link definition or heading; its brackets and label remain literal, while link-text children render normally."
   },
   {
     "id": "unused-footnote-definition",

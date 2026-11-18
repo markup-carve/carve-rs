@@ -123,9 +123,9 @@
   },
   {
     "id": "duplicate-reference-url",
+    "options": { "rules": { "duplicate-reference-url": "on" } },
     "trigger": "[a]: /u\n[b]: /u\n",
-    "near": "[a]: /u\n[b]: /v\n",
-    "options": {}
+    "near": "[a]: /u\n[b]: /v\n"
   },
   {
     "id": "empty-include-path",
@@ -144,7 +144,7 @@
     "trigger": "x[^a b]\n\n[^a b]: one\n[^a  b]: two\n",
     "near": "x[^a b]\n\n[^a b]: one\n",
     "options": {},
-    "message": "Footnote definition [^a  b] normalizes to the same key as [^a b]; the first definition wins. Normalized key: a b."
+    "message": "Footnote definition [^a  b] normalizes to the same key as [^a b]; the first definition wins. Normalized key: \"a b\"."
   },
   {
     "id": "heading-marker-mixed",
@@ -241,7 +241,7 @@
     "trigger": "|{.x}< a |\n",
     "near": "|{.x} < a |\n",
     "options": {},
-    "message": "\"{.x}<\" writes a cell's attribute block before its alignment marker, which Carve no longer reads as one. The block is part of the cell's marker run and the run ends at a space, so with the \"<\" glued to it there is no run: the braces are content and the cell is neither attributed nor aligned. Write \"<{.x} \" to align it, or \"{.x} <\" to keep the \"<\" as content deliberately."
+    "message": "\"{.x}<\" attaches the cell attribute block, but the following \"<\" is text and does not align the cell. Write \"{< .x}\" with the marker inside the first brace block to align it, or \"{.x} <\" to keep the mark as text."
   },
   {
     "id": "table-row-count-clamped",

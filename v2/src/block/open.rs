@@ -72,12 +72,7 @@ impl Parser<'_> {
         }
         let f = self.frame(walk, m);
         if let Some(marker) = shapes::list_marker(&k) {
-            // C2-B-190: a nested marker that cannot open is paragraph text.
-            let can_replace = f.lists.iter().any(|&col| m <= col);
-            if !can_replace && !self.room(2) {
-                return false;
-            }
-            return list_interrupts(&f, m, &marker);
+            return self.marker_interrupts(&f, m, &marker);
         }
         if let Some((term, _, _)) = shapes::desc_mark(&k) {
             // C2-B-190: a description that cannot open is text of the term.
@@ -91,6 +86,22 @@ impl Parser<'_> {
             return f.desc_lists.contains(&m) && (term || replaces || self.room(1));
         }
         walk.qbase == 0 && k.col == 0 && f.footnote && is_definition(k.rest())
+    }
+
+    fn marker_interrupts(&self, f: &Frame, column: usize, marker: &ListMarker) -> bool {
+        if matches!(
+            self.leaf,
+            Some(OpenLeaf {
+                leaf: Leaf::Term { .. },
+                ..
+            })
+        ) && f.desc_lists.iter().any(|&owner| column >= owner)
+        {
+            return false;
+        }
+        // C2-B-190: a nested marker that cannot open is paragraph text.
+        let can_replace = f.lists.iter().any(|&owner| column <= owner);
+        (can_replace || self.room(2)) && list_interrupts(f, column, marker)
     }
 
     /// Interrupter (d) and Exception C2-B-018.

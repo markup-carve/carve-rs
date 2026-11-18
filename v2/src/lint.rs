@@ -90,6 +90,24 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         {
             continue;
         }
+        if warning.rule == "list-item-block-overindented"
+            && !positions.iter().any(|range| {
+                range.start == warning.start
+                    && matches!(
+                        range.kind.as_str(),
+                        "heading"
+                            | "block_quote"
+                            | "code_block"
+                            | "definition_term"
+                            | "div"
+                            | "image"
+                            | "thematic_break"
+                            | "table"
+                    )
+            })
+        {
+            continue;
+        }
         if matches!(
             warning.rule,
             "deprecated-cell-alignment"
@@ -122,6 +140,9 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
                 | "markdown-definition-paragraph"
                 | "block-opener-without-blank-line"
                 | "list-marker-without-blank-line"
+                | "semantic-attribute-outside-span"
+                | "empty-include-path"
+                | "heading-trailing-attribute"
         ) {
             continue;
         }
@@ -231,12 +252,18 @@ fn normalize_root_message(
                 .unwrap_or(' ');
             let marker = marker.to_string();
             let spelling = format!("{block}{marker}");
+            let contents = block
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+                .unwrap_or("");
+            let corrected_prefix = format!("{{{marker} {contents}}}");
             diagnostic.message = Diagnostic::new(
                 "table-marker-run-padding",
                 &[
                     ("spelling", &spelling),
                     ("marker", &marker),
                     ("block", &block),
+                    ("correctedPrefix", &corrected_prefix),
                 ],
                 None,
                 None,
@@ -245,46 +272,7 @@ fn normalize_root_message(
             return;
         }
         "colon-fence-length-mismatch" => {
-            let authored = raw.len().to_string();
-            let before = source.get(..start).unwrap_or("");
-            let opener = last_colon_opener(before);
-            let expected = before
-                .get(opener..)
-                .unwrap_or("")
-                .chars()
-                .take_while(|c| *c == ':')
-                .count()
-                .to_string();
-            let line = (before
-                .get(..opener)
-                .unwrap_or("")
-                .bytes()
-                .filter(|b| *b == b'\n')
-                .count()
-                + 1)
-            .to_string();
-            let column = (opener
-                - before
-                    .get(..opener)
-                    .unwrap_or("")
-                    .rfind('\n')
-                    .map_or(0, |at| at + 1)
-                + 1)
-            .to_string();
-            diagnostic.message = Diagnostic::new(
-                "colon-fence-length-mismatch",
-                &[
-                    ("authoredWidth", &authored),
-                    ("expectedWidth", &expected),
-                    ("kind", "div"),
-                    ("line", &line),
-                    ("column", &column),
-                    ("outcome", "closes the container"),
-                ],
-                None,
-                None,
-            )
-            .message;
+            diagnostic.message = colon_fence_message(source, ranges, start, end, raw);
             return;
         }
         "list-marker-below-content-column" => {
@@ -302,9 +290,92 @@ fn normalize_root_message(
             .message;
             return;
         }
+        "list-item-block-overindented" => {
+            let content = list_columns(source, ranges, start).2.to_string();
+            diagnostic.message = Diagnostic::new(
+                "list-item-block-overindented",
+                &[("contentColumn", &content)],
+                None,
+                None,
+            )
+            .message;
+            return;
+        }
         _ => return,
     };
     diagnostic.message = Diagnostic::nth(code, message, &values, None, None).message;
+}
+
+fn colon_fence_message(
+    source: &str,
+    ranges: &[Range],
+    start: usize,
+    end: usize,
+    raw: &str,
+) -> String {
+    let authored = raw.len().to_string();
+    let before = source.get(..start).unwrap_or("");
+    let opener = last_colon_opener(before);
+    let expected = before
+        .get(opener..)
+        .unwrap_or("")
+        .chars()
+        .take_while(|c| *c == ':')
+        .count()
+        .to_string();
+    let line = (before
+        .get(..opener)
+        .unwrap_or("")
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1)
+    .to_string();
+    let column = (opener
+        - before
+            .get(..opener)
+            .unwrap_or("")
+            .rfind('\n')
+            .map_or(0, |at| at + 1)
+        + 1)
+    .to_string();
+    let authored_width = authored.parse::<usize>().unwrap_or(0);
+    let expected_width = expected.parse::<usize>().unwrap_or(0);
+    let closes_enclosing = ranges.iter().any(|range| {
+        range.start < opener
+            && range.end >= end
+            && matches!(
+                range.kind.as_str(),
+                "div" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
+            )
+            && source
+                .get(range.start..)
+                .unwrap_or("")
+                .bytes()
+                .take_while(|byte| *byte == b':')
+                .count()
+                <= authored_width
+    });
+    let variant = if authored_width > expected_width {
+        2
+    } else {
+        usize::from(closes_enclosing)
+    };
+    Diagnostic::nth(
+        "colon-fence-length-mismatch",
+        variant,
+        &[
+            ("authoredWidth", &authored),
+            ("expectedWidth", &expected),
+            ("kind", "div"),
+            ("line", &line),
+            ("column", &column),
+            ("outcome", "closes the container"),
+        ],
+        None,
+        None,
+    )
+    .message
 }
 
 fn list_columns(source: &str, ranges: &[Range], at: usize) -> (u32, u32, u32) {
@@ -375,7 +446,7 @@ fn last_colon_opener(before: &str) -> usize {
 
 fn footnote_twin(before: &str, key: &str) -> Option<String> {
     before.lines().find_map(|line| {
-        let label = line.trim_start().strip_prefix("[^")?.split_once("]:")?.0;
+        let label = line.split_once("[^")?.1.split_once("]:")?.0;
         (crate::chars::fold_label(label) == key).then(|| label.to_string())
     })
 }

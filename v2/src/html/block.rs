@@ -909,6 +909,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let Node::RawBlock(r) = n else { return };
         if r.format != "html" {
             self.losses.push("raw-format-dropped");
+            self.raw_losses.push(super::RawLoss {
+                kind: "block",
+                format: r.format.to_string(),
+                pos: r.pos,
+                file: self.file_of(r.pos.as_ref()),
+            });
             return;
         }
         if self.opts.raw_html {

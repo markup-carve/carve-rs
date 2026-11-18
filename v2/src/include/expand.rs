@@ -11,6 +11,7 @@ use crate::options::Options;
 use crate::tables::{INCLUDE_CAUSES, INCLUDE_CONFLICTS, INCLUDE_OPTIONS};
 use crate::tree::Scope;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub(super) struct Exp<'c, 'a> {
     pub cfg: &'c Includes,
@@ -20,6 +21,7 @@ pub(super) struct Exp<'c, 'a> {
     spent: usize,
     pub diags: &'c mut Vec<Diagnostic>,
     shifts: bool,
+    sources: HashMap<&'a str, &'a str>,
 }
 
 /// The file whose includes are expanded.
@@ -67,7 +69,7 @@ pub(crate) fn expand<'a>(
     opts: &Options,
     arena: &'a Arena,
     diags: &mut Vec<Diagnostic>,
-) {
+) -> HashMap<&'a str, &'a str> {
     let mut exp = Exp {
         cfg,
         opts,
@@ -75,6 +77,7 @@ pub(crate) fn expand<'a>(
         spent: 0,
         diags,
         shifts: false,
+        sources: HashMap::new(),
     };
     let frame = Frame {
         file: cfg.file.as_deref(),
@@ -86,6 +89,7 @@ pub(crate) fn expand<'a>(
     if exp.shifts {
         shift::apply(doc.children, exp.diags);
     }
+    exp.sources
 }
 
 /// C2-N-003: without a resolver every include is reported and stays unexpanded.
@@ -170,6 +174,7 @@ fn expand_one<'a>(node: &mut ast::Include<'a>, exp: &mut Exp<'_, 'a>, frame: &Fr
     }
     exp.spent += text.len();
     let text = exp.arena.str(&text);
+    exp.sources.insert(id, text);
     let selected = match select(exp, node, text, frame.scope, id) {
         Ok(s) => s,
         Err(f) => return fail(exp, node, frame, &f),

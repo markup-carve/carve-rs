@@ -54,9 +54,9 @@ pub fn render_with_losses_source(
 ) -> (String, Vec<&'static str>) {
     if opts.profile != crate::options::Profile::Full && src.contains('\0') {
         let normalized = crate::source::Source::new(src);
-        render_mapped_source(doc, opts, normalized.render_view(), true)
+        render_mapped_source(doc, opts, normalized.render_view(), true, None, None, None)
     } else {
-        render_source(doc, opts, src, true)
+        render_source(doc, opts, src, true, None, None, None)
     }
 }
 
@@ -69,7 +69,7 @@ pub fn render_with_losses_source_bytes(
     src: &[u8],
 ) -> (String, Vec<&'static str>) {
     let normalized = crate::source::Source::from_bytes(src);
-    render_mapped_source(doc, opts, normalized.render_view(), true)
+    render_mapped_source(doc, opts, normalized.render_view(), true, None, None, None)
 }
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
@@ -79,10 +79,22 @@ pub(crate) fn render_source(
     opts: &Options,
     src: &str,
     ordered: bool,
+    destinations: Option<&mut Vec<DestinationLoss>>,
+    raws: Option<&mut Vec<RawLoss>>,
+    carriers: Option<&mut Vec<CarrierLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(SourceView::direct(src));
     r.document();
+    if let Some(destinations) = destinations {
+        destinations.extend(r.destination_losses);
+    }
+    if let Some(raws) = raws {
+        raws.extend(r.raw_losses);
+    }
+    if let Some(carriers) = carriers {
+        carriers.extend(r.carrier_losses);
+    }
     (r.out, r.losses)
 }
 
@@ -92,10 +104,22 @@ pub(crate) fn render_files<'a>(
     opts: &Options,
     src: &str,
     files: &crate::resolve::files::Files<'a>,
+    destinations: Option<&mut Vec<DestinationLoss>>,
+    raws: Option<&mut Vec<RawLoss>>,
+    carriers: Option<&mut Vec<CarrierLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::build(doc, opts, true, Some(files));
     r.src = Some(SourceView::direct(src));
     r.document();
+    if let Some(destinations) = destinations {
+        destinations.extend(r.destination_losses);
+    }
+    if let Some(raws) = raws {
+        raws.extend(r.raw_losses);
+    }
+    if let Some(carriers) = carriers {
+        carriers.extend(r.carrier_losses);
+    }
     (r.out, r.losses)
 }
 
@@ -104,11 +128,45 @@ pub(crate) fn render_mapped_source(
     opts: &Options,
     src: SourceView<'_>,
     ordered: bool,
+    destinations: Option<&mut Vec<DestinationLoss>>,
+    raws: Option<&mut Vec<RawLoss>>,
+    carriers: Option<&mut Vec<CarrierLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(src);
     r.document();
+    if let Some(destinations) = destinations {
+        destinations.extend(r.destination_losses);
+    }
+    if let Some(raws) = raws {
+        raws.extend(r.raw_losses);
+    }
+    if let Some(carriers) = carriers {
+        carriers.extend(r.carrier_losses);
+    }
     (r.out, r.losses)
+}
+
+pub(crate) struct DestinationLoss {
+    pub image: bool,
+    pub attribute: bool,
+    pub pos: Option<crate::ast::Pos>,
+    pub value: String,
+    pub file: Option<String>,
+}
+
+pub(crate) struct RawLoss {
+    pub kind: &'static str,
+    pub format: String,
+    pub pos: Option<crate::ast::Pos>,
+    pub file: Option<String>,
+}
+
+pub(crate) struct CarrierLoss {
+    pub key: String,
+    pub pos: Option<crate::ast::Pos>,
+    pub regions: Vec<(u32, u32)>,
+    pub file: Option<String>,
 }
 
 /// About the output length: twice the source length the tree covers.
@@ -158,6 +216,9 @@ pub(crate) struct Renderer<'r, 'a> {
     /// Inside a node that stays while its children are degraded.
     degrading: usize,
     losses: Vec<&'static str>,
+    destination_losses: Vec<DestinationLoss>,
+    raw_losses: Vec<RawLoss>,
+    carrier_losses: Vec<CarrierLoss>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
     hidden: AddrSet<usize>,
     /// The row of `opts.profile` in the profile table.
@@ -233,6 +294,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             started: false,
             degrading: 0,
             losses: Vec::new(),
+            destination_losses: Vec::new(),
+            raw_losses: Vec::new(),
+            carrier_losses: Vec::new(),
             hidden: AddrSet::default(),
             profile,
         };
@@ -244,6 +308,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn src_of(&self, n: &Node<'_>) -> Option<SourceView<'r>> {
         self.src
             .filter(|_| !self.files.is_some_and(|f| f.included(n)))
+    }
+
+    fn file_of(&self, pos: Option<&crate::ast::Pos>) -> Option<String> {
+        self.files
+            .and_then(|files| pos.and_then(|pos| files.file_of_pos(pos)))
+            .map(str::to_string)
     }
 
     fn hidden_heading(&self, href: &str) -> bool {
@@ -456,7 +526,15 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn document(&mut self) {
         let doc = self.doc;
         for node in doc.children.iter() {
-            reserved_losses(node, &mut self.losses, &self.opts.url_policy, 1);
+            reserved_losses(
+                node,
+                &mut self.losses,
+                &mut self.destination_losses,
+                &mut self.carrier_losses,
+                &self.opts.url_policy,
+                self.files,
+                1,
+            );
         }
         if self.opts.sections {
             self.sectioned(doc.children);
@@ -582,7 +660,10 @@ fn panel_letter(mut index: usize) -> String {
 fn reserved_losses(
     node: &Node<'_>,
     losses: &mut Vec<&'static str>,
+    destinations: &mut Vec<DestinationLoss>,
+    carriers: &mut Vec<CarrierLoss>,
     policy: &crate::options::UrlPolicy,
+    files: Option<&crate::resolve::files::Files<'_>>,
     depth: usize,
 ) {
     if depth > crate::resolve::WALK_CAP {
@@ -598,15 +679,67 @@ fn reserved_losses(
                 .any(|name| name.eq_ignore_ascii_case(key))
             {
                 losses.push("carrier-attribute-dropped");
+                carriers.push(CarrierLoss {
+                    key: key.to_string(),
+                    pos: node.pos().copied(),
+                    regions: carrier_attribute_regions(node),
+                    file: files
+                        .and_then(|files| node.pos().and_then(|pos| files.file_of_pos(pos)))
+                        .map(str::to_string),
+                });
             }
             if !url::filter_value_in(key, value, None).is_empty()
                 && url::filter_value_in(key, value, Some(policy)).is_empty()
             {
                 losses.push("destination-denied");
+                destinations.push(DestinationLoss {
+                    image: false,
+                    attribute: true,
+                    pos: node.pos().copied(),
+                    value: value.to_string(),
+                    file: files
+                        .and_then(|files| node.pos().and_then(|pos| files.file_of_pos(pos)))
+                        .map(str::to_string),
+                });
             }
         }
     }
-    node.for_each_child(&mut |child| reserved_losses(child, losses, policy, depth + 1));
+    node.for_each_child(&mut |child| {
+        reserved_losses(
+            child,
+            losses,
+            destinations,
+            carriers,
+            policy,
+            files,
+            depth + 1,
+        );
+    });
+}
+
+fn carrier_attribute_regions(node: &Node<'_>) -> Vec<(u32, u32)> {
+    let Some(span) = node.pos() else {
+        return Vec::new();
+    };
+    let mut children = Vec::new();
+    node.for_each_child(&mut |child| {
+        if let Some(pos) = child.pos() {
+            children.push(*pos);
+        }
+    });
+    children.sort_by_key(|pos| pos.start_offset);
+    let mut regions = Vec::new();
+    let mut cursor = span.start_offset;
+    for child in children {
+        if cursor < child.start_offset {
+            regions.push((cursor, child.start_offset));
+        }
+        cursor = cursor.max(child.end_offset);
+    }
+    if cursor < span.end_offset {
+        regions.push((cursor, span.end_offset));
+    }
+    regions
 }
 
 /// The id a heading carries: authored, else generated.

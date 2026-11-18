@@ -38,13 +38,18 @@ pub struct Files<'a> {
     ids: AddrMap<usize, usize>,
     /// The `pos` address of every node an included file produced.
     inside: crate::hash::AddrSet<usize>,
+    of_pos: AddrMap<usize, usize>,
+    sources: HashMap<&'a str, &'a str>,
 }
 
 impl<'a> Files<'a> {
     /// Reads the files of `doc`, whose includes are expanded.
     #[must_use]
-    pub fn build(doc: &Document<'a>) -> Self {
-        let mut f = Files::default();
+    pub fn build(doc: &Document<'a>, sources: HashMap<&'a str, &'a str>) -> Self {
+        let mut f = Files {
+            sources,
+            ..Files::default()
+        };
         f.add(&*doc.children, None, None);
         f
     }
@@ -88,6 +93,7 @@ impl<'a> Files<'a> {
         }
         if let Some(p) = n.pos() {
             let at = std::ptr::from_ref(p).addr();
+            self.of_pos.insert(at, file);
             if n.attrs().is_some_and(|a| a.id.is_some()) {
                 self.ids.insert(at, file);
             }
@@ -126,6 +132,19 @@ impl<'a> Files<'a> {
     #[must_use]
     pub fn file_at(&self, pos: usize) -> Option<&'a str> {
         self.list.get(*self.ids.get(&pos)?)?.id
+    }
+
+    /// The included file that owns this exact AST position.
+    #[must_use]
+    pub fn file_of_pos(&self, pos: &crate::ast::Pos) -> Option<&'a str> {
+        self.list
+            .get(*self.of_pos.get(&std::ptr::from_ref(pos).addr())?)?
+            .id
+    }
+
+    /// The accepted source texts of expanded included files.
+    pub fn sources(&self) -> impl Iterator<Item = (&'a str, &'a str)> + '_ {
+        self.sources.iter().map(|(id, text)| (*id, *text))
     }
 
     /// True when an included file produced `n`, whose offsets count in that file.

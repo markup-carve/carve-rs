@@ -10,6 +10,7 @@ struct Line {
     path: String,
     kind: String,
     paragraph: bool,
+    content_start: Option<usize>,
     opaque: bool,
     attached_attribute: bool,
     scope: Scope,
@@ -18,6 +19,7 @@ struct Line {
 struct Scope {
     in_footnote: bool,
     in_description: bool,
+    in_container: bool,
 }
 
 struct Sink<'a> {
@@ -120,6 +122,9 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: paragraph.map_or_else(String::new, |r| r.path.clone()),
             kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
             paragraph: paragraph.is_some(),
+            content_start: paragraph
+                .filter(|range| range.start_line == number)
+                .map(|range| range.start.saturating_sub(start).min(raw.len())),
             opaque,
             attached_attribute: paragraph
                 .is_some_and(|range| range.has_attrs && range.start_line == number),
@@ -134,11 +139,13 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: String::new(),
             kind: String::new(),
             paragraph: false,
+            content_start: None,
             opaque: false,
             attached_attribute: false,
             scope: Scope {
                 in_footnote: false,
                 in_description: false,
+                in_container: false,
             },
         });
     }
@@ -154,6 +161,15 @@ fn scope(ranges: &[Range], number: usize) -> Scope {
     Scope {
         in_footnote: contains("footnote"),
         in_description: contains("definition_description"),
+        in_container: [
+            "block_quote",
+            "list_item",
+            "div",
+            "definition_description",
+            "footnote",
+        ]
+        .iter()
+        .any(|kind| contains(kind)),
     }
 }
 
@@ -217,6 +233,8 @@ fn starts_block(text: &str) -> bool {
 
 fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.trim();
+    let content_start = line.content_start.unwrap_or(0);
+    let content = line.text.get(content_start..).unwrap_or("").trim_start();
     if text == "+" {
         sink.whole("deprecated-continuation-marker", line, &[]);
     }
@@ -232,9 +250,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     if spaced_run(text) {
         sink.whole("deprecated-spaced-thematic-break", line, &[]);
     }
-    if line.paragraph && text.starts_with("~~~") {
-        sink.whole("block-marker-as-text", line, &[("what", "a tilde fence")]);
-    }
+    marker_as_text(line, content_start, content, sink);
     attribute_line_like(line, sink);
     if line.text.trim_start_matches([' ', '\t']).starts_with('>')
         && text.starts_with('>')
@@ -249,6 +265,28 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         );
     }
     table_line(line, sink);
+}
+
+fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut Sink<'_>) {
+    if line.paragraph && (content.starts_with("~~~") || content.starts_with(":::")) {
+        let what = if content.starts_with("~~~") {
+            "a tilde fence"
+        } else {
+            "a div fence"
+        };
+        let marker = line
+            .text
+            .get(content_start..)
+            .and_then(|tail| tail.find(content))
+            .map_or(content_start, |at| content_start + at);
+        sink.emit(
+            "block-marker-as-text",
+            line.start + marker,
+            line.start + line.text.trim_end().len(),
+            &line.path,
+            &[("what", what)],
+        );
+    }
 }
 
 fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
@@ -270,7 +308,12 @@ fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
 fn table_line(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.trim();
     if line.paragraph && text.starts_with('|') && !text.ends_with('|') {
-        sink.whole("table-shaped-paragraph", line, &[]);
+        let owner = match line.kind.as_str() {
+            "caption" => "caption",
+            "definition_term" => "term",
+            _ => "paragraph",
+        };
+        sink.whole("table-shaped-paragraph", line, &[("owner", owner)]);
         if text.matches('|').count() >= 2 {
             sink.whole("table-row-without-closing-pipe", line, &[]);
         }
@@ -327,14 +370,25 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         sink.whole("djot-heading-continuation", line, &[]);
     }
     if line.paragraph
-        && text.starts_with('[')
+        && line.text.find('[').is_some_and(|at| {
+            line.text[..at]
+                .bytes()
+                .all(|byte| matches!(byte, b' ' | b'\t' | b'>'))
+        })
         && text
             .find("]:")
             .is_some_and(|at| at > 1 && at + 2 < text.len())
-        && !line.scope.in_footnote
-        && (line.text.starts_with([' ', '\t']) || line.path.matches('/').count() > 2)
+        && (line.text.starts_with([' ', '\t']) || line.scope.in_container)
+        && let Some(start) = line.text.find('[')
+        && let Some(end) = line.text.get(start..).and_then(|rest| rest.find("]:"))
     {
-        sink.whole("definition-in-container", line, &[]);
+        sink.emit(
+            "definition-in-container",
+            line.start + start,
+            line.start + start + end + 2,
+            &line.path,
+            &[],
+        );
     }
     if line.kind == "definition_term"
         && previous.is_some_and(|p| p.path == line.path)
@@ -411,7 +465,7 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
         && let Some(end) = text.get(at + 2..).and_then(|s| s.find("}}"))
         && text
             .get(at + 2..at + 2 + end)
-            .is_some_and(|s| s.trim().is_empty())
+            .is_some_and(|s| s.trim().is_empty() || s.trim_start().starts_with(['#', '@']))
     {
         let token = text.get(at..at + end + 4).unwrap_or("");
         sink.emit(
@@ -426,17 +480,8 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
 
 fn prose_context(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
     let trimmed = line.text.trim();
-    if line.paragraph
-        && previous.is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty())
-    {
-        if starts_block(trimmed)
-            && (!trimmed.starts_with('{') || trimmed.ends_with('}'))
-            && !(trimmed.starts_with('[') && line.scope.in_footnote)
-            && !(trimmed.starts_with("> ")
-                && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
-        {
-            sink.whole("block-opener-without-blank-line", line, &[]);
-        }
+    if paragraph_continuation(line, previous) {
+        prose_block_opener(line, previous, trimmed, sink);
         if list_marker(trimmed) {
             sink.whole("list-marker-without-blank-line", line, &[]);
         }
@@ -444,6 +489,40 @@ fn prose_context(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mu
     bare_html(line, sink);
     github_alert(line, sink);
     caption_looking(line, previous, lines, sink);
+}
+
+fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
+    line.paragraph
+        && previous.is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty())
+}
+
+fn prose_block_opener(line: &Line, previous: Option<&Line>, trimmed: &str, sink: &mut Sink<'_>) {
+    if !starts_block(trimmed)
+        || (trimmed.starts_with('{') && !trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && line.scope.in_footnote)
+        || (trimmed.starts_with("> ")
+            && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
+    {
+        return;
+    }
+    let opener = if trimmed.starts_with(['#', '=']) {
+        "a heading"
+    } else if trimmed.starts_with('>') {
+        "a quote"
+    } else if trimmed.starts_with('{') {
+        "an attribute line"
+    } else if trimmed.starts_with("::") {
+        "a term"
+    } else if trimmed.starts_with(':') {
+        "a description"
+    } else {
+        "a definition"
+    };
+    sink.whole(
+        "block-opener-without-blank-line",
+        line,
+        &[("opener", opener)],
+    );
 }
 
 fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {

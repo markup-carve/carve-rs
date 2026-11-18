@@ -266,8 +266,14 @@ mod tests {
 
     fn generic(input: &str, opts: &Options) -> String {
         let arena = crate::Arena::for_input(input);
-        super::super::render_parts(input, opts, &arena, &mut Vec::new(), &mut Vec::new())
-            .map_or_else(|_| "render error".to_string(), |(html, _)| html)
+        super::super::render_parts(
+            input,
+            opts,
+            &arena,
+            &mut Vec::new(),
+            &mut super::super::RenderDetails::default(),
+        )
+        .map_or_else(|_| "render error".to_string(), |(html, _)| html)
     }
 
     #[test]
