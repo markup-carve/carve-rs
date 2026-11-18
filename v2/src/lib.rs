@@ -474,7 +474,7 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
             let mut raw_losses = details.raws.iter();
             let mut destination_losses = details.destinations.iter();
             let mut carrier_losses = details.carriers.iter();
-            let mut carrier_cursor = 0;
+            let mut carrier_cursors = std::collections::HashMap::new();
             let loss_diags: Vec<_> = losses
                 .iter()
                 .map(|c| {
@@ -505,7 +505,7 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
                         .or_else(|| destination.and_then(|d| d.pos))
                         .or_else(|| {
                             carrier.and_then(|c| {
-                                carrier_loss_position(&source, c, &mut carrier_cursor)
+                                carrier_loss_position(&source, c, &mut carrier_cursors)
                             })
                         })
                         .or_else(|| carrier.and_then(|c| c.pos))
@@ -556,16 +556,19 @@ fn destination_loss_position(
 fn carrier_loss_position(
     source: &source::Source<'_>,
     loss: &html::CarrierLoss,
-    cursor: &mut usize,
+    cursors: &mut std::collections::HashMap<(u32, u32), usize>,
 ) -> Option<ast::Pos> {
     let node = loss.pos?;
-    let start = usize::try_from(node.start_offset).ok()?.max(*cursor);
+    let id = (node.start_offset, node.end_offset);
+    let start = usize::try_from(node.start_offset)
+        .ok()?
+        .max(cursors.get(&id).copied().unwrap_or(0));
     let end = usize::try_from(node.end_offset).ok()?;
     let needle = format!("{}=", loss.key);
     let at = source.text().get(start..end)?.find(&needle)? + start;
     let tail = source.text().get(at..end)?;
     let length = tail.find([' ', '\t', '}']).unwrap_or(tail.len());
-    *cursor = at + length;
+    cursors.insert(id, at + length);
     Some(source.pos(at, at + length))
 }
 

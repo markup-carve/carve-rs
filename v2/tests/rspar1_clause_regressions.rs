@@ -156,6 +156,28 @@ fn c2_h_116_multiple_carrier_losses_keep_their_own_keys() {
 }
 
 #[test]
+fn c2_h_116_nested_carrier_losses_use_each_nodes_attribute_range() {
+    let source = "[outer [inner]{data-carve-ref=x}]{data-carve-raw=html}";
+    let rendered = carve2::render_with_diagnostics(source, &Options::default());
+    let losses: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .filter(|finding| finding.code == "carrier-attribute-dropped")
+        .collect();
+    assert_eq!(losses.len(), 2);
+    for (loss, expected) in losses
+        .iter()
+        .zip(["data-carve-raw=html", "data-carve-ref=x"])
+    {
+        let pos = loss.pos.expect("carrier range");
+        assert_eq!(
+            &source[pos.start_offset as usize..pos.end_offset as usize],
+            expected
+        );
+    }
+}
+
+#[test]
 fn c2_h_054_raw_format_loss_uses_catalog_message() {
     let rendered = carve2::render_with_diagnostics("before\n\n```=latex\nx\n", &Options::default());
     let loss = rendered
