@@ -272,69 +272,7 @@ fn normalize_root_message(
             return;
         }
         "colon-fence-length-mismatch" => {
-            let authored = raw.len().to_string();
-            let before = source.get(..start).unwrap_or("");
-            let opener = last_colon_opener(before);
-            let expected = before
-                .get(opener..)
-                .unwrap_or("")
-                .chars()
-                .take_while(|c| *c == ':')
-                .count()
-                .to_string();
-            let line = (before
-                .get(..opener)
-                .unwrap_or("")
-                .bytes()
-                .filter(|b| *b == b'\n')
-                .count()
-                + 1)
-            .to_string();
-            let column = (opener
-                - before
-                    .get(..opener)
-                    .unwrap_or("")
-                    .rfind('\n')
-                    .map_or(0, |at| at + 1)
-                + 1)
-            .to_string();
-            let authored_width = authored.parse::<usize>().unwrap_or(0);
-            let expected_width = expected.parse::<usize>().unwrap_or(0);
-            let closes_enclosing = ranges.iter().any(|range| {
-                range.start < opener
-                    && range.end >= end
-                    && matches!(
-                        range.kind.as_str(),
-                        "div" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
-                    )
-                    && source
-                        .get(range.start..)
-                        .unwrap_or("")
-                        .bytes()
-                        .take_while(|byte| *byte == b':')
-                        .count()
-                        <= authored_width
-            });
-            let variant = if authored_width > expected_width {
-                2
-            } else {
-                usize::from(closes_enclosing)
-            };
-            diagnostic.message = Diagnostic::nth(
-                "colon-fence-length-mismatch",
-                variant,
-                &[
-                    ("authoredWidth", &authored),
-                    ("expectedWidth", &expected),
-                    ("kind", "div"),
-                    ("line", &line),
-                    ("column", &column),
-                    ("outcome", "closes the container"),
-                ],
-                None,
-                None,
-            )
-            .message;
+            diagnostic.message = colon_fence_message(source, ranges, start, end, raw);
             return;
         }
         "list-marker-below-content-column" => {
@@ -366,6 +304,78 @@ fn normalize_root_message(
         _ => return,
     };
     diagnostic.message = Diagnostic::nth(code, message, &values, None, None).message;
+}
+
+fn colon_fence_message(
+    source: &str,
+    ranges: &[Range],
+    start: usize,
+    end: usize,
+    raw: &str,
+) -> String {
+    let authored = raw.len().to_string();
+    let before = source.get(..start).unwrap_or("");
+    let opener = last_colon_opener(before);
+    let expected = before
+        .get(opener..)
+        .unwrap_or("")
+        .chars()
+        .take_while(|c| *c == ':')
+        .count()
+        .to_string();
+    let line = (before
+        .get(..opener)
+        .unwrap_or("")
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1)
+    .to_string();
+    let column = (opener
+        - before
+            .get(..opener)
+            .unwrap_or("")
+            .rfind('\n')
+            .map_or(0, |at| at + 1)
+        + 1)
+    .to_string();
+    let authored_width = authored.parse::<usize>().unwrap_or(0);
+    let expected_width = expected.parse::<usize>().unwrap_or(0);
+    let closes_enclosing = ranges.iter().any(|range| {
+        range.start < opener
+            && range.end >= end
+            && matches!(
+                range.kind.as_str(),
+                "div" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
+            )
+            && source
+                .get(range.start..)
+                .unwrap_or("")
+                .bytes()
+                .take_while(|byte| *byte == b':')
+                .count()
+                <= authored_width
+    });
+    let variant = if authored_width > expected_width {
+        2
+    } else {
+        usize::from(closes_enclosing)
+    };
+    Diagnostic::nth(
+        "colon-fence-length-mismatch",
+        variant,
+        &[
+            ("authoredWidth", &authored),
+            ("expectedWidth", &expected),
+            ("kind", "div"),
+            ("line", &line),
+            ("column", &column),
+            ("outcome", "closes the container"),
+        ],
+        None,
+        None,
+    )
+    .message
 }
 
 fn list_columns(source: &str, ranges: &[Range], at: usize) -> (u32, u32, u32) {

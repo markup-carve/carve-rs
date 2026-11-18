@@ -250,20 +250,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     if spaced_run(text) {
         sink.whole("deprecated-spaced-thematic-break", line, &[]);
     }
-    if line.content_start.is_some() && (content.starts_with("~~~") || content.starts_with(":::")) {
-        let what = if content.starts_with("~~~") {
-            "a tilde fence"
-        } else {
-            "a div fence"
-        };
-        sink.emit(
-            "block-marker-as-text",
-            line.start + content_start,
-            line.start + line.text.trim_end().len(),
-            &line.path,
-            &[("what", what)],
-        );
-    }
+    marker_as_text(line, content_start, content, sink);
     attribute_line_like(line, sink);
     if line.text.trim_start_matches([' ', '\t']).starts_with('>')
         && text.starts_with('>')
@@ -278,6 +265,23 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         );
     }
     table_line(line, sink);
+}
+
+fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut Sink<'_>) {
+    if line.content_start.is_some() && (content.starts_with("~~~") || content.starts_with(":::")) {
+        let what = if content.starts_with("~~~") {
+            "a tilde fence"
+        } else {
+            "a div fence"
+        };
+        sink.emit(
+            "block-marker-as-text",
+            line.start + content_start,
+            line.start + line.text.trim_end().len(),
+            &line.path,
+            &[("what", what)],
+        );
+    }
 }
 
 fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
@@ -466,34 +470,8 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
 
 fn prose_context(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
     let trimmed = line.text.trim();
-    if line.paragraph
-        && previous.is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty())
-    {
-        if starts_block(trimmed)
-            && (!trimmed.starts_with('{') || trimmed.ends_with('}'))
-            && !(trimmed.starts_with('[') && line.scope.in_footnote)
-            && !(trimmed.starts_with("> ")
-                && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
-        {
-            let opener = if trimmed.starts_with(['#', '=']) {
-                "a heading"
-            } else if trimmed.starts_with('>') {
-                "a quote"
-            } else if trimmed.starts_with('{') {
-                "an attribute line"
-            } else if trimmed.starts_with("::") {
-                "a term"
-            } else if trimmed.starts_with(':') {
-                "a description"
-            } else {
-                "a definition"
-            };
-            sink.whole(
-                "block-opener-without-blank-line",
-                line,
-                &[("opener", opener)],
-            );
-        }
+    if paragraph_continuation(line, previous) {
+        prose_block_opener(line, previous, trimmed, sink);
         if list_marker(trimmed) {
             sink.whole("list-marker-without-blank-line", line, &[]);
         }
@@ -501,6 +479,40 @@ fn prose_context(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mu
     bare_html(line, sink);
     github_alert(line, sink);
     caption_looking(line, previous, lines, sink);
+}
+
+fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
+    line.paragraph
+        && previous.is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty())
+}
+
+fn prose_block_opener(line: &Line, previous: Option<&Line>, trimmed: &str, sink: &mut Sink<'_>) {
+    if !starts_block(trimmed)
+        || (trimmed.starts_with('{') && !trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && line.scope.in_footnote)
+        || (trimmed.starts_with("> ")
+            && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
+    {
+        return;
+    }
+    let opener = if trimmed.starts_with(['#', '=']) {
+        "a heading"
+    } else if trimmed.starts_with('>') {
+        "a quote"
+    } else if trimmed.starts_with('{') {
+        "an attribute line"
+    } else if trimmed.starts_with("::") {
+        "a term"
+    } else if trimmed.starts_with(':') {
+        "a description"
+    } else {
+        "a definition"
+    };
+    sink.whole(
+        "block-opener-without-blank-line",
+        line,
+        &[("opener", opener)],
+    );
 }
 
 fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
