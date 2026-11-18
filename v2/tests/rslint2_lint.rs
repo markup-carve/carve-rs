@@ -193,3 +193,63 @@ fn lint_respects_top_fragment_alert_and_indented_block_context() {
         );
     }
 }
+
+#[test]
+fn container_markers_keep_lint_ranges_on_the_marker() {
+    for (input, code, expected) in [
+        ("- +\n  b\n", "deprecated-continuation-marker", (1, 3)),
+        (
+            "> - a\n> +\n> b\n",
+            "deprecated-continuation-marker",
+            (2, 3),
+        ),
+        ("- a\n  +\n", "deprecated-continuation-marker", (2, 3)),
+        ("> x\n> - y\n", "list-marker-without-blank-line", (2, 3)),
+        ("> ___\n", "thematic-break-spelling", (1, 3)),
+    ] {
+        assert_eq!(first_position(input, code), expected, "{input:?}");
+    }
+    assert!(
+        !lint("x\n+ y\n", &LintOptions::default())
+            .iter()
+            .any(|d| d.code == "list-marker-without-blank-line")
+    );
+}
+
+#[test]
+fn frontmatter_quote_lint_uses_the_frontmatter_message() {
+    let diagnostics = lint("---\n>foo\n---\n", &LintOptions::default());
+    let finding = diagnostics
+        .iter()
+        .find(|d| d.code == "blockquote-marker-without-space")
+        .expect("frontmatter quote-looking text");
+    let pos = finding.pos.unwrap();
+    assert_eq!(
+        (pos.start_line, pos.start_column, pos.end_column),
+        (2, 1, 2)
+    );
+    assert!(finding.message.contains("frontmatter content"));
+}
+
+#[test]
+fn paragraph_and_strike_rules_respect_visible_nodes() {
+    assert_eq!(first_position("*Title*\n", "emphasis-as-heading"), (1, 1));
+    for input in ["{~a\\~>b~}\n", "{~`a~>b`~}\n", "{~[a~>b](/u)~}\n"] {
+        assert!(
+            !lint(input, &LintOptions::default())
+                .iter()
+                .any(|d| d.code == "deprecated-substitution-arrow")
+        );
+    }
+    assert_eq!(
+        first_position("{~a~>b~}\n", "deprecated-substitution-arrow"),
+        (1, 1)
+    );
+    for input in ["|---|\n| a |\n", "| a |\n| b |\n|---|\n"] {
+        assert!(
+            !lint(input, &LintOptions::default())
+                .iter()
+                .any(|d| d.code == "deprecated-separator-row")
+        );
+    }
+}

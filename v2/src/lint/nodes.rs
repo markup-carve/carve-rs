@@ -364,6 +364,7 @@ fn link(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_
     }
     if let Some(href) = node["href"].as_str() {
         if href.starts_with('#')
+            && sink.options.extensions.is_empty()
             && !href[1..].eq_ignore_ascii_case("top")
             && !ids.contains(&href[1..])
         {
@@ -445,7 +446,6 @@ fn unresolved_reference(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
 
 fn list(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     list_loose(item, sink);
-    list_nested(item, root, sink);
     list_ordered(item, sink);
     list_spacing(item, sink);
     list_indent(item, root, sink);
@@ -463,35 +463,6 @@ fn list_loose(item: &Item<'_>, sink: &mut Sink<'_>) {
         })
     {
         sink.emit("deprecated-loose-attribute", item, &[], 0);
-    }
-}
-
-fn list_nested(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
-    if item.parents.iter().any(|parent| parent == "list_item") {
-        let Some((from, to)) = bounds(item.node) else {
-            return;
-        };
-        let parent = item
-            .path
-            .rsplit_once("/children/")
-            .and_then(|(path, _)| root.pointer(path));
-        let content = parent
-            .and_then(|parent| parent["children"].as_array())
-            .and_then(|children| children.first())
-            .and_then(|first| field(first, "/pos/startColumn").as_u64())
-            .unwrap_or(0);
-        let column = field(item.node, "/pos/startColumn").as_u64().unwrap_or(0);
-        if content > 0 && column > content {
-            let content = content.to_string();
-            sink.emit_range(
-                "list-item-block-overindented",
-                from,
-                to,
-                &item.path,
-                &[("contentColumn", &content)],
-                0,
-            );
-        }
     }
 }
 
@@ -526,16 +497,17 @@ fn list_spacing(item: &Item<'_>, sink: &mut Sink<'_>) {
     if item.node["spacing"] == "tight" {
         if let Some(children) = item.node["children"].as_array() {
             for (index, child) in children.iter().enumerate() {
-                let paragraphs = child["children"].as_array().map_or(0, |blocks| {
-                    blocks
-                        .iter()
-                        .filter(|block| block["type"] == "paragraph")
-                        .count()
-                });
+                let blocks = child["children"].as_array().map_or(0, Vec::len);
                 let raw = bounds(child)
                     .and_then(|(a, b)| sink.source.get(a..b))
                     .unwrap_or("");
-                if paragraphs > 1 && raw.contains("\n\n") {
+                if blocks > 1
+                    && raw.contains("\n\n")
+                    && !raw
+                        .split("\n\n")
+                        .skip(1)
+                        .all(|part| part.trim_start().starts_with("%%"))
+                {
                     if let Some((from, to)) = bounds(child) {
                         sink.emit_range(
                             "tight-list-item-with-blank-line",
@@ -814,7 +786,7 @@ fn table(item: &Item<'_>, sink: &mut Sink<'_>) {
             let row_raw = bounds(row)
                 .and_then(|(a, b)| sink.source.get(a..b))
                 .unwrap_or("");
-            if row_raw.starts_with('|') && row_raw.ends_with('|') {
+            if row_index == 1 && row_raw.starts_with('|') && row_raw.ends_with('|') {
                 let cells_only = row_raw.trim_matches('|').trim();
                 if cells_only.len() >= 3
                     && cells_only
@@ -828,7 +800,7 @@ fn table(item: &Item<'_>, sink: &mut Sink<'_>) {
                 }
             }
             let count = row["children"].as_array().map_or(0, Vec::len);
-            if group["type"] == "table_head" && header_width.is_none() {
+            if header_width.is_none() {
                 header_width = Some(count);
             }
             if let Some(width) = header_width
@@ -986,7 +958,7 @@ fn table_cells(
         cell_alignment(cell, raw, text, &path, sink);
         cell_blocked(cell, text, row_index, cell_index, &path, sink);
         cell_span_attribute(cell, raw, &path, sink);
-        cell_row_attribute(cell, raw, cell_index + 1 == cells.len(), &path, sink);
+        cell_row_attribute(row, cell, raw, cell_index + 1 == cells.len(), &path, sink);
     }
 }
 
@@ -1027,6 +999,9 @@ fn cell_blocked(
 ) {
     if (text == "^" && row_index == 0 || text == "<" && cell_index == 0)
         && cell.get("span").is_none()
+        && !bounds(cell)
+            .and_then(|(from, to)| sink.source.get(from..to))
+            .is_some_and(|raw| raw.contains("\\<"))
     {
         if let Some((from, to)) = bounds(cell) {
             sink.emit_range(
@@ -1042,6 +1017,20 @@ fn cell_blocked(
 }
 
 fn cell_span_attribute(cell: &Value, raw: &str, path: &str, sink: &mut Sink<'_>) {
+    if cell["span"].as_str().is_some()
+        && cell["header"] == false
+        && raw.starts_with('=')
+        && let Some((from, _)) = bounds(cell)
+    {
+        sink.emit_range(
+            "table-span-marker-attribute",
+            from,
+            from + 1,
+            path,
+            &[("marker", "^"), ("direction", "above it")],
+            0,
+        );
+    }
     if let Some(span) = cell["span"].as_str()
         && raw.contains('{')
     {
@@ -1064,10 +1053,23 @@ fn cell_span_attribute(cell: &Value, raw: &str, path: &str, sink: &mut Sink<'_>)
     }
 }
 
-fn cell_row_attribute(cell: &Value, raw: &str, last: bool, path: &str, sink: &mut Sink<'_>) {
-    if last && raw.starts_with('{') && raw.ends_with('}') {
-        if let Some((from, to)) = bounds(cell) {
-            sink.emit_range("table-row-attribute-as-cell", from, to, path, &[], 0);
+fn cell_row_attribute(
+    row: &Value,
+    cell: &Value,
+    raw: &str,
+    last: bool,
+    path: &str,
+    sink: &mut Sink<'_>,
+) {
+    if last
+        && cell.get("attrs").is_none()
+        && crate::attr::parse_glued(raw, 0).is_some_and(|(_, end)| end == raw.len())
+    {
+        if let Some((from, to)) = bounds(row) {
+            let row_path = path
+                .rsplit_once("/children/")
+                .map_or(path, |(parent, _)| parent);
+            sink.emit_range("table-row-attribute-as-cell", from, to, row_path, &[], 0);
         }
     }
 }
@@ -1111,30 +1113,61 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
     {
         let name = pair[0].as_str().unwrap_or("");
         let value = pair[1].as_str().unwrap_or("");
-        if !matches!(name, "abbr" | "time" | "kbd") {
-            continue;
-        }
         if kind == "span" && name == "kbd" && !value.is_empty() {
-            sink.emit(
-                "semantic-attribute-value-ignored",
-                item,
-                &[("name", name)],
-                0,
-            );
-        } else if kind != "span"
-            && let Some((from, _)) = bounds(item.node)
-            && let Some((at, end)) = semantic_attr_key_range(sink.raw(item), name)
-        {
+            let raw = sink.raw(item);
+            if let Some((from, _)) = bounds(item.node)
+                && let Some((at, end)) = semantic_attr_value_range(raw, name)
+            {
+                sink.emit_range(
+                    "semantic-attribute-value-ignored",
+                    from + at,
+                    from + end,
+                    &item.path,
+                    &[("name", name)],
+                    0,
+                );
+            }
+        }
+    }
+    if kind != "span" {
+        for name in ["abbr", "time", "kbd"] {
+            let Some((from, _)) = bounds(item.node) else {
+                continue;
+            };
+            let Some((at, end)) = semantic_attr_key_range(sink.raw(item), name) else {
+                continue;
+            };
+            let raw = sink.raw(item);
+            let value = raw[end..]
+                .strip_prefix('=')
+                .unwrap_or("")
+                .split(|ch: char| ch.is_whitespace() || ch == '}')
+                .next()
+                .unwrap_or("")
+                .to_string();
             sink.emit_range(
                 "semantic-attribute-outside-span",
                 from + at,
                 from + end,
                 &item.path,
-                &[("name", name), ("type", kind), ("value", value)],
+                &[("name", name), ("type", kind), ("value", &value)],
                 0,
             );
         }
     }
+}
+
+fn semantic_attr_value_range(raw: &str, name: &str) -> Option<(usize, usize)> {
+    let (start, key_end) = semantic_attr_key_range(raw, name)?;
+    let value = raw.get(key_end..)?.strip_prefix('=')?;
+    let length = if let Some(quote @ ('\'' | '"')) = value.chars().next() {
+        value.get(1..)?.find(quote).map(|end| end + 2)?
+    } else {
+        value
+            .find(|ch: char| ch.is_whitespace() || ch == '}')
+            .unwrap_or(value.len())
+    };
+    Some((start, key_end + 1 + length))
 }
 
 fn semantic_attr_key_range(raw: &str, name: &str) -> Option<(usize, usize)> {
@@ -1189,11 +1222,7 @@ fn semantic_key_in_block(raw: &str, open: usize, end: usize, name: &str) -> Opti
     found
 }
 
-fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
-    let value = sink.raw(item).to_string();
-    let Some((from, _)) = bounds(item.node) else {
-        return;
-    };
+fn text_delimiters(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
     for (mark, code) in [
         ("**", "markdown-strong-double-star"),
         ("~~", "markdown-strikethrough-double-tilde"),
@@ -1209,7 +1238,16 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
                 && value.as_bytes().get(start + mark.len()) != Some(&byte);
             let close = value.as_bytes().get(to - mark.len() - 1) != Some(&byte)
                 && value.as_bytes().get(to) != Some(&byte);
-            if open && close {
+            let inner = &tail[..end];
+            if open
+                && close
+                && !escaped(value.as_bytes(), start)
+                && !escaped(value.as_bytes(), to - mark.len())
+                && !inner.starts_with(char::is_whitespace)
+                && !inner.ends_with(char::is_whitespace)
+                && !inner.contains("\n\n")
+                && (mark != "**" || !inner.contains('*'))
+            {
                 sink.emit_range(code, from + start, from + to, &item.path, &[], 0);
             }
         }
@@ -1236,6 +1274,14 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
             offset += end;
         }
     }
+}
+
+fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
+    let value = sink.raw(item).to_string();
+    let Some((from, _)) = bounds(item.node) else {
+        return;
+    };
+    text_delimiters(item, sink, &value, from);
     if item.parents.iter().any(|parent| parent == "line_block")
         && value.trim_start().starts_with("%%")
     {
@@ -1252,8 +1298,14 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     emphasis_before_attrs(item, sink, &value, from);
-    if let Some(at) = value.find("{.").filter(|at| *at > 0)
+    if let Some(at) = value
+        .find("{.")
+        .into_iter()
+        .chain(value.find("{#"))
+        .min()
+        .filter(|at| *at > 0)
         && value.get(at..).is_some_and(|tail| tail.contains('}'))
+        && !escaped(value.as_bytes(), at)
         && sink
             .source
             .get(..from + at)
@@ -1273,7 +1325,9 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     sigils(item, sink, &value, from);
-    if sink.options.platforms.iter().any(|p| p == "github") {
+    if sink.options.platforms.iter().any(|p| p == "github")
+        && !item.parents.iter().any(|kind| kind == "footnote")
+    {
         for (at, _) in value.match_indices('#') {
             let digits = value
                 .get(at + 1..)
@@ -1321,7 +1375,10 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
 
 fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: usize) {
     for (at, ch) in raw.char_indices() {
-        if !matches!(ch, '*' | '/') || raw.as_bytes().get(at + 1) != Some(&b'{') {
+        if !matches!(ch, '*' | '/')
+            || raw.as_bytes().get(at + 1) != Some(&b'{')
+            || escaped(raw.as_bytes(), at)
+        {
             continue;
         }
         let Some((_, end)) = crate::attr::parse_glued(raw, at + 1) else {
@@ -1383,6 +1440,7 @@ fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, from: usize) {
         if !matches!(mark, b'*' | b'/')
             || escaped(bytes, at)
             || !bytes.get(at + 1).is_some_and(u8::is_ascii_alphanumeric)
+            || (at > 0 && bytes.get(at - 1) == Some(&b'{'))
             || at > 0
                 && !bytes
                     .get(at - 1)
@@ -1405,6 +1463,11 @@ fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, from: usize) {
 }
 
 fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if item.node["type"] == "code_block"
+        || item.path.contains("/title/") && item.parents.iter().any(|kind| kind == "code_block")
+    {
+        return;
+    }
     let Some((from, _)) = bounds(item.node) else {
         return;
     };
@@ -1517,19 +1580,85 @@ fn emphasis(item: &Item<'_>, sink: &mut Sink<'_>) {
     span_before_attrs(item, sink, '/', "emphasis");
 }
 
+fn paragraph_delimiters(item: &Item<'_>, sink: &mut Sink<'_>) {
+    let raw = sink.raw(item).to_string();
+    if let Some((from, _)) = bounds(item.node) {
+        if raw.contains('\n') {
+            for (mark, code) in [
+                (b'=', "deprecated-bare-highlight"),
+                (b'~', "deprecated-bare-strike"),
+            ] {
+                if let Some((start, end)) = bare_pair(raw.as_bytes(), mark)
+                    && raw.get(start..end).is_some_and(|pair| pair.contains('\n'))
+                {
+                    sink.emit_range(code, from + start, from + end, &item.path, &[], 0);
+                }
+            }
+            if let Some(start) = raw.find("**")
+                && let Some(end) = raw.get(start + 2..).and_then(|tail| tail.find("**"))
+                && raw
+                    .get(start + 2..start + 2 + end)
+                    .is_some_and(|inner| inner.contains('\n') && !inner.contains("\n\n"))
+            {
+                sink.emit_range(
+                    "markdown-strong-double-star",
+                    from + start,
+                    from + start + end + 4,
+                    &item.path,
+                    &[],
+                    0,
+                );
+            }
+        }
+        if let Some(start) = raw.find("{/")
+            && raw
+                .get(start + 2..)
+                .and_then(|tail| tail.find("*/}"))
+                .is_some_and(|end| !escaped(raw.as_bytes(), start + 2 + end))
+            && raw.get(..start).is_some_and(|head| head.contains('*'))
+        {
+            sink.emit_range(
+                "braced-span-opener-as-text",
+                from + start,
+                from + start + 2,
+                &item.path,
+                &[],
+                0,
+            );
+        }
+    }
+}
+
 fn paragraph(item: &Item<'_>, sink: &mut Sink<'_>) {
+    paragraph_delimiters(item, sink);
     let children = item.node["children"].as_array();
     if children.is_some_and(|children| {
-        children.len() == 1
-            && children
-                .first()
-                .is_some_and(|node| node["type"] == "emphasis")
+        let visible: Vec<_> = children
+            .iter()
+            .filter(|node| {
+                node["type"] != "comment"
+                    && !(node["type"] == "text"
+                        && node["value"]
+                            .as_str()
+                            .is_some_and(|text| text.trim().is_empty()))
+            })
+            .collect();
+        visible.len() == 1
+            && visible.first().is_some_and(|node| {
+                matches!(node["type"].as_str(), Some("emphasis" | "strong"))
+                    && node["children"]
+                        .as_array()
+                        .is_some_and(|nodes| !nodes.is_empty())
+            })
     }) {
         sink.emit("emphasis-as-heading", item, &[], 0);
     }
 }
 
 fn strong(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if sink.raw(item).starts_with("*/") || sink.raw(item).ends_with("/*") {
+        sink.emit("comment-shaped-emphasis", item, &[], 0);
+    }
     let content = item.node["children"]
         .as_array()
         .map(|children| {
@@ -1586,7 +1715,17 @@ fn span_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, marker: char, name: &
 }
 
 fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {
-    if sink.raw(item).contains("~>") {
+    if item.node["children"].as_array().is_some_and(|children| {
+        children.iter().any(|child| {
+            child["type"] == "text"
+                && bounds(child)
+                    .and_then(|(from, to)| sink.source.get(from..to))
+                    .is_some_and(|raw| {
+                        raw.match_indices("~>")
+                            .any(|(at, _)| !escaped(raw.as_bytes(), at))
+                    })
+        })
+    }) {
         sink.emit("deprecated-substitution-arrow", item, &[], 0);
     }
     if sink.raw(item).starts_with("{~") {
@@ -1601,6 +1740,9 @@ fn highlight(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn mention(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if item.parents.iter().any(|kind| kind == "footnote") {
+        return;
+    }
     let raw = sink.raw(item).to_string();
     sink.emit(
         "platform-mention-token",
@@ -1624,14 +1766,7 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
                 .get(..open)
                 .is_some_and(|head| head.trim_end().ends_with(']'))
         {
-            sink.emit_range(
-                "comment-in-reference-label",
-                line_start + open,
-                to,
-                &item.path,
-                &[],
-                0,
-            );
+            sink.emit_range("comment-in-reference-label", from, to, &item.path, &[], 0);
         }
         return;
     }
@@ -1722,30 +1857,52 @@ fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
 
 fn bare_pair(text: &[u8], mark: u8) -> Option<(usize, usize)> {
     for start in 0..text.len() {
-        if text.get(start) != Some(&mark)
-            || escaped(text, start)
-            || text
-                .get(start.wrapping_sub(1))
-                .is_some_and(|before| *before == mark || before.is_ascii_alphanumeric())
-            || text
-                .get(start + 1)
-                .is_none_or(|next| *next == mark || next.is_ascii_whitespace())
-        {
+        if !bare_open(text, mark, start) {
             continue;
         }
         for end in start + 2..text.len() {
-            if text.get(end) == Some(&mark)
-                && !escaped(text, end)
-                && text
-                    .get(end - 1)
-                    .is_some_and(|before| *before != mark && !before.is_ascii_whitespace())
-                && !text.get(end + 1).is_some_and(u8::is_ascii_alphanumeric)
-            {
+            if bare_close(text, mark, start, end) {
                 return Some((start, end + 1));
             }
         }
     }
     None
+}
+
+fn bare_open(text: &[u8], mark: u8, start: usize) -> bool {
+    let Some(prefix) = text
+        .get(..start)
+        .and_then(|part| std::str::from_utf8(part).ok())
+    else {
+        return false;
+    };
+    let before = prefix.chars().next_back();
+    text.get(start) == Some(&mark)
+        && !escaped(text, start)
+        && !before.is_some_and(|ch| ch == char::from(mark) || ch.is_alphanumeric())
+        && text
+            .get(start + 1)
+            .is_some_and(|next| *next != mark && !next.is_ascii_whitespace())
+}
+
+fn bare_close(text: &[u8], mark: u8, start: usize, end: usize) -> bool {
+    let after = std::str::from_utf8(text.get(end + 1..).unwrap_or_default())
+        .ok()
+        .and_then(|s| s.chars().next());
+    text.get(end) == Some(&mark)
+        && !escaped(text, end)
+        && text.get(start + 1..end).is_some_and(|inner| {
+            !inner.iter().enumerate().any(|(offset, byte)| {
+                *byte == mark
+                    && text
+                        .get(start + offset)
+                        .is_some_and(|before| !before.is_ascii_whitespace())
+            })
+        })
+        && text
+            .get(end - 1)
+            .is_some_and(|before| *before != mark && !before.is_ascii_whitespace())
+        && !after.is_some_and(char::is_alphanumeric)
 }
 
 fn escaped(text: &[u8], at: usize) -> bool {
@@ -1880,8 +2037,17 @@ fn unused_footnotes(items: &[Item<'_>], sink: &mut Sink<'_>) {
     for item in items.iter().filter(|item| item.node["type"] == "footnote") {
         if let Some(key) = item.node["key"].as_str()
             && !used.contains(key)
+            && let Some((from, _)) = bounds(item.node)
+            && let Some(end) = sink.raw(item).find("]:")
         {
-            sink.emit("unused-footnote-definition", item, &[("label", key)], 0);
+            sink.emit_range(
+                "unused-footnote-definition",
+                from,
+                from + end + 1,
+                &item.path,
+                &[("label", key)],
+                0,
+            );
         }
     }
 }

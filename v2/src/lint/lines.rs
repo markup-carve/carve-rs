@@ -11,7 +11,7 @@ struct Line {
     kind: String,
     paragraph: bool,
     content_start: Option<usize>,
-    opaque: bool,
+    opacity: Opacity,
     attached_attribute: bool,
     scope: Scope,
 }
@@ -19,7 +19,21 @@ struct Line {
 struct Scope {
     in_footnote: bool,
     in_description: bool,
-    in_container: bool,
+    container: ContainerKind,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Opacity {
+    None,
+    Other,
+    Frontmatter,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContainerKind {
+    None,
+    Other,
+    ListItem,
 }
 
 struct Sink<'a> {
@@ -37,6 +51,18 @@ impl Sink<'_> {
         path: &str,
         values: &[(&str, &str)],
     ) {
+        self.emit_nth(code, from, to, path, values, 0);
+    }
+
+    fn emit_nth(
+        &mut self,
+        code: &'static str,
+        from: usize,
+        to: usize,
+        path: &str,
+        values: &[(&str, &str)],
+        message: usize,
+    ) {
         if !active(code, self.options) {
             return;
         }
@@ -47,7 +73,7 @@ impl Sink<'_> {
                     p.start_offset < pos.end_offset && pos.start_offset < p.end_offset
                 }))
         });
-        let mut diagnostic = Diagnostic::new(code, values, None, Some(pos));
+        let mut diagnostic = Diagnostic::nth(code, message, values, None, Some(pos));
         diagnostic.path = Some(path.to_string());
         self.output.push(diagnostic);
     }
@@ -78,7 +104,10 @@ pub(super) fn scan(
         output,
     };
     for (index, line) in lines.iter().enumerate() {
-        if line.opaque {
+        if line.opacity != Opacity::None {
+            if line.opacity == Opacity::Frontmatter {
+                frontmatter_quote_marker(line, &mut sink);
+            }
             continue;
         }
         let previous = index.checked_sub(1).and_then(|i| lines.get(i));
@@ -86,6 +115,27 @@ pub(super) fn scan(
         legacy(line, previous, &mut sink);
         prose(line, previous, &lines, &mut sink);
     }
+}
+
+fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
+    let raw = sink
+        .source
+        .text()
+        .get(line.start..line.start + line.text.len())
+        .unwrap_or("");
+    if !raw.starts_with('>') || raw.len() == 1 || raw.starts_with("> ") {
+        return;
+    }
+    let pos = sink.source.pos(line.start, line.start + 1);
+    let mut finding = Diagnostic::nth(
+        "blockquote-marker-without-space",
+        1,
+        &[("text", raw.get(1..).unwrap_or(""))],
+        None,
+        Some(pos),
+    );
+    finding.path = Some(line.path.clone());
+    sink.output.push(finding);
 }
 
 fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
@@ -104,6 +154,9 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
                 && r.start_line <= number
                 && number <= r.end_line
         });
+        let frontmatter = ranges
+            .iter()
+            .any(|r| r.kind == "frontmatter" && r.start_line <= number && number <= r.end_line);
         let mut bytes = raw.as_bytes().to_vec();
         for range in ranges.iter().filter(|r| is_opaque_leaf(&r.kind)) {
             let from = range.start.saturating_sub(start).min(bytes.len());
@@ -125,7 +178,13 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             content_start: paragraph
                 .filter(|range| range.start_line == number)
                 .map(|range| range.start.saturating_sub(start).min(raw.len())),
-            opaque,
+            opacity: if frontmatter {
+                Opacity::Frontmatter
+            } else if opaque {
+                Opacity::Other
+            } else {
+                Opacity::None
+            },
             attached_attribute: paragraph
                 .is_some_and(|range| range.has_attrs && range.start_line == number),
             scope: scope(ranges, number),
@@ -140,12 +199,12 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             kind: String::new(),
             paragraph: false,
             content_start: None,
-            opaque: false,
+            opacity: Opacity::None,
             attached_attribute: false,
             scope: Scope {
                 in_footnote: false,
                 in_description: false,
-                in_container: false,
+                container: ContainerKind::None,
             },
         });
     }
@@ -158,18 +217,26 @@ fn scope(ranges: &[Range], number: usize) -> Scope {
             .iter()
             .any(|r| r.kind == kind && r.start_line <= number && number <= r.end_line)
     };
+    let in_list_item = contains("list_item");
+    let in_container = [
+        "block_quote",
+        "list_item",
+        "div",
+        "definition_description",
+        "footnote",
+    ]
+    .iter()
+    .any(|kind| contains(kind));
     Scope {
         in_footnote: contains("footnote"),
         in_description: contains("definition_description"),
-        in_container: [
-            "block_quote",
-            "list_item",
-            "div",
-            "definition_description",
-            "footnote",
-        ]
-        .iter()
-        .any(|kind| contains(kind)),
+        container: if in_list_item {
+            ContainerKind::ListItem
+        } else if in_container {
+            ContainerKind::Other
+        } else {
+            ContainerKind::None
+        },
     }
 }
 
@@ -211,7 +278,7 @@ fn spaced_run(text: &str) -> bool {
 
 pub(super) fn list_marker(text: &str) -> bool {
     let bytes = text.as_bytes();
-    if bytes.get(1) == Some(&b' ') && bytes.first().is_some_and(|b| b"-*+".contains(b)) {
+    if bytes.get(1) == Some(&b' ') && bytes.first().is_some_and(|b| b"-*".contains(b)) {
         return true;
     }
     let digits = bytes
@@ -235,9 +302,56 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.trim();
     let content_start = line.content_start.unwrap_or(0);
     let content = line.text.get(content_start..).unwrap_or("").trim_start();
-    if text == "+" {
-        sink.whole("deprecated-continuation-marker", line, &[]);
+    let (prefix, tail) = marker_tail(&line.text);
+    continuation_marker(line, prefix, tail, sink);
+    quote_list_marker(line, previous, sink);
+    thematic_marker(line, previous, text, prefix, tail, sink);
+    marker_as_text(line, content_start, content, sink);
+    attribute_line_like(line, sink);
+    if line.text.starts_with('>')
+        && text.len() > 1
+        && !text.starts_with("> ")
+        && !text.starts_with(">\t")
+    {
+        sink.emit(
+            "blockquote-marker-without-space",
+            line.start,
+            line.start + 1,
+            &line.path,
+            &[("text", text.get(1..).unwrap_or(""))],
+        );
     }
+    table_line(line, sink);
+}
+
+fn continuation_marker(line: &Line, prefix: usize, tail: &str, sink: &mut Sink<'_>) {
+    if tail.trim_end() == "+" {
+        let message = if line.text.trim_start().starts_with("- +")
+            || line.text.trim_start().starts_with("* +")
+        {
+            2
+        } else {
+            usize::from(line.scope.container == ContainerKind::ListItem)
+        };
+        sink.emit_nth(
+            "deprecated-continuation-marker",
+            line.start + prefix,
+            line.start + prefix + 1,
+            &line.path,
+            &[],
+            message,
+        );
+    }
+}
+
+fn thematic_marker(
+    line: &Line,
+    previous: Option<&Line>,
+    text: &str,
+    prefix: usize,
+    tail: &str,
+    sink: &mut Sink<'_>,
+) {
     if run(text, "-_", 3) {
         let is_setext = text.starts_with('-')
             && previous.is_some_and(|p| p.paragraph && !p.text.trim().is_empty());
@@ -250,20 +364,48 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     if spaced_run(text) {
         sink.whole("deprecated-spaced-thematic-break", line, &[]);
     }
-    marker_as_text(line, content_start, content, sink);
-    attribute_line_like(line, sink);
-    if line.text.starts_with('>')
-        && text.len() > 1
-        && !text.starts_with("> ")
-        && !text.starts_with(">\t")
-    {
-        sink.whole(
-            "blockquote-marker-without-space",
-            line,
-            &[("text", text.get(1..).unwrap_or(""))],
+    if prefix > 0 && run(tail.trim_end(), "-_", 3) {
+        let end = tail.trim_end().len();
+        sink.emit(
+            "thematic-break-spelling",
+            line.start + prefix,
+            line.start + prefix + end,
+            &line.path,
+            &[("raw", tail.trim_end())],
         );
     }
-    table_line(line, sink);
+}
+
+fn quote_list_marker(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    if line.text.starts_with("> ")
+        && previous.is_some_and(|p| p.text.starts_with("> "))
+        && line.text.strip_prefix("> ").is_some_and(list_marker)
+    {
+        sink.emit(
+            "list-marker-without-blank-line",
+            line.start + 2,
+            line.start + 3,
+            &line.path,
+            &[],
+        );
+    }
+}
+
+fn marker_tail(text: &str) -> (usize, &str) {
+    let mut offset = text.len() - text.trim_start_matches([' ', '\t']).len();
+    let mut rest = &text[offset..];
+    loop {
+        let prefix = if rest.starts_with("> ") || rest.starts_with("- ") || rest.starts_with("* ") {
+            2
+        } else {
+            0
+        };
+        if prefix == 0 {
+            return (offset, rest);
+        }
+        offset += prefix;
+        rest = &rest[prefix..];
+    }
 }
 
 fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut Sink<'_>) {
@@ -305,7 +447,8 @@ fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn table_line(line: &Line, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
+    let (prefix, tail) = marker_tail(&line.text);
+    let text = tail.trim_end();
     for (at, _) in line.text.match_indices("|=") {
         if let Some(mark) = line.text.as_bytes().get(at + 2)
             && matches!(mark, b'<' | b'>' | b'~')
@@ -322,15 +465,31 @@ fn table_line(line: &Line, sink: &mut Sink<'_>) {
             );
         }
     }
-    if line.paragraph && text.starts_with('|') && !text.ends_with('|') {
+    if text.starts_with('|')
+        && text.len() > 1
+        && (!text.ends_with('|') || source_escaped(text.as_bytes(), text.len() - 1))
+        && !text.contains("%%")
+    {
         let owner = match line.kind.as_str() {
             "caption" => "caption",
             "definition_term" => "term",
             _ => "paragraph",
         };
-        sink.whole("table-shaped-paragraph", line, &[("owner", owner)]);
+        sink.emit(
+            "table-shaped-paragraph",
+            line.start + prefix,
+            line.start + prefix + text.len(),
+            &line.path,
+            &[("owner", owner)],
+        );
         if text.matches('|').count() >= 2 {
-            sink.whole("table-row-without-closing-pipe", line, &[]);
+            sink.emit(
+                "table-row-without-closing-pipe",
+                line.start + prefix,
+                line.start + prefix + text.len(),
+                &line.path,
+                &[],
+            );
         }
     }
 }
@@ -402,7 +561,7 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         && text
             .find("]:")
             .is_some_and(|at| at > 1 && at + 2 < text.len())
-        && (line.text.starts_with([' ', '\t']) || line.scope.in_container)
+        && (line.text.starts_with([' ', '\t']) || line.scope.container != ContainerKind::None)
         && let Some(start) = line.text.find('[')
         && let Some(end) = line.text.get(start..).and_then(|rest| rest.find("]:"))
     {
@@ -469,12 +628,25 @@ fn prose(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'
 fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
     let trimmed = text.trim();
-    if line.paragraph && trimmed.starts_with('[') && trimmed.ends_with("]:") && trimmed.len() >= 4 {
+    blank_reference_label(line, sink);
+    if line.paragraph
+        && trimmed.starts_with('[')
+        && trimmed.ends_with("]:")
+        && trimmed.len() >= 4
+        && {
+            let label = trimmed[1..trimmed.len() - 2].trim();
+            !label.is_empty()
+                && !label
+                    .strip_prefix('^')
+                    .is_some_and(|rest| rest.trim().is_empty())
+        }
+    {
         sink.whole("empty-reference-definition", line, &[]);
     }
     unattached_attribute(line, sink);
     if let Some(at) = text.find("<!--")
         && line.paragraph
+        && !source_escaped(text.as_bytes(), at)
     {
         if let Some(close) = text.get(at + 4..).and_then(|s| s.find("-->")) {
             sink.emit(
@@ -488,6 +660,27 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
     }
     link_gap(line, sink);
     empty_include_path(line, sink);
+}
+
+fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
+    let text = line.text.as_str();
+    for (open, _) in text.match_indices('[') {
+        let Some(close) = text[open + 1..].find(']').map(|at| open + 1 + at) else {
+            continue;
+        };
+        let label = text[open + 1..close]
+            .strip_prefix('^')
+            .unwrap_or(&text[open + 1..close]);
+        if label.trim().is_empty() {
+            sink.emit(
+                "blank-reference-label",
+                line.start + open,
+                line.start + close + 1,
+                &line.path,
+                &[],
+            );
+        }
+    }
 }
 
 fn empty_include_path(line: &Line, sink: &mut Sink<'_>) {
@@ -573,6 +766,23 @@ fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
         && previous.is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty())
 }
 
+fn block_opener_width(trimmed: &str) -> usize {
+    if trimmed.starts_with("::") {
+        2
+    } else if trimmed.starts_with(['#', '=']) {
+        trimmed
+            .bytes()
+            .take_while(|byte| matches!(byte, b'#' | b'='))
+            .count()
+    } else if trimmed.starts_with('{') {
+        trimmed.find('}').map_or(1, |end| end + 1)
+    } else if trimmed.starts_with('[') {
+        trimmed.find("]:").map_or(1, |end| end + 2)
+    } else {
+        1
+    }
+}
+
 fn prose_block_opener(line: &Line, previous: Option<&Line>, trimmed: &str, sink: &mut Sink<'_>) {
     if !starts_block(trimmed)
         || (trimmed.starts_with('{') && !trimmed.ends_with('}'))
@@ -595,9 +805,13 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, trimmed: &str, sink:
     } else {
         "a definition"
     };
-    sink.whole(
+    let prefix = line.text.len() - line.text.trim_start().len();
+    let marker = block_opener_width(trimmed);
+    sink.emit(
         "block-opener-without-blank-line",
-        line,
+        line.start + prefix,
+        line.start + prefix + marker,
+        &line.path,
         &[("opener", opener)],
     );
 }
@@ -626,6 +840,9 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
     let Some(at) = line.text.find('<') else {
         return;
     };
+    if source_escaped(line.text.as_bytes(), at) {
+        return;
+    }
     if line.text.get(at..).is_some_and(|s| s.starts_with("<!--")) {
         return;
     }
@@ -649,6 +866,17 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
         &line.path,
         &[],
     );
+}
+
+fn source_escaped(text: &[u8], at: usize) -> bool {
+    text.get(..at)
+        .unwrap_or(&[])
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\\')
+        .count()
+        % 2
+        == 1
 }
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
@@ -678,22 +906,32 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     }
 }
 
-fn caption_looking(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
-    let above = previous.filter(|p| !p.text.trim().is_empty()).or_else(|| {
-        lines
-            .iter()
-            .rev()
-            .find(|p| p.start < line.start && !p.text.trim().is_empty())
-    });
-    if !line.paragraph
-        || !above.is_some_and(|p| {
-            p.text.trim_start().starts_with('|') || p.text.trim_start().starts_with("![")
-        })
-    {
+fn caption_looking(line: &Line, _previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
+    if !line.paragraph || !caption_like(line.text.trim_start()) {
         return;
     }
-    if caption_like(line.text.trim_start()) {
-        sink.whole("caption-looking-paragraph", line, &[]);
+    let Some(index) = lines.iter().position(|other| other.start == line.start) else {
+        return;
+    };
+    let below = lines
+        .iter()
+        .skip(index + 1)
+        .take(2)
+        .any(|other| other.text.trim_start().starts_with('|'));
+    let above = lines.iter().take(index).rev().take(2).any(|other| {
+        let text = other.text.trim_start();
+        text.starts_with('|') || text.starts_with("![")
+    });
+    if below || above {
+        let prefix = line.text.len() - line.text.trim_start().len();
+        sink.emit_nth(
+            "caption-looking-paragraph",
+            line.start + prefix,
+            line.start + prefix + 1,
+            &line.path,
+            &[],
+            usize::from(!below),
+        );
     }
 }
 
