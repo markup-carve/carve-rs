@@ -301,10 +301,14 @@ fn prepare<'a>(
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
     for (id, pos, at) in dups {
         let file = files.as_ref().and_then(|f| f.file_at(at));
-        let pos = if file.is_none() {
-            id_range(&src, &id, pos).or(pos)
+        let pos = if let Some(name) = file {
+            files
+                .as_ref()
+                .and_then(|f| f.sources().find(|(id, _)| *id == name))
+                .and_then(|(_, text)| id_range(&source::Source::new(text), &id, pos))
+                .or(pos)
         } else {
-            pos
+            id_range(&src, &id, pos).or(pos)
         };
         diags.push(diagnostic::Diagnostic::new(
             "duplicate-id",
@@ -390,7 +394,9 @@ fn id_attribute_range(
     end: usize,
 ) -> Option<ast::Pos> {
     let raw = src.text().get(start..end)?;
-    let mut found = None;
+    let first_line_end = raw.find('\n').unwrap_or(raw.len());
+    let mut on_first_line = None;
+    let mut last = None;
     for (open, _) in raw.match_indices('{') {
         let Some((block, close)) = attr::parse_block(raw, open) else {
             continue;
@@ -400,10 +406,18 @@ fn id_attribute_range(
         }
         let body = raw.get(open + 1..close - 1)?;
         if let Some((from, to)) = authored_id_token(body) {
-            found = Some(src.pos(start + open + 1 + from, start + open + 1 + to));
+            let range = src.pos(start + open + 1 + from, start + open + 1 + to);
+            if open < first_line_end && on_first_line.is_none() {
+                on_first_line = Some(range);
+            }
+            last = Some(range);
         }
     }
-    found
+    if raw.contains('\n') && !raw.starts_with('[') {
+        on_first_line.or(last)
+    } else {
+        last
+    }
 }
 
 fn authored_id_token(body: &str) -> Option<(usize, usize)> {
@@ -415,14 +429,18 @@ fn authored_id_token(body: &str) -> Option<(usize, usize)> {
             index += 1;
         }
         let start = index;
-        let mut quoted = false;
+        let mut quote = None;
         let mut escaped = false;
         while let Some(&byte) = bytes.get(index) {
-            if byte == b' ' && !quoted {
+            if byte == b' ' && quote.is_none() {
                 break;
             }
-            if byte == b'"' && !escaped {
-                quoted = !quoted;
+            if matches!(byte, b'"' | b'\'') && !escaped {
+                if quote == Some(byte) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(byte);
+                }
             }
             escaped = byte == b'\\' && !escaped;
             index += 1;
