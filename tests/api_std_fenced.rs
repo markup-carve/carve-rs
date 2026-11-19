@@ -100,7 +100,10 @@ fn json_mode_wraps_the_body_in_a_script_and_guards_the_close() {
     assert_eq!(guarded.matches("</script>").count(), 1);
     // `<!--` then `<script` would keep the closing tag from closing the element.
     assert_eq!(
-        html("```chart\n{\"x\": \"<!--<script>\"}\n```", extensions::chart(preset())),
+        html(
+            "```chart\n{\"x\": \"<!--<script>\"}\n```",
+            extensions::chart(preset())
+        ),
         r#"<div class="chart" role="img" aria-label="chart"><script type="application/json">{"x": "<\u0021--<script>"}</script></div>"#
     );
 }
