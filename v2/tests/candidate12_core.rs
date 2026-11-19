@@ -449,8 +449,10 @@ fn c2_i_074_image_alt_removes_only_punctuation_escapes() {
 
 #[test]
 fn c2_b_197_block_image_uses_inline_comment_closer_rule() {
+    // D2 (18 November): `%%` directly after a braced opener is text, so the
+    // first `]` closes the bracket and no image forms (C2-I-023).
     let html = carve2::render("![{*%%]*}]()\n", &Options::default());
-    assert_eq!(html, "<img src=\"\" alt=\"{*%%]*}\">");
+    assert_eq!(html, "<p>![<strong>%%]</strong>]()</p>");
 }
 
 #[test]

@@ -498,37 +498,24 @@ impl<'a> Scanner<'_, '_, 'a> {
         true
     }
 
-    /// C2-I-023: a line comment takes the spaces before it and the rest of its line.
+    /// C2-I-023, C2-I-024: a line comment takes the spaces before it and the
+    /// rest of its line, every closer on it included; `%%` directly after an
+    /// opener is text. An image alt is source, so `%%` in it is text (C2-I-074).
     fn line_comment(&mut self) -> bool {
         let i = self.i;
-        let at_content_start = self
+        let in_alt = self
             .brackets
-            .last()
-            .is_some_and(|bracket| bracket.inner == i)
-            || self
-                .open_delims
-                .last()
-                .is_some_and(|mark| mark.braced && mark.at + 2 == i);
-        if self.env.kind == ContentKind::LineBlockLine
-            || !(atoms::comment_start(self.t, i) || at_content_start)
+            .iter()
+            .any(|b| matches!(b.kind, BKind::Image { .. }));
+        if self.env.kind == ContentKind::LineBlockLine || in_alt || !atoms::comment_start(self.t, i)
         {
             return false;
         }
-        let line_end = self
+        let end = self
             .t
             .get(i..)
             .and_then(|s| s.find('\n'))
             .map_or(self.t.len(), |e| e + i);
-        let in_reference_label = self
-            .brackets
-            .last()
-            .and_then(|bracket| self.toks.get(bracket.tok))
-            .is_some_and(|token| token.v0 > 0 && self.at(token.v0 - 1) == Some(b']'));
-        let end = if in_reference_label {
-            line_end
-        } else {
-            self.comment_closer(i + 2, line_end).unwrap_or(line_end)
-        };
         let mut start = i;
         if let Some(f) = self.text_from {
             while start > f && matches!(self.at(start - 1), Some(b' ' | b'\t')) {
@@ -548,19 +535,6 @@ impl<'a> Scanner<'_, '_, 'a> {
         self.i = start;
         self.leaf(start, end, node, false);
         true
-    }
-
-    fn comment_closer(&self, from: usize, end: usize) -> Option<usize> {
-        let bracket = self.brackets.last();
-        let braced = self.open_delims.iter().rev().find(|mark| mark.braced);
-        match (bracket, braced) {
-            (Some(b), Some(m)) if m.at >= b.inner => {
-                find_braced_comment_close(self.t, from, end, m.mark)
-            }
-            (Some(_), _) => find_bracket_comment_close(self.t, from, end),
-            (None, Some(m)) => find_braced_comment_close(self.t, from, end, m.mark),
-            (None, None) => None,
-        }
     }
 
     fn angle(&mut self) -> bool {
@@ -1235,65 +1209,6 @@ fn unescape_alt(source: &str) -> String {
         }
     }
     out
-}
-
-fn comment_scan_step(source: &str, at: usize, end: usize) -> usize {
-    let bytes = source.as_bytes();
-    match bytes.get(at) {
-        Some(b'\\') => (at + 2).min(end),
-        Some(b'`') => {
-            let code = atoms::code_span(source, at);
-            if code.closed && code.end <= end {
-                code.end
-            } else {
-                end
-            }
-        }
-        _ => at + 1,
-    }
-}
-
-pub(crate) fn find_bracket_comment_close(source: &str, from: usize, end: usize) -> Option<usize> {
-    let bytes = source.as_bytes();
-    let mut depth = 0usize;
-    let mut at = from;
-    while at < end {
-        match bytes.get(at).copied().unwrap_or_default() {
-            b'[' => depth += 1,
-            b']' if depth == 0 => return Some(at),
-            b']' => depth -= 1,
-            _ => {}
-        }
-        at = comment_scan_step(source, at, end);
-    }
-    None
-}
-
-pub(crate) fn find_braced_comment_close(
-    source: &str,
-    from: usize,
-    end: usize,
-    mark: char,
-) -> Option<usize> {
-    let bytes = source.as_bytes();
-    let mark = u8::try_from(u32::from(mark)).ok()?;
-    let mut depth = 0usize;
-    let mut at = from;
-    while at < end {
-        if bytes.get(at) == Some(&b'{') && bytes.get(at + 1) == Some(&mark) {
-            depth += 1;
-            at += 2;
-        } else if bytes.get(at) == Some(&mark) && bytes.get(at + 1) == Some(&b'}') {
-            if depth == 0 {
-                return Some(at);
-            }
-            depth -= 1;
-            at += 2;
-        } else {
-            at = comment_scan_step(source, at, end);
-        }
-    }
-    None
 }
 
 /// The `=` of a first part `key=` of the brace block at `i`.
