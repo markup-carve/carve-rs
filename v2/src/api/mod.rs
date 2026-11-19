@@ -598,13 +598,26 @@ pub fn parse<'a>(input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Er
     let input = input.into();
     check_length(input.len(), opts)?;
     let top = opts.includes.as_ref().and_then(|i| i.file.clone());
+    // The engine's own tree skips the reader checks, which cost about 70
+    // times the parse (carve-rs#4336); a decoded tree still runs them.
     match input {
         Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err() => {
             let arena = Arena::new();
             let doc = crate::try_parse_resolved_bytes_in(bytes, opts, &arena)?;
-            Tree::read(&crate::to_json(&doc), top)
+            Ok(Tree {
+                document: doc.owned(),
+                json: crate::to_json(&doc),
+                top,
+            })
         }
-        _ => Tree::read(&crate::tree_json(&input.text(), opts), top),
+        _ => match crate::tree_parts(&input.text(), opts) {
+            Some((json, document)) => Ok(Tree {
+                document,
+                json,
+                top,
+            }),
+            None => Tree::read("", top),
+        },
     }
 }
 

@@ -905,12 +905,37 @@ pub fn tree_json(input: &str, opts: &Options) -> String {
     if files.is_none() && opts.includes.is_none() {
         return to_json(&doc);
     }
-    let mut v = serde_json::to_value(&doc).unwrap_or_default();
+    stamped_value(&doc).to_string()
+}
+
+#[doc(hidden)]
+/// [`tree_json`] together with the owned tree of the same parse, for a
+/// caller that needs both without reading its own output back through the
+/// tree reader. `None` where [`tree_json`] gives no tree.
+#[must_use]
+pub fn tree_parts(input: &str, opts: &Options) -> Option<(String, ast::owned::Document)> {
+    let arena = Arena::for_input(input);
+    let (doc, _, files) = prepare(input, opts, &arena, &mut Vec::new()).ok()?;
+    if files.is_none() && opts.includes.is_none() {
+        return Some((to_json(&doc), doc.owned()));
+    }
+    let mut v = stamped_value(&doc);
+    let json = v.to_string();
+    if let Some(m) = v.as_object_mut() {
+        m.remove("type");
+    }
+    // The owned positions carry the file stamps, which `doc.owned()` lacks.
+    let owned = serde_json::from_value(v).ok()?;
+    Some((json, owned))
+}
+
+fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {
+    let mut v = serde_json::to_value(doc).unwrap_or_default();
     if let Some(m) = v.as_object_mut() {
         m.insert("type".into(), "document".into());
     }
     include::stamp_files(&mut v, None);
-    v.to_string()
+    v
 }
 
 #[doc(hidden)]

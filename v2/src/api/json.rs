@@ -29,7 +29,8 @@ pub fn call(request: &str) -> String {
         Err(e) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
     match response {
-        Ok(result) => json!({ "ok": result }).to_string(),
+        Ok(Reply::Value(result)) => json!({ "ok": result }).to_string(),
+        Ok(Reply::Tree(fields, tree)) => with_tree(fields, &tree),
         Err(e) => json!({ "error": {
             "name": e.spec_name(),
             "category": e.category(),
@@ -51,7 +52,30 @@ pub fn status(response: &str) -> i32 {
         .unwrap_or(0)
 }
 
-fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
+/// A result, or the members of a parse result and its tree as the JSON text
+/// the engine wrote: reading that text into a `Value` only to write it again
+/// cost several times the parse (carve-rs#4336).
+enum Reply {
+    Value(Value),
+    Tree(Map<String, Value>, String),
+}
+
+fn with_tree(fields: Map<String, Value>, tree: &str) -> String {
+    let head = Value::Object(fields).to_string();
+    let mut out = String::with_capacity(tree.len() + head.len() + 16);
+    out.push_str(r#"{"ok":"#);
+    out.push_str(&head[..head.len() - 1]);
+    if head.len() > 2 {
+        out.push(',');
+    }
+    // `tree` sorts after every other member, as the map would place it.
+    out.push_str(r#""tree":"#);
+    out.push_str(tree);
+    out.push_str("}}");
+    out
+}
+
+fn dispatch(host: &Carve, req: &Value) -> Result<Reply, Error> {
     let name = req
         .get("call")
         .and_then(Value::as_str)
@@ -64,8 +88,10 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
         enabled = with_extensions(host, &opts)?;
         &enabled
     };
+    if matches!(name, "parse" | "parseWithDiagnostics" | "parseWithLayout") {
+        return parse_call(host, name, req, &opts);
+    }
     match name {
-        "parse" | "parseWithDiagnostics" | "parseWithLayout" => parse_call(host, name, req, &opts),
         "render" | "renderWithDiagnostics" => render_call(host, name, req, &opts),
         "lint" => lint_call(req, &opts),
         "format" | "formatWithDiagnostics" => format_call(host, name, req, &opts),
@@ -76,6 +102,7 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
         }),
         _ => tree_call(name, req),
     }
+    .map(Reply::Value)
 }
 
 fn with_extensions(host: &Carve, opts: &CallOptions) -> Result<Carve, Error> {
@@ -124,7 +151,7 @@ fn tree_call(name: &str, req: &Value) -> Result<Value, Error> {
     })
 }
 
-fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Reply, Error> {
     let bytes = source(req)?;
     let positions = req
         .get("positions")
@@ -146,11 +173,7 @@ fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Resu
         host.parse(input(&bytes), &opts.options)?
     };
     let encoded = super::encode_tree_with(&tree, EncodeOptions { positions });
-    out.insert(
-        "tree".into(),
-        serde_json::from_str(&encoded).unwrap_or(Value::Null),
-    );
-    Ok(Value::Object(out))
+    Ok(Reply::Tree(out, encoded))
 }
 
 fn render_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
