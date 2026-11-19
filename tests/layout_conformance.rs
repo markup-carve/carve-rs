@@ -78,3 +78,16 @@ fn invalid_utf8_keeps_original_bytes_and_byte_ranges() {
     assert_eq!(result.layout["nodes"][0]["startByte"], 0);
     assert_eq!(result.layout["nodes"][0]["endByte"], 3);
 }
+
+#[test]
+fn reference_spelling_stops_before_attributes_with_brackets() {
+    let source = "[a][b]{title=\"]\"}\n\n[b]: u\n";
+    let result = api::parse_with_layout(source, &Options::default()).unwrap();
+    let reference = result.layout["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node.get("rawRef").is_some())
+        .unwrap();
+    assert_eq!(reference["rawRef"], "[a][b]");
+}

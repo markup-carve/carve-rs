@@ -266,6 +266,8 @@ impl Walk<'_> {
             .unwrap_or(byte)
     }
 
+    // Each arm measures one independent block family; keep the dispatch in source order.
+    #[allow(clippy::cognitive_complexity)]
     fn facts(
         &self,
         ty: &str,
@@ -636,8 +638,8 @@ impl Walk<'_> {
             }
             raw.push_str(rest);
         }
-        if let Some(last) = raw.rfind(']') {
-            raw.truncate(last + 1);
+        if let Some(stop) = reference_label_end(&raw) {
+            raw.truncate(stop);
         }
         self.nodes
             .push(json!({"path":path,"startByte":byte_start,"endByte":byte_end,"rawRef":raw}));
@@ -742,6 +744,30 @@ impl Walk<'_> {
             .push(json!({"path":path,"startByte":origin.start,"endByte":cell_end,"wraps":wraps}));
         let _ = first;
     }
+}
+
+fn reference_label_end(raw: &str) -> Option<usize> {
+    fn close(raw: &[u8], from: usize) -> Option<usize> {
+        if raw.get(from) != Some(&b'[') { return None; }
+        let mut depth = 1usize;
+        let mut at = from + 1;
+        while at < raw.len() {
+            match raw[at] {
+                b'\\' => at += 1,
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 { return Some(at + 1); }
+                }
+                _ => {}
+            }
+            at += 1;
+        }
+        None
+    }
+    let bytes = raw.as_bytes();
+    let first = close(bytes, 0)?;
+    if bytes.get(first) == Some(&b'[') { close(bytes, first) } else { Some(first) }
 }
 
 fn is_block(ty: &str) -> bool {
