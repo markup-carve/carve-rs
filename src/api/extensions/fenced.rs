@@ -130,6 +130,12 @@ impl Look {
     }
 }
 
+/// `</` would close the script early, and `<!--` followed by `<script` would
+/// keep the closing tag from closing it; both are rewritten as JSON escapes.
+fn guard_script(source: &str) -> String {
+    source.replace("</", "<\\/").replace("<!--", "<\\u0021--")
+}
+
 struct Interactive(Arc<Look>);
 
 impl Renderer for Interactive {
@@ -139,7 +145,7 @@ impl Renderer for Interactive {
         let body = match look.mode {
             ContentMode::Json => format!(
                 r#"<script type="application/json">{}</script>"#,
-                source.replace("</", "<\\/")
+                guard_script(source)
             ),
             // `>` stays so arrow syntax reaches the client library as written.
             ContentMode::Text => source.replace('&', "&amp;").replace('<', "&lt;"),
