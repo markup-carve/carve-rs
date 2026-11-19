@@ -153,7 +153,7 @@ The render calls of a host with extensions (`Carve::render`, `render_with_diagno
 2. Each qualified extension node is rendered by the renderer of the channel that `Options::mode` selects: `Channel::Interactive` for `interactive`, `Channel::BuildTime` for `static` (C2-X-052). With no renderer in that channel the fallback is written and `extension-fallback-rendered` reported (C2-X-035).
 3. A failing transform keeps its input view and reports `extension-transform-failed`; a failing renderer writes the fallback and reports `extension-renderer-failed`. Both entries name the extension (C2-X-050).
 
-A renderer receives the node as its JSON value and a `RenderContext` with the options, the mode, `escape`, `escape_attribute`, `render_blocks` and `render_inlines`. With no extension registered the host methods are the free functions, so the output does not change.
+A renderer receives the node as its JSON value and a `RenderContext` with the options, the mode, `escape`, `escape_attribute`, `render_blocks`, `render_inlines`, `plain_text`, `label` (the `labels` option), `next_id` (a control id no authored or earlier id takes, C2-X-048) and `attributes` (the attribute list of an element, written by the core rules, C2-X-033). With no extension registered the host methods are the free functions, so the output does not change.
 
 Over JSON, `host.documentTransforms` registers transforms that need no host code: each `{"name", "after", "insert"}` inserts the node `insert` after the node at the JSON pointer `after`. This is the form of the conformance host:
 
@@ -173,6 +173,25 @@ The same call enables the other standard extensions, all provisional:
 
 - `carve.wiki` and `carve.cite` claim `:wiki[...]` and `:cite[...]` (C2-X-057, C2-X-058). They have no standard renderer, so the content renders as plain text and attributes such as `locator` stay on the node.
 - `carve.imgFence.img` and `carve.imgFence.image` claim `img` and `image` code fences whose body is SVG (C2-X-059). Their standard renderer writes one `<img>` with a sanitized `data:image/svg+xml` URL; SVG it cannot sanitize keeps the code block and reports `extension-renderer-failed`.
+- `carve.fencedRender.<word>` for `mermaid`, `d2`, `dot`, `graphviz`, `wavedrom`, `abc`, `plantuml`, `puml`, `vega-lite` and `chart`: the diagram fence of that word as `<pre class="mermaid" role="img" aria-label="mermaid">` with the escaped source (`vega-lite` and `chart` as a JSON `<script>` in a `<div>`), for a client library to draw.
+- `carve.mathBlock`: a `math` fence as `<div class="math display">\[...\]</div>`.
+- `carve.codeGroup`: a `code-group` div whose body is code blocks as one switcher (radio inputs; one headed section per panel in `static` mode).
+- `carve.codeCallouts`: a document transform that turns a trailing `<n>` on a code line into a callout bubble and a following `<n> text` paragraph into its list.
+
+These come from `api::extensions`, the matcher surface of C2-X-005 to C2-X-031 with the ported carve-js standard extensions. A factory returns a `Bundle` of extensions and matchers that `Carve::register` adds; the factories take the options the JSON form cannot carry, such as a build-time renderer for `static` mode (`build`), a highlighter or the `aria` mode of `code_group`. Without a build-time renderer, `static` mode writes the fallback code block (C2-X-052). Two matchers of one source name fail at registration (C2-X-014).
+
+```rust
+use carve::api::{Carve, Options, extensions};
+
+let mut carve = Carve::new();
+carve.register(extensions::Bundle::merge([
+    extensions::presets(extensions::PresetBuilders::default()),
+    extensions::math_block(extensions::MathBlockOptions::default()),
+]))?;
+let html = carve.render("```math\nx^2\n```", &Options::default())?;
+assert_eq!(html, r#"<div class="math display">\[x^2\]</div>"#);
+# Ok::<(), carve::api::Error>(())
+```
 
 The render options `soft_break` (`softBreak`: `newline`, `space` or `br`), `allow_losses` (`allowLosses`, render-loss codes left out of the record and of `strict_losses`) and `max_losses` (`maxLosses`, default 100; later losses are counted in `suppressed_diagnostics`) follow C2-H-203 to C2-H-205.
 
@@ -248,6 +267,6 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 - On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
 - The engine does not yet implement `parseWithLayout` or `migrateTree`. Each returns `Error::Unsupported`.
 - `tree_fingerprint` hashes this engine's `encode_tree`. Member order is not fixed across engines (carve#6099), so a fingerprint from another engine does not match the same tree here.
-- Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The `host.attributes` and generated-id helpers of C2-X-033 are not offered, and the claim ownership of C2-X-054 is not tracked.
+- Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The claim ownership of C2-X-054 is not tracked.
 - Include resolver on WASI preview 1 and Windows: Rust has no stable identity of an open file there, so the resolver checks after the open that the target still canonicalizes to itself inside the root and has the type, length and modification time of the opened file.
 - The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.

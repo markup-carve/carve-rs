@@ -36,6 +36,7 @@
 
 mod error;
 pub mod extension;
+pub mod extensions;
 mod img_fence;
 mod import;
 mod info;
@@ -205,6 +206,26 @@ impl Tree {
     pub(crate) fn from_value(value: &Value) -> Result<Self, Error> {
         Self::read(&value.to_string(), None)
     }
+
+    /// A tree the engine built from checked parts, decoded without the
+    /// reader checks, which cost far more than the parse (carve-rs#4336).
+    pub(crate) fn trusted(mut value: Value, top: Option<String>) -> Result<Self, Error> {
+        let json = value.to_string();
+        if let Some(map) = value.as_object_mut() {
+            map.remove("type");
+        }
+        let document = serde_json::from_value(value).map_err(|e| {
+            Error::Tree(crate::reader::TreeError::Decode {
+                path: String::new(),
+                reason: e.to_string(),
+            })
+        })?;
+        Ok(Self {
+            document,
+            json,
+            top,
+        })
+    }
 }
 
 /// How [`encode_tree_with`] writes a tree.
@@ -243,6 +264,7 @@ pub struct Carve {
     writers: Writers,
     extensions: extension::Registry,
     standard: standard::Standard,
+    matchers: extensions::Matchers,
 }
 
 impl Carve {
@@ -287,11 +309,62 @@ impl Carve {
     ///
     /// [`Error::Option`] for a name this engine has no standard extension for.
     pub fn enable_standard(&mut self, name: &str, renderer: bool) -> Result<(), Error> {
+        if let Some(bundle) = extensions::standard(name) {
+            return self.register(if renderer {
+                bundle
+            } else {
+                bundle.without_renderers()
+            });
+        }
         self.standard.enable(name, renderer)
     }
 
+    /// PROVISIONAL: registers a bundle of [`extensions`]: its extensions as
+    /// [`Carve::register_extension`] does, and its matchers, which claim in
+    /// [`Carve::parse`] and the render calls (C2-X-005).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Option`] as [`Carve::register_extension`], for a matcher of an
+    /// extension the bundle does not declare, and for a second claim of one
+    /// source name (C2-X-014). Nothing is registered then.
+    pub fn register(&mut self, bundle: extensions::Bundle) -> Result<(), Error> {
+        let mut next = self.clone();
+        let mut matchers = next.matchers.clone();
+        for m in &bundle.matchers {
+            if !bundle
+                .extensions
+                .iter()
+                .any(|e| e.declaration.name == m.extension)
+            {
+                return Err(Error::option(
+                    "extensions",
+                    format!(
+                        "the matcher of {} names no extension of its bundle",
+                        m.extension
+                    ),
+                ));
+            }
+            matchers.check(m)?;
+            matchers.push(extensions::Matcher {
+                extension: String::new(),
+                form: m.form,
+                name: m.name.clone(),
+                claimer: Box::new(|_: &extensions::Claim<'_>| None),
+            });
+        }
+        for e in bundle.extensions {
+            next.extensions.register(e)?;
+        }
+        for m in bundle.matchers {
+            next.matchers.push(m);
+        }
+        *self = next;
+        Ok(())
+    }
+
     fn plain(&self) -> bool {
-        self.extensions.is_empty() && self.standard.is_empty()
+        self.extensions.is_empty() && self.standard.is_empty() && self.matchers.is_empty()
     }
 
     /// `parse` with the matchers of the enabled standard extensions
@@ -318,7 +391,7 @@ impl Carve {
     ) -> Result<Parsed, Error> {
         let input = input.into();
         let mut parsed = parse_with_diagnostics(input, opts)?;
-        if self.standard.is_empty() {
+        if self.standard.is_empty() && self.matchers.is_empty() {
             return Ok(parsed);
         }
         let mut value: Value = serde_json::from_str(&parsed.tree.json)
@@ -334,27 +407,19 @@ impl Carve {
                 standard::opener_name(&line, 0)
             }
         };
-        let mut failed = Vec::new();
-        if self.standard.tabs && !standard::claim_tabs(&mut value, &opener) {
-            failed.push("carve.tabs");
-        }
-        let matchers = self.standard.inline_matchers();
-        if !matchers.is_empty() {
-            failed.extend(standard::claim_inline(&mut value, &matchers));
-        }
-        let fences = self.standard.fence_matchers();
-        if !fences.is_empty() {
-            let claimed = img_fence::claim(&mut value, &fences);
-            let declared: Vec<(&str, Value)> = claimed
-                .into_iter()
-                .map(|n| (n, serde_json::json!([])))
-                .collect();
-            if !declared.is_empty() {
-                standard::declare_names(&mut value, &declared);
-            }
-        }
+        let failed = self.claim_standard(&mut value, &opener);
+        let claimed = if self.matchers.is_empty() {
+            Vec::new()
+        } else {
+            self.matchers.apply(&mut value, &opener, &|name| {
+                self.extensions.declaration(name)
+            })
+        };
         let top = parsed.tree.top.take();
-        parsed.tree = Tree::read(&value.to_string(), top)?;
+        // The standard claims are engine code and each host claim was read
+        // back on its own (C2-X-031), so the rest of the tree needs no checks.
+        parsed.tree = Tree::trusted(value, top)?;
+        parsed.diagnostics.extend(claimed);
         for name in failed {
             parsed.diagnostics.push(Entry {
                 code: "extension-transform-failed".into(),
@@ -370,6 +435,35 @@ impl Carve {
             });
         }
         Ok(parsed)
+    }
+
+    /// The claims of the enabled standard extensions; returns those whose
+    /// claim source could not be written (C2-X-051).
+    fn claim_standard(
+        &self,
+        value: &mut Value,
+        opener: &dyn Fn(usize) -> Option<String>,
+    ) -> Vec<&'static str> {
+        let mut failed = Vec::new();
+        if self.standard.tabs && !standard::claim_tabs(value, opener) {
+            failed.push("carve.tabs");
+        }
+        let matchers = self.standard.inline_matchers();
+        if !matchers.is_empty() {
+            failed.extend(standard::claim_inline(value, &matchers));
+        }
+        let fences = self.standard.fence_matchers();
+        if !fences.is_empty() {
+            let claimed = img_fence::claim(value, &fences);
+            let declared: Vec<(&str, Value)> = claimed
+                .into_iter()
+                .map(|n| (n, serde_json::json!([])))
+                .collect();
+            if !declared.is_empty() {
+                standard::declare_names(value, &declared);
+            }
+        }
+        failed
     }
 
     /// `render` with the registered extensions: the source is parsed, the
@@ -437,7 +531,9 @@ impl Carve {
     }
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
-        let mut view = Tree::read(&crate::resolved_json(tree.document(), opts), None)?;
+        let resolved: Value = serde_json::from_str(&crate::resolved_json(tree.document(), opts))
+            .map_err(|e| Error::option("tree", e.to_string()))?;
+        let mut view = Tree::trusted(resolved, None)?;
         view.top = tree.top;
         let (view, transform_entries) = self.extensions.transform(view);
         let host = extension::Host::new(&self.extensions, self.standard, opts, &view);

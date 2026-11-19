@@ -4,10 +4,26 @@ use super::{TreeError, schema};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+/// The compiled schema patterns, kept across calls: compiling them cost
+/// several milliseconds per decode, and the extension host decodes per node.
+fn compiled() -> &'static Mutex<HashMap<String, Regex>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Regex>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub(super) fn validate(value: &Value, root: &Value) -> Result<(), TreeError> {
-    let mut regexes = HashMap::new();
-    check(value, root, root, "", &mut regexes).map_err(|(path, reason)| schema(&path, reason))
+    let mut regexes = compiled().lock().map(|m| m.clone()).unwrap_or_default();
+    let known = regexes.len();
+    let result =
+        check(value, root, root, "", &mut regexes).map_err(|(path, reason)| schema(&path, reason));
+    if regexes.len() > known
+        && let Ok(mut cache) = compiled().lock()
+    {
+        cache.extend(regexes);
+    }
+    result
 }
 
 type Failure = (String, &'static str);
