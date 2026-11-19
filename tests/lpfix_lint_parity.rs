@@ -172,3 +172,9 @@ fn caption_like_line_looks_for_an_image_anywhere_above() {
         vec![(12, 13)]
     );
 }
+
+#[test]
+fn a_lazy_line_literal_quote_does_not_start_a_definition() {
+    assert!(spans("[^f]: > a\n> [ ]: u\n", "blank-reference-label").is_empty());
+    assert_eq!(spans("> [ ]: u\n", "blank-reference-label"), vec![(2, 6)]);
+}

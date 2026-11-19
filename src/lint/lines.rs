@@ -12,6 +12,7 @@ struct Line {
     path: String,
     kind: String,
     paragraph: bool,
+    literal_quote_prefix: bool,
     content_start: Option<usize>,
     opacity: Opacity,
     attached_attribute: bool,
@@ -182,6 +183,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: paragraph.map_or_else(String::new, |r| r.path.clone()),
             kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
             paragraph: paragraph.is_some(),
+            literal_quote_prefix: fact.flags & LITERAL_QUOTE_PREFIX != 0,
             content_start: paragraph
                 .filter(|range| range.start_line == number)
                 .map(|range| range.start.saturating_sub(start).min(raw.len())),
@@ -215,6 +217,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: String::new(),
             kind: String::new(),
             paragraph: false,
+            literal_quote_prefix: false,
             content_start: None,
             opacity: Opacity::None,
             attached_attribute: false,
@@ -233,6 +236,14 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
     let mut facts = vec![LineFacts::default(); count];
     for range in ranges {
         let kind = range.kind.as_str();
+        if kind == "text"
+            && let Some(line) = range.start_line.checked_sub(1)
+            && starts.get(line) == Some(&range.start)
+            && raws.get(line).is_some_and(|raw| raw.starts_with("> "))
+            && let Some(fact) = facts.get_mut(line)
+        {
+            fact.flags |= LITERAL_QUOTE_PREFIX;
+        }
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
         if paragraph_like || flags != 0 {
@@ -295,6 +306,7 @@ const FOOTNOTE: u8 = 8;
 const DESCRIPTION: u8 = 16;
 const CONTAINER: u8 = 32;
 const TABLE_ROW: u8 = 64;
+const LITERAL_QUOTE_PREFIX: u8 = 128;
 
 #[derive(Clone, Default)]
 struct LineFacts<'r> {
@@ -933,6 +945,9 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
 // C2-I-079: a footnote label, a full reference's label or a definition label of only spaces and tabs;
 // a task box and a bracket pair with no reference glued to it are no label.
 fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
+    if line.literal_quote_prefix {
+        return;
+    }
     let text = line.text.as_str();
     let (from, _) = leaf_text(line);
     for (open, _) in text.match_indices('[').filter(|(at, _)| *at >= from) {
