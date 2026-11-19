@@ -54,10 +54,10 @@ impl Writer for HtmlWriter {
     }
 
     fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<Written, Error> {
-        let rendered = crate::render_tree_with_diagnostics(tree.document(), &opts.render)?;
+        let rendered = super::render_tree_with_diagnostics(tree, &opts.render)?;
         Ok(Written {
             output: rendered.html,
-            diagnostics: rendered.diagnostics.iter().map(Entry::from).collect(),
+            diagnostics: rendered.diagnostics,
         })
     }
 }

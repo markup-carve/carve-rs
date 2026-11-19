@@ -322,6 +322,26 @@ fn the_html_writer_renders_the_tree() {
 }
 
 #[test]
+fn the_html_writer_reports_strict_render_losses_as_errors() {
+    let tree = api::parse("[a](javascript:x)", &opts()).unwrap();
+    let options = WriteOptions {
+        render: Options {
+            strict_losses: true,
+            ..opts()
+        },
+        ..WriteOptions::default()
+    };
+    let written = Carve::new().write_to("html", &tree, &options).unwrap();
+    assert_eq!(written.output, "");
+    assert!(
+        written
+            .diagnostics
+            .iter()
+            .any(|entry| { entry.code == "destination-denied" && entry.severity == "error" })
+    );
+}
+
+#[test]
 fn extension_registration_refuses_a_bad_declaration() {
     let ext = |name: &str, version: &str| Extension {
         declaration: ExtensionDeclaration {
