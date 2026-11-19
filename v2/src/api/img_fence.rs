@@ -170,6 +170,10 @@ pub(crate) fn render(node: &Value) -> Option<String> {
 
 /// C2-X-059, C2-X-060: the sanitized SVG as a `data:image/svg+xml` URL.
 pub(crate) fn image_url(body: &str) -> Option<String> {
+    // The HTML parser repairs markup, so well-formedness is checked first.
+    if !well_formed(body) {
+        return None;
+    }
     let dom = crate::import::parse::fragment(body);
     let mut root = None;
     for &id in dom.children(dom.root) {
@@ -224,6 +228,115 @@ fn write_element(dom: &Dom, id: Id, root: bool, depth: usize, out: &mut String) 
         let _ = write!(out, ">{inner}</{name}>");
     }
     Some(())
+}
+
+/// XML well-formedness of the tags: every element closed in order, attribute
+/// values quoted, no document type declaration.
+fn well_formed(body: &str) -> bool {
+    let mut open: Vec<&str> = Vec::new();
+    let mut rest = body;
+    while let Some(at) = rest.find('<') {
+        rest = rest.get(at..).unwrap_or("");
+        let skip = [("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")]
+            .iter()
+            .find(|(start, _)| rest.starts_with(start));
+        if let Some((_, end)) = skip {
+            let Some(close) = rest.find(end) else {
+                return false;
+            };
+            rest = rest.get(close + end.len()..).unwrap_or("");
+            continue;
+        }
+        if rest.starts_with("<!") {
+            return false;
+        }
+        let Some(tag) = tag(rest) else {
+            return false;
+        };
+        rest = rest.get(tag.len..).unwrap_or("");
+        match tag.kind {
+            Tag::Close => {
+                if open.pop() != Some(tag.name) {
+                    return false;
+                }
+            }
+            Tag::Open => open.push(tag.name),
+            Tag::Empty => {}
+        }
+    }
+    open.is_empty()
+}
+
+enum Tag {
+    Open,
+    Close,
+    Empty,
+}
+
+struct Read<'a> {
+    name: &'a str,
+    kind: Tag,
+    len: usize,
+}
+
+/// The tag at the start of `s`, which begins with `<`.
+fn tag(s: &str) -> Option<Read<'_>> {
+    let b = s.as_bytes();
+    let close = b.get(1) == Some(&b'/');
+    let start = 1 + usize::from(close);
+    let name_len = b
+        .get(start..)?
+        .iter()
+        .take_while(|&&c| c.is_ascii_alphanumeric() || matches!(c, b':' | b'-' | b'_' | b'.'))
+        .count();
+    if name_len == 0 {
+        return None;
+    }
+    let name = s.get(start..start + name_len)?;
+    let mut i = start + name_len;
+    loop {
+        let spaces = b
+            .get(i..)?
+            .iter()
+            .take_while(|c| c.is_ascii_whitespace())
+            .count();
+        i += spaces;
+        match b.get(i)? {
+            b'>' => {
+                let kind = if close { Tag::Close } else { Tag::Open };
+                return Some(Read {
+                    name,
+                    kind,
+                    len: i + 1,
+                });
+            }
+            b'/' if !close && b.get(i + 1) == Some(&b'>') => {
+                return Some(Read {
+                    name,
+                    kind: Tag::Empty,
+                    len: i + 2,
+                });
+            }
+            _ if close || spaces == 0 => return None,
+            _ => i = attribute(b, i)?,
+        }
+    }
+}
+
+/// The end of the attribute `name="value"` at `i`.
+fn attribute(b: &[u8], mut i: usize) -> Option<usize> {
+    let n = b
+        .get(i..)?
+        .iter()
+        .take_while(|&&c| c.is_ascii_alphanumeric() || matches!(c, b':' | b'-' | b'_' | b'.'))
+        .count();
+    if n == 0 || b.get(i + n) != Some(&b'=') {
+        return None;
+    }
+    i += n + 1;
+    let quote = *b.get(i).filter(|q| matches!(q, b'"' | b'\''))?;
+    let len = b.get(i + 1..)?.iter().position(|&c| c == quote)?;
+    Some(i + len + 2)
 }
 
 /// No external or active reference: `url(...)` only to a local `#id`.

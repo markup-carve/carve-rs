@@ -54,7 +54,15 @@ fn unsafe_elements_attributes_and_references_are_removed() {
 
 #[test]
 fn a_body_that_is_no_single_svg_root_keeps_the_fallback() {
-    for body in ["<svg/><svg/>", "<svg/>text", "<svg></svg><p>x</p>"] {
+    for body in [
+        "<svg/><svg/>",
+        "<svg/>text",
+        "<svg></svg><p>x</p>",
+        "<svg><rect></svg>",
+        "<svg><rect width=2/></svg>",
+        "<svg><!DOCTYPE x></svg>",
+        "<svg><g></rect></g></svg>",
+    ] {
         let out = render(body);
         let html = out["ok"]["html"].as_str().unwrap_or("");
         assert!(
