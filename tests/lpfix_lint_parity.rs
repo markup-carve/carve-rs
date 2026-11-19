@@ -111,6 +111,23 @@ fn between_list_columns_requires_an_existing_deeper_list() {
         ),
         vec![(15, 19)]
     );
+    assert_eq!(
+        spans("- a\n  - b\n * c\n", "list-marker-below-content-column"),
+        vec![(11, 14)]
+    );
+}
+
+#[test]
+fn pinned_lint_clause_cases_survive_candidate_filtering() {
+    assert_eq!(
+        spans("`a` {.x}\n", "unattached-inline-attribute"),
+        vec![(4, 8)]
+    );
+    assert_eq!(
+        spans("::: a\n:::: b\nx\n:::\n", "colon-fence-length-mismatch"),
+        vec![(15, 18)]
+    );
+    assert_eq!(spans("a\n===\n", "setext-heading-underline"), vec![(2, 5)]);
 }
 
 #[test]
@@ -225,6 +242,10 @@ fn a_lazy_line_literal_quote_does_not_start_a_definition() {
 
 #[test]
 fn item_body_column_accounts_for_quotes_and_tabs() {
+    assert_eq!(
+        spans("- a\n\n\t> q\n", "list-item-body-below-content-column"),
+        Vec::new()
+    );
     assert_eq!(
         spans(
             "> 10. %%\n>    : a\n",

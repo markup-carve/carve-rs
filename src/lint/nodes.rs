@@ -754,7 +754,7 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
             .take_while(|b| matches!(b, b' ' | b'\t'))
             .count();
         let start = from + offset + prefix + indent;
-        let column = u64::try_from(prefix + indent + 1).unwrap_or(u64::MAX);
+        let column = source_column(sink.source, start);
         if offset > 0
             && !line.trim().is_empty()
             && column > marker_column
@@ -1540,15 +1540,11 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     emphasis_before_attrs(item, sink, &value, from);
     if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
         let (block, end) = crate::attr::parse_block(&value, at)?;
-        let before = value.get(..at)?.rsplit('\n').next().unwrap_or("").trim();
+        let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
         (at > 0
             && !block.empty
             && !matches!(before, "" | ":" | ">")
-            && !escaped(value.as_bytes(), at)
-            && sink
-                .source
-                .get(..from + at)
-                .is_some_and(|prefix| !prefix.rsplit('\n').next().unwrap_or("").trim().is_empty()))
+            && !escaped(value.as_bytes(), at))
         .then_some((at, end))
     }) {
         sink.emit_range(

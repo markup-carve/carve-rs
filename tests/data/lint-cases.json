@@ -386,9 +386,9 @@
   },
   {
     "id": "list-item-body-below-content-column",
-    "origin": "syntax-blocks.md:55",
-    "trigger": "- a\n\n\tb",
-    "near": "- a\n\n\t",
+    "origin": "C2-B-025, C2-B-027",
+    "trigger": "10. a\n\n   b\n",
+    "near": "10. a\n\n    b\n",
     "fragment": "b",
     "message": "This line is indented past the list marker but short of the item's text, and it belongs to the item. Indent it to the text, or move it to the column of the list to end the item."
   },

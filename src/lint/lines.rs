@@ -450,6 +450,19 @@ fn thematic_marker(
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
     let candidate = tail.trim();
+    if run(candidate, "=", 3)
+        && previous.is_some_and(|p| {
+            p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty()
+        })
+    {
+        sink.emit(
+            "setext-heading-underline",
+            line.start + marker_start,
+            line.start + marker_start + candidate.len(),
+            &line.path,
+            &[],
+        );
+    }
     if run(candidate, "-_", 3)
         && !(line.kind == "definition_term"
             && line.content_start.is_none()

@@ -204,11 +204,14 @@ fn skip_legacy_warning(
             return true;
         }
         let column = parsed.pos(warning.start, warning.start).start_column;
-        if !positions.around(warning.start).any(|range| {
-            range.kind == "list"
-                && range.start < warning.start
-                && warning.start <= range.end
-                && parsed.pos(range.start, range.start).start_column > column
+        let previous = source
+            .get(..warning.start)
+            .unwrap_or("")
+            .trim_end_matches([' ', '\t', '\n']);
+        if !previous.len().checked_sub(1).is_some_and(|at| {
+            positions.around(at).any(|range| {
+                range.kind == "list" && parsed.pos(range.start, range.start).start_column > column
+            })
         }) {
             return true;
         }
@@ -642,11 +645,22 @@ fn colon_fence_mismatches(
         if candidate.len() >= 3 && candidate.bytes().all(|byte| byte == b':') {
             let at = line_start + line.len() - tail.len();
             let end = at + candidate.len();
-            let container = ranges
-                .around(at)
+            let previous = source
+                .get(..line_start)
+                .unwrap_or("")
+                .trim_end_matches([' ', '\t', '\n']);
+            let previous_line = previous.rsplit('\n').next().unwrap_or("").trim();
+            let previous_at =
+                if previous_line.len() >= 3 && previous_line.bytes().all(|byte| byte == b':') {
+                    Some(at)
+                } else {
+                    previous.len().checked_sub(1)
+                };
+            let container = previous_at
+                .into_iter()
+                .flat_map(|previous| ranges.around(previous))
                 .filter(|range| {
                     range.start < at
-                        && range.end >= end
                         && matches!(
                             range.kind.as_str(),
                             "div"
@@ -744,6 +758,10 @@ fn last_colon_opener(before: &str) -> usize {
     before
         .rmatch_indices(":::")
         .find_map(|(at, _)| {
+            let mut at = at;
+            while at > 0 && before.as_bytes().get(at - 1) == Some(&b':') {
+                at -= 1;
+            }
             let run = before
                 .get(at..)
                 .unwrap_or("")
