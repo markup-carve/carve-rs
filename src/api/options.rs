@@ -419,7 +419,19 @@ fn includes(v: &Value) -> Result<Option<crate::include::Includes>, Error> {
         v.as_bool()
             .ok_or_else(|| Error::option("includes", "allowAbsolute is not a boolean"))
     })?;
-    let mut inc = crate::include::Includes::new(root_resolver(root, allow_absolute)?);
+    let resolver = root_resolver(root)?;
+    let resolver = if allow_absolute {
+        resolver
+    } else {
+        std::sync::Arc::new(move |request: &crate::include::Request<'_>| {
+            if std::path::Path::new(request.path).is_absolute() {
+                Err(crate::include::Cause::OutsideRoot)
+            } else {
+                resolver(request)
+            }
+        })
+    };
+    let mut inc = crate::include::Includes::new(resolver);
     for (k, item) in map {
         match (k.as_str(), item) {
             ("root" | "allowAbsolute", _) => {}
@@ -438,14 +450,14 @@ fn includes(v: &Value) -> Result<Option<crate::include::Includes>, Error> {
 }
 
 #[cfg(feature = "fs")]
-fn root_resolver(root: &str, allow_absolute: bool) -> Result<crate::include::Resolver, Error> {
-    crate::include::fs::resolver_with(std::path::Path::new(root), allow_absolute)
+fn root_resolver(root: &str) -> Result<crate::include::Resolver, Error> {
+    crate::include::fs::resolver(std::path::Path::new(root))
         .map_err(|_| Error::option("includes", "the include root cannot be read"))
 }
 
 // Without `fs` the library opens no file, so a root on the JSON boundary is refused.
 #[cfg(not(feature = "fs"))]
-fn root_resolver(_root: &str, _allow_absolute: bool) -> Result<crate::include::Resolver, Error> {
+fn root_resolver(_root: &str) -> Result<crate::include::Resolver, Error> {
     Err(Error::option(
         "includes",
         "this build reads no files (the fs feature is off)",
