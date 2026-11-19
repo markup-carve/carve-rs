@@ -90,12 +90,12 @@ macro_rules! held_rule {
     };
 }
 
-// The shared fixture rows of these rules lint a later line of a term, which C2-B-069 and the 0.2 catalog
-// leave unreported; tests/lintsat1_parity.rs covers both rules.
+// These shared fixture rows pin readings the 0.2 catalog excludes: a later line of a term (C2-B-069), and a
+// separator right of the list's term mark (C2-B-067); tests/lintsat1_parity.rs covers the rules.
 macro_rules! stale_rule {
     ($name:ident, $code:literal, $data:literal) => {
         #[test]
-        #[ignore = "the shared fixture row lints a later line of a term (C2-B-069)"]
+        #[ignore = "the shared fixture row pins a reading the 0.2 catalog excludes"]
         fn $name() {
             check($code, include_str!($data));
         }
@@ -233,7 +233,7 @@ rule!(
     "deprecated-substitution-arrow",
     "data/lint-cases.json"
 );
-rule!(
+stale_rule!(
     lint_description_separator_below_content_column,
     "description-separator-below-content-column",
     "data/lint-cases.json"

@@ -43,6 +43,24 @@ fn lint_parity_with_carve_js_and_carve_php() {
         ("[^n]: ^ x\n", "definition-in-container", 0), // C2-B-081: a footnote definition is not reported for its own mark
         (":: > x\n", "definition-term-block-folded", 1), // C2-B-075: a quote mark opening a term's text
         (":: c\n# H\n", "definition-term-block-folded", 0), // C2-B-075: a block opener on a later line of the term
+        ("== H #\n", "heading-closing-hashes", 1), // C2-B-153: closing hashes on an `=` heading
+        ("= ##\n", "heading-closing-hashes", 0),   // C2-B-153: a run that is the only text
+        (
+            "::: box\n   :: t\n: d\n:::\n",
+            "description-separator-below-content-column",
+            1,
+        ), // C2-B-067: a lower-column separator after a folded term
+        (
+            ":: t\n: d\n",
+            "description-separator-below-content-column",
+            0,
+        ), // C2-B-067: a separator at the list column
+        ("- :: t\n  : d\n: x\n", "markdown-definition-paragraph", 0), // C2-B-074: a line the column rule reports is left to it
+        (
+            "\t:: t\n   : d\n",
+            "description-separator-below-content-column",
+            1,
+        ), // C2-B-004: a tab-indented term counts its tab stop
     ] {
         assert_eq!(count(source, rule), expected, "{rule} on {source:?}");
     }
