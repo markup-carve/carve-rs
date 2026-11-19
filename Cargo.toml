@@ -28,6 +28,9 @@ profile = []
 
 [dependencies]
 bumpalo = "3"
+# Markdown and GFM (cmark-gfm port) and Djot for the import hub (carve-js#5074).
+comrak = { version = "1", default-features = false }
+jotdown = "0.10"
 # The lint rules that 0.2 still reads from the published 0.1 engine.
 carve_0_1 = { package = "carve-lang", version = "=0.1.14", default-features = false }
 # The two move together: markup5ever_rcdom is cut against this exact html5ever.

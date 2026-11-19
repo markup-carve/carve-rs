@@ -291,20 +291,26 @@ fn host(req: &Value) -> Result<Carve, Error> {
     Ok(host)
 }
 
-/// C2-M-001: `source` is the HTML, `from` must be `html`; `rawHtml` and
-/// `strictLosses` are options.
+/// C2-M-001: `source` is the input, `from` names its format (`html`,
+/// `markdown`, `gfm` or `djot`); `rawHtml` and `strictLosses` are options.
 fn import_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
-    match req.get("from").and_then(Value::as_str) {
-        Some("html") => {}
-        Some(other) => return Err(Error::option("from", format!("unknown value \"{other}\""))),
-        None => return Err(Error::option("from", "importDocument takes from: \"html\"")),
-    }
-    let html = req
+    let format = match req.get("from").and_then(Value::as_str) {
+        Some(name) => super::ImportFormat::from_name(name)
+            .ok_or_else(|| Error::option("from", format!("unknown value \"{name}\"")))?,
+        None => {
+            return Err(Error::option(
+                "from",
+                "importDocument takes from: html, markdown, gfm or djot",
+            ));
+        }
+    };
+    let input = req
         .get("source")
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::option("source", "importDocument takes the HTML as source text"))?;
-    let imported = host.import_document_with(
-        html,
+        .ok_or_else(|| Error::option("source", "importDocument takes the input as source text"))?;
+    let imported = host.import_from(
+        input,
+        format,
         &super::ImportOptions {
             raw_html: opts.options.raw_html,
             strict_losses: opts.options.strict_losses,
