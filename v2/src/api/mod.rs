@@ -48,7 +48,9 @@ pub use crate::include::{Cause, Dependency, Includes, Request, Resolver};
 pub use crate::lint::LintOptions;
 pub use crate::options::{HeadingIds, Mode, Options, Profile, Social, UrlPolicy};
 pub use error::Error;
-pub use extension::{Channel, Extension, ExtensionDeclaration};
+pub use extension::{
+    Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
+};
 pub use record::{Entry, Range};
 pub use writer::{HtmlWriter, WriteOptions, Writer, Writers, Written};
 
@@ -224,6 +226,7 @@ pub struct Rendered {
 #[derive(Debug, Clone, Default)]
 pub struct Carve {
     writers: Writers,
+    extensions: extension::Registry,
 }
 
 impl Carve {
@@ -248,17 +251,94 @@ impl Carve {
         self.writers.register(writer)
     }
 
-    /// PROVISIONAL (C2-X-033, C2-X-053): registers an extension. This engine
-    /// does not run host renderers or transforms yet.
+    /// PROVISIONAL (C2-X-033, C2-X-052, C2-X-053): registers an extension. Its
+    /// renderers and transform take part in the render calls of this host.
     ///
     /// # Errors
     ///
-    /// Always [`Error::Unsupported`] in this engine.
-    #[allow(clippy::needless_pass_by_value)] // a host hands the registration over
+    /// [`Error::Option`] for an unqualified name, an empty version, a name and
+    /// version already registered, or two renderers for one channel.
     pub fn register_extension(&mut self, extension: Extension) -> Result<(), Error> {
-        let _ = extension;
-        Err(Error::Unsupported {
-            call: "registerExtension",
+        self.extensions.register(extension)
+    }
+
+    /// `render` with the registered extensions: the source is parsed, the
+    /// document transforms run on the resolved view (C2-X-053), and the view
+    /// is rendered with the renderers of the channel of `opts.mode`
+    /// (C2-X-052). With no extension registered it is [`render`].
+    ///
+    /// # Errors
+    ///
+    /// As [`render`].
+    pub fn render<'a>(&self, input: impl Into<Input<'a>>, opts: &Options) -> Result<String, Error> {
+        if self.extensions.is_empty() {
+            return render(input, opts);
+        }
+        Ok(self.render_with_diagnostics(input, opts)?.html)
+    }
+
+    /// `renderWithDiagnostics` with the registered extensions.
+    ///
+    /// # Errors
+    ///
+    /// As [`render_with_diagnostics`].
+    pub fn render_with_diagnostics<'a>(
+        &self,
+        input: impl Into<Input<'a>>,
+        opts: &Options,
+    ) -> Result<Rendered, Error> {
+        if self.extensions.is_empty() {
+            return render_with_diagnostics(input, opts);
+        }
+        let parsed = parse_with_diagnostics(input, opts)?;
+        let mut rendered = self.render_view(parsed.tree, opts)?;
+        let mut diagnostics = parsed.diagnostics;
+        diagnostics.append(&mut rendered.diagnostics);
+        rendered.diagnostics = diagnostics;
+        rendered.suppressed_diagnostics += parsed.suppressed_diagnostics;
+        Ok(rendered)
+    }
+
+    /// `render` of a supplied tree with the registered extensions.
+    ///
+    /// # Errors
+    ///
+    /// As [`render_tree`].
+    pub fn render_tree(&self, tree: &Tree, opts: &Options) -> Result<String, Error> {
+        Ok(self.render_tree_with_diagnostics(tree, opts)?.html)
+    }
+
+    /// `renderWithDiagnostics` of a supplied tree with the registered extensions.
+    ///
+    /// # Errors
+    ///
+    /// As [`render_tree`].
+    pub fn render_tree_with_diagnostics(
+        &self,
+        tree: &Tree,
+        opts: &Options,
+    ) -> Result<Rendered, Error> {
+        if self.extensions.is_empty() {
+            return render_tree_with_diagnostics(tree, opts);
+        }
+        self.render_view(tree.clone(), opts)
+    }
+
+    fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
+        let mut view = Tree::read(&crate::resolved_json(tree.document(), opts), None)?;
+        view.top = tree.top;
+        let (view, transform_entries) = self.extensions.transform(view);
+        let host = extension::Host::new(&self.extensions, opts);
+        let rendered = crate::render_tree_hooked(view.document(), opts, &host);
+        let (entries, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);
+        let mut diagnostics = transform_entries;
+        diagnostics.extend(entries);
+        diagnostics.extend(host.failures());
+        strict(opts, &diagnostics)?;
+        Ok(Rendered {
+            html: rendered.html,
+            diagnostics,
+            suppressed_diagnostics,
         })
     }
 
@@ -469,21 +549,29 @@ pub fn render_tree_with_diagnostics(tree: &Tree, opts: &Options) -> Result<Rende
 
 fn finish_render(rendered: crate::Rendered, opts: &Options) -> Result<Rendered, Error> {
     let (diagnostics, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);
-    if opts.strict_losses {
-        let codes: Vec<String> = diagnostics
-            .iter()
-            .filter(|e| e.channel == "render-loss")
-            .map(|e| e.code.clone())
-            .collect();
-        if !codes.is_empty() {
-            return Err(Error::Render { codes });
-        }
-    }
+    strict(opts, &diagnostics)?;
     Ok(Rendered {
         html: rendered.html,
         diagnostics,
         suppressed_diagnostics,
     })
+}
+
+/// C2-H-130: under `strictLosses` a render loss refuses the call.
+fn strict(opts: &Options, diagnostics: &[Entry]) -> Result<(), Error> {
+    if !opts.strict_losses {
+        return Ok(());
+    }
+    let codes: Vec<String> = diagnostics
+        .iter()
+        .filter(|e| e.channel == "render-loss")
+        .map(|e| e.code.clone())
+        .collect();
+    if codes.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::Render { codes })
+    }
 }
 
 /// `lint`: the record of a lint run, parse entries and lint findings

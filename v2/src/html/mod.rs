@@ -43,6 +43,26 @@ pub(crate) fn render_with_details(
     (r.out, r.losses, r.derived_failure)
 }
 
+/// A host's extension renderers (C2-X-033, C2-X-052), asked before the
+/// fallback of a qualified extension node is written.
+pub(crate) trait ExtensionHook {
+    /// The HTML of the node, given as its JSON value; `None` when no renderer
+    /// of the selected channel takes it, `Some(Err)` when the renderer failed.
+    fn render(&self, node: &serde_json::Value, block: bool) -> Option<Result<String, ()>>;
+}
+
+/// [`render_with_details`] with a host's extension renderers.
+pub(crate) fn render_hooked(
+    doc: &Document<'_>,
+    opts: &Options,
+    hook: &dyn ExtensionHook,
+) -> (String, Vec<&'static str>, Option<usize>) {
+    let mut r = Renderer::new(doc, opts);
+    r.hook = Some(hook);
+    r.document();
+    (r.out, r.losses, r.derived_failure)
+}
+
 /// Renders with losses while retaining the matching UTF-8 source text for
 /// degraded inline nodes. For a tree parsed from bytes, use
 /// [`render_with_losses_source_bytes`] (C2-B-218).
@@ -223,6 +243,7 @@ pub(crate) struct Renderer<'r, 'a> {
     hidden: AddrSet<usize>,
     /// The row of `opts.profile` in the profile table.
     profile: Option<&'static crate::tables::ProfileRow>,
+    hook: Option<&'r dyn ExtensionHook>,
 }
 
 impl<'r, 'a> Renderer<'r, 'a> {
@@ -299,9 +320,33 @@ impl<'r, 'a> Renderer<'r, 'a> {
             carrier_losses: Vec::new(),
             hidden: AddrSet::default(),
             profile,
+            hook: None,
         };
         r.index();
         r
+    }
+
+    /// C2-X-050: `Some(true)` when a host renderer wrote the node, `Some(false)`
+    /// when it failed and the fallback follows without its own loss.
+    fn hooked(
+        &mut self,
+        n: &Node<'_>,
+        block: bool,
+        out: Option<&mut String>,
+        depth: usize,
+    ) -> Option<bool> {
+        let hook = self.hook?;
+        let value = serde_json::to_value(n).ok()?;
+        match hook.render(&value, block)? {
+            Ok(html) => {
+                match out {
+                    Some(out) => out.push_str(&html),
+                    None => self.line(depth, &html),
+                }
+                Some(true)
+            }
+            Err(()) => Some(false),
+        }
     }
 
     /// The source of the file `n` stands in, when the renderer holds it.

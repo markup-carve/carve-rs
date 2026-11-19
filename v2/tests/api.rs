@@ -272,21 +272,23 @@ fn the_html_writer_renders_the_tree() {
 }
 
 #[test]
-fn extension_registration_is_provisional() {
+fn extension_registration_refuses_a_bad_declaration() {
+    let ext = |name: &str, version: &str| Extension {
+        declaration: ExtensionDeclaration {
+            name: name.into(),
+            version: version.into(),
+            required: false,
+            slots: Vec::new(),
+        },
+        renderers: Vec::new(),
+        transform: None,
+    };
     let mut carve = Carve::new();
-    let err = carve
-        .register_extension(Extension {
-            declaration: ExtensionDeclaration {
-                name: "ex.box".into(),
-                version: "1".into(),
-                required: false,
-                slots: Vec::new(),
-            },
-            renderers: Vec::new(),
-            transform: None,
-        })
-        .unwrap_err();
-    assert!(matches!(err, Error::Unsupported { .. }));
+    carve.register_extension(ext("ex.box", "1")).unwrap();
+    for (name, version) in [("box", "1"), ("ex.box", ""), ("ex.box", "1")] {
+        let err = carve.register_extension(ext(name, version)).unwrap_err();
+        assert!(matches!(err, Error::Option { .. }), "{name} {version}");
+    }
     assert_ne!(Channel::Interactive, Channel::BuildTime);
 }
 

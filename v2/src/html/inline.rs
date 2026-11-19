@@ -147,7 +147,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.wrap_span(s.attrs, s.lang, s.dir, &inner, out);
             }
             Node::RawInline(r) => self.raw_inline(r, out),
-            Node::InlineExtension(e) => self.inline_extension(e, out),
+            Node::InlineExtension(e) => self.inline_extension(n, e, out),
             Node::Ruby(r) => {
                 let _ = write!(
                     out,
@@ -697,9 +697,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     /// C2-H-076.
-    fn inline_extension(&mut self, e: &'r ast::InlineExtension<'a>, out: &mut String) {
+    fn inline_extension(
+        &mut self,
+        n: &'r Node<'a>,
+        e: &'r ast::InlineExtension<'a>,
+        out: &mut String,
+    ) {
         if e.name.contains('.') {
-            self.losses.push("extension-fallback-rendered");
+            match self.hooked(n, false, Some(out), 0) {
+                Some(true) => return,
+                Some(false) => {}
+                None => self.losses.push("extension-fallback-rendered"),
+            }
             let wrapped = e.attrs.is_some_and(|attrs| !attrs.is_empty());
             if wrapped {
                 let el = El::new(e.attrs, e.lang).with_dir(e.dir);

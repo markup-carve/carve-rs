@@ -9,12 +9,12 @@ import { WASI } from "node:wasi";
 
 const wasm = await WebAssembly.compile(await readFile(process.argv[2]));
 
-async function call(request) {
+async function call(request, preopens = {}) {
   const dir = await mkdtemp(join(tmpdir(), "carve2-wasi-"));
   await writeFile(join(dir, "in.json"), JSON.stringify(request));
   const stdin = openSync(join(dir, "in.json"), "r");
   const stdout = openSync(join(dir, "out.json"), "w");
-  const wasi = new WASI({ version: "preview1", args: ["carve2", "call"], stdin, stdout, returnOnExit: true });
+  const wasi = new WASI({ version: "preview1", args: ["carve2", "call"], stdin, stdout, preopens, returnOnExit: true });
   const instance = await WebAssembly.instantiate(wasm, wasi.getImportObject());
   const status = wasi.start(instance);
   closeSync(stdin);
@@ -41,6 +41,25 @@ const round = await call({ call: "decodeTree", json: JSON.stringify(tree) });
 if (round.status !== 0 || round.response.ok.tree.type !== "document") {
   failed++;
   console.error("FAIL decodeTree", JSON.stringify(round.response));
+}
+// carve-rs#4326: a contained resolver reads a target inside its mounted root.
+const root = await mkdtemp(join(tmpdir(), "carve2-root-"));
+await writeFile(join(root, "part.crv"), "*inside*\n");
+const included = await call(
+  { call: "renderWithDiagnostics", source: "{{ part.crv }}", options: { includes: { root: "/carve-root", file: "main.crv" } } },
+  { "/carve-root": root },
+);
+if (included.status !== 0 || included.response.ok?.html !== "<p><strong>inside</strong></p>") {
+  failed++;
+  console.error("FAIL include", JSON.stringify(included.response));
+}
+const outside = await call(
+  { call: "render", source: "{{ ../x.crv }}", options: { includes: { root: "/carve-root" } } },
+  { "/carve-root": root },
+);
+if (outside.status !== 0 || !outside.response.ok?.html.includes("x.crv")) {
+  failed++;
+  console.error("FAIL include outside", JSON.stringify(outside.response));
 }
 console.log(failed ? `wasi smoke: ${failed} failed` : "wasi smoke: ok");
 process.exit(failed ? 1 : 0);
