@@ -6,6 +6,8 @@ use crate::source::Source;
 
 struct Line {
     text: String,
+    quotes: usize,
+    table_row: bool,
     start: usize,
     path: String,
     kind: String,
@@ -18,7 +20,6 @@ struct Line {
 
 struct Scope {
     in_footnote: bool,
-    in_description: bool,
     container: ContainerKind,
 }
 
@@ -167,6 +168,8 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
         }
         out.push(Line {
             text: String::from_utf8_lossy(&bytes).into_owned(),
+            quotes: fact.quotes,
+            table_row: fact.flags & TABLE_ROW != 0,
             start,
             path: paragraph.map_or_else(String::new, |r| r.path.clone()),
             kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
@@ -185,7 +188,6 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
                 .is_some_and(|range| range.has_attrs && range.start_line == number),
             scope: Scope {
                 in_footnote: fact.flags & FOOTNOTE != 0,
-                in_description: fact.flags & DESCRIPTION != 0,
                 container: if fact.flags & LIST_ITEM != 0 {
                     ContainerKind::ListItem
                 } else if fact.flags & CONTAINER != 0 {
@@ -199,6 +201,8 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
     if source.ends_with('\n') || source.is_empty() {
         out.push(Line {
             text: String::new(),
+            quotes: 0,
+            table_row: false,
             start: source.len(),
             path: String::new(),
             kind: String::new(),
@@ -208,7 +212,6 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             attached_attribute: false,
             scope: Scope {
                 in_footnote: false,
-                in_description: false,
                 container: ContainerKind::None,
             },
         });
@@ -229,6 +232,7 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
             let covered = facts.get_mut(first..range.end_line.min(count));
             for fact in covered.into_iter().flatten() {
                 fact.flags |= flags;
+                fact.quotes += usize::from(kind == "block_quote");
                 // `max_by_key` keeps the last of equal keys.
                 if paragraph_like
                     && fact.paragraph.is_none_or(|best| {
@@ -270,7 +274,8 @@ fn range_flags(kind: &str) -> u8 {
         "list_item" => LIST_ITEM | CONTAINER,
         "footnote" => FOOTNOTE | CONTAINER,
         "definition_description" => DESCRIPTION | CONTAINER,
-        "block_quote" | "div" => CONTAINER,
+        "block_quote" | "div" | "directive" | "admonition" | "figure_group" => CONTAINER,
+        "table_row" => TABLE_ROW,
         _ => 0,
     }
 }
@@ -281,10 +286,12 @@ const LIST_ITEM: u8 = 4;
 const FOOTNOTE: u8 = 8;
 const DESCRIPTION: u8 = 16;
 const CONTAINER: u8 = 32;
+const TABLE_ROW: u8 = 64;
 
 #[derive(Clone, Default)]
 struct LineFacts<'r> {
     flags: u8,
+    quotes: usize,
     paragraph: Option<&'r Range>,
     masks: Vec<&'r Range>,
 }
@@ -341,10 +348,20 @@ pub(super) fn list_marker(text: &str) -> bool {
 }
 
 fn starts_block(text: &str) -> bool {
-    ["# ", "= ", "> ", ":: ", ": ", "{."]
+    ["> ", ":: ", ": ", "{."]
         .iter()
         .any(|p| text.starts_with(p))
+        || heading_mark(text)
         || text.starts_with('[') && text.contains("]:")
+}
+
+/// C2-B-151, C2-B-152: one to six `=` or `#` and a space.
+fn heading_mark(text: &str) -> bool {
+    let Some(mark) = text.bytes().next().filter(|b| matches!(b, b'#' | b'=')) else {
+        return false;
+    };
+    let run = text.bytes().take_while(|b| *b == mark).count();
+    run <= 6 && text.as_bytes().get(run) == Some(&b' ')
 }
 
 fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
@@ -405,8 +422,9 @@ fn thematic_marker(
     let candidate = tail.trim();
     if run(candidate, "-_", 3) {
         let is_setext = candidate.starts_with('-')
-            && previous
-                .is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty());
+            && previous.is_some_and(|p| {
+                p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty()
+            });
         if is_setext {
             sink.emit(
                 "setext-heading-underline",
@@ -425,8 +443,17 @@ fn thematic_marker(
             );
         }
     }
-    if spaced_run(text) {
-        sink.whole("deprecated-spaced-thematic-break", line, &[]);
+    let (quoted, rest) = quote_tail(&line.text, line.quotes);
+    let spaced = rest.trim();
+    if spaced_run(text) || spaced_run(spaced) {
+        let from = quoted + rest.len() - rest.trim_start().len();
+        sink.emit(
+            "deprecated-spaced-thematic-break",
+            line.start + from,
+            line.start + from + spaced.len(),
+            &line.path,
+            &[],
+        );
     }
 }
 
@@ -503,7 +530,7 @@ fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
 fn table_line(line: &Line, sink: &mut Sink<'_>) {
     let (prefix, tail) = marker_tail(&line.text);
     let text = tail.trim_end();
-    for (at, _) in line.text.match_indices("|=") {
+    for (at, _) in line.text.match_indices("|=").filter(|_| line.table_row) {
         if let Some(mark) = line.text.as_bytes().get(at + 2)
             && matches!(mark, b'<' | b'>' | b'~')
             && line.text.as_bytes().get(at + 3) == Some(&b' ')
@@ -585,16 +612,21 @@ fn legacy_authored(line: &Line, sink: &mut Sink<'_>) {
     if line.paragraph && (text.starts_with("#region ") || text.starts_with("#endregion")) {
         sink.whole("region-marker-renders-as-text", line, &[]);
     }
-    if line.paragraph && text.starts_with("^ ") && line.kind != "caption" {
-        sink.whole("unattached-caption", line, &[]);
+    let (at, leaf) = leaf_text(line);
+    if line.paragraph && leaf.starts_with("^ ") && line.kind != "caption" {
+        sink.emit(
+            "unattached-caption",
+            line.start + at,
+            line.start + at + leaf.len(),
+            &line.path,
+            &[],
+        );
     }
 }
 
 fn legacy_layout(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.trim();
-    if line.paragraph && text.starts_with(": ") && !line.scope.in_description {
-        sink.whole("markdown-definition-paragraph", line, &[]);
-    }
+    markdown_definition(line, previous, sink);
     if line.paragraph
         && line.text.starts_with("    ")
         && !text.is_empty()
@@ -609,8 +641,54 @@ fn legacy_layout(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     }
 }
 
+/// The text of a line's leaf behind its container prefixes and indent, and where it starts in the line.
+fn leaf_text(line: &Line) -> (usize, &str) {
+    let (from, tail) = match line.content_start {
+        Some(start) => (start, line.text.get(start..).unwrap_or("")),
+        None => quote_tail(&line.text, line.quotes),
+    };
+    let content = tail.trim_start_matches([' ', '\t']);
+    (from + tail.len() - content.len(), content.trim_end())
+}
+
+/// A later line of a leaf carries only quote marks before its text: list markers stand on first lines.
+fn quote_tail(text: &str, quotes: usize) -> (usize, &str) {
+    let mut rest = text;
+    for _ in 0..quotes {
+        let trimmed = rest.trim_start_matches([' ', '\t']);
+        // C2-B-031: a quote mark is `>` followed by a space or the end of the line.
+        match trimmed.strip_prefix('>') {
+            Some(tail) if tail.is_empty() || tail.starts_with(' ') => {
+                rest = tail.strip_prefix(' ').unwrap_or(tail);
+            }
+            _ => break,
+        }
+    }
+    (text.len() - rest.len(), rest)
+}
+
+// C2-B-074: a later paragraph line below a line that is no `::` term.
+fn markdown_definition(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    let (at, text) = leaf_text(line);
+    let Some(previous) = previous else { return };
+    if line.kind != "paragraph"
+        || previous.path != line.path
+        || previous.text.trim().is_empty()
+        || !text.starts_with(": ")
+        || leaf_text(previous).1.starts_with(":: ")
+    {
+        return;
+    }
+    sink.emit(
+        "markdown-definition-paragraph",
+        line.start + at,
+        line.start + at + text.len(),
+        &line.path,
+        &[],
+    );
+}
+
 fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
     if line.paragraph
         && previous.is_some_and(|p| p.text.starts_with("# "))
         && !line.text.starts_with(' ')
@@ -625,53 +703,69 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
             );
         }
     }
-    if line.paragraph
-        && line.text.find('[').is_some_and(|at| {
-            line.text[..at]
-                .bytes()
-                .all(|byte| matches!(byte, b' ' | b'\t' | b'>'))
-        })
-        && text
-            .find("]:")
-            .is_some_and(|at| at > 1 && at + 2 < text.len())
-        && (line.text.starts_with([' ', '\t']) || line.scope.container != ContainerKind::None)
-        && let Some(start) = line.text.find('[')
-        && let Some(end) = line.text.get(start..).and_then(|rest| rest.find("]:"))
-    {
-        sink.emit(
-            "definition-in-container",
-            line.start + start,
-            line.start + start + end + 2,
-            &line.path,
-            &[],
-        );
-    }
-    term_folded(line, previous, sink);
+    definition_in_container(line, sink);
+    term_folded(line, sink);
 }
 
-fn term_folded(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
-    if line.kind == "definition_term"
-        && previous.is_some_and(|p| p.path == line.path)
-        && starts_block(text)
-        && line.text == text
+// C2-B-081: a definition-shaped line behind container marks, a list marker or description mark included.
+fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
+    let (at, text) = leaf_text(line);
+    if !line.paragraph
+        || !text.starts_with('[')
+        || line.scope.in_footnote
+        || !(line.text.starts_with([' ', '\t']) || line.scope.container != ContainerKind::None)
     {
-        sink.whole("definition-term-block-folded", line, &[]);
+        return;
     }
-    if line.kind == "definition_term"
-        && let Some(body) = text.strip_prefix(":: ")
-        && (body.starts_with("> ") || list_marker(body))
-    {
-        let prefix = line.text.find(":: ").unwrap_or(0) + 3;
-        let marker = body.find(' ').unwrap_or(body.len());
-        sink.emit(
-            "definition-term-block-folded",
-            line.start + prefix,
-            line.start + prefix + marker,
-            &line.path,
-            &[],
-        );
+    let Some(close) = text
+        .find("]:")
+        .filter(|close| *close > 1 && close + 2 < text.len())
+    else {
+        return;
+    };
+    sink.emit(
+        "definition-in-container",
+        line.start + at,
+        line.start + at + close + 2,
+        &line.path,
+        &[],
+    );
+}
+
+// C2-B-075: a quote mark or list marker opening a term's text, on the term's first line only.
+fn term_folded(line: &Line, sink: &mut Sink<'_>) {
+    if line.kind != "definition_term" || line.content_start.is_none() {
+        return;
     }
+    let (at, text) = leaf_text(line);
+    let body = match text.strip_prefix("::") {
+        Some(rest) if rest.starts_with([' ', '\t']) => rest.trim_start_matches([' ', '\t']),
+        Some(_) => return,
+        None => text,
+    };
+    let spaced = |marker: &str| {
+        body.strip_prefix(marker)
+            .is_some_and(|t| t.starts_with([' ', '\t']))
+    };
+    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+    let ordered = (1..=9).contains(&digits)
+        && matches!(body.as_bytes().get(digits), Some(b'.' | b')'))
+        && matches!(body.as_bytes().get(digits + 1), Some(b' ' | b'\t'));
+    let marker = if spaced(">") || spaced("-") || spaced("*") {
+        1
+    } else if ordered {
+        digits + 1
+    } else {
+        return;
+    };
+    let from = at + text.len() - body.len();
+    sink.emit(
+        "definition-term-block-folded",
+        line.start + from,
+        line.start + from + marker,
+        &line.path,
+        &[],
+    );
 }
 
 fn legacy_separator(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
@@ -716,6 +810,7 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
         && {
             let label = trimmed[1..trimmed.len() - 2].trim();
             !label.is_empty()
+                && !label.contains(']')
                 && !label
                     .strip_prefix('^')
                     .is_some_and(|rest| rest.trim().is_empty())
@@ -751,22 +846,29 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
     empty_include_path(line, sink);
 }
 
+// C2-I-079: a footnote label, a full reference's label or a definition label of only spaces and tabs;
+// a task box and a bracket pair with no reference glued to it are no label.
 fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
-    // A task box (C2-B-046) sits before the paragraph's own start.
-    let from = line.content_start.unwrap_or(0);
+    let (from, _) = leaf_text(line);
     for (open, _) in text.match_indices('[').filter(|(at, _)| *at >= from) {
         let Some(close) = text[open + 1..].find(']').map(|at| open + 1 + at) else {
             continue;
         };
-        let label = text[open + 1..close]
-            .strip_prefix('^')
-            .unwrap_or(&text[open + 1..close]);
-        if label.trim().is_empty() {
+        let inner = &text[open + 1..close];
+        let footnote = inner.starts_with('^');
+        let label = inner.strip_prefix('^').unwrap_or(inner);
+        if label.is_empty() || !label.bytes().all(|b| b == b' ' || b == b'\t') {
+            continue;
+        }
+        let full = open.checked_sub(1).and_then(|at| text.as_bytes().get(at)) == Some(&b']');
+        let definition = open == from && text[close + 1..].starts_with(':');
+        if footnote || full || definition {
+            let end = close + 1 + usize::from(definition && !footnote && !full);
             sink.emit(
                 "blank-reference-label",
                 line.start + open,
-                line.start + close + 1,
+                line.start + end,
                 &line.path,
                 &[],
             );
@@ -881,13 +983,19 @@ fn block_opener_width(trimmed: &str) -> usize {
 }
 
 fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
-    let (prefix, content) = marker_tail(&line.text);
-    let content = content.trim_start();
-    let prefix = prefix + line.text[prefix..].len() - line.text[prefix..].trim_start().len();
+    // C2-B-019, C2-B-200: only a paragraph or caption line is a candidate; a term's later line is not.
+    if !matches!(
+        line.kind.as_str(),
+        "paragraph" | "caption" | "cell_paragraph"
+    ) {
+        return;
+    }
+    let (prefix, content) = leaf_text(line);
     if !starts_block(content)
         || (content.starts_with('{') && !content.ends_with('}'))
         || (content.starts_with('[') && line.scope.in_footnote)
         || (content.starts_with("> ")
+            && line.quotes > 0
             && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
     {
         return;
