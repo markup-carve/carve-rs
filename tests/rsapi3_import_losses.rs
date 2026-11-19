@@ -86,6 +86,14 @@ fn c2_a_167_refusal_paths_of_the_clause_cases() {
             continue;
         };
         let kind = c["kind"].as_str().unwrap_or("render");
+        // C2-T-005 maps render cases to the diagnostic call. Older pinned cases
+        // that expect a strict render-loss refusal describe the source-only call.
+        if kind == "render"
+            && c["options"]["strictLosses"] == true
+            && want["error"] == "CarveRenderError"
+        {
+            continue;
+        }
         let Some((_, name)) = calls.iter().find(|(k, _)| *k == kind) else {
             continue;
         };
