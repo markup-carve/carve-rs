@@ -613,7 +613,18 @@ pub(crate) fn render_tabs(
         .labels
         .get("tabsGroup")
         .map_or("Tabs", String::as_str);
-    let mut wrapper = String::from("<div class=\"tabs\"");
+    let mut wrapper = String::from("<div");
+    if let Some(id) = at(node, "/attrs/id").as_str() {
+        let _ = write!(wrapper, " id=\"{}\"", cx.escape_attribute(id));
+    }
+    let mut classes = String::from("tabs");
+    if let Some(authored) = at(node, "/attrs/classes").as_array() {
+        for class in authored.iter().filter_map(Value::as_str) {
+            classes.push(' ');
+            classes.push_str(class);
+        }
+    }
+    let _ = write!(wrapper, " class=\"{}\"", cx.escape_attribute(&classes));
     let mut has_role = false;
     let mut has_name = false;
     if let Some(pairs) = at(node, "/attrs/keyValues").as_array() {
@@ -624,11 +635,9 @@ pub(crate) fn render_tabs(
             ) else {
                 continue;
             };
-            if matches!(key, "role" | "aria-label" | "aria-labelledby") {
-                has_role |= key == "role";
-                has_name |= key.starts_with("aria-");
-                let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));
-            }
+            has_role |= key == "role";
+            has_name |= matches!(key, "aria-label" | "aria-labelledby");
+            let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));
         }
     }
     if !has_role {
