@@ -646,6 +646,7 @@ fn lint_file(
 ) -> Result<i32, i32> {
     let mut lint_opts = LintOptions {
         includes: opts.includes.clone(),
+        heading_ids: opts.heading_ids,
         ..Default::default()
     };
     if let Some(map) = value(args, "rules").and_then(Value::as_object) {

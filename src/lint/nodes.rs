@@ -109,7 +109,13 @@ fn collect(root: &Value) -> Vec<Item<'_>> {
 }
 
 pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnostic>) {
-    let json = crate::tree_json(source, &crate::Options::default());
+    let json = crate::tree_json(
+        source,
+        &crate::Options {
+            heading_ids: options.heading_ids,
+            ..crate::Options::default()
+        },
+    );
     let Some(tree) = parse_tree_value(&json) else {
         return;
     };
