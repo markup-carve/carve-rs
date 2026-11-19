@@ -1512,23 +1512,17 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     emphasis_before_attrs(item, sink, &value, from);
-    if let Some(at) = value
-        .find("{.")
-        .into_iter()
-        .chain(value.find("{#"))
-        .min()
-        .filter(|at| *at > 0)
-        && value.get(at..).is_some_and(|tail| tail.contains('}'))
-        && !escaped(value.as_bytes(), at)
-        && sink
-            .source
-            .get(..from + at)
-            .is_some_and(|prefix| !prefix.rsplit('\n').next().unwrap_or("").trim().is_empty())
-    {
-        let end = value
-            .get(at..)
-            .and_then(|tail| tail.find('}'))
-            .map_or(value.len(), |end| at + end + 1);
+    if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
+        let (block, end) = crate::attr::parse_block(&value, at)?;
+        (at > 0
+            && !block.empty
+            && !escaped(value.as_bytes(), at)
+            && sink
+                .source
+                .get(..from + at)
+                .is_some_and(|prefix| !prefix.rsplit('\n').next().unwrap_or("").trim().is_empty()))
+        .then_some((at, end))
+    }) {
         sink.emit_range(
             "unattached-inline-attribute",
             from + at,

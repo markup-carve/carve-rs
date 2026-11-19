@@ -106,3 +106,22 @@ fn footnote_label_range_excludes_a_preceding_attribute() {
         vec![(5, 9)]
     );
 }
+
+#[test]
+fn inline_attributes_allow_spaces_inside_braces() {
+    for source in ["a { #id }\n", "+ { #id }\n"] {
+        assert_eq!(
+            spans(source, "unattached-inline-attribute"),
+            vec![(2, 9)],
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn empty_definition_after_quote_marker_is_reported() {
+    assert_eq!(
+        spans("> [a]:\n", "empty-reference-definition"),
+        vec![(2, 6)]
+    );
+}

@@ -886,7 +886,7 @@ fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sin
 
 fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
-    let trimmed = text.trim();
+    let (from, trimmed) = leaf_text(line);
     blank_reference_label(line, sink);
     if line.paragraph
         && trimmed.starts_with('[')
@@ -901,12 +901,11 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
                     .is_some_and(|rest| rest.trim().is_empty())
         }
     {
-        let prefix = text.len() - text.trim_start().len();
         let message = usize::from(trimmed[1..].starts_with('^'));
         sink.emit_nth(
             "empty-reference-definition",
-            line.start + prefix,
-            line.start + prefix + trimmed.len(),
+            line.start + from,
+            line.start + from + trimmed.len(),
             &line.path,
             &[],
             message,
