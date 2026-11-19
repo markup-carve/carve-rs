@@ -127,18 +127,7 @@ fn check_node(
             ));
         }
     }
-    for slot in node["slots"]
-        .as_object()
-        .into_iter()
-        .flat_map(|slots| slots.keys())
-    {
-        if rule["slots"].get(slot).is_none() {
-            return Err(reader(
-                &format!("{path}/slots/{slot}"),
-                "unregistered extension slot",
-            ));
-        }
-    }
+    check_slot_names(node, path, rule)?;
     for (slot, spec) in rule["slots"]
         .as_object()
         .into_iter()
@@ -168,6 +157,22 @@ fn check_node(
                     ));
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+fn check_slot_names(node: &Value, path: &str, rule: &Value) -> Result<(), TreeError> {
+    for slot in node["slots"]
+        .as_object()
+        .into_iter()
+        .flat_map(|slots| slots.keys())
+    {
+        if rule["slots"].get(slot).is_none() {
+            return Err(reader(
+                &format!("{path}/slots/{slot}"),
+                "unregistered extension slot",
+            ));
         }
     }
     Ok(())
