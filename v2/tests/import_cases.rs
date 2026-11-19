@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 const HELD: &[(&str, &str)] = &[];
 
 /// The import entries that carry an expected `carve` source (not compared).
-const WITH_CARVE_CLAUSE: &[&str] = &["CC-907", "CC-1044"];
+const WITH_CARVE_CLAUSE: &[&str] = &["CC-907", "CC-1044", "CC-1260"];
 
 fn load(name: &str) -> Value {
     let path = format!("{}/spec-conformance/{name}", env!("CARGO_MANIFEST_DIR"));

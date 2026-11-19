@@ -3,8 +3,8 @@
 //! `prefix`, the prefix of its containers.
 
 use super::attrs::{
-    BlockParts, ListMarkers, brace_block, is_name, list_markers, longest_bare_run, plain_block,
-    quoted, same_list_kind,
+    BlockParts, ListMarkers, brace_block, is_name, letter_style_pair, list_markers,
+    longest_bare_run, plain_block, quoted, same_list_kind,
 };
 use super::inline::{
     BARE_BREAKS, IN_FIGURE_GROUP, braced_comment, line_comment_text, write_content, write_inlines,
@@ -1129,8 +1129,13 @@ pub fn blank_lines_between(
     if ty(node) == "comment" {
         return blank_lines_before_comment(w, before, node);
     }
-    if list_before.is_some_and(|l| same_list_kind(l, node)) {
-        return LIST_BOUNDARY_BLANKS;
+    if let Some(l) = list_before {
+        if same_list_kind(l, node) {
+            return LIST_BOUNDARY_BLANKS;
+        }
+        if letter_style_pair(l, node) {
+            return 0;
+        }
     }
     usize::from(!nested)
 }

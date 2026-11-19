@@ -279,8 +279,40 @@ fn same_ordered_kind(a: &Value, b: &Value) -> bool {
         return false;
     }
     let upper = |s: &str| s != s.to_lowercase();
-    // C2-B-038, C2-B-039: a single letter is a sibling in a list of the other letter style.
-    first == second || (first != "1" && second != "1" && upper(first) == upper(second))
+    if first == second {
+        return true;
+    }
+    if first == "1" || second == "1" || upper(first) != upper(second) {
+        return false;
+    }
+    // C2-W-028 with C2-B-038, C2-B-039: the first written marker of `b` is a
+    // sibling in `a` when it is a single letter of `a`'s style.
+    let start = b
+        .get("marker")
+        .and_then(|m| m.get("start"))
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
+    if second.eq_ignore_ascii_case("i") {
+        matches!(start, 1 | 5 | 10 | 50 | 100 | 500 | 1000)
+    } else {
+        matches!(start, 3 | 4 | 9 | 12 | 13 | 22 | 24)
+    }
+}
+
+/// C2-W-028: ordered lists of the two letter styles in one case and one
+/// delimiter, which need no blank line when `b` would not continue `a`.
+pub fn letter_style_pair(a: &Value, b: &Value) -> bool {
+    let ordered = |l: &Value| ty(l) == "list" && marker_field(l, "kind", "") == "ordered";
+    if !ordered(a) || !ordered(b) {
+        return false;
+    }
+    if marker_field(a, "delimiter", ".") != marker_field(b, "delimiter", ".") {
+        return false;
+    }
+    matches!(
+        (marker_field(a, "style", "1"), marker_field(b, "style", "1")),
+        ("a", "i") | ("i", "a") | ("A", "I") | ("I", "A")
+    )
 }
 
 /// C2-B-049, C2-B-053: whether the list `b` directly after the list `a` would continue it.

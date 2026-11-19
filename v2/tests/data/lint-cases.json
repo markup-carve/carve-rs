@@ -447,7 +447,7 @@
     "trigger": "i.  x\nb.  y\n",
     "near": "i.  x\n\n",
     "fragment": "b.  y",
-    "message": "Nothing after this one-letter marker settles its style, so a lone i reads as roman and any other letter as alphabetic, and the list splits after its first item."
+    "message": "This one-letter marker fixes its list style, so the next marker starts another list."
   },
   {
     "id": "ordered-marker-right-aligned",

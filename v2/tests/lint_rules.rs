@@ -646,3 +646,31 @@ rule!(
     "uneven-list-indent",
     "data/lint-extra.json"
 );
+
+/// C2-B-044: the split is reported for a one-letter roman-letter first
+/// marker with fewer than three blank lines before the next list.
+#[test]
+fn ordered_list_kind_split_bounds() {
+    let reports = |source: &str| {
+        lint(source, &LintOptions::default())
+            .iter()
+            .any(|d| d.code == "ordered-list-kind-split")
+    };
+    for source in [
+        "v. a\nvi. b\n",
+        "v. a\n\nvi. b\n",
+        "v. a\n\n\nvi. b\n",
+        "i) a\nj) b\n",
+        "I.  a\nJ.  b\n",
+    ] {
+        assert!(reports(source), "{source:?}");
+    }
+    for source in [
+        "v. a\n\n\n\nvi. b\n",
+        "b. a\nii. b\n",
+        "v. a\nw. b\nvi. c\n",
+        "i. a\nJ. b\n",
+    ] {
+        assert!(!reports(source), "{source:?}");
+    }
+}

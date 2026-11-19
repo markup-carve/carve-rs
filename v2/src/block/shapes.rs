@@ -330,56 +330,6 @@ pub fn marker_matches(list: MarkerKind, m: MarkerKind) -> bool {
     }
 }
 
-/// C2-B-042: settle the first one-letter roman-shaped marker from the next marker.
-#[must_use]
-pub fn settle_first(first: MarkerKind, next: MarkerKind) -> MarkerKind {
-    let MarkerKind::Ordered {
-        delim,
-        letter: Some(letter),
-        ..
-    } = first
-    else {
-        return first;
-    };
-    if !matches!(
-        letter.to_ascii_lowercase(),
-        'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'
-    ) {
-        return first;
-    }
-    let MarkerKind::Ordered {
-        style: next_style,
-        value: next_value,
-        letter: next_letter,
-        ..
-    } = next
-    else {
-        return first;
-    };
-    let upper = letter.is_ascii_uppercase();
-    let same_case = matches!(next_style, Style::UpperAlpha | Style::UpperRoman) == upper;
-    if !same_case {
-        return first;
-    }
-    let roman = roman_value(&letter.to_string()).is_some_and(|v| {
-        next_value == Some(v + 1) && matches!(next_style, Style::LowerRoman | Style::UpperRoman)
-    });
-    let alpha = next_letter.is_some_and(|c| u32::from(c) == u32::from(letter) + 1);
-    let style = match (roman, alpha, upper) {
-        (true, _, false) => Style::LowerRoman,
-        (true, _, true) => Style::UpperRoman,
-        (false, true, false) => Style::LowerAlpha,
-        (false, true, true) => Style::UpperAlpha,
-        _ => return first,
-    };
-    MarkerKind::Ordered {
-        style,
-        delim,
-        value: letter_value(letter, style),
-        letter: Some(letter),
-    }
-}
-
 /// Quote mark (C2-B-031): `>` followed by a space or by the end of the line.
 /// Returns the cursor behind the mark and its one space.
 #[must_use]
