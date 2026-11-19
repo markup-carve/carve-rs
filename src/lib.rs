@@ -193,10 +193,6 @@ pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String
 
 #[doc(hidden)]
 /// Renders a supplied tree and returns the render-loss record (C2-T-005).
-///
-/// # Errors
-///
-/// [`RenderError::Losses`] under `strictLosses`.
 pub fn render_tree_with_diagnostics(
     tree: &ast::owned::Document,
     opts: &Options,
@@ -206,9 +202,7 @@ pub fn render_tree_with_diagnostics(
     let files = resolve_tree(&mut doc, opts, &arena);
     let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), None);
     let losses = unallowed(losses, opts);
-    if opts.strict_losses && !losses.is_empty() {
-        return Err(RenderError::Losses(losses));
-    }
+    let lost = !losses.is_empty();
     let mut diagnostics = losses
         .into_iter()
         .map(|code| {
@@ -221,7 +215,11 @@ pub fn render_tree_with_diagnostics(
         .collect();
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Ok(Rendered {
-        html,
+        html: if opts.strict_losses && lost {
+            String::new()
+        } else {
+            html
+        },
         diagnostics,
         dropped_losses,
     })

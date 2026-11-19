@@ -583,7 +583,9 @@ impl Carve {
         if self.plain() {
             return render(input, opts);
         }
-        Ok(self.render_with_diagnostics(input, opts)?.html)
+        Ok(self
+            .render_with_diagnostics_for(input.into(), opts, true)?
+            .html)
     }
 
     /// `renderWithDiagnostics` with the registered extensions.
@@ -596,10 +598,18 @@ impl Carve {
         input: impl Into<Input<'a>>,
         opts: &Options,
     ) -> Result<Rendered, Error> {
+        self.render_with_diagnostics_for(input.into(), opts, false)
+    }
+
+    fn render_with_diagnostics_for(
+        &self,
+        input: Input<'_>,
+        opts: &Options,
+        refuse_loss: bool,
+    ) -> Result<Rendered, Error> {
         if self.plain() {
             return render_with_diagnostics(input, opts);
         }
-        let input = input.into();
         check_length(input.len(), opts)?;
         let parsed = if self.standard.is_empty() && self.extensions.owned_transforms_only() {
             // This tree goes straight to the owned render path. The public
@@ -629,7 +639,7 @@ impl Carve {
         } else {
             self.parse_with_diagnostics(input, opts)?
         };
-        let mut rendered = self.render_view(parsed.tree, opts)?;
+        let mut rendered = self.render_view(parsed.tree, opts, refuse_loss)?;
         let mut diagnostics = parsed.diagnostics;
         diagnostics.append(&mut rendered.diagnostics);
         rendered.diagnostics = diagnostics;
@@ -643,7 +653,10 @@ impl Carve {
     ///
     /// As [`render_tree`].
     pub fn render_tree(&self, tree: &Tree, opts: &Options) -> Result<String, Error> {
-        Ok(self.render_tree_with_diagnostics(tree, opts)?.html)
+        if self.plain() {
+            return render_tree(tree, opts);
+        }
+        Ok(self.render_view(tree.clone(), opts, true)?.html)
     }
 
     /// `renderWithDiagnostics` of a supplied tree with the registered extensions.
@@ -659,10 +672,15 @@ impl Carve {
         if self.plain() {
             return render_tree_with_diagnostics(tree, opts);
         }
-        self.render_view(tree.clone(), opts)
+        self.render_view(tree.clone(), opts, false)
     }
 
-    fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
+    fn render_view(
+        &self,
+        tree: Tree,
+        opts: &Options,
+        refuse_loss: bool,
+    ) -> Result<Rendered, Error> {
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
         let (view, transform_entries) = if self.extensions.owned_transforms_only() {
             let mut resolved = crate::resolved_owned(tree.document(), opts);
@@ -688,9 +706,18 @@ impl Carve {
         let mut diagnostics = transform_entries;
         diagnostics.extend(entries);
         diagnostics.extend(host.failures());
-        let dropped = limit(opts, &mut diagnostics, &rendered.dropped_losses)?;
+        let (dropped, lost) = limit(
+            opts,
+            &mut diagnostics,
+            &rendered.dropped_losses,
+            refuse_loss,
+        )?;
         Ok(Rendered {
-            html: rendered.html,
+            html: if opts.strict_losses && lost {
+                String::new()
+            } else {
+                rendered.html
+            },
             diagnostics,
             suppressed_diagnostics: suppressed + dropped,
         })
@@ -994,7 +1021,8 @@ pub fn render_tree(tree: &Tree, opts: &Options) -> Result<String, Error> {
 ///
 /// # Errors
 ///
-/// As [`render`]; under `strictLosses` a loss is [`Error::Render`].
+/// Input and option errors can refuse; a strict render loss returns an empty
+/// HTML string and the error entries of the record.
 pub fn render_with_diagnostics<'a>(
     input: impl Into<Input<'a>>,
     opts: &Options,
@@ -1019,37 +1047,49 @@ pub fn render_tree_with_diagnostics(tree: &Tree, opts: &Options) -> Result<Rende
 
 fn finish_render(rendered: crate::Rendered, opts: &Options) -> Result<Rendered, Error> {
     let (mut diagnostics, suppressed) = record::cap_includes(&rendered.diagnostics);
-    let dropped = limit(opts, &mut diagnostics, &rendered.dropped_losses)?;
+    let (dropped, lost) = limit(opts, &mut diagnostics, &rendered.dropped_losses, false)?;
     Ok(Rendered {
-        html: rendered.html,
+        html: if opts.strict_losses && lost {
+            String::new()
+        } else {
+            rendered.html
+        },
         diagnostics,
         suppressed_diagnostics: suppressed + dropped,
     })
 }
 
 /// C2-H-204, C2-H-205, C2-H-130: leaves allowed losses out, keeps the first
-/// `max_losses` of the others and refuses the call under `strictLosses` when
-/// a loss is left, kept or not. Returns the number of losses not kept.
-fn limit(opts: &Options, diagnostics: &mut Vec<Entry>, dropped: &[&str]) -> Result<usize, Error> {
+/// `max_losses` of the others. Returns the number not kept and whether any
+/// unallowed loss occurred. A source-only render may request the typed refusal.
+fn limit(
+    opts: &Options,
+    diagnostics: &mut Vec<Entry>,
+    dropped: &[&str],
+    refuse_loss: bool,
+) -> Result<(usize, bool), Error> {
     let loss = |e: &Entry| e.channel == "render-loss";
     diagnostics.retain(|e| !(loss(e) && opts.allows(&e.code)));
     let mut codes: Vec<String> = Vec::new();
     let mut kept = 0usize;
     let mut cut = dropped.len();
-    diagnostics.retain(|e| {
+    diagnostics.retain_mut(|e| {
         if !loss(e) {
             return true;
         }
         codes.push(e.code.clone());
         kept += 1;
         cut += usize::from(kept > opts.max_losses);
+        if opts.strict_losses {
+            e.severity = "error".into();
+        }
         kept <= opts.max_losses
     });
     codes.extend(dropped.iter().map(|c| (*c).to_string()));
-    if opts.strict_losses && !codes.is_empty() {
+    if refuse_loss && opts.strict_losses && !codes.is_empty() {
         return Err(Error::Render { codes });
     }
-    Ok(cut)
+    Ok((cut, !codes.is_empty()))
 }
 
 /// `lint`: the record of a lint run, parse entries and lint findings
