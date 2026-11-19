@@ -26,6 +26,7 @@ fn every_layout_clause_has_its_required_sidecar_facts() {
             "{id}"
         );
         let layout = result.layout;
+        api::validate_layout(&layout).unwrap_or_else(|e| panic!("{id}: {e}"));
         let expected = &case["expected"]["layout"];
         for field in ["version", "encoding", "source", "lineEndings", "bom"] {
             if let Some(want) = expected.get(field) {

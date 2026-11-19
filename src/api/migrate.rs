@@ -1,6 +1,6 @@
 //! `migrateTree` (C2-A-176 to C2-A-180): stored 1.x and retired draft trees
 //! upgraded to contract 2.0 outside the reader, as carve-js does. The
-//! source-layout record of the migration is not built here.
+//! with source-layout facts kept beside the migrated tree.
 
 mod shapes;
 mod table;
@@ -24,6 +24,8 @@ pub struct Migrated {
     /// The JSON text of the 2.0 envelope, for an input envelope.
     pub envelope: Option<String>,
     pub diagnostics: Vec<Entry>,
+    /// The version-2 sidecar; without source, only known migrated spelling is recorded.
+    pub layout: Value,
 }
 
 type Fields = Map<String, Value>;
@@ -401,6 +403,116 @@ fn before(node: &mut Fields) {
     }
 }
 
+/// Spelling fields of the retired shapes are attached temporarily to the
+/// corresponding migrated node. The final walk removes them before reading
+/// the tree and gives them JSON Pointer paths in the new tree.
+fn retired_layout(old: &Fields, node: &mut Fields) {
+    let mut facts = Fields::new();
+    match ty(node) {
+        "block_quote" => {
+            if let Some(v) = old.get("fenced") {
+                facts.insert("fenced".into(), v.clone());
+            }
+        }
+        "list" => {
+            if let Some(v) = old
+                .get("bareMarker")
+                .or_else(|| old.get("marker").and_then(|m| m.get("bare")))
+            {
+                facts.insert("bare".into(), v.clone());
+            }
+        }
+        "link" | "image" => {
+            if let Some(mut raw) = old
+                .get("rawRef")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            {
+                if ty(node) == "image" {
+                    raw = raw.strip_prefix('!').unwrap_or(&raw).to_string();
+                }
+                facts.insert("rawRef".into(), raw.into());
+            }
+        }
+        "table" => {
+            facts.insert(
+                "sourceFormat".into(),
+                old.get("sourceFormat")
+                    .cloned()
+                    .unwrap_or_else(|| "pipe".into()),
+            );
+        }
+        "table_row" => {
+            if let Some(v) = old.get("continuationLines") {
+                facts.insert("continuationLines".into(), v.clone());
+            }
+        }
+        "include" => {
+            let mut spelling = Fields::new();
+            for item in old
+                .get("options")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let pair = if let Some(items) = item.as_array() {
+                    items
+                        .first()
+                        .and_then(Value::as_str)
+                        .zip(items.get(1).and_then(Value::as_str))
+                } else {
+                    item.get("name")
+                        .and_then(Value::as_str)
+                        .zip(item.get("value").and_then(Value::as_str))
+                };
+                if let Some((key, raw)) = pair {
+                    spelling.entry(key).or_insert_with(|| raw.into());
+                }
+            }
+            if !spelling.is_empty() {
+                facts.insert("optionSpelling".into(), Value::Object(spelling));
+            }
+        }
+        _ => {}
+    }
+    if !facts.is_empty() {
+        node.insert("__layout".into(), Value::Object(facts));
+    }
+}
+
+fn strip_layout(node: &mut Value, path: &str, entries: &mut Vec<Value>) {
+    let Some(map) = node.as_object_mut() else {
+        return;
+    };
+    if let Some(Value::Object(facts)) = map.remove("__layout") {
+        let mut entry = json!({"path":path,"startByte":0,"endByte":0});
+        for (key, value) in facts {
+            put(&mut entry, &key, value);
+        }
+        entries.push(entry);
+    }
+    for slot in [
+        "title",
+        "children",
+        "columns",
+        "pairs",
+        "prefix",
+        "suffix",
+        "base",
+        "annotation",
+        "short",
+        "caption",
+    ] {
+        if let Some(Value::Array(children)) = map.get_mut(slot) {
+            for (index, child) in children.iter_mut().enumerate() {
+                strip_layout(child, &format!("{path}/{slot}/{index}"), entries);
+            }
+        } else if let Some(child @ Value::Object(_)) = map.get_mut(slot) {
+            strip_layout(child, &format!("{path}/{slot}"), entries);
+        }
+    }
+}
+
 fn arrange_definitions(node: &mut Fields) {
     if ty(node) != "document" {
         return;
@@ -476,6 +588,9 @@ fn migrate_node(old: &Fields, path: &str, state: &mut State<'_>) -> Vec<Value> {
     mechanical(&mut node, old_type);
     before(&mut node);
     shapes::shape(&mut node, old, state, path);
+    if state.source.is_none() {
+        retired_layout(old, &mut node);
+    }
     coalesce_text(&mut node);
     promote_images(&mut node);
     arrange_definitions(&mut node);
@@ -921,6 +1036,7 @@ pub fn migrate_tree_with(json: &Value, opts: &MigrateOptions) -> Result<Migrated
             tree,
             envelope,
             diagnostics: Vec::new(),
+            layout: migration_layout(opts.source.as_deref(), Vec::new())?,
         });
     }
     let mut state = State {
@@ -930,11 +1046,30 @@ pub fn migrate_tree_with(json: &Value, opts: &MigrateOptions) -> Result<Migrated
         declared: Vec::new(),
         used: Vec::new(),
     };
-    let (document, wrapped) = migrate_document(old, envelope, &mut state)?;
+    let (mut document, mut wrapped) = migrate_document(old, envelope, &mut state)?;
+    let mut entries = Vec::new();
+    strip_layout(&mut document, "", &mut entries);
+    if let Some(envelope) = wrapped.as_mut().and_then(Value::as_object_mut)
+        && let Some(doc) = envelope.get_mut("document")
+    {
+        strip_layout(doc, "", &mut Vec::new());
+    }
     let tree = read(&document, wrapped.as_ref())?;
     Ok(Migrated {
         tree,
         envelope: wrapped.map(|w| w.to_string()),
         diagnostics: state.diagnostics,
+        layout: migration_layout(opts.source.as_deref(), entries)?,
     })
+}
+
+fn migration_layout(source: Option<&str>, entries: Vec<Value>) -> Result<Value, Error> {
+    if let Some(source) = source {
+        return super::parse_with_layout(source, &crate::Options::default())
+            .map(|parsed| parsed.layout);
+    }
+    Ok(json!({
+        "version": 2, "encoding": "utf-8", "source": "", "lineEndings": "none",
+        "bom": false, "nodes": entries,
+    }))
 }

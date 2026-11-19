@@ -1080,6 +1080,15 @@ pub fn validate_tree(tree: &Tree) -> Result<(), Error> {
     Ok(())
 }
 
+/// Validates a version-2 source-layout record independently of a tree (C2-L-058).
+///
+/// # Errors
+///
+/// [`Error::Layout`] with a JSON Pointer to the rejected field.
+pub fn validate_layout(layout: &Value) -> Result<(), Error> {
+    layout::validate(layout)
+}
+
 /// `migrateTree` (C2-A-178): a 1.x or draft tree, bare or in an envelope,
 /// upgraded to contract 2.0.
 ///

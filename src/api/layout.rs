@@ -1,5 +1,8 @@
 //! An opt-in walk of the resolved tree and its source origins.
 
+mod validate;
+pub(super) use validate::validate;
+
 use super::{Error, Input, Tree};
 use crate::block::events::{Event, LeafKind};
 use crate::block::table::{Row, TableData};
