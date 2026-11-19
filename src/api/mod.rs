@@ -601,7 +601,34 @@ impl Carve {
         }
         let input = input.into();
         check_length(input.len(), opts)?;
-        let parsed = self.parse_with_diagnostics(input, opts)?;
+        let parsed = if self.standard.is_empty() && self.extensions.owned_transforms_only() {
+            // This tree goes straight to the owned render path. The public
+            // parse call still rebuilds its JSON after claims, but a render
+            // never exposes that intermediate wire form.
+            let mut parsed = parse_with_diagnostics(input, opts)?;
+            if self.may_claim(&parsed.tree.json) {
+                let opener = |at: usize| match input {
+                    Input::Text(source) => standard::opener_name(source, at),
+                    Input::Bytes(bytes) => {
+                        let line = bytes
+                            .get(at..)?
+                            .split(|&b| b == b'\n')
+                            .map(String::from_utf8_lossy)
+                            .find(|line| !standard::is_attribute_line(line))?;
+                        standard::opener_name(&line, 0)
+                    }
+                };
+                let claimed =
+                    self.matchers
+                        .apply_owned(&mut parsed.tree.document, &opener, &|name| {
+                            self.extensions.declaration(name)
+                        })?;
+                parsed.diagnostics.extend(claimed);
+            }
+            parsed
+        } else {
+            self.parse_with_diagnostics(input, opts)?
+        };
         let mut rendered = self.render_view(parsed.tree, opts)?;
         let mut diagnostics = parsed.diagnostics;
         diagnostics.append(&mut rendered.diagnostics);

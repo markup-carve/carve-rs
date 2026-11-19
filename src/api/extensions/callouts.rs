@@ -111,15 +111,13 @@ fn bind(nodes: &mut [Node]) {
     let mut at = 0;
     while let Some(node) = nodes.get_mut(at) {
         if has_marker(node) {
-            let Node::CodeBlock(code) = node else {
-                unreachable!()
-            };
-            *node = code_node(code);
+            if let Node::CodeBlock(code) = node {
+                *node = code_node(code);
+            }
             if let Some(next) = nodes.get_mut(at + 1).filter(|n| is_list(n)) {
-                let Node::Paragraph(paragraph) = next else {
-                    unreachable!()
-                };
-                *next = list_node(paragraph);
+                if let Node::Paragraph(paragraph) = next {
+                    *next = list_node(paragraph);
+                }
                 at += 1;
             }
         }
@@ -139,14 +137,8 @@ fn any_marker(nodes: &[Node], depth: usize) -> bool {
                 .children()
                 .is_some_and(|children| any_marker(children, depth + 1))
             || match node {
-                Node::BlockExtension(ext) => ext
-                    .slots
-                    .as_ref()
-                    .is_some_and(|slots| slot_has_marker(slots)),
-                Node::InlineExtension(ext) => ext
-                    .slots
-                    .as_ref()
-                    .is_some_and(|slots| slot_has_marker(slots)),
+                Node::BlockExtension(ext) => ext.slots.as_ref().is_some_and(slot_has_marker),
+                Node::InlineExtension(ext) => ext.slots.as_ref().is_some_and(slot_has_marker),
                 _ => false,
             }
     })

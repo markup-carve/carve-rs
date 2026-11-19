@@ -352,8 +352,6 @@ fn failure_entry(code: &str, message: &str) -> Entry {
 
 /// The authored ids of a view that a preceding node already holds.
 fn duplicate_ids(tree: &Tree) -> usize {
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut duplicates = 0;
     fn visit(
         node: &crate::ast::owned::Node,
         seen: &mut HashSet<String>,
@@ -404,6 +402,8 @@ fn duplicate_ids(tree: &Tree) -> usize {
             }
         }
     }
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut duplicates = 0;
     if let Some(id) = tree.document().attrs.as_ref().and_then(|a| a.id.as_ref()) {
         seen.insert(id.clone());
     }
