@@ -149,56 +149,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
         start += piece.len();
     }
     let count = raws.len();
-    // One pass per range over the lines it covers, instead of every range per line.
-    let mut facts = vec![LineFacts::default(); count];
-    for range in ranges {
-        let kind = range.kind.as_str();
-        let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
-        let flags = match kind {
-            "code_block" | "raw_block" => OPAQUE,
-            "frontmatter" => OPAQUE | FRONTMATTER,
-            "list_item" => LIST_ITEM | CONTAINER,
-            "footnote" => FOOTNOTE | CONTAINER,
-            "definition_description" => DESCRIPTION | CONTAINER,
-            "block_quote" | "div" => CONTAINER,
-            _ => 0,
-        };
-        if paragraph_like || flags != 0 {
-            let first = range.start_line.max(1) - 1;
-            let covered = facts.get_mut(first..range.end_line.min(count));
-            for fact in covered.into_iter().flatten() {
-                fact.flags |= flags;
-                // `max_by_key` keeps the last of equal keys.
-                if paragraph_like
-                    && fact.paragraph.is_none_or(|best| {
-                        (range.kind == "caption", range.path.len())
-                            >= (best.kind == "caption", best.path.len())
-                    })
-                {
-                    fact.paragraph = Some(range);
-                }
-            }
-        }
-        if is_opaque_leaf(kind) {
-            let first = starts
-                .partition_point(|s| *s <= range.start)
-                .saturating_sub(1);
-            let lines = starts
-                .get(first..)
-                .unwrap_or_default()
-                .iter()
-                .zip(raws.get(first..).unwrap_or_default())
-                .zip(facts.get_mut(first..).unwrap_or_default());
-            for ((line_start, raw), fact) in lines {
-                if *line_start >= range.end {
-                    break;
-                }
-                if range.start < line_start + raw.len() {
-                    fact.masks.push(range);
-                }
-            }
-        }
-    }
+    let facts = line_facts(&starts, &raws, ranges);
     let mut out = Vec::with_capacity(count + 1);
     let lines = starts.iter().zip(raws).zip(facts);
     for (index, ((&start, raw), fact)) in lines.enumerate() {
@@ -263,6 +214,61 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
         });
     }
     out
+}
+
+fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<LineFacts<'a>> {
+    let count = raws.len();
+    // One pass per range over the lines it covers, instead of every range per line.
+    let mut facts = vec![LineFacts::default(); count];
+    for range in ranges {
+        let kind = range.kind.as_str();
+        let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
+        let flags = match kind {
+            "code_block" | "raw_block" => OPAQUE,
+            "frontmatter" => OPAQUE | FRONTMATTER,
+            "list_item" => LIST_ITEM | CONTAINER,
+            "footnote" => FOOTNOTE | CONTAINER,
+            "definition_description" => DESCRIPTION | CONTAINER,
+            "block_quote" | "div" => CONTAINER,
+            _ => 0,
+        };
+        if paragraph_like || flags != 0 {
+            let first = range.start_line.max(1) - 1;
+            let covered = facts.get_mut(first..range.end_line.min(count));
+            for fact in covered.into_iter().flatten() {
+                fact.flags |= flags;
+                // `max_by_key` keeps the last of equal keys.
+                if paragraph_like
+                    && fact.paragraph.is_none_or(|best| {
+                        (range.kind == "caption", range.path.len())
+                            >= (best.kind == "caption", best.path.len())
+                    })
+                {
+                    fact.paragraph = Some(range);
+                }
+            }
+        }
+        if is_opaque_leaf(kind) {
+            let first = starts
+                .partition_point(|s| *s <= range.start)
+                .saturating_sub(1);
+            let lines = starts
+                .get(first..)
+                .unwrap_or_default()
+                .iter()
+                .zip(raws.get(first..).unwrap_or_default())
+                .zip(facts.get_mut(first..).unwrap_or_default());
+            for ((line_start, raw), fact) in lines {
+                if *line_start >= range.end {
+                    break;
+                }
+                if range.start < line_start + raw.len() {
+                    fact.masks.push(range);
+                }
+            }
+        }
+    }
+    facts
 }
 
 const OPAQUE: u8 = 1;
