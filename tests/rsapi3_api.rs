@@ -170,6 +170,13 @@ fn apply_patch_refusals() {
         "/children/0/type"
     );
     assert_eq!(refused(json!({"op": "add"}), None), "");
+    for bad in ["/children~2x", "/children~", "children"] {
+        assert_eq!(
+            refused(json!([{"op": "remove", "path": bad}]), None),
+            "/0/path",
+            "{bad}"
+        );
+    }
 }
 
 #[test]

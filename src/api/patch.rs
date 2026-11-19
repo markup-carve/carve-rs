@@ -153,6 +153,13 @@ fn pointer(value: Option<&Value>, at: &str) -> Result<Vec<String>, Error> {
     let Some(rest) = text.strip_prefix('/') else {
         return Err(refuse(at, "not a JSON pointer"));
     };
+    // RFC 6901: `~` only escapes `0` and `1`.
+    if rest
+        .match_indices('~')
+        .any(|(i, _)| !matches!(rest.as_bytes().get(i + 1), Some(b'0' | b'1')))
+    {
+        return Err(refuse(at, "not a JSON pointer"));
+    }
     Ok(rest
         .split('/')
         .map(|part| part.replace("~1", "/").replace("~0", "~"))
