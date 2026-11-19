@@ -89,6 +89,7 @@ pub(crate) struct CallOptions {
     pub extensions: Vec<String>,
     /// `renderers`: the extensions whose standard renderer is registered.
     pub renderers: Vec<String>,
+    pub tabs_aria: bool,
 }
 
 /// Reads the options of a call from a JSON object, refusing an unknown
@@ -131,6 +132,7 @@ fn from_json_in(
         set(&mut out, name, v)?;
     }
     out.lint.includes.clone_from(&out.options.includes);
+    out.lint.heading_ids = out.options.heading_ids;
     out.write.render = out.options.clone();
     out.write.extensions.clone_from(&out.extensions);
     Ok(out)
@@ -156,7 +158,9 @@ fn set(out: &mut CallOptions, name: &str, v: &Value) -> Result<(), Error> {
             Ok(())
         }
         "renderers" => {
-            out.renderers = standard_renderers(v)?;
+            let (names, aria) = standard_renderers(v)?;
+            out.renderers = names;
+            out.tabs_aria = aria;
             Ok(())
         }
         "labels" | "symbols" | "social" | "urlPolicy" | "includes" | "codeBlockRenderer" => {
@@ -411,10 +415,14 @@ fn includes(v: &Value) -> Result<Option<crate::include::Includes>, Error> {
     let Some(root) = map.get("root").and_then(Value::as_str) else {
         return Err(Error::option("includes", "root is missing or not a string"));
     };
-    let mut inc = crate::include::Includes::new(root_resolver(root)?);
+    let allow_absolute = map.get("allowAbsolute").map_or(Ok(true), |v| {
+        v.as_bool()
+            .ok_or_else(|| Error::option("includes", "allowAbsolute is not a boolean"))
+    })?;
+    let mut inc = crate::include::Includes::new(root_resolver(root, allow_absolute)?);
     for (k, item) in map {
         match (k.as_str(), item) {
-            ("root", _) => {}
+            ("root" | "allowAbsolute", _) => {}
             ("file", Value::String(s)) => inc.file = Some(s.clone()),
             ("depth", n) => inc.depth = limit(n)?,
             ("bytes", n) => inc.bytes = limit(n)?,
@@ -430,14 +438,14 @@ fn includes(v: &Value) -> Result<Option<crate::include::Includes>, Error> {
 }
 
 #[cfg(feature = "fs")]
-fn root_resolver(root: &str) -> Result<crate::include::Resolver, Error> {
-    crate::include::fs::resolver(std::path::Path::new(root))
+fn root_resolver(root: &str, allow_absolute: bool) -> Result<crate::include::Resolver, Error> {
+    crate::include::fs::resolver_with(std::path::Path::new(root), allow_absolute)
         .map_err(|_| Error::option("includes", "the include root cannot be read"))
 }
 
 // Without `fs` the library opens no file, so a root on the JSON boundary is refused.
 #[cfg(not(feature = "fs"))]
-fn root_resolver(_root: &str) -> Result<crate::include::Resolver, Error> {
+fn root_resolver(_root: &str, _allow_absolute: bool) -> Result<crate::include::Resolver, Error> {
     Err(Error::option(
         "includes",
         "this build reads no files (the fs feature is off)",
@@ -465,14 +473,27 @@ fn standard_names(v: &Value) -> Result<Vec<String>, Error> {
 
 /// `renderers` in JSON: `{NAME: "standard"}`, the standard renderer of a
 /// standard extension; a host renderer takes host code (C2-T-010).
-fn standard_renderers(v: &Value) -> Result<Vec<String>, Error> {
+fn standard_renderers(v: &Value) -> Result<(Vec<String>, bool), Error> {
     let Some(map) = v.as_object() else {
         return Err(Error::option("renderers", "not an object"));
     };
-    map.iter()
+    let names: Vec<String> = map
+        .iter()
         .map(|(name, r)| {
             if r == "standard" {
                 Ok(name.clone())
+            } else if name == "carve.tabs" && r.pointer("/standard/mode").is_some() {
+                match r.pointer("/standard/mode").and_then(Value::as_str) {
+                    Some("css" | "aria")
+                        if r["standard"].as_object().is_some_and(|m| m.len() == 1) =>
+                    {
+                        Ok(name.clone())
+                    }
+                    _ => Err(Error::option(
+                        "renderers",
+                        "carve.tabs standard mode must be css or aria",
+                    )),
+                }
             } else {
                 Err(Error::option(
                     "renderers",
@@ -480,7 +501,11 @@ fn standard_renderers(v: &Value) -> Result<Vec<String>, Error> {
                 ))
             }
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    Ok((
+        names,
+        v.pointer("/carve.tabs/standard/mode") == Some(&Value::String("aria".into())),
+    ))
 }
 
 /// C2-W-109: rule ids of `data/lint-rules.json` set to `on` or `off`, and
