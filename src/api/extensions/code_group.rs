@@ -361,7 +361,7 @@ pub fn code_group(options: CodeGroupOptions) -> Bundle {
             extension: NAME.into(),
             form: Form::Div,
             name: "code-group".into(),
-            claimer: Box::new(claim),
+            claimer: Box::new(super::Engine(claim)),
         }],
     }
 }

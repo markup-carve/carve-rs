@@ -84,6 +84,25 @@ pub trait Claimer: Send + Sync {
     /// Any error; the core node stays and `extension-transform-failed` is
     /// reported.
     fn claim(&self, claim: &Claim<'_>) -> Result<Option<Value>, Error>;
+
+    /// Whether the claimer is engine code whose nodes need no read-back.
+    #[doc(hidden)]
+    fn engine(&self) -> bool {
+        false
+    }
+}
+
+/// A claimer of this crate's standard extensions.
+pub(crate) struct Engine(pub(crate) fn(&Claim<'_>) -> Option<Value>);
+
+impl Claimer for Engine {
+    fn claim(&self, claim: &Claim<'_>) -> Result<Option<Value>, Error> {
+        Ok((self.0)(claim))
+    }
+
+    fn engine(&self) -> bool {
+        true
+    }
 }
 
 impl<F> Claimer for F
@@ -234,8 +253,15 @@ impl Matchers {
                 Value::Array(items) => pending.extend(items.iter_mut().rev()),
                 Value::Object(map) => {
                     if map.contains_key("type")
-                        && let Some(next) =
-                            self.claim(map, &names, &definitions, declared, &mut used, &mut entries)
+                        && let Some(next) = self.claim(
+                            map,
+                            opener,
+                            &names,
+                            &definitions,
+                            declared,
+                            &mut used,
+                            &mut entries,
+                        )
                     {
                         *map = next;
                     }
@@ -272,6 +298,7 @@ impl Matchers {
     fn claim(
         &self,
         map: &Map<String, Value>,
+        opener: &dyn Fn(usize) -> Option<String>,
         names: &dyn Fn(&Value) -> Option<String>,
         definitions: &[Value],
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
@@ -279,11 +306,27 @@ impl Matchers {
         entries: &mut Vec<Entry>,
     ) -> Option<Map<String, Value>> {
         let ty = map.get("type").and_then(Value::as_str)?;
-        let node = Value::Object(map.clone());
+        if !matches!(ty, "code_block" | "div" | "inline_extension") {
+            return None;
+        }
+        let name = match ty {
+            "code_block" => map
+                .get("syntax")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            "div" => map
+                .get("pos")
+                .and_then(|p| p.get("startOffset"))
+                .and_then(Value::as_u64)
+                .and_then(|o| usize::try_from(o).ok())
+                .and_then(opener),
+            _ => None,
+        };
+        let mut node = None;
         for m in &self.list {
             let fits = match m.form {
-                Form::Fence => ty == "code_block" && names(&node).as_deref() == Some(&m.name),
-                Form::Div => ty == "div" && names(&node).as_deref() == Some(&m.name),
+                Form::Fence => ty == "code_block" && name.as_deref() == Some(&m.name),
+                Form::Div => ty == "div" && name.as_deref() == Some(&m.name),
                 Form::Inline => {
                     ty == "inline_extension"
                         && map.get("version").is_none()
@@ -303,10 +346,11 @@ impl Matchers {
                 ));
                 return None;
             };
+            let node = node.get_or_insert_with(|| Value::Object(map.clone()));
             let claim = Claim {
                 form: m.form,
                 name: &m.name,
-                node: &node,
+                node,
                 source: &source,
                 names,
             };
@@ -359,6 +403,20 @@ impl Matchers {
             if let Some(pos) = map.get("pos") {
                 out.insert("pos".into(), pos.clone());
             }
+            let out = Value::Object(out);
+            if !m.claimer.engine() && !reads_back(&out, &decl, m.form) {
+                entries.push(entry(
+                    "extension-fallback-rendered",
+                    &format!(
+                        "Invalid transform of {}; the core source node was retained",
+                        m.extension
+                    ),
+                ));
+                return None;
+            }
+            let Value::Object(out) = out else {
+                return None;
+            };
             if !used.iter().any(|d| d.name == decl.name) {
                 used.push(decl);
             }
@@ -366,6 +424,23 @@ impl Matchers {
         }
         None
     }
+}
+
+/// C2-X-031: the claimed node passes the reader checks in a document that
+/// declares its extension.
+fn reads_back(node: &Value, decl: &ExtensionDeclaration, form: Form) -> bool {
+    let child = if form == Form::Inline {
+        json!({"type": "paragraph", "children": [node]})
+    } else {
+        node.clone()
+    };
+    let doc = json!({
+        "type": "document",
+        "astVersion": "2.0",
+        "extensions": [{"name": decl.name, "version": decl.version, "required": false, "slots": decl.slots}],
+        "children": [child],
+    });
+    crate::reader::read_tree_json(&doc.to_string()).is_ok()
 }
 
 fn source_record(

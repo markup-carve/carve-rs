@@ -95,7 +95,7 @@ pub fn math_block(options: MathBlockOptions) -> Bundle {
             extension: NAME.into(),
             form: Form::Fence,
             name: options.language.unwrap_or_else(|| "math".into()),
-            claimer: Box::new(claim),
+            claimer: Box::new(super::Engine(claim)),
         }],
     }
 }

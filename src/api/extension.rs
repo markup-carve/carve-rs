@@ -383,7 +383,9 @@ impl<'a> Host<'a> {
         if let (true, Some(map)) = (self.declared.is_array(), doc.as_object_mut()) {
             map.insert("extensions".into(), self.declared.clone());
         }
-        let tree = Tree::from_value(&doc)?;
+        // C2-X-034: a renderer is trusted host code, and its HTML is written
+        // unchanged, so the nodes it renders need no reader checks either.
+        let tree = Tree::trusted(doc, None)?;
         Ok(crate::render_tree_hooked(tree.document(), self.opts, self).html)
     }
 }

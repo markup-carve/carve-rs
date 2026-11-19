@@ -158,9 +158,8 @@ impl DocumentTransform for Transform {
             &mut doc,
             &[(CODE, json!([])), (LIST, json!(["lines"]))],
         );
-        let mut next = Tree::from_value(&doc)?;
-        next.set_file(view.top.clone());
-        Ok(next)
+        // Engine code: the two nodes are built from checked code blocks and paragraphs.
+        Tree::trusted(doc, view.top.clone())
     }
 }
 

@@ -206,6 +206,26 @@ impl Tree {
     pub(crate) fn from_value(value: &Value) -> Result<Self, Error> {
         Self::read(&value.to_string(), None)
     }
+
+    /// A tree the engine built from checked parts, decoded without the
+    /// reader checks, which cost far more than the parse (carve-rs#4336).
+    pub(crate) fn trusted(mut value: Value, top: Option<String>) -> Result<Self, Error> {
+        let json = value.to_string();
+        if let Some(map) = value.as_object_mut() {
+            map.remove("type");
+        }
+        let document = serde_json::from_value(value).map_err(|e| {
+            Error::Tree(crate::reader::TreeError::Decode {
+                path: String::new(),
+                reason: e.to_string(),
+            })
+        })?;
+        Ok(Self {
+            document,
+            json,
+            top,
+        })
+    }
 }
 
 /// How [`encode_tree_with`] writes a tree.
@@ -414,7 +434,9 @@ impl Carve {
             })
         };
         let top = parsed.tree.top.take();
-        parsed.tree = Tree::read(&value.to_string(), top)?;
+        // The standard claims are engine code and each host claim was read
+        // back on its own (C2-X-031), so the rest of the tree needs no checks.
+        parsed.tree = Tree::trusted(value, top)?;
         parsed.diagnostics.extend(claimed);
         for name in failed {
             parsed.diagnostics.push(Entry {
@@ -498,7 +520,9 @@ impl Carve {
     }
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
-        let mut view = Tree::read(&crate::resolved_json(tree.document(), opts), None)?;
+        let resolved: Value = serde_json::from_str(&crate::resolved_json(tree.document(), opts))
+            .map_err(|e| Error::option("tree", e.to_string()))?;
+        let mut view = Tree::trusted(resolved, None)?;
         view.top = tree.top;
         let (view, transform_entries) = self.extensions.transform(view);
         let host = extension::Host::new(&self.extensions, self.standard, opts, &view);
