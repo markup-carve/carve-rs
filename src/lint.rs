@@ -195,25 +195,6 @@ fn skip_legacy_warning(
     {
         return true;
     }
-    if warning.rule == "list-item-block-overindented"
-        && !positions.around(warning.start).any(|range| {
-            range.start == warning.start
-                && matches!(
-                    range.kind.as_str(),
-                    "heading"
-                        | "block_quote"
-                        | "code_block"
-                        | "definition_term"
-                        | "div"
-                        | "image"
-                        | "list"
-                        | "thematic_break"
-                        | "table"
-                )
-        })
-    {
-        return true;
-    }
     skip_legacy_context(warning, source, parsed, positions)
 }
 
@@ -284,6 +265,8 @@ fn skip_legacy_context(
         "indented-code-block",
         "heading-closing-hashes",
         "setext-heading-underline",
+        "list-item-block-overindented",
+        "github-alert-marker",
     ]
     .contains(&warning.rule)
     {

@@ -428,7 +428,9 @@ fn thematic_marker(
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
     let candidate = tail.trim();
-    if run(candidate, "-_", 3) {
+    if run(candidate, "-_", 3)
+        && !(line.kind == "definition_term" && line.content_start.is_none())
+    {
         let is_setext = candidate.starts_with('-')
             && previous.is_some_and(|p| {
                 p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty()
@@ -467,7 +469,7 @@ fn thematic_marker(
 
 fn quote_list_marker(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     if line.text.starts_with("> ")
-        && previous.is_some_and(|p| p.text.starts_with("> "))
+        && previous.is_some_and(|p| p.paragraph && p.text.starts_with("> "))
         && line.text.strip_prefix("> ").is_some_and(list_marker)
     {
         sink.emit(
@@ -1108,8 +1110,16 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
 }
 
 fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
+    let (at, text) = leaf_text(line);
     if !line.paragraph
+        || (line.content_start.is_none()
+            && !sink
+                .source
+                .text()
+                .get(line.start + line.text.len()..)
+                .unwrap_or("")
+                .trim()
+                .is_empty())
         || line.attached_attribute
         || !text.starts_with('{')
         || !text.ends_with('}')
@@ -1121,7 +1131,13 @@ fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
     if opener != b'.' && opener != b'#' && !opener.is_ascii_lowercase() {
         return;
     }
-    sink.whole("unattached-block-attribute", line, &[]);
+    sink.emit(
+        "unattached-block-attribute",
+        line.start + at,
+        line.start + at + text.len(),
+        &line.path,
+        &[],
+    );
 }
 
 fn bare_html(line: &Line, sink: &mut Sink<'_>) {
@@ -1171,7 +1187,7 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 }
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
-    if !line.text.trim_start().starts_with('>') {
+    if !line.text.trim_start().starts_with("> ") {
         return;
     }
     if let Some(at) = line.text.find("[!")

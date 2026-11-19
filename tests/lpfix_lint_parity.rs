@@ -49,3 +49,64 @@ fn block_lint_follows_the_parsed_leaf() {
         vec![(10, 15)]
     );
 }
+
+#[test]
+fn unattached_attribute_requires_its_own_leaf_line() {
+    for source in ["term\n{#id .c k=v}\n:::\n", "> :\n{#id}\n>\n"] {
+        assert!(
+            spans(source, "unattached-block-attribute").is_empty(),
+            "{source:?}"
+        );
+    }
+    for source in ["* {#id}\n", "> {#id}\n", ":: t\n: {#id}\n"] {
+        assert_eq!(
+            spans(source, "unattached-block-attribute").len(),
+            1,
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn list_item_overindent_requires_a_block_opener() {
+    for source in [
+        "* a\n   ![alt](i.png)\n",
+        "* $$x$${#m}\n   ![alt](i.png)\n",
+    ] {
+        assert!(
+            spans(source, "list-item-block-overindented").is_empty(),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn quote_and_term_markers_follow_their_parsed_owner() {
+    assert!(spans(">: > [!NOTE]\n", "github-alert-marker").is_empty());
+    for source in [":: t\n> ---\n", ":: t\n  - ----\n"] {
+        assert!(spans(source, "thematic-break-spelling").is_empty());
+    }
+    for source in ["> :::\n> * ^\n", "> :::: \n> - [x]\n", "> ::::\n> - [x]\n"] {
+        assert!(spans(source, "list-marker-without-blank-line").is_empty());
+    }
+}
+
+#[test]
+fn ordered_alignment_compares_marker_ends() {
+    assert!(spans("  10. x\n1. y\n", "ordered-marker-right-aligned").is_empty());
+    assert!(
+        spans("[^n]: 10. +|\n   1. :::\n", "ordered-marker-right-aligned").is_empty()
+    );
+    assert_eq!(
+        spans(" 9. x\n10. y\n", "ordered-marker-right-aligned").len(),
+        1
+    );
+}
+
+#[test]
+fn footnote_label_range_excludes_a_preceding_attribute() {
+    assert_eq!(
+        spans("{.c}\n[^f]: a\n", "unused-footnote-definition"),
+        vec![(5, 9)]
+    );
+}

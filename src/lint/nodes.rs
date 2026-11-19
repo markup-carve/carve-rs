@@ -632,10 +632,25 @@ fn list_ordered(item: &Item<'_>, sink: &mut Sink<'_>) {
             && let Some(first) = children.first()
         {
             let initial = field(first, "/pos/startColumn").as_u64().unwrap_or(0);
+            let marker_end = |node: &Value| {
+                let start = bounds(node)?.0;
+                let width = sink
+                    .source
+                    .get(start..)?
+                    .bytes()
+                    .take_while(|byte| !byte.is_ascii_whitespace())
+                    .count();
+                field(node, "/pos/startColumn")
+                    .as_u64()?
+                    .checked_add(u64::try_from(width).ok()?)
+            };
             if children
                 .iter()
                 .skip(1)
-                .any(|child| field(child, "/pos/startColumn").as_u64().unwrap_or(initial) < initial)
+                .any(|child| {
+                    field(child, "/pos/startColumn").as_u64().unwrap_or(initial) < initial
+                        && marker_end(child).is_some_and(|end| Some(end) == marker_end(first))
+                })
             {
                 if let Some((from, to)) = children.get(1).and_then(bounds) {
                     sink.emit_range(
@@ -2252,12 +2267,13 @@ fn unused_footnotes(items: &[Item<'_>], sink: &mut Sink<'_>) {
         if let Some(key) = item.node["key"].as_str()
             && !used.contains(key)
             && let Some((from, _)) = bounds(item.node)
-            && let Some(end) = sink.raw(item).find("]:")
+            && let Some(label_start) = sink.raw(item).find("[^")
+            && let Some(end) = sink.raw(item)[label_start..].find("]:")
         {
             sink.emit_range(
                 "unused-footnote-definition",
-                from,
-                from + end + 1,
+                from + label_start,
+                from + label_start + end + 1,
                 &item.path,
                 &[("label", key)],
                 0,
