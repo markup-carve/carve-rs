@@ -51,10 +51,30 @@ fn ast_and_reports_are_json_values() {
     assert_eq!(tree["children"][0]["children"][0]["value"], "a");
     assert!(tree["children"][0].get("pos").is_none());
 
+    let (status, stdout, stderr) = run(&["ast", "--envelope", "--no-positions", "-"], "a\n");
+    assert_eq!((status, stderr.as_str()), (0, ""));
+    let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(envelope["document"]["children"][0].get("pos").is_none());
+
     let (status, stdout, stderr) = run(&["diagnostics", "--json", "--no-includes", "-"], "a\n");
     assert_eq!(status, 0);
     assert_eq!(stderr, "");
     let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(report["files"][0]["file"], "<stdin>");
     assert_eq!(report["files"][0]["diagnostics"], serde_json::json!([]));
+}
+
+#[test]
+fn render_from_ast_exports_the_supplied_tree() {
+    let (status, tree, stderr) = run(&["ast", "--no-positions", "-"], "a\n");
+    assert_eq!((status, stderr.as_str()), (0, ""));
+    let (status, output, stderr) = run(&["render", "--from-ast", "--to", "plain", "-"], &tree);
+    assert_eq!((status, output, stderr), (0, "a\n".into(), "".into()));
+}
+
+#[test]
+fn batch_flag_on_another_command_is_a_usage_error() {
+    let (status, stdout, stderr) = run(&["fmt", "--batch", "-"], "a\n");
+    assert_eq!((status, stdout), (2, String::new()));
+    assert!(stderr.starts_with("carve[usage]:"));
 }

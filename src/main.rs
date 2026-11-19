@@ -18,9 +18,12 @@ struct Entry {
 
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    if arguments.first().map(String::as_str) != Some("call")
-        && !arguments.iter().any(|a| a == "--batch")
-    {
+    let legacy = matches!(
+        arguments.first().map(String::as_str),
+        Some("call" | "--batch")
+    ) || arguments.first().map(String::as_str) == Some("render")
+        && arguments.get(1).map(String::as_str) == Some("--batch");
+    if !legacy {
         std::process::exit(cli2::run(&arguments));
     }
     if arguments.first().map(String::as_str) == Some("lint") {

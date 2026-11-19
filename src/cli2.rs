@@ -509,15 +509,19 @@ fn one(
     match args.command.as_str() {
         "ast" => {
             let tree = host.parse(bytes, &opts).map_err(api_fail)?;
+            let positions = bool_value(args, "positions", true);
+            let encoded_tree = api::encode_tree_with(&tree, api::EncodeOptions { positions });
             let encoded = if bool_value(args, "envelope", false) {
-                api::encode_envelope(&tree)
+                if positions {
+                    api::encode_envelope(&tree)
+                } else {
+                    let mut envelope: Value =
+                        serde_json::from_str(&api::encode_envelope(&tree)).unwrap();
+                    envelope["document"] = serde_json::from_str(&encoded_tree).unwrap();
+                    envelope.to_string()
+                }
             } else {
-                api::encode_tree_with(
-                    &tree,
-                    api::EncodeOptions {
-                        positions: bool_value(args, "positions", true),
-                    },
-                )
+                encoded_tree
             };
             output(&format!("{encoded}\n"))?;
             if str_value(args, "report-includes").is_some() {
@@ -667,6 +671,14 @@ fn one(
                     None,
                 )
             };
+            let needs_tree = str_value(args, "report-includes").is_some()
+                || str_value(args, "to").is_some_and(|target| target != "html");
+            let parsed_tree = if needs_tree && tree.is_none() {
+                Some(host.parse(bytes, &opts).map_err(api_fail)?)
+            } else {
+                None
+            };
+            let resolved_tree = tree.as_ref().or(parsed_tree.as_ref());
             let retained: Vec<Entry> = rendered
                 .diagnostics
                 .into_iter()
@@ -681,11 +693,7 @@ fn one(
                 ));
             }
             if str_value(args, "report-includes").is_some() {
-                let tree = match tree {
-                    Some(t) => t,
-                    None => host.parse(bytes, &opts).map_err(api_fail)?,
-                };
-                include_reports.push(include_report(path, &tree));
+                include_reports.push(include_report(path, resolved_tree.unwrap()));
             }
             let strict = bool_value(args, "strict-losses", false) && !retained.is_empty();
             if strict {
@@ -700,11 +708,10 @@ fn one(
                 return Ok(1);
             }
             if let Some(target) = str_value(args, "to").filter(|s| *s != "html") {
-                let tree = host.parse(bytes, &opts).map_err(api_fail)?;
                 let out = host
                     .write_to(
                         target,
-                        &tree,
+                        resolved_tree.unwrap(),
                         &WriteOptions {
                             render: opts,
                             ..Default::default()
