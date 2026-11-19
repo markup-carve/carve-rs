@@ -234,7 +234,7 @@ fn c2_i_024_line_comment_takes_the_closers_of_its_line() {
     );
     assert_eq!(
         p("[a %% b](/u) c"),
-        "link(href=/u)[\"a\" comment(form=line value=b)] \" c\""
+        "\"[a\" comment(form=line value=b](/u) c)"
     );
 }
 

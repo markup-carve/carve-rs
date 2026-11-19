@@ -444,7 +444,8 @@ impl Parser<'_> {
 
     fn open_list<'c>(&mut self, k: &Cursor<'c>, m: usize, mk: &ListMarker) -> Cursor<'c> {
         let (start, mut attrs) = self.take_pending(k.offset(), None);
-        let kind = self.settle_first_list_marker(m, mk.kind);
+        // C2-B-042: the first marker fixes the style without reading a later line.
+        let kind = mk.kind;
         let mut value = match kind {
             MarkerKind::Ordered { value, .. } => Some(value.unwrap_or(1)),
             MarkerKind::Bullet(_) => None,
@@ -465,51 +466,6 @@ impl Parser<'_> {
             attrs,
         );
         self.push_item(k, m, mk)
-    }
-
-    fn settle_first_list_marker(&self, m: usize, first: MarkerKind) -> MarkerKind {
-        let MarkerKind::Ordered {
-            letter: Some(letter),
-            ..
-        } = first
-        else {
-            return first;
-        };
-        if !matches!(
-            letter.to_ascii_lowercase(),
-            'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'
-        ) {
-            return first;
-        }
-        let mut blanks = 0usize;
-        for i in self.line_no + 1..self.src.line_count() {
-            let (start, end) = self.src.line_range(i);
-            let walk = self.walk(Cursor::new(self.src.slice(start, end), start), false);
-            if walk.matched < self.stack.len() || walk.missing_quote.is_some() {
-                break;
-            }
-            let cur = walk.cur.after_blanks();
-            if cur.is_blank() {
-                blanks += 1;
-                if blanks >= LIST_END_BLANK_LINES {
-                    break;
-                }
-                continue;
-            }
-            let text = cur.rest();
-            if text.starts_with("%%")
-                && !text.starts_with("%% #region")
-                && !text.starts_with("%% #endregion")
-            {
-                continue;
-            }
-            if cur.col.saturating_sub(walk.qbase) > m {
-                continue;
-            }
-            return shapes::list_marker(&cur)
-                .map_or(first, |next| shapes::settle_first(first, next.kind));
-        }
-        first
     }
 
     /// The leaf openers, and the paragraph when nothing else opens.
@@ -955,7 +911,7 @@ fn bracket_end(s: &str, start: usize) -> Option<usize> {
     let mut braced: Vec<(u8, usize)> = Vec::new();
     let mut i = start;
     while let Some(&c) = b.get(i) {
-        if let Some(next) = bracket_opaque_end(s, i, start, &braced) {
+        if let Some(next) = bracket_opaque_end(s, i) {
             i = next?;
             continue;
         }
@@ -994,29 +950,13 @@ fn braced_closes(bytes: &[u8], i: usize, braced: &[(u8, usize)]) -> bool {
         .is_some_and(|&(mark, _)| bytes.get(i) == Some(&mark) && bytes.get(i + 1) == Some(&b'}'))
 }
 
-fn bracket_opaque_end(
-    source: &str,
-    i: usize,
-    start: usize,
-    braced: &[(u8, usize)],
-) -> Option<Option<usize>> {
+fn bracket_opaque_end(source: &str, i: usize) -> Option<Option<usize>> {
     let bytes = source.as_bytes();
     if bytes.get(i) == Some(&b'`') {
         let span = crate::inline::code_span(source, i);
         return Some(span.closed.then_some(span.end));
     }
-    if bytes.get(i) != Some(&b'%') || bytes.get(i + 1) != Some(&b'%') {
-        return None;
-    }
-    let at_content = braced.last().is_some_and(|&(_, content)| content == i);
-    if !crate::inline::comment_start(source, i) && i != start && !at_content {
-        return None;
-    }
-    Some(if let Some(&(mark, _)) = braced.last() {
-        crate::inline::find_braced_comment_close(source, i + 2, source.len(), char::from(mark))
-    } else {
-        crate::inline::find_bracket_comment_close(source, i + 2, source.len())
-    })
+    None
 }
 
 fn label_tail(s: &str, start: usize) -> Option<&str> {

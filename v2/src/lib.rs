@@ -183,6 +183,7 @@ pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String
     resolve::clear_results(&mut doc);
     resolve::resolve(&mut doc, opts, &arena);
     let (html, losses) = html::render_with_losses(&doc, opts);
+    let losses = unallowed(losses, opts);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }
@@ -204,10 +205,11 @@ pub fn render_tree_with_diagnostics(
     resolve::clear_results(&mut doc);
     resolve::resolve(&mut doc, opts, &arena);
     let (html, losses, derived) = html::render_with_details(&doc, opts);
+    let losses = unallowed(losses, opts);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }
-    let diagnostics = losses
+    let mut diagnostics = losses
         .into_iter()
         .map(|code| {
             let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
@@ -217,7 +219,12 @@ pub fn render_tree_with_diagnostics(
             finding
         })
         .collect();
-    Ok(Rendered { html, diagnostics })
+    let dropped_losses = cap_losses(&mut diagnostics, opts);
+    Ok(Rendered {
+        html,
+        diagnostics,
+        dropped_losses,
+    })
 }
 
 /// The JSON of a supplied tree after resolution, the render view of C2-X-053.
@@ -241,7 +248,7 @@ pub(crate) fn render_tree_hooked(
     resolve::clear_results(&mut doc);
     resolve::resolve(&mut doc, opts, &arena);
     let (html, losses, derived) = html::render_hooked(&doc, opts, hook);
-    let diagnostics = losses
+    let mut diagnostics = unallowed(losses, opts)
         .into_iter()
         .map(|code| {
             let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
@@ -251,7 +258,39 @@ pub(crate) fn render_tree_hooked(
             finding
         })
         .collect();
-    Rendered { html, diagnostics }
+    let dropped_losses = cap_losses(&mut diagnostics, opts);
+    Rendered {
+        html,
+        diagnostics,
+        dropped_losses,
+    }
+}
+
+/// C2-H-204: the losses whose code the host has not allowed.
+fn unallowed(mut losses: Vec<&'static str>, opts: &Options) -> Vec<&'static str> {
+    if !opts.allow_losses.is_empty() {
+        losses.retain(|code| !opts.allows(code));
+    }
+    losses
+}
+
+/// C2-H-205: keeps the first `max_losses` render-loss entries and returns
+/// the codes of the others.
+fn cap_losses(diags: &mut Vec<diagnostic::Diagnostic>, opts: &Options) -> Vec<&'static str> {
+    let mut kept = 0usize;
+    let mut dropped = Vec::new();
+    diags.retain(|d| {
+        if d.channel != "render-loss" {
+            return true;
+        }
+        kept += 1;
+        if kept <= opts.max_losses {
+            return true;
+        }
+        dropped.push(d.code);
+        false
+    });
+    dropped
 }
 
 fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
@@ -588,7 +627,7 @@ fn render_parts(
             Some(&mut details.carriers),
         );
         losses.extend(extra);
-        return Ok((out, losses));
+        return Ok((out, unallowed(losses, opts)));
     }
     let (out, losses) = if opts.profile != options::Profile::Full && input.contains('\0') {
         let src = source::Source::new(input);
@@ -612,7 +651,7 @@ fn render_parts(
             Some(&mut details.carriers),
         )
     };
-    Ok((out, losses))
+    Ok((out, unallowed(losses, opts)))
 }
 
 #[doc(hidden)]
@@ -621,6 +660,8 @@ fn render_parts(
 pub struct Rendered {
     pub html: String,
     pub diagnostics: Vec<diagnostic::Diagnostic>,
+    /// C2-H-205: the codes of the render losses past `max_losses`, in order.
+    pub dropped_losses: Vec<&'static str>,
 }
 
 impl Rendered {
@@ -653,9 +694,11 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
         }
         Err(_) => String::new(),
     };
+    let dropped_losses = cap_losses(&mut diags, opts);
     Rendered {
         html,
         diagnostics: diags,
+        dropped_losses,
     }
 }
 
@@ -905,12 +948,37 @@ pub fn tree_json(input: &str, opts: &Options) -> String {
     if files.is_none() && opts.includes.is_none() {
         return to_json(&doc);
     }
-    let mut v = serde_json::to_value(&doc).unwrap_or_default();
+    stamped_value(&doc).to_string()
+}
+
+#[doc(hidden)]
+/// [`tree_json`] together with the owned tree of the same parse, for a
+/// caller that needs both without reading its own output back through the
+/// tree reader. `None` where [`tree_json`] gives no tree.
+#[must_use]
+pub fn tree_parts(input: &str, opts: &Options) -> Option<(String, ast::owned::Document)> {
+    let arena = Arena::for_input(input);
+    let (doc, _, files) = prepare(input, opts, &arena, &mut Vec::new()).ok()?;
+    if files.is_none() && opts.includes.is_none() {
+        return Some((to_json(&doc), doc.owned()));
+    }
+    let mut v = stamped_value(&doc);
+    let json = v.to_string();
+    if let Some(m) = v.as_object_mut() {
+        m.remove("type");
+    }
+    // The owned positions carry the file stamps, which `doc.owned()` lacks.
+    let owned = serde_json::from_value(v).ok()?;
+    Some((json, owned))
+}
+
+fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {
+    let mut v = serde_json::to_value(doc).unwrap_or_default();
     if let Some(m) = v.as_object_mut() {
         m.insert("type".into(), "document".into());
     }
     include::stamp_files(&mut v, None);
-    v.to_string()
+    v
 }
 
 #[doc(hidden)]
@@ -941,6 +1009,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
     let (out, losses) =
         html::render_mapped_source(&doc, opts, src.render_view(), ordered, None, None, None);
+    let losses = unallowed(losses, opts);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
     }

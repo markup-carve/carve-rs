@@ -146,6 +146,13 @@ Over JSON, `host.documentTransforms` registers transforms that need no host code
 {"call": "render", "source": "...", "options": {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}}}
 ```
 
+The same call enables the other standard extensions, all provisional:
+
+- `carve.wiki` and `carve.cite` claim `:wiki[...]` and `:cite[...]` (C2-X-057, C2-X-058). They have no standard renderer, so the content renders as plain text and attributes such as `locator` stay on the node.
+- `carve.imgFence.img` and `carve.imgFence.image` claim `img` and `image` code fences whose body is SVG (C2-X-059). Their standard renderer writes one `<img>` with a sanitized `data:image/svg+xml` URL; SVG it cannot sanitize keeps the code block and reports `extension-renderer-failed`.
+
+The render options `soft_break` (`softBreak`: `newline`, `space` or `br`), `allow_losses` (`allowLosses`, render-loss codes left out of the record and of `strict_losses`) and `max_losses` (`maxLosses`, default 100; later losses are counted in `suppressed_diagnostics`) follow C2-H-203 to C2-H-205.
+
 ## Bindings and the JSON boundary
 
 `api::json::call(&str) -> String` takes one JSON request and returns one JSON response. Bindings (carve-py with PyO3, carve-rb with magnus, carve-wasm with wasm-bindgen) can wrap this single function instead of mirroring every Rust type, and hosts that run the WASI build use it through `carve2 call`.

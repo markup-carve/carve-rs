@@ -2,7 +2,7 @@
 //! boundary and the bindings pass them, and the lint options (C2-W-109).
 
 use super::{Error, LintOptions, Options, WriteOptions};
-use crate::options::{HeadingIds, Mode, Profile, Social, UrlPolicy};
+use crate::options::{HeadingIds, Mode, Profile, Social, SoftBreak, UrlPolicy};
 use serde_json::{Map, Value};
 use std::sync::OnceLock;
 
@@ -42,6 +42,32 @@ fn rule_ids() -> &'static [String] {
             .filter_map(|r| r.get("id").and_then(Value::as_str).map(str::to_string))
             .collect()
     })
+}
+
+/// C2-H-204: the codes of the render-loss channel.
+fn loss_code_ids() -> &'static [String] {
+    static IDS: OnceLock<Vec<String>> = OnceLock::new();
+    IDS.get_or_init(|| {
+        serde_json::from_str::<Value>(include_str!("../../spec-data/lint-rules.json"))
+            .ok()
+            .and_then(|v| v.get("rules").and_then(Value::as_array).cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter(|r| r.get("channel").and_then(Value::as_str) == Some("render-loss"))
+            .filter_map(|r| r.get("id").and_then(Value::as_str).map(str::to_string))
+            .collect()
+    })
+}
+
+fn loss_codes(v: &Value) -> Result<Vec<String>, Error> {
+    let codes = string_list("allowLosses", v)?;
+    match codes.iter().find(|c| !loss_code_ids().contains(c)) {
+        Some(c) => Err(Error::option(
+            "allowLosses",
+            format!("{c} is no code of the render-loss channel"),
+        )),
+        None => Ok(codes),
+    }
 }
 
 /// The options a JSON request sets, for every stage at once.
@@ -122,6 +148,14 @@ fn enumerated(o: &mut Options, name: &str, v: &Value) -> Result<(), Error> {
         "headingIds" => o.heading_ids = enum_value(name, v, HeadingIds::from_name)?,
         "mode" => o.mode = enum_value(name, v, mode)?,
         "profile" => o.profile = enum_value(name, v, Profile::from_name)?,
+        "softBreak" => o.soft_break = enum_value(name, v, SoftBreak::from_name)?,
+        "allowLosses" => o.allow_losses = loss_codes(v)?,
+        "maxLosses" => {
+            o.max_losses = v
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| Error::option(name, "the value is not a count"))?;
+        }
         _ => return Err(Error::option(name, "this engine does not read it")),
     }
     Ok(())

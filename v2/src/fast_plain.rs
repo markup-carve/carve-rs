@@ -234,6 +234,7 @@ pub(super) fn render(input: &str, opts: &Options) -> Option<String> {
         || opts.source_lines
         || opts.roundtrip
         || opts.includes.is_some()
+        || opts.soft_break != crate::options::SoftBreak::Newline
     {
         return None;
     }

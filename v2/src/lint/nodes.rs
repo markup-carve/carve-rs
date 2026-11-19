@@ -2076,14 +2076,25 @@ fn ordered_split(root: &Item<'_>, sink: &mut Sink<'_>) {
         }
         let a = field(first, "/marker/style").as_str().unwrap_or("");
         let b = field(second, "/marker/style").as_str().unwrap_or("");
+        // C2-B-044: a one-item list of a one-letter roman-letter marker, fewer
+        // than three blank lines before the next list.
+        let roman_letter = bounds(first)
+            .and_then(|(from, _)| sink.source.get(from..))
+            .map(|s| s.trim_start_matches([' ', '\t']).trim_start_matches('('))
+            .is_some_and(|s| {
+                let mut c = s.chars();
+                c.next().is_some_and(|l| "ivxlcdmIVXLCDM".contains(l))
+                    && matches!(c.next(), Some('.' | ')'))
+            });
         if first["children"].as_array().is_some_and(|a| a.len() == 1)
+            && roman_letter
             && matches!((a, b), ("i", "a") | ("a", "i") | ("I", "A") | ("A", "I"))
             && bounds(first)
                 .zip(bounds(second))
                 .is_some_and(|((_, end), (start, _))| {
                     sink.source
                         .get(end..start)
-                        .is_some_and(|between| !between.contains("\n\n"))
+                        .is_some_and(|between| between.matches('\n').count() < 4)
                 })
         {
             let path = format!("{}/children/{index}", root.path);

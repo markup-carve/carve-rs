@@ -11,27 +11,198 @@ use std::fmt::Write as _;
 /// The standard extensions a host enables, and whether their standard
 /// renderers are registered.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // one flag per extension and renderer
 pub(crate) struct Standard {
     pub tabs: bool,
     pub tabs_renderer: bool,
+    pub wiki: bool,
+    pub cite: bool,
+    /// C2-X-059: `carve.imgFence.img` and `carve.imgFence.image`, and
+    /// whether their standard renderer is registered.
+    pub img: bool,
+    pub image: bool,
+    pub img_renderer: bool,
+    pub image_renderer: bool,
 }
 
 impl Standard {
     pub(crate) fn enable(&mut self, name: &str, renderer: bool) -> Result<(), Error> {
-        if name != "carve.tabs" {
-            return Err(Error::option(
-                "extensions",
-                format!("{name} is not a standard extension of this engine"),
-            ));
-        }
-        self.tabs = true;
-        self.tabs_renderer |= renderer;
+        let slot = match name {
+            "carve.tabs" => {
+                self.tabs_renderer |= renderer;
+                &mut self.tabs
+            }
+            // C2-X-057, C2-X-058: matchers with the core-text fallback and no
+            // standard renderer.
+            "carve.wiki" | "carve.cite" if renderer => {
+                return Err(Error::option(
+                    "renderers",
+                    format!("{name} has no standard renderer in this engine"),
+                ));
+            }
+            "carve.wiki" => &mut self.wiki,
+            "carve.cite" => &mut self.cite,
+            "carve.imgFence.img" => {
+                self.img_renderer |= renderer;
+                &mut self.img
+            }
+            "carve.imgFence.image" => {
+                self.image_renderer |= renderer;
+                &mut self.image
+            }
+            _ => {
+                return Err(Error::option(
+                    "extensions",
+                    format!("{name} is not a standard extension of this engine"),
+                ));
+            }
+        };
+        *slot = true;
         Ok(())
     }
 
     pub(crate) const fn is_empty(self) -> bool {
-        !self.tabs
+        !(self.tabs || self.wiki || self.cite || self.img || self.image)
     }
+
+    /// The fence matchers enabled: language and qualified name.
+    pub(crate) fn fence_matchers(self) -> Vec<(&'static str, &'static str)> {
+        super::img_fence::MATCHERS
+            .iter()
+            .filter(|(name, _)| if *name == "img" { self.img } else { self.image })
+            .copied()
+            .collect()
+    }
+
+    /// Whether the standard renderer of the claimed extension `name` is registered.
+    pub(crate) fn renders(self, name: &str) -> bool {
+        match name {
+            "carve.imgFence.img" => self.img_renderer,
+            "carve.imgFence.image" => self.image_renderer,
+            _ => false,
+        }
+    }
+
+    /// The inline matchers enabled: source name and qualified name.
+    pub(crate) fn inline_matchers(self) -> Vec<(&'static str, &'static str)> {
+        let mut out = Vec::new();
+        if self.cite {
+            out.push(("cite", "carve.cite"));
+        }
+        if self.wiki {
+            out.push(("wiki", "carve.wiki"));
+        }
+        out
+    }
+}
+
+/// C2-X-006, C2-X-057, C2-X-058: claims each unqualified `:name[...]` of an
+/// enabled inline matcher as its extension node, the plain text of the
+/// content as fallback. Returns the extensions whose claim source could not
+/// be written; those core nodes stay (C2-X-051).
+pub(crate) fn claim_inline(
+    doc: &mut Value,
+    matchers: &[(&'static str, &'static str)],
+) -> Vec<&'static str> {
+    let mut claimed = Vec::new();
+    let mut failed = Vec::new();
+    let mut pending: Vec<&mut Value> = vec![doc];
+    while let Some(v) = pending.pop() {
+        match v {
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            Value::Object(map) => {
+                if let Some(&(source, qualified)) = inline_matcher(map, matchers) {
+                    match inline_node(map, source, qualified) {
+                        Some(node) => {
+                            *map = node;
+                            if !claimed.contains(&qualified) {
+                                claimed.push(qualified);
+                            }
+                        }
+                        None if !failed.contains(&qualified) => failed.push(qualified),
+                        None => {}
+                    }
+                    continue;
+                }
+                let extension = matches!(
+                    map.get("type").and_then(Value::as_str),
+                    Some("block_extension" | "inline_extension")
+                );
+                for (key, child) in map.iter_mut() {
+                    if (extension && key == "fallback") || key == "source" || key == "pos" {
+                        continue;
+                    }
+                    pending.push(child);
+                }
+            }
+            _ => {}
+        }
+    }
+    let declared: Vec<(&str, Value)> = claimed.into_iter().map(|n| (n, json!([]))).collect();
+    if !declared.is_empty() {
+        declare_names(doc, &declared);
+    }
+    failed
+}
+
+fn inline_matcher<'m>(
+    map: &Map<String, Value>,
+    matchers: &'m [(&'static str, &'static str)],
+) -> Option<&'m (&'static str, &'static str)> {
+    if map.get("type").and_then(Value::as_str) != Some("inline_extension")
+        || map.get("version").is_some()
+    {
+        return None;
+    }
+    let name = map.get("name").and_then(Value::as_str)?;
+    matchers.iter().find(|(source, _)| *source == name)
+}
+
+fn inline_node(
+    node: &Map<String, Value>,
+    source: &str,
+    qualified: &str,
+) -> Option<Map<String, Value>> {
+    let children = node
+        .get("children")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut bare = node.clone();
+    bare.remove("attrs");
+    let doc = json!({"type": "document", "astVersion": "2.0", "children": [
+        {"type": "paragraph", "children": [Value::Object(bare)]},
+    ]});
+    let text = super::Carve::default()
+        .write(&Tree::from_value(&doc).ok()?, &WriteOptions::default())
+        .ok()?;
+    let body = text
+        .trim_end_matches('\n')
+        .strip_prefix(&format!(":{source}["))?
+        .strip_suffix(']')?;
+    let mut out = Map::new();
+    out.insert("type".into(), "inline_extension".into());
+    out.insert("name".into(), qualified.into());
+    out.insert("version".into(), "1".into());
+    out.insert("children".into(), json!([]));
+    let text = plain_text(&children);
+    let fallback = if text.is_empty() {
+        json!([])
+    } else {
+        json!([{"type": "text", "value": text}])
+    };
+    out.insert("fallback".into(), fallback);
+    out.insert(
+        "source".into(),
+        json!({"form": "inline", "name": source, "body": body}),
+    );
+    if let Some(pos) = node.get("pos") {
+        out.insert("pos".into(), pos.clone());
+    }
+    if let Some(attrs) = node.get("attrs") {
+        out.insert("attrs".into(), attrs.clone());
+    }
+    Some(out)
 }
 
 /// C2-X-039 to C2-X-042: claims each `tabs` div whose body is one or more
@@ -229,17 +400,24 @@ fn finish(out: &mut Map<String, Value>, node: &Value) {
     }
 }
 
-/// C2-A-017: the root declares each qualified extension once, sorted by name.
 fn declare(doc: &mut Value) {
+    declare_names(
+        doc,
+        &[
+            ("carve.tab", json!(["title", "body"])),
+            ("carve.tabs", json!(["tabs"])),
+        ],
+    );
+}
+
+/// C2-A-017: the root declares each qualified extension once, sorted by name.
+pub(crate) fn declare_names(doc: &mut Value, names: &[(&str, Value)]) {
     let mut list: Vec<Value> = at(doc, "/extensions")
         .as_array()
         .cloned()
         .unwrap_or_default();
-    for (name, slots) in [
-        ("carve.tab", json!(["title", "body"])),
-        ("carve.tabs", json!(["tabs"])),
-    ] {
-        if !list.iter().any(|d| at(d, "/name") == name) {
+    for (name, slots) in names {
+        if !list.iter().any(|d| at(d, "/name") == *name) {
             list.push(json!({"name": name, "version": "1", "required": false, "slots": slots}));
         }
     }

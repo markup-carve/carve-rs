@@ -2,6 +2,10 @@
 //!
 //! `cargo run --release --manifest-path v2/bench/Cargo.toml -- [--rounds N] [--ms N] [--loop SECS] FILE...`
 //!
+//! `-- --boundary [FILE...]` times the library and JSON boundary calls instead: `render`,
+//! `api::parse`, `api::parse` plus `encode_tree`, and `api::json::call` of `parse`. With
+//! no file it uses 2, 8 and 32 KiB of a repeated paragraph.
+//!
 //! Times are CPU time of the thread. Prints, per document: the median time and spread of 0.2 parse, 0.2 parse plus HTML,
 //! 0.1 `parse` and 0.1 `render_html(&parse(src))`, measured alternately; then the 0.2
 //! stages (block pass, inline pass, the rest of the tree builder, resolve, HTML) with
@@ -263,6 +267,54 @@ fn print_stages(name: &str, st: &[Stat; 5], v01: [Stat; 2]) {
     );
 }
 
+/// The median CPU milliseconds per call of `f` over `rounds` rounds, after warm-up calls.
+fn median_ms(f: &dyn Fn() -> usize, rounds: u64, ms: u64) -> f64 {
+    for _ in 0..5 {
+        black_box(f());
+    }
+    let times: Vec<f64> = (0..rounds).map(|_| round(f, ms) / 1e3).collect();
+    summary(times).median
+}
+
+fn boundary(paths: &[String], rounds: u64, ms: u64) {
+    let docs: Vec<(String, String)> = if paths.is_empty() {
+        let para = "A *sample* paragraph with [link](https://example.com).\n\n".repeat(700);
+        [2048, 8192, 32768]
+            .map(|n| (format!("paragraphs-{n}"), para[..n].to_string()))
+            .into()
+    } else {
+        paths
+            .iter()
+            .map(|p| {
+                (
+                    p.clone(),
+                    std::fs::read_to_string(p).expect("readable document"),
+                )
+            })
+            .collect()
+    };
+    let opts = carve2::Options::default();
+    println!("doc\tbytes\trender_ms\tparse_ms\tparse_encode_ms\tjson_call_ms");
+    for (name, src) in &docs {
+        let request = serde_json::json!({ "call": "parse", "source": src }).to_string();
+        let render = || carve2::render(src, &opts).len();
+        let parse = || carve2::api::parse(src.as_str(), &opts).map_or(0, |_| 1);
+        let encode = || {
+            carve2::api::parse(src.as_str(), &opts)
+                .map_or(0, |t| carve2::api::encode_tree(&t).len())
+        };
+        let call = || carve2::api::json::call(&request).len();
+        println!(
+            "{name}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}",
+            src.len(),
+            median_ms(&render, rounds, ms),
+            median_ms(&parse, rounds, ms),
+            median_ms(&encode, rounds, ms),
+            median_ms(&call, rounds, ms),
+        );
+    }
+}
+
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut rounds = 15;
@@ -279,6 +331,11 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--loop") {
         let secs = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(10);
         run_loop(secs, args.get(i + 2).map_or("", String::as_str));
+        return;
+    }
+    if let Some(i) = args.iter().position(|a| a == "--boundary") {
+        args.remove(i);
+        boundary(&args, rounds, ms);
         return;
     }
     let _ = carve2::profile::INLINE_HOOK.set(inline_hook);

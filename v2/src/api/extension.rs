@@ -333,6 +333,11 @@ impl crate::html::ExtensionHook for Host<'_> {
                 }),
             );
         }
+        if self.standard.renders(name) && version == Some("1") {
+            return Some(super::img_fence::render(node).ok_or_else(|| {
+                self.failed.borrow_mut().push(name.to_string());
+            }));
+        }
         let channel = Channel::of(self.opts.mode);
         let renderer = self
             .registry

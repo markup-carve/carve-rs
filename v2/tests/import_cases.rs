@@ -9,10 +9,14 @@ use common::{parse_json, sorted};
 use serde_json::{Value, json};
 
 /// `(entry id, checked field)` held, each with the clause or cause.
-const HELD: &[(&str, &str)] = &[];
+const HELD: &[(&str, &str)] = &[
+    // C2-H-204: `allowLosses` of the importer needs a list on `ImportOptions`,
+    // a `Copy` type whose shape this round keeps.
+    ("CC-1260", "imported"),
+];
 
 /// The import entries that carry an expected `carve` source (not compared).
-const WITH_CARVE_CLAUSE: &[&str] = &["CC-907", "CC-1044"];
+const WITH_CARVE_CLAUSE: &[&str] = &["CC-907", "CC-1044", "CC-1260"];
 
 fn load(name: &str) -> Value {
     let path = format!("{}/spec-conformance/{name}", env!("CARGO_MANIFEST_DIR"));
