@@ -14,11 +14,13 @@
 //! # Ok::<(), carve::api::Error>(())
 //! ```
 
+mod apparatus;
 mod callouts;
 mod code_group;
 mod color_swatch;
 mod details;
 mod fenced;
+mod glossary;
 mod list_table;
 mod math;
 mod semantic_span;
@@ -35,6 +37,7 @@ pub use fenced::{
     chart, d2, fenced_render, fenced_render_name, graphviz, mermaid, plantuml, presets, vega_lite,
     wavedrom,
 };
+pub use glossary::glossary;
 pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
 pub use semantic_span::{SEMANTIC_SPAN_KEYS, semantic_span};
@@ -240,6 +243,7 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.tabNormalize" => tab_normalize(2).ok(),
         "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
         "carve.semanticSpan" => Some(semantic_span()),
+        "carve.glossary" | "carve.term" => Some(glossary()),
         "carve.smartQuotes" => Some(smart_quotes(&SmartQuotesOptions::default())),
         _ => None,
     }
