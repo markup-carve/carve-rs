@@ -7,7 +7,8 @@
 //! `tree` (a tree as a JSON value) for calls that read a tree, and for
 //! `render` instead of a source; `json` (text) for `decodeTree`; `options`,
 //! an object of the options of `data/options.json`; `positions` (default
-//! true) for `parse` and `parseWithDiagnostics`; `target` for `write`.
+//! true) for `parse` and `parseWithDiagnostics`; `target` for `write`;
+//! and, PROVISIONAL, `host` with `documentTransforms` for the render calls.
 //!
 //! The response is `{"ok": RESULT}` or `{"error": {"name", "category",
 //! "status", "message"}}`, the error row of C2-T-040.
@@ -24,7 +25,7 @@ use serde_json::{Map, Value, json};
 #[must_use]
 pub fn call(request: &str) -> String {
     let response = match serde_json::from_str::<Value>(request) {
-        Ok(req) => dispatch(&Carve::default(), &req),
+        Ok(req) => host(&req).and_then(|h| dispatch(&h, &req)),
         Err(e) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
     match response {
@@ -58,7 +59,7 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
     let opts = super::options::from_json(name, req.get("options"))?;
     match name {
         "parse" | "parseWithDiagnostics" | "parseWithLayout" => parse_call(name, req, &opts),
-        "render" | "renderWithDiagnostics" => render_call(name, req, &opts),
+        "render" | "renderWithDiagnostics" => render_call(host, name, req, &opts),
         "lint" => {
             let bytes = source(req)?;
             Ok(json!({ "diagnostics": entries(&super::lint(input(&bytes), &opts.lint)?) }))
@@ -126,20 +127,77 @@ fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Erro
     Ok(Value::Object(out))
 }
 
-fn render_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+fn render_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
     let o = &opts.options;
     if req.get("tree").is_some() {
         let tree = tree(req)?;
         if name == "render" {
-            return Ok(json!({ "html": super::render_tree(&tree, o)? }));
+            return Ok(json!({ "html": host.render_tree(&tree, o)? }));
         }
-        return Ok(rendered(&super::render_tree_with_diagnostics(&tree, o)?));
+        return Ok(rendered(&host.render_tree_with_diagnostics(&tree, o)?));
     }
     let bytes = source(req)?;
     if name == "render" {
-        return Ok(json!({ "html": super::render(input(&bytes), o)? }));
+        return Ok(json!({ "html": host.render(input(&bytes), o)? }));
     }
-    Ok(rendered(&super::render_with_diagnostics(input(&bytes), o)?))
+    Ok(rendered(&host.render_with_diagnostics(input(&bytes), o)?))
+}
+
+/// PROVISIONAL: `host.documentTransforms`, a list of `{name, after, insert}`
+/// that inserts the node `insert` after the node at the pointer `after`, in
+/// order (C2-X-053). `name` is the qualified name of the inserted extension.
+fn host(req: &Value) -> Result<Carve, Error> {
+    let mut host = Carve::default();
+    let Some(spec) = req.get("host") else {
+        return Ok(host);
+    };
+    let Some(spec) = spec.as_object() else {
+        return Err(Error::option("host", "the host is not an object"));
+    };
+    for (key, list) in spec {
+        if key != "documentTransforms" {
+            return Err(Error::option("host", format!("unknown field {key}")));
+        }
+        let Some(list) = list.as_array() else {
+            return Err(Error::option("documentTransforms", "not a list"));
+        };
+        for item in list {
+            let text = |k: &str| {
+                item.get(k)
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .ok_or_else(|| {
+                        Error::option("documentTransforms", format!("{k} is missing or not text"))
+                    })
+            };
+            let node = item
+                .get("insert")
+                .filter(|n| n.is_object())
+                .cloned()
+                .ok_or_else(|| {
+                    Error::option("documentTransforms", "insert is missing or not a node")
+                })?;
+            let version = node
+                .get("version")
+                .and_then(Value::as_str)
+                .unwrap_or("1")
+                .to_string();
+            host.register_extension(super::Extension {
+                declaration: super::ExtensionDeclaration {
+                    name: text("name")?,
+                    version,
+                    required: false,
+                    slots: Vec::new(),
+                },
+                renderers: Vec::new(),
+                transform: Some(Box::new(super::extension::InsertTransform {
+                    after: text("after")?,
+                    node,
+                })),
+            })?;
+        }
+    }
+    Ok(host)
 }
 
 fn write_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Error> {

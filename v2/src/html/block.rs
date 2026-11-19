@@ -158,7 +158,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.container(&open, "</section>", Vec::new(), &*s.children, depth);
             }
             Node::BlockExtension(e) => {
-                self.losses.push("extension-fallback-rendered");
+                match self.hooked(n, true, None, depth) {
+                    Some(true) => return,
+                    Some(false) => {}
+                    None => self.losses.push("extension-fallback-rendered"),
+                }
                 let wrapped = e.attrs.is_some_and(|attrs| !attrs.is_empty());
                 if wrapped {
                     let el = self.el(e.attrs, e.lang, n);

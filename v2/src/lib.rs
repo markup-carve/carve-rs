@@ -217,6 +217,31 @@ pub fn render_tree_with_diagnostics(
     Ok(Rendered { html, diagnostics })
 }
 
+/// [`render_tree_with_diagnostics`] with a host's extension renderers
+/// (C2-X-052). Losses are not refused here; the caller applies `strictLosses`.
+pub(crate) fn render_tree_hooked(
+    tree: &ast::owned::Document,
+    opts: &Options,
+    hook: &dyn html::ExtensionHook,
+) -> Rendered {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    let (html, losses, derived) = html::render_hooked(&doc, opts, hook);
+    let diagnostics = losses
+        .into_iter()
+        .map(|code| {
+            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
+            if code == "derived-text-budget" {
+                finding.path = derived.and_then(|target| node_path(doc.children, target));
+            }
+            finding
+        })
+        .collect();
+    Rendered { html, diagnostics }
+}
+
 fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
     let mut pending = vec![(nodes, String::new())];
     while let Some((children, parent)) = pending.pop() {

@@ -1,10 +1,15 @@
-//! PROVISIONAL: the extension host of `extensions.md` (C2-X). The types name
-//! what a host registers (a declaration, renderers per render channel, a
-//! document transform); this engine does not run host renderers or
-//! transforms yet, so [`super::Carve::register_extension`] refuses with
-//! [`super::Error::Unsupported`]. These types may change before 0.2 is final.
+//! PROVISIONAL: the extension host of `extensions.md` (C2-X). A host registers
+//! an [`Extension`]: its declaration, renderers per render channel (C2-X-052)
+//! and an optional document transform (C2-X-053). The engine has no standard
+//! extensions yet, so only host code registers. These types may change before
+//! 0.2 is final.
 
-use super::{Error, Options, Tree};
+use super::{Entry, Error, Options, Tree};
+use crate::options::Mode;
+use serde_json::Value;
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::sync::Arc;
 
 /// An extension declaration (C2-A-017).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,28 +24,103 @@ pub struct ExtensionDeclaration {
 /// The render channel a renderer registers for (C2-X-052).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {
-    /// `mode: interactive`.
+    /// Selected under `mode: interactive`.
     Interactive,
-    /// `mode: static`: the build-time channel.
+    /// The build-time channel, selected under `mode: static`.
     BuildTime,
 }
 
-/// A host renderer of extension nodes (C2-X-033).
+impl Channel {
+    const fn of(mode: Mode) -> Self {
+        match mode {
+            Mode::Interactive => Self::Interactive,
+            Mode::Static => Self::BuildTime,
+        }
+    }
+}
+
+/// What a renderer receives beside the node (C2-X-033).
+pub struct RenderContext<'a> {
+    host: &'a Host<'a>,
+    /// Whether the node is a block extension.
+    pub block: bool,
+}
+
+impl RenderContext<'_> {
+    /// The render options of the call, `mode`, `profile` and `urlPolicy`
+    /// among them.
+    #[must_use]
+    pub fn options(&self) -> &Options {
+        self.host.opts
+    }
+
+    /// The render mode (C2-H-122).
+    #[must_use]
+    pub fn mode(&self) -> Mode {
+        self.host.opts.mode
+    }
+
+    /// Escapes text for an element body.
+    #[must_use]
+    pub fn escape(&self, text: &str) -> String {
+        crate::html::esc::text_str(text)
+    }
+
+    /// Escapes text for a double-quoted attribute value.
+    #[must_use]
+    pub fn escape_attribute(&self, text: &str) -> String {
+        let mut out = String::new();
+        crate::html::esc::attr(text, &mut out);
+        out
+    }
+
+    /// The HTML of a list of block nodes, such as a block slot, written with
+    /// the options and renderers of the call.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Tree`] for nodes the reader refuses.
+    pub fn render_blocks(&self, nodes: &Value) -> Result<String, Error> {
+        self.host.render_list(nodes)
+    }
+
+    /// The HTML of a list of inline nodes, such as an inline slot.
+    ///
+    /// # Errors
+    ///
+    /// As [`RenderContext::render_blocks`].
+    pub fn render_inlines(&self, nodes: &Value) -> Result<String, Error> {
+        let paragraph = Value::Array(vec![serde_json::json!({
+            "type": "paragraph",
+            "children": nodes,
+        })]);
+        let html = self.host.render_list(&paragraph)?;
+        Ok(html
+            .strip_prefix("<p>")
+            .and_then(|h| h.strip_suffix("</p>"))
+            .map_or(html.clone(), str::to_string))
+    }
+}
+
+/// A host renderer of extension nodes (C2-X-033, C2-X-034): trusted code
+/// whose HTML is written unchanged.
 pub trait Renderer: Send + Sync {
     /// Writes the HTML of one extension node, given as its JSON value.
     ///
     /// # Errors
     ///
-    /// Any error; the host records it as the renderer's failure.
-    fn render(&self, node: &serde_json::Value, opts: &Options) -> Result<String, Error>;
+    /// Any error; the engine writes the fallback and reports
+    /// `extension-renderer-failed` (C2-X-050).
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error>;
 }
 
-/// A document transform (C2-X-053): takes the resolved render view and
-/// returns a view.
+/// A document transform (C2-X-053): takes a copy of the resolved render view
+/// and returns a view.
 pub trait DocumentTransform: Send + Sync {
     /// # Errors
     ///
-    /// Any error; the host keeps the input view (C2-X-055).
+    /// Any error; the engine keeps the input view and reports
+    /// `extension-transform-failed` (C2-X-055).
     fn transform(&self, view: Tree) -> Result<Tree, Error>;
 }
 
@@ -58,5 +138,221 @@ impl std::fmt::Debug for Extension {
             .field("renderers", &self.renderers.len())
             .field("transform", &self.transform.is_some())
             .finish()
+    }
+}
+
+/// The registered extensions of a host, in registration order.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Registry {
+    list: Vec<Arc<Extension>>,
+}
+
+impl Registry {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
+    pub(crate) fn register(&mut self, extension: Extension) -> Result<(), Error> {
+        let d = &extension.declaration;
+        if !d.name.contains('.') || d.name.starts_with('.') || d.name.ends_with('.') {
+            return Err(Error::option(
+                "extensions",
+                format!("{} is not a qualified extension name", d.name),
+            ));
+        }
+        if d.version.is_empty() {
+            return Err(Error::option(
+                "extensions",
+                format!("{} has no version", d.name),
+            ));
+        }
+        if self
+            .list
+            .iter()
+            .any(|e| e.declaration.name == d.name && e.declaration.version == d.version)
+        {
+            return Err(Error::option(
+                "extensions",
+                format!("{} {} is already registered", d.name, d.version),
+            ));
+        }
+        for channel in [Channel::Interactive, Channel::BuildTime] {
+            if extension
+                .renderers
+                .iter()
+                .filter(|(c, _)| *c == channel)
+                .count()
+                > 1
+            {
+                return Err(Error::option(
+                    "extensions",
+                    format!("{} registers two renderers for one channel", d.name),
+                ));
+            }
+        }
+        self.list.push(Arc::new(extension));
+        Ok(())
+    }
+
+    /// C2-X-053 to C2-X-055: runs the transforms in registration order, each
+    /// on a copy of the previous view; a failed transform leaves its input.
+    pub(crate) fn transform(&self, mut view: Tree) -> (Tree, Vec<Entry>) {
+        let mut entries = Vec::new();
+        for ext in &self.list {
+            let Some(transform) = &ext.transform else {
+                continue;
+            };
+            let failure = match transform.transform(view.clone()) {
+                Ok(next) if duplicate_ids(&next) > duplicate_ids(&view) => {
+                    Some("an inserted node takes an id a preceding node holds".to_string())
+                }
+                Ok(next) => {
+                    view = next;
+                    None
+                }
+                Err(e) => Some(e.to_string()),
+            };
+            if let Some(why) = failure {
+                entries.push(failure_entry(
+                    "extension-transform-failed",
+                    &format!(
+                        "The document transform of the extension \"{}\" failed: {why}",
+                        ext.declaration.name
+                    ),
+                ));
+            }
+        }
+        (view, entries)
+    }
+}
+
+fn failure_entry(code: &str, message: &str) -> Entry {
+    Entry {
+        code: code.to_string(),
+        severity: "warning".to_string(),
+        channel: "render-loss".to_string(),
+        message: message.to_string(),
+        path: None,
+        range: None,
+        file: None,
+        foreign_type: None,
+    }
+}
+
+/// The authored ids of a view that a preceding node already holds.
+fn duplicate_ids(tree: &Tree) -> usize {
+    let Ok(value) = serde_json::from_str::<Value>(&super::encode_tree(tree)) else {
+        return 0;
+    };
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut duplicates = 0;
+    let mut pending = vec![&value];
+    while let Some(v) = pending.pop() {
+        match v {
+            Value::Object(map) => {
+                if let Some(id) = map
+                    .get("attrs")
+                    .and_then(|a| a.get("id"))
+                    .and_then(Value::as_str)
+                    && !seen.insert(id.to_string())
+                {
+                    duplicates += 1;
+                }
+                pending.extend(map.values().rev());
+            }
+            Value::Array(items) => pending.extend(items.iter().rev()),
+            _ => {}
+        }
+    }
+    duplicates
+}
+
+/// The renderers of one render call.
+pub(crate) struct Host<'a> {
+    registry: &'a Registry,
+    opts: &'a Options,
+    failed: RefCell<Vec<String>>,
+}
+
+impl<'a> Host<'a> {
+    pub(crate) fn new(registry: &'a Registry, opts: &'a Options) -> Self {
+        Self {
+            registry,
+            opts,
+            failed: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// The `extension-renderer-failed` entries of the call (C2-X-050).
+    pub(crate) fn failures(&self) -> Vec<Entry> {
+        self.failed
+            .borrow()
+            .iter()
+            .map(|name| {
+                failure_entry(
+                    "extension-renderer-failed",
+                    &format!(
+                        "The renderer of the extension \"{name}\" failed; its fallback was written unresolved"
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    fn render_list(&self, nodes: &Value) -> Result<String, Error> {
+        let doc = serde_json::json!({
+            "type": "document",
+            "astVersion": "2.0",
+            "children": nodes,
+        });
+        let tree = Tree::from_value(&doc)?;
+        Ok(crate::render_tree_hooked(tree.document(), self.opts, self).html)
+    }
+}
+
+impl crate::html::ExtensionHook for Host<'_> {
+    fn render(&self, node: &Value, block: bool) -> Option<Result<String, ()>> {
+        let name = node.get("name").and_then(Value::as_str)?;
+        let version = node.get("version").and_then(Value::as_str);
+        let channel = Channel::of(self.opts.mode);
+        let renderer = self
+            .registry
+            .list
+            .iter()
+            .filter(|e| e.declaration.name == name)
+            .filter(|e| version.is_none_or(|v| v == e.declaration.version))
+            .find_map(|e| e.renderers.iter().find(|(c, _)| *c == channel))
+            .map(|(_, r)| r)?;
+        let cx = RenderContext { host: self, block };
+        Some(renderer.render(node, &cx).map_err(|_| {
+            self.failed.borrow_mut().push(name.to_string());
+        }))
+    }
+}
+
+/// A transform with no host code: inserts `node` after the node at the JSON
+/// pointer `after` (the `documentTransforms` form of the conformance host).
+#[derive(Debug, Clone, PartialEq)]
+pub struct InsertTransform {
+    pub after: String,
+    pub node: Value,
+}
+
+impl DocumentTransform for InsertTransform {
+    fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        let mut value: Value = serde_json::from_str(&super::encode_tree(&view))
+            .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
+        let missing = || Error::option("documentTransforms", format!("no node at {}", self.after));
+        let (parent, index) = self.after.rsplit_once('/').ok_or_else(missing)?;
+        let index: usize = index.parse().map_err(|_| missing())?;
+        let list = value
+            .pointer_mut(parent)
+            .and_then(Value::as_array_mut)
+            .filter(|l| index < l.len())
+            .ok_or_else(missing)?;
+        list.insert(index + 1, self.node.clone());
+        let mut next = Tree::from_value(&value)?;
+        next.set_file(view.top.clone());
+        Ok(next)
     }
 }
