@@ -1225,7 +1225,7 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
         .any(|other| other.text.trim_start().starts_with('|'));
     let above = lines.iter().take(index).rev().take(2).any(|other| {
         let text = other.text.trim_start();
-        text.starts_with('|') || text.starts_with("![")
+        text.starts_with('|') || text.contains("![")
     });
     if below || above {
         sink.emit_nth(

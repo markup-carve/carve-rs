@@ -802,7 +802,7 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
             0,
         );
     }
-    if let Some(at) = raw.rfind("{.")
+    if let Some(at) = raw.rfind("{.").into_iter().chain(raw.rfind("{#")).max()
         && raw.ends_with('}')
     {
         let block = &raw[at..];

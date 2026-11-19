@@ -152,3 +152,23 @@ fn opener_indent_uses_the_container_content_column_and_tab_stops() {
         vec![(3, 4)]
     );
 }
+
+#[test]
+fn continued_heading_attribute_is_reported() {
+    assert_eq!(
+        spans("### H\n {#id}\n", "heading-trailing-attribute"),
+        vec![(7, 12)]
+    );
+}
+
+#[test]
+fn caption_like_line_looks_for_an_image_anywhere_above() {
+    assert_eq!(
+        spans("2) ![alt](i.png)\n   : word\n", "caption-looking-paragraph"),
+        vec![(20, 21)]
+    );
+    assert_eq!(
+        spans(">![](i.png)\n: {%c%}\n", "caption-looking-paragraph"),
+        vec![(12, 13)]
+    );
+}
