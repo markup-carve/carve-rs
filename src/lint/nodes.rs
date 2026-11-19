@@ -255,9 +255,62 @@ fn ids(items: &[Item<'_>]) -> HashSet<String> {
 
 fn check_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
     overindented_opener(item, sink);
+    list_item_opener_overindented(item, root, sink);
     semantic(item, sink);
     check_block_node(item, ids, root, sink);
     check_inline_node(item, sink);
+}
+
+fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
+    if !matches!(
+        item.node.get("type").and_then(Value::as_str),
+        Some(
+            "block_quote"
+                | "heading"
+                | "code_block"
+                | "definition_term"
+                | "div"
+                | "admonition"
+                | "directive"
+                | "image"
+                | "thematic_break"
+                | "table"
+        )
+    ) {
+        return;
+    }
+    let Some(parent) = item
+        .path
+        .rsplit_once("/children/")
+        .and_then(|(path, _)| root.pointer(path))
+        .filter(|node| node.get("type").and_then(Value::as_str) == Some("list_item"))
+    else {
+        return;
+    };
+    let Some((from, _)) = bounds(item.node) else {
+        return;
+    };
+    let first = field(parent, "/children/0");
+    if field(first, "/pos/startOffset").as_u64() == u64::try_from(from).ok() {
+        return;
+    }
+    let content = field(first, "/pos/startColumn").as_u64().unwrap_or(0);
+    let column = field(item.node, "/pos/startColumn").as_u64().unwrap_or(0);
+    if content > 0 && column > content {
+        let end = sink
+            .source
+            .get(from..)
+            .and_then(|tail| tail.find('\n'))
+            .map_or(sink.source.len(), |length| from + length);
+        sink.emit_range(
+            "list-item-block-overindented",
+            from,
+            end,
+            &item.path,
+            &[("contentColumn", &content.to_string())],
+            0,
+        );
+    }
 }
 
 fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
