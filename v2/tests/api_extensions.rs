@@ -193,7 +193,7 @@ fn c2_x_052_the_mode_selects_the_channel() {
         .render_tree_with_diagnostics(&tree, &Options::default())
         .unwrap();
     assert_eq!(r.html, "<div class=\"b&amp;x\"><p>*inside*</p></div>");
-    assert!(r.diagnostics.is_empty());
+    assert_eq!(r.diagnostics, []);
     let stat = Options {
         mode: Mode::Static,
         ..Options::default()
@@ -287,15 +287,17 @@ impl DocumentTransform for SeesIds {
     }
 }
 
+struct Shared(std::sync::Arc<SeesIds>);
+
+impl DocumentTransform for Shared {
+    fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        self.0.transform(view)
+    }
+}
+
 #[test]
 fn c2_x_053_a_transform_receives_the_resolved_view() {
     let seen = std::sync::Arc::new(SeesIds(std::sync::Mutex::new(None)));
-    struct Shared(std::sync::Arc<SeesIds>);
-    impl DocumentTransform for Shared {
-        fn transform(&self, view: Tree) -> Result<Tree, Error> {
-            self.0.transform(view)
-        }
-    }
     let mut carve = Carve::new();
     carve
         .register_extension(Extension {
