@@ -194,7 +194,7 @@ impl Tree {
     /// envelope keeps its `document`.
     fn read(json: &str, top: Option<String>) -> Result<Self, Error> {
         let read = crate::reader::read_tree_json(json)?;
-        let bare = match serde_json::from_str::<Value>(json) {
+        let bare = match crate::api::deep_json(json) {
             Ok(Value::Object(mut envelope)) if envelope.contains_key("document") => envelope
                 .remove("document")
                 .map_or_else(String::new, |d| d.to_string()),
@@ -404,7 +404,7 @@ impl Carve {
         if self.standard.is_empty() && self.matchers.is_empty() {
             return Ok(parsed);
         }
-        let mut value: Value = serde_json::from_str(&parsed.tree.json)
+        let mut value: Value = crate::api::deep_json(&parsed.tree.json)
             .map_err(|e| Error::option("tree", e.to_string()))?;
         let opener = |at: usize| match input {
             Input::Text(s) => standard::opener_name(s, at),
@@ -541,7 +541,7 @@ impl Carve {
     }
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
-        let resolved: Value = serde_json::from_str(&crate::resolved_json(tree.document(), opts))
+        let resolved: Value = crate::api::deep_json(&crate::resolved_json(tree.document(), opts))
             .map_err(|e| Error::option("tree", e.to_string()))?;
         let mut view = Tree::trusted(resolved, None)?;
         view.top = tree.top;
@@ -732,6 +732,16 @@ fn check_length(len: usize, opts: &Options) -> Result<(), Error> {
         });
     }
     Ok(())
+}
+
+/// A tree's JSON text as a value; trees nest past serde_json's default
+/// recursion limit of 128.
+pub(crate) fn deep_json(text: &str) -> serde_json::Result<Value> {
+    let mut de = serde_json::Deserializer::from_str(text);
+    de.disable_recursion_limit();
+    let value = <Value as serde::Deserialize>::deserialize(&mut de)?;
+    de.end()?;
+    Ok(value)
 }
 
 /// `parse`: the resolved tree of a source, includes expanded when
@@ -929,7 +939,7 @@ pub fn encode_tree_with(tree: &Tree, opts: EncodeOptions) -> String {
     if opts.positions {
         return encode_tree(tree);
     }
-    let Ok(mut value) = serde_json::from_str::<Value>(&tree.json) else {
+    let Ok(mut value) = crate::api::deep_json(&tree.json) else {
         return encode_tree(tree);
     };
     strip_positions(&mut value);
@@ -955,7 +965,7 @@ fn strip_positions(value: &mut Value) {
 /// `encodeEnvelope`: the JSON text of the envelope of a tree (C2-A-012).
 #[must_use]
 pub fn encode_envelope(tree: &Tree) -> String {
-    let document: Value = serde_json::from_str(&tree.json).unwrap_or(Value::Null);
+    let document: Value = crate::api::deep_json(&tree.json).unwrap_or(Value::Null);
     let version = document.get("astVersion").cloned().unwrap_or(Value::Null);
     let extensions = document
         .get("extensions")

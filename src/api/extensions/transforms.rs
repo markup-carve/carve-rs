@@ -12,7 +12,7 @@ pub type DefaultAttributes = Vec<(String, Vec<(String, String)>)>;
 /// Runs `edit` on every node list of the view except fallbacks, each list
 /// before the nodes in it, and decodes the result.
 fn walk(view: &Tree, edit: &dyn Fn(&mut Vec<Value>)) -> Result<Tree, Error> {
-    let mut doc: Value = serde_json::from_str(&crate::api::encode_tree(view))
+    let mut doc: Value = crate::api::deep_json(&crate::api::encode_tree(view))
         .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
     let mut pending: Vec<&mut Value> = doc.get_mut("children").into_iter().collect();
     while let Some(v) = pending.pop() {

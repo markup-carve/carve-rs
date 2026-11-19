@@ -318,7 +318,7 @@ fn failure_entry(code: &str, message: &str) -> Entry {
 
 /// The authored ids of a view that a preceding node already holds.
 fn duplicate_ids(tree: &Tree) -> usize {
-    let Ok(value) = serde_json::from_str::<Value>(&super::encode_tree(tree)) else {
+    let Ok(value) = crate::api::deep_json(&super::encode_tree(tree)) else {
         return 0;
     };
     let mut seen: HashSet<String> = HashSet::new();
@@ -362,7 +362,7 @@ impl<'a> Host<'a> {
         opts: &'a Options,
         view: &Tree,
     ) -> Self {
-        let value = serde_json::from_str::<Value>(&super::encode_tree(view)).unwrap_or(Value::Null);
+        let value = crate::api::deep_json(&super::encode_tree(view)).unwrap_or(Value::Null);
         Self {
             registry,
             standard,
@@ -457,7 +457,7 @@ pub struct InsertTransform {
 
 impl DocumentTransform for InsertTransform {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        let mut value: Value = serde_json::from_str(&super::encode_tree(&view))
+        let mut value: Value = crate::api::deep_json(&super::encode_tree(&view))
             .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
         let missing = || Error::option("documentTransforms", format!("no node at {}", self.after));
         let (parent, index) = self.after.rsplit_once('/').ok_or_else(missing)?;
