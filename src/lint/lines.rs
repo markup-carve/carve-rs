@@ -1006,7 +1006,10 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_>) {
-    if !line.paragraph || !caption_like(line.text.trim_start()) {
+    let start = line.content_start.unwrap_or(0);
+    let tail = line.text.get(start..).unwrap_or("");
+    let marker = start + tail.len() - tail.trim_start().len();
+    if !line.paragraph || !caption_like(tail.trim_start()) {
         return;
     }
     let below = lines
@@ -1019,11 +1022,10 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
         text.starts_with('|') || text.starts_with("![")
     });
     if below || above {
-        let prefix = line.text.len() - line.text.trim_start().len();
         sink.emit_nth(
             "caption-looking-paragraph",
-            line.start + prefix,
-            line.start + prefix + 1,
+            line.start + marker,
+            line.start + marker + 1,
             &line.path,
             &[],
             usize::from(!below),
