@@ -24,6 +24,28 @@ fn supplied_tree_losses_name_the_node_and_destination_field() {
 }
 
 #[test]
+fn denied_attribute_does_not_steal_a_later_link_path() {
+    let tree = json!({
+        "type":"document", "astVersion":"2.0", "children":[
+            {"type":"paragraph","attrs":{"keyValues":[["ping","https://x.test"]]},
+                "children":[{"type":"link","href":"https://y.test",
+                    "children":[{"type":"text","value":"a"}]}]}
+        ]
+    });
+    let reply = call(json!({"call":"renderWithDiagnostics","tree":tree,
+        "options":{"urlPolicy":{"deny":["https"]}}}));
+    let destinations: Vec<_> = reply["ok"]["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["code"] == "destination-denied")
+        .collect();
+    assert_eq!(destinations.len(), 2);
+    assert_eq!(destinations[0]["path"], "/children/0/attrs/keyValues/0/1");
+    assert_eq!(destinations[1]["path"], "/children/0/children/0/href");
+}
+
+#[test]
 fn tabs_wrapper_keeps_authored_attributes_in_renderer_order() {
     let reply = call(json!({
         "call":"render",

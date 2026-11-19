@@ -280,7 +280,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             {
                 for child in p.children.iter() {
                     if let Node::Image(image) = child {
-                        self.image(image, p.attrs, p.lang, out);
+                        self.image(child, image, p.attrs, p.lang, out);
                     }
                 }
             } else {
