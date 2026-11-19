@@ -133,6 +133,7 @@ fn from_json_in(
     }
     out.lint.includes.clone_from(&out.options.includes);
     out.lint.heading_ids = out.options.heading_ids;
+    out.lint.extensions.clone_from(&out.extensions);
     out.write.render = out.options.clone();
     out.write.extensions.clone_from(&out.extensions);
     Ok(out)
