@@ -395,6 +395,26 @@ impl Walk<'_> {
             }
             "table" => {
                 let open = opener(source, start, end);
+                if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
+                    if source[start..open].contains("header-rows=") {
+                        let head = node
+                            .get("children")
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .filter(|group| {
+                                group.get("type").and_then(Value::as_str) == Some("table_head")
+                            })
+                            .map(|group| {
+                                group
+                                    .get("children")
+                                    .and_then(Value::as_array)
+                                    .map_or(0, Vec::len)
+                            })
+                            .sum::<usize>();
+                        entry.insert("headerRows".into(), head.into());
+                    }
+                }
                 entry.insert(
                     "sourceFormat".into(),
                     if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
