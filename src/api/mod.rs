@@ -417,7 +417,7 @@ impl Carve {
     ) -> Result<Parsed, Error> {
         let input = input.into();
         let mut parsed = parse_with_diagnostics(input, opts)?;
-        if self.standard.is_empty() && self.matchers.is_empty() {
+        if !self.may_claim(&parsed.tree.json) {
             return Ok(parsed);
         }
         let mut value: Value = crate::api::deep_json(&parsed.tree.json)
@@ -461,6 +461,25 @@ impl Carve {
             });
         }
         Ok(parsed)
+    }
+
+    /// Whether the tree holds a node of a type an enabled claim reads, so the
+    /// JSON pass of the claims can change it.
+    fn may_claim(&self, json: &str) -> bool {
+        let div = self.standard.tabs || self.matchers.has_form(extensions::Form::Div);
+        // A fence is claimed by its language, the `syntax` of the code block.
+        let syntax = |name: &str| json.contains(&format!(r#""syntax":{}"#, Value::from(name)));
+        let fence = self
+            .standard
+            .fence_matchers()
+            .iter()
+            .any(|(name, _)| syntax(name))
+            || self.matchers.names(extensions::Form::Fence).any(syntax);
+        let inline = !self.standard.inline_matchers().is_empty()
+            || self.matchers.has_form(extensions::Form::Inline);
+        (div && json.contains(r#""type":"div""#))
+            || fence
+            || (inline && json.contains(r#""type":"inline_extension""#))
     }
 
     /// The claims of the enabled standard extensions; returns those whose
@@ -557,11 +576,17 @@ impl Carve {
     }
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
-        let resolved: Value = crate::api::deep_json(&crate::resolved_json(tree.document(), opts))
-            .map_err(|e| Error::option("tree", e.to_string()))?;
-        let mut view = Tree::trusted(resolved, None)?;
-        view.top = tree.top;
-        let (view, transform_entries) = self.extensions.transform(view);
+        // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
+        let (view, transform_entries) = if self.extensions.has_transforms() {
+            let resolved: Value =
+                crate::api::deep_json(&crate::resolved_json(tree.document(), opts))
+                    .map_err(|e| Error::option("tree", e.to_string()))?;
+            let mut view = Tree::trusted(resolved, None)?;
+            view.top = tree.top;
+            self.extensions.transform(view)
+        } else {
+            (tree, Vec::new())
+        };
         let host = extension::Host::new(&self.extensions, self.standard, &self.host, opts, &view);
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
