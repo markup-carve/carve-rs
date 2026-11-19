@@ -99,7 +99,7 @@ fn strict_diagnostic_render_keeps_unallowed_losses_and_counts_capped_losses() {
     let result = api::render_with_diagnostics("[a](javascript:x)\n", &capped).unwrap();
     assert_eq!(result.html, "");
     assert_eq!(result.suppressed_diagnostics, 1);
-    assert!(result.diagnostics.is_empty());
+    assert_eq!(result.diagnostics.len(), 0);
     assert!(matches!(
         api::render("[a](javascript:x)\n", &capped),
         Err(Error::Render { .. })
