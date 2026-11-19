@@ -48,7 +48,7 @@ pub mod ast {
 }
 pub use crate::include::{Cause, Dependency, Includes, Request, Resolver};
 pub use crate::lint::LintOptions;
-pub use crate::options::{HeadingIds, Mode, Options, Profile, Social, UrlPolicy};
+pub use crate::options::{HeadingIds, Mode, Options, Profile, Social, SoftBreak, UrlPolicy};
 pub use error::Error;
 pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
@@ -306,7 +306,7 @@ impl Carve {
     ) -> Result<Parsed, Error> {
         let input = input.into();
         let mut parsed = parse_with_diagnostics(input, opts)?;
-        if !self.standard.tabs {
+        if self.standard.is_empty() {
             return Ok(parsed);
         }
         let mut value: Value = serde_json::from_str(&parsed.tree.json)
@@ -322,15 +322,24 @@ impl Carve {
                 standard::opener_name(&line, 0)
             }
         };
-        let complete = standard::claim_tabs(&mut value, &opener);
+        let mut failed = Vec::new();
+        if self.standard.tabs && !standard::claim_tabs(&mut value, &opener) {
+            failed.push("carve.tabs");
+        }
+        let matchers = self.standard.inline_matchers();
+        if !matchers.is_empty() {
+            failed.extend(standard::claim_inline(&mut value, &matchers));
+        }
         let top = parsed.tree.top.take();
         parsed.tree = Tree::read(&value.to_string(), top)?;
-        if !complete {
+        for name in failed {
             parsed.diagnostics.push(Entry {
                 code: "extension-transform-failed".into(),
                 severity: "warning".into(),
                 channel: "render-loss".into(),
-                message: "The extension carve.tabs could not write its claim source; the core node was retained".into(),
+                message: format!(
+                    "The extension {name} could not write its claim source; the core node was retained"
+                ),
                 path: None,
                 range: None,
                 file: None,
@@ -410,15 +419,15 @@ impl Carve {
         let (view, transform_entries) = self.extensions.transform(view);
         let host = extension::Host::new(&self.extensions, self.standard, opts, &view);
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
-        let (entries, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);
+        let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
         diagnostics.extend(entries);
         diagnostics.extend(host.failures());
-        strict(opts, &diagnostics)?;
+        let dropped = limit(opts, &mut diagnostics, &rendered.dropped_losses)?;
         Ok(Rendered {
             html: rendered.html,
             diagnostics,
-            suppressed_diagnostics,
+            suppressed_diagnostics: suppressed + dropped,
         })
     }
 
@@ -708,30 +717,38 @@ pub fn render_tree_with_diagnostics(tree: &Tree, opts: &Options) -> Result<Rende
 }
 
 fn finish_render(rendered: crate::Rendered, opts: &Options) -> Result<Rendered, Error> {
-    let (diagnostics, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);
-    strict(opts, &diagnostics)?;
+    let (mut diagnostics, suppressed) = record::cap_includes(&rendered.diagnostics);
+    let dropped = limit(opts, &mut diagnostics, &rendered.dropped_losses)?;
     Ok(Rendered {
         html: rendered.html,
         diagnostics,
-        suppressed_diagnostics,
+        suppressed_diagnostics: suppressed + dropped,
     })
 }
 
-/// C2-H-130: under `strictLosses` a render loss refuses the call.
-fn strict(opts: &Options, diagnostics: &[Entry]) -> Result<(), Error> {
-    if !opts.strict_losses {
-        return Ok(());
+/// C2-H-204, C2-H-205, C2-H-130: leaves allowed losses out, keeps the first
+/// `max_losses` of the others and refuses the call under `strictLosses` when
+/// a loss is left, kept or not. Returns the number of losses not kept.
+fn limit(opts: &Options, diagnostics: &mut Vec<Entry>, dropped: &[&str]) -> Result<usize, Error> {
+    let loss = |e: &Entry| e.channel == "render-loss";
+    diagnostics.retain(|e| !(loss(e) && opts.allows(&e.code)));
+    let mut codes: Vec<String> = Vec::new();
+    let mut kept = 0usize;
+    let mut cut = dropped.len();
+    diagnostics.retain(|e| {
+        if !loss(e) {
+            return true;
+        }
+        codes.push(e.code.clone());
+        kept += 1;
+        cut += usize::from(kept > opts.max_losses);
+        kept <= opts.max_losses
+    });
+    codes.extend(dropped.iter().map(|c| (*c).to_string()));
+    if opts.strict_losses && !codes.is_empty() {
+        return Err(Error::Render { codes });
     }
-    let codes: Vec<String> = diagnostics
-        .iter()
-        .filter(|e| e.channel == "render-loss")
-        .map(|e| e.code.clone())
-        .collect();
-    if codes.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::Render { codes })
-    }
+    Ok(cut)
 }
 
 /// `lint`: the record of a lint run, parse entries and lint findings
