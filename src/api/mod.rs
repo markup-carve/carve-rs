@@ -820,14 +820,28 @@ pub fn parse_with_layout<'a>(
     opts: &Options,
 ) -> Result<ParsedLayout, Error> {
     let input = input.into();
-    let unsupported = || Error::Unsupported {
-        call: "parseWithLayout",
-    };
     if matches!(input, Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err()) {
-        return Err(unsupported());
+        return Err(unsupported_layout());
     }
     let text = input.text();
     let source = text.as_ref();
+    let parsed = parse_with_diagnostics(input, opts)?;
+    let layout = heading_layout(source, &parsed.tree)?;
+    Ok(ParsedLayout {
+        tree: parsed.tree,
+        diagnostics: parsed.diagnostics,
+        suppressed_diagnostics: parsed.suppressed_diagnostics,
+        layout,
+    })
+}
+
+fn unsupported_layout() -> Error {
+    Error::Unsupported {
+        call: "parseWithLayout",
+    }
+}
+
+fn heading_source(source: &str) -> Option<(&str, &str)> {
     let (body, line_endings) = if let Some(body) = source.strip_suffix("\r\n") {
         (body, "crlf")
     } else if let Some(body) = source.strip_suffix('\n') {
@@ -836,20 +850,24 @@ pub fn parse_with_layout<'a>(
         (source, "none")
     };
     if body.contains(['\r', '\n']) {
-        return Err(unsupported());
+        return None;
     }
     let marker_width = body.bytes().take_while(|byte| *byte == b'#').count();
     if !(1..=6).contains(&marker_width) || body.as_bytes().get(marker_width) != Some(&b' ') {
-        return Err(unsupported());
+        return None;
     }
-    let parsed = parse_with_diagnostics(input, opts)?;
-    let value: Value = serde_json::from_str(&parsed.tree.json)
+    Some((&body[..marker_width], line_endings))
+}
+
+fn heading_layout(source: &str, tree: &Tree) -> Result<Value, Error> {
+    let (marker, line_endings) = heading_source(source).ok_or_else(unsupported_layout)?;
+    let value: Value = serde_json::from_str(&tree.json)
         .map_err(|error| Error::option("tree", error.to_string()))?;
     let children = value
         .get("children")
         .and_then(Value::as_array)
-        .ok_or_else(unsupported)?;
-    let heading = children.first().ok_or_else(unsupported)?;
+        .ok_or_else(unsupported_layout)?;
+    let heading = children.first().ok_or_else(unsupported_layout)?;
     if children.len() != 1
         || heading.get("type").and_then(Value::as_str) != Some("heading")
         || !heading
@@ -861,17 +879,17 @@ pub fn parse_with_layout<'a>(
                     .all(|item| item.get("type").and_then(Value::as_str) == Some("text"))
             })
     {
-        return Err(unsupported());
+        return Err(unsupported_layout());
     }
     let start = heading
         .pointer("/pos/startOffset")
         .and_then(Value::as_u64)
-        .ok_or_else(unsupported)?;
+        .ok_or_else(unsupported_layout)?;
     let end = heading
         .pointer("/pos/endOffset")
         .and_then(Value::as_u64)
-        .ok_or_else(unsupported)?;
-    let layout = serde_json::json!({
+        .ok_or_else(unsupported_layout)?;
+    Ok(serde_json::json!({
         "version": 2,
         "encoding": "utf-8",
         "source": source,
@@ -883,16 +901,10 @@ pub fn parse_with_layout<'a>(
             "endByte": end,
             "blankLinesBefore": 0,
             "blankLinesAfter": 0,
-            "markerRaw": &body[..marker_width],
+            "markerRaw": marker,
             "markerColumn": 0
         }]
-    });
-    Ok(ParsedLayout {
-        tree: parsed.tree,
-        diagnostics: parsed.diagnostics,
-        suppressed_diagnostics: parsed.suppressed_diagnostics,
-        layout,
-    })
+    }))
 }
 
 /// `render`: the HTML of a source (C2-H-137).
