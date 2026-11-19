@@ -90,18 +90,6 @@ macro_rules! held_rule {
     };
 }
 
-// These shared fixture rows pin readings the 0.2 catalog excludes: a later line of a term (C2-B-069), and a
-// separator right of the list's term mark (C2-B-067); tests/lintsat1_parity.rs covers the rules.
-macro_rules! stale_rule {
-    ($name:ident, $code:literal, $data:literal) => {
-        #[test]
-        #[ignore = "the shared fixture row pins a reading the 0.2 catalog excludes"]
-        fn $name() {
-            check($code, include_str!($data));
-        }
-    };
-}
-
 rule!(
     lint_a11y_image_alt,
     "a11y/image-alt",
@@ -178,7 +166,7 @@ rule!(
     "definition-in-container",
     "data/lint-cases.json"
 );
-stale_rule!(
+rule!(
     lint_definition_term_block_folded,
     "definition-term-block-folded",
     "data/lint-cases.json"
@@ -233,7 +221,7 @@ rule!(
     "deprecated-substitution-arrow",
     "data/lint-cases.json"
 );
-stale_rule!(
+rule!(
     lint_description_separator_below_content_column,
     "description-separator-below-content-column",
     "data/lint-cases.json"
@@ -353,7 +341,7 @@ rule!(
     "list-marker-without-blank-line",
     "data/lint-cases.json"
 );
-stale_rule!(
+rule!(
     lint_markdown_definition_paragraph,
     "markdown-definition-paragraph",
     "data/lint-cases.json"

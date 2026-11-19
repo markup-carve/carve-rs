@@ -281,6 +281,9 @@ fn skip_legacy_context(
         "semantic-attribute-outside-span",
         "empty-include-path",
         "heading-trailing-attribute",
+        "indented-code-block",
+        "heading-closing-hashes",
+        "setext-heading-underline",
     ]
     .contains(&warning.rule)
     {

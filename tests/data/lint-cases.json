@@ -130,9 +130,9 @@
   {
     "id": "definition-term-block-folded",
     "origin": "../carve/tests/corpus/503-a-block-opener-indented-under-a-definition-term-ends-the-term-at-every-depth-7.crv",
-    "trigger": ":: c\n# H\n",
-    "near": ":: c\n\n",
-    "fragment": "# H",
+    "trigger": ":: > x\n",
+    "near": ":: c\n# H\n",
+    "fragment": ">",
     "message": "A quote mark or list marker after the term mark is term text. Put the intended block on a `: ` description line at the list column, such as `: > text` or `: - item`."
   },
   {
@@ -218,10 +218,10 @@
   {
     "id": "description-separator-below-content-column",
     "origin": "../carve/tests/corpus/799-a-description-sibling-is-recognized-at-any-column-2.crv",
-    "trigger": ":: t\n: a\n : b\n",
-    "near": ":: t\n: a\n \n",
-    "fragment": ": b",
-    "message": "This description starts at column 2, below the column 1 of the definition list above, so it adds no entry to that list. Indent it to column 1 to continue the list."
+    "trigger": "::: box\n   :: t\n: d\n:::\n",
+    "near": ":: t\n: a\n : b\n",
+    "fragment": ": d",
+    "message": "This description starts at column 1, below the column 4 of the definition list above, so it adds no entry to that list. Indent it to column 4 to continue the list."
   },
   {
     "id": "description-term-multi-line",
@@ -411,9 +411,9 @@
   {
     "id": "markdown-definition-paragraph",
     "origin": "../carve/tests/corpus/846-a-lazy-line-continues-a-quoted-term-only-as-plain-text-11.crv",
-    "trigger": "> :: t\n : d\n",
-    "near": "> :: t\n \n",
-    "fragment": ": d",
+    "trigger": "a\n: x\n",
+    "near": "> :: t\n : d\n",
+    "fragment": ": x",
     "message": "This markdown definition remains paragraph text; use a :: term line before the definition."
   },
   {

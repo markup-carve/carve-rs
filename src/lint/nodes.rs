@@ -954,8 +954,9 @@ fn table(item: &Item<'_>, sink: &mut Sink<'_>) {
             let row_raw = bounds(row)
                 .and_then(|(a, b)| sink.source.get(a..b))
                 .unwrap_or("");
-            if row_index == 1 && row_raw.starts_with('|') && row_raw.ends_with('|') {
-                let cells_only = row_raw.trim_matches('|').trim();
+            let row_content = row_raw.trim_end();
+            if row_index == 1 && row_content.starts_with('|') && row_content.ends_with('|') {
+                let cells_only = row_content.trim_matches('|').trim();
                 if cells_only.len() >= 3
                     && cells_only
                         .chars()
