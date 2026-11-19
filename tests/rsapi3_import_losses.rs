@@ -59,7 +59,7 @@ fn loss_options_in_rust() {
     let imported = api::Carve::default()
         .import_document_with("<p>a<wbr>b</p>", &ImportOptions::default(), &limits)
         .unwrap();
-    assert!(imported.diagnostics.is_empty());
+    assert_eq!(imported.diagnostics.len(), 0);
     assert_eq!(imported.suppressed_diagnostics, 1);
     assert_eq!(LossOptions::default().max_losses, 100);
 }
