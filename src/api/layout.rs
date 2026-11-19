@@ -748,7 +748,9 @@ impl Walk<'_> {
 
 fn reference_label_end(raw: &str) -> Option<usize> {
     fn close(raw: &[u8], from: usize) -> Option<usize> {
-        if raw.get(from) != Some(&b'[') { return None; }
+        if raw.get(from) != Some(&b'[') {
+            return None;
+        }
         let mut depth = 1usize;
         let mut at = from + 1;
         while at < raw.len() {
@@ -757,7 +759,9 @@ fn reference_label_end(raw: &str) -> Option<usize> {
                 b'[' => depth += 1,
                 b']' => {
                     depth -= 1;
-                    if depth == 0 { return Some(at + 1); }
+                    if depth == 0 {
+                        return Some(at + 1);
+                    }
                 }
                 _ => {}
             }
@@ -767,7 +771,11 @@ fn reference_label_end(raw: &str) -> Option<usize> {
     }
     let bytes = raw.as_bytes();
     let first = close(bytes, 0)?;
-    if bytes.get(first) == Some(&b'[') { close(bytes, first) } else { Some(first) }
+    if bytes.get(first) == Some(&b'[') {
+        close(bytes, first)
+    } else {
+        Some(first)
+    }
 }
 
 fn is_block(ty: &str) -> bool {
