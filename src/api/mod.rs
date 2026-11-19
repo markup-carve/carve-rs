@@ -1039,7 +1039,9 @@ pub fn include_dependencies(tree: &Tree) -> Vec<Dependency> {
 /// `encodeTree`: the JSON text of the bare tree (C2-A-012).
 #[must_use]
 pub fn encode_tree(tree: &Tree) -> String {
-    tree.json.clone()
+    // serde_json's object map orders keys lexically without preserve_order.
+    // Parsing the accepted tree removes input whitespace and insertion order.
+    deep_json(&tree.json).map_or_else(|_| tree.json.clone(), |value| value.to_string())
 }
 
 /// `encodeTree` with `positions` off or on.
