@@ -257,3 +257,15 @@ fn colon_mismatch_requires_an_open_container() {
         );
     }
 }
+
+#[test]
+fn later_list_markers_in_quoted_and_footnote_text() {
+    assert_eq!(
+        spans("> ::\n>   2) :: word\n", "list-marker-without-blank-line"),
+        vec![(9, 19)]
+    );
+    assert_eq!(
+        spans("[^f]: :: more\n   - x\n", "list-marker-without-blank-line"),
+        vec![(17, 20)]
+    );
+}

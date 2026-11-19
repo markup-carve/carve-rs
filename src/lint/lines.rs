@@ -1050,7 +1050,8 @@ fn prose_context(
     lines: &[Line],
     sink: &mut Sink<'_>,
 ) {
-    let trimmed = line.text.trim();
+    let (marker_at, marker_text) = leaf_after_quotes(line);
+    let list_candidate = list_marker(marker_text);
     if paragraph_continuation(line, previous) {
         if line.literal_quote_prefix {
             let at = line.text.len() - line.text.trim_start().len();
@@ -1063,9 +1064,22 @@ fn prose_context(
             );
         }
         prose_block_opener(line, previous, sink);
-        if list_marker(trimmed) {
-            sink.whole("list-marker-without-blank-line", line, &[]);
-        }
+    }
+    if list_candidate
+        && (paragraph_continuation(line, previous)
+            || previous.is_some_and(|p| {
+                p.kind == "definition_term"
+                    && !p.text.trim().is_empty()
+                    && (line.scope.in_footnote || line.quotes > 0)
+            }))
+    {
+        sink.emit(
+            "list-marker-without-blank-line",
+            line.start + marker_at,
+            line.start + marker_at + marker_text.len(),
+            &line.path,
+            &[],
+        );
     }
     bare_html(line, sink);
     github_alert(line, sink);
