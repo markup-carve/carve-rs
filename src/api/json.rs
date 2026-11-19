@@ -517,6 +517,7 @@ fn migrate_call(req: &Value) -> Result<Value, Error> {
     let mut out = json!({
         "tree": tree_value(&migrated.tree),
         "diagnostics": entries(&migrated.diagnostics),
+        "layout": migrated.layout,
     });
     if let Some(envelope) = migrated.envelope {
         if let Some(m) = out.as_object_mut() {

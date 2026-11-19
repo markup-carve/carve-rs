@@ -18,6 +18,8 @@ pub enum Error {
     Render { codes: Vec<String> },
     /// `CarveTreeError`: a tree the reader refuses (C2-A-188).
     Tree(TreeError),
+    /// `CarveLayoutError`: a source-layout sidecar the reader refuses.
+    Layout { path: String, reason: String },
     /// `CarveWriteError`: a writer loss (C2-W-134) or a failing writer.
     Write { target: String, message: String },
     /// `ImportInputError`: an HTML input the importer refuses (C2-M-006).
@@ -49,6 +51,7 @@ impl Error {
             Self::Input { .. } => "CarveInputError",
             Self::Render { .. } => "CarveRenderError",
             Self::Tree(_) => "CarveTreeError",
+            Self::Layout { .. } => "CarveLayoutError",
             Self::Write { .. } => "CarveWriteError",
             Self::ImportInput { .. } => "ImportInputError",
             Self::Patch { .. } => "CarvePatchError",
@@ -63,7 +66,7 @@ impl Error {
             Self::Option { .. } | Self::Unsupported { .. } => "usage",
             Self::Input { .. } => "input-invalid",
             Self::Render { .. } | Self::Export { .. } => "render-loss",
-            Self::Tree(_) | Self::Patch { .. } => "ast-json-invalid",
+            Self::Tree(_) | Self::Layout { .. } | Self::Patch { .. } => "ast-json-invalid",
             Self::Write { .. } => "writer-refused",
             Self::ImportInput { .. } => "import-input-invalid",
         }
@@ -79,6 +82,7 @@ impl Error {
             }
             Self::Tree(TreeError::Json(_)) => Some(String::new()),
             Self::Patch { path, .. }
+            | Self::Layout { path, .. }
             | Self::Tree(
                 TreeError::Schema { path, .. }
                 | TreeError::Reader { path, .. }
@@ -108,11 +112,11 @@ impl std::fmt::Display for Error {
             ),
             Self::Render { codes } => write!(f, "the render lost content: {}", codes.join(", ")),
             Self::Tree(e) => write!(f, "{e}"),
-            Self::Write { target, message } => write!(f, "writer {target}: {message}"),
-            Self::ImportInput { message } => write!(f, "{message}"),
-            Self::Patch { path, reason } => {
+            Self::Layout { path, reason } | Self::Patch { path, reason } => {
                 write!(f, "{}: {reason}", if path.is_empty() { "/" } else { path })
             }
+            Self::Write { target, message } => write!(f, "writer {target}: {message}"),
+            Self::ImportInput { message } => write!(f, "{message}"),
             Self::Export { diagnostics } => {
                 let codes: Vec<&str> = diagnostics.iter().map(|e| e.code.as_str()).collect();
                 let n = diagnostics.len();

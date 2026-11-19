@@ -29,10 +29,9 @@ fn main() -> Result<(), Error> {
         carve.write_to("html", &tree, &w)?.output,
         api::render("# T\n\nx", &o)?
     );
-    assert!(matches!(
-        api::parse_with_layout("x", &o),
-        Err(Error::Unsupported { .. })
-    ));
+    let layout = api::parse_with_layout("x", &o)?.layout;
+    assert_eq!(layout["version"], 2);
+    assert_eq!(layout["source"], "x");
     assert!(matches!(
         api::migrate_tree(&serde_json::Value::Null),
         Err(Error::Tree(_))
