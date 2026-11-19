@@ -14,6 +14,7 @@ struct Item<'a> {
     node: &'a Value,
     path: String,
     parents: Vec<String>,
+    description_content_column: Option<usize>,
 }
 
 struct Sink<'a> {
@@ -76,29 +77,47 @@ fn bounds(node: &Value) -> Option<(usize, usize)> {
 
 fn collect(root: &Value) -> Vec<Item<'_>> {
     let mut out = Vec::new();
-    let mut pending = vec![(root, String::new(), Vec::<String>::new())];
-    while let Some((value, path, parents)) = pending.pop() {
+    let mut pending = vec![(root, String::new(), Vec::<String>::new(), None)];
+    while let Some((value, path, parents, description_content_column)) = pending.pop() {
         match value {
             Value::Object(map) => {
                 let mut next = parents;
+                let mut child_description_column = description_content_column;
                 if let Some(kind) = value["type"].as_str() {
                     out.push(Item {
                         node: value,
                         path: path.clone(),
                         parents: next.clone(),
+                        description_content_column,
                     });
                     next.push(kind.to_string());
+                    if kind == "definition_description" {
+                        child_description_column = value
+                            .pointer("/pos/startColumn")
+                            .and_then(Value::as_u64)
+                            .and_then(|column| usize::try_from(column + 1).ok());
+                    }
                 }
                 for (key, child) in map {
                     if matches!(key.as_str(), "data" | "props" | "pos" | "segments") {
                         continue;
                     }
-                    pending.push((child, format!("{path}/{key}"), next.clone()));
+                    pending.push((
+                        child,
+                        format!("{path}/{key}"),
+                        next.clone(),
+                        child_description_column,
+                    ));
                 }
             }
             Value::Array(items) => {
                 for (index, child) in items.iter().enumerate() {
-                    pending.push((child, format!("{path}/{index}"), parents.clone()));
+                    pending.push((
+                        child,
+                        format!("{path}/{index}"),
+                        parents.clone(),
+                        description_content_column,
+                    ));
                 }
             }
             _ => {}
@@ -280,9 +299,16 @@ fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
     let quote = item
         .parents
         .iter()
-        .rev()
-        .any(|parent| parent == "block_quote");
-    let (owner, standard) = if quote {
+        .rposition(|parent| parent == "block_quote");
+    let description = item
+        .parents
+        .iter()
+        .rposition(|parent| parent == "definition_description");
+    let (owner, standard) = if let Some(column) = item.description_content_column
+        && description > quote
+    {
+        ("a description", column)
+    } else if quote.is_some() {
         ("a quote", prefix.rfind('>').map_or(0, |at| at + 2))
     } else if item.parents.iter().any(|parent| {
         matches!(
@@ -297,12 +323,6 @@ fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
         .any(|parent| parent == "footnote_definition")
     {
         ("a footnote body", 0)
-    } else if item
-        .parents
-        .iter()
-        .any(|parent| parent == "definition_description")
-    {
-        ("a description", 0)
     } else {
         ("document", 0)
     };
