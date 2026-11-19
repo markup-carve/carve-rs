@@ -174,7 +174,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
     fn simple_inline(&mut self, n: &Node, out: &mut String) -> bool {
         match n {
             Node::Text(t) => esc::text(t.value, out),
-            Node::SoftBreak(_) => out.push('\n'),
+            Node::SoftBreak(_) => out.push_str(match self.opts.soft_break {
+                crate::options::SoftBreak::Newline => "\n",
+                crate::options::SoftBreak::Space => " ",
+                crate::options::SoftBreak::Br => "<br>\n",
+            }),
             Node::HardBreak(_) => out.push_str("<br>\n"),
             Node::NonBreakingSpace(_) => out.push_str("&nbsp;"),
             Node::SmartPunctuation(s) => {

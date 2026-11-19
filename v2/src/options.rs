@@ -87,6 +87,28 @@ impl Profile {
     }
 }
 
+/// `softBreak` (C2-H-203): how a `soft_break` is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SoftBreak {
+    #[default]
+    Newline,
+    Space,
+    Br,
+}
+
+impl SoftBreak {
+    /// Parses an option value.
+    #[must_use]
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s {
+            "newline" => Some(Self::Newline),
+            "space" => Some(Self::Space),
+            "br" => Some(Self::Br),
+            _ => None,
+        }
+    }
+}
+
 /// `mode` (C2-H-122).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
@@ -111,6 +133,12 @@ pub struct Options {
     pub url_policy: UrlPolicy,
     pub profile: Profile,
     pub strict_losses: bool,
+    /// C2-H-203.
+    pub soft_break: SoftBreak,
+    /// C2-H-204: render-loss codes left out of the record and of `strict_losses`.
+    pub allow_losses: Vec<String>,
+    /// C2-H-205: the render-loss entries the record keeps.
+    pub max_losses: usize,
     pub social: Option<Social>,
     /// C2-N-003: the resolver and limits of include expansion; `None` expands nothing.
     pub includes: Option<crate::include::Includes>,
@@ -144,13 +172,25 @@ impl Default for Options {
             url_policy: UrlPolicy::default(),
             profile: Profile::default(),
             strict_losses: tables::DEFAULT_STRICT_LOSSES,
+            soft_break: SoftBreak::default(),
+            allow_losses: Vec::new(),
+            max_losses: DEFAULT_MAX_LOSSES,
             social: None,
             includes: None,
         }
     }
 }
 
+/// C2-H-205: the default of `maxLosses`.
+pub const DEFAULT_MAX_LOSSES: usize = 100;
+
 impl Options {
+    /// C2-H-204: whether `code` is an allowed loss.
+    #[must_use]
+    pub fn allows(&self, code: &str) -> bool {
+        self.allow_losses.iter().any(|c| c == code)
+    }
+
     /// A label string (C2-H-125); a key left out keeps its English default.
     #[must_use]
     pub fn label(&self, key: &str) -> &str {
