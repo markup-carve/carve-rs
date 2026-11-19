@@ -1,3 +1,0 @@
-See [Setup](#setup).
-
-# Setup

@@ -1,0 +1,13 @@
+# A downstream crate that depends on carve by path, as a binding would.
+# CI builds and runs it; it is not a member of the workspace.
+[package]
+name = "carve-consumer-smoke"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+carve = { package = "carve-lang", path = ".." }
+serde_json = "1"

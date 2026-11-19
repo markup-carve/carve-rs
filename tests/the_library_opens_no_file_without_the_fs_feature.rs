@@ -1,21 +1,16 @@
-//! The `fs` feature is the whole guarantee, so the guarantee gets a gate.
-//!
-//! `--no-default-features` is supposed to leave a build with NO code that opens
-//! a file - the property carve-js gets structurally, by keeping its filesystem
-//! resolver behind a `./node` subpath so the browser bundle cannot contain it.
-//! Here it is a `#[cfg]`, and a `#[cfg]` is only as good as the next person
-//! remembering it: one ungated `std::fs::read_to_string` added anywhere in the
-//! library silently takes the property away, and every existing test stays
-//! green because they all run WITH the feature.
-//!
-//! So the library's filesystem call sites are an inventory. Adding one is fine;
-//! adding one without deciding which side of the feature it belongs on is not.
+//! `--no-default-features` promises a library with no code that opens a file.
+//! A `#[cfg]` is only as good as the next person remembering it, so the
+//! library's filesystem call sites are an inventory: a new one has to be put on
+//! one side of the `fs` feature on purpose.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Every shipped library file. The binary's `main.rs` and its folder-migration
-/// module are excluded: CLI file access is outside the library's `fs` promise.
+fn src() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
+/// Every library file. `main.rs` and `lint_cli.rs` belong to the binary, which
+/// requires `fs`; `include/fs.rs` is the resolver module, gated as a whole.
 fn library_sources() -> Vec<PathBuf> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).expect("src is readable") {
@@ -23,40 +18,24 @@ fn library_sources() -> Vec<PathBuf> {
             if path.is_dir() {
                 walk(&path, root, out);
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs")
-                && path != root.join("main.rs")
-                && path != root.join("migrate_directory.rs")
+                && ![
+                    root.join("main.rs"),
+                    root.join("lint_cli.rs"),
+                    root.join("include/fs.rs"),
+                ]
+                .contains(&path)
             {
                 out.push(path);
             }
         }
     }
     let mut out = Vec::new();
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let root = src();
     walk(&root, &root, &mut out);
-    let test_modules: BTreeSet<PathBuf> = out
-        .iter()
-        .flat_map(|source_path| {
-            let source = std::fs::read_to_string(source_path).expect("source is readable");
-            let lines: Vec<_> = source.lines().collect();
-            lines
-                .windows(3)
-                .filter_map(|lines| {
-                    if lines[0] != "#[cfg(test)]" || !lines[2].starts_with("mod ") {
-                        return None;
-                    }
-                    let relative = lines[1].strip_prefix("#[path = \"")?.strip_suffix("\"]")?;
-                    Some(source_path.parent().unwrap().join(relative))
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    out.retain(|path| !test_modules.contains(path));
     out.sort();
     out
 }
 
-/// A line that reaches the filesystem. Deliberately a wide net - `fs::` catches
-/// the imported spelling as well as the fully qualified one.
 fn opens_a_file(line: &str) -> bool {
     let code = line.split("//").next().unwrap_or(line);
     code.match_indices("fs::").any(|(at, _)| {
@@ -66,139 +45,53 @@ fn opens_a_file(line: &str) -> bool {
         || code.contains("File::create")
 }
 
-/// The shipped lines of a file: everything outside a `#[cfg(test)]` module.
-///
-/// Inline test modules are skipped STRUCTURALLY rather than listed, because what the
-/// feature promises is about a shipped build - a corpus reader in a unit test
-/// is not in one at all. Listing them instead would have put three entries in
-/// the inventory below that say nothing about the guarantee.
-///
-/// File-backed test modules declared with `#[cfg(test)]` and `#[path]` are
-/// excluded by `library_sources`. Inline modules use `#[cfg(test)]` then
-/// `mod ... {` at column zero, closed by a `}` at column zero. Another shape
-/// is scanned rather than skipped, so an unknown filesystem call fails loudly.
-fn shipped_lines(source: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut in_test_module = false;
-    let mut pending_test_attr = false;
-    for line in source.lines() {
-        if in_test_module {
-            if line == "}" {
-                in_test_module = false;
-            }
-            continue;
-        }
-        if line.trim() == "#[cfg(test)]" {
-            pending_test_attr = true;
-            continue;
-        }
-        if pending_test_attr {
-            pending_test_attr = false;
-            if (line.starts_with("mod ") || line.starts_with("pub mod "))
-                && line.trim_end().ends_with('{')
-            {
-                in_test_module = true;
-                continue;
-            }
-        }
-        out.push(line);
-    }
-    out
-}
-
-#[test]
-fn file_backed_test_declarations_do_not_hide_shipped_lines() {
-    let source = "#[cfg(test)]\nmod tests;\nlet data = std::fs::read(\"x\");\n";
-    assert!(shipped_lines(source).iter().any(|line| opens_a_file(line)));
-    assert!(!opens_a_file("pub(crate) use inline_crossrefs::*;"));
+fn line_before<'a>(source: &'a str, item: &str) -> &'a str {
+    let at = source
+        .find(item)
+        .unwrap_or_else(|| panic!("{item} not found"));
+    source[..at].lines().last().unwrap_or_default().trim()
 }
 
 #[test]
 fn every_library_filesystem_call_is_accounted_for() {
-    // file -> the call sites it is allowed to hold, by the code on the line.
-    // ONE entry per call, so a second call on a known line is still a finding.
-    let allowed: BTreeSet<(&str, &str)> = [
-        // The filesystem resolver, the only shipped reader, gated on `fs`.
-        ("includes.rs", "root_real: std::fs::canonicalize(root)?,"),
-        (
-            "includes.rs",
-            "let real = std::fs::canonicalize(&candidate).map_err(|e| match e.kind() {",
-        ),
-        (
-            "includes.rs",
-            "let metadata = std::fs::metadata(&real).map_err(|_| IncludeDenial::Denied)?;",
-        ),
-        (
-            "includes.rs",
-            "let bytes = std::fs::read(&real).map_err(|_| IncludeDenial::Denied)?;",
-        ),
-        // `lexical_real`, also gated on `fs`: containment for a path not there.
-        ("includes.rs", "match std::fs::canonicalize(&prefix) {"),
-    ]
-    .into_iter()
-    .collect();
-
-    let mut found: BTreeSet<(String, String)> = BTreeSet::new();
+    let allowed = [(
+        "options.rs",
+        "crate::include::fs::resolver(std::path::Path::new(root))",
+    )];
+    let mut found = Vec::new();
     for path in library_sources() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let source = std::fs::read_to_string(&path).expect("source is readable");
-        assert!(
-            !source.contains("migrate_directory"),
-            "CLI filesystem module must stay outside the library"
-        );
-        for line in shipped_lines(&source) {
-            if opens_a_file(line) {
-                found.insert((name.clone(), line.trim().to_string()));
-            }
+        for line in source.lines().filter(|line| opens_a_file(line)) {
+            found.push((name.clone(), line.trim().to_string()));
         }
     }
-
-    let allowed_owned: BTreeSet<(String, String)> = allowed
+    let unexpected: Vec<_> = found
         .iter()
-        .map(|(f, l)| ((*f).to_string(), (*l).to_string()))
+        .filter(|(f, l)| !allowed.iter().any(|(af, al)| af == f && al == l))
         .collect();
-
-    let added: Vec<_> = found.difference(&allowed_owned).collect();
     assert!(
-        added.is_empty(),
-        "a library filesystem call is not accounted for. Either gate it on the \
-         `fs` feature (the crate promises `--no-default-features` opens no file) \
-         or add it to this inventory with the reason it is safe:\n{added:#?}"
+        unexpected.is_empty(),
+        "gate this filesystem call on the `fs` feature or add it here with the reason:\n{unexpected:#?}"
     );
-
-    // The other direction: an entry matching nothing is an excuse with no
-    // expiry, and would let the real call it described be deleted or moved
-    // without anyone noticing this gate stopped covering it.
-    let stale: Vec<_> = allowed_owned.difference(&found).collect();
-    assert!(
-        stale.is_empty(),
-        "this inventory names a call site that no longer exists; delete the entry:\n{stale:#?}"
-    );
+    for (f, l) in allowed {
+        assert!(
+            found.iter().any(|(ff, ll)| ff == f && ll == l),
+            "stale entry, the call no longer exists: {f}: {l}"
+        );
+    }
 }
 
 #[test]
-fn the_resolver_is_gated_on_the_feature() {
-    // The inventory above says WHERE the calls are; this says the block holding
-    // them actually carries the attribute. Without it every call would still be
-    // "accounted for" while compiling into a no-default-features build.
-    let source =
-        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/includes.rs"))
-            .expect("includes.rs is readable");
-
-    for item in [
-        "pub struct FileSystemResolver {",
-        "impl FileSystemResolver {",
-        "impl IncludeResolver for FileSystemResolver {",
-        "pub const DEFAULT_MAX_FILE_BYTES: u64",
-    ] {
-        let at = source
-            .find(item)
-            .unwrap_or_else(|| panic!("{item} not found"));
-        let preceding = &source[..at];
-        let line_before = preceding.lines().last().unwrap_or_default().trim();
-        assert_eq!(
-            line_before, "#[cfg(feature = \"fs\")]",
-            "{item} is not gated on the `fs` feature"
-        );
-    }
+fn the_filesystem_paths_are_gated_on_the_feature() {
+    let include = std::fs::read_to_string(src().join("include/mod.rs")).unwrap();
+    assert_eq!(
+        line_before(&include, "pub mod fs;"),
+        "#[cfg(feature = \"fs\")]"
+    );
+    let options = std::fs::read_to_string(src().join("api/options.rs")).unwrap();
+    assert_eq!(
+        line_before(&options, "fn root_resolver(root: &str)"),
+        "#[cfg(feature = \"fs\")]"
+    );
 }
