@@ -847,3 +847,30 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: &[Value], first: bool) {
         .unwrap_or("");
     w.lines = body.split('\n').map(str::to_string).collect();
 }
+#[cfg(test)]
+mod repair_limit_test {
+    use super::*;
+
+    #[test]
+    fn exhausted_repair_budget_reports_writer_refused() {
+        let pool = typed_arena::Arena::new();
+        let mut writer = Writer::new(&pool, false);
+        writer.lines.push("x".into());
+        let group = [
+            serde_json::json!({"type": "paragraph", "children": [{"type": "text", "value": "x"}]}),
+        ];
+        let mut history = History {
+            ids: HashMap::new(),
+            recent: std::collections::VecDeque::new(),
+            seen: HashSet::new(),
+            rounds: 1,
+            remaining: 0,
+        };
+
+        assert!(repeated_repair(&mut writer, &group, &mut history));
+        assert_eq!(
+            writer.sp.losses.first().map(|loss| loss.code),
+            Some("writer-refused")
+        );
+    }
+}
