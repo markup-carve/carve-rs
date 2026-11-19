@@ -14,11 +14,15 @@
 //! # Ok::<(), carve::api::Error>(())
 //! ```
 
+mod apparatus;
 mod callouts;
+mod citations;
 mod code_group;
 mod color_swatch;
 mod details;
 mod fenced;
+mod glossary;
+mod index_terms;
 mod list_table;
 mod math;
 mod semantic_span;
@@ -27,6 +31,7 @@ mod transforms;
 mod wikilinks;
 
 pub use callouts::code_callouts;
+pub use citations::{CitationMode, CitationsOptions, citations};
 pub use code_group::{CodeGroupMode, CodeGroupOptions, Highlighter, code_group};
 pub use color_swatch::{ColorSwatchOptions, SwatchPosition, SwatchShape, color_swatch};
 pub use details::{details, spoiler};
@@ -35,6 +40,8 @@ pub use fenced::{
     chart, d2, fenced_render, fenced_render_name, graphviz, mermaid, plantuml, presets, vega_lite,
     wavedrom,
 };
+pub use glossary::glossary;
+pub use index_terms::{IndexOptions, index};
 pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
 pub use semantic_span::{SEMANTIC_SPAN_KEYS, semantic_span};
@@ -228,6 +235,21 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
     if let Some(word) = name.strip_prefix("carve.fencedRender.") {
         return fenced::preset_word(word);
     }
+    apparatus_standard(name).or_else(|| standard_other(name))
+}
+
+fn apparatus_standard(name: &str) -> Option<Bundle> {
+    match name {
+        "carve.glossary" | "carve.term" => Some(glossary()),
+        "carve.index" | "carve.indexTerm" => Some(index(IndexOptions::default())),
+        // The named carve.cite path is the C2-X-058 core-text matcher.
+        // The full citation bundle is registered explicitly or by references.
+        "carve.references" => Some(citations(CitationsOptions::default())),
+        _ => None,
+    }
+}
+
+fn standard_other(name: &str) -> Option<Bundle> {
     match name {
         "carve.mathBlock" => Some(math_block(MathBlockOptions::default())),
         "carve.codeGroup" => Some(code_group(CodeGroupOptions::default())),
