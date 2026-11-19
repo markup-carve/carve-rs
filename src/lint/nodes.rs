@@ -1981,7 +1981,7 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
         *at += line.len();
         Some(out)
     }) {
-        let text = line.trim_end_matches('\n');
+        let text = line.trim_end_matches('\n').trim_start_matches([' ', '\t']);
         let run = text.chars().take_while(|c| *c == '%').count();
         if width == 0 {
             if run >= 3 {
@@ -1994,7 +1994,7 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
             sink.emit_range(
                 "comment-fence-closer-with-text",
                 from + offset,
-                from + offset + text.len(),
+                from + offset + line.trim_end_matches('\n').len(),
                 &item.path,
                 &[],
                 0,
