@@ -741,43 +741,83 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
     let Some((from, _)) = bounds(item.node) else {
         return;
     };
-    let marker_column = field(item.node, "/pos/startColumn").as_u64().unwrap_or(1);
-    let content_column = field(item.node, "/children/0/pos/startColumn")
+    let marker_column = source_column(sink.source, from);
+    let content_column = field(item.node, "/children/0/pos/startOffset")
         .as_u64()
-        .unwrap_or(marker_column + 2);
+        .and_then(|offset| usize::try_from(offset).ok())
+        .map_or(marker_column + 2, |offset| {
+            source_column(sink.source, offset)
+        });
+    let quotes = item
+        .parents
+        .iter()
+        .filter(|parent| *parent == "block_quote")
+        .count();
     for (offset, line) in raw.split_inclusive('\n').scan(0usize, |at, line| {
         let out = (*at, line);
         *at += line.len();
         Some(out)
     }) {
+        let mut prefix = 0;
+        if offset > 0 {
+            for _ in 0..quotes {
+                let rest = line
+                    .get(prefix..)
+                    .unwrap_or("")
+                    .trim_start_matches([' ', '\t']);
+                prefix += line.get(prefix..).unwrap_or("").len() - rest.len();
+                if rest.starts_with("> ") {
+                    prefix += 2;
+                } else {
+                    break;
+                }
+            }
+        }
         let indent = line
+            .get(prefix..)
+            .unwrap_or("")
             .bytes()
             .take_while(|b| matches!(b, b' ' | b'\t'))
             .count();
-        let column = u64::try_from(indent).unwrap_or(u64::MAX) + 1;
+        let start = from + offset + prefix + indent;
+        let column = u64::try_from(prefix + indent + 1).unwrap_or(u64::MAX);
         if offset > 0
             && !line.trim().is_empty()
             && column > marker_column
             && column < content_column
-            && !super::lines::list_marker(line.trim())
+            && !super::lines::list_marker(line.get(prefix + indent..).unwrap_or("").trim())
             && item.node["children"].as_array().is_some_and(|children| {
                 children.iter().any(|child| {
-                    field(child, "/pos/startOffset").as_u64()
-                        == u64::try_from(from + offset + indent).ok()
+                    field(child, "/pos/startOffset").as_u64() == u64::try_from(start).ok()
                 })
             })
         {
-            let start = from + offset + indent;
             sink.emit_range(
                 "list-item-body-below-content-column",
                 start,
-                start + line.trim().len(),
+                start + line.get(prefix + indent..).unwrap_or("").trim_end().len(),
                 &item.path,
                 &[],
                 0,
             );
         }
     }
+}
+
+fn source_column(source: &str, at: usize) -> u64 {
+    let line = source
+        .get(..at)
+        .unwrap_or("")
+        .rsplit('\n')
+        .next()
+        .unwrap_or("");
+    line.chars().fold(1u64, |column, ch| {
+        if ch == '\t' {
+            column + 4 - (column - 1) % 4
+        } else {
+            column + 1
+        }
+    })
 }
 
 fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {

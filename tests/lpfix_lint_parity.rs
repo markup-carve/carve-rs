@@ -178,3 +178,21 @@ fn a_lazy_line_literal_quote_does_not_start_a_definition() {
     assert!(spans("[^f]: > a\n> [ ]: u\n", "blank-reference-label").is_empty());
     assert_eq!(spans("> [ ]: u\n", "blank-reference-label"), vec![(2, 6)]);
 }
+
+#[test]
+fn item_body_column_accounts_for_quotes_and_tabs() {
+    assert_eq!(
+        spans(
+            "> 10. %%\n>    : a\n",
+            "list-item-body-below-content-column"
+        ),
+        vec![(14, 17)]
+    );
+    assert_eq!(
+        spans(
+            "\ti) :: term\n\n     +|\n",
+            "list-item-body-below-content-column"
+        ),
+        vec![(18, 20)]
+    );
+}
