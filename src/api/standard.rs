@@ -168,18 +168,7 @@ fn inline_node(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let mut bare = node.clone();
-    bare.remove("attrs");
-    let doc = json!({"type": "document", "astVersion": "2.0", "children": [
-        {"type": "paragraph", "children": [Value::Object(bare)]},
-    ]});
-    let text = super::Carve::default()
-        .write(&Tree::from_value(&doc).ok()?, &WriteOptions::default())
-        .ok()?;
-    let body = text
-        .trim_end_matches('\n')
-        .strip_prefix(&format!(":{source}["))?
-        .strip_suffix(']')?;
+    let body = inline_body(node, source)?;
     let mut out = Map::new();
     out.insert("type".into(), "inline_extension".into());
     out.insert("name".into(), qualified.into());
@@ -210,15 +199,7 @@ fn inline_node(
 /// the div at a byte offset; `false` means the claim source could not be
 /// written and the core node stays (C2-X-051).
 pub(crate) fn claim_tabs(doc: &mut Value, opener: &dyn Fn(usize) -> Option<String>) -> bool {
-    let definitions: Vec<Value> = at(doc, "/children")
-        .as_array()
-        .map(|c| {
-            c.iter()
-                .filter(|n| at(n, "/type") == "link_reference_definition")
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
+    let definitions = definitions(doc);
     let cx = Claim {
         opener,
         definitions,
@@ -325,32 +306,67 @@ impl Claim<'_> {
     /// C2-X-026, C2-W-089: the canonical body of the div, written with the
     /// link reference definitions of the document around it.
     fn source(&self, node: &Value, name: &str) -> Option<Value> {
-        let mut children = vec![node.clone()];
-        children.extend(self.definitions.iter().cloned());
-        let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
-        let tree = Tree::from_value(&doc).ok()?;
-        let text = super::Carve::default()
-            .write(&tree, &WriteOptions::default())
-            .ok()?;
-        let lines: Vec<&str> = text.split('\n').collect();
-        let open = lines.iter().position(|l| l.starts_with(":::"))?;
-        let opener = lines.get(open)?;
-        let run = opener.get(..opener.bytes().take_while(|&b| b == b':').count())?;
-        let close = lines.iter().rposition(|l| *l == run)?;
-        let body = lines.get(open + 1..close)?.join("\n");
-        let mut source = Map::new();
-        source.insert("form".into(), "div".into());
-        source.insert("name".into(), name.into());
-        if let Some(title) = at(node, "/title").as_array() {
-            source.insert("title".into(), plain_text(title).into());
-        }
-        if let Some(label) = node.get("groupLabel") {
-            source.insert("groupLabel".into(), label.clone());
-        }
-        let body = if body.is_empty() { body } else { body + "\n" };
-        source.insert("body".into(), body.into());
-        Some(Value::Object(source))
+        div_source(node, name, &self.definitions)
     }
+}
+
+/// C2-X-026, C2-W-089: the source record of a claimed div, its body written
+/// with the link reference definitions of the document around it.
+pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Option<Value> {
+    let mut children = vec![node.clone()];
+    children.extend(definitions.iter().cloned());
+    let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
+    let tree = Tree::from_value(&doc).ok()?;
+    let text = super::Carve::default()
+        .write(&tree, &WriteOptions::default())
+        .ok()?;
+    let lines: Vec<&str> = text.split('\n').collect();
+    let open = lines.iter().position(|l| l.starts_with(":::"))?;
+    let opener = lines.get(open)?;
+    let run = opener.get(..opener.bytes().take_while(|&b| b == b':').count())?;
+    let close = lines.iter().rposition(|l| *l == run)?;
+    let body = lines.get(open + 1..close)?.join("\n");
+    let mut source = Map::new();
+    source.insert("form".into(), "div".into());
+    source.insert("name".into(), name.into());
+    if let Some(title) = at(node, "/title").as_array() {
+        source.insert("title".into(), plain_text(title).into());
+    }
+    if let Some(label) = node.get("groupLabel") {
+        source.insert("groupLabel".into(), label.clone());
+    }
+    let body = if body.is_empty() { body } else { body + "\n" };
+    source.insert("body".into(), body.into());
+    Some(Value::Object(source))
+}
+
+/// The link reference definitions at the top level of a document.
+pub(crate) fn definitions(doc: &Value) -> Vec<Value> {
+    at(doc, "/children")
+        .as_array()
+        .map(|c| {
+            c.iter()
+                .filter(|n| at(n, "/type") == "link_reference_definition")
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The body of the source form `:name[body]` of an inline extension node.
+pub(crate) fn inline_body(node: &Map<String, Value>, source: &str) -> Option<String> {
+    let mut bare = node.clone();
+    bare.remove("attrs");
+    let doc = json!({"type": "document", "astVersion": "2.0", "children": [
+        {"type": "paragraph", "children": [Value::Object(bare)]},
+    ]});
+    let text = super::Carve::default()
+        .write(&Tree::from_value(&doc).ok()?, &WriteOptions::default())
+        .ok()?;
+    text.trim_end_matches('\n')
+        .strip_prefix(&format!(":{source}["))?
+        .strip_suffix(']')
+        .map(str::to_string)
 }
 
 fn tab_node(node: &Value, source: Value) -> Value {

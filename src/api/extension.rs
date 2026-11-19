@@ -84,6 +84,47 @@ impl RenderContext<'_> {
         self.host.render_list(nodes)
     }
 
+    /// The plain text of inline nodes, as an accessible name reads it.
+    #[must_use]
+    pub fn plain_text(&self, nodes: &[Value]) -> String {
+        super::standard::plain_text(nodes)
+    }
+
+    /// The `labels` render option (C2-H-125).
+    #[must_use]
+    pub fn label(&self, key: &str) -> Option<&str> {
+        self.host.opts.labels.get(key).map(String::as_str)
+    }
+
+    /// A control id of the form `{prefix}-{n}` that no authored id, generated
+    /// heading id or earlier control id of the render takes (C2-X-048).
+    #[must_use]
+    pub fn next_id(&self, prefix: &str) -> String {
+        self.host.ids.borrow_mut().next(prefix)
+    }
+
+    /// C2-X-033: the attribute list of the element of `node` (its `attrs`
+    /// and, for a block under `sourceLines`, its source line), written as
+    /// every core element writes it: ` id="..." class="..." ...`.
+    #[must_use]
+    pub fn attributes(&self, node: &Value) -> String {
+        let mut div = serde_json::Map::new();
+        div.insert("type".into(), "div".into());
+        div.insert("children".into(), Value::Array(Vec::new()));
+        for key in ["attrs", "pos"] {
+            if let Some(v) = node.get(key) {
+                div.insert(key.into(), v.clone());
+            }
+        }
+        let Ok(html) = self
+            .host
+            .render_list(&Value::Array(vec![Value::Object(div)]))
+        else {
+            return String::new();
+        };
+        open_tag_attributes(&html, "div").unwrap_or_default()
+    }
+
     /// The HTML of a list of inline nodes, such as an inline slot.
     ///
     /// # Errors
@@ -100,6 +141,20 @@ impl RenderContext<'_> {
             .and_then(|h| h.strip_suffix("</p>"))
             .map_or(html.clone(), str::to_string))
     }
+}
+
+/// The attribute text of the first `<tag ...>` of `html`, quoted values skipped.
+fn open_tag_attributes(html: &str, tag: &str) -> Option<String> {
+    let rest = html.strip_prefix('<')?.strip_prefix(tag)?;
+    let mut quoted = false;
+    for (i, c) in rest.char_indices() {
+        match c {
+            '"' => quoted = !quoted,
+            '>' if !quoted => return Some(rest[..i].to_string()),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// A host renderer of extension nodes (C2-X-033, C2-X-034): trusted code
@@ -150,6 +205,13 @@ pub(crate) struct Registry {
 impl Registry {
     pub(crate) fn is_empty(&self) -> bool {
         self.list.is_empty()
+    }
+
+    pub(crate) fn declaration(&self, name: &str) -> Option<ExtensionDeclaration> {
+        self.list
+            .iter()
+            .find(|e| e.declaration.name == name)
+            .map(|e| e.declaration.clone())
     }
 
     pub(crate) fn register(&mut self, extension: Extension) -> Result<(), Error> {
@@ -274,6 +336,8 @@ pub(crate) struct Host<'a> {
     opts: &'a Options,
     failed: RefCell<Vec<String>>,
     ids: RefCell<super::standard::UsedIds>,
+    /// The declarations of the view, so a slot's extension nodes read back.
+    declared: Value,
 }
 
 impl<'a> Host<'a> {
@@ -290,6 +354,7 @@ impl<'a> Host<'a> {
             opts,
             failed: RefCell::new(Vec::new()),
             ids: RefCell::new(super::standard::UsedIds::of(&value)),
+            declared: value.get("extensions").cloned().unwrap_or(Value::Null),
         }
     }
 
@@ -310,11 +375,14 @@ impl<'a> Host<'a> {
     }
 
     fn render_list(&self, nodes: &Value) -> Result<String, Error> {
-        let doc = serde_json::json!({
+        let mut doc = serde_json::json!({
             "type": "document",
             "astVersion": "2.0",
             "children": nodes,
         });
+        if let (true, Some(map)) = (self.declared.is_array(), doc.as_object_mut()) {
+            map.insert("extensions".into(), self.declared.clone());
+        }
         let tree = Tree::from_value(&doc)?;
         Ok(crate::render_tree_hooked(tree.document(), self.opts, self).html)
     }

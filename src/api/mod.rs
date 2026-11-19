@@ -36,6 +36,7 @@
 
 mod error;
 pub mod extension;
+pub mod extensions;
 mod img_fence;
 mod import;
 mod info;
@@ -243,6 +244,7 @@ pub struct Carve {
     writers: Writers,
     extensions: extension::Registry,
     standard: standard::Standard,
+    matchers: extensions::Matchers,
 }
 
 impl Carve {
@@ -287,11 +289,62 @@ impl Carve {
     ///
     /// [`Error::Option`] for a name this engine has no standard extension for.
     pub fn enable_standard(&mut self, name: &str, renderer: bool) -> Result<(), Error> {
+        if let Some(bundle) = extensions::standard(name) {
+            return self.register(if renderer {
+                bundle
+            } else {
+                bundle.without_renderers()
+            });
+        }
         self.standard.enable(name, renderer)
     }
 
+    /// PROVISIONAL: registers a bundle of [`extensions`]: its extensions as
+    /// [`Carve::register_extension`] does, and its matchers, which claim in
+    /// [`Carve::parse`] and the render calls (C2-X-005).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Option`] as [`Carve::register_extension`], for a matcher of an
+    /// extension the bundle does not declare, and for a second claim of one
+    /// source name (C2-X-014). Nothing is registered then.
+    pub fn register(&mut self, bundle: extensions::Bundle) -> Result<(), Error> {
+        let mut next = self.clone();
+        let mut matchers = next.matchers.clone();
+        for m in &bundle.matchers {
+            if !bundle
+                .extensions
+                .iter()
+                .any(|e| e.declaration.name == m.extension)
+            {
+                return Err(Error::option(
+                    "extensions",
+                    format!(
+                        "the matcher of {} names no extension of its bundle",
+                        m.extension
+                    ),
+                ));
+            }
+            matchers.check(m)?;
+            matchers.push(extensions::Matcher {
+                extension: String::new(),
+                form: m.form,
+                name: m.name.clone(),
+                claimer: Box::new(|_: &extensions::Claim<'_>| None),
+            });
+        }
+        for e in bundle.extensions {
+            next.extensions.register(e)?;
+        }
+        for m in bundle.matchers {
+            next.matchers.push(m);
+        }
+        *self = next;
+        Ok(())
+    }
+
     fn plain(&self) -> bool {
-        self.extensions.is_empty() && self.standard.is_empty()
+        self.extensions.is_empty() && self.standard.is_empty() && self.matchers.is_empty()
     }
 
     /// `parse` with the matchers of the enabled standard extensions
@@ -318,7 +371,7 @@ impl Carve {
     ) -> Result<Parsed, Error> {
         let input = input.into();
         let mut parsed = parse_with_diagnostics(input, opts)?;
-        if self.standard.is_empty() {
+        if self.standard.is_empty() && self.matchers.is_empty() {
             return Ok(parsed);
         }
         let mut value: Value = serde_json::from_str(&parsed.tree.json)
@@ -353,8 +406,16 @@ impl Carve {
                 standard::declare_names(&mut value, &declared);
             }
         }
+        let claimed = if self.matchers.is_empty() {
+            Vec::new()
+        } else {
+            self.matchers.apply(&mut value, &opener, &|name| {
+                self.extensions.declaration(name)
+            })
+        };
         let top = parsed.tree.top.take();
         parsed.tree = Tree::read(&value.to_string(), top)?;
+        parsed.diagnostics.extend(claimed);
         for name in failed {
             parsed.diagnostics.push(Entry {
                 code: "extension-transform-failed".into(),
