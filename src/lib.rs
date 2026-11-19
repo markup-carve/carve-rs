@@ -1,881 +1,1047 @@
-//! Carve — a parser + HTML renderer for the [Carve](https://github.com/markup-carve/carve)
-//! markup language.
+//! Carve 0.2 engine, stage 1: parse (source to tree), resolve and render HTML,
+//! built from the 0.2 specification.
 //!
-//! ## Quick start
+//! The tree has two faces. [`parse_in`] and [`parse_resolved_in`] build it in
+//! an [`Arena`]: nodes and child lists live in the arena, and text that is a
+//! slice of the input borrows the input, so the tree lives as long as both.
+//! This is the fast path, and [`render`] takes it. [`parse`] and
+//! [`parse_resolved`] return an owned copy ([`ast::owned`]) for callers that
+//! keep trees or deserialize them; `in_arena` and `owned` convert between the
+//! two. Both serialize to the same JSON.
 //!
-//! ```
-//! let html = carve::to_html("# Hello\n\n/italic/ and *bold*.");
-//! assert!(html.contains("<h1>Hello</h1>"));
-//! assert!(html.contains("<em>italic</em>"));
-//! ```
-//!
-//! Use [`parse`] and [`render_html`] when a caller needs the AST between those
-//! steps. [`from_json`] reads the public AST exchange format, and [`try_to_json`]
-//! reports serialization failures for caller-built trees. HTML and BBCode
-//! importers, and importer functions named `try_*`, return fallible results.
-//!
-//! File inclusion can be run through [`prepare_doc_with_includes`] or as a
-//! separate pass through [`includes::expand_includes`].
-//! The `fs` feature enables the built-in filesystem resolver; disabling default
-//! features leaves resolver choice with the host.
-//!
-//! Implementation status: passes every `.crv` / `.html` pair currently
-//! checked into this crate's `tests/spec` submodule, including tables,
-//! captions / figures, admonitions, abbreviations, mentions, tags,
-//! inline extensions, attributes, and frontmatter.
+//! The public, stable library is the module [`api`]: the calls of
+//! `tooling.md`, typed errors, option validation, the writer registry and the
+//! JSON boundary for bindings. Every other module and item of the crate root
+//! is an engine internal that the engine's own tests reach; it is hidden from
+//! the documentation and may change without notice.
+#![forbid(unsafe_code)]
+#![warn(clippy::pedantic)]
+// No panics on any input: the quality bar of the stage, enforced.
+#![deny(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::todo
+)]
+// Parser offsets and byte markers are clearer as short names in their local scopes.
+#![allow(clippy::many_single_char_names)]
+// Generated schema literals use their source formatting.
+#![allow(clippy::unreadable_literal)]
+// Generated AST visitors and parser dispatch functions follow the schema shape.
+#![allow(clippy::too_many_lines)]
+// Three parser states require distinct nested option values.
+#![allow(clippy::option_option)]
+// Generated AST constructors preserve their current field grouping.
+#![allow(clippy::inconsistent_struct_constructor)]
 
-#![deny(missing_docs)]
-
-mod abbr_budget;
-/// Accessibility lint for Carve source.
-pub mod accessibility;
-pub mod ast;
-pub mod ast_envelope;
-mod ast_fingerprint;
-pub mod ast_json;
-pub mod ast_merge;
-pub mod ast_patch;
-pub mod ast_sidecars;
-pub mod bbcode_migrate;
-mod carrier_markers;
-mod citations;
-pub mod conversion_diagnostics;
-pub mod djot_migrate;
-mod document_ids;
-mod escape;
-mod extension;
-pub mod extensions;
-pub mod html_import;
-mod include_walk;
-/// Opt-in file inclusion with host-supplied resolution and diagnostics.
-pub mod includes;
-/// Incremental parsing snapshots and text-change results.
-pub mod incremental;
-mod index_budget;
-mod inline_carriers;
-pub mod lint;
-mod markdown_assessment;
+pub mod api;
+mod arena;
 #[doc(hidden)]
-pub use markdown_assessment::take_attribute_opener_scan_bytes;
-mod markdown_gfm_autolinks;
-mod markdown_github_alerts;
-pub mod markdown_import;
-mod markdown_strike;
-/// Import and migration results for supported source formats.
-pub mod migration;
-mod parse;
+pub mod ast;
+#[doc(hidden)]
+pub mod attr;
+#[doc(hidden)]
+pub mod block;
+#[doc(hidden)]
+pub mod chars;
+#[doc(hidden)]
+pub mod diagnostic;
+mod fast_plain;
+#[doc(hidden)]
+pub mod hash;
+#[doc(hidden)]
+pub mod html;
+mod import;
+#[doc(hidden)]
+pub mod include;
+#[doc(hidden)]
+pub mod inline;
+#[doc(hidden)]
+pub mod lint;
+#[doc(hidden)]
+pub mod options;
+#[cfg(feature = "profile")]
 pub mod profile;
-pub mod profile_filter;
-pub mod prosemirror;
-mod render;
-mod render_ansi;
-mod render_carve;
-mod render_carve_error;
-#[path = "render/render_depth.rs"]
-mod render_depth;
-#[path = "render/render_loss.rs"]
-mod render_loss;
-mod render_markdown;
-mod render_plain;
-#[path = "render/render_text.rs"]
-mod render_text;
-mod roundtrip;
-mod sentinel_run;
-#[path = "source/source_layout.rs"]
-mod source_layout;
-#[path = "source/source_patch.rs"]
-mod source_patch;
-#[path = "source/source_positions.rs"]
-mod source_positions;
-mod stamp;
-/// Chunked HTML output on a fast path that may return `NeedsAst`.
-pub mod stream;
-#[path = "table/table_display_width.rs"]
-mod table_display_width;
-#[path = "table/table_source_metadata.rs"]
-mod table_source_metadata;
-#[path = "table/table_spans.rs"]
-mod table_spans;
-mod table_unicode_18_data;
-#[path = "table/table_width.rs"]
-mod table_width;
-mod translit_map;
-mod wire_fields;
+#[doc(hidden)]
+pub mod reader;
+#[doc(hidden)]
+pub mod resolve;
+#[doc(hidden)]
+pub mod source;
+#[doc(hidden)]
+pub mod tables;
+#[doc(hidden)]
+pub mod tree;
+// The canonical Carve writer (`writer.md`), reached through `api`.
+mod write;
 
-/// Temporary marker for generated line-block columns and terminal rendering.
-/// Authored NUL is normalized before parsing. Published spaces use explicit
-/// `NonBreakingSpace` nodes; verbatim fields contain literal U+00A0.
-pub(crate) const NBSP_PLACEHOLDER: char = '\0';
-/// The Carve specification version this engine implements.
-///
-/// `carve fmt --stamp` writes it into a document and [`needs_review`] compares
-/// an existing stamp against it, so a stale value tells a reader their document
-/// is current when it is not. It is not kept correct by hand: the test
-/// `the_version_a_build_reports_is_the_one_that_shipped` compares it against the
-/// `Version:` field of the vendored grammar on every run.
-///
-/// The version of the crate itself is `CARGO_PKG_VERSION` - derived from the
-/// manifest, never written out a second time here.
-pub const SPEC_VERSION: &str = "0.1";
+#[doc(hidden)]
+pub use arena::Arena;
 
-pub use accessibility::{lint_accessibility, AccessibilityDiagnostic, AccessibilitySeverity};
-pub use ast::*;
-pub use ast_envelope::{
-    from_ast_envelope_json, to_ast_envelope_json, AstEnvelopeError, AstEnvelopeExtension,
-    AstEnvelopeOptions, AstEnvelopeReaderOptions, AST_CONTRACT_VERSION, CORE_AST_VOCABULARY,
-};
-pub use ast_json::{from_json, to_json, try_to_json, AstJsonError, AstJsonErrorKind};
-pub use ast_merge::{
-    merge_ast, merge_ast_with_resolver, MergeConflict, MergeConflictReason, MergeResolution,
-    MergeResult,
-};
-pub use ast_patch::{
-    apply_ast_patch, apply_reversible_ast_patch, ast_patch_from_json, ast_patch_to_json,
-    create_ast_patch, create_reversible_ast_patch, AstPatchError, AstPatchOperation,
-    ReversibleAstPatch,
-};
-pub use ast_sidecars::{
-    authored_provenance, fresh_node_identity, from_annotation_ranges_json, from_node_identity_json,
-    from_provenance_json, parse_with_authored_provenance, to_annotation_ranges_json,
-    to_node_identity_json, to_provenance_json, AnnotationAnchor, AnnotationRange, AnnotationRanges,
-    AstSidecarError, NodeIdentity, NodeIdentityEntry, NodeProvenance, Provenance, ProvenanceOrigin,
-    ProvenanceSource,
-};
-pub use bbcode_migrate::{bbcode_to_carve, BbcodeImportError, BBCODE_MAX_INPUT_LENGTH};
-pub use citations::{
-    parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
-};
-pub use conversion_diagnostics::{
-    conversion_diagnostics, to_conversion_diagnostics_json, ConversionDiagnostic,
-    ConversionDiagnosticCode, ConversionDiagnostics, ConversionPos,
-    DEFAULT_MAX_CONVERSION_DIAGNOSTICS,
-};
-pub use djot_migrate::djot_to_carve;
-pub use extension::{
-    label_default, AsciiHeadingIds, BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch,
-    MatcherContext, Mode, Options, RenderContext, SmartTypographyMode, SocialLinkKind,
-    SocialLinkResolver, SocialLinkResolverInput, StaticRenderers, LABEL_FOOTNOTE_BACKLINK,
-};
-pub use extensions::{
-    sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, CodeGroup, CodeGroupOptions,
-    ColorSwatch, ContentMode, CrossrefStyle, Details, ExternalLinks, ExternalLinksOptions,
-    FencedRender, FencedRenderOptions, Glossary, HeadingLevelShift, HeadingLevelShiftOptions,
-    HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions,
-    HeadingReference, HeadingReferenceOptions, ImgFence, Index, ListTable, ListType, MathBlock,
-    MathBlockOptions, Position, QuoteCharacters, SanitizeResult, SanitizeSvgOptions, SmartQuotes,
-    Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions,
-    Tabs, TabsMode, TabsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
-    SMART_QUOTE_LOCALES,
-};
-pub use html_import::{
-    html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,
-    HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportReport, HtmlImportResult,
-    HtmlImportSeverity, ImportConfidence, ImportFidelity, MAX_HTML_IMPORT_DEPTH,
-};
-pub use includes::{
-    expand_includes, expands_for_target, select_include_region, IncludeContext, IncludeDenial,
-    IncludeDependency, IncludeOptions, IncludeRegion, IncludeRegionError, IncludeRegionMode,
-    IncludeResolved, IncludeResolver, IncludeResult, IncludeWarning, DEFAULT_MAX_DEPTH,
-    DEFAULT_MAX_RESOLVER_CALLS, DEFAULT_MAX_WARNINGS,
-};
-#[cfg(feature = "fs")]
-pub use includes::{FileSystemResolver, DEFAULT_MAX_FILE_BYTES};
-pub use incremental::{
-    parse_snapshot, parse_snapshot_with_identity, reparse, IncrementalParse, IncrementalParseError,
-    ParserSnapshot, TextChange,
-};
-pub use lint::{lint_carve, lint_carve_with_options, migrate_case_only_references, LintWarning};
-pub use markdown_import::{
-    markdown_to_ast, markdown_to_carve, migration_raw_heading_ids, try_markdown_to_ast,
-    try_markdown_to_carve,
-};
-pub use migration::{
-    fragment_fixup_diagnostic, migrate_bbcode, migrate_djot, migrate_html, migrate_markdown,
-    try_migrate_markdown, try_migrate_markdown_for_directory,
-    try_migrate_markdown_for_directory_with_destinations, MigrationConfidence, MigrationDiagnostic,
-    MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
-};
-#[cfg(feature = "experimental-event-parser")]
-pub use parse::parse_experimental_event_blocks;
-#[cfg(feature = "experimental-event-parser-options")]
-pub use parse::parse_experimental_event_blocks_with_options;
-pub use parse::{decision_trace, parse, parse_with_options};
-pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
-pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
-pub use prosemirror::{
-    from_prosemirror, from_prosemirror_with_report, to_prosemirror, ProseMirrorDoc,
-    ProseMirrorError, ProseMirrorImport,
-};
-pub use render::{
-    render_html, render_html_owned, render_html_owned_with_options, render_html_with_options,
-    MAX_RENDER_DEPTH,
-};
-pub use render_ansi::{render_ansi, render_ansi_with_options};
-pub use render_carve::{render_carve, render_carve_with_options, CarveWriterOptions};
-pub use render_carve_error::{CarveWriteError, RenderCarveError, SourceUnspellable};
-pub use render_depth::RenderDepthError;
-pub use render_loss::{
-    with_render_loss_report, CheckedRenderOptions, RawNodeType, RenderLoss, RenderLossError,
-    RenderResult, RenderTarget, DEFAULT_MAX_RENDER_LOSSES,
-};
-pub use render_markdown::{render_markdown, render_markdown_with_options, MarkdownRenderError};
-pub use render_plain::{render_plain_text, render_plain_text_with_options};
-pub use source_layout::{parse_with_source_layout, to_source_layout_json};
-pub use source_patch::{
-    apply_source_patch, create_source_patch, source_fingerprint, SourceEdit, SourceEditKind,
-    SourcePatch, SourcePatchError, SourceSuggestion,
-};
-pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
-pub use stream::{try_render_html_streaming, StreamOutcome};
+// The examples of README.md run as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;
+#[doc(hidden)]
+pub use options::Options;
 
-/// Parse a Carve source string and render it as HTML in one call.
+#[doc(hidden)]
+/// Parses source into the pre-resolve tree (stage parse), in `arena`. Text
+/// values that are slices of the input borrow it.
 ///
-/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
-/// renderers' ceiling, so the §25 refusal is unreachable from a source string
-/// (see [`RenderDepthError`], which the tree-taking renderers return).
-pub fn to_html(source: &str) -> String {
-    let options = Options::default();
-    if let Some(html) = parse::try_layout_html(source, &options) {
-        return html;
-    }
-    let (doc, crossref_index) = parse::parse_with_render_index(source, &options);
-    render::render_html_owned_with_index(
-        doc,
-        &options,
-        crossref_index,
-        source.contains("[@") || source.contains(":::"),
-        source.contains("[^") || source.contains("^["),
-    )
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
+/// # Errors
+///
+/// [`RenderError::TooLong`] when positions cannot fit in `u32`.
+pub fn parse_in<'a>(input: &'a str, arena: &'a Arena) -> Result<ast::Document<'a>, RenderError> {
+    check_source_length(input.len())?;
+    let src = source::Source::new(input);
+    let out = block::scan(&src);
+    Ok(tree::build(&src, arena, out.events, &out.own_starts))
 }
 
-/// Parse a Carve source string and render it as Markdown in one call.
+#[doc(hidden)]
+/// Parses and resolves in `arena`: the tree `--tree` prints.
 ///
-/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
-/// renderers' ceiling, so the §25 refusal is unreachable from a source string
-/// (see [`RenderDepthError`], which the tree-taking renderers return).
-/// Positions are ON for this convenience wrapper: §7 orders collected
-/// definitions by source position, and the footnote map is a BTreeMap, so
-/// without spans the definitions print in LABEL order (carve-rs#686). A caller
-/// that builds its own document and calls the tree-taking renderer keeps
-/// whatever it parsed with; label order is the only order available there.
-pub fn to_markdown(source: &str) -> String {
-    render_markdown(&parse_with_options(
-        source,
-        &Options::default().with_positions(true),
-    ))
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
+/// # Errors
+///
+/// [`RenderError::TooLong`] when positions cannot fit in `u32`.
+pub fn parse_resolved_in<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+) -> Result<ast::Document<'a>, RenderError> {
+    let mut doc = parse_in(input, arena)?;
+    resolve::resolve(&mut doc, opts, arena);
+    Ok(doc)
 }
 
-/// Parse a Carve source string and render it as plain text in one call.
-///
-/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
-/// renderers' ceiling, so the §25 refusal is unreachable from a source string
-/// (see [`RenderDepthError`], which the tree-taking renderers return).
-/// Positions are ON for this convenience wrapper: §7 orders collected
-/// definitions by source position, and the footnote map is a BTreeMap, so
-/// without spans the definitions print in LABEL order (carve-rs#686). A caller
-/// that builds its own document and calls the tree-taking renderer keeps
-/// whatever it parsed with; label order is the only order available there.
-pub fn to_plain_text(source: &str) -> String {
-    render_plain_text(&parse_with_options(
-        source,
-        &Options::default().with_positions(true),
-    ))
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
-}
-
-/// Parse a Carve source string and render it as ANSI-styled text in one call.
-///
-/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
-/// renderers' ceiling, so the §25 refusal is unreachable from a source string
-/// (see [`RenderDepthError`], which the tree-taking renderers return).
-/// Positions are ON for this convenience wrapper: §7 orders collected
-/// definitions by source position, and the footnote map is a BTreeMap, so
-/// without spans the definitions print in LABEL order (carve-rs#686). A caller
-/// that builds its own document and calls the tree-taking renderer keeps
-/// whatever it parsed with; label order is the only order available there.
-pub fn to_ansi(source: &str) -> String {
-    render_ansi(&parse_with_options(
-        source,
-        &Options::default().with_positions(true),
-    ))
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
-}
-
-/// Parse a Carve source string and render canonical Carve source in one call.
-///
-/// This formatter is intentionally parse-only: it does not run extension hooks,
-/// heading-id enrichment, or other render-time transforms. It also carries no
-/// [`Options`], so no profile reaches it; callers that need the profile honored
-/// on this target use [`try_to_carve_with_options`].
-/// A DEFAULT `Options` CARRIES NO PROFILE, so the only refusal this can meet is
-/// the writer's own, and this entry point has no way to report one. It leaves
-/// the source as authored rather than aborting or emitting an empty document:
-/// every caller here formats in place (`to_carve_patch` then yields a no-op
-/// patch), so losing the text would be worse than not formatting it. A caller
-/// that needs to SEE the refusal uses [`try_to_carve_with_options`], which both
-/// CLI paths now do (carve-rs#2326).
-pub fn to_carve(source: &str) -> String {
-    try_to_carve_with_options(source, &Options::default()).unwrap_or_else(|_| source.to_string())
-}
-
-/// Prepare canonical formatting as a stale-safe patch without changing source.
-pub fn to_carve_patch(source: &str) -> SourcePatch {
-    let formatted = to_carve(source);
-    let mut patch = create_source_patch(
-        source,
-        &formatted,
-        SourceEditKind::Formatting,
-        "canonical-format",
-    );
-    if !patch.edits.is_empty() && lint::lint_with_recovery(source, &Options::default()).1 {
-        patch.edits.clear();
-        patch.unresolved.push(SourceSuggestion {
-            start: 0,
-            end: patch.source_bytes,
-            replacement: formatted,
-            kind: SourceEditKind::Formatting,
-            code: "invalid-container-metadata".into(),
-            message:
-                "Canonical formatting drops invalid container metadata; review the proposed source."
-                    .into(),
+fn check_source_length(len: usize) -> Result<(), RenderError> {
+    if len > u32::MAX as usize {
+        return Err(RenderError::TooLong {
+            profile: "source",
+            limit: u32::MAX as usize,
         });
     }
-    patch
+    Ok(())
 }
 
-/// Render HTML and report target-routed raw nodes that were omitted.
-pub fn to_html_with_report(
-    source: &str,
-    checked_options: CheckedRenderOptions,
-) -> Result<RenderResult<String>, RenderLossError> {
-    render_loss::checked(RenderTarget::Html, checked_options, || {
-        render_html_owned(parse_with_options(
-            source,
-            &Options::default().with_positions(true),
-        ))
-        .expect("the parse cap sits below the render ceiling")
-    })
-}
-
-/// Render HTML under `options` and report what the render dropped.
+#[doc(hidden)]
+/// C2-B-218: parses bytes with replacement of malformed UTF-8 and original byte offsets.
 ///
-/// [`to_html_with_report`] renders under the defaults, so it cannot reach a
-/// loss an option produces. Roundtrip export has one: a PART 10 §13a carrier
-/// displaces an authored attribute of its own name, and the drop is REPORTED
-/// rather than silent (ruling markup-carve/carve#2902 question 1).
+/// # Errors
 ///
-/// A row carries a position only where `options` asked for one
-/// ([`Options::with_positions`]); every other field is filled either way.
-pub fn to_html_with_options_and_report(
-    source: &str,
-    options: &Options<'_>,
-    checked_options: CheckedRenderOptions,
-) -> Result<RenderResult<String>, RenderLossError> {
-    render_loss::checked(RenderTarget::Html, checked_options, || {
-        to_html_with_options(source, options)
-    })
+/// [`RenderError::TooLong`] when positions cannot fit in `u32`.
+pub fn try_parse_resolved_bytes_in<'a>(
+    input: &'a [u8],
+    opts: &Options,
+    arena: &'a Arena,
+) -> Result<ast::Document<'a>, RenderError> {
+    check_source_length(input.len())?;
+    let src = source::Source::from_bytes(input);
+    check_source_length(src.text().len())?;
+    let out = block::scan(&src);
+    let mut doc = tree::build(&src, arena, out.events, &out.own_starts);
+    resolve::resolve(&mut doc, opts, arena);
+    Ok(doc)
 }
 
-/// Render Markdown and report target-routed raw nodes that were omitted.
-pub fn to_markdown_with_report(
-    source: &str,
-    checked_options: CheckedRenderOptions,
-) -> Result<RenderResult<String>, RenderLossError> {
-    render_loss::checked(RenderTarget::Markdown, checked_options, || {
-        let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
-            parse_with_options(source, &Options::default().with_positions(true))
-        });
-        let rendered = render_markdown(&doc).expect("the parse cap sits below the render ceiling");
-        render_loss::collect_markdown_unattached(unattached);
-        rendered
-    })
-}
-
-/// Render plain text and report every raw node omitted by that target.
-pub fn to_plain_text_with_report(
-    source: &str,
-    checked_options: CheckedRenderOptions,
-) -> Result<RenderResult<String>, RenderLossError> {
-    render_loss::checked(RenderTarget::Plain, checked_options, || {
-        render_plain_text(&parse_with_options(
-            source,
-            &Options::default().with_positions(true),
-        ))
-        .expect("the parse cap sits below the render ceiling")
-    })
-}
-
-/// Render ANSI text and report raw inline nodes. Raw blocks have a visible
-/// `[raw:format]` fallback and therefore are not losses on this target.
-pub fn to_ansi_with_report(
-    source: &str,
-    checked_options: CheckedRenderOptions,
-) -> Result<RenderResult<String>, RenderLossError> {
-    render_loss::checked(RenderTarget::Ansi, checked_options, || {
-        render_ansi(&parse_with_options(
-            source,
-            &Options::default().with_positions(true),
-        ))
-        .expect("the parse cap sits below the render ceiling")
-    })
-}
-
-/// Canonical Carve reports nested list items whose tightness cannot be kept.
-pub fn to_carve_with_report(
-    source: &str,
-    checked_options: CheckedRenderOptions,
-) -> Result<RenderResult<String>, RenderLossError> {
-    render_loss::checked(RenderTarget::Carve, checked_options, || to_carve(source))
-}
-
-/// Parse, apply the feature-restriction profile, and render canonical Carve
-/// source. Enforces the profile's `max_length` on the source bytes before the
-/// parser walks them, exactly as [`try_to_html_with_options`] does, and returns
-/// a [`ProfileViolationError`] when the cap is exceeded or the profile's action
-/// is [`DisallowedAction::Error`] and a disallowed node is found.
+#[doc(hidden)]
+/// Parses source into an owned pre-resolve tree.
 ///
-/// The profile is honored here for the same reason it is honored on every other
-/// target: `--carve` parses and re-serializes a whole document, so a host that
-/// normalizes UNTRUSTED markup through it needs the cap that bounds that work,
-/// and it must not get back the raw HTML block a `minimal` profile removes from
-/// every other output. The ingest path already reached that answer -
-/// `prepare_document_for_render` filters before `render_carve` on `--from-json`,
-/// so leaving the parse path unfiltered made one target answer the same flags
-/// two different ways depending on how the document arrived (carve-rs#1191).
+/// # Errors
 ///
-/// Like [`to_carve`] this stays parse-only in every other respect: no extension
-/// hooks, no heading-id enrichment.
-pub fn try_to_carve_with_options(
-    source: &str,
-    options: &Options<'_>,
-) -> Result<String, CarveWriteError> {
-    // BEFORE the parse. `max_length` bounds untrusted input, so it has to be
-    // answered ahead of anything that walks that input - refusing after the
-    // parse means the work the cap exists to prevent has already been done.
-    // Same position, same message shape as `prepare_doc`.
-    if let Some(profile) = &options.profile {
-        let max_length = profile.max_length();
-        if max_length > 0 && source.len() > max_length {
-            return Err(CarveWriteError::Profile(ProfileViolationError {
-                violations: vec![ProfileViolation {
-                    node_type: "document".to_string(),
-                    reason: "max_length_exceeded".to_string(),
-                    reason_description: Some(format!(
-                        "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
-                        source.len()
-                    )),
-                }],
-            }));
+/// [`RenderError::TooLong`] when positions cannot fit in `u32`.
+pub fn parse(input: &str) -> Result<ast::owned::Document, RenderError> {
+    check_source_length(input.len())?;
+    let arena = Arena::for_input(input);
+    Ok(parse_in(input, &arena)?.owned())
+}
+
+#[doc(hidden)]
+/// Parses and resolves into an owned tree.
+///
+/// # Errors
+///
+/// [`RenderError::TooLong`] when positions cannot fit in `u32`.
+pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Document, RenderError> {
+    check_source_length(input.len())?;
+    let arena = Arena::for_input(input);
+    Ok(parse_resolved_in(input, opts, &arena)?.owned())
+}
+
+#[doc(hidden)]
+/// Renders a supplied tree after running resolution anew (C2-A-135).
+///
+/// # Errors
+///
+/// [`RenderError::Losses`] under `strictLosses`.
+pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String, RenderError> {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    let (html, losses) = html::render_with_losses(&doc, opts);
+    let losses = unallowed(losses, opts);
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    Ok(html)
+}
+
+#[doc(hidden)]
+/// Renders a supplied tree and returns the render-loss record (C2-T-005).
+///
+/// # Errors
+///
+/// [`RenderError::Losses`] under `strictLosses`.
+pub fn render_tree_with_diagnostics(
+    tree: &ast::owned::Document,
+    opts: &Options,
+) -> Result<Rendered, RenderError> {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    let (html, losses, derived) = html::render_with_details(&doc, opts);
+    let losses = unallowed(losses, opts);
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    let mut diagnostics = losses
+        .into_iter()
+        .map(|code| {
+            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
+            if code == "derived-text-budget" {
+                finding.path = derived.and_then(|target| node_path(doc.children, target));
+            }
+            finding
+        })
+        .collect();
+    let dropped_losses = cap_losses(&mut diagnostics, opts);
+    Ok(Rendered {
+        html,
+        diagnostics,
+        dropped_losses,
+    })
+}
+
+/// The JSON of a supplied tree after resolution, the render view of C2-X-053.
+pub(crate) fn resolved_json(tree: &ast::owned::Document, opts: &Options) -> String {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    to_json(&doc)
+}
+
+/// [`render_tree_with_diagnostics`] with a host's extension renderers
+/// (C2-X-052). Losses are not refused here; the caller applies `strictLosses`.
+pub(crate) fn render_tree_hooked(
+    tree: &ast::owned::Document,
+    opts: &Options,
+    hook: &dyn html::ExtensionHook,
+) -> Rendered {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    let (html, losses, derived) = html::render_hooked(&doc, opts, hook);
+    let mut diagnostics = unallowed(losses, opts)
+        .into_iter()
+        .map(|code| {
+            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
+            if code == "derived-text-budget" {
+                finding.path = derived.and_then(|target| node_path(doc.children, target));
+            }
+            finding
+        })
+        .collect();
+    let dropped_losses = cap_losses(&mut diagnostics, opts);
+    Rendered {
+        html,
+        diagnostics,
+        dropped_losses,
+    }
+}
+
+/// C2-H-204: the losses whose code the host has not allowed.
+fn unallowed(mut losses: Vec<&'static str>, opts: &Options) -> Vec<&'static str> {
+    if !opts.allow_losses.is_empty() {
+        losses.retain(|code| !opts.allows(code));
+    }
+    losses
+}
+
+/// C2-H-205: keeps the first `max_losses` render-loss entries and returns
+/// the codes of the others.
+fn cap_losses(diags: &mut Vec<diagnostic::Diagnostic>, opts: &Options) -> Vec<&'static str> {
+    let mut kept = 0usize;
+    let mut dropped = Vec::new();
+    diags.retain(|d| {
+        if d.channel != "render-loss" {
+            return true;
         }
-    }
-    // The SAME text the parser reads. `raw_frontmatter` scans for the block's
-    // closing `---` line on the RAW string while `parse_for_carve` ran on a
-    // normalized copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
-    // concluded there was no frontmatter while the parser had already found it
-    // - and the document fell through to `render_frontmatter`, which rebuilds
-    // the block from the parsed key/value map. That map has no format token, so
-    // `---toml` came back `---`; and a format the map cannot represent parses
-    // into an EMPTY map, so the whole block was dropped. A lone CR and a leading
-    // BOM reached the same fall-through (carve-rs#732).
-    let normalized = parse::normalize_source(source);
-    let source = normalized.as_ref();
-    let (mut frontmatter, _) = raw_frontmatter(source);
-    let mut doc = parse::parse_for_carve(source);
-    if frontmatter.is_some() {
-        doc.frontmatter.clear();
-        doc.frontmatter_raw = None;
-    }
-    if let Some(profile) = &options.profile {
-        let base_host = options.profile_base_host.as_deref();
-        doc = apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc;
-        // The raw block is held HERE, in a local, not in the tree - the writer
-        // reproduces the bytes the author wrote rather than rebuilding them
-        // from the parsed map. So the filter's own frontmatter strip cannot
-        // reach it, and a denied block would come back out verbatim with every
-        // `title:` / `author:` value the strip exists to remove.
-        if frontmatter.is_some() && !profile.is_type_allowed_on("frontmatter", true) {
-            frontmatter = None;
+        kept += 1;
+        if kept <= opts.max_losses {
+            return true;
         }
-    }
-    // THE WRITER'S REFUSAL IS THE CALLER'S TO HANDLE (carve-rs#2326). This was
-    // an `expect` saying a parsed tree never reaches the render ceiling. The
-    // DEPTH half of that is true; a round-trip refusal is not, and one level
-    // past the parse cap the flattening produces a code node whose value the
-    // writer cannot spell, so a shipped CLI path aborted on valid input.
-    let rendered = render_carve_with_options(
-        &doc,
-        &CarveWriterOptions::default().with_align_tables(options.align_tables),
-    )?;
-    // The writer's own output, unedited. `restore_inline_comments` used to walk
-    // the SOURCE lines here and graft each trailing `%%` back onto the first
-    // formatted line equal to the part before it. It could not repair what it
-    // was written for: `render_carve` emits `InlineNode::Comment` itself, so a
-    // line the writer carried the comment onto already ENDS in the marker and is
-    // therefore not equal to the rendering of the part before it. The graft
-    // landed on some OTHER equal line or matched nothing - inert or harmful,
-    // never corrective - and on `a` over `a %%` inside a line block it wrote the
-    // marker onto both (carve-rs#1076). Only the trailing newline it also
-    // guaranteed is kept.
-    let body = if rendered.ends_with('\n') {
-        rendered
-    } else {
-        format!("{rendered}\n")
-    };
-    Ok(match frontmatter {
-        Some(frontmatter) if body.trim().is_empty() => format!("{frontmatter}\n"),
-        Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
-        None => body,
-    })
-}
-
-fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
-    // The parser's own extent: a `fmt` that disagrees with the parser about
-    // where a frontmatter block ends would rewrite an ordinary line into one
-    // (carve-rs#725, carve-rs#2407). An unclosed block runs to the end of the
-    // document and is written with a closer (carve#5016).
-    let Some((kind, rest_start, content_len, after)) = parse::frontmatter_extent(source) else {
-        return (None, source);
-    };
-    let rest = &source[rest_start..];
-    // The opening delimiter carries the format token for EVERY format, the
-    // default one included: PART 11 section 6b says frontmatter in `yaml` comes
-    // back as `---yaml` and never as a bare `---`. An untyped opener is the case
-    // that clause was written for, not one it forgot - `---` and `---yaml` open
-    // the same block, so nothing in the tree tells them apart, and a writer that
-    // omitted the token would be special-casing a value `frontmatter_format`
-    // distinguishes nowhere except in the parser's leniency rule. A reader's
-    // leniency is not a writer's license.
-    //
-    // The default is the parser's own, from the same constant that fills
-    // `Frontmatter::format` for a bare fence, so the written source and the
-    // published tree cannot disagree about which format the document is in.
-    let open = format!(
-        "---{}",
-        if kind.is_empty() {
-            parse::DEFAULT_FRONTMATTER_FORMAT
-        } else {
-            kind
-        }
-    );
-    let content = &rest[..content_len];
-    // An unclosed block's content ends at the end of the document, line ending
-    // included; a closed one's stops before the closer's line.
-    let content = if content_len == after {
-        content.trim_end_matches('\n')
-    } else {
-        content
-    };
-    let body = &rest[after..];
-    (Some(format!("{open}\n{content}\n---")), body)
-}
-
-/// Parse the source, run `before_render` extension hooks, then apply the
-/// feature-restriction profile (if any) as an AST transform. Enforces the
-/// profile's `max_length` on the source bytes (pre-render) and returns a
-/// [`ProfileViolationError`] when the profile's action is
-/// [`DisallowedAction::Error`] and a disallowed node is found.
-///
-/// This is the shared pipeline position (after parse, before render) used by
-/// every `try_to_*_with_options` entry point, so the profile holds identically
-/// across the HTML, Markdown, plain-text and ANSI renderers.
-fn prepare_doc(
-    source: &str,
-    options: &Options<'_>,
-    effective_mode: Mode,
-    target_is_html: bool,
-) -> Result<ast::Document, ProfileViolationError> {
-    let Some(profile) = &options.profile else {
-        return Ok(parsed_doc_with_hooks(
-            source,
-            options,
-            effective_mode,
-            target_is_html,
-        ));
-    };
-    let max_length = profile.max_length();
-    if max_length > 0 && source.len() > max_length {
-        // Match carve-php / carve-js: an over-length input is a profile
-        // violation surfaced as an error regardless of the configured action.
-        let violation = ProfileViolation {
-            node_type: "document".to_string(),
-            reason: "max_length_exceeded".to_string(),
-            reason_description: Some(format!(
-                "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
-                source.len()
-            )),
-        };
-        return Err(ProfileViolationError {
-            violations: vec![violation],
-        });
-    }
-    let doc = parsed_doc_with_hooks(source, options, effective_mode, target_is_html);
-    let base_host = options.profile_base_host.as_deref();
-    Ok(apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc)
-}
-
-/// Run render-time extension hooks and the configured feature profile on an
-/// already-built document. Used by `--from-json`, where parsing has happened in
-/// another process but render restrictions must still apply.
-pub fn prepare_document_for_render(
-    mut doc: ast::Document,
-    options: &Options<'_>,
-    effective_mode: Mode,
-    target_is_html: bool,
-) -> Result<ast::Document, ProfileViolationError> {
-    // FIRST, ahead of the hooks. A profile's `max_length` bounds UNTRUSTED
-    // INPUT, so it has to be answered before anything walks that input:
-    // `before_render` hooks are where the table of contents and the index
-    // traverse and allocate from the tree, and refusing afterwards means the
-    // work the cap exists to prevent has already been done.
-    //
-    // It also puts the number out of a hook's reach. `before_render` takes the
-    // document by value and hands one back, so a hook could return a document
-    // whose `ingest_payload_len` it had cleared - and a cap read after the
-    // hooks would be a cap whose input the pipeline could rewrite.
-    if let Some(profile) = &options.profile {
-        // Measured, not claimed. On the ingest path the untrusted input is the
-        // payload: it is what got parsed, held and walked. `source_len` cannot
-        // stand in for it there, because that number arrives inside the payload
-        // - a hostile tree claims 0 and renders anything, which is exactly what
-        // `Profile::minimal()` used to accept: an 80 KB payload against a
-        // 10,000 byte cap. `main.rs` already measures the payload for
-        // `--from-json` and says why; this helper is documented as the same
-        // path for a host that has already decoded, so it has to reach the same
-        // answer.
-        let max_length = profile.max_length();
-        let input_len = doc.untrusted_input_len();
-        if max_length > 0 && input_len > max_length {
-            let violation = ProfileViolation {
-                node_type: "document".to_string(),
-                reason: "max_length_exceeded".to_string(),
-                reason_description: Some(format!(
-                    "Input exceeds the profile's maximum length of {max_length} bytes ({input_len} given)."
-                )),
-            };
-            return Err(ProfileViolationError {
-                violations: vec![violation],
-            });
-        }
-    }
-
-    let ctx = extension::BeforeRenderContext::new(options, effective_mode, target_is_html);
-    for ext in &options.extensions {
-        doc = ext.before_render(doc, &ctx);
-    }
-    let Some(profile) = &options.profile else {
-        return Ok(doc);
-    };
-    let base_host = options.profile_base_host.as_deref();
-    Ok(apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc)
-}
-
-/// Parse, run extension hooks, apply the profile, and render to HTML.
-/// Returns an error only when the profile's action is
-/// [`DisallowedAction::Error`] (or `max_length` is exceeded).
-pub fn try_to_html_with_options(
-    source: &str,
-    options: &Options<'_>,
-) -> Result<String, ProfileViolationError> {
-    // HTML honors the configured mode (interactive / static).
-    Ok(
-        render_html_owned_with_options(prepare_doc(source, options, options.mode, true)?, options)
-            .expect(
-                "the parse cap sits below the render ceiling, so a parsed tree never reaches it",
-            ),
-    )
-}
-
-/// Parse, run extension/profile transforms, and serialize the AST as JSON.
-pub fn try_to_json_with_options(
-    source: &str,
-    options: &Options<'_>,
-) -> Result<String, ProfileViolationError> {
-    Ok(to_json(&prepare_doc(
-        source,
-        options,
-        Mode::Interactive,
-        false,
-    )?))
-}
-
-/// Parse and serialize with `options`, returning an empty string on failure.
-///
-/// Use [`try_to_json_with_options`] when the caller needs the error.
-pub fn to_json_with_options(source: &str, options: &Options<'_>) -> String {
-    try_to_json_with_options(source, options).unwrap_or_default()
-}
-
-/// Parse, run extension hooks, apply the profile, and render to Markdown.
-/// Markdown is inherently static, so the render mode is forced to
-/// [`Mode::Interactive`] in the hooks (the HTML-only static path never runs);
-/// the Markdown renderer flattens containers on its own.
-/// Returns a typed writer refusal when a roundtrip carrier cannot be spelled.
-pub fn try_to_markdown_with_options(
-    source: &str,
-    options: &Options<'_>,
-) -> Result<String, CarveWriteError> {
-    let (doc, unattached) = parse::collecting_unattached_block_attrs(|| {
-        prepare_doc(source, options, Mode::Interactive, false)
+        dropped.push(d.code);
+        false
     });
-    let rendered = render_markdown_with_options(&doc?, options)?;
-    render_loss::collect_markdown_unattached(unattached);
-    Ok(rendered)
+    dropped
 }
 
-/// Parse, run extension hooks, apply the profile, and render to plain text.
-/// Plain text is inherently static; see [`try_to_markdown_with_options`] for
-/// why the mode is forced to [`Mode::Interactive`] in the hooks.
-pub fn try_to_plain_text_with_options(
-    source: &str,
-    options: &Options<'_>,
-) -> Result<String, ProfileViolationError> {
-    Ok(render_plain_text_with_options(
-        &prepare_doc(source, options, Mode::Interactive, false)?,
-        options,
-    )
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it"))
-}
-
-/// Parse, run extension hooks, apply the profile, and render to ANSI text.
-/// ANSI is inherently static; see [`try_to_markdown_with_options`] for why the
-/// mode is forced to [`Mode::Interactive`] in the hooks.
-pub fn try_to_ansi_with_options(
-    source: &str,
-    options: &Options<'_>,
-) -> Result<String, ProfileViolationError> {
-    Ok(render_ansi_with_options(
-        &prepare_doc(source, options, Mode::Interactive, false)?,
-        options,
-    )
-    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it"))
-}
-
-/// Parse and run `before_render` extension hooks, WITHOUT applying the profile.
-/// `effective_mode` is the resolved render mode for the target format: the HTML
-/// renderer passes `Options::mode`, the non-HTML renderers force
-/// [`Mode::Interactive`] (static rendering is HTML-only).
-fn parsed_doc_with_hooks(
-    source: &str,
-    options: &Options<'_>,
-    effective_mode: Mode,
-    target_is_html: bool,
-) -> ast::Document {
-    doc_with_hooks(
-        parse_with_options(source, options),
-        options,
-        effective_mode,
-        target_is_html,
-    )
-}
-
-fn doc_with_hooks(
-    mut doc: ast::Document,
-    options: &Options<'_>,
-    effective_mode: Mode,
-    target_is_html: bool,
-) -> ast::Document {
-    let ctx = extension::BeforeRenderContext::new(options, effective_mode, target_is_html);
-    for ext in &options.extensions {
-        doc = ext.before_render(doc, &ctx);
-    }
-    doc
-}
-
-/// Parse, expand `{{ … }}` includes, then run the same extension-hook and
-/// profile pipeline the `to_*` entry points use, returning the prepared
-/// document alongside the include diagnostics.
-///
-/// Expansion sits between PARSE and the hook/profile stages deliberately:
-/// included content is therefore subject to exactly the same extension
-/// transforms and the same profile filtering as content the author typed
-/// directly, so an include can never be a privilege-escalation channel
-/// (spec §19 I7, §25 "File inclusion").
-///
-/// The profile's `max_length` is checked against the INPUT source, before
-/// expansion; amplification through includes is bounded separately by the
-/// include byte budget ([`IncludeOptions::with_max_bytes`]).
-pub fn prepare_doc_with_includes(
-    source: &str,
-    options: &Options<'_>,
-    include_options: &IncludeOptions<'_>,
-    effective_mode: Mode,
-    target_is_html: bool,
-) -> Result<PreparedWithIncludes, ProfileViolationError> {
-    if let Some(profile) = &options.profile {
-        let max_length = profile.max_length();
-        if max_length > 0 && source.len() > max_length {
-            return Err(ProfileViolationError {
-                violations: vec![ProfileViolation {
-                    node_type: "document".to_string(),
-                    reason: "max_length_exceeded".to_string(),
-                    reason_description: Some(format!(
-                        "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
-                        source.len()
-                    )),
-                }],
-            });
+fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
+    let mut pending = vec![(nodes, String::new())];
+    while let Some((children, parent)) = pending.pop() {
+        for (i, node) in children.iter().enumerate().rev() {
+            let path = format!("{parent}/children/{i}");
+            if resolve::order::addr(node) == target {
+                return Some(path);
+            }
+            if let Some(next) = node.children() {
+                pending.push((next, path));
+            }
         }
     }
-    let expanded = includes::expand_includes_with_extensions(
-        parse_with_options(source, options),
-        source,
-        include_options,
-        &options.extensions,
+    None
+}
+
+#[doc(hidden)]
+/// Parses, resolves and renders HTML. A refused render (`try_render`)
+/// gives no output, the empty string.
+#[must_use]
+pub fn render(input: &str, opts: &Options) -> String {
+    try_render(input, opts).unwrap_or_default()
+}
+
+#[doc(hidden)]
+/// Why a render returned no output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderError {
+    /// C2-H-163: the input is longer than the profile's `max_length` bytes.
+    TooLong { profile: &'static str, limit: usize },
+    /// C2-H-130: `strictLosses` and the render lost content: one code per
+    /// loss, in document order.
+    Losses(Vec<&'static str>),
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooLong { profile, limit } => write!(
+                f,
+                "the input is longer than the {limit} bytes the profile {profile} accepts"
+            ),
+            Self::Losses(codes) => write!(f, "the render lost content: {}", codes.join(", ")),
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
+#[doc(hidden)]
+/// Parses, resolves and renders HTML, or says why the render gives no
+/// output: an input over `max_length` is refused before it is parsed
+/// (C2-H-163), and under `strictLosses` a render loss is an error (C2-H-130).
+///
+/// # Errors
+///
+/// [`RenderError::TooLong`] and [`RenderError::Losses`].
+pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
+    let profile = opts.profile.name();
+    let limit = tables::PROFILES
+        .iter()
+        .find(|p| p.name == profile)
+        .and_then(|p| p.max_length);
+    let limit = limit.unwrap_or(u32::MAX as usize).min(u32::MAX as usize);
+    if input.len() > limit {
+        return Err(RenderError::TooLong { profile, limit });
+    }
+    if let Some(html) = fast_plain::render(input, opts) {
+        return Ok(html);
+    }
+    let arena = Arena::for_input(input);
+    let mut diags = Vec::new();
+    let (out, losses) = render_parts(
+        input,
+        opts,
+        &arena,
+        &mut diags,
+        &mut RenderDetails::default(),
+    )?;
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    Ok(out)
+}
+
+/// Parses, expands (C2-N-006) and resolves; true in the second place when
+/// the resolution order is needed, in the third when an include was expanded.
+fn prepare<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    check_source_length(input.len())?;
+    let src = source::Source::new(input);
+    let out = block::scan(&src);
+    diags.extend(
+        out.findings
+            .iter()
+            .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
     );
-    let doc = doc_with_hooks(expanded.doc, options, effective_mode, target_is_html);
-    let doc = match &options.profile {
-        Some(profile) => apply_profile(doc, profile, options.profile_base_host.as_deref())?.doc,
-        None => doc,
+    let (mut doc, scope) = tree::build_scoped(&src, arena, out.events, None);
+    duplicate_definitions(&doc, &src, diags);
+    diags.extend(
+        scope
+            .findings
+            .iter()
+            .map(|f| diagnostic::Diagnostic::from_finding(f, &src, None)),
+    );
+    let expanded = opts.includes.is_some();
+    let mut included_sources = std::collections::HashMap::new();
+    if let Some(cfg) = &opts.includes {
+        if input.contains("{{") {
+            included_sources = include::expand(&mut doc, &scope, cfg, opts, arena, diags);
+        }
+    } else if input.contains("{{") {
+        include::no_resolver(doc.children, diags);
+    }
+    let files = (expanded && input.contains("{{"))
+        .then(|| resolve::files::Files::build(&doc, included_sources));
+    let mut dups = Vec::new();
+    let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
+    for (id, pos, at) in dups {
+        let file = files.as_ref().and_then(|f| f.file_at(at));
+        let pos = if let Some(name) = file {
+            files
+                .as_ref()
+                .and_then(|f| f.sources().find(|(id, _)| *id == name))
+                .and_then(|(_, text)| id_range(&source::Source::new(text), &id, pos))
+                .or(pos)
+        } else {
+            id_range(&src, &id, pos).or(pos)
+        };
+        diags.push(diagnostic::Diagnostic::new(
+            "duplicate-id",
+            &[("explicit", &id)],
+            file,
+            pos,
+        ));
+    }
+    if expanded {
+        doc.stages = Some(&resolve::STAGES_EXPANDED);
+    }
+    Ok((doc, ordered, files))
+}
+
+pub(crate) fn parse_diagnostics(input: &str, opts: &Options) -> Vec<diagnostic::Diagnostic> {
+    let arena = Arena::for_input(input);
+    let mut diagnostics = Vec::new();
+    let _ = prepare(input, opts, &arena, &mut diagnostics);
+    diagnostics
+}
+
+/// C2-B-083, C2-B-085: only the first definition of each label wins.
+fn duplicate_definitions(
+    doc: &ast::Document<'_>,
+    src: &source::Source<'_>,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+) {
+    let mut links = std::collections::HashSet::new();
+    let mut abbreviations = std::collections::HashSet::new();
+    let mut footnotes = std::collections::HashSet::new();
+    for node in doc.children.iter() {
+        let code = match node {
+            ast::Node::LinkReferenceDefinition(x)
+                if !links.insert(crate::chars::fold_label(x.key)) =>
+            {
+                "duplicate-link-reference-definition"
+            }
+            ast::Node::AbbreviationDef(x)
+                if !abbreviations.insert(crate::chars::fold_label(x.key)) =>
+            {
+                "duplicate-abbreviation-definition"
+            }
+            ast::Node::Footnote(x) if !footnotes.insert(crate::chars::fold_label(x.key)) => {
+                "duplicate-footnote-definition"
+            }
+            _ => continue,
+        };
+        let pos = node.pos().copied().map(|p| {
+            if code == "duplicate-footnote-definition" {
+                let (start, end) = src.line_range(p.start_line.saturating_sub(1) as usize);
+                let marker_end = src
+                    .text()
+                    .get(start..end)
+                    .and_then(|line| {
+                        let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+                        block::shapes::footnote_marker_len(&line[indent..])
+                            .map(|marker| start + indent + marker)
+                    })
+                    .unwrap_or(end);
+                src.pos(p.start(), marker_end)
+            } else {
+                p
+            }
+        });
+        diags.push(diagnostic::Diagnostic::new(code, &[], None, pos));
+    }
+}
+
+fn id_range(src: &source::Source<'_>, id: &str, pos: Option<ast::Pos>) -> Option<ast::Pos> {
+    let pos = pos?;
+    if let Some(range) = id_attribute_range(src, id, pos.start(), pos.end()) {
+        return Some(range);
+    }
+    let previous = pos.start_line.saturating_sub(2) as usize;
+    let (start, end) = src.line_range(previous);
+    let line = src.text().get(start..end)?;
+    if line.trim_start_matches([' ', '\t']).starts_with('{') {
+        return id_attribute_range(src, id, start, end);
+    }
+    None
+}
+
+fn id_attribute_range(
+    src: &source::Source<'_>,
+    id: &str,
+    start: usize,
+    end: usize,
+) -> Option<ast::Pos> {
+    let raw = src.text().get(start..end)?;
+    let first_line_end = raw.find('\n').unwrap_or(raw.len());
+    let mut on_first_line = None;
+    let mut last = None;
+    for (open, _) in raw.match_indices('{') {
+        let Some((block, close)) = attr::parse_block(raw, open) else {
+            continue;
+        };
+        if block.attrs.id.as_deref() != Some(id) {
+            continue;
+        }
+        let body = raw.get(open + 1..close - 1)?;
+        if let Some((from, to)) = authored_id_token(body) {
+            let range = src.pos(start + open + 1 + from, start + open + 1 + to);
+            if open < first_line_end && on_first_line.is_none() {
+                on_first_line = Some(range);
+            }
+            last = Some(range);
+        }
+    }
+    if raw.contains('\n') && !raw.starts_with('[') {
+        on_first_line.or(last)
+    } else {
+        last
+    }
+}
+
+fn authored_id_token(body: &str) -> Option<(usize, usize)> {
+    let bytes = body.as_bytes();
+    let mut index = 0;
+    let mut found = None;
+    while index < bytes.len() {
+        while bytes.get(index) == Some(&b' ') {
+            index += 1;
+        }
+        let start = index;
+        let mut quote = None;
+        let mut escaped = false;
+        while let Some(&byte) = bytes.get(index) {
+            if byte == b' ' && quote.is_none() {
+                break;
+            }
+            if matches!(byte, b'"' | b'\'') && !escaped {
+                if quote == Some(byte) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(byte);
+                }
+            }
+            escaped = byte == b'\\' && !escaped;
+            index += 1;
+        }
+        if start == index {
+            break;
+        }
+        let token = body.get(start..index)?;
+        if token.starts_with('#')
+            || token
+                .split_once('=')
+                .is_some_and(|(key, _)| key.eq_ignore_ascii_case("id"))
+        {
+            found = Some((start, index));
+        }
+    }
+    found
+}
+
+/// `places` gets the file of each unexpanded include of an expanded tree.
+#[derive(Default)]
+struct RenderDetails {
+    places: Vec<Option<String>>,
+    destinations: Vec<html::DestinationLoss>,
+    raws: Vec<html::RawLoss>,
+    carriers: Vec<html::CarrierLoss>,
+    included_sources: std::collections::HashMap<String, String>,
+}
+
+fn render_parts(
+    input: &str,
+    opts: &Options,
+    arena: &Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+    details: &mut RenderDetails,
+) -> Result<(String, Vec<&'static str>), RenderError> {
+    let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
+    if let Some(files) = files {
+        details.included_sources.extend(
+            files
+                .sources()
+                .map(|(id, text)| (id.to_string(), text.to_string())),
+        );
+        include::unexpanded(doc.children, None, &mut details.places);
+        let extra = if opts.roundtrip {
+            include::roundtrip_losses(doc.children)
+        } else {
+            Vec::new()
+        };
+        if matches!(
+            opts.profile,
+            options::Profile::Full | options::Profile::Article
+        ) {
+            include::flatten(&mut doc, arena);
+        }
+        let src = source::Source::new(input);
+        let (out, mut losses) = html::render_files(
+            &doc,
+            opts,
+            src.text(),
+            &files,
+            Some(&mut details.destinations),
+            Some(&mut details.raws),
+            Some(&mut details.carriers),
+        );
+        losses.extend(extra);
+        return Ok((out, unallowed(losses, opts)));
+    }
+    let (out, losses) = if opts.profile != options::Profile::Full && input.contains('\0') {
+        let src = source::Source::new(input);
+        html::render_mapped_source(
+            &doc,
+            opts,
+            src.render_view(),
+            ordered,
+            Some(&mut details.destinations),
+            Some(&mut details.raws),
+            Some(&mut details.carriers),
+        )
+    } else {
+        html::render_source(
+            &doc,
+            opts,
+            input,
+            ordered,
+            Some(&mut details.destinations),
+            Some(&mut details.raws),
+            Some(&mut details.carriers),
+        )
     };
-    Ok(PreparedWithIncludes {
-        doc,
-        warnings: expanded.warnings,
-        suppressed_warnings: expanded.suppressed_warnings,
-        dependencies: expanded.dependencies,
-    })
+    Ok((out, unallowed(losses, opts)))
 }
 
-/// Output of [`prepare_doc_with_includes`]: the fully prepared document plus
-/// the include diagnostics a host needs for reporting and file watching.
-pub struct PreparedWithIncludes {
-    /// Parsed document after include expansion and render preparation.
-    pub doc: ast::Document,
-    /// Include diagnostics the host can display.
-    pub warnings: Vec<IncludeWarning>,
-    /// Number of include diagnostics hidden by the reporting limit.
-    pub suppressed_warnings: usize,
-    /// Included files the host can watch for changes.
-    pub dependencies: Vec<IncludeDependency>,
+#[doc(hidden)]
+/// The HTML of a render and the findings of its parse and its render.
+#[derive(Debug, Clone, Default)]
+pub struct Rendered {
+    pub html: String,
+    pub diagnostics: Vec<diagnostic::Diagnostic>,
+    /// C2-H-205: the codes of the render losses past `max_losses`, in order.
+    pub dropped_losses: Vec<&'static str>,
 }
 
-/// Infallible HTML entry point. Identical to [`try_to_html_with_options`]
-/// except that profile errors render an empty safe output instead of returning
-/// an error. Callers that need to surface violations should use
-/// [`try_to_html_with_options`].
-pub fn to_html_with_options(source: &str, options: &Options<'_>) -> String {
-    try_to_html_with_options(source, options).unwrap_or_default()
+impl Rendered {
+    /// The codes of the findings, in order.
+    #[must_use]
+    pub fn codes(&self) -> Vec<String> {
+        self.diagnostics
+            .iter()
+            .map(|d| d.code.to_string())
+            .collect()
+    }
 }
 
-/// Infallible Markdown entry point. See [`to_html_with_options`] for the
-/// error-action fallback behavior.
-pub fn to_markdown_with_options(source: &str, options: &Options<'_>) -> String {
-    try_to_markdown_with_options(source, options).unwrap_or_default()
+#[doc(hidden)]
+/// Renders as [`render`] does and returns the findings of the parse
+/// channel (C2-N-061) and the render losses (C2-H-130) beside the HTML.
+#[must_use]
+pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
+    let arena = Arena::for_input(input);
+    let mut diags = Vec::new();
+    let mut details = RenderDetails::default();
+    let html = match render_parts(input, opts, &arena, &mut diags, &mut details) {
+        Ok((html, losses)) => {
+            diags.extend(loss_diagnostics(input, opts, &diags, &details, &losses));
+            if opts.strict_losses && !losses.is_empty() {
+                String::new()
+            } else {
+                html
+            }
+        }
+        Err(_) => String::new(),
+    };
+    let dropped_losses = cap_losses(&mut diags, opts);
+    Rendered {
+        html,
+        diagnostics: diags,
+        dropped_losses,
+    }
 }
 
-/// Infallible plain-text entry point. See [`to_html_with_options`].
-pub fn to_plain_text_with_options(source: &str, options: &Options<'_>) -> String {
-    try_to_plain_text_with_options(source, options).unwrap_or_default()
+fn loss_diagnostics(
+    input: &str,
+    opts: &Options,
+    parse_diags: &[diagnostic::Diagnostic],
+    details: &RenderDetails,
+    losses: &[&'static str],
+) -> Vec<diagnostic::Diagnostic> {
+    let mut places = details.places.iter().cloned();
+    let source = source::Source::new(input);
+    let mut raw_losses = details.raws.iter();
+    let mut destination_losses = details.destinations.iter();
+    let mut carrier_losses = details.carriers.iter();
+    let mut carrier_cursors = std::collections::HashMap::new();
+    let included_sources = &details.included_sources;
+    let loss_diags: Vec<_> = losses
+        .iter()
+        .map(|c| {
+            // C2-N-063: the loss of an unexpanded include names its file.
+            let include_file = if *c == "include-unresolved" {
+                places.next().flatten()
+            } else {
+                None
+            };
+            let raw = if *c == "raw-format-dropped" {
+                raw_losses.next()
+            } else {
+                None
+            };
+            let destination = if *c == "destination-denied" {
+                destination_losses.next()
+            } else {
+                None
+            };
+            let carrier = if *c == "carrier-attribute-dropped" {
+                carrier_losses.next()
+            } else {
+                None
+            };
+            let file = include_file.or_else(|| {
+                raw.and_then(|r| r.file.clone())
+                    .or_else(|| destination.and_then(|d| d.file.clone()))
+                    .or_else(|| carrier.and_then(|c| c.file.clone()))
+            });
+            let included_source = file
+                .as_deref()
+                .and_then(|id| included_sources.get(id))
+                .map(|text| source::Source::new(text));
+            let loss_source = included_source.as_ref().unwrap_or(&source);
+            let pos = raw
+                .and_then(|r| r.pos)
+                .or_else(|| destination.and_then(|d| destination_loss_position(loss_source, d)))
+                .or_else(|| destination.and_then(|d| d.pos))
+                .or_else(|| {
+                    carrier
+                        .and_then(|c| carrier_loss_position(loss_source, c, &mut carrier_cursors))
+                })
+                .or_else(|| carrier.and_then(|c| c.pos))
+                .or_else(|| {
+                    file.is_none()
+                        .then(|| loss_position(c, &source, opts, parse_diags))
+                        .flatten()
+                });
+            let (variant, values) = loss_message(c, raw, destination, carrier);
+            let values: Vec<_> = values
+                .iter()
+                .map(|(name, value)| (*name, value.as_str()))
+                .collect();
+            diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos)
+        })
+        .collect();
+    loss_diags
 }
 
-/// Infallible ANSI entry point. See [`to_html_with_options`].
-pub fn to_ansi_with_options(source: &str, options: &Options<'_>) -> String {
-    try_to_ansi_with_options(source, options).unwrap_or_default()
+fn destination_loss_position(
+    source: &source::Source<'_>,
+    loss: &html::DestinationLoss,
+) -> Option<ast::Pos> {
+    let node = loss.pos?;
+    let start = usize::try_from(node.start_offset).ok()?;
+    let end = usize::try_from(node.end_offset).ok()?;
+    let raw = source.text().get(start..end)?;
+    let at = if loss.attribute {
+        raw.rfind(&loss.value)?
+    } else if let Some(mark) = raw.rfind("](") {
+        let from = mark + 2;
+        let to = from + raw.get(from..)?.find(')')?;
+        from + raw.get(from..to)?.find(&loss.value)?
+    } else {
+        raw.find(&loss.value)?
+    } + start;
+    Some(source.pos(at, at + loss.value.len()))
 }
 
-/// Infallible Carve-writer entry point. See [`to_html_with_options`] for the
-/// error-action fallback behavior.
-pub fn to_carve_with_options(source: &str, options: &Options<'_>) -> String {
-    try_to_carve_with_options(source, options).unwrap_or_default()
+fn carrier_loss_position(
+    source: &source::Source<'_>,
+    loss: &html::CarrierLoss,
+    cursors: &mut std::collections::HashMap<(Option<String>, u32, u32), usize>,
+) -> Option<ast::Pos> {
+    let node = loss.pos?;
+    let id = (loss.file.clone(), node.start_offset, node.end_offset);
+    let cursor = cursors.get(&id).copied().unwrap_or(0);
+    let at = loss.regions.iter().find_map(|(from, to)| {
+        let start = usize::try_from(*from).ok()?.max(cursor);
+        let end = usize::try_from(*to).ok()?;
+        source
+            .text()
+            .get(start..end)?
+            .find(&loss.key)
+            .map(|at| at + start)
+    })?;
+    let end = usize::try_from(node.end_offset).ok()?;
+    let tail = source.text().get(at..end)?;
+    let length = if tail.get(loss.key.len()..)?.starts_with('=') {
+        tail.find([' ', '\t', '\n', '}']).unwrap_or(tail.len())
+    } else {
+        loss.key.len()
+    };
+    cursors.insert(id, at + length);
+    Some(source.pos(at, at + length))
+}
+
+fn loss_message(
+    code: &str,
+    raw: Option<&html::RawLoss>,
+    destination: Option<&html::DestinationLoss>,
+    carrier: Option<&html::CarrierLoss>,
+) -> (usize, Vec<(&'static str, String)>) {
+    match code {
+        "carrier-attribute-dropped" => {
+            let key = carrier.map_or_else(String::new, |loss| loss.key.clone());
+            (0, vec![("key", key)])
+        }
+        "destination-denied" => (
+            usize::from(destination.is_some_and(|d| d.image)),
+            Vec::new(),
+        ),
+        "raw-format-dropped" => (
+            0,
+            vec![
+                ("kind", raw.map_or("", |r| r.kind).to_string()),
+                ("format", raw.map_or("", |r| r.format.as_str()).to_string()),
+                ("target", "HTML".to_string()),
+            ],
+        ),
+        _ => (0, Vec::new()),
+    }
+}
+
+fn loss_position(
+    code: &str,
+    source: &source::Source<'_>,
+    opts: &Options,
+    parse_diags: &[diagnostic::Diagnostic],
+) -> Option<ast::Pos> {
+    let text = source.text();
+    let span = match code {
+        "carrier-attribute-dropped" => {
+            let start = text.find("data-carve-")?;
+            let len = text
+                .get(start..)?
+                .bytes()
+                .take_while(|b| !matches!(b, b' ' | b'\t' | b'}'))
+                .count();
+            (start, start + len)
+        }
+        "destination-denied" => {
+            let start = text.find("](")? + 2;
+            let end = start + text.get(start..)?.find(')')?;
+            (start, end)
+        }
+        "raw-format-dropped" => return raw_loss_position(source, parse_diags),
+        "profile-construct-degraded" => {
+            let start = text.find(|c: char| !c.is_whitespace())?;
+            (start, start + 1)
+        }
+        "include-unresolved" | "include-expanded-roundtrip" => {
+            let start = text.find("{{")?;
+            (start, start + 2)
+        }
+        "derived-text-budget" => return derived_overflow_pos(text, opts),
+        _ => return None,
+    };
+    Some(source.pos(span.0, span.1))
+}
+
+fn raw_loss_position(
+    source: &source::Source<'_>,
+    parse_diags: &[diagnostic::Diagnostic],
+) -> Option<ast::Pos> {
+    if let Some(pos) = parse_diags
+        .iter()
+        .find(|d| d.code == "unclosed-code-fence")
+        .and_then(|d| d.pos)
+    {
+        return Some(pos);
+    }
+    let start = source.text().find('`')?;
+    Some(source.pos(start, start + 1))
+}
+
+fn derived_overflow_pos(input: &str, opts: &Options) -> Option<ast::Pos> {
+    let arena = Arena::for_input(input);
+    let doc = parse_resolved_in(input, opts, &arena).ok()?;
+    let order = resolve::order::Order::build(&doc);
+    let mut remaining =
+        tables::DERIVED_TEXT_BYTES.max(input.len().saturating_mul(tables::DERIVED_TEXT_FACTOR));
+    for visit in order.visits {
+        if let ast::Node::Abbreviation(abbr) = visit.node
+            && let Some(expansion) = abbr.expansion
+        {
+            if expansion.len() > remaining {
+                return abbr.pos;
+            }
+            remaining -= expansion.len();
+        }
+    }
+    None
+}
+
+#[doc(hidden)]
+/// C2-N-083: the dependencies of a document: its include nodes in tree
+/// order, each with its path as written, its including file and, when the
+/// file was read, its id. With no resolver every directive is unread.
+#[must_use]
+pub fn dependencies(input: &str, opts: &Options) -> Vec<include::Dependency> {
+    let arena = Arena::for_input(input);
+    let mut out = Vec::new();
+    if let Ok((doc, _, _)) = prepare(input, opts, &arena, &mut Vec::new()) {
+        let top = opts.includes.as_ref().and_then(|c| c.file.as_deref());
+        include::dependencies(doc.children, top, &mut out);
+    }
+    out
+}
+
+#[doc(hidden)]
+/// The JSON of the expanded and resolved tree (C2-A-165), every position of
+/// an included node naming its file (C2-N-019).
+#[must_use]
+pub fn tree_json(input: &str, opts: &Options) -> String {
+    let arena = Arena::for_input(input);
+    let Ok((doc, _, files)) = prepare(input, opts, &arena, &mut Vec::new()) else {
+        return String::new();
+    };
+    if files.is_none() && opts.includes.is_none() {
+        return to_json(&doc);
+    }
+    stamped_value(&doc).to_string()
+}
+
+#[doc(hidden)]
+/// [`tree_json`] together with the owned tree of the same parse, for a
+/// caller that needs both without reading its own output back through the
+/// tree reader. `None` where [`tree_json`] gives no tree.
+#[must_use]
+pub fn tree_parts(input: &str, opts: &Options) -> Option<(String, ast::owned::Document)> {
+    let arena = Arena::for_input(input);
+    let (doc, _, files) = prepare(input, opts, &arena, &mut Vec::new()).ok()?;
+    if files.is_none() && opts.includes.is_none() {
+        return Some((to_json(&doc), doc.owned()));
+    }
+    let mut v = stamped_value(&doc);
+    let json = v.to_string();
+    if let Some(m) = v.as_object_mut() {
+        m.remove("type");
+    }
+    // The owned positions carry the file stamps, which `doc.owned()` lacks.
+    let owned = serde_json::from_value(v).ok()?;
+    Some((json, owned))
+}
+
+fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {
+    let mut v = serde_json::to_value(doc).unwrap_or_default();
+    if let Some(m) = v.as_object_mut() {
+        m.insert("type".into(), "document".into());
+    }
+    include::stamp_files(&mut v, None);
+    v
+}
+
+#[doc(hidden)]
+/// C2-B-218: renders bytes after replacing malformed UTF-8 subparts.
+///
+/// # Errors
+///
+/// [`RenderError::TooLong`] and [`RenderError::Losses`].
+pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderError> {
+    check_source_length(input.len())?;
+    if let Ok(valid) = std::str::from_utf8(input) {
+        return try_render(valid, opts);
+    }
+    let profile = opts.profile.name();
+    let limit = tables::PROFILES
+        .iter()
+        .find(|p| p.name == profile)
+        .and_then(|p| p.max_length)
+        .unwrap_or(u32::MAX as usize)
+        .min(u32::MAX as usize);
+    if input.len() > limit {
+        return Err(RenderError::TooLong { profile, limit });
+    }
+    let src = source::Source::from_bytes(input);
+    let arena = Arena::for_input(src.text());
+    let out = block::scan(&src);
+    let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
+    let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
+    let (out, losses) =
+        html::render_mapped_source(&doc, opts, src.render_view(), ordered, None, None, None);
+    let losses = unallowed(losses, opts);
+    if opts.strict_losses && !losses.is_empty() {
+        return Err(RenderError::Losses(losses));
+    }
+    Ok(out)
+}
+
+#[doc(hidden)]
+/// The JSON of a tree (C2-A-165).
+#[must_use]
+pub fn to_json(doc: &ast::Document<'_>) -> String {
+    #[derive(serde::Serialize)]
+    #[serde(tag = "type")]
+    enum Root<'r, 'a> {
+        #[serde(rename = "document")]
+        Document(&'r ast::Document<'a>),
+    }
+    serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod source_limit_tests {
+    #[test]
+    fn source_larger_than_u32_positions_is_refused() {
+        assert!(super::check_source_length(u32::MAX as usize).is_ok());
+        if let Some(too_long) = (u32::MAX as usize).checked_add(1) {
+            assert_eq!(
+                super::check_source_length(too_long),
+                Err(super::RenderError::TooLong {
+                    profile: "source",
+                    limit: u32::MAX as usize,
+                })
+            );
+        }
+    }
 }

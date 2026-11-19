@@ -3,73 +3,49 @@
 # imported as `carve` (see [lib].name) and the CLI binary is still `carve`.
 name = "carve-lang"
 version = "0.1.14"
-edition = "2021"
-rust-version = "1.75"
-description = "Rust parser and HTML renderer for the Carve markup language."
+edition = "2024"
+rust-version = "1.85"
+description = "Rust parser, HTML renderer and tooling for the Carve markup language."
 license = "MIT"
 repository = "https://github.com/markup-carve/carve-rs"
 homepage = "https://markup-carve.github.io/carve/"
 documentation = "https://docs.rs/carve-lang"
 readme = "README.md"
-keywords = ["carve", "markup", "parser", "html", "djot"]
+keywords = ["carve", "markup", "parser", "html"]
 categories = ["parser-implementations", "text-processing"]
-# Integration tests are declared below, not discovered (tests/suite/main.rs).
-autotests = false
-# Ship only the crate sources + metadata. The integration tests pull in the
-# `tests/spec` submodule (1200+ corpus/doc files) which consumers do not need.
-include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
-
-[workspace]
-# The proc macro that declares the suite's test modules; see tests/suite/main.rs.
-members = ["tests/suite/registry", "v2"]
+# build.rs generates the tables from spec-data/; the tests and their fixtures
+# stay out of the package.
+include = ["/src/**/*", "/build.rs", "/spec-data/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
 [features]
-# The filesystem resolver, ON by default. Off, the crate carries no code that
-# opens a file: a sandboxed, WASM or browser-hosted build can DROP it rather
-# than rely on the target having no filesystem to make it fail. carve-js states
-# the same property at its module boundary (the resolver is behind a `./node`
-# subpath, absent from the browser bundle); this is the Rust spelling of it.
-#
-# Nothing else in the crate reads a file, so `--no-default-features` is the
-# whole guarantee, and `tests/no_filesystem_without_the_fs_feature.rs` is what
-# keeps it true.
-default = ["fs", "experimental-event-parser-options"]
+# The filesystem resolver, ON by default. Off, the library carries no code that
+# opens a file, so a sandboxed, WASM or browser-hosted build can drop it.
+# `tests/the_library_opens_no_file_without_the_fs_feature.rs` keeps it true.
+default = ["fs"]
 fs = []
-experimental-event-parser = []
-experimental-event-parser-options = ["experimental-event-parser"]
+# Stage hooks for the timing program in bench/; off in every normal build.
+profile = []
 
 [dependencies]
-# THESE TWO MOVE TOGETHER OR NOT AT ALL. markup5ever_rcdom is the DOM sink
-# html5ever parses into, and it depends on the exact html5ever it was cut
-# against, so a bump to one alone cannot resolve. Dependabot opens them as
-# separate pull requests (carve-rs#1471, carve-rs#1472) and each of those fails
-# on its own by construction - the pair has to land in one commit.
-#
-# The rcdom version reads 0.39.0+unofficial on crates.io. The `+unofficial`
-# is BUILD METADATA, which a version requirement ignores, so `"0.39"` matches
-# it. Spelling it `0.39.0-unofficial` would ask for a PRE-RELEASE instead,
-# which is a different version space and not what is published.
+bumpalo = "3"
+# The lint rules that 0.2 still reads from the published 0.1 engine.
+carve_0_1 = { package = "carve-lang", version = "=0.1.14", default-features = false }
+# The two move together: markup5ever_rcdom is cut against this exact html5ever.
 html5ever = "0.39"
 markup5ever_rcdom = "0.39"
-memchr = "2.7"
-smallvec = "1.15"
-# The Markdown importer parses to an AST first, the way the HTML importer uses
-# html5ever, rather than rewriting source lines. pulldown-cmark is the
-# ecosystem's CommonMark parser and emits an event stream that walks straight
-# into a Carve Document.
-pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
-unicode-normalization = "0.1"
-regex = "1"
 serde = { version = "1", features = ["derive"] }
-# `unbounded_depth` because the corpus holds a document nested to the parser's
-# cap (200 containers), and this crate's own AST JSON is then past serde_json's
-# default 128-level limit. `parse_value` bounds the depth itself, before serde
-# recurses, so lifting serde's own limit does not lift the budget.
 serde_json = { version = "1", features = ["unbounded_depth"] }
+regex = "1"
+typed-arena = "2"
+unicode-normalization = "0.1"
+
+[build-dependencies]
+serde_json = "1"
 
 [dev-dependencies]
-# Path-only, so `cargo publish` drops it.
-carve-suite-registry = { path = "tests/suite/registry" }
+# The fixture trees nest past serde_json's default recursion limit of 128.
+serde_json = { version = "1", features = ["unbounded_depth"] }
+flate2 = "1"
 
 [lib]
 name = "carve"
@@ -78,534 +54,15 @@ path = "src/lib.rs"
 [[bin]]
 name = "carve"
 path = "src/main.rs"
-
-[[test]]
-name = "suite"
-path = "tests/suite/main.rs"
-
-[[test]]
-name = "markdown_carrier_writer_refusal"
-path = "tests/markdown_carrier_writer_refusal.rs"
-
-[[test]]
-name = "plus_ownership_remaining_5658"
-path = "tests/plus_ownership_remaining_5658.rs"
-
-[[test]]
-name = "hosted_note_frame_tabs_5877"
-path = "tests/hosted_note_frame_tabs_5877.rs"
-
-[[test]]
-name = "a_quoted_wrapped_attribute_closes_the_host"
-path = "tests/a_quoted_wrapped_attribute_closes_the_host.rs"
-
-[[test]]
-name = "marker_line_note_code_fence_frame_tabs_5877"
-path = "tests/marker_line_note_code_fence_frame_tabs_5877.rs"
-
-[[test]]
-name = "blank_before_invisible_child_list_4220"
-path = "tests/blank_before_invisible_child_list_4220.rs"
-
-[[test]]
-name = "nested_marker_brace_runs"
-path = "tests/nested_marker_brace_runs.rs"
-
-[[test]]
-name = "virtual_item_host_4198"
-path = "tests/virtual_item_host_4198.rs"
-
-[[test]]
-name = "line_block_payload_closers_3123"
-path = "tests/line_block_payload_closers_3123.rs"
-
-[[test]]
-name = "bare_colon_openers_hold_no_paragraph"
-path = "tests/bare_colon_openers_hold_no_paragraph.rs"
-
-[[test]]
-name = "a_cut_attribute_tail_stays_literal"
-path = "tests/a_cut_attribute_tail_stays_literal.rs"
-
-[[test]]
-name = "a_tab_led_line_block_keeps_its_opener_lead"
-path = "tests/a_tab_led_line_block_keeps_its_opener_lead.rs"
-
-[[test]]
-name = "a_rewritten_tabbed_line_block_opener"
-path = "tests/a_rewritten_tabbed_line_block_opener.rs"
-
-[[test]]
-name = "a_literal_quoted_tabbed_line_block"
-path = "tests/a_literal_quoted_tabbed_line_block.rs"
-
-[[test]]
-name = "tabbed_verse_facade_5733"
-path = "tests/tabbed_verse_facade_5733.rs"
-
-[[test]]
-name = "first_block_plus_passes_sibling_note_bodies"
-path = "tests/first_block_plus_passes_sibling_note_bodies.rs"
-
-[[test]]
-name = "attached_list_boundaries_4126"
-path = "tests/attached_list_boundaries_4126.rs"
-
-[[test]]
-name = "description_attached_open_fence_5575"
-path = "tests/description_attached_open_fence_5575.rs"
-
-[[test]]
-name = "attached_note_block_text_5512"
-path = "tests/attached_note_block_text_5512.rs"
-
-[[test]]
-name = "off_column_plus_note_first_block_5516"
-path = "tests/off_column_plus_note_first_block_5516.rs"
-
-[[test]]
-name = "note_fence_return_to_host_4093"
-path = "tests/note_fence_return_to_host_4093.rs"
-
-[[test]]
-name = "attached_note_comment_span_4094"
-path = "tests/attached_note_comment_span_4094.rs"
-
-[[test]]
-name = "attached_note_quote_follower"
-path = "tests/attached_note_quote_follower.rs"
-
-[[test]]
-name = "pulled_description_block_at_content_column"
-path = "tests/pulled_description_block_at_content_column.rs"
-
-[[test]]
-name = "attached_unclosed_fence_paragraph_lazy"
-path = "tests/attached_unclosed_fence_paragraph_lazy.rs"
-
-[[test]]
-name = "attached_unclosed_colon_4016"
-path = "tests/attached_unclosed_colon_4016.rs"
-
-[[test]]
-name = "outer_attached_fence_4003"
-path = "tests/outer_attached_fence_4003.rs"
-
-[[test]]
-name = "quoted_note_comment_closer"
-path = "tests/quoted_note_comment_closer.rs"
-
-[[test]]
-name = "quoted_note_lazy_comment_5915"
-path = "tests/quoted_note_lazy_comment_5915.rs"
-
-[[test]]
-name = "lint_consumed_closers_tabs_and_erased_lines"
-path = "tests/lint_consumed_closers_tabs_and_erased_lines.rs"
-
-[[test]]
-name = "description_text_targets_3983"
-path = "tests/description_text_targets_3983.rs"
-
-[[test]]
-name = "comment_span_sibling_3982"
-path = "tests/comment_span_sibling_3982.rs"
-
-[[test]]
-name = "quoted_description_note_3984"
-path = "tests/quoted_description_note_3984.rs"
-
-[[test]]
-name = "comment_span_owner_3990"
-path = "tests/comment_span_owner_3990.rs"
-
-[[test]]
-name = "attach_rule_5250"
-path = "tests/attach_rule_5250.rs"
-
-[[test]]
-name = "refused_plus_keeps_list_boundaries"
-path = "tests/refused_plus_keeps_list_boundaries.rs"
-
-[[test]]
-name = "caption_abbreviation_expansion"
-path = "tests/caption_abbreviation_expansion.rs"
-
-[[test]]
-name = "literal_include_apostrophe"
-path = "tests/literal_include_apostrophe.rs"
-
-[[test]]
-name = "writer_invisible_boundaries"
-path = "tests/writer_invisible_boundaries.rs"
-
-[[test]]
-name = "parser_nested_description_fence"
-path = "tests/parser_nested_description_fence.rs"
-
-[[test]]
-name = "list_span_owner_column"
-path = "tests/list_span_owner_column.rs"
-
-[[test]]
-name = "a_refused_plus_is_escaped_above_an_outer_block"
-path = "tests/a_refused_plus_is_escaped_above_an_outer_block.rs"
-
-[[test]]
-name = "a_refused_plus_skips_invisible_lines"
-path = "tests/a_refused_plus_skips_invisible_lines.rs"
-
-[[test]]
-name = "a_lazy_caption_keeps_its_column"
-path = "tests/a_lazy_caption_keeps_its_column.rs"
-
-[[test]]
-name = "a_missed_term_refuses_a_definition_separator"
-path = "tests/a_missed_term_refuses_a_definition_separator.rs"
-
-[[test]]
-name = "a_definition_ends_a_quoted_term_before_lazy_text"
-path = "tests/a_definition_ends_a_quoted_term_before_lazy_text.rs"
-
-[[test]]
-name = "a_document_abbreviation_ends_lazy_containers"
-path = "tests/a_document_abbreviation_ends_lazy_containers.rs"
-
-[[test]]
-name = "a_colon_line_without_a_term_continues_a_note"
-path = "tests/a_colon_line_without_a_term_continues_a_note.rs"
-
-[[test]]
-name = "fx22_render_boundaries"
-path = "tests/fx22_render_boundaries.rs"
-
-[[test]]
-name = "fx22_html_image_import"
-path = "tests/fx22_html_image_import.rs"
-
-[[test]]
-name = "fx22_parser_boundaries"
-path = "tests/fx22_parser_boundaries.rs"
-
-[[test]]
-name = "authoring_lint_port"
-path = "tests/authoring_lint_port.rs"
-
-[[test]]
-name = "github_alert_link_label"
-path = "tests/github_alert_link_label.rs"
-
-[[test]]
-name = "quoted_link_definition_in_footnote"
-path = "tests/quoted_link_definition_in_footnote.rs"
-
-[[test]]
-name = "description_marker_line_sublist"
-path = "tests/description_marker_line_sublist.rs"
-
-[[test]]
-name = "fmt_adjacent_tight_lists_in_description"
-path = "tests/fmt_adjacent_tight_lists_in_description.rs"
-
-[[test]]
-name = "markdown_unresolved_reference_import"
-path = "tests/markdown_unresolved_reference_import.rs"
-
-[[test]]
-name = "display_math_trailing_attrs_caption"
-path = "tests/display_math_trailing_attrs_caption.rs"
-
-[[test]]
-name = "link_title_padding_and_citation_separator"
-path = "tests/link_title_padding_and_citation_separator.rs"
-
-[[test]]
-name = "admonition_heading_id_collision"
-path = "tests/admonition_heading_id_collision.rs"
-
-[[test]]
-name = "html_image_style_dimensions"
-path = "tests/html_image_style_dimensions.rs"
-
-[[test]]
-name = "markdown_html_anchor_in_link_label"
-path = "tests/markdown_html_anchor_in_link_label.rs"
-
-[[test]]
-name = "port_3156"
-path = "tests/port_3156.rs"
-
-[[test]]
-name = "markdown_unmatched_closing_destination"
-path = "tests/markdown_unmatched_closing_destination.rs"
-
-[[test]]
-name = "public_api_paths"
-path = "tests/public_api_paths.rs"
-
-[[test]]
-name = "perf_regressions"
-path = "tests/perf_regressions.rs"
-
-[[test]]
-name = "event_pipeline"
-path = "tests/event_pipeline.rs"
-required-features = ["experimental-event-parser"]
-
-[[example]]
-name = "event_route_cpu"
-path = "examples/event_route_cpu.rs"
-required-features = ["experimental-event-parser-options"]
-
-[[test]]
-name = "includes"
-path = "tests/includes.rs"
-
-[[test]]
-name = "include_conformance"
-path = "tests/include_conformance.rs"
-
-[[test]]
-name = "code_include_slice_and_positions"
-path = "tests/code_include_slice_and_positions.rs"
+required-features = ["fs"]
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 
-# Full debug info makes every test binary carry a copy of it, and a day of test
-# runs filled 95 GB of build cache. Line tables keep file and line numbers in a
-# backtrace, which is what the panic output actually uses.
+# Full debug info makes every test binary carry a copy of it.
 [profile.dev]
 debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
-
-[[test]]
-name = "shared_roundtrip_export_acceptance"
-path = "tests/shared_roundtrip_export_acceptance.rs"
-
-[[test]]
-name = "html_carrier_contract"
-path = "tests/html_carrier_contract.rs"
-
-[[test]]
-name = "markdown_roundtrip_phase_one"
-path = "tests/markdown_roundtrip_phase_one.rs"
-
-[[test]]
-name = "inline_carrier_wave"
-path = "tests/inline_carrier_wave.rs"
-
-[[test]]
-name = "carrier_marker_depth"
-path = "tests/carrier_marker_depth.rs"
-
-[[test]]
-name = "carrier_marker_figure"
-path = "tests/carrier_marker_figure.rs"
-
-[[test]]
-name = "table_alignment_fixtures"
-path = "tests/table_alignment_fixtures.rs"
-
-[[test]]
-name = "table_alignment_options"
-path = "tests/table_alignment_options.rs"
-
-[[test]]
-name = "canonical_table_headers"
-path = "tests/canonical_table_headers.rs"
-
-[[test]]
-name = "lint_context_batch"
-path = "tests/lint_context_batch.rs"
-
-[[test]]
-name = "multiline_image_caption"
-path = "tests/multiline_image_caption.rs"
-
-[[test]]
-name = "image_ast_attrs"
-path = "tests/image_ast_attrs.rs"
-
-[[test]]
-name = "parser_owner_batch"
-path = "tests/parser_owner_batch.rs"
-
-[[test]]
-name = "attached_colon_boundaries"
-path = "tests/attached_colon_boundaries.rs"
-
-[[test]]
-name = "parser_first_block_and_refused_plus"
-path = "tests/parser_first_block_and_refused_plus.rs"
-
-[[test]]
-name = "parser_invisible_transitions"
-path = "tests/parser_invisible_transitions.rs"
-
-[[test]]
-name = "empty_header_alignment_import"
-path = "tests/empty_header_alignment_import.rs"
-
-[[test]]
-name = "span_marker_padding"
-path = "tests/span_marker_padding.rs"
-
-[[test]]
-name = "markdown_render_losses"
-path = "tests/markdown_render_losses.rs"
-
-[[test]]
-name = "lint_include_conformance"
-path = "tests/lint_include_conformance.rs"
-
-[[test]]
-name = "table_include_selection"
-path = "tests/table_include_selection.rs"
-
-[[test]]
-name = "reserved_citation_reference_tail"
-path = "tests/reserved_citation_reference_tail.rs"
-
-[[test]]
-name = "tab_after_list_marker"
-path = "tests/tab_after_list_marker.rs"
-
-[[test]]
-name = "a_tab_after_spaces_reaches_its_continuation_column"
-path = "tests/a_tab_after_spaces_reaches_its_continuation_column.rs"
-
-[[test]]
-name = "fx27_nested_term_ownership"
-path = "tests/fx27_nested_term_ownership.rs"
-
-[[test]]
-name = "fx27_marker_term_columns"
-path = "tests/fx27_marker_term_columns.rs"
-
-[[test]]
-name = "fx27_nested_sibling_after_lazy"
-path = "tests/fx27_nested_sibling_after_lazy.rs"
-
-[[test]]
-name = "table_reference_pipe_escapes"
-path = "tests/table_reference_pipe_escapes.rs"
-
-[[test]]
-name = "closed_first_block_attachment_boundary"
-path = "tests/closed_first_block_attachment_boundary.rs"
-
-[[test]]
-name = "host_resumes_after_attached_block"
-path = "tests/host_resumes_after_attached_block.rs"
-
-[[test]]
-name = "accepted_plus_closes_body_fences"
-path = "tests/accepted_plus_closes_body_fences.rs"
-
-[[test]]
-name = "definition_caption_lazy"
-path = "tests/definition_caption_lazy.rs"
-
-[[test]]
-name = "quote_flanks_skip_braced_comments"
-path = "tests/quote_flanks_skip_braced_comments.rs"
-
-[[test]]
-name = "table_cell_authored_spans"
-path = "tests/table_cell_authored_spans.rs"
-
-[[test]]
-name = "a_verbatim_interior_colon_run_is_unspellable"
-path = "tests/a_verbatim_interior_colon_run_is_unspellable.rs"
-
-[[test]]
-name = "a_marker_column_plus_after_a_missed_term"
-path = "tests/a_marker_column_plus_after_a_missed_term.rs"
-
-[[test]]
-name = "accepted_plus_follower_keeps_its_host"
-path = "tests/accepted_plus_follower_keeps_its_host.rs"
-
-[[test]]
-name = "a_first_block_quote_keeps_its_item_column"
-path = "tests/a_first_block_quote_keeps_its_item_column.rs"
-
-[[test]]
-name = "unresolved_reference_attribute_followed_by_link"
-path = "tests/unresolved_reference_attribute_followed_by_link.rs"
-
-[[test]]
-name = "container_comment_runs_5206"
-path = "tests/container_comment_runs_5206.rs"
-
-[[test]]
-name = "quoted_lazy_attribute_5223"
-path = "tests/quoted_lazy_attribute_5223.rs"
-
-[[test]]
-name = "tab_in_marker_ladder_frame"
-path = "tests/tab_in_marker_ladder_frame.rs"
-
-[[test]]
-name = "a_quoted_description_stanza_takes_lazy_marker_text"
-path = "tests/a_quoted_description_stanza_takes_lazy_marker_text.rs"
-
-[[test]]
-name = "a_quoted_description_comment_closes_lazy_paragraph"
-path = "tests/a_quoted_description_comment_closes_lazy_paragraph.rs"
-
-[[test]]
-name = "a_band_paragraph_after_a_descendant_span_takes_lazy_text"
-path = "tests/a_band_paragraph_after_a_descendant_span_takes_lazy_text.rs"
-
-[[test]]
-name = "quote_plus_blank_5383"
-path = "tests/quote_plus_blank_5383.rs"
-
-[[test]]
-name = "quote_attached_fence_looseness_4032"
-path = "tests/quote_attached_fence_looseness_4032.rs"
-
-[[test]]
-name = "nested_quote_fence_payload_4033"
-path = "tests/nested_quote_fence_payload_4033.rs"
-
-[[test]]
-name = "ended_attached_fence_follower"
-path = "tests/ended_attached_fence_follower.rs"
-
-[[test]]
-name = "losing_duplicate_plus_lines_5502"
-path = "tests/losing_duplicate_plus_lines_5502.rs"
-
-[[test]]
-name = "interleaved_note_duplicate_5528"
-path = "tests/interleaved_note_duplicate_5528.rs"
-
-[[test]]
-name = "nested_note_lazy_4106"
-path = "tests/nested_note_lazy_4106.rs"
-
-[[test]]
-name = "quote_fence_prepass_4107"
-path = "tests/quote_fence_prepass_4107.rs"
-
-[[test]]
-name = "attached_open_fence_sibling_5499"
-path = "tests/attached_open_fence_sibling_5499.rs"
-
-[[test]]
-name = "position_free_comment_runs_5724"
-path = "tests/position_free_comment_runs_5724.rs"
-
-[[test]]
-name = "ast_ungated_rows_5480"
-path = "tests/ast_ungated_rows_5480.rs"
-
-[[test]]
-name = "tabbed_verse_authored_spaces_5755"
-path = "tests/tabbed_verse_authored_spaces_5755.rs"

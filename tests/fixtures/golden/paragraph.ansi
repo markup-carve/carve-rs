@@ -1,3 +1,0 @@
-First para.
-
-Second para.

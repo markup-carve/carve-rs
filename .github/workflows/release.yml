@@ -120,7 +120,7 @@ jobs:
 
       # The spec is released first; an engine release implements a spec release.
       - name: The spec pin is a published spec release
-        run: ./scripts/check-spec-pin-is-tag.sh tests/spec
+        run: ./scripts/check-spec-pin-is-tag.sh spec-data/SOURCE_COMMIT
 
       # The tag does not exist yet. A crates.io version can never be yanked
       # back into availability under the same number, and the tag is what the
