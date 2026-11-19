@@ -98,3 +98,41 @@ fn all_three_bundles_share_a_document() {
     );
     assert!(out.contains("<li>HTTP <a href=\"#idx-http-1\" class=\"index-backref\" aria-label=\"Back to HTTP\">↩</a></li>"), "{out}");
 }
+
+#[test]
+fn apparatus_options_and_backlinks_match_reference() {
+    let index = html(
+        ":index[x]\n\n::: index\n:::\n",
+        extensions::index(extensions::IndexOptions {
+            backref_label: Some("Zurück zu".into()),
+        }),
+    );
+    assert!(index.contains("aria-label=\"Zurück zu x\""), "{index}");
+
+    let author_date = html(
+        ":cite[doe]{mode=\"suppress-author\"}\n\n::: references\n:: [doe]{author=\"Doe\" year=\"2020\"}\n: Book.\n:::\n",
+        extensions::citations(extensions::CitationsOptions {
+            mode: extensions::CitationMode::AuthorDate,
+            bibliography: None,
+        }),
+    );
+    assert!(
+        author_date.contains("(<a href=\"#ref-doe\" data-cite-key=\"doe\">2020</a>)"),
+        "{author_date}"
+    );
+
+    let csl = html(
+        "A :cite[x].",
+        extensions::citations(extensions::CitationsOptions {
+            mode: extensions::CitationMode::Numbered,
+            bibliography: Some(vec![serde_json::json!({"id":"x", "title":"<b>"})]),
+        }),
+    );
+    assert!(csl.contains("id=\"cite-x-1\""), "{csl}");
+    assert!(
+        csl.contains(
+            "<li id=\"ref-x\">&lt;b&gt;. <a href=\"#cite-x-1\" class=\"ref-backref\">↩</a></li>"
+        ),
+        "{csl}"
+    );
+}
