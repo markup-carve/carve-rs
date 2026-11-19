@@ -92,8 +92,9 @@ fn collect(root: &Value) -> Vec<Item<'_>> {
                     });
                     next.push(kind.to_string());
                     if kind == "definition_description" {
-                        child_description_column = value["pos"]["startColumn"]
-                            .as_u64()
+                        child_description_column = value
+                            .pointer("/pos/startColumn")
+                            .and_then(Value::as_u64)
                             .and_then(|column| usize::try_from(column + 1).ok());
                     }
                 }
