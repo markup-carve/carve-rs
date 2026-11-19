@@ -341,6 +341,28 @@ impl Carve {
         self.standard.enable(name, renderer)
     }
 
+    /// Registers the standard tabs renderer with its host mode, `css` or `aria`
+    /// (C2-X-043, C2-X-048, C2-X-056).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Option`] for a mode other than `css` or `aria`.
+    pub fn enable_standard_tabs_renderer(&mut self, mode: &str) -> Result<(), Error> {
+        let aria = match mode {
+            "css" => false,
+            "aria" => true,
+            _ => {
+                return Err(Error::option(
+                    "mode",
+                    "tabs renderer mode must be css or aria",
+                ));
+            }
+        };
+        self.enable_standard("carve.tabs", true)?;
+        self.standard.tabs_aria = aria;
+        Ok(())
+    }
+
     /// PROVISIONAL: registers a bundle of [`extensions`]: its extensions as
     /// [`Carve::register_extension`] does, and its matchers, which claim in
     /// [`Carve::parse`] and the render calls (C2-X-005).

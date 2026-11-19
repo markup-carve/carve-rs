@@ -496,12 +496,10 @@ pub(crate) fn opener_name(source: &str, at: usize) -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
-/// The ids a generated control id must avoid (C2-X-048): authored ids and
-/// generated heading ids, and every prefix of them that ends before a `-`.
+/// Authored and generated heading IDs reserved in the render document (C2-X-048).
 #[derive(Debug, Default)]
 pub(crate) struct UsedIds {
     ids: HashSet<String>,
-    prefixes: HashSet<String>,
     count: usize,
 }
 
@@ -517,12 +515,12 @@ impl UsedIds {
                         .and_then(|a| a.get("id"))
                         .and_then(Value::as_str)
                     {
-                        used.add(id);
+                        used.ids.insert(id.to_string());
                     }
                     if map.get("type").is_some_and(|t| t == "heading")
                         && let Some(id) = map.get("generatedId").and_then(Value::as_str)
                     {
-                        used.add(id);
+                        used.ids.insert(id.to_string());
                     }
                     pending.extend(map.values());
                 }
@@ -533,20 +531,30 @@ impl UsedIds {
         used
     }
 
-    fn add(&mut self, id: &str) {
-        self.ids.insert(id.to_string());
-        for (at, _) in id.match_indices('-') {
-            self.prefixes.insert(id[..at].to_string());
-        }
-    }
-
     pub(crate) fn next(&mut self, prefix: &str) -> String {
         loop {
             self.count += 1;
-            let candidate = format!("{prefix}-{}", self.count);
-            if !self.ids.contains(&candidate) && !self.prefixes.contains(&candidate) {
-                self.add(&candidate);
-                return candidate;
+            let id = format!("{prefix}-{}", self.count);
+            if self.ids.insert(id.clone()) {
+                return id;
+            }
+        }
+    }
+
+    pub(crate) fn next_tabs(&mut self, count: usize, aria: bool) -> String {
+        loop {
+            self.count += 1;
+            let group = format!("tabs-{}", self.count);
+            let controls = (0..count).map(|i| format!("{group}-{i}"));
+            let panels = (0..count).map(|i| format!("{group}-{i}-panel"));
+            if controls.clone().all(|id| !self.ids.contains(&id))
+                && (!aria || panels.clone().all(|id| !self.ids.contains(&id)))
+            {
+                self.ids.extend(controls);
+                if aria {
+                    self.ids.extend(panels);
+                }
+                return group;
             }
         }
     }

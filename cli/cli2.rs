@@ -57,6 +57,8 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         "import",
         "migrate-ast",
         "lint",
+        "fix",
+        "flatten",
     ];
     let command = arguments
         .first()
@@ -76,7 +78,14 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             }
             "--help" | "-h" => parsed.help = true,
             "--version" | "-V" => parsed.version = true,
-            "-w" if command == "fmt" => {
+            "-o" if ["render", "fmt", "import", "flatten"].contains(&command) => {
+                at += 1;
+                let path = arguments
+                    .get(at)
+                    .ok_or_else(|| "missing value for -o".to_string())?;
+                parsed.values.insert("output".into(), json!(path));
+            }
+            "-w" if ["fmt", "lint", "fix"].contains(&command) => {
                 parsed.values.insert("write".into(), json!(true));
             }
             arg if arg == "-" || !arg.starts_with('-') => parsed.files.push(arg.into()),
@@ -156,7 +165,7 @@ fn find_flag<'a>(
     name: &str,
     base: &str,
 ) -> Result<&'a Value, String> {
-    flag_row(rows, command, base)
+    flag_row(rows, if command == "fix" { "lint" } else { command }, base)
         .or_else(|| flag_row(rows, command, name))
         .or_else(|| (command == "render" && name == "to").then_some(&Value::Null))
         .ok_or_else(|| format!("unknown flag --{name} for {command}"))
@@ -202,6 +211,30 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
             > 1
     {
         return Err("--check, --diff and --write cannot be combined".into());
+    }
+    if parsed.command == "lint" || parsed.command == "fix" {
+        let fixed = parsed.command == "fix" || yes("fix");
+        if yes("write") && !fixed {
+            return Err("--write needs --fix".into());
+        }
+        if yes("json") && fixed && !yes("write") {
+            return Err("--json with --fix needs --write".into());
+        }
+    }
+    if parsed.command == "fmt"
+        && parsed.values.contains_key("output")
+        && (yes("write") || yes("check") || yes("diff"))
+    {
+        return Err("--output cannot combine with --write, --check or --diff".into());
+    }
+    if let Some(out) = str_value(parsed, "output") {
+        for report in ["report-includes", "report-losses"] {
+            if let Some(path) = str_value(parsed, report) {
+                if path != "-" && absolute(out) == absolute(path) {
+                    return Err("output and report cannot share a path".into());
+                }
+            }
+        }
     }
     if yes("normalize") && yes("from-ast") {
         return Err("--normalize needs source input".into());
@@ -269,6 +302,18 @@ fn strict_text<'a>(path: &str, bytes: &'a [u8]) -> Result<&'a str, i32> {
         )
     })
 }
+fn product(args: &Args, text: &str) -> Result<(), i32> {
+    if let Some(path) = str_value(args, "output") {
+        use std::fs::OpenOptions;
+        OpenOptions::new()
+            .append(true)
+            .open(path)
+            .and_then(|mut file| file.write_all(text.as_bytes()))
+            .map_err(|e| fail("output-unwritable", format!("{path}: {e}")))
+    } else {
+        output(text)
+    }
+}
 fn output(text: &str) -> Result<(), i32> {
     std::io::stdout()
         .write_all(text.as_bytes())
@@ -324,7 +369,7 @@ fn options(args: &Args, path: &str) -> Result<Options, i32> {
     set_loss_options(args, &mut result)?;
     if matches!(
         args.command.as_str(),
-        "render" | "ast" | "lint" | "diagnostics"
+        "render" | "ast" | "lint" | "fix" | "flatten" | "diagnostics"
     ) && !bool_value(args, "from-ast", false)
     {
         includes(path, args, &mut result)?;
@@ -566,7 +611,8 @@ fn one(
             include_reports,
             diagnostics,
         ),
-        "lint" => lint_file(args, path, bytes, &opts, diagnostics),
+        "lint" | "fix" => lint_file(args, path, bytes, &opts, diagnostics),
+        "flatten" => flatten_file(args, path, bytes, &host, &opts),
         "fmt" => fmt_file(args, path, bytes, &host),
         "import" => import_file(args, path, bytes, &host, &opts, loss_reports),
         "migrate-ast" => migrate_file(path, bytes),
@@ -637,6 +683,169 @@ fn diagnostics_file(
     Ok(0)
 }
 
+fn fix_fragment(code: &str, text: &str) -> Option<String> {
+    let paired = |open: &str, close: &str, left: &str, right: &str| {
+        let start = text.find(open)?;
+        let end = text.rfind(close)?;
+        (end >= start + open.len()).then(|| {
+            format!(
+                "{}{}{}{}{}",
+                &text[..start],
+                left,
+                &text[start + open.len()..end],
+                right,
+                &text[end + close.len()..]
+            )
+        })
+    };
+    match code {
+        "markdown-strong-double-star" => paired("**", "**", "*", "*"),
+        "markdown-strikethrough-double-tilde" => paired("~~", "~~", "{~", "~}"),
+        "deprecated-bare-strike" => paired("~", "~", "{~", "~}"),
+        "djot-subscript-tilde" => paired("~", "~", "{,", ",}"),
+        "deprecated-bare-highlight" => paired("=", "=", "{=", "=}"),
+        "djot-emphasis-underscore" => paired("_", "_", "/", "/"),
+        "djot-intraword-underscore" => paired("_", "_", "{/", "/}"),
+        "djot-superscript-caret" => paired("^", "^", "{^", "^}"),
+        "heading-closing-hashes" => Some(String::new()),
+        "thematic-break-spelling" => Some("***".into()),
+        "djot-plus-bullet" => text
+            .find('+')
+            .map(|at| format!("{}-{}", &text[..at], &text[at + 1..])),
+        _ => None,
+    }
+}
+
+fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
+    let mut source = String::from_utf8_lossy(bytes).into_owned();
+    loop {
+        let entries = api::lint(source.as_bytes(), options).map_err(api_fail)?;
+        let mut candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
+        for entry in entries {
+            let Some(range) = entry.range else {
+                continue;
+            };
+            let Some(slice) = source.get(range.start_offset..range.end_offset) else {
+                continue;
+            };
+            if let Some(replacement) = fix_fragment(&entry.code, slice) {
+                if replacement != slice {
+                    let start = if entry.code == "heading-closing-hashes"
+                        && range.start_offset > 0
+                        && source.as_bytes()[range.start_offset - 1] == b' '
+                    {
+                        range.start_offset - 1
+                    } else {
+                        range.start_offset
+                    };
+                    candidates
+                        .entry((start, range.end_offset))
+                        .or_default()
+                        .push(replacement);
+                }
+            }
+        }
+        let mut changes: Vec<_> = candidates
+            .into_iter()
+            .filter_map(|(range, replacements)| {
+                (replacements.iter().all(|r| r == &replacements[0]))
+                    .then(|| (range, replacements[0].clone()))
+            })
+            .collect();
+        changes.sort_by_key(|(range, _)| std::cmp::Reverse(range.0));
+        let mut boundary = source.len();
+        let mut applied = false;
+        for ((start, end), replacement) in changes {
+            if end > boundary {
+                continue;
+            }
+            source.replace_range(start..end, &replacement);
+            boundary = start;
+            applied = true;
+        }
+        if !applied {
+            break;
+        }
+    }
+    Ok(source.into_bytes())
+}
+
+fn expand_include_nodes(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            let mut expanded = Vec::new();
+            for mut item in std::mem::take(items) {
+                if item.get("type").and_then(Value::as_str) == Some("include") {
+                    if let Some(children) = item
+                        .get_mut("children")
+                        .and_then(Value::as_array_mut)
+                        .map(std::mem::take)
+                    {
+                        let mut nested = Value::Array(children);
+                        expand_include_nodes(&mut nested);
+                        expanded.extend(
+                            nested
+                                .as_array_mut()
+                                .map(std::mem::take)
+                                .unwrap_or_default(),
+                        );
+                    }
+                } else {
+                    expand_include_nodes(&mut item);
+                    expanded.push(item);
+                }
+            }
+            *items = expanded;
+        }
+        Value::Object(map) => {
+            for child in map.values_mut() {
+                expand_include_nodes(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn flatten_file(
+    args: &Args,
+    path: &str,
+    bytes: &[u8],
+    host: &Carve,
+    opts: &Options,
+) -> Result<i32, i32> {
+    let parsed = host.parse_with_diagnostics(bytes, opts).map_err(api_fail)?;
+    let causes: Vec<_> = parsed
+        .diagnostics
+        .iter()
+        .filter(|e| e.code.starts_with("include-"))
+        .cloned()
+        .collect();
+    if !causes.is_empty() {
+        eprintln!("carve[include-unresolved]: {path}: an include did not expand");
+        lines(path, bytes, &causes, true)?;
+        return Ok(1);
+    }
+    let mut expanded: Value = serde_json::from_str(&api::encode_tree(&parsed.tree))
+        .map_err(|e| fail("ast-json-invalid", e))?;
+    expand_include_nodes(&mut expanded);
+    let flat_tree = api::decode_tree(&expanded.to_string()).map_err(api_fail)?;
+    let flattened = host
+        .write(&flat_tree, &WriteOptions::default())
+        .map_err(api_fail)?;
+    let expanded_html = host
+        .render_tree(&parsed.tree, &Options::default())
+        .map_err(api_fail)?;
+    let flat_html = host
+        .render(flattened.as_str(), &Options::default())
+        .map_err(api_fail)?;
+    if expanded_html != flat_html {
+        eprintln!("carve[flatten-changed]: {path}: flattened HTML differs");
+        return Ok(1);
+    }
+    product(args, &flattened)?;
+    Ok(0)
+}
+
 fn lint_file(
     args: &Args,
     path: &str,
@@ -662,17 +871,59 @@ fn lint_file(
             .map(str::to_owned)
             .collect();
     }
-    let entries = api::lint(bytes, &lint_opts).map_err(api_fail)?;
-    if bool_value(args, "json", false) {
-        diagnostics.push(loss_report(path, &entries, bytes, 0));
-    } else {
-        lines(path, bytes, &entries, false)?;
+    let fixed = args.command == "fix" || bool_value(args, "fix", false);
+    if fixed {
+        for rule in serde_json::from_str::<Value>(include_str!("../spec-data/lint-rules.json"))
+            .unwrap()["rules"]
+            .as_array()
+            .unwrap()
+        {
+            if rule.get("fix").is_some()
+                && !lint_opts
+                    .rules
+                    .contains_key(rule["id"].as_str().unwrap_or(""))
+            {
+                lint_opts
+                    .rules
+                    .insert(rule["id"].as_str().unwrap().into(), "on".into());
+            }
+        }
     }
-    Ok(i32::from(
-        entries
-            .iter()
-            .any(|e| e.severity == "warning" || e.severity == "error"),
-    ))
+    let source = if fixed {
+        apply_fixes(bytes, &lint_opts)?
+    } else {
+        bytes.to_vec()
+    };
+    let entries: Vec<Entry> = api::lint(source.as_slice(), &lint_opts)
+        .map_err(api_fail)?
+        .into_iter()
+        .filter(|e| {
+            !value(args, "ignore")
+                .and_then(Value::as_array)
+                .is_some_and(|files| {
+                    files
+                        .iter()
+                        .any(|f| f.as_str() == Some(path) || f.as_str() == e.file.as_deref())
+                })
+        })
+        .collect();
+    if fixed {
+        if bool_value(args, "write", false) {
+            if source != bytes {
+                std::fs::write(path, &source).map_err(|e| fail("output-unwritable", e))?;
+            }
+        } else {
+            output(&String::from_utf8_lossy(&source))?;
+        }
+    }
+    if bool_value(args, "json", false) {
+        diagnostics.push(loss_report(path, &entries, &source, 0));
+    } else {
+        lines(path, &source, &entries, fixed)?;
+    }
+    Ok(i32::from(entries.iter().any(|e| {
+        bool_value(args, "strict", false) || e.severity == "warning" || e.severity == "error"
+    })))
 }
 
 fn fmt_file(args: &Args, path: &str, bytes: &[u8], host: &Carve) -> Result<i32, i32> {
@@ -705,7 +956,7 @@ fn fmt_output(args: &Args, path: &str, before: &str, after: &str) -> Result<i32,
     let write = bool_value(args, "write", false);
     if !changed {
         if ![check, diff, write].contains(&true) {
-            output(after)?;
+            product(args, after)?;
         }
         return Ok(0);
     }
@@ -716,7 +967,7 @@ fn fmt_output(args: &Args, path: &str, before: &str, after: &str) -> Result<i32,
     } else if write {
         std::fs::write(path, after).map_err(|e| fail("output-unwritable", e))?;
     } else {
-        output(after)?;
+        product(args, after)?;
     }
     Ok(i32::from(check || diff))
 }
@@ -758,7 +1009,7 @@ fn import_file(
             imported.suppressed_diagnostics,
         ));
     }
-    output(&imported.source)?;
+    product(args, &imported.source)?;
     Ok(0)
 }
 
@@ -787,6 +1038,7 @@ fn render_file(
     let (rendered, tree) = render_input(args, path, bytes, host, &opts)?;
     let parsed_tree = tree_if_needed(args, bytes, host, &opts, tree.as_ref())?;
     let resolved_tree = tree.as_ref().or(parsed_tree.as_ref());
+    let strict_entry = bool_value(args, "strict", false) && !rendered.diagnostics.is_empty();
     let retained: Vec<Entry> = rendered
         .diagnostics
         .into_iter()
@@ -826,11 +1078,11 @@ fn render_file(
                 },
             )
             .map_err(api_fail)?;
-        output(&out.output)?;
+        product(args, &out.output)?;
     } else {
-        output(&format!("{}\n", rendered.html))?;
+        product(args, &format!("{}\n", rendered.html))?;
     }
-    Ok(0)
+    Ok(i32::from(strict_entry))
 }
 fn render_input(
     args: &Args,
@@ -882,14 +1134,31 @@ pub fn run(arguments: &[String]) -> i32 {
         println!("Usage: carve {} [FLAG...] [FILE...]", args.command);
         return 0;
     }
+    let mut staged = vec![None; args.files.len()];
+    if let Some(path) = str_value(&args, "output") {
+        for (index, input) in args.files.iter().enumerate() {
+            if input != "-" && absolute(input) == absolute(path) {
+                staged[index] = Some(match read(input) {
+                    Ok(bytes) => bytes,
+                    Err(code) => return code,
+                });
+            }
+        }
+        if let Err(e) = std::fs::write(path, "") {
+            return fail("output-unwritable", e);
+        }
+    }
     let mut status = 0;
     let mut losses = Vec::new();
     let mut includes = Vec::new();
     let mut diagnostics = Vec::new();
-    for path in &args.files {
-        let bytes = match read(path) {
-            Ok(b) => b,
-            Err(code) => return code,
+    for (path, staged_bytes) in args.files.iter().zip(staged) {
+        let bytes = match staged_bytes {
+            Some(bytes) => bytes,
+            None => match read(path) {
+                Ok(bytes) => bytes,
+                Err(code) => return code,
+            },
         };
         match one(
             &args,
@@ -904,7 +1173,9 @@ pub fn run(arguments: &[String]) -> i32 {
             Err(code) => return code,
         }
     }
-    if bool_value(&args, "json", false) && matches!(args.command.as_str(), "lint" | "diagnostics") {
+    if bool_value(&args, "json", false)
+        && matches!(args.command.as_str(), "lint" | "fix" | "diagnostics")
+    {
         if let Err(code) = output(&format!("{}\n", json!({"files":diagnostics}))) {
             return code;
         }
