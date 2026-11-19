@@ -211,3 +211,14 @@ fn description_column_requires_an_open_term_above() {
 fn continuation_plus_is_not_a_list_marker() {
     assert!(spans("- + x\n + item\n", "list-marker-below-content-column").is_empty());
 }
+
+#[test]
+fn indented_heading_continuation_after_quote_prefix() {
+    assert_eq!(
+        spans(
+            "> i) == H\n>        $$x$${#m}\t\n",
+            "deprecated-indented-line-under-heading"
+        ),
+        vec![(10, 29)]
+    );
+}

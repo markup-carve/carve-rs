@@ -864,17 +864,27 @@ fn heading_continuation(item: &Item<'_>, raw: &str, sink: &mut Sink<'_>) {
         return;
     };
     let mut offset = 0;
+    let quote_depth = item
+        .parents
+        .iter()
+        .filter(|parent| *parent == "block_quote")
+        .count();
     for (index, line) in raw.split_inclusive('\n').enumerate() {
         let at = offset;
         offset += line.len();
         if index == 0 || line.trim_start().starts_with("%%") {
             continue;
         }
-        if line.starts_with([' ', '\t']) && !line.trim().is_empty() {
+        let mut content = line;
+        for _ in 0..quote_depth {
+            content = content.trim_start_matches([' ', '\t']);
+            content = content.strip_prefix("> ").unwrap_or(content);
+        }
+        if content.starts_with([' ', '\t']) && !content.trim().is_empty() {
             sink.emit_range(
                 "deprecated-indented-line-under-heading",
                 from + at,
-                from + at + line.trim_end().len(),
+                from + at + line.trim_end_matches(['\n', '\r']).len(),
                 &item.path,
                 &[],
                 0,
