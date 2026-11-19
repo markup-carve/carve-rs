@@ -869,6 +869,7 @@ fn refuse_losses(written: Written) -> Result<String, Error> {
             "the source cannot be returned without its loss report: {}",
             found.join(", ")
         ),
+        diagnostics: written.diagnostics,
     })
 }
 

@@ -86,6 +86,20 @@ fn writer_loss_messages_use_the_catalog_template() {
 }
 
 #[test]
+fn source_only_write_error_carries_loss_diagnostics() {
+    let tree = json!({"type":"document","astVersion":"2.0","children":[
+        {"type":"paragraph","role":"image","children":[
+            {"type":"image","src":"i.png","decorative":true}
+        ]}
+    ]});
+    let reply = call(&json!({"call":"write","tree":tree}));
+    assert_eq!(reply["error"]["name"], "CarveWriteError");
+    let diagnostics = reply["error"]["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics[0]["code"], "field-unspellable");
+    assert_eq!(diagnostics[0]["path"], "/children/0/children/0/decorative");
+}
+
+#[test]
 fn renderer_syntax_filter_does_not_match_a_block_without_syntax() {
     let reply = call(&json!({
         "call":"render", "source":"```\nx\n```\n",

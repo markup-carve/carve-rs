@@ -98,6 +98,7 @@ pub(crate) fn tree_value(json: &str) -> Result<serde_json::Value, Error> {
     serde::Deserialize::deserialize(&mut de).map_err(|e: serde_json::Error| Error::Write {
         target: "carve".into(),
         message: e.to_string(),
+        diagnostics: Vec::new(),
     })
 }
 
