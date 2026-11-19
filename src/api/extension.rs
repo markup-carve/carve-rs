@@ -285,7 +285,10 @@ impl Registry {
                 continue;
             };
             let failure = match transform.transform(view.clone()) {
-                Ok(next) if next.json == view.json => None,
+                Ok(next) if next.json == view.json => {
+                    view = next;
+                    None
+                }
                 Ok(next) => {
                     let before = *held.get_or_insert_with(|| duplicate_ids(&view));
                     let after = duplicate_ids(&next);
