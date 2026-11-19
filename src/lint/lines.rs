@@ -95,6 +95,7 @@ pub(super) fn scan(
     output: &mut Vec<Diagnostic>,
 ) {
     let lines = lines(source, ranges);
+    let lists = DescriptionLists::new(ranges);
     let mut sink = Sink {
         source: Source::new(source),
         options,
@@ -110,6 +111,13 @@ pub(super) fn scan(
         }
         let previous = index.checked_sub(1).and_then(|i| lines.get(i));
         markers(line, previous, &mut sink);
+        let below = lists.below_list_column(line, index, &lines);
+        if below.is_none() {
+            markdown_definition(line, previous, &mut sink);
+        }
+        if let Some((at, text, column, host)) = below {
+            description_column(line, at, text, column, host, &mut sink);
+        }
         legacy(line, previous, &mut sink);
         prose(line, index, previous, &lines, &mut sink);
     }
@@ -578,7 +586,6 @@ fn table_line(line: &Line, sink: &mut Sink<'_>) {
 fn legacy(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     legacy_markup(line, previous, sink);
     legacy_context(line, previous, sink);
-    legacy_separator(line, previous, sink);
 }
 
 fn legacy_markup(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
@@ -626,7 +633,6 @@ fn legacy_authored(line: &Line, sink: &mut Sink<'_>) {
 
 fn legacy_layout(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.trim();
-    markdown_definition(line, previous, sink);
     if line.paragraph
         && line.text.starts_with("    ")
         && !text.is_empty()
@@ -665,6 +671,110 @@ fn quote_tail(text: &str, quotes: usize) -> (usize, &str) {
         }
     }
     (text.len() - rest.len(), rest)
+}
+
+/// The description lists and the lines where a term or description starts, for the column rule.
+struct DescriptionLists<'r> {
+    lists: Vec<&'r Range>,
+    entry_lines: std::collections::HashSet<usize>,
+}
+
+impl<'r> DescriptionLists<'r> {
+    fn new(ranges: &'r [Range]) -> Self {
+        Self {
+            lists: ranges
+                .iter()
+                .filter(|r| r.kind == "definition_list")
+                .collect(),
+            entry_lines: ranges
+                .iter()
+                .filter(|r| {
+                    matches!(
+                        r.kind.as_str(),
+                        "definition_term" | "definition_description"
+                    )
+                })
+                .map(|r| r.start_line)
+                .collect(),
+        }
+    }
+
+    /// C2-B-067, C2-B-071, C2-B-074: a colon mark that opens no entry, below a description list whose first term
+    /// mark stands further right; gives the mark's offset in the line, the text and the list's column.
+    fn below_list_column<'l>(
+        &self,
+        line: &'l Line,
+        index: usize,
+        lines: &[Line],
+    ) -> Option<(usize, &'l str, usize, usize)> {
+        let (at, text) = leaf_after_quotes(line);
+        let mark = text.strip_prefix("::").or_else(|| text.strip_prefix(':'))?;
+        if !(mark.is_empty() || mark.starts_with([' ', '\t']))
+            || self.entry_lines.contains(&(index + 1))
+        {
+            return None;
+        }
+        let host = lines
+            .get(..index)?
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, l)| !l.text.trim().is_empty() && l.quotes == line.quotes)?;
+        let number = host.0 + 1;
+        let list = self
+            .lists
+            .iter()
+            .filter(|r| r.start_line <= number && number <= r.end_line)
+            .max_by_key(|r| r.path.len())?;
+        let list_line = lines.get(list.start_line.checked_sub(1)?)?;
+        let host = visual_column(list_line, list.start.checked_sub(list_line.start)?);
+        let column = visual_column(line, at);
+        (host > column).then_some((at, text, column, host))
+    }
+}
+
+/// C2-B-004: the column of a byte of the line behind its own quote marks, counting tab stops of four.
+fn visual_column(line: &Line, at: usize) -> usize {
+    let (from, _) = quote_tail(&line.text, line.quotes);
+    let column = |to: usize| {
+        line.text
+            .get(..to)
+            .unwrap_or("")
+            .chars()
+            .fold(0, |c, ch| if ch == '\t' { c + 4 - c % 4 } else { c + 1 })
+    };
+    column(at.max(from)) - column(from)
+}
+
+/// The text behind the line's own quote marks and indent, and where it starts in the line.
+fn leaf_after_quotes(line: &Line) -> (usize, &str) {
+    let (from, tail) = quote_tail(&line.text, line.quotes);
+    let content = tail.trim_start_matches([' ', '\t']);
+    (from + tail.len() - content.len(), content.trim_end())
+}
+
+fn description_column(
+    line: &Line,
+    at: usize,
+    text: &str,
+    column: usize,
+    host: usize,
+    sink: &mut Sink<'_>,
+) {
+    let name = if text.starts_with("::") {
+        "term"
+    } else {
+        "description"
+    };
+    let column = (column + 1).to_string();
+    let host = (host + 1).to_string();
+    sink.emit(
+        "description-separator-below-content-column",
+        line.start + at,
+        line.start + at + text.len(),
+        &line.path,
+        &[("name", name), ("column", &column), ("host.column", &host)],
+    );
 }
 
 // C2-B-074: a later paragraph line below a line that is no `::` term.
@@ -766,32 +876,6 @@ fn term_folded(line: &Line, sink: &mut Sink<'_>) {
         &line.path,
         &[],
     );
-}
-
-fn legacy_separator(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
-    if let Some(previous) = previous
-        && line.paragraph
-        && (text.starts_with(": ") || text.starts_with(":: "))
-    {
-        let prior = previous.text.trim_start();
-        let prior_indent = previous.text.len() - prior.len();
-        let indent = line.text.len() - line.text.trim_start().len();
-        if (prior.starts_with(": ") || prior.starts_with(":: ")) && indent > prior_indent {
-            let column = (indent + 1).to_string();
-            let host = (prior_indent + 1).to_string();
-            let name = if text.starts_with(":: ") {
-                "term"
-            } else {
-                "description"
-            };
-            sink.whole(
-                "description-separator-below-content-column",
-                line,
-                &[("name", name), ("column", &column), ("host.column", &host)],
-            );
-        }
-    }
 }
 
 fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {

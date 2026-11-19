@@ -770,9 +770,13 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
 fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
     let raw = sink.raw(item).to_string();
     let trimmed = raw.trim_end();
+    // C2-B-153: an `=` heading too; the run needs heading text before it, so `= ##` is left alone.
+    let marker = trimmed.len() - trimmed.trim_start_matches(['#', '=']).len();
     if let Some(run) = trimmed.split_whitespace().last()
         && run.chars().all(|c| c == '#')
-        && raw.starts_with('#')
+        && trimmed
+            .get(marker..)
+            .is_some_and(|body| body.trim().len() > run.len())
         && let Some((from, _)) = bounds(item.node)
         && let Some(offset) = trimmed.rfind(run)
     {
