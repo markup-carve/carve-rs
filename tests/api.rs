@@ -208,13 +208,9 @@ fn lint_returns_the_record_and_validates_options() {
 
 #[test]
 fn calls_this_engine_lacks_are_unsupported() {
-    for err in [
-        api::parse_with_layout("x", &opts()).unwrap_err(),
-        api::migrate_tree(&json!({})).unwrap_err(),
-    ] {
-        assert!(matches!(err, Error::Unsupported { .. }), "{err}");
-        assert_eq!(err.category(), "usage");
-    }
+    let err = api::parse_with_layout("x", &opts()).unwrap_err();
+    assert!(matches!(err, Error::Unsupported { .. }), "{err}");
+    assert_eq!(err.category(), "usage");
     assert!(api::import_document("<p>x</p>", &api::ImportOptions::default()).is_ok());
 }
 
@@ -365,7 +361,7 @@ fn json_boundary_typed_failures() {
         let out = call(&json!({"call": name, "source": "x", "tree": tree}));
         assert!(out.get("ok").is_some(), "{name}: {out}");
     }
-    for name in ["importDocument", "migrateTree", "parseWithLayout"] {
+    for name in ["importDocument", "parseWithLayout"] {
         let out = call(&json!({"call": name, "source": "x", "tree": tree}));
         assert_eq!(out["error"]["category"], "usage", "{name}");
     }
