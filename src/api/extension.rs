@@ -186,6 +186,18 @@ pub trait DocumentTransform: Send + Sync {
     /// Any error; the engine keeps the input view and reports
     /// `extension-transform-failed` (C2-X-055).
     fn transform(&self, view: Tree) -> Result<Tree, Error>;
+
+    /// Whether this transform can edit a resolved, owned render view without
+    /// a fallible host callback or an observable intermediate tree.
+    #[doc(hidden)]
+    fn supports_owned(&self) -> bool {
+        false
+    }
+
+    /// The in-place form for engine transforms that opt in above. It must be
+    /// infallible and leave the tree valid.
+    #[doc(hidden)]
+    fn transform_owned(&self, _view: &mut crate::ast::owned::Document) {}
 }
 
 /// One registration: a declaration with its renderers and an optional transform.
@@ -269,6 +281,21 @@ impl Registry {
     /// on a copy of the previous view; a failed transform leaves its input.
     pub(crate) fn has_transforms(&self) -> bool {
         self.list.iter().any(|e| e.transform.is_some())
+    }
+
+    pub(crate) fn owned_transforms_only(&self) -> bool {
+        self.has_transforms()
+            && self
+                .list
+                .iter()
+                .filter_map(|e| e.transform.as_ref())
+                .all(|transform| transform.supports_owned())
+    }
+
+    pub(crate) fn transform_owned(&self, view: &mut crate::ast::owned::Document) {
+        for transform in self.list.iter().filter_map(|e| e.transform.as_ref()) {
+            transform.transform_owned(view);
+        }
     }
 
     pub(crate) fn transform(&self, mut view: Tree) -> (Tree, Vec<Entry>) {

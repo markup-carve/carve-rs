@@ -227,6 +227,18 @@ impl DocumentTransform for Transform {
         }
         let top = view.top.clone();
         let mut doc = view.into_document();
+        self.transform_owned(&mut doc);
+        Tree::from_owned(doc, top)
+    }
+
+    fn supports_owned(&self) -> bool {
+        true
+    }
+
+    fn transform_owned(&self, doc: &mut owned::Document) {
+        if !any_marker(&doc.children, 0) {
+            return;
+        }
         bind_tree(&mut doc.children, 0);
         let mut declarations = json!({"extensions": doc.extensions});
         crate::api::standard::declare_names(
@@ -234,7 +246,6 @@ impl DocumentTransform for Transform {
             &[(CODE, json!([])), (LIST, json!(["lines"]))],
         );
         doc.extensions = declarations.get_mut("extensions").cloned();
-        Tree::from_owned(doc, top)
     }
 }
 

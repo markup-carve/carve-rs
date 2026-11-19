@@ -249,6 +249,16 @@ impl Tree {
             top,
         })
     }
+
+    /// An internal render view. Only the renderer reads this tree; it is not
+    /// returned by a public tree call and therefore needs no wire encoding.
+    fn render_view(document: Document, top: Option<String>) -> Self {
+        Self {
+            document,
+            json: String::new(),
+            top,
+        }
+    }
 }
 
 /// How [`encode_tree_with`] writes a tree.
@@ -627,7 +637,11 @@ impl Carve {
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
-        let (view, transform_entries) = if self.extensions.has_transforms() {
+        let (view, transform_entries) = if self.extensions.owned_transforms_only() {
+            let mut resolved = crate::resolved_owned(tree.document(), opts);
+            self.extensions.transform_owned(&mut resolved);
+            (Tree::render_view(resolved, tree.top), Vec::new())
+        } else if self.extensions.has_transforms() {
             let mut view = Tree::from_owned(crate::resolved_owned(tree.document(), opts), None)?;
             view.top = tree.top;
             self.extensions.transform(view)
