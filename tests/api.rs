@@ -386,10 +386,8 @@ fn json_boundary_typed_failures() {
         let out = call(&json!({"call": name, "source": "x", "tree": tree}));
         assert!(out.get("ok").is_some(), "{name}: {out}");
     }
-    for name in ["importDocument"] {
-        let out = call(&json!({"call": name, "source": "x", "tree": tree}));
-        assert_eq!(out["error"]["category"], "usage", "{name}");
-    }
+    let out = call(&json!({"call": "importDocument", "source": "x", "tree": tree}));
+    assert_eq!(out["error"]["category"], "usage");
     let out = call(&json!({"call": "parseWithLayout", "source": "x", "tree": tree}));
     assert_eq!(out["ok"]["layout"]["source"], "x");
     assert_eq!(out["ok"]["layout"]["version"], 2);
