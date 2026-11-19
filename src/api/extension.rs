@@ -117,27 +117,35 @@ impl RenderContext<'_> {
     /// every core element writes it: ` id="..." class="..." ...`.
     #[must_use]
     pub fn attributes(&self, node: &Value) -> String {
-        let mut div = serde_json::Map::new();
-        div.insert("type".into(), "div".into());
-        div.insert("children".into(), Value::Array(Vec::new()));
-        // A source line is written on block elements only.
-        let keys: &[&str] = if self.block {
-            &["attrs", "pos"]
-        } else {
-            &["attrs"]
-        };
-        for key in keys {
-            if let Some(v) = node.get(*key) {
-                div.insert((*key).into(), v.clone());
-            }
+        use crate::html::attrs::{El, Filter};
+        let attrs: Option<crate::ast::owned::Attrs> = node
+            .get("attrs")
+            .and_then(|value| serde_json::from_value(value.clone()).ok());
+        let classes: Vec<&str> = attrs.as_ref().map_or(Vec::new(), |a| {
+            a.classes.iter().map(String::as_str).collect()
+        });
+        let keys: Vec<(&str, &str)> = attrs.as_ref().map_or(Vec::new(), |a| {
+            a.key_values
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect()
+        });
+        let borrowed = attrs.as_ref().map(|a| crate::ast::Attrs {
+            id: a.id.as_deref(),
+            classes: &classes,
+            key_values: &keys,
+        });
+        let mut element = El::new(borrowed.as_ref(), None);
+        if self.block && self.host.opts.source_lines {
+            element.source_line = node
+                .pointer("/pos/startLine")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok());
         }
-        let Ok(html) = self
-            .host
-            .render_list(&Value::Array(vec![Value::Object(div)]))
-        else {
-            return String::new();
-        };
-        open_tag_attributes(&html, "div").unwrap_or_default()
+        element.write(Filter {
+            roundtrip: self.host.opts.roundtrip,
+            policy: Some(&self.host.opts.url_policy),
+        })
     }
 
     /// The HTML of a list of inline nodes, such as an inline slot.
@@ -156,20 +164,6 @@ impl RenderContext<'_> {
             .and_then(|h| h.strip_suffix("</p>"))
             .map_or(html.clone(), str::to_string))
     }
-}
-
-/// The attribute text of the first `<tag ...>` of `html`, quoted values skipped.
-fn open_tag_attributes(html: &str, tag: &str) -> Option<String> {
-    let rest = html.strip_prefix('<')?.strip_prefix(tag)?;
-    let mut quoted = false;
-    for (i, c) in rest.char_indices() {
-        match c {
-            '"' => quoted = !quoted,
-            '>' if !quoted => return Some(rest[..i].to_string()),
-            _ => {}
-        }
-    }
-    None
 }
 
 /// A host renderer of extension nodes (C2-X-033, C2-X-034): trusted code
@@ -331,28 +325,63 @@ fn failure_entry(code: &str, message: &str) -> Entry {
 
 /// The authored ids of a view that a preceding node already holds.
 fn duplicate_ids(tree: &Tree) -> usize {
-    let Ok(value) = crate::api::deep_json(&super::encode_tree(tree)) else {
-        return 0;
-    };
     let mut seen: HashSet<String> = HashSet::new();
     let mut duplicates = 0;
-    let mut pending = vec![&value];
-    while let Some(v) = pending.pop() {
-        match v {
-            Value::Object(map) => {
-                if let Some(id) = map
-                    .get("attrs")
-                    .and_then(|a| a.get("id"))
-                    .and_then(Value::as_str)
-                    && !seen.insert(id.to_string())
-                {
-                    duplicates += 1;
+    fn visit(
+        node: &crate::ast::owned::Node,
+        seen: &mut HashSet<String>,
+        duplicates: &mut usize,
+        depth: usize,
+    ) {
+        if depth > crate::resolve::WALK_CAP {
+            return;
+        }
+        if let Some(id) = node.attrs().and_then(|a| a.id.as_ref())
+            && !seen.insert(id.clone())
+        {
+            *duplicates += 1;
+        }
+        node.for_each_child(&mut |child| visit(child, seen, duplicates, depth + 1));
+        // Extension slots carry nodes as JSON until the host renderer reads them.
+        match node {
+            crate::ast::owned::Node::BlockExtension(ext) => {
+                if let Some(slots) = &ext.slots {
+                    visit_json(slots, seen, duplicates);
                 }
-                pending.extend(map.values().rev());
             }
-            Value::Array(items) => pending.extend(items.iter().rev()),
+            crate::ast::owned::Node::InlineExtension(ext) => {
+                if let Some(slots) = &ext.slots {
+                    visit_json(slots, seen, duplicates);
+                }
+            }
             _ => {}
         }
+    }
+    fn visit_json(root: &Value, seen: &mut HashSet<String>, duplicates: &mut usize) {
+        let mut pending = vec![root];
+        while let Some(value) = pending.pop() {
+            match value {
+                Value::Object(map) => {
+                    if let Some(id) = map
+                        .get("attrs")
+                        .and_then(|a| a.get("id"))
+                        .and_then(Value::as_str)
+                        && !seen.insert(id.to_string())
+                    {
+                        *duplicates += 1;
+                    }
+                    pending.extend(map.values());
+                }
+                Value::Array(items) => pending.extend(items),
+                _ => {}
+            }
+        }
+    }
+    if let Some(id) = tree.document().attrs.as_ref().and_then(|a| a.id.as_ref()) {
+        seen.insert(id.clone());
+    }
+    for node in &tree.document().children {
+        visit(node, &mut seen, &mut duplicates, 0);
     }
     duplicates
 }
@@ -367,6 +396,7 @@ pub(crate) struct Host<'a> {
     /// Read from the resolved view on the first control id the render takes.
     ids: RefCell<Option<super::standard::UsedIds>>,
     view: &'a Tree,
+    resolved: bool,
     /// The declarations of the view, so a slot's extension nodes read back.
     declared: Value,
 }
@@ -378,6 +408,7 @@ impl<'a> Host<'a> {
         fields: &'a super::extensions::HostFields,
         opts: &'a Options,
         view: &'a Tree,
+        resolved: bool,
     ) -> Self {
         Self {
             registry,
@@ -387,6 +418,7 @@ impl<'a> Host<'a> {
             failed: RefCell::new(Vec::new()),
             ids: RefCell::new(None),
             view,
+            resolved,
             declared: view.document().extensions.clone().unwrap_or(Value::Null),
         }
     }
@@ -394,8 +426,12 @@ impl<'a> Host<'a> {
     fn next_id(&self, prefix: &str) -> String {
         let mut ids = self.ids.borrow_mut();
         ids.get_or_insert_with(|| {
-            let resolved = crate::resolved_json(self.view.document(), self.opts);
-            super::standard::UsedIds::of(&crate::api::deep_json(&resolved).unwrap_or(Value::Null))
+            if self.resolved {
+                super::standard::UsedIds::of_owned(self.view.document())
+            } else {
+                let resolved = crate::resolved_owned(self.view.document(), self.opts);
+                super::standard::UsedIds::of_owned(&resolved)
+            }
         })
         .next(prefix)
     }
@@ -426,18 +462,17 @@ impl<'a> Host<'a> {
     }
 
     fn render_list(&self, nodes: &Value) -> Result<String, Error> {
-        let mut doc = serde_json::json!({
-            "type": "document",
-            "astVersion": "2.0",
-            "children": nodes,
-        });
-        if let (true, Some(map)) = (self.declared.is_array(), doc.as_object_mut()) {
-            map.insert("extensions".into(), self.declared.clone());
-        }
+        let children: Vec<crate::ast::owned::Node> = serde_json::from_value(nodes.clone())
+            .map_err(|e| Error::option("nodes", e.to_string()))?;
+        let doc = crate::ast::owned::Document {
+            ast_version: "2.0".into(),
+            children,
+            extensions: self.declared.is_array().then(|| self.declared.clone()),
+            ..Default::default()
+        };
         // C2-X-034: a renderer is trusted host code, and its HTML is written
         // unchanged, so the nodes it renders need no reader checks either.
-        let tree = Tree::trusted(doc, None)?;
-        Ok(crate::render_tree_hooked(tree.document(), self.opts, self).html)
+        Ok(crate::render_tree_hooked(&doc, self.opts, self).html)
     }
 }
 

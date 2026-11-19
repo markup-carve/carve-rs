@@ -227,12 +227,13 @@ pub fn render_tree_with_diagnostics(
     })
 }
 
-/// The JSON of a supplied tree after resolution, the render view of C2-X-053.
-pub(crate) fn resolved_json(tree: &ast::owned::Document, opts: &Options) -> String {
+/// The resolved view as an owned tree, for extension transforms that already
+/// consume typed nodes. Avoids a JSON round trip between resolution and them.
+pub(crate) fn resolved_owned(tree: &ast::owned::Document, opts: &Options) -> ast::owned::Document {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
-    to_json(&doc)
+    doc.owned()
 }
 
 /// Resolves a supplied tree again (C2-A-135). The children of an expanded

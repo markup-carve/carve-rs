@@ -233,6 +233,22 @@ impl Tree {
             top,
         })
     }
+
+    /// Rebuild the wire form after an engine transform changed the owned AST.
+    /// The host needs the tree as an AST for rendering and as canonical JSON
+    /// for the public boundary; this avoids decoding that JSON back to an AST.
+    pub(crate) fn from_owned(document: Document, top: Option<String>) -> Result<Self, Error> {
+        let mut value =
+            serde_json::to_value(&document).map_err(|e| Error::option("tree", e.to_string()))?;
+        if let Some(map) = value.as_object_mut() {
+            map.insert("type".into(), "document".into());
+        }
+        Ok(Self {
+            document,
+            json: value.to_string(),
+            top,
+        })
+    }
 }
 
 /// How [`encode_tree_with`] writes a tree.
@@ -601,16 +617,20 @@ impl Carve {
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
         let (view, transform_entries) = if self.extensions.has_transforms() {
-            let resolved: Value =
-                crate::api::deep_json(&crate::resolved_json(tree.document(), opts))
-                    .map_err(|e| Error::option("tree", e.to_string()))?;
-            let mut view = Tree::trusted(resolved, None)?;
+            let mut view = Tree::from_owned(crate::resolved_owned(tree.document(), opts), None)?;
             view.top = tree.top;
             self.extensions.transform(view)
         } else {
             (tree, Vec::new())
         };
-        let host = extension::Host::new(&self.extensions, self.standard, &self.host, opts, &view);
+        let host = extension::Host::new(
+            &self.extensions,
+            self.standard,
+            &self.host,
+            opts,
+            &view,
+            self.extensions.has_transforms(),
+        );
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
