@@ -27,7 +27,7 @@
 //! | `includeDependencies` | [`include_dependencies`] |
 //! | `encodeTree`, `encodeEnvelope` | [`encode_tree`], [`encode_tree_with`], [`encode_envelope`] |
 //! | `decodeTree`, `validateTree` | [`decode_tree`], [`validate_tree`] |
-//! | `migrateTree` | [`migrate_tree`] (not yet available) |
+//! | `migrateTree` | [`migrate_tree`], [`migrate_tree_with`] |
 //! | `diffTree`, `applyPatch` | [`diff_tree`], [`apply_patch`] |
 //! | `sourceFingerprint`, `treeFingerprint` | [`source_fingerprint`], [`tree_fingerprint`] |
 //! | `headingId` | [`heading_id`] |
@@ -40,6 +40,7 @@ mod img_fence;
 mod import;
 mod info;
 pub mod json;
+mod migrate;
 mod options;
 mod patch;
 mod record;
@@ -65,6 +66,7 @@ pub use import::{ImportOptions, Imported, LossOptions, import_document};
 pub use info::{
     NODE_TYPES, NodeTypes, Position, SPEC_VERSION, SpecVersion, VERSION, heading_id, position_of,
 };
+pub use migrate::{MigrateOptions, Migrated, migrate_tree_with};
 pub use patch::{apply_patch, diff_tree, source_fingerprint, tree_fingerprint};
 pub use record::{Entry, Range};
 pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
@@ -872,14 +874,12 @@ pub fn validate_tree(tree: &Tree) -> Result<(), Error> {
     Ok(())
 }
 
-/// `migrateTree` (C2-A-178): not available in this engine yet.
+/// `migrateTree` (C2-A-178): a 1.x or draft tree, bare or in an envelope,
+/// upgraded to contract 2.0.
 ///
 /// # Errors
 ///
-/// Always [`Error::Unsupported`].
+/// As [`migrate_tree_with`].
 pub fn migrate_tree(json: &Value) -> Result<Tree, Error> {
-    let _ = json;
-    Err(Error::Unsupported {
-        call: "migrateTree",
-    })
+    migrate_tree_with(json, &MigrateOptions::default()).map(|m| m.tree)
 }

@@ -105,9 +105,7 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Reply, Error> {
         "format" | "formatWithDiagnostics" => format_call(host, name, req, &opts),
         "write" | "writeWithDiagnostics" => write_call(host, req, &opts),
         "importDocument" => import_call(host, req, &opts),
-        "migrateTree" => Err(Error::Unsupported {
-            call: "migrateTree",
-        }),
+        "migrateTree" => migrate_call(req),
         _ => helper_call(name, req, &opts),
     }
     .map(Reply::Value)
@@ -460,4 +458,31 @@ fn position_call(req: &Value) -> Result<Value, Error> {
         })?;
     let p = super::position_of(input(&bytes), offset)?;
     Ok(json!({ "line": p.line, "column": p.column }))
+}
+
+/// `migrateTree` (C2-A-178, C2-A-180): `tree`, a 1.x or draft tree or
+/// envelope, and the optional `source` its offsets count.
+fn migrate_call(req: &Value) -> Result<Value, Error> {
+    let tree = req
+        .get("tree")
+        .ok_or_else(|| Error::option("tree", "the call takes a tree"))?;
+    let source = match req.get("source") {
+        None => None,
+        Some(v) => Some(
+            v.as_str()
+                .ok_or_else(|| Error::option("source", "not text"))?
+                .to_string(),
+        ),
+    };
+    let migrated = super::migrate_tree_with(tree, &super::MigrateOptions { source })?;
+    let mut out = json!({
+        "tree": tree_value(&migrated.tree),
+        "diagnostics": entries(&migrated.diagnostics),
+    });
+    if let Some(envelope) = migrated.envelope {
+        if let Some(m) = out.as_object_mut() {
+            m.insert("envelope".into(), super::writer::tree_value(&envelope)?);
+        }
+    }
+    Ok(out)
 }

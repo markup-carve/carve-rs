@@ -35,7 +35,7 @@ carve = { package = "carve-lang", version = "0.2", default-features = false }
 | `includeDependencies` | `api::include_dependencies(&Tree)` | available |
 | `encodeTree`, `encodeEnvelope` | `api::encode_tree`, `api::encode_tree_with(&Tree, EncodeOptions { positions })`, `api::encode_envelope` | available |
 | `decodeTree`, `validateTree` | `api::decode_tree(&str)`, `api::validate_tree(&Tree)` | available |
-| `migrateTree` | `api::migrate_tree` | `Error::Unsupported` for now |
+| `migrateTree` | `api::migrate_tree(&Value) -> Result<Tree, Error>`, `api::migrate_tree_with(&Value, &MigrateOptions { source })` returns `Migrated { tree, envelope, diagnostics }` (C2-A-178 to C2-A-180) | available, without the layout record |
 | `positionOf` | `api::position_of(input, offset) -> Result<Position { line, column }, Error>` (C2-T-041) | available |
 | `diffTree`, `applyPatch` | `api::diff_tree(&Tree, &Tree) -> Vec<Value>`, `api::apply_patch(&Tree, &[Value], Option<&str>) -> Result<Tree, Error>` | available |
 | `sourceFingerprint`, `treeFingerprint` | `api::source_fingerprint(&[u8])`, `api::tree_fingerprint(&Tree)`: `sha256:` and the hex SHA-256 of the source or of `encode_tree` | available |
@@ -246,7 +246,8 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 - `tooling.md` gives `parse` a `positions` parameter. Here the tree in memory always carries positions, and `encode_tree_with(..., EncodeOptions { positions: false })` and the JSON request field `positions` drop them on output.
 - `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`, or set with `Tree::set_file` on a decoded tree.
 - On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
-- The engine does not yet implement `parseWithLayout` or `migrateTree`. Each returns `Error::Unsupported`.
+- The engine does not yet implement `parseWithLayout`; it returns `Error::Unsupported`. `migrateTree` returns no source-layout record, and the JSON call answers `tree`, `diagnostics` and, for an envelope, `envelope`.
+- `migrateTree` reads a 1.x `keyValues` object without `order` in sorted member order: the JSON reader of this crate does not keep member order.
 - `tree_fingerprint` hashes this engine's `encode_tree`. Member order is not fixed across engines (carve#6099), so a fingerprint from another engine does not match the same tree here.
 - Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The `host.attributes` and generated-id helpers of C2-X-033 are not offered, and the claim ownership of C2-X-054 is not tracked.
 - Include resolver on WASI preview 1 and Windows: Rust has no stable identity of an open file there, so the resolver checks after the open that the target still canonicalizes to itself inside the root and has the type, length and modification time of the opened file.
