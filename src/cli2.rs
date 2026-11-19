@@ -4,6 +4,7 @@ use carve::api::{
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -47,6 +48,11 @@ fn flag_row<'a>(rows: &'a [Value], command: &str, name: &str) -> Option<&'a Valu
                 .is_some_and(|c| c.iter().any(|c| c == command))
     })
 }
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::similar_names
+)]
 fn parse(argv: &[String]) -> Result<Args, String> {
     let commands = [
         "render",
@@ -60,8 +66,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
     let command = argv
         .first()
         .filter(|a| commands.contains(&a.as_str()))
-        .map(String::as_str)
-        .unwrap_or("render");
+        .map_or("render", String::as_str);
     let mut args = Args {
         command: command.into(),
         ..Default::default()
@@ -108,7 +113,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         };
         let row = flag_row(&rows, command, base)
             .or_else(|| flag_row(&rows, command, name))
-            .or_else(|| (command == "render" && name == "to").then(|| &Value::Null))
+            .or_else(|| (command == "render" && name == "to").then_some(&Value::Null))
             .ok_or_else(|| format!("unknown flag --{name} for {command}"))?;
         let kind = if name == "to" {
             "enum"
@@ -294,6 +299,7 @@ fn includes(path: &str, args: &Args, options: &mut Options) -> Result<(), i32> {
     options.includes = Some(inc);
     Ok(())
 }
+#[allow(clippy::cognitive_complexity)]
 fn options(args: &Args, path: &str) -> Result<Options, i32> {
     let mut o = Options::default();
     o.raw_html = bool_value(args, "raw-html", o.raw_html);
@@ -369,7 +375,7 @@ fn options(args: &Args, path: &str) -> Result<Options, i32> {
         }
     }
     if let Some(n) = value(args, "max-render-losses").and_then(Value::as_u64) {
-        o.max_losses = n as usize;
+        o.max_losses = usize::try_from(n).map_err(|_| usage("--max-render-losses is too large"))?;
     }
     if matches!(
         args.command.as_str(),
@@ -395,6 +401,7 @@ fn string_map(v: &Value) -> Result<BTreeMap<String, String>, i32> {
 fn display(path: &str) -> &str {
     if path == "-" { "<stdin>" } else { path }
 }
+#[allow(clippy::naive_bytecount)] // Only line-feed bytes count as line breaks.
 fn place(bytes: &[u8], offset: usize) -> (usize, usize) {
     let prefix = &bytes[..offset.min(bytes.len())];
     let start = prefix
@@ -423,21 +430,16 @@ fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
 fn lines(path: &str, bytes: &[u8], entries: &[Entry], stderr: bool) -> Result<(), i32> {
     let mut text = String::new();
     for e in entries {
-        let (line, column) = e
-            .range
-            .map(|r| place(bytes, r.start_offset))
-            .unwrap_or((0, 0));
+        let (line, column) = e.range.map_or((0, 0), |r| place(bytes, r.start_offset));
         let name = e.file.as_deref().unwrap_or(display(path));
         if line == 0 {
-            text.push_str(&format!(
-                "{name}: {} {} {}\n",
-                e.severity, e.code, e.message
-            ));
+            let _ = writeln!(text, "{name}: {} {} {}", e.severity, e.code, e.message);
         } else {
-            text.push_str(&format!(
-                "{name}:{line}:{column}: {} {} {}\n",
+            let _ = writeln!(
+                text,
+                "{name}:{line}:{column}: {} {} {}",
                 e.severity, e.code, e.message
-            ));
+            );
         }
     }
     if stderr {
@@ -488,14 +490,20 @@ fn first_change(path: &str, before: &str, after: &str) -> String {
 fn unified(path: &str, before: &str, after: &str) -> String {
     let old: Vec<&str> = before.trim_end_matches('\n').split('\n').collect();
     let new: Vec<&str> = after.trim_end_matches('\n').split('\n').collect();
-    format!(
-        "--- a/{path}\n+++ b/{path}\n@@ -1,{} +1,{} @@\n{}{}",
+    let mut result = format!(
+        "--- a/{path}\n+++ b/{path}\n@@ -1,{} +1,{} @@\n",
         old.len(),
-        new.len(),
-        old.iter().map(|s| format!("-{s}\n")).collect::<String>(),
-        new.iter().map(|s| format!("+{s}\n")).collect::<String>()
-    )
+        new.len()
+    );
+    for line in old {
+        let _ = writeln!(result, "-{line}");
+    }
+    for line in new {
+        let _ = writeln!(result, "+{line}");
+    }
+    result
 }
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)] // One dispatch arm per command.
 fn one(
     args: &Args,
     path: &str,
@@ -549,8 +557,10 @@ fn one(
             Ok(0)
         }
         "lint" => {
-            let mut lint_opts = LintOptions::default();
-            lint_opts.includes = opts.includes.clone();
+            let mut lint_opts = LintOptions {
+                includes: opts.includes.clone(),
+                ..Default::default()
+            };
             if let Some(map) = value(args, "rules").and_then(Value::as_object) {
                 lint_opts.rules = map
                     .iter()
@@ -726,8 +736,8 @@ fn one(
         }
     }
 }
-pub fn run(argv: &[String]) -> i32 {
-    let args = match parse(argv) {
+pub fn run(arguments: &[String]) -> i32 {
+    let args = match parse(arguments) {
         Ok(a) => a,
         Err(e) => return usage(e),
     };
@@ -757,7 +767,7 @@ pub fn run(argv: &[String]) -> i32 {
             &mut diagnostics,
         ) {
             Ok(code) => status = status.max(code),
-            Err(code) if code == 1 => status = status.max(1),
+            Err(1) => status = status.max(1),
             Err(code) => return code,
         }
     }
