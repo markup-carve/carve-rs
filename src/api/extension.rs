@@ -109,7 +109,7 @@ impl RenderContext<'_> {
     /// heading id or earlier control id of the render takes (C2-X-048).
     #[must_use]
     pub fn next_id(&self, prefix: &str) -> String {
-        self.host.ids.borrow_mut().next(prefix)
+        self.host.next_id(prefix)
     }
 
     /// C2-X-033: the attribute list of the element of `node` (its `attrs`
@@ -273,19 +273,29 @@ impl Registry {
 
     /// C2-X-053 to C2-X-055: runs the transforms in registration order, each
     /// on a copy of the previous view; a failed transform leaves its input.
+    pub(crate) fn has_transforms(&self) -> bool {
+        self.list.iter().any(|e| e.transform.is_some())
+    }
+
     pub(crate) fn transform(&self, mut view: Tree) -> (Tree, Vec<Entry>) {
         let mut entries = Vec::new();
+        let mut held: Option<usize> = None;
         for ext in &self.list {
             let Some(transform) = &ext.transform else {
                 continue;
             };
             let failure = match transform.transform(view.clone()) {
-                Ok(next) if duplicate_ids(&next) > duplicate_ids(&view) => {
-                    Some("an inserted node takes an id a preceding node holds".to_string())
-                }
+                Ok(next) if next.json == view.json => None,
                 Ok(next) => {
-                    view = next;
-                    None
+                    let before = *held.get_or_insert_with(|| duplicate_ids(&view));
+                    let after = duplicate_ids(&next);
+                    if after > before {
+                        Some("an inserted node takes an id a preceding node holds".to_string())
+                    } else {
+                        held = Some(after);
+                        view = next;
+                        None
+                    }
                 }
                 Err(e) => Some(e.to_string()),
             };
@@ -351,7 +361,9 @@ pub(crate) struct Host<'a> {
     fields: &'a super::extensions::HostFields,
     opts: &'a Options,
     failed: RefCell<Vec<String>>,
-    ids: RefCell<super::standard::UsedIds>,
+    /// Read from the resolved view on the first control id the render takes.
+    ids: RefCell<Option<super::standard::UsedIds>>,
+    view: &'a Tree,
     /// The declarations of the view, so a slot's extension nodes read back.
     declared: Value,
 }
@@ -362,18 +374,27 @@ impl<'a> Host<'a> {
         standard: super::standard::Standard,
         fields: &'a super::extensions::HostFields,
         opts: &'a Options,
-        view: &Tree,
+        view: &'a Tree,
     ) -> Self {
-        let value = crate::api::deep_json(&super::encode_tree(view)).unwrap_or(Value::Null);
         Self {
             registry,
             standard,
             fields,
             opts,
             failed: RefCell::new(Vec::new()),
-            ids: RefCell::new(super::standard::UsedIds::of(&value)),
-            declared: value.get("extensions").cloned().unwrap_or(Value::Null),
+            ids: RefCell::new(None),
+            view,
+            declared: view.document().extensions.clone().unwrap_or(Value::Null),
         }
+    }
+
+    fn next_id(&self, prefix: &str) -> String {
+        let mut ids = self.ids.borrow_mut();
+        ids.get_or_insert_with(|| {
+            let resolved = crate::resolved_json(self.view.document(), self.opts);
+            super::standard::UsedIds::of(&crate::api::deep_json(&resolved).unwrap_or(Value::Null))
+        })
+        .next(prefix)
     }
 
     /// The `extension-renderer-failed` entries of the call (C2-X-050).
@@ -426,7 +447,7 @@ impl crate::html::ExtensionHook for Host<'_> {
                 block,
                 depth,
             };
-            let group = || self.ids.borrow_mut().next("tabs");
+            let group = || self.next_id("tabs");
             return Some(
                 super::standard::render_tabs(node, &cx, &group).map_err(|_| {
                     self.failed.borrow_mut().push(name.to_string());

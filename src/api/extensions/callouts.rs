@@ -128,8 +128,25 @@ fn bind(nodes: &mut [Value]) {
 
 struct Transform;
 
+/// Whether the tree JSON holds a `<n>` before a line end or the end of a
+/// string, where a code line's marker has to stand.
+fn may_hold_marker(json: &str) -> bool {
+    json.match_indices('<').any(|(at, _)| {
+        let rest = &json[at + 1..];
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        digits > 0
+            && rest[digits..].strip_prefix('>').is_some_and(|tail| {
+                let tail = tail.trim_start_matches([' ', '\\', 't']);
+                tail.is_empty() || tail.starts_with('"') || tail.starts_with('n')
+            })
+    })
+}
+
 impl DocumentTransform for Transform {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        if !may_hold_marker(&crate::api::encode_tree(&view)) {
+            return Ok(view);
+        }
         let mut doc: Value = crate::api::deep_json(&crate::api::encode_tree(&view))
             .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
         let mut pending: Vec<&mut Value> = doc.get_mut("children").into_iter().collect();

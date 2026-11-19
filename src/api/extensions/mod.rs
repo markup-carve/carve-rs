@@ -251,6 +251,17 @@ pub(crate) struct Matchers {
 }
 
 impl Matchers {
+    pub(crate) fn has_form(&self, form: Form) -> bool {
+        self.list.iter().any(|m| m.form == form)
+    }
+
+    pub(crate) fn names(&self, form: Form) -> impl Iterator<Item = &str> {
+        self.list
+            .iter()
+            .filter(move |m| m.form == form)
+            .map(|m| m.name.as_str())
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.list.is_empty()
     }
