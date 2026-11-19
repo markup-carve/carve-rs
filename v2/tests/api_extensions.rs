@@ -277,3 +277,42 @@ fn json_host_document_transforms() {
         "host": {"documentTransforms": [{"after": "/children/0", "insert": para("B")}]}}));
     assert_eq!(unnamed["error"]["name"], "CarveOptionError");
 }
+
+struct SeesIds(std::sync::Mutex<Option<String>>);
+
+impl DocumentTransform for SeesIds {
+    fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        *self.0.lock().unwrap() = Some(api::encode_tree(&view));
+        Ok(view)
+    }
+}
+
+#[test]
+fn c2_x_053_a_transform_receives_the_resolved_view() {
+    let seen = std::sync::Arc::new(SeesIds(std::sync::Mutex::new(None)));
+    struct Shared(std::sync::Arc<SeesIds>);
+    impl DocumentTransform for Shared {
+        fn transform(&self, view: Tree) -> Result<Tree, Error> {
+            self.0.transform(view)
+        }
+    }
+    let mut carve = Carve::new();
+    carve
+        .register_extension(Extension {
+            declaration: declaration("ex.look"),
+            renderers: Vec::new(),
+            transform: Some(Box::new(Shared(seen.clone()))),
+        })
+        .unwrap();
+    let tree = api::parse("# Title", &Options::default()).unwrap();
+    let bare: Value = serde_json::from_str(&api::encode_tree(&tree)).unwrap();
+    let mut stripped = bare.clone();
+    stripped["children"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("generatedId");
+    let supplied = api::decode_tree(&stripped.to_string()).unwrap();
+    carve.render_tree(&supplied, &Options::default()).unwrap();
+    let view = seen.0.lock().unwrap().clone().unwrap();
+    assert!(view.contains("\"generatedId\":\"Title\""), "{view}");
+}

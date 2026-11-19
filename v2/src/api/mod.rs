@@ -325,7 +325,9 @@ impl Carve {
     }
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
-        let (view, transform_entries) = self.extensions.transform(tree);
+        let mut view = Tree::read(&crate::resolved_json(tree.document(), opts), None)?;
+        view.top = tree.top;
+        let (view, transform_entries) = self.extensions.transform(view);
         let host = extension::Host::new(&self.extensions, opts);
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);

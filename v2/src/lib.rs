@@ -217,6 +217,15 @@ pub fn render_tree_with_diagnostics(
     Ok(Rendered { html, diagnostics })
 }
 
+/// The JSON of a supplied tree after resolution, the render view of C2-X-053.
+pub(crate) fn resolved_json(tree: &ast::owned::Document, opts: &Options) -> String {
+    let arena = Arena::new();
+    let mut doc = tree.in_arena(&arena);
+    resolve::clear_results(&mut doc);
+    resolve::resolve(&mut doc, opts, &arena);
+    to_json(&doc)
+}
+
 /// [`render_tree_with_diagnostics`] with a host's extension renderers
 /// (C2-X-052). Losses are not refused here; the caller applies `strictLosses`.
 pub(crate) fn render_tree_hooked(
