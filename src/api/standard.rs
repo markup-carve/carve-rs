@@ -15,6 +15,7 @@ use std::fmt::Write as _;
 pub(crate) struct Standard {
     pub tabs: bool,
     pub tabs_renderer: bool,
+    pub tabs_aria: bool,
     pub wiki: bool,
     pub cite: bool,
     /// C2-X-059: `carve.imgFence.img` and `carve.imgFence.image`, and
@@ -175,6 +176,13 @@ fn inline_node(
     out.insert("version".into(), "1".into());
     out.insert("children".into(), json!([]));
     let text = plain_text(&children);
+    let text = if source == "wiki" {
+        text.split_once('|')
+            .map_or(text.as_str(), |(_, display)| display)
+            .to_string()
+    } else {
+        text
+    };
     let fallback = if text.is_empty() {
         json!([])
     } else {
@@ -550,6 +558,7 @@ pub(crate) fn render_tabs(
     node: &Value,
     cx: &super::RenderContext<'_>,
     group: &dyn Fn() -> String,
+    aria: bool,
 ) -> Result<String, Error> {
     let tabs = at(node, "/slots/tabs")
         .as_array()
@@ -560,10 +569,36 @@ pub(crate) fn render_tabs(
         .labels
         .get("tabsGroup")
         .map_or("Tabs", String::as_str);
-    let mut out = format!(
-        r#"<div class="tabs" role="group" aria-label="{}">"#,
-        cx.escape_attribute(label)
-    );
+    let mut wrapper = String::from("<div class=\"tabs\"");
+    let mut has_role = false;
+    let mut has_name = false;
+    if let Some(pairs) = at(node, "/attrs/keyValues").as_array() {
+        for pair in pairs {
+            let (Some(key), Some(value)) = (
+                pair.get(0).and_then(Value::as_str),
+                pair.get(1).and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            if matches!(key, "role" | "aria-label" | "aria-labelledby") {
+                has_role |= key == "role";
+                has_name |= key.starts_with("aria-");
+                let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));
+            }
+        }
+    }
+    if !has_role {
+        wrapper.push_str(if aria && cx.mode() != crate::options::Mode::Static {
+            " role=\"tablist\""
+        } else {
+            " role=\"group\""
+        });
+    }
+    if !has_name {
+        let _ = write!(wrapper, " aria-label=\"{}\"", cx.escape_attribute(label));
+    }
+    wrapper.push('>');
+    let mut out = wrapper;
     let titles: Vec<(Vec<Value>, String)> = tabs
         .iter()
         .enumerate()
@@ -611,18 +646,39 @@ pub(crate) fn render_tabs(
     let mut panels = String::new();
     for (i, (tab, (title, name))) in tabs.iter().zip(&titles).enumerate() {
         let id = format!("{group}-{i}");
-        let _ = write!(
-            out,
-            r#"<input type="radio" name="{group}" id="{id}"{}><label for="{id}">{}</label>"#,
-            if i == selected { " checked" } else { "" },
-            label_html(title, name)?
-        );
-        let _ = write!(
-            panels,
-            r#"<div class="tab-panel" role="group" aria-label="{}">{}</div>"#,
-            cx.escape_attribute(name),
-            cx.render_blocks(at(tab, "/slots/body"))?
-        );
+        if aria {
+            let panel = format!("{id}-panel");
+            let selected_here = i == selected;
+            let _ = write!(
+                out,
+                "<button type=\"button\" role=\"tab\" id=\"{id}\" aria-selected=\"{selected_here}\" aria-controls=\"{panel}\"{}>{}</button>",
+                if selected_here {
+                    ""
+                } else {
+                    " tabindex=\"-1\""
+                },
+                label_html(title, name)?
+            );
+            let _ = write!(
+                panels,
+                "<div class=\"tab-panel\" role=\"tabpanel\" id=\"{panel}\" aria-labelledby=\"{id}\"{}>{}</div>",
+                if selected_here { "" } else { " hidden" },
+                cx.render_blocks(at(tab, "/slots/body"))?
+            );
+        } else {
+            let _ = write!(
+                out,
+                r#"<input type="radio" name="{group}" id="{id}"{}><label for="{id}">{}</label>"#,
+                if i == selected { " checked" } else { "" },
+                label_html(title, name)?
+            );
+            let _ = write!(
+                panels,
+                r#"<div class="tab-panel" role="group" aria-label="{}">{}</div>"#,
+                cx.escape_attribute(name),
+                cx.render_blocks(at(tab, "/slots/body"))?
+            );
+        }
     }
     out.push_str(&panels);
     out.push_str("</div>");

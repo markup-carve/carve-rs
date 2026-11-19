@@ -233,7 +233,7 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.codeGroup" => Some(code_group(CodeGroupOptions::default())),
         "carve.codeCallouts" => Some(code_callouts()),
         "carve.details" => Some(details()),
-        "carve.spoiler" => Some(spoiler()),
+        "carve.spoiler" | "carve.spoilerBlock" => Some(spoiler()),
         "carve.listTable" => Some(list_table()),
         "carve.colorSwatch" => Some(color_swatch(ColorSwatchOptions::default())),
         "carve.tabNormalize" => tab_normalize(2).ok(),

@@ -155,8 +155,16 @@ fn with_extensions(host: &Carve, opts: &CallOptions) -> Result<Carve, Error> {
         ));
     }
     let mut enabled = host.clone();
+    enabled.standard.tabs_aria = opts.tabs_aria;
     for ext in &opts.extensions {
-        enabled.enable_standard(ext, opts.renderers.contains(ext))?;
+        if ext == "carve.spoilerBlock" && opts.extensions.iter().any(|name| name == "carve.spoiler")
+        {
+            continue;
+        }
+        let renderer = opts.renderers.contains(ext)
+            || (ext == "carve.spoiler"
+                && opts.renderers.iter().any(|name| name == "carve.spoilerBlock"));
+        enabled.enable_standard(ext, renderer)?;
     }
     Ok(enabled)
 }

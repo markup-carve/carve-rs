@@ -428,9 +428,11 @@ impl crate::html::ExtensionHook for Host<'_> {
             };
             let group = || self.ids.borrow_mut().next("tabs");
             return Some(
-                super::standard::render_tabs(node, &cx, &group).map_err(|_| {
-                    self.failed.borrow_mut().push(name.to_string());
-                }),
+                super::standard::render_tabs(node, &cx, &group, self.standard.tabs_aria).map_err(
+                    |_| {
+                        self.failed.borrow_mut().push(name.to_string());
+                    },
+                ),
             );
         }
         if self.standard.renders(name) && version == Some("1") {
