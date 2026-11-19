@@ -222,3 +222,18 @@ fn indented_heading_continuation_after_quote_prefix() {
         vec![(10, 29)]
     );
 }
+
+#[test]
+fn lazy_quote_line_is_an_opener_candidate() {
+    assert_eq!(
+        spans(
+            "[^f]: > [^m]: key [ref][]\n> [\n",
+            "block-opener-without-blank-line"
+        ),
+        vec![(26, 27)]
+    );
+    assert_eq!(
+        spans("    * > > +\n> >\n", "block-opener-without-blank-line"),
+        vec![(12, 13)]
+    );
+}

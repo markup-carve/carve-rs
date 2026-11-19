@@ -1052,6 +1052,16 @@ fn prose_context(
 ) {
     let trimmed = line.text.trim();
     if paragraph_continuation(line, previous) {
+        if line.literal_quote_prefix {
+            let at = line.text.len() - line.text.trim_start().len();
+            sink.emit(
+                "block-opener-without-blank-line",
+                line.start + at,
+                line.start + at + 1,
+                &line.path,
+                &[("opener", "a quote")],
+            );
+        }
         prose_block_opener(line, previous, sink);
         if list_marker(trimmed) {
             sink.whole("list-marker-without-blank-line", line, &[]);
