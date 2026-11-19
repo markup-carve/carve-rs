@@ -73,12 +73,44 @@ fn unattached_attribute_requires_its_own_leaf_line() {
 
 #[test]
 fn list_item_overindent_requires_a_block_opener() {
-    for source in ["* a\n   ![alt](i.png)\n", "* $$x$${#m}\n   ![alt](i.png)\n"] {
+    for source in [
+        "* a\n   ![alt](i.png)\n",
+        "* $$x$${#m}\n   ![alt](i.png)\n",
+        "%%%\n   %%%\n- [^n]:\n         - [x]\n",
+        "1. :::\n   :: term\n   : def\n    :::\n",
+        "- a\n   - b\n",
+    ] {
         assert!(
             spans(source, "list-item-block-overindented").is_empty(),
             "{source:?}"
         );
     }
+    assert_eq!(
+        spans("- a\n\n   # H\n", "list-item-block-overindented"),
+        vec![(8, 11)]
+    );
+}
+
+#[test]
+fn between_list_columns_requires_an_existing_deeper_list() {
+    for source in [
+        "- a\n\n - b\n",
+        "1. a\n  1. b\n",
+        "10. =H\n   2) >\n",
+        "1. a\n\n 1. b\n",
+    ] {
+        assert!(
+            spans(source, "list-marker-below-content-column").is_empty(),
+            "{source:?}"
+        );
+    }
+    assert_eq!(
+        spans(
+            "1. a\n   1. b\n  1. c\n",
+            "list-marker-below-content-column"
+        ),
+        vec![(15, 19)]
+    );
 }
 
 #[test]

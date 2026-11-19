@@ -581,46 +581,9 @@ fn unresolved_reference(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
 
 fn list(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     list_loose(item, sink);
-    list_nested(item, root, sink);
     list_ordered(item, sink);
     list_spacing(item, sink);
     list_indent(item, root, sink);
-}
-
-fn list_nested(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
-    if !item.parents.iter().any(|parent| parent == "list_item") {
-        return;
-    }
-    let Some((from, to)) = bounds(item.node) else {
-        return;
-    };
-    if sink
-        .source
-        .get(..from)
-        .is_some_and(|before| before.trim_end_matches([' ', '\t']).ends_with("\n\n"))
-    {
-        return;
-    }
-    let parent = item
-        .path
-        .rsplit_once("/children/")
-        .and_then(|(path, _)| root.pointer(path));
-    let content = parent
-        .and_then(|parent| parent["children"].as_array())
-        .and_then(|children| children.first())
-        .and_then(|first| field(first, "/pos/startColumn").as_u64())
-        .unwrap_or(0);
-    let column = field(item.node, "/pos/startColumn").as_u64().unwrap_or(0);
-    if content > 0 && column > content {
-        sink.emit_range(
-            "list-item-block-overindented",
-            from,
-            to,
-            &item.path,
-            &[("contentColumn", &content.to_string())],
-            0,
-        );
-    }
 }
 
 fn list_loose(item: &Item<'_>, sink: &mut Sink<'_>) {

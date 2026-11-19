@@ -196,12 +196,22 @@ fn skip_legacy_warning(
     {
         return true;
     }
-    if warning.rule == "list-marker-below-content-column"
-        && source
+    if warning.rule == "list-marker-below-content-column" {
+        if source
             .get(warning.start..)
             .is_some_and(|tail| tail.starts_with('+'))
-    {
-        return true;
+        {
+            return true;
+        }
+        let column = parsed.pos(warning.start, warning.start).start_column;
+        if !positions.around(warning.start).any(|range| {
+            range.kind == "list"
+                && range.start < warning.start
+                && warning.start <= range.end
+                && parsed.pos(range.start, range.start).start_column > column
+        }) {
+            return true;
+        }
     }
     skip_legacy_context(warning, source, parsed, positions)
 }
@@ -330,6 +340,13 @@ fn convert_legacy_warning(
         })
     {
         diagnostic.pos = Some(parsed.pos(table.start, table.end));
+    }
+    if warning.rule == "list-marker-below-content-column" {
+        let end = source
+            .get(warning.start..)
+            .and_then(|tail| tail.find('\n'))
+            .map_or(source.len(), |length| warning.start + length);
+        diagnostic.pos = Some(parsed.pos(warning.start, end));
     }
     if warning.rule == "figure-group-panel-number"
         && let Some(panel) = positions.last_image_before(warning.start)

@@ -265,26 +265,35 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
             }
         }
         if is_opaque_leaf(kind) {
-            let first = starts
-                .partition_point(|s| *s <= range.start)
-                .saturating_sub(1);
-            let lines = starts
-                .get(first..)
-                .unwrap_or_default()
-                .iter()
-                .zip(raws.get(first..).unwrap_or_default())
-                .zip(facts.get_mut(first..).unwrap_or_default());
-            for ((line_start, raw), fact) in lines {
-                if *line_start >= range.end {
-                    break;
-                }
-                if range.start < line_start + raw.len() {
-                    fact.masks.push(range);
-                }
-            }
+            mask_opaque_lines(starts, raws, &mut facts, range);
         }
     }
     facts
+}
+
+fn mask_opaque_lines<'a>(
+    starts: &[usize],
+    raws: &[&str],
+    facts: &mut [LineFacts<'a>],
+    range: &'a Range,
+) {
+    let first = starts
+        .partition_point(|s| *s <= range.start)
+        .saturating_sub(1);
+    let lines = starts
+        .get(first..)
+        .unwrap_or_default()
+        .iter()
+        .zip(raws.get(first..).unwrap_or_default())
+        .zip(facts.get_mut(first..).unwrap_or_default());
+    for ((line_start, raw), fact) in lines {
+        if *line_start >= range.end {
+            break;
+        }
+        if range.start < line_start + raw.len() {
+            fact.masks.push(range);
+        }
+    }
 }
 
 fn range_flags(kind: &str) -> u8 {
