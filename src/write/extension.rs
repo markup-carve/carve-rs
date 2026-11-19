@@ -70,12 +70,7 @@ fn core_inline(node: &Value) -> Option<Value> {
     let source = node
         .get("source")
         .filter(|x| s(x, "form") == Some("inline"))?;
-    let parsed = super::parse_plain(s(source, "body").unwrap_or(""))?;
-    let content = match children(&parsed) {
-        [p] if ty(p) == "paragraph" => children(p).to_vec(),
-        [] => Vec::new(),
-        _ => return None,
-    };
+    let content = body_inlines(s(source, "body").unwrap_or(""))?;
     let mut core = serde_json::Map::new();
     core.insert("type".into(), "inline_extension".into());
     core.insert("name".into(), s(source, "name")?.into());
@@ -84,6 +79,34 @@ fn core_inline(node: &Value) -> Option<Value> {
     }
     core.insert("children".into(), Value::Array(content));
     Some(Value::Object(core))
+}
+
+/// The inline content `body` parses to; the readback asks for one body many
+/// times, so the last few are kept.
+fn body_inlines(body: &str) -> Option<Vec<Value>> {
+    thread_local! {
+        static SEEN: std::cell::RefCell<Vec<(String, Option<Vec<Value>>)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    if let Some(hit) = SEEN.with_borrow(|seen| {
+        seen.iter()
+            .find(|(b, _)| b == body)
+            .map(|(_, content)| content.clone())
+    }) {
+        return hit;
+    }
+    let content = super::parse_plain(body).and_then(|parsed| match children(&parsed) {
+        [p] if ty(p) == "paragraph" => Some(children(p).to_vec()),
+        [] => Some(Vec::new()),
+        _ => None,
+    });
+    SEEN.with_borrow_mut(|seen| {
+        if seen.len() == 64 {
+            seen.remove(0);
+        }
+        seen.push((body.to_string(), content.clone()));
+    });
+    content
 }
 
 /// `tree` with each inline extension that carries an inline source form
