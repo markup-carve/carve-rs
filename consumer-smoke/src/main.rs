@@ -29,12 +29,14 @@ fn main() -> Result<(), Error> {
         carve.write_to("html", &tree, &w)?.output,
         api::render("# T\n\nx", &o)?
     );
-    for refused in [
-        api::parse_with_layout("x", &o).map(|_| ()),
-        api::migrate_tree(&serde_json::Value::Null).map(|_| ()),
-    ] {
-        assert!(matches!(refused, Err(Error::Unsupported { .. })));
-    }
+    assert!(matches!(
+        api::parse_with_layout("x", &o),
+        Err(Error::Unsupported { .. })
+    ));
+    assert!(matches!(
+        api::migrate_tree(&serde_json::Value::Null),
+        Err(Error::Tree(_))
+    ));
     assert_eq!(carve.format("# T\n\nx", &w)?, "= T\n\nx\n");
     assert_eq!(carve.write(&tree, &w)?, "= T\n\nx\n");
     let imported = api::import_document("<p>Hi <strong>x</strong></p>", &ImportOptions::default())?;
