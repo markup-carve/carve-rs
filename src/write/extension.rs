@@ -17,12 +17,14 @@ pub fn canonical_body(node: &Value) -> bool {
 /// C2-X-023: a core readback of the source form is allowed only for its canonical content.
 pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool {
     let Some(actual) = actual else { return false };
-    if ty(expected) == "inline_extension" {
-        return inline_source_equivalent(expected, actual);
+    match ty(expected) {
+        "inline_extension" => inline_source_equivalent(expected, actual),
+        "block_extension" => block_source_equivalent(expected, actual),
+        _ => false,
     }
-    if ty(expected) != "block_extension" {
-        return false;
-    }
+}
+
+fn block_source_equivalent(expected: &Value, actual: &Value) -> bool {
     let Some(source) = expected.get("source") else {
         return false;
     };
