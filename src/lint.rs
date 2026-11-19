@@ -146,6 +146,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     }
     lines::scan(source, opts, &positions.all, &mut out);
     nodes::scan(source, opts, &mut out);
+    colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     let invalid_tables: Vec<_> = out
         .iter()
@@ -275,6 +276,7 @@ fn skip_legacy_context(
         "list-item-block-overindented",
         "github-alert-marker",
         "description-separator-below-content-column",
+        "colon-fence-length-mismatch",
     ]
     .contains(&warning.rule)
     {
@@ -600,6 +602,71 @@ fn colon_fence_message(
         None,
     )
     .message
+}
+
+fn colon_fence_mismatches(
+    source: &str,
+    opts: &LintOptions,
+    ranges: &Ranges<'_>,
+    output: &mut Vec<Diagnostic>,
+) {
+    if !active("colon-fence-length-mismatch", opts) {
+        return;
+    }
+    let positions = Source::new(source);
+    let mut line_start = 0;
+    for piece in source.split_inclusive('\n') {
+        let line = piece.trim_end_matches(['\n', '\r']);
+        let mut tail = line.trim_start_matches([' ', '\t']);
+        while let Some(rest) = tail.strip_prefix("> ") {
+            tail = rest.trim_start_matches([' ', '\t']);
+        }
+        let candidate = tail.trim_end_matches([' ', '\t']);
+        if candidate.len() >= 3 && candidate.bytes().all(|byte| byte == b':') {
+            let at = line_start + line.len() - tail.len();
+            let end = at + candidate.len();
+            let container = ranges
+                .around(at)
+                .filter(|range| {
+                    range.start < at
+                        && range.end >= end
+                        && matches!(
+                            range.kind.as_str(),
+                            "div"
+                                | "admonition"
+                                | "figure_group"
+                                | "line_block"
+                                | "hard_break_block"
+                        )
+                })
+                .max_by_key(|range| range.start);
+            if let Some(container) = container {
+                let width = source
+                    .get(container.start..)
+                    .unwrap_or("")
+                    .bytes()
+                    .take_while(|byte| *byte == b':')
+                    .count();
+                let opaque = ranges.around(at).any(|range| {
+                    range.start <= at
+                        && end <= range.end
+                        && matches!(range.kind.as_str(), "code_block" | "raw_block" | "comment")
+                });
+                if width >= 3 && width != candidate.len() && !opaque {
+                    let mut finding = Diagnostic::new(
+                        "colon-fence-length-mismatch",
+                        &[],
+                        None,
+                        Some(positions.pos(at, end)),
+                    );
+                    finding.message = colon_fence_message(source, ranges, at, end, candidate);
+                    finding.path = Some(container.path.clone());
+                    output.push(finding);
+                }
+            }
+        }
+        line_start += piece.len();
+    }
 }
 
 fn list_columns(

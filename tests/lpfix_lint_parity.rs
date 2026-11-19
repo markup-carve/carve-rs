@@ -237,3 +237,23 @@ fn lazy_quote_line_is_an_opener_candidate() {
         vec![(12, 13)]
     );
 }
+
+#[test]
+fn colon_mismatch_requires_an_open_container() {
+    assert_eq!(
+        spans(":::\n::::\n:::\n", "colon-fence-length-mismatch"),
+        vec![(4, 8)]
+    );
+    for (source, expected) in [
+        ("  :::\n::::\n", (6, 10)),
+        ("  ::::\n:::\n", (7, 10)),
+        ("\t::::\n:::\n", (6, 9)),
+        ("* ::: warning\n   ::::\n   :::\n", (17, 21)),
+    ] {
+        assert_eq!(
+            spans(source, "colon-fence-length-mismatch"),
+            vec![expected],
+            "{source:?}"
+        );
+    }
+}
