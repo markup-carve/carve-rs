@@ -2276,7 +2276,7 @@ fn ordered_split(root: &Item<'_>, sink: &mut Sink<'_>) {
 
 fn unused_definitions(items: &[Item<'_>], sink: &mut Sink<'_>) {
     let mut used = HashSet::new();
-    let mut definitions = HashMap::new();
+    let mut definitions = Vec::new();
     for item in items {
         match item.node["type"].as_str() {
             Some("link" | "image") if item.node.get("key").is_some() => {
@@ -2286,14 +2286,14 @@ fn unused_definitions(items: &[Item<'_>], sink: &mut Sink<'_>) {
             }
             Some("link_reference_definition") => {
                 if let Some(key) = item.node["key"].as_str() {
-                    definitions.insert(key.to_string(), item);
+                    definitions.push((key, item));
                 }
             }
             _ => {}
         }
     }
     for (key, item) in definitions {
-        if !used.contains(&key) {
+        if !used.contains(key) {
             sink.emit("unused-link-reference-definition", item, &[], 0);
         }
     }

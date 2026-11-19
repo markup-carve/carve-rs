@@ -269,3 +269,11 @@ fn later_list_markers_in_quoted_and_footnote_text() {
         vec![(17, 20)]
     );
 }
+
+#[test]
+fn every_unused_definition_is_reported() {
+    assert_eq!(
+        spans("[a]: <>\n[a]: u\n", "unused-link-reference-definition"),
+        vec![(0, 7), (8, 14)]
+    );
+}
