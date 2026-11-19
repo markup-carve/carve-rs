@@ -1052,6 +1052,28 @@ fn prose_context(
 ) {
     let (marker_at, marker_text) = leaf_after_quotes(line);
     let list_candidate = list_marker(marker_text);
+    if line.scope.container == ContainerKind::ListItem
+        && line.kind != "definition_term"
+        && previous.is_some_and(|p| {
+            p.kind == "definition_term"
+                && p.content_start.is_some()
+                && p.scope.container == ContainerKind::ListItem
+        })
+        && list_candidate
+    {
+        let raw = sink
+            .source
+            .text()
+            .get(line.start..line.start + line.text.len())
+            .unwrap_or("");
+        sink.emit(
+            "description-term-multi-line",
+            line.start + marker_at,
+            line.start + raw.trim_end().len(),
+            &line.path,
+            &[],
+        );
+    }
     if paragraph_continuation(line, previous) {
         if line.literal_quote_prefix {
             let at = line.text.len() - line.text.trim_start().len();

@@ -277,3 +277,11 @@ fn every_unused_definition_is_reported() {
         vec![(0, 7), (8, 14)]
     );
 }
+
+#[test]
+fn item_term_continuation_has_a_multiline_diagnostic() {
+    assert_eq!(
+        spans("* :: key\n * %%#region\n", "description-term-multi-line"),
+        vec![(10, 21)]
+    );
+}
