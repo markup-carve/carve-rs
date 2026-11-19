@@ -9,7 +9,7 @@
 //! assert_eq!(html, "<p>Hello <strong>world</strong></p>");
 //!
 //! let tree = api::parse("Hello", &Options::default())?;
-//! assert!(api::encode_tree(&tree).starts_with(r#"{"type":"document""#));
+//! assert!(api::encode_tree(&tree).starts_with(r#"{"children":["#));
 //! # Ok::<(), api::Error>(())
 //! ```
 //!
