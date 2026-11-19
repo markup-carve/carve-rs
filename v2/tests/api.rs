@@ -211,16 +211,9 @@ fn lint_returns_the_record_and_validates_options() {
 
 #[test]
 fn calls_this_engine_lacks_are_unsupported() {
-    let tree = api::parse("x", &opts()).unwrap();
-    let carve = Carve::new();
-    let w = WriteOptions::default();
     for err in [
         api::parse_with_layout("x", &opts()).unwrap_err(),
         api::migrate_tree(&json!({})).unwrap_err(),
-        carve.write(&tree, &w).unwrap_err(),
-        carve.write_with_diagnostics(&tree, &w).unwrap_err(),
-        carve.format("x", &w).unwrap_err(),
-        carve.format_with_diagnostics("x", &w).unwrap_err(),
     ] {
         assert!(matches!(err, Error::Unsupported { .. }), "{err}");
         assert_eq!(err.category(), "usage");
@@ -233,7 +226,7 @@ struct Upper;
 impl Writer for Upper {
     #[allow(clippy::unnecessary_literal_bound)]
     fn target(&self) -> &str {
-        "carve"
+        "stub"
     }
 
     fn write(&self, tree: &Tree, _opts: &WriteOptions) -> Result<Written, Error> {
@@ -247,13 +240,14 @@ impl Writer for Upper {
 #[test]
 fn a_registered_writer_serves_write_and_format() {
     let mut carve = Carve::new();
-    assert_eq!(carve.writers().targets(), vec!["html"]);
-    carve.register_writer(Arc::new(Upper)).unwrap();
     assert_eq!(carve.writers().targets(), vec!["carve", "html"]);
+    carve.register_writer(Arc::new(Upper)).unwrap();
+    assert_eq!(carve.writers().targets(), vec!["carve", "html", "stub"]);
     let tree = api::parse("a\n\nb", &opts()).unwrap();
     let w = WriteOptions::default();
-    assert_eq!(carve.write(&tree, &w).unwrap(), "2 nodes");
-    assert_eq!(carve.format("a\n\nb", &w).unwrap(), "2 nodes");
+    assert_eq!(carve.write_to("stub", &tree, &w).unwrap().output, "2 nodes");
+    assert_eq!(carve.write(&tree, &w).unwrap(), "a\n\nb\n");
+    assert_eq!(carve.format("a\n\nb", &w).unwrap(), "a\n\nb\n");
     let again = carve.register_writer(Arc::new(Upper)).unwrap_err();
     assert!(matches!(again, Error::Option { .. }));
 }
@@ -370,13 +364,11 @@ fn json_boundary_typed_failures() {
     assert_eq!(loss["error"]["name"], "CarveRenderError");
     assert_eq!(loss["error"]["status"], 1);
     let tree = call(&json!({"call": "parse", "source": "x"}))["ok"]["tree"].clone();
-    for name in [
-        "format",
-        "write",
-        "importDocument",
-        "migrateTree",
-        "parseWithLayout",
-    ] {
+    for name in ["format", "write"] {
+        let out = call(&json!({"call": name, "source": "x", "tree": tree}));
+        assert!(out.get("ok").is_some(), "{name}: {out}");
+    }
+    for name in ["importDocument", "migrateTree", "parseWithLayout"] {
         let out = call(&json!({"call": name, "source": "x", "tree": tree}));
         assert_eq!(out["error"]["category"], "usage", "{name}");
     }

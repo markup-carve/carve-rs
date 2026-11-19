@@ -1,0 +1,1218 @@
+//! The inline nodes as Carve source (C2-W-069 to C2-W-080, C2-W-116). A line
+//! break of the content is a line feed in the string; the block that holds the
+//! content places the lines.
+
+use super::attrs::{BlockParts, brace_block, plain_block, quoted};
+use super::node::{N, children, has, id, s, text, ty};
+use super::state::{Writer, lose, trim_end};
+use crate::chars::fold_label;
+use serde_json::Value;
+
+/// The content stands in a table cell: a pipe in text takes a backslash (C2-W-098).
+pub const IN_CELL: u32 = 1;
+pub const IN_EMPHASIS: u32 = 2;
+pub const IN_STRONG: u32 = 4;
+/// C2-W-080: a hard break is the bare line ending.
+pub const BARE_BREAKS: u32 = 8;
+pub const IN_BRACKET: u32 = 16;
+/// C2-W-117: inside the body of a figure group.
+pub const IN_FIGURE_GROUP: u32 = 32;
+/// C2-I-089: inside an inline footnote, where a caret pair opens nothing.
+pub const IN_NOTE: u32 = 64;
+
+#[derive(Default)]
+struct BraceQuote {
+    at: usize,
+    brace: bool,
+    quote: u8,
+}
+
+/// C2-I-033: a quoted brace value is opaque, including its backslashes.
+fn in_quoted_brace(value: &[u8], at: usize, c: &mut BraceQuote) -> bool {
+    while c.at < at {
+        let code = value.get(c.at).copied().unwrap_or(0);
+        if c.quote != 0 {
+            if code == b'\\' {
+                c.at += 2;
+                continue;
+            }
+            if code == c.quote {
+                c.quote = 0;
+            }
+        } else if code == b'{' {
+            c.brace = true;
+        } else if code == b'}' {
+            c.brace = false;
+        } else if c.brace && (code == b'"' || code == b'\'') {
+            c.quote = code;
+        }
+        c.at += 1;
+    }
+    c.quote != 0
+}
+
+/// C2-W-097: a backslash that the next character of the same text would make an escape is written twice.
+fn doubles(value: &[u8], at: usize, c: &mut BraceQuote) -> bool {
+    let Some(&next) = value.get(at + 1) else {
+        return false;
+    };
+    (next == b' ' || next.is_ascii_punctuation()) && !in_quoted_brace(value, at, c)
+}
+
+fn always_escaped(value: &[u8], at: usize, flags: u32, c: &mut BraceQuote) -> bool {
+    let code = value.get(at).copied().unwrap_or(0);
+    (code == b'\\' && doubles(value, at, c))
+        || (flags & IN_CELL != 0 && code == b'|')
+        || (flags & IN_BRACKET != 0 && (code == b'[' || code == b']'))
+}
+
+/// The index of the first entry of `offsets` that is not below `from`.
+pub fn first_from(offsets: &[usize], from: usize) -> usize {
+    offsets.partition_point(|&o| o < from)
+}
+
+/// The text `value[from, to)` with the backslashes it needs.
+fn escaped(
+    w: &Writer<'_>,
+    node: &Value,
+    value: &str,
+    from: usize,
+    to: usize,
+    flags: u32,
+) -> String {
+    let escapes = w.escapes_of(node);
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(to.saturating_sub(from) + 4);
+    let mut next = first_from(escapes, from);
+    let mut start = from;
+    let mut cursor = BraceQuote::default();
+    for at in from..to {
+        let asked = escapes.get(next) == Some(&at);
+        if asked {
+            next += 1;
+        }
+        if !asked && !always_escaped(bytes, at, flags, &mut cursor) {
+            continue;
+        }
+        out.push_str(value.get(start..at).unwrap_or(""));
+        out.push('\\');
+        start = at;
+    }
+    out.push_str(value.get(start..to).unwrap_or(""));
+    out
+}
+
+/// The offset in the value of the text `node` behind the `bytes` bytes of its
+/// spelling that start at `from`, or `None` where no character ends there.
+pub fn spelled_end(
+    w: &Writer<'_>,
+    node: &Value,
+    from: usize,
+    bytes: usize,
+    flags: u32,
+) -> Option<usize> {
+    let value = text(node);
+    let raw = value.as_bytes();
+    let escapes = w.escapes_of(node);
+    let mut next = first_from(escapes, from);
+    let mut rest = bytes;
+    let mut at = from;
+    let mut cursor = BraceQuote::default();
+    while rest > 0 && at < raw.len() {
+        let asked = escapes.get(next) == Some(&at);
+        if asked {
+            next += 1;
+        }
+        let cost = 1 + usize::from(asked || always_escaped(raw, at, flags, &mut cursor));
+        rest = rest.checked_sub(cost)?;
+        at += 1;
+    }
+    (rest == 0 && value.is_char_boundary(at)).then_some(at)
+}
+
+fn text_node(w: &Writer<'_>, node: &Value, flags: u32) -> String {
+    let value = text(node);
+    let points = if flags & IN_CELL == 0 {
+        None
+    } else {
+        w.wrap_points.as_ref().and_then(|p| p.get(&id(node)))
+    };
+    if points.is_none()
+        && !w.has_escapes(node)
+        && !value.contains('\\')
+        && (flags & IN_CELL == 0 || !value.contains('|'))
+        && (flags & IN_BRACKET == 0 || !value.contains(['[', ']']))
+    {
+        return value.to_string();
+    }
+    let mut out = String::new();
+    let mut from = 0;
+    for &point in points.into_iter().flatten() {
+        // C2-L-021: the joining space before the fragment is the line break of the continuation row.
+        out.push_str(&escaped(
+            w,
+            node,
+            value,
+            from,
+            from.max(point.saturating_sub(1)),
+            flags,
+        ));
+        out.push('\n');
+        from = point;
+    }
+    out.push_str(&escaped(w, node, value, from, value.len(), flags));
+    out
+}
+
+/// C2-I-023, C2-I-024: a line comment that starts or ends the content of a span.
+pub fn edge_comment(node: &Value) -> bool {
+    let c = children(node);
+    let line =
+        |n: Option<&Value>| n.is_some_and(|n| ty(n) == "comment" && s(n, "form") == Some("line"));
+    line(c.first()) || line(c.last())
+}
+
+/// Whether emphasis (bit 1) and strong (bit 2) occur below `node` (C2-W-070).
+pub fn kinds_below(w: &mut Writer<'_>, node: &Value) -> u8 {
+    if let Some(&k) = w.kinds_below.get(&id(node)) {
+        return k;
+    }
+    let mut kinds = 0;
+    for c in children(node) {
+        match ty(c) {
+            "emphasis" => kinds |= 1,
+            "strong" => kinds |= 2,
+            _ => {}
+        }
+        if has(c, "children") {
+            kinds |= kinds_below(w, c);
+        }
+    }
+    w.kinds_below.insert(id(node), kinds);
+    kinds
+}
+
+pub fn braced_pair(w: &mut Writer<'_>, node: &Value, flags: u32, bit: u8, inside: u32) -> bool {
+    flags & inside != 0 || kinds_below(w, node) & bit != 0 || w.form(node) > 0 || edge_comment(node)
+}
+
+fn refs(nodes: &[Value]) -> Vec<&Value> {
+    nodes.iter().collect()
+}
+
+/// C2-W-116: a node that needs content and has none is left out.
+fn content_of<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> Option<String> {
+    let c = children(node);
+    if c.is_empty() {
+        lose(w, node, None);
+        return None;
+    }
+    Some(write_inlines(w, &refs(c), flags))
+}
+
+fn paired<'t>(
+    w: &mut Writer<'t>,
+    node: N<'t>,
+    flags: u32,
+    mark: char,
+    bit: u8,
+    inside: u32,
+) -> String {
+    let Some(content) = content_of(w, node, flags | inside) else {
+        return String::new();
+    };
+    if braced_pair(w, node, flags, bit, inside) {
+        format!("{{{mark}{content}{mark}}}")
+    } else {
+        format!("{mark}{content}{mark}")
+    }
+}
+
+fn braced<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32, open: char, close: char) -> String {
+    content_of(w, node, flags).map_or_else(String::new, |c| format!("{{{open}{c}{close}}}"))
+}
+
+/// C2-I-016: whether a reader would take one space from each end of `value`.
+fn loses_padding(value: &str) -> bool {
+    value.starts_with(' ') && value.ends_with(' ') && value.bytes().any(|b| b != b' ')
+}
+
+/// C2-W-059: a braced comment, written `{%%}` when its value is empty.
+pub fn braced_comment(value: &str) -> String {
+    if value.is_empty() {
+        "{%%}".into()
+    } else {
+        format!("{{% {value} %}}")
+    }
+}
+
+/// C2-W-077: the shortest backtick run that does not occur in `value`, with padding where the ends need it.
+pub fn code_span(value: &str) -> String {
+    let mut taken = std::collections::HashSet::new();
+    let mut run = 0usize;
+    for b in value.bytes().chain(std::iter::once(0)) {
+        if b == b'`' {
+            run += 1;
+        } else {
+            if run > 0 {
+                taken.insert(run);
+            }
+            run = 0;
+        }
+    }
+    let mut length = 1;
+    while taken.contains(&length) {
+        length += 1;
+    }
+    let ticks = "`".repeat(length);
+    if value.starts_with('`') || value.ends_with('`') || loses_padding(value) {
+        format!("{ticks} {value} {ticks}")
+    } else {
+        format!("{ticks}{value}{ticks}")
+    }
+}
+
+fn span_value(w: &mut Writer<'_>, node: &Value, flags: u32) -> String {
+    let spelled = cell_value(w, node, text(node), flags);
+    if spelled.starts_with('\n') && spelled.ends_with('`') {
+        lose(w, node, Some("value"));
+    }
+    code_span(&spelled)
+}
+
+/// C2-W-067, C2-I-120: a line feed has no spelling in a cell; a space stands in its place.
+fn cell_value(w: &mut Writer<'_>, node: &Value, value: &str, flags: u32) -> String {
+    if flags & IN_CELL == 0 || !value.contains('\n') {
+        return value.to_string();
+    }
+    lose(w, node, Some("value"));
+    value.replace('\n', " ")
+}
+
+/// C2-I-013: a destination reads only the escaped parenthesis and the escaped backslash; C2-W-098: in a cell a pipe too.
+fn destination(value: &str, pipes: bool) -> String {
+    let bytes = value.as_bytes();
+    let mut unmatched = std::collections::HashSet::new();
+    let mut open = Vec::new();
+    for (at, &b) in bytes.iter().enumerate() {
+        if b == b'(' {
+            open.push(at);
+        } else if b == b')' && open.pop().is_none() {
+            unmatched.insert(at);
+        }
+    }
+    unmatched.extend(open);
+    let mut out = String::with_capacity(value.len());
+    for (at, c) in value.char_indices() {
+        let next = bytes.get(at + 1).copied().unwrap_or(b')');
+        if unmatched.contains(&at) || (c == '\\' && b"()\\".contains(&next)) || (pipes && c == '|')
+        {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn escape_pipes(value: &str) -> String {
+    value.replace('|', "\\|")
+}
+
+/// C2-I-076, C2-I-079: a backslash at the end of a label would take its closing bracket.
+fn label_text(key: &str) -> String {
+    if key.ends_with('\\') {
+        format!("{key} ")
+    } else {
+        key.to_string()
+    }
+}
+
+fn reference_label(node: &Value, key: &str, pipes: bool) -> String {
+    match s(node, "refForm") {
+        Some("collapsed") => return "[]".into(),
+        Some("shortcut") => return String::new(),
+        _ => {}
+    }
+    let label = if pipes {
+        escape_pipes(key)
+    } else {
+        key.to_string()
+    };
+    // C2-I-078: a label that starts with a caret or an at-sign is no reference label.
+    if key.starts_with('^') || key.starts_with('@') {
+        format!("[ {}]", label_text(&label))
+    } else {
+        format!("[{}]", label_text(&label))
+    }
+}
+
+/// C2-W-073, C2-W-074: the link tail, or the label of a reference.
+pub fn target(node: &Value, href: &str, pipes: bool) -> String {
+    if let Some(key) = s(node, "key") {
+        return reference_label(node, key, pipes);
+    }
+    let title = s(node, "tooltip").map_or(String::new(), |t| format!(" {}", quoted(t, pipes)));
+    format!("({}{title})", destination(href, pipes))
+}
+
+/// C2-W-075, C2-W-084: the verbatim text of a reference, where the sidecar holds it.
+pub fn raw_reference(w: &Writer<'_>, node: &Value, flags: u32) -> Option<String> {
+    if !has(node, "key") || w.form(node) > 0 {
+        return None;
+    }
+    let raw = w.fact(node)?.raw_ref.as_ref()?;
+    if !raw.contains('\n') {
+        return Some(raw.clone());
+    }
+    if flags & IN_CELL != 0 {
+        let mut out = String::new();
+        for (i, part) in raw.split('\n').enumerate() {
+            if i > 0 {
+                out = trim_end(&out).to_string();
+                out.push(' ');
+                out.push_str(part.trim_start_matches([' ', '\t']));
+            } else {
+                out.push_str(part);
+            }
+        }
+        return Some(out);
+    }
+    Some(trim_line_ends(raw))
+}
+
+/// C2-W-022: no space or tab at the end of a line, except one an odd run of backslashes escapes.
+fn trim_line_ends(raw: &str) -> String {
+    let mut out = String::new();
+    let lines: Vec<&str> = raw.split('\n').collect();
+    let last = lines.len().saturating_sub(1);
+    for (i, line) in lines.iter().enumerate() {
+        if i == last {
+            out.push_str(line);
+            break;
+        }
+        let b = line.as_bytes();
+        let mut cut = b.len();
+        while cut > 0 && matches!(b.get(cut - 1), Some(b' ' | b'\t')) {
+            cut -= 1;
+        }
+        let mut slashes = 0;
+        while cut > slashes && b.get(cut - 1 - slashes) == Some(&b'\\') {
+            slashes += 1;
+        }
+        if slashes % 2 == 1 && b.get(cut) == Some(&b' ') {
+            cut += 1;
+        }
+        out.push_str(line.get(..cut).unwrap_or(""));
+        out.push('\n');
+    }
+    out
+}
+
+/// C2-W-125 case five: an unescaped leading caret of link or span text reads as a footnote reference.
+fn escape_leading_caret(w: &mut Writer<'_>, kids: &[Value], flags: u32) {
+    if flags & IN_NOTE != 0 {
+        return;
+    }
+    if let Some(first) = kids.first() {
+        if ty(first) == "text"
+            && text(first).starts_with('^')
+            && w.escapes_of(first).first() != Some(&0)
+        {
+            w.add_escape(first, 0);
+        }
+    }
+}
+
+fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
+    if let Some(raw) = raw_reference(w, node, flags) {
+        w.raw_refs.push(raw.clone());
+        return raw;
+    }
+    escape_leading_caret(w, children(node), flags);
+    let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
+    let content = collapsed_content(w, node, content, flags);
+    format!(
+        "[{content}]{}",
+        target(node, s(node, "href").unwrap_or(""), flags & IN_CELL != 0)
+    )
+}
+
+/// C2-W-075: the content of a collapsed reference folds to its key (C2-I-079).
+fn collapsed_content(w: &mut Writer<'_>, node: &Value, content: String, flags: u32) -> String {
+    let Some(key) = s(node, "key") else {
+        return content;
+    };
+    if s(node, "refForm") != Some("collapsed")
+        || flags & IN_CELL != 0
+        || fold_label(&content) == key
+    {
+        return content;
+    }
+    for candidate in [escaped_like(&content, key), Some(key.to_string())]
+        .into_iter()
+        .flatten()
+    {
+        if reads_as_collapsed(w, &candidate, key, children(node)) {
+            return candidate;
+        }
+    }
+    content
+}
+
+fn reads_as_collapsed(w: &mut Writer<'_>, candidate: &str, key: &str, kids: &[Value]) -> bool {
+    let keys = std::iter::once(key.to_string()).collect();
+    let doc = super::check::parse_with(w, &format!("[{candidate}][]\n"), &keys);
+    let blocks = children(&doc);
+    let [p] = blocks else { return false };
+    let [link] = children(p) else { return false };
+    ty(link) == "link"
+        && s(link, "key") == Some(key)
+        && super::node::trees_equal(
+            &serde_json::json!({"type": "paragraph", "children": children(link)}),
+            &serde_json::json!({"type": "paragraph", "children": kids}),
+        )
+}
+
+fn is_label_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n')
+}
+
+/// C2-I-001, C2-I-079: the content with the escapes the key holds, or `None`.
+fn escaped_like(content: &str, key: &str) -> Option<String> {
+    let c = content.as_bytes();
+    let k = key.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(c.len());
+    let (mut at, mut ki) = (0usize, 0usize);
+    while let Some(&ch) = c.get(at) {
+        if is_label_space(ch) {
+            let mut end = at;
+            while c.get(end).is_some_and(|&b| is_label_space(b)) {
+                end += 1;
+            }
+            out.extend_from_slice(c.get(at..end)?);
+            if ki > 0 && end < c.len() && k.get(ki) == Some(&b' ') {
+                ki += 1;
+            }
+            at = end;
+            continue;
+        }
+        let next = c.get(at + 1).copied();
+        if ch == b'\\'
+            && next.is_some_and(|n| n != b'\\' && n.is_ascii_punctuation() && k.get(ki) == Some(&n))
+        {
+            out.push(next.unwrap_or(b' '));
+            ki += 1;
+            at += 2;
+            continue;
+        }
+        let escape = k.get(ki) == Some(&b'\\')
+            && k.get(ki + 1) == Some(&ch)
+            && ch != b'\\'
+            && ch.is_ascii_punctuation();
+        if !escape && k.get(ki) != Some(&ch) {
+            return None;
+        }
+        if escape {
+            out.push(b'\\');
+        }
+        out.push(ch);
+        ki += if escape { 2 } else { 1 };
+        at += 1;
+    }
+    let out = String::from_utf8(out).ok()?;
+    (ki == k.len() && fold_label(&out) == key).then_some(out)
+}
+
+fn image_node(w: &mut Writer<'_>, node: &Value, flags: u32) -> String {
+    if let Some(raw) = raw_reference(w, node, flags) {
+        w.raw_refs.push(raw.clone());
+        return format!("!{raw}");
+    }
+    let pipes = flags & IN_CELL != 0;
+    let alt = collapsed_alt(w, node, alt_source(s(node, "alt").unwrap_or("")));
+    let alt = if pipes { escape_pipes(&alt) } else { alt };
+    format!(
+        "![{alt}]{}",
+        target(node, s(node, "src").unwrap_or(""), pipes)
+    )
+}
+
+fn collapsed_alt(w: &mut Writer<'_>, node: &Value, alt: String) -> String {
+    let Some(key) = s(node, "key") else {
+        return alt;
+    };
+    if s(node, "refForm") != Some("collapsed") || fold_label(&alt) == key {
+        return alt;
+    }
+    let keys = std::iter::once(key.to_string()).collect();
+    let doc = super::check::parse_with(w, &format!("![{key}][]\n"), &keys);
+    let ok = match children(&doc) {
+        [p] => match children(p) {
+            [img] => {
+                ty(img) == "image"
+                    && s(img, "key") == Some(key)
+                    && img.get("alt") == node.get("alt")
+            }
+            _ => false,
+        },
+        _ => false,
+    };
+    if ok { key.to_string() } else { alt }
+}
+
+/// The end of the code span or braced comment that opens at `at` of `alt`: `Some(0)` if none opens, `None` if it has no closer.
+fn atom_end(alt: &[u8], at: usize) -> Option<usize> {
+    let ch = alt.get(at).copied();
+    if ch == Some(b'{') && matches!(alt.get(at + 1), Some(b'#' | b'%')) {
+        let mark = alt.get(at + 1).copied().unwrap_or(b'#');
+        let tail = alt.get(at + 2..).unwrap_or(&[]);
+        return tail
+            .windows(2)
+            .position(|w| w.first() == Some(&mark) && w.get(1) == Some(&b'}'))
+            .map(|p| at + 2 + p + 2);
+    }
+    if ch != Some(b'`') || (at > 0 && alt.get(at - 1) == Some(&b'`')) {
+        return Some(0);
+    }
+    let mut size = 1;
+    while alt.get(at + size) == Some(&b'`') {
+        size += 1;
+    }
+    let mut next = at + size;
+    while next < alt.len() {
+        if alt.get(next) != Some(&b'`') {
+            next += 1;
+            continue;
+        }
+        let mut length = 1;
+        while alt.get(next + length) == Some(&b'`') {
+            length += 1;
+        }
+        if length == size {
+            return Some(next + size);
+        }
+        next += length;
+    }
+    None
+}
+
+fn raw_atoms(alt: &[u8], lone: &mut std::collections::HashSet<usize>) -> Vec<bool> {
+    let mut raw = vec![false; alt.len()];
+    let mut at = 0;
+    while at < alt.len() {
+        match atom_end(alt, at) {
+            Some(0) => {}
+            Some(end) => {
+                for r in raw.iter_mut().take(end).skip(at) {
+                    *r = true;
+                }
+                at = end;
+                continue;
+            }
+            None => {
+                lone.insert(at);
+                while alt.get(at) == Some(&b'`') && alt.get(at + 1) == Some(&b'`') {
+                    at += 1;
+                    lone.insert(at);
+                }
+            }
+        }
+        at += 1;
+    }
+    raw
+}
+
+fn unpartnered(alt: &[u8], raw: &[bool], lone: &mut std::collections::HashSet<usize>) {
+    let mut open: Vec<usize> = Vec::new();
+    let mut notes: Vec<usize> = Vec::new();
+    for (at, &ch) in alt.iter().enumerate() {
+        if raw.get(at) == Some(&true) {
+            continue;
+        }
+        if ch == b'[' {
+            open.push(at);
+        } else if ch != b']' {
+        } else if at >= 2 && alt.get(at - 1) == Some(&b'^') && open.last() == Some(&(at - 2)) {
+            lone.insert(at);
+        } else if let Some(opener) = open.pop() {
+            if alt.get(opener + 1) == Some(&b'^') {
+                notes.push(at);
+            }
+        } else {
+            lone.insert(notes.pop().unwrap_or(at));
+        }
+    }
+    lone.extend(open);
+}
+
+/// C2-W-097: alt text doubles a backslash before ASCII punctuation or at its
+/// end, and escapes a bracket with no partner.
+fn alt_source(alt: &str) -> String {
+    let bytes = alt.as_bytes();
+    let mut lone = std::collections::HashSet::new();
+    let raw = raw_atoms(bytes, &mut lone);
+    unpartnered(bytes, &raw, &mut lone);
+    let mut out = String::with_capacity(alt.len() + 4);
+    for (at, ch) in alt.char_indices() {
+        let next = bytes.get(at + 1);
+        if (ch == '\\' && next.is_none_or(u8::is_ascii_punctuation)) || lone.contains(&at) {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn autolink_node(w: &mut Writer<'_>, node: &Value) -> String {
+    let href = s(node, "href").unwrap_or("");
+    let Some(t) = s(node, "text") else {
+        return format!("<{href}>");
+    };
+    if href != format!("mailto:{t}") {
+        lose(w, node, Some("text"));
+    }
+    href.strip_prefix("mailto:")
+        .map_or_else(|| format!("<{href}>"), |rest| format!("<{rest}>"))
+}
+
+fn mention_node(w: &mut Writer<'_>, node: &Value) -> String {
+    if has(node, "label") {
+        lose(w, node, Some("label"));
+    } else if s(node, "kind").is_some_and(|k| k != "user") {
+        lose(w, node, Some("kind"));
+    }
+    format!("@{}", s(node, "target").unwrap_or(""))
+}
+
+/// C2-W-022, C2-W-117: a line comment; a value that ends with a space or a tab loses it.
+pub fn line_comment_text(w: &mut Writer<'_>, node: &Value, value: &str) -> String {
+    let kept = trim_end(value);
+    if kept.len() != value.len() {
+        lose(w, node, Some("value"));
+    }
+    if kept.is_empty() {
+        "%%".into()
+    } else {
+        format!("%% {kept}")
+    }
+}
+
+fn comment_node(w: &mut Writer<'_>, node: &Value, flags: u32) -> String {
+    let value = cell_value(w, node, text(node), flags);
+    // C2-W-005, C2-A-074: where a padded line reads as a block opener, the value stands glued to the marks.
+    let glued = w.form(node) > 0 && !value.starts_with(' ') && !value.ends_with(' ');
+    if s(node, "form") == Some("braced") {
+        return if glued {
+            format!("{{%{value}%}}")
+        } else {
+            braced_comment(&value)
+        };
+    }
+    line_comment_text(w, node, &value)
+}
+
+fn abbreviation_node(w: &mut Writer<'_>, node: &Value) -> String {
+    let key = s(node, "key").unwrap_or("");
+    // C2-W-117: without a definition of its key the word reads back as text.
+    if !w.abbreviations.iter().any(|(k, _)| k == key) {
+        lose(w, node, None);
+    }
+    key.to_string()
+}
+
+fn ruby_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
+    lose(w, node, None);
+    let mut out = String::new();
+    for pair in super::node::list(node, "pairs").unwrap_or(&[]) {
+        let base = write_inlines(
+            w,
+            &refs(super::node::list(pair, "base").unwrap_or(&[])),
+            flags,
+        );
+        let annotation = write_inlines(
+            w,
+            &refs(super::node::list(pair, "annotation").unwrap_or(&[])),
+            flags,
+        );
+        out.push_str(&base);
+        out.push('(');
+        out.push_str(&annotation);
+        out.push(')');
+    }
+    out
+}
+
+/// C2-A-175: a node with no spelling of its own is its children, or its fallback.
+fn children_only<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
+    lose(w, node, None);
+    let kids = super::node::list(node, "fallback").unwrap_or_else(|| children(node));
+    write_inlines(w, &refs(kids), flags)
+}
+
+fn inline_extension<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
+    let name = s(node, "name").unwrap_or("");
+    if !name.contains('.') {
+        let content = write_inlines(w, &refs(children(node)), flags);
+        return format!(":{name}[{content}]");
+    }
+    if let Some(source) = node
+        .get("source")
+        .filter(|src| s(src, "form") == Some("inline"))
+    {
+        let form = format!(
+            ":{}[{}]",
+            s(source, "name").unwrap_or(""),
+            s(source, "body").unwrap_or("")
+        );
+        let same = w.extensions.is_empty() || {
+            let doc = super::check::parse_chunk(w, &format!("{form}{}\n", plain_block(node)));
+            match children(&doc) {
+                [p] => {
+                    ty(p) == "paragraph"
+                        && matches!(children(p), [x] if super::node::trees_equal(node, x))
+                }
+                _ => false,
+            }
+        };
+        if same {
+            return form;
+        }
+    }
+    lose(w, node, None);
+    let kids = super::node::list(node, "fallback").unwrap_or_else(|| children(node));
+    write_inlines(w, &refs(kids), flags)
+}
+
+fn own<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> Option<String> {
+    Some(match ty(node) {
+        "text" => text_node(w, node, flags),
+        "soft_break" => "\n".into(),
+        "hard_break" => if flags & BARE_BREAKS != 0 {
+            "\n"
+        } else {
+            "\\\n"
+        }
+        .into(),
+        "emphasis" => paired(w, node, flags, '/', 1, IN_EMPHASIS),
+        "strong" => paired(w, node, flags, '*', 2, IN_STRONG),
+        "underline" => braced(w, node, flags, '_', '_'),
+        "strike" => braced(w, node, flags, '~', '~'),
+        "highlight" => braced(w, node, flags, '=', '='),
+        "superscript" => braced(w, node, flags, '^', '^'),
+        "subscript" => braced(w, node, flags, ',', ','),
+        "insert" => braced(w, node, flags, '+', '+'),
+        "delete" => braced(w, node, flags, '-', '-'),
+        "critic_comment" => format!("{{#{}#}}", cell_value(w, node, text(node), flags)),
+        "span" => format!("[{}]", write_inlines(w, &refs(children(node)), flags)),
+        "link" => link_node(w, node, flags),
+        "image" => image_node(w, node, flags),
+        "inline_footnote" => format!(
+            "^[{}]",
+            write_inlines(w, &refs(children(node)), flags | IN_NOTE)
+        ),
+        "inline_extension" => inline_extension(w, node, flags),
+        "footnote_ref" => format!("[^{}]", label_text(s(node, "key").unwrap_or(""))),
+        "code" => span_value(w, node, flags),
+        "literal_inline" => format!("!{}", span_value(w, node, flags)),
+        "math" => {
+            let mark = if super::node::flag(node, "display") {
+                "$$"
+            } else {
+                "$"
+            };
+            format!("{mark}{}", span_value(w, node, flags))
+        }
+        "raw_inline" => format!(
+            "{}{{={}}}",
+            span_value(w, node, flags),
+            s(node, "format").unwrap_or("")
+        ),
+        "symbol" => format!(":{}:", s(node, "name").unwrap_or("")),
+        "mention" => mention_node(w, node),
+        "tag" => format!("#{}", s(node, "name").unwrap_or("")),
+        "autolink" => autolink_node(w, node),
+        "xref" => format!("</#{}>", s(node, "key").unwrap_or("")),
+        "non_breaking_space" => "\\ ".into(),
+        "smart_punctuation" => s(node, "source").unwrap_or("").to_string(),
+        "abbreviation" => abbreviation_node(w, node),
+        // The mark of a caption number is the first bare `#` of the caption (C2-B-207).
+        "caption_number" => "#".into(),
+        "comment" => comment_node(w, node, flags),
+        "citation_group" => {
+            lose(w, node, None);
+            s(node, "raw").unwrap_or("").to_string()
+        }
+        "ruby" => ruby_node(w, node, flags),
+        _ => return None,
+    })
+}
+
+pub fn write_inline<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
+    let out = match own(w, node, flags) {
+        Some(out) => out,
+        None => children_only(w, node, flags),
+    };
+    // C2-W-076: the attribute block is glued to its host. C2-I-040: a span takes the block with no part.
+    let block = brace_block(
+        node,
+        &BlockParts {
+            pipes: flags & IN_CELL != 0,
+            ..BlockParts::default()
+        },
+    );
+    if ty(node) == "span" && block.is_empty() {
+        format!("{out}{{}}")
+    } else {
+        out + &block
+    }
+}
+
+/// C2-W-112: the code span `nodes[at]` has the code span behind it glued to it.
+pub fn joins_next_code(nodes: &[N<'_>], at: usize) -> bool {
+    let Some(&node) = nodes.get(at) else {
+        return false;
+    };
+    ty(node) == "code"
+        && plain_block(node).is_empty()
+        && nodes.get(at + 1).is_some_and(|n| ty(n) == "code")
+}
+
+fn part_end(w: &mut Writer<'_>, nodes: &[N<'_>], at: usize) -> usize {
+    if !joins_next_code(nodes, at) {
+        return at + 1;
+    }
+    let mut end = at + 1;
+    while joins_next_code(nodes, end - 1) {
+        if let Some(&n) = nodes.get(end) {
+            lose(w, n, None);
+        }
+        end += 1;
+    }
+    end
+}
+
+/// C2-W-112: code spans with nothing between them are written as one span.
+fn code_run(nodes: &[N<'_>], from: usize, end: usize) -> String {
+    let mut value = String::new();
+    for n in nodes.get(from..end).unwrap_or(&[]) {
+        if ty(n) == "code" {
+            value.push_str(text(n));
+        }
+    }
+    let last = nodes
+        .get(end.saturating_sub(1))
+        .map_or(String::new(), |n| plain_block(n));
+    code_span(&value) + &last
+}
+
+fn unspelled_space(w: &mut Writer<'_>, node: &Value) -> String {
+    lose(w, node, None);
+    "\u{a0}".into()
+}
+
+fn write_part<'t>(
+    w: &mut Writer<'t>,
+    nodes: &[N<'t>],
+    at: usize,
+    end: usize,
+    flags: u32,
+) -> String {
+    let Some(&node) = nodes.get(at) else {
+        return String::new();
+    };
+    let next = nodes.get(at + 1).copied();
+    if ty(node) == "non_breaking_space" && super::node::is(next, "soft_break") {
+        return unspelled_space(w, node);
+    }
+    let part = if end > at + 1 {
+        code_run(nodes, at, end)
+    } else {
+        write_inline(w, node, flags)
+    };
+    // C2-W-022: no space or tab of text stands at the end of a line.
+    if ty(node) == "text" && super::node::is(next, "soft_break") {
+        trim_end(&part).to_string()
+    } else {
+        part
+    }
+}
+
+/// C2-W-069: a bare mark glued to the same mark before it makes one run, so the node is braced.
+fn glued_part<'t>(
+    w: &mut Writer<'t>,
+    nodes: &[N<'t>],
+    at: usize,
+    end: usize,
+    flags: u32,
+    before: Option<char>,
+) -> String {
+    let Some(&node) = nodes.get(at) else {
+        return String::new();
+    };
+    let mark = match ty(node) {
+        "emphasis" => Some('/'),
+        "strong" => Some('*'),
+        _ => None,
+    };
+    if let (Some(m), Some(next)) = (mark, nodes.get(end)) {
+        if ty(next) == "text" && text(next).starts_with(m) {
+            w.forms.insert(id(node), 1);
+        }
+    }
+    let part = write_part(w, nodes, at, end, flags);
+    if mark.is_none() || part.is_empty() || part.chars().next() != before {
+        return part;
+    }
+    w.forms.insert(id(node), 1);
+    write_part(w, nodes, at, end, flags)
+}
+
+/// C2-I-102: in a hard-break block a line ending alone at the start of a line is a blank line.
+pub fn line_start_break(node: &Value, line_start: bool) -> Option<&'static str> {
+    (ty(node) == "hard_break" && line_start).then_some("\\\n")
+}
+
+fn unclosed_braces(value: &str) -> Vec<usize> {
+    let b = value.as_bytes();
+    let mut open: Vec<(u8, usize)> = Vec::new();
+    let mut at = 0;
+    while at + 1 < b.len() {
+        let c = b.get(at).copied().unwrap_or(0);
+        let n = b.get(at + 1).copied().unwrap_or(0);
+        if c == b'\\' && n.is_ascii_punctuation() {
+            at += 2;
+            continue;
+        }
+        if c == b'{' && b"*/-=".contains(&n) {
+            open.push((n, at));
+        } else if n == b'}' && open.last().is_some_and(|o| o.0 == c) {
+            open.pop();
+        }
+        at += 1;
+    }
+    open.into_iter().map(|o| o.1).collect()
+}
+
+fn brace_before_comment_closer(
+    w: &mut Writer<'_>,
+    node: &Value,
+    comment: Option<&Value>,
+    after: Option<&Value>,
+    flags: u32,
+) {
+    let Some(comment) = comment else { return };
+    if ty(comment) != "comment"
+        || s(comment, "form") != Some("line")
+        || after.is_some()
+        || flags & (IN_NOTE | IN_BRACKET) == 0
+    {
+        return;
+    }
+    for at in unclosed_braces(text(node)) {
+        w.add_escape(node, at);
+    }
+}
+
+fn span_closing_bracket(w: &mut Writer<'_>, node: &Value, before: Option<&Value>) {
+    let Some(before) = before else { return };
+    if !matches!(ty(before), "strong" | "emphasis") || !text(node).contains(']') {
+        return;
+    }
+    let opens = children(before).iter().any(|c| {
+        if ty(c) != "text" {
+            return false;
+        }
+        let v = text(c);
+        v.strip_prefix("^[").is_some_and(|rest| {
+            rest.find('[')
+                .is_some_and(|open| rest.get(..open).is_some_and(|r| !r.contains(']')))
+        })
+    });
+    if !opens {
+        return;
+    }
+    if let Some(closing) = text(node).find(']') {
+        if !w.escapes_of(node).contains(&closing) {
+            w.add_escape(node, closing);
+        }
+    }
+}
+
+fn brace_beside_pair(
+    w: &mut Writer<'_>,
+    node: &Value,
+    next: Option<&Value>,
+    at_end: bool,
+    flags: u32,
+) {
+    let paired_next = match next.map(ty) {
+        Some("strong") => next.is_some_and(|n| !braced_pair(w, n, flags, 2, IN_STRONG)),
+        Some("emphasis") => next.is_some_and(|n| !braced_pair(w, n, flags, 1, IN_EMPHASIS)),
+        _ => false,
+    };
+    let paired_end = at_end && flags & (IN_STRONG | IN_EMPHASIS) != 0;
+    let value = text(node);
+    if !value.ends_with('{') || (!paired_next && !paired_end) {
+        return;
+    }
+    w.add_escape(node, value.len() - 1);
+}
+
+/// C2-W-097: a backslash that ends a text is written as two where what follows
+/// it is ASCII punctuation, a space or the end of a line.
+fn double_last_backslash<'t>(
+    w: &mut Writer<'t>,
+    node: N<'t>,
+    nodes: &[N<'t>],
+    next: usize,
+    flags: u32,
+) {
+    let value = text(node);
+    if !value.ends_with('\\') {
+        return;
+    }
+    let last = value.len() - 1;
+    if w.escapes_of(node).last() == Some(&last) {
+        return;
+    }
+    if let Some(&after) = nodes.get(next) {
+        if !matches!(ty(after), "soft_break" | "hard_break") {
+            let end = part_end(w, nodes, next);
+            let spelled = write_part(w, nodes, next, end, flags);
+            let first = spelled.bytes().next();
+            if first.is_some_and(|c| c != b' ' && !c.is_ascii_punctuation()) {
+                return;
+            }
+        }
+    }
+    w.sp.escapes.entry(id(node)).or_default().push(last);
+}
+
+/// C2-W-125 case six: a backtick of text glued behind a span lengthens its closing run.
+fn escape_glued_backtick(w: &mut Writer<'_>, node: &Value, before: Option<&Value>) {
+    let Some(before) = before else { return };
+    if !text(node).starts_with('`')
+        || has(before, "attrs")
+        || !matches!(ty(before), "code" | "literal_inline" | "math")
+    {
+        return;
+    }
+    if w.escapes_of(node).first() != Some(&0) {
+        w.add_escape(node, 0);
+    }
+}
+
+fn place_escapes<'t>(
+    w: &mut Writer<'t>,
+    nodes: &[N<'t>],
+    at: usize,
+    end: usize,
+    flags: u32,
+    after_bang: bool,
+) {
+    let Some(&node) = nodes.get(at) else { return };
+    if ty(node) == "text" {
+        double_last_backslash(w, node, nodes, end, flags);
+        escape_glued_backtick(
+            w,
+            node,
+            at.checked_sub(1).and_then(|i| nodes.get(i)).copied(),
+        );
+        brace_before_comment_closer(
+            w,
+            node,
+            nodes.get(end).copied(),
+            nodes.get(end + 1).copied(),
+            flags,
+        );
+        span_closing_bracket(
+            w,
+            node,
+            at.checked_sub(1).and_then(|i| nodes.get(i)).copied(),
+        );
+        brace_beside_pair(w, node, nodes.get(end).copied(), end == nodes.len(), flags);
+    }
+    // Behind an unescaped `!` the bracket reads as span text whatever the caret starts.
+    if ty(node) == "span" && !after_bang {
+        escape_leading_caret(w, children(node), flags);
+    }
+}
+
+pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> String {
+    let mut out = String::new();
+    let mut line_start = true;
+    let mut last: Option<char> = None;
+    let mut at = 0;
+    while at < nodes.len() {
+        let Some(&node) = nodes.get(at) else { break };
+        // C2-I-023: a line comment starts at the start of a line or after whitespace.
+        if ty(node) == "comment" && s(node, "form") != Some("braced") && !line_start {
+            out.push(' ');
+            last = Some(' ');
+        }
+        // C2-L-021: a fragment of a continuation row starts at this node.
+        if flags & IN_CELL != 0
+            && w.wrap_starts
+                .as_ref()
+                .is_some_and(|s| s.contains(&id(node)))
+        {
+            if out.ends_with(' ') {
+                out.pop();
+            }
+            out.push('\n');
+            line_start = true;
+            last = Some('\n');
+        }
+        let end = part_end(w, nodes, at);
+        let after_bang = last == Some('!')
+            && !out
+                .get(..out.len().saturating_sub(1))
+                .is_some_and(|o| o.ends_with('\\'));
+        place_escapes(w, nodes, at, end, flags, after_bang);
+        let part = if let Some(b) = line_start_break(node, line_start) {
+            b.to_string()
+        } else if ty(node) == "hard_break"
+            && flags & BARE_BREAKS != 0
+            && matches!(last, Some(' ' | '\t'))
+        {
+            "\\\n".to_string()
+        } else {
+            glued_part(w, nodes, at, end, flags, last)
+        };
+        out.push_str(&part);
+        if let Some(c) = part.chars().last() {
+            last = Some(c);
+        }
+        line_start = last == Some('\n') || (line_start && part.is_empty());
+        at = end;
+    }
+    out
+}
+
+/// The source of the content of a text leaf: no space or tab of text stands at its end (C2-W-022).
+pub fn write_content<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> String {
+    let Some(&last) = nodes.last() else {
+        return String::new();
+    };
+    if ty(last) == "non_breaking_space" {
+        let head = write_inlines(w, nodes.get(..nodes.len() - 1).unwrap_or(&[]), flags);
+        return head + &unspelled_space(w, last);
+    }
+    let out = write_inlines(w, nodes, flags);
+    if ty(last) == "text" {
+        return trim_end(&out).to_string();
+    }
+    if ty(last) != "hard_break" || !out.ends_with('\n') {
+        return out;
+    }
+    let b = out.as_bytes();
+    let before = b.len().checked_sub(3).and_then(|i| b.get(i)).copied();
+    let spelled =
+        out.ends_with("\\\n") && (out.len() == 2 || matches!(before, Some(b'\n' | b' ' | b'\t')));
+    let trimmed = out.get(..out.len() - 1).unwrap_or("");
+    if flags & BARE_BREAKS != 0 && !spelled {
+        format!("{trimmed}\\")
+    } else {
+        trimmed.to_string()
+    }
+}

@@ -5,7 +5,7 @@
 mod code;
 mod expand;
 pub mod fs;
-mod lines;
+pub(crate) mod lines;
 mod section;
 mod shift;
 
