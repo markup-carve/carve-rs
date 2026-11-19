@@ -12,21 +12,6 @@ use serde_json::Value;
 /// `(entry id, reason)`.
 const HELD: &[(&str, &str)] = &[];
 
-#[test]
-fn writer_repair_limit_reports_writer_refused() {
-    let source = format!("x {}", "[a][\\]".repeat(4_000));
-    let written = Carve::default()
-        .format_with_diagnostics(source.as_str(), &WriteOptions::default())
-        .expect("format should return its nearest source with diagnostics");
-    assert!(
-        written
-            .diagnostics
-            .iter()
-            .any(|entry| entry.code == "writer-refused"),
-        "C2-W-133 must report the engine's repair limit"
-    );
-}
-
 fn load(path: &str) -> Value {
     let text = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))
         .unwrap_or_default();

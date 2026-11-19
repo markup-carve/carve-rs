@@ -456,6 +456,31 @@ fn repeated_repair(w: &mut Writer<'_>, group: &[Value], h: &mut History) -> bool
     refuse
 }
 
+#[cfg(test)]
+mod repair_limit_test {
+    use super::*;
+
+    #[test]
+    fn exhausted_repair_budget_reports_writer_refused() {
+        let pool = typed_arena::Arena::new();
+        let mut writer = Writer::new(&pool, false);
+        writer.lines.push("x".into());
+        let group = [
+            serde_json::json!({"type": "paragraph", "children": [{"type": "text", "value": "x"}]}),
+        ];
+        let mut history = History {
+            ids: HashMap::new(),
+            recent: std::collections::VecDeque::new(),
+            seen: HashSet::new(),
+            rounds: 1,
+            remaining: 0,
+        };
+
+        assert!(repeated_repair(&mut writer, &group, &mut history));
+        assert_eq!(writer.sp.losses[0].code, "writer-refused");
+    }
+}
+
 /// The text nodes below `nodes` in the order they are written: a title before the children.
 fn text_order(nodes: &[Value], order: &mut HashMap<usize, usize>) {
     for n in nodes {
