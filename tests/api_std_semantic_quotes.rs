@@ -17,8 +17,8 @@ fn smart() -> Options {
     }
 }
 
-fn quotes(source: &str, options: SmartQuotesOptions) -> String {
-    html_with(source, extensions::smart_quotes(&options), &smart())
+fn quotes(source: &str, options: &SmartQuotesOptions) -> String {
+    html_with(source, extensions::smart_quotes(options), &smart())
 }
 
 fn locale(name: &str) -> SmartQuotesOptions {
@@ -71,7 +71,7 @@ fn semantic_span_makes_lint_report_the_added_keys_outside_a_span() {
         lint_codes(source, &["carve.semanticSpan"]),
         ["semantic-attribute-outside-span"]
     );
-    assert!(lint_codes(source, &[]).is_empty());
+    assert_eq!(lint_codes(source, &[]), Vec::<String>::new());
     assert_eq!(
         lint_codes("[x]{samp=1}\n", &["carve.semanticSpan"]),
         ["semantic-attribute-value-ignored"]
@@ -81,7 +81,7 @@ fn semantic_span_makes_lint_report_the_added_keys_outside_a_span() {
 #[test]
 fn smart_quotes_write_the_locale_quotes_and_leave_apostrophes() {
     assert_eq!(
-        quotes("\"Hi\" it's 'x'", locale("de")),
+        quotes("\"Hi\" it's 'x'", &locale("de")),
         "<p>„Hi“ it’s ‚x‘</p>"
     );
     let off = Options {
@@ -94,14 +94,14 @@ fn smart_quotes_write_the_locale_quotes_and_leave_apostrophes() {
 
 #[test]
 fn smart_quotes_use_the_exact_locale_then_its_language_then_english() {
-    assert_eq!(quotes("\"a\"", locale("de_CH")), "<p>«a»</p>");
-    assert_eq!(quotes("\"a\"", locale("fr-CA")), "<p>«&nbsp;a&nbsp;»</p>");
-    assert_eq!(quotes("\"a\"", locale("xx")), "<p>“a”</p>");
+    assert_eq!(quotes("\"a\"", &locale("de_CH")), "<p>«a»</p>");
+    assert_eq!(quotes("\"a\"", &locale("fr-CA")), "<p>«&nbsp;a&nbsp;»</p>");
+    assert_eq!(quotes("\"a\"", &locale("xx")), "<p>“a”</p>");
     let close = SmartQuotesOptions {
         close_double_quote: Some("!".into()),
         ..SmartQuotesOptions::default()
     };
-    assert_eq!(quotes("\"a\"", close), "<p>“a!</p>");
+    assert_eq!(quotes("\"a\"", &close), "<p>“a!</p>");
 }
 
 #[test]
