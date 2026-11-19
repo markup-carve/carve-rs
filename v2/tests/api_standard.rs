@@ -11,9 +11,6 @@ const HELD: &[&str] = &[
     // C2-X-053: the inserted node has `slots: {}`, which the schema refuses
     // (`minProperties: 1`); spec inconsistency.
     "CC-1221", "CC-1229",
-    // C2-X-059, C2-X-060: the `imgFence` matchers and sanitizer are not
-    // implemented yet.
-    "CC-1225", "CC-1226", "CC-1228",
 ];
 
 fn call(request: &Value) -> Value {

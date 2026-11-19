@@ -31,6 +31,7 @@
 
 mod error;
 pub mod extension;
+mod img_fence;
 mod import;
 pub mod json;
 mod options;
@@ -329,6 +330,17 @@ impl Carve {
         let matchers = self.standard.inline_matchers();
         if !matchers.is_empty() {
             failed.extend(standard::claim_inline(&mut value, &matchers));
+        }
+        let fences = self.standard.fence_matchers();
+        if !fences.is_empty() {
+            let claimed = img_fence::claim(&mut value, &fences);
+            let declared: Vec<(&str, Value)> = claimed
+                .into_iter()
+                .map(|n| (n, serde_json::json!([])))
+                .collect();
+            if !declared.is_empty() {
+                standard::declare_names(&mut value, &declared);
+            }
         }
         let top = parsed.tree.top.take();
         parsed.tree = Tree::read(&value.to_string(), top)?;

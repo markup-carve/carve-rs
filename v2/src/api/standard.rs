@@ -11,11 +11,18 @@ use std::fmt::Write as _;
 /// The standard extensions a host enables, and whether their standard
 /// renderers are registered.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // one flag per extension and renderer
 pub(crate) struct Standard {
     pub tabs: bool,
     pub tabs_renderer: bool,
     pub wiki: bool,
     pub cite: bool,
+    /// C2-X-059: `carve.imgFence.img` and `carve.imgFence.image`, and
+    /// whether their standard renderer is registered.
+    pub img: bool,
+    pub image: bool,
+    pub img_renderer: bool,
+    pub image_renderer: bool,
 }
 
 impl Standard {
@@ -35,6 +42,14 @@ impl Standard {
             }
             "carve.wiki" => &mut self.wiki,
             "carve.cite" => &mut self.cite,
+            "carve.imgFence.img" => {
+                self.img_renderer |= renderer;
+                &mut self.img
+            }
+            "carve.imgFence.image" => {
+                self.image_renderer |= renderer;
+                &mut self.image
+            }
             _ => {
                 return Err(Error::option(
                     "extensions",
@@ -47,7 +62,25 @@ impl Standard {
     }
 
     pub(crate) const fn is_empty(self) -> bool {
-        !(self.tabs || self.wiki || self.cite)
+        !(self.tabs || self.wiki || self.cite || self.img || self.image)
+    }
+
+    /// The fence matchers enabled: language and qualified name.
+    pub(crate) fn fence_matchers(self) -> Vec<(&'static str, &'static str)> {
+        super::img_fence::MATCHERS
+            .iter()
+            .filter(|(name, _)| if *name == "img" { self.img } else { self.image })
+            .copied()
+            .collect()
+    }
+
+    /// Whether the standard renderer of the claimed extension `name` is registered.
+    pub(crate) fn renders(self, name: &str) -> bool {
+        match name {
+            "carve.imgFence.img" => self.img_renderer,
+            "carve.imgFence.image" => self.image_renderer,
+            _ => false,
+        }
     }
 
     /// The inline matchers enabled: source name and qualified name.
@@ -78,14 +111,7 @@ pub(crate) fn claim_inline(
         match v {
             Value::Array(items) => pending.extend(items.iter_mut()),
             Value::Object(map) => {
-                let matcher = (map.get("type").and_then(Value::as_str) == Some("inline_extension")
-                    && map.get("version").is_none())
-                .then(|| {
-                    let name = map.get("name").and_then(Value::as_str);
-                    matchers.iter().find(|(source, _)| Some(*source) == name)
-                })
-                .flatten();
-                if let Some(&(source, qualified)) = matcher {
+                if let Some(&(source, qualified)) = inline_matcher(map, matchers) {
                     match inline_node(map, source, qualified) {
                         Some(node) => {
                             *map = node;
@@ -117,6 +143,19 @@ pub(crate) fn claim_inline(
         declare_names(doc, &declared);
     }
     failed
+}
+
+fn inline_matcher<'m>(
+    map: &Map<String, Value>,
+    matchers: &'m [(&'static str, &'static str)],
+) -> Option<&'m (&'static str, &'static str)> {
+    if map.get("type").and_then(Value::as_str) != Some("inline_extension")
+        || map.get("version").is_some()
+    {
+        return None;
+    }
+    let name = map.get("name").and_then(Value::as_str)?;
+    matchers.iter().find(|(source, _)| *source == name)
 }
 
 fn inline_node(
@@ -372,7 +411,7 @@ fn declare(doc: &mut Value) {
 }
 
 /// C2-A-017: the root declares each qualified extension once, sorted by name.
-fn declare_names(doc: &mut Value, names: &[(&str, Value)]) {
+pub(crate) fn declare_names(doc: &mut Value, names: &[(&str, Value)]) {
     let mut list: Vec<Value> = at(doc, "/extensions")
         .as_array()
         .cloned()

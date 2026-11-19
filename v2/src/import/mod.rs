@@ -4,10 +4,10 @@
 mod align;
 mod attrs;
 mod blocks;
-mod dom;
+pub(crate) mod dom;
 mod inline;
 mod notes;
-mod parse;
+pub(crate) mod parse;
 mod template;
 
 use crate::api::{Entry, Range};
