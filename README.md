@@ -177,6 +177,10 @@ The same call enables the other standard extensions, all provisional:
 - `carve.mathBlock`: a `math` fence as `<div class="math display">\[...\]</div>`.
 - `carve.codeGroup`: a `code-group` div whose body is code blocks as one switcher (radio inputs; one headed section per panel in `static` mode).
 - `carve.codeCallouts`: a document transform that turns a trailing `<n>` on a code line into a callout bubble and a following `<n> text` paragraph into its list.
+- `carve.details`: a `details` div as `<details>` with its title as `<summary>` (`Details` without one), expanded in `static` mode.
+- `carve.spoiler`: `:spoiler[x]` as `<span class="spoiler">` and a `spoiler` div as `<details class="spoiler">`; `static` mode reveals both.
+- `carve.wiki` with its standard renderer: `:wiki[Page#anchor|Display]` as a link through a slug of the page, which the URL policy must allow (C2-X-057). `wikilinks` takes a URL generator, the link classes and `new_window`.
+- `carve.tabNormalize` (tabs in code as two spaces; `tab_normalize(width)` for another width) and `carve.inlineFootnotesToParentheses`: document transforms of the render view. `default_attributes` adds attributes per node type under the authored ones and has no JSON form.
 
 These come from `api::extensions`, the matcher surface of C2-X-005 to C2-X-031 with the ported carve-js standard extensions. A factory returns a `Bundle` of extensions and matchers that `Carve::register` adds; the factories take the options the JSON form cannot carry, such as a build-time renderer for `static` mode (`build`), a highlighter or the `aria` mode of `code_group`. Without a build-time renderer, `static` mode writes the fallback code block (C2-X-052). Two matchers of one source name fail at registration (C2-X-014).
 

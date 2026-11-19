@@ -48,7 +48,12 @@ pub(crate) fn render_with_details(
 pub(crate) trait ExtensionHook {
     /// The HTML of the node, given as its JSON value; `None` when no renderer
     /// of the selected channel takes it, `Some(Err)` when the renderer failed.
-    fn render(&self, node: &serde_json::Value, block: bool) -> Option<Result<String, ()>>;
+    fn render(
+        &self,
+        node: &serde_json::Value,
+        block: bool,
+        depth: usize,
+    ) -> Option<Result<String, ()>>;
 }
 
 /// [`render_with_details`] with a host's extension renderers.
@@ -337,7 +342,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     ) -> Option<bool> {
         let hook = self.hook?;
         let value = serde_json::to_value(n).ok()?;
-        match hook.render(&value, block)? {
+        match hook.render(&value, block, depth)? {
             Ok(html) => {
                 match out {
                     Some(out) => out.push_str(&html),
