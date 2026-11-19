@@ -3,6 +3,7 @@
 
 use std::io::{Read, Write};
 
+#[path = "../cli/cli2.rs"]
 mod cli2;
 mod lint_cli;
 

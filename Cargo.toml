@@ -15,7 +15,7 @@ keywords = ["carve", "markup", "parser", "html"]
 categories = ["parser-implementations", "text-processing"]
 # build.rs generates the tables from spec-data/; the tests and their fixtures
 # stay out of the package.
-include = ["/src/**/*", "/build.rs", "/spec-data/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+include = ["/src/**/*", "/cli/**/*", "/build.rs", "/spec-data/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
 [features]
 # The filesystem resolver, ON by default. Off, the library carries no code that
