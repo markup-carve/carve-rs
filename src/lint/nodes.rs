@@ -761,7 +761,12 @@ fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
         .lines()
         .next()
         .is_some_and(|line| line.trim_end() == "---")
-        && (raw.lines().nth(1).is_none_or(|line| line.trim().is_empty()) || !value.contains(':'))
+        && raw.lines().nth(1).is_some()
+        && (raw
+            .lines()
+            .nth(1)
+            .is_some_and(|line| line.trim().is_empty())
+            || !value.contains(':'))
     {
         sink.emit("frontmatter-shaped-thematic-break", item, &[], 0);
     }
