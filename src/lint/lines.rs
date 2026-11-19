@@ -223,15 +223,7 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
     for range in ranges {
         let kind = range.kind.as_str();
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
-        let flags = match kind {
-            "code_block" | "raw_block" => OPAQUE,
-            "frontmatter" => OPAQUE | FRONTMATTER,
-            "list_item" => LIST_ITEM | CONTAINER,
-            "footnote" => FOOTNOTE | CONTAINER,
-            "definition_description" => DESCRIPTION | CONTAINER,
-            "block_quote" | "div" => CONTAINER,
-            _ => 0,
-        };
+        let flags = range_flags(kind);
         if paragraph_like || flags != 0 {
             let first = range.start_line.max(1) - 1;
             let covered = facts.get_mut(first..range.end_line.min(count));
@@ -269,6 +261,18 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
         }
     }
     facts
+}
+
+fn range_flags(kind: &str) -> u8 {
+    match kind {
+        "code_block" | "raw_block" => OPAQUE,
+        "frontmatter" => OPAQUE | FRONTMATTER,
+        "list_item" => LIST_ITEM | CONTAINER,
+        "footnote" => FOOTNOTE | CONTAINER,
+        "definition_description" => DESCRIPTION | CONTAINER,
+        "block_quote" | "div" => CONTAINER,
+        _ => 0,
+    }
 }
 
 const OPAQUE: u8 = 1;
