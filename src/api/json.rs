@@ -95,17 +95,7 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Reply, Error> {
         .get("call")
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
-    let export = matches!(name, "write" | "writeWithDiagnostics")
-        && req
-            .get("target")
-            .and_then(Value::as_str)
-            .and_then(crate::export::Target::from_name)
-            .is_some();
-    let opts = if export {
-        super::options::export_from_json(name, req.get("options"))?
-    } else {
-        super::options::from_json(name, req.get("options"))?
-    };
+    let opts = call_options(name, req)?;
     let enabled;
     let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
         host
@@ -138,6 +128,22 @@ fn helper_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Err
         "headingId" => heading_id_call(req, opts),
         "positionOf" => position_call(req),
         _ => tree_call(name, req),
+    }
+}
+
+/// The options of a request; a `write` to an export target also reads the
+/// export options of the render stage.
+fn call_options(name: &str, req: &Value) -> Result<CallOptions, Error> {
+    let export = matches!(name, "write" | "writeWithDiagnostics")
+        && req
+            .get("target")
+            .and_then(Value::as_str)
+            .and_then(crate::export::Target::from_name)
+            .is_some();
+    if export {
+        super::options::export_from_json(name, req.get("options"))
+    } else {
+        super::options::from_json(name, req.get("options"))
     }
 }
 

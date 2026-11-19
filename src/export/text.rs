@@ -1,6 +1,9 @@
 //! The plain-text and ANSI exports. They share one walk; the ANSI target adds
 //! SGR styling, box tables and a quote bar.
 
+// The handlers of a dispatch table share one signature, so some return `Ok` only.
+#![allow(clippy::unnecessary_wraps)]
+
 use super::common::{
     Exporter, children, each_node, flag, footnote_definitions, int, is_skipped_break,
     is_unresolved, key_value, list, reference_label, slot, strip_bidi, sv, ty,
@@ -298,143 +301,194 @@ fn pair_key(term: &str, expansion: &str) -> (String, String) {
 }
 
 fn block(s: &mut State<'_, '_>, node: &Value) -> R {
-    match ty(node) {
-        "section" => blocks(s, children(node)),
-        "heading" => {
-            let content = inlines(s, children(node))?;
-            Ok(heading(s, int(node, "level").unwrap_or(1), &content))
-        }
-        "paragraph" => {
-            let host = format!("{}\n\n", inlines(s, children(node))?);
-            let caption = s.caption(node);
-            captioned(s, host, caption, false)
-        }
-        "code_block" => {
-            let host = code_block(s, node)?;
-            let caption = s.caption(node);
-            captioned(s, host, caption, false)
-        }
-        "block_quote" => {
-            let host = block_quote(s, children(node))?;
-            let caption = s.caption(node);
-            captioned(s, host, caption, true)
-        }
-        "list" => list_block(s, node),
-        "thematic_break" => Ok(if s.ansi {
-            format!("{}\n\n", s.style(&"─".repeat(40), DIM))
-        } else {
-            "---\n\n".into()
-        }),
-        "table" => table(s, node),
-        "admonition" | "directive" | "div" => Ok(format!(
-            "{}{}",
-            title_line(s, node)?,
-            blocks(s, children(node))?
-        )),
-        "line_block" => {
-            let mut out = String::new();
-            for line in children(node) {
-                if ty(line) == "line" {
-                    out.push_str(&inlines(s, without_final_break(children(line)))?);
-                    out.push('\n');
-                }
-            }
+    BLOCKS
+        .iter()
+        .find(|(name, _)| *name == ty(node))
+        .map_or_else(|| Ok(String::new()), |(_, handler)| handler(s, node))
+}
+
+type BlockFn = fn(s: &mut State<'_, '_>, node: &Value) -> R;
+
+const BLOCKS: &[(&str, BlockFn)] = &[
+    ("section", block_section),
+    ("heading", block_heading),
+    ("paragraph", block_paragraph),
+    ("code_block", block_code_block),
+    ("block_quote", block_block_quote),
+    ("list", block_list),
+    ("thematic_break", block_thematic_break),
+    ("table", block_table),
+    ("admonition", block_admonition),
+    ("directive", block_admonition),
+    ("div", block_admonition),
+    ("line_block", block_line_block),
+    ("definition_list", block_definition_list),
+    ("figure_group", block_figure_group),
+    ("include", block_include),
+    ("block_extension", block_block_extension),
+    ("raw_block", block_raw_block),
+    ("abbreviation_def", block_abbreviation_def),
+    ("link_reference_definition", block_link_reference_definition),
+];
+
+fn block_section(s: &mut State<'_, '_>, node: &Value) -> R {
+    blocks(s, children(node))
+}
+
+fn block_heading(s: &mut State<'_, '_>, node: &Value) -> R {
+    let content = inlines(s, children(node))?;
+    Ok(heading(s, int(node, "level").unwrap_or(1), &content))
+}
+
+fn block_paragraph(s: &mut State<'_, '_>, node: &Value) -> R {
+    let host = format!("{}\n\n", inlines(s, children(node))?);
+    let caption = s.caption(node);
+    captioned(s, host, caption, false)
+}
+
+fn block_code_block(s: &mut State<'_, '_>, node: &Value) -> R {
+    let host = code_block(s, node)?;
+    let caption = s.caption(node);
+    captioned(s, host, caption, false)
+}
+
+fn block_block_quote(s: &mut State<'_, '_>, node: &Value) -> R {
+    let host = block_quote(s, children(node))?;
+    let caption = s.caption(node);
+    captioned(s, host, caption, true)
+}
+
+fn block_list(s: &mut State<'_, '_>, node: &Value) -> R {
+    list_block(s, node)
+}
+
+fn block_thematic_break(s: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok(if s.ansi {
+        format!("{}\n\n", s.style(&"─".repeat(40), DIM))
+    } else {
+        "---\n\n".into()
+    })
+}
+
+fn block_table(s: &mut State<'_, '_>, node: &Value) -> R {
+    table(s, node)
+}
+
+fn block_admonition(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!(
+        "{}{}",
+        title_line(s, node)?,
+        blocks(s, children(node))?
+    ))
+}
+
+fn block_line_block(s: &mut State<'_, '_>, node: &Value) -> R {
+    let mut out = String::new();
+    for line in children(node) {
+        if ty(line) == "line" {
+            out.push_str(&inlines(s, without_final_break(children(line)))?);
             out.push('\n');
-            Ok(out)
         }
-        "definition_list" => {
-            let mut out = String::new();
-            for child in children(node) {
-                match ty(child) {
-                    "definition_term" => {
-                        let text = inlines(s, children(child))?;
-                        out.push_str(&s.style(&text, &format!("{BOLD}{FG_YELLOW}")));
-                        out.push('\n');
-                    }
-                    "definition_description" => {
-                        out.push_str("  ");
-                        out.push_str(trim(&blocks(s, children(child))?));
-                        out.push('\n');
-                    }
-                    _ => {}
-                }
-            }
-            out.push('\n');
-            Ok(out)
-        }
-        "figure_group" => {
-            let mut out = match slot(node, "caption") {
-                Some(caption) => caption_block(s, caption)?,
-                None => String::new(),
-            };
-            for child in children(node) {
-                out.push_str(&panel(s, child)?);
-            }
-            Ok(out)
-        }
-        "include" => {
-            let caption = s.caption(node);
-            if node.get("children").is_none() {
-                let line = s.x.unexpanded_include(node);
-                let host = format!("{}\n\n", s.clean(&line));
-                return captioned(s, host, caption, false);
-            }
-            let host = blocks(s, children(node))?;
-            captioned(s, host, caption, false)
-        }
-        "block_extension" => {
-            let fallback = list(node, "fallback");
-            if fallback.is_empty() {
-                blocks(s, children(node))
-            } else {
-                blocks(s, fallback)
-            }
-        }
-        "raw_block" => {
-            if s.ansi {
-                let value = s.clean(sv(node, "value").unwrap_or(""));
-                let value = value.strip_suffix('\n').unwrap_or(&value);
-                let text = format!(
-                    "[raw:{}] {value}",
-                    s.clean(sv(node, "format").unwrap_or(""))
-                );
-                return Ok(format!("{}\n\n", s.style(&text, DIM)));
-            }
-            s.x.raw_dropped(node, true);
-            Ok(String::new())
-        }
-        "abbreviation_def" => {
-            let key = sv(node, "key").unwrap_or("");
-            let expansion = sv(node, "expansion").unwrap_or("");
-            // A definition whose expansion this run writes beside its occurrences loses its line.
-            if s.expanded_before.contains(&pair_key(key, expansion)) {
-                return Ok(String::new());
-            }
-            let text = format!("*[{}]: {}", s.clean(key), s.clean(expansion));
-            Ok(format!("{}\n\n", s.style(&text, DIM)))
-        }
-        "link_reference_definition" => {
-            let key = sv(node, "key").unwrap_or("");
-            if s.referenced.contains(key) {
-                return Ok(String::new());
-            }
-            let authored = strip_bidi(&s.clean(sv(node, "href").unwrap_or("")));
-            let href = s.x.allowed_destination(&authored, node);
-            let title =
-                sv(node, "tooltip").map_or_else(String::new, |t| format!(" \"{}\"", s.clean(t)));
-            let text = format!(
-                "[{}]:{}{title}",
-                s.clean(key),
-                if href.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {href}")
-                }
-            );
-            Ok(format!("{}\n\n", s.style(&text, DIM)))
-        }
-        _ => Ok(String::new()),
     }
+    out.push('\n');
+    Ok(out)
+}
+
+fn block_definition_list(s: &mut State<'_, '_>, node: &Value) -> R {
+    let mut out = String::new();
+    for child in children(node) {
+        match ty(child) {
+            "definition_term" => {
+                let text = inlines(s, children(child))?;
+                out.push_str(&s.style(&text, &format!("{BOLD}{FG_YELLOW}")));
+                out.push('\n');
+            }
+            "definition_description" => {
+                out.push_str("  ");
+                out.push_str(trim(&blocks(s, children(child))?));
+                out.push('\n');
+            }
+            _ => {}
+        }
+    }
+    out.push('\n');
+    Ok(out)
+}
+
+fn block_figure_group(s: &mut State<'_, '_>, node: &Value) -> R {
+    let mut out = match slot(node, "caption") {
+        Some(caption) => caption_block(s, caption)?,
+        None => String::new(),
+    };
+    for child in children(node) {
+        out.push_str(&panel(s, child)?);
+    }
+    Ok(out)
+}
+
+fn block_include(s: &mut State<'_, '_>, node: &Value) -> R {
+    let caption = s.caption(node);
+    if node.get("children").is_none() {
+        let line = s.x.unexpanded_include(node);
+        let host = format!("{}\n\n", s.clean(&line));
+        return captioned(s, host, caption, false);
+    }
+    let host = blocks(s, children(node))?;
+    captioned(s, host, caption, false)
+}
+
+fn block_block_extension(s: &mut State<'_, '_>, node: &Value) -> R {
+    let fallback = list(node, "fallback");
+    if fallback.is_empty() {
+        blocks(s, children(node))
+    } else {
+        blocks(s, fallback)
+    }
+}
+
+fn block_raw_block(s: &mut State<'_, '_>, node: &Value) -> R {
+    if s.ansi {
+        let value = s.clean(sv(node, "value").unwrap_or(""));
+        let value = value.strip_suffix('\n').unwrap_or(&value);
+        let text = format!(
+            "[raw:{}] {value}",
+            s.clean(sv(node, "format").unwrap_or(""))
+        );
+        return Ok(format!("{}\n\n", s.style(&text, DIM)));
+    }
+    s.x.raw_dropped(node, true);
+    Ok(String::new())
+}
+
+fn block_abbreviation_def(s: &mut State<'_, '_>, node: &Value) -> R {
+    let key = sv(node, "key").unwrap_or("");
+    let expansion = sv(node, "expansion").unwrap_or("");
+    // A definition whose expansion this run writes beside its occurrences loses its line.
+    if s.expanded_before.contains(&pair_key(key, expansion)) {
+        return Ok(String::new());
+    }
+    let text = format!("*[{}]: {}", s.clean(key), s.clean(expansion));
+    Ok(format!("{}\n\n", s.style(&text, DIM)))
+}
+
+fn block_link_reference_definition(s: &mut State<'_, '_>, node: &Value) -> R {
+    let key = sv(node, "key").unwrap_or("");
+    if s.referenced.contains(key) {
+        return Ok(String::new());
+    }
+    let authored = strip_bidi(&s.clean(sv(node, "href").unwrap_or("")));
+    let href = s.x.allowed_destination(&authored, node);
+    let title = sv(node, "tooltip").map_or_else(String::new, |t| format!(" \"{}\"", s.clean(t)));
+    let text = format!(
+        "[{}]:{}{title}",
+        s.clean(key),
+        if href.is_empty() {
+            String::new()
+        } else {
+            format!(" {href}")
+        }
+    );
+    Ok(format!("{}\n\n", s.style(&text, DIM)))
 }
 
 /// A panel of a figure group: its caption first, then the host, so the
@@ -791,147 +845,287 @@ fn styled(s: &mut State<'_, '_>, node: &Value, codes: &str) -> R {
 }
 
 fn inline(s: &mut State<'_, '_>, node: &Value) -> R {
-    Ok(match ty(node) {
-        "text" | "literal_inline" => s.clean(sv(node, "value").unwrap_or("")),
-        "emphasis" => styled(s, node, ITALIC)?,
-        "strong" => {
-            let kids = children(node);
-            if let [only] = kids
-                && s.ansi
-                && ty(only) == "emphasis"
-            {
-                let text = inlines(s, children(only))?;
-                s.style(&text, &format!("{BOLD}{ITALIC}"))
-            } else {
-                styled(s, node, BOLD)?
-            }
+    INLINES
+        .iter()
+        .find(|(name, _)| *name == ty(node))
+        .map_or_else(|| Ok(String::new()), |(_, handler)| handler(s, node))
+}
+
+type InlineFn = fn(s: &mut State<'_, '_>, node: &Value) -> R;
+
+const INLINES: &[(&str, InlineFn)] = &[
+    ("text", inline_text),
+    ("literal_inline", inline_text),
+    ("emphasis", inline_emphasis),
+    ("strong", inline_strong),
+    ("underline", inline_underline),
+    ("strike", inline_strike),
+    ("highlight", inline_highlight),
+    ("insert", inline_insert),
+    ("delete", inline_delete),
+    ("subscript", inline_subscript),
+    ("superscript", inline_superscript),
+    ("small_caps", inline_small_caps),
+    ("span", inline_span),
+    ("code", inline_code),
+    ("math", inline_math),
+    ("link", inline_link),
+    ("image", inline_image),
+    ("autolink", inline_autolink),
+    ("xref", inline_xref),
+    ("footnote_ref", inline_footnote_ref),
+    ("inline_footnote", inline_footnote_ref),
+    ("abbreviation", inline_abbreviation),
+    ("ruby", inline_ruby),
+    ("raw_inline", inline_raw_inline),
+    ("symbol", inline_symbol),
+    ("mention", inline_mention),
+    ("tag", inline_tag),
+    ("inline_extension", inline_inline_extension),
+    ("critic_comment", inline_critic_comment),
+    ("caption_number", inline_caption_number),
+    ("citation_group", inline_citation_group),
+    ("smart_punctuation", inline_smart_punctuation),
+    ("non_breaking_space", inline_non_breaking_space),
+    ("soft_break", inline_soft_break),
+    ("hard_break", inline_hard_break),
+];
+
+fn inline_text(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(s.clean(sv(node, "value").unwrap_or("")))
+}
+
+fn inline_emphasis(s: &mut State<'_, '_>, node: &Value) -> R {
+    styled(s, node, ITALIC)
+}
+
+fn inline_strong(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let kids = children(node);
+        if let [only] = kids
+            && s.ansi
+            && ty(only) == "emphasis"
+        {
+            let text = inlines(s, children(only))?;
+            s.style(&text, &format!("{BOLD}{ITALIC}"))
+        } else {
+            styled(s, node, BOLD)?
         }
-        "underline" => styled(s, node, UNDERLINE)?,
-        "strike" => styled(s, node, STRIKE)?,
-        "highlight" => styled(s, node, &format!("{REVERSE}{FG_YELLOW}"))?,
-        "insert" => styled(s, node, &format!("{FG_GREEN}{UNDERLINE}"))?,
-        "delete" => {
-            if s.ansi {
-                styled(s, node, &format!("{STRIKE}{FG_RED}"))?
-            } else {
-                format!("~{}~", inlines(s, children(node))?)
-            }
-        }
-        "subscript" => {
-            let text = inlines(s, children(node))?;
-            if s.ansi {
-                super::terminal::to_subscript(&text)
-            } else {
-                text
-            }
-        }
-        "superscript" => {
-            let text = inlines(s, children(node))?;
-            if s.ansi {
-                super::terminal::to_superscript(&text)
-            } else {
-                text
-            }
-        }
-        "small_caps" => inlines(s, children(node))?,
-        "span" => span(s, node)?,
-        "code" => {
-            let text = s.clean(sv(node, "value").unwrap_or(""));
-            s.style(&text, FG_BRIGHT_YELLOW)
-        }
-        "math" => {
-            let number = match int(node, "number") {
-                Some(n) if flag(node, "display") => {
-                    format!(" {} {n}", s.clean(sv(node, "numberPrefix").unwrap_or("")))
-                }
-                _ => String::new(),
-            };
-            let text = s.clean(sv(node, "value").unwrap_or(""));
-            s.style(&text, FG_BRIGHT_MAGENTA) + &number
-        }
-        "link" => link(s, node)?,
-        "image" => image(s, node),
-        "autolink" => {
-            let text = s.clean(sv(node, "text").or_else(|| sv(node, "href")).unwrap_or(""));
-            if s.x.link_depth > 0 {
-                text
-            } else {
-                s.style(&text, &format!("{UNDERLINE}{FG_BLUE}"))
-            }
-        }
-        "xref" => {
-            let (text, resolved) = s.x.xref_text(node);
-            let text = s.clean(&text);
-            if resolved && s.x.link_depth == 0 {
-                s.style(&text, &format!("{UNDERLINE}{FG_BLUE}"))
-            } else {
-                text
-            }
-        }
-        "footnote_ref" | "inline_footnote" => note_ref(s, node)?,
-        "abbreviation" => {
-            let raw = sv(node, "key").unwrap_or("");
-            let term = s.clean(raw);
-            let Some(expansion) = sv(node, "expansion") else {
-                return Ok(term);
-            };
-            if s.abbr_depth > 0 || !s.x.draw_derived(node, expansion) {
-                return Ok(term);
-            }
-            s.expanded.insert(pair_key(raw, expansion));
-            let tail = format!(" ({})", s.clean(expansion));
-            format!("{term}{}", s.style(&tail, DIM))
-        }
-        "ruby" => {
-            let target = s.x.target.name();
-            s.x.loss(
-                node,
-                "ruby-flattened",
-                format!("Flattened ruby annotation while rendering {target}"),
-            );
-            let mut out = String::new();
-            for pair in list(node, "pairs") {
-                out.push_str(&slot_inlines(s, list(pair, "base"))?);
-                out.push('(');
-                out.push_str(&slot_inlines(s, list(pair, "annotation"))?);
-                out.push(')');
-            }
-            out
-        }
-        "raw_inline" => {
-            s.x.raw_dropped(node, false);
-            String::new()
-        }
-        "symbol" => format!(":{}:", s.clean(sv(node, "name").unwrap_or(""))),
-        "mention" => match sv(node, "label") {
-            Some(label) => s.clean(label),
-            None => s.clean(&format!("@{}", sv(node, "target").unwrap_or(""))),
-        },
-        "tag" => format!("#{}", s.clean(sv(node, "name").unwrap_or(""))),
-        "inline_extension" => {
-            let dotted = sv(node, "name").is_some_and(|n| n.contains('.'));
-            match node.get("fallback").and_then(Value::as_array) {
-                Some(fallback) if dotted => slot_inlines(s, fallback)?,
-                _ => inlines(s, children(node))?,
-            }
-        }
-        "critic_comment" => {
-            let target = s.x.target.name();
-            s.x.loss(
-                node,
-                "editorial-comment-flattened",
-                format!("Flattened an editorial comment while rendering {target}"),
-            );
-            s.clean(sv(node, "value").unwrap_or(""))
-        }
-        "caption_number" => int(node, "n").map_or_else(|| "#".into(), |n| n.to_string()),
-        "citation_group" => s.clean(sv(node, "raw").unwrap_or("")),
-        "smart_punctuation" => s.x.smart_text(node).to_string(),
-        "non_breaking_space" => NBSP_HOLD.to_string(),
-        "soft_break" => " ".into(),
-        "hard_break" => "\n".into(),
-        _ => String::new(),
     })
+}
+
+fn inline_underline(s: &mut State<'_, '_>, node: &Value) -> R {
+    styled(s, node, UNDERLINE)
+}
+
+fn inline_strike(s: &mut State<'_, '_>, node: &Value) -> R {
+    styled(s, node, STRIKE)
+}
+
+fn inline_highlight(s: &mut State<'_, '_>, node: &Value) -> R {
+    styled(s, node, &format!("{REVERSE}{FG_YELLOW}"))
+}
+
+fn inline_insert(s: &mut State<'_, '_>, node: &Value) -> R {
+    styled(s, node, &format!("{FG_GREEN}{UNDERLINE}"))
+}
+
+fn inline_delete(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        if s.ansi {
+            styled(s, node, &format!("{STRIKE}{FG_RED}"))?
+        } else {
+            format!("~{}~", inlines(s, children(node))?)
+        }
+    })
+}
+
+fn inline_subscript(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let text = inlines(s, children(node))?;
+        if s.ansi {
+            super::terminal::to_subscript(&text)
+        } else {
+            text
+        }
+    })
+}
+
+fn inline_superscript(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let text = inlines(s, children(node))?;
+        if s.ansi {
+            super::terminal::to_superscript(&text)
+        } else {
+            text
+        }
+    })
+}
+
+fn inline_small_caps(s: &mut State<'_, '_>, node: &Value) -> R {
+    inlines(s, children(node))
+}
+
+fn inline_span(s: &mut State<'_, '_>, node: &Value) -> R {
+    span(s, node)
+}
+
+fn inline_code(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let text = s.clean(sv(node, "value").unwrap_or(""));
+        s.style(&text, FG_BRIGHT_YELLOW)
+    })
+}
+
+fn inline_math(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let number = match int(node, "number") {
+            Some(n) if flag(node, "display") => {
+                format!(" {} {n}", s.clean(sv(node, "numberPrefix").unwrap_or("")))
+            }
+            _ => String::new(),
+        };
+        let text = s.clean(sv(node, "value").unwrap_or(""));
+        s.style(&text, FG_BRIGHT_MAGENTA) + &number
+    })
+}
+
+fn inline_link(s: &mut State<'_, '_>, node: &Value) -> R {
+    link(s, node)
+}
+
+fn inline_image(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(image(s, node))
+}
+
+fn inline_autolink(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let text = s.clean(sv(node, "text").or_else(|| sv(node, "href")).unwrap_or(""));
+        if s.x.link_depth > 0 {
+            text
+        } else {
+            s.style(&text, &format!("{UNDERLINE}{FG_BLUE}"))
+        }
+    })
+}
+
+fn inline_xref(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let (text, resolved) = s.x.xref_text(node);
+        let text = s.clean(&text);
+        if resolved && s.x.link_depth == 0 {
+            s.style(&text, &format!("{UNDERLINE}{FG_BLUE}"))
+        } else {
+            text
+        }
+    })
+}
+
+fn inline_footnote_ref(s: &mut State<'_, '_>, node: &Value) -> R {
+    note_ref(s, node)
+}
+
+fn inline_abbreviation(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let raw = sv(node, "key").unwrap_or("");
+        let term = s.clean(raw);
+        let Some(expansion) = sv(node, "expansion") else {
+            return Ok(term);
+        };
+        if s.abbr_depth > 0 || !s.x.draw_derived(node, expansion) {
+            return Ok(term);
+        }
+        s.expanded.insert(pair_key(raw, expansion));
+        let tail = format!(" ({})", s.clean(expansion));
+        format!("{term}{}", s.style(&tail, DIM))
+    })
+}
+
+fn inline_ruby(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let target = s.x.target.name();
+        s.x.loss(
+            node,
+            "ruby-flattened",
+            format!("Flattened ruby annotation while rendering {target}"),
+        );
+        let mut out = String::new();
+        for pair in list(node, "pairs") {
+            out.push_str(&slot_inlines(s, list(pair, "base"))?);
+            out.push('(');
+            out.push_str(&slot_inlines(s, list(pair, "annotation"))?);
+            out.push(')');
+        }
+        out
+    })
+}
+
+fn inline_raw_inline(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        s.x.raw_dropped(node, false);
+        String::new()
+    })
+}
+
+fn inline_symbol(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!(":{}:", s.clean(sv(node, "name").unwrap_or(""))))
+}
+
+fn inline_mention(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(match sv(node, "label") {
+        Some(label) => s.clean(label),
+        None => s.clean(&format!("@{}", sv(node, "target").unwrap_or(""))),
+    })
+}
+
+fn inline_tag(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!("#{}", s.clean(sv(node, "name").unwrap_or(""))))
+}
+
+fn inline_inline_extension(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let dotted = sv(node, "name").is_some_and(|n| n.contains('.'));
+        match node.get("fallback").and_then(Value::as_array) {
+            Some(fallback) if dotted => slot_inlines(s, fallback)?,
+            _ => inlines(s, children(node))?,
+        }
+    })
+}
+
+fn inline_critic_comment(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let target = s.x.target.name();
+        s.x.loss(
+            node,
+            "editorial-comment-flattened",
+            format!("Flattened an editorial comment while rendering {target}"),
+        );
+        s.clean(sv(node, "value").unwrap_or(""))
+    })
+}
+
+fn inline_caption_number(_s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(int(node, "n").map_or_else(|| "#".into(), |n| n.to_string()))
+}
+
+fn inline_citation_group(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(s.clean(sv(node, "raw").unwrap_or("")))
+}
+
+fn inline_smart_punctuation(s: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(s.x.smart_text(node).to_string())
+}
+
+fn inline_non_breaking_space(_s: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok(NBSP_HOLD.to_string())
+}
+
+fn inline_soft_break(_s: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok(" ".into())
+}
+
+fn inline_hard_break(_s: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok("\n".into())
 }
 
 /// A span with an authored `abbr` writes its value after the content, and no expansion nested in it.

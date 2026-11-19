@@ -429,49 +429,11 @@ pub fn plain_inline_text(x: &Exporter<'_>, nodes: &[Value]) -> String {
 
 fn plain_into(x: &Exporter<'_>, nodes: &[Value], out: &mut String) {
     for node in nodes {
+        if let Some(text) = plain_atom(x, node).or_else(|| plain_reference(x, node)) {
+            out.push_str(&text);
+            continue;
+        }
         match ty(node) {
-            "text" | "code" | "literal_inline" | "math" => {
-                out.push_str(sv(node, "value").unwrap_or(""));
-            }
-            "smart_punctuation" => out.push_str(x.smart_text(node)),
-            "soft_break" | "hard_break" | "non_breaking_space" => out.push(' '),
-            "autolink" => out.push_str(sv(node, "text").or_else(|| sv(node, "href")).unwrap_or("")),
-            "image" => out.push_str(sv(node, "alt").unwrap_or("")),
-            "abbreviation" => out.push_str(sv(node, "key").unwrap_or("")),
-            "symbol" => {
-                out.push(':');
-                out.push_str(sv(node, "name").unwrap_or(""));
-                out.push(':');
-            }
-            "mention" => {
-                if let Some(label) = sv(node, "label") {
-                    out.push_str(label);
-                } else {
-                    out.push('@');
-                    out.push_str(sv(node, "target").unwrap_or(""));
-                }
-            }
-            "tag" => {
-                out.push('#');
-                out.push_str(sv(node, "name").unwrap_or(""));
-            }
-            "xref" => {
-                let text = sv(node, "href")
-                    .and_then(|href| x.xref_text.get(href.strip_prefix('#').unwrap_or(href)));
-                if let Some(text) = text {
-                    out.push_str(text);
-                } else {
-                    out.push_str("</#");
-                    out.push_str(sv(node, "key").unwrap_or(""));
-                    out.push('>');
-                }
-            }
-            "caption_number" => match int(node, "n") {
-                Some(n) => out.push_str(&n.to_string()),
-                None => out.push('#'),
-            },
-            "citation_group" => out.push_str(sv(node, "raw").unwrap_or("")),
-            "critic_comment" => out.push_str(sv(node, "value").unwrap_or("")),
             "comment" | "raw_inline" => {}
             "ruby" => {
                 for pair in list(node, "pairs") {
@@ -481,6 +443,39 @@ fn plain_into(x: &Exporter<'_>, nodes: &[Value], out: &mut String) {
             _ => plain_into(x, children(node), out),
         }
     }
+}
+
+/// The text of an inline that holds it in a field of its own.
+fn plain_atom(x: &Exporter<'_>, node: &Value) -> Option<String> {
+    let text = match ty(node) {
+        "text" | "code" | "literal_inline" | "math" | "critic_comment" => sv(node, "value"),
+        "smart_punctuation" => Some(x.smart_text(node)),
+        "soft_break" | "hard_break" | "non_breaking_space" => Some(" "),
+        "autolink" => sv(node, "text").or_else(|| sv(node, "href")),
+        "image" => sv(node, "alt"),
+        "abbreviation" => sv(node, "key"),
+        "citation_group" => sv(node, "raw"),
+        _ => return None,
+    };
+    Some(text.unwrap_or("").to_string())
+}
+
+/// The text of a symbol, mention, tag, cross-reference or caption number.
+fn plain_reference(x: &Exporter<'_>, node: &Value) -> Option<String> {
+    Some(match ty(node) {
+        "symbol" => format!(":{}:", sv(node, "name").unwrap_or("")),
+        "mention" => sv(node, "label").map_or_else(
+            || format!("@{}", sv(node, "target").unwrap_or("")),
+            str::to_string,
+        ),
+        "tag" => format!("#{}", sv(node, "name").unwrap_or("")),
+        "xref" => sv(node, "href")
+            .and_then(|href| x.xref_text.get(href.strip_prefix('#').unwrap_or(href)))
+            .cloned()
+            .unwrap_or_else(|| format!("</#{}>", sv(node, "key").unwrap_or(""))),
+        "caption_number" => int(node, "n").map_or_else(|| "#".into(), |n| n.to_string()),
+        _ => return None,
+    })
 }
 
 /// The value of the `abbr` key of a span's attributes.

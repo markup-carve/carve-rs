@@ -3,6 +3,9 @@
 //! inline HTML (escaped where it is author content) or flattens, and the
 //! flattening is reported.
 
+// The handlers of a dispatch table share one signature, so some return `Ok` only.
+#![allow(clippy::unnecessary_wraps)]
+
 use super::common::{
     Exporter, children, each_node, flag, footnote_definitions, int, is_skipped_break,
     is_unresolved, key_value, list, plain_inline_text, reference_label, slot, strip_bidi, sv, ty,
@@ -547,183 +550,338 @@ fn autolink(m: &mut State<'_, '_>, node: &Value) -> String {
 }
 
 fn inline(m: &mut State<'_, '_>, node: &Value) -> R {
-    Ok(match ty(node) {
-        "text" => escape_text(sv(node, "value").unwrap_or(""), m.x.link_depth > 0),
-        "emphasis" => delimited_node(m, node, "*", "em")?,
-        "strong" => delimited_node(m, node, "**", "strong")?,
-        "strike" => delimited_node(m, node, "~~", "del")?,
-        "underline" => element(m, "u", node, &[])?,
-        "subscript" => element(m, "sub", node, &[])?,
-        "superscript" => element(m, "sup", node, &[])?,
-        "highlight" => element(m, "mark", node, &[])?,
-        "insert" => element(m, "ins", node, &[])?,
-        "delete" => element(m, "del", node, &["critic-delete"])?,
-        "small_caps" => element(m, "span", node, &["smallcaps"])?,
-        "span" => {
-            let Some(abbr) = key_value(node, "abbr") else {
-                return inlines(m, children(node));
-            };
-            m.abbr_depth += 1;
-            let inner = inlines(m, children(node));
-            m.abbr_depth -= 1;
-            let inner = inner?;
-            if abbr.is_empty() || !m.x.draw_derived(node, abbr) {
-                return Ok(inner);
-            }
-            format!("<abbr title=\"{}\">{inner}</abbr>", escape_attribute(abbr))
+    INLINES
+        .iter()
+        .find(|(name, _)| *name == ty(node))
+        .map_or_else(|| Ok(String::new()), |(_, handler)| handler(m, node))
+}
+
+type InlineFn = fn(m: &mut State<'_, '_>, node: &Value) -> R;
+
+const INLINES: &[(&str, InlineFn)] = &[
+    ("text", inline_text),
+    ("emphasis", inline_emphasis),
+    ("strong", inline_strong),
+    ("strike", inline_strike),
+    ("underline", inline_underline),
+    ("subscript", inline_subscript),
+    ("superscript", inline_superscript),
+    ("highlight", inline_highlight),
+    ("insert", inline_insert),
+    ("delete", inline_delete),
+    ("small_caps", inline_small_caps),
+    ("span", inline_span),
+    ("code", inline_code),
+    ("literal_inline", inline_literal_inline),
+    ("math", inline_math),
+    ("link", inline_link),
+    ("image", inline_image),
+    ("autolink", inline_autolink),
+    ("xref", inline_xref),
+    ("footnote_ref", inline_footnote_ref),
+    ("inline_footnote", inline_inline_footnote),
+    ("abbreviation", inline_abbreviation),
+    ("ruby", inline_ruby),
+    ("raw_inline", inline_raw_inline),
+    ("symbol", inline_symbol),
+    ("mention", inline_mention),
+    ("tag", inline_tag),
+    ("inline_extension", inline_inline_extension),
+    ("critic_comment", inline_critic_comment),
+    ("caption_number", inline_caption_number),
+    ("citation_group", inline_citation_group),
+    ("smart_punctuation", inline_smart_punctuation),
+    ("non_breaking_space", inline_non_breaking_space),
+    ("soft_break", inline_soft_break),
+    ("hard_break", inline_hard_break),
+];
+
+fn inline_text(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(escape_text(
+        sv(node, "value").unwrap_or(""),
+        m.x.link_depth > 0,
+    ))
+}
+
+fn inline_emphasis(m: &mut State<'_, '_>, node: &Value) -> R {
+    delimited_node(m, node, "*", "em")
+}
+
+fn inline_strong(m: &mut State<'_, '_>, node: &Value) -> R {
+    delimited_node(m, node, "**", "strong")
+}
+
+fn inline_strike(m: &mut State<'_, '_>, node: &Value) -> R {
+    delimited_node(m, node, "~~", "del")
+}
+
+fn inline_underline(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "u", node, &[])
+}
+
+fn inline_subscript(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "sub", node, &[])
+}
+
+fn inline_superscript(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "sup", node, &[])
+}
+
+fn inline_highlight(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "mark", node, &[])
+}
+
+fn inline_insert(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "ins", node, &[])
+}
+
+fn inline_delete(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "del", node, &["critic-delete"])
+}
+
+fn inline_small_caps(m: &mut State<'_, '_>, node: &Value) -> R {
+    element(m, "span", node, &["smallcaps"])
+}
+
+fn inline_span(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let Some(abbr) = key_value(node, "abbr") else {
+            return inlines(m, children(node));
+        };
+        m.abbr_depth += 1;
+        let inner = inlines(m, children(node));
+        m.abbr_depth -= 1;
+        let inner = inner?;
+        if abbr.is_empty() || !m.x.draw_derived(node, abbr) {
+            return Ok(inner);
         }
-        "code" => code_span(sv(node, "value").unwrap_or("")),
-        "literal_inline" => escape_text(sv(node, "value").unwrap_or(""), false),
-        "math" => {
-            let value = escape_html(sv(node, "value").unwrap_or(""));
-            let display = flag(node, "display");
-            let number = match int(node, "number") {
-                Some(n) if display => {
-                    format!(
-                        " {} {n}",
-                        escape_text(sv(node, "numberPrefix").unwrap_or(""), false)
-                    )
-                }
-                _ => String::new(),
-            };
-            if display {
-                format!("$${value}$${number}")
-            } else {
-                format!("${value}${number}")
-            }
-        }
-        "link" => link(m, node)?,
-        "image" => image(m, node),
-        "autolink" => autolink(m, node),
-        "xref" => {
-            let (text, resolved) = m.x.xref_text(node);
-            if !resolved {
-                return Ok(format!(
-                    "</#{}>",
-                    escape_html(sv(node, "key").unwrap_or(""))
-                ));
-            }
-            let href = sv(node, "href").unwrap_or("");
-            let slug = m.slugs.get(&safe_decode(href.get(1..).unwrap_or("")));
-            match slug {
-                Some(slug) if m.x.link_depth == 0 => {
-                    format!("[{}](#{slug})", escape_text(&text, false))
-                }
-                _ => escape_text(&text, false),
-            }
-        }
-        "footnote_ref" => {
-            let raw = sv(node, "key").unwrap_or("");
-            let key = escape_html(raw);
-            if node.get("number").is_none() && !m.footnotes.contains(raw) {
-                return Ok(format!("\\[^{}\\]", key.replace('\\', "\\\\")));
-            }
-            format!("[^{key}]")
-        }
-        "inline_footnote" => {
-            let depth = std::mem::take(&mut m.x.link_depth);
-            let inner = inlines(m, children(node));
-            m.x.link_depth = depth;
-            format!("^[{}]", inner?)
-        }
-        "abbreviation" => {
-            let term = escape_html(sv(node, "key").unwrap_or(""));
-            match sv(node, "expansion") {
-                Some(expansion) if m.abbr_depth == 0 && m.x.draw_derived(node, expansion) => {
-                    format!(
-                        "<abbr title=\"{}\">{term}</abbr>",
-                        escape_attribute(expansion)
-                    )
-                }
-                _ => term,
-            }
-        }
-        "ruby" => {
-            let mut out = format!("<ruby{}>", html_attributes(node.get("attrs"), &[]));
-            for pair in list(node, "pairs") {
-                out.push_str(&slot_inlines(m, list(pair, "base"))?);
-                out.push_str("<rp>(</rp><rt>");
-                out.push_str(&slot_inlines(m, list(pair, "annotation"))?);
-                out.push_str("</rt><rp>)</rp>");
-            }
-            out.push_str("</ruby>");
-            out
-        }
-        "raw_inline" => {
-            if sv(node, "format") != Some("html") {
-                m.x.raw_dropped(node, false);
-                return Ok(String::new());
-            }
-            m.x.loss(node, "raw-html-escaped", "Escaped raw HTML in Markdown");
-            escape_html(sv(node, "value").unwrap_or(""))
-        }
-        "symbol" => format!(":{}:", clean(sv(node, "name").unwrap_or(""))),
-        "mention" => match sv(node, "label") {
-            Some(label) => escape_text(label, false),
-            None => escape_text(&format!("@{}", sv(node, "target").unwrap_or("")), false),
-        },
-        "tag" => escape_text(&format!("#{}", sv(node, "name").unwrap_or("")), false),
-        "inline_extension" => {
-            let dotted = sv(node, "name").is_some_and(|n| n.contains('.'));
-            match node.get("fallback").and_then(Value::as_array) {
-                Some(fallback) if dotted => slot_inlines(m, fallback)?,
-                _ => inlines(m, children(node))?,
-            }
-        }
-        "critic_comment" => format!(
-            "<span class=\"critic-comment\">{}</span>",
-            escape_text(sv(node, "value").unwrap_or(""), false)
-        ),
-        "caption_number" => int(node, "n").map_or_else(|| "\\#".into(), |n| n.to_string()),
-        "citation_group" => escape_text(sv(node, "raw").unwrap_or(""), false),
-        "smart_punctuation" => escape_text(m.x.smart_text(node), false),
-        "non_breaking_space" => "\u{a0}".into(),
-        "soft_break" => if m.single_line > 0 { " " } else { "\n" }.into(),
-        "hard_break" => if m.single_line > 0 { "<br>" } else { "\\\n" }.into(),
-        _ => String::new(),
+        format!("<abbr title=\"{}\">{inner}</abbr>", escape_attribute(abbr))
     })
+}
+
+fn inline_code(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(code_span(sv(node, "value").unwrap_or("")))
+}
+
+fn inline_literal_inline(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(escape_text(sv(node, "value").unwrap_or(""), false))
+}
+
+fn inline_math(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let value = escape_html(sv(node, "value").unwrap_or(""));
+        let display = flag(node, "display");
+        let number = match int(node, "number") {
+            Some(n) if display => {
+                format!(
+                    " {} {n}",
+                    escape_text(sv(node, "numberPrefix").unwrap_or(""), false)
+                )
+            }
+            _ => String::new(),
+        };
+        if display {
+            format!("$${value}$${number}")
+        } else {
+            format!("${value}${number}")
+        }
+    })
+}
+
+fn inline_link(m: &mut State<'_, '_>, node: &Value) -> R {
+    link(m, node)
+}
+
+fn inline_image(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(image(m, node))
+}
+
+fn inline_autolink(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(autolink(m, node))
+}
+
+fn inline_xref(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let (text, resolved) = m.x.xref_text(node);
+        if !resolved {
+            return Ok(format!(
+                "</#{}>",
+                escape_html(sv(node, "key").unwrap_or(""))
+            ));
+        }
+        let href = sv(node, "href").unwrap_or("");
+        let slug = m.slugs.get(&safe_decode(href.get(1..).unwrap_or("")));
+        match slug {
+            Some(slug) if m.x.link_depth == 0 => {
+                format!("[{}](#{slug})", escape_text(&text, false))
+            }
+            _ => escape_text(&text, false),
+        }
+    })
+}
+
+fn inline_footnote_ref(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let raw = sv(node, "key").unwrap_or("");
+        let key = escape_html(raw);
+        if node.get("number").is_none() && !m.footnotes.contains(raw) {
+            return Ok(format!("\\[^{}\\]", key.replace('\\', "\\\\")));
+        }
+        format!("[^{key}]")
+    })
+}
+
+fn inline_inline_footnote(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let depth = std::mem::take(&mut m.x.link_depth);
+        let inner = inlines(m, children(node));
+        m.x.link_depth = depth;
+        format!("^[{}]", inner?)
+    })
+}
+
+fn inline_abbreviation(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let term = escape_html(sv(node, "key").unwrap_or(""));
+        match sv(node, "expansion") {
+            Some(expansion) if m.abbr_depth == 0 && m.x.draw_derived(node, expansion) => {
+                format!(
+                    "<abbr title=\"{}\">{term}</abbr>",
+                    escape_attribute(expansion)
+                )
+            }
+            _ => term,
+        }
+    })
+}
+
+fn inline_ruby(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let mut out = format!("<ruby{}>", html_attributes(node.get("attrs"), &[]));
+        for pair in list(node, "pairs") {
+            out.push_str(&slot_inlines(m, list(pair, "base"))?);
+            out.push_str("<rp>(</rp><rt>");
+            out.push_str(&slot_inlines(m, list(pair, "annotation"))?);
+            out.push_str("</rt><rp>)</rp>");
+        }
+        out.push_str("</ruby>");
+        out
+    })
+}
+
+fn inline_raw_inline(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        if sv(node, "format") != Some("html") {
+            m.x.raw_dropped(node, false);
+            return Ok(String::new());
+        }
+        m.x.loss(node, "raw-html-escaped", "Escaped raw HTML in Markdown");
+        escape_html(sv(node, "value").unwrap_or(""))
+    })
+}
+
+fn inline_symbol(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!(":{}:", clean(sv(node, "name").unwrap_or(""))))
+}
+
+fn inline_mention(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(match sv(node, "label") {
+        Some(label) => escape_text(label, false),
+        None => escape_text(&format!("@{}", sv(node, "target").unwrap_or("")), false),
+    })
+}
+
+fn inline_tag(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(escape_text(
+        &format!("#{}", sv(node, "name").unwrap_or("")),
+        false,
+    ))
+}
+
+fn inline_inline_extension(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok({
+        let dotted = sv(node, "name").is_some_and(|n| n.contains('.'));
+        match node.get("fallback").and_then(Value::as_array) {
+            Some(fallback) if dotted => slot_inlines(m, fallback)?,
+            _ => inlines(m, children(node))?,
+        }
+    })
+}
+
+fn inline_critic_comment(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!(
+        "<span class=\"critic-comment\">{}</span>",
+        escape_text(sv(node, "value").unwrap_or(""), false)
+    ))
+}
+
+fn inline_caption_number(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(int(node, "n").map_or_else(|| "\\#".into(), |n| n.to_string()))
+}
+
+fn inline_citation_group(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(escape_text(sv(node, "raw").unwrap_or(""), false))
+}
+
+fn inline_smart_punctuation(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(escape_text(m.x.smart_text(node), false))
+}
+
+fn inline_non_breaking_space(_m: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok("\u{a0}".into())
+}
+
+fn inline_soft_break(m: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok(if m.single_line > 0 { " " } else { "\n" }.into())
+}
+
+fn inline_hard_break(m: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok(if m.single_line > 0 { "<br>" } else { "\\\n" }.into())
 }
 
 /// Keeps a paragraph line from reading as a block of its own: a list marker,
 /// a quote, a heading, a thematic break, a setext underline, or code by its
 /// indentation. Spaces and tabs at the edges of a line are layout and go.
-fn protect_line(line: &str, first: bool) -> String {
+/// A line a backslash keeps from opening a list item, a quote, a heading, a
+/// thematic break or a setext underline.
+fn opens_block(text: &str, first: bool) -> bool {
     static PLUS_FIRST: Re = LazyLock::new(|| Regex::new(r"^[-+]([ \t]|$)").ok());
     static PLUS_LATER: Re = LazyLock::new(|| Regex::new(r"^[-+][ \t]+\S").ok());
-    static ORDERED: Re = LazyLock::new(|| Regex::new(r"^\d{1,9}[.)]([ \t]|$)").ok());
     static ATX: Re = LazyLock::new(|| Regex::new(r"^#{1,6}([ \t]|$)").ok());
     static BREAK: Re = LazyLock::new(|| {
         Regex::new(r"^(?:-(?:[ \t]*-){2,}|_(?:[ \t]*_){2,}|\*(?:[ \t]*\*){2,})[ \t]*$").ok()
     });
     static SETEXT: Re = LazyLock::new(|| Regex::new(r"^(?:=+|-+)[ \t]*$").ok());
-    let mut text = line.trim_matches([' ', '\t']).to_string();
-    // A hard break keeps its backslash as the last character of the line, with no space before it.
-    let backslashes = text.len() - text.trim_end_matches('\\').len();
-    if backslashes % 2 == 1 {
-        let body = text[..text.len() - 1].trim_end_matches([' ', '\t']);
-        text = format!("{body}\\");
-    }
+    hit(if first { &PLUS_FIRST } else { &PLUS_LATER }, text)
+        || text.starts_with('>')
+        || hit(&ATX, text)
+        || hit(&BREAK, text)
+        || (!first && hit(&SETEXT, text))
+}
+
+fn protect_line(line: &str, first: bool) -> String {
+    static ORDERED: Re = LazyLock::new(|| Regex::new(r"^\d{1,9}[.)]([ \t]|$)").ok());
+    let mut text = hard_break_end(line.trim_matches([' ', '\t']));
     if text.is_empty() {
         return text;
     }
-    let plus = if first { &PLUS_FIRST } else { &PLUS_LATER };
-    if hit(plus, &text) {
+    if opens_block(&text, first) {
         text.insert(0, '\\');
     }
     if let Some(found) = ORDERED.as_ref().and_then(|r| r.find(&text)) {
         let digits = text[..found.end()].find(['.', ')']).unwrap_or(0);
         text.insert(digits, '\\');
     }
-    if text.starts_with('>') {
-        text.insert(0, '\\');
-    }
-    if hit(&ATX, &text) {
-        text.insert(0, '\\');
-    }
-    if hit(&BREAK, &text) || (!first && hit(&SETEXT, &text)) {
-        text.insert(0, '\\');
-    }
     text
+}
+
+/// A hard break keeps its backslash as the last character of the line, with no space before it.
+fn hard_break_end(text: &str) -> String {
+    let backslashes = text.len() - text.trim_end_matches('\\').len();
+    match text.strip_suffix('\\') {
+        Some(body) if backslashes % 2 == 1 => format!("{}\\", body.trim_end_matches([' ', '\t'])),
+        _ => text.to_string(),
+    }
 }
 
 fn paragraph_text(text: &str) -> String {
@@ -820,86 +978,149 @@ fn block(m: &mut State<'_, '_>, node: &Value, mark: Option<&'static str>) -> R {
         );
     }
     match ty(node) {
-        "section" => blocks(m, children(node)),
-        "heading" => heading(m, node),
-        "paragraph" => {
-            let written = format!("{}\n\n", paragraph_text(&inlines(m, children(node))?));
-            let caption = m.caption(node);
-            captioned(m, node, written, caption, "\n")
-        }
-        "code_block" => {
-            let written = code_block(m, node);
-            let caption = m.caption(node);
-            captioned(m, node, written, caption, "\n")
-        }
-        "block_quote" => {
-            let written = quote(&blocks(m, children(node))?);
-            let caption = m.caption(node);
-            captioned(m, node, written, caption, "\n\n")
-        }
         "list" => list_block(m, node, mark.unwrap_or_else(|| list_mark(node))),
-        "thematic_break" => Ok("---\n\n".into()),
-        "table" => table(m, node),
-        "admonition" | "directive" => Ok(format!(
-            "{}{}",
-            title_lines(m, node)?,
-            blocks(m, children(node))?
-        )),
-        "div" => {
-            m.x.loss(
-                node,
-                "markdown-container-flattened",
-                "Flattened a container in Markdown",
-            );
-            Ok(format!(
-                "{}{}",
-                title_lines(m, node)?,
-                blocks(m, children(node))?
-            ))
-        }
-        "line_block" => line_block(m, node),
-        "definition_list" => definition_list(m, node),
-        "figure_group" => figure_group(m, node),
-        "include" => {
-            let caption = m.caption(node);
-            if node.get("children").is_none() {
-                let line = m.x.unexpanded_include(node);
-                let written = format!("{}\n\n", paragraph_text(&escape_text(&line, false)));
-                return captioned(m, node, written, caption, "\n");
-            }
-            let written = blocks(m, children(node))?;
-            captioned(m, node, written, caption, "\n\n")
-        }
-        "block_extension" => {
-            let fallback = list(node, "fallback");
-            blocks(
-                m,
-                if fallback.is_empty() {
-                    children(node)
-                } else {
-                    fallback
-                },
-            )
-        }
-        "raw_block" => {
-            if sv(node, "format") != Some("html") {
-                m.x.raw_dropped(node, true);
-                return Ok(String::new());
-            }
-            m.x.loss(node, "raw-html-escaped", "Escaped raw HTML in Markdown");
-            Ok(format!(
-                "{}\n\n",
-                escape_html(sv(node, "value").unwrap_or(""))
-            ))
-        }
-        "abbreviation_def" => Ok(format!(
-            "*[{}]: {}\n\n",
-            escape_html(sv(node, "key").unwrap_or("")),
-            escape_html(sv(node, "expansion").unwrap_or(""))
-        )),
-        "link_reference_definition" => Ok(link_definition(m, node)),
-        _ => Ok(String::new()),
+        _ => BLOCKS
+            .iter()
+            .find(|(name, _)| *name == ty(node))
+            .map_or_else(|| Ok(String::new()), |(_, handler)| handler(m, node)),
     }
+}
+
+type BlockFn = fn(m: &mut State<'_, '_>, node: &Value) -> R;
+
+const BLOCKS: &[(&str, BlockFn)] = &[
+    ("section", block_section),
+    ("heading", block_heading),
+    ("paragraph", block_paragraph),
+    ("code_block", block_code_block),
+    ("block_quote", block_block_quote),
+    ("thematic_break", block_thematic_break),
+    ("table", block_table),
+    ("admonition", block_admonition),
+    ("directive", block_admonition),
+    ("div", block_div),
+    ("line_block", block_line_block),
+    ("definition_list", block_definition_list),
+    ("figure_group", block_figure_group),
+    ("include", block_include),
+    ("block_extension", block_block_extension),
+    ("raw_block", block_raw_block),
+    ("abbreviation_def", block_abbreviation_def),
+    ("link_reference_definition", block_link_reference_definition),
+];
+
+fn block_section(m: &mut State<'_, '_>, node: &Value) -> R {
+    blocks(m, children(node))
+}
+
+fn block_heading(m: &mut State<'_, '_>, node: &Value) -> R {
+    heading(m, node)
+}
+
+fn block_paragraph(m: &mut State<'_, '_>, node: &Value) -> R {
+    let written = format!("{}\n\n", paragraph_text(&inlines(m, children(node))?));
+    let caption = m.caption(node);
+    captioned(m, node, written, caption, "\n")
+}
+
+fn block_code_block(m: &mut State<'_, '_>, node: &Value) -> R {
+    let written = code_block(m, node);
+    let caption = m.caption(node);
+    captioned(m, node, written, caption, "\n")
+}
+
+fn block_block_quote(m: &mut State<'_, '_>, node: &Value) -> R {
+    let written = quote(&blocks(m, children(node))?);
+    let caption = m.caption(node);
+    captioned(m, node, written, caption, "\n\n")
+}
+
+fn block_thematic_break(_m: &mut State<'_, '_>, _node: &Value) -> R {
+    Ok("---\n\n".into())
+}
+
+fn block_table(m: &mut State<'_, '_>, node: &Value) -> R {
+    table(m, node)
+}
+
+fn block_admonition(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!(
+        "{}{}",
+        title_lines(m, node)?,
+        blocks(m, children(node))?
+    ))
+}
+
+fn block_div(m: &mut State<'_, '_>, node: &Value) -> R {
+    m.x.loss(
+        node,
+        "markdown-container-flattened",
+        "Flattened a container in Markdown",
+    );
+    Ok(format!(
+        "{}{}",
+        title_lines(m, node)?,
+        blocks(m, children(node))?
+    ))
+}
+
+fn block_line_block(m: &mut State<'_, '_>, node: &Value) -> R {
+    line_block(m, node)
+}
+
+fn block_definition_list(m: &mut State<'_, '_>, node: &Value) -> R {
+    definition_list(m, node)
+}
+
+fn block_figure_group(m: &mut State<'_, '_>, node: &Value) -> R {
+    figure_group(m, node)
+}
+
+fn block_include(m: &mut State<'_, '_>, node: &Value) -> R {
+    let caption = m.caption(node);
+    if node.get("children").is_none() {
+        let line = m.x.unexpanded_include(node);
+        let written = format!("{}\n\n", paragraph_text(&escape_text(&line, false)));
+        return captioned(m, node, written, caption, "\n");
+    }
+    let written = blocks(m, children(node))?;
+    captioned(m, node, written, caption, "\n\n")
+}
+
+fn block_block_extension(m: &mut State<'_, '_>, node: &Value) -> R {
+    let fallback = list(node, "fallback");
+    blocks(
+        m,
+        if fallback.is_empty() {
+            children(node)
+        } else {
+            fallback
+        },
+    )
+}
+
+fn block_raw_block(m: &mut State<'_, '_>, node: &Value) -> R {
+    if sv(node, "format") != Some("html") {
+        m.x.raw_dropped(node, true);
+        return Ok(String::new());
+    }
+    m.x.loss(node, "raw-html-escaped", "Escaped raw HTML in Markdown");
+    Ok(format!(
+        "{}\n\n",
+        escape_html(sv(node, "value").unwrap_or(""))
+    ))
+}
+
+fn block_abbreviation_def(_m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(format!(
+        "*[{}]: {}\n\n",
+        escape_html(sv(node, "key").unwrap_or("")),
+        escape_html(sv(node, "expansion").unwrap_or(""))
+    ))
+}
+
+fn block_link_reference_definition(m: &mut State<'_, '_>, node: &Value) -> R {
+    Ok(link_definition(m, node))
 }
 
 fn line_block(m: &mut State<'_, '_>, node: &Value) -> R {
@@ -1383,17 +1604,31 @@ fn table_cells(m: &mut State<'_, '_>, row: &Value, is_header: bool) -> Result<Ve
     Ok(cells)
 }
 
+/// The rows of a table in order, comments left out.
+fn rows_of(node: &Value) -> impl Iterator<Item = &Value> {
+    children(node)
+        .iter()
+        .filter(|section| ty(section) != "comment")
+        .flat_map(children)
+        .filter(|row| ty(row) != "comment")
+}
+
+/// The alignment row cell of a column.
+fn align_cell(column: Option<&Value>) -> &'static str {
+    let value = column.and_then(|c| sv(c, "align").or_else(|| sv(c, "resolvedAlign")));
+    match value {
+        Some("left") => ":---",
+        Some("center") => ":---:",
+        Some("right") => "---:",
+        _ => "---",
+    }
+}
+
 fn table(m: &mut State<'_, '_>, node: &Value) -> R {
     let mut header: Option<Vec<String>> = None;
     let mut rows: Vec<Vec<String>> = Vec::new();
-    for section in children(node) {
-        if ty(section) == "comment" {
-            continue;
-        }
-        for row in children(section) {
-            if ty(row) == "comment" {
-                continue;
-            }
+    {
+        for row in rows_of(node) {
             let cells_of = children(row);
             let is_header = !cells_of.is_empty()
                 && cells_of
@@ -1426,16 +1661,7 @@ fn table(m: &mut State<'_, '_>, node: &Value) -> R {
         padded.resize(width.max(cells.len()), "");
         format!("| {} |", padded.join(" | "))
     };
-    let align = |at: usize| {
-        let column = columns.get(at);
-        let value = column.and_then(|c| sv(c, "align").or_else(|| sv(c, "resolvedAlign")));
-        match value {
-            Some("left") => ":---",
-            Some("center") => ":---:",
-            Some("right") => "---:",
-            _ => "---",
-        }
-    };
+    let align = |at: usize| align_cell(columns.get(at));
     let mut out = format!(
         "{}\n| {} |\n",
         line(header.as_deref().unwrap_or(&[])),
