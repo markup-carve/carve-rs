@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-fn call(request: Value) -> Value {
+fn call(request: &Value) -> Value {
     serde_json::from_str(&carve::api::json::call(&request.to_string())).unwrap()
 }
 
@@ -14,7 +14,7 @@ fn supplied_tree_losses_name_the_node_and_destination_field() {
                 {"type":"link","href":"javascript:x","children":[{"type":"text","value":"a"}]}
             ]}]}]
     });
-    let reply = call(json!({"call":"renderWithDiagnostics","tree":tree}));
+    let reply = call(&json!({"call":"renderWithDiagnostics","tree":tree}));
     let diagnostics = reply["ok"]["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics[0]["path"], "/children/0");
     assert_eq!(
@@ -32,7 +32,7 @@ fn denied_attribute_does_not_steal_a_later_link_path() {
                     "children":[{"type":"text","value":"a"}]}]}
         ]
     });
-    let reply = call(json!({"call":"renderWithDiagnostics","tree":tree,
+    let reply = call(&json!({"call":"renderWithDiagnostics","tree":tree,
         "options":{"urlPolicy":{"deny":["https"]}}}));
     let destinations: Vec<_> = reply["ok"]["diagnostics"]
         .as_array()
@@ -47,7 +47,7 @@ fn denied_attribute_does_not_steal_a_later_link_path() {
 
 #[test]
 fn tabs_wrapper_keeps_authored_attributes_in_renderer_order() {
-    let reply = call(json!({
+    let reply = call(&json!({
         "call":"render",
         "source":"{#t .k key=v onclick=evil data-src=javascript:evil}\n:::: tabs\n::: tab \"A\"\na\n:::\n::::\n",
         "options":{"extensions":["carve.tabs"],"renderers":{"carve.tabs":"standard"}}
@@ -68,7 +68,7 @@ fn writer_loss_messages_use_the_catalog_template() {
     let tree = json!({"type":"document","astVersion":"2.0","children":[
         {"type":"paragraph","role":"image","children":[{"type":"image","src":"i.png","decorative":true}]}
     ]});
-    let reply = call(json!({"call":"writeWithDiagnostics","tree":tree}));
+    let reply = call(&json!({"call":"writeWithDiagnostics","tree":tree}));
     let diagnostic = reply["ok"]["diagnostics"]
         .as_array()
         .unwrap()
@@ -87,7 +87,7 @@ fn writer_loss_messages_use_the_catalog_template() {
 
 #[test]
 fn renderer_syntax_filter_does_not_match_a_block_without_syntax() {
-    let reply = call(json!({
+    let reply = call(&json!({
         "call":"render", "source":"```\nx\n```\n",
         "options":{"codeBlockRenderer":{"syntax":"","result":"<b>matched</b>"}}
     }));

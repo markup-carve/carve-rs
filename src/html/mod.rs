@@ -46,18 +46,20 @@ pub(crate) fn render_with_details(
 
 /// [`render_with_details`] of a supplied tree, with the files of its
 /// expanded includes and a host's extension renderers where there are any.
-pub(crate) fn render_tree_parts<'a>(
-    doc: &Document<'a>,
-    opts: &Options,
-    files: Option<&crate::resolve::files::Files<'a>>,
-    hook: Option<&dyn ExtensionHook>,
-) -> (
+type TreeParts = (
     String,
     Vec<&'static str>,
     Option<usize>,
     Vec<(usize, String)>,
     Vec<DestinationLoss>,
-) {
+);
+
+pub(crate) fn render_tree_parts<'a>(
+    doc: &Document<'a>,
+    opts: &Options,
+    files: Option<&crate::resolve::files::Files<'a>>,
+    hook: Option<&dyn ExtensionHook>,
+) -> TreeParts {
     let mut r = Renderer::build(doc, opts, true, files);
     r.hook = hook;
     r.document();

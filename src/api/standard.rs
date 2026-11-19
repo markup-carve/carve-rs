@@ -596,23 +596,8 @@ impl UsedIds {
     }
 }
 
-/// The standard tabs renderer: radio controls in `interactive` mode
-/// (C2-X-043 to C2-X-048), sections in `static` mode (C2-X-056, ruling D6).
-pub(crate) fn render_tabs(
-    node: &Value,
-    cx: &super::RenderContext<'_>,
-    group: &dyn Fn() -> String,
-    aria: bool,
-) -> Result<String, Error> {
-    let tabs = at(node, "/slots/tabs")
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    let label = cx
-        .options()
-        .labels
-        .get("tabsGroup")
-        .map_or("Tabs", String::as_str);
+/// Builds the tabs wrapper with the standard authored-attribute rules.
+fn tabs_wrapper(node: &Value, cx: &super::RenderContext<'_>, aria: bool, label: &str) -> String {
     let mut wrapper = String::from("<div");
     if let Some(id) = at(node, "/attrs/id").as_str() {
         let _ = write!(wrapper, " id=\"{}\"", cx.escape_attribute(id));
@@ -656,7 +641,27 @@ pub(crate) fn render_tabs(
         let _ = write!(wrapper, " aria-label=\"{}\"", cx.escape_attribute(label));
     }
     wrapper.push('>');
-    let mut out = wrapper;
+    wrapper
+}
+
+/// The standard tabs renderer: radio controls in `interactive` mode
+/// (C2-X-043 to C2-X-048), sections in `static` mode (C2-X-056, ruling D6).
+pub(crate) fn render_tabs(
+    node: &Value,
+    cx: &super::RenderContext<'_>,
+    group: &dyn Fn() -> String,
+    aria: bool,
+) -> Result<String, Error> {
+    let tabs = at(node, "/slots/tabs")
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let label = cx
+        .options()
+        .labels
+        .get("tabsGroup")
+        .map_or("Tabs", String::as_str);
+    let mut out = tabs_wrapper(node, cx, aria, label);
     let titles: Vec<(Vec<Value>, String)> = tabs
         .iter()
         .enumerate()
