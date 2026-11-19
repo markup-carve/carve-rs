@@ -459,8 +459,6 @@ impl Carve {
         if !self.may_claim(&parsed.tree.json) {
             return Ok(parsed);
         }
-        let mut value: Value = crate::api::deep_json(&parsed.tree.json)
-            .map_err(|e| Error::option("tree", e.to_string()))?;
         let opener = |at: usize| match input {
             Input::Text(s) => standard::opener_name(s, at),
             Input::Bytes(b) => {
@@ -472,6 +470,19 @@ impl Carve {
                 standard::opener_name(&line, 0)
             }
         };
+        if self.standard.is_empty() {
+            let claimed =
+                self.matchers
+                    .apply_owned(&mut parsed.tree.document, &opener, &|name| {
+                        self.extensions.declaration(name)
+                    })?;
+            let top = parsed.tree.top.take();
+            parsed.tree = Tree::from_owned(std::mem::take(&mut parsed.tree.document), top)?;
+            parsed.diagnostics.extend(claimed);
+            return Ok(parsed);
+        }
+        let mut value: Value = crate::api::deep_json(&parsed.tree.json)
+            .map_err(|e| Error::option("tree", e.to_string()))?;
         let failed = self.claim_standard(&mut value, &opener);
         let claimed = if self.matchers.is_empty() {
             Vec::new()

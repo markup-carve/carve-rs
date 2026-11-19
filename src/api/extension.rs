@@ -439,8 +439,12 @@ impl<'a> Host<'a> {
     fn next_tabs_id(&self, count: usize, aria: bool) -> String {
         let mut ids = self.ids.borrow_mut();
         ids.get_or_insert_with(|| {
-            let resolved = crate::resolved_json(self.view.document(), self.opts);
-            super::standard::UsedIds::of(&crate::api::deep_json(&resolved).unwrap_or(Value::Null))
+            if self.resolved {
+                super::standard::UsedIds::of_owned(self.view.document())
+            } else {
+                let resolved = crate::resolved_owned(self.view.document(), self.opts);
+                super::standard::UsedIds::of_owned(&resolved)
+            }
         })
         .next_tabs(count, aria)
     }
