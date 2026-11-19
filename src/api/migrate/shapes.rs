@@ -498,12 +498,14 @@ fn figure(node: &mut Fields, old: &Fields) {
             json!({"type": "caption", "children": [{"type": "paragraph", "children": caption}]});
         node.insert("caption".into(), wrapped);
     }
-    if let (Some(short @ Value::Array(_)), Some(Value::Object(caption))) =
-        (old.get("shortCaption"), node.get_mut("caption"))
-    {
-        caption.insert("short".into(), short.clone());
+    // The slot walk has migrated `shortCaption` already; carve-js reads the
+    // unmigrated one from `old`.
+    let short = node.remove("shortCaption");
+    if let (Some(short @ Value::Array(_)), true) = (short, old.get("shortCaption").is_some()) {
+        if let Some(Value::Object(caption)) = node.get_mut("caption") {
+            caption.insert("short".into(), short);
+        }
     }
-    node.remove("shortCaption");
 }
 
 fn admonition(node: &mut Fields) {

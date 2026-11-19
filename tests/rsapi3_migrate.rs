@@ -105,3 +105,21 @@ fn geometry(value: &mut Value, positions: bool) {
         _ => {}
     }
 }
+
+/// C2-A-178: the short caption of a figure is migrated like its caption.
+#[test]
+fn a_short_caption_is_migrated() {
+    let old = json!({"type": "document", "astVersion": "1.2", "children": [{
+        "type": "figure",
+        "caption": [{"type": "text", "value": "C"}],
+        "shortCaption": [{"type": "escaped_text", "value": "*"}],
+        "children": [{"type": "code_block", "content": "x\n"}],
+    }]});
+    let migrated = api::migrate_tree(&old).unwrap();
+    let tree: serde_json::Value = serde_json::from_str(&api::encode_tree(&migrated)).unwrap();
+    assert_eq!(
+        tree["children"][0]["caption"]["short"],
+        json!([{"type": "text", "value": "*"}]),
+        "{tree}"
+    );
+}
