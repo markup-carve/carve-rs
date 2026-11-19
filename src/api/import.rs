@@ -15,7 +15,8 @@ pub struct ImportOptions {
 
 impl ImportOptions {
     /// Reads the options object of the JSON boundary: `from` is required and
-    /// must be `html`; `rawHtml` and `strictLosses` are booleans.
+    /// names a format of [`super::ImportFormat`]; `rawHtml` and
+    /// `strictLosses` are booleans.
     ///
     /// # Errors
     ///
@@ -32,7 +33,7 @@ impl ImportOptions {
         for (name, v) in map {
             match name.as_str() {
                 "from" => match v.as_str() {
-                    Some("html") => {}
+                    Some(name) if super::ImportFormat::from_name(name).is_some() => {}
                     Some(other) => {
                         return Err(Error::option("from", format!("unknown value \"{other}\"")));
                     }

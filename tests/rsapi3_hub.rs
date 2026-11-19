@@ -138,6 +138,13 @@ fn rust_and_json_errors() {
         .unwrap();
     assert_eq!(imported.source, "*a*\n");
     assert_eq!(ImportFormat::from_name("bbcode"), None);
+    for from in ["html", "markdown", "gfm", "djot"] {
+        assert!(
+            ImportOptions::from_json(Some(&json!({ "from": from }))).is_ok(),
+            "{from}"
+        );
+    }
+    assert!(ImportOptions::from_json(Some(&json!({"from": "bbcode"}))).is_err());
     let out: Value = serde_json::from_str(&call(
         r#"{"call":"importDocument","from":"bbcode","source":"x"}"#,
     ))
