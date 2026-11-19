@@ -46,6 +46,43 @@ fn denied_attribute_does_not_steal_a_later_link_path() {
 }
 
 #[test]
+fn denied_link_in_admonition_title_keeps_its_slot_path() {
+    let tree = json!({"type":"document","astVersion":"2.0","children":[
+        {"type":"admonition","kind":"note","children":[],"title":[
+            {"type":"link","href":"javascript:x","children":[{"type":"text","value":"a"}]}
+        ]}
+    ]});
+    let reply = call(&json!({"call":"renderWithDiagnostics","tree":tree}));
+    assert_eq!(
+        reply["ok"]["diagnostics"][0]["code"], "destination-denied",
+        "{reply}"
+    );
+    assert_eq!(
+        reply["ok"]["diagnostics"][0]["path"],
+        "/children/0/title/0/href"
+    );
+}
+
+#[test]
+fn denied_link_in_caption_keeps_its_singular_slot_path() {
+    let tree = json!({"type":"document","astVersion":"2.0","children":[
+        {"type":"paragraph","role":"image","children":[{"type":"image","src":"a.png","alt":"a"}],
+            "caption":{"type":"caption","children":[{"type":"paragraph","children":[
+                {"type":"link","href":"javascript:x","children":[{"type":"text","value":"b"}]}
+            ]}]}}
+    ]});
+    let reply = call(&json!({"call":"renderWithDiagnostics","tree":tree}));
+    assert_eq!(
+        reply["ok"]["diagnostics"][0]["code"], "destination-denied",
+        "{reply}"
+    );
+    assert_eq!(
+        reply["ok"]["diagnostics"][0]["path"],
+        "/children/0/caption/children/0/children/0/href"
+    );
+}
+
+#[test]
 fn tabs_wrapper_keeps_authored_attributes_in_renderer_order() {
     let reply = call(&json!({
         "call":"render",

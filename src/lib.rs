@@ -315,27 +315,140 @@ fn cap_losses(diags: &mut Vec<diagnostic::Diagnostic>, opts: &Options) -> Vec<&'
     dropped
 }
 
+enum PathItem<'n, 'a> {
+    Array(&'n [ast::Node<'a>], String),
+    One(&'n ast::Node<'a>, String),
+}
+
+fn secondary_node_paths<'n, 'a>(
+    node: &'n ast::Node<'a>,
+    path: &str,
+    pending: &mut Vec<PathItem<'n, 'a>>,
+) {
+    use PathItem::{Array, One};
+    match node {
+        ast::Node::Admonition(e) => {
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        ast::Node::BlockExtension(e) => pending.push(Array(e.fallback, format!("{path}/fallback"))),
+        ast::Node::InlineExtension(e) => {
+            if let Some(fallback) = e.fallback.as_deref() {
+                pending.push(Array(fallback, format!("{path}/fallback")));
+            }
+        }
+        ast::Node::BlockQuote(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Caption(e) => {
+            if let Some(short) = e.short.as_deref() {
+                pending.push(Array(short, format!("{path}/short")));
+            }
+        }
+        _ => secondary_node_paths_middle(node, path, pending),
+    }
+}
+
+fn secondary_node_paths_middle<'n, 'a>(
+    node: &'n ast::Node<'a>,
+    path: &str,
+    pending: &mut Vec<PathItem<'n, 'a>>,
+) {
+    use PathItem::{Array, One};
+    match node {
+        ast::Node::Citation(e) => {
+            if let Some(prefix) = e.prefix.as_deref() {
+                pending.push(Array(prefix, format!("{path}/prefix")));
+            }
+            if let Some(suffix) = e.suffix.as_deref() {
+                pending.push(Array(suffix, format!("{path}/suffix")));
+            }
+        }
+        ast::Node::CodeBlock(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        ast::Node::Directive(e) => {
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        ast::Node::Div(e) => {
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        _ => secondary_node_paths_tail(node, path, pending),
+    }
+}
+
+fn secondary_node_paths_tail<'n, 'a>(
+    node: &'n ast::Node<'a>,
+    path: &str,
+    pending: &mut Vec<PathItem<'n, 'a>>,
+) {
+    use PathItem::{Array, One};
+    match node {
+        ast::Node::FigureGroup(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Image(e) => {
+            if let Some(description) = e.long_description.as_deref() {
+                pending.push(Array(description, format!("{path}/longDescription")));
+            }
+        }
+        ast::Node::Include(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Paragraph(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Ruby(e) => pending.push(Array(e.pairs, format!("{path}/pairs"))),
+        ast::Node::RubyPair(e) => {
+            pending.push(Array(e.base, format!("{path}/base")));
+            pending.push(Array(e.annotation, format!("{path}/annotation")));
+        }
+        ast::Node::Table(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+            pending.push(Array(e.columns, format!("{path}/columns")));
+        }
+        _ => {}
+    }
+}
+
 fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
-    let mut pending = vec![(nodes, String::new(), "children")];
-    while let Some((children, parent, slot)) = pending.pop() {
-        for (i, node) in children.iter().enumerate().rev() {
-            let path = format!("{parent}/{slot}/{i}");
-            if resolve::order::addr(node) == target {
-                return Some(path);
-            }
-            if let Some(next) = node.children() {
-                pending.push((next, path.clone(), "children"));
-            }
-            match node {
-                ast::Node::BlockExtension(e) => {
-                    pending.push((e.fallback, path.clone(), "fallback"));
+    use PathItem::{Array, One};
+    let mut pending = vec![Array(nodes, "/children".to_string())];
+    while let Some(item) = pending.pop() {
+        match item {
+            Array(nodes, prefix) => {
+                for (i, node) in nodes.iter().enumerate().rev() {
+                    pending.push(One(node, format!("{prefix}/{i}")));
                 }
-                ast::Node::InlineExtension(e) => {
-                    if let Some(fallback) = e.fallback.as_deref() {
-                        pending.push((fallback, path.clone(), "fallback"));
-                    }
+            }
+            One(node, path) => {
+                if resolve::order::addr(node) == target {
+                    return Some(path);
                 }
-                _ => {}
+                if let Some(children) = node.children() {
+                    pending.push(Array(children, format!("{path}/children")));
+                }
+                secondary_node_paths(node, &path, &mut pending);
             }
         }
     }
