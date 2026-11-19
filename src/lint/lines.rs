@@ -440,7 +440,12 @@ fn thematic_marker(
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
     let candidate = tail.trim();
-    if run(candidate, "-_", 3) && !(line.kind == "definition_term" && line.content_start.is_none())
+    if run(candidate, "-_", 3)
+        && !(line.kind == "definition_term"
+            && line.content_start.is_none()
+            && ["> ", "- ", "* "]
+                .iter()
+                .any(|prefix| line.text.trim_start().starts_with(prefix)))
     {
         let is_setext = candidate.starts_with('-')
             && previous.is_some_and(|p| {
@@ -733,9 +738,6 @@ impl<'r> DescriptionLists<'r> {
             .enumerate()
             .rev()
             .find(|(_, l)| !l.text.trim().is_empty() && l.quotes == line.quotes)?;
-        if host.1.kind != "definition_term" || host.1.content_start.is_none() {
-            return None;
-        }
         let number = host.0 + 1;
         let list = self
             .lists
@@ -948,9 +950,6 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
 // C2-I-079: a footnote label, a full reference's label or a definition label of only spaces and tabs;
 // a task box and a bracket pair with no reference glued to it are no label.
 fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
-    if line.literal_quote_prefix {
-        return;
-    }
     let text = line.text.as_str();
     let (from, _) = leaf_text(line);
     for (open, _) in text.match_indices('[').filter(|(at, _)| *at >= from) {
@@ -959,6 +958,9 @@ fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
         };
         let inner = &text[open + 1..close];
         let footnote = inner.starts_with('^');
+        if line.literal_quote_prefix && !footnote {
+            continue;
+        }
         let label = inner.strip_prefix('^').unwrap_or(inner);
         if label.is_empty() || !label.bytes().all(|b| b == b' ' || b == b'\t') {
             continue;
@@ -1075,7 +1077,7 @@ fn prose_context(
         );
     }
     if paragraph_continuation(line, previous) {
-        if line.literal_quote_prefix {
+        if line.literal_quote_prefix && matches!(line.kind.as_str(), "paragraph" | "caption") {
             let at = line.text.len() - line.text.trim_start().len();
             sink.emit(
                 "block-opener-without-blank-line",
@@ -1090,9 +1092,7 @@ fn prose_context(
     if list_candidate
         && (paragraph_continuation(line, previous)
             || previous.is_some_and(|p| {
-                p.kind == "definition_term"
-                    && !p.text.trim().is_empty()
-                    && (line.scope.in_footnote || line.quotes > 0)
+                p.kind == "definition_term" && !p.text.trim().is_empty() && line.scope.in_footnote
             }))
     {
         sink.emit(
@@ -1173,15 +1173,20 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
 
 fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
     let (at, text) = leaf_text(line);
+    let tail = sink
+        .source
+        .text()
+        .get(line.start + line.text.len()..)
+        .unwrap_or("");
+    let next = tail
+        .strip_prefix('\n')
+        .unwrap_or(tail)
+        .split('\n')
+        .next()
+        .unwrap_or("")
+        .trim();
     if !line.paragraph
-        || (line.content_start.is_none()
-            && !sink
-                .source
-                .text()
-                .get(line.start + line.text.len()..)
-                .unwrap_or("")
-                .trim()
-                .is_empty())
+        || (line.content_start.is_none() && (next.starts_with(":::") || next.starts_with('>')))
         || line.attached_attribute
         || !text.starts_with('{')
         || !text.ends_with('}')
@@ -1249,7 +1254,8 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 }
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
-    if !line.text.trim_start().starts_with("> ") {
+    let starts = line.text.trim_start();
+    if !(starts.starts_with("> ") || starts.starts_with(">[") || starts.starts_with(">>")) {
         return;
     }
     if let Some(at) = line.text.find("[!")

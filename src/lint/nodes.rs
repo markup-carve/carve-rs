@@ -364,7 +364,14 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         }
         (owner, column)
     } else if quote.is_some() {
-        ("a quote", prefix.rfind('>').map_or(0, |at| at + 2))
+        (
+            "a quote",
+            prefix.rfind('>').map_or(0, |at| {
+                let end = (at + 2).min(prefix.len());
+                usize::try_from(source_column(&prefix[..end], end).saturating_sub(1))
+                    .unwrap_or(usize::MAX)
+            }),
+        )
     } else if item.parents.iter().any(|parent| {
         matches!(
             parent.as_str(),
@@ -1566,8 +1573,10 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     emphasis_before_attrs(item, sink, &value, from);
     if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
         let (block, end) = crate::attr::parse_block(&value, at)?;
+        let before = value.get(..at)?.rsplit('\n').next().unwrap_or("").trim();
         (at > 0
             && !block.empty
+            && !matches!(before, "" | ":" | ">")
             && !escaped(value.as_bytes(), at)
             && sink
                 .source
