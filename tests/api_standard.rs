@@ -252,3 +252,14 @@ fn format_parses_with_the_enabled_tabs_matcher() {
     assert_eq!(out["ok"]["source"], TABS);
     assert_eq!(out["ok"]["diagnostics"], json!([]));
 }
+
+#[test]
+fn tabs_renderer_host_mode() {
+    let source = ":::: tabs\n::: tab \"A\"\na\n:::\n::::\n";
+    let mut host = api::Carve::new();
+    host.enable_standard_tabs_renderer("aria").unwrap();
+    let html = host.render(source, &api::Options::default()).unwrap();
+    assert!(html.contains("role=\"tablist\""), "{html}");
+    assert!(html.contains("role=\"tabpanel\""), "{html}");
+    assert!(host.enable_standard_tabs_renderer("other").is_err());
+}

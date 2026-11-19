@@ -556,8 +556,26 @@ fn legacy_markup(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 
 fn legacy_authored(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.trim();
-    if line.paragraph && text.starts_with("+ ") && text.len() > 2 {
-        sink.whole("djot-plus-bullet", line, &[]);
+    if line.paragraph {
+        let content = line
+            .text
+            .get(line.content_start.unwrap_or(0)..)
+            .unwrap_or("");
+        let offset = line.text.len() - content.trim_start().len();
+        let content = content.trim_start();
+        if content.starts_with('+')
+            && content
+                .get(1..)
+                .is_some_and(|tail| tail.starts_with([' ', '\t']) && !tail.trim().is_empty())
+        {
+            sink.emit(
+                "djot-plus-bullet",
+                line.start + offset,
+                line.start + offset + content.trim_end().len(),
+                &line.path,
+                &[],
+            );
+        }
     }
     if line.paragraph && (text.starts_with("#region ") || text.starts_with("#endregion")) {
         sink.whole("region-marker-renders-as-text", line, &[]);

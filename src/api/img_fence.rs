@@ -141,6 +141,7 @@ fn node(code: &Map<String, Value>, qualified: &str) -> Map<String, Value> {
     let body = code.get("value").cloned().unwrap_or_default();
     let mut fallback = code.clone();
     fallback.remove("pos");
+    fallback.remove("attrs");
     let mut out = Map::new();
     out.insert("type".into(), "block_extension".into());
     out.insert("name".into(), qualified.into());

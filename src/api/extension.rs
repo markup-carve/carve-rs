@@ -450,7 +450,15 @@ impl crate::html::ExtensionHook for Host<'_> {
                 block,
                 depth,
             };
-            let group = || self.next_id("tabs");
+            let group = || {
+                let count = node
+                    .pointer("/slots/tabs")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+                self.ids
+                    .borrow_mut()
+                    .next_tabs(count, self.standard.tabs_aria)
+            };
             return Some(
                 super::standard::render_tabs(node, &cx, &group, self.standard.tabs_aria).map_err(
                     |_| {
