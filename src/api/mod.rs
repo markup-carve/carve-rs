@@ -654,7 +654,8 @@ impl Carve {
     /// As [`render_tree`].
     pub fn render_tree(&self, tree: &Tree, opts: &Options) -> Result<String, Error> {
         if self.plain() {
-            return render_tree(tree, opts);
+            let rendered = crate::render_tree_with_diagnostics(tree.document(), opts)?;
+            return Ok(finish_render(rendered, opts, true)?.html);
         }
         Ok(self.render_view(tree.clone(), opts, true)?.html)
     }
@@ -1030,7 +1031,7 @@ pub fn render_with_diagnostics<'a>(
     let input = input.into();
     check_length(input.len(), opts)?;
     let rendered = crate::render_with_diagnostics(&input.text(), opts);
-    let mut rendered = finish_render(rendered, opts)?;
+    let mut rendered = finish_render(rendered, opts, false)?;
     input.remap(&mut rendered.diagnostics);
     Ok(rendered)
 }
@@ -1042,12 +1043,21 @@ pub fn render_with_diagnostics<'a>(
 /// As [`render_tree`].
 pub fn render_tree_with_diagnostics(tree: &Tree, opts: &Options) -> Result<Rendered, Error> {
     let rendered = crate::render_tree_with_diagnostics(tree.document(), opts)?;
-    finish_render(rendered, opts)
+    finish_render(rendered, opts, false)
 }
 
-fn finish_render(rendered: crate::Rendered, opts: &Options) -> Result<Rendered, Error> {
+fn finish_render(
+    rendered: crate::Rendered,
+    opts: &Options,
+    refuse_loss: bool,
+) -> Result<Rendered, Error> {
     let (mut diagnostics, suppressed) = record::cap_includes(&rendered.diagnostics);
-    let (dropped, lost) = limit(opts, &mut diagnostics, &rendered.dropped_losses, false)?;
+    let (dropped, lost) = limit(
+        opts,
+        &mut diagnostics,
+        &rendered.dropped_losses,
+        refuse_loss,
+    )?;
     Ok(Rendered {
         html: if opts.strict_losses && lost {
             String::new()
