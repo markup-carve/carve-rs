@@ -146,6 +146,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     }
     lines::scan(source, opts, &positions.all, &mut out);
     nodes::scan(source, opts, &mut out);
+    colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     let invalid_tables: Vec<_> = out
         .iter()
@@ -195,24 +196,25 @@ fn skip_legacy_warning(
     {
         return true;
     }
-    if warning.rule == "list-item-block-overindented"
-        && !positions.around(warning.start).any(|range| {
-            range.start == warning.start
-                && matches!(
-                    range.kind.as_str(),
-                    "heading"
-                        | "block_quote"
-                        | "code_block"
-                        | "definition_term"
-                        | "div"
-                        | "image"
-                        | "list"
-                        | "thematic_break"
-                        | "table"
-                )
-        })
-    {
-        return true;
+    if warning.rule == "list-marker-below-content-column" {
+        if source
+            .get(warning.start..)
+            .is_some_and(|tail| tail.starts_with('+'))
+        {
+            return true;
+        }
+        let column = parsed.pos(warning.start, warning.start).start_column;
+        let previous = source
+            .get(..warning.start)
+            .unwrap_or("")
+            .trim_end_matches([' ', '\t', '\n']);
+        if !previous.len().checked_sub(1).is_some_and(|at| {
+            positions.around(at).any(|range| {
+                range.kind == "list" && parsed.pos(range.start, range.start).start_column > column
+            })
+        }) {
+            return true;
+        }
     }
     skip_legacy_context(warning, source, parsed, positions)
 }
@@ -281,6 +283,13 @@ fn skip_legacy_context(
         "semantic-attribute-outside-span",
         "empty-include-path",
         "heading-trailing-attribute",
+        "indented-code-block",
+        "heading-closing-hashes",
+        "setext-heading-underline",
+        "list-item-block-overindented",
+        "github-alert-marker",
+        "description-separator-below-content-column",
+        "colon-fence-length-mismatch",
     ]
     .contains(&warning.rule)
     {
@@ -334,6 +343,13 @@ fn convert_legacy_warning(
         })
     {
         diagnostic.pos = Some(parsed.pos(table.start, table.end));
+    }
+    if warning.rule == "list-marker-below-content-column" {
+        let end = source
+            .get(warning.start..)
+            .and_then(|tail| tail.find('\n'))
+            .map_or(source.len(), |length| warning.start + length);
+        diagnostic.pos = Some(parsed.pos(warning.start, end));
     }
     if warning.rule == "figure-group-panel-number"
         && let Some(panel) = positions.last_image_before(warning.start)
@@ -608,6 +624,82 @@ fn colon_fence_message(
     .message
 }
 
+fn colon_fence_mismatches(
+    source: &str,
+    opts: &LintOptions,
+    ranges: &Ranges<'_>,
+    output: &mut Vec<Diagnostic>,
+) {
+    if !active("colon-fence-length-mismatch", opts) {
+        return;
+    }
+    let positions = Source::new(source);
+    let mut line_start = 0;
+    for piece in source.split_inclusive('\n') {
+        let line = piece.trim_end_matches(['\n', '\r']);
+        let mut tail = line.trim_start_matches([' ', '\t']);
+        while let Some(rest) = tail.strip_prefix("> ") {
+            tail = rest.trim_start_matches([' ', '\t']);
+        }
+        let candidate = tail.trim_end_matches([' ', '\t']);
+        if candidate.len() >= 3 && candidate.bytes().all(|byte| byte == b':') {
+            let at = line_start + line.len() - tail.len();
+            let end = at + candidate.len();
+            let previous = source
+                .get(..line_start)
+                .unwrap_or("")
+                .trim_end_matches([' ', '\t', '\n']);
+            let previous_line = previous.rsplit('\n').next().unwrap_or("").trim();
+            let previous_at =
+                if previous_line.len() >= 3 && previous_line.bytes().all(|byte| byte == b':') {
+                    Some(at)
+                } else {
+                    previous.len().checked_sub(1)
+                };
+            let container = previous_at
+                .into_iter()
+                .flat_map(|previous| ranges.around(previous))
+                .filter(|range| {
+                    range.start < at
+                        && matches!(
+                            range.kind.as_str(),
+                            "div"
+                                | "admonition"
+                                | "figure_group"
+                                | "line_block"
+                                | "hard_break_block"
+                        )
+                })
+                .max_by_key(|range| range.start);
+            if let Some(container) = container {
+                let width = source
+                    .get(container.start..)
+                    .unwrap_or("")
+                    .bytes()
+                    .take_while(|byte| *byte == b':')
+                    .count();
+                let opaque = ranges.around(at).any(|range| {
+                    range.start <= at
+                        && end <= range.end
+                        && matches!(range.kind.as_str(), "code_block" | "raw_block" | "comment")
+                });
+                if width >= 3 && width != candidate.len() && !opaque {
+                    let mut finding = Diagnostic::new(
+                        "colon-fence-length-mismatch",
+                        &[],
+                        None,
+                        Some(positions.pos(at, end)),
+                    );
+                    finding.message = colon_fence_message(source, ranges, at, end, candidate);
+                    finding.path = Some(container.path.clone());
+                    output.push(finding);
+                }
+            }
+        }
+        line_start += piece.len();
+    }
+}
+
 fn list_columns(
     source: &str,
     positions: &Source<'_>,
@@ -666,6 +758,10 @@ fn last_colon_opener(before: &str) -> usize {
     before
         .rmatch_indices(":::")
         .find_map(|(at, _)| {
+            let mut at = at;
+            while at > 0 && before.as_bytes().get(at - 1) == Some(&b':') {
+                at -= 1;
+            }
             let run = before
                 .get(at..)
                 .unwrap_or("")
