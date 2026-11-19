@@ -448,35 +448,39 @@ fn retired_layout(old: &Fields, node: &mut Fields) {
             }
         }
         "include" => {
-            let mut spelling = Fields::new();
-            for item in old
-                .get("options")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-            {
-                let pair = if let Some(items) = item.as_array() {
-                    items
-                        .first()
-                        .and_then(Value::as_str)
-                        .zip(items.get(1).and_then(Value::as_str))
-                } else {
-                    item.get("name")
-                        .and_then(Value::as_str)
-                        .zip(item.get("value").and_then(Value::as_str))
-                };
-                if let Some((key, raw)) = pair {
-                    spelling.entry(key).or_insert_with(|| raw.into());
-                }
-            }
-            if !spelling.is_empty() {
-                facts.insert("optionSpelling".into(), Value::Object(spelling));
-            }
+            retired_include(old, &mut facts);
         }
         _ => {}
     }
     if !facts.is_empty() {
         node.insert("__layout".into(), Value::Object(facts));
+    }
+}
+
+fn retired_include(old: &Fields, facts: &mut Fields) {
+    let mut spelling = Fields::new();
+    for item in old
+        .get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let pair = if let Some(items) = item.as_array() {
+            items
+                .first()
+                .and_then(Value::as_str)
+                .zip(items.get(1).and_then(Value::as_str))
+        } else {
+            item.get("name")
+                .and_then(Value::as_str)
+                .zip(item.get("value").and_then(Value::as_str))
+        };
+        if let Some((key, raw)) = pair {
+            spelling.entry(key).or_insert_with(|| raw.into());
+        }
+    }
+    if !spelling.is_empty() {
+        facts.insert("optionSpelling".into(), Value::Object(spelling));
     }
 }
 

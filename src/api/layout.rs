@@ -176,46 +176,16 @@ impl Walk<'_> {
         let end = byte_end.map(|n| self.text_offset(n));
         let mut inner = frame;
         if let (Some(start), Some(end)) = (start, end) {
-            if start <= end
-                && end <= self.source.len()
-                && is_block(ty)
-                && (ty != "comment"
-                    || frame.blocks
-                    || frame.table && table_comment(self.source, start))
-                && (!frame.caption || ty == "caption")
-                && !frame.cell
-            {
-                let mut entry = Map::new();
-                entry.insert("path".into(), path.into());
-                entry.insert("startByte".into(), byte_start.unwrap_or(start).into());
-                entry.insert("endByte".into(), byte_end.unwrap_or(end).into());
-                if required_blanks(ty, frame) {
-                    entry.insert(
-                        "blankLinesBefore".into(),
-                        self.blank_before(start, frame.start, frame.quotes).into(),
-                    );
-                    let after = if ty == "block_quote"
-                        && !self.source[start..end].trim_start().starts_with(":::")
-                    {
-                        self.marked_blank_end(end, frame.quotes + 1)
-                    } else {
-                        end
-                    };
-                    entry.insert(
-                        "blankLinesAfter".into(),
-                        self.blank_after(after, frame.end, frame.quotes, frame.open)
-                            .into(),
-                    );
-                }
-                self.facts(ty, node, start, end, frame.quotes, &mut entry);
-                self.nodes.push(Value::Object(entry));
-                inner.start = start;
-                inner.end = end;
-                inner.quotes += usize::from(
-                    ty == "block_quote" && !self.source[start..end].trim_start().starts_with(":::"),
-                );
-                inner.open = ty == "block_quote";
-            }
+            inner = self.visit_block(
+                ty,
+                node,
+                path,
+                start,
+                end,
+                byte_start.unwrap_or(start),
+                byte_end.unwrap_or(end),
+                frame,
+            );
         }
         if matches!(ty, "link" | "image") && node.get("key").is_some() {
             if let (Some(start), Some(end)) = (start, end) {
@@ -235,6 +205,65 @@ impl Walk<'_> {
         {
             self.table_rows(node, path, start, end);
         }
+        self.visit_slots(node, path, ty, frame, inner);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn visit_block(
+        &mut self,
+        ty: &str,
+        node: &Value,
+        path: &str,
+        start: usize,
+        end: usize,
+        byte_start: usize,
+        byte_end: usize,
+        mut frame: Frame,
+    ) -> Frame {
+        if start > end
+            || end > self.source.len()
+            || !is_block(ty)
+            || frame.cell
+            || frame.caption && ty != "caption"
+            || ty == "comment"
+                && !(frame.blocks || frame.table && table_comment(self.source, start))
+        {
+            return frame;
+        }
+        let mut entry = Map::new();
+        entry.insert("path".into(), path.into());
+        entry.insert("startByte".into(), byte_start.into());
+        entry.insert("endByte".into(), byte_end.into());
+        if required_blanks(ty, frame) {
+            entry.insert(
+                "blankLinesBefore".into(),
+                self.blank_before(start, frame.start, frame.quotes).into(),
+            );
+            let after = if ty == "block_quote"
+                && !self.source[start..end].trim_start().starts_with(":::")
+            {
+                self.marked_blank_end(end, frame.quotes + 1)
+            } else {
+                end
+            };
+            entry.insert(
+                "blankLinesAfter".into(),
+                self.blank_after(after, frame.end, frame.quotes, frame.open)
+                    .into(),
+            );
+        }
+        self.facts(ty, node, start, end, frame.quotes, &mut entry);
+        self.nodes.push(Value::Object(entry));
+        frame.start = start;
+        frame.end = end;
+        frame.quotes += usize::from(
+            ty == "block_quote" && !self.source[start..end].trim_start().starts_with(":::"),
+        );
+        frame.open = ty == "block_quote";
+        frame
+    }
+
+    fn visit_slots(&mut self, node: &Value, path: &str, ty: &str, frame: Frame, inner: Frame) {
         for slot in ["title", "children", "caption"] {
             if ty == "include" && slot == "children" {
                 continue;
@@ -266,8 +295,7 @@ impl Walk<'_> {
             .unwrap_or(byte)
     }
 
-    // Each arm measures one independent block family; keep the dispatch in source order.
-    #[allow(clippy::cognitive_complexity)]
+    // Each arm measures one independent block family.
     fn facts(
         &self,
         ty: &str,
@@ -289,270 +317,218 @@ impl Walk<'_> {
         let mark_at = mark_start + line.len() - trimmed.len();
         let column = column_of(source, mark_at, quotes);
         match ty {
-            "heading" => {
-                let raw = if trimmed.starts_with('#') {
-                    trimmed.bytes().take_while(|b| *b == b'#').count()
-                } else if trimmed.starts_with('=') {
-                    trimmed.bytes().take_while(|b| *b == b'=').count()
-                } else {
-                    0
-                };
-                if raw > 0 {
-                    marker(entry, &trimmed[..raw], column);
-                }
-            }
+            "heading" => heading_facts(trimmed, column, entry),
             "thematic_break" => marker(entry, trimmed.trim_end(), column),
-            "list" => {
-                if node.pointer("/marker/kind").and_then(Value::as_str) == Some("ordered") {
-                    let first = node
-                        .pointer("/children/0/pos/startOffset")
-                        .and_then(Value::as_u64)
-                        .and_then(|n| usize::try_from(n).ok())
-                        .map_or(start, |n| self.text_offset(n));
-                    entry.insert(
-                        "bare".into(),
-                        self.source[first..line_end(self.source, first)]
-                            .trim_start()
-                            .starts_with(". ")
-                            .into(),
-                    );
-                }
-            }
-            "list_item" | "definition_description" | "footnote" => {
-                let mark_len = if ty == "list_item" {
-                    list_marker_len(trimmed)
-                } else if ty == "definition_description" {
-                    1
-                } else {
-                    trimmed.find(':').map_or(0, |n| n + 1)
-                };
-                if mark_len > 0 && mark_len <= trimmed.len() {
-                    marker(entry, &trimmed[..mark_len], column);
-                    if ty == "footnote" {
-                        let rest = &trimmed[mark_len..];
-                        entry.insert(
-                            "metadataSeparatorRaw".into(),
-                            format!(
-                                ":{}",
-                                &rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()]
-                            )
-                            .into(),
-                        );
-                    }
-                    let mut content = mark_at + mark_len;
-                    while source
-                        .as_bytes()
-                        .get(content)
-                        .is_some_and(|b| *b == b' ' || *b == b'\t')
-                    {
-                        content += 1;
-                    }
-                    let marker_content = content;
-                    if ty == "list_item" && source[content..].starts_with("{.") {
-                        if let Some(close) = source[content..].find('}') {
-                            content += close + 1;
-                        }
-                        while source
-                            .as_bytes()
-                            .get(content)
-                            .is_some_and(|b| *b == b' ' || *b == b'\t')
-                        {
-                            content += 1;
-                        }
-                    }
-                    if ty == "list_item"
-                        && matches!(trimmed.as_bytes().first(), Some(b'-' | b'*'))
-                        && node.get("task").is_some()
-                        && source.as_bytes().get(content) == Some(&b'[')
-                        && source.as_bytes().get(content + 2) == Some(&b']')
-                    {
-                        if let Some(close) = source[content..].find(']') {
-                            content += close + 1;
-                        }
-                        while source
-                            .as_bytes()
-                            .get(content)
-                            .is_some_and(|b| *b == b' ' || *b == b'\t')
-                        {
-                            content += 1;
-                        }
-                    }
-                    if content < line_end(source, start)
-                        || ty == "list_item" && marker_content < line_end(source, start)
-                    {
-                        let content_col = column_of(
-                            source,
-                            if content < line_end(source, start) {
-                                content
-                            } else {
-                                marker_content
-                            },
-                            quotes,
-                        );
-                        entry.insert("contentColumn".into(), content_col.into());
-                        entry.insert(
-                            "continuationStyle".into(),
-                            continuation_style(source, node, start, end, content_col, quotes)
-                                .into(),
-                        );
-                    } else {
-                        entry.insert("continuationStyle".into(), "marker_line".into());
-                    }
-                }
-            }
-            "definition_term" => {
-                if let Some(rest) = trimmed.strip_prefix("::") {
-                    marker(entry, "::", column);
-                    entry.insert(
-                        "metadataSeparatorRaw".into(),
-                        rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()].into(),
-                    );
-                }
-            }
-            "block_quote" => {
-                entry.insert("fenced".into(), trimmed.starts_with(":::").into());
-                if trimmed.starts_with(":::") {
-                    fence(entry, source, start, end, ':');
-                }
-            }
+            "list" => self.list_facts(node, start, entry),
+            "list_item" | "definition_description" | "footnote" => self.item_facts(
+                ty, node, start, end, quotes, mark_at, column, trimmed, entry,
+            ),
+            "definition_term" => term_facts(trimmed, column, entry),
+            "block_quote" => quote_facts(source, start, end, trimmed, entry),
             "code_block" | "raw_block" | "frontmatter" | "line_block" | "comment" | "div"
-            | "admonition" | "directive" => {
-                if let Some(open) = opener(source, start, end) {
-                    fence(entry, source, open, end, source.as_bytes()[open] as char);
-                }
-                if ty == "div"
-                    && node
-                        .pointer("/attrs/classes")
-                        .and_then(Value::as_array)
-                        .is_some_and(|a| a.iter().any(|v| v == "hardbreaks"))
-                {
-                    entry.insert(
-                        "hardBreakOpener".into(),
-                        source[start..end]
-                            .lines()
-                            .any(|line| line.trim_start().starts_with("::: \\"))
-                            .into(),
-                    );
-                }
-            }
+            | "admonition" | "directive" => self.fence_facts(ty, node, start, end, entry),
             "link_reference_definition" | "abbreviation_def" => {
-                if let Some(close) = trimmed.find(':') {
-                    marker(entry, &trimmed[..=close], column);
-                    let rest = &trimmed[close + 1..];
-                    entry.insert(
-                        "metadataSeparatorRaw".into(),
-                        format!(
-                            ":{}",
-                            &rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()]
-                        )
-                        .into(),
-                    );
-                }
+                definition_facts(trimmed, column, entry);
             }
             "caption" => {
                 entry.insert("attachment".into(), "preceding".into());
             }
-            "table" => {
-                let open = opener(source, start, end);
-                if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
-                    if source[start..open].contains("header-rows=") {
-                        let head = node
-                            .get("children")
-                            .and_then(Value::as_array)
-                            .into_iter()
-                            .flatten()
-                            .filter(|group| {
-                                group.get("type").and_then(Value::as_str) == Some("table_head")
-                            })
-                            .map(|group| {
-                                group
-                                    .get("children")
-                                    .and_then(Value::as_array)
-                                    .map_or(0, Vec::len)
-                            })
-                            .sum::<usize>();
-                        entry.insert("headerRows".into(), head.into());
-                    }
-                }
+            "table" => self.table_facts(node, start, end, entry),
+            "include" => self.include_facts(node, start, end, entry),
+            _ => {}
+        }
+        comment_column(ty, node, source, start, quotes, entry);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn item_facts(
+        &self,
+        ty: &str,
+        node: &Value,
+        start: usize,
+        end: usize,
+        quotes: usize,
+        mark_at: usize,
+        column: usize,
+        trimmed: &str,
+        entry: &mut Map<String, Value>,
+    ) {
+        let source = self.source;
+        let mark_len = if ty == "list_item" {
+            list_marker_len(trimmed)
+        } else if ty == "definition_description" {
+            1
+        } else {
+            trimmed.find(':').map_or(0, |n| n + 1)
+        };
+        if mark_len > 0 && mark_len <= trimmed.len() {
+            marker(entry, &trimmed[..mark_len], column);
+            if ty == "footnote" {
+                let rest = &trimmed[mark_len..];
                 entry.insert(
-                    "sourceFormat".into(),
-                    if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
-                        if source[open..line_end(source, open)].contains("tsv") {
-                            "tsv"
-                        } else {
-                            "csv"
-                        }
-                    } else {
-                        "pipe"
-                    }
+                    "metadataSeparatorRaw".into(),
+                    format!(
+                        ":{}",
+                        &rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()]
+                    )
                     .into(),
                 );
             }
-            "include" => {
-                let mut spellings = Map::new();
-                let raw = &source[start..end];
-                let options = node.get("options").and_then(Value::as_object);
-                let mut at = 0;
-                while let Some(found) = raw[at..].find('@') {
-                    let key_start = at + found + 1;
-                    let Some(colon) = raw[key_start..].find(':') else {
-                        break;
-                    };
-                    let key_end = key_start + colon;
-                    let key = raw[key_start..key_end]
-                        .rsplit('@')
-                        .next()
-                        .unwrap_or("")
-                        .trim();
-                    let value_start = key_end + 1;
-                    if options.is_some_and(|o| o.contains_key(key)) {
-                        let bytes = raw.as_bytes();
-                        let mut stop = value_start;
-                        if bytes.get(stop) == Some(&b'"') {
-                            stop += 1;
-                            while stop < bytes.len() {
-                                if bytes[stop] == b'\\' {
-                                    stop += 2;
-                                    continue;
-                                }
-                                if bytes[stop] == b'"' {
-                                    stop += 1;
-                                    break;
-                                }
-                                stop += 1;
-                            }
-                        } else {
-                            while stop < bytes.len()
-                                && !matches!(bytes[stop], b' ' | b'\t' | b'\r' | b'\n' | b'}')
-                            {
-                                stop += 1;
-                            }
-                        }
-                        if let Some(value) = raw.get(value_start..stop) {
-                            spellings.insert(key.into(), value.into());
-                        }
-                    }
-                    at = value_start;
-                    if at >= raw.len() {
-                        break;
-                    }
-                }
-                if !spellings.is_empty() {
-                    entry.insert("optionSpelling".into(), Value::Object(spellings));
-                }
-            }
-            _ => {}
+            let marker_content = skip_layout_space(source, mark_at + mark_len);
+            let content = item_content_start(ty, node, trimmed, source, marker_content);
+            content_facts(
+                source,
+                node,
+                ty,
+                start,
+                end,
+                quotes,
+                marker_content,
+                content,
+                entry,
+            );
         }
-        if ty == "comment" && quotes > 0 && node.get("form").and_then(Value::as_str) == Some("line")
-        {
-            let line = &source[line_start(source, start)..start];
-            if let Some(mark) = line.find('>') {
-                let at = line_start(source, start) + mark;
-                entry.insert(
-                    "markerColumn".into(),
-                    column_of(source, at, quotes - 1).into(),
-                );
+    }
+
+    fn include_facts(
+        &self,
+        node: &Value,
+        start: usize,
+        end: usize,
+        entry: &mut Map<String, Value>,
+    ) {
+        let source = self.source;
+        let mut spellings = Map::new();
+        let raw = &source[start..end];
+        let options = node.get("options").and_then(Value::as_object);
+        let mut at = 0;
+        while let Some(found) = raw[at..].find('@') {
+            let key_start = at + found + 1;
+            let Some(colon) = raw[key_start..].find(':') else {
+                break;
+            };
+            let key_end = key_start + colon;
+            let key = raw[key_start..key_end]
+                .rsplit('@')
+                .next()
+                .unwrap_or("")
+                .trim();
+            let value_start = key_end + 1;
+            if options.is_some_and(|o| o.contains_key(key)) {
+                let bytes = raw.as_bytes();
+                let mut stop = value_start;
+                if bytes.get(stop) == Some(&b'"') {
+                    stop += 1;
+                    while stop < bytes.len() {
+                        if bytes[stop] == b'\\' {
+                            stop += 2;
+                            continue;
+                        }
+                        if bytes[stop] == b'"' {
+                            stop += 1;
+                            break;
+                        }
+                        stop += 1;
+                    }
+                } else {
+                    while stop < bytes.len()
+                        && !matches!(bytes[stop], b' ' | b'\t' | b'\r' | b'\n' | b'}')
+                    {
+                        stop += 1;
+                    }
+                }
+                if let Some(value) = raw.get(value_start..stop) {
+                    spellings.insert(key.into(), value.into());
+                }
             }
+            at = value_start;
+            if at >= raw.len() {
+                break;
+            }
+        }
+        if !spellings.is_empty() {
+            entry.insert("optionSpelling".into(), Value::Object(spellings));
+        }
+    }
+
+    fn table_facts(&self, node: &Value, start: usize, end: usize, entry: &mut Map<String, Value>) {
+        let source = self.source;
+        let open = opener(source, start, end);
+        if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
+            if source[start..open].contains("header-rows=") {
+                let head = node
+                    .get("children")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter(|group| group.get("type").and_then(Value::as_str) == Some("table_head"))
+                    .map(|group| {
+                        group
+                            .get("children")
+                            .and_then(Value::as_array)
+                            .map_or(0, Vec::len)
+                    })
+                    .sum::<usize>();
+                entry.insert("headerRows".into(), head.into());
+            }
+        }
+        entry.insert(
+            "sourceFormat".into(),
+            if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
+                if source[open..line_end(source, open)].contains("tsv") {
+                    "tsv"
+                } else {
+                    "csv"
+                }
+            } else {
+                "pipe"
+            }
+            .into(),
+        );
+    }
+
+    fn fence_facts(
+        &self,
+        ty: &str,
+        node: &Value,
+        start: usize,
+        end: usize,
+        entry: &mut Map<String, Value>,
+    ) {
+        let source = self.source;
+        if let Some(open) = opener(source, start, end) {
+            fence(entry, source, open, end, source.as_bytes()[open] as char);
+        }
+        if ty == "div"
+            && node
+                .pointer("/attrs/classes")
+                .and_then(Value::as_array)
+                .is_some_and(|a| a.iter().any(|v| v == "hardbreaks"))
+        {
+            entry.insert(
+                "hardBreakOpener".into(),
+                source[start..end]
+                    .lines()
+                    .any(|line| line.trim_start().starts_with("::: \\"))
+                    .into(),
+            );
+        }
+    }
+
+    fn list_facts(&self, node: &Value, start: usize, entry: &mut Map<String, Value>) {
+        if node.pointer("/marker/kind").and_then(Value::as_str) == Some("ordered") {
+            let first = node
+                .pointer("/children/0/pos/startOffset")
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .map_or(start, |n| self.text_offset(n));
+            entry.insert(
+                "bare".into(),
+                self.source[first..line_end(self.source, first)]
+                    .trim_start()
+                    .starts_with(". ")
+                    .into(),
+            );
         }
     }
 
@@ -743,6 +719,145 @@ impl Walk<'_> {
         self.nodes
             .push(json!({"path":path,"startByte":origin.start,"endByte":cell_end,"wraps":wraps}));
         let _ = first;
+    }
+}
+
+fn skip_layout_space(source: &str, mut at: usize) -> usize {
+    while source
+        .as_bytes()
+        .get(at)
+        .is_some_and(|b| *b == b' ' || *b == b'\t')
+    {
+        at += 1;
+    }
+    at
+}
+
+fn item_content_start(
+    ty: &str,
+    node: &Value,
+    trimmed: &str,
+    source: &str,
+    mut content: usize,
+) -> usize {
+    if ty == "list_item" && source[content..].starts_with("{.") {
+        if let Some(close) = source[content..].find('}') {
+            content += close + 1;
+        }
+        content = skip_layout_space(source, content);
+    }
+    if ty == "list_item"
+        && matches!(trimmed.as_bytes().first(), Some(b'-' | b'*'))
+        && node.get("task").is_some()
+        && source.as_bytes().get(content) == Some(&b'[')
+        && source.as_bytes().get(content + 2) == Some(&b']')
+    {
+        content = skip_layout_space(source, content + 3);
+    }
+    content
+}
+
+#[allow(clippy::too_many_arguments)]
+fn content_facts(
+    source: &str,
+    node: &Value,
+    ty: &str,
+    start: usize,
+    end: usize,
+    quotes: usize,
+    marker_content: usize,
+    content: usize,
+    entry: &mut Map<String, Value>,
+) {
+    let line_end = line_end(source, start);
+    if content < line_end || ty == "list_item" && marker_content < line_end {
+        let content_col = column_of(
+            source,
+            if content < line_end {
+                content
+            } else {
+                marker_content
+            },
+            quotes,
+        );
+        entry.insert("contentColumn".into(), content_col.into());
+        entry.insert(
+            "continuationStyle".into(),
+            continuation_style(source, node, start, end, content_col, quotes).into(),
+        );
+    } else {
+        entry.insert("continuationStyle".into(), "marker_line".into());
+    }
+}
+
+fn heading_facts(trimmed: &str, column: usize, entry: &mut Map<String, Value>) {
+    let raw = if trimmed.starts_with('#') {
+        trimmed.bytes().take_while(|b| *b == b'#').count()
+    } else if trimmed.starts_with('=') {
+        trimmed.bytes().take_while(|b| *b == b'=').count()
+    } else {
+        0
+    };
+    if raw > 0 {
+        marker(entry, &trimmed[..raw], column);
+    }
+}
+
+fn definition_facts(trimmed: &str, column: usize, entry: &mut Map<String, Value>) {
+    if let Some(close) = trimmed.find(':') {
+        marker(entry, &trimmed[..=close], column);
+        let rest = &trimmed[close + 1..];
+        entry.insert(
+            "metadataSeparatorRaw".into(),
+            format!(
+                ":{}",
+                &rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()]
+            )
+            .into(),
+        );
+    }
+}
+
+fn term_facts(trimmed: &str, column: usize, entry: &mut Map<String, Value>) {
+    if let Some(rest) = trimmed.strip_prefix("::") {
+        marker(entry, "::", column);
+        entry.insert(
+            "metadataSeparatorRaw".into(),
+            rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()].into(),
+        );
+    }
+}
+
+fn quote_facts(
+    source: &str,
+    start: usize,
+    end: usize,
+    trimmed: &str,
+    entry: &mut Map<String, Value>,
+) {
+    entry.insert("fenced".into(), trimmed.starts_with(":::").into());
+    if trimmed.starts_with(":::") {
+        fence(entry, source, start, end, ':');
+    }
+}
+
+fn comment_column(
+    ty: &str,
+    node: &Value,
+    source: &str,
+    start: usize,
+    quotes: usize,
+    entry: &mut Map<String, Value>,
+) {
+    if ty == "comment" && quotes > 0 && node.get("form").and_then(Value::as_str) == Some("line") {
+        let line = &source[line_start(source, start)..start];
+        if let Some(mark) = line.find('>') {
+            let at = line_start(source, start) + mark;
+            entry.insert(
+                "markerColumn".into(),
+                column_of(source, at, quotes - 1).into(),
+            );
+        }
     }
 }
 

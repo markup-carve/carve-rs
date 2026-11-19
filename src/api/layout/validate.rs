@@ -187,40 +187,7 @@ fn entry(value: &Value, path: &str, length: usize) -> Result<String, Error> {
         ));
     }
     for (key, value) in entry {
-        let at = format!("{path}/{key}");
-        match key.as_str() {
-            "path" | "startByte" | "endByte" => {}
-            "bare" | "fenced" | "hardBreakOpener" => {
-                if !value.is_boolean() {
-                    return Err(fail(at, "is not a boolean"));
-                }
-            }
-            "continuationLines" | "headerRows" | "markerColumn" | "contentColumn"
-            | "blankLinesBefore" | "blankLinesAfter" => {
-                count(Some(value), &at, 0)?;
-            }
-            "rawRef" | "markerRaw" | "openerRaw" | "closerRaw" | "metadataSeparatorRaw" => {
-                string(Some(value), &at)?;
-            }
-            "sourceFormat" => one_of(Some(value), &at, &["pipe", "csv", "tsv"])?,
-            "continuationStyle" => {
-                one_of(Some(value), &at, &["lazy", "indent", "marker_line", "none"])?;
-            }
-            "attachment" => one_of(Some(value), &at, &["preceding", "none"])?,
-            "wraps" => wraps(value, &at, end - start)?,
-            "optionSpelling" => {
-                let options = object(value, &at)?;
-                for (name, written) in options {
-                    if !["lines", "region", "rows", "cols", "shift", "code"]
-                        .contains(&name.as_str())
-                    {
-                        return Err(fail(format!("{at}/{name}"), "is not an include option"));
-                    }
-                    string(Some(written), &format!("{at}/{name}"))?;
-                }
-            }
-            _ => return Err(fail(at, "is not a field of a node entry")),
-        }
+        validate_fact(key, value, &format!("{path}/{key}"), end - start)?;
     }
     if entry.contains_key("openerRaw") != entry.contains_key("closerRaw") {
         return Err(fail(path, "openerRaw and closerRaw come as a pair"));
@@ -231,8 +198,78 @@ fn entry(value: &Value, path: &str, length: usize) -> Result<String, Error> {
     Ok(name)
 }
 
+fn validate_fact(key: &str, value: &Value, path: &str, span: u64) -> Result<(), Error> {
+    match key {
+        "wraps" => wraps(value, path, span),
+        "optionSpelling" => validate_spelling(value, path),
+        _ => validate_scalar(key, value, path),
+    }
+}
+
+fn validate_spelling(value: &Value, path: &str) -> Result<(), Error> {
+    for (name, written) in object(value, path)? {
+        if !["lines", "region", "rows", "cols", "shift", "code"].contains(&name.as_str()) {
+            return Err(fail(format!("{path}/{name}"), "is not an include option"));
+        }
+        string(Some(written), &format!("{path}/{name}"))?;
+    }
+    Ok(())
+}
+
+fn validate_scalar(key: &str, value: &Value, path: &str) -> Result<(), Error> {
+    match key {
+        "path" | "startByte" | "endByte" => Ok(()),
+        "bare" | "fenced" | "hardBreakOpener" if value.is_boolean() => Ok(()),
+        "bare" | "fenced" | "hardBreakOpener" => Err(fail(path, "is not a boolean")),
+        "continuationLines" | "headerRows" | "markerColumn" | "contentColumn"
+        | "blankLinesBefore" | "blankLinesAfter" => {
+            count(Some(value), path, 0)?;
+            Ok(())
+        }
+        "rawRef" | "markerRaw" | "openerRaw" | "closerRaw" | "metadataSeparatorRaw" => {
+            string(Some(value), path)?;
+            Ok(())
+        }
+        "sourceFormat" => one_of(Some(value), path, &["pipe", "csv", "tsv"]),
+        "continuationStyle" => one_of(
+            Some(value),
+            path,
+            &["lazy", "indent", "marker_line", "none"],
+        ),
+        "attachment" => one_of(Some(value), path, &["preceding", "none"]),
+        _ => Err(fail(path, "is not a field of a node entry")),
+    }
+}
+
 pub(crate) fn validate(value: &Value) -> Result<(), Error> {
     let root = object(value, "")?;
+    let length = validate_header(root)?;
+    let nodes = root
+        .get("nodes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| fail("/nodes", "is not a list"))?;
+    let mut previous = None::<String>;
+    for (index, node) in nodes.iter().enumerate() {
+        let path = format!("/nodes/{index}");
+        let name = entry(node, &path, length)?;
+        if let Some(previous) = previous.as_deref() {
+            if !document_order(previous, &name).is_lt() {
+                return Err(fail(
+                    format!("{path}/path"),
+                    if previous == name {
+                        "is a duplicate path"
+                    } else {
+                        "is not in document order"
+                    },
+                ));
+            }
+        }
+        previous = Some(name);
+    }
+    Ok(())
+}
+
+fn validate_header(root: &Map<String, Value>) -> Result<usize, Error> {
     for key in [
         "version",
         "encoding",
@@ -272,32 +309,9 @@ pub(crate) fn validate(value: &Value) -> Result<(), Error> {
     if !root.get("bom").is_some_and(Value::is_boolean) {
         return Err(fail("/bom", "is not a boolean"));
     }
-    let nodes = root
-        .get("nodes")
-        .and_then(Value::as_array)
-        .ok_or_else(|| fail("/nodes", "is not a list"))?;
-    let length = if root.get("encoding") == Some(&Value::from("base64")) {
+    Ok(if root.get("encoding") == Some(&Value::from("base64")) {
         base64_len(source)?
     } else {
         source.len()
-    };
-    let mut previous = None::<String>;
-    for (index, node) in nodes.iter().enumerate() {
-        let path = format!("/nodes/{index}");
-        let name = entry(node, &path, length)?;
-        if let Some(previous) = previous.as_deref() {
-            if !document_order(previous, &name).is_lt() {
-                return Err(fail(
-                    format!("{path}/path"),
-                    if previous == name {
-                        "is a duplicate path"
-                    } else {
-                        "is not in document order"
-                    },
-                ));
-            }
-        }
-        previous = Some(name);
-    }
-    Ok(())
+    })
 }
