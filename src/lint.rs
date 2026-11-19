@@ -195,6 +195,13 @@ fn skip_legacy_warning(
     {
         return true;
     }
+    if warning.rule == "list-marker-below-content-column"
+        && source
+            .get(warning.start..)
+            .is_some_and(|tail| tail.starts_with('+'))
+    {
+        return true;
+    }
     skip_legacy_context(warning, source, parsed, positions)
 }
 
@@ -267,6 +274,7 @@ fn skip_legacy_context(
         "setext-heading-underline",
         "list-item-block-overindented",
         "github-alert-marker",
+        "description-separator-below-content-column",
     ]
     .contains(&warning.rule)
     {

@@ -196,3 +196,18 @@ fn item_body_column_accounts_for_quotes_and_tabs() {
         vec![(18, 20)]
     );
 }
+
+#[test]
+fn description_column_requires_an_open_term_above() {
+    for source in ["    [^f]: :: term\n:\n", ":: t\n- [ ] :: t\n:\n"] {
+        assert!(
+            spans(source, "description-separator-below-content-column").is_empty(),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn continuation_plus_is_not_a_list_marker() {
+    assert!(spans("- + x\n + item\n", "list-marker-below-content-column").is_empty());
+}

@@ -733,6 +733,9 @@ impl<'r> DescriptionLists<'r> {
             .enumerate()
             .rev()
             .find(|(_, l)| !l.text.trim().is_empty() && l.quotes == line.quotes)?;
+        if host.1.kind != "definition_term" || host.1.content_start.is_none() {
+            return None;
+        }
         let number = host.0 + 1;
         let list = self
             .lists
