@@ -28,13 +28,20 @@
 //! | `encodeTree`, `encodeEnvelope` | [`encode_tree`], [`encode_tree_with`], [`encode_envelope`] |
 //! | `decodeTree`, `validateTree` | [`decode_tree`], [`validate_tree`] |
 //! | `migrateTree` | [`migrate_tree`] (not yet available) |
+//! | `diffTree`, `applyPatch` | [`diff_tree`], [`apply_patch`] |
+//! | `sourceFingerprint`, `treeFingerprint` | [`source_fingerprint`], [`tree_fingerprint`] |
+//! | `headingId` | [`heading_id`] |
+//! | `positionOf` | [`position_of`] (C2-T-041) |
+//! | `VERSION`, `SPEC_VERSION`, `NODE_TYPES` | [`VERSION`], [`SPEC_VERSION`], [`NODE_TYPES`] |
 
 mod error;
 pub mod extension;
 mod img_fence;
 mod import;
+mod info;
 pub mod json;
 mod options;
+mod patch;
 mod record;
 mod standard;
 pub mod writer;
@@ -55,6 +62,10 @@ pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
 };
 pub use import::{ImportOptions, Imported, LossOptions, import_document};
+pub use info::{
+    NODE_TYPES, NodeTypes, Position, SPEC_VERSION, SpecVersion, VERSION, heading_id, position_of,
+};
+pub use patch::{apply_patch, diff_tree, source_fingerprint, tree_fingerprint};
 pub use record::{Entry, Range};
 pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
 

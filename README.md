@@ -36,6 +36,11 @@ carve = { package = "carve-lang", version = "0.2", default-features = false }
 | `encodeTree`, `encodeEnvelope` | `api::encode_tree`, `api::encode_tree_with(&Tree, EncodeOptions { positions })`, `api::encode_envelope` | available |
 | `decodeTree`, `validateTree` | `api::decode_tree(&str)`, `api::validate_tree(&Tree)` | available |
 | `migrateTree` | `api::migrate_tree` | `Error::Unsupported` for now |
+| `positionOf` | `api::position_of(input, offset) -> Result<Position { line, column }, Error>` (C2-T-041) | available |
+| `diffTree`, `applyPatch` | `api::diff_tree(&Tree, &Tree) -> Vec<Value>`, `api::apply_patch(&Tree, &[Value], Option<&str>) -> Result<Tree, Error>` | available |
+| `sourceFingerprint`, `treeFingerprint` | `api::source_fingerprint(&[u8])`, `api::tree_fingerprint(&Tree)`: `sha256:` and the hex SHA-256 of the source or of `encode_tree` | available |
+| `headingId` | `api::heading_id(text, HeadingIds) -> Option<String>`: the generated id without the duplicate suffix, `None` under `off` | available |
+| `VERSION`, `SPEC_VERSION`, `NODE_TYPES` | `api::VERSION`, `api::SPEC_VERSION { version, commit }`, `api::NODE_TYPES { block, inline }` from the pinned `ast-schema.json` | available |
 
 `input` is anything that converts into `api::Input`: `&str`, `&String`, `&[u8]` or `&Vec<u8>`. Bytes are never refused for their encoding (C2-B-218).
 
@@ -89,7 +94,10 @@ Every call returns `api::Error`. Its variants are the library errors of C2-T-040
 | `Tree` | `CarveTreeError` | `ast-json-invalid` | 2 |
 | `Write` | `CarveWriteError` | `writer-refused` | 1 |
 | `ImportInput` | `ImportInputError` | `import-input-invalid` | 2 |
+| `Patch` | `CarvePatchError` | `ast-json-invalid` | 2 |
 | `Unsupported` | `CarveOptionError` | `usage` | 2 |
+
+`Patch { path, reason }` refuses an `apply_patch`: `path` points into the patch (`/0/op`), or into the tree the patch gave. Its row is not in C2-T-040 yet; on the JSON boundary the error object also carries `path` and `reason`.
 
 `Unsupported` is not a row of C2-T-040. It marks a 0.2 call that this engine does not offer yet, so a host can test for it instead of matching a message.
 
@@ -178,7 +186,7 @@ A request names the call with its `tooling.md` spelling:
 {"call": "renderWithDiagnostics", "source": "Hi *there*", "options": {"profile": "comment"}}
 ```
 
-Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, with the HTML as `source`). In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). `format` and `importDocument` answer with `source`, `write` with `output`.
+Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, with the HTML as `source`). `a` and `b` for `diffTree`; `tree`, `patch` and `fingerprint` for `applyPatch`; `text` for `headingId`; `offset` for `positionOf`. In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). `format` and `importDocument` answer with `source`, `write` with `output`.
 
 The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 
@@ -239,6 +247,7 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 - `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`, or set with `Tree::set_file` on a decoded tree.
 - On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
 - The engine does not yet implement `parseWithLayout` or `migrateTree`. Each returns `Error::Unsupported`.
+- `tree_fingerprint` hashes this engine's `encode_tree`. Member order is not fixed across engines (carve#6099), so a fingerprint from another engine does not match the same tree here.
 - Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The `host.attributes` and generated-id helpers of C2-X-033 are not offered, and the claim ownership of C2-X-054 is not tracked.
 - Include resolver on WASI preview 1 and Windows: Rust has no stable identity of an open file there, so the resolver checks after the open that the target still canonicalizes to itself inside the root and has the type, length and modification time of the opened file.
 - The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.

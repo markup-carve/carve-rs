@@ -16,7 +16,16 @@ pub(crate) fn stages(call: &str) -> Option<&'static [&'static str]> {
         "lint" => &["lint", "parse"],
         "importDocument" => &["import"],
         "decodeTree" | "validateTree" => &["tree"],
-        "includeDependencies" | "encodeTree" | "encodeEnvelope" | "migrateTree" => &[],
+        "includeDependencies"
+        | "encodeTree"
+        | "encodeEnvelope"
+        | "migrateTree"
+        | "diffTree"
+        | "applyPatch"
+        | "sourceFingerprint"
+        | "treeFingerprint"
+        | "positionOf" => &[],
+        "headingId" => &["resolve"],
         _ => return None,
     })
 }

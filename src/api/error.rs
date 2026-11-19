@@ -22,6 +22,9 @@ pub enum Error {
     Write { target: String, message: String },
     /// `ImportInputError`: an HTML input the importer refuses (C2-M-006).
     ImportInput { message: String },
+    /// `CarvePatchError`: a patch that cannot be applied; `path` points into
+    /// the patch, or into the tree the patch gave (C2-A-167).
+    Patch { path: String, reason: String },
     /// The call is part of the 0.2 library but this engine does not offer
     /// it yet. Not a row of C2-T-040; the command line reports it as `usage`.
     Unsupported { call: &'static str },
@@ -45,6 +48,7 @@ impl Error {
             Self::Tree(_) => "CarveTreeError",
             Self::Write { .. } => "CarveWriteError",
             Self::ImportInput { .. } => "ImportInputError",
+            Self::Patch { .. } => "CarvePatchError",
         }
     }
 
@@ -55,7 +59,7 @@ impl Error {
             Self::Option { .. } | Self::Unsupported { .. } => "usage",
             Self::Input { .. } => "input-invalid",
             Self::Render { .. } => "render-loss",
-            Self::Tree(_) => "ast-json-invalid",
+            Self::Tree(_) | Self::Patch { .. } => "ast-json-invalid",
             Self::Write { .. } => "writer-refused",
             Self::ImportInput { .. } => "import-input-invalid",
         }
@@ -70,7 +74,8 @@ impl Error {
                 Some(format!("/{}", option.replace('~', "~0").replace('/', "~1")))
             }
             Self::Tree(TreeError::Json(_)) => Some(String::new()),
-            Self::Tree(
+            Self::Patch { path, .. }
+            | Self::Tree(
                 TreeError::Schema { path, .. }
                 | TreeError::Reader { path, .. }
                 | TreeError::Decode { path, .. },
@@ -101,6 +106,9 @@ impl std::fmt::Display for Error {
             Self::Tree(e) => write!(f, "{e}"),
             Self::Write { target, message } => write!(f, "writer {target}: {message}"),
             Self::ImportInput { message } => write!(f, "{message}"),
+            Self::Patch { path, reason } => {
+                write!(f, "{}: {reason}", if path.is_empty() { "/" } else { path })
+            }
             Self::Unsupported { call } => {
                 write!(f, "{call} is not available in this engine yet")
             }

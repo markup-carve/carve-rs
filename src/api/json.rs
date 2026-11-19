@@ -41,6 +41,9 @@ pub fn call(request: &str) -> String {
             if let (Some(path), Some(m)) = (e.path(), error.as_object_mut()) {
                 m.insert("path".into(), path.into());
             }
+            if let (Error::Patch { reason, .. }, Some(m)) = (&e, error.as_object_mut()) {
+                m.insert("reason".into(), reason.as_str().into());
+            }
             json!({ "error": error }).to_string()
         }
     }
@@ -105,9 +108,22 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Reply, Error> {
         "migrateTree" => Err(Error::Unsupported {
             call: "migrateTree",
         }),
-        _ => tree_call(name, req),
+        _ => helper_call(name, req, &opts),
     }
     .map(Reply::Value)
+}
+
+/// The calls that read no source as a document: the tree calls, the patch
+/// calls, `headingId` and `positionOf`.
+fn helper_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    match name {
+        "diffTree" | "applyPatch" | "sourceFingerprint" | "treeFingerprint" => {
+            patch_call(name, req)
+        }
+        "headingId" => heading_id_call(req, opts),
+        "positionOf" => position_call(req),
+        _ => tree_call(name, req),
+    }
 }
 
 fn with_extensions(host: &Carve, opts: &CallOptions) -> Result<Carve, Error> {
@@ -368,4 +384,80 @@ fn dependencies(tree: &Tree) -> Value {
             Value::Object(m)
         })
         .collect()
+}
+
+/// `diffTree` (`a`, `b`), `applyPatch` (`tree`, `patch`, `fingerprint`),
+/// `sourceFingerprint` (`source` or `sourceBytes`) and `treeFingerprint`.
+fn patch_call(name: &str, req: &Value) -> Result<Value, Error> {
+    let tree_at = |key: &str| {
+        req.get(key)
+            .ok_or_else(|| Error::option(key, format!("{name} takes a tree as {key}")))
+            .and_then(Tree::from_value)
+    };
+    Ok(match name {
+        "diffTree" => json!({ "patch": super::diff_tree(&tree_at("a")?, &tree_at("b")?) }),
+        "applyPatch" => apply_patch_call(req)?,
+        "sourceFingerprint" => {
+            let bytes = source(req)?;
+            let raw = match &bytes {
+                Source::Text(t) => t.as_bytes(),
+                Source::Bytes(b) => b.as_slice(),
+            };
+            json!({ "fingerprint": super::source_fingerprint(raw) })
+        }
+        _ => json!({ "fingerprint": super::tree_fingerprint(&tree(req)?) }),
+    })
+}
+
+fn apply_patch_call(req: &Value) -> Result<Value, Error> {
+    let fingerprint = match req.get("fingerprint") {
+        None => None,
+        Some(v) => Some(
+            v.as_str()
+                .ok_or_else(|| Error::option("fingerprint", "not text"))?,
+        ),
+    };
+    let patched = super::apply_patch(
+        &tree(req)?,
+        super::patch::operations(req.get("patch"))?,
+        fingerprint,
+    )?;
+    Ok(json!({ "tree": tree_value(&patched) }))
+}
+
+/// `headingId`: `text` and the option `headingIds`; `id` is null under `off`.
+fn heading_id_call(req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    if let Some(other) = req
+        .get("options")
+        .and_then(Value::as_object)
+        .and_then(|m| m.keys().find(|k| *k != "headingIds"))
+    {
+        return Err(Error::option(other, "the call headingId does not read it"));
+    }
+    let text = req
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::option("text", "not a string"))?;
+    Ok(json!({ "id": super::heading_id(text, opts.options.heading_ids) }))
+}
+
+/// `positionOf` (C2-T-041): `source` or `sourceBytes`, and `offset`.
+fn position_call(req: &Value) -> Result<Value, Error> {
+    let bytes = source(req)?;
+    let offset = req
+        .get("offset")
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| {
+            Error::option(
+                "offset",
+                format!(
+                    "{} is no offset into the source",
+                    req.get("offset")
+                        .map_or_else(|| "undefined".into(), Value::to_string)
+                ),
+            )
+        })?;
+    let p = super::position_of(input(&bytes), offset)?;
+    Ok(json!({ "line": p.line, "column": p.column }))
 }
