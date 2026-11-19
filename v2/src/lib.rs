@@ -73,6 +73,8 @@ pub mod source;
 pub mod tables;
 #[doc(hidden)]
 pub mod tree;
+// The canonical Carve writer (`writer.md`), reached through `api`.
+mod write;
 
 #[doc(hidden)]
 pub use arena::Arena;

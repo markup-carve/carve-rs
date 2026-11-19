@@ -31,11 +31,11 @@ fn main() -> Result<(), Error> {
         api::parse_with_layout("x", &o).map(|_| ()),
         api::import_document("<p>x</p>", &o).map(|_| ()),
         api::migrate_tree(&serde_json::Value::Null).map(|_| ()),
-        carve.write(&tree, &w).map(|_| ()),
-        carve.format("x", &w).map(|_| ()),
     ] {
         assert!(matches!(refused, Err(Error::Unsupported { .. })));
     }
+    assert_eq!(carve.format("# T\n\nx", &w)?, "= T\n\nx\n");
+    assert_eq!(carve.write(&tree, &w)?, "= T\n\nx\n");
     let response = api::json::call(r#"{"call":"render","source":"x"}"#);
     assert_eq!(response, r#"{"ok":{"html":"<p>x</p>"}}"#);
     assert_eq!(api::json::status(&response), 0);

@@ -50,7 +50,7 @@ pub use crate::options::{HeadingIds, Mode, Options, Profile, Social, UrlPolicy};
 pub use error::Error;
 pub use extension::{Channel, Extension, ExtensionDeclaration};
 pub use record::{Entry, Range};
-pub use writer::{HtmlWriter, WriteOptions, Writer, Writers, Written};
+pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
 
 use crate::Arena;
 use serde_json::Value;
@@ -269,7 +269,7 @@ impl Carve {
     /// [`Error::Unsupported`] while no `carve` writer is registered;
     /// [`Error::Write`] for a writer loss (C2-W-134).
     pub fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<String, Error> {
-        Ok(self.write_with_diagnostics(tree, opts)?.output)
+        refuse_losses(self.write_with_diagnostics(tree, opts)?)
     }
 
     /// `writeWithDiagnostics`: the Carve source of a tree and the record.
@@ -314,7 +314,7 @@ impl Carve {
         input: impl Into<Input<'a>>,
         opts: &WriteOptions,
     ) -> Result<String, Error> {
-        Ok(self.format_with_diagnostics(input, opts)?.output)
+        refuse_losses(self.format_with_diagnostics(input, opts)?)
     }
 
     /// `formatWithDiagnostics`.
@@ -330,9 +330,60 @@ impl Carve {
         if self.writers.get("carve").is_none() {
             return Err(Error::Unsupported { call: "format" });
         }
-        let tree = parse(input, &opts.render)?;
-        self.write_with_diagnostics(&tree, opts)
+        // C2-H-137: format reads no render option.
+        if opts.render.profile != Profile::default() {
+            return Err(Error::option("profile", "not an option of format"));
+        }
+        writer::check_extensions(&opts.extensions)?;
+        let input = input.into();
+        let parsed = parse_with_diagnostics(input, &opts.render)?;
+        let doc = writer::tree_value(&parsed.tree.json)?;
+        let settings = crate::write::Settings {
+            align_tables: opts.align_tables,
+            extensions: opts.extensions.clone(),
+            layout: None,
+        };
+        // C2-W-127: `normalize` writes as if there were no sidecar. Positions of a
+        // byte input with malformed UTF-8 do not index the replaced text.
+        let text = input.text();
+        let valid = match input {
+            Input::Text(_) => true,
+            Input::Bytes(b) => std::str::from_utf8(b).is_ok(),
+        };
+        let src = (valid && !opts.normalize).then_some(text.as_ref());
+        let (output, written) = crate::write::format_tree(&doc, src, &settings);
+        // C2-N-005: a processor whose output is Carve source expands nothing.
+        let mut diagnostics: Vec<Entry> = parsed
+            .diagnostics
+            .into_iter()
+            .filter(|e| e.code != "include-no-resolver")
+            .collect();
+        diagnostics.extend(written);
+        Ok(Written {
+            output,
+            diagnostics,
+        })
     }
+}
+
+/// C2-W-134: a call that returns only source refuses a result with a writer loss.
+fn refuse_losses(written: Written) -> Result<String, Error> {
+    if !crate::write::has_loss(&written.diagnostics) {
+        return Ok(written.output);
+    }
+    let found: Vec<String> = written
+        .diagnostics
+        .iter()
+        .filter(|e| crate::write::has_loss(std::slice::from_ref(e)))
+        .map(|e| format!("{} at {}", e.code, e.path.as_deref().unwrap_or("")))
+        .collect();
+    Err(Error::Write {
+        target: "carve".into(),
+        message: format!(
+            "the source cannot be returned without its loss report: {}",
+            found.join(", ")
+        ),
+    })
 }
 
 fn unsupported_as(e: Error, call: &'static str) -> Error {

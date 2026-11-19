@@ -66,6 +66,9 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
         "format" | "formatWithDiagnostics" => {
             let bytes = source(req)?;
             let written = host.format_with_diagnostics(input(&bytes), &opts.write)?;
+            if name == "format" {
+                super::refuse_losses(written.clone())?;
+            }
             Ok(json!({ "source": written.output, "diagnostics": entries(&written.diagnostics) }))
         }
         "write" | "writeWithDiagnostics" => write_call(host, req, &opts),
@@ -148,6 +151,9 @@ fn write_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Er
         Some(target) => host.write_to(target, &tree, &opts.write)?,
         None => host.write_with_diagnostics(&tree, &opts.write)?,
     };
+    if req.get("call").and_then(Value::as_str) == Some("write") {
+        super::refuse_losses(written.clone())?;
+    }
     Ok(json!({ "output": written.output, "diagnostics": entries(&written.diagnostics) }))
 }
 
