@@ -285,23 +285,28 @@ impl Matchers {
                 _ => {}
             }
         }
+        fn claim_candidate(node: &mut Node, pass: &mut Pass<'_>) -> Result<(), Error> {
+            if !matches!(
+                node,
+                Node::CodeBlock(_) | Node::Div(_) | Node::InlineExtension(_)
+            ) {
+                return Ok(());
+            }
+            let value = serde_json::to_value(&*node)
+                .map_err(|e| Error::option("extensions", e.to_string()))?;
+            if let Some(map) = value.as_object()
+                && let Some(next) = pass.claim(map)
+            {
+                *node = serde_json::from_value(Value::Object(next))
+                    .map_err(|e| Error::option("extensions", e.to_string()))?;
+            }
+            Ok(())
+        }
         fn walk(node: &mut Node, pass: &mut Pass<'_>, depth: usize) -> Result<(), Error> {
             if depth > crate::resolve::WALK_CAP {
                 return Ok(());
             }
-            if matches!(
-                node,
-                Node::CodeBlock(_) | Node::Div(_) | Node::InlineExtension(_)
-            ) {
-                let value = serde_json::to_value(&*node)
-                    .map_err(|e| Error::option("extensions", e.to_string()))?;
-                if let Some(map) = value.as_object() {
-                    if let Some(next) = pass.claim(map) {
-                        *node = serde_json::from_value(Value::Object(next))
-                            .map_err(|e| Error::option("extensions", e.to_string()))?;
-                    }
-                }
-            }
+            claim_candidate(node, pass)?;
             match node {
                 Node::BlockExtension(ext) => {
                     for child in &mut ext.children {
