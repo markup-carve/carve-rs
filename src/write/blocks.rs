@@ -342,6 +342,19 @@ fn include_option(name: &str, value: &Value, spelling: Option<&str>) -> String {
 
 /// C2-W-058, C2-H-171: the one spelling of an include directive.
 fn include_source(w: &Writer<'_>, node: &Value) -> String {
+    let spelling = w.fact(node).and_then(|f| f.option_spelling.as_ref());
+    include_spelled(node, spelling)
+}
+
+/// The spelling of an include directive with no source facts.
+pub fn include_spelling(node: &Value) -> String {
+    include_spelled(node, None)
+}
+
+fn include_spelled(
+    node: &Value,
+    spelling: Option<&std::collections::BTreeMap<String, String>>,
+) -> String {
     let path = s(node, "path").unwrap_or("");
     let mut parts = vec![if is_bare_path(path) {
         path.to_string()
@@ -351,7 +364,6 @@ fn include_source(w: &Writer<'_>, node: &Value) -> String {
     if let Some(section) = s(node, "section") {
         parts.push(format!("#{section}"));
     }
-    let spelling = w.fact(node).and_then(|f| f.option_spelling.as_ref());
     let options = node.get("options");
     for (_, name, _, _) in crate::tables::INCLUDE_OPTIONS {
         if let Some(value) = options.and_then(|o| o.get(*name)) {

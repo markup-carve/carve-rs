@@ -48,6 +48,7 @@ pub mod block;
 pub mod chars;
 #[doc(hidden)]
 pub mod diagnostic;
+pub mod export;
 mod fast_plain;
 #[doc(hidden)]
 pub mod hash;
@@ -202,9 +203,8 @@ pub fn render_tree_with_diagnostics(
 ) -> Result<Rendered, RenderError> {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
-    resolve::clear_results(&mut doc);
-    resolve::resolve(&mut doc, opts, &arena);
-    let (html, losses, derived) = html::render_with_details(&doc, opts);
+    let files = resolve_tree(&mut doc, opts, &arena);
+    let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), None);
     let losses = unallowed(losses, opts);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));
@@ -231,9 +231,42 @@ pub fn render_tree_with_diagnostics(
 pub(crate) fn resolved_json(tree: &ast::owned::Document, opts: &Options) -> String {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
-    resolve::clear_results(&mut doc);
-    resolve::resolve(&mut doc, opts, &arena);
+    let _ = resolve_tree_unflattened(&mut doc, opts, &arena);
     to_json(&doc)
+}
+
+/// Resolves a supplied tree again (C2-A-135). The children of an expanded
+/// include keep their own file's definitions (C2-N-053), as in a render
+/// from source, and render in its place (C2-N-075).
+pub(crate) fn resolve_tree<'a>(
+    doc: &mut ast::Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+) -> Option<resolve::files::Files<'a>> {
+    let files = resolve_tree_unflattened(doc, opts, arena)?;
+    if matches!(
+        opts.profile,
+        options::Profile::Full | options::Profile::Article
+    ) {
+        include::flatten(doc, arena);
+    }
+    Some(files)
+}
+
+/// [`resolve_tree`] with the include nodes left in place.
+pub(crate) fn resolve_tree_unflattened<'a>(
+    doc: &mut ast::Document<'a>,
+    opts: &Options,
+    arena: &'a Arena,
+) -> Option<resolve::files::Files<'a>> {
+    resolve::clear_results(doc);
+    if !include::has_expanded(doc.children) {
+        resolve::resolve(doc, opts, arena);
+        return None;
+    }
+    let files = resolve::files::Files::build(doc, std::collections::HashMap::new());
+    resolve::resolve_files(doc, opts, arena, Some(&files), &mut Vec::new());
+    Some(files)
 }
 
 /// [`render_tree_with_diagnostics`] with a host's extension renderers
@@ -245,9 +278,8 @@ pub(crate) fn render_tree_hooked(
 ) -> Rendered {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
-    resolve::clear_results(&mut doc);
-    resolve::resolve(&mut doc, opts, &arena);
-    let (html, losses, derived) = html::render_hooked(&doc, opts, hook);
+    let files = resolve_tree(&mut doc, opts, &arena);
+    let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), Some(hook));
     let mut diagnostics = unallowed(losses, opts)
         .into_iter()
         .map(|code| {

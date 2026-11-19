@@ -7,7 +7,9 @@
 //! `tree` (a tree as a JSON value) for calls that read a tree, and for
 //! `render` instead of a source; `json` (text) for `decodeTree`; `options`,
 //! an object of the options of `data/options.json`; `positions` (default
-//! true) for `parse` and `parseWithDiagnostics`; `target` for `write`;
+//! true) for `parse` and `parseWithDiagnostics`; `target` for `write`
+//! (`carve`, `html`, or the exports `markdown`, `plain` and `ansi`, which
+//! also read `smartTypography`, `strictLosses` and `urlPolicy`);
 //! and, PROVISIONAL, `host` with `documentTransforms` for the render calls.
 //!
 //! The response is `{"ok": RESULT}` or `{"error": {"name", "category",
@@ -24,7 +26,12 @@ use serde_json::{Map, Value, json};
 /// Runs one request and returns the response JSON text.
 #[must_use]
 pub fn call(request: &str) -> String {
-    let response = match serde_json::from_str::<Value>(request) {
+    let mut de = serde_json::Deserializer::from_str(request);
+    // A tree in a request nests past serde_json's default limit of 128.
+    de.disable_recursion_limit();
+    let parsed =
+        <Value as serde::Deserialize>::deserialize(&mut de).and_then(|v| de.end().map(|()| v));
+    let response = match parsed {
         Ok(req) => host(&req).and_then(|h| dispatch(&h, &req)),
         Err(e) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
@@ -88,7 +95,7 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Reply, Error> {
         .get("call")
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
-    let opts = super::options::from_json(name, req.get("options"))?;
+    let opts = call_options(name, req)?;
     let enabled;
     let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
         host
@@ -121,6 +128,22 @@ fn helper_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Err
         "headingId" => heading_id_call(req, opts),
         "positionOf" => position_call(req),
         _ => tree_call(name, req),
+    }
+}
+
+/// The options of a request; a `write` to an export target also reads the
+/// export options of the render stage.
+fn call_options(name: &str, req: &Value) -> Result<CallOptions, Error> {
+    let export = matches!(name, "write" | "writeWithDiagnostics")
+        && req
+            .get("target")
+            .and_then(Value::as_str)
+            .and_then(crate::export::Target::from_name)
+            .is_some();
+    if export {
+        super::options::export_from_json(name, req.get("options"))
+    } else {
+        super::options::from_json(name, req.get("options"))
     }
 }
 

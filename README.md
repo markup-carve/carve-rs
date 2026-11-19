@@ -29,7 +29,7 @@ carve = { package = "carve-lang", version = "0.2", default-features = false }
 | `render` | `api::render(input, &Options)`, `api::render_tree(&Tree, &Options)` | available |
 | `renderWithDiagnostics` | `api::render_with_diagnostics`, `api::render_tree_with_diagnostics` return `Rendered { html, diagnostics, suppressed_diagnostics }` | available |
 | `format`, `formatWithDiagnostics` | `Carve::format`, `Carve::format_with_diagnostics` | available |
-| `write`, `writeWithDiagnostics` | `Carve::write`, `Carve::write_with_diagnostics`, `Carve::write_to(target, ...)` | `carve` and `html` built in |
+| `write`, `writeWithDiagnostics` | `Carve::write`, `Carve::write_with_diagnostics`, `Carve::write_to(target, ...)` | `html`, `carve`, `markdown`, `plain` and `ansi` built in |
 | `lint` | `api::lint(input, &LintOptions) -> Result<Vec<Entry>, Error>` | available |
 | `importDocument` | `api::import_document(html, &ImportOptions)`, `Carve::import_document` return `Imported { tree, source, diagnostics, suppressed_diagnostics }`; `Carve::import_document_with(html, &ImportOptions, &LossOptions { allow_losses, max_losses })` adds `allowLosses` and `maxLosses` | available (HTML) |
 | `includeDependencies` | `api::include_dependencies(&Tree)` | available |
@@ -95,6 +95,7 @@ Every call returns `api::Error`. Its variants are the library errors of C2-T-040
 | `Write` | `CarveWriteError` | `writer-refused` | 1 |
 | `ImportInput` | `ImportInputError` | `import-input-invalid` | 2 |
 | `Patch` | `CarvePatchError` | `ast-json-invalid` | 2 |
+| `Export` | `CarveExportError` | `render-loss` | 1 |
 | `Unsupported` | `CarveOptionError` | `usage` | 2 |
 
 `Patch { path, reason }` refuses an `apply_patch`: `path` points into the patch (`/0/op`), or into the tree the patch gave. Its row is not in C2-T-040 yet; on the JSON boundary the error object also carries `path` and `reason`.
@@ -107,9 +108,28 @@ A record entry is `api::Entry` with the library fields of C2-T-020: `code`, `sev
 
 ## Writers
 
-`api::Writer` is one interface for every output format that writes a resolved tree: a target name and `write(&Tree, &WriteOptions) -> Result<Written, Error>`. `Carve::new()` has the built-in `html` writer. Register more with `Carve::register_writer`; a second writer for the same target is refused.
+`api::Writer` is one interface for every output format that writes a resolved tree: a target name and `write(&Tree, &WriteOptions) -> Result<Written, Error>`. `Carve::new()` has the built-in writers `html`, `carve` and the exports `markdown`, `plain` and `ansi`. Register more with `Carve::register_writer`; a second writer for the same target, or a writer that takes one of the three export names, is refused. `Carve::write_to` refuses an unknown target with an `Error::Option` whose message lists the known targets.
 
-The 0.1 Markdown, plain-text and ANSI writers are coming to 0.2 (maintainer ruling, 2026-11-18). They will register as the targets `markdown`, `plain` and `ansi` on this interface, and the Carve writer as `carve`, so callers will not see an API break when they land.
+## Exports: Markdown, plain text and ANSI
+
+`carve::export` writes a 0.2 tree as Markdown (CommonMark with the GFM tables, task lists, strikethrough and footnotes), as plain text, or as text styled with ANSI escape sequences for a terminal. It ports carve-js `@markup-carve/carve/export` (`docs/export.md` there lists the Markdown fallbacks and the loss codes). Each format has one call that returns the text and the losses of the run in one `Written` result:
+
+```rust
+use carve::api::{self, Options};
+use carve::export::{self, ExportOptions};
+
+let tree = api::parse("= Notes\n\nSee *this* and </#Notes>.\n", &Options::default())?;
+let md = export::to_markdown(&tree, &ExportOptions::default())?;
+assert_eq!(md.output, "# Notes\n\nSee **this** and [Notes](#notes).\n");
+assert_eq!(export::to_plain_text(&tree, &ExportOptions::default())?.output, "Notes\n\nSee this and Notes.\n");
+let ansi = export::to_ansi(&tree, &ExportOptions::default())?;
+assert!(ansi.output.contains("\x1b[1mthis\x1b[0m"));
+# Ok::<(), carve::api::Error>(())
+```
+
+`ExportOptions` holds `smart_typography` (default true), `strict_losses` (refuses with `Error::Export`, which carries the losses) and `url_policy` (a denied destination is written empty and reported). The losses are entries of the `render-loss` channel with the pointer of their node. `export::export_to(Target, ...)` writes by target, and the writers of the registry (`markdown`, `plain`, `ansi`) read the same three options from `WriteOptions::render`. On the command line, `carve render --to markdown|plain|ansi|carve FILE` writes the other formats.
+
+The `codeBlockRenderer` render option is `Options::code_block_renderer`: a `CodeBlockRenderer` wrapping a host function from a code block node (its JSON value) and the block's default HTML to the HTML written in its place, or `None` for the default (C2-H-206, C2-H-207). It runs for every ordinary code block, in containers and expanded includes too, but not for a raw block, a code span or a block outside the profile.
 
 ## Extensions (provisional)
 
@@ -209,7 +229,7 @@ A request names the call with its `tooling.md` spelling:
 {"call": "renderWithDiagnostics", "source": "Hi *there*", "options": {"profile": "comment"}}
 ```
 
-Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, with the HTML as `source`). `a` and `b` for `diffTree`; `tree`, `patch` and `fingerprint` for `applyPatch`; `text` for `headingId`; `offset` for `positionOf`. In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). `format` and `importDocument` answer with `source`, `write` with `output`.
+Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write` (`carve`, `html`, `markdown`, `plain` or `ansi`; the three exports also read `smartTypography`, `strictLosses` and `urlPolicy`); `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, with the HTML as `source`). `a` and `b` for `diffTree`; `tree`, `patch` and `fingerprint` for `applyPatch`; `text` for `headingId`; `offset` for `positionOf`. In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). For the same reason `codeBlockRenderer` takes the harness function of the conformance cases, `{"syntax": "ts", "result": "<div>{default}</div>"}`: `result` replaces each block of that `syntax` (of any syntax without it), with `{default}` and `{syntax}` filled in, and `null` keeps the default HTML. `format` and `importDocument` answer with `source`, `write` with `output`.
 
 The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 
@@ -248,9 +268,9 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `lint_accessibility` | `api::lint`: `a11y/image-alt` and `heading-level-skip` are catalog rules |
 | `extensions::registry::by_key`, `extensions::registry::keys` | `Carve::register_extension` (provisional) |
 | `to_carve`, `render_carve`, `try_to_carve_with_options`, `to_carve_with_report` | `Carve::format`, `Carve::write` |
-| `to_markdown`, `render_markdown`, `render_markdown_with_options`, `try_to_markdown_with_options`, `to_markdown_with_report` | writer target `markdown` (pending port) |
-| `to_plain_text`, `render_plain_text`, `render_plain_text_with_options`, `try_to_plain_text_with_options`, `to_plain_text_with_report` | writer target `plain` (pending port) |
-| `to_ansi`, `render_ansi`, `render_ansi_with_options`, `try_to_ansi_with_options`, `to_ansi_with_report` | writer target `ansi` (pending port) |
+| `to_markdown`, `render_markdown`, `render_markdown_with_options`, `try_to_markdown_with_options`, `to_markdown_with_report` | `export::to_markdown`, writer target `markdown` |
+| `to_plain_text`, `render_plain_text`, `render_plain_text_with_options`, `try_to_plain_text_with_options`, `to_plain_text_with_report` | `export::to_plain_text`, writer target `plain` |
+| `to_ansi`, `render_ansi`, `render_ansi_with_options`, `try_to_ansi_with_options`, `to_ansi_with_report` | `export::to_ansi`, writer target `ansi` |
 | `html_to_ast`, `migrate_html` | `api::import_document` |
 | `parse_with_source_layout` | `api::parse_with_layout` (pending) |
 | `djot_to_carve`, `migrate_djot`, `bbcode_to_carve`, `migrate_bbcode`, `try_migrate_markdown`, `try_markdown_to_ast` | gone: 0.2 specifies no Markdown, Djot or BBCode importer (C2-T-003) |

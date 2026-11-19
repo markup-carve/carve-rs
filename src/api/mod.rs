@@ -581,12 +581,14 @@ impl Carve {
             .map_err(|e| unsupported_as(e, "write"))
     }
 
-    /// Writes a tree with the writer of `target` (`html`, and the targets
-    /// registered on this host).
+    /// Writes a tree with the writer of `target`: `html`, `carve`, the
+    /// exports `markdown`, `plain` and `ansi`, and the targets registered on
+    /// this host.
     ///
     /// # Errors
     ///
-    /// [`Error::Unsupported`] for a target with no writer; the writer's error.
+    /// [`Error::Option`] for a target with no writer, naming the known
+    /// targets; the writer's error.
     pub fn write_to(
         &self,
         target: &str,
@@ -594,7 +596,13 @@ impl Carve {
         opts: &WriteOptions,
     ) -> Result<Written, Error> {
         let Some(writer) = self.writers.get(target) else {
-            return Err(Error::Unsupported { call: "write" });
+            return Err(Error::option(
+                "target",
+                format!(
+                    "unknown writer target \"{target}\"; known targets: {}",
+                    self.writers.targets().join(", ")
+                ),
+            ));
         };
         writer.write(tree, &self.with_standard(opts))
     }

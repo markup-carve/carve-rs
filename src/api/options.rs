@@ -97,6 +97,20 @@ pub(crate) fn from_json(call: &str, value: Option<&Value>) -> Result<CallOptions
     let Some(call_stages) = stages(call) else {
         return Err(Error::option("call", format!("unknown call {call}")));
     };
+    from_json_in(call, call_stages, value)
+}
+
+/// The options of a `write` call to an export target, which reads the
+/// render options `smartTypography`, `strictLosses` and `urlPolicy`.
+pub(crate) fn export_from_json(call: &str, value: Option<&Value>) -> Result<CallOptions, Error> {
+    from_json_in(call, &["format", "render"], value)
+}
+
+fn from_json_in(
+    call: &str,
+    call_stages: &[&str],
+    value: Option<&Value>,
+) -> Result<CallOptions, Error> {
     let mut out = CallOptions::default();
     let Some(value) = value else {
         return Ok(out);
@@ -145,7 +159,7 @@ fn set(out: &mut CallOptions, name: &str, v: &Value) -> Result<(), Error> {
             out.renderers = standard_renderers(v)?;
             Ok(())
         }
-        "labels" | "symbols" | "social" | "urlPolicy" | "includes" => {
+        "labels" | "symbols" | "social" | "urlPolicy" | "includes" | "codeBlockRenderer" => {
             structure(&mut out.options, name, v)
         }
         _ => enumerated(&mut out.options, name, v),
@@ -176,9 +190,71 @@ fn structure(o: &mut Options, name: &str, v: &Value) -> Result<(), Error> {
         "symbols" => o.symbols = string_map(name, v)?.into_iter().collect(),
         "social" => o.social = Some(social(v)?),
         "urlPolicy" => o.url_policy = url_policy(v)?,
+        "codeBlockRenderer" => o.code_block_renderer = code_block_renderer(v)?,
         _ => o.includes = includes(v)?,
     }
     Ok(())
+}
+
+/// `codeBlockRenderer` over the JSON boundary, where a host function cannot
+/// pass: the harness function of the conformance cases, `{"syntax"?,
+/// "result"}`. `result` is the HTML for a block of that syntax (any block
+/// without `syntax`) with `{default}` and `{syntax}` replaced, or null for
+/// the default HTML (C2-H-206, C2-H-207).
+fn code_block_renderer(v: &Value) -> Result<Option<crate::options::CodeBlockRenderer>, Error> {
+    const NAME: &str = "codeBlockRenderer";
+    if v.is_null() {
+        return Ok(None);
+    }
+    let Some(map) = v.as_object() else {
+        return Err(Error::option(NAME, "not an object"));
+    };
+    if let Some(key) = map
+        .keys()
+        .find(|k| !matches!(k.as_str(), "syntax" | "result"))
+    {
+        return Err(Error::option(NAME, format!("unknown field {key}")));
+    }
+    let syntax = match map.get("syntax") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(_) => return Err(Error::option(NAME, "syntax is not text")),
+    };
+    let result = match map.get("result") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(_) => {
+            return Err(Error::option(
+                NAME,
+                "returned a value that is neither text nor nothing",
+            ));
+        }
+    };
+    Ok(Some(crate::options::CodeBlockRenderer::new(
+        move |node, default_html| {
+            let own = node.get("syntax").and_then(Value::as_str).unwrap_or("");
+            if syntax.as_deref().is_some_and(|s| s != own) {
+                return None;
+            }
+            let mut rest = result.as_deref()?;
+            let mut html = String::with_capacity(rest.len() + default_html.len());
+            while let Some(at) = rest.find('{') {
+                html.push_str(&rest[..at]);
+                let tail = &rest[at..];
+                let (token, value) = if tail.starts_with("{default}") {
+                    ("{default}", default_html)
+                } else if tail.starts_with("{syntax}") {
+                    ("{syntax}", own)
+                } else {
+                    ("{", "{")
+                };
+                html.push_str(value);
+                rest = &tail[token.len()..];
+            }
+            html.push_str(rest);
+            Some(html)
+        },
+    )))
 }
 
 fn boolean_slot<'o>(out: &'o mut CallOptions, name: &str) -> Option<&'o mut bool> {

@@ -25,6 +25,9 @@ pub enum Error {
     /// `CarvePatchError`: a patch that cannot be applied; `path` points into
     /// the patch, or into the tree the patch gave (C2-A-167).
     Patch { path: String, reason: String },
+    /// `CarveExportError`: an export lost something under `strict_losses`;
+    /// the losses with their positions.
+    Export { diagnostics: Vec<super::Entry> },
     /// The call is part of the 0.2 library but this engine does not offer
     /// it yet. Not a row of C2-T-040; the command line reports it as `usage`.
     Unsupported { call: &'static str },
@@ -49,6 +52,7 @@ impl Error {
             Self::Write { .. } => "CarveWriteError",
             Self::ImportInput { .. } => "ImportInputError",
             Self::Patch { .. } => "CarvePatchError",
+            Self::Export { .. } => "CarveExportError",
         }
     }
 
@@ -58,7 +62,7 @@ impl Error {
         match self {
             Self::Option { .. } | Self::Unsupported { .. } => "usage",
             Self::Input { .. } => "input-invalid",
-            Self::Render { .. } => "render-loss",
+            Self::Render { .. } | Self::Export { .. } => "render-loss",
             Self::Tree(_) | Self::Patch { .. } => "ast-json-invalid",
             Self::Write { .. } => "writer-refused",
             Self::ImportInput { .. } => "import-input-invalid",
@@ -88,7 +92,7 @@ impl Error {
     #[must_use]
     pub const fn status(&self) -> i32 {
         match self {
-            Self::Render { .. } | Self::Write { .. } => 1,
+            Self::Render { .. } | Self::Write { .. } | Self::Export { .. } => 1,
             _ => 2,
         }
     }
@@ -108,6 +112,12 @@ impl std::fmt::Display for Error {
             Self::ImportInput { message } => write!(f, "{message}"),
             Self::Patch { path, reason } => {
                 write!(f, "{}: {reason}", if path.is_empty() { "/" } else { path })
+            }
+            Self::Export { diagnostics } => {
+                let codes: Vec<&str> = diagnostics.iter().map(|e| e.code.as_str()).collect();
+                let n = diagnostics.len();
+                let s = if n == 1 { "" } else { "s" };
+                write!(f, "the export lost {n} construct{s}: {}", codes.join(", "))
             }
             Self::Unsupported { call } => {
                 write!(f, "{call} is not available in this engine yet")

@@ -880,6 +880,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.write(self.filter()),
             esc::text_str(c.value)
         );
+        // C2-H-206, C2-H-207: the host's HTML, unfiltered, or the default.
+        let s = match &self.opts.code_block_renderer {
+            Some(host) => serde_json::to_value(n)
+                .ok()
+                .and_then(|node| (host.0)(&node, &s))
+                .unwrap_or(s),
+            None => s,
+        };
         self.line(depth, &s);
     }
 
