@@ -200,7 +200,16 @@ fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Resu
         .and_then(Value::as_bool)
         .unwrap_or(true);
     if name == "parseWithLayout" {
-        super::parse_with_layout(input(&bytes), &opts.options)?;
+        let parsed = super::parse_with_layout(input(&bytes), &opts.options)?;
+        let mut out = Map::new();
+        out.insert("diagnostics".into(), entries(&parsed.diagnostics));
+        out.insert(
+            "suppressedDiagnostics".into(),
+            parsed.suppressed_diagnostics.into(),
+        );
+        out.insert("layout".into(), parsed.layout);
+        let encoded = super::encode_tree_with(&parsed.tree, EncodeOptions { positions: true });
+        return Ok(Reply::Tree(out, encoded));
     }
     let mut out = Map::new();
     let tree = if name == "parseWithDiagnostics" {
