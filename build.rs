@@ -22,6 +22,30 @@ fn main() {
     write(&out.join("ast_owned_gen.rs"), &owned);
     write(&out.join("ast_conv_gen.rs"), &conv);
     write(&out.join("tables_gen.rs"), &gen_tables(&dir));
+    write(&out.join("package_info_gen.rs"), &gen_package_info(&dir));
+}
+
+/// `SPEC_COMMIT` and `NODE_TYPES` of the public library, from the pinned commit
+/// and the children of `document` and `paragraph` in the tree schema.
+fn gen_package_info(dir: &Path) -> String {
+    let commit = fs::read_to_string(dir.join("SOURCE_COMMIT")).unwrap_or_default();
+    let schema = load(dir, "ast-schema.json");
+    let types = |node: &str| -> String {
+        schema["$defs"][node]["properties"]["children"]["items"]["oneOf"]
+            .as_array()
+            .unwrap_or_else(|| panic!("ast-schema.json: no children of {node}"))
+            .iter()
+            .filter_map(|e| e["$ref"].as_str()?.rsplit('/').next())
+            .map(|t| format!("{t:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "pub(crate) const SPEC_COMMIT: &str = {:?};\npub(crate) const BLOCK_TYPES: &[&str] = &[{}];\npub(crate) const INLINE_TYPES: &[&str] = &[{}];\n",
+        commit.trim(),
+        types("document"),
+        types("paragraph"),
+    )
 }
 
 fn load(dir: &Path, name: &str) -> Value {
