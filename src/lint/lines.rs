@@ -401,27 +401,32 @@ fn thematic_marker(
     tail: &str,
     sink: &mut Sink<'_>,
 ) {
-    if run(text, "-_", 3) {
-        let is_setext = text.starts_with('-')
-            && previous.is_some_and(|p| p.paragraph && !p.text.trim().is_empty());
+    let marker_start = prefix + tail.len() - tail.trim_start().len();
+    let candidate = tail.trim();
+    if run(candidate, "-_", 3) {
+        let is_setext = candidate.starts_with('-')
+            && previous
+                .is_some_and(|p| p.paragraph && p.path == line.path && !p.text.trim().is_empty());
         if is_setext {
-            sink.whole("setext-heading-underline", line, &[]);
+            sink.emit(
+                "setext-heading-underline",
+                line.start + marker_start,
+                line.start + marker_start + candidate.len(),
+                &line.path,
+                &[],
+            );
         } else {
-            sink.whole("thematic-break-spelling", line, &[("raw", text)]);
+            sink.emit(
+                "thematic-break-spelling",
+                line.start + marker_start,
+                line.start + marker_start + candidate.len(),
+                &line.path,
+                &[("raw", candidate)],
+            );
         }
     }
     if spaced_run(text) {
         sink.whole("deprecated-spaced-thematic-break", line, &[]);
-    }
-    if prefix > 0 && run(tail.trim_end(), "-_", 3) {
-        let end = tail.trim_end().len();
-        sink.emit(
-            "thematic-break-spelling",
-            line.start + prefix,
-            line.start + prefix + end,
-            &line.path,
-            &[("raw", tail.trim_end())],
-        );
     }
 }
 
@@ -843,7 +848,7 @@ fn prose_context(
 ) {
     let trimmed = line.text.trim();
     if paragraph_continuation(line, previous) {
-        prose_block_opener(line, previous, trimmed, sink);
+        prose_block_opener(line, previous, sink);
         if list_marker(trimmed) {
             sink.whole("list-marker-without-blank-line", line, &[]);
         }
@@ -875,30 +880,32 @@ fn block_opener_width(trimmed: &str) -> usize {
     }
 }
 
-fn prose_block_opener(line: &Line, previous: Option<&Line>, trimmed: &str, sink: &mut Sink<'_>) {
-    if !starts_block(trimmed)
-        || (trimmed.starts_with('{') && !trimmed.ends_with('}'))
-        || (trimmed.starts_with('[') && line.scope.in_footnote)
-        || (trimmed.starts_with("> ")
+fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    let (prefix, content) = marker_tail(&line.text);
+    let content = content.trim_start();
+    let prefix = prefix + line.text[prefix..].len() - line.text[prefix..].trim_start().len();
+    if !starts_block(content)
+        || (content.starts_with('{') && !content.ends_with('}'))
+        || (content.starts_with('[') && line.scope.in_footnote)
+        || (content.starts_with("> ")
             && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
     {
         return;
     }
-    let opener = if trimmed.starts_with(['#', '=']) {
+    let opener = if content.starts_with(['#', '=']) {
         "a heading"
-    } else if trimmed.starts_with('>') {
+    } else if content.starts_with('>') {
         "a quote"
-    } else if trimmed.starts_with('{') {
+    } else if content.starts_with('{') {
         "an attribute line"
-    } else if trimmed.starts_with("::") {
+    } else if content.starts_with("::") {
         "a term"
-    } else if trimmed.starts_with(':') {
+    } else if content.starts_with(':') {
         "a description"
     } else {
         "a definition"
     };
-    let prefix = line.text.len() - line.text.trim_start().len();
-    let marker = block_opener_width(trimmed);
+    let marker = block_opener_width(content);
     sink.emit(
         "block-opener-without-blank-line",
         line.start + prefix,
