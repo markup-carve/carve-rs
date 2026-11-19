@@ -43,7 +43,7 @@ fn through_host(c: &Value) -> bool {
 
 /// C2-T-005: operations outside this core gate.
 const LATER: &[&str] = &[
-    "write", "import", "lint", "format", "layout", "migrate", "cli",
+    "write", "import", "lint", "format", "layout", "migrate", "cli", "patch",
 ];
 
 fn load(name: &str) -> Value {
