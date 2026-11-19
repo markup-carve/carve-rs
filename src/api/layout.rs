@@ -1,4 +1,6 @@
 //! An opt-in walk of the resolved tree and its source origins.
+// Byte indices below come from checked parser positions or bounded byte scans.
+#![allow(clippy::indexing_slicing)]
 
 mod validate;
 pub(super) use validate::validate;
@@ -136,6 +138,7 @@ fn line_endings(source: &str) -> &'static str {
 }
 
 #[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)]
 struct Frame {
     start: usize,
     end: usize,
@@ -162,11 +165,11 @@ impl Walk<'_> {
         let byte_start = pos
             .and_then(|p| p.get("startOffset"))
             .and_then(Value::as_u64)
-            .map(|n| n as usize);
+            .and_then(|n| usize::try_from(n).ok());
         let byte_end = pos
             .and_then(|p| p.get("endOffset"))
             .and_then(Value::as_u64)
-            .map(|n| n as usize);
+            .and_then(|n| usize::try_from(n).ok());
         let start = byte_start.map(|n| self.text_offset(n));
         let end = byte_end.map(|n| self.text_offset(n));
         let mut inner = frame;
@@ -267,9 +270,15 @@ impl Walk<'_> {
         entry: &mut Map<String, Value>,
     ) {
         let source = self.source;
-        let line = &source[start..line_end(source, start).min(end)];
+        let first = &source[start..line_end(source, start).min(end)];
+        let mark_start = if first.trim_start().starts_with('{') && line_end(source, start) < end {
+            line_end(source, start) + 1
+        } else {
+            start
+        };
+        let line = &source[mark_start..line_end(source, mark_start).min(end)];
         let trimmed = line.trim_start_matches([' ', '\t']);
-        let mark_at = start + line.len() - trimmed.len();
+        let mark_at = mark_start + line.len() - trimmed.len();
         let column = column_of(source, mark_at, quotes);
         match ty {
             "heading" => {
@@ -287,7 +296,18 @@ impl Walk<'_> {
             "thematic_break" => marker(entry, trimmed.trim_end(), column),
             "list" => {
                 if node.pointer("/marker/kind").and_then(Value::as_str) == Some("ordered") {
-                    entry.insert("bare".into(), trimmed.starts_with('.').into());
+                    let first = node
+                        .pointer("/children/0/pos/startOffset")
+                        .and_then(Value::as_u64)
+                        .and_then(|n| usize::try_from(n).ok())
+                        .map_or(start, |n| self.text_offset(n));
+                    entry.insert(
+                        "bare".into(),
+                        self.source[first..line_end(self.source, first)]
+                            .trim_start()
+                            .starts_with(". ")
+                            .into(),
+                    );
                 }
             }
             "list_item" | "definition_description" | "footnote" => {
@@ -296,7 +316,7 @@ impl Walk<'_> {
                 } else if ty == "definition_description" {
                     1
                 } else {
-                    trimmed.find(":").map_or(0, |n| n + 1)
+                    trimmed.find(':').map_or(0, |n| n + 1)
                 };
                 if mark_len > 0 && mark_len <= trimmed.len() {
                     marker(entry, &trimmed[..mark_len], column);
@@ -319,7 +339,28 @@ impl Walk<'_> {
                     {
                         content += 1;
                     }
-                    if ty == "list_item" && source[content..].starts_with('[') {
+                    let marker_content = content;
+                    if ty == "list_item" && source[content..].starts_with("{.") {
+                        if let Some(close) = source[content..].find('}') {
+                            content += close + 1;
+                        }
+                        while source
+                            .as_bytes()
+                            .get(content)
+                            .is_some_and(|b| *b == b' ' || *b == b'\t')
+                        {
+                            content += 1;
+                        }
+                    }
+                    if ty == "list_item"
+                        && node.get("task").is_some()
+                        && source.as_bytes().get(content) == Some(&b'[')
+                        && source.as_bytes().get(content + 2) == Some(&b']')
+                        && matches!(
+                            source.as_bytes().get(content + 1),
+                            Some(b' ' | b'x' | b'X' | b'_')
+                        )
+                    {
                         if let Some(close) = source[content..].find(']') {
                             content += close + 1;
                         }
@@ -331,8 +372,18 @@ impl Walk<'_> {
                             content += 1;
                         }
                     }
-                    if content < line_end(source, start) {
-                        let content_col = column_of(source, content, quotes);
+                    if content < line_end(source, start)
+                        || ty == "list_item" && marker_content < line_end(source, start)
+                    {
+                        let content_col = column_of(
+                            source,
+                            if content < line_end(source, start) {
+                                content
+                            } else {
+                                marker_content
+                            },
+                            quotes,
+                        );
                         entry.insert("contentColumn".into(), content_col.into());
                         entry.insert(
                             "continuationStyle".into(),
@@ -344,9 +395,8 @@ impl Walk<'_> {
                 }
             }
             "definition_term" => {
-                if trimmed.starts_with("::") {
+                if let Some(rest) = trimmed.strip_prefix("::") {
                     marker(entry, "::", column);
-                    let rest = &trimmed[2..];
                     entry.insert(
                         "metadataSeparatorRaw".into(),
                         rest[..rest.len() - rest.trim_start_matches([' ', '\t']).len()].into(),
@@ -372,12 +422,15 @@ impl Walk<'_> {
                 {
                     entry.insert(
                         "hardBreakOpener".into(),
-                        trimmed.starts_with("::: \\").into(),
+                        source[start..end]
+                            .lines()
+                            .any(|line| line.trim_start().starts_with("::: \\"))
+                            .into(),
                     );
                 }
             }
             "link_reference_definition" | "abbreviation_def" => {
-                if let Some(close) = trimmed.find(":") {
+                if let Some(close) = trimmed.find(':') {
                     marker(entry, &trimmed[..=close], column);
                     let rest = &trimmed[close + 1..];
                     entry.insert(
@@ -440,7 +493,11 @@ impl Walk<'_> {
                         break;
                     };
                     let key_end = key_start + colon;
-                    let key = &raw[key_start..key_end];
+                    let key = raw[key_start..key_end]
+                        .rsplit('@')
+                        .next()
+                        .unwrap_or("")
+                        .trim();
                     let value_start = key_end + 1;
                     if options.is_some_and(|o| o.contains_key(key)) {
                         let bytes = raw.as_bytes();
@@ -545,6 +602,7 @@ impl Walk<'_> {
         last
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn raw_ref(
         &mut self,
         ty: &str,
@@ -874,15 +932,12 @@ fn fence(entry: &mut Map<String, Value>, source: &str, start: usize, end: usize,
         return;
     }
     entry.insert("openerRaw".into(), line[..len].into());
-    let last = &source[line_start(source, end)..end];
-    let trimmed = last.trim().trim_start_matches('>').trim_start();
-    entry.insert(
-        "closerRaw".into(),
+    let mut close = "";
+    for candidate in source[start + line.len()..end].lines() {
+        let trimmed = candidate.trim().trim_start_matches('>').trim_start();
         if trimmed.starts_with(marker) && trimmed.chars().all(|c| c == marker) {
-            trimmed
-        } else {
-            ""
+            close = trimmed;
         }
-        .into(),
-    );
+    }
+    entry.insert("closerRaw".into(), close.into());
 }

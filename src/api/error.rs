@@ -112,14 +112,11 @@ impl std::fmt::Display for Error {
             ),
             Self::Render { codes } => write!(f, "the render lost content: {}", codes.join(", ")),
             Self::Tree(e) => write!(f, "{e}"),
-            Self::Layout { path, reason } => {
+            Self::Layout { path, reason } | Self::Patch { path, reason } => {
                 write!(f, "{}: {reason}", if path.is_empty() { "/" } else { path })
             }
             Self::Write { target, message } => write!(f, "writer {target}: {message}"),
             Self::ImportInput { message } => write!(f, "{message}"),
-            Self::Patch { path, reason } => {
-                write!(f, "{}: {reason}", if path.is_empty() { "/" } else { path })
-            }
             Self::Export { diagnostics } => {
                 let codes: Vec<&str> = diagnostics.iter().map(|e| e.code.as_str()).collect();
                 let n = diagnostics.len();

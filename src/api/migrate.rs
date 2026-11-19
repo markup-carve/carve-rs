@@ -1036,7 +1036,7 @@ pub fn migrate_tree_with(json: &Value, opts: &MigrateOptions) -> Result<Migrated
             tree,
             envelope,
             diagnostics: Vec::new(),
-            layout: migration_layout(opts.source.as_deref(), Vec::new())?,
+            layout: migration_layout(opts.source.as_deref(), &[])?,
         });
     }
     let mut state = State {
@@ -1059,11 +1059,11 @@ pub fn migrate_tree_with(json: &Value, opts: &MigrateOptions) -> Result<Migrated
         tree,
         envelope: wrapped.map(|w| w.to_string()),
         diagnostics: state.diagnostics,
-        layout: migration_layout(opts.source.as_deref(), entries)?,
+        layout: migration_layout(opts.source.as_deref(), &entries)?,
     })
 }
 
-fn migration_layout(source: Option<&str>, entries: Vec<Value>) -> Result<Value, Error> {
+fn migration_layout(source: Option<&str>, entries: &[Value]) -> Result<Value, Error> {
     if let Some(source) = source {
         return super::parse_with_layout(source, &crate::Options::default())
             .map(|parsed| parsed.layout);

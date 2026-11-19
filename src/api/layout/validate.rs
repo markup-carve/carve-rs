@@ -1,4 +1,6 @@
 //! The closed version-2 layout record reader (C2-L-007 to C2-L-058).
+// Four-byte base64 groups are checked before indexing.
+#![allow(clippy::indexing_slicing)]
 
 use super::super::Error;
 use serde_json::{Map, Value};
@@ -56,7 +58,7 @@ fn one_of(value: Option<&Value>, path: &str, allowed: &[&str]) -> Result<(), Err
 
 fn base64_len(text: &str) -> Result<usize, Error> {
     let bytes = text.as_bytes();
-    if !bytes.len().is_multiple_of(4) {
+    if bytes.len() % 4 != 0 {
         return Err(fail(
             "/source",
             "is not base64: its length is not a multiple of 4",
@@ -79,7 +81,7 @@ fn base64_len(text: &str) -> Result<usize, Error> {
         let b = digit(group[1]).ok_or_else(|| fail("/source", "is not base64"))?;
         let pad2 = group[2] == b'=';
         let pad3 = group[3] == b'=';
-        if (pad2 || pad3) && !last || pad2 && !pad3 {
+        if pad2 && !pad3 || pad3 && !last {
             return Err(fail("/source", "is not base64"));
         }
         let c = if pad2 {
@@ -109,11 +111,12 @@ fn base64_len(text: &str) -> Result<usize, Error> {
     Ok(decoded.len())
 }
 
+const SLOTS: &[&str] = &["title", "children", "caption", "columns"];
+
 fn segment_order(a: &str, b: &str) -> std::cmp::Ordering {
     if let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>()) {
         return a.cmp(&b);
     }
-    const SLOTS: &[&str] = &["title", "children", "caption", "columns"];
     let rank = |v: &str| SLOTS.iter().position(|x| *x == v).unwrap_or(SLOTS.len());
     rank(a).cmp(&rank(b)).then_with(|| a.cmp(b))
 }
@@ -201,7 +204,7 @@ fn entry(value: &Value, path: &str, length: usize) -> Result<String, Error> {
             }
             "sourceFormat" => one_of(Some(value), &at, &["pipe", "csv", "tsv"])?,
             "continuationStyle" => {
-                one_of(Some(value), &at, &["lazy", "indent", "marker_line", "none"])?
+                one_of(Some(value), &at, &["lazy", "indent", "marker_line", "none"])?;
             }
             "attachment" => one_of(Some(value), &at, &["preceding", "none"])?,
             "wraps" => wraps(value, &at, end - start)?,
