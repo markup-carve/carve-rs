@@ -127,6 +127,18 @@ fn check_node(
             ));
         }
     }
+    for slot in node["slots"]
+        .as_object()
+        .into_iter()
+        .flat_map(|slots| slots.keys())
+    {
+        if rule["slots"].get(slot).is_none() {
+            return Err(reader(
+                &format!("{path}/slots/{slot}"),
+                "unregistered extension slot",
+            ));
+        }
+    }
     for (slot, spec) in rule["slots"]
         .as_object()
         .into_iter()
@@ -183,4 +195,26 @@ fn in_ast_category(kind: &str, host: &str) -> bool {
                 .iter()
                 .any(|item| item["$ref"] == format!("#/$defs/{kind}"))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_node;
+    use crate::reader::TreeError;
+    use serde_json::json;
+
+    #[test]
+    fn c2_x_038_registered_slots_reject_undeclared_names() {
+        let node = json!({
+            "type": "block_extension",
+            "name": "carve.tabs",
+            "version": "1",
+            "slots": {"tabs": [], "extra": []}
+        });
+        assert!(matches!(
+            check_node(&node, "/node", None),
+            Err(TreeError::Reader { path, reason })
+                if path == "/node/slots/extra" && reason == "unregistered extension slot"
+        ));
+    }
 }

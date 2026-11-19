@@ -25,3 +25,36 @@ fn c2_x_031_038_046_registered_extension_refusals_name_the_node() {
         );
     }
 }
+
+#[test]
+fn c2_x_038_rejects_a_slot_outside_the_registered_schema() {
+    let text = include_str!("../spec-conformance/clause-cases.json");
+    let mut parser = serde_json::Deserializer::from_str(text);
+    parser.disable_recursion_limit();
+    let corpus = Value::deserialize(&mut parser).expect("clause corpus");
+    let mut tree = corpus["cases"]
+        .as_array()
+        .expect("cases")
+        .iter()
+        .find(|case| case["id"] == "CC-471")
+        .expect("registered extension case")["tree"]
+        .clone();
+    tree["children"][0]
+        .as_object_mut()
+        .expect("tabs node")
+        .remove("props");
+    assert!(
+        read_tree_value(tree.clone()).is_ok(),
+        "base tree must be valid"
+    );
+    tree["extensions"][1]["slots"]
+        .as_array_mut()
+        .expect("declared slots")
+        .push(Value::String("extra".into()));
+    tree["children"][0]["slots"]["extra"] = Value::Array(vec![]);
+    let result = read_tree_value(tree);
+    assert!(
+        matches!(&result, Err(TreeError::Reader { path, .. } | TreeError::Schema { path, .. }) if path == "/children/0/slots/extra"),
+        "{result:?}"
+    );
+}
