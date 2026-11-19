@@ -51,11 +51,16 @@ pub(crate) fn render_tree_parts<'a>(
     opts: &Options,
     files: Option<&crate::resolve::files::Files<'a>>,
     hook: Option<&dyn ExtensionHook>,
-) -> (String, Vec<&'static str>, Option<usize>) {
+) -> (
+    String,
+    Vec<&'static str>,
+    Option<usize>,
+    Vec<(usize, String)>,
+) {
     let mut r = Renderer::build(doc, opts, true, files);
     r.hook = hook;
     r.document();
-    (r.out, r.losses, r.derived_failure)
+    (r.out, r.losses, r.derived_failure, r.extension_loss_nodes)
 }
 
 /// A host's extension renderers (C2-X-033, C2-X-052), asked before the
@@ -256,6 +261,7 @@ pub(crate) struct Renderer<'r, 'a> {
     /// Inside a node that stays while its children are degraded.
     degrading: usize,
     losses: Vec<&'static str>,
+    extension_loss_nodes: Vec<(usize, String)>,
     destination_losses: Vec<DestinationLoss>,
     raw_losses: Vec<RawLoss>,
     carrier_losses: Vec<CarrierLoss>,
@@ -336,6 +342,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             started: false,
             degrading: 0,
             losses: Vec::new(),
+            extension_loss_nodes: Vec::new(),
             destination_losses: Vec::new(),
             raw_losses: Vec::new(),
             carrier_losses: Vec::new(),

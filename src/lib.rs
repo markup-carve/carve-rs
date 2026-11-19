@@ -200,19 +200,11 @@ pub fn render_tree_with_diagnostics(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     let files = resolve_tree(&mut doc, opts, &arena);
-    let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), None);
+    let (html, losses, derived, extension_nodes) =
+        html::render_tree_parts(&doc, opts, files.as_ref(), None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
-    let mut diagnostics = losses
-        .into_iter()
-        .map(|code| {
-            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
-            if code == "derived-text-budget" {
-                finding.path = derived.and_then(|target| node_path(doc.children, target));
-            }
-            finding
-        })
-        .collect();
+    let mut diagnostics = tree_loss_diagnostics(&doc, opts, losses, derived, &extension_nodes);
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Ok(Rendered {
         html: if opts.strict_losses && lost {
@@ -278,17 +270,15 @@ pub(crate) fn render_tree_hooked(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     let files = resolve_tree(&mut doc, opts, &arena);
-    let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), Some(hook));
-    let mut diagnostics = unallowed(losses, opts)
-        .into_iter()
-        .map(|code| {
-            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
-            if code == "derived-text-budget" {
-                finding.path = derived.and_then(|target| node_path(doc.children, target));
-            }
-            finding
-        })
-        .collect();
+    let (html, losses, derived, extension_nodes) =
+        html::render_tree_parts(&doc, opts, files.as_ref(), Some(hook));
+    let mut diagnostics = tree_loss_diagnostics(
+        &doc,
+        opts,
+        unallowed(losses, opts),
+        derived,
+        &extension_nodes,
+    );
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Rendered {
         html,
@@ -333,11 +323,107 @@ fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
                 return Some(path);
             }
             if let Some(next) = node.children() {
-                pending.push((next, path));
+                pending.push((next, path.clone()));
+            }
+            match node {
+                ast::Node::BlockExtension(e) => {
+                    pending.push((e.fallback, format!("{path}/fallback")));
+                }
+                ast::Node::InlineExtension(e) => {
+                    if let Some(fallback) = e.fallback.as_deref() {
+                        pending.push((fallback, format!("{path}/fallback")));
+                    }
+                }
+                _ => {}
             }
         }
     }
     None
+}
+
+fn tree_loss_diagnostics(
+    doc: &ast::Document<'_>,
+    opts: &Options,
+    losses: Vec<&'static str>,
+    derived: Option<usize>,
+    extension_nodes: &[(usize, String)],
+) -> Vec<diagnostic::Diagnostic> {
+    let mut extensions = extension_nodes.iter();
+    let mut destinations = if losses.contains(&"destination-denied") {
+        denied_tree_destinations(doc, opts)
+    } else {
+        Vec::new()
+    }
+    .into_iter();
+    losses
+        .into_iter()
+        .map(|code| {
+            let name = if code == "extension-fallback-rendered" {
+                extensions.next()
+            } else {
+                None
+            };
+            let mut finding = diagnostic::Diagnostic::new(
+                code,
+                &name.map_or(Vec::new(), |(_, name)| vec![("name", name.as_str())]),
+                None,
+                None,
+            );
+            finding.path = match code {
+                "extension-fallback-rendered" => {
+                    name.and_then(|(target, _)| node_path(doc.children, *target))
+                }
+                "destination-denied" => destinations.next(),
+                "derived-text-budget" => derived.and_then(|target| node_path(doc.children, target)),
+                _ => None,
+            };
+            finding
+        })
+        .collect()
+}
+
+fn denied_tree_destinations(doc: &ast::Document<'_>, opts: &Options) -> Vec<String> {
+    fn visit(
+        value: &serde_json::Value,
+        path: &str,
+        policy: &options::UrlPolicy,
+        found: &mut Vec<String>,
+    ) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let Some(kind) = fields.get("type").and_then(serde_json::Value::as_str) {
+                    let key = match kind {
+                        "link" | "autolink" => Some("href"),
+                        "image" => Some("src"),
+                        _ => None,
+                    };
+                    if let Some(key) = key {
+                        if let Some(dest) = fields.get(key).and_then(serde_json::Value::as_str) {
+                            if !html::url::allowed(dest, policy) {
+                                found.push(format!("{path}/{key}"));
+                            }
+                        }
+                    }
+                }
+                for (key, child) in fields {
+                    if key != "attrs" {
+                        visit(child, &format!("{path}/{key}"), policy, found);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    visit(child, &format!("{path}/{index}"), policy, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    if let Ok(value) = serde_json::to_value(doc) {
+        visit(&value, "", &opts.url_policy, &mut found);
+    }
+    found
 }
 
 #[doc(hidden)]

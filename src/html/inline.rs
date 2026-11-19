@@ -745,7 +745,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             match self.hooked(n, false, Some(out), 0) {
                 Some(true) => return,
                 Some(false) => {}
-                None => self.losses.push("extension-fallback-rendered"),
+                None => {
+                    self.losses.push("extension-fallback-rendered");
+                    self.extension_loss_nodes
+                        .push((crate::resolve::order::addr(n), e.name.to_string()));
+                }
             }
             let wrapped = e.attrs.is_some_and(|attrs| !attrs.is_empty());
             if wrapped {
