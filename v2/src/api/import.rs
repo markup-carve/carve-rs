@@ -58,10 +58,12 @@ impl ImportOptions {
     }
 }
 
-/// The imported tree and the importer's record, in document order.
+/// The imported tree, its canonical Carve source, and the record of the
+/// importer followed by that of the writer (C2-M-001, C2-T-005).
 #[derive(Debug, Clone)]
 pub struct Imported {
     pub tree: Tree,
+    pub source: String,
     pub diagnostics: Vec<Entry>,
 }
 
@@ -87,31 +89,57 @@ fn run(html: &str, raw_html: bool) -> Result<crate::import::Imported, Error> {
     })
 }
 
-/// `importDocument` (C2-M-001): the tree of an HTML input and the record of
-/// the importer.
+/// `importDocument` (C2-M-001) on `Carve::default()`.
 ///
 /// # Errors
 ///
-/// [`Error::ImportInput`] for an input the importer refuses (C2-M-006);
-/// [`Error::Render`] for a loss under `strict_losses` (C2-M-082).
+/// As [`super::Carve::import_document`].
 pub fn import_document(html: &str, opts: &ImportOptions) -> Result<Imported, Error> {
-    let imported = run(html, opts.raw_html)?;
-    let tree = Tree::from_value(&imported.tree).map_err(|e| Error::ImportInput {
-        message: format!("the imported tree fails the reader checks: {e}"),
-    })?;
-    if opts.strict_losses {
-        let codes: Vec<String> = imported
-            .diagnostics
-            .iter()
-            .filter(|e| e.channel == "render-loss")
-            .map(|e| e.code.clone())
-            .collect();
-        if !codes.is_empty() {
-            return Err(Error::Render { codes });
+    super::Carve::default().import_document(html, opts)
+}
+
+impl super::Carve {
+    /// `importDocument` (C2-M-001): the tree of an HTML input, its source
+    /// written by the `carve` writer of this host, and the record.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ImportInput`] for an input the importer refuses (C2-M-006);
+    /// [`Error::Render`] for an importer or writer loss under `strict_losses`
+    /// (C2-M-082, C2-T-034); [`Error::Write`] for a writer loss without it.
+    pub fn import_document(&self, html: &str, opts: &ImportOptions) -> Result<Imported, Error> {
+        let imported = run(html, opts.raw_html)?;
+        let tree = Tree::from_value(&imported.tree).map_err(|e| Error::ImportInput {
+            message: format!("the imported tree fails the reader checks: {e}"),
+        })?;
+        let mut diagnostics = imported.diagnostics;
+        let written = match self.write_with_diagnostics(&tree, &super::WriteOptions::default()) {
+            Err(Error::Write { .. }) if opts.strict_losses => {
+                let mut codes = losses(&diagnostics);
+                codes.push("writer-refused".into());
+                return Err(Error::Render { codes });
+            }
+            other => other?,
+        };
+        diagnostics.extend(written.diagnostics);
+        if opts.strict_losses {
+            let codes = losses(&diagnostics);
+            if !codes.is_empty() {
+                return Err(Error::Render { codes });
+            }
         }
+        Ok(Imported {
+            tree,
+            source: written.output,
+            diagnostics,
+        })
     }
-    Ok(Imported {
-        tree,
-        diagnostics: imported.diagnostics,
-    })
+}
+
+fn losses(entries: &[Entry]) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|e| e.channel == "render-loss")
+        .map(|e| e.code.clone())
+        .collect()
 }
