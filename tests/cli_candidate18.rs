@@ -70,3 +70,47 @@ fn candidate18_cli_clause_cases() {
         }
     }
 }
+
+#[test]
+fn output_can_name_the_input_without_erasing_it() {
+    let dir = std::env::temp_dir().join(format!("carve-rs-output-input-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.crv"), "a **b**\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_carve"))
+        .args(["fmt", "--output", "a.crv", "a.crv"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a.crv")).unwrap(),
+        "a **b**\n"
+    );
+}
+
+#[test]
+fn fix_alias_reports_json_and_removes_closing_heading_space() {
+    let dir = std::env::temp_dir().join(format!("carve-rs-fix-json-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.crv"), "# Title ##\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_carve"))
+        .args(["fix", "--write", "--json", "a.crv"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a.crv")).unwrap(),
+        "# Title\n"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["files"][0]["file"], "a.crv");
+}

@@ -730,8 +730,16 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
             };
             if let Some(replacement) = fix_fragment(&entry.code, slice) {
                 if replacement != slice {
+                    let start = if entry.code == "heading-closing-hashes"
+                        && range.start_offset > 0
+                        && source.as_bytes()[range.start_offset - 1] == b' '
+                    {
+                        range.start_offset - 1
+                    } else {
+                        range.start_offset
+                    };
                     candidates
-                        .entry((range.start_offset, range.end_offset))
+                        .entry((start, range.end_offset))
                         .or_default()
                         .push(replacement);
                 }
@@ -746,16 +754,16 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
             .collect();
         changes.sort_by_key(|(range, _)| std::cmp::Reverse(range.0));
         let mut boundary = source.len();
-        let mut changed = false;
+        let mut applied = false;
         for ((start, end), replacement) in changes {
             if end > boundary {
                 continue;
             }
             source.replace_range(start..end, &replacement);
             boundary = start;
-            changed = true;
+            applied = true;
         }
-        if !changed {
+        if !applied {
             break;
         }
     }
@@ -909,7 +917,7 @@ fn lint_file(
         }
     }
     if bool_value(args, "json", false) {
-        diagnostics.push(loss_report(path, &entries, bytes, 0));
+        diagnostics.push(loss_report(path, &entries, &source, 0));
     } else {
         lines(path, &source, &entries, fixed)?;
     }
@@ -1126,7 +1134,16 @@ pub fn run(arguments: &[String]) -> i32 {
         println!("Usage: carve {} [FLAG...] [FILE...]", args.command);
         return 0;
     }
+    let mut staged = vec![None; args.files.len()];
     if let Some(path) = str_value(&args, "output") {
+        for (index, input) in args.files.iter().enumerate() {
+            if input != "-" && absolute(input) == absolute(path) {
+                staged[index] = Some(match read(input) {
+                    Ok(bytes) => bytes,
+                    Err(code) => return code,
+                });
+            }
+        }
         if let Err(e) = std::fs::write(path, "") {
             return fail("output-unwritable", e);
         }
@@ -1135,10 +1152,13 @@ pub fn run(arguments: &[String]) -> i32 {
     let mut losses = Vec::new();
     let mut includes = Vec::new();
     let mut diagnostics = Vec::new();
-    for path in &args.files {
-        let bytes = match read(path) {
-            Ok(b) => b,
-            Err(code) => return code,
+    for (path, staged_bytes) in args.files.iter().zip(staged) {
+        let bytes = match staged_bytes {
+            Some(bytes) => bytes,
+            None => match read(path) {
+                Ok(bytes) => bytes,
+                Err(code) => return code,
+            },
         };
         match one(
             &args,
@@ -1153,7 +1173,9 @@ pub fn run(arguments: &[String]) -> i32 {
             Err(code) => return code,
         }
     }
-    if bool_value(&args, "json", false) && matches!(args.command.as_str(), "lint" | "diagnostics") {
+    if bool_value(&args, "json", false)
+        && matches!(args.command.as_str(), "lint" | "fix" | "diagnostics")
+    {
         if let Err(code) = output(&format!("{}\n", json!({"files":diagnostics}))) {
             return code;
         }
