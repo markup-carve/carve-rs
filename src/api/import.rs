@@ -15,7 +15,8 @@ pub struct ImportOptions {
 
 impl ImportOptions {
     /// Reads the options object of the JSON boundary: `from` is required and
-    /// must be `html`; `rawHtml` and `strictLosses` are booleans.
+    /// names a format of [`super::ImportFormat`]; `rawHtml` and
+    /// `strictLosses` are booleans.
     ///
     /// # Errors
     ///
@@ -32,7 +33,7 @@ impl ImportOptions {
         for (name, v) in map {
             match name.as_str() {
                 "from" => match v.as_str() {
-                    Some("html") => {}
+                    Some(name) if super::ImportFormat::from_name(name).is_some() => {}
                     Some(other) => {
                         return Err(Error::option("from", format!("unknown value \"{other}\"")));
                     }
@@ -147,6 +148,48 @@ impl super::Carve {
         limits: &LossOptions,
     ) -> Result<Imported, Error> {
         let imported = run(html, opts.raw_html)?;
+        self.finish_import(imported, *opts, limits)
+    }
+
+    /// `importDocument` of Markdown, GFM, Djot or HTML (carve-js#5074): the
+    /// library HTML of the input through the HTML importer, raw HTML kept.
+    ///
+    /// # Errors
+    ///
+    /// As [`Carve::import_document_with`].
+    pub fn import_from(
+        &self,
+        input: &str,
+        format: super::ImportFormat,
+        opts: &ImportOptions,
+        limits: &LossOptions,
+    ) -> Result<Imported, Error> {
+        if format == super::ImportFormat::Html {
+            return self.import_document_with(input, opts, limits);
+        }
+        let mut sink = super::hub::Sink::default();
+        let html = super::hub::to_html(input, format, &mut sink)?;
+        let mut imported = run(&html, true)?;
+        imported.tree = super::hub::finish(imported.tree, &sink);
+        // The library's own line breaks are no whitespace of the input, and a
+        // range would index the intermediate HTML.
+        imported
+            .diagnostics
+            .retain(|e| e.code != "import-whitespace-normalized");
+        for e in &mut imported.diagnostics {
+            if e.code.starts_with("import-") {
+                e.range = None;
+            }
+        }
+        self.finish_import(imported, *opts, limits)
+    }
+
+    fn finish_import(
+        &self,
+        imported: crate::import::Imported,
+        opts: ImportOptions,
+        limits: &LossOptions,
+    ) -> Result<Imported, Error> {
         let tree = Tree::from_value(&imported.tree).map_err(|e| Error::ImportInput {
             message: format!("the imported tree fails the reader checks: {e}"),
         })?;

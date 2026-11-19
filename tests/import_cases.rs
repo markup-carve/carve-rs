@@ -223,7 +223,7 @@ fn import_options_from_json() {
     for bad in [
         None,
         Some(json!({})),
-        Some(json!({"from": "markdown"})),
+        Some(json!({"from": "bbcode"})),
         Some(json!({"from": 1})),
         Some(json!({"from": "html", "rawHtml": "yes"})),
         Some(json!({"from": "html", "strictLosses": 1})),
