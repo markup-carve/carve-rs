@@ -52,6 +52,23 @@ fn index_sorts_entries_and_links_each_use() {
 }
 
 #[test]
+fn a_claimed_directive_keeps_its_authored_id() {
+    let out = html(
+        ":index[x]\n\n{#ix .wide}\n::: index\nSee also.\n:::\n",
+        extensions::index(extensions::IndexOptions::default()),
+    );
+    assert!(
+        out.contains("<span id=\"idx-x-1\" class=\"index-term\"></span>"),
+        "{out}"
+    );
+    assert!(
+        out.contains("<div id=\"ix\" class=\"index wide\">"),
+        "{out}"
+    );
+    assert!(out.contains("<ul class=\"index\">"), "{out}");
+}
+
+#[test]
 fn citations_resolve_keys_and_place_references() {
     let source = "See :cite[doe]{locator=\"p. 4\"}.\n\n::: references\n:: doe\n: Doe, J. (2020). /A book/.\n:::\n";
     let out = html(

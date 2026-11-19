@@ -366,7 +366,21 @@ fn duplicate_ids(tree: &Tree) -> usize {
         {
             *duplicates += 1;
         }
-        node.for_each_child(&mut |child| visit(child, seen, duplicates, depth + 1));
+        // A claimed node's fallback is an inert record of the authored source.
+        // Its ids coexist with those in the rendered slot, by design.
+        match node {
+            crate::ast::owned::Node::BlockExtension(ext) => {
+                for child in &ext.children {
+                    visit(child, seen, duplicates, depth + 1);
+                }
+            }
+            crate::ast::owned::Node::InlineExtension(ext) => {
+                for child in &ext.children {
+                    visit(child, seen, duplicates, depth + 1);
+                }
+            }
+            _ => node.for_each_child(&mut |child| visit(child, seen, duplicates, depth + 1)),
+        }
         // Extension slots carry nodes as JSON until the host renderer reads them.
         match node {
             crate::ast::owned::Node::BlockExtension(ext) => {
@@ -395,7 +409,13 @@ fn duplicate_ids(tree: &Tree) -> usize {
                     {
                         *duplicates += 1;
                     }
-                    pending.extend(map.values());
+                    pending.extend(map.iter().filter_map(|(key, value)| {
+                        (!matches!(
+                            key.as_str(),
+                            "fallback" | "source" | "payload" | "props" | "metadata" | "data"
+                        ))
+                        .then_some(value)
+                    }));
                 }
                 Value::Array(items) => pending.extend(items),
                 _ => {}
