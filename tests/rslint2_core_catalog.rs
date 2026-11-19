@@ -35,5 +35,5 @@ fn extra_indent_in_div_remains_reportable() {
 #[test]
 fn references_placement_is_void_in_core_lint() {
     let source = "> ::: references\n> :::";
-    assert!(matching(source, "references-placement-in-container").is_empty());
+    assert_eq!(matching(source, "references-placement-in-container"), []);
 }
