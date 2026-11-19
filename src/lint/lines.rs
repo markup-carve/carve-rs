@@ -4,6 +4,7 @@ use super::{LintOptions, Range, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 
+#[allow(clippy::struct_excessive_bools)] // Independent facts from separate parse and source checks.
 struct Line {
     text: String,
     quotes: usize,

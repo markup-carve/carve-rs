@@ -344,7 +344,11 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         };
         if let Some(column) = field(node, "/children/0/pos/startColumn").as_u64() {
             let start_line = field(node, "/pos/startLine").as_u64().unwrap_or(0);
-            content_owner = Some((owner, column.saturating_sub(1) as usize, start_line));
+            content_owner = Some((
+                owner,
+                usize::try_from(column.saturating_sub(1)).unwrap_or(usize::MAX),
+                start_line,
+            ));
             break;
         }
     }

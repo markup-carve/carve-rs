@@ -44,7 +44,10 @@ fn block_lint_follows_the_parsed_leaf() {
         );
     }
     assert_eq!(spans("== H #\n", "heading-closing-hashes"), vec![(5, 6)]);
-    assert!(spans("{{ x.crv#s }}\n-----\n", "setext-heading-underline").is_empty());
+    assert_eq!(
+        spans("{{ x.crv#s }}\n-----\n", "setext-heading-underline"),
+        Vec::new()
+    );
     assert_eq!(
         spans("paragraph\n-----\n", "setext-heading-underline"),
         vec![(10, 15)]
@@ -80,19 +83,25 @@ fn list_item_overindent_requires_a_block_opener() {
 
 #[test]
 fn quote_and_term_markers_follow_their_parsed_owner() {
-    assert!(spans(">: > [!NOTE]\n", "github-alert-marker").is_empty());
+    assert_eq!(spans(">: > [!NOTE]\n", "github-alert-marker"), Vec::new());
     for source in [":: t\n> ---\n", ":: t\n  - ----\n"] {
-        assert!(spans(source, "thematic-break-spelling").is_empty());
+        assert_eq!(spans(source, "thematic-break-spelling"), Vec::new());
     }
     for source in ["> :::\n> * ^\n", "> :::: \n> - [x]\n", "> ::::\n> - [x]\n"] {
-        assert!(spans(source, "list-marker-without-blank-line").is_empty());
+        assert_eq!(spans(source, "list-marker-without-blank-line"), Vec::new());
     }
 }
 
 #[test]
 fn ordered_alignment_compares_marker_ends() {
-    assert!(spans("  10. x\n1. y\n", "ordered-marker-right-aligned").is_empty());
-    assert!(spans("[^n]: 10. +|\n   1. :::\n", "ordered-marker-right-aligned").is_empty());
+    assert_eq!(
+        spans("  10. x\n1. y\n", "ordered-marker-right-aligned"),
+        Vec::new()
+    );
+    assert_eq!(
+        spans("[^n]: 10. +|\n   1. :::\n", "ordered-marker-right-aligned"),
+        Vec::new()
+    );
     assert_eq!(
         spans(" 9. x\n10. y\n", "ordered-marker-right-aligned").len(),
         1
@@ -175,7 +184,10 @@ fn caption_like_line_looks_for_an_image_anywhere_above() {
 
 #[test]
 fn a_lazy_line_literal_quote_does_not_start_a_definition() {
-    assert!(spans("[^f]: > a\n> [ ]: u\n", "blank-reference-label").is_empty());
+    assert_eq!(
+        spans("[^f]: > a\n> [ ]: u\n", "blank-reference-label"),
+        Vec::new()
+    );
     assert_eq!(spans("> [ ]: u\n", "blank-reference-label"), vec![(2, 6)]);
 }
 
@@ -209,7 +221,10 @@ fn description_column_requires_an_open_term_above() {
 
 #[test]
 fn continuation_plus_is_not_a_list_marker() {
-    assert!(spans("- + x\n + item\n", "list-marker-below-content-column").is_empty());
+    assert_eq!(
+        spans("- + x\n + item\n", "list-marker-below-content-column"),
+        Vec::new()
+    );
 }
 
 #[test]
