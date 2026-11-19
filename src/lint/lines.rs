@@ -252,18 +252,7 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
         {
             fact.flags |= LITERAL_QUOTE_PREFIX;
         }
-        let content = match kind {
-            "soft_break" | "hard_break" => Some((range.end_line, range.end)),
-            "paragraph" | "caption" | "line" | "heading" | "definition_term" | "thematic_break"
-            | "table_row" => Some((range.start_line, range.start)),
-            _ => None,
-        };
-        if let Some((line, at)) = content
-            && let Some(fact) = facts.get_mut(line.max(1) - 1)
-            && fact.content.is_none_or(|known| at < known)
-        {
-            fact.content = Some(at);
-        }
+        mark_content(&mut facts, range);
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
         if paragraph_like || flags != 0 {
@@ -312,6 +301,22 @@ fn mask_opaque_lines<'a>(
         if range.start < line_start + raw.len() {
             fact.masks.push(range);
         }
+    }
+}
+
+/// A leaf block starts its first line's text, and each break ends where the next line's text starts.
+fn mark_content(facts: &mut [LineFacts<'_>], range: &Range) {
+    let content = match range.kind.as_str() {
+        "soft_break" | "hard_break" => Some((range.end_line, range.end)),
+        "paragraph" | "caption" | "line" | "heading" | "definition_term" | "thematic_break"
+        | "table_row" => Some((range.start_line, range.start)),
+        _ => None,
+    };
+    if let Some((line, at)) = content
+        && let Some(fact) = facts.get_mut(line.max(1) - 1)
+        && fact.content.is_none_or(|known| at < known)
+    {
+        fact.content = Some(at);
     }
 }
 
@@ -1178,6 +1183,20 @@ fn block_opener_width(trimmed: &str) -> usize {
     }
 }
 
+/// In a quote the mark on both lines is the quote's own; a lazy line carries no mark of the quote before
+/// its content, so its `>` is the candidate (carve#6178).
+fn quote_continues(line: &Line, previous: Option<&Line>, prefix: usize, content: &str) -> bool {
+    let own_mark = line.content.is_none()
+        || line
+            .text
+            .get(..prefix)
+            .is_some_and(|before| before.contains('>'));
+    content.starts_with("> ")
+        && own_mark
+        && line.quotes > 0
+        && previous.is_some_and(|p| p.text.trim_start().starts_with("> "))
+}
+
 fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     // C2-B-019, C2-B-200: only a paragraph or caption line is a candidate; a term's later line is not.
     if !matches!(
@@ -1187,19 +1206,10 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
         return;
     }
     let (prefix, content) = line_text(line);
-    // carve#6178: a lazy line carries no mark of the quote before its content, so its `>` is the candidate.
-    let own_mark = line.content.is_none()
-        || line
-            .text
-            .get(..prefix)
-            .is_some_and(|before| before.contains('>'));
     if !starts_block(content)
         || (content.starts_with('{') && !content.ends_with('}'))
         || (content.starts_with('[') && line.scope.in_footnote)
-        || (content.starts_with("> ")
-            && own_mark
-            && line.quotes > 0
-            && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
+        || quote_continues(line, previous, prefix, content)
     {
         return;
     }
