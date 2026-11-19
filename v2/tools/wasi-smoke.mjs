@@ -6,6 +6,12 @@ import { openSync, closeSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WASI } from "node:wasi";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+
+// Node 22 segfaults once a dozen finished instances wait for collection.
+setFlagsFromString("--expose-gc");
+const gc = runInNewContext("gc");
 
 const wasm = await WebAssembly.compile(await readFile(process.argv[2]));
 
@@ -19,6 +25,7 @@ async function call(request, preopens = {}) {
   const status = wasi.start(instance);
   closeSync(stdin);
   closeSync(stdout);
+  gc();
   return { status, response: JSON.parse(readFileSync(join(dir, "out.json"), "utf8")) };
 }
 
