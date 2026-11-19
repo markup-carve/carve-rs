@@ -16,20 +16,24 @@
 
 mod callouts;
 mod code_group;
+mod color_swatch;
 mod details;
 mod fenced;
+mod list_table;
 mod math;
 mod transforms;
 mod wikilinks;
 
 pub use callouts::code_callouts;
 pub use code_group::{CodeGroupMode, CodeGroupOptions, Highlighter, code_group};
+pub use color_swatch::{ColorSwatchOptions, SwatchPosition, SwatchShape, color_swatch};
 pub use details::{details, spoiler};
 pub use fenced::{
     ContentMode, DiagramBuilder, FencedRenderOptions, PresetBuilders, PresetOptions, Tag, abc,
     chart, d2, fenced_render, fenced_render_name, graphviz, mermaid, plantuml, presets, vega_lite,
     wavedrom,
 };
+pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
 pub use transforms::{
     DefaultAttributes, default_attributes, inline_footnotes_to_parentheses, tab_normalize,
@@ -193,6 +197,8 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.codeCallouts" => Some(code_callouts()),
         "carve.details" => Some(details()),
         "carve.spoiler" => Some(spoiler()),
+        "carve.listTable" => Some(list_table()),
+        "carve.colorSwatch" => Some(color_swatch(ColorSwatchOptions::default())),
         "carve.tabNormalize" => tab_normalize(2).ok(),
         "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
         _ => None,
