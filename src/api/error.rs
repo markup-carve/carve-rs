@@ -21,7 +21,11 @@ pub enum Error {
     /// `CarveLayoutError`: a source-layout sidecar the reader refuses.
     Layout { path: String, reason: String },
     /// `CarveWriteError`: a writer loss (C2-W-134) or a failing writer.
-    Write { target: String, message: String },
+    Write {
+        target: String,
+        message: String,
+        diagnostics: Vec<super::Entry>,
+    },
     /// `ImportInputError`: an HTML input the importer refuses (C2-M-006).
     ImportInput { message: String },
     /// `CarvePatchError`: a patch that cannot be applied; `path` points into
@@ -115,7 +119,9 @@ impl std::fmt::Display for Error {
             Self::Layout { path, reason } | Self::Patch { path, reason } => {
                 write!(f, "{}: {reason}", if path.is_empty() { "/" } else { path })
             }
-            Self::Write { target, message } => write!(f, "writer {target}: {message}"),
+            Self::Write {
+                target, message, ..
+            } => write!(f, "writer {target}: {message}"),
             Self::ImportInput { message } => write!(f, "{message}"),
             Self::Export { diagnostics } => {
                 let codes: Vec<&str> = diagnostics.iter().map(|e| e.code.as_str()).collect();

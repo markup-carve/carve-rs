@@ -46,16 +46,30 @@ pub(crate) fn render_with_details(
 
 /// [`render_with_details`] of a supplied tree, with the files of its
 /// expanded includes and a host's extension renderers where there are any.
+type TreeParts = (
+    String,
+    Vec<&'static str>,
+    Option<usize>,
+    Vec<(usize, String)>,
+    Vec<DestinationLoss>,
+);
+
 pub(crate) fn render_tree_parts<'a>(
     doc: &Document<'a>,
     opts: &Options,
     files: Option<&crate::resolve::files::Files<'a>>,
     hook: Option<&dyn ExtensionHook>,
-) -> (String, Vec<&'static str>, Option<usize>) {
+) -> TreeParts {
     let mut r = Renderer::build(doc, opts, true, files);
     r.hook = hook;
     r.document();
-    (r.out, r.losses, r.derived_failure)
+    (
+        r.out,
+        r.losses,
+        r.derived_failure,
+        r.extension_loss_nodes,
+        r.destination_losses,
+    )
 }
 
 /// A host's extension renderers (C2-X-033, C2-X-052), asked before the
@@ -191,6 +205,7 @@ pub(crate) struct DestinationLoss {
     pub pos: Option<crate::ast::Pos>,
     pub value: String,
     pub file: Option<String>,
+    pub site: Option<(usize, String)>,
 }
 
 pub(crate) struct RawLoss {
@@ -256,6 +271,7 @@ pub(crate) struct Renderer<'r, 'a> {
     /// Inside a node that stays while its children are degraded.
     degrading: usize,
     losses: Vec<&'static str>,
+    extension_loss_nodes: Vec<(usize, String)>,
     destination_losses: Vec<DestinationLoss>,
     raw_losses: Vec<RawLoss>,
     carrier_losses: Vec<CarrierLoss>,
@@ -336,6 +352,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             started: false,
             degrading: 0,
             losses: Vec::new(),
+            extension_loss_nodes: Vec::new(),
             destination_losses: Vec::new(),
             raw_losses: Vec::new(),
             carrier_losses: Vec::new(),
@@ -754,7 +771,7 @@ fn reserved_losses(
         .attrs()
         .filter(|_| !matches!(node, Node::AbbreviationDef(_)))
     {
-        for (key, value) in attrs.key_values {
+        for (index, (key, value)) in attrs.key_values.iter().enumerate() {
             if attrs::RESERVED
                 .iter()
                 .any(|name| name.eq_ignore_ascii_case(key))
@@ -781,6 +798,10 @@ fn reserved_losses(
                     file: files
                         .and_then(|files| node.pos().and_then(|pos| files.file_of_pos(pos)))
                         .map(str::to_string),
+                    site: Some((
+                        crate::resolve::order::addr(node),
+                        format!("/attrs/keyValues/{index}/1"),
+                    )),
                 });
             }
         }

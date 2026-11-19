@@ -596,6 +596,83 @@ impl UsedIds {
     }
 }
 
+/// Builds the tabs wrapper with the standard authored-attribute rules.
+fn tabs_wrapper(node: &Value, cx: &super::RenderContext<'_>, aria: bool, label: &str) -> String {
+    let mut wrapper = String::from("<div");
+    if let Some(id) = at(node, "/attrs/id").as_str() {
+        let _ = write!(wrapper, " id=\"{}\"", cx.escape_attribute(id));
+    }
+    let mut classes = String::from("tabs");
+    if let Some(authored) = at(node, "/attrs/classes").as_array() {
+        for class in authored.iter().filter_map(Value::as_str) {
+            classes.push(' ');
+            classes.push_str(class);
+        }
+    }
+    let _ = write!(wrapper, " class=\"{}\"", cx.escape_attribute(&classes));
+    let mut has_role = false;
+    let mut has_name = false;
+    if let Some(pairs) = at(node, "/attrs/keyValues").as_array() {
+        for pair in pairs {
+            let (Some(key), Some(value)) = (
+                pair.get(0).and_then(Value::as_str),
+                pair.get(1).and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            if crate::html::url::dropped_name(key)
+                || crate::html::attrs::RESERVED
+                    .iter()
+                    .any(|reserved| reserved.eq_ignore_ascii_case(key))
+                || key.eq_ignore_ascii_case("class")
+                || (at(node, "/attrs/id").is_string() && key.eq_ignore_ascii_case("id"))
+            {
+                continue;
+            }
+            let value =
+                crate::html::url::filter_value_in(key, value, Some(&cx.options().url_policy));
+            has_role |= key.eq_ignore_ascii_case("role");
+            has_name |= key.eq_ignore_ascii_case("aria-label")
+                || key.eq_ignore_ascii_case("aria-labelledby");
+            let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));
+        }
+    }
+    if !has_role {
+        wrapper.push_str(if aria && cx.mode() != crate::options::Mode::Static {
+            " role=\"tablist\""
+        } else {
+            " role=\"group\""
+        });
+    }
+    if !has_name {
+        let _ = write!(wrapper, " aria-label=\"{}\"", cx.escape_attribute(label));
+    }
+    wrapper.push('>');
+    wrapper
+}
+
+fn selected_tab(tabs: &[Value]) -> usize {
+    tabs.iter()
+        .position(|t| {
+            at(t, "/attrs/keyValues")
+                .as_array()
+                .is_some_and(|kv| kv.iter().any(|p| p.get(0).is_some_and(|k| k == "selected")))
+        })
+        .unwrap_or(0)
+}
+
+fn tab_label_html(
+    title: &[Value],
+    name: &str,
+    cx: &super::RenderContext<'_>,
+) -> Result<String, Error> {
+    if title.is_empty() {
+        Ok(cx.escape(name))
+    } else {
+        cx.render_inlines(&Value::Array(title.to_vec()))
+    }
+}
+
 /// The standard tabs renderer: radio controls in `interactive` mode
 /// (C2-X-043 to C2-X-048), sections in `static` mode (C2-X-056, ruling D6).
 pub(crate) fn render_tabs(
@@ -613,36 +690,7 @@ pub(crate) fn render_tabs(
         .labels
         .get("tabsGroup")
         .map_or("Tabs", String::as_str);
-    let mut wrapper = String::from("<div class=\"tabs\"");
-    let mut has_role = false;
-    let mut has_name = false;
-    if let Some(pairs) = at(node, "/attrs/keyValues").as_array() {
-        for pair in pairs {
-            let (Some(key), Some(value)) = (
-                pair.get(0).and_then(Value::as_str),
-                pair.get(1).and_then(Value::as_str),
-            ) else {
-                continue;
-            };
-            if matches!(key, "role" | "aria-label" | "aria-labelledby") {
-                has_role |= key == "role";
-                has_name |= key.starts_with("aria-");
-                let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));
-            }
-        }
-    }
-    if !has_role {
-        wrapper.push_str(if aria && cx.mode() != crate::options::Mode::Static {
-            " role=\"tablist\""
-        } else {
-            " role=\"group\""
-        });
-    }
-    if !has_name {
-        let _ = write!(wrapper, " aria-label=\"{}\"", cx.escape_attribute(label));
-    }
-    wrapper.push('>');
-    let mut out = wrapper;
+    let mut out = tabs_wrapper(node, cx, aria, label);
     let titles: Vec<(Vec<Value>, String)> = tabs
         .iter()
         .enumerate()
@@ -659,33 +707,19 @@ pub(crate) fn render_tabs(
             (title, name)
         })
         .collect();
-    let label_html = |title: &[Value], name: &str| -> Result<String, Error> {
-        if title.is_empty() {
-            Ok(cx.escape(name))
-        } else {
-            cx.render_inlines(&Value::Array(title.to_vec()))
-        }
-    };
     if cx.mode() == crate::options::Mode::Static {
         for (tab, (title, name)) in tabs.iter().zip(&titles) {
             let _ = write!(
                 out,
                 r#"<section class="tabs-panel"><h3 class="tabs-label">{}</h3>{}</section>"#,
-                label_html(title, name)?,
+                tab_label_html(title, name, cx)?,
                 cx.render_blocks(at(tab, "/slots/body"))?
             );
         }
         out.push_str("</div>");
         return Ok(out);
     }
-    let selected = tabs
-        .iter()
-        .position(|t| {
-            at(t, "/attrs/keyValues")
-                .as_array()
-                .is_some_and(|kv| kv.iter().any(|p| p.get(0).is_some_and(|k| k == "selected")))
-        })
-        .unwrap_or(0);
+    let selected = selected_tab(&tabs);
     let group = group();
     let mut panels = String::new();
     for (i, (tab, (title, name))) in tabs.iter().zip(&titles).enumerate() {
@@ -701,7 +735,7 @@ pub(crate) fn render_tabs(
                 } else {
                     " tabindex=\"-1\""
                 },
-                label_html(title, name)?
+                tab_label_html(title, name, cx)?
             );
             let _ = write!(
                 panels,
@@ -714,7 +748,7 @@ pub(crate) fn render_tabs(
                 out,
                 r#"<input type="radio" name="{group}" id="{id}"{}><label for="{id}">{}</label>"#,
                 if i == selected { " checked" } else { "" },
-                label_html(title, name)?
+                tab_label_html(title, name, cx)?
             );
             let _ = write!(
                 panels,

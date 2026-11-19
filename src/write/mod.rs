@@ -174,7 +174,7 @@ fn root_metadata_losses(doc: &Value, out: &mut Vec<Entry>) {
         if metadata.and_then(|m| m.get(name)).is_some() {
             out.push(loss_entry(
                 "field-unspellable",
-                format!("root metadata.{name} has no spelling in Carve source"),
+                format!("Carve source cannot spell root metadata.{name}"),
                 format!("/metadata/{name}"),
                 None,
             ));
@@ -184,7 +184,7 @@ fn root_metadata_losses(doc: &Value, out: &mut Vec<Entry>) {
         if doc.get(name).is_some() {
             out.push(loss_entry(
                 "field-unspellable",
-                format!("the document {name} has no spelling in Carve source"),
+                format!("Carve source cannot spell document {name}"),
                 format!("/{name}"),
                 None,
             ));
@@ -195,7 +195,7 @@ fn root_metadata_losses(doc: &Value, out: &mut Vec<Entry>) {
     {
         out.push(loss_entry(
             "field-unspellable",
-            "root metadata.fields has no spelling in Carve source".into(),
+            "Carve source cannot spell root metadata.fields".into(),
             "/metadata/fields".into(),
             None,
         ));

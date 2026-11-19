@@ -141,8 +141,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         match n {
             Node::Link(l) => self.link(n, l, out),
-            Node::Autolink(a) => self.autolink(a, out),
-            Node::Image(i) => self.image(i, None, None, out),
+            Node::Autolink(a) => self.autolink(n, a, out),
+            Node::Image(i) => self.image(n, i, None, None, out),
             Node::FootnoteRef(_) | Node::InlineFootnote(_) => self.note_mark(n, out),
             Node::Xref(x) => self.xref(n, x, out),
             Node::Span(s) => self.span(s, out),
@@ -357,6 +357,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         pos: Option<ast::Pos>,
         image: bool,
         file: Option<String>,
+        node: Option<&Node<'a>>,
     ) -> Cow<'d, str> {
         if url::allowed(dest, &self.opts.url_policy) {
             Cow::Borrowed(dest)
@@ -368,6 +369,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 pos,
                 value: dest.to_string(),
                 file,
+                site: node.map(|n| {
+                    (
+                        crate::resolve::order::addr(n),
+                        if image { "/src" } else { "/href" }.to_string(),
+                    )
+                }),
             });
             Cow::Borrowed("")
         }
@@ -400,6 +407,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 pos: l.pos,
                 value: href.to_string(),
                 file: self.file_of(l.pos.as_ref()),
+                site: Some((crate::resolve::order::addr(n), "/href".to_string())),
             });
             esc::text(
                 &crate::resolve::plain::text_of_degraded_block(&*l.children),
@@ -410,14 +418,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.anchor(n, l, href, out);
     }
 
-    fn anchor(&mut self, _n: &'r Node<'a>, l: &'r ast::Link<'a>, href: &str, out: &mut String) {
+    fn anchor(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, href: &str, out: &mut String) {
         let def = l.key.and_then(|k| self.links.get(k)).copied();
         let merged = merge_def(def.and_then(|d| d.attrs), l.attrs);
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), l.lang).with_dir(l.dir);
         let file = self.file_of(l.pos.as_ref());
-        el.structural
-            .push(("href", Some(self.destination(href, l.pos, false, file))));
+        el.structural.push((
+            "href",
+            Some(self.destination(href, l.pos, false, file, Some(n))),
+        ));
         if let Some(t) = l.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
         }
@@ -444,7 +454,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
     }
 
-    fn autolink(&mut self, a: &ast::Autolink, out: &mut String) {
+    fn autolink(&mut self, n: &'r Node<'a>, a: &ast::Autolink, out: &mut String) {
         let text = a.text.unwrap_or(a.href);
         if self.opts.profile == Profile::Comment && !url::allowed(a.href, &self.opts.url_policy) {
             self.losses.push("destination-denied");
@@ -454,6 +464,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 pos: a.pos,
                 value: a.href.to_string(),
                 file: self.file_of(a.pos.as_ref()),
+                site: Some((crate::resolve::order::addr(n), "/href".to_string())),
             });
             esc::text(text, out);
             return;
@@ -464,8 +475,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
         let file = self.file_of(a.pos.as_ref());
-        el.structural
-            .push(("href", Some(self.destination(a.href, a.pos, false, file))));
+        el.structural.push((
+            "href",
+            Some(self.destination(a.href, a.pos, false, file, Some(n))),
+        ));
         self.rel(&mut el);
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-autolink", None));
@@ -480,6 +493,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-080, C2-H-084, C2-H-085.
     pub(super) fn image(
         &mut self,
+        n: &'r Node<'a>,
         i: &'r ast::Image<'a>,
         paragraph_attrs: Option<&Attrs<'a>>,
         paragraph_lang: Option<&'a str>,
@@ -506,8 +520,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let merged = merged.as_ref().map(Merged::attrs);
         let mut el = El::new(merged.as_ref(), i.lang.or(paragraph_lang)).with_dir(i.dir);
         let file = self.file_of(i.pos.as_ref());
-        el.structural
-            .push(("src", Some(self.destination(src, i.pos, true, file))));
+        el.structural.push((
+            "src",
+            Some(self.destination(src, i.pos, true, file, Some(n))),
+        ));
         el.structural.push(("alt", Some(alt.into())));
         if let Some(t) = i.tooltip.as_ref().or(def.and_then(|d| d.tooltip.as_ref())) {
             el.structural.push(("title", Some((*t).into())));
@@ -577,8 +593,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         let mut el = El::new(x.attrs, x.lang).with_dir(x.dir);
         let file = self.file_of(x.pos.as_ref());
-        el.structural
-            .push(("href", Some(self.destination(href, x.pos, false, file))));
+        el.structural.push((
+            "href",
+            Some(self.destination(href, x.pos, false, file, Some(n))),
+        ));
         if self.opts.roundtrip {
             el.carriers.push(("data-carve-xref", None));
         }
@@ -688,7 +706,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }) {
             Some(t) => {
                 let full = t.replace("{name}", &encode_social_name(b.name));
-                let href = self.destination(&full, None, false, None).into_owned();
+                let href = self
+                    .destination(&full, None, false, None, None)
+                    .into_owned();
                 el.structural.push(("href", Some(href.into())));
                 self.rel(&mut el);
                 "a"
@@ -745,7 +765,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
             match self.hooked(n, false, Some(out), 0) {
                 Some(true) => return,
                 Some(false) => {}
-                None => self.losses.push("extension-fallback-rendered"),
+                None => {
+                    self.losses.push("extension-fallback-rendered");
+                    self.extension_loss_nodes
+                        .push((crate::resolve::order::addr(n), e.name.to_string()));
+                }
             }
             let wrapped = e.attrs.is_some_and(|attrs| !attrs.is_empty());
             if wrapped {

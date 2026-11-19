@@ -716,7 +716,16 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
                     .is_some_and(|rest| rest.trim().is_empty())
         }
     {
-        sink.whole("empty-reference-definition", line, &[]);
+        let prefix = text.len() - text.trim_start().len();
+        let message = usize::from(trimmed[1..].starts_with('^'));
+        sink.emit_nth(
+            "empty-reference-definition",
+            line.start + prefix,
+            line.start + prefix + trimmed.len(),
+            &line.path,
+            &[],
+            message,
+        );
     }
     unattached_attribute(line, sink);
     if let Some(at) = text.find("<!--")

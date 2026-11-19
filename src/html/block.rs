@@ -161,7 +161,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 match self.hooked(n, true, None, depth) {
                     Some(true) => return,
                     Some(false) => {}
-                    None => self.losses.push("extension-fallback-rendered"),
+                    None => {
+                        self.losses.push("extension-fallback-rendered");
+                        self.extension_loss_nodes
+                            .push((crate::resolve::order::addr(n), e.name.to_string()));
+                    }
                 }
                 let wrapped = e.attrs.is_some_and(|attrs| !attrs.is_empty());
                 if wrapped {
@@ -276,7 +280,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             {
                 for child in p.children.iter() {
                     if let Node::Image(image) = child {
-                        self.image(image, p.attrs, p.lang, out);
+                        self.image(child, image, p.attrs, p.lang, out);
                     }
                 }
             } else {

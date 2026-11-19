@@ -51,6 +51,9 @@ pub fn call(request: &str) -> String {
             if let (Error::Patch { reason, .. }, Some(m)) = (&e, error.as_object_mut()) {
                 m.insert("reason".into(), reason.as_str().into());
             }
+            if let (Error::Write { diagnostics, .. }, Some(m)) = (&e, error.as_object_mut()) {
+                m.insert("diagnostics".into(), json!(diagnostics));
+            }
             json!({ "error": error }).to_string()
         }
     }

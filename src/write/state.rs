@@ -256,10 +256,7 @@ pub fn lose_key(w: &mut Writer<'_>, node: &Value, index: usize, key: &str) {
     keys.push(key.to_string());
     w.sp.losses.push(Loss {
         code: "field-unspellable",
-        message: format!(
-            "the key {key} in the attrs of a {} node has no spelling beside the table fields that write it",
-            ty(node)
-        ),
+        message: format!("Carve source cannot spell key {key} in the attrs of a {} node beside the table fields that write it", ty(node)),
         node: Some(id(node)),
         step: Some(format!("/attrs/keyValues/{index}")),
     });
@@ -273,12 +270,12 @@ pub fn lose(w: &mut Writer<'_>, node: &Value, field: Option<&str>) {
     let (code, message) = match field {
         None => (
             "structure-unspellable",
-            format!("a {} node has no spelling in Carve source here", ty(node)),
+            format!("Carve source cannot spell a {} node here", ty(node)),
         ),
         Some(f) => (
             "field-unspellable",
             format!(
-                "the field {f} of a {} node has no spelling in Carve source here",
+                "Carve source cannot spell field {f} of a {} node here",
                 ty(node)
             ),
         ),

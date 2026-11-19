@@ -200,19 +200,12 @@ pub fn render_tree_with_diagnostics(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     let files = resolve_tree(&mut doc, opts, &arena);
-    let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), None);
+    let (html, losses, derived, extension_nodes, destinations) =
+        html::render_tree_parts(&doc, opts, files.as_ref(), None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
-    let mut diagnostics = losses
-        .into_iter()
-        .map(|code| {
-            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
-            if code == "derived-text-budget" {
-                finding.path = derived.and_then(|target| node_path(doc.children, target));
-            }
-            finding
-        })
-        .collect();
+    let mut diagnostics =
+        tree_loss_diagnostics(&doc, losses, derived, &extension_nodes, &destinations);
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Ok(Rendered {
         html: if opts.strict_losses && lost {
@@ -278,17 +271,15 @@ pub(crate) fn render_tree_hooked(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     let files = resolve_tree(&mut doc, opts, &arena);
-    let (html, losses, derived) = html::render_tree_parts(&doc, opts, files.as_ref(), Some(hook));
-    let mut diagnostics = unallowed(losses, opts)
-        .into_iter()
-        .map(|code| {
-            let mut finding = diagnostic::Diagnostic::new(code, &[], None, None);
-            if code == "derived-text-budget" {
-                finding.path = derived.and_then(|target| node_path(doc.children, target));
-            }
-            finding
-        })
-        .collect();
+    let (html, losses, derived, extension_nodes, destinations) =
+        html::render_tree_parts(&doc, opts, files.as_ref(), Some(hook));
+    let mut diagnostics = tree_loss_diagnostics(
+        &doc,
+        unallowed(losses, opts),
+        derived,
+        &extension_nodes,
+        &destinations,
+    );
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Rendered {
         html,
@@ -324,20 +315,185 @@ fn cap_losses(diags: &mut Vec<diagnostic::Diagnostic>, opts: &Options) -> Vec<&'
     dropped
 }
 
-fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
-    let mut pending = vec![(nodes, String::new())];
-    while let Some((children, parent)) = pending.pop() {
-        for (i, node) in children.iter().enumerate().rev() {
-            let path = format!("{parent}/children/{i}");
-            if resolve::order::addr(node) == target {
-                return Some(path);
+enum PathItem<'n, 'a> {
+    Array(&'n [ast::Node<'a>], String),
+    One(&'n ast::Node<'a>, String),
+}
+
+fn secondary_node_paths<'n, 'a>(
+    node: &'n ast::Node<'a>,
+    path: &str,
+    pending: &mut Vec<PathItem<'n, 'a>>,
+) {
+    use PathItem::{Array, One};
+    match node {
+        ast::Node::Admonition(e) => {
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
             }
-            if let Some(next) = node.children() {
-                pending.push((next, path));
+        }
+        ast::Node::BlockExtension(e) => pending.push(Array(e.fallback, format!("{path}/fallback"))),
+        ast::Node::InlineExtension(e) => {
+            if let Some(fallback) = e.fallback.as_deref() {
+                pending.push(Array(fallback, format!("{path}/fallback")));
+            }
+        }
+        ast::Node::BlockQuote(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Caption(e) => {
+            if let Some(short) = e.short.as_deref() {
+                pending.push(Array(short, format!("{path}/short")));
+            }
+        }
+        _ => secondary_node_paths_middle(node, path, pending),
+    }
+}
+
+fn secondary_node_paths_middle<'n, 'a>(
+    node: &'n ast::Node<'a>,
+    path: &str,
+    pending: &mut Vec<PathItem<'n, 'a>>,
+) {
+    use PathItem::{Array, One};
+    match node {
+        ast::Node::Citation(e) => {
+            if let Some(prefix) = e.prefix.as_deref() {
+                pending.push(Array(prefix, format!("{path}/prefix")));
+            }
+            if let Some(suffix) = e.suffix.as_deref() {
+                pending.push(Array(suffix, format!("{path}/suffix")));
+            }
+        }
+        ast::Node::CodeBlock(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        ast::Node::Directive(e) => {
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        ast::Node::Div(e) => {
+            if let Some(title) = e.title.as_deref() {
+                pending.push(Array(title, format!("{path}/title")));
+            }
+        }
+        _ => secondary_node_paths_tail(node, path, pending),
+    }
+}
+
+fn secondary_node_paths_tail<'n, 'a>(
+    node: &'n ast::Node<'a>,
+    path: &str,
+    pending: &mut Vec<PathItem<'n, 'a>>,
+) {
+    use PathItem::{Array, One};
+    match node {
+        ast::Node::FigureGroup(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Image(e) => {
+            if let Some(description) = e.long_description.as_deref() {
+                pending.push(Array(description, format!("{path}/longDescription")));
+            }
+        }
+        ast::Node::Include(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Paragraph(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+        }
+        ast::Node::Ruby(e) => pending.push(Array(e.pairs, format!("{path}/pairs"))),
+        ast::Node::RubyPair(e) => {
+            pending.push(Array(e.base, format!("{path}/base")));
+            pending.push(Array(e.annotation, format!("{path}/annotation")));
+        }
+        ast::Node::Table(e) => {
+            if let Some(caption) = e.caption.as_deref() {
+                pending.push(One(caption, format!("{path}/caption")));
+            }
+            pending.push(Array(e.columns, format!("{path}/columns")));
+        }
+        _ => {}
+    }
+}
+
+fn node_path(nodes: &[ast::Node<'_>], target: usize) -> Option<String> {
+    use PathItem::{Array, One};
+    let mut pending = vec![Array(nodes, "/children".to_string())];
+    while let Some(item) = pending.pop() {
+        match item {
+            Array(nodes, prefix) => {
+                for (i, node) in nodes.iter().enumerate().rev() {
+                    pending.push(One(node, format!("{prefix}/{i}")));
+                }
+            }
+            One(node, path) => {
+                if resolve::order::addr(node) == target {
+                    return Some(path);
+                }
+                if let Some(children) = node.children() {
+                    pending.push(Array(children, format!("{path}/children")));
+                }
+                secondary_node_paths(node, &path, &mut pending);
             }
         }
     }
     None
+}
+
+fn tree_loss_diagnostics(
+    doc: &ast::Document<'_>,
+    losses: Vec<&'static str>,
+    derived: Option<usize>,
+    extension_nodes: &[(usize, String)],
+    destination_losses: &[html::DestinationLoss],
+) -> Vec<diagnostic::Diagnostic> {
+    let mut extensions = extension_nodes.iter();
+    let mut destinations = destination_losses.iter();
+    losses
+        .into_iter()
+        .map(|code| {
+            let name = if code == "extension-fallback-rendered" {
+                extensions.next()
+            } else {
+                None
+            };
+            let mut finding = diagnostic::Diagnostic::new(
+                code,
+                &name.map_or(Vec::new(), |(_, name)| vec![("name", name.as_str())]),
+                None,
+                None,
+            );
+            finding.path = match code {
+                "extension-fallback-rendered" => {
+                    name.and_then(|(target, _)| node_path(doc.children, *target))
+                }
+                "destination-denied" => destinations
+                    .next()
+                    .and_then(|loss| loss.site.as_ref())
+                    .and_then(|(target, field)| {
+                        node_path(doc.children, *target).map(|path| format!("{path}{field}"))
+                    }),
+                "derived-text-budget" => derived.and_then(|target| node_path(doc.children, target)),
+                _ => None,
+            };
+            finding
+        })
+        .collect()
 }
 
 #[doc(hidden)]
