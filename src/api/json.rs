@@ -31,13 +31,18 @@ pub fn call(request: &str) -> String {
     match response {
         Ok(Reply::Value(result)) => json!({ "ok": result }).to_string(),
         Ok(Reply::Tree(fields, tree)) => with_tree(fields, &tree),
-        Err(e) => json!({ "error": {
-            "name": e.spec_name(),
-            "category": e.category(),
-            "status": e.status(),
-            "message": e.to_string(),
-        }})
-        .to_string(),
+        Err(e) => {
+            let mut error = json!({
+                "name": e.spec_name(),
+                "category": e.category(),
+                "status": e.status(),
+                "message": e.to_string(),
+            });
+            if let (Some(path), Some(m)) = (e.path(), error.as_object_mut()) {
+                m.insert("path".into(), path.into());
+            }
+            json!({ "error": error }).to_string()
+        }
     }
 }
 
@@ -261,17 +266,22 @@ fn import_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, E
         .get("source")
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("source", "importDocument takes the HTML as source text"))?;
-    let imported = host.import_document(
+    let imported = host.import_document_with(
         html,
         &super::ImportOptions {
             raw_html: opts.options.raw_html,
             strict_losses: opts.options.strict_losses,
+        },
+        &super::LossOptions {
+            allow_losses: opts.options.allow_losses.clone(),
+            max_losses: opts.options.max_losses,
         },
     )?;
     Ok(json!({
         "tree": tree_value(&imported.tree),
         "source": imported.source,
         "diagnostics": entries(&imported.diagnostics),
+        "suppressedDiagnostics": imported.suppressed_diagnostics,
     }))
 }
 

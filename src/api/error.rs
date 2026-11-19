@@ -61,6 +61,24 @@ impl Error {
         }
     }
 
+    /// The RFC 6901 pointer of what the error names, into the options or the
+    /// tree the call was given (C2-A-167): `/profile` for a refused option.
+    #[must_use]
+    pub fn path(&self) -> Option<String> {
+        match self {
+            Self::Option { option, .. } => {
+                Some(format!("/{}", option.replace('~', "~0").replace('/', "~1")))
+            }
+            Self::Tree(TreeError::Json(_)) => Some(String::new()),
+            Self::Tree(
+                TreeError::Schema { path, .. }
+                | TreeError::Reader { path, .. }
+                | TreeError::Decode { path, .. },
+            ) => Some(path.clone()),
+            _ => None,
+        }
+    }
+
     /// The exit status of the category (C2-T-040).
     #[must_use]
     pub const fn status(&self) -> i32 {

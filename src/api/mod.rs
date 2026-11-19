@@ -54,7 +54,7 @@ pub use error::Error;
 pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
 };
-pub use import::{ImportOptions, Imported, import_document};
+pub use import::{ImportOptions, Imported, LossOptions, import_document};
 pub use record::{Entry, Range};
 pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
 

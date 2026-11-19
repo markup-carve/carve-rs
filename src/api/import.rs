@@ -58,6 +58,27 @@ impl ImportOptions {
     }
 }
 
+/// `allowLosses` and `maxLosses` as the importer reads them (C2-H-204,
+/// C2-H-205). Apart from [`ImportOptions`], which stays `Copy`: a list of
+/// codes read at run time has no `Copy` form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LossOptions {
+    /// Loss codes left out of the record; they count for neither
+    /// `strict_losses` nor `max_losses`.
+    pub allow_losses: Vec<String>,
+    /// The number of losses the record keeps, 100 by default.
+    pub max_losses: usize,
+}
+
+impl Default for LossOptions {
+    fn default() -> Self {
+        Self {
+            allow_losses: Vec::new(),
+            max_losses: crate::options::Options::default().max_losses,
+        }
+    }
+}
+
 /// The imported tree, its canonical Carve source, and the record of the
 /// importer followed by that of the writer (C2-M-001, C2-T-005).
 #[derive(Debug, Clone)]
@@ -65,6 +86,8 @@ pub struct Imported {
     pub tree: Tree,
     pub source: String,
     pub diagnostics: Vec<Entry>,
+    /// The losses past `max_losses` (C2-H-205).
+    pub suppressed_diagnostics: usize,
 }
 
 fn run(html: &str, raw_html: bool) -> Result<crate::import::Imported, Error> {
@@ -108,11 +131,28 @@ impl super::Carve {
     /// [`Error::Render`] for an importer or writer loss under `strict_losses`
     /// (C2-M-082, C2-T-034); [`Error::Write`] for a writer loss without it.
     pub fn import_document(&self, html: &str, opts: &ImportOptions) -> Result<Imported, Error> {
+        self.import_document_with(html, opts, &LossOptions::default())
+    }
+
+    /// [`Carve::import_document`] with `allowLosses` and `maxLosses`
+    /// (C2-H-204, C2-H-205).
+    ///
+    /// # Errors
+    ///
+    /// As [`Carve::import_document`]; an allowed loss fails no strict import.
+    pub fn import_document_with(
+        &self,
+        html: &str,
+        opts: &ImportOptions,
+        limits: &LossOptions,
+    ) -> Result<Imported, Error> {
         let imported = run(html, opts.raw_html)?;
         let tree = Tree::from_value(&imported.tree).map_err(|e| Error::ImportInput {
             message: format!("the imported tree fails the reader checks: {e}"),
         })?;
+        let allowed = |e: &Entry| limits.allow_losses.contains(&e.code);
         let mut diagnostics = imported.diagnostics;
+        diagnostics.retain(|e| !(e.channel == "render-loss" && allowed(e)));
         let written = match self.write_with_diagnostics(&tree, &super::WriteOptions::default()) {
             Err(Error::Write { .. }) if opts.strict_losses => {
                 let mut codes = losses(&diagnostics);
@@ -121,17 +161,33 @@ impl super::Carve {
             }
             other => other?,
         };
-        diagnostics.extend(written.diagnostics);
+        diagnostics.extend(
+            written
+                .diagnostics
+                .into_iter()
+                .filter(|e| !(e.channel == "render-loss" && allowed(e))),
+        );
         if opts.strict_losses {
             let codes = losses(&diagnostics);
             if !codes.is_empty() {
                 return Err(Error::Render { codes });
             }
         }
+        let mut kept = 0usize;
+        let mut suppressed_diagnostics = 0usize;
+        diagnostics.retain(|e| {
+            if e.channel != "render-loss" {
+                return true;
+            }
+            kept += 1;
+            suppressed_diagnostics += usize::from(kept > limits.max_losses);
+            kept <= limits.max_losses
+        });
         Ok(Imported {
             tree,
             source: written.output,
             diagnostics,
+            suppressed_diagnostics,
         })
     }
 }
