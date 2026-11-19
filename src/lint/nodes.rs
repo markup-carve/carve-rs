@@ -1210,7 +1210,7 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
                     .iter()
                     .any(|&(key, target)| key == name && target.is_none())
             {
-                let (at, end) = attribute_range(raw, name, true)
+                let (at, end) = semantic_attr_value_range(raw, name)
                     .map_or((from, to), |(a, e)| (from + a, from + e));
                 sink.emit_range(
                     "semantic-attribute-value-ignored",
@@ -1236,7 +1236,7 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
         else {
             continue;
         };
-        let Some((at, end)) = attribute_range(raw, name, false) else {
+        let Some((at, end)) = semantic_attr_key_range(raw, name) else {
             continue;
         };
         sink.emit_range(
@@ -1250,43 +1250,71 @@ fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
-/// The first `key` or `key=value` token of the node source, as carve-js
-/// `attributeRange` matches it; `whole` takes the value in.
-fn attribute_range(raw: &str, key: &str, whole: bool) -> Option<(usize, usize)> {
-    let ends = |at: usize| {
-        raw[at..]
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_whitespace() || c == '}')
+fn semantic_attr_value_range(raw: &str, name: &str) -> Option<(usize, usize)> {
+    let (start, key_end) = semantic_attr_key_range(raw, name)?;
+    let value = raw.get(key_end..)?.strip_prefix('=')?;
+    let length = if let Some(quote @ ('\'' | '"')) = value.chars().next() {
+        value.get(1..)?.find(quote).map(|end| end + 2)?
+    } else {
+        value
+            .find(|ch: char| ch.is_whitespace() || ch == '}')
+            .unwrap_or(value.len())
     };
-    for (start, _) in raw.match_indices(key) {
-        if raw[..start]
-            .chars()
-            .next_back()
-            .is_some_and(|c| !c.is_whitespace() && c != '{')
-        {
+    Some((start, key_end + 1 + length))
+}
+
+/// The key token in the first attribute block that holds it.
+fn semantic_attr_key_range(raw: &str, name: &str) -> Option<(usize, usize)> {
+    let mut at = 0;
+    while let Some(offset) = raw.get(at..)?.find('{') {
+        let open = at + offset;
+        let Some((_, end)) = crate::attr::parse_block(raw, open) else {
+            at = open + 1;
             continue;
+        };
+        if let Some(hit) = semantic_key_in_block(raw, open, end, name) {
+            return Some(hit);
         }
-        let after = start + key.len();
-        if let Some(value) = raw[after..].strip_prefix('=') {
-            let quoted = value
-                .chars()
-                .next()
-                .filter(|c| matches!(c, '"' | '\''))
-                .and_then(|q| value[1..].find(q).map(|e| e + 2));
-            let bare = value.find(|c: char| c.is_whitespace() || c == '}');
-            let length = quoted
-                .filter(|&l| ends(after + 1 + l))
-                .or(bare.filter(|&l| l > 0));
-            if let Some(length) = length {
-                return Some((start, if whole { after + 1 + length } else { after }));
-            }
-        }
-        if ends(after) {
-            return Some((start, after));
-        }
+        at = end;
     }
     None
+}
+
+fn semantic_key_in_block(raw: &str, open: usize, end: usize, name: &str) -> Option<(usize, usize)> {
+    let mut part = open + 1;
+    let mut found = None;
+    while part < end - 1 {
+        while raw.as_bytes().get(part) == Some(&b' ') {
+            part += 1;
+        }
+        let start = part;
+        let mut quote = None;
+        while part < end - 1 {
+            let Some(&byte) = raw.as_bytes().get(part) else {
+                break;
+            };
+            if byte == b'\\' && quote.is_some() {
+                part += 2;
+                continue;
+            }
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                if matches!(byte, b'\'' | b'"') {
+                    quote = Some(byte);
+                } else if byte == b' ' {
+                    break;
+                }
+            }
+            part += 1;
+        }
+        let token = raw.get(start..part)?;
+        let key = token.split_once('=').map_or(token, |(key, _)| key);
+        if key == name {
+            found = Some((start, start + name.len()));
+        }
+    }
+    found
 }
 
 fn text_delimiters(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
