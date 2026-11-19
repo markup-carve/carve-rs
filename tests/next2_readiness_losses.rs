@@ -64,6 +64,20 @@ fn tabs_wrapper_keeps_authored_attributes_in_renderer_order() {
 }
 
 #[test]
+fn tabs_wrapper_replaces_generated_role_without_case_sensitivity() {
+    let reply = call(&json!({
+        "call":"render",
+        "source":"{#t .k ROLE=note}\n:::: tabs\n::: tab \"A\"\na\n:::\n::::\n",
+        "options":{"extensions":["carve.tabs"],"renderers":{"carve.tabs":"standard"}}
+    }));
+    let html = reply["ok"]["html"].as_str().unwrap();
+    assert!(
+        html.starts_with("<div id=\"t\" class=\"tabs k\" ROLE=\"note\" aria-label=\"Tabs\">"),
+        "{html}"
+    );
+}
+
+#[test]
 fn writer_loss_messages_use_the_catalog_template() {
     let tree = json!({"type":"document","astVersion":"2.0","children":[
         {"type":"paragraph","role":"image","children":[{"type":"image","src":"i.png","decorative":true}]}

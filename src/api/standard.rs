@@ -620,13 +620,20 @@ fn tabs_wrapper(node: &Value, cx: &super::RenderContext<'_>, aria: bool, label: 
             ) else {
                 continue;
             };
-            if crate::html::url::dropped_name(key) {
+            if crate::html::url::dropped_name(key)
+                || crate::html::attrs::RESERVED
+                    .iter()
+                    .any(|reserved| reserved.eq_ignore_ascii_case(key))
+                || key.eq_ignore_ascii_case("class")
+                || (at(node, "/attrs/id").is_string() && key.eq_ignore_ascii_case("id"))
+            {
                 continue;
             }
             let value =
                 crate::html::url::filter_value_in(key, value, Some(&cx.options().url_policy));
-            has_role |= key == "role";
-            has_name |= matches!(key, "aria-label" | "aria-labelledby");
+            has_role |= key.eq_ignore_ascii_case("role");
+            has_name |= key.eq_ignore_ascii_case("aria-label")
+                || key.eq_ignore_ascii_case("aria-labelledby");
             let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));
         }
     }
