@@ -2,7 +2,7 @@
 
 use crate::chars::is_number;
 use crate::options::HeadingIds;
-use crate::tables::{SLUG_REMOVED, SLUG_REVERSED};
+use crate::tables::{SLUG_FOLDS, SLUG_REMOVED, SLUG_REVERSED};
 use std::collections::{HashMap, HashSet};
 use unicode_normalization::UnicodeNormalization;
 
@@ -76,19 +76,22 @@ fn lower(s: &str) -> String {
     s.chars().flat_map(char::to_lowercase).collect()
 }
 
-/// C2-H-147 leaves the transliteration to the host: this host decomposes and
-/// keeps the ASCII part (gap HTML-006).
+/// C2-H-147: the pinned folds, canonical decomposition, mark removal, then
+/// canonical composition. Unmapped characters remain in the result.
 fn transliterate(s: &str) -> String {
-    let mut out = String::new();
+    let mut folded = String::new();
     for c in s.chars() {
-        let ascii: String = c.to_string().nfkd().filter(char::is_ascii).collect();
-        if ascii.is_empty() {
-            out.push(c);
+        if let Some((_, ascii)) = SLUG_FOLDS.iter().find(|(letter, _)| *letter == c) {
+            folded.push_str(ascii);
         } else {
-            out.push_str(&ascii);
+            folded.push(c);
         }
     }
-    out
+    folded
+        .nfd()
+        .filter(|c| !('\u{0300}'..='\u{036f}').contains(c))
+        .nfc()
+        .collect()
 }
 
 /// C2-H-148: a leading number takes `s-`, an empty slug is `s`.

@@ -87,7 +87,7 @@ fn value_arg(args: &[String], index: usize, cli: &mut Cli) -> Result<Option<usiz
     };
     if !matches!(
         flag,
-        "--rule" | "--ignore" | "--platform" | "--extension" | "--include-root"
+        "--rule" | "--ignore" | "--platform" | "--extension" | "--include-root" | "--heading-ids"
     ) {
         return Ok(None);
     }
@@ -105,6 +105,10 @@ fn value_arg(args: &[String], index: usize, cli: &mut Cli) -> Result<Option<usiz
         "--platform" if value == "github" => cli.options.platforms.push(value.clone()),
         "--extension" if value == "citations" => {}
         "--include-root" => cli.include_root = Some(value.clone()),
+        "--heading-ids" => {
+            cli.options.heading_ids = carve::options::HeadingIds::from_name(value)
+                .ok_or_else(|| option_error("unknown heading id mode"))?;
+        }
         _ => return Err(option_error("unknown platform or extension")),
     }
     Ok(Some(2))
@@ -129,7 +133,7 @@ fn print_help() {
     println!(
         "Usage: carve lint [--json] [--caption-hints] [--rule ID] [--ignore ID] \
         [--from-djot] [--portable] [--platform github] [--extension citations] \
-        [--include-root DIR] [files]\nExit: 0 clean, 1 findings, 2 input or option error."
+        [--include-root DIR] [--heading-ids MODE] [files]\nExit: 0 clean, 1 findings, 2 input or option error."
     );
 }
 

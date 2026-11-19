@@ -3,12 +3,19 @@
 use carve::diagnostic::Diagnostic;
 use carve::include::{Cause, Includes, Request};
 use carve::lint::{LintOptions, lint};
+use carve::options::HeadingIds;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 fn options(case: &Value) -> LintOptions {
     let mut options = LintOptions::default();
+    if let Some(heading_ids) = case["options"]["headingIds"]
+        .as_str()
+        .and_then(HeadingIds::from_name)
+    {
+        options.heading_ids = heading_ids;
+    }
     if let Some(rules) = case["options"]["rules"].as_object() {
         for (name, state) in rules {
             options

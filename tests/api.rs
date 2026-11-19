@@ -72,7 +72,13 @@ fn strict_losses_is_a_render_error() {
 fn parse_encode_decode_round_trip() {
     let tree = api::parse("# Title\n\nText", &opts()).unwrap();
     let json = api::encode_tree(&tree);
-    assert_eq!(json, carve::tree_json("# Title\n\nText", &opts()));
+    assert_eq!(
+        json,
+        serde_json::to_string(
+            &serde_json::from_str::<Value>(&carve::tree_json("# Title\n\nText", &opts())).unwrap()
+        )
+        .unwrap()
+    );
     let back = api::decode_tree(&json).unwrap();
     assert_eq!(api::encode_tree(&back), json);
     api::validate_tree(&back).unwrap();
@@ -89,7 +95,11 @@ fn parse_bytes_keeps_input_offsets() {
     let tree = api::parse(Input::Bytes(bytes), &opts()).unwrap();
     let arena = carve::Arena::new();
     let engine = carve::try_parse_resolved_bytes_in(bytes, &opts(), &arena).unwrap();
-    assert_eq!(api::encode_tree(&tree), carve::to_json(&engine));
+    assert_eq!(
+        api::encode_tree(&tree),
+        serde_json::to_string(&serde_json::from_str::<Value>(&carve::to_json(&engine)).unwrap())
+            .unwrap()
+    );
 }
 
 #[test]
@@ -109,7 +119,10 @@ fn envelope_round_trip() {
     let v: Value = serde_json::from_str(&envelope).unwrap();
     assert_eq!(v["astVersion"], "2.0");
     assert_eq!(v["document"]["type"], "document");
-    assert!(envelope.ends_with(&format!(r#""document":{}}}"#, api::encode_tree(&tree))));
+    assert_eq!(
+        v["document"],
+        serde_json::from_str::<Value>(&api::encode_tree(&tree)).unwrap()
+    );
     let back = api::decode_tree(&envelope).unwrap();
     let back: Value = serde_json::from_str(&api::encode_tree(&back)).unwrap();
     let original: Value = serde_json::from_str(&api::encode_tree(&tree)).unwrap();

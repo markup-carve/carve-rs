@@ -264,3 +264,18 @@ pub fn spoiler() -> Bundle {
         ],
     }
 }
+
+pub(super) fn spoiler_inline() -> Bundle {
+    spoiler_part("carve.spoiler")
+}
+
+pub(super) fn spoiler_block() -> Bundle {
+    spoiler_part("carve.spoilerBlock")
+}
+
+fn spoiler_part(name: &str) -> Bundle {
+    let mut bundle = spoiler();
+    bundle.extensions.retain(|ext| ext.declaration.name == name);
+    bundle.matchers.retain(|matcher| matcher.extension == name);
+    bundle
+}

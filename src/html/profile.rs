@@ -394,6 +394,9 @@ fn degraded_simple_text(n: &Node, src: Option<SourceView<'_>>) -> Option<String>
         }
         Node::Include(i) => super::block::include_text(i),
         Node::Paragraph(p) => inlines_block_plain(&*p.children),
+        // A line block is one leaf block in a degraded profile. Empty lines
+        // contribute nothing; each remaining line keeps its leading spaces.
+        Node::LineBlock(lb) => block_text(lb.children, src),
         // Leaves of inline content: an inline node with children is no block here.
         Node::CellParagraph(p) => inlines_block_plain(&*p.children),
         Node::Line(l) => inlines_block_plain(&*l.children),

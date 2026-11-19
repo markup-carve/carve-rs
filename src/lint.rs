@@ -16,6 +16,8 @@ mod nodes;
 /// Rule switches and platform selection for a lint run.
 #[derive(Debug, Clone, Default)]
 pub struct LintOptions {
+    /// Heading id policy used to resolve fragment targets.
+    pub heading_ids: crate::options::HeadingIds,
     /// A rule id mapped to `on` or `off`.
     pub rules: HashMap<String, String>,
     /// Platform names, currently `github`.
@@ -63,6 +65,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let mut out = lint_core(source, opts);
     let parse = crate::Options {
         includes: opts.includes.clone(),
+        heading_ids: opts.heading_ids,
         ..crate::Options::default()
     };
     out.extend(crate::parse_diagnostics(source, &parse));
@@ -175,7 +178,9 @@ fn skip_legacy_warning(
     if !active(warning.rule, opts) {
         return true;
     }
-    if warning.rule == "broken-fragment-link" && !opts.extensions.is_empty() {
+    if warning.rule == "broken-fragment-link"
+        && (!opts.extensions.is_empty() || opts.heading_ids != crate::options::HeadingIds::KeepCase)
+    {
         return true;
     }
     if warning.rule == "table-shaped-paragraph"

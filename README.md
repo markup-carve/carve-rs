@@ -58,11 +58,13 @@ assert_eq!(api::render_tree(&again, &opts)?, api::render("# Title", &opts)?);
 
 ## Options
 
-`api::Options` holds the parse, resolution and render options of `data/options.json` (`heading_ids`, `mode`, `profile`, `raw_html`, `url_policy`, `includes` and the rest). `api::LintOptions` holds `rules`, `platforms` and `includes`, and `api::WriteOptions` holds `align_tables`, `normalize` and the render options a writer reads.
+`api::Options` holds the parse, resolution and render options of `data/options.json` (`heading_ids`, `mode`, `profile`, `raw_html`, `url_policy`, `includes` and the rest). `api::LintOptions` holds `rules`, `platforms`, `heading_ids` and `includes`; `carve lint --heading-ids MODE` uses that same heading ID policy for fragment links. The JSON `importDocument` call accepts `labels` for generated accessible names, such as `admonitionNote`. `api::WriteOptions` holds `align_tables`, `normalize` and the render options a writer reads.
 
 Typed structs cannot carry an unknown option, so the refusals of C2-H-137 happen where options arrive as data: the JSON boundary refuses an unknown option, a value outside the option's range, and an option that no stage of the call reads (`alignTables` on `render`, for example). `api::lint` checks rule ids against `data/lint-rules.json` and platforms against `data/options.json` in both forms.
 
 Includes use the resolver of `includes.md`:
+
+`include::fs::resolver(root)` permits absolute paths that resolve inside the root. Use `include::fs::resolver_with(root, false)` to refuse every absolute include path before reading it. The command line uses the default, which permits contained absolute paths.
 
 ```rust,no_run
 use carve::api::{self, Includes, Options};
@@ -189,6 +191,8 @@ Over JSON, `host.documentTransforms` registers transforms that need no host code
 {"call": "render", "source": "...", "options": {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}}}
 ```
 
+The standard tabs renderer defaults to CSS radio controls. Set `"renderers": {"carve.tabs": {"standard": {"mode": "aria"}}}` for buttons and tab panels with WAI-ARIA roles. Static rendering writes titled sections in either mode. Authored `role`, `aria-label` and `aria-labelledby` on the tabs wrapper replace the corresponding generated attributes.
+
 The same call enables the other standard extensions, all provisional:
 
 - `carve.wiki` and `carve.cite` claim `:wiki[...]` and `:cite[...]` (C2-X-057, C2-X-058). They have no standard renderer, so the content renders as plain text and attributes such as `locator` stay on the node.
@@ -231,7 +235,7 @@ A request names the call with its `tooling.md` spelling:
 {"call": "renderWithDiagnostics", "source": "Hi *there*", "options": {"profile": "comment"}}
 ```
 
-Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write` (`carve`, `html`, `markdown`, `plain` or `ansi`; the three exports also read `smartTypography`, `strictLosses` and `urlPolicy`); `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, `"markdown"`, `"gfm"` or `"djot"`, with the input as `source`). `a` and `b` for `diffTree`; `tree`, `patch` and `fingerprint` for `applyPatch`; `text` for `headingId`; `offset` for `positionOf`. In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). For the same reason `codeBlockRenderer` takes the harness function of the conformance cases, `{"syntax": "ts", "result": "<div>{default}</div>"}`: `result` replaces each block of that `syntax` (of any syntax without it), with `{default}` and `{syntax}` filled in, and `null` keeps the default HTML. `format` and `importDocument` answer with `source`, `write` with `output`.
+Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write` (`carve`, `html`, `markdown`, `plain` or `ansi`; the three exports also read `smartTypography`, `strictLosses` and `urlPolicy`); `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, `"markdown"`, `"gfm"` or `"djot"`, with the input as `source`). `a` and `b` for `diffTree`; `tree`, `patch` and `fingerprint` for `applyPatch`; `text` for `headingId`; `offset` for `positionOf`. In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth`, `bytes` and `allowAbsolute` (true by default); `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). For the same reason `codeBlockRenderer` takes the harness function of the conformance cases, `{"syntax": "ts", "result": "<div>{default}</div>"}`: `result` replaces each block of that `syntax` (of any syntax without it), with `{default}` and `{syntax}` filled in, and `null` keeps the default HTML. `format` and `importDocument` answer with `source`, `write` with `output`.
 
 The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 

@@ -7,10 +7,7 @@ use common::{parse_json, sorted};
 use serde_json::{Value, json};
 
 /// Cases held, each with its cause; a held case must keep failing.
-const HELD: &[&str] = &[
-    // C2-A-058 refuses the `slots: {}` the cases insert (markup-carve/carve#6098).
-    "CC-1221", "CC-1229",
-];
+const HELD: &[&str] = &[];
 
 fn call(request: &Value) -> Value {
     parse_json(&api::json::call(&request.to_string()))
