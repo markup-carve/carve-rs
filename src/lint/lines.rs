@@ -428,8 +428,7 @@ fn thematic_marker(
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
     let candidate = tail.trim();
-    if run(candidate, "-_", 3)
-        && !(line.kind == "definition_term" && line.content_start.is_none())
+    if run(candidate, "-_", 3) && !(line.kind == "definition_term" && line.content_start.is_none())
     {
         let is_setext = candidate.starts_with('-')
             && previous.is_some_and(|p| {

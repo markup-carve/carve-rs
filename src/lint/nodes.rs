@@ -644,14 +644,10 @@ fn list_ordered(item: &Item<'_>, sink: &mut Sink<'_>) {
                     .as_u64()?
                     .checked_add(u64::try_from(width).ok()?)
             };
-            if children
-                .iter()
-                .skip(1)
-                .any(|child| {
-                    field(child, "/pos/startColumn").as_u64().unwrap_or(initial) < initial
-                        && marker_end(child).is_some_and(|end| Some(end) == marker_end(first))
-                })
-            {
+            if children.iter().skip(1).any(|child| {
+                field(child, "/pos/startColumn").as_u64().unwrap_or(initial) < initial
+                    && marker_end(child).is_some_and(|end| Some(end) == marker_end(first))
+            }) {
                 if let Some((from, to)) = children.get(1).and_then(bounds) {
                     sink.emit_range(
                         "ordered-marker-right-aligned",

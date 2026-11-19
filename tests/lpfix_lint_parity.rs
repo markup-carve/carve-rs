@@ -17,7 +17,10 @@ fn indented_code_requires_an_indented_paragraph() {
             "{source:?}"
         );
     }
-    assert_eq!(spans("\n    plain text\n", "indented-code-block"), vec![(5, 15)]);
+    assert_eq!(
+        spans("\n    plain text\n", "indented-code-block"),
+        vec![(5, 15)]
+    );
 }
 
 #[test]
@@ -41,9 +44,7 @@ fn block_lint_follows_the_parsed_leaf() {
         );
     }
     assert_eq!(spans("== H #\n", "heading-closing-hashes"), vec![(5, 6)]);
-    assert!(
-        spans("{{ x.crv#s }}\n-----\n", "setext-heading-underline").is_empty()
-    );
+    assert!(spans("{{ x.crv#s }}\n-----\n", "setext-heading-underline").is_empty());
     assert_eq!(
         spans("paragraph\n-----\n", "setext-heading-underline"),
         vec![(10, 15)]
@@ -69,10 +70,7 @@ fn unattached_attribute_requires_its_own_leaf_line() {
 
 #[test]
 fn list_item_overindent_requires_a_block_opener() {
-    for source in [
-        "* a\n   ![alt](i.png)\n",
-        "* $$x$${#m}\n   ![alt](i.png)\n",
-    ] {
+    for source in ["* a\n   ![alt](i.png)\n", "* $$x$${#m}\n   ![alt](i.png)\n"] {
         assert!(
             spans(source, "list-item-block-overindented").is_empty(),
             "{source:?}"
@@ -94,9 +92,7 @@ fn quote_and_term_markers_follow_their_parsed_owner() {
 #[test]
 fn ordered_alignment_compares_marker_ends() {
     assert!(spans("  10. x\n1. y\n", "ordered-marker-right-aligned").is_empty());
-    assert!(
-        spans("[^n]: 10. +|\n   1. :::\n", "ordered-marker-right-aligned").is_empty()
-    );
+    assert!(spans("[^n]: 10. +|\n   1. :::\n", "ordered-marker-right-aligned").is_empty());
     assert_eq!(
         spans(" 9. x\n10. y\n", "ordered-marker-right-aligned").len(),
         1
