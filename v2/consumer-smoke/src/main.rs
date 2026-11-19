@@ -1,6 +1,8 @@
 //! Calls every public function of `carve2::api` once, from outside the crate.
 
-use carve2::api::{self, Carve, EncodeOptions, Error, LintOptions, Options, WriteOptions};
+use carve2::api::{
+    self, Carve, EncodeOptions, Error, ImportOptions, LintOptions, Options, WriteOptions,
+};
 
 fn main() -> Result<(), Error> {
     let o = Options::default();
@@ -29,13 +31,26 @@ fn main() -> Result<(), Error> {
     );
     for refused in [
         api::parse_with_layout("x", &o).map(|_| ()),
-        api::import_document("<p>x</p>", &o).map(|_| ()),
         api::migrate_tree(&serde_json::Value::Null).map(|_| ()),
     ] {
         assert!(matches!(refused, Err(Error::Unsupported { .. })));
     }
     assert_eq!(carve.format("# T\n\nx", &w)?, "= T\n\nx\n");
     assert_eq!(carve.write(&tree, &w)?, "= T\n\nx\n");
+    let imported = api::import_document("<p>Hi <strong>x</strong></p>", &ImportOptions::default())?;
+    assert_eq!(imported.source, "Hi *x*\n");
+    assert_eq!(
+        carve
+            .import_document("<p>x</p>", &ImportOptions::default())?
+            .source,
+        "x\n"
+    );
+    let mut tabs = Carve::new();
+    tabs.enable_standard("carve.tabs", true)?;
+    assert!(
+        tabs.render(":::: tabs\n::: tab \"A\"\nx\n:::\n::::\n", &o)?
+            .starts_with("<div class=\"tabs\"")
+    );
     let response = api::json::call(r#"{"call":"render","source":"x"}"#);
     assert_eq!(response, r#"{"ok":{"html":"<p>x</p>"}}"#);
     assert_eq!(api::json::status(&response), 0);
