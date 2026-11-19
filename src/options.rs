@@ -142,6 +142,47 @@ pub struct Options {
     pub social: Option<Social>,
     /// C2-N-003: the resolver and limits of include expansion; `None` expands nothing.
     pub includes: Option<crate::include::Includes>,
+    /// C2-H-206, C2-H-207: the host's renderer of ordinary code blocks.
+    pub code_block_renderer: Option<CodeBlockRenderer>,
+}
+
+/// `codeBlockRenderer` (C2-H-206, C2-H-207): a host function from a code
+/// block node, as its JSON value, and the block's default HTML to the HTML
+/// written in its place, or `None` for the default. The HTML is trusted: no
+/// filter or profile touches it.
+///
+/// ```
+/// use carve::options::{CodeBlockRenderer, Options};
+///
+/// let opts = Options {
+///     code_block_renderer: Some(CodeBlockRenderer::new(|node, default_html| {
+///         (node["syntax"] == "ts").then(|| format!("<div class=\"hl\">{default_html}</div>"))
+///     })),
+///     ..Options::default()
+/// };
+/// let html = carve::api::render("```ts\nx\n```\n", &opts)?;
+/// assert_eq!(html, "<div class=\"hl\"><pre><code class=\"language-ts\">x\n</code></pre></div>");
+/// # Ok::<(), carve::api::Error>(())
+/// ```
+#[derive(Clone)]
+pub struct CodeBlockRenderer(pub std::sync::Arc<CodeBlockFn>);
+
+/// The host function of a [`CodeBlockRenderer`].
+pub type CodeBlockFn = dyn Fn(&serde_json::Value, &str) -> Option<String> + Send + Sync;
+
+impl CodeBlockRenderer {
+    /// The renderer of a host function.
+    pub fn new(
+        render: impl Fn(&serde_json::Value, &str) -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        Self(std::sync::Arc::new(render))
+    }
+}
+
+impl std::fmt::Debug for CodeBlockRenderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CodeBlockRenderer(..)")
+    }
 }
 
 /// URL templates for mentions and tags (C2-H-126). Gap G-022: the
@@ -177,6 +218,7 @@ impl Default for Options {
             max_losses: DEFAULT_MAX_LOSSES,
             social: None,
             includes: None,
+            code_block_renderer: None,
         }
     }
 }

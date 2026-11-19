@@ -1,7 +1,7 @@
 //! The writer registry: one interface for every output format that writes a
-//! resolved 0.2 tree (C2-W-001). HTML and Carve are built in; the Markdown,
-//! plain-text and ANSI writers ruled into 0.2 register here under their target
-//! names when they are ported, without a change to this API.
+//! resolved 0.2 tree (C2-W-001). HTML and Carve are built in, and so are the
+//! exports of [`crate::export`] under the reserved targets `markdown`,
+//! `plain` and `ansi`.
 
 use super::{Entry, Error, Options, Tree};
 use std::collections::BTreeMap;
@@ -126,6 +126,12 @@ impl Default for Writers {
         let mut by_target: BTreeMap<String, Arc<dyn Writer>> = BTreeMap::new();
         by_target.insert("html".into(), Arc::new(HtmlWriter));
         by_target.insert("carve".into(), Arc::new(CarveWriter));
+        for target in crate::export::EXPORT_TARGETS {
+            by_target.insert(
+                target.name().into(),
+                Arc::new(crate::export::ExportWriter(target)),
+            );
+        }
         Self { by_target }
     }
 }
@@ -141,9 +147,16 @@ impl Writers {
     ///
     /// # Errors
     ///
-    /// [`Error::Option`] when a writer already has the target name.
+    /// [`Error::Option`] when a writer already has the target name, or the
+    /// name is one the exports reserve (`markdown`, `plain`, `ansi`).
     pub fn register(&mut self, writer: Arc<dyn Writer>) -> Result<(), Error> {
         let target = writer.target().to_string();
+        if crate::export::Target::from_name(&target).is_some() {
+            return Err(Error::option(
+                "writers",
+                format!("the target {target} is reserved"),
+            ));
+        }
         if self.by_target.contains_key(&target) {
             return Err(Error::option(
                 "writers",

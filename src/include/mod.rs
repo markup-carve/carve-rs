@@ -205,6 +205,19 @@ pub(crate) fn unexpanded(
     }
 }
 
+/// Whether an include of the tree was expanded.
+pub(crate) fn has_expanded(nodes: &[Node<'_>]) -> bool {
+    nodes.iter().any(|n| match n {
+        Node::Include(i) => i.children.is_some(),
+        _ if expand::holds_blocks(n) || matches!(n, Node::List(_) | Node::DefinitionList(_)) => {
+            let mut found = false;
+            n.for_each_child(&mut |c| found = found || has_expanded(std::slice::from_ref(c)));
+            found
+        }
+        _ => false,
+    })
+}
+
 /// C2-N-079: one `include-expanded-roundtrip` for each expanded include that
 /// no expanded include holds.
 pub(crate) fn roundtrip_losses(nodes: &[Node<'_>]) -> Vec<&'static str> {

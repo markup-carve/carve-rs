@@ -1,4 +1,5 @@
-//! `carve`: reads Carve source on stdin, writes HTML, or the tree with `--tree`.
+//! `carve`: reads Carve source on stdin, writes HTML, or the tree with `--tree`,
+//! or another output format with `render --to markdown|plain|ansi|carve`.
 
 use std::io::{Read, Write};
 
@@ -10,6 +11,8 @@ struct Entry {
     file: Option<String>,
     root: Option<String>,
     no_includes: bool,
+    /// The output format of `--to`; HTML when absent.
+    to: Option<String>,
 }
 
 fn main() {
@@ -41,7 +44,9 @@ fn main() {
     let text = std::str::from_utf8(&bytes)
         .ok()
         .filter(|_| opts.includes.is_some());
-    let out = if let (true, Some(text)) = (tree, text) {
+    let out = if let Some(target) = entry.to.as_deref().filter(|t| *t != "html") {
+        write_to(target, &bytes, &opts)
+    } else if let (true, Some(text)) = (tree, text) {
         carve::tree_json(text, &opts)
     } else if tree {
         match carve::try_parse_resolved_bytes_in(&bytes, &opts, &carve::Arena::new()) {
@@ -63,6 +68,25 @@ fn main() {
     let mut stdout = std::io::stdout();
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.write_all(b"\n");
+}
+
+/// `render --to TARGET`: the tree written by the writer of TARGET.
+fn write_to(target: &str, bytes: &[u8], opts: &carve::Options) -> String {
+    let host = carve::api::Carve::new();
+    let written = carve::api::parse(bytes, opts).and_then(|tree| {
+        let write = carve::api::WriteOptions {
+            render: opts.clone(),
+            ..Default::default()
+        };
+        host.write_to(target, &tree, &write)
+    });
+    match written {
+        Ok(w) => w.output.strip_suffix('\n').unwrap_or(&w.output).to_string(),
+        Err(e) => {
+            eprintln!("carve: {e}");
+            std::process::exit(e.status())
+        }
+    }
 }
 
 /// `carve call`: one JSON request of `carve::api::json` on standard
@@ -110,7 +134,11 @@ fn includes(entry: &Entry, opts: &mut carve::Options) {
 
 fn parse_args(opts: &mut carve::Options, entry: &mut Entry) -> Option<bool> {
     let mut tree = false;
-    let args = entry_args(std::env::args().skip(1).collect(), entry);
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("render") {
+        args.remove(0);
+    }
+    let args = entry_args(args, entry);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -132,7 +160,7 @@ fn parse_args(opts: &mut carve::Options, entry: &mut Entry) -> Option<bool> {
                 eprintln!(
                     "{}",
                     concat!(
-                        "usage: carve [--tree] [--roundtrip] [--raw-html] [--no-sections] ",
+                        "usage: carve [render] [--to html|carve|markdown|plain|ansi] [--tree] [--roundtrip] [--raw-html] [--no-sections] ",
                         "[--no-smart-typography] [--source-lines] [--strict-losses] ",
                         "[--mention-url URL] [--tag-url URL] [--heading-ids off|keep-case|lower|ascii] ",
                         "[--profile full|article|comment|minimal] [--include-root DIR] [--no-includes] ",
@@ -153,6 +181,7 @@ fn entry_args(args: Vec<String>, entry: &mut Entry) -> Vec<String> {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--no-includes" => entry.no_includes = true,
+            "--to" => entry.to = it.next(),
             "--include-root" => entry.root = it.next(),
             "--batch" => {
                 rest.push(a);

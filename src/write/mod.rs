@@ -17,6 +17,9 @@ mod state;
 mod table;
 mod width_data;
 
+pub(crate) use blocks::include_spelling;
+pub(crate) use table::display_width;
+
 use crate::api::{Entry, Range};
 use check::{Check, compare_blocks, escape_openers, exhausted, extend_chains, parse_chunk};
 use node::{N, children, id, span, text, ty};

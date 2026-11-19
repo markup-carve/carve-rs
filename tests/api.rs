@@ -233,9 +233,13 @@ impl Writer for Upper {
 #[test]
 fn a_registered_writer_serves_write_and_format() {
     let mut carve = Carve::new();
-    assert_eq!(carve.writers().targets(), vec!["carve", "html"]);
+    let builtin = vec!["ansi", "carve", "html", "markdown", "plain"];
+    assert_eq!(carve.writers().targets(), builtin);
     carve.register_writer(Arc::new(Upper)).unwrap();
-    assert_eq!(carve.writers().targets(), vec!["carve", "html", "stub"]);
+    assert_eq!(
+        carve.writers().targets(),
+        vec!["ansi", "carve", "html", "markdown", "plain", "stub"]
+    );
     let tree = api::parse("a\n\nb", &opts()).unwrap();
     let w = WriteOptions::default();
     assert_eq!(carve.write_to("stub", &tree, &w).unwrap().output, "2 nodes");
@@ -252,10 +256,18 @@ fn the_html_writer_renders_the_tree() {
         .write_to("html", &tree, &WriteOptions::default())
         .unwrap();
     assert_eq!(written.output, api::render("*a*", &opts()).unwrap());
-    assert!(matches!(
-        Carve::new().write_to("markdown", &tree, &WriteOptions::default()),
-        Err(Error::Unsupported { .. })
-    ));
+    let markdown = Carve::new().write_to("markdown", &tree, &WriteOptions::default());
+    assert_eq!(markdown.unwrap().output, "**a**\n");
+    let unknown = Carve::new()
+        .write_to("pdf", &tree, &WriteOptions::default())
+        .unwrap_err();
+    assert!(matches!(unknown, Error::Option { .. }), "{unknown}");
+    assert!(
+        unknown
+            .to_string()
+            .contains("known targets: ansi, carve, html, markdown, plain"),
+        "{unknown}"
+    );
 }
 
 #[test]

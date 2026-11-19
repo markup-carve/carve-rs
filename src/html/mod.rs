@@ -43,6 +43,20 @@ pub(crate) fn render_with_details(
     (r.out, r.losses, r.derived_failure)
 }
 
+/// [`render_with_details`] of a supplied tree, with the files of its
+/// expanded includes and a host's extension renderers where there are any.
+pub(crate) fn render_tree_parts<'a>(
+    doc: &Document<'a>,
+    opts: &Options,
+    files: Option<&crate::resolve::files::Files<'a>>,
+    hook: Option<&dyn ExtensionHook>,
+) -> (String, Vec<&'static str>, Option<usize>) {
+    let mut r = Renderer::build(doc, opts, true, files);
+    r.hook = hook;
+    r.document();
+    (r.out, r.losses, r.derived_failure)
+}
+
 /// A host's extension renderers (C2-X-033, C2-X-052), asked before the
 /// fallback of a qualified extension node is written.
 pub(crate) trait ExtensionHook {
@@ -54,18 +68,6 @@ pub(crate) trait ExtensionHook {
         block: bool,
         depth: usize,
     ) -> Option<Result<String, ()>>;
-}
-
-/// [`render_with_details`] with a host's extension renderers.
-pub(crate) fn render_hooked(
-    doc: &Document<'_>,
-    opts: &Options,
-    hook: &dyn ExtensionHook,
-) -> (String, Vec<&'static str>, Option<usize>) {
-    let mut r = Renderer::new(doc, opts);
-    r.hook = Some(hook);
-    r.document();
-    (r.out, r.losses, r.derived_failure)
 }
 
 /// Renders with losses while retaining the matching UTF-8 source text for
@@ -433,39 +435,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
         {
             return;
         }
-        for v in &self.order.visits {
-            if let Node::FigureGroup(group) = v.node {
-                for (id, text) in panel_targets(group, self.opts) {
-                    self.xref_text.entry(id).or_insert(text);
-                }
-            }
-            let (id, text) = match v.node {
-                Node::Heading(h) => match heading_id(v.node) {
-                    Some(id) => (id.to_string(), plain::text_of(h.children)),
-                    None => continue,
-                },
-                n => {
-                    let Some((Node::CaptionNumber(c), before)) = caption_of(n).and_then(mark_of)
-                    else {
-                        continue;
-                    };
-                    let (Some(num), Some(id)) = (c.n, n.attrs().and_then(|a| a.id)) else {
-                        continue;
-                    };
-                    let label = label_key(before, Some(&self.opts.symbols));
-                    let text = if label.is_empty() {
-                        num.to_string()
-                    } else {
-                        format!("{label} {num}")
-                    };
-                    (id.to_string(), text)
-                }
-            };
-            self.xref_text.entry(id).or_insert_with(|| {
-                let mut escaped = String::new();
-                esc::text(&text, &mut escaped);
-                escaped
-            });
+        for (id, text) in target_texts(&self.order, self.opts) {
+            self.xref_text
+                .entry(id)
+                .or_insert_with(|| esc::text_str(&text));
         }
     }
 
@@ -661,6 +634,50 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 }
 
+/// The text of each cross-reference target of a resolved document, by id,
+/// unescaped (C2-H-095, C2-H-096); the first of an id wins.
+pub(crate) fn xref_targets(doc: &Document<'_>, opts: &Options) -> HashMap<String, String> {
+    let order = Order::build(doc);
+    let mut texts = HashMap::new();
+    for (id, text) in target_texts(&order, opts) {
+        texts.entry(id).or_insert(text);
+    }
+    texts
+}
+
+/// The targets in document order, before the first-wins rule.
+fn target_texts(order: &Order<'_, '_>, opts: &Options) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for v in &order.visits {
+        if let Node::FigureGroup(group) = v.node {
+            out.extend(panel_targets(group, opts));
+        }
+        let (id, text) = match v.node {
+            Node::Heading(h) => match heading_id(v.node) {
+                Some(id) => (id.to_string(), plain::text_of(h.children)),
+                None => continue,
+            },
+            n => {
+                let Some((Node::CaptionNumber(c), before)) = caption_of(n).and_then(mark_of) else {
+                    continue;
+                };
+                let (Some(num), Some(id)) = (c.n, n.attrs().and_then(|a| a.id)) else {
+                    continue;
+                };
+                let label = label_key(before, Some(&opts.symbols));
+                let text = if label.is_empty() {
+                    num.to_string()
+                } else {
+                    format!("{label} {num}")
+                };
+                (id.to_string(), text)
+            }
+        };
+        out.push((id, text));
+    }
+    out
+}
+
 fn panel_targets(group: &crate::ast::FigureGroup<'_>, opts: &Options) -> Vec<(String, String)> {
     let Some((Node::CaptionNumber(number), before)) = group.caption.as_deref().and_then(mark_of)
     else {
@@ -688,7 +705,7 @@ fn panel_targets(group: &crate::ast::FigureGroup<'_>, opts: &Options) -> Vec<(St
             } else {
                 format!("{label} {number}{letter}")
             };
-            Some((id.to_string(), esc::text_str(&text)))
+            Some((id.to_string(), text))
         })
         .collect()
 }
