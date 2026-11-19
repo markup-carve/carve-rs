@@ -1188,6 +1188,12 @@ fn gen_slug(out: &mut String, v: &Value) {
         let _ = writeln!(out, "    ({g:?}, {:?}),", s(row, "ascii"));
     }
     out.push_str("];\n\n");
+    out.push_str("pub const SLUG_FOLDS: &[(char, &str)] = &[\n");
+    for row in arr(&v["transliteration"], "folds") {
+        let letter = s(row, "letter").chars().next().unwrap_or(' ');
+        let _ = writeln!(out, "    ({letter:?}, {:?}),", s(row, "ascii"));
+    }
+    out.push_str("];\n\n");
 }
 
 fn gen_url(out: &mut String, v: &Value) {
