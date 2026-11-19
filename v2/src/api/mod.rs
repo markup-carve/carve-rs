@@ -23,7 +23,7 @@
 //! | `format`, `formatWithDiagnostics` | [`Carve::format`], [`Carve::format_with_diagnostics`] |
 //! | `write`, `writeWithDiagnostics` | [`Carve::write`], [`Carve::write_with_diagnostics`], [`Carve::write_to`] |
 //! | `lint` | [`lint`] |
-//! | `importDocument` | [`import_document`] (not yet available) |
+//! | `importDocument` | [`import_document`] |
 //! | `includeDependencies` | [`include_dependencies`] |
 //! | `encodeTree`, `encodeEnvelope` | [`encode_tree`], [`encode_tree_with`], [`encode_envelope`] |
 //! | `decodeTree`, `validateTree` | [`decode_tree`], [`validate_tree`] |
@@ -31,9 +31,11 @@
 
 mod error;
 pub mod extension;
+mod import;
 pub mod json;
 mod options;
 mod record;
+mod standard;
 pub mod writer;
 
 pub use crate::ast::owned::Document;
@@ -51,8 +53,9 @@ pub use error::Error;
 pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
 };
+pub use import::{ImportOptions, Imported, import_document};
 pub use record::{Entry, Range};
-pub use writer::{HtmlWriter, WriteOptions, Writer, Writers, Written};
+pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
 
 use crate::Arena;
 use serde_json::Value;
@@ -227,6 +230,7 @@ pub struct Rendered {
 pub struct Carve {
     writers: Writers,
     extensions: extension::Registry,
+    standard: standard::Standard,
 }
 
 impl Carve {
@@ -262,6 +266,80 @@ impl Carve {
         self.extensions.register(extension)
     }
 
+    /// PROVISIONAL: enables a standard extension of `data/extensions.json`.
+    /// This engine has `carve.tabs` (C2-X-039): its matcher claims `tabs`
+    /// divs in [`Carve::parse`] and the render calls, and with `renderer` its
+    /// standard renderers render it in both channels (C2-X-043, C2-X-052).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Option`] for a name this engine has no standard extension for.
+    pub fn enable_standard(&mut self, name: &str, renderer: bool) -> Result<(), Error> {
+        self.standard.enable(name, renderer)
+    }
+
+    fn plain(&self) -> bool {
+        self.extensions.is_empty() && self.standard.is_empty()
+    }
+
+    /// `parse` with the matchers of the enabled standard extensions
+    /// (C2-X-005). Without them it is [`parse`].
+    ///
+    /// # Errors
+    ///
+    /// As [`parse`].
+    pub fn parse<'a>(&self, input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Error> {
+        Ok(self.parse_with_diagnostics(input, opts)?.tree)
+    }
+
+    /// `parseWithDiagnostics` with the matchers of the enabled standard
+    /// extensions. A claim whose source record cannot be written keeps the
+    /// core node and reports `extension-transform-failed` (C2-X-051).
+    ///
+    /// # Errors
+    ///
+    /// As [`parse`].
+    pub fn parse_with_diagnostics<'a>(
+        &self,
+        input: impl Into<Input<'a>>,
+        opts: &Options,
+    ) -> Result<Parsed, Error> {
+        let input = input.into();
+        let mut parsed = parse_with_diagnostics(input, opts)?;
+        if !self.standard.tabs {
+            return Ok(parsed);
+        }
+        let mut value: Value = serde_json::from_str(&parsed.tree.json)
+            .map_err(|e| Error::option("tree", e.to_string()))?;
+        let opener = |at: usize| match input {
+            Input::Text(s) => standard::opener_name(s, at),
+            Input::Bytes(b) => {
+                let line = b
+                    .get(at..)?
+                    .split(|&c| c == b'\n')
+                    .map(String::from_utf8_lossy)
+                    .find(|l| !standard::is_attribute_line(l))?;
+                standard::opener_name(&line, 0)
+            }
+        };
+        let complete = standard::claim_tabs(&mut value, &opener);
+        let top = parsed.tree.top.take();
+        parsed.tree = Tree::read(&value.to_string(), top)?;
+        if !complete {
+            parsed.diagnostics.push(Entry {
+                code: "extension-transform-failed".into(),
+                severity: "warning".into(),
+                channel: "render-loss".into(),
+                message: "The extension carve.tabs could not write its claim source; the core node was retained".into(),
+                path: None,
+                range: None,
+                file: None,
+                foreign_type: None,
+            });
+        }
+        Ok(parsed)
+    }
+
     /// `render` with the registered extensions: the source is parsed, the
     /// document transforms run on the resolved view (C2-X-053), and the view
     /// is rendered with the renderers of the channel of `opts.mode`
@@ -271,7 +349,7 @@ impl Carve {
     ///
     /// As [`render`].
     pub fn render<'a>(&self, input: impl Into<Input<'a>>, opts: &Options) -> Result<String, Error> {
-        if self.extensions.is_empty() {
+        if self.plain() {
             return render(input, opts);
         }
         Ok(self.render_with_diagnostics(input, opts)?.html)
@@ -287,10 +365,12 @@ impl Carve {
         input: impl Into<Input<'a>>,
         opts: &Options,
     ) -> Result<Rendered, Error> {
-        if self.extensions.is_empty() {
+        if self.plain() {
             return render_with_diagnostics(input, opts);
         }
-        let parsed = parse_with_diagnostics(input, opts)?;
+        let input = input.into();
+        check_length(input.len(), opts)?;
+        let parsed = self.parse_with_diagnostics(input, opts)?;
         let mut rendered = self.render_view(parsed.tree, opts)?;
         let mut diagnostics = parsed.diagnostics;
         diagnostics.append(&mut rendered.diagnostics);
@@ -318,7 +398,7 @@ impl Carve {
         tree: &Tree,
         opts: &Options,
     ) -> Result<Rendered, Error> {
-        if self.extensions.is_empty() {
+        if self.plain() {
             return render_tree_with_diagnostics(tree, opts);
         }
         self.render_view(tree.clone(), opts)
@@ -328,7 +408,7 @@ impl Carve {
         let mut view = Tree::read(&crate::resolved_json(tree.document(), opts), None)?;
         view.top = tree.top;
         let (view, transform_entries) = self.extensions.transform(view);
-        let host = extension::Host::new(&self.extensions, opts);
+        let host = extension::Host::new(&self.extensions, self.standard, opts, &view);
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
@@ -346,10 +426,9 @@ impl Carve {
     ///
     /// # Errors
     ///
-    /// [`Error::Unsupported`] while no `carve` writer is registered;
     /// [`Error::Write`] for a writer loss (C2-W-134).
     pub fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<String, Error> {
-        Ok(self.write_with_diagnostics(tree, opts)?.output)
+        refuse_losses(self.write_with_diagnostics(tree, opts)?)
     }
 
     /// `writeWithDiagnostics`: the Carve source of a tree and the record.
@@ -381,7 +460,19 @@ impl Carve {
         let Some(writer) = self.writers.get(target) else {
             return Err(Error::Unsupported { call: "write" });
         };
-        writer.write(tree, opts)
+        writer.write(tree, &self.with_standard(opts))
+    }
+
+    /// `opts` with the standard extensions this host enables, so the writer's
+    /// readback claims what this host's parse claims (C2-X-005).
+    fn with_standard<'o>(&self, opts: &'o WriteOptions) -> std::borrow::Cow<'o, WriteOptions> {
+        let tabs = "carve.tabs";
+        if !self.standard.tabs || opts.extensions.iter().any(|e| e == tabs) {
+            return std::borrow::Cow::Borrowed(opts);
+        }
+        let mut owned = opts.clone();
+        owned.extensions.push(tabs.into());
+        std::borrow::Cow::Owned(owned)
     }
 
     /// `format`: the canonical Carve source of a source (C2-W-001).
@@ -394,7 +485,7 @@ impl Carve {
         input: impl Into<Input<'a>>,
         opts: &WriteOptions,
     ) -> Result<String, Error> {
-        Ok(self.format_with_diagnostics(input, opts)?.output)
+        refuse_losses(self.format_with_diagnostics(input, opts)?)
     }
 
     /// `formatWithDiagnostics`.
@@ -410,9 +501,65 @@ impl Carve {
         if self.writers.get("carve").is_none() {
             return Err(Error::Unsupported { call: "format" });
         }
-        let tree = parse(input, &opts.render)?;
-        self.write_with_diagnostics(&tree, opts)
+        // C2-H-137: format reads no render option.
+        if opts.render.profile != Profile::default() {
+            return Err(Error::option("profile", "not an option of format"));
+        }
+        writer::check_extensions(&opts.extensions)?;
+        let mut host = self.clone();
+        if opts.extensions.iter().any(|e| e == "carve.tabs") {
+            host.enable_standard("carve.tabs", false)?;
+        }
+        let opts = &*host.with_standard(opts);
+        let input = input.into();
+        let parsed = host.parse_with_diagnostics(input, &opts.render)?;
+        let doc = writer::tree_value(&parsed.tree.json)?;
+        let settings = crate::write::Settings {
+            align_tables: opts.align_tables,
+            extensions: opts.extensions.clone(),
+            layout: None,
+        };
+        // C2-W-127: `normalize` writes as if there were no sidecar. Positions of a
+        // byte input with malformed UTF-8 do not index the replaced text.
+        let text = input.text();
+        let valid = match input {
+            Input::Text(_) => true,
+            Input::Bytes(b) => std::str::from_utf8(b).is_ok(),
+        };
+        let src = (valid && !opts.normalize).then_some(text.as_ref());
+        let (output, written) = crate::write::format_tree(&doc, src, &settings);
+        // C2-N-005: a processor whose output is Carve source expands nothing.
+        let mut diagnostics: Vec<Entry> = parsed
+            .diagnostics
+            .into_iter()
+            .filter(|e| e.code != "include-no-resolver")
+            .collect();
+        diagnostics.extend(written);
+        Ok(Written {
+            output,
+            diagnostics,
+        })
     }
+}
+
+/// C2-W-134: a call that returns only source refuses a result with a writer loss.
+fn refuse_losses(written: Written) -> Result<String, Error> {
+    if !crate::write::has_loss(&written.diagnostics) {
+        return Ok(written.output);
+    }
+    let found: Vec<String> = written
+        .diagnostics
+        .iter()
+        .filter(|e| crate::write::has_loss(std::slice::from_ref(e)))
+        .map(|e| format!("{} at {}", e.code, e.path.as_deref().unwrap_or("")))
+        .collect();
+    Err(Error::Write {
+        target: "carve".into(),
+        message: format!(
+            "the source cannot be returned without its loss report: {}",
+            found.join(", ")
+        ),
+    })
 }
 
 fn unsupported_as(e: Error, call: &'static str) -> Error {
@@ -590,18 +737,6 @@ pub fn lint<'a>(input: impl Into<Input<'a>>, opts: &LintOptions) -> Result<Vec<E
         .collect();
     input.remap(&mut entries);
     Ok(entries)
-}
-
-/// `importDocument` (C2-M-001): not available in this engine yet.
-///
-/// # Errors
-///
-/// Always [`Error::Unsupported`].
-pub fn import_document(html: &str, opts: &Options) -> Result<Tree, Error> {
-    let _ = (html, opts);
-    Err(Error::Unsupported {
-        call: "importDocument",
-    })
 }
 
 /// `includeDependencies`: the include nodes of an expanded tree in tree

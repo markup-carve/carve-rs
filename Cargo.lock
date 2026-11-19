@@ -73,6 +73,8 @@ dependencies = [
  "bumpalo",
  "carve-lang 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "flate2",
+ "html5ever",
+ "markup5ever_rcdom",
  "regex",
  "serde",
  "serde_json",

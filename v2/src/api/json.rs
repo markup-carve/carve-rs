@@ -57,27 +57,53 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
     let opts = super::options::from_json(name, req.get("options"))?;
+    let enabled;
+    let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
+        host
+    } else {
+        enabled = with_extensions(host, &opts)?;
+        &enabled
+    };
     match name {
-        "parse" | "parseWithDiagnostics" | "parseWithLayout" => parse_call(name, req, &opts),
+        "parse" | "parseWithDiagnostics" | "parseWithLayout" => parse_call(host, name, req, &opts),
         "render" | "renderWithDiagnostics" => render_call(host, name, req, &opts),
-        "lint" => {
-            let bytes = source(req)?;
-            Ok(json!({ "diagnostics": entries(&super::lint(input(&bytes), &opts.lint)?) }))
-        }
-        "format" | "formatWithDiagnostics" => {
-            let bytes = source(req)?;
-            let written = host.format_with_diagnostics(input(&bytes), &opts.write)?;
-            Ok(json!({ "source": written.output, "diagnostics": entries(&written.diagnostics) }))
-        }
+        "lint" => lint_call(req, &opts),
+        "format" | "formatWithDiagnostics" => format_call(host, name, req, &opts),
         "write" | "writeWithDiagnostics" => write_call(host, req, &opts),
-        "importDocument" => Err(Error::Unsupported {
-            call: "importDocument",
-        }),
+        "importDocument" => import_call(host, req, &opts),
         "migrateTree" => Err(Error::Unsupported {
             call: "migrateTree",
         }),
         _ => tree_call(name, req),
     }
+}
+
+fn with_extensions(host: &Carve, opts: &CallOptions) -> Result<Carve, Error> {
+    if let Some(ext) = opts.renderers.iter().find(|r| !opts.extensions.contains(r)) {
+        return Err(Error::option(
+            "renderers",
+            format!("{ext} is not among the enabled extensions"),
+        ));
+    }
+    let mut enabled = host.clone();
+    for ext in &opts.extensions {
+        enabled.enable_standard(ext, opts.renderers.contains(ext))?;
+    }
+    Ok(enabled)
+}
+
+fn lint_call(req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let bytes = source(req)?;
+    Ok(json!({ "diagnostics": entries(&super::lint(input(&bytes), &opts.lint)?) }))
+}
+
+fn format_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    let bytes = source(req)?;
+    let written = host.format_with_diagnostics(input(&bytes), &opts.write)?;
+    if name == "format" {
+        super::refuse_losses(written.clone())?;
+    }
+    Ok(json!({ "source": written.output, "diagnostics": entries(&written.diagnostics) }))
 }
 
 fn tree_call(name: &str, req: &Value) -> Result<Value, Error> {
@@ -98,7 +124,7 @@ fn tree_call(name: &str, req: &Value) -> Result<Value, Error> {
     })
 }
 
-fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
     let bytes = source(req)?;
     let positions = req
         .get("positions")
@@ -109,7 +135,7 @@ fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Erro
     }
     let mut out = Map::new();
     let tree = if name == "parseWithDiagnostics" {
-        let parsed = super::parse_with_diagnostics(input(&bytes), &opts.options)?;
+        let parsed = host.parse_with_diagnostics(input(&bytes), &opts.options)?;
         out.insert("diagnostics".into(), entries(&parsed.diagnostics));
         out.insert(
             "suppressedDiagnostics".into(),
@@ -117,7 +143,7 @@ fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Erro
         );
         parsed.tree
     } else {
-        super::parse(input(&bytes), &opts.options)?
+        host.parse(input(&bytes), &opts.options)?
     };
     let encoded = super::encode_tree_with(&tree, EncodeOptions { positions });
     out.insert(
@@ -200,12 +226,41 @@ fn host(req: &Value) -> Result<Carve, Error> {
     Ok(host)
 }
 
+/// C2-M-001: `source` is the HTML, `from` must be `html`; `rawHtml` and
+/// `strictLosses` are options.
+fn import_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+    match req.get("from").and_then(Value::as_str) {
+        Some("html") => {}
+        Some(other) => return Err(Error::option("from", format!("unknown value \"{other}\""))),
+        None => return Err(Error::option("from", "importDocument takes from: \"html\"")),
+    }
+    let html = req
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::option("source", "importDocument takes the HTML as source text"))?;
+    let imported = host.import_document(
+        html,
+        &super::ImportOptions {
+            raw_html: opts.options.raw_html,
+            strict_losses: opts.options.strict_losses,
+        },
+    )?;
+    Ok(json!({
+        "tree": tree_value(&imported.tree),
+        "source": imported.source,
+        "diagnostics": entries(&imported.diagnostics),
+    }))
+}
+
 fn write_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
     let tree = tree(req)?;
     let written = match req.get("target").and_then(Value::as_str) {
         Some(target) => host.write_to(target, &tree, &opts.write)?,
         None => host.write_with_diagnostics(&tree, &opts.write)?,
     };
+    if req.get("call").and_then(Value::as_str) == Some("write") {
+        super::refuse_losses(written.clone())?;
+    }
     Ok(json!({ "output": written.output, "diagnostics": entries(&written.diagnostics) }))
 }
 

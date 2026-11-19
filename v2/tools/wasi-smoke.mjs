@@ -6,6 +6,12 @@ import { openSync, closeSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WASI } from "node:wasi";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+
+// Node 22 segfaults once a dozen finished instances wait for collection.
+setFlagsFromString("--expose-gc");
+const gc = runInNewContext("gc");
 
 const wasm = await WebAssembly.compile(await readFile(process.argv[2]));
 
@@ -19,6 +25,7 @@ async function call(request, preopens = {}) {
   const status = wasi.start(instance);
   closeSync(stdin);
   closeSync(stdout);
+  gc();
   return { status, response: JSON.parse(readFileSync(join(dir, "out.json"), "utf8")) };
 }
 
@@ -27,6 +34,23 @@ const checks = [
   [{ call: "parse", source: "x", positions: false }, 0, (r) => r.ok.tree.type === "document"],
   [{ call: "lint", source: "# A\n\n# A\n" }, 0, (r) => Array.isArray(r.ok.diagnostics)],
   [{ call: "render", source: "x", options: { nope: 1 } }, 2, (r) => r.error.category === "usage"],
+  // carve-rs#4327, #4328, #4329: the writer, the HTML importer and the standard extensions.
+  [{ call: "format", source: "Hi _there_\n" }, 0, (r) => r.ok.source === "Hi _there_\n"],
+  [
+    { call: "write", tree: { type: "document", astVersion: "2.0", children: [{ type: "thematic_break" }] } },
+    0,
+    (r) => r.ok.output === "***\n",
+  ],
+  [
+    { call: "importDocument", source: "<p>Hi <strong>there</strong></p>", from: "html" },
+    0,
+    (r) => r.ok.source === "Hi *there*\n" && r.ok.tree.type === "document",
+  ],
+  [
+    { call: "render", source: ':::: tabs\n::: tab "A"\nx\n:::\n::::\n', options: { extensions: ["carve.tabs"], renderers: { "carve.tabs": "standard" } } },
+    0,
+    (r) => r.ok.html.startsWith('<div class="tabs"'),
+  ],
 ];
 let failed = 0;
 for (const [request, status, ok] of checks) {

@@ -10,6 +10,9 @@ publish = false
 [dependencies]
 bumpalo = "3"
 carve-lang = { version = "=0.1.14", default-features = false }
+# The two move together: markup5ever_rcdom is cut against this exact html5ever.
+html5ever = "0.39"
+markup5ever_rcdom = "0.39"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["unbounded_depth"] }
 regex = "1"

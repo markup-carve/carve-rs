@@ -53,6 +53,7 @@ mod fast_plain;
 pub mod hash;
 #[doc(hidden)]
 pub mod html;
+mod import;
 #[doc(hidden)]
 pub mod include;
 #[doc(hidden)]
@@ -73,6 +74,8 @@ pub mod source;
 pub mod tables;
 #[doc(hidden)]
 pub mod tree;
+// The canonical Carve writer (`writer.md`), reached through `api`.
+mod write;
 
 #[doc(hidden)]
 pub use arena::Arena;

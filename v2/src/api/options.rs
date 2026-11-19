@@ -50,6 +50,10 @@ pub(crate) struct CallOptions {
     pub options: Options,
     pub lint: LintOptions,
     pub write: WriteOptions,
+    /// `extensions` by name: the standard extensions to enable.
+    pub extensions: Vec<String>,
+    /// `renderers`: the extensions whose standard renderer is registered.
+    pub renderers: Vec<String>,
 }
 
 /// Reads the options of a call from a JSON object, refusing an unknown
@@ -79,6 +83,7 @@ pub(crate) fn from_json(call: &str, value: Option<&Value>) -> Result<CallOptions
     }
     out.lint.includes.clone_from(&out.options.includes);
     out.write.render = out.options.clone();
+    out.write.extensions.clone_from(&out.extensions);
     Ok(out)
 }
 
@@ -97,6 +102,14 @@ fn set(out: &mut CallOptions, name: &str, v: &Value) -> Result<(), Error> {
     }
     match name {
         "rules" | "platforms" => lint_option(&mut out.lint, name, v),
+        "extensions" => {
+            out.extensions = standard_names(v)?;
+            Ok(())
+        }
+        "renderers" => {
+            out.renderers = standard_renderers(v)?;
+            Ok(())
+        }
         "labels" | "symbols" | "social" | "urlPolicy" | "includes" => {
             structure(&mut out.options, name, v)
         }
@@ -109,7 +122,7 @@ fn enumerated(o: &mut Options, name: &str, v: &Value) -> Result<(), Error> {
         "headingIds" => o.heading_ids = enum_value(name, v, HeadingIds::from_name)?,
         "mode" => o.mode = enum_value(name, v, mode)?,
         "profile" => o.profile = enum_value(name, v, Profile::from_name)?,
-        _ => host_code(name, v)?,
+        _ => return Err(Error::option(name, "this engine does not read it")),
     }
     Ok(())
 }
@@ -305,21 +318,37 @@ fn limit(v: &Value) -> Result<usize, Error> {
         .ok_or_else(|| Error::option("includes", "a limit is not a count"))
 }
 
-/// `extensions` and `renderers` take host code (C2-T-010): an empty value is
-/// the default, anything else has no JSON form.
-fn host_code(name: &str, v: &Value) -> Result<(), Error> {
-    let empty = match v {
-        Value::Array(a) => a.is_empty(),
-        Value::Object(o) => o.is_empty(),
-        _ => false,
+/// `extensions` in JSON: the names of standard extensions (C2-X-039). Host
+/// extensions take host code (C2-T-010) and register in Rust.
+fn standard_names(v: &Value) -> Result<Vec<String>, Error> {
+    v.as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .map(|i| i.as_str().map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+        })
+        .ok_or_else(|| Error::option("extensions", "not a list of standard extension names"))
+}
+
+/// `renderers` in JSON: `{NAME: "standard"}`, the standard renderer of a
+/// standard extension; a host renderer takes host code (C2-T-010).
+fn standard_renderers(v: &Value) -> Result<Vec<String>, Error> {
+    let Some(map) = v.as_object() else {
+        return Err(Error::option("renderers", "not an object"));
     };
-    if empty {
-        return Ok(());
-    }
-    Err(Error::option(
-        name,
-        "the option takes host code, which JSON cannot name",
-    ))
+    map.iter()
+        .map(|(name, r)| {
+            if r == "standard" {
+                Ok(name.clone())
+            } else {
+                Err(Error::option(
+                    "renderers",
+                    format!("{name}: only \"standard\" has a JSON form"),
+                ))
+            }
+        })
+        .collect()
 }
 
 /// C2-W-109: rule ids of `data/lint-rules.json` set to `on` or `off`, and
