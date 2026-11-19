@@ -400,6 +400,15 @@ impl<'a> Host<'a> {
         .next(prefix)
     }
 
+    fn next_tabs_id(&self, count: usize, aria: bool) -> String {
+        let mut ids = self.ids.borrow_mut();
+        ids.get_or_insert_with(|| {
+            let resolved = crate::resolved_json(self.view.document(), self.opts);
+            super::standard::UsedIds::of(&crate::api::deep_json(&resolved).unwrap_or(Value::Null))
+        })
+        .next_tabs(count, aria)
+    }
+
     /// The `extension-renderer-failed` entries of the call (C2-X-050).
     pub(crate) fn failures(&self) -> Vec<Entry> {
         self.failed
@@ -455,9 +464,7 @@ impl crate::html::ExtensionHook for Host<'_> {
                     .pointer("/slots/tabs")
                     .and_then(Value::as_array)
                     .map_or(0, Vec::len);
-                self.ids
-                    .borrow_mut()
-                    .next_tabs(count, self.standard.tabs_aria)
+                self.next_tabs_id(count, self.standard.tabs_aria)
             };
             return Some(
                 super::standard::render_tabs(node, &cx, &group, self.standard.tabs_aria).map_err(
