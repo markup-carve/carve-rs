@@ -14,14 +14,6 @@ use std::sync::Arc;
 
 /// C2-T-005: `(entry id, checked field)` held outside the core stage.
 const HELD: &[(&str, &str)] = &[
-    ("CC-454", "diagnostic:extension-fallback-rendered"),
-    ("CC-455", "diagnostic:extension-fallback-rendered"),
-    ("CC-456", "diagnostic:extension-fallback-rendered"),
-    ("CC-457", "diagnostic:extension-fallback-rendered"),
-    ("CC-458", "diagnostic:extension-fallback-rendered"),
-    ("CC-459", "diagnostic:extension-fallback-rendered"),
-    ("CC-459", "diagnostic:destination-denied"),
-    ("CC-663", "diagnostic:extension-fallback-rendered"),
     // C2-H-206, C2-H-207: `codeBlockRenderer` is a host function this engine does not take yet.
     ("CC-1272", "html"),
     ("CC-1274", "html"),
