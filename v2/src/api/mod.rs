@@ -460,7 +460,19 @@ impl Carve {
         let Some(writer) = self.writers.get(target) else {
             return Err(Error::Unsupported { call: "write" });
         };
-        writer.write(tree, opts)
+        writer.write(tree, &self.with_standard(opts))
+    }
+
+    /// `opts` with the standard extensions this host enables, so the writer's
+    /// readback claims what this host's parse claims (C2-X-005).
+    fn with_standard<'o>(&self, opts: &'o WriteOptions) -> std::borrow::Cow<'o, WriteOptions> {
+        let tabs = "carve.tabs";
+        if !self.standard.tabs || opts.extensions.iter().any(|e| e == tabs) {
+            return std::borrow::Cow::Borrowed(opts);
+        }
+        let mut owned = opts.clone();
+        owned.extensions.push(tabs.into());
+        std::borrow::Cow::Owned(owned)
     }
 
     /// `format`: the canonical Carve source of a source (C2-W-001).
@@ -494,8 +506,13 @@ impl Carve {
             return Err(Error::option("profile", "not an option of format"));
         }
         writer::check_extensions(&opts.extensions)?;
+        let mut host = self.clone();
+        if opts.extensions.iter().any(|e| e == "carve.tabs") {
+            host.enable_standard("carve.tabs", false)?;
+        }
+        let opts = &*host.with_standard(opts);
         let input = input.into();
-        let parsed = parse_with_diagnostics(input, &opts.render)?;
+        let parsed = host.parse_with_diagnostics(input, &opts.render)?;
         let doc = writer::tree_value(&parsed.tree.json)?;
         let settings = crate::write::Settings {
             align_tables: opts.align_tables,

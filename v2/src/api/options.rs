@@ -83,6 +83,7 @@ pub(crate) fn from_json(call: &str, value: Option<&Value>) -> Result<CallOptions
     }
     out.lint.includes.clone_from(&out.options.includes);
     out.write.render = out.options.clone();
+    out.write.extensions.clone_from(&out.extensions);
     Ok(out)
 }
 

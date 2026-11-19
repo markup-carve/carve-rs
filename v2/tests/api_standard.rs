@@ -186,3 +186,46 @@ fn the_tabs_renderer_reads_a_supplied_tree() {
     );
     assert_eq!(out["ok"]["diagnostics"], json!([]));
 }
+
+const TABS: &str = ":::: tabs\n::: tab \"A\"\nSome *x*\n:::\n\n::: tab \"B\"\n- y\n:::\n::::\n";
+
+fn assert_clean(how: &str, written: &api::Written) {
+    assert_eq!(written.output, TABS, "{how}");
+    assert!(
+        written.diagnostics.is_empty(),
+        "{how}: {:?}",
+        written.diagnostics
+    );
+}
+
+#[test]
+fn format_parses_with_the_enabled_tabs_matcher() {
+    let with_option = api::WriteOptions {
+        extensions: vec!["carve.tabs".into()],
+        ..api::WriteOptions::default()
+    };
+    let plain = api::Carve::new();
+    assert_clean(
+        "WriteOptions.extensions",
+        &plain.format_with_diagnostics(TABS, &with_option).unwrap(),
+    );
+    let mut host = api::Carve::new();
+    host.enable_standard("carve.tabs", false).unwrap();
+    assert_clean(
+        "enable_standard",
+        &host
+            .format_with_diagnostics(TABS, &api::WriteOptions::default())
+            .unwrap(),
+    );
+    let tree = host.parse(TABS, &api::Options::default()).unwrap();
+    assert_clean(
+        "write of a claimed tree",
+        &host
+            .write_with_diagnostics(&tree, &api::WriteOptions::default())
+            .unwrap(),
+    );
+    let out = call(&json!({"call": "formatWithDiagnostics", "source": TABS,
+        "options": {"extensions": ["carve.tabs"]}}));
+    assert_eq!(out["ok"]["source"], TABS);
+    assert_eq!(out["ok"]["diagnostics"], json!([]));
+}
