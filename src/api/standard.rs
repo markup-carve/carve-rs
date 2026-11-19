@@ -504,23 +504,60 @@ pub(crate) struct UsedIds {
 }
 
 impl UsedIds {
-    pub(crate) fn of(view: &Value) -> Self {
+    pub(crate) fn of_owned(view: &crate::ast::owned::Document) -> Self {
+        fn walk(node: &crate::ast::owned::Node, used: &mut UsedIds, depth: usize) {
+            if depth > crate::resolve::WALK_CAP {
+                return;
+            }
+            if let Some(id) = node.attrs().and_then(|attrs| attrs.id.as_deref()) {
+                used.ids.insert(id.to_string());
+            }
+            if let crate::ast::owned::Node::Heading(heading) = node {
+                if let Some(id) = &heading.generated_id {
+                    used.ids.insert(id.clone());
+                }
+            }
+            node.for_each_child(&mut |child| walk(child, used, depth + 1));
+            match node {
+                crate::ast::owned::Node::BlockExtension(ext) => {
+                    if let Some(slots) = &ext.slots {
+                        used.scan_json(slots);
+                    }
+                }
+                crate::ast::owned::Node::InlineExtension(ext) => {
+                    if let Some(slots) = &ext.slots {
+                        used.scan_json(slots);
+                    }
+                }
+                _ => {}
+            }
+        }
         let mut used = Self::default();
-        let mut pending = vec![view];
-        while let Some(v) = pending.pop() {
-            match v {
+        if let Some(id) = view.attrs.as_ref().and_then(|attrs| attrs.id.as_deref()) {
+            used.ids.insert(id.to_string());
+        }
+        for node in &view.children {
+            walk(node, &mut used, 0);
+        }
+        used
+    }
+
+    fn scan_json(&mut self, root: &Value) {
+        let mut pending = vec![root];
+        while let Some(value) = pending.pop() {
+            match value {
                 Value::Object(map) => {
                     if let Some(id) = map
                         .get("attrs")
-                        .and_then(|a| a.get("id"))
+                        .and_then(|attrs| attrs.get("id"))
                         .and_then(Value::as_str)
                     {
-                        used.ids.insert(id.to_string());
+                        self.ids.insert(id.to_string());
                     }
-                    if map.get("type").is_some_and(|t| t == "heading")
-                        && let Some(id) = map.get("generatedId").and_then(Value::as_str)
-                    {
-                        used.ids.insert(id.to_string());
+                    if map.get("type").is_some_and(|ty| ty == "heading") {
+                        if let Some(id) = map.get("generatedId").and_then(Value::as_str) {
+                            self.ids.insert(id.to_string());
+                        }
                     }
                     pending.extend(map.values());
                 }
@@ -528,7 +565,6 @@ impl UsedIds {
                 _ => {}
             }
         }
-        used
     }
 
     pub(crate) fn next(&mut self, prefix: &str) -> String {

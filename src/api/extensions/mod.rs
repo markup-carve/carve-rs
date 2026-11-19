@@ -252,6 +252,123 @@ pub(crate) struct Matchers {
 }
 
 impl Matchers {
+    /// Claim on the owned AST, crossing into JSON only for a candidate node
+    /// passed to host code. The source writer still sees the same node value.
+    pub(crate) fn apply_owned(
+        &self,
+        doc: &mut crate::ast::owned::Document,
+        opener: &dyn Fn(usize) -> Option<String>,
+        declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
+    ) -> Result<Vec<Entry>, Error> {
+        use crate::ast::owned::Node;
+        fn slot(value: &mut Value, pass: &mut Pass<'_>, depth: usize) {
+            if depth > crate::resolve::WALK_CAP {
+                return;
+            }
+            match value {
+                Value::Array(items) => {
+                    for item in items {
+                        slot(item, pass, depth + 1);
+                    }
+                }
+                Value::Object(map) => {
+                    if let Some(next) = pass.claim(map) {
+                        *map = next;
+                    }
+                    let extension = is_extension(map);
+                    for (key, child) in map.iter_mut() {
+                        if descends(key, extension) {
+                            slot(child, pass, depth + 1);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn claim_candidate(node: &mut Node, pass: &mut Pass<'_>) -> Result<(), Error> {
+            if !matches!(
+                node,
+                Node::CodeBlock(_) | Node::Div(_) | Node::InlineExtension(_)
+            ) {
+                return Ok(());
+            }
+            let value = serde_json::to_value(&*node)
+                .map_err(|e| Error::option("extensions", e.to_string()))?;
+            if let Some(map) = value.as_object()
+                && let Some(next) = pass.claim(map)
+            {
+                *node = serde_json::from_value(Value::Object(next))
+                    .map_err(|e| Error::option("extensions", e.to_string()))?;
+            }
+            Ok(())
+        }
+        fn walk(node: &mut Node, pass: &mut Pass<'_>, depth: usize) -> Result<(), Error> {
+            if depth > crate::resolve::WALK_CAP {
+                return Ok(());
+            }
+            claim_candidate(node, pass)?;
+            match node {
+                Node::BlockExtension(ext) => {
+                    for child in &mut ext.children {
+                        walk(child, pass, depth + 1)?;
+                    }
+                    if let Some(slots) = &mut ext.slots {
+                        slot(slots, pass, depth + 1);
+                    }
+                }
+                Node::InlineExtension(ext) => {
+                    for child in &mut ext.children {
+                        walk(child, pass, depth + 1)?;
+                    }
+                    if let Some(slots) = &mut ext.slots {
+                        slot(slots, pass, depth + 1);
+                    }
+                }
+                _ => {
+                    let mut failure = None;
+                    node.for_each_child_mut(&mut |child| {
+                        if failure.is_none() {
+                            failure = walk(child, pass, depth + 1).err();
+                        }
+                    });
+                    if let Some(error) = failure {
+                        return Err(error);
+                    }
+                }
+            }
+            Ok(())
+        }
+        let definitions = doc
+            .children
+            .iter()
+            .filter(|node| matches!(node, Node::LinkReferenceDefinition(_)))
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| Error::option("extensions", e.to_string()))?;
+        let mut pass = Pass {
+            matchers: self,
+            opener,
+            declared,
+            definitions,
+            used: Vec::new(),
+            entries: Vec::new(),
+        };
+        for node in &mut doc.children {
+            walk(node, &mut pass, 0)?;
+        }
+        let Pass { used, entries, .. } = pass;
+        if !used.is_empty() {
+            let names: Vec<(&str, Value)> = used
+                .iter()
+                .map(|d| (d.name.as_str(), json!(d.slots)))
+                .collect();
+            let mut declaration = json!({"extensions": doc.extensions});
+            super::standard::declare_names(&mut declaration, &names);
+            doc.extensions = declaration.get("extensions").cloned();
+        }
+        Ok(entries)
+    }
+
     pub(crate) fn has_form(&self, form: Form) -> bool {
         self.list.iter().any(|m| m.form == form)
     }

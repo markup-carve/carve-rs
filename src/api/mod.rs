@@ -233,6 +233,32 @@ impl Tree {
             top,
         })
     }
+
+    /// Rebuild the wire form after an engine transform changed the owned AST.
+    /// The host needs the tree as an AST for rendering and as canonical JSON
+    /// for the public boundary; this avoids decoding that JSON back to an AST.
+    pub(crate) fn from_owned(document: Document, top: Option<String>) -> Result<Self, Error> {
+        let mut value =
+            serde_json::to_value(&document).map_err(|e| Error::option("tree", e.to_string()))?;
+        if let Some(map) = value.as_object_mut() {
+            map.insert("type".into(), "document".into());
+        }
+        Ok(Self {
+            document,
+            json: value.to_string(),
+            top,
+        })
+    }
+
+    /// An internal render view. Only the renderer reads this tree; it is not
+    /// returned by a public tree call and therefore needs no wire encoding.
+    fn render_view(document: Document, top: Option<String>) -> Self {
+        Self {
+            document,
+            json: String::new(),
+            top,
+        }
+    }
 }
 
 /// How [`encode_tree_with`] writes a tree.
@@ -443,8 +469,6 @@ impl Carve {
         if !self.may_claim(&parsed.tree.json) {
             return Ok(parsed);
         }
-        let mut value: Value = crate::api::deep_json(&parsed.tree.json)
-            .map_err(|e| Error::option("tree", e.to_string()))?;
         let opener = |at: usize| match input {
             Input::Text(s) => standard::opener_name(s, at),
             Input::Bytes(b) => {
@@ -456,6 +480,19 @@ impl Carve {
                 standard::opener_name(&line, 0)
             }
         };
+        if self.standard.is_empty() {
+            let claimed =
+                self.matchers
+                    .apply_owned(&mut parsed.tree.document, &opener, &|name| {
+                        self.extensions.declaration(name)
+                    })?;
+            let top = parsed.tree.top.take();
+            parsed.tree = Tree::from_owned(std::mem::take(&mut parsed.tree.document), top)?;
+            parsed.diagnostics.extend(claimed);
+            return Ok(parsed);
+        }
+        let mut value: Value = crate::api::deep_json(&parsed.tree.json)
+            .map_err(|e| Error::option("tree", e.to_string()))?;
         let failed = self.claim_standard(&mut value, &opener);
         let claimed = if self.matchers.is_empty() {
             Vec::new()
@@ -564,7 +601,34 @@ impl Carve {
         }
         let input = input.into();
         check_length(input.len(), opts)?;
-        let parsed = self.parse_with_diagnostics(input, opts)?;
+        let parsed = if self.standard.is_empty() && self.extensions.owned_transforms_only() {
+            // This tree goes straight to the owned render path. The public
+            // parse call still rebuilds its JSON after claims, but a render
+            // never exposes that intermediate wire form.
+            let mut parsed = parse_with_diagnostics(input, opts)?;
+            if self.may_claim(&parsed.tree.json) {
+                let opener = |at: usize| match input {
+                    Input::Text(source) => standard::opener_name(source, at),
+                    Input::Bytes(bytes) => {
+                        let line = bytes
+                            .get(at..)?
+                            .split(|&b| b == b'\n')
+                            .map(String::from_utf8_lossy)
+                            .find(|line| !standard::is_attribute_line(line))?;
+                        standard::opener_name(&line, 0)
+                    }
+                };
+                let claimed =
+                    self.matchers
+                        .apply_owned(&mut parsed.tree.document, &opener, &|name| {
+                            self.extensions.declaration(name)
+                        })?;
+                parsed.diagnostics.extend(claimed);
+            }
+            parsed
+        } else {
+            self.parse_with_diagnostics(input, opts)?
+        };
         let mut rendered = self.render_view(parsed.tree, opts)?;
         let mut diagnostics = parsed.diagnostics;
         diagnostics.append(&mut rendered.diagnostics);
@@ -600,17 +664,25 @@ impl Carve {
 
     fn render_view(&self, tree: Tree, opts: &Options) -> Result<Rendered, Error> {
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
-        let (view, transform_entries) = if self.extensions.has_transforms() {
-            let resolved: Value =
-                crate::api::deep_json(&crate::resolved_json(tree.document(), opts))
-                    .map_err(|e| Error::option("tree", e.to_string()))?;
-            let mut view = Tree::trusted(resolved, None)?;
+        let (view, transform_entries) = if self.extensions.owned_transforms_only() {
+            let mut resolved = crate::resolved_owned(tree.document(), opts);
+            self.extensions.transform_owned(&mut resolved);
+            (Tree::render_view(resolved, tree.top), Vec::new())
+        } else if self.extensions.has_transforms() {
+            let mut view = Tree::from_owned(crate::resolved_owned(tree.document(), opts), None)?;
             view.top = tree.top;
             self.extensions.transform(view)
         } else {
             (tree, Vec::new())
         };
-        let host = extension::Host::new(&self.extensions, self.standard, &self.host, opts, &view);
+        let host = extension::Host::new(
+            &self.extensions,
+            self.standard,
+            &self.host,
+            opts,
+            &view,
+            self.extensions.has_transforms(),
+        );
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
