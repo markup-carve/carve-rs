@@ -387,7 +387,7 @@ fn tree(req: &Value) -> Result<Tree, Error> {
 }
 
 fn tree_value(tree: &Tree) -> Value {
-    serde_json::from_str(&super::encode_tree(tree)).unwrap_or(Value::Null)
+    crate::api::deep_json(&super::encode_tree(tree)).unwrap_or(Value::Null)
 }
 
 fn entries(list: &[Entry]) -> Value {

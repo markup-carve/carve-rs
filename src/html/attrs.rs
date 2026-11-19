@@ -250,6 +250,8 @@ impl<'a> El<'a> {
     fn skip_key(&self, key: &str) -> bool {
         (self.lang.is_some() && key.eq_ignore_ascii_case("lang"))
             || (self.dir.is_some() && key.eq_ignore_ascii_case("dir"))
+            // C2-H-016: the generated source line replaces an authored one.
+            || (self.source_line.is_some() && key.eq_ignore_ascii_case("data-source-line"))
             || url::dropped_name(key)
             || self.skip_keys.iter().any(|s| s.eq_ignore_ascii_case(key))
             || self.skip_exact_keys.contains(&key)
