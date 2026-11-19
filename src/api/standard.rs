@@ -635,6 +635,11 @@ pub(crate) fn render_tabs(
             ) else {
                 continue;
             };
+            if crate::html::url::dropped_name(key) {
+                continue;
+            }
+            let value =
+                crate::html::url::filter_value_in(key, value, Some(&cx.options().url_policy));
             has_role |= key == "role";
             has_name |= matches!(key, "aria-label" | "aria-labelledby");
             let _ = write!(wrapper, " {key}=\"{}\"", cx.escape_attribute(value));

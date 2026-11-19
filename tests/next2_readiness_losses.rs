@@ -49,16 +49,18 @@ fn denied_attribute_does_not_steal_a_later_link_path() {
 fn tabs_wrapper_keeps_authored_attributes_in_renderer_order() {
     let reply = call(json!({
         "call":"render",
-        "source":"{#t .k key=v}\n:::: tabs\n::: tab \"A\"\na\n:::\n::::\n",
+        "source":"{#t .k key=v onclick=evil data-src=javascript:evil}\n:::: tabs\n::: tab \"A\"\na\n:::\n::::\n",
         "options":{"extensions":["carve.tabs"],"renderers":{"carve.tabs":"standard"}}
     }));
     let html = reply["ok"]["html"].as_str().unwrap();
     assert!(
         html.starts_with(
-            "<div id=\"t\" class=\"tabs k\" key=\"v\" role=\"group\" aria-label=\"Tabs\">"
+            "<div id=\"t\" class=\"tabs k\" key=\"v\" data-src=\"\" role=\"group\" aria-label=\"Tabs\">"
         ),
         "{html}"
     );
+    assert!(!html.contains("onclick="), "{html}");
+    assert!(html.contains("data-src=\"\""), "{html}");
 }
 
 #[test]
