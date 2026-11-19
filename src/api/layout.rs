@@ -57,6 +57,7 @@ pub(super) fn build(source: &str, tree: &Tree, input: Input<'_>) -> Result<Value
             blocks: true,
             cell: false,
             caption: false,
+            table: false,
             open: false,
         },
     );
@@ -146,6 +147,7 @@ struct Frame {
     blocks: bool,
     cell: bool,
     caption: bool,
+    table: bool,
     open: bool,
 }
 
@@ -177,6 +179,9 @@ impl Walk<'_> {
             if start <= end
                 && end <= self.source.len()
                 && is_block(ty)
+                && (ty != "comment"
+                    || frame.blocks
+                    || frame.table && table_comment(self.source, start))
                 && (!frame.caption || ty == "caption")
                 && !frame.cell
             {
@@ -230,10 +235,10 @@ impl Walk<'_> {
         {
             self.table_rows(node, path, start, end);
         }
-        if ty == "include" {
-            return;
-        }
         for slot in ["title", "children", "caption"] {
+            if ty == "include" && slot == "children" {
+                continue;
+            }
             let Some(value) = node.get(slot) else {
                 continue;
             };
@@ -241,6 +246,7 @@ impl Walk<'_> {
                 blocks: slot == "children" && block_children(ty),
                 cell: frame.cell || ty == "table_cell",
                 caption: frame.caption || ty == "caption" || slot == "caption",
+                table: ty == "table_body",
                 ..inner
             };
             if let Some(children) = value.as_array() {
@@ -353,13 +359,10 @@ impl Walk<'_> {
                         }
                     }
                     if ty == "list_item"
+                        && matches!(trimmed.as_bytes().first(), Some(b'-' | b'*'))
                         && node.get("task").is_some()
                         && source.as_bytes().get(content) == Some(&b'[')
                         && source.as_bytes().get(content + 2) == Some(&b']')
-                        && matches!(
-                            source.as_bytes().get(content + 1),
-                            Some(b' ' | b'x' | b'X' | b'_')
-                        )
                     {
                         if let Some(close) = source[content..].find(']') {
                             content += close + 1;
@@ -387,7 +390,8 @@ impl Walk<'_> {
                         entry.insert("contentColumn".into(), content_col.into());
                         entry.insert(
                             "continuationStyle".into(),
-                            continuation_style(source, start, end, content_col, quotes).into(),
+                            continuation_style(source, node, start, end, content_col, quotes)
+                                .into(),
                         );
                     } else {
                         entry.insert("continuationStyle".into(), "marker_line".into());
@@ -673,10 +677,7 @@ impl Walk<'_> {
                 };
                 row_index += 1;
                 let row_path = format!("{path}/children/{group_index}/children/{index}");
-                let lines = self.source[row.start..row.end]
-                    .bytes()
-                    .filter(|b| *b == b'\n')
-                    .count();
+                let lines = continuation_lines(self.source, row.start, row.end);
                 if lines > 0 {
                     self.nodes.push(json!({"path":row_path,"startByte":row.start,"endByte":row.end,"continuationLines":lines}));
                 }
@@ -716,10 +717,7 @@ impl Walk<'_> {
         let mut wraps = Vec::new();
         let mut offset = 0;
         for (index, piece) in origin.pieces.iter().enumerate() {
-            let line = self.source[row.start..piece.start]
-                .bytes()
-                .filter(|b| *b == b'\n')
-                .count();
+            let line = continuation_lines(self.source, row.start, piece.start);
             if line > 0 {
                 if index > 0 && offset > 0 && piece.join == crate::inline::Join::Cell {
                     offset += 1;
@@ -759,6 +757,7 @@ fn is_block(ty: &str) -> bool {
             | "definition_description"
             | "footnote"
             | "block_quote"
+            | "figure_group"
             | "div"
             | "admonition"
             | "directive"
@@ -780,6 +779,7 @@ fn block_children(ty: &str) -> bool {
         ty,
         "document"
             | "block_quote"
+            | "figure_group"
             | "div"
             | "admonition"
             | "directive"
@@ -796,6 +796,7 @@ fn required_blanks(ty: &str, frame: Frame) -> bool {
         || (!frame.cell
             && !frame.caption
             && (frame.blocks
+                || frame.table
                 || matches!(
                     ty,
                     "list_item" | "definition_term" | "definition_description"
@@ -850,6 +851,9 @@ fn blank_inside(source: &str, start: usize, end: usize, quotes: usize) -> bool {
     }
     text.is_empty()
 }
+fn table_comment(source: &str, start: usize) -> bool {
+    source[line_start(source, start)..start].trim().is_empty()
+}
 fn column_of(source: &str, offset: usize, quotes: usize) -> usize {
     let line = &source[line_start(source, offset)..offset];
     let mut chars = line.char_indices().peekable();
@@ -899,8 +903,16 @@ fn list_marker_len(line: &str) -> usize {
     }
     line.find(['.', ')']).map_or(0, |n| n + 1)
 }
+fn continuation_lines(source: &str, start: usize, end: usize) -> usize {
+    source[start..end]
+        .split('\n')
+        .skip(1)
+        .filter(|line| line.trim_start_matches([' ', '\t', '>']).starts_with('+'))
+        .count()
+}
 fn continuation_style(
     source: &str,
+    node: &Value,
     start: usize,
     end: usize,
     column: usize,
@@ -910,20 +922,72 @@ fn continuation_style(
         Some(n) => start + n + 1,
         None => return "marker_line",
     };
-    let mut indent = false;
-    for line in source[first..end].split('\n') {
-        let line_start = first + source[first..end].find(line).unwrap_or(0);
+    if has_lazy_paragraph(node, source, first, column, quotes) {
+        return "lazy";
+    }
+    let mut later = false;
+    let mut line_start = first;
+    while line_start < end {
+        let line_end = source[line_start..end]
+            .find('\n')
+            .map_or(end, |n| line_start + n);
+        let line = &source[line_start..line_end];
+        let next = line_end.saturating_add(1);
+        line_start = next;
         if line.trim().is_empty() {
             continue;
         }
-        let at = line_start + line.len() - line.trim_start_matches([' ', '\t', '>']).len();
-        let at_col = column_of(source, at, quotes);
-        if at_col < column {
-            return "lazy";
+        later = true;
+        let at = line_end - line.trim_start_matches([' ', '\t', '>']).len();
+        if column_of(source, at, quotes) >= column {
+            return "indent";
         }
-        indent = true;
     }
-    if indent { "indent" } else { "marker_line" }
+    if later { "none" } else { "marker_line" }
+}
+
+fn has_lazy_paragraph(
+    node: &Value,
+    source: &str,
+    first: usize,
+    column: usize,
+    quotes: usize,
+) -> bool {
+    fn visit(
+        node: &Value,
+        source: &str,
+        first: usize,
+        column: usize,
+        quotes: usize,
+        paragraph: bool,
+    ) -> bool {
+        let ty = node.get("type").and_then(Value::as_str).unwrap_or("");
+        if ty == "table" {
+            return false;
+        }
+        let paragraph = paragraph || ty == "paragraph";
+        if paragraph
+            && ty != "paragraph"
+            && node.get("children").and_then(Value::as_array).is_none()
+            && let Some(at) = node
+                .pointer("/pos/startOffset")
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+            && at >= first
+            && at <= source.len()
+            && column_of(source, at, quotes) < column
+        {
+            return true;
+        }
+        node.get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|children| {
+                children
+                    .iter()
+                    .any(|child| visit(child, source, first, column, quotes, paragraph))
+            })
+    }
+    visit(node, source, first, column, quotes, false)
 }
 fn fence(entry: &mut Map<String, Value>, source: &str, start: usize, end: usize, marker: char) {
     let line = &source[start..line_end(source, start).min(end)];
