@@ -200,7 +200,7 @@ fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Resu
         .and_then(Value::as_bool)
         .unwrap_or(true);
     if name == "parseWithLayout" {
-        let parsed = super::parse_with_layout(input(&bytes), &opts.options)?;
+        let parsed = super::parse_with_layout_for(host, input(&bytes), &opts.options)?;
         let mut out = Map::new();
         out.insert("diagnostics".into(), entries(&parsed.diagnostics));
         out.insert(

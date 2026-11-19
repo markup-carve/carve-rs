@@ -819,13 +819,21 @@ pub fn parse_with_layout<'a>(
     input: impl Into<Input<'a>>,
     opts: &Options,
 ) -> Result<ParsedLayout, Error> {
+    parse_with_layout_for(&Carve::default(), input, opts)
+}
+
+fn parse_with_layout_for<'a>(
+    host: &Carve,
+    input: impl Into<Input<'a>>,
+    opts: &Options,
+) -> Result<ParsedLayout, Error> {
     let input = input.into();
     if matches!(input, Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err()) {
         return Err(unsupported_layout());
     }
     let text = input.text();
     let source = text.as_ref();
-    let parsed = parse_with_diagnostics(input, opts)?;
+    let parsed = host.parse_with_diagnostics(input, opts)?;
     let layout = heading_layout(source, &parsed.tree)?;
     Ok(ParsedLayout {
         tree: parsed.tree,
