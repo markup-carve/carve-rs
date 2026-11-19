@@ -9,7 +9,9 @@
 //! assert_eq!(html, "<p>Hello <strong>world</strong></p>");
 //!
 //! let tree = api::parse("Hello", &Options::default())?;
-//! assert!(api::encode_tree(&tree).starts_with(r#"{"children":["#));
+//! let encoded = api::encode_tree(&tree);
+//! let value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+//! assert_eq!(encoded, value.to_string()); // C2-A-217: canonical sorted members.
 //! # Ok::<(), api::Error>(())
 //! ```
 //!
