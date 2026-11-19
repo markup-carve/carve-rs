@@ -31,7 +31,7 @@ carve = { package = "carve-lang", version = "0.2", default-features = false }
 | `format`, `formatWithDiagnostics` | `Carve::format`, `Carve::format_with_diagnostics` | available |
 | `write`, `writeWithDiagnostics` | `Carve::write`, `Carve::write_with_diagnostics`, `Carve::write_to(target, ...)` | `carve` and `html` built in |
 | `lint` | `api::lint(input, &LintOptions) -> Result<Vec<Entry>, Error>` | available |
-| `importDocument` | `api::import_document(html, &ImportOptions)`, `Carve::import_document` return `Imported { tree, source, diagnostics }` | available (HTML) |
+| `importDocument` | `api::import_document(html, &ImportOptions)`, `Carve::import_document` return `Imported { tree, source, diagnostics, suppressed_diagnostics }`; `Carve::import_document_with(html, &ImportOptions, &LossOptions { allow_losses, max_losses })` adds `allowLosses` and `maxLosses` | available (HTML) |
 | `includeDependencies` | `api::include_dependencies(&Tree)` | available |
 | `encodeTree`, `encodeEnvelope` | `api::encode_tree`, `api::encode_tree_with(&Tree, EncodeOptions { positions })`, `api::encode_envelope` | available |
 | `decodeTree`, `validateTree` | `api::decode_tree(&str)`, `api::validate_tree(&Tree)` | available |
@@ -79,7 +79,7 @@ A host with its own storage passes any `Resolver`, a function from an `api::Requ
 
 ## Errors
 
-Every call returns `api::Error`. Its variants are the library errors of C2-T-040, and `spec_name()`, `category()` and `status()` give the matching row:
+Every call returns `api::Error`. Its variants are the library errors of C2-T-040, and `spec_name()`, `category()` and `status()` give the matching row. `path()` gives the RFC 6901 pointer of what an option or tree error names (`/profile`, `/children/0/type`), which the JSON boundary writes as `path` (C2-A-167):
 
 | Variant | `spec_name()` | `category()` | `status()` |
 |---|---|---|---|
