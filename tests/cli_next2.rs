@@ -28,10 +28,10 @@ fn run(args: &[&str], input: &str) -> (i32, String, String) {
 
 #[test]
 fn commands_use_the_same_file_and_error_contract() {
-    assert_eq!(run(&["fmt", "-"], "a\n"), (0, "a\n".into(), "".into()));
+    assert_eq!(run(&["fmt", "-"], "a\n"), (0, "a\n".into(), String::new()));
     assert_eq!(
         run(&["import", "--from", "html", "-"], "<p>a</p>"),
-        (0, "a\n".into(), "".into())
+        (0, "a\n".into(), String::new())
     );
     let (status, stdout, stderr) = run(&["migrate-ast", "-"], "not json\n");
     assert_eq!((status, stdout), (2, String::new()));
@@ -69,7 +69,7 @@ fn render_from_ast_exports_the_supplied_tree() {
     let (status, tree, stderr) = run(&["ast", "--no-positions", "-"], "a\n");
     assert_eq!((status, stderr.as_str()), (0, ""));
     let (status, output, stderr) = run(&["render", "--from-ast", "--to", "plain", "-"], &tree);
-    assert_eq!((status, output, stderr), (0, "a\n".into(), "".into()));
+    assert_eq!((status, output, stderr), (0, "a\n".into(), String::new()));
 }
 
 #[test]
