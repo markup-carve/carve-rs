@@ -311,6 +311,12 @@ impl Carve {
     ///
     /// [`Error::Option`] for a name this engine has no standard extension for.
     pub fn enable_standard(&mut self, name: &str, renderer: bool) -> Result<(), Error> {
+        // C2-X-057: with its renderer, `carve.wiki` is the wikilinks bundle.
+        if name == "carve.wiki" && renderer {
+            return self.register(extensions::wikilinks(
+                extensions::WikilinksOptions::default(),
+            ));
+        }
         if let Some(bundle) = extensions::standard(name) {
             return self.register(if renderer {
                 bundle

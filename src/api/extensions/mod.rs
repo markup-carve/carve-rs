@@ -16,17 +16,25 @@
 
 mod callouts;
 mod code_group;
+mod details;
 mod fenced;
 mod math;
+mod transforms;
+mod wikilinks;
 
 pub use callouts::code_callouts;
 pub use code_group::{CodeGroupMode, CodeGroupOptions, Highlighter, code_group};
+pub use details::{details, spoiler};
 pub use fenced::{
     ContentMode, DiagramBuilder, FencedRenderOptions, PresetBuilders, PresetOptions, Tag, abc,
     chart, d2, fenced_render, fenced_render_name, graphviz, mermaid, plantuml, presets, vega_lite,
     wavedrom,
 };
 pub use math::{MathBlockOptions, MathBuilder, math_block};
+pub use transforms::{
+    DefaultAttributes, default_attributes, inline_footnotes_to_parentheses, tab_normalize,
+};
+pub use wikilinks::{UrlGenerator, WikilinksOptions, wikilinks};
 
 use super::{Entry, Error, Extension, ExtensionDeclaration};
 use serde_json::{Map, Value, json};
@@ -183,6 +191,10 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.mathBlock" => Some(math_block(MathBlockOptions::default())),
         "carve.codeGroup" => Some(code_group(CodeGroupOptions::default())),
         "carve.codeCallouts" => Some(code_callouts()),
+        "carve.details" => Some(details()),
+        "carve.spoiler" => Some(spoiler()),
+        "carve.tabNormalize" => tab_normalize(2).ok(),
+        "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
         _ => None,
     }
 }

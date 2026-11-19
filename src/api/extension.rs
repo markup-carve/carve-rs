@@ -44,6 +44,7 @@ pub struct RenderContext<'a> {
     host: &'a Host<'a>,
     /// Whether the node is a block extension.
     pub block: bool,
+    depth: usize,
 }
 
 impl RenderContext<'_> {
@@ -52,6 +53,14 @@ impl RenderContext<'_> {
     #[must_use]
     pub fn options(&self) -> &Options {
         self.host.opts
+    }
+
+    /// The indentation level of the node's block, in two-space units
+    /// (C2-H-042): a renderer that writes several lines indents the lines
+    /// after the first by it.
+    #[must_use]
+    pub fn block_depth(&self) -> usize {
+        self.depth
     }
 
     /// The render mode (C2-H-122).
@@ -111,9 +120,15 @@ impl RenderContext<'_> {
         let mut div = serde_json::Map::new();
         div.insert("type".into(), "div".into());
         div.insert("children".into(), Value::Array(Vec::new()));
-        for key in ["attrs", "pos"] {
-            if let Some(v) = node.get(key) {
-                div.insert(key.into(), v.clone());
+        // A source line is written on block elements only.
+        let keys: &[&str] = if self.block {
+            &["attrs", "pos"]
+        } else {
+            &["attrs"]
+        };
+        for key in keys {
+            if let Some(v) = node.get(*key) {
+                div.insert((*key).into(), v.clone());
             }
         }
         let Ok(html) = self
@@ -391,11 +406,15 @@ impl<'a> Host<'a> {
 }
 
 impl crate::html::ExtensionHook for Host<'_> {
-    fn render(&self, node: &Value, block: bool) -> Option<Result<String, ()>> {
+    fn render(&self, node: &Value, block: bool, depth: usize) -> Option<Result<String, ()>> {
         let name = node.get("name").and_then(Value::as_str)?;
         let version = node.get("version").and_then(Value::as_str);
         if name == "carve.tabs" && self.standard.tabs_renderer && version == Some("1") {
-            let cx = RenderContext { host: self, block };
+            let cx = RenderContext {
+                host: self,
+                block,
+                depth,
+            };
             let group = || self.ids.borrow_mut().next("tabs");
             return Some(
                 super::standard::render_tabs(node, &cx, &group).map_err(|_| {
@@ -417,7 +436,11 @@ impl crate::html::ExtensionHook for Host<'_> {
             .filter(|e| version.is_none_or(|v| v == e.declaration.version))
             .find_map(|e| e.renderers.iter().find(|(c, _)| *c == channel))
             .map(|(_, r)| r)?;
-        let cx = RenderContext { host: self, block };
+        let cx = RenderContext {
+            host: self,
+            block,
+            depth,
+        };
         Some(renderer.render(node, &cx).map_err(|_| {
             self.failed.borrow_mut().push(name.to_string());
         }))
