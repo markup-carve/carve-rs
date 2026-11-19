@@ -407,25 +407,7 @@ impl Carve {
                 standard::opener_name(&line, 0)
             }
         };
-        let mut failed = Vec::new();
-        if self.standard.tabs && !standard::claim_tabs(&mut value, &opener) {
-            failed.push("carve.tabs");
-        }
-        let matchers = self.standard.inline_matchers();
-        if !matchers.is_empty() {
-            failed.extend(standard::claim_inline(&mut value, &matchers));
-        }
-        let fences = self.standard.fence_matchers();
-        if !fences.is_empty() {
-            let claimed = img_fence::claim(&mut value, &fences);
-            let declared: Vec<(&str, Value)> = claimed
-                .into_iter()
-                .map(|n| (n, serde_json::json!([])))
-                .collect();
-            if !declared.is_empty() {
-                standard::declare_names(&mut value, &declared);
-            }
-        }
+        let failed = self.claim_standard(&mut value, &opener);
         let claimed = if self.matchers.is_empty() {
             Vec::new()
         } else {
@@ -453,6 +435,35 @@ impl Carve {
             });
         }
         Ok(parsed)
+    }
+
+    /// The claims of the enabled standard extensions; returns those whose
+    /// claim source could not be written (C2-X-051).
+    fn claim_standard(
+        &self,
+        value: &mut Value,
+        opener: &dyn Fn(usize) -> Option<String>,
+    ) -> Vec<&'static str> {
+        let mut failed = Vec::new();
+        if self.standard.tabs && !standard::claim_tabs(value, opener) {
+            failed.push("carve.tabs");
+        }
+        let matchers = self.standard.inline_matchers();
+        if !matchers.is_empty() {
+            failed.extend(standard::claim_inline(value, &matchers));
+        }
+        let fences = self.standard.fence_matchers();
+        if !fences.is_empty() {
+            let claimed = img_fence::claim(value, &fences);
+            let declared: Vec<(&str, Value)> = claimed
+                .into_iter()
+                .map(|n| (n, serde_json::json!([])))
+                .collect();
+            if !declared.is_empty() {
+                standard::declare_names(value, &declared);
+            }
+        }
+        failed
     }
 
     /// `render` with the registered extensions: the source is parsed, the

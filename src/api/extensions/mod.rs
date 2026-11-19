@@ -223,67 +223,41 @@ impl Matchers {
 
     /// C2-X-005: claims core nodes in one pass after the core parse, outer
     /// nodes first, and declares the extensions the claims use (C2-A-017).
-    /// `opener` gives the source name of the div at a byte offset; `slots`
-    /// the declared version and slots of a qualified name.
+    /// `opener` gives the source name of the div at a byte offset;
+    /// `declared` the declaration of a qualified name.
     pub(crate) fn apply(
         &self,
         doc: &mut Value,
         opener: &dyn Fn(usize) -> Option<String>,
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
     ) -> Vec<Entry> {
-        let definitions = super::standard::definitions(doc);
-        let names = |node: &Value| -> Option<String> {
-            match node.get("type").and_then(Value::as_str)? {
-                "code_block" => node
-                    .get("syntax")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                "div" => opener(usize::try_from(node.pointer("/pos/startOffset")?.as_u64()?).ok()?),
-                _ => None,
-            }
+        let mut pass = Pass {
+            matchers: self,
+            opener,
+            declared,
+            definitions: super::standard::definitions(doc),
+            used: Vec::new(),
+            entries: Vec::new(),
         };
-        let mut used: Vec<ExtensionDeclaration> = Vec::new();
-        let mut entries = Vec::new();
-        let mut pending: Vec<&mut Value> = match doc.get_mut("children") {
-            Some(children) => vec![children],
-            None => Vec::new(),
-        };
+        let mut pending: Vec<&mut Value> = doc.get_mut("children").into_iter().collect();
         while let Some(v) = pending.pop() {
             match v {
                 Value::Array(items) => pending.extend(items.iter_mut().rev()),
                 Value::Object(map) => {
-                    if map.contains_key("type")
-                        && let Some(next) = self.claim(
-                            map,
-                            opener,
-                            &names,
-                            &definitions,
-                            declared,
-                            &mut used,
-                            &mut entries,
-                        )
-                    {
+                    if let Some(next) = pass.claim(map) {
                         *map = next;
                     }
-                    let extension = matches!(
-                        map.get("type").and_then(Value::as_str),
-                        Some("block_extension" | "inline_extension")
+                    let extension = is_extension(map);
+                    pending.extend(
+                        map.iter_mut()
+                            .filter(|(key, _)| descends(key, extension))
+                            .map(|(_, child)| child),
                     );
-                    for (key, child) in map.iter_mut() {
-                        if (extension && key == "fallback")
-                            || matches!(
-                                key.as_str(),
-                                "source" | "pos" | "attrs" | "props" | "payload" | "data"
-                            )
-                        {
-                            continue;
-                        }
-                        pending.push(child);
-                    }
                 }
                 _ => {}
             }
         }
+        let Pass { used, entries, .. } = pass;
         if !used.is_empty() {
             let names: Vec<(&str, Value)> = used
                 .iter()
@@ -293,136 +267,193 @@ impl Matchers {
         }
         entries
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn claim(
-        &self,
-        map: &Map<String, Value>,
-        opener: &dyn Fn(usize) -> Option<String>,
-        names: &dyn Fn(&Value) -> Option<String>,
-        definitions: &[Value],
-        declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
-        used: &mut Vec<ExtensionDeclaration>,
-        entries: &mut Vec<Entry>,
-    ) -> Option<Map<String, Value>> {
+fn is_extension(map: &Map<String, Value>) -> bool {
+    matches!(
+        map.get("type").and_then(Value::as_str),
+        Some("block_extension" | "inline_extension")
+    )
+}
+
+/// Whether the claim pass walks into the member `key`.
+fn descends(key: &str, extension: bool) -> bool {
+    let skipped = matches!(
+        key,
+        "source" | "pos" | "attrs" | "props" | "payload" | "data"
+    );
+    !(skipped || (extension && key == "fallback"))
+}
+
+/// The state of one claim pass.
+struct Pass<'a> {
+    matchers: &'a Matchers,
+    opener: &'a dyn Fn(usize) -> Option<String>,
+    declared: &'a dyn Fn(&str) -> Option<ExtensionDeclaration>,
+    definitions: Vec<Value>,
+    used: Vec<ExtensionDeclaration>,
+    entries: Vec<Entry>,
+}
+
+impl Pass<'_> {
+    /// The source name of a code block or div.
+    fn source_name(&self, node: &Map<String, Value>) -> Option<String> {
+        match node.get("type").and_then(Value::as_str)? {
+            "code_block" => node
+                .get("syntax")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            "div" => {
+                let at = node.get("pos")?.get("startOffset")?.as_u64()?;
+                (self.opener)(usize::try_from(at).ok()?)
+            }
+            _ => None,
+        }
+    }
+
+    fn fail(&mut self, code: &str, message: &str) {
+        self.entries.push(entry(code, message));
+    }
+
+    fn claim(&mut self, map: &Map<String, Value>) -> Option<Map<String, Value>> {
         let ty = map.get("type").and_then(Value::as_str)?;
         if !matches!(ty, "code_block" | "div" | "inline_extension") {
             return None;
         }
-        let name = match ty {
-            "code_block" => map
-                .get("syntax")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            "div" => map
-                .get("pos")
-                .and_then(|p| p.get("startOffset"))
-                .and_then(Value::as_u64)
-                .and_then(|o| usize::try_from(o).ok())
-                .and_then(opener),
-            _ => None,
-        };
+        let name = self.source_name(map);
         let mut node = None;
-        for m in &self.list {
-            let fits = match m.form {
-                Form::Fence => ty == "code_block" && name.as_deref() == Some(&m.name),
-                Form::Div => ty == "div" && name.as_deref() == Some(&m.name),
-                Form::Inline => {
-                    ty == "inline_extension"
-                        && map.get("version").is_none()
-                        && map.get("name").and_then(Value::as_str) == Some(&m.name)
-                }
-            };
-            if !fits {
+        let matchers = self.matchers;
+        for m in &matchers.list {
+            if !fits(m, ty, name.as_deref(), map) {
                 continue;
             }
-            let Some(source) = source_record(m.form, &m.name, map, definitions) else {
-                entries.push(entry(
-                    "extension-transform-failed",
-                    &format!(
-                        "The extension {} could not write its claim source; the core node was retained",
-                        m.extension
-                    ),
-                ));
-                return None;
-            };
             let node = node.get_or_insert_with(|| Value::Object(map.clone()));
-            let claim = Claim {
-                form: m.form,
-                name: &m.name,
-                node,
-                source: &source,
-                names,
-            };
-            let made = match m.claimer.claim(&claim) {
-                Ok(None) => continue,
-                Ok(Some(made)) => made,
-                Err(e) => {
-                    entries.push(entry(
-                        "extension-transform-failed",
-                        &format!(
-                            "The extension {} transform failed: {e}; the core source node was retained",
-                            m.extension
-                        ),
-                    ));
-                    return None;
-                }
-            };
-            let want = if m.form == Form::Inline {
-                "inline_extension"
-            } else {
-                "block_extension"
-            };
-            let decl = declared(&m.extension);
-            let valid = made.get("type").and_then(Value::as_str) == Some(want)
-                && made.get("name").and_then(Value::as_str) == Some(&m.extension)
-                && decl.as_ref().is_some_and(|d| {
-                    made.get("version").and_then(Value::as_str) == Some(d.version.as_str())
-                });
-            let (Some(decl), true, Value::Object(mut out)) = (decl, valid, made) else {
-                entries.push(entry(
-                    "extension-fallback-rendered",
-                    &format!(
-                        "Invalid transform of {}; the core source node was retained",
-                        m.extension
-                    ),
-                ));
-                return None;
-            };
-            out.insert("source".into(), source);
-            let attrs = map.get("attrs").cloned().and_then(|a| {
-                if m.form == Form::Div {
-                    remaining_attrs(&a)
-                } else {
-                    Some(a)
-                }
-            });
-            if let Some(attrs) = attrs {
-                out.insert("attrs".into(), attrs);
+            match self.try_claim(m, map, node) {
+                Attempt::Declined => {}
+                Attempt::Retained => return None,
+                Attempt::Claimed(out) => return Some(out),
             }
-            if let Some(pos) = map.get("pos") {
-                out.insert("pos".into(), pos.clone());
-            }
-            let out = Value::Object(out);
-            if !m.claimer.engine() && !reads_back(&out, &decl, m.form) {
-                entries.push(entry(
-                    "extension-fallback-rendered",
-                    &format!(
-                        "Invalid transform of {}; the core source node was retained",
-                        m.extension
-                    ),
-                ));
-                return None;
-            }
-            let Value::Object(out) = out else {
-                return None;
-            };
-            if !used.iter().any(|d| d.name == decl.name) {
-                used.push(decl);
-            }
-            return Some(out);
         }
         None
+    }
+
+    fn try_claim(&mut self, m: &Matcher, map: &Map<String, Value>, node: &Value) -> Attempt {
+        let Some(source) = source_record(m.form, &m.name, map, &self.definitions) else {
+            self.fail(
+                "extension-transform-failed",
+                &format!(
+                    "The extension {} could not write its claim source; the core node was retained",
+                    m.extension
+                ),
+            );
+            return Attempt::Retained;
+        };
+        let names = |n: &Value| n.as_object().and_then(|n| self.source_name(n));
+        let claim = Claim {
+            form: m.form,
+            name: &m.name,
+            node,
+            source: &source,
+            names: &names,
+        };
+        let made = match m.claimer.claim(&claim) {
+            Ok(None) => return Attempt::Declined,
+            Ok(Some(made)) => made,
+            Err(e) => {
+                self.fail(
+                    "extension-transform-failed",
+                    &format!(
+                        "The extension {} transform failed: {e}; the core source node was retained",
+                        m.extension
+                    ),
+                );
+                return Attempt::Retained;
+            }
+        };
+        let decl = (self.declared)(&m.extension);
+        let Some((decl, out)) =
+            decl.and_then(|d| finish(m, made, map, source, &d).map(|out| (d, out)))
+        else {
+            self.fail(
+                "extension-fallback-rendered",
+                &format!(
+                    "Invalid transform of {}; the core source node was retained",
+                    m.extension
+                ),
+            );
+            return Attempt::Retained;
+        };
+        if !self.used.iter().any(|d| d.name == decl.name) {
+            self.used.push(decl);
+        }
+        Attempt::Claimed(out)
+    }
+}
+
+enum Attempt {
+    Declined,
+    Retained,
+    Claimed(Map<String, Value>),
+}
+
+fn fits(m: &Matcher, ty: &str, name: Option<&str>, map: &Map<String, Value>) -> bool {
+    match m.form {
+        Form::Fence => ty == "code_block" && name == Some(m.name.as_str()),
+        Form::Div => ty == "div" && name == Some(m.name.as_str()),
+        Form::Inline => {
+            ty == "inline_extension"
+                && map.get("version").is_none()
+                && map.get("name").and_then(Value::as_str) == Some(m.name.as_str())
+        }
+    }
+}
+
+/// C2-X-031: the claimed node of the right type, name and version, with the
+/// source, attributes and position of the core node attached; `None` when
+/// it is not valid.
+fn finish(
+    m: &Matcher,
+    made: Value,
+    map: &Map<String, Value>,
+    source: Value,
+    decl: &ExtensionDeclaration,
+) -> Option<Map<String, Value>> {
+    let want = if m.form == Form::Inline {
+        "inline_extension"
+    } else {
+        "block_extension"
+    };
+    let text = |k: &str| made.get(k).and_then(Value::as_str);
+    if text("type") != Some(want)
+        || text("name") != Some(m.extension.as_str())
+        || text("version") != Some(decl.version.as_str())
+    {
+        return None;
+    }
+    let Value::Object(mut out) = made else {
+        return None;
+    };
+    out.insert("source".into(), source);
+    let attrs = map.get("attrs").and_then(|a| {
+        if m.form == Form::Div {
+            remaining_attrs(a)
+        } else {
+            Some(a.clone())
+        }
+    });
+    if let Some(attrs) = attrs {
+        out.insert("attrs".into(), attrs);
+    }
+    if let Some(pos) = map.get("pos") {
+        out.insert("pos".into(), pos.clone());
+    }
+    let out = Value::Object(out);
+    if !m.claimer.engine() && !reads_back(&out, decl, m.form) {
+        return None;
+    }
+    match out {
+        Value::Object(out) => Some(out),
+        _ => None,
     }
 }
 
