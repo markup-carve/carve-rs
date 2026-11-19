@@ -24,7 +24,10 @@ pub fn resolver(root: &Path) -> Result<Resolver, RootError> {
     if !root.is_absolute() {
         return Err(RootError::NotAbsolute);
     }
-    let root = std::fs::canonicalize(root).map_err(|_| RootError::Unreadable)?;
+    let root = canonicalize(root).ok_or(RootError::Unreadable)?;
+    if !std::fs::metadata(&root).is_ok_and(|m| m.is_dir()) {
+        return Err(RootError::Unreadable);
+    }
     Ok(Arc::new(move |r: &Request<'_>| read(&root, r)))
 }
 
@@ -53,7 +56,7 @@ fn canonical(path: &Path) -> Option<PathBuf> {
             return None;
         }
     }
-    let mut out = std::fs::canonicalize(&existing).ok()?;
+    let mut out = canonicalize(&existing)?;
     for part in rest.iter().rev() {
         match Path::new(part).components().next() {
             Some(Component::ParentDir) => {
@@ -64,6 +67,55 @@ fn canonical(path: &Path) -> Option<PathBuf> {
         }
     }
     Some(out)
+}
+
+/// `std::fs::canonicalize`, which WASI preview 1 does not offer.
+#[cfg(not(target_os = "wasi"))]
+fn canonicalize(path: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
+}
+
+/// On WASI the links are followed by hand, as `realpath` would.
+#[cfg(target_os = "wasi")]
+fn canonicalize(path: &Path) -> Option<PathBuf> {
+    const MAX_LINKS: usize = 40;
+    let mut pending: Vec<std::ffi::OsString> = path
+        .components()
+        .rev()
+        .map(|c| c.as_os_str().to_os_string())
+        .collect();
+    let mut out = PathBuf::new();
+    let mut links = 0;
+    while let Some(part) = pending.pop() {
+        match Path::new(&part).components().next() {
+            Some(Component::RootDir) => out = PathBuf::from("/"),
+            Some(Component::ParentDir) => {
+                out.pop();
+            }
+            Some(Component::CurDir) | None => {}
+            Some(_) => {
+                out.push(&part);
+                let meta = std::fs::symlink_metadata(&out).ok()?;
+                if meta.file_type().is_symlink() {
+                    links += 1;
+                    if links > MAX_LINKS {
+                        return None;
+                    }
+                    let link = std::fs::read_link(&out).ok()?;
+                    out.pop();
+                    if link.is_absolute() {
+                        out = PathBuf::new();
+                    }
+                    pending.extend(
+                        link.components()
+                            .rev()
+                            .map(|c| c.as_os_str().to_os_string()),
+                    );
+                }
+            }
+        }
+    }
+    out.is_absolute().then_some(out)
 }
 
 /// Lexical `.` and `..` of the joined path, so a missing directory before a
@@ -144,9 +196,18 @@ fn opened_inside(file: &std::fs::File, target: &Path, _root: &Path) -> bool {
     }
 }
 
+/// Without a stable handle identity (WASI preview 1, Windows) the tested path
+/// must still canonicalize to itself and name a file of the same metadata.
 #[cfg(not(unix))]
-fn opened_inside(_file: &std::fs::File, _target: &Path, _root: &Path) -> bool {
-    false
+fn opened_inside(file: &std::fs::File, target: &Path, root: &Path) -> bool {
+    let same = |a: &std::fs::Metadata, b: &std::fs::Metadata| {
+        a.is_file() == b.is_file() && a.len() == b.len() && a.modified().ok() == b.modified().ok()
+    };
+    canonicalize(target).is_some_and(|t| t == target && t.starts_with(root))
+        && match (file.metadata(), std::fs::metadata(target)) {
+            (Ok(a), Ok(b)) => same(&a, &b),
+            _ => false,
+        }
 }
 
 #[cfg(test)]
