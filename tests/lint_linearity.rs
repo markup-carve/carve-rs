@@ -22,7 +22,10 @@ fn time_of(src: &str, opts: &LintOptions) -> Duration {
 
 fn ratios(unit: &str, opts: &LintOptions) -> Vec<f64> {
     let mut base = 1;
-    while time_of(&unit.repeat(base), opts) < FLOOR && base < 1 << 12 {
+    // At tiny sizes the fixed call setup dominates and makes adjacent ratios
+    // unstable; measure the scaling region the issue describes.
+    while (unit.len() * base < 2048 || time_of(&unit.repeat(base), opts) < FLOOR) && base < 1 << 12
+    {
         base *= 2;
     }
     let times: Vec<f64> = [1, 2, 4, 8]
