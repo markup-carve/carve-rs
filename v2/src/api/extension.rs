@@ -270,16 +270,26 @@ fn duplicate_ids(tree: &Tree) -> usize {
 /// The renderers of one render call.
 pub(crate) struct Host<'a> {
     registry: &'a Registry,
+    standard: super::standard::Standard,
     opts: &'a Options,
     failed: RefCell<Vec<String>>,
+    ids: RefCell<super::standard::UsedIds>,
 }
 
 impl<'a> Host<'a> {
-    pub(crate) fn new(registry: &'a Registry, opts: &'a Options) -> Self {
+    pub(crate) fn new(
+        registry: &'a Registry,
+        standard: super::standard::Standard,
+        opts: &'a Options,
+        view: &Tree,
+    ) -> Self {
+        let value = serde_json::from_str::<Value>(&super::encode_tree(view)).unwrap_or(Value::Null);
         Self {
             registry,
+            standard,
             opts,
             failed: RefCell::new(Vec::new()),
+            ids: RefCell::new(super::standard::UsedIds::of(&value)),
         }
     }
 
@@ -314,6 +324,15 @@ impl crate::html::ExtensionHook for Host<'_> {
     fn render(&self, node: &Value, block: bool) -> Option<Result<String, ()>> {
         let name = node.get("name").and_then(Value::as_str)?;
         let version = node.get("version").and_then(Value::as_str);
+        if name == "carve.tabs" && self.standard.tabs_renderer && version == Some("1") {
+            let cx = RenderContext { host: self, block };
+            let group = || self.ids.borrow_mut().next("tabs");
+            return Some(
+                super::standard::render_tabs(node, &cx, &group).map_err(|_| {
+                    self.failed.borrow_mut().push(name.to_string());
+                }),
+            );
+        }
         let channel = Channel::of(self.opts.mode);
         let renderer = self
             .registry

@@ -57,8 +57,26 @@ fn dispatch(host: &Carve, req: &Value) -> Result<Value, Error> {
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
     let opts = super::options::from_json(name, req.get("options"))?;
+    let mut enabled;
+    let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
+        host
+    } else {
+        enabled = host.clone();
+        for ext in &opts.renderers {
+            if !opts.extensions.contains(ext) {
+                return Err(Error::option(
+                    "renderers",
+                    format!("{ext} is not among the enabled extensions"),
+                ));
+            }
+        }
+        for ext in &opts.extensions {
+            enabled.enable_standard(ext, opts.renderers.contains(ext))?;
+        }
+        &enabled
+    };
     match name {
-        "parse" | "parseWithDiagnostics" | "parseWithLayout" => parse_call(name, req, &opts),
+        "parse" | "parseWithDiagnostics" | "parseWithLayout" => parse_call(host, name, req, &opts),
         "render" | "renderWithDiagnostics" => render_call(host, name, req, &opts),
         "lint" => {
             let bytes = source(req)?;
@@ -98,7 +116,7 @@ fn tree_call(name: &str, req: &Value) -> Result<Value, Error> {
     })
 }
 
-fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
+fn parse_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Error> {
     let bytes = source(req)?;
     let positions = req
         .get("positions")
@@ -109,7 +127,7 @@ fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Erro
     }
     let mut out = Map::new();
     let tree = if name == "parseWithDiagnostics" {
-        let parsed = super::parse_with_diagnostics(input(&bytes), &opts.options)?;
+        let parsed = host.parse_with_diagnostics(input(&bytes), &opts.options)?;
         out.insert("diagnostics".into(), entries(&parsed.diagnostics));
         out.insert(
             "suppressedDiagnostics".into(),
@@ -117,7 +135,7 @@ fn parse_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Erro
         );
         parsed.tree
     } else {
-        super::parse(input(&bytes), &opts.options)?
+        host.parse(input(&bytes), &opts.options)?
     };
     let encoded = super::encode_tree_with(&tree, EncodeOptions { positions });
     out.insert(

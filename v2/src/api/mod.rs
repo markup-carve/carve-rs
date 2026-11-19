@@ -34,6 +34,7 @@ pub mod extension;
 pub mod json;
 mod options;
 mod record;
+mod standard;
 pub mod writer;
 
 pub use crate::ast::owned::Document;
@@ -227,6 +228,7 @@ pub struct Rendered {
 pub struct Carve {
     writers: Writers,
     extensions: extension::Registry,
+    standard: standard::Standard,
 }
 
 impl Carve {
@@ -262,6 +264,76 @@ impl Carve {
         self.extensions.register(extension)
     }
 
+    /// PROVISIONAL: enables a standard extension of `data/extensions.json`.
+    /// This engine has `carve.tabs` (C2-X-039): its matcher claims `tabs`
+    /// divs in [`Carve::parse`] and the render calls, and with `renderer` its
+    /// standard renderers render it in both channels (C2-X-043, C2-X-052).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Option`] for a name this engine has no standard extension for.
+    pub fn enable_standard(&mut self, name: &str, renderer: bool) -> Result<(), Error> {
+        self.standard.enable(name, renderer)
+    }
+
+    fn plain(&self) -> bool {
+        self.extensions.is_empty() && self.standard.is_empty()
+    }
+
+    /// `parse` with the matchers of the enabled standard extensions
+    /// (C2-X-005). Without them it is [`parse`].
+    ///
+    /// # Errors
+    ///
+    /// As [`parse`].
+    pub fn parse<'a>(&self, input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Error> {
+        Ok(self.parse_with_diagnostics(input, opts)?.tree)
+    }
+
+    /// `parseWithDiagnostics` with the matchers of the enabled standard
+    /// extensions. A claim whose source record cannot be written keeps the
+    /// core node and reports `extension-transform-failed` (C2-X-051).
+    ///
+    /// # Errors
+    ///
+    /// As [`parse`].
+    pub fn parse_with_diagnostics<'a>(
+        &self,
+        input: impl Into<Input<'a>>,
+        opts: &Options,
+    ) -> Result<Parsed, Error> {
+        let input = input.into();
+        let mut parsed = parse_with_diagnostics(input, opts)?;
+        if !self.standard.tabs {
+            return Ok(parsed);
+        }
+        let mut value: Value = serde_json::from_str(&parsed.tree.json)
+            .map_err(|e| Error::option("tree", e.to_string()))?;
+        let opener = |at: usize| match input {
+            Input::Text(s) => standard::opener_name(s, at),
+            Input::Bytes(b) => {
+                let line = b.get(at..)?.split(|&c| c == b'\n').next()?;
+                standard::opener_name(&String::from_utf8_lossy(line), 0)
+            }
+        };
+        let complete = standard::claim_tabs(&mut value, &opener);
+        let top = parsed.tree.top.take();
+        parsed.tree = Tree::read(&value.to_string(), top)?;
+        if !complete {
+            parsed.diagnostics.push(Entry {
+                code: "extension-transform-failed".into(),
+                severity: "warning".into(),
+                channel: "render-loss".into(),
+                message: "The extension carve.tabs could not write its claim source; the core node was retained".into(),
+                path: None,
+                range: None,
+                file: None,
+                foreign_type: None,
+            });
+        }
+        Ok(parsed)
+    }
+
     /// `render` with the registered extensions: the source is parsed, the
     /// document transforms run on the resolved view (C2-X-053), and the view
     /// is rendered with the renderers of the channel of `opts.mode`
@@ -271,7 +343,7 @@ impl Carve {
     ///
     /// As [`render`].
     pub fn render<'a>(&self, input: impl Into<Input<'a>>, opts: &Options) -> Result<String, Error> {
-        if self.extensions.is_empty() {
+        if self.plain() {
             return render(input, opts);
         }
         Ok(self.render_with_diagnostics(input, opts)?.html)
@@ -287,10 +359,12 @@ impl Carve {
         input: impl Into<Input<'a>>,
         opts: &Options,
     ) -> Result<Rendered, Error> {
-        if self.extensions.is_empty() {
+        if self.plain() {
             return render_with_diagnostics(input, opts);
         }
-        let parsed = parse_with_diagnostics(input, opts)?;
+        let input = input.into();
+        check_length(input.len(), opts)?;
+        let parsed = self.parse_with_diagnostics(input, opts)?;
         let mut rendered = self.render_view(parsed.tree, opts)?;
         let mut diagnostics = parsed.diagnostics;
         diagnostics.append(&mut rendered.diagnostics);
@@ -318,7 +392,7 @@ impl Carve {
         tree: &Tree,
         opts: &Options,
     ) -> Result<Rendered, Error> {
-        if self.extensions.is_empty() {
+        if self.plain() {
             return render_tree_with_diagnostics(tree, opts);
         }
         self.render_view(tree.clone(), opts)
@@ -328,7 +402,7 @@ impl Carve {
         let mut view = Tree::read(&crate::resolved_json(tree.document(), opts), None)?;
         view.top = tree.top;
         let (view, transform_entries) = self.extensions.transform(view);
-        let host = extension::Host::new(&self.extensions, opts);
+        let host = extension::Host::new(&self.extensions, self.standard, opts, &view);
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed_diagnostics) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
