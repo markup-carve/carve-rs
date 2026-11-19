@@ -6,6 +6,16 @@ use carve2::api;
 use common::{parse_json, sorted};
 use serde_json::{Value, json};
 
+/// Cases held, each with its cause; a held case must keep failing.
+const HELD: &[&str] = &[
+    // C2-X-053: the inserted node has `slots: {}`, which the schema refuses
+    // (`minProperties: 1`); spec inconsistency.
+    "CC-1221", "CC-1229",
+    // C2-X-059, C2-X-060: the `imgFence` matchers and sanitizer are not
+    // implemented yet.
+    "CC-1225", "CC-1226", "CC-1228",
+];
+
 fn call(request: &Value) -> Value {
     parse_json(&api::json::call(&request.to_string()))
 }
@@ -29,6 +39,9 @@ fn check(case: &Value) -> Option<String> {
     let mut failures = Vec::new();
     if let Some(html) = expected["html"].as_str() {
         let mut request = json!({"call": "renderWithDiagnostics", "options": case["options"]});
+        if let Some(host) = case.get("host") {
+            request["host"] = host.clone();
+        }
         // A render case gives either source or a tree.
         if case["tree"].is_object() {
             request["tree"] = case["tree"].clone();
@@ -43,13 +56,22 @@ fn check(case: &Value) -> Option<String> {
                 out["error"]
             ));
         }
+        let codes = out["ok"]["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         for code in expected["notReported"].as_array().into_iter().flatten() {
-            let codes = out["ok"]["diagnostics"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
             if codes.iter().any(|d| d["code"] == *code) {
                 failures.push(format!("reported {code}"));
+            }
+        }
+        for want in expected["diagnostics"].as_array().into_iter().flatten() {
+            let code = want
+                .as_str()
+                .or_else(|| want["code"].as_str())
+                .unwrap_or("");
+            if !codes.iter().any(|d| d["code"] == code) {
+                failures.push(format!("did not report {code}"));
             }
         }
     }
@@ -81,7 +103,7 @@ fn pinned_cases() -> Vec<Value> {
         .into_iter()
         .flatten()
         .filter(|c| matches!(c["kind"].as_str(), Some("parse" | "render")))
-        .filter(|c| c["options"].get("extensions").is_some())
+        .filter(|c| c["options"].get("extensions").is_some() || c.get("host").is_some())
         .cloned()
         .collect()
 }
@@ -90,7 +112,15 @@ fn pinned_cases() -> Vec<Value> {
 fn c2_x_039_the_pinned_tabs_cases() {
     let cases = pinned_cases();
     assert!(cases.len() >= 20, "{}", cases.len());
-    let failures: Vec<String> = cases.iter().filter_map(check).collect();
+    let mut failures = Vec::new();
+    for case in &cases {
+        let id = case["id"].as_str().unwrap_or("");
+        match (check(case), HELD.contains(&id)) {
+            (Some(failure), false) => failures.push(failure),
+            (None, true) => failures.push(format!("{id}: held but passes; drop the hold")),
+            _ => {}
+        }
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

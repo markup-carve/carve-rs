@@ -6,7 +6,7 @@
 mod common;
 
 use carve2::include::{Cause, Includes, Request};
-use carve2::options::{HeadingIds, Options, Profile, UrlPolicy};
+use carve2::options::{HeadingIds, Options, Profile, SoftBreak, UrlPolicy};
 use common::{parse_json, sorted};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -22,21 +22,24 @@ const HELD: &[(&str, &str)] = &[
     ("CC-459", "diagnostic:extension-fallback-rendered"),
     ("CC-459", "diagnostic:destination-denied"),
     ("CC-663", "diagnostic:extension-fallback-rendered"),
-    ("CC-664", "notReported"),
-    ("CC-439", "children"),
-    ("CC-440", "children"),
-    ("CC-441", "children"),
-    ("CC-442", "children"),
-    ("CC-443", "children"),
-    ("CC-451", "html"),
-    ("CC-452", "html"),
-    ("CC-453", "html"),
-    ("CC-1032", "html"),
-    ("CC-1033", "html"),
-    ("CC-1034", "html"),
-    ("CC-1048", "html"),
-    ("CC-1089", "html"),
+    // C2-H-206, C2-H-207: `codeBlockRenderer` is a host function this engine does not take yet.
+    ("CC-1272", "html"),
+    ("CC-1274", "html"),
+    ("CC-1275", "html"),
+    ("CC-1276", "html"),
+    ("CC-1277", "html"),
+    ("CC-1278", "html"),
+    ("CC-1279", "html"),
+    ("CC-1283", "html"),
+    ("CC-1284", "html"),
+    ("CC-1286", "html"),
 ];
+
+/// A case with extensions or a host runs through the JSON boundary in
+/// `api_standard.rs`, not through the core calls of this gate.
+fn through_host(c: &Value) -> bool {
+    c.get("host").is_some() || c["options"].get("extensions").is_some()
+}
 
 /// C2-T-005: operations outside this core gate.
 const LATER: &[&str] = &[
@@ -75,6 +78,18 @@ pub fn options(v: &Value, files: Option<&Value>) -> Options {
     }
     if let Some(p) = v["profile"].as_str().and_then(Profile::from_name) {
         o.profile = p;
+    }
+    if let Some(s) = v["softBreak"].as_str().and_then(SoftBreak::from_name) {
+        o.soft_break = s;
+    }
+    if let Some(codes) = v["allowLosses"].as_array() {
+        o.allow_losses = codes
+            .iter()
+            .filter_map(|c| c.as_str().map(str::to_owned))
+            .collect();
+    }
+    if let Some(n) = v["maxLosses"].as_u64() {
+        o.max_losses = usize::try_from(n).unwrap_or(usize::MAX);
     }
     for (key, slot) in [
         ("sourceLines", &mut o.source_lines),
@@ -301,7 +316,7 @@ fn c2_conformance_clause_cases() {
     let corpus = load("clause-cases.json");
     let mut run = run();
     for c in corpus["cases"].as_array().into_iter().flatten() {
-        if c["kind"].as_str().is_some_and(|kind| LATER.contains(&kind)) {
+        if c["kind"].as_str().is_some_and(|kind| LATER.contains(&kind)) || through_host(c) {
             continue;
         }
         let id = c["id"].as_str().unwrap_or("");
@@ -417,7 +432,7 @@ fn c2_t_005_parse_and_render_clause_diagnostics() {
     let mut run = run();
     for c in corpus["cases"].as_array().into_iter().flatten() {
         let kind = c["kind"].as_str().unwrap_or("render");
-        if kind != "parse" && kind != "render" {
+        if kind != "parse" && kind != "render" || through_host(c) {
             continue;
         }
         if c["expected"].get("refusal").is_some() {
