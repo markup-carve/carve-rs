@@ -644,6 +644,28 @@ fn tabs_wrapper(node: &Value, cx: &super::RenderContext<'_>, aria: bool, label: 
     wrapper
 }
 
+fn selected_tab(tabs: &[Value]) -> usize {
+    tabs.iter()
+        .position(|t| {
+            at(t, "/attrs/keyValues")
+                .as_array()
+                .is_some_and(|kv| kv.iter().any(|p| p.get(0).is_some_and(|k| k == "selected")))
+        })
+        .unwrap_or(0)
+}
+
+fn tab_label_html(
+    title: &[Value],
+    name: &str,
+    cx: &super::RenderContext<'_>,
+) -> Result<String, Error> {
+    if title.is_empty() {
+        Ok(cx.escape(name))
+    } else {
+        cx.render_inlines(&Value::Array(title.to_vec()))
+    }
+}
+
 /// The standard tabs renderer: radio controls in `interactive` mode
 /// (C2-X-043 to C2-X-048), sections in `static` mode (C2-X-056, ruling D6).
 pub(crate) fn render_tabs(
@@ -678,33 +700,19 @@ pub(crate) fn render_tabs(
             (title, name)
         })
         .collect();
-    let label_html = |title: &[Value], name: &str| -> Result<String, Error> {
-        if title.is_empty() {
-            Ok(cx.escape(name))
-        } else {
-            cx.render_inlines(&Value::Array(title.to_vec()))
-        }
-    };
     if cx.mode() == crate::options::Mode::Static {
         for (tab, (title, name)) in tabs.iter().zip(&titles) {
             let _ = write!(
                 out,
                 r#"<section class="tabs-panel"><h3 class="tabs-label">{}</h3>{}</section>"#,
-                label_html(title, name)?,
+                tab_label_html(title, name, cx)?,
                 cx.render_blocks(at(tab, "/slots/body"))?
             );
         }
         out.push_str("</div>");
         return Ok(out);
     }
-    let selected = tabs
-        .iter()
-        .position(|t| {
-            at(t, "/attrs/keyValues")
-                .as_array()
-                .is_some_and(|kv| kv.iter().any(|p| p.get(0).is_some_and(|k| k == "selected")))
-        })
-        .unwrap_or(0);
+    let selected = selected_tab(&tabs);
     let group = group();
     let mut panels = String::new();
     for (i, (tab, (title, name))) in tabs.iter().zip(&titles).enumerate() {
@@ -720,7 +728,7 @@ pub(crate) fn render_tabs(
                 } else {
                     " tabindex=\"-1\""
                 },
-                label_html(title, name)?
+                tab_label_html(title, name, cx)?
             );
             let _ = write!(
                 panels,
@@ -733,7 +741,7 @@ pub(crate) fn render_tabs(
                 out,
                 r#"<input type="radio" name="{group}" id="{id}"{}><label for="{id}">{}</label>"#,
                 if i == selected { " checked" } else { "" },
-                label_html(title, name)?
+                tab_label_html(title, name, cx)?
             );
             let _ = write!(
                 panels,
