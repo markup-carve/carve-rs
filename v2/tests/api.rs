@@ -216,7 +216,6 @@ fn calls_this_engine_lacks_are_unsupported() {
     let w = WriteOptions::default();
     for err in [
         api::parse_with_layout("x", &opts()).unwrap_err(),
-        api::import_document("<p>x</p>", &opts()).unwrap_err(),
         api::migrate_tree(&json!({})).unwrap_err(),
         carve.write(&tree, &w).unwrap_err(),
         carve.write_with_diagnostics(&tree, &w).unwrap_err(),
@@ -226,6 +225,7 @@ fn calls_this_engine_lacks_are_unsupported() {
         assert!(matches!(err, Error::Unsupported { .. }), "{err}");
         assert_eq!(err.category(), "usage");
     }
+    assert!(api::import_document("<p>x</p>", &api::ImportOptions::default()).is_ok());
 }
 
 struct Upper;

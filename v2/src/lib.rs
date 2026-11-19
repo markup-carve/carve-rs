@@ -53,6 +53,7 @@ mod fast_plain;
 pub mod hash;
 #[doc(hidden)]
 pub mod html;
+mod import;
 #[doc(hidden)]
 pub mod include;
 #[doc(hidden)]

@@ -23,7 +23,7 @@
 //! | `format`, `formatWithDiagnostics` | [`Carve::format`], [`Carve::format_with_diagnostics`] |
 //! | `write`, `writeWithDiagnostics` | [`Carve::write`], [`Carve::write_with_diagnostics`], [`Carve::write_to`] |
 //! | `lint` | [`lint`] |
-//! | `importDocument` | [`import_document`] (not yet available) |
+//! | `importDocument` | [`import_document`] |
 //! | `includeDependencies` | [`include_dependencies`] |
 //! | `encodeTree`, `encodeEnvelope` | [`encode_tree`], [`encode_tree_with`], [`encode_envelope`] |
 //! | `decodeTree`, `validateTree` | [`decode_tree`], [`validate_tree`] |
@@ -31,6 +31,7 @@
 
 mod error;
 pub mod extension;
+mod import;
 pub mod json;
 mod options;
 mod record;
@@ -52,6 +53,7 @@ pub use error::Error;
 pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
 };
+pub use import::{ImportOptions, Imported, import_document};
 pub use record::{Entry, Range};
 pub use writer::{HtmlWriter, WriteOptions, Writer, Writers, Written};
 
@@ -664,18 +666,6 @@ pub fn lint<'a>(input: impl Into<Input<'a>>, opts: &LintOptions) -> Result<Vec<E
         .collect();
     input.remap(&mut entries);
     Ok(entries)
-}
-
-/// `importDocument` (C2-M-001): not available in this engine yet.
-///
-/// # Errors
-///
-/// Always [`Error::Unsupported`].
-pub fn import_document(html: &str, opts: &Options) -> Result<Tree, Error> {
-    let _ = (html, opts);
-    Err(Error::Unsupported {
-        call: "importDocument",
-    })
 }
 
 /// `includeDependencies`: the include nodes of an expanded tree in tree
