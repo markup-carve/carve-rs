@@ -351,29 +351,25 @@ impl Table<'_> {
             };
             let _ = write!(open, r#" scope="{scope}""#);
         }
+        open.push_str(&self.cell_attributes(cell, col, cx));
+        Ok(format!("{open}>{}</{tag}>", cell_content(&cell.item, cx)?))
+    }
+
+    /// The spans, the authored attributes and the alignment style of a cell.
+    fn cell_attributes(&self, cell: &Cell, col: usize, cx: &RenderContext<'_>) -> String {
+        let mut open = String::new();
         if cell.rowspan > 1 {
             let _ = write!(open, r#" rowspan="{}""#, cell.rowspan);
         }
         if cell.colspan > 1 {
             let _ = write!(open, r#" colspan="{}""#, cell.colspan);
         }
-        open.push_str(&author_attrs(own, CELL_KEYS, cx));
+        open.push_str(&author_attrs(cell.item.get("attrs"), CELL_KEYS, cx));
         let style = self.cell_style(cell, col);
         if !style.is_empty() {
             let _ = write!(open, r#" style="{}""#, cx.escape_attribute(&style));
         }
-        let blocks = children(&cell.item);
-        let content = match blocks {
-            [para] if is(Some(para), "paragraph") => {
-                cx.render_inlines(para.get("children").unwrap_or(&json!([])))?
-            }
-            _ => blocks
-                .iter()
-                .map(|b| cx.render_blocks(&json!([b])))
-                .collect::<Result<Vec<_>, _>>()?
-                .join("\n"),
-        };
-        Ok(format!("{open}>{content}</{tag}>"))
+        open
     }
 
     fn row(&self, row: usize, cx: &RenderContext<'_>) -> Result<String, Error> {
@@ -440,6 +436,46 @@ fn columns(attrs: Option<&Value>, cx: &RenderContext<'_>) -> String {
     format!("  <colgroup>\n{cols}\n  </colgroup>\n")
 }
 
+/// A cell with one paragraph writes its inlines; any other body its blocks.
+fn cell_content(item: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+    let blocks = children(item);
+    if let [para] = blocks {
+        if is(Some(para), "paragraph") {
+            return cx.render_inlines(para.get("children").unwrap_or(&json!([])));
+        }
+    }
+    Ok(blocks
+        .iter()
+        .map(|b| cx.render_blocks(&json!([b])))
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n"))
+}
+
+/// The cells of each row and whether the row is a header row; `None` when a
+/// row is not a list.
+fn extract(list: &Value) -> Option<(Vec<Vec<Cell>>, Vec<bool>)> {
+    let mut rows = Vec::new();
+    let mut row_heads = Vec::new();
+    for row in children(list) {
+        let items = row_cells(row)?;
+        row_heads
+            .push(attr_value(items.first().and_then(|i| i.get("attrs")), "header-row").is_some());
+        rows.push(
+            items
+                .into_iter()
+                .map(|item| Cell {
+                    mark: mark(&item),
+                    item,
+                    rowspan: 1,
+                    colspan: 1,
+                    skip: false,
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+    Some((rows, row_heads))
+}
+
 struct ListTable;
 
 impl ListTable {
@@ -450,28 +486,9 @@ impl ListTable {
         else {
             return Ok(None);
         };
-        let mut rows = Vec::new();
-        let mut row_heads = Vec::new();
-        for row in children(list) {
-            let Some(items) = row_cells(row) else {
-                return Ok(None);
-            };
-            row_heads.push(
-                attr_value(items.first().and_then(|i| i.get("attrs")), "header-row").is_some(),
-            );
-            rows.push(
-                items
-                    .into_iter()
-                    .map(|item| Cell {
-                        mark: mark(&item),
-                        item,
-                        rowspan: 1,
-                        colspan: 1,
-                        skip: false,
-                    })
-                    .collect::<Vec<_>>(),
-            );
-        }
+        let Some((mut rows, row_heads)) = extract(list) else {
+            return Ok(None);
+        };
         let attrs = node.get("attrs");
         let count = rows.len();
         let head = header_count(attrs, "header-rows").min(count);
