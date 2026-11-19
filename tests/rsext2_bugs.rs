@@ -72,3 +72,32 @@ fn extensions_and_includes_combine() {
         assert_eq!(out["diagnostics"], json!([]), "{extensions}");
     }
 }
+
+#[test]
+fn an_authored_title_on_a_nested_semantic_span_stays_on_the_outermost_element() {
+    for (source, expected) in [
+        (
+            "[x]{abbr=A kbd title=T}",
+            "<p><kbd title=\"T\"><abbr title=\"A\">x</abbr></kbd></p>",
+        ),
+        (
+            "[x]{time=2020 abbr=A title=T datetime=D}",
+            "<p><time title=\"T\" datetime=\"D\"><abbr title=\"A\">x</abbr></time></p>",
+        ),
+        (
+            "[x]{abbr=A data-x=1 title=T}",
+            "<p><abbr data-x=\"1\" title=\"T\">x</abbr></p>",
+        ),
+        ("[x]{abbr=A Title=T}", "<p><abbr Title=\"T\">x</abbr></p>"),
+        (
+            "[x]{data-x=1 abbr=A}",
+            "<p><abbr title=\"A\" data-x=\"1\">x</abbr></p>",
+        ),
+    ] {
+        assert_eq!(
+            ok(&json!({"call": "render", "source": source}))["html"],
+            expected,
+            "{source}"
+        );
+    }
+}

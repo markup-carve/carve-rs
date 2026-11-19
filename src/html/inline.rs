@@ -547,30 +547,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-075, C2-H-099, C2-H-175.
     fn span(&mut self, s: &'r ast::Span<'a>, out: &mut String) {
-        let (abbr, time, kbd) = (
-            span_value(s, "abbr", true),
-            span_value(s, "time", true),
-            span_value(s, "kbd", true),
-        );
-        let mut layers: Vec<(&'static str, Option<(&'static str, String)>)> = Vec::new();
-        if let Some(v) = abbr.as_ref() {
-            // Gap HTML-010: emptiness is tested before the value filter, as the oracle does.
-            let title =
-                span_value(s, "title", false).or_else(|| (!v.is_empty()).then(|| v.clone()));
-            layers.push(("abbr", title.map(|t| ("title", t))));
-        }
-        if let Some(v) = time.as_ref() {
-            layers.push((
-                "time",
-                span_value(s, "datetime", false)
-                    .or_else(|| (!v.is_empty()).then(|| v.clone()))
-                    .map(|value| ("datetime", value)),
-            ));
-        }
-        layers.extend(kbd.as_ref().map(|_| ("kbd", None)));
+        const KEYS: [(&str, Option<&str>); 3] = [
+            ("abbr", Some("title")),
+            ("time", Some("datetime")),
+            ("kbd", None),
+        ];
+        let found: Vec<(&'static str, Option<&'static str>, String)> = KEYS
+            .iter()
+            .filter_map(|&(key, target)| span_value(s, key, true).map(|v| (key, target, v)))
+            .collect();
         let mut el = El::new(s.attrs, s.lang).with_dir(s.dir);
         el.skip_exact_keys = &["abbr", "time", "kbd"];
-        let Some((outer, rest)) = layers.split_last() else {
+        let Some(((outer, target, value), inner)) = found.split_last() else {
             out.push_str("<span");
             el.write_into(self.filter(), out);
             out.push('>');
@@ -578,36 +566,35 @@ impl<'r, 'a> Renderer<'r, 'a> {
             out.push_str("</span>");
             return;
         };
-        if let Some((k, v)) = &outer.1 {
-            el.structural.push((k, Some(v.clone().into())));
-            el.skip_keys = if *k == "title" {
-                &["title"]
-            } else {
-                &["datetime"]
-            };
+        // Gap HTML-010: emptiness is tested before the value filter, as the oracle does.
+        // The authored key is a remaining attribute of the outermost element and wins there.
+        if let Some(t) = target
+            && !value.is_empty()
+            && span_value(s, t, false).is_none()
+        {
+            el.structural.push((t, Some(value.clone().into())));
         }
-        if abbr.is_some() && time.is_some() {
-            el.skip_keys = &["title", "datetime"];
-        }
-        let _ = write!(out, "<{}{}>", outer.0, el.write(self.filter()));
-        for (tag, a) in rest.iter().rev() {
+        let _ = write!(out, "<{outer}{}>", el.write(self.filter()));
+        for (tag, target, value) in inner.iter().rev() {
             out.push('<');
             out.push_str(tag);
-            if let Some((k, v)) = a {
-                let _ = write!(out, " {k}=\"{}\"", attr_str(v));
+            if let Some(t) = target
+                && !value.is_empty()
+            {
+                let _ = write!(out, " {t}=\"{}\"", attr_str(value));
             }
             out.push('>');
         }
-        let abbr_layer = usize::from(abbr.is_some());
+        let abbr_layer = usize::from(found.first().is_some_and(|f| f.0 == "abbr"));
         self.in_abbr += abbr_layer;
         self.inlines(&*s.children, out);
         self.in_abbr -= abbr_layer;
-        for (tag, _) in rest {
+        for (tag, _, _) in inner {
             out.push_str("</");
             out.push_str(tag);
             out.push('>');
         }
-        let _ = write!(out, "</{}>", outer.0);
+        let _ = write!(out, "</{outer}>");
     }
 
     /// C2-H-072, C2-H-151, C2-H-168.
