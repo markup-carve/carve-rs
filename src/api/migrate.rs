@@ -887,7 +887,7 @@ pub fn migrate_tree_with(json: &Value, opts: &MigrateOptions) -> Result<Migrated
     let parsed;
     let input = match json {
         Value::String(text) => {
-            parsed = crate::api::deep_json(text).map_err(|e| refuse(e.to_string()))?;
+            parsed = serde_json::from_str::<Value>(text).map_err(|e| refuse(e.to_string()))?;
             &parsed
         }
         other => other,
