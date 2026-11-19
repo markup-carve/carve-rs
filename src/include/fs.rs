@@ -21,6 +21,16 @@ pub enum RootError {
 ///
 /// [`RootError`] for a relative root or one that cannot be canonicalized.
 pub fn resolver(root: &Path) -> Result<Resolver, RootError> {
+    resolver_with(root, true)
+}
+
+/// A contained file resolver. With `allow_absolute` off, absolute include
+/// paths are refused before the file system is consulted (C2-N-012).
+///
+/// # Errors
+///
+/// [`RootError`] for a relative or unreadable root.
+pub fn resolver_with(root: &Path, allow_absolute: bool) -> Result<Resolver, RootError> {
     if !root.is_absolute() {
         return Err(RootError::NotAbsolute);
     }
@@ -28,7 +38,9 @@ pub fn resolver(root: &Path) -> Result<Resolver, RootError> {
     if !std::fs::metadata(&root).is_ok_and(|m| m.is_dir()) {
         return Err(RootError::Unreadable);
     }
-    Ok(Arc::new(move |r: &Request<'_>| read(&root, r)))
+    Ok(Arc::new(move |r: &Request<'_>| {
+        read(&root, r, allow_absolute)
+    }))
 }
 
 /// C2-N-012: a path that starts with a URI scheme, letters and `:` before any `/`.
@@ -134,8 +146,11 @@ fn lexical(path: &Path) -> PathBuf {
     out
 }
 
-fn read(root: &Path, r: &Request<'_>) -> Result<(Vec<u8>, String), Cause> {
-    if has_scheme(r.path) || r.path.is_empty() {
+fn read(root: &Path, r: &Request<'_>, allow_absolute: bool) -> Result<(Vec<u8>, String), Cause> {
+    if has_scheme(r.path)
+        || r.path.is_empty()
+        || (!allow_absolute && Path::new(r.path).is_absolute())
+    {
         return Err(Cause::OutsideRoot);
     }
     let base = r.from.map_or_else(
