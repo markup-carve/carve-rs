@@ -48,7 +48,7 @@ fn candidate18_cli_clause_cases() {
         let want = &case["expected"];
         assert_eq!(
             out.status.code(),
-            want["status"].as_i64().map(|n| n as i32),
+            want["status"].as_i64().map(|n| i32::try_from(n).unwrap()),
             "{id}: status"
         );
         let stdout = String::from_utf8(out.stdout).unwrap();
