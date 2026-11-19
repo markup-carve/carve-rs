@@ -90,7 +90,57 @@ The 0.1 Markdown, plain-text and ANSI writers are coming to 0.2 (maintainer ruli
 
 ## Extensions (provisional)
 
-`api::extension` names what a host registers under `extensions.md`: an `ExtensionDeclaration`, renderers per `Channel` (interactive or build time, C2-X-052) and a `DocumentTransform` (C2-X-053). This engine does not run host renderers or transforms yet, so `Carve::register_extension` returns `Error::Unsupported`. These types may change before 0.2 is final.
+`api::extension` is the extension host of `extensions.md`. A host registers an `Extension`: its `ExtensionDeclaration`, renderers per `Channel` and an optional `DocumentTransform`. The types may change before 0.2 is final.
+
+```rust
+use carve2::api::{self, Carve, Channel, Error, Extension, ExtensionDeclaration, Options, RenderContext, Renderer};
+use serde_json::Value;
+
+struct Note;
+
+impl Renderer for Note {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        Ok(format!("<aside>{}</aside>", cx.render_blocks(&node["slots"]["body"])?))
+    }
+}
+
+let mut carve = Carve::new();
+carve.register_extension(Extension {
+    declaration: ExtensionDeclaration {
+        name: "ex.note".into(),
+        version: "1".into(),
+        required: false,
+        slots: vec!["body".into()],
+    },
+    renderers: vec![(Channel::Interactive, Box::new(Note))],
+    transform: None,
+})?;
+let tree = api::decode_tree(r#"{"type":"document","astVersion":"2.0",
+  "extensions":[{"name":"ex.note","version":"1","required":false,"slots":["body"]}],
+  "children":[{"type":"block_extension","name":"ex.note","version":"1","children":[],
+    "slots":{"body":[{"type":"paragraph","children":[{"type":"text","value":"Hi"}]}]},
+    "fallback":[{"type":"paragraph","children":[{"type":"text","value":"Hi"}]}]}]}"#)?;
+assert_eq!(carve.render_tree(&tree, &Options::default())?, "<aside><p>Hi</p></aside>");
+# Ok::<(), carve2::api::Error>(())
+```
+
+The render calls of a host with extensions (`Carve::render`, `render_with_diagnostics`, `render_tree`, `render_tree_with_diagnostics`) work in this order:
+
+1. The document transforms run in registration order, each on a copy of the resolved view, and each sees the result of the one before (C2-X-053). A transform whose view gives an authored id to a second node fails (C2-X-055).
+2. Each qualified extension node is rendered by the renderer of the channel that `Options::mode` selects: `Channel::Interactive` for `interactive`, `Channel::BuildTime` for `static` (C2-X-052). With no renderer in that channel the fallback is written and `extension-fallback-rendered` reported (C2-X-035).
+3. A failing transform keeps its input view and reports `extension-transform-failed`; a failing renderer writes the fallback and reports `extension-renderer-failed`. Both entries name the extension (C2-X-050).
+
+A renderer receives the node as its JSON value and a `RenderContext` with the options, the mode, `escape`, `escape_attribute`, `render_blocks` and `render_inlines`. With no extension registered the host methods are the free functions, so the output does not change.
+
+Over JSON, `host.documentTransforms` registers transforms that need no host code: each `{"name", "after", "insert"}` inserts the node `insert` after the node at the JSON pointer `after`. This is the form of the conformance host:
+
+```json
+{"call": "render", "tree": {...}, "host": {"documentTransforms": [
+  {"name": "sample.insert", "after": "/children/0", "insert": {"type": "block_extension", "name": "sample.insert", "version": "1", "children": [], "fallback": [...]}}
+]}}
+```
+
+The standard `carve.tabs` extension (C2-X-039) has no matcher or renderer in this engine yet, so the options `extensions` and `renderers` still take only their empty defaults.
 
 ## Bindings and the JSON boundary
 
@@ -162,5 +212,7 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 - `tooling.md` gives `parse` a `positions` parameter. Here the tree in memory always carries positions, and `encode_tree_with(..., EncodeOptions { positions: false })` and the JSON request field `positions` drop them on output.
 - `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`, or set with `Tree::set_file` on a decoded tree.
 - On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
-- The engine does not yet implement `parseWithLayout`, `importDocument`, `migrateTree`, the Carve writer (`format`, `write`) or the extension host. Each returns `Error::Unsupported`.
+- The engine does not yet implement `parseWithLayout`, `importDocument`, `migrateTree` or the Carve writer (`format`, `write`). Each returns `Error::Unsupported`.
+- Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The `host.attributes` and generated-id helpers of C2-X-033 are not offered, and the claim ownership of C2-X-054 is not tracked.
+- Include resolver on WASI preview 1 and Windows: Rust has no stable identity of an open file there, so the resolver checks after the open that the target still canonicalizes to itself inside the root and has the type, length and modification time of the opened file.
 - The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.
