@@ -222,6 +222,15 @@ fn c2_x_050_a_failing_renderer_writes_the_fallback() {
     };
     let err = carve.render_tree(&boxed_tree(), &strict).unwrap_err();
     assert!(matches!(err, Error::Render { .. }));
+    let diagnostic = carve
+        .render_tree_with_diagnostics(&boxed_tree(), &strict)
+        .unwrap();
+    assert_eq!(diagnostic.html, "");
+    assert!(
+        diagnostic.diagnostics.iter().any(|entry| {
+            entry.code == "extension-renderer-failed" && entry.severity == "error"
+        })
+    );
 }
 
 #[test]

@@ -52,7 +52,7 @@ fn render_with_diagnostics_reports_parse_entries() {
 }
 
 #[test]
-fn strict_losses_is_a_render_error() {
+fn strict_losses_refuse_source_render_but_return_a_diagnostic_record() {
     let o = Options {
         profile: Profile::Minimal,
         strict_losses: true,
@@ -62,8 +62,46 @@ fn strict_losses_is_a_render_error() {
     assert!(matches!(&err, Error::Render { codes } if !codes.is_empty()));
     assert_eq!(err.category(), "render-loss");
     assert_eq!(err.status(), 1);
+    let diagnostic = api::render_with_diagnostics("# Heading", &o).unwrap();
+    assert_eq!(diagnostic.html, "");
+    assert_eq!(diagnostic.suppressed_diagnostics, 0);
+    assert!(
+        diagnostic
+            .diagnostics
+            .iter()
+            .any(|entry| { entry.channel == "render-loss" && entry.severity == "error" })
+    );
+}
+
+#[test]
+fn strict_diagnostic_render_keeps_unallowed_losses_and_counts_capped_losses() {
+    let source = "[a](javascript:x)\n\nb `c`{=latex}\n";
+    let o = Options {
+        strict_losses: true,
+        allow_losses: vec!["destination-denied".into()],
+        ..opts()
+    };
+    let result = api::render_with_diagnostics(source, &o).unwrap();
+    assert_eq!(result.html, "");
+    assert_eq!(result.suppressed_diagnostics, 0);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|entry| { entry.code == "raw-format-dropped" && entry.severity == "error" })
+    );
+
+    let capped = Options {
+        strict_losses: true,
+        max_losses: 0,
+        ..opts()
+    };
+    let result = api::render_with_diagnostics("[a](javascript:x)\n", &capped).unwrap();
+    assert_eq!(result.html, "");
+    assert_eq!(result.suppressed_diagnostics, 1);
+    assert_eq!(result.diagnostics.len(), 0);
     assert!(matches!(
-        api::render_with_diagnostics("# Heading", &o),
+        api::render("[a](javascript:x)\n", &capped),
         Err(Error::Render { .. })
     ));
 }
@@ -280,6 +318,26 @@ fn the_html_writer_renders_the_tree() {
             .to_string()
             .contains("known targets: ansi, carve, html, markdown, plain"),
         "{unknown}"
+    );
+}
+
+#[test]
+fn the_html_writer_reports_strict_render_losses_as_errors() {
+    let tree = api::parse("[a](javascript:x)", &opts()).unwrap();
+    let options = WriteOptions {
+        render: Options {
+            strict_losses: true,
+            ..opts()
+        },
+        ..WriteOptions::default()
+    };
+    let written = Carve::new().write_to("html", &tree, &options).unwrap();
+    assert_eq!(written.output, "");
+    assert!(
+        written
+            .diagnostics
+            .iter()
+            .any(|entry| { entry.code == "destination-denied" && entry.severity == "error" })
     );
 }
 
