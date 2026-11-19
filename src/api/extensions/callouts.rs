@@ -152,7 +152,9 @@ fn slot_has_marker(value: &Value) -> bool {
                     .get("value")
                     .and_then(Value::as_str)
                     .is_some_and(|text| text.split('\n').any(|line| marker(line).is_some())))
-                || map.values().any(slot_has_marker)
+                || map
+                    .iter()
+                    .any(|(key, child)| descends_slot(key) && slot_has_marker(child))
         }
         Value::Array(items) => items.iter().any(slot_has_marker),
         _ => false,
@@ -179,12 +181,21 @@ fn bind_slot(value: &mut Value, depth: usize) {
             }
         }
         Value::Object(map) => {
-            for child in map.values_mut() {
-                bind_slot(child, depth + 1);
+            for (key, child) in map.iter_mut() {
+                if descends_slot(key) {
+                    bind_slot(child, depth + 1);
+                }
             }
         }
         _ => {}
     }
+}
+
+fn descends_slot(key: &str) -> bool {
+    !matches!(
+        key,
+        "fallback" | "source" | "payload" | "props" | "pos" | "attrs" | "data"
+    )
 }
 
 fn bind_tree(nodes: &mut Vec<Node>, depth: usize) {
@@ -330,5 +341,34 @@ pub fn code_callouts() -> Bundle {
         ],
         host: super::HostFields::default(),
         matchers: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slot_transform_skips_fallback_and_metadata() {
+        let code = json!({"type": "code_block", "value": "x <1>"});
+        let mut slots = json!({"body": [{
+            "type": "block_extension", "name": "sample.outer", "version": "1",
+            "children": [], "fallback": [code.clone()],
+            "props": {"shadow": code.clone()},
+            "slots": {"nested": [code]}
+        }]});
+        bind_slot(&mut slots, 0);
+        assert_eq!(
+            slots.pointer("/body/0/fallback/0/type"),
+            Some(&json!("code_block"))
+        );
+        assert_eq!(
+            slots.pointer("/body/0/props/shadow/type"),
+            Some(&json!("code_block"))
+        );
+        assert_eq!(
+            slots.pointer("/body/0/slots/nested/0/type"),
+            Some(&json!("block_extension"))
+        );
     }
 }
