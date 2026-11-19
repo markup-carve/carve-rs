@@ -242,7 +242,9 @@ fn apparatus_standard(name: &str) -> Option<Bundle> {
     match name {
         "carve.glossary" | "carve.term" => Some(glossary()),
         "carve.index" | "carve.indexTerm" => Some(index(IndexOptions::default())),
-        "carve.cite" | "carve.references" => Some(citations(CitationsOptions::default())),
+        // The named carve.cite path is the C2-X-058 core-text matcher.
+        // The full citation bundle is registered explicitly or by references.
+        "carve.references" => Some(citations(CitationsOptions::default())),
         _ => None,
     }
 }
