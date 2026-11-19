@@ -14,7 +14,6 @@ struct Item<'a> {
     node: &'a Value,
     path: String,
     parents: Vec<String>,
-    description_content_column: Option<usize>,
 }
 
 struct Sink<'a> {
@@ -77,47 +76,29 @@ fn bounds(node: &Value) -> Option<(usize, usize)> {
 
 fn collect(root: &Value) -> Vec<Item<'_>> {
     let mut out = Vec::new();
-    let mut pending = vec![(root, String::new(), Vec::<String>::new(), None)];
-    while let Some((value, path, parents, description_content_column)) = pending.pop() {
+    let mut pending = vec![(root, String::new(), Vec::<String>::new())];
+    while let Some((value, path, parents)) = pending.pop() {
         match value {
             Value::Object(map) => {
                 let mut next = parents;
-                let mut child_description_column = description_content_column;
                 if let Some(kind) = value["type"].as_str() {
                     out.push(Item {
                         node: value,
                         path: path.clone(),
                         parents: next.clone(),
-                        description_content_column,
                     });
                     next.push(kind.to_string());
-                    if kind == "definition_description" {
-                        child_description_column = value
-                            .pointer("/pos/startColumn")
-                            .and_then(Value::as_u64)
-                            .and_then(|column| usize::try_from(column + 1).ok());
-                    }
                 }
                 for (key, child) in map {
                     if matches!(key.as_str(), "data" | "props" | "pos" | "segments") {
                         continue;
                     }
-                    pending.push((
-                        child,
-                        format!("{path}/{key}"),
-                        next.clone(),
-                        child_description_column,
-                    ));
+                    pending.push((child, format!("{path}/{key}"), next.clone()));
                 }
             }
             Value::Array(items) => {
                 for (index, child) in items.iter().enumerate() {
-                    pending.push((
-                        child,
-                        format!("{path}/{index}"),
-                        parents.clone(),
-                        description_content_column,
-                    ));
+                    pending.push((child, format!("{path}/{index}"), parents.clone()));
                 }
             }
             _ => {}
@@ -254,7 +235,7 @@ fn ids(items: &[Item<'_>]) -> HashSet<String> {
 }
 
 fn check_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
-    overindented_opener(item, sink);
+    overindented_opener(item, root, sink);
     list_item_opener_overindented(item, root, sink);
     semantic(item, sink);
     check_block_node(item, ids, root, sink);
@@ -313,7 +294,7 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
     }
 }
 
-fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
+fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     if item.parents.iter().any(|parent| parent == "list_item") {
         return;
     }
@@ -322,7 +303,7 @@ fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
         "heading" => "heading",
         "definition_term" => "term",
         "div" | "admonition" | "directive" => "div",
-        "code_block" => "code fence",
+        "code_block" | "raw_block" => "code fence",
         "line_block" => "line block",
         "thematic_break" => "thematic break",
         "table" => "table row",
@@ -349,18 +330,39 @@ fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
     if marker == 0 || kind == "code fence" && marker < 3 {
         return;
     }
+    let mut parent_path = item.path.as_str();
+    let mut content_owner = None;
+    while let Some((parent, _)) = parent_path.rsplit_once("/children/") {
+        parent_path = parent;
+        let Some(node) = root.pointer(parent) else {
+            break;
+        };
+        let owner = match node["type"].as_str() {
+            Some("definition_description") => "a description",
+            Some("footnote") => "a footnote body",
+            _ => continue,
+        };
+        if let Some(column) = field(node, "/children/0/pos/startColumn").as_u64() {
+            let start_line = field(node, "/pos/startLine").as_u64().unwrap_or(0);
+            content_owner = Some((owner, column.saturating_sub(1) as usize, start_line));
+            break;
+        }
+    }
     let quote = item
         .parents
         .iter()
         .rposition(|parent| parent == "block_quote");
-    let description = item
+    let content_parent = item
         .parents
         .iter()
-        .rposition(|parent| parent == "definition_description");
-    let (owner, standard) = if let Some(column) = item.description_content_column
-        && description > quote
+        .rposition(|parent| matches!(parent.as_str(), "definition_description" | "footnote"));
+    let (owner, standard) = if let Some((owner, column, start_line)) = content_owner
+        && content_parent > quote
     {
-        ("a description", column)
+        if field(item.node, "/pos/startLine").as_u64() == Some(start_line) {
+            return;
+        }
+        (owner, column)
     } else if quote.is_some() {
         ("a quote", prefix.rfind('>').map_or(0, |at| at + 2))
     } else if item.parents.iter().any(|parent| {
@@ -370,27 +372,27 @@ fn overindented_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
         )
     }) {
         ("a div", 0)
-    } else if item
-        .parents
-        .iter()
-        .any(|parent| parent == "footnote_definition")
-    {
-        ("a footnote body", 0)
     } else {
         ("document", 0)
     };
-    if prefix.len() <= standard
+    let column = prefix.chars().fold(
+        0,
+        |at, ch| {
+            if ch == '\t' { at + 4 - at % 4 } else { at + 1 }
+        },
+    );
+    if column <= standard
         || !prefix
-            .get(standard..)
-            .is_some_and(|rest| rest.bytes().all(|byte| matches!(byte, b' ' | b'\t')))
+            .chars()
+            .all(|ch| matches!(ch, ' ' | '\t' | ':' | '[' | '^' | ']' | '>'))
     {
         return;
     }
-    let past = prefix.len() - standard;
+    let past = column - standard;
     sink.emit_range(
         "block-opener-overindented",
         from,
-        from + marker,
+        from + if kind == "code fence" { 1 } else { marker },
         &item.path,
         &[
             ("kind", kind),

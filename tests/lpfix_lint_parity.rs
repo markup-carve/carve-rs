@@ -125,3 +125,30 @@ fn empty_definition_after_quote_marker_is_reported() {
         vec![(2, 6)]
     );
 }
+
+#[test]
+fn opener_indent_uses_the_container_content_column_and_tab_stops() {
+    for source in [
+        "[^n]: a\n\n      > q\n",
+        ":: term\n:   > a\n",
+        ":: term\n:  :: word\n",
+        "[^n]: :::\n == H ##\n",
+    ] {
+        assert!(
+            spans(source, "block-opener-overindented").is_empty(),
+            "{source:?}"
+        );
+    }
+    assert_eq!(
+        spans(":: a\n: key\n\n\t:: term\n", "block-opener-overindented"),
+        vec![(13, 15)]
+    );
+    assert_eq!(
+        spans("  ````=html\n", "block-opener-overindented"),
+        vec![(2, 3)]
+    );
+    assert_eq!(
+        spans("   ```=html\n", "block-opener-overindented"),
+        vec![(3, 4)]
+    );
+}
