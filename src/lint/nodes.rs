@@ -1,6 +1,6 @@
 //! Checks tied to parsed nodes and their source positions (C2-W-107).
 
-use super::{LintOptions, active, parse_tree_value};
+use super::{LintOptions, active, drop_replaced, parse_tree_value};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use serde_json::Value;
@@ -21,6 +21,7 @@ struct Sink<'a> {
     positions: Source<'a>,
     options: &'a LintOptions,
     output: &'a mut Vec<Diagnostic>,
+    replacing: Vec<usize>,
 }
 
 impl Sink<'_> {
@@ -50,13 +51,9 @@ impl Sink<'_> {
             return;
         }
         let pos = self.positions.pos(from, to);
-        self.output.retain(|d| {
-            !(code != "table-attribute-invalid"
-                && d.code == code
-                && d.pos.is_some_and(|other| {
-                    other.start_offset < pos.end_offset && pos.start_offset < other.end_offset
-                }))
-        });
+        if code != "table-attribute-invalid" {
+            self.replacing.push(self.output.len());
+        }
         let mut finding = Diagnostic::nth(code, message, values, None, Some(pos));
         finding.path = Some(path.to_string());
         self.output.push(finding);
@@ -122,9 +119,11 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
         positions: Source::new(source),
         options,
         output,
+        replacing: Vec::new(),
     };
     let ids = ids(&items);
     let targets = id_targets(&items);
+    let targets = TargetIndex::new(&targets);
     for item in &items {
         check_node(item, &ids, &tree, &mut sink);
         if item.node["type"] == "xref" {
@@ -132,6 +131,7 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
         }
     }
     check_document(&items, &mut sink);
+    drop_replaced(sink.output, &sink.replacing);
 }
 
 struct IdTarget<'a> {
@@ -168,22 +168,41 @@ fn id_targets<'a>(items: &'a [Item<'a>]) -> Vec<IdTarget<'a>> {
         .collect()
 }
 
-fn crossref(item: &Item<'_>, targets: &[IdTarget<'_>], sink: &mut Sink<'_>) {
+/// The first target of each id, and of each ASCII-folded id among the eligible ones.
+struct TargetIndex<'a, 't> {
+    exact: HashMap<&'a str, &'t IdTarget<'a>>,
+    folded: HashMap<String, &'t IdTarget<'a>>,
+}
+
+impl<'a, 't> TargetIndex<'a, 't> {
+    fn new(targets: &'t [IdTarget<'a>]) -> Self {
+        let mut exact = HashMap::new();
+        let mut folded = HashMap::new();
+        for target in targets {
+            exact.entry(target.id).or_insert(target);
+            if target.eligible {
+                folded
+                    .entry(target.id.to_ascii_lowercase())
+                    .or_insert(target);
+            }
+        }
+        Self { exact, folded }
+    }
+}
+
+fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>) {
     if item.node.get("href").is_some() {
         return;
     }
     let key = item.node["key"].as_str().unwrap_or("");
-    if let Some(target) = targets.iter().find(|target| target.id == key) {
+    if let Some(target) = targets.exact.get(key) {
         sink.emit(
             "broken-crossref",
             item,
             &[("target", key), ("id", target.id), ("kind", target.kind)],
             0,
         );
-    } else if let Some(target) = targets
-        .iter()
-        .find(|target| target.eligible && target.id.eq_ignore_ascii_case(key))
-    {
+    } else if let Some(target) = targets.folded.get(&key.to_ascii_lowercase()) {
         let phrase = format!("the id \"{}\" differs only in case", target.id);
         sink.emit(
             "broken-crossref",

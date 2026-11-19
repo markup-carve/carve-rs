@@ -1,6 +1,6 @@
 //! Lint of source lines after the 0.2 parse has marked paragraphs and opaque spans.
 
-use super::{LintOptions, Range, active};
+use super::{LintOptions, Range, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 
@@ -40,6 +40,7 @@ struct Sink<'a> {
     source: Source<'a>,
     options: &'a LintOptions,
     output: &'a mut Vec<Diagnostic>,
+    replacing: Vec<usize>,
 }
 
 impl Sink<'_> {
@@ -67,14 +68,9 @@ impl Sink<'_> {
             return;
         }
         let pos = self.source.pos(from, to);
-        self.output.retain(|d| {
-            !(d.code == code
-                && d.pos.is_some_and(|p| {
-                    p.start_offset < pos.end_offset && pos.start_offset < p.end_offset
-                }))
-        });
         let mut diagnostic = Diagnostic::nth(code, message, values, None, Some(pos));
         diagnostic.path = Some(path.to_string());
+        self.replacing.push(self.output.len());
         self.output.push(diagnostic);
     }
 
@@ -102,6 +98,7 @@ pub(super) fn scan(
         source: Source::new(source),
         options,
         output,
+        replacing: Vec::new(),
     };
     for (index, line) in lines.iter().enumerate() {
         if line.opacity != Opacity::None {
@@ -113,8 +110,9 @@ pub(super) fn scan(
         let previous = index.checked_sub(1).and_then(|i| lines.get(i));
         markers(line, previous, &mut sink);
         legacy(line, previous, &mut sink);
-        prose(line, previous, &lines, &mut sink);
+        prose(line, index, previous, &lines, &mut sink);
     }
+    drop_replaced(sink.output, &sink.replacing);
 }
 
 fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
@@ -142,35 +140,30 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
-    let mut out = Vec::new();
+    let mut starts = Vec::new();
+    let mut raws = Vec::new();
     let mut start = 0;
     for piece in source.split_inclusive('\n') {
-        let raw = piece.trim_end_matches(['\n', '\r']);
-        let number = out.len() + 1;
-        let paragraph = ranges
-            .iter()
-            .filter(|r| matches!(r.kind.as_str(), "paragraph" | "caption" | "definition_term"))
-            .filter(|r| r.start_line <= number && number <= r.end_line)
-            .max_by_key(|r| (r.kind == "caption", r.path.len()));
-        let opaque = ranges.iter().any(|r| {
-            matches!(r.kind.as_str(), "code_block" | "raw_block" | "frontmatter")
-                && r.start_line <= number
-                && number <= r.end_line
-        });
-        let frontmatter = ranges
-            .iter()
-            .any(|r| r.kind == "frontmatter" && r.start_line <= number && number <= r.end_line);
+        starts.push(start);
+        raws.push(piece.trim_end_matches(['\n', '\r']));
+        start += piece.len();
+    }
+    let count = raws.len();
+    let facts = line_facts(&starts, &raws, ranges);
+    let mut out = Vec::with_capacity(count + 1);
+    let lines = starts.iter().zip(raws).zip(facts);
+    for (index, ((&start, raw), fact)) in lines.enumerate() {
+        let number = index + 1;
+        let paragraph = fact.paragraph;
         let mut bytes = raw.as_bytes().to_vec();
-        for range in ranges.iter().filter(|r| is_opaque_leaf(&r.kind)) {
+        for range in fact.masks {
             let from = range.start.saturating_sub(start).min(bytes.len());
             let to = range.end.saturating_sub(start).min(bytes.len());
-            if range.end > start && range.start < start + bytes.len() {
-                bytes
-                    .get_mut(from..to)
-                    .into_iter()
-                    .flatten()
-                    .for_each(|b| *b = 0);
-            }
+            bytes
+                .get_mut(from..to)
+                .into_iter()
+                .flatten()
+                .for_each(|b| *b = 0);
         }
         out.push(Line {
             text: String::from_utf8_lossy(&bytes).into_owned(),
@@ -181,18 +174,27 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             content_start: paragraph
                 .filter(|range| range.start_line == number)
                 .map(|range| range.start.saturating_sub(start).min(raw.len())),
-            opacity: if frontmatter {
+            opacity: if fact.flags & FRONTMATTER != 0 {
                 Opacity::Frontmatter
-            } else if opaque {
+            } else if fact.flags & OPAQUE != 0 {
                 Opacity::Other
             } else {
                 Opacity::None
             },
             attached_attribute: paragraph
                 .is_some_and(|range| range.has_attrs && range.start_line == number),
-            scope: scope(ranges, number),
+            scope: Scope {
+                in_footnote: fact.flags & FOOTNOTE != 0,
+                in_description: fact.flags & DESCRIPTION != 0,
+                container: if fact.flags & LIST_ITEM != 0 {
+                    ContainerKind::ListItem
+                } else if fact.flags & CONTAINER != 0 {
+                    ContainerKind::Other
+                } else {
+                    ContainerKind::None
+                },
+            },
         });
-        start += piece.len();
     }
     if source.ends_with('\n') || source.is_empty() {
         out.push(Line {
@@ -214,33 +216,77 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
     out
 }
 
-fn scope(ranges: &[Range], number: usize) -> Scope {
-    let contains = |kind: &str| {
-        ranges
-            .iter()
-            .any(|r| r.kind == kind && r.start_line <= number && number <= r.end_line)
-    };
-    let in_list_item = contains("list_item");
-    let in_container = [
-        "block_quote",
-        "list_item",
-        "div",
-        "definition_description",
-        "footnote",
-    ]
-    .iter()
-    .any(|kind| contains(kind));
-    Scope {
-        in_footnote: contains("footnote"),
-        in_description: contains("definition_description"),
-        container: if in_list_item {
-            ContainerKind::ListItem
-        } else if in_container {
-            ContainerKind::Other
-        } else {
-            ContainerKind::None
-        },
+fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<LineFacts<'a>> {
+    let count = raws.len();
+    // One pass per range over the lines it covers, instead of every range per line.
+    let mut facts = vec![LineFacts::default(); count];
+    for range in ranges {
+        let kind = range.kind.as_str();
+        let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
+        let flags = range_flags(kind);
+        if paragraph_like || flags != 0 {
+            let first = range.start_line.max(1) - 1;
+            let covered = facts.get_mut(first..range.end_line.min(count));
+            for fact in covered.into_iter().flatten() {
+                fact.flags |= flags;
+                // `max_by_key` keeps the last of equal keys.
+                if paragraph_like
+                    && fact.paragraph.is_none_or(|best| {
+                        (range.kind == "caption", range.path.len())
+                            >= (best.kind == "caption", best.path.len())
+                    })
+                {
+                    fact.paragraph = Some(range);
+                }
+            }
+        }
+        if is_opaque_leaf(kind) {
+            let first = starts
+                .partition_point(|s| *s <= range.start)
+                .saturating_sub(1);
+            let lines = starts
+                .get(first..)
+                .unwrap_or_default()
+                .iter()
+                .zip(raws.get(first..).unwrap_or_default())
+                .zip(facts.get_mut(first..).unwrap_or_default());
+            for ((line_start, raw), fact) in lines {
+                if *line_start >= range.end {
+                    break;
+                }
+                if range.start < line_start + raw.len() {
+                    fact.masks.push(range);
+                }
+            }
+        }
     }
+    facts
+}
+
+fn range_flags(kind: &str) -> u8 {
+    match kind {
+        "code_block" | "raw_block" => OPAQUE,
+        "frontmatter" => OPAQUE | FRONTMATTER,
+        "list_item" => LIST_ITEM | CONTAINER,
+        "footnote" => FOOTNOTE | CONTAINER,
+        "definition_description" => DESCRIPTION | CONTAINER,
+        "block_quote" | "div" => CONTAINER,
+        _ => 0,
+    }
+}
+
+const OPAQUE: u8 = 1;
+const FRONTMATTER: u8 = 2;
+const LIST_ITEM: u8 = 4;
+const FOOTNOTE: u8 = 8;
+const DESCRIPTION: u8 = 16;
+const CONTAINER: u8 = 32;
+
+#[derive(Clone, Default)]
+struct LineFacts<'r> {
+    flags: u8,
+    paragraph: Option<&'r Range>,
+    masks: Vec<&'r Range>,
 }
 
 fn is_opaque_leaf(kind: &str) -> bool {
@@ -631,9 +677,9 @@ fn legacy_separator(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     }
 }
 
-fn prose(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
+fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
     prose_tokens(line, sink);
-    prose_context(line, previous, lines, sink);
+    prose_context(line, index, previous, lines, sink);
 }
 
 fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
@@ -761,7 +807,13 @@ fn link_gap(line: &Line, sink: &mut Sink<'_>) {
     }
 }
 
-fn prose_context(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
+fn prose_context(
+    line: &Line,
+    index: usize,
+    previous: Option<&Line>,
+    lines: &[Line],
+    sink: &mut Sink<'_>,
+) {
     let trimmed = line.text.trim();
     if paragraph_continuation(line, previous) {
         prose_block_opener(line, previous, trimmed, sink);
@@ -771,7 +823,7 @@ fn prose_context(line: &Line, previous: Option<&Line>, lines: &[Line], sink: &mu
     }
     bare_html(line, sink);
     github_alert(line, sink);
-    caption_looking(line, previous, lines, sink);
+    caption_looking(line, index, lines, sink);
 }
 
 fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
@@ -919,13 +971,10 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     }
 }
 
-fn caption_looking(line: &Line, _previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
+fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_>) {
     if !line.paragraph || !caption_like(line.text.trim_start()) {
         return;
     }
-    let Some(index) = lines.iter().position(|other| other.start == line.start) else {
-        return;
-    };
     let below = lines
         .iter()
         .skip(index + 1)

@@ -18,6 +18,15 @@ pub(super) fn filter(source: &str, findings: Vec<Diagnostic>) -> Vec<Diagnostic>
     };
     let mut controls = collect(source, &tree);
     controls.sort_by_key(|control| control.line);
+    let mut line_scoped: HashMap<u32, Vec<&Control>> = HashMap::new();
+    for control in &controls {
+        let target = match control.kind {
+            "disable-line" => control.line,
+            "disable-next-line" => control.line + 1,
+            _ => continue,
+        };
+        line_scoped.entry(target).or_default().push(control);
+    }
     let mut state = HashMap::new();
     let mut index = 0;
     let mut output = Vec::new();
@@ -30,10 +39,10 @@ pub(super) fn filter(source: &str, findings: Vec<Diagnostic>) -> Vec<Diagnostic>
             update_state(&mut state, control);
             index += 1;
         }
-        let in_line_scope = controls.iter().any(|control| {
-            (control.kind == "disable-line" && control.line == line
-                || control.kind == "disable-next-line" && control.line + 1 == line)
-                && (control.ids.is_empty() || control.ids.iter().any(|id| id == finding.code))
+        let in_line_scope = line_scoped.get(&line).is_some_and(|scoped| {
+            scoped.iter().any(|control| {
+                control.ids.is_empty() || control.ids.iter().any(|id| id == finding.code)
+            })
         });
         if !in_line_scope
             && !state

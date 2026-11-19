@@ -4,6 +4,7 @@ use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use serde::Deserialize as _;
 use serde_json::Value;
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -132,7 +133,7 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
 
 fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let positions = node_ranges(source);
+    let positions = Ranges::new(source, node_ranges(source));
     let mut out = Vec::new();
     for warning in carve_0_1::lint_carve(source) {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
@@ -140,7 +141,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         }
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
-    lines::scan(source, opts, &positions, &mut out);
+    lines::scan(source, opts, &positions.all, &mut out);
     nodes::scan(source, opts, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     let invalid_tables: Vec<_> = out
@@ -169,7 +170,7 @@ fn skip_legacy_warning(
     source: &str,
     opts: &LintOptions,
     parsed: &Source<'_>,
-    positions: &[Range],
+    positions: &Ranges<'_>,
 ) -> bool {
     if !active(warning.rule, opts) {
         return true;
@@ -190,7 +191,7 @@ fn skip_legacy_warning(
         return true;
     }
     if warning.rule == "list-item-block-overindented"
-        && !positions.iter().any(|range| {
+        && !positions.around(warning.start).any(|range| {
             range.start == warning.start
                 && matches!(
                     range.kind.as_str(),
@@ -215,7 +216,7 @@ fn skip_legacy_context(
     warning: &carve_0_1::LintWarning,
     source: &str,
     parsed: &Source<'_>,
-    positions: &[Range],
+    positions: &Ranges<'_>,
 ) -> bool {
     if warning.rule == "footnote-labels-differ-only-in-whitespace"
         && parsed
@@ -226,7 +227,7 @@ fn skip_legacy_context(
         return true;
     }
     if warning.rule == "bidi-control-in-source"
-        && positions.iter().any(|range| {
+        && positions.around(warning.start).any(|range| {
             range.kind == "code_block"
                 && range.start_line == parsed.line_of(warning.start) + 1
                 && range.start <= warning.start
@@ -286,9 +287,9 @@ fn skip_legacy_context(
 fn overlap_in_centered_table(
     source: &str,
     warning: &carve_0_1::LintWarning,
-    positions: &[Range],
+    positions: &Ranges<'_>,
 ) -> bool {
-    positions.iter().any(|range| {
+    positions.around(warning.start).any(|range| {
         range.kind == "table"
             && range.start <= warning.start
             && warning.start < range.end
@@ -302,7 +303,7 @@ fn convert_legacy_warning(
     warning: carve_0_1::LintWarning,
     source: &str,
     parsed: &Source<'_>,
-    positions: &[Range],
+    positions: &Ranges<'_>,
 ) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(
         warning.rule,
@@ -316,23 +317,21 @@ fn convert_legacy_warning(
     normalize_root_message(
         &mut diagnostic,
         source,
+        parsed,
         positions,
         warning.start,
         warning.end,
     );
     diagnostic.path = path_at(positions, warning.start, warning.end);
     if warning.rule == "delimited-table-wide-row"
-        && let Some(table) = positions.iter().find(|range| {
+        && let Some(table) = positions.around(warning.start).find(|range| {
             range.kind == "table" && range.start <= warning.start && warning.end <= range.end
         })
     {
         diagnostic.pos = Some(parsed.pos(table.start, table.end));
     }
     if warning.rule == "figure-group-panel-number"
-        && let Some(panel) = positions
-            .iter()
-            .filter(|range| range.kind == "image" && range.start < warning.start)
-            .max_by_key(|range| range.start)
+        && let Some(panel) = positions.last_image_before(warning.start)
     {
         diagnostic.pos = Some(parsed.pos(panel.start, panel.start + 1));
     }
@@ -341,7 +340,7 @@ fn convert_legacy_warning(
 fn referenced_footnote_platform_tokens(
     source: &str,
     opts: &LintOptions,
-    ranges: &[Range],
+    ranges: &Ranges<'_>,
     output: &mut Vec<Diagnostic>,
 ) {
     if !opts.platforms.iter().any(|platform| platform == "github") {
@@ -349,6 +348,7 @@ fn referenced_footnote_platform_tokens(
     }
     let positions = Source::new(source);
     let references: HashSet<&str> = ranges
+        .all
         .iter()
         .filter_map(|range| range.footnote_key.as_deref())
         .collect();
@@ -394,8 +394,8 @@ fn referenced_footnote_platform_tokens(
     }
 }
 
-fn opaque_definition(ranges: &[Range], offset: usize) -> bool {
-    ranges.iter().any(|range| {
+fn opaque_definition(ranges: &Ranges<'_>, offset: usize) -> bool {
+    ranges.around(offset).any(|range| {
         ["code_block", "raw_block", "frontmatter", "comment"].contains(&range.kind.as_str())
             && range.start <= offset
             && offset < range.end
@@ -427,7 +427,8 @@ fn table_marker_run_padding(source: &str, at: usize) -> bool {
 fn normalize_root_message(
     diagnostic: &mut Diagnostic,
     source: &str,
-    ranges: &[Range],
+    parsed: &Source<'_>,
+    ranges: &Ranges<'_>,
     start: usize,
     end: usize,
 ) {
@@ -507,7 +508,7 @@ fn normalize_root_message(
             return;
         }
         "list-marker-below-content-column" => {
-            let (column, base, content) = list_columns(source, ranges, start);
+            let (column, base, content) = list_columns(source, parsed, ranges, start);
             diagnostic.message = Diagnostic::new(
                 "list-marker-below-content-column",
                 &[
@@ -522,7 +523,7 @@ fn normalize_root_message(
             return;
         }
         "list-item-block-overindented" => {
-            let content = list_columns(source, ranges, start).2.to_string();
+            let content = list_columns(source, parsed, ranges, start).2.to_string();
             diagnostic.message = Diagnostic::new(
                 "list-item-block-overindented",
                 &[("contentColumn", &content)],
@@ -539,7 +540,7 @@ fn normalize_root_message(
 
 fn colon_fence_message(
     source: &str,
-    ranges: &[Range],
+    ranges: &Ranges<'_>,
     start: usize,
     end: usize,
     raw: &str,
@@ -554,14 +555,7 @@ fn colon_fence_message(
         .take_while(|c| *c == ':')
         .count()
         .to_string();
-    let line = (before
-        .get(..opener)
-        .unwrap_or("")
-        .bytes()
-        .filter(|b| *b == b'\n')
-        .count()
-        + 1)
-    .to_string();
+    let line = (ranges.newlines_before(opener) + 1).to_string();
     let column = (opener
         - before
             .get(..opener)
@@ -572,7 +566,7 @@ fn colon_fence_message(
     .to_string();
     let authored_width = authored.parse::<usize>().unwrap_or(0);
     let expected_width = expected.parse::<usize>().unwrap_or(0);
-    let closes_enclosing = ranges.iter().any(|range| {
+    let closes_enclosing = ranges.around(opener).any(|range| {
         range.start < opener
             && range.end >= end
             && matches!(
@@ -609,11 +603,15 @@ fn colon_fence_message(
     .message
 }
 
-fn list_columns(source: &str, ranges: &[Range], at: usize) -> (u32, u32, u32) {
-    let positions = Source::new(source);
+fn list_columns(
+    source: &str,
+    positions: &Source<'_>,
+    ranges: &Ranges<'_>,
+    at: usize,
+) -> (u32, u32, u32) {
     let column = positions.pos(at, at).start_column;
     let mut columns: Vec<u32> = ranges
-        .iter()
+        .around(at)
         .filter(|range| range.kind == "list" && range.start <= at && at <= range.end)
         .map(|range| positions.pos(range.start, range.start).start_column)
         .collect();
@@ -629,20 +627,21 @@ fn list_columns(source: &str, ranges: &[Range], at: usize) -> (u32, u32, u32) {
         .copied()
         .filter(|value| *value > column)
         .min()
-        .unwrap_or_else(|| marker_content_column(source, ranges, at, base));
+        .unwrap_or_else(|| marker_content_column(source, positions, ranges, at, base));
     (column, base, content)
 }
 
-fn marker_content_column(source: &str, ranges: &[Range], at: usize, base: u32) -> u32 {
+fn marker_content_column(
+    source: &str,
+    positions: &Source<'_>,
+    ranges: &Ranges<'_>,
+    at: usize,
+    base: u32,
+) -> u32 {
     ranges
-        .iter()
+        .around(at)
         .filter(|range| range.kind == "list" && range.start <= at && at <= range.end)
-        .find(|range| {
-            Source::new(source)
-                .pos(range.start, range.start)
-                .start_column
-                == base
-        })
+        .find(|range| positions.pos(range.start, range.start).start_column == base)
         .map_or(base.saturating_add(2), |range| {
             let marker = source
                 .get(range.start..)
@@ -692,6 +691,146 @@ fn catalog_message_has_slots(code: &str) -> bool {
         .and_then(|messages| messages.first())
         .and_then(Value::as_str)
         .is_some_and(|message| message.contains("${"))
+}
+
+/// Drops every finding that a later finding of the same code at `replacing`
+/// overlaps: one pass in place of a scan of all findings per emit.
+fn drop_replaced(output: &mut Vec<Diagnostic>, replacing: &[usize]) {
+    let mut later: HashMap<&'static str, Vec<(u32, u32, usize)>> = HashMap::new();
+    for &at in replacing {
+        if let Some(finding) = output.get(at)
+            && let Some(pos) = finding.pos
+        {
+            later
+                .entry(finding.code)
+                .or_default()
+                .push((pos.start_offset, pos.end_offset, at));
+        }
+    }
+    if later.is_empty() {
+        return;
+    }
+    let mut dropped = vec![false; output.len()];
+    for (code, mut spans) in later {
+        // A Fenwick tree over the starts of the replacing findings holds the
+        // furthest end; filled from the last finding back, a query sees only later ones.
+        let mut starts: Vec<u32> = spans.iter().map(|span| span.0).collect();
+        starts.sort_unstable();
+        starts.dedup();
+        let mut furthest = vec![0u32; starts.len() + 1];
+        spans.sort_unstable_by_key(|span| span.2);
+        let mut spans = spans.into_iter().rev().peekable();
+        for (at, finding) in output.iter().enumerate().rev() {
+            if finding.code == code
+                && let Some(pos) = finding.pos
+            {
+                let mut slot = starts.partition_point(|start| *start < pos.end_offset);
+                while slot > 0 {
+                    if furthest
+                        .get(slot)
+                        .is_some_and(|end| *end > pos.start_offset)
+                    {
+                        if let Some(flag) = dropped.get_mut(at) {
+                            *flag = true;
+                        }
+                        break;
+                    }
+                    slot &= slot - 1;
+                }
+            }
+            while let Some((start, end, _)) = spans.next_if(|span| span.2 == at) {
+                let mut slot = starts.partition_point(|s| *s < start) + 1;
+                while let Some(slot_end) = furthest.get_mut(slot) {
+                    *slot_end = (*slot_end).max(end);
+                    slot += slot & slot.wrapping_neg();
+                }
+            }
+        }
+    }
+    let mut flags = dropped.into_iter();
+    output.retain(|_| !flags.next().unwrap_or(false));
+}
+
+/// The node ranges, with the ranges that touch each source line, so a lookup
+/// at one offset reads the ranges around it instead of all of them.
+struct Ranges<'a> {
+    all: Vec<Range>,
+    source: &'a str,
+    index: OnceCell<RangeIndex>,
+}
+
+struct RangeIndex {
+    line_starts: Vec<usize>,
+    by_line: Vec<Vec<usize>>,
+    /// Image starts with their range index, in ascending order.
+    images: Vec<(usize, usize)>,
+}
+
+impl<'a> Ranges<'a> {
+    const fn new(source: &'a str, all: Vec<Range>) -> Self {
+        Self {
+            all,
+            source,
+            index: OnceCell::new(),
+        }
+    }
+
+    fn index(&self) -> &RangeIndex {
+        self.index.get_or_init(|| {
+            let mut line_starts = vec![0];
+            line_starts.extend(self.source.match_indices('\n').map(|(at, _)| at + 1));
+            let line_of = |at: usize| line_starts.partition_point(|s| *s <= at).saturating_sub(1);
+            let mut by_line = vec![Vec::new(); line_starts.len()];
+            let mut images = Vec::new();
+            for (at, range) in self.all.iter().enumerate() {
+                let lines = line_of(range.start)..=line_of(range.end.max(range.start));
+                for line in by_line.get_mut(lines).into_iter().flatten() {
+                    line.push(at);
+                }
+                if range.kind == "image" {
+                    images.push((range.start, at));
+                }
+            }
+            images.sort_unstable();
+            RangeIndex {
+                line_starts,
+                by_line,
+                images,
+            }
+        })
+    }
+
+    /// The ranges on the line of `at`, in tree order: every range that holds `at` is among them.
+    fn around(&self, at: usize) -> impl Iterator<Item = &Range> {
+        let index = self.index();
+        let line = index
+            .line_starts
+            .partition_point(|s| *s <= at)
+            .saturating_sub(1);
+        index
+            .by_line
+            .get(line)
+            .into_iter()
+            .flatten()
+            .filter_map(|at| self.all.get(*at))
+    }
+
+    fn newlines_before(&self, at: usize) -> usize {
+        self.index()
+            .line_starts
+            .partition_point(|s| *s <= at)
+            .saturating_sub(1)
+    }
+
+    /// The image that starts last before `at`; the later one in tree order on a tie.
+    fn last_image_before(&self, at: usize) -> Option<&Range> {
+        let images = &self.index().images;
+        let before = images.partition_point(|(start, _)| *start < at);
+        before
+            .checked_sub(1)
+            .and_then(|last| images.get(last))
+            .and_then(|(_, range)| self.all.get(*range))
+    }
 }
 
 struct Range {
@@ -760,10 +899,65 @@ fn parse_tree_value(text: &str) -> Option<Value> {
     Some(value)
 }
 
-fn path_at(ranges: &[Range], start: usize, end: usize) -> Option<String> {
+fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
     ranges
-        .iter()
+        .around(start)
         .filter(|r| r.start <= start && end <= r.end)
         .max_by_key(|r| r.path.len())
         .map(|r| r.path.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Diagnostic, drop_replaced};
+    use crate::ast::Pos;
+
+    fn finding(code: &'static str, start: u32, end: u32) -> Diagnostic {
+        let pos = Pos {
+            start_offset: start,
+            end_offset: end,
+            ..Pos::default()
+        };
+        Diagnostic::new(code, &[], None, Some(pos))
+    }
+
+    /// The one-pass filter keeps exactly what a `retain` before each replacing push kept.
+    #[test]
+    fn drop_replaced_matches_retain_per_emit() {
+        let mut seed = 7u64;
+        let mut next = |bound: u64| {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            u32::try_from((seed >> 33) % bound).unwrap_or(0)
+        };
+        for _ in 0..500 {
+            let mut expected: Vec<Diagnostic> = Vec::new();
+            let mut output: Vec<Diagnostic> = Vec::new();
+            let mut replacing = Vec::new();
+            for _ in 0..next(40) {
+                let code = match next(3) {
+                    0 => "a",
+                    1 => "b",
+                    _ => "c",
+                };
+                let start = next(60);
+                let item = finding(code, start, start + next(6));
+                if next(4) == 0 {
+                    expected.push(item.clone());
+                } else {
+                    let pos = item.pos.unwrap_or_default();
+                    expected.retain(|d| {
+                        !(d.code == code
+                            && d.pos.is_some_and(|p| {
+                                p.start_offset < pos.end_offset && pos.start_offset < p.end_offset
+                            }))
+                    });
+                    expected.push(item.clone());
+                    replacing.push(output.len());
+                }
+                output.push(item);
+            }
+            drop_replaced(&mut output, &replacing);
+            assert_eq!(output, expected);
+        }
+    }
 }
