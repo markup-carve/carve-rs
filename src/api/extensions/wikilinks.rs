@@ -173,6 +173,7 @@ pub fn wikilinks(options: WikilinksOptions) -> Bundle {
             renderers: vec![(Channel::Interactive, link()), (Channel::BuildTime, link())],
             transform: None,
         }],
+        host: super::HostFields::default(),
         matchers: vec![Matcher {
             extension: "carve.wiki".into(),
             form: Form::Inline,

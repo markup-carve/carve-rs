@@ -9,6 +9,7 @@ mod notes;
 mod profile;
 mod table;
 pub mod url;
+pub(crate) use inline::CORE_SEMANTIC_KEYS;
 
 use crate::ast::{Document, LinkReferenceDefinition, Node};
 use crate::hash::{AddrMap, AddrSet};
@@ -68,6 +69,16 @@ pub(crate) trait ExtensionHook {
         block: bool,
         depth: usize,
     ) -> Option<Result<String, ()>>;
+
+    /// The span keys of a registered `semanticSpan` (C2-H-075).
+    fn semantic_keys(&self) -> Option<crate::api::extensions::SemanticKeys> {
+        None
+    }
+
+    /// The quote glyphs of a registered `smartQuotes`.
+    fn quotes(&self) -> Option<&[String; 4]> {
+        None
+    }
 }
 
 /// Renders with losses while retaining the matching UTF-8 source text for
@@ -232,6 +243,8 @@ pub(crate) struct Renderer<'r, 'a> {
     pending: String,
     in_link: usize,
     in_abbr: usize,
+    /// The smart punctuation node being written is an apostrophe that locale quotes leave.
+    apostrophe: bool,
     level: usize,
     caption_inner: Option<usize>,
     /// The `longDescription` blocks met in the block being written (C2-H-080).
@@ -315,6 +328,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             pending: String::new(),
             in_link: 0,
             in_abbr: 0,
+            apostrophe: false,
             level: 0,
             caption_inner: None,
             long_desc: Vec::new(),

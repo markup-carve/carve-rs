@@ -1202,68 +1202,70 @@ fn include(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
+/// C2-H-075 keys with those a registered `semanticSpan` adds (carve-js#5060).
+fn semantic_keys(options: &LintOptions) -> crate::api::extensions::SemanticKeys {
+    if options.extensions.iter().any(|e| e == "carve.semanticSpan") {
+        crate::api::extensions::SEMANTIC_SPAN_KEYS
+    } else {
+        crate::html::CORE_SEMANTIC_KEYS
+    }
+}
+
 fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
     let kind = item.node["type"].as_str().unwrap_or("");
-    for pair in field(item.node, "/attrs/keyValues")
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
-        let name = pair[0].as_str().unwrap_or("");
-        let value = pair[1].as_str().unwrap_or("");
-        if kind == "span" && name == "kbd" && !value.is_empty() {
-            let raw = sink.raw(item);
-            if let Some((from, _)) = bounds(item.node)
-                && let Some((at, end)) = semantic_attr_value_range(raw, name)
+    let keys = semantic_keys(sink.options);
+    let pairs = field(item.node, "/attrs/keyValues").as_array();
+    let Some(((from, to), pairs)) = bounds(item.node).zip(pairs) else {
+        return;
+    };
+    let source = sink.source;
+    let raw = source.get(from..to).unwrap_or("");
+    if kind == "span" {
+        for pair in pairs {
+            let name = pair[0].as_str().unwrap_or("");
+            let value = pair[1].as_str().unwrap_or("");
+            if !value.is_empty()
+                && keys
+                    .iter()
+                    .any(|&(key, target)| key == name && target.is_none())
             {
+                let (at, end) = semantic_attr_value_range(raw, name)
+                    .map_or((from, to), |(a, e)| (from + a, from + e));
                 sink.emit_range(
                     "semantic-attribute-value-ignored",
-                    from + at,
-                    from + end,
+                    at,
+                    end,
                     &item.path,
                     &[("name", name)],
                     0,
                 );
             }
         }
+        return;
     }
-    if kind != "span" {
-        for name in ["abbr", "time", "kbd"] {
-            if kind == "paragraph"
-                && item.node["children"].as_array().is_some_and(|children| {
-                    children.iter().any(|child| {
-                        child["type"] == "span"
-                            && field(child, "/attrs/keyValues")
-                                .as_array()
-                                .is_some_and(|pairs| pairs.iter().any(|pair| pair[0] == name))
-                    })
-                })
-            {
-                continue;
-            }
-            let Some((from, _)) = bounds(item.node) else {
-                continue;
-            };
-            let Some((at, end)) = semantic_attr_key_range(sink.raw(item), name) else {
-                continue;
-            };
-            let raw = sink.raw(item);
-            let value = raw[end..]
-                .strip_prefix('=')
-                .unwrap_or("")
-                .split(|ch: char| ch.is_whitespace() || ch == '}')
-                .next()
-                .unwrap_or("")
-                .to_string();
-            sink.emit_range(
-                "semantic-attribute-outside-span",
-                from + at,
-                from + end,
-                &item.path,
-                &[("name", name), ("type", kind), ("value", &value)],
-                0,
-            );
-        }
+    for &(name, _) in keys {
+        let Some(value) = pairs
+            .iter()
+            .find(|pair| {
+                pair[0]
+                    .as_str()
+                    .is_some_and(|key| key.eq_ignore_ascii_case(name))
+            })
+            .map(|pair| pair[1].as_str().unwrap_or(""))
+        else {
+            continue;
+        };
+        let Some((at, end)) = semantic_attr_key_range(raw, name) else {
+            continue;
+        };
+        sink.emit_range(
+            "semantic-attribute-outside-span",
+            from + at,
+            from + end,
+            &item.path,
+            &[("name", name), ("type", kind), ("value", value)],
+            0,
+        );
     }
 }
 
@@ -1280,19 +1282,21 @@ fn semantic_attr_value_range(raw: &str, name: &str) -> Option<(usize, usize)> {
     Some((start, key_end + 1 + length))
 }
 
+/// The key token in the first attribute block that holds it.
 fn semantic_attr_key_range(raw: &str, name: &str) -> Option<(usize, usize)> {
     let mut at = 0;
-    let mut found = None;
     while let Some(offset) = raw.get(at..)?.find('{') {
         let open = at + offset;
         let Some((_, end)) = crate::attr::parse_block(raw, open) else {
             at = open + 1;
             continue;
         };
-        found = semantic_key_in_block(raw, open, end, name).or(found);
+        if let Some(hit) = semantic_key_in_block(raw, open, end, name) {
+            return Some(hit);
+        }
         at = end;
     }
-    found
+    None
 }
 
 fn semantic_key_in_block(raw: &str, open: usize, end: usize, name: &str) -> Option<(usize, usize)> {

@@ -348,6 +348,7 @@ fn duplicate_ids(tree: &Tree) -> usize {
 pub(crate) struct Host<'a> {
     registry: &'a Registry,
     standard: super::standard::Standard,
+    fields: &'a super::extensions::HostFields,
     opts: &'a Options,
     failed: RefCell<Vec<String>>,
     ids: RefCell<super::standard::UsedIds>,
@@ -359,6 +360,7 @@ impl<'a> Host<'a> {
     pub(crate) fn new(
         registry: &'a Registry,
         standard: super::standard::Standard,
+        fields: &'a super::extensions::HostFields,
         opts: &'a Options,
         view: &Tree,
     ) -> Self {
@@ -366,6 +368,7 @@ impl<'a> Host<'a> {
         Self {
             registry,
             standard,
+            fields,
             opts,
             failed: RefCell::new(Vec::new()),
             ids: RefCell::new(super::standard::UsedIds::of(&value)),
@@ -406,6 +409,14 @@ impl<'a> Host<'a> {
 }
 
 impl crate::html::ExtensionHook for Host<'_> {
+    fn semantic_keys(&self) -> Option<super::extensions::SemanticKeys> {
+        self.fields.semantic_keys
+    }
+
+    fn quotes(&self) -> Option<&[String; 4]> {
+        self.fields.quotes.as_ref()
+    }
+
     fn render(&self, node: &Value, block: bool, depth: usize) -> Option<Result<String, ()>> {
         let name = node.get("name").and_then(Value::as_str)?;
         let version = node.get("version").and_then(Value::as_str);

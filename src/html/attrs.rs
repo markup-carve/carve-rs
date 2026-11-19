@@ -63,7 +63,7 @@ pub struct El<'a> {
     /// Keys left out, beside the reserved ones.
     pub skip_keys: &'static [&'static str],
     /// Semantic span keys match only the authored lower-case spelling (C2-H-075).
-    pub skip_exact_keys: &'static [&'static str],
+    pub skip_semantic_keys: crate::api::extensions::SemanticKeys,
 }
 
 /// The render switches the filter reads.
@@ -254,7 +254,7 @@ impl<'a> El<'a> {
             || (self.source_line.is_some() && key.eq_ignore_ascii_case("data-source-line"))
             || url::dropped_name(key)
             || self.skip_keys.iter().any(|s| s.eq_ignore_ascii_case(key))
-            || self.skip_exact_keys.contains(&key)
+            || self.skip_semantic_keys.iter().any(|(k, _)| *k == key)
             || RESERVED.iter().any(|r| r.eq_ignore_ascii_case(key))
     }
 

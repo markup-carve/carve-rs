@@ -357,6 +357,7 @@ pub fn code_group(options: CodeGroupOptions) -> Bundle {
             ],
             transform: None,
         }],
+        host: super::HostFields::default(),
         matchers: vec![Matcher {
             extension: NAME.into(),
             form: Form::Div,

@@ -278,6 +278,7 @@ pub struct Carve {
     extensions: extension::Registry,
     standard: standard::Standard,
     matchers: extensions::Matchers,
+    host: extensions::HostFields,
 }
 
 impl Carve {
@@ -378,12 +379,16 @@ impl Carve {
         for m in bundle.matchers {
             next.matchers.push(m);
         }
+        next.host.merge(bundle.host);
         *self = next;
         Ok(())
     }
 
     fn plain(&self) -> bool {
-        self.extensions.is_empty() && self.standard.is_empty() && self.matchers.is_empty()
+        self.extensions.is_empty()
+            && self.standard.is_empty()
+            && self.matchers.is_empty()
+            && self.host.is_empty()
     }
 
     /// `parse` with the matchers of the enabled standard extensions
@@ -555,7 +560,7 @@ impl Carve {
         let mut view = Tree::trusted(resolved, None)?;
         view.top = tree.top;
         let (view, transform_entries) = self.extensions.transform(view);
-        let host = extension::Host::new(&self.extensions, self.standard, opts, &view);
+        let host = extension::Host::new(&self.extensions, self.standard, &self.host, opts, &view);
         let rendered = crate::render_tree_hooked(view.document(), opts, &host);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;

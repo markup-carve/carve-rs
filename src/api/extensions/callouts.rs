@@ -250,6 +250,7 @@ pub fn code_callouts() -> Bundle {
                 transform: None,
             },
         ],
+        host: super::HostFields::default(),
         matchers: Vec::new(),
     }
 }

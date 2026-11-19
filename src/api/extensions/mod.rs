@@ -21,6 +21,8 @@ mod details;
 mod fenced;
 mod list_table;
 mod math;
+mod semantic_span;
+mod smart_quotes;
 mod transforms;
 mod wikilinks;
 
@@ -35,6 +37,11 @@ pub use fenced::{
 };
 pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
+pub use semantic_span::{SEMANTIC_SPAN_KEYS, semantic_span};
+pub use smart_quotes::{
+    QuoteCharacters, SMART_QUOTE_LOCALES, SmartQuotesOptions, is_smart_quote_locale_supported,
+    smart_quote_locales, smart_quotes,
+};
 pub use transforms::{
     DefaultAttributes, default_attributes, inline_footnotes_to_parentheses, tab_normalize,
 };
@@ -151,6 +158,35 @@ impl std::fmt::Debug for Matcher {
 pub struct Bundle {
     pub extensions: Vec<Extension>,
     pub matchers: Vec<Matcher>,
+    pub host: HostFields,
+}
+
+/// Span keys from inside out, each with the attribute its value fills.
+pub type SemanticKeys = &'static [(&'static str, Option<&'static str>)];
+
+/// What a bundle sets on the host beside its registrations; the last
+/// registration that sets a field wins.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HostFields {
+    /// The C2-H-075 span keys, replacing `abbr`, `time` and `kbd`.
+    pub semantic_keys: Option<SemanticKeys>,
+    /// Open and close double, then open and close single quote glyphs.
+    pub quotes: Option<[String; 4]>,
+}
+
+impl HostFields {
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.semantic_keys.is_none() && self.quotes.is_none()
+    }
+
+    pub(crate) fn merge(&mut self, later: Self) {
+        if later.semantic_keys.is_some() {
+            self.semantic_keys = later.semantic_keys;
+        }
+        if later.quotes.is_some() {
+            self.quotes = later.quotes;
+        }
+    }
 }
 
 impl Bundle {
@@ -162,6 +198,7 @@ impl Bundle {
         for b in bundles {
             out.extensions.extend(b.extensions);
             out.matchers.extend(b.matchers);
+            out.host.merge(b.host);
         }
         out
     }
@@ -201,6 +238,8 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.colorSwatch" => Some(color_swatch(ColorSwatchOptions::default())),
         "carve.tabNormalize" => tab_normalize(2).ok(),
         "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
+        "carve.semanticSpan" => Some(semantic_span()),
+        "carve.smartQuotes" => Some(smart_quotes(&SmartQuotesOptions::default())),
         _ => None,
     }
 }
