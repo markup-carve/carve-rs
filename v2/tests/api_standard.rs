@@ -8,8 +8,7 @@ use serde_json::{Value, json};
 
 /// Cases held, each with its cause; a held case must keep failing.
 const HELD: &[&str] = &[
-    // C2-X-053: the inserted node has `slots: {}`, which the schema refuses
-    // (`minProperties: 1`); spec inconsistency.
+    // C2-A-058 refuses the `slots: {}` the cases insert (markup-carve/carve#6098).
     "CC-1221", "CC-1229",
 ];
 
