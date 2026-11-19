@@ -16,11 +16,13 @@
 
 mod apparatus;
 mod callouts;
+mod citations;
 mod code_group;
 mod color_swatch;
 mod details;
 mod fenced;
 mod glossary;
+mod index_terms;
 mod list_table;
 mod math;
 mod semantic_span;
@@ -29,6 +31,7 @@ mod transforms;
 mod wikilinks;
 
 pub use callouts::code_callouts;
+pub use citations::{CitationMode, CitationsOptions, citations};
 pub use code_group::{CodeGroupMode, CodeGroupOptions, Highlighter, code_group};
 pub use color_swatch::{ColorSwatchOptions, SwatchPosition, SwatchShape, color_swatch};
 pub use details::{details, spoiler};
@@ -38,6 +41,7 @@ pub use fenced::{
     wavedrom,
 };
 pub use glossary::glossary;
+pub use index_terms::{IndexOptions, index};
 pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
 pub use semantic_span::{SEMANTIC_SPAN_KEYS, semantic_span};
@@ -244,6 +248,8 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
         "carve.semanticSpan" => Some(semantic_span()),
         "carve.glossary" | "carve.term" => Some(glossary()),
+        "carve.index" | "carve.indexTerm" => Some(index(IndexOptions::default())),
+        "carve.cite" | "carve.references" => Some(citations(CitationsOptions::default())),
         "carve.smartQuotes" => Some(smart_quotes(&SmartQuotesOptions::default())),
         _ => None,
     }

@@ -28,3 +28,42 @@ fn glossary_links_terms_and_places_entries() {
     assert!(out.contains("<span class=\"term\">FTP</span>"), "{out}");
     assert!(out.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"), "{out}");
 }
+
+#[test]
+fn index_sorts_entries_and_links_each_use() {
+    let source = "See :index[Zed] and :index[HTTP].\n\n::: index\n:::\n";
+    let out = html(
+        source,
+        extensions::index(extensions::IndexOptions::default()),
+    );
+    assert!(
+        out.contains("<span id=\"idx-zed-1\" class=\"index-term\"></span>"),
+        "{out}"
+    );
+    assert!(
+        out.contains("<span id=\"idx-http-1\" class=\"index-term\"></span>"),
+        "{out}"
+    );
+    assert!(out.contains("<ul class=\"index\">"), "{out}");
+    assert!(
+        out.find("href=\"#idx-http-1\"").unwrap() < out.rfind("href=\"#idx-zed-1\"").unwrap(),
+        "{out}"
+    );
+}
+
+#[test]
+fn citations_resolve_keys_and_place_references() {
+    let source = "See :cite[doe]{locator=\"p. 4\"}.\n\n::: references\n:: doe\n: Doe, J. (2020). /A book/.\n:::\n";
+    let out = html(
+        source,
+        extensions::citations(extensions::CitationsOptions::default()),
+    );
+    assert!(
+        out.contains("[<a href=\"#ref-doe\" data-cite-key=\"doe\">1</a>, p. 4]"),
+        "{out}"
+    );
+    assert!(
+        out.contains("<li id=\"ref-doe\">Doe, J. (2020). <em>A book</em>.</li>"),
+        "{out}"
+    );
+}
