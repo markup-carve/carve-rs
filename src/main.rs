@@ -3,6 +3,7 @@
 
 use std::io::{Read, Write};
 
+mod cli2;
 mod lint_cli;
 
 /// The entry file and the include settings of the command line (C2-N-004).
@@ -17,6 +18,11 @@ struct Entry {
 
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().map(String::as_str) != Some("call")
+        && !arguments.iter().any(|a| a == "--batch")
+    {
+        std::process::exit(cli2::run(&arguments));
+    }
     if arguments.first().map(String::as_str) == Some("lint") {
         std::process::exit(lint_cli::run(&arguments[1..]));
     }
