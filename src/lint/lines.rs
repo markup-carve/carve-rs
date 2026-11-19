@@ -675,7 +675,9 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
 
 fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
-    for (open, _) in text.match_indices('[') {
+    // A task box (C2-B-046) sits before the paragraph's own start.
+    let from = line.content_start.unwrap_or(0);
+    for (open, _) in text.match_indices('[').filter(|(at, _)| *at >= from) {
         let Some(close) = text[open + 1..].find(']').map(|at| open + 1 + at) else {
             continue;
         };

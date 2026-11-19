@@ -712,6 +712,7 @@ fn writer_equal(expected: &Value, actual: &Value) -> bool {
     node::trees_equal(expected, actual)
         || extension::source_core_equivalent(expected, Some(actual))
         || node::trees_equal(&node::without_standard_data(expected), actual)
+        || extension::with_core_inlines(expected).is_some_and(|e| node::trees_equal(&e, actual))
 }
 
 /// C2-W-011: a block that the rounds let pass and that reads back as another tree is reported.

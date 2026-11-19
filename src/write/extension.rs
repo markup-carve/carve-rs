@@ -17,6 +17,9 @@ pub fn canonical_body(node: &Value) -> bool {
 /// C2-X-023: a core readback of the source form is allowed only for its canonical content.
 pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool {
     let Some(actual) = actual else { return false };
+    if ty(expected) == "inline_extension" {
+        return inline_source_equivalent(expected, actual);
+    }
     if ty(expected) != "block_extension" {
         return false;
     }
@@ -52,6 +55,56 @@ pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool 
     let mine = children(&parsed);
     let theirs = children(actual);
     mine.len() == theirs.len() && mine.iter().zip(theirs).all(|(x, y)| trees_equal(x, y))
+}
+
+/// C2-X-023: the inline source form reads back as the core inline extension
+/// of that name, attributes and canonical content `body`.
+fn inline_source_equivalent(expected: &Value, actual: &Value) -> bool {
+    core_inline(expected).is_some_and(|core| trees_equal(&core, actual))
+}
+
+/// The core node the inline source form of `node` reads back as.
+fn core_inline(node: &Value) -> Option<Value> {
+    let source = node
+        .get("source")
+        .filter(|x| s(x, "form") == Some("inline"))?;
+    let parsed = super::parse_plain(s(source, "body").unwrap_or(""))?;
+    let content = match children(&parsed) {
+        [p] if ty(p) == "paragraph" => children(p).to_vec(),
+        [] => Vec::new(),
+        _ => return None,
+    };
+    let mut core = serde_json::Map::new();
+    core.insert("type".into(), "inline_extension".into());
+    core.insert("name".into(), s(source, "name")?.into());
+    if let Some(attrs) = node.get("attrs") {
+        core.insert("attrs".into(), attrs.clone());
+    }
+    core.insert("children".into(), Value::Array(content));
+    Some(Value::Object(core))
+}
+
+/// `tree` with each inline extension that carries an inline source form
+/// replaced by the core node it reads back as, or `None` when it has none.
+pub fn with_core_inlines(tree: &Value) -> Option<Value> {
+    fn walk(v: &mut Value, changed: &mut bool) {
+        if ty(v) == "inline_extension"
+            && let Some(core) = core_inline(v)
+        {
+            *v = core;
+            *changed = true;
+            return;
+        }
+        match v {
+            Value::Object(map) => map.values_mut().for_each(|x| walk(x, changed)),
+            Value::Array(items) => items.iter_mut().for_each(|x| walk(x, changed)),
+            _ => {}
+        }
+    }
+    let mut out = tree.clone();
+    let mut changed = false;
+    walk(&mut out, &mut changed);
+    changed.then_some(out)
 }
 
 /// C2-X-005: the claims of the enabled standard extensions on a parsed chunk.

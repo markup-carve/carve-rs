@@ -580,10 +580,10 @@ fn authored_id_token(body: &str) -> Option<(usize, usize)> {
     found
 }
 
-/// `places` gets the file of each unexpanded include of an expanded tree.
+/// `places` gets the file and the path of each unexpanded include.
 #[derive(Default)]
 struct RenderDetails {
-    places: Vec<Option<String>>,
+    places: Vec<(Option<String>, String)>,
     destinations: Vec<html::DestinationLoss>,
     raws: Vec<html::RawLoss>,
     carriers: Vec<html::CarrierLoss>,
@@ -598,13 +598,13 @@ fn render_parts(
     details: &mut RenderDetails,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
     let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
+    include::unexpanded(doc.children, None, &mut details.places);
     if let Some(files) = files {
         details.included_sources.extend(
             files
                 .sources()
                 .map(|(id, text)| (id.to_string(), text.to_string())),
         );
-        include::unexpanded(doc.children, None, &mut details.places);
         let extra = if opts.roundtrip {
             include::roundtrip_losses(doc.children)
         } else {
@@ -720,10 +720,10 @@ fn loss_diagnostics(
         .iter()
         .map(|c| {
             // C2-N-063: the loss of an unexpanded include names its file.
-            let include_file = if *c == "include-unresolved" {
-                places.next().flatten()
+            let (include_file, include_path) = if *c == "include-unresolved" {
+                places.next().map_or((None, None), |(f, p)| (f, Some(p)))
             } else {
-                None
+                (None, None)
             };
             let raw = if *c == "raw-format-dropped" {
                 raw_losses.next()
@@ -764,7 +764,7 @@ fn loss_diagnostics(
                         .then(|| loss_position(c, &source, opts, parse_diags))
                         .flatten()
                 });
-            let (variant, values) = loss_message(c, raw, destination, carrier);
+            let (variant, values) = loss_message(c, raw, destination, carrier, include_path);
             let values: Vec<_> = values
                 .iter()
                 .map(|(name, value)| (*name, value.as_str()))
@@ -828,8 +828,10 @@ fn loss_message(
     raw: Option<&html::RawLoss>,
     destination: Option<&html::DestinationLoss>,
     carrier: Option<&html::CarrierLoss>,
+    include_path: Option<String>,
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
+        "include-unresolved" => (0, vec![("path", include_path.unwrap_or_default())]),
         "carrier-attribute-dropped" => {
             let key = carrier.map_or_else(String::new, |loss| loss.key.clone());
             (0, vec![("key", key)])
