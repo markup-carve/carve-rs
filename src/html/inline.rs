@@ -43,6 +43,40 @@ fn span_value(s: &ast::Span<'_>, key: &str, exact: bool) -> Option<String> {
         .map(|(name, value)| url::filter_value(name, value).to_string())
 }
 
+const QUOTE_KINDS: [(ast::SmartPunctuationKind, &str); 4] = [
+    (ast::SmartPunctuationKind::LeftDoubleQuote, "\u{201c}"),
+    (ast::SmartPunctuationKind::RightDoubleQuote, "\u{201d}"),
+    (ast::SmartPunctuationKind::LeftSingleQuote, "\u{2018}"),
+    (ast::SmartPunctuationKind::RightSingleQuote, "\u{2019}"),
+];
+
+/// A closing single quote between two letters is an apostrophe, which locale quotes leave as it is.
+fn is_apostrophe(nodes: &[Node<'_>], at: usize) -> bool {
+    let Some(Node::SmartPunctuation(s)) = nodes.get(at) else {
+        return false;
+    };
+    let (Some(Node::Text(before)), Some(Node::Text(after))) = (
+        at.checked_sub(1).and_then(|b| nodes.get(b)),
+        nodes.get(at + 1),
+    ) else {
+        return false;
+    };
+    s.kind == ast::SmartPunctuationKind::RightSingleQuote
+        && before
+            .value
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphabetic)
+        && after.value.chars().next().is_some_and(char::is_alphabetic)
+}
+
+/// The C2-H-075 span keys from inside out, with the attribute each value fills.
+pub(crate) const CORE_SEMANTIC_KEYS: crate::api::extensions::SemanticKeys = &[
+    ("abbr", Some("title")),
+    ("time", Some("datetime")),
+    ("kbd", None),
+];
+
 impl<'r, 'a> Renderer<'r, 'a> {
     /// The inline content of a leaf with its comment-only lines and one break
     /// beside each left out (C2-H-069).
@@ -62,9 +96,27 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     pub(super) fn inlines(&mut self, nodes: &'r [Node<'a>], out: &mut String) {
-        for n in nodes {
+        let quotes = self.opts.smart_typography && self.hook.is_some_and(|h| h.quotes().is_some());
+        for (at, n) in nodes.iter().enumerate() {
+            self.apostrophe = quotes && is_apostrophe(nodes, at);
             self.inline(n, out);
         }
+        self.apostrophe = false;
+    }
+
+    /// A quote that carries the glyph of its kind takes that of a registered `smartQuotes`.
+    fn quote_glyph<'s>(&'s self, s: &'s ast::SmartPunctuation<'_>) -> &'s str {
+        let Some(quotes) = self.hook.and_then(|h| h.quotes()) else {
+            return s.glyph;
+        };
+        if self.apostrophe {
+            return s.glyph;
+        }
+        QUOTE_KINDS
+            .iter()
+            .position(|(kind, glyph)| *kind == s.kind && *glyph == s.glyph)
+            .and_then(|at| quotes.get(at))
+            .map_or(s.glyph, String::as_str)
     }
 
     fn inline(&mut self, n: &'r Node<'a>, out: &mut String) {
@@ -179,7 +231,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             Node::NonBreakingSpace(_) => out.push_str("&nbsp;"),
             Node::SmartPunctuation(s) => {
                 if self.opts.smart_typography {
-                    esc::text(s.glyph, out);
+                    esc::text(self.quote_glyph(s), out);
                 } else {
                     esc::text(s.source, out);
                 }
@@ -547,17 +599,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-075, C2-H-099, C2-H-175.
     fn span(&mut self, s: &'r ast::Span<'a>, out: &mut String) {
-        const KEYS: [(&str, Option<&str>); 3] = [
-            ("abbr", Some("title")),
-            ("time", Some("datetime")),
-            ("kbd", None),
-        ];
-        let found: Vec<(&'static str, Option<&'static str>, String)> = KEYS
+        let keys = self
+            .hook
+            .and_then(super::ExtensionHook::semantic_keys)
+            .unwrap_or(CORE_SEMANTIC_KEYS);
+        let found: Vec<(&'static str, Option<&'static str>, String)> = keys
             .iter()
             .filter_map(|&(key, target)| span_value(s, key, true).map(|v| (key, target, v)))
             .collect();
         let mut el = El::new(s.attrs, s.lang).with_dir(s.dir);
-        el.skip_exact_keys = &["abbr", "time", "kbd"];
+        el.skip_semantic_keys = keys;
         let Some(((outer, target, value), inner)) = found.split_last() else {
             out.push_str("<span");
             el.write_into(self.filter(), out);

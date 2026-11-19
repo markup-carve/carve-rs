@@ -463,6 +463,7 @@ pub fn color_swatch(options: ColorSwatchOptions) -> Bundle {
             ],
             transform: None,
         }],
+        host: super::HostFields::default(),
         matchers: vec![Matcher {
             extension: "carve.colorSwatch".into(),
             form: Form::Inline,

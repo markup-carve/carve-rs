@@ -168,6 +168,7 @@ pub fn details() -> Bundle {
             ],
             transform: None,
         }],
+        host: super::HostFields::default(),
         matchers: vec![Matcher {
             extension: "carve.details".into(),
             form: Form::Div,
@@ -246,6 +247,7 @@ pub fn spoiler() -> Bundle {
                 transform: None,
             },
         ],
+        host: super::HostFields::default(),
         matchers: vec![
             Matcher {
                 extension: "carve.spoiler".into(),

@@ -91,6 +91,7 @@ pub fn math_block(options: MathBlockOptions) -> Bundle {
             renderers,
             transform: None,
         }],
+        host: super::HostFields::default(),
         matchers: vec![Matcher {
             extension: NAME.into(),
             form: Form::Fence,

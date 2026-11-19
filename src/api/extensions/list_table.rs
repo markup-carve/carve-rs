@@ -563,6 +563,7 @@ pub fn list_table() -> Bundle {
             ],
             transform: None,
         }],
+        host: super::HostFields::default(),
         matchers: vec![Matcher {
             extension: "carve.listTable".into(),
             form: Form::Div,

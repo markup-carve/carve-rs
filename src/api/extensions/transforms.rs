@@ -47,6 +47,7 @@ fn bundle(name: &str, transform: Box<dyn DocumentTransform>) -> Bundle {
             renderers: Vec::new(),
             transform: Some(transform),
         }],
+        host: super::HostFields::default(),
         matchers: Vec::new(),
     }
 }
