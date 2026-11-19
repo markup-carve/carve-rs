@@ -125,30 +125,51 @@ fn check_alternative(
     if name != "allOf"
         && let Some(kind) = value["type"].as_str()
     {
-        if let Some(branch) = branches.iter().find(|branch| {
-            branch["$ref"]
-                .as_str()
-                .is_some_and(|reference| reference.ends_with(&format!("/{kind}")))
-        }) {
+        if let Some(branch) = typed_branch(branches, kind) {
             return check(value, branch, root, path, regexes);
         }
     }
-    let mut passed = 0;
-    for branch in branches {
-        if check(value, branch, root, path, regexes).is_ok() {
-            passed += 1;
-            if name == "anyOf" || name == "oneOf" && passed > 1 {
-                break;
-            }
-        }
-    }
+    let (passed, failure) = matching_branches(value, branches, name, root, path, regexes);
     if name == "allOf" && passed != branches.len()
         || name == "anyOf" && passed == 0
         || name == "oneOf" && passed != 1
     {
-        return Err(fail(path, "schema alternatives do not match"));
+        return Err(failure.unwrap_or_else(|| fail(path, "schema alternatives do not match")));
     }
     Ok(())
+}
+
+fn typed_branch<'a>(branches: &'a [Value], kind: &str) -> Option<&'a Value> {
+    branches.iter().find(|branch| {
+        branch["$ref"]
+            .as_str()
+            .is_some_and(|reference| reference.ends_with(&format!("/{kind}")))
+    })
+}
+
+fn matching_branches(
+    value: &Value,
+    branches: &[Value],
+    name: &str,
+    root: &Value,
+    path: &str,
+    regexes: &mut HashMap<String, Regex>,
+) -> (usize, Option<Failure>) {
+    let mut passed = 0;
+    let mut failure = None;
+    for branch in branches {
+        match check(value, branch, root, path, regexes) {
+            Ok(()) => {
+                passed += 1;
+                if name == "anyOf" || name == "oneOf" && passed > 1 {
+                    break;
+                }
+            }
+            Err(detail) if failure.is_none() => failure = Some(detail),
+            Err(_) => {}
+        }
+    }
+    (passed, failure)
 }
 
 fn check_conditionals(

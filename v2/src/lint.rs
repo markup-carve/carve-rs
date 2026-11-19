@@ -76,7 +76,58 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
                     .is_some_and(|span| span.contains("%%"))
             })
     });
+    select_message_variants(source, &mut out);
     out
+}
+
+/// Selects catalog wording whose trigger depends on the surrounding source,
+/// after legacy, line and node scanners have contributed their findings.
+fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
+    for finding in findings {
+        let Some(pos) = finding.pos else { continue };
+        let start = usize::try_from(pos.start_offset).unwrap_or(usize::MAX);
+        let Some(prefix) = source.get(..start) else {
+            continue;
+        };
+        let line_start = prefix.rfind('\n').map_or(0, |at| at + 1);
+        let line_end = source
+            .get(start..)
+            .and_then(|tail| tail.find('\n').map(|at| start + at))
+            .unwrap_or(source.len());
+        let line = source.get(line_start..line_end).unwrap_or("").trim();
+        let previous = prefix
+            .get(..line_start)
+            .unwrap_or("")
+            .trim_end_matches(['\r', '\n'])
+            .rsplit('\n')
+            .next()
+            .unwrap_or("")
+            .trim_start();
+        let blank_next = source
+            .get(line_end..)
+            .and_then(|tail| tail.strip_prefix('\n'))
+            .is_some_and(|tail| tail.starts_with('\n') || tail.starts_with("\r\n"));
+        let variant = match finding.code {
+            "list-marker-without-blank-line"
+                if previous.starts_with(":: ") || previous.starts_with(": ") =>
+            {
+                Some(1)
+            }
+            "unattached-block-attribute" if blank_next => Some(1),
+            "region-marker-renders-as-text" if line.starts_with("%%") => Some(1),
+            _ => None,
+        };
+        if let Some(variant) = variant {
+            finding.message = Diagnostic::nth(
+                finding.code,
+                variant,
+                &[],
+                finding.file.as_deref(),
+                finding.pos,
+            )
+            .message;
+        }
+    }
 }
 
 fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {

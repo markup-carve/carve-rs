@@ -873,12 +873,41 @@ impl<'a> Parser<'a> {
 
     /// C2-B-122: further words after an opener's parts are not read.
     pub(super) fn further_words(&mut self, start: usize, end: usize) {
+        let before = self.src.text().get(..start).unwrap_or("");
+        let line_start = before.rfind('\n').map_or(0, |at| at + 1);
+        let line = self
+            .src
+            .text()
+            .get(line_start..end)
+            .unwrap_or("")
+            .trim_start();
+        let opener = before.get(line_start..).unwrap_or("").trim_end();
+        let respaced = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        let (message, values) = if line.starts_with("```") {
+            let run = line.bytes().take_while(|&b| b == b'`').count();
+            let rest = line.get(run..).unwrap_or("");
+            if rest.trim_start().starts_with('{') && rest.starts_with("  ") {
+                (4, vec![("correctedOpener", opener.to_string())])
+            } else if rest.starts_with("  ") || rest.starts_with('\t') && rest.trim().is_empty() {
+                (5, vec![("respaced", respaced)])
+            } else if rest.contains('\t') {
+                (6, vec![("respaced", respaced)])
+            } else if rest.contains('"') {
+                (1, Vec::new())
+            } else {
+                (4, vec![("correctedOpener", opener.to_string())])
+            }
+        } else if line.starts_with(":::") && opener.trim_end_matches([' ', '\t']) == ":::" {
+            (0, Vec::new())
+        } else {
+            (4, vec![("correctedOpener", opener.to_string())])
+        };
         self.findings.push(Finding {
             code: "fence-title-syntax",
-            message: 1,
+            message,
             start,
             end,
-            values: Vec::new(),
+            values,
         });
     }
 
