@@ -17,9 +17,14 @@ pub fn canonical_body(node: &Value) -> bool {
 /// C2-X-023: a core readback of the source form is allowed only for its canonical content.
 pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool {
     let Some(actual) = actual else { return false };
-    if ty(expected) != "block_extension" {
-        return false;
+    match ty(expected) {
+        "inline_extension" => inline_source_equivalent(expected, actual),
+        "block_extension" => block_source_equivalent(expected, actual),
+        _ => false,
     }
+}
+
+fn block_source_equivalent(expected: &Value, actual: &Value) -> bool {
     let Some(source) = expected.get("source") else {
         return false;
     };
@@ -52,6 +57,79 @@ pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool 
     let mine = children(&parsed);
     let theirs = children(actual);
     mine.len() == theirs.len() && mine.iter().zip(theirs).all(|(x, y)| trees_equal(x, y))
+}
+
+/// C2-X-023: the inline source form reads back as the core inline extension
+/// of that name, attributes and canonical content `body`.
+fn inline_source_equivalent(expected: &Value, actual: &Value) -> bool {
+    core_inline(expected).is_some_and(|core| trees_equal(&core, actual))
+}
+
+/// The core node the inline source form of `node` reads back as.
+fn core_inline(node: &Value) -> Option<Value> {
+    let source = node
+        .get("source")
+        .filter(|x| s(x, "form") == Some("inline"))?;
+    let content = body_inlines(s(source, "body").unwrap_or(""))?;
+    let mut core = serde_json::Map::new();
+    core.insert("type".into(), "inline_extension".into());
+    core.insert("name".into(), s(source, "name")?.into());
+    if let Some(attrs) = node.get("attrs") {
+        core.insert("attrs".into(), attrs.clone());
+    }
+    core.insert("children".into(), Value::Array(content));
+    Some(Value::Object(core))
+}
+
+/// The inline content `body` parses to; the readback asks for one body many
+/// times, so the last few are kept.
+fn body_inlines(body: &str) -> Option<Vec<Value>> {
+    thread_local! {
+        static SEEN: std::cell::RefCell<Vec<(String, Option<Vec<Value>>)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    if let Some(hit) = SEEN.with_borrow(|seen| {
+        seen.iter()
+            .find(|(b, _)| b == body)
+            .map(|(_, content)| content.clone())
+    }) {
+        return hit;
+    }
+    let content = super::parse_plain(body).and_then(|parsed| match children(&parsed) {
+        [p] if ty(p) == "paragraph" => Some(children(p).to_vec()),
+        [] => Some(Vec::new()),
+        _ => None,
+    });
+    SEEN.with_borrow_mut(|seen| {
+        if seen.len() == 64 {
+            seen.remove(0);
+        }
+        seen.push((body.to_string(), content.clone()));
+    });
+    content
+}
+
+/// `tree` with each inline extension that carries an inline source form
+/// replaced by the core node it reads back as, or `None` when it has none.
+pub fn with_core_inlines(tree: &Value) -> Option<Value> {
+    fn walk(v: &mut Value, changed: &mut bool) {
+        if ty(v) == "inline_extension"
+            && let Some(core) = core_inline(v)
+        {
+            *v = core;
+            *changed = true;
+            return;
+        }
+        match v {
+            Value::Object(map) => map.values_mut().for_each(|x| walk(x, changed)),
+            Value::Array(items) => items.iter_mut().for_each(|x| walk(x, changed)),
+            _ => {}
+        }
+    }
+    let mut out = tree.clone();
+    let mut changed = false;
+    walk(&mut out, &mut changed);
+    changed.then_some(out)
 }
 
 /// C2-X-005: the claims of the enabled standard extensions on a parsed chunk.

@@ -1783,6 +1783,9 @@ fn compare_fields<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
 }
 
 fn compare_inline<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
+    if super::extension::source_core_equivalent(e, Some(a)) {
+        return;
+    }
     if has(e, "key") && has_other_form(w, c, e) {
         compare_raw(w, c, e, a);
         return;
