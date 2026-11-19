@@ -17,7 +17,7 @@
 //! |---|---|
 //! | `parse` | [`parse`], [`Carve::parse`] |
 //! | `parseWithDiagnostics` | [`parse_with_diagnostics`] |
-//! | `parseWithLayout` | [`parse_with_layout`] (not yet available) |
+//! | `parseWithLayout` | [`parse_with_layout`] (single-line ATX heading slice) |
 //! | `render` | [`render`], [`render_tree`] |
 //! | `renderWithDiagnostics` | [`render_with_diagnostics`], [`render_tree_with_diagnostics`] |
 //! | `format`, `formatWithDiagnostics` | [`Carve::format`], [`Carve::format_with_diagnostics`] |
@@ -251,6 +251,15 @@ pub struct Parsed {
     pub tree: Tree,
     pub diagnostics: Vec<Entry>,
     pub suppressed_diagnostics: usize,
+}
+
+/// A parsed tree and its version-2 source-layout sidecar (C2-A-003).
+#[derive(Debug, Clone)]
+pub struct ParsedLayout {
+    pub tree: Tree,
+    pub diagnostics: Vec<Entry>,
+    pub suppressed_diagnostics: usize,
+    pub layout: Value,
 }
 
 /// HTML with the record of its parse and render (C2-A-172, C2-H-130).
@@ -799,16 +808,111 @@ pub fn parse_with_diagnostics<'a>(
     })
 }
 
-/// `parseWithLayout` (C2-A-003): not available in this engine yet.
+/// `parseWithLayout` (C2-A-003), currently for a single-line ATX heading
+/// whose children are plain text. Other inputs remain unsupported until the
+/// block and inline passes carry the source trace required by C2-L-059.
 ///
 /// # Errors
 ///
-/// Always [`Error::Unsupported`].
-pub fn parse_with_layout<'a>(input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Error> {
-    let _ = (input.into(), opts);
-    Err(Error::Unsupported {
-        call: "parseWithLayout",
+/// As [`parse_with_diagnostics`], or [`Error::Unsupported`] outside this slice.
+pub fn parse_with_layout<'a>(
+    input: impl Into<Input<'a>>,
+    opts: &Options,
+) -> Result<ParsedLayout, Error> {
+    parse_with_layout_for(&Carve::default(), input, opts)
+}
+
+fn parse_with_layout_for<'a>(
+    host: &Carve,
+    input: impl Into<Input<'a>>,
+    opts: &Options,
+) -> Result<ParsedLayout, Error> {
+    let input = input.into();
+    if matches!(input, Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err()) {
+        return Err(unsupported_layout());
+    }
+    let text = input.text();
+    let source = text.as_ref();
+    let parsed = host.parse_with_diagnostics(input, opts)?;
+    let layout = heading_layout(source, &parsed.tree)?;
+    Ok(ParsedLayout {
+        tree: parsed.tree,
+        diagnostics: parsed.diagnostics,
+        suppressed_diagnostics: parsed.suppressed_diagnostics,
+        layout,
     })
+}
+
+fn unsupported_layout() -> Error {
+    Error::Unsupported {
+        call: "parseWithLayout",
+    }
+}
+
+fn heading_source(source: &str) -> Option<(&str, &str)> {
+    let (body, line_endings) = if let Some(body) = source.strip_suffix("\r\n") {
+        (body, "crlf")
+    } else if let Some(body) = source.strip_suffix('\n') {
+        (body, "lf")
+    } else {
+        (source, "none")
+    };
+    if body.contains(['\r', '\n']) {
+        return None;
+    }
+    let marker_width = body.bytes().take_while(|byte| *byte == b'#').count();
+    if !(1..=6).contains(&marker_width) || body.as_bytes().get(marker_width) != Some(&b' ') {
+        return None;
+    }
+    Some((&body[..marker_width], line_endings))
+}
+
+fn heading_layout(source: &str, tree: &Tree) -> Result<Value, Error> {
+    let (marker, line_endings) = heading_source(source).ok_or_else(unsupported_layout)?;
+    let value: Value = serde_json::from_str(&tree.json)
+        .map_err(|error| Error::option("tree", error.to_string()))?;
+    let children = value
+        .get("children")
+        .and_then(Value::as_array)
+        .ok_or_else(unsupported_layout)?;
+    let heading = children.first().ok_or_else(unsupported_layout)?;
+    if children.len() != 1
+        || heading.get("type").and_then(Value::as_str) != Some("heading")
+        || !heading
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|items| {
+                items
+                    .iter()
+                    .all(|item| item.get("type").and_then(Value::as_str) == Some("text"))
+            })
+    {
+        return Err(unsupported_layout());
+    }
+    let start = heading
+        .pointer("/pos/startOffset")
+        .and_then(Value::as_u64)
+        .ok_or_else(unsupported_layout)?;
+    let end = heading
+        .pointer("/pos/endOffset")
+        .and_then(Value::as_u64)
+        .ok_or_else(unsupported_layout)?;
+    Ok(serde_json::json!({
+        "version": 2,
+        "encoding": "utf-8",
+        "source": source,
+        "lineEndings": line_endings,
+        "bom": false,
+        "nodes": [{
+            "path": "/children/0",
+            "startByte": start,
+            "endByte": end,
+            "blankLinesBefore": 0,
+            "blankLinesAfter": 0,
+            "markerRaw": marker,
+            "markerColumn": 0
+        }]
+    }))
 }
 
 /// `render`: the HTML of a source (C2-H-137).
