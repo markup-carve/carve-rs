@@ -13,10 +13,10 @@ The calls follow `spec/0.2/tooling.md` (C2-T-005), spelled the Rust way (C2-T-00
 | `parseWithLayout` | `api::parse_with_layout` | `Error::Unsupported` for now |
 | `render` | `api::render(input, &Options)`, `api::render_tree(&Tree, &Options)` | available |
 | `renderWithDiagnostics` | `api::render_with_diagnostics`, `api::render_tree_with_diagnostics` return `Rendered { html, diagnostics, suppressed_diagnostics }` | available |
-| `format`, `formatWithDiagnostics` | `Carve::format`, `Carve::format_with_diagnostics` | `Error::Unsupported` until a `carve` writer is registered |
-| `write`, `writeWithDiagnostics` | `Carve::write`, `Carve::write_with_diagnostics`, `Carve::write_to(target, ...)` | `html` built in; `carve` pending |
+| `format`, `formatWithDiagnostics` | `Carve::format`, `Carve::format_with_diagnostics` | available |
+| `write`, `writeWithDiagnostics` | `Carve::write`, `Carve::write_with_diagnostics`, `Carve::write_to(target, ...)` | `carve` and `html` built in |
 | `lint` | `api::lint(input, &LintOptions) -> Result<Vec<Entry>, Error>` | available |
-| `importDocument` | `api::import_document` | `Error::Unsupported` for now |
+| `importDocument` | `api::import_document(html, &ImportOptions)`, `Carve::import_document` return `Imported { tree, source, diagnostics }` | available (HTML) |
 | `includeDependencies` | `api::include_dependencies(&Tree)` | available |
 | `encodeTree`, `encodeEnvelope` | `api::encode_tree`, `api::encode_tree_with(&Tree, EncodeOptions { positions })`, `api::encode_envelope` | available |
 | `decodeTree`, `validateTree` | `api::decode_tree(&str)`, `api::validate_tree(&Tree)` | available |
@@ -140,7 +140,11 @@ Over JSON, `host.documentTransforms` registers transforms that need no host code
 ]}}
 ```
 
-The standard `carve.tabs` extension (C2-X-039) has no matcher or renderer in this engine yet, so the options `extensions` and `renderers` still take only their empty defaults.
+`Carve::enable_standard("carve.tabs", renderer)` enables the standard `carve.tabs` extension (C2-X-039, provisional): its matcher claims `tabs` divs, and with `renderer` its standard renderers render them. Over JSON, the option `extensions` names it and `renderers` maps it to `"standard"`:
+
+```json
+{"call": "render", "source": "...", "options": {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}}}
+```
 
 ## Bindings and the JSON boundary
 
@@ -152,7 +156,7 @@ A request names the call with its `tooling.md` spelling:
 {"call": "renderWithDiagnostics", "source": "Hi *there*", "options": {"profile": "comment"}}
 ```
 
-Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` take host code (C2-T-010), so only their empty defaults are accepted.
+Fields: `source` (text) or `sourceBytes` (a list of byte values); `tree` (a tree as a JSON value) for the calls that read a tree and for `render` instead of a source; `json` (text) for `decodeTree`; `options`, keyed as in `data/options.json`; `positions` for `parse`; `target` for `write`; `file` for `includeDependencies`, the id of the top-level document, which a tree in JSON does not carry (`Tree::set_file` in Rust). `from` for `importDocument` (`"html"`, with the HTML as `source`). In JSON, `includes` is `{"root": DIR}` with optional `file`, `depth` and `bytes`; `extensions` and `renderers` accept the standard extensions only, since host code has no JSON form (C2-T-010). `format` and `importDocument` answer with `source`, `write` with `output`.
 
 The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 
@@ -190,11 +194,11 @@ The table maps the 0.1 calls that the bindings (carve-py, carve-rb, carve-wasm) 
 | `lint_carve`, `lint_carve_with_options` | `api::lint` |
 | `lint_accessibility` | `api::lint`: `a11y/image-alt` and `heading-level-skip` are catalog rules |
 | `extensions::registry::by_key`, `extensions::registry::keys` | `Carve::register_extension` (provisional) |
-| `to_carve`, `render_carve`, `try_to_carve_with_options`, `to_carve_with_report` | `Carve::format`, `Carve::write` (pending) |
+| `to_carve`, `render_carve`, `try_to_carve_with_options`, `to_carve_with_report` | `Carve::format`, `Carve::write` |
 | `to_markdown`, `render_markdown`, `render_markdown_with_options`, `try_to_markdown_with_options`, `to_markdown_with_report` | writer target `markdown` (pending port) |
 | `to_plain_text`, `render_plain_text`, `render_plain_text_with_options`, `try_to_plain_text_with_options`, `to_plain_text_with_report` | writer target `plain` (pending port) |
 | `to_ansi`, `render_ansi`, `render_ansi_with_options`, `try_to_ansi_with_options`, `to_ansi_with_report` | writer target `ansi` (pending port) |
-| `html_to_ast`, `migrate_html` | `api::import_document` (pending) |
+| `html_to_ast`, `migrate_html` | `api::import_document` |
 | `parse_with_source_layout` | `api::parse_with_layout` (pending) |
 | `djot_to_carve`, `migrate_djot`, `bbcode_to_carve`, `migrate_bbcode`, `try_migrate_markdown`, `try_markdown_to_ast` | gone: 0.2 specifies no Markdown, Djot or BBCode importer (C2-T-003) |
 | `create_ast_patch`, `apply_ast_patch`, `ast_patch_to_json`, `ast_patch_from_json`, `create_reversible_ast_patch`, `apply_reversible_ast_patch` | gone: 0.2 has no patch API (`UPGRADING.md`, Part 2) |
@@ -212,7 +216,7 @@ Option types: `carve::Options::new()` and `Options::default()` become `api::Opti
 - `tooling.md` gives `parse` a `positions` parameter. Here the tree in memory always carries positions, and `encode_tree_with(..., EncodeOptions { positions: false })` and the JSON request field `positions` drop them on output.
 - `tooling.md` gives `includeDependencies` a tree. `api::include_dependencies` reads the include nodes of an expanded tree; the `from` of a top-level include is the `file` id given in `Includes`, or set with `Tree::set_file` on a decoded tree.
 - On bytes with malformed UTF-8, `parse_with_diagnostics`, `render_with_diagnostics` and `lint` read the replaced text and move each range back to input byte offsets; a range edge inside a replaced sequence moves to the end of that sequence.
-- The engine does not yet implement `parseWithLayout`, `importDocument`, `migrateTree` or the Carve writer (`format`, `write`). Each returns `Error::Unsupported`.
+- The engine does not yet implement `parseWithLayout` or `migrateTree`. Each returns `Error::Unsupported`.
 - Extension host: resolution still visits only the fallback of an extension node, where C2-X-032 asks for its slots when a renderer is registered, so `render_blocks` and `render_inlines` render a slot as a document of its own, without the references, notes and ids of the whole document. The `host.attributes` and generated-id helpers of C2-X-033 are not offered, and the claim ownership of C2-X-054 is not tracked.
 - Include resolver on WASI preview 1 and Windows: Rust has no stable identity of an open file there, so the resolver checks after the open that the target still canonicalizes to itself inside the root and has the type, length and modification time of the opened file.
 - The social option's host functions (`resolveMention`, `resolveTag`, `context`) have no JSON form and no Rust form yet; `mentionUrl` and `tagUrl` templates work.

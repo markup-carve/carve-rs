@@ -952,12 +952,22 @@ fn write_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
             code_block(w, node, prefix);
             write_caption(w, caption(node), prefix, flags);
         }
+        "table" => {
+            write_table(w, node, prefix, flags);
+            write_caption(w, caption(node), prefix, flags);
+        }
         "raw_block" => code_block(w, node, prefix),
         "comment" => comment(w, node, prefix),
         "frontmatter" => frontmatter(w, node, prefix),
         "include" => include(w, node, prefix, flags),
         "link_reference_definition" => link_definition(w, node, prefix),
         "abbreviation_def" => abbreviation_definition(w, node, prefix),
+        _ => container_block(w, node, prefix, flags),
+    }
+}
+
+fn container_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
+    match ty(node) {
         "footnote" => footnote(w, node, prefix, flags),
         "list" => write_list(w, node, prefix, flags),
         "definition_term" => text_leaf(w, node, prefix, flags, ":: ", "   "),
@@ -968,10 +978,6 @@ fn write_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
         "admonition" | "directive" => named_div(w, node, prefix, flags),
         "figure_group" => figure_group(w, node, prefix, flags),
         "line_block" => line_block(w, node, prefix, flags),
-        "table" => {
-            write_table(w, node, prefix, flags);
-            write_caption(w, caption(node), prefix, flags);
-        }
         "block_extension" => block_extension(w, node, prefix, flags),
         _ => children_only(w, node, prefix, flags),
     }

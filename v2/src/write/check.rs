@@ -483,6 +483,18 @@ fn respell_step<'t>(
         6 => escape_closer_before_brace(w, c, es, i),
         7 => escape_after(w, c, es, i),
         8 => escape_content_line(w, c, e),
+        _ => late_respell_step(w, c, e, step, attempt),
+    }
+}
+
+fn late_respell_step<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    e: N<'t>,
+    step: usize,
+    attempt: &mut Attempt<'t>,
+) -> bool {
+    match step {
         9 => escape_owner_mark(w, c, e),
         10 => {
             if !has_other_form(w, c, e) {
@@ -1017,6 +1029,25 @@ fn bracket_run(b: &[u8], at: usize) -> (usize, usize) {
     (start, end)
 }
 
+fn escape_footnote_brackets<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    node: N<'t>,
+    at: usize,
+    end: usize,
+) {
+    let b = text(node).as_bytes();
+    for k in at + 1..end {
+        if b.get(k) != Some(&b'[') {
+            continue;
+        }
+        if b.get(k + 1) != Some(&b'^') || k + 2 >= end {
+            return;
+        }
+        escape_at(w, c, node, k);
+    }
+}
+
 fn escape_brackets<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize, a: &Built) {
     let b = text(node).as_bytes();
     let (start, end) = bracket_run(b, at);
@@ -1024,16 +1055,7 @@ fn escape_brackets<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize
         return;
     }
     if a.kind == "footnote_ref" {
-        let mut k = at + 1;
-        while k < end {
-            if b.get(k) == Some(&b'[') {
-                if b.get(k + 1) != Some(&b'^') || k + 2 >= end {
-                    return;
-                }
-                escape_at(w, c, node, k);
-            }
-            k += 1;
-        }
+        escape_footnote_brackets(w, c, node, at, end);
         return;
     }
     let sigil = sigil_of(b, at);

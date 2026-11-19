@@ -570,6 +570,30 @@ fn compare_group<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: 
 /// One round of the test of C2-W-089. False when the group reads back as its blocks.
 fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: bool) -> bool {
     let mut c = compare_group(w, doc, group, first);
+    if drop_asked_trials(w, &mut c, group, first) && c.changes() == 0 {
+        return true;
+    }
+    if c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
+        keep_leftmost_escape(w, &mut c, group);
+    }
+    extend_chains(w, &mut c);
+    if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
+        // C2-W-005: what only line 1 reads differently is written below one blank line.
+        w.blank_first = compare_group(w, doc, group, false).losses.is_empty();
+        if w.blank_first {
+            return true;
+        }
+    }
+    apply_changes(w, &c)
+}
+
+/// Drops the escapes of trials that were already asked; true when any was dropped.
+fn drop_asked_trials<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    group: &'t [Value],
+    first: bool,
+) -> bool {
     let mut dropped = false;
     let trials = if c.trials.len() <= MAX_ORDERED_ESCAPES {
         c.trials.clone()
@@ -589,30 +613,21 @@ fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: bool) -
         }
         dropped = true;
     }
-    if dropped && c.changes() == 0 {
-        return true;
-    }
-    if c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
-        if let Some(best) = leftmost(group, &c.escapes) {
-            let deferred: Vec<(usize, usize)> = c
-                .escapes
-                .iter()
-                .filter(|(n, at)| !(id(n) == id(best.0) && *at == best.1))
-                .map(|(n, at)| (id(n), *at))
-                .collect();
-            defer_escapes(w, &deferred);
-            c.escapes = vec![best];
-        }
-    }
-    extend_chains(w, &mut c);
-    if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
-        // C2-W-005: what only line 1 reads differently is written below one blank line.
-        w.blank_first = compare_group(w, doc, group, false).losses.is_empty();
-        if w.blank_first {
-            return true;
-        }
-    }
-    apply_changes(w, &c)
+    dropped
+}
+
+fn keep_leftmost_escape<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: &'t [Value]) {
+    let Some(best) = leftmost(group, &c.escapes) else {
+        return;
+    };
+    let deferred: Vec<(usize, usize)> = c
+        .escapes
+        .iter()
+        .filter(|(n, at)| !(id(n) == id(best.0) && *at == best.1))
+        .map(|(n, at)| (id(n), *at))
+        .collect();
+    defer_escapes(w, &deferred);
+    c.escapes = vec![best];
 }
 
 const LINE_LEAVES: &[&str] = &[

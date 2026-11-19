@@ -314,8 +314,12 @@ impl Carve {
         let opener = |at: usize| match input {
             Input::Text(s) => standard::opener_name(s, at),
             Input::Bytes(b) => {
-                let line = b.get(at..)?.split(|&c| c == b'\n').next()?;
-                standard::opener_name(&String::from_utf8_lossy(line), 0)
+                let line = b
+                    .get(at..)?
+                    .split(|&c| c == b'\n')
+                    .map(String::from_utf8_lossy)
+                    .find(|l| !standard::is_attribute_line(l))?;
+                standard::opener_name(&line, 0)
             }
         };
         let complete = standard::claim_tabs(&mut value, &opener);
@@ -422,7 +426,6 @@ impl Carve {
     ///
     /// # Errors
     ///
-    /// [`Error::Unsupported`] while no `carve` writer is registered;
     /// [`Error::Write`] for a writer loss (C2-W-134).
     pub fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<String, Error> {
         refuse_losses(self.write_with_diagnostics(tree, opts)?)

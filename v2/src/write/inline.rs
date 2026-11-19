@@ -484,43 +484,59 @@ fn escaped_like(content: &str, key: &str) -> Option<String> {
     let mut out: Vec<u8> = Vec::with_capacity(c.len());
     let (mut at, mut ki) = (0usize, 0usize);
     while let Some(&ch) = c.get(at) {
-        if is_label_space(ch) {
-            let mut end = at;
-            while c.get(end).is_some_and(|&b| is_label_space(b)) {
-                end += 1;
-            }
-            out.extend_from_slice(c.get(at..end)?);
-            if ki > 0 && end < c.len() && k.get(ki) == Some(&b' ') {
-                ki += 1;
-            }
-            at = end;
-            continue;
-        }
-        let next = c.get(at + 1).copied();
-        if ch == b'\\'
-            && next.is_some_and(|n| n != b'\\' && n.is_ascii_punctuation() && k.get(ki) == Some(&n))
-        {
-            out.push(next.unwrap_or(b' '));
-            ki += 1;
-            at += 2;
-            continue;
-        }
-        let escape = k.get(ki) == Some(&b'\\')
-            && k.get(ki + 1) == Some(&ch)
-            && ch != b'\\'
-            && ch.is_ascii_punctuation();
-        if !escape && k.get(ki) != Some(&ch) {
-            return None;
-        }
-        if escape {
-            out.push(b'\\');
-        }
-        out.push(ch);
-        ki += if escape { 2 } else { 1 };
-        at += 1;
+        (at, ki) = if is_label_space(ch) {
+            label_space_run(c, k, at, ki, &mut out)?
+        } else {
+            label_char(c, k, at, ki, &mut out)?
+        };
     }
     let out = String::from_utf8(out).ok()?;
     (ki == k.len() && fold_label(&out) == key).then_some(out)
+}
+
+fn label_space_run(
+    c: &[u8],
+    k: &[u8],
+    at: usize,
+    ki: usize,
+    out: &mut Vec<u8>,
+) -> Option<(usize, usize)> {
+    let mut end = at;
+    while c.get(end).is_some_and(|&b| is_label_space(b)) {
+        end += 1;
+    }
+    out.extend_from_slice(c.get(at..end)?);
+    let skip = ki > 0 && end < c.len() && k.get(ki) == Some(&b' ');
+    Some((end, ki + usize::from(skip)))
+}
+
+fn label_char(
+    c: &[u8],
+    k: &[u8],
+    at: usize,
+    ki: usize,
+    out: &mut Vec<u8>,
+) -> Option<(usize, usize)> {
+    let ch = *c.get(at)?;
+    let next = c.get(at + 1).copied();
+    if ch == b'\\'
+        && next.is_some_and(|n| n != b'\\' && n.is_ascii_punctuation() && k.get(ki) == Some(&n))
+    {
+        out.push(next.unwrap_or(b' '));
+        return Some((at + 2, ki + 1));
+    }
+    let escape = k.get(ki) == Some(&b'\\')
+        && k.get(ki + 1) == Some(&ch)
+        && ch != b'\\'
+        && ch.is_ascii_punctuation();
+    if !escape && k.get(ki) != Some(&ch) {
+        return None;
+    }
+    if escape {
+        out.push(b'\\');
+    }
+    out.push(ch);
+    Some((at + 1, ki + if escape { 2 } else { 1 }))
 }
 
 fn image_node(w: &mut Writer<'_>, node: &Value, flags: u32) -> String {
@@ -1151,11 +1167,7 @@ pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> Str
             last = Some(' ');
         }
         // C2-L-021: a fragment of a continuation row starts at this node.
-        if flags & IN_CELL != 0
-            && w.wrap_starts
-                .as_ref()
-                .is_some_and(|s| s.contains(&id(node)))
-        {
+        if wraps_at(w, node, flags) {
             if out.ends_with(' ') {
                 out.pop();
             }
@@ -1169,16 +1181,7 @@ pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> Str
                 .get(..out.len().saturating_sub(1))
                 .is_some_and(|o| o.ends_with('\\'));
         place_escapes(w, nodes, at, end, flags, after_bang);
-        let part = if let Some(b) = line_start_break(node, line_start) {
-            b.to_string()
-        } else if ty(node) == "hard_break"
-            && flags & BARE_BREAKS != 0
-            && matches!(last, Some(' ' | '\t'))
-        {
-            "\\\n".to_string()
-        } else {
-            glued_part(w, nodes, at, end, flags, last)
-        };
+        let part = inline_part(w, nodes, at, end, flags, (line_start, last));
         out.push_str(&part);
         if let Some(c) = part.chars().last() {
             last = Some(c);
@@ -1187,6 +1190,36 @@ pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> Str
         at = end;
     }
     out
+}
+
+fn wraps_at(w: &Writer<'_>, node: &Value, flags: u32) -> bool {
+    flags & IN_CELL != 0
+        && w.wrap_starts
+            .as_ref()
+            .is_some_and(|s| s.contains(&id(node)))
+}
+
+fn inline_part<'t>(
+    w: &mut Writer<'t>,
+    nodes: &[N<'t>],
+    at: usize,
+    end: usize,
+    flags: u32,
+    (line_start, last): (bool, Option<char>),
+) -> String {
+    let Some(&node) = nodes.get(at) else {
+        return String::new();
+    };
+    if let Some(b) = line_start_break(node, line_start) {
+        b.to_string()
+    } else if ty(node) == "hard_break"
+        && flags & BARE_BREAKS != 0
+        && matches!(last, Some(' ' | '\t'))
+    {
+        "\\\n".to_string()
+    } else {
+        glued_part(w, nodes, at, end, flags, last)
+    }
 }
 
 /// The source of the content of a text leaf: no space or tab of text stands at its end (C2-W-022).

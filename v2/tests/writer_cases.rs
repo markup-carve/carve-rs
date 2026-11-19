@@ -59,7 +59,7 @@ impl Group {
         }
     }
 
-    fn check(&mut self, id: &str, problems: Vec<String>) {
+    fn check(&mut self, id: &str, problems: &[String]) {
         let held = HELD.iter().any(|(h, _)| *h == id);
         match (problems.is_empty(), held) {
             (true, false) => self.pass += 1,
@@ -183,7 +183,7 @@ fn strip(v: &mut Value) {
 }
 
 #[test]
-fn writer_clause_cases_examples_and_trees() {
+fn writer_clause_cases() {
     let carve = Carve::new();
     let mut failures = Vec::new();
 
@@ -217,7 +217,7 @@ fn writer_clause_cases_examples_and_trees() {
                         }
                     }
                 }
-                writes.check(id, problems);
+                writes.check(id, &problems);
             }
             Some("format") => {
                 let input = c["input"].as_str().unwrap_or("");
@@ -230,14 +230,19 @@ fn writer_clause_cases_examples_and_trees() {
                         &mut problems,
                     );
                 }
-                formats.check(id, problems);
+                formats.check(id, &problems);
             }
             _ => {}
         }
     }
     failures.extend(writes.finish());
     failures.extend(formats.finish());
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
 
+#[test]
+fn writer_examples() {
+    let carve = Carve::new();
     let examples = load("spec-conformance/examples.json");
     let mut group = Group::new("write examples");
     for e in examples["examples"]
@@ -259,10 +264,15 @@ fn writer_clause_cases_examples_and_trees() {
                 problems.push("the expected source does not read back as the input".into());
             }
         }
-        group.check(id, problems);
+        group.check(id, &problems);
     }
-    failures.extend(group.finish());
+    let failures = group.finish();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
 
+#[test]
+fn writer_trees() {
+    let carve = Carve::new();
     let trees = load("spec-trees/examples-writer.json");
     let mut group = Group::new("writer trees");
     for t in trees["trees"].as_array().into_iter().flatten() {
@@ -282,10 +292,9 @@ fn writer_clause_cases_examples_and_trees() {
                 Ok(w) => problems.push(format!("losses {:?}", codes(&w.diagnostics))),
             },
         }
-        group.check(id, problems);
+        group.check(id, &problems);
     }
-    failures.extend(group.finish());
-
+    let failures = group.finish();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -328,12 +337,12 @@ fn format_round_trips_render_examples() {
                 match carve.format(once.as_str(), &WriteOptions::default()) {
                     Ok(twice) if twice == once => {}
                     other => {
-                        problems.push(format!("{input}\n--- once\n{once}--- twice\n{other:?}"))
+                        problems.push(format!("{input}\n--- once\n{once}--- twice\n{other:?}"));
                     }
                 }
             }
         }
-        group.check(id, problems);
+        group.check(id, &problems);
     }
     println!("round-trip: {refused} refused with a loss report");
     let failures = group.finish();

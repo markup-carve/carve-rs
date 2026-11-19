@@ -823,7 +823,31 @@ impl Cx {
         if key.is_none() && !collapsed && !shortcut {
             return None;
         }
-        let fault = match &key {
+        if let Some((name, reason)) = self.reference_fault(id, key.as_deref(), collapsed) {
+            self.ignored_carrier(id, name, reason);
+            return None;
+        }
+        let form = match (collapsed, shortcut) {
+            (true, true) => {
+                for name in ["data-carve-ref-collapsed", "data-carve-ref-shortcut"] {
+                    self.ignored_carrier(id, name, "a reference has one form");
+                }
+                "full"
+            }
+            (true, false) => "collapsed",
+            (false, true) => "shortcut",
+            (false, false) => "full",
+        };
+        Some((key?, form))
+    }
+
+    fn reference_fault(
+        &self,
+        id: Id,
+        key: Option<&str>,
+        collapsed: bool,
+    ) -> Option<(&'static str, &'static str)> {
+        match key {
             None => Some((
                 if collapsed {
                     "data-carve-ref-collapsed"
@@ -832,31 +856,14 @@ impl Cx {
                 },
                 "there is no reference key",
             )),
-            Some(k) if k.is_empty() || fold_label(k) != *k => {
+            Some(k) if k.is_empty() || fold_label(k) != k => {
                 Some(("data-carve-ref", "the key is not folded"))
             }
             Some(_) if link_forms(&self.dom, id).len() > 1 => {
                 Some(("data-carve-ref", "the link has one form"))
             }
             Some(_) => None,
-        };
-        if let Some((name, reason)) = fault {
-            self.ignored_carrier(id, name, reason);
-            return None;
         }
-        let form = if collapsed && shortcut {
-            for name in ["data-carve-ref-collapsed", "data-carve-ref-shortcut"] {
-                self.ignored_carrier(id, name, "a reference has one form");
-            }
-            "full"
-        } else if collapsed {
-            "collapsed"
-        } else if shortcut {
-            "shortcut"
-        } else {
-            "full"
-        };
-        Some((key?, form))
     }
 
     /// C2-H-019, C2-H-191: the first reference of each key gives back its definition.

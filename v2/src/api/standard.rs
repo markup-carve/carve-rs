@@ -268,10 +268,20 @@ pub(crate) fn plain_text(nodes: &[Value]) -> String {
     out
 }
 
+pub(crate) fn is_attribute_line(line: &str) -> bool {
+    line.trim_start_matches([' ', '\t', '>'])
+        .trim_start_matches([' ', '\t'])
+        .starts_with('{')
+}
+
 /// The source name of a div whose opener starts at `at`: the word after
 /// the colon run (C2-X-008).
 pub(crate) fn opener_name(source: &str, at: usize) -> Option<String> {
-    let line = source.get(at..)?.lines().next()?;
+    // The span of a div with attributes starts at its attribute lines.
+    let line = source.get(at..)?.lines().find(|l| !is_attribute_line(l))?;
+    let line = line
+        .trim_start_matches([' ', '\t', '>'])
+        .trim_start_matches([' ', '\t']);
     let rest = line.trim_start_matches(':');
     if rest.len() + 3 > line.len() {
         return None;

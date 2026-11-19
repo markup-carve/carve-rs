@@ -160,33 +160,7 @@ pub fn from_source(doc: &Value, src: &str) -> Vec<Entry> {
 }
 
 fn walk(node: &Value, src: &str, path: &str, quoted: bool, out: &mut Vec<Entry>) {
-    let mut facts = Facts::default();
-    let mut any = true;
-    match ty(node) {
-        "list" => {
-            let ordered = node.get("marker").and_then(|m| s(m, "kind")) == Some("ordered");
-            let first = children(node).first().and_then(span);
-            match (ordered, first) {
-                (true, Some((start, _))) => {
-                    facts.bare = Some(src.as_bytes().get(start) == Some(&b'.'));
-                }
-                _ => any = false,
-            }
-        }
-        "block_quote" => facts.fenced = Some(opener(node, src).is_some_and(|o| o.starts_with(':'))),
-        "div" if classes(node).contains(&super::blocks::HARD_BREAKS_CLASS) => {
-            facts.hard_break_opener = opener(node, src).map(|o| {
-                o.trim_start_matches(':')
-                    .trim_start_matches([' ', '\t'])
-                    .starts_with('\\')
-            });
-        }
-        "table" => table_facts(node, src, path, out, &mut facts),
-        "link" | "image" if node.get("key").is_some() => facts.raw_ref = raw_ref(node, src, quoted),
-        "include" => facts.option_spelling = option_spelling(node, src),
-        _ => any = false,
-    }
-    if any {
+    if let Some(facts) = node_facts(node, src, path, quoted, out) {
         out.push(Entry {
             path: path.to_string(),
             facts,
@@ -206,6 +180,37 @@ fn walk(node: &Value, src: &str, path: &str, quoted: bool, out: &mut Vec<Entry>)
             walk(c, src, &p, inner, out);
         }
     });
+}
+
+/// The facts of one node, or `None` when its type records none.
+fn node_facts(
+    node: &Value,
+    src: &str,
+    path: &str,
+    quoted: bool,
+    out: &mut Vec<Entry>,
+) -> Option<Facts> {
+    let mut facts = Facts::default();
+    match ty(node) {
+        "list" => {
+            let ordered = node.get("marker").and_then(|m| s(m, "kind")) == Some("ordered");
+            let (start, _) = children(node).first().and_then(span).filter(|_| ordered)?;
+            facts.bare = Some(src.as_bytes().get(start) == Some(&b'.'));
+        }
+        "block_quote" => facts.fenced = Some(opener(node, src).is_some_and(|o| o.starts_with(':'))),
+        "div" if classes(node).contains(&super::blocks::HARD_BREAKS_CLASS) => {
+            facts.hard_break_opener = opener(node, src).map(|o| {
+                o.trim_start_matches(':')
+                    .trim_start_matches([' ', '\t'])
+                    .starts_with('\\')
+            });
+        }
+        "table" => table_facts(node, src, path, out, &mut facts),
+        "link" | "image" if node.get("key").is_some() => facts.raw_ref = raw_ref(node, src, quoted),
+        "include" => facts.option_spelling = option_spelling(node, src),
+        _ => return None,
+    }
+    Some(facts)
 }
 
 /// The opener line of a block, behind its attribute lines, from the column of its start.

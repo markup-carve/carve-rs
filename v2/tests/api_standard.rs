@@ -28,9 +28,14 @@ fn check(case: &Value) -> Option<String> {
     let expected = &case["expected"];
     let mut failures = Vec::new();
     if let Some(html) = expected["html"].as_str() {
-        let out = call(
-            &json!({"call": "renderWithDiagnostics", "source": input, "options": case["options"]}),
-        );
+        let mut request = json!({"call": "renderWithDiagnostics", "options": case["options"]});
+        // A render case gives either source or a tree.
+        if case["tree"].is_object() {
+            request["tree"] = case["tree"].clone();
+        } else {
+            request["source"] = input.into();
+        }
+        let out = call(&request);
         let got = out["ok"]["html"].as_str().unwrap_or("");
         if got != html {
             failures.push(format!(

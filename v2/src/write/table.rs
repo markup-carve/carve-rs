@@ -450,45 +450,10 @@ fn pipe_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u32) {
     let mut entries = table_entries(w, table, flags);
     let closing = ends_with_group_comment(table);
     if closing {
-        if let Some(Entry::Row(last)) = entries
-            .iter_mut()
-            .rev()
-            .find(|e| matches!(e, Entry::Row(_)))
-        {
-            while last.lines.len() > 1
-                && last
-                    .lines
-                    .last()
-                    .is_some_and(|l| l.iter().all(|p| p.trim().is_empty()))
-            {
-                last.lines.pop();
-            }
-        }
+        trim_last_row(&mut entries);
     }
     if w.align_tables {
-        let mut rows: Vec<WrittenRow> = Vec::new();
-        let mut kinds = Vec::new();
-        for e in entries.drain(..) {
-            match e {
-                Entry::Row(r) => {
-                    rows.push(r);
-                    kinds.push(None);
-                }
-                Entry::Comment(c) => kinds.push(Some(c)),
-            }
-        }
-        align_columns(&mut rows);
-        let mut rows = rows.into_iter();
-        for k in kinds {
-            match k {
-                Some(c) => entries.push(Entry::Comment(c)),
-                None => {
-                    if let Some(r) = rows.next() {
-                        entries.push(Entry::Row(r));
-                    }
-                }
-            }
-        }
+        align_entries(&mut entries);
     }
     for e in &entries {
         match e {
@@ -501,6 +466,51 @@ fn pipe_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u32) {
     }
     if closing {
         emit(w, prefix, "+ |");
+    }
+}
+
+/// Drops the blank trailing lines of the last row.
+fn trim_last_row(entries: &mut [Entry<'_>]) {
+    let Some(Entry::Row(last)) = entries
+        .iter_mut()
+        .rev()
+        .find(|e| matches!(e, Entry::Row(_)))
+    else {
+        return;
+    };
+    while last.lines.len() > 1
+        && last
+            .lines
+            .last()
+            .is_some_and(|l| l.iter().all(|p| p.trim().is_empty()))
+    {
+        last.lines.pop();
+    }
+}
+
+fn align_entries(entries: &mut Vec<Entry<'_>>) {
+    let mut rows: Vec<WrittenRow> = Vec::new();
+    let mut kinds = Vec::new();
+    for e in entries.drain(..) {
+        match e {
+            Entry::Row(r) => {
+                rows.push(r);
+                kinds.push(None);
+            }
+            Entry::Comment(c) => kinds.push(Some(c)),
+        }
+    }
+    align_columns(&mut rows);
+    let mut rows = rows.into_iter();
+    for k in kinds {
+        match k {
+            Some(c) => entries.push(Entry::Comment(c)),
+            None => {
+                if let Some(r) = rows.next() {
+                    entries.push(Entry::Row(r));
+                }
+            }
+        }
     }
 }
 

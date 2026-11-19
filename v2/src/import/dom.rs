@@ -209,6 +209,17 @@ impl Dom {
         out
     }
 
+    fn in_raw_text(&self, n: Id) -> bool {
+        self.parent(n)
+            .and_then(|p| match &self.node(p).kind {
+                Kind::Element { name, html, .. } => {
+                    Some(*html && RAW_TEXT.contains(&name.as_str()))
+                }
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
     fn serialize(&self, id: Id, skip: Option<&dyn Fn(&str) -> bool>, out: &mut String) {
         enum Step {
             Open(Id, bool),
@@ -226,16 +237,7 @@ impl Dom {
             let (n, top) = n;
             match &self.node(n).kind {
                 Kind::Text(t) => {
-                    let raw = self
-                        .parent(n)
-                        .and_then(|p| match &self.node(p).kind {
-                            Kind::Element { name, html, .. } => {
-                                Some(*html && RAW_TEXT.contains(&name.as_str()))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(false);
-                    if raw {
+                    if self.in_raw_text(n) {
                         out.push_str(t);
                     } else {
                         escape(t, false, out);
@@ -249,19 +251,7 @@ impl Dom {
                     pending.extend(self.children(n).iter().rev().map(|&c| Step::Open(c, false)));
                 }
                 Kind::Element { name, html, attrs } => {
-                    out.push('<');
-                    out.push_str(name);
-                    for (k, v) in attrs {
-                        if top && skip.is_some_and(|f| f(k)) {
-                            continue;
-                        }
-                        out.push(' ');
-                        out.push_str(k);
-                        out.push_str("=\"");
-                        escape(v, true, out);
-                        out.push('"');
-                    }
-                    out.push('>');
+                    start_tag(name, attrs, skip.filter(|_| top), out);
                     if *html && VOID.contains(&name.as_str()) {
                         continue;
                     }
@@ -277,6 +267,27 @@ impl Dom {
             }
         }
     }
+}
+
+fn start_tag(
+    name: &str,
+    attrs: &[(String, String)],
+    skip: Option<&dyn Fn(&str) -> bool>,
+    out: &mut String,
+) {
+    out.push('<');
+    out.push_str(name);
+    for (k, v) in attrs {
+        if skip.is_some_and(|f| f(k)) {
+            continue;
+        }
+        out.push(' ');
+        out.push_str(k);
+        out.push_str("=\"");
+        escape(v, true, out);
+        out.push('"');
+    }
+    out.push('>');
 }
 
 fn escape(s: &str, attribute: bool, out: &mut String) {
