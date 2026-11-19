@@ -734,7 +734,7 @@ fn check_length(len: usize, opts: &Options) -> Result<(), Error> {
     Ok(())
 }
 
-/// A tree's JSON text as a value; trees nest past serde_json's default
+/// A tree's JSON text as a value; trees nest past `serde_json`'s default
 /// recursion limit of 128.
 pub(crate) fn deep_json(text: &str) -> serde_json::Result<Value> {
     let mut de = serde_json::Deserializer::from_str(text);
