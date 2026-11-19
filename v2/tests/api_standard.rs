@@ -28,13 +28,21 @@ fn check(case: &Value) -> Option<String> {
     let expected = &case["expected"];
     let mut failures = Vec::new();
     if let Some(html) = expected["html"].as_str() {
-        let out = call(&json!({"call": "renderWithDiagnostics", "source": input, "options": case["options"]}));
+        let out = call(
+            &json!({"call": "renderWithDiagnostics", "source": input, "options": case["options"]}),
+        );
         let got = out["ok"]["html"].as_str().unwrap_or("");
         if got != html {
-            failures.push(format!("html\n  want {html}\n  got  {got} {}", out["error"]));
+            failures.push(format!(
+                "html\n  want {html}\n  got  {got} {}",
+                out["error"]
+            ));
         }
         for code in expected["notReported"].as_array().into_iter().flatten() {
-            let codes = out["ok"]["diagnostics"].as_array().cloned().unwrap_or_default();
+            let codes = out["ok"]["diagnostics"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
             if codes.iter().any(|d| d["code"] == *code) {
                 failures.push(format!("reported {code}"));
             }
@@ -48,7 +56,10 @@ fn check(case: &Value) -> Option<String> {
         without_pos(&mut got);
         let (want, got) = (sorted(children), sorted(&got));
         if want != got {
-            failures.push(format!("children\n  want {want}\n  got  {got} {}", out["error"]));
+            failures.push(format!(
+                "children\n  want {want}\n  got  {got} {}",
+                out["error"]
+            ));
         }
     }
     (!failures.is_empty()).then(|| format!("{id}: {}", failures.join("; ")))
@@ -93,18 +104,42 @@ fn c2_x_056_selected_tab_and_static_sections() {
     };
     let two = ":::: tabs\n::: tab \"Install\"\nRun setup.\n:::\n\n{selected}\n::: tab \"Use\"\nOpen the app.\n:::\n::::\n";
     let cases = [
-        tabs(":::: tabs\n::: tab \"Install\"\nRun.\n:::\n::::\n", Some("static"), true,
-            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Install</h3><p>Run.</p></section></div>"),
-        tabs(":::: tabs\n::: tab \"Install\"\nRun.\n:::\n::::\n", Some("static"), false,
-            "<p><strong>Install</strong></p>\n<p>Run.</p>"),
-        tabs(":::: tabs\n::: tab \"A\"\na\n:::\n{selected}\n::: tab \"B\"\nb\n:::\n::::\n", None, true,
-            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\"><label for=\"tabs-1-0\">A</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-1\" checked><label for=\"tabs-1-1\">B</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"B\"><p>b</p></div></div>"),
-        tabs(":::: tabs\n::: tab \"A\"\na\n:::\n\n{selected}\n::: tab \"B\"\nb\n:::\n\n{selected}\n::: tab \"C\"\nc\n:::\n::::\n", None, true,
-            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\"><label for=\"tabs-1-0\">A</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-1\" checked><label for=\"tabs-1-1\">B</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-2\"><label for=\"tabs-1-2\">C</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"B\"><p>b</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"C\"><p>c</p></div></div>"),
-        tabs(":::: tabs\n::: tab \"A\"\na\n:::\n\n{k=v}\n::: tab \"B\"\nb\n:::\n::::\n", None, true,
-            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\" checked><label for=\"tabs-1-0\">A</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-1\"><label for=\"tabs-1-1\">B</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"B\"><p>b</p></div></div>"),
-        tabs(two, Some("static"), true,
-            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Install</h3><p>Run setup.</p></section><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Use</h3><p>Open the app.</p></section></div>"),
+        tabs(
+            ":::: tabs\n::: tab \"Install\"\nRun.\n:::\n::::\n",
+            Some("static"),
+            true,
+            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Install</h3><p>Run.</p></section></div>",
+        ),
+        tabs(
+            ":::: tabs\n::: tab \"Install\"\nRun.\n:::\n::::\n",
+            Some("static"),
+            false,
+            "<p><strong>Install</strong></p>\n<p>Run.</p>",
+        ),
+        tabs(
+            ":::: tabs\n::: tab \"A\"\na\n:::\n{selected}\n::: tab \"B\"\nb\n:::\n::::\n",
+            None,
+            true,
+            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\"><label for=\"tabs-1-0\">A</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-1\" checked><label for=\"tabs-1-1\">B</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"B\"><p>b</p></div></div>",
+        ),
+        tabs(
+            ":::: tabs\n::: tab \"A\"\na\n:::\n\n{selected}\n::: tab \"B\"\nb\n:::\n\n{selected}\n::: tab \"C\"\nc\n:::\n::::\n",
+            None,
+            true,
+            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\"><label for=\"tabs-1-0\">A</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-1\" checked><label for=\"tabs-1-1\">B</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-2\"><label for=\"tabs-1-2\">C</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"B\"><p>b</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"C\"><p>c</p></div></div>",
+        ),
+        tabs(
+            ":::: tabs\n::: tab \"A\"\na\n:::\n\n{k=v}\n::: tab \"B\"\nb\n:::\n::::\n",
+            None,
+            true,
+            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\" checked><label for=\"tabs-1-0\">A</label><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-1\"><label for=\"tabs-1-1\">B</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div><div class=\"tab-panel\" role=\"group\" aria-label=\"B\"><p>b</p></div></div>",
+        ),
+        tabs(
+            two,
+            Some("static"),
+            true,
+            "<div class=\"tabs\" role=\"group\" aria-label=\"Tabs\"><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Install</h3><p>Run setup.</p></section><section class=\"tabs-panel\"><h3 class=\"tabs-label\">Use</h3><p>Open the app.</p></section></div>",
+        ),
     ];
     let failures: Vec<String> = cases.iter().filter_map(check).collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
