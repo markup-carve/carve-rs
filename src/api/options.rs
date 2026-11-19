@@ -237,10 +237,11 @@ fn code_block_renderer(v: &Value) -> Result<Option<crate::options::CodeBlockRend
     };
     Ok(Some(crate::options::CodeBlockRenderer::new(
         move |node, default_html| {
-            let own = node.get("syntax").and_then(Value::as_str).unwrap_or("");
-            if syntax.as_deref().is_some_and(|s| s != own) {
+            let own_syntax = node.get("syntax").and_then(Value::as_str);
+            if syntax.as_deref().is_some_and(|s| Some(s) != own_syntax) {
                 return None;
             }
+            let own = own_syntax.unwrap_or("");
             let mut rest = result.as_deref()?;
             let mut html = String::with_capacity(rest.len() + default_html.len());
             while let Some(at) = rest.find('{') {
