@@ -235,6 +235,19 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
     if let Some(word) = name.strip_prefix("carve.fencedRender.") {
         return fenced::preset_word(word);
     }
+    apparatus_standard(name).or_else(|| standard_other(name))
+}
+
+fn apparatus_standard(name: &str) -> Option<Bundle> {
+    match name {
+        "carve.glossary" | "carve.term" => Some(glossary()),
+        "carve.index" | "carve.indexTerm" => Some(index(IndexOptions::default())),
+        "carve.cite" | "carve.references" => Some(citations(CitationsOptions::default())),
+        _ => None,
+    }
+}
+
+fn standard_other(name: &str) -> Option<Bundle> {
     match name {
         "carve.mathBlock" => Some(math_block(MathBlockOptions::default())),
         "carve.codeGroup" => Some(code_group(CodeGroupOptions::default())),
@@ -247,9 +260,6 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
         "carve.tabNormalize" => tab_normalize(2).ok(),
         "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
         "carve.semanticSpan" => Some(semantic_span()),
-        "carve.glossary" | "carve.term" => Some(glossary()),
-        "carve.index" | "carve.indexTerm" => Some(index(IndexOptions::default())),
-        "carve.cite" | "carve.references" => Some(citations(CitationsOptions::default())),
         "carve.smartQuotes" => Some(smart_quotes(&SmartQuotesOptions::default())),
         _ => None,
     }

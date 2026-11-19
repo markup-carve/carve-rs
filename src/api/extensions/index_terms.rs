@@ -1,5 +1,7 @@
 //! The provisional index bundle of the 0.2 reference.
 
+#![allow(clippy::indexing_slicing)]
+
 use super::apparatus::{self as app, Body};
 use super::{Bundle, Claim, Engine, Form, Matcher, declaration};
 use crate::api::{Channel, DocumentTransform, Error, Extension, RenderContext, Renderer, Tree};
@@ -88,7 +90,7 @@ fn index_list(entries: &BTreeMap<String, Entry>, label: &str, budget: &mut i64) 
 
 impl DocumentTransform for Transform {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        let mut doc = app::view(view.clone())?;
+        let mut doc = app::view(&view)?;
         let mut taken = app::view_ids(&doc);
         let mut entries: BTreeMap<String, Entry> = BTreeMap::new();
         app::walk(&mut doc, &mut |node| {
@@ -115,7 +117,7 @@ impl DocumentTransform for Transform {
             false
         });
         if entries.is_empty() {
-            return app::finish(view, doc);
+            return app::finish(&view, doc);
         }
         let src_bytes = doc
             .get("srcByteLength")
@@ -136,14 +138,14 @@ impl DocumentTransform for Transform {
             if let Some(parts) = body.get_mut("children").and_then(Value::as_array_mut) {
                 parts.push(list);
             }
-            *node = app::claim_directive(INDEX, node, vec![body]);
+            *node = app::claim_directive(INDEX, node, &[body]);
             claimed = true;
             false
         });
         if claimed {
             super::super::standard::declare_names(&mut doc, &[(INDEX, json!(["body"]))]);
         }
-        app::finish(view, doc)
+        app::finish(&view, doc)
     }
 }
 

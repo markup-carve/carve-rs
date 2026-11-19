@@ -132,7 +132,7 @@ pub(super) fn core_nodes(nodes: &[Value]) -> Vec<Value> {
         if let Some(body) = copy.get_mut("children").and_then(Value::as_array_mut) {
             *body = core_nodes(body);
         }
-        copy.get_mut("slots").map(|slots| {
+        if let Some(slots) = copy.get_mut("slots") {
             if let Some(map) = slots.as_object_mut() {
                 for part in map.values_mut() {
                     if let Some(list) = part.as_array_mut() {
@@ -140,17 +140,19 @@ pub(super) fn core_nodes(nodes: &[Value]) -> Vec<Value> {
                     }
                 }
             }
-        });
+        }
         vec![copy]
     }
     nodes.iter().flat_map(strip).collect()
 }
 
-pub(super) fn claim_directive(name: &str, authored: &Value, body: Vec<Value>) -> Value {
+pub(super) fn claim_directive(name: &str, authored: &Value, body: &[Value]) -> Value {
     let mut node = json!({"type": "block_extension", "name": name, "version": "1",
-        "children": [], "slots": {"body": body}, "fallback": core_nodes(&[authored.clone()])});
+        "children": [], "slots": {"body": body}, "fallback": core_nodes(std::slice::from_ref(authored))});
     if let Some(pos) = authored.get("pos") {
-        node["pos"] = pos.clone();
+        if let Some(map) = node.as_object_mut() {
+            map.insert("pos".into(), pos.clone());
+        }
     }
     node
 }
@@ -170,18 +172,18 @@ pub(super) fn inline_attrs(
             !pair
                 .get(0)
                 .and_then(Value::as_str)
-                .is_some_and(|name| drop.iter().any(|key| *key == name))
+                .is_some_and(|name| drop.contains(&name))
         })
         .collect();
     cx.attributes(&with_attrs(node, names, pairs))
 }
 
-pub(super) fn view(view: Tree) -> Result<Value, Error> {
-    crate::api::deep_json(&crate::api::encode_tree(&view))
+pub(super) fn view(view: &Tree) -> Result<Value, Error> {
+    crate::api::deep_json(&crate::api::encode_tree(view))
         .map_err(|e| Error::option("documentTransforms", e.to_string()))
 }
 
-pub(super) fn finish(view: Tree, doc: Value) -> Result<Tree, Error> {
+pub(super) fn finish(view: &Tree, doc: Value) -> Result<Tree, Error> {
     Tree::trusted(doc, view.top.clone())
 }
 

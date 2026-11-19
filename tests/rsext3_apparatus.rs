@@ -67,3 +67,34 @@ fn citations_resolve_keys_and_place_references() {
         "{out}"
     );
 }
+
+#[test]
+fn all_three_bundles_share_a_document() {
+    let source = "See :cite[doe]{locator=\"p. 4\"} and :term[HTTP]:index[HTTP].\n\n::: glossary\n:: HTTP\n: HyperText Transfer Protocol.\n:::\n\n::: references\n:: doe\n: Doe, J. (2020). /A book/.\n:::\n\n::: index\n:::\n";
+    let mut host = Carve::new();
+    host.register(extensions::glossary()).unwrap();
+    host.register(extensions::index(extensions::IndexOptions::default()))
+        .unwrap();
+    host.register(extensions::citations(
+        extensions::CitationsOptions::default(),
+    ))
+    .unwrap();
+    let out = host.render(source, &Options::default()).unwrap();
+    assert!(
+        out.contains("[<a href=\"#ref-doe\" data-cite-key=\"doe\">1</a>, p. 4]"),
+        "{out}"
+    );
+    assert!(
+        out.contains("<a href=\"#gloss-HTTP\" class=\"term\">HTTP</a>"),
+        "{out}"
+    );
+    assert!(
+        out.contains("<span id=\"idx-http-1\" class=\"index-term\"></span>"),
+        "{out}"
+    );
+    assert!(
+        out.contains("<li id=\"ref-doe\">Doe, J. (2020). <em>A book</em>.</li>"),
+        "{out}"
+    );
+    assert!(out.contains("<li>HTTP <a href=\"#idx-http-1\" class=\"index-backref\" aria-label=\"Back to HTTP\">↩</a></li>"), "{out}");
+}

@@ -1,5 +1,7 @@
 //! The provisional glossary bundle of the 0.2 reference.
 
+#![allow(clippy::indexing_slicing)]
+
 use super::apparatus::{self as app, Body};
 use super::{Bundle, Claim, Engine, Form, Matcher, declaration};
 use crate::api::{Channel, DocumentTransform, Error, Extension, RenderContext, Renderer, Tree};
@@ -36,19 +38,15 @@ fn claim_term(claim: &Claim<'_>) -> Option<Value> {
 }
 
 struct Transform;
-impl DocumentTransform for Transform {
-    fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        let mut doc = app::view(view.clone())?;
-        let mut taken = app::view_ids(&doc);
-        let mut slugs = HashSet::new();
-        let mut targets = HashMap::new();
-        let mut ids = HashMap::new();
-        app::walk(&mut doc, &mut |node| {
-            if app::ty(node) != "directive"
-                || node.get("kind").and_then(Value::as_str) != Some("glossary")
-            {
-                return true;
-            }
+fn collect_targets(doc: &mut Value) -> (HashMap<String, String>, HashMap<u64, String>) {
+    let mut taken = app::view_ids(doc);
+    let mut slugs = HashSet::new();
+    let mut targets = HashMap::new();
+    let mut ids = HashMap::new();
+    app::walk(doc, &mut |node| {
+        if app::ty(node) == "directive"
+            && node.get("kind").and_then(Value::as_str) == Some("glossary")
+        {
             for list in app::children(node)
                 .iter()
                 .filter(|part| app::ty(part) == "definition_list")
@@ -74,8 +72,54 @@ impl DocumentTransform for Transform {
                     }
                 }
             }
-            true
-        });
+        }
+        true
+    });
+    (targets, ids)
+}
+
+fn place_glossary(node: &mut Value, ids: &HashMap<u64, String>) -> bool {
+    if app::ty(node) != "directive" || node.get("kind").and_then(Value::as_str) != Some("glossary")
+    {
+        return false;
+    }
+    let mut body = node.clone();
+    if let Some(parts) = body.get_mut("children").and_then(Value::as_array_mut) {
+        for list in parts
+            .iter_mut()
+            .filter(|part| app::ty(part) == "definition_list")
+        {
+            let attrs = list
+                .as_object_mut()
+                .map(|map| map.entry("attrs").or_insert_with(|| json!({})));
+            if let Some(attrs) = attrs {
+                let mut classes = attrs
+                    .get("classes")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                classes.insert(0, Value::from("glossary"));
+                attrs["classes"] = Value::Array(classes);
+            }
+            if let Some(terms) = list.get_mut("children").and_then(Value::as_array_mut) {
+                for term in terms {
+                    if let Some(at) = term.pointer("/pos/startOffset").and_then(Value::as_u64)
+                        && let Some(id) = ids.get(&at)
+                    {
+                        term["attrs"]["id"] = Value::from(id.clone());
+                    }
+                }
+            }
+        }
+    }
+    *node = app::claim_directive(GLOSSARY, node, &[body]);
+    true
+}
+
+impl DocumentTransform for Transform {
+    fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        let mut doc = app::view(&view)?;
+        let (targets, ids) = collect_targets(&mut doc);
         app::walk(&mut doc, &mut |node| {
             if app::ty(node) == "inline_extension"
                 && node.get("name").and_then(Value::as_str) == Some(TERM)
@@ -93,49 +137,14 @@ impl DocumentTransform for Transform {
         });
         let mut claimed = false;
         app::walk(&mut doc, &mut |node| {
-            if app::ty(node) != "directive"
-                || node.get("kind").and_then(Value::as_str) != Some("glossary")
-            {
-                return true;
-            }
-            claimed = true;
-            let mut body = node.clone();
-            if let Some(parts) = body.get_mut("children").and_then(Value::as_array_mut) {
-                for list in parts
-                    .iter_mut()
-                    .filter(|part| app::ty(part) == "definition_list")
-                {
-                    let attrs = list
-                        .as_object_mut()
-                        .and_then(|map| Some(map.entry("attrs").or_insert_with(|| json!({}))));
-                    if let Some(attrs) = attrs {
-                        let mut classes = attrs
-                            .get("classes")
-                            .and_then(Value::as_array)
-                            .cloned()
-                            .unwrap_or_default();
-                        classes.insert(0, Value::from("glossary"));
-                        attrs["classes"] = Value::Array(classes);
-                    }
-                    if let Some(terms) = list.get_mut("children").and_then(Value::as_array_mut) {
-                        for term in terms {
-                            if let Some(at) =
-                                term.pointer("/pos/startOffset").and_then(Value::as_u64)
-                                && let Some(id) = ids.get(&at)
-                            {
-                                term["attrs"]["id"] = Value::from(id.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            *node = app::claim_directive(GLOSSARY, node, vec![body]);
-            false
+            let found = place_glossary(node, &ids);
+            claimed |= found;
+            !found
         });
         if claimed {
             super::super::standard::declare_names(&mut doc, &[(GLOSSARY, json!(["body"]))]);
         }
-        app::finish(view, doc)
+        app::finish(&view, doc)
     }
 }
 

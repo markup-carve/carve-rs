@@ -1,5 +1,7 @@
 //! The provisional citations bundle of the 0.2 reference.
 
+#![allow(clippy::indexing_slicing)]
+
 use super::apparatus::{self as app, Body};
 use super::{Bundle, Claim, Engine, Form, Matcher, declaration};
 use crate::api::{Channel, DocumentTransform, Error, Extension, RenderContext, Renderer, Tree};
@@ -335,7 +337,7 @@ struct Transform {
 }
 impl DocumentTransform for Transform {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        let mut doc = app::view(view.clone())?;
+        let mut doc = app::view(&view)?;
         let entries = collect_entries(
             &mut doc,
             self.options.bibliography.as_deref().unwrap_or(&[]),
@@ -389,7 +391,7 @@ impl DocumentTransform for Transform {
                     placed = true;
                 }
             }
-            *node = app::claim_directive(REFERENCES, node, vec![body]);
+            *node = app::claim_directive(REFERENCES, node, &[body]);
             claimed = true;
             false
         });
@@ -405,7 +407,7 @@ impl DocumentTransform for Transform {
         if claimed {
             super::super::standard::declare_names(&mut doc, &[(REFERENCES, json!(["body"]))]);
         }
-        app::finish(view, doc)
+        app::finish(&view, doc)
     }
 }
 
