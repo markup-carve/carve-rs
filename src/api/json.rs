@@ -160,7 +160,16 @@ fn with_extensions(host: &Carve, opts: &CallOptions) -> Result<Carve, Error> {
     let mut enabled = host.clone();
     enabled.standard.tabs_aria = opts.tabs_aria;
     for ext in &opts.extensions {
-        enabled.enable_standard(ext, opts.renderers.contains(ext))?;
+        if ext == "carve.codeGroup" && opts.code_group_aria {
+            enabled.register(super::extensions::code_group(
+                super::extensions::CodeGroupOptions {
+                    mode: super::extensions::CodeGroupMode::Aria,
+                    ..Default::default()
+                },
+            ))?;
+        } else {
+            enabled.enable_standard(ext, opts.renderers.contains(ext))?;
+        }
     }
     Ok(enabled)
 }

@@ -200,7 +200,7 @@ The same call enables the other standard extensions, all provisional:
 - `carve.wiki` and `carve.cite` claim `:wiki[...]` and `:cite[...]` (C2-X-057, C2-X-058). They have no standard renderer, so the content renders as plain text and attributes such as `locator` stay on the node.
 - `carve.imgFence.img` and `carve.imgFence.image` claim `img` and `image` code fences whose body is SVG (C2-X-059). Their standard renderer writes one `<img>` with a sanitized `data:image/svg+xml` URL; SVG it cannot sanitize keeps the code block and reports `extension-renderer-failed`.
 - `carve.fencedRender.<word>` for `mermaid`, `d2`, `dot`, `graphviz`, `wavedrom`, `abc`, `plantuml`, `puml`, `vega-lite` and `chart`: the diagram fence of that word as `<pre class="mermaid" role="img" aria-label="mermaid">` with the escaped source (`vega-lite` and `chart` as a JSON `<script>` in a `<div>`), for a client library to draw.
-- `carve.mathBlock`: a `math` fence as `<div class="math display">\[...\]</div>`.
+- `carve.mathBlock`: a `math` fence as `<div class="math display" role="math">\[...\]</div>`.
 - `carve.codeGroup`: a `code-group` div whose body is code blocks as one switcher (radio inputs; one headed section per panel in `static` mode).
 - `carve.codeCallouts`: a document transform that turns a trailing `<n>` on a code line into a callout bubble and a following `<n> text` paragraph into its list.
 - `carve.details`: a `details` div as `<details>` with its title as `<summary>` (`Details` without one), expanded in `static` mode.
@@ -221,7 +221,7 @@ carve.register(extensions::Bundle::merge([
     extensions::math_block(extensions::MathBlockOptions::default()),
 ]))?;
 let html = carve.render("```math\nx^2\n```", &Options::default())?;
-assert_eq!(html, r#"<div class="math display">\[x^2\]</div>"#);
+assert_eq!(html, r#"<div class="math display" role="math">\[x^2\]</div>"#);
 # Ok::<(), carve::api::Error>(())
 ```
 

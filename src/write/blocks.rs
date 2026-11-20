@@ -642,7 +642,10 @@ fn block_quote<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
 
 fn title_tail<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     let title = list(node, "title").map(|t| write_inlines(w, &refs(t), flags));
-    let spelled = title.clone().unwrap_or_default();
+    let spelled = title.as_deref().map_or(String::new(), |t| {
+        let q = quoted(t, false);
+        q.get(1..q.len() - 1).unwrap_or("").to_string()
+    });
     opener_tail(w, node, title.as_deref(), &spelled)
 }
 
