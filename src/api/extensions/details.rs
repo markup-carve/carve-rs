@@ -77,12 +77,36 @@ fn attrs_with(node: &Value, base: &[&str], cx: &RenderContext<'_>) -> String {
     cx.attributes(&with_attrs(node, cls, key_values(attrs)))
 }
 
-/// `head`, `inner` and the body one level in, then `tail`, indented to the
-/// block depth like core containers.
-fn container(head: &str, inner: &str, body: &str, tail: &str, cx: &RenderContext<'_>) -> String {
+fn has_raw_block(node: &Value) -> bool {
+    let mut pending = vec![node];
+    while let Some(value) = pending.pop() {
+        if value.get("type").and_then(Value::as_str) == Some("raw_block") {
+            return true;
+        }
+        match value {
+            Value::Array(items) => pending.extend(items),
+            Value::Object(fields) => pending.extend(fields.values()),
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Indent ordinary markup while preserving the bytes of literal bodies.
+fn container(
+    head: &str,
+    inner: &str,
+    body: &str,
+    tail: &str,
+    raw_body: bool,
+    cx: &RenderContext<'_>,
+) -> String {
     let indent = "  ".repeat(cx.block_depth());
     let mut lines = vec![head.to_string(), format!("{indent}  {inner}")];
-    if !body.is_empty() {
+    if raw_body || body.contains("<textarea") || (body.contains("<pre") && !body.contains("<code"))
+    {
+        lines.push(body.to_string());
+    } else if !body.is_empty() {
         let mut in_code = false;
         for line in body.split('\n') {
             // Core code blocks put their literal value between these tags.
@@ -151,6 +175,7 @@ fn render_disclosure(
         &format!("<summary>{}</summary>", summary(node, label, cx)?),
         &body(node, cx)?,
         "</details>",
+        node.pointer("/slots/body").is_some_and(has_raw_block),
         cx,
     ))
 }
@@ -227,6 +252,7 @@ impl Renderer for SpoilerBlock {
             ),
             &body(node, cx)?,
             "</section>",
+            node.pointer("/slots/body").is_some_and(has_raw_block),
             cx,
         ))
     }

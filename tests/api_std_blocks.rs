@@ -52,6 +52,72 @@ fn details_renders_a_disclosure_with_the_title_as_summary() {
 }
 
 #[test]
+fn details_keeps_code_payload_bytes() {
+    assert_eq!(
+        html(
+            "::: details \"Req\"\n```php\nx\n```\n:::\n",
+            extensions::details()
+        ),
+        "<details>\n  <summary>Req</summary>\n<pre><code class=\"language-php\">x\n</code></pre>\n</details>"
+    );
+    let nested = html(
+        "- item\n\n  ::: details \"Req\"\n  ```php\n  first\n    second\n  ```\n  :::\n",
+        extensions::details(),
+    );
+    assert!(
+        nested.contains("first\n  second\n</code></pre>"),
+        "{nested}"
+    );
+    let raw = html_with(
+        "::: details \"Req\"\n```=html\n<div>\n x\n</div>\n```\n:::\n",
+        extensions::details(),
+        &Options {
+            raw_html: true,
+            ..Options::default()
+        },
+    );
+    assert!(raw.contains("<div>\n x\n</div>"), "{raw}");
+}
+
+#[test]
+fn details_keeps_one_thousand_code_variants() {
+    for i in 0..1_000 {
+        let prefix = if i % 2 == 0 { "" } else { "  " };
+        let lead = " ".repeat(i % 7);
+        let second = " ".repeat((i / 7) % 7);
+        let mut lines = Vec::new();
+        if !prefix.is_empty() {
+            lines.extend(["- item".to_string(), String::new()]);
+        }
+        lines.push(format!("{prefix}::: details \"Req\""));
+        if i % 3 == 0 {
+            lines.extend([format!("{prefix}before"), prefix.to_string()]);
+        }
+        lines.extend([
+            format!("{prefix}```php"),
+            format!("{prefix}{lead}x"),
+            format!("{prefix}{second}y"),
+            format!("{prefix}```"),
+        ]);
+        if i % 5 == 0 {
+            lines.extend([prefix.to_string(), format!("{prefix}after")]);
+        }
+        lines.push(format!("{prefix}:::"));
+        let source = format!("{}\n", lines.join("\n"));
+        let rendered = html(&source, extensions::details());
+        let (_, content) = rendered
+            .split_once("class=\"language-php\">")
+            .unwrap_or_else(|| panic!("variant {i}: {rendered}"));
+        let (content, _) = content.split_once("</code>").unwrap();
+        assert_eq!(
+            content,
+            format!("{lead}x\n{second}y\n"),
+            "variant {i}: {source}"
+        );
+    }
+}
+
+#[test]
 fn details_default_summary_inline_markup_and_escapes() {
     assert!(
         html("::: details\nx\n:::\n", extensions::details()).contains("<summary>Details</summary>")
