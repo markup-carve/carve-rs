@@ -171,6 +171,7 @@ pub struct Tree {
     document: Document,
     json: String,
     top: Option<String>,
+    sources: std::collections::HashMap<String, String>,
 }
 
 impl Tree {
@@ -207,6 +208,7 @@ impl Tree {
             document: read.into_document(),
             json: bare,
             top,
+            sources: std::collections::HashMap::new(),
         })
     }
 
@@ -231,6 +233,7 @@ impl Tree {
             document,
             json,
             top,
+            sources: std::collections::HashMap::new(),
         })
     }
 
@@ -247,6 +250,7 @@ impl Tree {
             document,
             json: value.to_string(),
             top,
+            sources: std::collections::HashMap::new(),
         })
     }
 
@@ -257,6 +261,7 @@ impl Tree {
             document,
             json: String::new(),
             top,
+            sources: std::collections::HashMap::new(),
         }
     }
 }
@@ -469,18 +474,25 @@ impl Carve {
         if !self.may_claim(&parsed.tree.json) {
             return Ok(parsed);
         }
-        let opener = |at: usize| match input {
-            Input::Text(s) => standard::opener_name(s, at),
-            Input::Bytes(b) => {
-                let line = b
-                    .get(at..)?
-                    .split(|&c| c == b'\n')
-                    .map(String::from_utf8_lossy)
-                    .find(|l| !standard::is_attribute_line(l))?;
-                standard::opener_name(&line, 0)
-            }
+        let opener = |file: Option<&str>, at: usize| match file {
+            Some(id) => parsed
+                .tree
+                .sources
+                .get(id)
+                .and_then(|source| standard::opener_name(source, at)),
+            None => match input {
+                Input::Text(s) => standard::opener_name(s, at),
+                Input::Bytes(b) => {
+                    let line = b
+                        .get(at..)?
+                        .split(|&c| c == b'\n')
+                        .map(String::from_utf8_lossy)
+                        .find(|l| !standard::is_attribute_line(l))?;
+                    standard::opener_name(&line, 0)
+                }
+            },
         };
-        if self.standard.is_empty() {
+        if self.standard.is_empty() && parsed.tree.sources.is_empty() {
             let claimed =
                 self.matchers
                     .apply_owned(&mut parsed.tree.document, &opener, &|name| {
@@ -547,7 +559,7 @@ impl Carve {
     fn claim_standard(
         &self,
         value: &mut Value,
-        opener: &dyn Fn(usize) -> Option<String>,
+        opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
     ) -> Vec<&'static str> {
         let mut failed = Vec::new();
         if self.standard.tabs && !standard::claim_tabs(value, opener) {
@@ -611,22 +623,32 @@ impl Carve {
             return render_with_diagnostics(input, opts);
         }
         check_length(input.len(), opts)?;
-        let parsed = if self.standard.is_empty() && self.extensions.owned_transforms_only() {
+        let parsed = if self.standard.is_empty()
+            && self.extensions.owned_transforms_only()
+            && opts.includes.is_none()
+        {
             // This tree goes straight to the owned render path. The public
             // parse call still rebuilds its JSON after claims, but a render
             // never exposes that intermediate wire form.
             let mut parsed = parse_with_diagnostics(input, opts)?;
             if self.may_claim(&parsed.tree.json) {
-                let opener = |at: usize| match input {
-                    Input::Text(source) => standard::opener_name(source, at),
-                    Input::Bytes(bytes) => {
-                        let line = bytes
-                            .get(at..)?
-                            .split(|&b| b == b'\n')
-                            .map(String::from_utf8_lossy)
-                            .find(|line| !standard::is_attribute_line(line))?;
-                        standard::opener_name(&line, 0)
-                    }
+                let opener = |file: Option<&str>, at: usize| match file {
+                    Some(id) => parsed
+                        .tree
+                        .sources
+                        .get(id)
+                        .and_then(|source| standard::opener_name(source, at)),
+                    None => match input {
+                        Input::Text(source) => standard::opener_name(source, at),
+                        Input::Bytes(bytes) => {
+                            let line = bytes
+                                .get(at..)?
+                                .split(|&b| b == b'\n')
+                                .map(String::from_utf8_lossy)
+                                .find(|line| !standard::is_attribute_line(line))?;
+                            standard::opener_name(&line, 0)
+                        }
+                    },
                 };
                 let claimed =
                     self.matchers
@@ -929,13 +951,15 @@ pub fn parse<'a>(input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Er
                 document: doc.owned(),
                 json: crate::to_json(&doc),
                 top,
+                sources: std::collections::HashMap::new(),
             })
         }
-        _ => match crate::tree_parts(&input.text(), opts) {
-            Some((json, document)) => Ok(Tree {
+        _ => match crate::tree_parts_with_sources(&input.text(), opts) {
+            Some((json, document, sources)) => Ok(Tree {
                 document,
                 json,
                 top,
+                sources,
             }),
             None => Tree::read("", top),
         },

@@ -891,6 +891,7 @@ fn read(document: &Value, envelope: Option<&Value>) -> Result<Tree, Error> {
         document: read.into_document(),
         json: document.to_string(),
         top: None,
+        sources: std::collections::HashMap::new(),
     })
 }
 

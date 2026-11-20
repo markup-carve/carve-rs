@@ -1167,19 +1167,40 @@ pub fn tree_json(input: &str, opts: &Options) -> String {
 /// tree reader. `None` where [`tree_json`] gives no tree.
 #[must_use]
 pub fn tree_parts(input: &str, opts: &Options) -> Option<(String, ast::owned::Document)> {
+    tree_parts_with_sources(input, opts).map(|(json, doc, _)| (json, doc))
+}
+
+/// The parsed tree and the source of each expanded include, keyed by file id.
+#[must_use]
+pub(crate) fn tree_parts_with_sources(
+    input: &str,
+    opts: &Options,
+) -> Option<(
+    String,
+    ast::owned::Document,
+    std::collections::HashMap<String, String>,
+)> {
     let arena = Arena::for_input(input);
     let (doc, _, files) = prepare(input, opts, &arena, &mut Vec::new()).ok()?;
+    let sources = files
+        .as_ref()
+        .map_or_else(std::collections::HashMap::new, |f| {
+            f.sources()
+                .map(|(id, text)| (id.to_string(), text.to_string()))
+                .collect()
+        });
     if files.is_none() && opts.includes.is_none() {
-        return Some((to_json(&doc), doc.owned()));
+        return Some((to_json(&doc), doc.owned(), sources));
     }
     let mut v = stamped_value(&doc);
     let json = v.to_string();
     if let Some(m) = v.as_object_mut() {
         m.remove("type");
     }
-    // The owned positions carry the file stamps, which `doc.owned()` lacks.
+    // The JSON keeps file stamps for the claim pass; the owned tree keeps the
+    // resolved structure for rendering.
     let owned = serde_json::from_value(v).ok()?;
-    Some((json, owned))
+    Some((json, owned, sources))
 }
 
 fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {

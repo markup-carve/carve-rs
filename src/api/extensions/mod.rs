@@ -304,7 +304,7 @@ impl Matchers {
     pub(crate) fn apply_owned(
         &self,
         doc: &mut crate::ast::owned::Document,
-        opener: &dyn Fn(usize) -> Option<String>,
+        opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
     ) -> Result<Vec<Entry>, Error> {
         use crate::ast::owned::Node;
@@ -456,12 +456,12 @@ impl Matchers {
 
     /// C2-X-005: claims core nodes in one pass after the core parse, outer
     /// nodes first, and declares the extensions the claims use (C2-A-017).
-    /// `opener` gives the source name of the div at a byte offset;
+    /// `opener` gives the source name of the div at a file id and byte offset;
     /// `declared` the declaration of a qualified name.
     pub(crate) fn apply(
         &self,
         doc: &mut Value,
-        opener: &dyn Fn(usize) -> Option<String>,
+        opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
     ) -> Vec<Entry> {
         let mut pass = Pass {
@@ -521,7 +521,7 @@ fn descends(key: &str, extension: bool) -> bool {
 /// The state of one claim pass.
 struct Pass<'a> {
     matchers: &'a Matchers,
-    opener: &'a dyn Fn(usize) -> Option<String>,
+    opener: &'a dyn Fn(Option<&str>, usize) -> Option<String>,
     declared: &'a dyn Fn(&str) -> Option<ExtensionDeclaration>,
     definitions: Vec<Value>,
     used: Vec<ExtensionDeclaration>,
@@ -538,7 +538,10 @@ impl Pass<'_> {
                 .map(str::to_string),
             "div" => {
                 let at = node.get("pos")?.get("startOffset")?.as_u64()?;
-                (self.opener)(usize::try_from(at).ok()?)
+                (self.opener)(
+                    node.get("pos")?.get("file").and_then(Value::as_str),
+                    usize::try_from(at).ok()?,
+                )
             }
             _ => None,
         }

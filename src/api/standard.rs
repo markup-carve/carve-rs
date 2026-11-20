@@ -204,9 +204,12 @@ fn inline_node(
 
 /// C2-X-039 to C2-X-042: claims each `tabs` div whose body is one or more
 /// `tab` divs with a nonempty quoted title. `opener` gives the source name of
-/// the div at a byte offset; `false` means the claim source could not be
+/// the div at a file id and byte offset; `false` means the claim source could not be
 /// written and the core node stays (C2-X-051).
-pub(crate) fn claim_tabs(doc: &mut Value, opener: &dyn Fn(usize) -> Option<String>) -> bool {
+pub(crate) fn claim_tabs(
+    doc: &mut Value,
+    opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
+) -> bool {
     let definitions = definitions(doc);
     let cx = Claim {
         opener,
@@ -224,7 +227,7 @@ pub(crate) fn claim_tabs(doc: &mut Value, opener: &dyn Fn(usize) -> Option<Strin
 }
 
 struct Claim<'a> {
-    opener: &'a dyn Fn(usize) -> Option<String>,
+    opener: &'a dyn Fn(Option<&str>, usize) -> Option<String>,
     definitions: Vec<Value>,
     failed: RefCell<bool>,
 }
@@ -235,7 +238,10 @@ impl Claim<'_> {
             return None;
         }
         let offset = at(node, "/pos/startOffset").as_u64()?;
-        (self.opener)(usize::try_from(offset).ok()?)
+        (self.opener)(
+            at(node, "/pos/file").as_str(),
+            usize::try_from(offset).ok()?,
+        )
     }
 
     fn is_tab(&self, node: &Value) -> bool {
