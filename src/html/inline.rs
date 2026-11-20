@@ -260,9 +260,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let Some(tag) = wrapper_tag(n) else {
             match n {
                 Node::Code(c) => {
-                    let el = El::new(c.attrs, c.lang).with_dir(c.dir);
                     out.push_str("<code");
-                    el.write_into(self.filter(), out);
+                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() {
+                        El::new(c.attrs, c.lang)
+                            .with_dir(c.dir)
+                            .write_into(self.filter(), out);
+                    }
                     out.push('>');
                     esc::text(c.value, out);
                     out.push_str("</code>");
@@ -284,13 +287,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return;
         };
-        let mut el = El::new(n.attrs(), lang_of(n)).with_dir(n.dir());
-        if matches!(n, Node::SmallCaps(_)) {
-            el.base.push("smallcaps".into());
-        }
         out.push('<');
         out.push_str(tag);
-        el.write_into(self.filter(), out);
+        let (attrs, lang, dir) = (n.attrs(), lang_of(n), n.dir());
+        if attrs.is_some() || lang.is_some() || dir.is_some() || matches!(n, Node::SmallCaps(_)) {
+            let mut el = El::new(attrs, lang).with_dir(dir);
+            if matches!(n, Node::SmallCaps(_)) {
+                el.base.push("smallcaps".into());
+            }
+            el.write_into(self.filter(), out);
+        }
         out.push('>');
         if let Some(c) = n.children() {
             self.inlines(c, out);

@@ -52,6 +52,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     // C2-H-165: containers omit empty degraded children, but still report them.
     pub(super) fn report_suppressed(&mut self, children: &[Node]) {
+        // Without a profile row nothing is degraded, so nothing is reported.
+        if self.profile.is_none() {
+            return;
+        }
         for child in children {
             if !visible(child) {
                 continue;
@@ -133,14 +137,23 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// The children that render: visible, and not degraded to nothing.
     pub(super) fn shown(&self, children: &'r [Node<'a>]) -> Vec<&'r Node<'a>> {
-        children
-            .iter()
-            .filter(|c| {
-                visible(c)
-                    && !matches!(c, Node::Paragraph(p) if self.only_comments(p.children))
-                    && self.degraded(c).is_none_or(|p| !p.is_empty())
-            })
-            .collect()
+        let mut out = Vec::new();
+        self.shown_into(children, &mut out);
+        out
+    }
+
+    /// `shown`, appended to `out`.
+    pub(super) fn shown_into(&self, children: &'r [Node<'a>], out: &mut Vec<&'r Node<'a>>) {
+        // Without a profile row `visible` decides alone.
+        if self.profile.is_none() {
+            out.extend(children.iter().filter(|c| visible(c)));
+            return;
+        }
+        out.extend(children.iter().filter(|c| {
+            visible(c)
+                && !matches!(c, Node::Paragraph(p) if self.only_comments(p.children))
+                && self.degraded(c).is_none_or(|p| !p.is_empty())
+        }));
     }
 
     /// The escaped paragraphs a block outside the profile leaves, none when

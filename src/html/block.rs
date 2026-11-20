@@ -185,6 +185,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
     }
 
+    /// True when the element of `n` writes no attribute: `el` would be bare.
+    pub(super) fn bare_el(&self, attrs: Option<&Attrs>, lang: Option<&str>, n: &Node) -> bool {
+        attrs.is_none() && lang.is_none() && !self.opts.source_lines && n.dir().is_none()
+    }
+
     /// The element of a block: its attributes, language and source line.
     pub(super) fn el<'b>(
         &self,
@@ -287,6 +292,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 }
             } else {
                 self.leaf_into(p.children, out);
+            }
+            return true;
+        }
+        if self.bare_el(p.attrs, p.lang, n) {
+            if !bare {
+                out.push_str("<p>");
+            }
+            self.leaf_into(&*p.children, out);
+            if !bare {
+                out.push_str("</p>");
             }
             return true;
         }
@@ -504,19 +519,31 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-007, C2-H-032 to C2-H-035.
     fn item(&mut self, n: &'r Node<'a>, depth: usize, tight: bool, ordered: bool) {
         let Node::ListItem(i) = n else { return };
-        let mut el = self.el(i.attrs, i.lang, n);
-        let head = Self::item_task(i, ordered, &mut el);
-        let mut open = String::from("<li");
-        el.write_into(self.filter(), &mut open);
-        open.push('>');
-        open.push_str(&head);
-        self.report_suppressed(i.children);
-        let vis = self.shown(i.children);
-        let Some((first, rest)) = vis.split_first() else {
-            self.line(depth, &format!("{open}</li>"));
-            return;
+        let open: Cow<'static, str> = if i.task.is_none() && self.bare_el(i.attrs, i.lang, n) {
+            Cow::Borrowed("<li>")
+        } else {
+            let mut el = self.el(i.attrs, i.lang, n);
+            let head = Self::item_task(i, ordered, &mut el);
+            let mut open = String::from("<li");
+            el.write_into(self.filter(), &mut open);
+            open.push('>');
+            open.push_str(&head);
+            Cow::Owned(open)
         };
-        self.item_visible(first, rest, &open, depth, tight);
+        self.report_suppressed(i.children);
+        let mut vis = self.node_lists.pop().unwrap_or_default();
+        self.shown_into(i.children, &mut vis);
+        if let Some((first, rest)) = vis.split_first() {
+            self.item_visible(first, rest, &open, depth, tight);
+        } else {
+            self.line_with(depth, |_, out| {
+                out.push_str(&open);
+                out.push_str("</li>");
+                true
+            });
+        }
+        vis.clear();
+        self.node_lists.push(vis);
     }
 
     fn item_visible(
