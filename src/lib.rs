@@ -944,22 +944,22 @@ fn loss_diagnostics(
                 .and_then(|id| included_sources.get(id))
                 .map(|text| source::Source::new(text));
             let loss_source = included_source.as_ref().unwrap_or(&source);
-            let pos = raw
-                .and_then(|r| r.pos)
-                .or(include_pos)
-                .or_else(|| profile.and_then(|p| p.pos))
-                .or_else(|| destination.and_then(|d| destination_loss_position(loss_source, d)))
-                .or_else(|| destination.and_then(|d| d.pos))
-                .or_else(|| {
-                    carrier
-                        .and_then(|c| carrier_loss_position(loss_source, c, &mut carrier_cursors))
-                })
-                .or_else(|| carrier.and_then(|c| c.pos))
-                .or_else(|| {
-                    file.is_none()
-                        .then(|| loss_position(c, &source, opts, parse_diags))
-                        .flatten()
-                });
+            let pos = render_loss_position(
+                c,
+                &source,
+                loss_source,
+                opts,
+                parse_diags,
+                &LossPosition {
+                    raw,
+                    include_pos,
+                    profile,
+                    destination,
+                    carrier,
+                    file: file.as_deref(),
+                },
+                &mut carrier_cursors,
+            );
             let (variant, values) =
                 loss_message(c, raw, destination, carrier, profile, opts, include_path);
             let values: Vec<_> = values
@@ -975,6 +975,50 @@ fn loss_diagnostics(
         })
         .collect();
     loss_diags
+}
+
+struct LossPosition<'a> {
+    raw: Option<&'a html::RawLoss>,
+    include_pos: Option<ast::Pos>,
+    profile: Option<&'a html::ProfileLoss>,
+    destination: Option<&'a html::DestinationLoss>,
+    carrier: Option<&'a html::CarrierLoss>,
+    file: Option<&'a str>,
+}
+
+fn render_loss_position(
+    code: &str,
+    source: &source::Source<'_>,
+    loss_source: &source::Source<'_>,
+    opts: &Options,
+    parse_diags: &[diagnostic::Diagnostic],
+    record: &LossPosition<'_>,
+    carrier_cursors: &mut std::collections::HashMap<(Option<String>, u32, u32), usize>,
+) -> Option<ast::Pos> {
+    record
+        .raw
+        .and_then(|r| r.pos)
+        .or(record.include_pos)
+        .or_else(|| record.profile.and_then(|p| p.pos))
+        .or_else(|| {
+            record
+                .destination
+                .and_then(|d| destination_loss_position(loss_source, d))
+        })
+        .or_else(|| record.destination.and_then(|d| d.pos))
+        .or_else(|| {
+            record
+                .carrier
+                .and_then(|c| carrier_loss_position(loss_source, c, carrier_cursors))
+        })
+        .or_else(|| record.carrier.and_then(|c| c.pos))
+        .or_else(|| {
+            record
+                .file
+                .is_none()
+                .then(|| loss_position(code, source, opts, parse_diags))
+                .flatten()
+        })
 }
 
 fn destination_loss_position(
