@@ -86,6 +86,10 @@ fn colon_run_uses_its_actual_open_container() {
         vec![(18, 21)]
     );
     assert_eq!(
+        spans("{.c}\r\n::::\r\n:::\r\n", "colon-fence-length-mismatch"),
+        vec![(12, 15)]
+    );
+    assert_eq!(
         spans(
             "::::\n\n2) - > ::: glossary\n     :::\n\n     > *[HTML]: Hyper\n   term *strong*\n   word [ref][]",
             "colon-fence-length-mismatch"

@@ -751,7 +751,8 @@ fn colon_parent_survives(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool 
 fn colon_opener_at(source: &str, start: usize) -> Option<usize> {
     let mut at = start;
     loop {
-        let line = source.get(at..)?.split('\n').next()?;
+        let raw_line = source.get(at..)?.split('\n').next()?;
+        let line = raw_line.trim_end_matches('\r');
         let trimmed = line.trim_start_matches([' ', '\t']);
         if trimmed.starts_with(":::") {
             return Some(at + line.len() - trimmed.len());
@@ -759,7 +760,7 @@ fn colon_opener_at(source: &str, start: usize) -> Option<usize> {
         if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
             return None;
         }
-        at += line.len() + 1;
+        at += raw_line.len() + 1;
     }
 }
 
