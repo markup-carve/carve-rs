@@ -63,3 +63,56 @@ fn a_cell_with_both_counts_reports_its_rowspan() {
         )
     );
 }
+
+fn write(doc: &Value) -> (String, Vec<String>) {
+    let r: Value = serde_json::from_str(&call(
+        &json!({"call": "writeWithDiagnostics", "tree": doc}).to_string(),
+    ))
+    .unwrap();
+    let losses = r["ok"]["diagnostics"]
+        .as_array()
+        .map(|d| {
+            d.iter()
+                .map(|e| e["code"].as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    (r["ok"]["output"].as_str().unwrap_or("").to_string(), losses)
+}
+
+fn cell(value: &str) -> Value {
+    json!({"type": "table_cell", "header": false, "children": [
+        {"type": "cell_paragraph", "children": [{"type": "text", "value": value}]}]})
+}
+
+fn table(columns: usize, rows: Vec<Vec<Value>>) -> Value {
+    json!({"type": "document", "astVersion": "2.0", "children": [{"type": "table",
+        "columns": vec![json!({"type": "table_column"}); columns],
+        "children": [{"type": "table_body", "children": rows.into_iter()
+            .map(|cells| json!({"type": "table_row", "children": cells})).collect::<Vec<_>>()}]}]})
+}
+
+#[test]
+fn a_count_with_some_of_its_marks_gets_only_the_rest() {
+    let mark =
+        |span: &str| json!({"type": "table_cell", "header": false, "span": span, "children": []});
+    let mut a = cell("a");
+    a["colspan"] = json!(3);
+    assert_eq!(
+        write(&table(3, vec![vec![a, mark("colspan")]])).0,
+        "| a | < | < |\n"
+    );
+    let mut a = cell("a");
+    a["rowspan"] = json!(3);
+    assert_eq!(
+        write(&table(
+            2,
+            vec![
+                vec![a, cell("b")],
+                vec![mark("rowspan"), cell("c")],
+                vec![cell("d")]
+            ]
+        )),
+        ("| a | b |\n| ^ | c |\n| ^ | d |\n".into(), vec![])
+    );
+}

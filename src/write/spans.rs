@@ -14,13 +14,11 @@ pub struct Spans {
     pub unspelled: Vec<String>,
 }
 
-/// A row span from above that holds a column: its cell path, the rows it still takes, its width,
-/// and whether the tree holds its marks.
+/// A row span from above that holds a column: its cell path, the rows it still takes, and its width.
 struct Pending {
     at: String,
     rows: i64,
     width: usize,
-    marked: Option<bool>,
 }
 
 fn count(cell: &Value, field: &str) -> i64 {
@@ -101,44 +99,46 @@ impl GroupMarks {
             let at = format!("{path}/children/{k}");
             out.cells.push(cell.clone());
             out.from.push(at.clone());
-            if span_of(Some(cell)) == Some("rowspan") {
-                if let Some(Some(held)) = self.pending.get_mut(out.column) {
-                    if held.marked == Some(true) {
-                        held.rows -= 1;
-                    }
-                }
+            if span_of(Some(cell)) == Some("rowspan")
+                && let Some(Some(held)) = self.pending.get_mut(out.column)
+            {
+                held.rows -= 1;
             }
             let colspan = usize::try_from(count(cell, "colspan").max(1)).unwrap_or(1);
-            let marked = cell.get("span").is_some()
-                || colspan == 1
-                || (1..colspan).all(|n| span_of(given.get(k + n)) == Some("colspan"));
-            if !marked {
-                for _ in 1..colspan {
-                    out.cells.push(mark("colspan"));
-                    out.from.push(at.clone());
-                }
-                out.added = true;
+            // The marks the tree holds behind the cell count toward its colspan; the rest are added.
+            let held = if cell.get("span").is_some() {
+                colspan - 1
+            } else {
+                (1..colspan)
+                    .take_while(|n| span_of(given.get(k + n)) == Some("colspan"))
+                    .count()
+            };
+            let missing = colspan - 1 - held;
+            for _ in 0..missing {
+                out.cells.push(mark("colspan"));
+                out.from.push(at.clone());
             }
-            let rowspan = count(cell, "rowspan");
-            if rowspan > 1 {
+            out.added |= missing > 0;
+            if count(cell, "rowspan") > 1 {
                 if self.pending.len() <= out.column {
                     self.pending.resize_with(out.column + 1, || None);
                 }
-                self.pending[out.column] = Some(Pending {
-                    at,
-                    rows: rowspan - 1,
-                    width: colspan,
-                    marked: None,
-                });
+                if let Some(slot) = self.pending.get_mut(out.column) {
+                    *slot = Some(Pending {
+                        at,
+                        rows: count(cell, "rowspan") - 1,
+                        width: colspan,
+                    });
+                }
             }
-            out.column += if marked { 1 } else { colspan };
+            out.column += 1 + missing;
         }
         self.take(&mut out, None, unspelled);
         // A row span that no cell of this row reaches has no place in it.
         for held in self.pending.iter_mut().skip(out.column).flatten() {
             if held.rows > 0 {
                 held.rows -= 1;
-                if held.marked != Some(true) && !unspelled.contains(&held.at) {
+                if !unspelled.contains(&held.at) {
                     unspelled.push(held.at.clone());
                 }
             }
@@ -147,14 +147,10 @@ impl GroupMarks {
     }
 
     /// The marks of the row spans from above at the column, before the cell `next` of the row.
+    /// A `^` that the tree holds there is the mark of its row, so none is added.
     fn take(&mut self, out: &mut RowOut, next: Option<&Value>, unspelled: &mut Vec<String>) {
         while let Some(Some(held)) = self.pending.get_mut(out.column) {
-            if held.rows <= 0 {
-                break;
-            }
-            // The first row below a count tells whether the tree holds its marks.
-            let marked = *held.marked.get_or_insert(span_of(next) == Some("rowspan"));
-            if marked {
+            if held.rows <= 0 || span_of(next) == Some("rowspan") {
                 break;
             }
             // A `^` below a cell of more than one column joins nothing, so that row span stays unspelled.
@@ -173,7 +169,7 @@ impl GroupMarks {
     fn finish(&self, unspelled: &mut Vec<String>) {
         // A row span that reaches past the last row of its group has no row for its marks.
         for held in self.pending.iter().flatten() {
-            if held.rows > 0 && held.marked != Some(true) && !unspelled.contains(&held.at) {
+            if held.rows > 0 && !unspelled.contains(&held.at) {
                 unspelled.push(held.at.clone());
             }
         }
@@ -199,7 +195,9 @@ fn mark_tables(
             marks.finish(unspelled);
         }
         for (g, r, cells, row_path, from) in changes {
-            node["children"][g]["children"][r]["children"] = Value::Array(cells);
+            if let Some(slot) = node.pointer_mut(&format!("/children/{g}/children/{r}/children")) {
+                *slot = Value::Array(cells);
+            }
             rows_out.push((row_path, from));
         }
     }
