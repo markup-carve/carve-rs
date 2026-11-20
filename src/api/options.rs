@@ -90,6 +90,7 @@ pub(crate) struct CallOptions {
     /// `renderers`: the extensions whose standard renderer is registered.
     pub renderers: Vec<String>,
     pub tabs_aria: bool,
+    pub code_group_aria: bool,
 }
 
 /// Reads the options of a call from a JSON object, refusing an unknown
@@ -159,9 +160,10 @@ fn set(out: &mut CallOptions, name: &str, v: &Value) -> Result<(), Error> {
             Ok(())
         }
         "renderers" => {
-            let (names, aria) = standard_renderers(v)?;
+            let (names, tabs_aria, code_group_aria) = standard_renderers(v)?;
             out.renderers = names;
-            out.tabs_aria = aria;
+            out.tabs_aria = tabs_aria;
+            out.code_group_aria = code_group_aria;
             Ok(())
         }
         "labels" | "symbols" | "social" | "urlPolicy" | "includes" | "codeBlockRenderer" => {
@@ -487,7 +489,7 @@ fn standard_names(v: &Value) -> Result<Vec<String>, Error> {
 
 /// `renderers` in JSON: `{NAME: "standard"}`, the standard renderer of a
 /// standard extension; a host renderer takes host code (C2-T-010).
-fn standard_renderers(v: &Value) -> Result<(Vec<String>, bool), Error> {
+fn standard_renderers(v: &Value) -> Result<(Vec<String>, bool, bool), Error> {
     let Some(map) = v.as_object() else {
         return Err(Error::option("renderers", "not an object"));
     };
@@ -496,7 +498,9 @@ fn standard_renderers(v: &Value) -> Result<(Vec<String>, bool), Error> {
         .map(|(name, r)| {
             if r == "standard" {
                 Ok(name.clone())
-            } else if name == "carve.tabs" && r.pointer("/standard/mode").is_some() {
+            } else if matches!(name.as_str(), "carve.tabs" | "carve.codeGroup")
+                && r.pointer("/standard/mode").is_some()
+            {
                 match r.pointer("/standard/mode").and_then(Value::as_str) {
                     Some("css" | "aria")
                         if r["standard"].as_object().is_some_and(|m| m.len() == 1) =>
@@ -505,7 +509,7 @@ fn standard_renderers(v: &Value) -> Result<(Vec<String>, bool), Error> {
                     }
                     _ => Err(Error::option(
                         "renderers",
-                        "carve.tabs standard mode must be css or aria",
+                        format!("{name} standard mode must be css or aria"),
                     )),
                 }
             } else {
@@ -519,6 +523,7 @@ fn standard_renderers(v: &Value) -> Result<(Vec<String>, bool), Error> {
     Ok((
         names,
         v.pointer("/carve.tabs/standard/mode") == Some(&Value::String("aria".into())),
+        v.pointer("/carve.codeGroup/standard/mode") == Some(&Value::String("aria".into())),
     ))
 }
 

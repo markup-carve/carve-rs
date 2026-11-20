@@ -732,3 +732,20 @@ fn the_json_boundary_selects_them_by_name() {
         "<pre><code class=\"language-dot\">a\n</code></pre>"
     );
 }
+
+#[test]
+fn the_json_boundary_accepts_code_group_aria_mode() {
+    let source = "::: code-group\n```js [A]\na\n```\n\n```py [B]\nb\n```\n:::\n";
+    let request = serde_json::json!({
+        "call": "render",
+        "source": source,
+        "options": {
+            "extensions": ["carve.codeGroup"],
+            "renderers": {"carve.codeGroup": {"standard": {"mode": "aria"}}}
+        }
+    });
+    let response: Value = serde_json::from_str(&api::json::call(&request.to_string())).unwrap();
+    let output = response["ok"]["html"].as_str().unwrap();
+    assert!(output.contains("role=\"tab\""), "{output}");
+    assert!(output.contains("codegroup-1-tab-1"), "{output}");
+}
