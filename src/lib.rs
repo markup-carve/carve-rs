@@ -575,8 +575,9 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         &mut diags,
         &mut RenderDetails::default(),
     )?;
-    if opts.strict_losses && !losses.is_empty() {
-        return Err(RenderError::Losses(losses));
+    let unallowed = unallowed(losses, opts);
+    if opts.strict_losses && !unallowed.is_empty() {
+        return Err(RenderError::Losses(unallowed));
     }
     Ok(out)
 }
@@ -786,10 +787,8 @@ fn authored_id_token(body: &str) -> Option<(usize, usize)> {
 /// `places` gets the file and the path of each unexpanded include.
 #[derive(Default)]
 struct RenderDetails {
-    places: Vec<(Option<String>, String)>,
-    destinations: Vec<html::DestinationLoss>,
-    raws: Vec<html::RawLoss>,
-    carriers: Vec<html::CarrierLoss>,
+    places: Vec<(Option<String>, String, Option<ast::Pos>)>,
+    losses: html::LossDetails,
     included_sources: std::collections::HashMap<String, String>,
 }
 
@@ -820,17 +819,10 @@ fn render_parts(
             include::flatten(&mut doc, arena);
         }
         let src = source::Source::new(input);
-        let (out, mut losses) = html::render_files(
-            &doc,
-            opts,
-            src.text(),
-            &files,
-            Some(&mut details.destinations),
-            Some(&mut details.raws),
-            Some(&mut details.carriers),
-        );
+        let (out, mut losses) =
+            html::render_files(&doc, opts, src.text(), &files, Some(&mut details.losses));
         losses.extend(extra);
-        return Ok((out, unallowed(losses, opts)));
+        return Ok((out, losses));
     }
     let (out, losses) = if opts.profile != options::Profile::Full && input.contains('\0') {
         let src = source::Source::new(input);
@@ -839,22 +831,12 @@ fn render_parts(
             opts,
             src.render_view(),
             ordered,
-            Some(&mut details.destinations),
-            Some(&mut details.raws),
-            Some(&mut details.carriers),
+            Some(&mut details.losses),
         )
     } else {
-        html::render_source(
-            &doc,
-            opts,
-            input,
-            ordered,
-            Some(&mut details.destinations),
-            Some(&mut details.raws),
-            Some(&mut details.carriers),
-        )
+        html::render_source(&doc, opts, input, ordered, Some(&mut details.losses))
     };
-    Ok((out, unallowed(losses, opts)))
+    Ok((out, losses))
 }
 
 #[doc(hidden)]
@@ -889,7 +871,7 @@ pub fn render_with_diagnostics(input: &str, opts: &Options) -> Rendered {
     let html = match render_parts(input, opts, &arena, &mut diags, &mut details) {
         Ok((html, losses)) => {
             diags.extend(loss_diagnostics(input, opts, &diags, &details, &losses));
-            if opts.strict_losses && !losses.is_empty() {
+            if opts.strict_losses && !unallowed(losses, opts).is_empty() {
                 String::new()
             } else {
                 html
@@ -914,19 +896,27 @@ fn loss_diagnostics(
 ) -> Vec<diagnostic::Diagnostic> {
     let mut places = details.places.iter().cloned();
     let source = source::Source::new(input);
-    let mut raw_losses = details.raws.iter();
-    let mut destination_losses = details.destinations.iter();
-    let mut carrier_losses = details.carriers.iter();
+    let mut raw_losses = details.losses.raws.iter();
+    let mut destination_losses = details.losses.destinations.iter();
+    let mut carrier_losses = details.losses.carriers.iter();
+    let mut profile_losses = details.losses.profiles.iter();
     let mut carrier_cursors = std::collections::HashMap::new();
     let included_sources = &details.included_sources;
     let loss_diags: Vec<_> = losses
         .iter()
-        .map(|c| {
+        .filter_map(|c| {
             // C2-N-063: the loss of an unexpanded include names its file.
-            let (include_file, include_path) = if *c == "include-unresolved" {
-                places.next().map_or((None, None), |(f, p)| (f, Some(p)))
+            let (include_file, include_path, include_pos) = if *c == "include-unresolved" {
+                places
+                    .next()
+                    .map_or((None, None, None), |(f, p, pos)| (f, Some(p), pos))
             } else {
-                (None, None)
+                (None, None, None)
+            };
+            let profile = if *c == "profile-construct-degraded" {
+                profile_losses.next()
+            } else {
+                None
             };
             let raw = if *c == "raw-format-dropped" {
                 raw_losses.next()
@@ -947,27 +937,31 @@ fn loss_diagnostics(
                 raw.and_then(|r| r.file.clone())
                     .or_else(|| destination.and_then(|d| d.file.clone()))
                     .or_else(|| carrier.and_then(|c| c.file.clone()))
+                    .or_else(|| profile.and_then(|p| p.file.clone()))
             });
             let included_source = file
                 .as_deref()
                 .and_then(|id| included_sources.get(id))
                 .map(|text| source::Source::new(text));
             let loss_source = included_source.as_ref().unwrap_or(&source);
-            let pos = raw
-                .and_then(|r| r.pos)
-                .or_else(|| destination.and_then(|d| destination_loss_position(loss_source, d)))
-                .or_else(|| destination.and_then(|d| d.pos))
-                .or_else(|| {
-                    carrier
-                        .and_then(|c| carrier_loss_position(loss_source, c, &mut carrier_cursors))
-                })
-                .or_else(|| carrier.and_then(|c| c.pos))
-                .or_else(|| {
-                    file.is_none()
-                        .then(|| loss_position(c, &source, opts, parse_diags))
-                        .flatten()
-                });
-            let (variant, values) = loss_message(c, raw, destination, carrier, include_path);
+            let pos = render_loss_position(
+                c,
+                &source,
+                loss_source,
+                opts,
+                parse_diags,
+                &LossPosition {
+                    raw,
+                    include_pos,
+                    profile,
+                    destination,
+                    carrier,
+                    file: file.as_deref(),
+                },
+                &mut carrier_cursors,
+            );
+            let (variant, values) =
+                loss_message(c, raw, destination, carrier, profile, opts, include_path);
             let values: Vec<_> = values
                 .iter()
                 .map(|(name, value)| (*name, value.as_str()))
@@ -977,10 +971,54 @@ fn loss_diagnostics(
             if opts.strict_losses {
                 diagnostic.severity = "error";
             }
-            diagnostic
+            (!opts.allows(c) || opts.allow_losses.is_empty()).then_some(diagnostic)
         })
         .collect();
     loss_diags
+}
+
+struct LossPosition<'a> {
+    raw: Option<&'a html::RawLoss>,
+    include_pos: Option<ast::Pos>,
+    profile: Option<&'a html::ProfileLoss>,
+    destination: Option<&'a html::DestinationLoss>,
+    carrier: Option<&'a html::CarrierLoss>,
+    file: Option<&'a str>,
+}
+
+fn render_loss_position(
+    code: &str,
+    source: &source::Source<'_>,
+    loss_source: &source::Source<'_>,
+    opts: &Options,
+    parse_diags: &[diagnostic::Diagnostic],
+    record: &LossPosition<'_>,
+    carrier_cursors: &mut std::collections::HashMap<(Option<String>, u32, u32), usize>,
+) -> Option<ast::Pos> {
+    record
+        .raw
+        .and_then(|r| r.pos)
+        .or(record.include_pos)
+        .or_else(|| record.profile.and_then(|p| p.pos))
+        .or_else(|| {
+            record
+                .destination
+                .and_then(|d| destination_loss_position(loss_source, d))
+        })
+        .or_else(|| record.destination.and_then(|d| d.pos))
+        .or_else(|| {
+            record
+                .carrier
+                .and_then(|c| carrier_loss_position(loss_source, c, carrier_cursors))
+        })
+        .or_else(|| record.carrier.and_then(|c| c.pos))
+        .or_else(|| {
+            record
+                .file
+                .is_none()
+                .then(|| loss_position(code, source, opts, parse_diags))
+                .flatten()
+        })
 }
 
 fn destination_loss_position(
@@ -1036,10 +1074,19 @@ fn loss_message(
     raw: Option<&html::RawLoss>,
     destination: Option<&html::DestinationLoss>,
     carrier: Option<&html::CarrierLoss>,
+    profile: Option<&html::ProfileLoss>,
+    opts: &Options,
     include_path: Option<String>,
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
         "include-unresolved" => (0, vec![("path", include_path.unwrap_or_default())]),
+        "profile-construct-degraded" => (
+            0,
+            vec![
+                ("profile", opts.profile.name().to_string()),
+                ("construct", profile.map_or("", |p| p.construct).to_string()),
+            ],
+        ),
         "carrier-attribute-dropped" => {
             let key = carrier.map_or_else(String::new, |loss| loss.key.clone());
             (0, vec![("key", key)])
@@ -1238,8 +1285,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     let out = block::scan(&src);
     let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
-    let (out, losses) =
-        html::render_mapped_source(&doc, opts, src.render_view(), ordered, None, None, None);
+    let (out, losses) = html::render_mapped_source(&doc, opts, src.render_view(), ordered, None);
     let losses = unallowed(losses, opts);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));

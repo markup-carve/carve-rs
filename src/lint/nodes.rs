@@ -346,8 +346,8 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
     let content = field(first, "/pos/startOffset")
         .as_u64()
         .and_then(|offset| usize::try_from(offset).ok())
-        .map_or(0, |offset| source_column(sink.source, offset));
-    let column = source_column(sink.source, from);
+        .map_or(0, |offset| quote_column(sink.source, offset));
+    let column = quote_column(sink.source, from);
     if content > 0 && column > content {
         let end = sink
             .source
@@ -944,6 +944,28 @@ fn source_column(source: &str, at: usize) -> u64 {
     })
 }
 
+/// C2-B-003: compare columns behind quote prefixes, regardless of their authored indent.
+fn quote_column(source: &str, at: usize) -> u64 {
+    let line = source
+        .get(..at)
+        .unwrap_or("")
+        .rsplit('\n')
+        .next()
+        .unwrap_or("");
+    let mut tail = line;
+    loop {
+        let trimmed = tail.trim_start_matches([' ', '\t']);
+        let Some(after) = trimmed.strip_prefix('>') else {
+            break;
+        };
+        if !after.is_empty() && !after.starts_with(' ') {
+            break;
+        }
+        tail = after.strip_prefix(' ').unwrap_or(after);
+    }
+    source_column(tail, tail.len())
+}
+
 fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
     let raw = sink.raw(item).to_string();
     let trimmed = raw.trim_end();
@@ -993,10 +1015,21 @@ fn heading_continuation(item: &Item<'_>, raw: &str, sink: &mut Sink<'_>) {
         .iter()
         .filter(|parent| *parent == "block_quote")
         .count();
-    for (index, line) in raw.split_inclusive('\n').enumerate() {
+    let mut seen_heading = false;
+    for line in raw.split_inclusive('\n') {
         let at = offset;
         offset += line.len();
-        if index == 0 || line.trim_start().starts_with("%%") {
+        if !seen_heading {
+            let trimmed = line.trim_start_matches([' ', '\t']);
+            let marker = trimmed.as_bytes().first().copied();
+            let run = trimmed
+                .bytes()
+                .take_while(|b| Some(*b) == marker && matches!(b, b'#' | b'='))
+                .count();
+            seen_heading = (1..=6).contains(&run) && trimmed.as_bytes().get(run) == Some(&b' ');
+            continue;
+        }
+        if line.trim_start().starts_with("%%") {
             continue;
         }
         let mut content = line;

@@ -178,9 +178,9 @@
   {
     "id": "deprecated-indented-line-under-heading",
     "origin": "../carve/tests/corpus/415-a-floating-attribute-does-not-widen-a-list-item-s-content-column-4.crv",
-    "trigger": "-{#k} {#h}\n # h\n",
-    "near": "-{#k} {#h}\n\n",
-    "fragment": " # h",
+    "trigger": "# H\n  cont\n",
+    "near": "# H\ncont\n",
+    "fragment": "  cont",
     "message": "This indented line directly below a heading is part of the heading in 0.2; in 0.1 it started a paragraph. Remove the indent to make it a separate block again; if it then reads as a list marker or another opener and a paragraph is meant, escape its first character."
   },
   {

@@ -191,13 +191,17 @@ fn flatten_node<'a>(n: &mut Node<'a>, arena: &'a Arena) {
 pub(crate) fn unexpanded(
     nodes: &[Node<'_>],
     file: Option<&str>,
-    out: &mut Vec<(Option<String>, String)>,
+    out: &mut Vec<(Option<String>, String, Option<crate::ast::Pos>)>,
 ) {
     for n in nodes {
         if let Node::Include(i) = n {
             match i.children.as_deref() {
                 Some(children) => unexpanded(children, i.file, out),
-                None => out.push((file.map(str::to_string), i.path.to_string())),
+                None => out.push((
+                    file.map(str::to_string),
+                    i.path.to_string(),
+                    n.pos().copied(),
+                )),
             }
         } else if expand::holds_blocks(n) || matches!(n, Node::List(_) | Node::DefinitionList(_)) {
             n.for_each_child(&mut |c| unexpanded(std::slice::from_ref(c), file, out));
