@@ -73,36 +73,21 @@ fn ancestors<'n, 'a>(all: &'n [Node<'a>], at: usize) -> impl Iterator<Item = &'n
 pub(super) fn warnings(source: &str, tree: &Value) -> Vec<Warning> {
     let all = nodes(tree);
     let mut out = Vec::new();
-    let in_footnote = |at: usize| ancestors(&all, at).any(|n| n.kind == "footnote");
     let mut braced_comments = HashSet::new();
     let mut footnote_labels = Vec::new();
     for (at, node) in all.iter().enumerate() {
         let value = node.value;
         match node.kind {
-            "div" => figure_nested(source, &all, at, &mut out),
-            "figure_group" => figure_group(source, value, &mut out),
-            "caption_number" => panel_number(source, &all, at, &mut out),
-            "strong" if !in_footnote(at) => glob_strong(source, value, &mut out),
             "comment" if value["form"] == "braced" => {
                 braced_comments.extend(bounds(value).map(|(start, _)| start));
             }
             "footnote" => footnote_labels.extend(bounds(value).map(|(start, _)| start)),
-            "list" | "definition_list" => consumed_key(source, value, "loose", &mut out),
-            "code_block" if matches!(value["syntax"].as_str(), Some("csv" | "tsv")) => {
-                consumed_key(source, value, "table", &mut out);
-            }
             "table" => {
                 wide_row(value, &mut out);
                 table_columns(source, value, &mut out);
                 span_markers(source, value, &mut out);
             }
-            "table_cell" => reversed_marker(source, value, &mut out),
-            "paragraph" if !in_footnote(at) => {
-                html_comment(source, &all, at, &mut out);
-                bare_tags(source, &all, at, &mut out);
-            }
-            "list_item" => marker_between_lists(source, &all, at, &mut out),
-            _ => {}
+            _ => visit(source, &all, at, &mut out),
         }
     }
     template_tags(source, &braced_comments, &mut out);
@@ -110,6 +95,29 @@ pub(super) fn warnings(source: &str, tree: &Value) -> Vec<Warning> {
     region_markers(source, &all, &mut out);
     out.sort_by(|a, b| (a.start, a.end, a.rule).cmp(&(b.start, b.end, b.rule)));
     out
+}
+
+fn visit(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
+    let Some(node) = all.get(at) else { return };
+    let value = node.value;
+    let in_footnote = || ancestors(all, at).any(|n| n.kind == "footnote");
+    match node.kind {
+        "div" => figure_nested(source, all, at, out),
+        "figure_group" => figure_group(source, value, out),
+        "caption_number" => panel_number(source, all, at, out),
+        "strong" if !in_footnote() => glob_strong(source, value, out),
+        "list" | "definition_list" => consumed_key(source, value, "loose", out),
+        "code_block" if matches!(value["syntax"].as_str(), Some("csv" | "tsv")) => {
+            consumed_key(source, value, "table", out);
+        }
+        "table_cell" => reversed_marker(source, value, out),
+        "paragraph" if !in_footnote() => {
+            html_comment(source, all, at, out);
+            bare_tags(source, all, at, out);
+        }
+        "list_item" => marker_between_lists(source, all, at, out),
+        _ => {}
+    }
 }
 
 fn push(out: &mut Vec<Warning>, rule: &'static str, (start, end): (usize, usize)) {
