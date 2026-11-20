@@ -360,8 +360,25 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
 }
 
 fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
-    if item.parents.iter().any(|parent| parent == "list_item") {
-        return;
+    let mut ancestor = item.path.as_str();
+    while let Some((path, _)) = ancestor.rsplit_once("/children/") {
+        ancestor = path;
+        let Some(node) = root.pointer(path) else {
+            break;
+        };
+        match node["type"].as_str() {
+            Some("list_item") => return,
+            Some(
+                "div"
+                | "admonition"
+                | "directive"
+                | "figure_group"
+                | "block_quote"
+                | "footnote"
+                | "definition_description",
+            ) => break,
+            _ => {}
+        }
     }
     let kind = match item.node["type"].as_str().unwrap_or("") {
         "block_quote" => "quote",

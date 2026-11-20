@@ -43,6 +43,10 @@ fn nested_opener_uses_div_content_column() {
         spans("   :::\n  ***\n", "block-opener-overindented"),
         vec![(3, 6)]
     );
+    assert_eq!(
+        spans("* ::: box\n   ::: glossary\n", "block-opener-overindented"),
+        vec![(13, 16)]
+    );
 }
 
 #[test]
@@ -86,6 +90,10 @@ fn text_quote_prefix_does_not_hide_inline_attribute() {
     assert_eq!(
         spans(">{.c}\n", "unattached-inline-attribute"),
         vec![(1, 5)]
+    );
+    assert_eq!(
+        spans("a\n> {.c}\n", "unattached-inline-attribute"),
+        vec![(4, 8)]
     );
 }
 
