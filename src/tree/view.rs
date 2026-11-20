@@ -75,6 +75,13 @@ impl<'t> AsView<'t> for &&'t Value {
     }
 }
 
+impl<'t> AsView<'t> for &mut &'t Value {
+    type V = &'t Value;
+    fn view(self) -> &'t Value {
+        self
+    }
+}
+
 /// A node as the writer reads it.
 pub trait View<'t>: Copy + 't {
     type List: NodeList<'t, Self>;
