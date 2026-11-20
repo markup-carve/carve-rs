@@ -142,7 +142,8 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
     if !raw.starts_with('>') || raw.len() == 1 || raw.starts_with("> ") {
         return;
     }
-    let pos = sink.source.pos(line.start, line.start + 1);
+    let end = line.start + raw.trim_end_matches([' ', '\t']).len();
+    let pos = sink.source.pos(line.start, end);
     let mut finding = Diagnostic::nth(
         "blockquote-marker-without-space",
         1,
@@ -453,7 +454,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
         sink.emit(
             "blockquote-marker-without-space",
             line.start,
-            line.start + 1,
+            line.start + line.text.trim_end_matches([' ', '\t']).len(),
             &line.path,
             &[("text", text.get(1..).unwrap_or(""))],
         );
@@ -992,11 +993,11 @@ fn term_folded(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sink: &mut Sink<'_>) {
-    prose_tokens(line, sink);
+    prose_tokens(line, previous, sink);
     prose_context(line, index, previous, lines, sink);
 }
 
-fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
+fn prose_tokens(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
     let (from, trimmed) = line_text(line);
     blank_reference_label(line, sink);
@@ -1023,7 +1024,7 @@ fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
             message,
         );
     }
-    unattached_attribute(line, sink);
+    unattached_attribute(line, previous, sink);
     if let Some(at) = text.find("<!--")
         && line.paragraph
         && !source_escaped(text.as_bytes(), at)
@@ -1312,7 +1313,11 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
     );
 }
 
-fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
+fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    // C2-W-107: a later line of a paragraph is its text, which block-opener-without-blank-line reports (carve#6195).
+    if previous.is_some_and(|previous| previous.paragraph && previous.path == line.path) {
+        return;
+    }
     let (at, text) = leaf_text(line);
     let tail = sink
         .source

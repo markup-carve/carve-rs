@@ -84,6 +84,33 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     out
 }
 
+/// C2-W-143: whether the line after `line_end` is blank for the rules inside the quotes that open before `start` on
+/// its line, that is, holds only spaces and tabs behind that many quote marks; `>>` at column 1 is text (C2-B-031).
+fn blank_within(source: &str, line_start: usize, start: usize, line_end: usize) -> bool {
+    let depth = source
+        .get(line_start..start)
+        .unwrap_or("")
+        .bytes()
+        .filter(|byte| *byte == b'>')
+        .count();
+    let Some(tail) = source
+        .get(line_end..)
+        .and_then(|tail| tail.strip_prefix('\n'))
+        .filter(|tail| !tail.is_empty())
+    else {
+        return false;
+    };
+    let mut rest = tail.split('\n').next().unwrap_or("").trim_end_matches('\r');
+    for _ in 0..depth {
+        let trimmed = rest.trim_start_matches([' ', '\t']);
+        match trimmed.strip_prefix('>') {
+            Some(after) if after.is_empty() || after.starts_with(' ') => rest = after,
+            _ => break,
+        }
+    }
+    rest.trim_matches([' ', '\t']).is_empty()
+}
+
 /// Selects catalog wording whose trigger depends on the surrounding source,
 /// after legacy, line and node scanners have contributed their findings.
 fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
@@ -107,10 +134,7 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
             .next()
             .unwrap_or("")
             .trim_start();
-        let blank_next = source
-            .get(line_end..)
-            .and_then(|tail| tail.strip_prefix('\n'))
-            .is_some_and(|tail| tail.starts_with('\n') || tail.starts_with("\r\n"));
+        let blank_next = blank_within(source, line_start, start, line_end);
         let variant = match finding.code {
             "list-marker-without-blank-line"
                 if previous.starts_with(":: ") || previous.starts_with(": ") =>
@@ -673,7 +697,24 @@ fn colon_fence_mismatches(
                         && end <= range.end
                         && matches!(range.kind.as_str(), "code_block" | "raw_block" | "comment")
                 });
-                if width >= 3 && width != candidate.len() && !opaque {
+                // The run cannot close a div outside its own quote, item, footnote or description (C2-B-109,
+                // carve#6194), so that div is not compared with it.
+                let inner = format!("{}/", container.path);
+                let owned = ranges.around(at).any(|range| {
+                    range.start < at
+                        && at <= range.end
+                        && range.path.starts_with(&inner)
+                        && matches!(
+                            range.kind.as_str(),
+                            "block_quote"
+                                | "list_item"
+                                | "footnote"
+                                | "definition_description"
+                                | "citation_definition"
+                        )
+                        && !source.get(range.start..).unwrap_or("").starts_with(":::")
+                });
+                if width >= 3 && width != candidate.len() && !opaque && !owned {
                     let mut finding = Diagnostic::new(
                         "colon-fence-length-mismatch",
                         &[],

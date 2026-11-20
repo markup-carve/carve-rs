@@ -226,7 +226,7 @@ fn frontmatter_quote_lint_uses_the_frontmatter_message() {
     let pos = finding.pos.unwrap();
     assert_eq!(
         (pos.start_line, pos.start_column, pos.end_column),
-        (2, 1, 2)
+        (2, 1, 5)
     );
     assert!(finding.message.contains("frontmatter content"));
 }

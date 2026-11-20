@@ -246,11 +246,11 @@ fn opener_indent_uses_the_container_content_column_and_tab_stops() {
     );
     assert_eq!(
         spans("  ````=html\n", "block-opener-overindented"),
-        vec![(2, 3)]
+        vec![(2, 6)]
     );
     assert_eq!(
         spans("   ```=html\n", "block-opener-overindented"),
-        vec![(3, 4)]
+        vec![(3, 6)]
     );
 }
 
