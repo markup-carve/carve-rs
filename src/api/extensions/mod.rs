@@ -25,6 +25,7 @@ mod glossary;
 mod index_terms;
 mod list_table;
 mod math;
+mod navigation;
 mod semantic_span;
 mod smart_quotes;
 mod transforms;
@@ -44,6 +45,13 @@ pub use glossary::glossary;
 pub use index_terms::{IndexOptions, index};
 pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
+pub use navigation::{
+    AutolinkOptions, CrossrefStyle, ExternalLinksOptions, HeadingLevelShiftOptions,
+    HeadingNumbersOptions, HeadingPermalinksOptions, HeadingReferenceOptions, LinkPolicyOptions,
+    ListType, Position, TableOfContentsOptions, autolink, external_links, heading_level_shift,
+    heading_numbers, heading_permalinks, heading_reference, link_policy, table_of_contents,
+    toc_placement,
+};
 pub use semantic_span::{SEMANTIC_SPAN_KEYS, semantic_span};
 pub use smart_quotes::{
     QuoteCharacters, SMART_QUOTE_LOCALES, SmartQuotesOptions, is_smart_quote_locale_supported,
@@ -235,7 +243,9 @@ pub(crate) fn standard(name: &str) -> Option<Bundle> {
     if let Some(word) = name.strip_prefix("carve.fencedRender.") {
         return fenced::preset_word(word);
     }
-    apparatus_standard(name).or_else(|| standard_other(name))
+    apparatus_standard(name)
+        .or_else(|| standard_other(name))
+        .or_else(|| navigation_standard(name))
 }
 
 fn apparatus_standard(name: &str) -> Option<Bundle> {
@@ -263,6 +273,21 @@ fn standard_other(name: &str) -> Option<Bundle> {
         "carve.inlineFootnotesToParentheses" => Some(inline_footnotes_to_parentheses()),
         "carve.semanticSpan" => Some(semantic_span()),
         "carve.smartQuotes" => Some(smart_quotes(&SmartQuotesOptions::default())),
+        _ => None,
+    }
+}
+
+fn navigation_standard(name: &str) -> Option<Bundle> {
+    match name {
+        "carve.externalLinks" => Some(external_links(ExternalLinksOptions::default())),
+        "carve.headingLevelShift" => Some(heading_level_shift(HeadingLevelShiftOptions::default())),
+        "carve.headingPermalinks" => Some(heading_permalinks(HeadingPermalinksOptions::default())),
+        "carve.headingNumbers" => Some(heading_numbers(HeadingNumbersOptions::default())),
+        "carve.headingReference" => Some(heading_reference(HeadingReferenceOptions::default())),
+        "carve.toc" => Some(table_of_contents(TableOfContentsOptions::default())),
+        "carve.tocPlacement" => Some(toc_placement()),
+        "carve.autolink" => Some(autolink(AutolinkOptions::default())),
+        "carve.linkPolicy" => Some(link_policy(LinkPolicyOptions::default())),
         _ => None,
     }
 }
