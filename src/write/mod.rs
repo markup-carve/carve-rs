@@ -46,7 +46,9 @@ impl Settings {
     #[must_use]
     pub fn with_layout(mut self, layout: Option<&Value>) -> Self {
         self.layout = layout.map(facts::from_layout);
+        // C2-L-056: a base64 source holds bytes, not the text the positions count.
         self.source = layout
+            .filter(|l| l.get("encoding").and_then(Value::as_str) != Some("base64"))
             .and_then(|l| l.get("source"))
             .and_then(Value::as_str)
             .map(str::to_string);

@@ -192,3 +192,16 @@ fn a_comment_that_only_holds_the_keyword_later_is_no_control() {
     let src = format!("x\n\n%% foo {CONTROL}\n## H\n");
     assert_eq!(format(&src), format!("x\n\n%% foo {CONTROL}\n\n== H\n"));
 }
+
+#[test]
+fn a_base64_layout_counts_as_no_source() {
+    let bytes: &[u8] = b"x\n\n%% carve-lint-disable-next-line\n## H \xff\n";
+    let parsed = api::parse_with_layout(bytes, &Options::default()).unwrap();
+    assert_eq!(parsed.layout["encoding"], "base64");
+    let opts = WriteOptions {
+        layout: Some(parsed.layout.clone()),
+        ..WriteOptions::default()
+    };
+    let written = Carve::new().write(&parsed.tree, &opts).unwrap();
+    assert_eq!(written, format!("x\n\n{CONTROL}\n== H \u{FFFD}\n"));
+}
