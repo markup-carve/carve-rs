@@ -5,7 +5,7 @@
 use super::atoms::{self, Angle, Label};
 use super::content::Content;
 use super::token::{Delim, K, Kind, Sort, Tok};
-use super::{ContentKind, InlineEnv, Join};
+use super::{ContentKind, Env, Join};
 use crate::ast::{
     Autolink, Code, Comment, CommentForm, CriticComment, FootnoteRef, Image, ImageRefForm,
     LinkRefForm, LiteralInline, Math, Mention, Node, RawInline, Symbol, Tag, Xref, XrefNamespace,
@@ -52,7 +52,7 @@ struct Scanner<'r, 'e, 'a> {
     c: &'r Content<'e, 'a>,
     t: &'r str,
     b: &'r [u8],
-    env: &'r InlineEnv<'e, 'a>,
+    env: &'r Env<'e, 'a>,
     toks: Vec<Tok<'a>>,
     text_from: Option<usize>,
     brackets: Vec<Bracket>,
@@ -76,11 +76,7 @@ struct Scanner<'r, 'e, 'a> {
 
 /// Runs the scan over one content.
 #[must_use]
-pub fn scan<'a>(
-    c: &Content<'_, 'a>,
-    env: &InlineEnv<'_, 'a>,
-    mut toks: Vec<Tok<'a>>,
-) -> Scanned<'a> {
+pub fn scan<'a>(c: &Content<'_, 'a>, env: &Env<'_, 'a>, mut toks: Vec<Tok<'a>>) -> Scanned<'a> {
     let t = c.text.as_str();
     toks.clear();
     // Each byte that starts a form makes about one token and ends a text run.

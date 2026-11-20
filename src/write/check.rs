@@ -35,15 +35,10 @@ pub fn parse_with(w: &mut Writer<'_>, src: &str, keys: &HashSet<String>) -> Valu
 pub fn parse_chunk_keys(w: &mut Writer<'_>, src: &str, keys: Option<&HashSet<String>>) -> Value {
     w.parses += 1;
     w.work_chars = w.work_chars.saturating_add(src.len());
-    let scope = crate::tree::Scope {
-        link_keys: keys.cloned().unwrap_or_default(),
-        abbreviations: w.abbreviations.clone(),
-        findings: Vec::new(),
-    };
     let source = crate::source::Source::new(src);
     let out = crate::block::scan(&source);
     let arena = crate::Arena::for_input(src);
-    let (doc, _) = crate::tree::build_scoped(&source, &arena, out.events, Some(&scope));
+    let (doc, _) = crate::tree::build_layered(&source, &arena, out.events, keys, &w.abbreviations);
     let mut v = serde_json::to_value(&doc).unwrap_or_default();
     if let Some(m) = v.as_object_mut() {
         m.insert("type".into(), "document".into());
@@ -57,15 +52,16 @@ pub fn parse_chunk_keys(w: &mut Writer<'_>, src: &str, keys: Option<&HashSet<Str
 /// The tree of the whole written document, for the check of C2-W-144; it is
 /// no repair parse of a group, so it counts toward no limit.
 pub fn parse_written(w: &Writer<'_>, src: &str) -> Value {
-    let scope = crate::tree::Scope {
-        link_keys: w.link_keys.clone(),
-        abbreviations: w.abbreviations.clone(),
-        findings: Vec::new(),
-    };
     let source = crate::source::Source::new(src);
     let out = crate::block::scan(&source);
     let arena = crate::Arena::for_input(src);
-    let (doc, _) = crate::tree::build_scoped(&source, &arena, out.events, Some(&scope));
+    let (doc, _) = crate::tree::build_layered(
+        &source,
+        &arena,
+        out.events,
+        Some(&w.link_keys),
+        &w.abbreviations,
+    );
     let mut v = serde_json::to_value(&doc).unwrap_or_default();
     if !w.extensions.is_empty() {
         super::extension::apply_claims(&mut v, &w.extensions, src);

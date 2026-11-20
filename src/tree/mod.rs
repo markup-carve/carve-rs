@@ -10,7 +10,7 @@ use crate::attr::AttrBlock;
 use crate::block::events::{ContainerKind, Event, LeafKind, LineBlockEntry, Role};
 use crate::block::shapes::{DivInfo, MarkerKind};
 use crate::chars::fold_label;
-use crate::inline::{self, ContentKind, InlineEnv, Join, Piece};
+use crate::inline::{self, ContentKind, Join, Piece};
 use crate::source::Source;
 use std::collections::HashSet;
 
@@ -44,24 +44,48 @@ pub fn build_scoped<'a>(
     events: Vec<Event>,
     outer: Option<&Scope>,
 ) -> (ast::Document<'a>, Scope) {
-    let (mut link_keys, mut abbreviations) = definitions(&events);
+    let (doc, mut scope) = build_layered(
+        src,
+        arena,
+        events,
+        outer.map(|o| &o.link_keys),
+        outer.map_or(&[], |o| &o.abbreviations),
+    );
     if let Some(outer) = outer {
-        link_keys.extend(outer.link_keys.iter().cloned());
-        let own: HashSet<String> = abbreviations.iter().map(|(k, _)| k.clone()).collect();
-        abbreviations.extend(
+        scope.link_keys.extend(outer.link_keys.iter().cloned());
+        let own: HashSet<String> = scope.abbreviations.iter().map(|(k, _)| k.clone()).collect();
+        scope.abbreviations.extend(
             outer
                 .abbreviations
                 .iter()
                 .filter(|(k, _)| !own.contains(k))
                 .cloned(),
         );
-        abbreviations.sort_by(|a, b| a.0.cmp(&b.0));
+        scope.abbreviations.sort_by(|a, b| a.0.cmp(&b.0));
     }
+    (doc, scope)
+}
+
+/// `build` with the link keys and abbreviations (sorted by term) of the
+/// documents around this one, read in place; the scope returned holds this
+/// file's own definitions only.
+#[must_use]
+#[allow(clippy::implicit_hasher)] // the inline pass reads a `HashSet<String>`
+pub fn build_layered<'a>(
+    src: &Source<'a>,
+    arena: &'a Arena,
+    events: Vec<Event>,
+    outer_keys: Option<&HashSet<String>>,
+    outer_abbreviations: &[(String, String)],
+) -> (ast::Document<'a>, Scope) {
+    let (link_keys, abbreviations) = definitions(&events);
     let mut b = Builder {
         src,
         arena,
         link_keys,
         abbreviations,
+        outer_keys,
+        outer_abbreviations,
         stack: Vec::new(),
         root: Vec::new(),
         hard: 0,
@@ -126,6 +150,8 @@ struct Builder<'s, 'a> {
     arena: &'a Arena,
     link_keys: HashSet<String>,
     abbreviations: Vec<(String, String)>,
+    outer_keys: Option<&'s HashSet<String>>,
+    outer_abbreviations: &'s [(String, String)],
     stack: Vec<Frame<'a>>,
     root: Vec<Node<'a>>,
     hard: usize,
@@ -168,17 +194,23 @@ impl<'a> Builder<'_, 'a> {
     }
 
     fn inline(&self, kind: ContentKind, pieces: &[Piece]) -> &'a mut [Node<'a>] {
-        let env = InlineEnv {
+        let env = inline::Env {
             src: self.src,
             arena: self.arena,
-            link_keys: &self.link_keys,
-            abbreviations: &self.abbreviations,
+            link_keys: inline::Keys {
+                own: &self.link_keys,
+                outer: self.outer_keys,
+            },
+            abbreviations: inline::Terms {
+                own: &self.abbreviations,
+                outer: self.outer_abbreviations,
+            },
             kind,
             hard_breaks: self.hard > 0,
         };
         #[cfg(feature = "profile")]
         crate::profile::inline(true);
-        let out = inline::parse(&env, pieces, &mut self.scratch.borrow_mut());
+        let out = inline::parse_env(&env, pieces, &mut self.scratch.borrow_mut());
         #[cfg(feature = "profile")]
         crate::profile::inline(false);
         out

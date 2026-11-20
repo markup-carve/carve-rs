@@ -7,7 +7,7 @@ use super::delim::Ctx;
 use super::events::Ev;
 use super::smart::{Out, Prev, Smart};
 use super::token::Kind;
-use super::{InlineEnv, Scratch, abbr};
+use super::{Env, Scratch, abbr};
 use crate::Arena;
 use crate::ast::{
     Abbreviation, CommentForm, HardBreak, InlineExtension, InlineFootnote, Link, Node,
@@ -28,7 +28,7 @@ pub(super) struct Frame<'a> {
 struct Builder<'r, 'e, 'a> {
     c: &'r Content<'e, 'a>,
     ctx: &'r Ctx<'r>,
-    env: &'r InlineEnv<'e, 'a>,
+    env: &'r Env<'e, 'a>,
     a: &'a Arena,
     root: Vec<Node<'a>>,
     frames: Vec<Frame<'a>>,
@@ -53,7 +53,7 @@ struct Builder<'r, 'e, 'a> {
 pub(super) fn build<'a>(
     c: &Content<'_, 'a>,
     ctx: &Ctx<'_>,
-    env: &InlineEnv<'_, 'a>,
+    env: &Env<'_, 'a>,
     s: &mut Scratch<'a>,
 ) -> &'a mut [Node<'a>] {
     let mut evs = std::mem::take(&mut s.evs);
@@ -479,7 +479,7 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
     /// Plain text: abbreviations first, smart typography in what is left.
     fn plain(&mut self, v0: usize, v1: usize, next_flow: Option<char>) {
         let s = self.ctx.t.get(v0..v1).unwrap_or("");
-        let hits = abbr::find(s, self.flow_prev, next_flow, self.env.abbreviations);
+        let hits = abbr::find(s, self.flow_prev, next_flow, &self.env.abbreviations);
         let mut from = v0;
         for (a, b, idx) in hits {
             self.smart_text(from, v0 + a, None);

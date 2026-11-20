@@ -2,7 +2,7 @@
 //! by one line feed each, with the map from content offsets back to source
 //! offsets.
 
-use super::{ContentKind, InlineEnv, Join, Piece};
+use super::{ContentKind, Env, Join, Piece};
 use crate::Arena;
 use crate::ast::Pos;
 use crate::source::Source;
@@ -59,7 +59,7 @@ fn trim_end(b: &[u8], start: usize, mut end: usize) -> usize {
 }
 
 #[inline]
-fn piece_bounds(env: &InlineEnv<'_, '_>, p: &Piece, full: &str) -> (usize, usize, usize) {
+fn piece_bounds(env: &Env<'_, '_>, p: &Piece, full: &str) -> (usize, usize, usize) {
     let b = full.as_bytes();
     let end = p.end.min(full.len());
     let mut start = p.start.min(end);
@@ -92,11 +92,7 @@ fn piece_bounds(env: &InlineEnv<'_, '_>, p: &Piece, full: &str) -> (usize, usize
 
 impl<'e, 'a> Content<'e, 'a> {
     /// Joins the pieces of one content, in the buffers of `s`.
-    pub(super) fn new_in(
-        env: &InlineEnv<'e, 'a>,
-        pieces: &[Piece],
-        s: &mut super::Scratch<'a>,
-    ) -> Self {
+    pub(super) fn new_in(env: &Env<'e, 'a>, pieces: &[Piece], s: &mut super::Scratch<'a>) -> Self {
         let full = env.src.text();
         let mut text = std::mem::take(&mut s.text);
         text.clear();

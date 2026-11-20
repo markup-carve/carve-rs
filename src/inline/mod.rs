@@ -67,6 +67,69 @@ pub struct InlineEnv<'e, 'a> {
     pub hard_breaks: bool,
 }
 
+/// [`InlineEnv`] with the definitions of the documents around this one kept
+/// apart from its own.
+pub(crate) struct Env<'e, 'a> {
+    pub src: &'e Source<'a>,
+    pub arena: &'a Arena,
+    pub link_keys: Keys<'e>,
+    pub abbreviations: Terms<'e>,
+    pub kind: ContentKind,
+    pub hard_breaks: bool,
+}
+
+/// The link keys of a document and of the documents around it, read in
+/// place so that a small parse inside a large scope copies none of them.
+#[derive(Clone, Copy)]
+pub(crate) struct Keys<'e> {
+    pub own: &'e HashSet<String>,
+    pub outer: Option<&'e HashSet<String>>,
+}
+
+impl Keys<'_> {
+    #[must_use]
+    pub(crate) fn contains(&self, key: &str) -> bool {
+        self.own.contains(key) || self.outer.is_some_and(|o| o.contains(key))
+    }
+}
+
+/// The abbreviations of a document, then those of the documents around it
+/// whose term it does not define itself. Both lists are sorted by term.
+#[derive(Clone, Copy)]
+pub(crate) struct Terms<'e> {
+    pub own: &'e [(String, String)],
+    pub outer: &'e [(String, String)],
+}
+
+impl<'e> Terms<'e> {
+    #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.own.is_empty() && self.outer.is_empty()
+    }
+
+    /// The index of `term`: own terms first, the outer ones after them.
+    #[must_use]
+    pub(crate) fn find(&self, term: &str) -> Option<usize> {
+        let by = |(t, _): &(String, String)| t.as_str().cmp(term);
+        match self.own.binary_search_by(by) {
+            Ok(i) => Some(i),
+            Err(_) => self
+                .outer
+                .binary_search_by(by)
+                .ok()
+                .map(|j| self.own.len() + j),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn get(&self, idx: usize) -> Option<&'e (String, String)> {
+        match idx.checked_sub(self.own.len()) {
+            None => self.own.get(idx),
+            Some(j) => self.outer.get(j),
+        }
+    }
+}
+
 /// The buffers of one inline pass, kept for the next content of the document.
 #[derive(Default)]
 pub struct Scratch<'a> {
@@ -105,16 +168,35 @@ pub fn parse<'a>(
     pieces: &[Piece],
     s: &mut Scratch<'a>,
 ) -> &'a mut [Node<'a>] {
+    let env = Env {
+        src: env.src,
+        arena: env.arena,
+        link_keys: Keys {
+            own: env.link_keys,
+            outer: None,
+        },
+        abbreviations: Terms {
+            own: env.abbreviations,
+            outer: &[],
+        },
+        kind: env.kind,
+        hard_breaks: env.hard_breaks,
+    };
+    parse_env(&env, pieces, s)
+}
+
+/// [`parse`] of an [`Env`].
+pub(crate) fn parse_env<'a>(
+    env: &Env<'_, 'a>,
+    pieces: &[Piece],
+    s: &mut Scratch<'a>,
+) -> &'a mut [Node<'a>] {
     let out = parse_in(env, pieces, s);
     s.trim();
     out
 }
 
-fn parse_in<'a>(
-    env: &InlineEnv<'_, 'a>,
-    pieces: &[Piece],
-    s: &mut Scratch<'a>,
-) -> &'a mut [Node<'a>] {
+fn parse_in<'a>(env: &Env<'_, 'a>, pieces: &[Piece], s: &mut Scratch<'a>) -> &'a mut [Node<'a>] {
     if let Some(nodes) = plain_piece(env, pieces) {
         return nodes;
     }
@@ -135,7 +217,7 @@ fn parse_in<'a>(
 
 /// Plain lines (`plain_span`) with no abbreviation defined and no hard break
 /// block: text nodes with a soft break between them, as the full pass builds.
-fn plain_piece<'a>(env: &InlineEnv<'_, 'a>, pieces: &[Piece]) -> Option<&'a mut [Node<'a>]> {
+fn plain_piece<'a>(env: &Env<'_, 'a>, pieces: &[Piece]) -> Option<&'a mut [Node<'a>]> {
     let multi = pieces.len() > 1;
     if !env.abbreviations.is_empty()
         || (multi && (env.hard_breaks || env.kind == ContentKind::Cell))
@@ -175,7 +257,7 @@ fn plain_piece<'a>(env: &InlineEnv<'_, 'a>, pieces: &[Piece]) -> Option<&'a mut 
 
 /// The start and text of a piece of ASCII letters, digits, inner spaces and
 /// a few punctuation marks: nothing in it starts a construct.
-fn plain_span<'a>(env: &InlineEnv<'_, 'a>, p: &Piece) -> Option<(usize, &'a str)> {
+fn plain_span<'a>(env: &Env<'_, 'a>, p: &Piece) -> Option<(usize, &'a str)> {
     let t = env.src.borrowed(p.start, p.end)?;
     let trimmed = if env.kind == ContentKind::Cell {
         t.trim_matches([' ', '\t'])
