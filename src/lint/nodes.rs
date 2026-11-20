@@ -871,7 +871,15 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
         .as_u64()
         .and_then(|offset| usize::try_from(offset).ok())
         .map_or(marker_column + 2, |offset| {
-            source_column(sink.source, offset)
+            // C2-B-027: a task mark is item text, so the column is that of its `[`.
+            let box_at = item
+                .node
+                .get("task")
+                .and_then(|_| sink.source.get(from..offset))
+                .filter(|head| !head.contains('\n'))
+                .and_then(|head| head.rfind('['))
+                .map_or(offset, |at| from + at);
+            source_column(sink.source, box_at)
         });
     let quotes = item
         .parents

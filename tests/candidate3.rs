@@ -204,13 +204,19 @@ fn c2_b_166_escaped_pipe_start_is_paragraph_text() {
 
 #[test]
 fn c2_b_055_body_between_marker_and_content_columns_is_reported() {
-    for source in ["- a\n\n b", "- [ ] first\n\n  second"] {
+    // carve#6230: a task mark is item text, so `  second` sits at the content column.
+    for (source, reported) in [
+        ("- a\n\n b", true),
+        ("- [ ] first\n\n second", true),
+        ("- [ ] first\n\n  second", false),
+    ] {
         let codes: Vec<_> = carve::lint::lint(source, &carve::lint::LintOptions::default())
             .into_iter()
             .map(|finding| finding.code)
             .collect();
-        assert!(
+        assert_eq!(
             codes.contains(&"list-item-body-below-content-column"),
+            reported,
             "{source}"
         );
     }

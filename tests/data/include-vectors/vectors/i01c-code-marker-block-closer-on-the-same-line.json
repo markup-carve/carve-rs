@@ -15,8 +15,8 @@
   ],
   "resolver": "virtual",
   "expected": {
-    "html": "<p>{{ a.css @region:demo @code:css }}</p>",
-    "fmt": "{{ a.css @region:demo @code:css }}\n",
+    "html": "<p>{{ a.css @code:css @region:demo }}</p>",
+    "fmt": "{{ a.css @code:css @region:demo }}\n",
     "warnings": [
       {
         "code": "include-region-invalid"

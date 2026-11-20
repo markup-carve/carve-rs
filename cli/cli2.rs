@@ -987,6 +987,9 @@ fn import_file(
     let settings = ImportOptions {
         raw_html: bool_value(args, "raw-html", false),
         strict_losses: bool_value(args, "strict-losses", false),
+        adapter: str_value(args, "adapter")
+            .and_then(api::ImportAdapter::from_name)
+            .unwrap_or_default(),
     };
     let limits = LossOptions {
         allow_losses: opts.allow_losses.clone(),

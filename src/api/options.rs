@@ -91,6 +91,8 @@ pub(crate) struct CallOptions {
     pub renderers: Vec<String>,
     pub tabs_aria: bool,
     pub code_group_aria: bool,
+    /// `adapter` of the HTML importer (C2-M-102).
+    pub adapter: super::ImportAdapter,
 }
 
 /// Reads the options of a call from a JSON object, refusing an unknown
@@ -168,6 +170,10 @@ fn set(out: &mut CallOptions, name: &str, v: &Value) -> Result<(), Error> {
         }
         "labels" | "symbols" | "social" | "urlPolicy" | "includes" | "codeBlockRenderer" => {
             structure(&mut out.options, name, v)
+        }
+        "adapter" => {
+            out.adapter = enum_value(name, v, super::ImportAdapter::from_name)?;
+            Ok(())
         }
         _ => enumerated(&mut out.options, name, v),
     }

@@ -12,8 +12,8 @@
   ],
   "resolver": "virtual",
   "expected": {
-    "html": "<p>{{ two.txt @lines:3-3 @code }}</p>",
-    "fmt": "{{ two.txt @lines:3-3 @code }}\n",
+    "html": "<p>{{ two.txt @code @lines:3-3 }}</p>",
+    "fmt": "{{ two.txt @code @lines:3-3 }}\n",
     "warnings": [
       {
         "code": "include-lines-out-of-range"

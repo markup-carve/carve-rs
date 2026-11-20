@@ -116,6 +116,12 @@ impl Dom {
         }
     }
 
+    pub fn set_parent(&mut self, id: Id, parent: Option<Id>) {
+        if let Some(n) = self.nodes.get_mut(id) {
+            n.parent = parent;
+        }
+    }
+
     pub fn set_children(&mut self, id: Id, children: Vec<Id>) {
         if let Some(n) = self.nodes.get_mut(id) {
             n.children = children;

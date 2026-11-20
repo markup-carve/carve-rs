@@ -10,8 +10,8 @@
   ],
   "resolver": "virtual",
   "expected": {
-    "html": "<p>{{ q.js @region:a @code }}</p>",
-    "fmt": "{{ q.js @region:a @code }}\n",
+    "html": "<p>{{ q.js @code @region:a }}</p>",
+    "fmt": "{{ q.js @code @region:a }}\n",
     "warnings": [
       {
         "code": "include-region-invalid"

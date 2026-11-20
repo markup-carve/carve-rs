@@ -10,8 +10,8 @@
   ],
   "resolver": "virtual",
   "expected": {
-    "html": "<p>{{ a.js @shift:1 @code @shift:2 }}</p>",
-    "fmt": "{{ a.js @shift:1 @code @shift:2 }}\n",
+    "html": "<p>{{ a.js @code @shift:1 @shift:2 }}</p>",
+    "fmt": "{{ a.js @code @shift:1 @shift:2 }}\n",
     "warnings": [
       {
         "code": "include-option-invalid"
