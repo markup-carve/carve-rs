@@ -1239,7 +1239,8 @@ fn quote_opener_candidate(line: &Line, source: &str) -> bool {
     matches!(line.kind.as_str(), "paragraph" | "caption")
         && source
             .get(line.start + at..line.start + line.text.len())
-            .is_some_and(|raw| raw.starts_with("> "))
+            .and_then(|raw| raw.strip_prefix("> "))
+            .is_some_and(|tail| tail.bytes().any(|byte| !byte.is_ascii_whitespace()))
 }
 
 fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {

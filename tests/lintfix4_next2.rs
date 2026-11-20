@@ -49,6 +49,7 @@ fn comments_after_lazy_quote_markers_are_quote_candidates() {
         ranges("  c\n  > %%%\n", "block-opener-without-blank-line"),
         vec![(6, 7)]
     );
+    assert!(ranges("a\n> \n", "block-opener-without-blank-line").is_empty());
 }
 
 #[test]
@@ -119,6 +120,11 @@ fn generated_variants_keep_the_correct_owner_and_span() {
                 u32::try_from(mark + 1).unwrap()
             )],
             "lazy variant {index}"
+        );
+        let empty_quote = format!("text{index}\n{indent}> \n");
+        assert!(
+            ranges(&empty_quote, "block-opener-without-blank-line").is_empty(),
+            "empty quote variant {index}"
         );
 
         let quoted = format!("> - a{index}\n>\n{indent}>   {heading} H\n");
