@@ -86,6 +86,49 @@ fn citations_resolve_keys_and_place_references() {
 }
 
 #[test]
+fn standard_cite_and_references_share_the_registered_claim() {
+    let source = "See :cite[knuth1984]{locator=\"p. 33\"} and :cite[knuth1984; lamport1994].\n\n::: references\n:: knuth1984\n: Knuth.\n\n:: lamport1994\n: Lamport.\n:::\n";
+    for cite_first in [true, false] {
+        let mut host = Carve::new();
+        if cite_first {
+            host.enable_standard("carve.cite", false).unwrap();
+        }
+        host.register(extensions::citations(
+            extensions::CitationsOptions::default(),
+        ))
+        .unwrap();
+        if !cite_first {
+            host.enable_standard("carve.cite", false).unwrap();
+        }
+        let result = host
+            .render_with_diagnostics(source, &Options::default())
+            .unwrap();
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .all(|entry| !entry.code.starts_with("extension-")),
+            "{:?}",
+            result.diagnostics
+        );
+        assert!(
+            result
+                .html
+                .contains("[<a href=\"#ref-knuth1984\" data-cite-key=\"knuth1984\">1</a>, p. 33]"),
+            "{}",
+            result.html
+        );
+        assert!(
+            result
+                .html
+                .contains("<li id=\"ref-lamport1994\">Lamport.</li>"),
+            "{}",
+            result.html
+        );
+    }
+}
+
+#[test]
 fn all_three_bundles_share_a_document() {
     let source = "See :cite[doe]{locator=\"p. 4\"} and :term[HTTP]:index[HTTP].\n\n::: glossary\n:: HTTP\n: HyperText Transfer Protocol.\n:::\n\n::: references\n:: doe\n: Doe, J. (2020). /A book/.\n:::\n\n::: index\n:::\n";
     let mut host = Carve::new();

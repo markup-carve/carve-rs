@@ -91,6 +91,23 @@ fn external_links_are_available_at_the_json_boundary() {
 }
 
 #[test]
+fn external_links_keep_working_with_authored_and_generated_autolinks() {
+    let request = serde_json::json!({"call":"render", "source":"[x](https://ext.org) and https://a.org and <http://b.org>\n", "options":{"extensions":["carve.autolink", "carve.externalLinks"]}});
+    let response: serde_json::Value =
+        serde_json::from_str(&api::json::call(&request.to_string())).unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    let html = response["ok"]["html"].as_str().unwrap();
+    for href in ["https://ext.org", "https://a.org", "http://b.org"] {
+        assert!(
+            html.contains(&format!(
+                "href=\"{href}\" rel=\"noopener noreferrer\" target=\"_blank\""
+            )),
+            "{html}"
+        );
+    }
+}
+
+#[test]
 fn table_of_contents_renders_and_falls_back() {
     let source = "= Intro\n\n== Usage\n\n=== Deep\n\n== Next\n";
     let out = html(
