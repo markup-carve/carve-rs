@@ -15,6 +15,8 @@ struct Line {
     paragraph: bool,
     literal_quote_prefix: bool,
     content_start: Option<usize>,
+    /// Where the tree places this line's text: its first leaf, or the end of the break before it.
+    content: Option<usize>,
     opacity: Opacity,
     attached_attribute: bool,
     scope: Scope,
@@ -188,6 +190,10 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             content_start: paragraph
                 .filter(|range| range.start_line == number)
                 .map(|range| range.start.saturating_sub(start).min(raw.len())),
+            content: fact
+                .content
+                .filter(|at| *at >= start && *at <= start + raw.len())
+                .map(|at| at - start),
             opacity: if fact.flags & FRONTMATTER != 0 {
                 Opacity::Frontmatter
             } else if fact.flags & OPAQUE != 0 {
@@ -220,6 +226,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             paragraph: false,
             literal_quote_prefix: false,
             content_start: None,
+            content: None,
             opacity: Opacity::None,
             attached_attribute: false,
             scope: Scope {
@@ -245,6 +252,7 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
         {
             fact.flags |= LITERAL_QUOTE_PREFIX;
         }
+        mark_content(&mut facts, range);
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
         if paragraph_like || flags != 0 {
@@ -296,6 +304,22 @@ fn mask_opaque_lines<'a>(
     }
 }
 
+/// A leaf block starts its first line's text, and each break ends where the next line's text starts.
+fn mark_content(facts: &mut [LineFacts<'_>], range: &Range) {
+    let content = match range.kind.as_str() {
+        "soft_break" | "hard_break" => Some((range.end_line, range.end)),
+        "paragraph" | "caption" | "line" | "heading" | "definition_term" | "thematic_break"
+        | "table_row" => Some((range.start_line, range.start)),
+        _ => None,
+    };
+    if let Some((line, at)) = content
+        && let Some(fact) = facts.get_mut(line.max(1) - 1)
+        && fact.content.is_none_or(|known| at < known)
+    {
+        fact.content = Some(at);
+    }
+}
+
 fn range_flags(kind: &str) -> u8 {
     match kind {
         "code_block" | "raw_block" => OPAQUE,
@@ -321,6 +345,7 @@ const LITERAL_QUOTE_PREFIX: u8 = 128;
 #[derive(Clone, Default)]
 struct LineFacts<'r> {
     flags: u8,
+    content: Option<usize>,
     quotes: usize,
     paragraph: Option<&'r Range>,
     masks: Vec<&'r Range>,
@@ -401,7 +426,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let (prefix, tail) = marker_tail(&line.text);
     continuation_marker(line, prefix, tail, sink);
     quote_list_marker(line, previous, sink);
-    thematic_marker(line, previous, text, prefix, tail, sink);
+    thematic_marker(line, previous, prefix, tail, sink);
     marker_as_text(line, content_start, content, sink);
     attribute_line_like(line, sink);
     if line.text.starts_with('>')
@@ -443,18 +468,15 @@ fn continuation_marker(line: &Line, prefix: usize, tail: &str, sink: &mut Sink<'
 fn thematic_marker(
     line: &Line,
     previous: Option<&Line>,
-    text: &str,
     prefix: usize,
     tail: &str,
     sink: &mut Sink<'_>,
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
     let candidate = tail.trim();
-    if run(candidate, "=", 3)
-        && previous.is_some_and(|p| {
-            p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty()
-        })
-    {
+    let after_paragraph = previous
+        .is_some_and(|p| p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty());
+    if (run(candidate, "=", 3) || run(candidate, "-", 3)) && after_paragraph {
         sink.emit(
             "setext-heading-underline",
             line.start + marker_start,
@@ -463,39 +485,22 @@ fn thematic_marker(
             &[],
         );
     }
-    if run(candidate, "-_", 3)
-        && !(line.kind == "definition_term"
-            && line.content_start.is_none()
-            && ["> ", "- ", "* "]
-                .iter()
-                .any(|prefix| line.text.trim_start().starts_with(prefix)))
-    {
-        let is_setext = candidate.starts_with('-')
-            && previous.is_some_and(|p| {
-                p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty()
-            });
-        if is_setext {
-            sink.emit(
-                "setext-heading-underline",
-                line.start + marker_start,
-                line.start + marker_start + candidate.len(),
-                &line.path,
-                &[],
-            );
-        } else {
-            sink.emit(
-                "thematic-break-spelling",
-                line.start + marker_start,
-                line.start + marker_start + candidate.len(),
-                &line.path,
-                &[("raw", candidate)],
-            );
-        }
+    // carve#6174: the run is read behind the container prefixes, marker lines included.
+    let (from, own) = line_text(line);
+    // A hyphen run below any paragraph line is left to `setext-heading-underline`, as carve-js reads it.
+    let below_paragraph =
+        previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
+    if run(own, "-_", 3) && !(own.starts_with('-') && below_paragraph) {
+        sink.emit(
+            "thematic-break-spelling",
+            line.start + from,
+            line.start + from + own.len(),
+            &line.path,
+            &[("raw", own)],
+        );
     }
-    let (quoted, rest) = quote_tail(&line.text, line.quotes);
-    let spaced = rest.trim();
-    if spaced_run(text) || spaced_run(spaced) {
-        let from = quoted + rest.len() - rest.trim_start().len();
+    let (from, spaced) = spaced_text(line);
+    if spaced_run(spaced) {
         sink.emit(
             "deprecated-spaced-thematic-break",
             line.start + from,
@@ -696,6 +701,34 @@ fn leaf_text(line: &Line) -> (usize, &str) {
     };
     let content = tail.trim_start_matches([' ', '\t']);
     (from + tail.len() - content.len(), content.trim_end())
+}
+
+/// The text behind the line's container prefixes and indent (C2-B-027), as the tree places it.
+fn line_text(line: &Line) -> (usize, &str) {
+    match line.content {
+        Some(start) => (start, line.text.get(start..).unwrap_or("").trim_end()),
+        None => leaf_after_quotes(line),
+    }
+}
+
+/// A spaced run parses as nested list markers, so it reaches back over the markers it makes itself.
+fn spaced_text(line: &Line) -> (usize, &str) {
+    if line.content.is_none() {
+        return leaf_after_quotes(line);
+    }
+    let (start, own) = line_text(line);
+    let marker = own.bytes().next();
+    let bytes = line.text.as_bytes();
+    let mut at = start;
+    while let Some(&byte) = at.checked_sub(1).and_then(|before| bytes.get(before))
+        && (matches!(byte, b' ' | b'\t') || Some(byte) == marker)
+    {
+        at -= 1;
+    }
+    while matches!(bytes.get(at), Some(b' ' | b'\t')) {
+        at += 1;
+    }
+    (at, line.text.get(at..).unwrap_or("").trim_end())
 }
 
 /// A later line of a leaf carries only quote marks before its text: list markers stand on first lines.
@@ -926,7 +959,7 @@ fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sin
 
 fn prose_tokens(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
-    let (from, trimmed) = leaf_text(line);
+    let (from, trimmed) = line_text(line);
     blank_reference_label(line, sink);
     if line.paragraph
         && trimmed.starts_with('[')
@@ -1153,6 +1186,20 @@ fn block_opener_width(trimmed: &str) -> usize {
     }
 }
 
+/// In a quote the mark on both lines is the quote's own; a lazy line carries no mark of the quote before
+/// its content, so its `>` is the candidate (carve#6178).
+fn quote_continues(line: &Line, previous: Option<&Line>, prefix: usize, content: &str) -> bool {
+    let own_mark = line.content.is_none()
+        || line
+            .text
+            .get(..prefix)
+            .is_some_and(|before| before.contains('>'));
+    content.starts_with("> ")
+        && own_mark
+        && line.quotes > 0
+        && previous.is_some_and(|p| p.text.trim_start().starts_with("> "))
+}
+
 fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     // C2-B-019, C2-B-200: only a paragraph or caption line is a candidate; a term's later line is not.
     if !matches!(
@@ -1161,13 +1208,11 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
     ) {
         return;
     }
-    let (prefix, content) = leaf_text(line);
+    let (prefix, content) = line_text(line);
     if !starts_block(content)
         || (content.starts_with('{') && !content.ends_with('}'))
         || (content.starts_with('[') && line.scope.in_footnote)
-        || (content.starts_with("> ")
-            && line.quotes > 0
-            && previous.is_some_and(|p| p.text.trim_start().starts_with("> ")))
+        || quote_continues(line, previous, prefix, content)
     {
         return;
     }
