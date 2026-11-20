@@ -229,6 +229,7 @@ impl DocumentTransform for ExternalLinks {
                 if node.get("type").and_then(Value::as_str) == Some("autolink") {
                     link.insert("type".into(), "link".into());
                     link.insert("children".into(), json!([{"type":"text","value":node.get("text").and_then(Value::as_str).unwrap_or(href)}]));
+                    link.remove("text");
                 }
                 let a = attrs(&mut link)?;
                 if target.is_empty() {
