@@ -889,7 +889,7 @@ fn read(document: &Value, envelope: Option<&Value>) -> Result<Tree, Error> {
     let read = crate::reader::read_tree_value(checked)?;
     Ok(Tree {
         document: read.into_document(),
-        json: document.to_string(),
+        json: document.to_string().into(),
         top: None,
         sources: std::collections::HashMap::new(),
     })

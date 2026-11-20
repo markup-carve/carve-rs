@@ -1214,21 +1214,26 @@ pub fn tree_json(input: &str, opts: &Options) -> String {
 /// tree reader. `None` where [`tree_json`] gives no tree.
 #[must_use]
 pub fn tree_parts(input: &str, opts: &Options) -> Option<(String, ast::owned::Document)> {
-    tree_parts_with_sources(input, opts).map(|(json, doc, _)| (json, doc))
+    let (json, doc, _) = tree_parts_with_sources(input, opts, &mut Vec::new())?;
+    Some((json.unwrap_or_else(|| owned_json(&doc)), doc))
 }
 
 /// The parsed tree and the source of each expanded include, keyed by file id.
+/// The JSON is only built where it differs from the owned tree's own
+/// encoding ([`owned_json`]): with includes, whose file stamps the owned tree
+/// lacks.
 #[must_use]
 pub(crate) fn tree_parts_with_sources(
     input: &str,
     opts: &Options,
+    diags: &mut Vec<diagnostic::Diagnostic>,
 ) -> Option<(
-    String,
+    Option<String>,
     ast::owned::Document,
     std::collections::HashMap<String, String>,
 )> {
     let arena = Arena::for_input(input);
-    let (doc, _, files) = prepare(input, opts, &arena, &mut Vec::new()).ok()?;
+    let (doc, _, files) = prepare(input, opts, &arena, diags).ok()?;
     let sources = files
         .as_ref()
         .map_or_else(std::collections::HashMap::new, |f| {
@@ -1237,7 +1242,7 @@ pub(crate) fn tree_parts_with_sources(
                 .collect()
         });
     if files.is_none() && opts.includes.is_none() {
-        return Some((to_json(&doc), doc.owned(), sources));
+        return Some((None, doc.owned(), sources));
     }
     let mut v = stamped_value(&doc);
     let json = v.to_string();
@@ -1247,7 +1252,7 @@ pub(crate) fn tree_parts_with_sources(
     // The JSON keeps file stamps for the claim pass; the owned tree keeps the
     // resolved structure for rendering.
     let owned = serde_json::from_value(v).ok()?;
-    Some((json, owned, sources))
+    Some((Some(json), owned, sources))
 }
 
 fn stamped_value(doc: &ast::Document<'_>) -> serde_json::Value {
@@ -1302,6 +1307,18 @@ pub fn to_json(doc: &ast::Document<'_>) -> String {
     enum Root<'r, 'a> {
         #[serde(rename = "document")]
         Document(&'r ast::Document<'a>),
+    }
+    serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
+}
+
+/// [`to_json`] of the owned copy of a tree; both families serialize alike.
+#[must_use]
+pub(crate) fn owned_json(doc: &ast::owned::Document) -> String {
+    #[derive(serde::Serialize)]
+    #[serde(tag = "type")]
+    enum Root<'r> {
+        #[serde(rename = "document")]
+        Document(&'r ast::owned::Document),
     }
     serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
 }

@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 
 pub(super) fn build(source: &str, tree: &Tree, input: Input<'_>) -> Result<Value, Error> {
     let document =
-        super::deep_json(&tree.json).map_err(|error| Error::option("tree", error.to_string()))?;
+        super::deep_json(tree.json()).map_err(|error| Error::option("tree", error.to_string()))?;
     let (encoding, original) = match input {
         Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err() => ("base64", base64(bytes)),
         _ => ("utf-8", source.to_string()),

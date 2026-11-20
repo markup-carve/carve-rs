@@ -730,21 +730,12 @@ fn writer_equal(expected: &Value, actual: &Value) -> bool {
 
 /// C2-W-011: a block that the rounds let pass and that reads back as another tree is reported.
 fn report_unread(w: &mut Writer<'_>, group: &[Value]) {
-    let parsed: Vec<Value> = w
-        .parsed
-        .as_ref()
-        .map(|p| children(p).to_vec())
-        .unwrap_or_default();
-    for at in 0..group.len().max(parsed.len()) {
-        if let (Some(block), Some(e)) = (parsed.get(at), group.get(at)) {
-            if writer_equal(e, block) {
-                continue;
-            }
-        }
-        if let Some(n) = group.get(at.min(group.len().saturating_sub(1))) {
-            lose(w, n, None);
-        }
-        return;
+    let parsed: &[Value] = w.parsed.as_ref().map_or(&[], |p| children(p));
+    let unread = (0..group.len().max(parsed.len())).find(|&at| {
+        !matches!((parsed.get(at), group.get(at)), (Some(block), Some(e)) if writer_equal(e, block))
+    });
+    if let Some(n) = unread.and_then(|at| group.get(at.min(group.len().saturating_sub(1)))) {
+        lose(w, n, None);
     }
 }
 

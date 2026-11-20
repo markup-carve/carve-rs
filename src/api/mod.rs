@@ -169,7 +169,8 @@ impl Input<'_> {
 #[derive(Debug, Clone)]
 pub struct Tree {
     document: Document,
-    json: String,
+    /// Built on first use from `document` where the parse did not give it.
+    json: std::sync::OnceLock<String>,
     top: Option<String>,
     sources: std::collections::HashMap<String, String>,
 }
@@ -179,6 +180,44 @@ impl Tree {
     #[must_use]
     pub fn document(&self) -> &Document {
         &self.document
+    }
+
+    /// The JSON wire form of the tree.
+    pub(crate) fn json(&self) -> &str {
+        self.json.get_or_init(|| crate::owned_json(&self.document))
+    }
+
+    /// The wire form as a JSON value, without a round trip through text
+    /// where the wire form was not built yet.
+    pub(crate) fn value(&self) -> Result<Value, Error> {
+        if let Some(json) = self.json.get() {
+            return writer::tree_value(json);
+        }
+        let mut value = serde_json::to_value(&self.document).map_err(|e| Error::Write {
+            target: "carve".into(),
+            message: e.to_string(),
+            diagnostics: Vec::new(),
+        })?;
+        if let Some(map) = value.as_object_mut() {
+            map.insert("type".into(), "document".into());
+        }
+        Ok(value)
+    }
+
+    /// A tree of the engine's own parse, whose wire form is the owned
+    /// tree's encoding unless the parse gave one.
+    fn parsed(
+        document: Document,
+        json: Option<String>,
+        top: Option<String>,
+        sources: std::collections::HashMap<String, String>,
+    ) -> Self {
+        Self {
+            document,
+            json: json.map_or_else(std::sync::OnceLock::new, std::sync::OnceLock::from),
+            top,
+            sources,
+        }
     }
 
     /// The id of the top-level document, which [`include_dependencies`]
@@ -206,7 +245,7 @@ impl Tree {
         };
         Ok(Self {
             document: read.into_document(),
-            json: bare,
+            json: bare.into(),
             top,
             sources: std::collections::HashMap::new(),
         })
@@ -231,7 +270,7 @@ impl Tree {
         })?;
         Ok(Self {
             document,
-            json,
+            json: json.into(),
             top,
             sources: std::collections::HashMap::new(),
         })
@@ -248,7 +287,7 @@ impl Tree {
         }
         Ok(Self {
             document,
-            json: value.to_string(),
+            json: value.to_string().into(),
             top,
             sources: std::collections::HashMap::new(),
         })
@@ -259,7 +298,7 @@ impl Tree {
     fn render_view(document: Document, top: Option<String>) -> Self {
         Self {
             document,
-            json: String::new(),
+            json: String::new().into(),
             top,
             sources: std::collections::HashMap::new(),
         }
@@ -471,7 +510,7 @@ impl Carve {
     ) -> Result<Parsed, Error> {
         let input = input.into();
         let mut parsed = parse_with_diagnostics(input, opts)?;
-        if !self.may_claim(&parsed.tree.json) {
+        if !self.may_claim(&parsed.tree) {
             return Ok(parsed);
         }
         let opener = |file: Option<&str>, at: usize| match file {
@@ -503,8 +542,7 @@ impl Carve {
             parsed.diagnostics.extend(claimed);
             return Ok(parsed);
         }
-        let mut value: Value = crate::api::deep_json(&parsed.tree.json)
-            .map_err(|e| Error::option("tree", e.to_string()))?;
+        let mut value = parsed.tree.value()?;
         let failed = self.claim_standard(&mut value, &opener);
         let claimed = if self.matchers.is_empty() {
             Vec::new()
@@ -537,8 +575,22 @@ impl Carve {
 
     /// Whether the tree holds a node of a type an enabled claim reads, so the
     /// JSON pass of the claims can change it.
-    fn may_claim(&self, json: &str) -> bool {
+    fn may_claim(&self, tree: &Tree) -> bool {
         let div = self.standard.tabs || self.matchers.has_form(extensions::Form::Div);
+        let inline = !self.standard.inline_matchers().is_empty()
+            || self.matchers.has_form(extensions::Form::Inline);
+        if !div
+            && !inline
+            && self.standard.fence_matchers().is_empty()
+            && self
+                .matchers
+                .names(extensions::Form::Fence)
+                .next()
+                .is_none()
+        {
+            return false;
+        }
+        let json = tree.json();
         // A fence is claimed by its language, the `syntax` of the code block.
         let syntax = |name: &str| json.contains(&format!(r#""syntax":{}"#, Value::from(name)));
         let fence = self
@@ -547,8 +599,6 @@ impl Carve {
             .iter()
             .any(|(name, _)| syntax(name))
             || self.matchers.names(extensions::Form::Fence).any(syntax);
-        let inline = !self.standard.inline_matchers().is_empty()
-            || self.matchers.has_form(extensions::Form::Inline);
         (div && json.contains(r#""type":"div""#))
             || fence
             || (inline && json.contains(r#""type":"inline_extension""#))
@@ -641,7 +691,7 @@ impl Carve {
             // parse call still rebuilds its JSON after claims, but a render
             // never exposes that intermediate wire form.
             let mut parsed = parse_with_diagnostics(input, opts)?;
-            if self.may_claim(&parsed.tree.json) {
+            if self.may_claim(&parsed.tree) {
                 let opener = |file: Option<&str>, at: usize| match file {
                     Some(id) => parsed
                         .tree
@@ -855,7 +905,7 @@ impl Carve {
         let opts = &*host.with_standard(opts);
         let input = input.into();
         let parsed = host.parse_with_diagnostics(input, &opts.render)?;
-        let doc = writer::tree_value(&parsed.tree.json)?;
+        let doc = parsed.tree.value()?;
         let settings = crate::write::Settings {
             align_tables: opts.align_tables,
             extensions: opts.extensions.clone(),
@@ -953,7 +1003,16 @@ pub(crate) fn deep_json(text: &str) -> serde_json::Result<Value> {
 ///
 /// [`Error::Input`] for a source longer than its profile accepts.
 pub fn parse<'a>(input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Error> {
-    let input = input.into();
+    Ok(parse_collecting(input.into(), opts, &mut Vec::new())?.0)
+}
+
+/// [`parse`], adding the parse diagnostics to `diags` where the tree came
+/// from the same pass; the flag says whether it did.
+fn parse_collecting(
+    input: Input<'_>,
+    opts: &Options,
+    diags: &mut Vec<crate::diagnostic::Diagnostic>,
+) -> Result<(Tree, bool), Error> {
     check_length(input.len(), opts)?;
     let top = opts.includes.as_ref().and_then(|i| i.file.clone());
     // The engine's own tree skips the reader checks, which cost about 70
@@ -962,21 +1021,14 @@ pub fn parse<'a>(input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Er
         Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err() => {
             let arena = Arena::new();
             let doc = crate::try_parse_resolved_bytes_in(bytes, opts, &arena)?;
-            Ok(Tree {
-                document: doc.owned(),
-                json: crate::to_json(&doc),
-                top,
-                sources: std::collections::HashMap::new(),
-            })
+            let tree = Tree::parsed(doc.owned(), None, top, std::collections::HashMap::new());
+            Ok((tree, false))
         }
-        _ => match crate::tree_parts_with_sources(&input.text(), opts) {
-            Some((json, document, sources)) => Ok(Tree {
-                document,
-                json,
-                top,
-                sources,
-            }),
-            None => Tree::read("", top),
+        _ => match crate::tree_parts_with_sources(&input.text(), opts, diags) {
+            Some((json, document, sources)) => {
+                Ok((Tree::parsed(document, json, top, sources), true))
+            }
+            None => Ok((Tree::read("", top)?, true)),
         },
     }
 }
@@ -992,9 +1044,12 @@ pub fn parse_with_diagnostics<'a>(
     opts: &Options,
 ) -> Result<Parsed, Error> {
     let input = input.into();
-    let tree = parse(input, opts)?;
-    let (mut diagnostics, suppressed_diagnostics) =
-        record::cap_includes(&crate::parse_diagnostics(&input.text(), opts));
+    let mut found = Vec::new();
+    let (tree, collected) = parse_collecting(input, opts, &mut found)?;
+    if !collected {
+        found = crate::parse_diagnostics(&input.text(), opts);
+    }
+    let (mut diagnostics, suppressed_diagnostics) = record::cap_includes(&found);
     input.remap(&mut diagnostics);
     Ok(Parsed {
         tree,
@@ -1176,7 +1231,7 @@ pub fn include_dependencies(tree: &Tree) -> Vec<Dependency> {
 pub fn encode_tree(tree: &Tree) -> String {
     // serde_json's object map orders keys lexically without preserve_order.
     // Parsing the accepted tree removes input whitespace and insertion order.
-    deep_json(&tree.json).map_or_else(|_| tree.json.clone(), |value| value.to_string())
+    deep_json(tree.json()).map_or_else(|_| tree.json().to_string(), |value| value.to_string())
 }
 
 /// `encodeTree` with `positions` off or on.
@@ -1185,7 +1240,7 @@ pub fn encode_tree_with(tree: &Tree, opts: EncodeOptions) -> String {
     if opts.positions {
         return encode_tree(tree);
     }
-    let Ok(mut value) = crate::api::deep_json(&tree.json) else {
+    let Ok(mut value) = crate::api::deep_json(tree.json()) else {
         return encode_tree(tree);
     };
     strip_positions(&mut value);
@@ -1211,7 +1266,7 @@ fn strip_positions(value: &mut Value) {
 /// `encodeEnvelope`: the JSON text of the envelope of a tree (C2-A-012).
 #[must_use]
 pub fn encode_envelope(tree: &Tree) -> String {
-    let document: Value = crate::api::deep_json(&tree.json).unwrap_or(Value::Null);
+    let document: Value = crate::api::deep_json(tree.json()).unwrap_or(Value::Null);
     let version = document.get("astVersion").cloned().unwrap_or(Value::Null);
     let extensions = document
         .get("extensions")
@@ -1219,7 +1274,7 @@ pub fn encode_envelope(tree: &Tree) -> String {
         .unwrap_or_default();
     format!(
         r#"{{"astVersion":{version}{extensions},"document":{}}}"#,
-        tree.json
+        tree.json()
     )
 }
 
@@ -1247,7 +1302,7 @@ pub struct TreeReadOptions<'a> {
 pub fn decode_tree_with(json: &str, options: TreeReadOptions<'_>) -> Result<Tree, Error> {
     let tree = Tree::read(json, None)?;
     if let Some(annotations) = options.annotations {
-        let mut root: Value = deep_json(&tree.json)
+        let mut root: Value = deep_json(tree.json())
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
         let supplied: Value = deep_json(json)
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
@@ -1278,9 +1333,9 @@ pub fn validate_tree(tree: &Tree) -> Result<(), Error> {
 ///
 /// [`Error::Tree`] for a refused tree or sidecar.
 pub fn validate_tree_with(tree: &Tree, options: TreeReadOptions<'_>) -> Result<(), Error> {
-    crate::reader::read_tree_json(&tree.json)?;
+    crate::reader::read_tree_json(tree.json())?;
     if let Some(annotations) = options.annotations {
-        let root: Value = deep_json(&tree.json)
+        let root: Value = deep_json(tree.json())
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
         crate::reader::check_annotations(&root, annotations)?;
     }
