@@ -194,12 +194,18 @@ fn inline_attributes_on_lazy_term_lines_are_reported() {
         vec![(11, 16)]
     );
     // A description that owns the line is a distinct inline content.
-    assert!(spans(":: term\n: {#id}\n", "unattached-inline-attribute").is_empty());
+    assert_eq!(
+        spans(":: term\n: {#id}\n", "unattached-inline-attribute"),
+        Vec::new()
+    );
 }
 
 #[test]
 fn lazy_quote_comment_is_not_an_opener() {
-    assert!(spans(">-\n> %%x\n", "block-opener-without-blank-line").is_empty());
+    assert_eq!(
+        spans(">-\n> %%x\n", "block-opener-without-blank-line"),
+        Vec::new()
+    );
     assert_eq!(
         spans(">-\n> # heading\n", "block-opener-without-blank-line"),
         vec![(3, 4)]
