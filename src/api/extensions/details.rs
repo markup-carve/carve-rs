@@ -80,24 +80,32 @@ fn attrs_with(node: &Value, base: &[&str], cx: &RenderContext<'_>) -> String {
 /// `head`, `inner` and the body one level in, then `tail`, indented to the
 /// block depth like core containers.
 fn container(head: &str, inner: &str, body: &str, tail: &str, cx: &RenderContext<'_>) -> String {
-    let mut lines = vec![head.to_string(), format!("  {inner}")];
-    if !body.is_empty() {
-        lines.push(
-            body.split('\n')
-                .map(|l| {
-                    if l.is_empty() {
-                        String::new()
-                    } else {
-                        format!("  {l}")
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
-    }
-    lines.push(tail.to_string());
     let indent = "  ".repeat(cx.block_depth());
-    lines.join("\n").replace('\n', &format!("\n{indent}"))
+    let mut lines = vec![head.to_string(), format!("{indent}  {inner}")];
+    if !body.is_empty() {
+        let mut in_code = false;
+        for line in body.split('\n') {
+            // Core code blocks put their literal value between these tags.
+            // Indenting a continuation line, including the closing-tag line,
+            // would change the value of the code element.
+            let starts_code = line.contains("<pre") && line.contains("<code");
+            if in_code {
+                lines.push(line.to_string());
+            } else if line.is_empty() {
+                lines.push(indent.clone());
+            } else {
+                lines.push(format!("{indent}  {line}"));
+            }
+            if starts_code {
+                in_code = true;
+            }
+            if in_code && line.contains("</code>") {
+                in_code = false;
+            }
+        }
+    }
+    lines.push(format!("{indent}{tail}"));
+    lines.join("\n")
 }
 
 fn summary(node: &Value, label: &str, cx: &RenderContext<'_>) -> Result<String, Error> {

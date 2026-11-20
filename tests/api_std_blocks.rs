@@ -74,6 +74,81 @@ fn details_attributes_and_nesting_in_a_list() {
 }
 
 #[test]
+fn details_preserves_fenced_code_text_at_every_depth() {
+    let cases = [
+        (
+            "one line",
+            "::: details \"Req\"\n```php\nx\n```\n:::\n",
+            "x\n",
+        ),
+        (
+            "multiple lines",
+            "::: details \"Req\"\n```php\nx\n  y\nz\n```\n:::\n",
+            "x\n  y\nz\n",
+        ),
+        (
+            "list item",
+            "- item\n\n  ::: details \"Req\"\n  ```php\n  x\n    y\n  ```\n  :::\n",
+            "x\n  y\n",
+        ),
+        (
+            "nested details",
+            ":::: details \"Outer\"\n::: details \"Req\"\n```php\nx\n  y\n```\n:::\n::::\n",
+            "x\n  y\n",
+        ),
+    ];
+    for (name, source, expected) in cases {
+        let output = html(source, extensions::details());
+        let code = output
+            .split_once("<code class=\"language-php\">")
+            .and_then(|(_, rest)| rest.split_once("</code>"))
+            .map(|(text, _)| text)
+            .unwrap_or_else(|| panic!("{name}: no code element in {output}"));
+        assert_eq!(code, expected, "{name}: {output}");
+    }
+
+    assert_eq!(
+        html(
+            "::: details \"Req\"\n```php\nx\n```\n:::\n",
+            extensions::details()
+        ),
+        "<details>\n  <summary>Req</summary>\n  <pre><code class=\"language-php\">x\n</code></pre>\n</details>"
+    );
+}
+
+#[test]
+fn details_preserves_generated_fence_payloads() {
+    for n in 0..250 {
+        let payload = if n % 2 == 0 {
+            format!("line-{n}\n")
+        } else {
+            format!("line-{n}\n  value-{n}\n")
+        };
+        let indented = payload
+            .lines()
+            .map(|line| format!("  {line}\n"))
+            .collect::<String>();
+        let sources = [
+            format!("::: details \"Req\"\n```php\n{payload}```\n:::\n"),
+            format!("- item\n\n  ::: details \"Req\"\n  ```php\n{indented}  ```\n  :::\n"),
+            format!(
+                ":::: details \"Outer\"\n::: details \"Req\"\n```php\n{payload}```\n:::\n::::\n"
+            ),
+            format!("::: details \"Req\"\ntext\n\n```php\n{payload}```\n\nafter\n:::\n"),
+        ];
+        for source in sources {
+            let output = html(&source, extensions::details());
+            let code = output
+                .split_once("<code class=\"language-php\">")
+                .and_then(|(_, rest)| rest.split_once("</code>"))
+                .map(|(text, _)| text)
+                .unwrap_or_else(|| panic!("no code element in {output}"));
+            assert_eq!(code, payload, "variant {n}: {source}");
+        }
+    }
+}
+
+#[test]
 fn details_static_mode_is_expanded_once() {
     assert!(
         html_with(
