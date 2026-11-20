@@ -80,6 +80,17 @@ fn details_keeps_code_payload_bytes() {
 }
 
 #[test]
+fn details_keeps_ordinary_inline_code_indented() {
+    assert_eq!(
+        html(
+            "::: details \"Req\"\nA `code` example.\n:::\n",
+            extensions::details()
+        ),
+        "<details>\n  <summary>Req</summary>\n  <p>A <code>code</code> example.</p>\n</details>"
+    );
+}
+
+#[test]
 fn details_keeps_one_thousand_code_variants() {
     for i in 0..1_000 {
         let prefix = if i % 2 == 0 { "" } else { "  " };
