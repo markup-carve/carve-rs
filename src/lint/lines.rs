@@ -1166,8 +1166,8 @@ fn prose_context(
         );
     }
     if paragraph_continuation(line, previous) {
-        if quote_opener_candidate(line) {
-            let at = line.text.len() - line.text.trim_start().len();
+        if quote_opener_candidate(line, sink.source.text()) {
+            let (at, _) = line_text(line);
             sink.emit(
                 "block-opener-without-blank-line",
                 line.start + at,
@@ -1234,14 +1234,12 @@ fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
     })
 }
 
-fn quote_opener_candidate(line: &Line) -> bool {
-    line.literal_quote_prefix
-        && matches!(line.kind.as_str(), "paragraph" | "caption")
-        && line
-            .text
-            .trim_start()
-            .strip_prefix('>')
-            .is_some_and(|tail| tail.bytes().any(|b| b != 0 && !b.is_ascii_whitespace()))
+fn quote_opener_candidate(line: &Line, source: &str) -> bool {
+    let (at, _) = line_text(line);
+    matches!(line.kind.as_str(), "paragraph" | "caption")
+        && source
+            .get(line.start + at..line.start + line.text.len())
+            .is_some_and(|raw| raw.starts_with("> "))
 }
 
 fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {

@@ -201,10 +201,10 @@ fn inline_attributes_on_lazy_term_lines_are_reported() {
 }
 
 #[test]
-fn lazy_quote_comment_is_not_an_opener() {
+fn lazy_quote_comment_is_an_opener_candidate() {
     assert_eq!(
         spans(">-\n> %%x\n", "block-opener-without-blank-line"),
-        Vec::new()
+        vec![(3, 4)]
     );
     assert_eq!(
         spans(">-\n> # heading\n", "block-opener-without-blank-line"),
