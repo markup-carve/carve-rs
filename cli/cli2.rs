@@ -726,11 +726,10 @@ fn fix_fragment(code: &str, text: &str) -> Option<String> {
 fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
     const MAX_PASSES: usize = 10;
     let mut source = String::from_utf8_lossy(bytes).into_owned();
-    let original = source.clone();
     let mut seen = std::collections::HashSet::new();
     for _ in 0..MAX_PASSES {
         if !seen.insert(source.clone()) {
-            return Ok(original.into_bytes());
+            return Ok(source.into_bytes());
         }
         let entries = api::lint(source.as_bytes(), options).map_err(api_fail)?;
         let mut candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
@@ -780,7 +779,7 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
             return Ok(source.into_bytes());
         }
     }
-    Ok(original.into_bytes())
+    Ok(source.into_bytes())
 }
 
 fn expand_include_nodes(value: &mut Value) {
