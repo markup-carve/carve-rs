@@ -16,18 +16,30 @@ const HELD: &[(&str, &str)] = &[
 ];
 
 /// The import entries that carry an expected `carve` source (not compared).
-const WITH_CARVE_CLAUSE: &[&str] = &["CC-907", "CC-1044", "CC-1260"];
+const WITH_CARVE_CLAUSE: &[&str] = &[
+    "CC-907", "CC-1044", "CC-1260", "CC-1419", "CC-1420", "CC-1421", "CC-1422", "CC-1423",
+    "CC-1424", "CC-1425", "CC-1426", "CC-1427", "CC-1428", "CC-1429", "CC-1430", "CC-1431",
+    "CC-1432", "CC-1433", "CC-1434",
+];
 
 fn load(name: &str) -> Value {
     let path = format!("{}/spec-conformance/{name}", env!("CARGO_MANIFEST_DIR"));
     parse_json(&std::fs::read_to_string(path).unwrap_or_default())
 }
 
-fn options(v: &Value) -> ImportOptions {
-    ImportOptions {
+fn options(v: &Value) -> Result<ImportOptions, Error> {
+    // C2-M-102: an unknown adapter is an option error before the import starts.
+    if let Some(name) = v["adapter"].as_str() {
+        ImportOptions::from_json(Some(&json!({"from": "html", "adapter": name})))?;
+    }
+    Ok(ImportOptions {
         raw_html: v["rawHtml"].as_bool().unwrap_or(false),
         strict_losses: v["strictLosses"].as_bool().unwrap_or(false),
-    }
+        adapter: v["adapter"]
+            .as_str()
+            .and_then(api::ImportAdapter::from_name)
+            .unwrap_or_default(),
+    })
 }
 
 /// C2-T-019: LINE counts line feeds from 1, COLUMN the code points of the line.
@@ -94,8 +106,14 @@ impl Run {
     }
 }
 
-fn check_entry(run: &mut Run, id: &str, html: &str, opts: ImportOptions, expected: &Value) {
-    let result = api::import_document(html, &opts);
+fn check_entry(
+    run: &mut Run,
+    id: &str,
+    html: &str,
+    opts: Result<ImportOptions, Error>,
+    expected: &Value,
+) {
+    let result = opts.and_then(|opts| api::import_document(html, &opts));
     if let Some(want) = expected.get("refusal") {
         let name = want["error"].as_str().unwrap_or("");
         let got = result.as_ref().err().map(Error::spec_name);

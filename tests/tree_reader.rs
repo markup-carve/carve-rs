@@ -68,7 +68,7 @@ fn c2_a_170_imported_corpus_trees_pass_the_reader() {
         read_tree_value(tree).unwrap_or_else(|error| panic!("{}: {error}", entry["id"]));
         checked += 1;
     }
-    assert_eq!(checked, 64);
+    assert_eq!(checked, 65);
 }
 
 #[test]

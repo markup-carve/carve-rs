@@ -68,7 +68,7 @@ pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
 };
 pub use hub::ImportFormat;
-pub use import::{ImportOptions, Imported, LossOptions, import_document};
+pub use import::{ImportAdapter, ImportOptions, Imported, LossOptions, import_document};
 pub use info::{
     NODE_TYPES, NodeTypes, Position, SPEC_VERSION, SpecVersion, VERSION, heading_id, position_of,
 };

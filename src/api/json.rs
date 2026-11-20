@@ -336,6 +336,7 @@ fn import_call(host: &Carve, req: &Value, opts: &CallOptions) -> Result<Value, E
         &super::ImportOptions {
             raw_html: opts.options.raw_html,
             strict_losses: opts.options.strict_losses,
+            adapter: opts.adapter,
         },
         &super::LossOptions {
             allow_losses: opts.options.allow_losses.clone(),

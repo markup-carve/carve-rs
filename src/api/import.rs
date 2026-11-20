@@ -3,6 +3,59 @@
 use super::{Entry, Error, Tree};
 use serde_json::Value;
 
+/// The editor that wrote the HTML, the option `adapter` (C2-M-102).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ImportAdapter {
+    #[default]
+    Generic,
+    Tiptap,
+    Prosemirror,
+    Ckeditor,
+    Tinymce,
+    Word,
+    GoogleDocs,
+}
+
+impl ImportAdapter {
+    /// Every adapter, in the order of `data/import-html.json`'s option row.
+    pub const ALL: [Self; 7] = [
+        Self::Generic,
+        Self::Tiptap,
+        Self::Prosemirror,
+        Self::Ckeditor,
+        Self::Tinymce,
+        Self::Word,
+        Self::GoogleDocs,
+    ];
+
+    /// The option value of the adapter.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Tiptap => "tiptap",
+            Self::Prosemirror => "prosemirror",
+            Self::Ckeditor => "ckeditor",
+            Self::Tinymce => "tinymce",
+            Self::Word => "word",
+            Self::GoogleDocs => "google-docs",
+        }
+    }
+
+    /// The adapter an option value names.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.name() == name)
+    }
+
+    /// C2-M-102: `word` and `google-docs` run the note pass; the others read
+    /// the input by the mapping alone.
+    #[must_use]
+    pub const fn runs_note_pass(self) -> bool {
+        matches!(self, Self::Word | Self::GoogleDocs)
+    }
+}
+
 /// The options of [`import_document`] (C2-M-066, C2-M-082). The input format
 /// is HTML; the JSON boundary names it with `from: "html"`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -11,6 +64,8 @@ pub struct ImportOptions {
     pub raw_html: bool,
     /// Makes every loss of the import an error (C2-M-082, C2-H-130).
     pub strict_losses: bool,
+    /// The editor adapter (C2-M-102).
+    pub adapter: ImportAdapter,
 }
 
 impl ImportOptions {
@@ -48,6 +103,12 @@ impl ImportOptions {
                     } else {
                         out.strict_losses = b;
                     }
+                }
+                "adapter" => {
+                    out.adapter = v
+                        .as_str()
+                        .and_then(ImportAdapter::from_name)
+                        .ok_or_else(|| Error::option(name, format!("unknown value {v}")))?;
                 }
                 _ => return Err(Error::option(name, "unknown option")),
             }
@@ -91,9 +152,14 @@ pub struct Imported {
     pub suppressed_diagnostics: usize,
 }
 
-fn run(html: &str, raw_html: bool) -> Result<crate::import::Imported, Error> {
+fn run(
+    html: &str,
+    raw_html: bool,
+    adapter: ImportAdapter,
+) -> Result<crate::import::Imported, Error> {
     let import = || {
-        crate::import::import_html(html, raw_html).map_err(|r| Error::ImportInput { message: r.0 })
+        crate::import::import_html(html, raw_html, adapter.runs_note_pass())
+            .map_err(|r| Error::ImportInput { message: r.0 })
     };
     // wasm32 targets have no threads; the default stack of the host applies.
     if cfg!(target_family = "wasm") {
@@ -147,7 +213,7 @@ impl super::Carve {
         opts: &ImportOptions,
         limits: &LossOptions,
     ) -> Result<Imported, Error> {
-        let imported = run(html, opts.raw_html)?;
+        let imported = run(html, opts.raw_html, opts.adapter)?;
         self.finish_import(imported, *opts, limits)
     }
 
@@ -169,7 +235,7 @@ impl super::Carve {
         }
         let mut sink = super::hub::Sink::default();
         let html = super::hub::to_html(input, format, &mut sink)?;
-        let mut imported = run(&html, true)?;
+        let mut imported = run(&html, true, opts.adapter)?;
         imported.tree = super::hub::finish(imported.tree, &sink);
         // The library's own line breaks are no whitespace of the input, and a
         // range would index the intermediate HTML.

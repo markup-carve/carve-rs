@@ -1,6 +1,7 @@
 //! The HTML importer of `import-html.md`: HTML text to a 0.2 tree and the
 //! record of what the tree does not hold (C2-M-001, C2-M-080).
 
+mod adapter;
 mod align;
 mod attrs;
 mod blocks;
@@ -194,9 +195,13 @@ fn nesting_exceeded(root: &Value) -> bool {
 }
 
 /// `importDocument` for HTML (C2-M-001): the tree as JSON and the record.
-pub(crate) fn import_html(input: &str, raw_html: bool) -> Result<Imported, Refused> {
+pub(crate) fn import_html(
+    input: &str,
+    raw_html: bool,
+    note_pass: bool,
+) -> Result<Imported, Refused> {
     let full = is_full_document(input);
-    let dom = if full {
+    let mut dom = if full {
         parse::document(input)
     } else {
         parse::fragment(input)
@@ -205,6 +210,9 @@ pub(crate) fn import_html(input: &str, raw_html: bool) -> Result<Imported, Refus
         return Err(Refused(format!(
             "Foreign input exceeds the engine tree depth limit of {MAX_FOREIGN_DEPTH}"
         )));
+    }
+    if note_pass {
+        adapter::note_pass(&mut dom);
     }
     let mut cx = Cx::new(dom, raw_html);
     if !full {
