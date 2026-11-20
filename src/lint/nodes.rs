@@ -1541,11 +1541,8 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
         let (block, end) = crate::attr::parse_block(&value, at)?;
         let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
-        (at > 0
-            && !block.empty
-            && !matches!(before, "" | ":" | ">")
-            && !escaped(value.as_bytes(), at))
-        .then_some((at, end))
+        (at > 0 && !block.empty && !matches!(before, "" | ">") && !escaped(value.as_bytes(), at))
+            .then_some((at, end))
     }) {
         sink.emit_range(
             "unattached-inline-attribute",

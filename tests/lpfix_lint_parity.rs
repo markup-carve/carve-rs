@@ -177,6 +177,49 @@ fn inline_attributes_allow_spaces_inside_braces() {
 }
 
 #[test]
+fn inline_attributes_on_lazy_term_lines_are_reported() {
+    for (source, expected) in [
+        ("# x {#id} y\n", (4, 9)),
+        (":: x {#id}\n\n: y\n", (5, 10)),
+        ("| x {#id} y |\n", (4, 9)),
+    ] {
+        assert_eq!(
+            spans(source, "unattached-inline-attribute"),
+            vec![expected],
+            "{source:?}"
+        );
+    }
+    assert_eq!(
+        spans(" :: term\n: {#id}\n", "unattached-inline-attribute"),
+        vec![(11, 16)]
+    );
+    // A description that owns the line is a distinct inline content.
+    assert_eq!(
+        spans(":: term\n: {#id}\n", "unattached-inline-attribute"),
+        Vec::new()
+    );
+}
+
+#[test]
+fn lazy_quote_comment_is_not_an_opener() {
+    assert_eq!(
+        spans(">-\n> %%x\n", "block-opener-without-blank-line"),
+        Vec::new()
+    );
+    assert_eq!(
+        spans(">-\n> # heading\n", "block-opener-without-blank-line"),
+        vec![(3, 4)]
+    );
+    assert_eq!(
+        spans(
+            "    i) > $$x$$\n   > ## H\n",
+            "block-opener-without-blank-line"
+        ),
+        vec![(18, 19)]
+    );
+}
+
+#[test]
 fn empty_definition_after_quote_marker_is_reported() {
     assert_eq!(
         spans("> [a]:\n", "empty-reference-definition"),
