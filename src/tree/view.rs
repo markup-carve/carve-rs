@@ -46,12 +46,26 @@ impl<'t> NodeList<'t, &'t Value> for &'t [Value] {
     }
 }
 
-impl<'t> NodeList<'t, Typed<'t>> for &'t [Node] {
+/// The nodes of a slot of the typed tree: owned nodes, or the JSON value of
+/// a field the schema leaves open (`slots`, `metadata`).
+#[derive(Debug, Clone, Copy)]
+pub enum TList<'t> {
+    Nodes(&'t [Node]),
+    Json(&'t [Value]),
+}
+
+impl<'t> NodeList<'t, Typed<'t>> for TList<'t> {
     fn len(self) -> usize {
-        <[Node]>::len(self)
+        match self {
+            TList::Nodes(l) => l.len(),
+            TList::Json(l) => l.len(),
+        }
     }
     fn get(self, i: usize) -> Option<Typed<'t>> {
-        <[Node]>::get(self, i).map(Typed::Node)
+        match self {
+            TList::Nodes(l) => l.get(i).map(Typed::Node),
+            TList::Json(l) => l.get(i).map(Typed::Json),
+        }
     }
 }
 
@@ -85,6 +99,7 @@ impl<'t> AsView<'t> for &mut &'t Value {
 /// A node as the writer reads it.
 pub trait View<'t>: Copy + 't {
     type List: NodeList<'t, Self>;
+    type Fields: Iterator<Item = (&'t str, Field<'t, Self>)>;
 
     fn empty() -> Self::List;
     /// The node type; empty for a value that is not a node.
@@ -155,10 +170,52 @@ pub trait View<'t>: Copy + 't {
     fn sub_int(self, name: &str, key: &str) -> Option<i64>;
     fn classes(self) -> Vec<&'t str>;
     fn key_values(self) -> Vec<(&'t str, &'t str)>;
+    /// The fields that are set, in key order; `type` included.
+    fn fields(self) -> Self::Fields;
+    /// The handle of a JSON value inside the tree.
+    fn json(v: &'t Value) -> Self;
+    /// The node as a field value: an item of a list, which in a JSON list need not be a node.
+    fn as_field(self) -> Field<'t, Self>;
+    /// A list of this node alone.
+    fn one(self) -> Self::List;
+}
+
+/// A JSON value as a field: a node is an object with a `type`, a list is nodes.
+fn classify(v: &Value) -> Field<'_, &Value> {
+    match v {
+        Value::Null => Field::Null,
+        Value::String(s) => Field::Str(s),
+        Value::Bool(b) => Field::Bool(*b),
+        Value::Number(n) => n
+            .as_i64()
+            .map_or_else(|| n.as_f64().map_or(Field::Json(v), Field::Num), Field::Int),
+        Value::Array(items) => Field::Nodes(items.as_slice()),
+        Value::Object(_) if v.get("type").is_some() => Field::Node(v),
+        Value::Object(_) => Field::Json(v),
+    }
+}
+
+/// The fields of a JSON object in key order.
+pub type JsonFields<'t> = std::iter::Map<
+    std::iter::Flatten<std::option::IntoIter<serde_json::map::Iter<'t>>>,
+    fn((&'t String, &'t Value)) -> (&'t str, Field<'t, &'t Value>),
+>;
+
+fn json_entry<'t>((k, v): (&'t String, &'t Value)) -> (&'t str, Field<'t, &'t Value>) {
+    (k.as_str(), classify(v))
 }
 
 impl<'t> View<'t> for &'t Value {
     type List = &'t [Value];
+    type Fields = JsonFields<'t>;
+
+    fn fields(self) -> JsonFields<'t> {
+        self.as_object()
+            .map(serde_json::Map::iter)
+            .into_iter()
+            .flatten()
+            .map(json_entry as fn(_) -> _)
+    }
 
     fn empty() -> &'t [Value] {
         &[]
@@ -169,20 +226,7 @@ impl<'t> View<'t> for &'t Value {
     }
 
     fn field(self, name: &str) -> Field<'t, Self> {
-        let Some(v) = self.get(name) else {
-            return Field::Absent;
-        };
-        match v {
-            Value::Null => Field::Null,
-            Value::String(s) => Field::Str(s),
-            Value::Bool(b) => Field::Bool(*b),
-            Value::Number(n) => n
-                .as_i64()
-                .map_or_else(|| n.as_f64().map_or(Field::Json(v), Field::Num), Field::Int),
-            Value::Array(items) => Field::Nodes(items.as_slice()),
-            Value::Object(_) if v.get("type").is_some() => Field::Node(v),
-            Value::Object(_) => Field::Json(v),
-        }
+        self.get(name).map_or(Field::Absent, classify)
     }
 
     fn id(self) -> usize {
@@ -225,6 +269,18 @@ impl<'t> View<'t> for &'t Value {
         self.get(name)?.get(key)?.as_i64()
     }
 
+    fn json(v: &'t Value) -> Self {
+        v
+    }
+
+    fn as_field(self) -> Field<'t, Self> {
+        classify(self)
+    }
+
+    fn one(self) -> &'t [Value] {
+        std::slice::from_ref(self)
+    }
+
     fn classes(self) -> Vec<&'t str> {
         self.get("attrs")
             .and_then(|a| a.get("classes"))
@@ -249,11 +305,41 @@ impl<'t> View<'t> for &'t Value {
     }
 }
 
-/// A node of the owned typed tree; the root is a [`Document`] outside [`Node`].
+/// A node of the owned typed tree; the root is a [`Document`] outside [`Node`],
+/// and a field the schema leaves open holds JSON values.
 #[derive(Debug, Clone, Copy)]
 pub enum Typed<'t> {
     Doc(&'t Document),
     Node(&'t Node),
+    Json(&'t Value),
+}
+
+/// A field of the typed tree, with JSON nodes and lists read as the JSON side reads them.
+fn typed<'a>(f: Field<'a, Typed<'a>>) -> Field<'a, Typed<'a>> {
+    match f {
+        Field::Json(v) => from_json(classify(v)),
+        other => other,
+    }
+}
+
+fn from_json<'a>(f: Field<'a, &'a Value>) -> Field<'a, Typed<'a>> {
+    match f {
+        Field::Absent => Field::Absent,
+        Field::Null => Field::Null,
+        Field::Str(s) => Field::Str(s),
+        Field::Int(n) => Field::Int(n),
+        Field::Num(n) => Field::Num(n),
+        Field::Bool(b) => Field::Bool(b),
+        Field::Node(v) => Field::Node(Typed::Json(v)),
+        Field::Nodes(l) => Field::Nodes(TList::Json(l)),
+        Field::Strings(s) => Field::Strings(s),
+        Field::Pos(p) => Field::Pos(p),
+        Field::Segments(s) => Field::Segments(s),
+        Field::Attrs(a) => Field::Attrs(a),
+        Field::Marker(m) => Field::Marker(m),
+        Field::Task(t) => Field::Task(t),
+        Field::Json(v) => Field::Json(v),
+    }
 }
 
 impl<'t> Typed<'t> {
@@ -261,28 +347,60 @@ impl<'t> Typed<'t> {
         match self {
             Typed::Doc(d) => d.attrs.as_deref(),
             Typed::Node(n) => n.attrs(),
+            Typed::Json(_) => None,
+        }
+    }
+}
+
+/// The fields of a typed node in key order.
+pub enum TypedFields<'t> {
+    Names(Typed<'t>, std::slice::Iter<'static, &'static str>),
+    Json(JsonFields<'t>),
+}
+
+impl<'t> Iterator for TypedFields<'t> {
+    type Item = (&'t str, Field<'t, Typed<'t>>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            TypedFields::Names(n, names) => names.find_map(|&k| {
+                let f = n.field(k);
+                (!matches!(f, Field::Absent)).then_some((k, f))
+            }),
+            TypedFields::Json(it) => it.next().map(|(k, f)| (k, from_json(f))),
         }
     }
 }
 
 impl<'t> View<'t> for Typed<'t> {
-    type List = &'t [Node];
+    type List = TList<'t>;
+    type Fields = TypedFields<'t>;
 
-    fn empty() -> &'t [Node] {
-        &[]
+    fn fields(self) -> TypedFields<'t> {
+        match self {
+            Typed::Doc(_) => TypedFields::Names(self, Document::VIEW_NAMES.iter()),
+            Typed::Node(n) => TypedFields::Names(self, n.view_names().iter()),
+            Typed::Json(v) => TypedFields::Json(v.fields()),
+        }
+    }
+
+    fn empty() -> TList<'t> {
+        TList::Nodes(&[])
     }
 
     fn ty(self) -> &'t str {
         match self {
             Typed::Doc(_) => "document",
             Typed::Node(n) => n.type_name(),
+            Typed::Json(v) => v.ty(),
         }
     }
 
     fn field(self, name: &str) -> Field<'t, Self> {
         match self {
-            Typed::Doc(d) => d.view_field(name),
-            Typed::Node(n) => n.view_field(name),
+            Typed::Doc(d) => typed(d.view_field(name)),
+            Typed::Node(n) => typed(n.view_field(name)),
+            Typed::Json(v) => from_json(v.field(name)),
         }
     }
 
@@ -290,6 +408,7 @@ impl<'t> View<'t> for Typed<'t> {
         match self {
             Typed::Doc(d) => std::ptr::from_ref(d).addr(),
             Typed::Node(n) => n.view_addr(),
+            Typed::Json(v) => v.id(),
         }
     }
 
@@ -297,10 +416,38 @@ impl<'t> View<'t> for Typed<'t> {
         match self {
             Typed::Doc(d) => d.pos,
             Typed::Node(n) => n.pos().copied(),
+            Typed::Json(v) => v.pos(),
         }
     }
 
+    fn span(self) -> Option<(usize, usize)> {
+        match self {
+            Typed::Json(v) => v.span(),
+            _ => self.pos().map(|p| (p.start(), p.end())),
+        }
+    }
+
+    fn pos_field(self, field: &str) -> Option<i64> {
+        if let Typed::Json(v) = self {
+            return v.pos_field(field);
+        }
+        let p = self.pos()?;
+        let v = match field {
+            "startLine" => p.start_line,
+            "endLine" => p.end_line,
+            "startColumn" => p.start_column,
+            "endColumn" => p.end_column,
+            "startOffset" => p.start_offset,
+            "endOffset" => p.end_offset,
+            _ => return None,
+        };
+        Some(i64::from(v))
+    }
+
     fn sub_str(self, name: &str, key: &str) -> Option<&'t str> {
+        if let Typed::Json(v) = self {
+            return v.sub_str(name, key);
+        }
         match (self.field(name), key) {
             (Field::Attrs(a), "id") => a.id.as_deref(),
             (Field::Marker(m), "kind") => Some(&m.kind),
@@ -308,26 +455,35 @@ impl<'t> View<'t> for Typed<'t> {
             (Field::Marker(m), "style") => m.style.as_deref(),
             (Field::Marker(m), "delimiter") => m.delimiter.as_deref(),
             (Field::Task(t), "mark") => Some(&t.mark),
-            (Field::Json(v), _) => v.get(key)?.as_str(),
+            (Field::Json(v) | Field::Node(Typed::Json(v)), _) => v.get(key)?.as_str(),
             _ => None,
         }
     }
 
     fn sub_int(self, name: &str, key: &str) -> Option<i64> {
+        if let Typed::Json(v) = self {
+            return v.sub_int(name, key);
+        }
         match (self.field(name), key) {
             (Field::Marker(m), "start") => m.start,
-            (Field::Json(v), _) => v.get(key)?.as_i64(),
+            (Field::Json(v) | Field::Node(Typed::Json(v)), _) => v.get(key)?.as_i64(),
             _ => None,
         }
     }
 
     fn classes(self) -> Vec<&'t str> {
+        if let Typed::Json(v) = self {
+            return v.classes();
+        }
         self.attrs()
             .map(|a| a.classes.iter().map(String::as_str).collect())
             .unwrap_or_default()
     }
 
     fn key_values(self) -> Vec<(&'t str, &'t str)> {
+        if let Typed::Json(v) = self {
+            return v.key_values();
+        }
         self.attrs()
             .map(|a| {
                 a.key_values
@@ -337,10 +493,29 @@ impl<'t> View<'t> for Typed<'t> {
             })
             .unwrap_or_default()
     }
+
+    fn json(v: &'t Value) -> Self {
+        Typed::Json(v)
+    }
+
+    fn as_field(self) -> Field<'t, Self> {
+        match self {
+            Typed::Json(v) => from_json(classify(v)),
+            _ => Field::Node(self),
+        }
+    }
+
+    fn one(self) -> TList<'t> {
+        match self {
+            Typed::Doc(_) => TList::Nodes(&[]),
+            Typed::Node(n) => TList::Nodes(std::slice::from_ref(n)),
+            Typed::Json(v) => TList::Json(std::slice::from_ref(v)),
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{Field, NodeList, Typed, View};
     use serde_json::Value;
 
@@ -388,6 +563,12 @@ mod tests {
         for (name, value) in &map {
             same_field(v, t, name, value, &format!("{at}/{name}"));
         }
+        let keys: Vec<String> = t.fields().map(|(k, _)| k.to_string()).collect();
+        assert_eq!(
+            keys,
+            map.keys().cloned().collect::<Vec<_>>(),
+            "{at}: field order"
+        );
     }
 
     fn same_members(v: &Value, t: Typed<'_>, name: &str, here: &str) {
@@ -397,7 +578,7 @@ mod tests {
         assert_eq!(v.sub_int(name, "start"), t.sub_int(name, "start"), "{here}");
     }
 
-    fn same_list(a: &[Value], b: &[crate::ast::owned::Node], here: &str) {
+    fn same_list(a: &[Value], b: super::TList<'_>, here: &str) {
         assert_eq!(a.len(), NodeList::len(b), "{here}: length");
         for (i, x) in a.iter().enumerate() {
             if let Some(y) = NodeList::get(b, i) {
@@ -437,7 +618,8 @@ mod tests {
         }
     }
 
-    fn inputs() -> Vec<String> {
+    /// The input of every example and clause case.
+    pub(crate) fn inputs() -> Vec<String> {
         let mut out = Vec::new();
         for (text, list) in [
             (

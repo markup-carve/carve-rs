@@ -517,7 +517,7 @@ fn view_expr(f: &Field) -> &'static str {
         _ if f.json == "pos" => "Field::Pos(*v)",
         _ if f.json == "attrs" => "Field::Attrs(v)",
         _ if f.json == "segments" => "Field::Segments(v)",
-        FieldKind::Nodes => "Field::Nodes(v.as_slice())",
+        FieldKind::Nodes => "Field::Nodes(TList::Nodes(v.as_slice()))",
         FieldKind::NodeBox => "Field::Node(Typed::Node(v))",
         FieldKind::Str => "Field::Str(v)",
         FieldKind::Int => "Field::Int(*v)",
@@ -534,7 +534,7 @@ fn view_expr(f: &Field) -> &'static str {
 /// `view_field` of each owned node type and of [`Node`]: a field by its wire
 /// name, as `crate::tree::view` reads it.
 fn write_view(out: &mut String, nodes: &[NodeDef]) {
-    let head = "use crate::tree::view::{Field, Typed};\n\n";
+    let head = "use crate::tree::view::{Field, TList, Typed};\n\n";
     out.push_str(head);
     for n in nodes {
         let _ = writeln!(
@@ -559,11 +559,26 @@ fn write_view(out: &mut String, nodes: &[NodeDef]) {
             }
         }
         let _ = writeln!(out, "            \"type\" => Field::Str({:?}),", n.name);
-        out.push_str("            _ => Field::Absent,\n        }\n    }\n}\n\n");
+        out.push_str("            _ => Field::Absent,\n        }\n    }\n\n");
+        let mut names: Vec<&str> = n.fields.iter().map(|f| f.json.as_str()).collect();
+        names.push("type");
+        names.sort_unstable();
+        let _ = writeln!(
+            out,
+            "    /// The wire names of the fields, in key order.\n    #[cfg_attr(not(test), allow(dead_code))]\n    pub(crate) const VIEW_NAMES: &'static [&'static str] = &{names:?};\n}}\n"
+        );
     }
     out.push_str("#[cfg_attr(not(test), allow(dead_code))]\nimpl Node {\n    pub(crate) fn view_field<'t>(&'t self, name: &str) -> Field<'t, Typed<'t>> {\n        match self {\n");
     for n in nodes {
         let _ = writeln!(out, "            Self::{}(n) => n.view_field(name),", n.ty);
+    }
+    out.push_str("        }\n    }\n\n    pub(crate) const fn view_names(&self) -> &'static [&'static str] {\n        match self {\n");
+    for n in nodes {
+        let _ = writeln!(
+            out,
+            "            Self::{}(_) => {}::VIEW_NAMES,",
+            n.ty, n.ty
+        );
     }
     out.push_str("        }\n    }\n\n    /// The address of the node's own struct, stable while the tree is borrowed.\n    pub(crate) fn view_addr(&self) -> usize {\n        match self {\n");
     for n in nodes {

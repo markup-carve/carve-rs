@@ -4,7 +4,7 @@
 //! are not compared).
 
 use crate::hash::AddrHasher;
-use crate::tree::view::{AsView, View};
+use crate::tree::view::{AsView, Field, NodeList, View};
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -141,42 +141,52 @@ fn slots_table() -> &'static TypeMap<Vec<Vec<String>>> {
     })
 }
 
-fn visit_value<'t>(v: &'t Value, step: &str, f: &mut dyn FnMut(&'t [Value], &str, bool)) {
+fn visit_value<'t, V: View<'t>>(
+    v: Field<'t, V>,
+    step: &str,
+    f: &mut dyn FnMut(V::List, &str, bool),
+) {
     match v {
-        Value::Array(items) => f(items, step, false),
-        Value::Object(_) if v.get("type").is_some() => f(std::slice::from_ref(v), step, true),
+        Field::Nodes(items) => f(items, step, false),
+        Field::Node(n) => f(n.one(), step, true),
         _ => {}
     }
 }
 
-fn visit_path<'t>(
-    v: &'t Value,
+fn visit_path<'t, V: View<'t>>(
+    v: Field<'t, V>,
     parts: &[String],
     step: &str,
-    f: &mut dyn FnMut(&'t [Value], &str, bool),
+    f: &mut dyn FnMut(V::List, &str, bool),
 ) {
     let Some((first, rest)) = parts.split_first() else {
         visit_value(v, step, f);
         return;
     };
+    let object = match v {
+        Field::Node(n) => Some(n),
+        Field::Json(j) if j.is_object() => Some(V::json(j)),
+        _ => None,
+    };
     if first == "*" {
-        match v {
-            Value::Object(m) => {
-                for (k, inner) in m {
-                    visit_path(inner, rest, &join_step(step, k), f);
+        if let Some(o) = object {
+            for (k, inner) in o.fields() {
+                visit_path(inner, rest, &join_step(step, k), f);
+            }
+        } else if let Field::Nodes(items) = v {
+            for k in 0..items.len() {
+                if let Some(inner) = items.get(k) {
+                    visit_path(inner.as_field(), rest, &join_step(step, &k.to_string()), f);
                 }
             }
-            Value::Array(items) => {
-                for (k, inner) in items.iter().enumerate() {
-                    visit_path(inner, rest, &join_step(step, &k.to_string()), f);
-                }
-            }
-            _ => {}
         }
         return;
     }
-    if let Some(inner) = v.get(first.as_str()) {
-        visit_path(inner, rest, &join_step(step, first), f);
+    if let Some(o) = object {
+        let inner = o.field(first);
+        if !matches!(inner, Field::Absent) {
+            visit_path(inner, rest, &join_step(step, first), f);
+        }
     }
 }
 
@@ -200,12 +210,14 @@ fn escaped_key(name: &str) -> Cow<'_, str> {
 /// C2-A-024: the slots of a node in their table order; in source order a title
 /// precedes the other slots. `f` takes the nodes, the pointer step and whether
 /// the slot holds one node.
-pub fn for_each_slot<'t>(
-    n: &'t Value,
+#[allow(clippy::type_complexity)]
+pub fn for_each_slot<'t, A: AsView<'t>>(
+    n: A,
     source_order: bool,
-    f: &mut dyn FnMut(&'t [Value], &str, bool),
+    f: &mut dyn FnMut(<A::V as View<'t>>::List, &str, bool),
 ) {
-    let Some(paths) = slots_table().get(ty(n)) else {
+    let n = n.view();
+    let Some(paths) = slots_table().get(n.ty()) else {
         return;
     };
     if source_order
@@ -213,24 +225,24 @@ pub fn for_each_slot<'t>(
             .iter()
             .any(|p| p.len() == 1 && p.first().is_some_and(|x| x == "title"))
     {
-        if let Some(t) = n.get("title") {
-            visit_value(t, "title", f);
-        }
+        visit_value(n.field("title"), "title", f);
     }
     for p in paths {
         if source_order && p.len() == 1 && p.first().is_some_and(|x| x == "title") {
             continue;
         }
-        visit_path(n, p, "", f);
+        visit_path(Field::Node(n), p, "", f);
     }
 }
 
 /// Every node below `n` in its slots, depth first.
-pub fn descendants<'t>(n: &'t Value, out: &mut Vec<&'t Value>) {
+pub fn descendants<'t, V: View<'t>>(n: V, out: &mut Vec<V>) {
     for_each_slot(n, false, &mut |nodes, _, _| {
-        for c in nodes {
-            out.push(c);
-            descendants(c, out);
+        for i in 0..nodes.len() {
+            if let Some(c) = nodes.get(i) {
+                out.push(c);
+                descendants(c, out);
+            }
         }
     });
 }
@@ -293,94 +305,180 @@ pub fn skipped_in(
     }
 }
 
-/// The compared fields of `node`, in key order.
-fn compared(
-    node: &Map<String, Value>,
+/// C2-A-162 for a node of either side: whether field `name` of `node` is
+/// not compared. `fields` is the result table of the node's type.
+fn skipped<'t, V: View<'t>>(
+    node: V,
+    fields: Option<&Fields>,
+    name: &str,
     span_marks: bool,
-) -> impl Iterator<Item = (&String, &Value)> {
-    let fields = result_fields(node);
-    node.iter()
-        .filter(move |(k, _)| !skipped_in(node, fields, k, span_marks))
+) -> bool {
+    let Some(fields) = fields else {
+        return false;
+    };
+    if matches!(name, "pos" | "segments" | "srcByteLength") {
+        return true;
+    }
+    let Some((_, when)) = fields.iter().find(|(f, _)| f == name) else {
+        return false;
+    };
+    match when.as_deref() {
+        Some("reference use") => !matches!(node.field("key"), Field::Absent),
+        Some("derived from authored span mark") => span_marks,
+        _ => true,
+    }
 }
 
 /// Whether two neighbors of `items` are text nodes, which C2-A-161 compares joined.
-fn has_adjacent_text(items: &[Value]) -> bool {
-    items
-        .windows(2)
-        .any(|p| matches!(p, [a, b] if ty(a) == "text" && ty(b) == "text"))
+fn has_adjacent_text<'t, V: View<'t>>(items: V::List) -> bool {
+    (1..items.len()).any(|i| {
+        matches!((items.get(i - 1), items.get(i)), (Some(a), Some(b)) if a.ty() == "text" && b.ty() == "text")
+    })
 }
 
-fn coalesced(items: &[Value]) -> Vec<std::borrow::Cow<'_, Value>> {
-    let mut out: Vec<std::borrow::Cow<'_, Value>> = Vec::with_capacity(items.len());
-    for item in items {
-        if ty(item) == "text" {
-            if let Some(last) = out.last_mut() {
-                if ty(&**last) == "text" {
-                    let mut merged = last.clone().into_owned();
-                    let joined = format!("{}{}", text(&merged), text(item));
-                    if let Some(m) = merged.as_object_mut() {
-                        m.insert("value".into(), Value::String(joined));
-                    }
-                    *last = std::borrow::Cow::Owned(merged);
-                    continue;
-                }
+/// An item of a list as C2-A-161 compares it: a node, or a run of text
+/// nodes as its first node with the joined value.
+struct Item<'t, V> {
+    node: V,
+    joined: Option<String>,
+    _t: std::marker::PhantomData<&'t ()>,
+}
+
+fn coalesced<'t, V: View<'t>>(items: V::List) -> Vec<Item<'t, V>> {
+    let mut out: Vec<Item<'t, V>> = Vec::with_capacity(items.len());
+    for i in 0..items.len() {
+        let Some(item) = items.get(i) else { continue };
+        if item.ty() == "text" {
+            if let Some(last) = out.last_mut().filter(|l| l.node.ty() == "text") {
+                let joined = last
+                    .joined
+                    .get_or_insert_with(|| text(last.node).to_string());
+                joined.push_str(text(item));
+                continue;
             }
         }
-        out.push(std::borrow::Cow::Borrowed(item));
+        out.push(Item {
+            node: item,
+            joined: None,
+            _t: std::marker::PhantomData,
+        });
     }
     out
 }
 
-fn list_has_span_marks(table: &Value) -> bool {
-    children(table).iter().any(|g| {
-        children(g).iter().any(|r| {
-            children(r)
-                .iter()
-                .any(|c| ty(c) == "table_cell" && has(c, "span"))
+fn list_has_span_marks<'t, V: View<'t>>(table: V) -> bool {
+    let groups = table.children();
+    (0..groups.len()).filter_map(|i| groups.get(i)).any(|g| {
+        let rows = g.children();
+        (0..rows.len()).filter_map(|i| rows.get(i)).any(|r| {
+            let cells = r.children();
+            (0..cells.len())
+                .filter_map(|i| cells.get(i))
+                .any(|c| c.ty() == "table_cell" && c.has("span"))
         })
     })
 }
 
-fn equal_values(a: &Value, b: &Value, span_marks: bool) -> bool {
-    match (a, b) {
-        (Value::Array(x), Value::Array(y)) => {
-            if !has_adjacent_text(x) && !has_adjacent_text(y) {
-                return x.len() == y.len()
-                    && x.iter().zip(y).all(|(l, r)| equal_values(l, r, span_marks));
-            }
-            let (x, y) = (coalesced(x), coalesced(y));
-            x.len() == y.len()
-                && x.iter()
-                    .zip(&y)
-                    .all(|(l, r)| equal_values(l, r, span_marks))
-        }
-        (Value::Object(x), Value::Object(y)) => {
-            let inner = if x.get("type").and_then(Value::as_str) == Some("table") {
-                list_has_span_marks(a) || list_has_span_marks(b)
+fn equal_lists<'t, V: View<'t>>(x: V::List, y: V::List, span_marks: bool) -> bool {
+    if !has_adjacent_text::<V>(x) && !has_adjacent_text::<V>(y) {
+        return x.len() == y.len()
+            && (0..x.len()).all(|i| match (x.get(i), y.get(i)) {
+                (Some(l), Some(r)) => equal_fields(l.as_field(), r.as_field(), span_marks),
+                _ => false,
+            });
+    }
+    let (x, y) = (coalesced::<V>(x), coalesced::<V>(y));
+    x.len() == y.len()
+        && x.iter().zip(&y).all(|(l, r)| {
+            if l.joined.is_none() && r.joined.is_none() {
+                equal_fields(l.node.as_field(), r.node.as_field(), span_marks)
             } else {
-                span_marks
-            };
-            let (mut l, mut r) = (compared(x, inner), compared(y, inner));
-            loop {
-                match (l.next(), r.next()) {
-                    (None, None) => return true,
-                    (Some((kl, p)), Some((kr, q))) if kl == kr => {
-                        if !equal_values(p, q, inner) {
-                            return false;
-                        }
-                    }
-                    _ => return false,
+                equal_nodes(
+                    l.node,
+                    l.joined.as_deref(),
+                    r.node,
+                    r.joined.as_deref(),
+                    span_marks,
+                )
+            }
+        })
+}
+
+fn equal_nodes<'t, V: View<'t>>(
+    a: V,
+    ja: Option<&str>,
+    b: V,
+    jb: Option<&str>,
+    span_marks: bool,
+) -> bool {
+    let inner = if a.ty() == "table" {
+        list_has_span_marks(a) || list_has_span_marks(b)
+    } else {
+        span_marks
+    };
+    let (fa, fb) = (results().get(a.ty()), results().get(b.ty()));
+    let mut l = a.fields().filter(|(k, _)| !skipped(a, fa, k, inner));
+    let mut r = b.fields().filter(|(k, _)| !skipped(b, fb, k, inner));
+    loop {
+        match (l.next(), r.next()) {
+            (None, None) => return true,
+            (Some((kl, p)), Some((kr, q))) if kl == kr => {
+                let same = if kl == "value" && (ja.is_some() || jb.is_some()) {
+                    let left = ja.or_else(|| text_of(p));
+                    left.is_some() && left == jb.or_else(|| text_of(q))
+                } else {
+                    equal_fields(p, q, inner)
+                };
+                if !same {
+                    return false;
                 }
             }
+            _ => return false,
         }
-        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
-        _ => a == b,
+    }
+}
+
+fn text_of<'t, V: View<'t>>(f: Field<'t, V>) -> Option<&'t str> {
+    match f {
+        Field::Str(s) => Some(s),
+        _ => None,
+    }
+}
+
+fn equal_fields<'t, V: View<'t>>(a: Field<'t, V>, b: Field<'t, V>, span_marks: bool) -> bool {
+    match (a, b) {
+        (Field::Nodes(x), Field::Nodes(y)) => equal_lists::<V>(x, y, span_marks),
+        (Field::Node(x), Field::Node(y)) => equal_nodes(x, None, y, None, span_marks),
+        (Field::Json(x), Field::Json(y)) => {
+            equal_nodes(V::json(x), None, V::json(y), None, span_marks)
+        }
+        (Field::Str(x), Field::Str(y)) => x == y,
+        (Field::Int(_) | Field::Num(_), Field::Int(_) | Field::Num(_)) => number(a) == number(b),
+        (Field::Bool(x), Field::Bool(y)) => x == y,
+        (Field::Null, Field::Null) => true,
+        (Field::Strings(x), Field::Strings(y)) => x == y,
+        (Field::Pos(x), Field::Pos(y)) => x == y,
+        (Field::Segments(x), Field::Segments(y)) => x == y,
+        (Field::Attrs(x), Field::Attrs(y)) => x == y,
+        (Field::Marker(x), Field::Marker(y)) => x == y,
+        (Field::Task(x), Field::Task(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// C2-A-161 compares numbers by value, as JSON reads them.
+#[allow(clippy::cast_precision_loss)]
+fn number<'t, V: View<'t>>(f: Field<'t, V>) -> Option<f64> {
+    match f {
+        Field::Int(n) => Some(n as f64),
+        Field::Num(n) => Some(n),
+        _ => None,
     }
 }
 
 /// C2-A-161: whether two trees are the same document.
-pub fn trees_equal(a: &Value, b: &Value) -> bool {
-    equal_values(a, b, false)
+pub fn trees_equal<'t, A: AsView<'t>, B: AsView<'t, V = A::V>>(a: A, b: B) -> bool {
+    equal_fields(a.view().as_field(), b.view().as_field(), false)
 }
 
 /// `n` without the standard data namespaces (C2-A-193).
@@ -428,30 +526,114 @@ pub fn plain_text(nodes: &[Value]) -> String {
 }
 
 /// The JSON pointer of each wanted node in the document, by identity.
-pub fn pointers(doc: &Value, wanted: &std::collections::HashSet<usize>) -> HashMap<usize, String> {
+pub fn pointers<'t, V: View<'t>>(
+    doc: V,
+    wanted: &std::collections::HashSet<usize>,
+) -> HashMap<usize, String> {
     let mut found = HashMap::new();
     if wanted.is_empty() {
         return found;
     }
-    let mut stack: Vec<(&Value, String)> = vec![(doc, String::new())];
+    let mut stack: Vec<(V, String)> = vec![(doc, String::new())];
     while let Some((n, path)) = stack.pop() {
-        if wanted.contains(&id(n)) {
-            found.insert(id(n), path.clone());
+        if wanted.contains(&n.id()) {
+            found.insert(n.id(), path.clone());
             if found.len() == wanted.len() {
                 break;
             }
         }
         for_each_slot(n, false, &mut |nodes, step, single| {
             if single {
-                if let Some(c) = nodes.first() {
+                if let Some(c) = nodes.get(0) {
                     stack.push((c, format!("{path}/{step}")));
                 }
             } else {
-                for (i, c) in nodes.iter().enumerate() {
-                    stack.push((c, format!("{path}/{step}/{i}")));
+                for i in 0..nodes.len() {
+                    if let Some(c) = nodes.get(i) {
+                        stack.push((c, format!("{path}/{step}/{i}")));
+                    }
                 }
             }
         });
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{descendants, id, pointers, trees_equal};
+    use crate::tree::view::Typed;
+
+    fn parse(input: &str) -> Option<crate::api::Tree> {
+        crate::api::parse(input, &crate::api::Options::default()).ok()
+    }
+
+    #[test]
+    fn trees_compare_alike_on_both_sides() {
+        let inputs = crate::tree::view::tests::inputs();
+        let host = crate::api::Carve::new();
+        let opts = crate::api::WriteOptions::default();
+        let trees: Vec<_> = inputs.iter().map(|i| parse(i)).collect();
+        let (mut equal, mut differ) = (0, 0);
+        for (i, a) in trees.iter().enumerate() {
+            let Some(a) = a else { continue };
+            let va = a.value().unwrap_or_default();
+            let formatted = host
+                .format(inputs.get(i).map_or("", String::as_str), &opts)
+                .ok()
+                .and_then(|f| parse(&f));
+            for b in [
+                Some(a),
+                trees.get(i + 1).and_then(Option::as_ref),
+                formatted.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let vb = b.value().unwrap_or_default();
+                let by_value = trees_equal(&va, &vb);
+                let by_type = trees_equal(Typed::Doc(a.document()), Typed::Doc(b.document()));
+                assert_eq!(by_value, by_type, "input {i}");
+                if by_value {
+                    equal += 1;
+                } else {
+                    differ += 1;
+                }
+            }
+        }
+        assert!(
+            equal > 1000 && differ > 1000,
+            "{equal} equal, {differ} differ"
+        );
+    }
+
+    #[test]
+    fn slots_and_pointers_read_alike_on_both_sides() {
+        for (i, input) in crate::tree::view::tests::inputs().iter().enumerate() {
+            let Some(tree) = parse(input) else { continue };
+            let value = tree.value().unwrap_or_default();
+            let mut by_value = vec![&value];
+            descendants(&value, &mut by_value);
+            let mut by_type = vec![Typed::Doc(tree.document())];
+            descendants(Typed::Doc(tree.document()), &mut by_type);
+            assert_eq!(by_value.len(), by_type.len(), "input {i}");
+            let ids = |all: &[usize]| all.iter().copied().collect();
+            let pv = pointers(
+                &value,
+                &ids(&by_value.iter().map(|n| id(*n)).collect::<Vec<_>>()),
+            );
+            let pt = pointers(
+                Typed::Doc(tree.document()),
+                &ids(&by_type.iter().map(|n| id(*n)).collect::<Vec<_>>()),
+            );
+            let order = |all: &[usize], p: &std::collections::HashMap<usize, String>| {
+                all.iter().map(|n| p.get(n).cloned()).collect::<Vec<_>>()
+            };
+            assert_eq!(
+                order(&by_value.iter().map(|n| id(*n)).collect::<Vec<_>>(), &pv),
+                order(&by_type.iter().map(|n| id(*n)).collect::<Vec<_>>(), &pt),
+                "input {i}"
+            );
+        }
+    }
 }
