@@ -16,8 +16,8 @@
   ],
   "resolver": "virtual",
   "expected": {
-    "html": "<p>{{ bom.txt @lines:1-1 @code }}</p>",
-    "fmt": "{{ bom.txt @lines:1-1 @code }}\n",
+    "html": "<p>{{ bom.txt @code @lines:1-1 }}</p>",
+    "fmt": "{{ bom.txt @code @lines:1-1 }}\n",
     "warnings": [
       {
         "code": "include-lines-out-of-range"

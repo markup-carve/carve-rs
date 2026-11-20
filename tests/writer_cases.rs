@@ -183,6 +183,21 @@ fn strip(v: &mut Value) {
 }
 
 #[test]
+fn include_code_mode_writes_before_selection_and_transform_options() {
+    let carve = Carve::new();
+    let opts = WriteOptions::default();
+    let expected = "{{ parts/plans.csv @code:csv @rows:3-4 @cols:\"Plan,Price\" }}\n";
+    for input in [
+        "{{ parts/plans.csv @rows:3-4 @cols:\"Plan,Price\" @code:csv }}\n",
+        expected,
+    ] {
+        assert_eq!(carve.format(input, &opts).unwrap(), expected);
+        let tree = api::parse(input, &Options::default()).unwrap();
+        assert_eq!(carve.write(&tree, &opts).unwrap(), expected);
+    }
+}
+
+#[test]
 fn writer_clause_cases() {
     let carve = Carve::new();
     let mut failures = Vec::new();

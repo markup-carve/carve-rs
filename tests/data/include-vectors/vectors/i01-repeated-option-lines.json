@@ -10,8 +10,8 @@
   ],
   "resolver": "virtual",
   "expected": {
-    "html": "<p>{{ a.js @lines:1-1 @code @lines:3-3 }}</p>",
-    "fmt": "{{ a.js @lines:1-1 @code @lines:3-3 }}\n",
+    "html": "<p>{{ a.js @code @lines:1-1 @lines:3-3 }}</p>",
+    "fmt": "{{ a.js @code @lines:1-1 @lines:3-3 }}\n",
     "warnings": [
       {
         "code": "include-option-invalid"
