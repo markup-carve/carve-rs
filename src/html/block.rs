@@ -244,7 +244,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.report_empty_paragraph(n);
                 return false;
             }
-            self.losses.push("profile-construct-degraded");
+            self.profile_loss(n);
             let t = esc::text_str(&crate::resolve::plain::text_of(&*p.children));
             if t.is_empty() {
                 return false;
@@ -271,7 +271,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return false;
         }
         if self.empty_after_degrade(p.children) {
-            self.losses.push("profile-construct-degraded");
+            self.profile_loss(n);
             return false;
         }
         if p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children) {
@@ -396,7 +396,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             && crate::resolve::order::caption_of(only).is_none()
         {
             if let Some([p]) = self.degraded(only).as_deref() {
-                self.losses.push("profile-construct-degraded");
+                self.profile_loss(only);
                 self.line(depth, &format!("{open}<p>{p}</p></blockquote>"));
                 return;
             }
@@ -530,7 +530,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         // C2-H-165 with C2-H-007: a block a profile degrades is paragraphs.
         if let Some(paras) = self.degraded(first) {
-            self.losses.push("profile-construct-degraded");
+            self.profile_loss(first);
             let mut it = paras.iter();
             let head = it.next().map_or_else(String::new, |p| {
                 if tight {

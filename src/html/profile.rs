@@ -8,6 +8,14 @@ use crate::source::SourceView;
 use crate::tables::ProfileRow;
 
 impl<'r, 'a> Renderer<'r, 'a> {
+    pub(super) fn profile_loss(&mut self, n: &Node) {
+        self.losses.push("profile-construct-degraded");
+        self.profile_losses.push(super::ProfileLoss {
+            pos: n.pos().copied(),
+            construct: n.type_name(),
+            file: self.file_of(n.pos()),
+        });
+    }
     pub(super) fn only_comments(&self, nodes: &[Node]) -> bool {
         super::block::comments_only_with_critic(
             nodes,
@@ -31,11 +39,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
     // C2-H-129, C2-H-165: a degraded node still reports when it leaves no text.
     pub(super) fn report_empty_paragraph(&mut self, n: &Node) {
         if !self.profile_allows(n, true) {
-            self.losses.push("profile-construct-degraded");
+            self.profile_loss(n);
         } else if let Node::Paragraph(p) = n {
             for child in p.children.iter() {
                 if matches!(child, Node::CriticComment(_)) && !self.profile_allows(child, false) {
-                    self.losses.push("profile-construct-degraded");
+                    self.profile_loss(child);
                 }
             }
         }
@@ -52,7 +60,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     self.report_empty_paragraph(child);
                 }
             } else if self.degraded(child).is_some_and(|paras| paras.is_empty()) {
-                self.losses.push("profile-construct-degraded");
+                self.profile_loss(child);
             }
         }
     }
@@ -90,14 +98,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-165: a block outside the profile becomes paragraphs of its plain
     /// text behind the mark of its kind.
     pub(super) fn degrade_block(&mut self, n: &'r Node<'a>, depth: usize) {
-        self.losses.push("profile-construct-degraded");
+        self.profile_loss(n);
         for p in self.degraded(n).unwrap_or_default() {
             self.line(depth, &format!("<p>{p}</p>"));
         }
     }
 
     pub(super) fn degrade_captioned(&mut self, n: &'r Node<'a>, depth: usize) {
-        self.losses.push("profile-construct-degraded");
+        self.profile_loss(n);
         let mut paras = Vec::new();
         degraded_paragraphs(n, &mut paras, 0, self.src_of(n));
         for p in paras.into_iter().filter(|p| !p.is_empty()) {
@@ -153,7 +161,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if matches!(n, Node::Comment(_)) {
             return;
         }
-        self.losses.push("profile-construct-degraded");
+        self.profile_loss(n);
         if let Node::Xref(x) = n {
             let target = x.href.and_then(|href| href.strip_prefix('#'));
             if let Some(text) = target.and_then(|id| self.xref_text.get(id)) {

@@ -106,9 +106,18 @@ pub fn render_with_losses_source(
 ) -> (String, Vec<&'static str>) {
     if opts.profile != crate::options::Profile::Full && src.contains('\0') {
         let normalized = crate::source::Source::new(src);
-        render_mapped_source(doc, opts, normalized.render_view(), true, None, None, None)
+        render_mapped_source(
+            doc,
+            opts,
+            normalized.render_view(),
+            true,
+            None,
+            None,
+            None,
+            None,
+        )
     } else {
-        render_source(doc, opts, src, true, None, None, None)
+        render_source(doc, opts, src, true, None, None, None, None)
     }
 }
 
@@ -121,7 +130,16 @@ pub fn render_with_losses_source_bytes(
     src: &[u8],
 ) -> (String, Vec<&'static str>) {
     let normalized = crate::source::Source::from_bytes(src);
-    render_mapped_source(doc, opts, normalized.render_view(), true, None, None, None)
+    render_mapped_source(
+        doc,
+        opts,
+        normalized.render_view(),
+        true,
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
@@ -134,6 +152,7 @@ pub(crate) fn render_source(
     destinations: Option<&mut Vec<DestinationLoss>>,
     raws: Option<&mut Vec<RawLoss>>,
     carriers: Option<&mut Vec<CarrierLoss>>,
+    profiles: Option<&mut Vec<ProfileLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(SourceView::direct(src));
@@ -146,6 +165,9 @@ pub(crate) fn render_source(
     }
     if let Some(carriers) = carriers {
         carriers.extend(r.carrier_losses);
+    }
+    if let Some(profiles) = profiles {
+        profiles.extend(r.profile_losses);
     }
     (r.out, r.losses)
 }
@@ -159,6 +181,7 @@ pub(crate) fn render_files<'a>(
     destinations: Option<&mut Vec<DestinationLoss>>,
     raws: Option<&mut Vec<RawLoss>>,
     carriers: Option<&mut Vec<CarrierLoss>>,
+    profiles: Option<&mut Vec<ProfileLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::build(doc, opts, true, Some(files));
     r.src = Some(SourceView::direct(src));
@@ -172,6 +195,9 @@ pub(crate) fn render_files<'a>(
     if let Some(carriers) = carriers {
         carriers.extend(r.carrier_losses);
     }
+    if let Some(profiles) = profiles {
+        profiles.extend(r.profile_losses);
+    }
     (r.out, r.losses)
 }
 
@@ -183,6 +209,7 @@ pub(crate) fn render_mapped_source(
     destinations: Option<&mut Vec<DestinationLoss>>,
     raws: Option<&mut Vec<RawLoss>>,
     carriers: Option<&mut Vec<CarrierLoss>>,
+    profiles: Option<&mut Vec<ProfileLoss>>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(src);
@@ -195,6 +222,9 @@ pub(crate) fn render_mapped_source(
     }
     if let Some(carriers) = carriers {
         carriers.extend(r.carrier_losses);
+    }
+    if let Some(profiles) = profiles {
+        profiles.extend(r.profile_losses);
     }
     (r.out, r.losses)
 }
@@ -219,6 +249,12 @@ pub(crate) struct CarrierLoss {
     pub key: String,
     pub pos: Option<crate::ast::Pos>,
     pub regions: Vec<(u32, u32)>,
+    pub file: Option<String>,
+}
+
+pub(crate) struct ProfileLoss {
+    pub pos: Option<crate::ast::Pos>,
+    pub construct: &'static str,
     pub file: Option<String>,
 }
 
@@ -275,6 +311,7 @@ pub(crate) struct Renderer<'r, 'a> {
     destination_losses: Vec<DestinationLoss>,
     raw_losses: Vec<RawLoss>,
     carrier_losses: Vec<CarrierLoss>,
+    profile_losses: Vec<ProfileLoss>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
     hidden: AddrSet<usize>,
     /// The row of `opts.profile` in the profile table.
@@ -356,6 +393,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             destination_losses: Vec::new(),
             raw_losses: Vec::new(),
             carrier_losses: Vec::new(),
+            profile_losses: Vec::new(),
             hidden: AddrSet::default(),
             profile,
             hook: None,
