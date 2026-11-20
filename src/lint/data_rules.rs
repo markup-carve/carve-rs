@@ -260,7 +260,7 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
                 .is_some_and(|code| active_catalog(code, options))
         })
         .collect();
-    let mut buckets: HashMap<(&'static str, String, String), Vec<&Value>> = HashMap::new();
+    let mut buckets: HashMap<(&'static str, &str, &str), Vec<&Value>> = HashMap::new();
     for record in &records.items {
         let value = if record.over == "line" {
             &records.lines[record.line_index]
@@ -279,7 +279,7 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
             ""
         };
         let rules = buckets
-            .entry((record.over, kind.to_owned(), parent.to_owned()))
+            .entry((record.over, kind, parent))
             .or_insert_with(|| {
                 active_rules
                     .iter()
