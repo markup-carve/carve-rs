@@ -332,7 +332,8 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
             }
             Some("paragraph")
                 if item.node["type"] == "image"
-                    && bounds(owner).is_some_and(|(start, _)| start == from) => {
+                    && bounds(owner).is_some_and(|(start, _)| start == from) =>
+            {
                 path = owner_path;
             }
             _ => return,
@@ -371,18 +372,8 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         let Some(node) = root.pointer(path) else {
             break;
         };
-        match node["type"].as_str() {
-            Some("list_item") => return,
-            Some(
-                "div"
-                | "admonition"
-                | "directive"
-                | "figure_group"
-                | "block_quote"
-                | "footnote"
-                | "definition_description",
-            ) => break,
-            _ => {}
+        if node["type"] == "list_item" {
+            return;
         }
     }
     let kind = match item.node["type"].as_str().unwrap_or("") {
