@@ -205,12 +205,10 @@ fn lint_core<'a>(
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
-    if data_rules::data_mode() {
-        if tree.is_some() {
-            let records = data_model::records(source, &positions.all);
-            out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
-            out.extend(data_rules::run(&records, source, opts));
-        }
+    if data_rules::data_mode() && tree.is_some() {
+        let records = data_model::records(source, &positions.all);
+        out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
+        out.extend(data_rules::run(&records, source, opts));
     }
     let invalid_tables: Vec<_> = out
         .iter()
@@ -1241,7 +1239,7 @@ fn node_ranges(tree: V<'_>) -> Vec<Range> {
                         && value
                             .at("children")
                             .as_array()
-                            .and_then(|children| children.single())
+                            .and_then(super::view::Arr::single)
                             .is_some_and(|child| child.ty().as_str() == Some("image")),
                     footnote_key: (kind == "footnote_ref")
                         .then(|| value.at("key").as_str().map(str::to_string))

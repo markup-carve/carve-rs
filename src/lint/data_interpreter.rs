@@ -1,4 +1,9 @@
 //! Evaluates the expressions of the pinned 0.2 lint model.
+#![allow(
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
@@ -20,9 +25,11 @@ pub(super) struct Eval<'a> {
     pub base: usize,
 }
 
+type RegexCache = HashMap<u64, (String, String, Option<Regex>)>;
+
 fn regex(pattern: &str, flags: &str) -> Option<Regex> {
     thread_local! {
-        static CACHE: RefCell<HashMap<u64,(String,String,Option<Regex>)>> = RefCell::new(HashMap::new());
+        static CACHE: RefCell<RegexCache> = RefCell::new(HashMap::new());
     }
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     pattern.hash(&mut hash);
@@ -320,8 +327,7 @@ impl Eval<'_> {
                 let from = as_number(&self.value(arg_at(1))).max(0) as usize;
                 let to = args
                     .and_then(|v| v.get(2))
-                    .map(|v| as_number(&self.value(v)).max(0) as usize)
-                    .unwrap_or(text.len());
+                    .map_or_else(|| text.len(), |v| as_number(&self.value(v)).max(0) as usize);
                 Value::String(
                     text.get(from.min(text.len())..to.min(text.len()))
                         .unwrap_or("")

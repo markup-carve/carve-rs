@@ -1,4 +1,5 @@
 //! Source and tree records consumed by the pinned 0.2 lint model.
+#![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
 use super::{
     Range,
@@ -13,7 +14,7 @@ fn parent(path: &str) -> &str {
     path.rsplit_once("/children/").map_or("", |(p, _)| p)
 }
 
-fn text_at<'a>(source: &'a str, from: usize, to: usize) -> &'a str {
+fn text_at(source: &str, from: usize, to: usize) -> &str {
     source
         .get(from.min(source.len())..to.min(source.len()))
         .unwrap_or("")
@@ -30,7 +31,7 @@ fn quoted_start(text: &str, marks: usize) -> usize {
         at += 1;
     }
     for _ in 0..marks {
-        if bytes.get(at) != Some(&b'>') || !bytes.get(at + 1).is_none_or(|b| *b == b' ') {
+        if bytes.get(at) != Some(&b'>') || bytes.get(at + 1).is_some_and(|b| *b != b' ') {
             break;
         }
         at += 1;
@@ -267,7 +268,7 @@ fn owner_path<'a>(mut path: &'a str, types: &HashMap<String, String>) -> &'a str
         .get(path)
         .is_some_and(|kind| kind == "definition_list")
     {
-        path = parent(path)
+        path = parent(path);
     }
     path
 }
@@ -305,7 +306,7 @@ fn item_owner_path<'a>(mut path: &'a str, types: &HashMap<String, String>) -> &'
             "admonition" | "directive" | "div" | "figure_group"
         )
     }) {
-        path = parent(path)
+        path = parent(path);
     }
     if types.get(path).is_some_and(|kind| kind == "list_item") {
         path
@@ -438,6 +439,7 @@ fn colon_layouts<'a>(
     colons
 }
 
+#[allow(clippy::cognitive_complexity)]
 pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
     let positions = Source::new(source);
     let raw_lines = lines::data_lines(source, ranges);
@@ -733,7 +735,7 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         let owner = owner_path(parent_path, &types);
         let item_owner = item_owner_path(owner, &types);
         let kind = range.kind.as_str();
-        let item_child = parent_type == "list_item" || item_owner != "";
+        let item_child = parent_type == "list_item" || !item_owner.is_empty();
         let opener_rule = matches!(
             kind,
             "admonition"

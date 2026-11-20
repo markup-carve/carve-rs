@@ -1,4 +1,5 @@
 //! Rule selection and reporting from the pinned 0.2 lint model.
+#![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
 use super::data_interpreter::Eval;
 use super::{LintOptions, active_catalog};
@@ -8,6 +9,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+#[allow(clippy::expect_used)] // The pinned model is a checked build input.
 pub(super) fn model() -> &'static Value {
     static MODEL: OnceLock<Value> = OnceLock::new();
     MODEL.get_or_init(|| {
