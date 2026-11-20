@@ -308,6 +308,7 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
                 | "admonition"
                 | "directive"
                 | "image"
+                | "paragraph"
                 | "thematic_break"
                 | "table"
         )
@@ -317,6 +318,12 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
     let Some((from, _)) = bounds(item.node) else {
         return;
     };
+    if item.node["type"] == "paragraph"
+        && (item.node.get("attrs").is_none()
+            || !sink.source.get(from..).is_some_and(|s| s.starts_with('{')))
+    {
+        return;
+    }
     let mut path = item.path.as_str();
     let parent = loop {
         let Some((owner_path, _)) = path.rsplit_once("/children/") else {
