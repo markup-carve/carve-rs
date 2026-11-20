@@ -733,5 +733,19 @@
     "input": "::: |\n>a\n:::\n",
     "code": "blockquote-marker-without-space",
     "reported": true
+  },
+{
+    "id": "github-alert-marker#CC-1068",
+    "origin": "spec:CC-1068",
+    "input": ">[!NOTE]\n",
+    "code": "github-alert-marker",
+    "reported": true
+  },
+{
+    "id": "github-alert-marker#CC-1079",
+    "origin": "spec:CC-1079",
+    "input": "[!NOTE]: /u\n\n>[!NOTE]\n",
+    "code": "github-alert-marker",
+    "reported": true
   }
 ]

@@ -1461,7 +1461,9 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     let starts = line.text.trim_start();
-    if !starts.starts_with("> ") {
+    // GitHub also writes the alert mark immediately after `>`; this is still a
+    // useful migration warning even though Carve reads the glued line as text.
+    if !starts.starts_with("> ") && !starts.starts_with(">[") {
         return;
     }
     if !matches!(
