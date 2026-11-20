@@ -69,6 +69,7 @@ pub mod inline;
 pub mod lint;
 #[doc(hidden)]
 pub mod options;
+mod pair_marks;
 #[cfg(feature = "profile")]
 pub mod profile;
 #[doc(hidden)]

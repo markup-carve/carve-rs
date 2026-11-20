@@ -1824,55 +1824,9 @@ fn semantic_key_in_block(raw: &str, open: usize, end: usize, name: &str) -> Opti
 }
 
 fn text_delimiters(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    for (mark, code) in [
-        ("**", "markdown-strong-double-star"),
-        ("~~", "markdown-strikethrough-double-tilde"),
-    ] {
-        if let Some(start) = value.find(mark)
-            && let Some(tail) = value.get(start + mark.len()..)
-            && let Some(end) = tail.find(mark)
-            && end > 0
-        {
-            let to = start + mark.len() + end + mark.len();
-            let byte = mark.as_bytes().first().copied().unwrap_or_default();
-            let open = value.as_bytes().get(start.wrapping_sub(1)) != Some(&byte)
-                && value.as_bytes().get(start + mark.len()) != Some(&byte);
-            let close = value.as_bytes().get(to - mark.len() - 1) != Some(&byte)
-                && value.as_bytes().get(to) != Some(&byte);
-            let inner = &tail[..end];
-            if open
-                && close
-                && !escaped(value.as_bytes(), start)
-                && !escaped(value.as_bytes(), to - mark.len())
-                && !inner.starts_with(char::is_whitespace)
-                && !inner.ends_with(char::is_whitespace)
-                && !inner.contains("\n\n")
-                && (mark != "**" || !inner.contains('*'))
-            {
-                sink.emit_range(code, from + start, from + to, item.path(), &[], 0);
-            }
-        }
-    }
-    for (mark, code) in [
-        (b'_', "deprecated-bare-underline"),
-        (b'~', "deprecated-bare-strike"),
-        (b'=', "deprecated-bare-highlight"),
-    ] {
-        let mut offset = 0;
-        while let Some((start, end)) = value
-            .as_bytes()
-            .get(offset..)
-            .and_then(|rest| bare_pair(rest, mark))
-        {
-            sink.emit_range(
-                code,
-                from + offset + start,
-                from + offset + end,
-                item.path(),
-                &[],
-                0,
-            );
-            offset += end;
+    for (mark, code) in crate::pair_marks::RULES {
+        for (start, end) in crate::pair_marks::pairs(value, mark, code) {
+            sink.emit_range(code, from + start, from + end, item.path(), &[], 0);
         }
     }
 }
@@ -2185,13 +2139,13 @@ fn paragraph_delimiters(item: &Item<'_>, sink: &mut Sink<'_>) {
     if let Some((from, _)) = bounds(item.node) {
         if raw.contains('\n') {
             for (mark, code) in [
-                (b'=', "deprecated-bare-highlight"),
-                (b'~', "deprecated-bare-strike"),
+                ("=", "deprecated-bare-highlight"),
+                ("~", "deprecated-bare-strike"),
             ] {
-                if let Some((start, end)) = bare_pair(raw.as_bytes(), mark)
-                    && raw.get(start..end).is_some_and(|pair| pair.contains('\n'))
-                {
-                    sink.emit_range(code, from + start, from + end, item.path(), &[], 0);
+                for (start, end) in crate::pair_marks::pairs(&raw, mark, code) {
+                    if raw.get(start..end).is_some_and(|pair| pair.contains('\n')) {
+                        sink.emit_range(code, from + start, from + end, item.path(), &[], 0);
+                    }
                 }
             }
             if let Some(start) = raw.find("**")
@@ -2453,56 +2407,6 @@ fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     bidi(item, sink);
-}
-
-fn bare_pair(text: &[u8], mark: u8) -> Option<(usize, usize)> {
-    for start in 0..text.len() {
-        if !bare_open(text, mark, start) {
-            continue;
-        }
-        for end in start + 2..text.len() {
-            if bare_close(text, mark, start, end) {
-                return Some((start, end + 1));
-            }
-        }
-    }
-    None
-}
-
-fn bare_open(text: &[u8], mark: u8, start: usize) -> bool {
-    let Some(prefix) = text
-        .get(..start)
-        .and_then(|part| std::str::from_utf8(part).ok())
-    else {
-        return false;
-    };
-    let before = prefix.chars().next_back();
-    text.get(start) == Some(&mark)
-        && !escaped(text, start)
-        && !before.is_some_and(|ch| ch == char::from(mark) || ch.is_alphanumeric())
-        && text
-            .get(start + 1)
-            .is_some_and(|next| *next != mark && !next.is_ascii_whitespace())
-}
-
-fn bare_close(text: &[u8], mark: u8, start: usize, end: usize) -> bool {
-    let after = std::str::from_utf8(text.get(end + 1..).unwrap_or_default())
-        .ok()
-        .and_then(|s| s.chars().next());
-    text.get(end) == Some(&mark)
-        && !escaped(text, end)
-        && text.get(start + 1..end).is_some_and(|inner| {
-            !inner.iter().enumerate().any(|(offset, byte)| {
-                *byte == mark
-                    && text
-                        .get(start + offset)
-                        .is_some_and(|before| !before.is_ascii_whitespace())
-            })
-        })
-        && text
-            .get(end - 1)
-            .is_some_and(|before| *before != mark && !before.is_ascii_whitespace())
-        && !after.is_some_and(char::is_alphanumeric)
 }
 
 fn escaped(text: &[u8], at: usize) -> bool {

@@ -14,6 +14,7 @@ mod extension;
 mod facts;
 mod inline;
 mod node;
+mod pairs;
 mod spans;
 mod state;
 mod table;
@@ -258,6 +259,27 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
     while at < nodes.len() {
         let from = at;
         at = repair_group(w, doc, from, out.is_empty());
+        // C2-W-146: test the written text with the five pair rules and reparse each escape round.
+        for _ in 0..16 {
+            let asked = pairs::asked(w, nodes.get(from..at).unwrap_or(&[]));
+            if asked.is_empty() {
+                break;
+            }
+            let saved_lines = w.lines.clone();
+            let saved_escapes = w.sp.escapes.clone();
+            let saved_losses = w.sp.losses.len();
+            for (node, offset) in asked {
+                w.add_escape(node, offset);
+            }
+            let next = repair_group(w, doc, from, out.is_empty());
+            if w.sp.losses.len() > saved_losses {
+                w.lines = saved_lines;
+                w.sp.escapes = saved_escapes;
+                w.sp.losses.truncate(saved_losses);
+                break;
+            }
+            at = next;
+        }
         if w.lines.is_empty() {
             continue;
         }
