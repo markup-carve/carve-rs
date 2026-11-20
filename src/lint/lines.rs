@@ -196,7 +196,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             quotes: fact.quotes,
             table_row: fact.flags & TABLE_ROW != 0,
             start,
-            path: paragraph.map_or_else(String::new, |r| r.path.clone()),
+            path: paragraph.map_or_else(String::new, |r| r.path.to_string()),
             kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
             paragraph: paragraph.is_some(),
             paragraph_in_div: paragraph

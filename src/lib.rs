@@ -650,6 +650,35 @@ pub(crate) fn parse_diagnostics(input: &str, opts: &Options) -> Vec<diagnostic::
     diagnostics
 }
 
+/// The value of [`tree_json`], without the text round trip.
+pub(crate) fn tree_json_value(input: &str, opts: &Options) -> Option<serde_json::Value> {
+    tree_value_and_diagnostics(input, opts, opts, true).0
+}
+
+/// The value of [`tree_json`] under `tree_opts` and the [`parse_diagnostics`]
+/// under `opts`, from one parse when `same` says both parse alike.
+pub(crate) fn tree_value_and_diagnostics(
+    input: &str,
+    tree_opts: &Options,
+    opts: &Options,
+    same: bool,
+) -> (Option<serde_json::Value>, Vec<diagnostic::Diagnostic>) {
+    let arena = Arena::for_input(input);
+    let mut diagnostics = Vec::new();
+    let prepared = prepare(input, tree_opts, &arena, &mut diagnostics);
+    let value = prepared.ok().map(|(doc, _, files)| {
+        if files.is_none() && tree_opts.includes.is_none() {
+            tree_value(&doc)
+        } else {
+            stamped_value(&doc)
+        }
+    });
+    if !same {
+        diagnostics = parse_diagnostics(input, opts);
+    }
+    (value, diagnostics)
+}
+
 /// C2-B-083, C2-B-085: only the first definition of each label wins.
 fn duplicate_definitions(
     doc: &ast::Document<'_>,
@@ -1302,12 +1331,6 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
 /// The JSON of a tree (C2-A-165).
 #[must_use]
 pub fn to_json(doc: &ast::Document<'_>) -> String {
-    #[derive(serde::Serialize)]
-    #[serde(tag = "type")]
-    enum Root<'r, 'a> {
-        #[serde(rename = "document")]
-        Document(&'r ast::Document<'a>),
-    }
     serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
 }
 
@@ -1321,6 +1344,18 @@ pub(crate) fn owned_json(doc: &ast::owned::Document) -> String {
         Document(&'r ast::owned::Document),
     }
     serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
+}
+
+/// The value [`to_json`] writes, without the text round trip.
+fn tree_value(doc: &ast::Document<'_>) -> serde_json::Value {
+    serde_json::to_value(Root::Document(doc)).unwrap_or_default()
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "type")]
+enum Root<'r, 'a> {
+    #[serde(rename = "document")]
+    Document(&'r ast::Document<'a>),
 }
 
 #[cfg(test)]

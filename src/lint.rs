@@ -2,14 +2,15 @@
 
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
-use serde::Deserialize as _;
 use serde_json::Value;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 mod controls;
 mod includes;
+mod legacy;
 mod lines;
 mod nodes;
 
@@ -62,13 +63,16 @@ fn active(code: &str, opts: &LintOptions) -> bool {
 /// Runs enabled lint rules and returns catalog diagnostics in source order.
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
-    let mut out = lint_core(source, opts);
     let parse = crate::Options {
         includes: opts.includes.clone(),
         heading_ids: opts.heading_ids,
         ..crate::Options::default()
     };
-    out.extend(crate::parse_diagnostics(source, &parse));
+    let same = opts.includes.is_none() && opts.heading_ids == crate::options::HeadingIds::default();
+    let (tree, diagnostics) =
+        crate::tree_value_and_diagnostics(source, &crate::Options::default(), &parse, same);
+    let mut out = lint_core(source, opts, tree.as_ref());
+    out.extend(diagnostics);
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
     }
@@ -159,19 +163,21 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     }
 }
 
-fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
+fn lint_core(source: &str, opts: &LintOptions, tree: Option<&Value>) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let tree = parse_tree_value(&crate::tree_json(source, &crate::Options::default()));
-    let positions = Ranges::new(source, tree.as_ref().map_or_else(Vec::new, node_ranges));
+    let positions = Ranges::new(source, tree.map_or_else(Vec::new, node_ranges));
     let mut out = Vec::new();
-    for warning in carve_0_1::lint_carve(source) {
+    for warning in tree
+        .as_ref()
+        .map_or_else(Vec::new, |tree| legacy::warnings(source, tree))
+    {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
             continue;
         }
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
     lines::scan(source, opts, &positions.all, &mut out);
-    if let Some(tree) = tree.as_ref() {
+    if let Some(tree) = tree {
         nodes::scan(source, opts, tree, &mut out);
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
@@ -194,7 +200,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         })
     });
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
-    if let Some(tree) = tree.as_ref() {
+    if let Some(tree) = tree {
         controls::filter(source, out, tree)
     } else {
         out
@@ -202,7 +208,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
 }
 
 fn skip_legacy_warning(
-    warning: &carve_0_1::LintWarning,
+    warning: &legacy::Warning,
     source: &str,
     opts: &LintOptions,
     parsed: &Source<'_>,
@@ -254,14 +260,14 @@ fn skip_legacy_warning(
     skip_legacy_context(warning, source, parsed, positions)
 }
 
-fn hidden_html_tag(warning: &carve_0_1::LintWarning, positions: &Ranges<'_>) -> bool {
+fn hidden_html_tag(warning: &legacy::Warning, positions: &Ranges<'_>) -> bool {
     positions.around(warning.start).any(|range| {
         range.kind == "comment" && range.start <= warning.start && warning.end <= range.end
     })
 }
 
 fn skip_legacy_context(
-    warning: &carve_0_1::LintWarning,
+    warning: &legacy::Warning,
     source: &str,
     parsed: &Source<'_>,
     positions: &Ranges<'_>,
@@ -342,7 +348,7 @@ fn skip_legacy_context(
 
 fn overlap_in_centered_table(
     source: &str,
-    warning: &carve_0_1::LintWarning,
+    warning: &legacy::Warning,
     positions: &Ranges<'_>,
 ) -> bool {
     positions.around(warning.start).any(|range| {
@@ -356,7 +362,7 @@ fn overlap_in_centered_table(
 }
 
 fn convert_legacy_warning(
-    warning: carve_0_1::LintWarning,
+    warning: legacy::Warning,
     source: &str,
     parsed: &Source<'_>,
     positions: &Ranges<'_>,
@@ -364,7 +370,7 @@ fn convert_legacy_warning(
     let mut diagnostic = Diagnostic::new(
         warning.rule,
         &[],
-        warning.file.as_deref(),
+        None,
         Some(parsed.pos(warning.start, warning.end)),
     );
     if diagnostic.message.is_empty() || catalog_message_has_slots(warning.rule) {
@@ -744,7 +750,7 @@ fn colon_fence_mismatches(
                         Some(positions.pos(at, end)),
                     );
                     finding.message = colon_fence_message(source, ranges, at, end, candidate);
-                    finding.path = Some(container.path.clone());
+                    finding.path = Some(container.path.to_string());
                     output.push(finding);
                 }
             }
@@ -792,7 +798,7 @@ fn colon_crosses_owner(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
             "list_item" | "block_quote" | "footnote" | "definition_description"
         ) && current
             .path
-            .strip_prefix(&range.path)
+            .strip_prefix(range.path.as_str())
             .is_some_and(|rest| rest.starts_with("/children/"))
             && current.start <= at
             && at <= current.end
@@ -1084,7 +1090,7 @@ impl<'a> Ranges<'a> {
 struct Range {
     start: usize,
     end: usize,
-    path: String,
+    path: LazyPath,
     kind: String,
     start_line: usize,
     end_line: usize,
@@ -1092,10 +1098,80 @@ struct Range {
     footnote_key: Option<String>,
 }
 
+/// A node's pointer, written out only when a rule reads it.
+struct LazyPath {
+    step: Option<Rc<Step>>,
+    len: usize,
+    text: OnceCell<String>,
+}
+
+struct Step {
+    segment: Segment,
+    previous: Option<Rc<Step>>,
+}
+
+enum Segment {
+    Key(Rc<str>),
+    Index(usize),
+}
+
+impl LazyPath {
+    const fn len(&self) -> usize {
+        self.len
+    }
+
+    fn as_str(&self) -> &str {
+        self.text.get_or_init(|| {
+            use std::fmt::Write as _;
+            let mut steps = Vec::new();
+            let mut current = self.step.as_deref();
+            while let Some(step) = current {
+                steps.push(&step.segment);
+                current = step.previous.as_deref();
+            }
+            let mut text = String::with_capacity(self.len);
+            for segment in steps.into_iter().rev() {
+                text.push('/');
+                match segment {
+                    Segment::Key(key) => text.push_str(key),
+                    Segment::Index(index) => {
+                        let _ = write!(text, "{index}");
+                    }
+                }
+            }
+            text
+        })
+    }
+}
+
+impl std::ops::Deref for LazyPath {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for LazyPath {
+    fn eq(&self, other: &&str) -> bool {
+        self.len == other.len() && self.as_str() == *other
+    }
+}
+
 fn node_ranges(tree: &Value) -> Vec<Range> {
     let mut out = Vec::new();
-    let mut pending = vec![(tree, String::new())];
-    while let Some((value, path)) = pending.pop() {
+    let mut keys: HashMap<&str, Rc<str>> = HashMap::new();
+    let mut pending: Vec<(&Value, Option<Rc<Step>>, usize)> = vec![(tree, None, 0)];
+    while let Some((value, step, len)) = pending.pop() {
+        let child = |segment: Segment, width: usize| {
+            (
+                Some(Rc::new(Step {
+                    segment,
+                    previous: step.clone(),
+                })),
+                len + 1 + width,
+            )
+        };
         match value {
             Value::Object(map) => {
                 if let (Some(pos), Some(kind)) = (value.get("pos"), value["type"].as_str()) {
@@ -1109,7 +1185,11 @@ fn node_ranges(tree: &Value) -> Vec<Range> {
                     out.push(Range {
                         start,
                         end,
-                        path: path.clone(),
+                        path: LazyPath {
+                            step: step.clone(),
+                            len,
+                            text: OnceCell::new(),
+                        },
                         kind: kind.into(),
                         start_line,
                         end_line,
@@ -1119,20 +1199,22 @@ fn node_ranges(tree: &Value) -> Vec<Range> {
                             .flatten(),
                     });
                 }
-                pending.extend(
-                    map.iter()
-                        .filter(|(_, value)| matches!(value, Value::Object(_) | Value::Array(_)))
-                        .map(|(key, value)| (value, format!("{path}/{key}"))),
-                );
+                for (key, item) in map {
+                    if matches!(item, Value::Object(_) | Value::Array(_)) {
+                        let name = keys.entry(key).or_insert_with(|| Rc::from(key.as_str()));
+                        let (next, width) = child(Segment::Key(Rc::clone(name)), key.len());
+                        pending.push((item, next, width));
+                    }
+                }
             }
             Value::Array(items) => {
-                pending.extend(
-                    items
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, value)| matches!(value, Value::Object(_) | Value::Array(_)))
-                        .map(|(i, v)| (v, format!("{path}/{i}"))),
-                );
+                for (i, item) in items.iter().enumerate() {
+                    if matches!(item, Value::Object(_) | Value::Array(_)) {
+                        let digits = i.checked_ilog10().map_or(1, |d| d as usize + 1);
+                        let (next, width) = child(Segment::Index(i), digits);
+                        pending.push((item, next, width));
+                    }
+                }
             }
             _ => {}
         }
@@ -1140,20 +1222,12 @@ fn node_ranges(tree: &Value) -> Vec<Range> {
     out
 }
 
-fn parse_tree_value(text: &str) -> Option<Value> {
-    let mut parser = serde_json::Deserializer::from_str(text);
-    parser.disable_recursion_limit();
-    let value = Value::deserialize(&mut parser).ok()?;
-    parser.end().ok()?;
-    Some(value)
-}
-
 fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
     ranges
         .around(start)
         .filter(|r| r.start <= start && end <= r.end)
         .max_by_key(|r| r.path.len())
-        .map(|r| r.path.clone())
+        .map(|r| r.path.to_string())
 }
 
 #[cfg(test)]
