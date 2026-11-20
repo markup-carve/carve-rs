@@ -89,8 +89,6 @@ pub struct Writer<'t> {
     pub kinds_below: AddrMap<usize, u8>,
     pub abbreviations: Vec<(String, String)>,
     pub link_keys: HashSet<String>,
-    /// The source of the last read-back parse of a group.
-    pub parsed: Option<String>,
     pub prewritten: Option<usize>,
     pub parses: usize,
     pub probes: HashMap<String, ProbeResult<'t>>,
@@ -125,7 +123,6 @@ impl<'t> Writer<'t> {
             kinds_below: AddrMap::default(),
             abbreviations: Vec::new(),
             link_keys: HashSet::new(),
-            parsed: None,
             prewritten: None,
             parses: 0,
             probes: HashMap::new(),
