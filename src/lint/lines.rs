@@ -499,6 +499,13 @@ fn thematic_marker(
     let candidate = tail.trim();
     let after_paragraph =
         previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
+    if after_paragraph
+        && (run(candidate, "-", 3) || run(candidate, "=", 3))
+        && prefix > line.text.len() - line.text.trim_start_matches([' ', '\t']).len()
+        && list_marker(line.text.trim_start_matches([' ', '\t']))
+    {
+        return;
+    }
     if (run(candidate, "=", 3) || run(candidate, "-", 3)) && after_paragraph {
         sink.emit(
             "setext-heading-underline",

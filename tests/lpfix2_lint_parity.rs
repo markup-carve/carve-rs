@@ -31,6 +31,10 @@ fn list_opener_uses_its_owner_and_visual_column() {
 #[test]
 fn hyphen_runs_use_the_parsed_paragraph_and_item() {
     assert_eq!(
+        spans("- a\n- ---\n", "setext-heading-underline"),
+        Vec::new()
+    );
+    assert_eq!(
         spans("> { #id }\n-----\n", "setext-heading-underline"),
         vec![(10, 15)]
     );
