@@ -4,6 +4,7 @@
 //! are not compared).
 
 use crate::hash::AddrHasher;
+use crate::hash::{AddrMap, AddrSet};
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -447,8 +448,8 @@ pub fn plain_text(nodes: &[Value]) -> String {
 }
 
 /// The JSON pointer of each wanted node in the document, by identity.
-pub fn pointers(doc: &Value, wanted: &std::collections::HashSet<usize>) -> HashMap<usize, String> {
-    let mut found = HashMap::new();
+pub fn pointers(doc: &Value, wanted: &AddrSet<usize>) -> AddrMap<usize, String> {
+    let mut found = AddrMap::default();
     if wanted.is_empty() {
         return found;
     }

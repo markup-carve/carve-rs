@@ -6,6 +6,7 @@ use super::attrs::{BlockParts, brace_block, plain_block, quoted};
 use super::node::{N, children, has, id, s, text, ty};
 use super::state::{Writer, lose, trim_end};
 use crate::chars::fold_label;
+use crate::hash::AddrSet;
 use serde_json::Value;
 
 /// The content stands in a table cell: a pipe in text takes a backslash (C2-W-098).
@@ -612,7 +613,7 @@ fn atom_end(alt: &[u8], at: usize) -> Option<usize> {
     None
 }
 
-fn raw_atoms(alt: &[u8], lone: &mut std::collections::HashSet<usize>) -> Vec<bool> {
+fn raw_atoms(alt: &[u8], lone: &mut AddrSet<usize>) -> Vec<bool> {
     let mut raw = vec![false; alt.len()];
     let mut at = 0;
     while at < alt.len() {
@@ -638,7 +639,7 @@ fn raw_atoms(alt: &[u8], lone: &mut std::collections::HashSet<usize>) -> Vec<boo
     raw
 }
 
-fn unpartnered(alt: &[u8], raw: &[bool], lone: &mut std::collections::HashSet<usize>) {
+fn unpartnered(alt: &[u8], raw: &[bool], lone: &mut AddrSet<usize>) {
     let mut open: Vec<usize> = Vec::new();
     let mut notes: Vec<usize> = Vec::new();
     for (at, &ch) in alt.iter().enumerate() {
@@ -665,7 +666,7 @@ fn unpartnered(alt: &[u8], raw: &[bool], lone: &mut std::collections::HashSet<us
 /// end, and escapes a bracket with no partner.
 fn alt_source(alt: &str) -> String {
     let bytes = alt.as_bytes();
-    let mut lone = std::collections::HashSet::new();
+    let mut lone = AddrSet::default();
     let raw = raw_atoms(bytes, &mut lone);
     unpartnered(bytes, &raw, &mut lone);
     let mut out = String::with_capacity(alt.len() + 4);

@@ -2,6 +2,7 @@
 //! spellings the reparse asked for (C2-W-089), the sidecar facts and the losses.
 
 use super::node::{N, id, ty};
+use crate::hash::{AddrMap, AddrSet};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -60,11 +61,11 @@ pub struct ProbeResult<'t> {
 /// The state a probe of the repair swaps in and out (write-check).
 #[derive(Debug, Default)]
 pub struct Spelling<'t> {
-    pub escapes: HashMap<usize, Vec<usize>>,
-    pub attempts: HashMap<usize, Attempt<'t>>,
+    pub escapes: AddrMap<usize, Vec<usize>>,
+    pub attempts: AddrMap<usize, Attempt<'t>>,
     pub losses: Vec<Loss>,
-    pub lost: HashSet<usize>,
-    pub lost_keys: HashMap<usize, Vec<String>>,
+    pub lost: AddrSet<usize>,
+    pub lost_keys: AddrMap<usize, Vec<String>>,
 }
 
 pub struct Writer<'t> {
@@ -75,24 +76,24 @@ pub struct Writer<'t> {
     pub lead: Option<String>,
     pub bare_dot_lead: bool,
     pub sp: Spelling<'t>,
-    pub forms: HashMap<usize, u32>,
+    pub forms: AddrMap<usize, u32>,
     pub starts: Vec<(N<'t>, usize)>,
-    pub start_index: HashMap<usize, usize>,
-    pub facts: Option<HashMap<usize, Facts>>,
-    pub wrap_points: Option<HashMap<usize, Vec<usize>>>,
-    pub wrap_starts: Option<HashSet<usize>>,
+    pub start_index: AddrMap<usize, usize>,
+    pub facts: Option<AddrMap<usize, Facts>>,
+    pub wrap_points: Option<AddrMap<usize, Vec<usize>>>,
+    pub wrap_starts: Option<AddrSet<usize>>,
     pub align_tables: bool,
     pub blank_first: bool,
-    pub colon_runs: HashMap<usize, usize>,
-    pub kinds_below: HashMap<usize, u8>,
+    pub colon_runs: AddrMap<usize, usize>,
+    pub kinds_below: AddrMap<usize, u8>,
     pub abbreviations: Vec<(String, String)>,
     pub link_keys: HashSet<String>,
     pub parsed: Option<Value>,
     pub prewritten: Option<usize>,
     pub parses: usize,
     pub probes: HashMap<String, ProbeResult<'t>>,
-    pub node_ids: HashMap<usize, usize>,
-    pub stand_ins: HashMap<usize, HashMap<String, N<'t>>>,
+    pub node_ids: AddrMap<usize, usize>,
+    pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
     pub work_chars: usize,
     pub work_limit: usize,
@@ -110,24 +111,24 @@ impl<'t> Writer<'t> {
             lead: None,
             bare_dot_lead: false,
             sp: Spelling::default(),
-            forms: HashMap::new(),
+            forms: AddrMap::default(),
             starts: Vec::new(),
-            start_index: HashMap::new(),
+            start_index: AddrMap::default(),
             facts: None,
             wrap_points: None,
             wrap_starts: None,
             align_tables,
             blank_first: false,
-            colon_runs: HashMap::new(),
-            kinds_below: HashMap::new(),
+            colon_runs: AddrMap::default(),
+            kinds_below: AddrMap::default(),
             abbreviations: Vec::new(),
             link_keys: HashSet::new(),
             parsed: None,
             prewritten: None,
             parses: 0,
             probes: HashMap::new(),
-            node_ids: HashMap::new(),
-            stand_ins: HashMap::new(),
+            node_ids: AddrMap::default(),
+            stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),
             work_chars: 0,
             work_limit: usize::MAX,

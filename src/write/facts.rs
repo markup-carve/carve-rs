@@ -4,8 +4,9 @@
 
 use super::node::{N, children, classes, id, list, s, span, text, ty};
 use super::state::{Facts, Wrap, Writer};
+use crate::hash::{AddrMap, AddrSet};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 /// One node entry of a sidecar, as far as the writer reads it.
@@ -88,13 +89,13 @@ fn starts_fragment(doc: &Value, cell: &Value, path: &str) -> bool {
 /// C2-L-020, C2-L-021, C2-L-006: the wrap places of a cell; a contradiction drops all of its wraps.
 fn read_wraps<'t>(
     w: &mut Writer<'t>,
-    facts: &mut HashMap<usize, Facts>,
+    facts: &mut AddrMap<usize, Facts>,
     doc: N<'t>,
     cell: N<'t>,
     entry: &Entry,
 ) {
-    let mut cursors: HashMap<usize, Vec<usize>> = HashMap::new();
-    let mut starts: HashSet<usize> = HashSet::new();
+    let mut cursors: AddrMap<usize, Vec<usize>> = AddrMap::default();
+    let mut starts: AddrSet<usize> = AddrSet::default();
     for wrap in entry.facts.wraps.iter().flatten() {
         let ok = node_at(doc, &wrap.path).is_some_and(|node| {
             if ty(node) != "text" {
@@ -131,16 +132,16 @@ fn read_wraps<'t>(
             return;
         }
     }
-    let points = w.wrap_points.get_or_insert_with(HashMap::new);
+    let points = w.wrap_points.get_or_insert_with(AddrMap::default);
     points.extend(cursors);
     w.wrap_starts
-        .get_or_insert_with(HashSet::new)
+        .get_or_insert_with(AddrSet::default)
         .extend(starts);
 }
 
 /// Takes the facts of `entries` into the writer.
 pub fn read<'t>(w: &mut Writer<'t>, doc: N<'t>, entries: &[Entry]) {
-    let mut facts: HashMap<usize, Facts> = HashMap::new();
+    let mut facts: AddrMap<usize, Facts> = AddrMap::default();
     for entry in entries {
         let Some(node) = node_at(doc, &entry.path) else {
             continue;
