@@ -926,8 +926,8 @@ fn block_extension<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32
             } else {
                 format!("{attrs}\n{spelling}")
             };
-            let doc = super::check::parse_chunk_keys(w, &probe, None);
-            let parsed = children(&doc).first();
+            let chunk = super::check::Chunk::new(probe);
+            let parsed = children(chunk.parse_keys(w, None)).first();
             let same = if w.extensions.is_empty() {
                 super::extension::source_core_equivalent(node, parsed)
             } else {

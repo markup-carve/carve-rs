@@ -26,7 +26,7 @@ pub(crate) use table::display_width;
 use crate::api::{Entry, Range};
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
-use check::{Check, compare_blocks, escape_openers, exhausted, extend_chains, parse_chunk};
+use check::{Check, Chunk, compare_blocks, escape_openers, exhausted, extend_chains};
 use node::{N, children, id, span, text, ty};
 use serde_json::Value;
 use state::{Writer, lose};
@@ -583,19 +583,19 @@ fn defer_escapes(w: &mut Writer<'_>, deferred: &[(usize, usize)]) {
     }
 }
 
-fn group_tree<'t>(
+/// The group written with `escapes`, for a parse.
+fn group_chunk<'t>(
     w: &mut Writer<'t>,
     group: Arr<'t>,
     first: bool,
     escapes: AddrMap<usize, Vec<usize>>,
-) -> Value {
+) -> Chunk {
     w.sp.escapes = escapes;
     w.lines.clear();
     w.lead = None;
     w.clear_starts();
     blocks::write_blocks(w, group, "", 0, false);
-    let src = group_source(w, first);
-    parse_chunk(w, &src)
+    Chunk::new(group_source(w, first))
 }
 
 /// C2-W-088, C2-W-091: whether the test asks for the escape `at` of `node`.
@@ -625,9 +625,10 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
     let list = escaped.entry(id(node)).or_default();
     list.push(at);
     list.sort_unstable();
-    let without = group_tree(w, group, first, left);
-    let with = group_tree(w, group, first, escaped);
-    let asked = !node::trees_equal(&with, &without);
+    let without = group_chunk(w, group, first, left);
+    let without = without.parse(w);
+    let with = group_chunk(w, group, first, escaped);
+    let asked = !node::trees_equal(with.parse(w), without);
     w.sp.escapes = placed;
     w.lines = lines;
     w.lead = lead;
@@ -637,15 +638,15 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
 }
 
 fn compare_group<'t>(w: &mut Writer<'t>, doc: N<'t>, group: Arr<'t>, first: bool) -> Check<'t> {
-    let source = group_source(w, first);
-    let parsed = parse_chunk(w, &source);
+    let chunk = Chunk::new(group_source(w, first));
+    let parsed = chunk.parse(w);
     let mut c = Check {
-        source: Some(source),
+        source: Some(chunk.text().to_string()),
         ..Check::default()
     };
-    compare_blocks(w, &mut c, group, children(&parsed), doc);
-    escape_openers(w, &mut c, V::Json(&parsed), if first { 1 } else { 2 });
-    w.parsed = Some(parsed);
+    compare_blocks(w, &mut c, group, children(parsed), doc);
+    escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });
+    w.parsed = Some(chunk.text().to_string());
     c
 }
 
@@ -799,7 +800,11 @@ fn writer_equal(expected: V<'_>, actual: V<'_>) -> bool {
 
 /// C2-W-011: a block that the rounds let pass and that reads back as another tree is reported.
 fn report_unread(w: &mut Writer<'_>, group: Arr<'_>) {
-    let parsed: Arr<'_> = w.parsed.as_ref().map_or_else(Arr::empty, children);
+    // The last read-back parse again, uncounted: only a group that keeps a loss gets here.
+    let chunk = w.parsed.clone().map(Chunk::new);
+    let parsed: Arr<'_> = chunk
+        .as_ref()
+        .map_or_else(Arr::empty, |c| children(c.read(w, Some(&w.link_keys))));
     let unread = (0..group.len().max(parsed.len())).find(|&at| {
         !matches!((parsed.get(at), group.get(at)), (Some(block), Some(e)) if writer_equal(e, block))
     });
@@ -830,14 +835,12 @@ fn star_after_break(nodes: Arr<'_>, byte: usize, parent: Option<V<'_>>) -> bool 
     false
 }
 
-fn prunable_opener(w: &Writer<'_>, source: &str, at: usize) -> bool {
+/// `parsed` is the read-back parse of `source`, asked for only before a star.
+fn prunable_opener<'p>(source: &str, at: usize, parsed: &mut dyn FnMut() -> Option<V<'p>>) -> bool {
     let b = source.as_bytes();
     let next = b.get(at + 1).copied();
     if next == Some(b'*') {
-        return w
-            .parsed
-            .as_ref()
-            .is_some_and(|p| star_after_break(children(p), at, None));
+        return parsed().is_some_and(|p| star_after_break(children(p), at, None));
     }
     if next == Some(b'[') {
         let rest = source.get(at + 2..).unwrap_or("");
@@ -883,6 +886,10 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool) {
     let mut source = group_source(w, first);
     let raws = std::mem::take(&mut w.raw_refs);
     let mut at = source.find('\\');
+    // The parse of `source` as it stands, read again (uncounted) after a prune only where a star asks.
+    let kept = typed_arena::Arena::new();
+    let mut parsed: Option<V<'_>> = None;
+    let mut parsed_source = w.parsed.clone();
     while let Some(p) = at {
         if exhausted(w) {
             if let Some(host) = group.first() {
@@ -890,19 +897,28 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool) {
             }
             break;
         }
-        if prunable_opener(w, &source, p) && !in_raw(&source, p, &raws) {
+        let mut current = || {
+            if parsed.is_none() {
+                let chunk: &Chunk = kept.alloc(Chunk::new(parsed_source.take()?));
+                parsed = Some(chunk.read(w, Some(&w.link_keys)));
+            }
+            parsed
+        };
+        if prunable_opener(&source, p, &mut current) && !in_raw(&source, p, &raws) {
             let candidate = format!(
                 "{}{}",
                 source.get(..p).unwrap_or(""),
                 source.get(p + 1..).unwrap_or("")
             );
-            let parsed = parse_chunk(w, &candidate);
-            let kids = children(&parsed);
+            let chunk = Chunk::new(candidate);
+            let kids = children(chunk.parse(w));
             if kids.len() == group.len()
                 && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
             {
-                source = candidate;
-                w.parsed = Some(parsed);
+                source = chunk.text().to_string();
+                w.parsed = Some(source.clone());
+                parsed = None;
+                parsed_source = Some(source.clone());
                 at = source.get(p..).and_then(|r| r.find('\\')).map(|q| q + p);
                 continue;
             }

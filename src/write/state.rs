@@ -89,7 +89,8 @@ pub struct Writer<'t> {
     pub kinds_below: AddrMap<usize, u8>,
     pub abbreviations: Vec<(String, String)>,
     pub link_keys: HashSet<String>,
-    pub parsed: Option<Value>,
+    /// The source of the last read-back parse of a group.
+    pub parsed: Option<String>,
     pub prewritten: Option<usize>,
     pub parses: usize,
     pub probes: HashMap<String, ProbeResult<'t>>,

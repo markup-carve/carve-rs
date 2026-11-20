@@ -455,8 +455,8 @@ fn collapsed_content(w: &mut Writer<'_>, node: V<'_>, content: String, flags: u3
 
 fn reads_as_collapsed(w: &mut Writer<'_>, candidate: &str, key: &str, kids: Arr<'_>) -> bool {
     let keys = std::iter::once(key.to_string()).collect();
-    let doc = super::check::parse_with(w, &format!("[{candidate}][]\n"), &keys);
-    let Some(p) = children(&doc).single() else {
+    let chunk = super::check::Chunk::new(format!("[{candidate}][]\n"));
+    let Some(p) = children(chunk.parse_keys(w, Some(&keys))).single() else {
         return false;
     };
     let Some(link) = children(p).single() else {
@@ -555,8 +555,8 @@ fn collapsed_alt(w: &mut Writer<'_>, node: V<'_>, alt: String) -> String {
         return alt;
     }
     let keys = std::iter::once(key.to_string()).collect();
-    let doc = super::check::parse_with(w, &format!("![{key}][]\n"), &keys);
-    let ok = children(&doc)
+    let chunk = super::check::Chunk::new(format!("![{key}][]\n"));
+    let ok = children(chunk.parse_keys(w, Some(&keys)))
         .single()
         .and_then(|p| children(p).single())
         .is_some_and(|img| {
@@ -772,8 +772,8 @@ fn inline_extension<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
             s(source, "body").unwrap_or("")
         );
         let same = w.extensions.is_empty() || {
-            let doc = super::check::parse_chunk(w, &format!("{form}{}\n", plain_block(node)));
-            children(&doc).single().is_some_and(|p| {
+            let chunk = super::check::Chunk::new(format!("{form}{}\n", plain_block(node)));
+            children(chunk.parse(w)).single().is_some_and(|p| {
                 ty(p) == "paragraph"
                     && children(p)
                         .single()
