@@ -91,3 +91,31 @@ fn without_the_renderer_the_fallback_is_written() {
         "<pre><code class=\"language-img\">&lt;svg/&gt;\n</code></pre>"
     );
 }
+
+#[test]
+fn c2_x_059_authored_src_and_alt_of_any_case_leave_the_attribute_list() {
+    for (attrs, alt) in [
+        ("{src=\"https://x/y\" alt=\"X\"}", "X"),
+        ("{ALT=\"D\"}", "D"),
+        ("{Src=\"q\" Alt=\"z\" .c}", "z"),
+    ] {
+        let request = serde_json::json!({
+            "call": "render",
+            "source": format!("{attrs}\n```img\n<svg><rect/></svg>\n```\n"),
+            "options": {
+                "extensions": ["carve.imgFence.img"],
+                "renderers": {"carve.imgFence.img": "standard"},
+            },
+        });
+        let response: serde_json::Value =
+            serde_json::from_str(&carve::api::json::call(&request.to_string())).unwrap();
+        let html = response["ok"]["html"].as_str().unwrap_or_default();
+        assert_eq!(html.matches("src=").count(), 1, "{html}");
+        assert_eq!(
+            html.to_ascii_lowercase().matches("alt=").count(),
+            1,
+            "{html}"
+        );
+        assert!(html.contains(&format!("alt=\"{alt}\"")), "{html}");
+    }
+}

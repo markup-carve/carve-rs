@@ -176,17 +176,24 @@ pub(crate) fn render(node: &Value, attributes: &dyn Fn(&Value) -> String) -> Opt
     {
         if let Some(value) = pairs
             .iter()
-            .find(|pair| pair.get(0).and_then(Value::as_str) == Some("alt"))
+            .find(|pair| key_is(pair, "alt"))
             .and_then(|pair| pair.get(1).and_then(Value::as_str))
         {
             crate::html::esc::attr(value, &mut alt);
         }
-        pairs.retain(|pair| pair.get(0).and_then(Value::as_str) != Some("alt"));
+        // C2-H-013: the image's own `src` and `alt` replace authored keys of either name.
+        pairs.retain(|pair| !key_is(pair, "alt") && !key_is(pair, "src"));
     }
     Some(format!(
         "<img src=\"{url}\" alt=\"{alt}\"{}>",
         attributes(&rest)
     ))
+}
+
+fn key_is(pair: &Value, name: &str) -> bool {
+    pair.get(0)
+        .and_then(Value::as_str)
+        .is_some_and(|key| key.eq_ignore_ascii_case(name))
 }
 
 /// C2-X-059, C2-X-060: the sanitized SVG as a `data:image/svg+xml` URL.
