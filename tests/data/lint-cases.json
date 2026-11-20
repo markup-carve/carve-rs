@@ -148,7 +148,7 @@
     "origin": "../carve/tests/corpus/600-a-delimiter-that-is-part-of-a-larger-character-is-text-5.crv",
     "trigger": "~a~‍b~\n",
     "near": "‍b~\n",
-    "fragment": "~a~",
+    "fragment": "~a~‍b~",
     "message": "A bare tilde pair is text in 0.2. Write the braced strike."
   },
   {

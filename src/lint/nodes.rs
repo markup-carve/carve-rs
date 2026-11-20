@@ -1824,55 +1824,9 @@ fn semantic_key_in_block(raw: &str, open: usize, end: usize, name: &str) -> Opti
 }
 
 fn text_delimiters(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    for (mark, code) in [
-        ("**", "markdown-strong-double-star"),
-        ("~~", "markdown-strikethrough-double-tilde"),
-    ] {
-        if let Some(start) = value.find(mark)
-            && let Some(tail) = value.get(start + mark.len()..)
-            && let Some(end) = tail.find(mark)
-            && end > 0
-        {
-            let to = start + mark.len() + end + mark.len();
-            let byte = mark.as_bytes().first().copied().unwrap_or_default();
-            let open = value.as_bytes().get(start.wrapping_sub(1)) != Some(&byte)
-                && value.as_bytes().get(start + mark.len()) != Some(&byte);
-            let close = value.as_bytes().get(to - mark.len() - 1) != Some(&byte)
-                && value.as_bytes().get(to) != Some(&byte);
-            let inner = &tail[..end];
-            if open
-                && close
-                && !escaped(value.as_bytes(), start)
-                && !escaped(value.as_bytes(), to - mark.len())
-                && !inner.starts_with(char::is_whitespace)
-                && !inner.ends_with(char::is_whitespace)
-                && !inner.contains("\n\n")
-                && (mark != "**" || !inner.contains('*'))
-            {
-                sink.emit_range(code, from + start, from + to, item.path(), &[], 0);
-            }
-        }
-    }
-    for (mark, code) in [
-        (b'_', "deprecated-bare-underline"),
-        (b'~', "deprecated-bare-strike"),
-        (b'=', "deprecated-bare-highlight"),
-    ] {
-        let mut offset = 0;
-        while let Some((start, end)) = value
-            .as_bytes()
-            .get(offset..)
-            .and_then(|rest| bare_pair(rest, mark))
-        {
-            sink.emit_range(
-                code,
-                from + offset + start,
-                from + offset + end,
-                item.path(),
-                &[],
-                0,
-            );
-            offset += end;
+    for (mark, code) in crate::pair_marks::RULES {
+        for (start, end) in crate::pair_marks::pairs(value, mark, code) {
+            sink.emit_range(code, from + start, from + end, item.path(), &[], 0);
         }
     }
 }
@@ -1899,55 +1853,9 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     emphasis_before_attrs(item, sink, &value, from);
-    if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
-        let (block, end) = crate::attr::parse_block(&value, at)?;
-        let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
-        let quote_prefix = before == ">"
-            && !value.starts_with('>')
-            && sink
-                .source
-                .get(..from + at)
-                .is_some_and(|prefix| prefix.ends_with("> "));
-        (at > 0
-            && !block.empty
-            && !before.is_empty()
-            && !quote_prefix
-            && !escaped(value.as_bytes(), at))
-        .then_some((at, end))
-    }) {
-        sink.emit_range(
-            "unattached-inline-attribute",
-            from + at,
-            from + end,
-            item.path(),
-            &[],
-            0,
-        );
-    }
+    text_inline_attr(item, sink, &value, from);
     sigils(item, sink, &value, from);
-    if sink.options.platforms.iter().any(|p| p == "github")
-        && !parent_kinds(item).any(|kind| kind == "footnote")
-    {
-        for (at, _) in value.match_indices('#') {
-            let digits = value
-                .get(at + 1..)
-                .unwrap_or("")
-                .bytes()
-                .take_while(u8::is_ascii_digit)
-                .count();
-            if digits > 0 {
-                let token = value.get(at..at + digits + 1).unwrap_or("");
-                sink.emit_range(
-                    "platform-issue-reference",
-                    from + at,
-                    from + at + token.len(),
-                    item.path(),
-                    &[("host", "GitHub"), ("text", token)],
-                    0,
-                );
-            }
-        }
-    }
+    text_platform_refs(item, sink, &value, from);
     djot_text(item, sink, &value, from);
     unclosed_emphasis(item, sink, from);
     let parent = item.parents.as_deref().map_or("", |parent| parent.kind);
@@ -1971,6 +1879,60 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     bidi(item, sink);
+}
+
+fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
+    if sink.options.platforms.iter().any(|p| p == "github")
+        && !parent_kinds(item).any(|kind| kind == "footnote")
+    {
+        for (at, _) in value.match_indices('#') {
+            let digits = value
+                .get(at + 1..)
+                .unwrap_or("")
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            if digits > 0 {
+                let token = value.get(at..at + digits + 1).unwrap_or("");
+                sink.emit_range(
+                    "platform-issue-reference",
+                    from + at,
+                    from + at + token.len(),
+                    item.path(),
+                    &[("host", "GitHub"), ("text", token)],
+                    0,
+                );
+            }
+        }
+    }
+}
+
+fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
+    if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
+        let (block, end) = crate::attr::parse_block(value, at)?;
+        let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
+        let quote_prefix = before == ">"
+            && !value.starts_with('>')
+            && sink
+                .source
+                .get(..from + at)
+                .is_some_and(|prefix| prefix.ends_with("> "));
+        (at > 0
+            && !block.empty
+            && !before.is_empty()
+            && !quote_prefix
+            && !escaped(value.as_bytes(), at))
+        .then_some((at, end))
+    }) {
+        sink.emit_range(
+            "unattached-inline-attribute",
+            from + at,
+            from + end,
+            item.path(),
+            &[],
+            0,
+        );
+    }
 }
 
 fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: usize) {
@@ -2185,13 +2147,13 @@ fn paragraph_delimiters(item: &Item<'_>, sink: &mut Sink<'_>) {
     if let Some((from, _)) = bounds(item.node) {
         if raw.contains('\n') {
             for (mark, code) in [
-                (b'=', "deprecated-bare-highlight"),
-                (b'~', "deprecated-bare-strike"),
+                ("=", "deprecated-bare-highlight"),
+                ("~", "deprecated-bare-strike"),
             ] {
-                if let Some((start, end)) = bare_pair(raw.as_bytes(), mark)
-                    && raw.get(start..end).is_some_and(|pair| pair.contains('\n'))
-                {
-                    sink.emit_range(code, from + start, from + end, item.path(), &[], 0);
+                for (start, end) in crate::pair_marks::pairs(&raw, mark, code) {
+                    if raw.get(start..end).is_some_and(|pair| pair.contains('\n')) {
+                        sink.emit_range(code, from + start, from + end, item.path(), &[], 0);
+                    }
                 }
             }
             if let Some(start) = raw.find("**")
@@ -2453,56 +2415,6 @@ fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     bidi(item, sink);
-}
-
-fn bare_pair(text: &[u8], mark: u8) -> Option<(usize, usize)> {
-    for start in 0..text.len() {
-        if !bare_open(text, mark, start) {
-            continue;
-        }
-        for end in start + 2..text.len() {
-            if bare_close(text, mark, start, end) {
-                return Some((start, end + 1));
-            }
-        }
-    }
-    None
-}
-
-fn bare_open(text: &[u8], mark: u8, start: usize) -> bool {
-    let Some(prefix) = text
-        .get(..start)
-        .and_then(|part| std::str::from_utf8(part).ok())
-    else {
-        return false;
-    };
-    let before = prefix.chars().next_back();
-    text.get(start) == Some(&mark)
-        && !escaped(text, start)
-        && !before.is_some_and(|ch| ch == char::from(mark) || ch.is_alphanumeric())
-        && text
-            .get(start + 1)
-            .is_some_and(|next| *next != mark && !next.is_ascii_whitespace())
-}
-
-fn bare_close(text: &[u8], mark: u8, start: usize, end: usize) -> bool {
-    let after = std::str::from_utf8(text.get(end + 1..).unwrap_or_default())
-        .ok()
-        .and_then(|s| s.chars().next());
-    text.get(end) == Some(&mark)
-        && !escaped(text, end)
-        && text.get(start + 1..end).is_some_and(|inner| {
-            !inner.iter().enumerate().any(|(offset, byte)| {
-                *byte == mark
-                    && text
-                        .get(start + offset)
-                        .is_some_and(|before| !before.is_ascii_whitespace())
-            })
-        })
-        && text
-            .get(end - 1)
-            .is_some_and(|before| *before != mark && !before.is_ascii_whitespace())
-        && !after.is_some_and(char::is_alphanumeric)
 }
 
 fn escaped(text: &[u8], at: usize) -> bool {
