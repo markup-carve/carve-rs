@@ -48,6 +48,7 @@ impl<'a> V<'a> {
                 _ => node.view_get(key),
             },
             Self::Json(value) => value.get(key).map(Self::Json),
+            Self::Pos(pos) => pos_field(pos, key).map(|n| Self::Int(i64::from(n))),
             _ => self
                 .value_fields()?
                 .into_iter()
@@ -249,6 +250,18 @@ impl<'a> V<'a> {
         self.each(&mut |_, _| n += 1);
         Some(n)
     }
+}
+
+fn pos_field(pos: &Pos, key: &str) -> Option<u32> {
+    Some(match key {
+        "startLine" => pos.start_line,
+        "endLine" => pos.end_line,
+        "startColumn" => pos.start_column,
+        "endColumn" => pos.end_column,
+        "startOffset" => pos.start_offset,
+        "endOffset" => pos.end_offset,
+        _ => return None,
+    })
 }
 
 impl PartialEq<&str> for V<'_> {
