@@ -27,8 +27,14 @@ fn hyphen_runs_use_the_parsed_paragraph_and_item() {
         spans("> { #id }\n-----\n", "setext-heading-underline"),
         vec![(10, 15)]
     );
-    assert!(spans("> { #id }\n-----\n", "thematic-break-spelling").is_empty());
-    assert!(spans(":: t\n: d\n  - ----\n", "thematic-break-spelling").is_empty());
+    assert_eq!(
+        spans("> { #id }\n-----\n", "thematic-break-spelling"),
+        Vec::new()
+    );
+    assert_eq!(
+        spans(":: t\n: d\n  - ----\n", "thematic-break-spelling"),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -49,7 +55,10 @@ fn caption_checks_neighbor_behind_container_prefixes() {
 
 #[test]
 fn colon_run_uses_its_actual_open_container() {
-    assert!(spans("1. ::::\n:::\n", "colon-fence-length-mismatch").is_empty());
+    assert_eq!(
+        spans("1. ::::\n:::\n", "colon-fence-length-mismatch"),
+        Vec::new()
+    );
     assert_eq!(
         spans("{.c}\n::::\n:::\n", "colon-fence-length-mismatch"),
         vec![(10, 13)]
@@ -62,8 +71,14 @@ fn colon_run_uses_its_actual_open_container() {
 
 #[test]
 fn attribute_run_must_be_an_attribute_leaf() {
-    assert!(spans("a\n{.c}\nb\n", "unattached-block-attribute").is_empty());
-    assert!(spans(":: a\n{.c}\n", "unattached-block-attribute").is_empty());
+    assert_eq!(
+        spans("a\n{.c}\nb\n", "unattached-block-attribute"),
+        Vec::new()
+    );
+    assert_eq!(
+        spans(":: a\n{.c}\n", "unattached-block-attribute"),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -76,7 +91,10 @@ fn text_quote_prefix_does_not_hide_inline_attribute() {
 
 #[test]
 fn lazy_term_line_is_not_a_definition() {
-    assert!(spans("i) :: a\n[a]: u\n", "definition-in-container").is_empty());
+    assert_eq!(
+        spans("i) :: a\n[a]: u\n", "definition-in-container"),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -103,21 +121,35 @@ fn marker_in_nested_div_is_a_paragraph_line() {
 
 #[test]
 fn sibling_item_interrupts_a_term() {
-    assert!(spans("2) :: a\n10. -\n", "description-term-multi-line").is_empty());
+    assert_eq!(
+        spans("2) :: a\n10. -\n", "description-term-multi-line"),
+        Vec::new()
+    );
 }
 
 #[test]
 fn lazy_heading_lines_do_not_join_the_outline() {
-    assert!(spans(":x\n\t  # H\n ### H\n", "heading-level-skip").is_empty());
+    assert_eq!(
+        spans(":x\n\t  # H\n ### H\n", "heading-level-skip"),
+        Vec::new()
+    );
 }
 
 #[test]
 fn hidden_comment_body_has_no_html_tag() {
-    assert!(
+    assert_eq!(
         spans(
             "\t>:::\n## H\ni) i) %%%%\n       %%% \n>  a <b>\n",
             "bare-html-tag"
-        )
-        .is_empty()
+        ),
+        Vec::new()
+    );
+}
+
+#[test]
+fn later_html_tag_still_reports_after_a_comparison() {
+    assert_eq!(
+        spans("x < 3 and <b>text</b>\n", "bare-html-tag"),
+        vec![(10, 13)]
     );
 }

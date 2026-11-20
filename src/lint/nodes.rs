@@ -451,11 +451,12 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
                 Some("div" | "admonition" | "directive" | "figure_group")
             )
         })
-        .and_then(|node| bounds(node))
+        .and_then(bounds)
         .map(|(start, _)| {
             (
                 "a div",
-                source_column(sink.source, start).saturating_sub(1) as usize,
+                usize::try_from(source_column(sink.source, start).saturating_sub(1))
+                    .unwrap_or(usize::MAX),
             )
         })
     {

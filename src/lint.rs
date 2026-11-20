@@ -196,6 +196,13 @@ fn skip_legacy_warning(
     {
         return true;
     }
+    if warning.rule == "bare-html-tag"
+        && positions.around(warning.start).any(|range| {
+            range.kind == "comment" && range.start <= warning.start && warning.end <= range.end
+        })
+    {
+        return true;
+    }
     if warning.rule == "list-marker-below-content-column" {
         if source
             .get(warning.start..)
@@ -291,7 +298,6 @@ fn skip_legacy_context(
         "description-separator-below-content-column",
         "colon-fence-length-mismatch",
         "heading-level-skip",
-        "bare-html-tag",
     ]
     .contains(&warning.rule)
     {
