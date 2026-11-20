@@ -21,55 +21,61 @@ fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
     nodes.iter().collect()
 }
 
-/// The tree of `src` with the definitions of the document `w` writes.
-pub fn parse_chunk(w: &mut Writer<'_>, src: &str) -> Value {
-    let keys = std::mem::take(&mut w.link_keys);
-    let doc = parse_chunk_keys(w, src, Some(&keys));
-    w.link_keys = keys;
-    doc
+/// Written text for the read-back check and the arena its parse lives in: the
+/// tree is read through a view and dropped with the arena, never built as JSON.
+pub struct Chunk {
+    text: String,
+    arena: crate::Arena,
 }
 
-pub fn parse_with(w: &mut Writer<'_>, src: &str, keys: &HashSet<String>) -> Value {
-    parse_chunk_keys(w, src, Some(keys))
-}
+impl Chunk {
+    pub fn new(text: String) -> Self {
+        let arena = crate::Arena::for_input(&text);
+        Self { text, arena }
+    }
 
-/// The pre-resolve tree of `src` as JSON, with the link keys `keys` and the
-/// abbreviations of the document in scope. Each call counts toward the repair limit.
-pub fn parse_chunk_keys(w: &mut Writer<'_>, src: &str, keys: Option<&HashSet<String>>) -> Value {
-    w.parses += 1;
-    w.work_chars = w.work_chars.saturating_add(src.len());
-    let source = crate::source::Source::new(src);
-    let out = crate::block::scan(&source);
-    let arena = crate::Arena::for_input(src);
-    let (doc, _) = crate::tree::build_layered(&source, &arena, out.events, keys, &w.abbreviations);
-    let mut v = serde_json::to_value(&doc).unwrap_or_default();
-    if let Some(m) = v.as_object_mut() {
-        m.insert("type".into(), "document".into());
+    pub fn text(&self) -> &str {
+        &self.text
     }
-    if !w.extensions.is_empty() {
-        super::extension::apply_claims(&mut v, &w.extensions, src);
-    }
-    v
-}
 
-/// The tree of the whole written document, for the check of C2-W-144; it is
-/// no repair parse of a group, so it counts toward no limit.
-pub fn parse_written(w: &Writer<'_>, src: &str) -> Value {
-    let source = crate::source::Source::new(src);
-    let out = crate::block::scan(&source);
-    let arena = crate::Arena::for_input(src);
-    let (doc, _) = crate::tree::build_layered(
-        &source,
-        &arena,
-        out.events,
-        Some(&w.link_keys),
-        &w.abbreviations,
-    );
-    let mut v = serde_json::to_value(&doc).unwrap_or_default();
-    if !w.extensions.is_empty() {
-        super::extension::apply_claims(&mut v, &w.extensions, src);
+    /// The tree with the definitions of the document `w` writes.
+    pub fn parse<'c>(&'c self, w: &mut Writer<'_>) -> V<'c> {
+        let keys = std::mem::take(&mut w.link_keys);
+        let doc = self.parse_keys(w, Some(&keys));
+        w.link_keys = keys;
+        doc
     }
-    v
+
+    /// The pre-resolve tree with the link keys `keys` and the abbreviations of
+    /// the document in scope. Each call counts toward the repair limit.
+    pub fn parse_keys<'c>(&'c self, w: &mut Writer<'_>, keys: Option<&HashSet<String>>) -> V<'c> {
+        w.parses += 1;
+        w.work_chars = w.work_chars.saturating_add(self.text.len());
+        self.read(w, keys)
+    }
+
+    /// The tree as [`Self::parse_keys`] reads it, counted toward no limit.
+    pub fn read<'c>(&'c self, w: &Writer<'_>, keys: Option<&HashSet<String>>) -> V<'c> {
+        let source = crate::source::Source::new(&self.text);
+        let out = crate::block::scan(&source);
+        let (doc, _) =
+            crate::tree::build_layered(&source, &self.arena, out.events, keys, &w.abbreviations);
+        if w.extensions.is_empty() {
+            return V::Doc(self.arena.alloc(doc));
+        }
+        let mut v = serde_json::to_value(&doc).unwrap_or_default();
+        if let Some(m) = v.as_object_mut() {
+            m.insert("type".into(), "document".into());
+        }
+        super::extension::apply_claims(&mut v, &w.extensions, &self.text);
+        V::Json(self.arena.json(v))
+    }
+
+    /// The tree of the whole written document, for the check of C2-W-144; it is
+    /// no repair parse of a group, so it counts toward no limit.
+    pub fn read_written<'c>(&'c self, w: &Writer<'_>) -> V<'c> {
+        self.read(w, Some(&w.link_keys))
+    }
 }
 
 /// C2-W-133: whether the repair of the group has parsed more than its limit.
@@ -815,9 +821,10 @@ fn probe_round<'t>(
     expected: &[N<'t>],
     flags: u32,
 ) -> Option<(Vec<(N<'t>, usize)>, bool)> {
-    let source = format!("{}\n", write_inlines(w, expected, flags));
-    let parsed = parse_chunk(w, &source);
-    let block = children(&parsed).single()?;
+    let chunk = Chunk::new(format!("{}\n", write_inlines(w, expected, flags)));
+    let parsed = chunk.parse(w);
+    let source = chunk.text().to_string();
+    let block = children(parsed).single()?;
     if ty(block) != "paragraph" {
         return None;
     }
@@ -957,8 +964,10 @@ fn opens_block_alone<'t>(w: &mut Writer<'t>, c: &Check<'t>, nodes: &[N<'t>], fro
     if exhausted(w) {
         return false;
     }
-    let doc = parse_chunk(w, &line);
-    let opens = children(&doc).single().is_none_or(|p| ty(p) != "paragraph");
+    let chunk = Chunk::new(line.clone());
+    let opens = children(chunk.parse(w))
+        .single()
+        .is_none_or(|p| ty(p) != "paragraph");
     w.line_opens.insert(line, opens);
     opens
 }

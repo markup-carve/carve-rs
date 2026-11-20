@@ -2,7 +2,7 @@
 //! is written directly above the next line, and one that suppressed nothing
 //! keeps a blank line below it, where the tree reads back the same.
 
-use super::check::parse_written;
+use super::check::Chunk;
 use super::node::trees_equal;
 use super::state::Writer;
 use crate::hash::AddrSet;
@@ -19,12 +19,12 @@ pub fn keep_above(w: &Writer<'_>, written: String, original: Option<&str>) -> St
     if !written.contains(CONTROL) {
         return written;
     }
-    let tree_value = parse_written(w, &written);
-    let tree = V::Json(&tree_value);
+    let tree_chunk = Chunk::new(written.clone());
+    let tree = tree_chunk.read_written(w);
     let live: Vec<bool> = match original {
         Some(src) => {
-            let parsed_value = parse_written(w, src);
-            let parsed = V::Json(&parsed_value);
+            let parsed_chunk = Chunk::new(src.to_string());
+            let parsed = parsed_chunk.read_written(w);
             let lines: Vec<&str> = src.split('\n').collect();
             controls(parsed)
                 .iter()
@@ -81,8 +81,8 @@ fn restore_blanks(w: &Writer<'_>, written: String, tree: V<'_>, live: &[bool]) -
         return written;
     }
     let lines: Vec<&str> = written.split('\n').collect();
-    let parsed_value = parse_written(w, &written);
-    let parsed = V::Json(&parsed_value);
+    let parsed_chunk = Chunk::new(written.clone());
+    let parsed = parsed_chunk.read_written(w);
     let at: AddrSet<usize> = controls(parsed)
         .iter()
         .enumerate()
@@ -112,8 +112,8 @@ fn restore_blanks(w: &Writer<'_>, written: String, tree: V<'_>, live: &[bool]) -
 
 /// Whether `candidate` reads back as `tree` and gives no control comment a line it did not suppress.
 fn same_controls(w: &Writer<'_>, candidate: &str, tree: V<'_>, live: &[bool]) -> bool {
-    let parsed_value = parse_written(w, candidate);
-    let parsed = V::Json(&parsed_value);
+    let parsed_chunk = Chunk::new(candidate.to_string());
+    let parsed = parsed_chunk.read_written(w);
     let (Some(a), Some(b)) = (
         parsed.get("children").and_then(V::as_array),
         tree.get("children").and_then(V::as_array),
