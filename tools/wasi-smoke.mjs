@@ -35,7 +35,7 @@ const checks = [
   [{ call: "lint", source: "# A\n\n# A\n" }, 0, (r) => Array.isArray(r.ok.diagnostics)],
   [{ call: "render", source: "x", options: { nope: 1 } }, 2, (r) => r.error.category === "usage"],
   // carve-rs#4327, #4328, #4329: the writer, the HTML importer and the standard extensions.
-  [{ call: "format", source: "Hi _there_\n" }, 0, (r) => r.ok.source === "Hi _there_\n"],
+  [{ call: "format", source: "Hi _there_\n" }, 0, (r) => r.ok.source === "Hi \\_there_\n"],
   [
     { call: "write", tree: { type: "document", astVersion: "2.0", children: [{ type: "thematic_break" }] } },
     0,

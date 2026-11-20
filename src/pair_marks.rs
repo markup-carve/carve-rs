@@ -62,7 +62,8 @@ pub(crate) fn pairs(text: &str, mark: &str, id: &str) -> Vec<(usize, usize)> {
             at = start + mark.len();
             continue;
         }
-        let mut search = start + mark.len() + 1;
+        let after_opener = start + mark.len();
+        let mut search = after_opener + next(text, after_opener).map_or(0, char::len_utf8);
         let end = loop {
             let Some(candidate) = text
                 .get(search..)
