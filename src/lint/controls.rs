@@ -1,6 +1,5 @@
 //! C2-B-215 and C2-B-216 suppression from parsed line comment nodes.
 
-use super::parse_tree_value;
 use crate::diagnostic::Diagnostic;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -11,12 +10,8 @@ struct Control {
     ids: Vec<String>,
 }
 
-pub(super) fn filter(source: &str, findings: Vec<Diagnostic>) -> Vec<Diagnostic> {
-    let tree = crate::tree_json(source, &crate::Options::default());
-    let Some(tree) = parse_tree_value(&tree) else {
-        return findings;
-    };
-    let mut controls = collect(source, &tree);
+pub(super) fn filter(source: &str, findings: Vec<Diagnostic>, tree: &Value) -> Vec<Diagnostic> {
+    let mut controls = collect(source, tree);
     controls.sort_by_key(|control| control.line);
     let mut line_scoped: HashMap<u32, Vec<&Control>> = HashMap::new();
     for control in &controls {
