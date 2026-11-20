@@ -6,7 +6,7 @@
 )]
 
 use regex::{Regex, RegexBuilder};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -19,7 +19,7 @@ pub(super) struct Eval<'a> {
     pub line: &'a str,
     pub line_start: usize,
     pub vars: HashMap<String, Value>,
-    pub let_expr: HashMap<String, Value>,
+    pub let_expr: Option<&'a Map<String, Value>>,
     pub item: Option<Value>,
     pub spans: HashMap<String, (usize, usize)>,
     pub base: usize,
@@ -209,7 +209,7 @@ impl Eval<'_> {
         if let Some(value) = self.vars.get(name) {
             return value.clone();
         }
-        let Some(expression) = self.let_expr.get(name).cloned() else {
+        let Some(expression) = self.let_expr.and_then(|map| map.get(name)).cloned() else {
             return Value::Null;
         };
         let spans = self.spans.clone();

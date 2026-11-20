@@ -267,16 +267,11 @@ fn run_rule(
             .unwrap_or(""),
         line_start: record.line_start,
         vars: HashMap::new(),
-        let_expr: HashMap::new(),
+        let_expr: rule["let"].as_object(),
         item: None,
         spans: HashMap::new(),
         base: 0,
     };
-    if let Some(lets) = rule["let"].as_object() {
-        for (key, expr) in lets {
-            eval.let_expr.insert(key.clone(), expr.clone());
-        }
-    }
     let passed = rule.get("when").is_none_or(|when| eval.test(when));
     if !passed {
         return;
