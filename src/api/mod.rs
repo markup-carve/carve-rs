@@ -565,7 +565,17 @@ impl Carve {
         if self.standard.tabs && !standard::claim_tabs(value, opener) {
             failed.push("carve.tabs");
         }
-        let matchers = self.standard.inline_matchers();
+        let matchers: Vec<_> = self
+            .standard
+            .inline_matchers()
+            .into_iter()
+            .filter(|(source, _)| {
+                !self
+                    .matchers
+                    .names(extensions::Form::Inline)
+                    .any(|name| name == *source)
+            })
+            .collect();
         if !matchers.is_empty() {
             failed.extend(standard::claim_inline(value, &matchers));
         }
