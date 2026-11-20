@@ -204,9 +204,9 @@ fn lint_core<'a>(
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     if data_rules::data_mode() {
-        if let Some(tree) = tree {
+        if tree.is_some() {
             let start_model = std::time::Instant::now();
-            let records = data_model::records(source, tree, &positions.all);
+            let records = data_model::records(source, &positions.all);
             let elapsed_model = start_model.elapsed();
             out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
             let start_rules = std::time::Instant::now();
@@ -1143,6 +1143,8 @@ struct Range {
     start_line: usize,
     end_line: usize,
     has_attrs: bool,
+    form_block: bool,
+    image_line: bool,
     footnote_key: Option<String>,
 }
 
@@ -1244,6 +1246,13 @@ fn node_ranges(tree: V<'_>) -> Vec<Range> {
                     start_line: number("startLine"),
                     end_line: number("endLine"),
                     has_attrs: value.get("attrs").is_some(),
+                    form_block: value.at("form").as_str() == Some("block"),
+                    image_line: kind == "paragraph"
+                        && value
+                            .at("children")
+                            .as_array()
+                            .and_then(|children| children.single())
+                            .is_some_and(|child| child.ty().as_str() == Some("image")),
                     footnote_key: (kind == "footnote_ref")
                         .then(|| value.at("key").as_str().map(str::to_string))
                         .flatten(),

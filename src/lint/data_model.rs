@@ -198,18 +198,6 @@ fn column_of(source: &Source<'_>, at: usize, quotes: usize) -> usize {
     column.saturating_sub(origin)
 }
 
-fn block_node<'a>(tree: &'a Value, path: &str) -> Option<&'a Value> {
-    let mut found = tree;
-    for part in path.split('/').filter(|part| !part.is_empty()) {
-        found = if let Some(index) = part.parse::<usize>().ok() {
-            found.get(index)?
-        } else {
-            found.get(part)?
-        };
-    }
-    Some(found)
-}
-
 fn owner_record(
     path: &str,
     types: &HashMap<String, String>,
@@ -389,7 +377,7 @@ fn colon_layouts<'a>(
     colons
 }
 
-pub(super) fn records(source: &str, tree: &Value, ranges: &[Range]) -> Records {
+pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
     let clock = std::time::Instant::now();
     let positions = Source::new(source);
     let raw_lines = lines::data_lines(source, ranges);
@@ -435,8 +423,7 @@ pub(super) fn records(source: &str, tree: &Value, ranges: &[Range]) -> Records {
                 | "raw_block"
                 | "frontmatter"
                 | "comment"
-        ) || (range.kind == "comment"
-            && !block_node(tree, range.path.as_str()).is_some_and(|node| node["form"] == "block"))
+        ) || (range.kind == "comment" && !range.form_block)
         {
             continue;
         }
@@ -460,9 +447,7 @@ pub(super) fn records(source: &str, tree: &Value, ranges: &[Range]) -> Records {
         let end = line.start + line.text.len();
         let leaf = leaf_by_line[index];
         let leaf_kind = leaf.map_or("none", |range| {
-            if range.kind == "comment"
-                && block_node(tree, range.path.as_str()).is_some_and(|node| node["form"] == "block")
-            {
+            if range.kind == "comment" && range.form_block {
                 "comment_block"
             } else {
                 range.kind.as_str()
@@ -539,11 +524,11 @@ pub(super) fn records(source: &str, tree: &Value, ranges: &[Range]) -> Records {
             next_colon += 1;
         }
         active_colons.retain(|colon| {
+            if colon.closed && colon.end < line.start {
+                return false;
+            }
             if colon.end >= line.start.saturating_sub(1) {
                 return true;
-            }
-            if colon.closed {
-                return false;
             }
             source.get(colon.end..line.start).is_some_and(|gap| {
                 gap.bytes()
@@ -587,17 +572,11 @@ pub(super) fn records(source: &str, tree: &Value, ranges: &[Range]) -> Records {
     }
     let records_elapsed = clock.elapsed();
     for range in ranges {
-        let Some(node) = block_node(tree, range.path.as_str()) else {
-            continue;
-        };
-        if node.get("pos").is_none() {
-            continue;
-        }
         let at = range.start_line.saturating_sub(1);
         let Some(line) = raw_lines.get(at) else {
             continue;
         };
-        let is_inline = (range.kind == "comment" && node["form"] != "block")
+        let is_inline = (range.kind == "comment" && !range.form_block)
             || matches!(
                 range.kind.as_str(),
                 "text"
@@ -751,7 +730,7 @@ pub(super) fn records(source: &str, tree: &Value, ranges: &[Range]) -> Records {
             "opener_column":mark_column,"mark_column":mark_column,
             "opener_start":opener,"opener_text":opener_text,
             "after_quote_mark":text_at(source,line.start,range.start).ends_with("> "),"attributed":range.has_attrs,
-            "image_line":range.kind=="paragraph" && node["children"].as_array().is_some_and(|v|v.len()==1 && v[0]["type"]=="image"),
+            "image_line":range.image_line,
             "index":index,"line_index":at,"last_line_index":last_index,"prev_type":previous,
             "owner":owner_value,"item_owner":item_owner_value,"parent":parent_value});
         records.push(Record {
