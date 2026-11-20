@@ -33,6 +33,13 @@ fn core(source: &str) -> String {
     api::render(source, &Options::default()).unwrap()
 }
 
+fn code_text(output: &str) -> &str {
+    output
+        .split_once("<code class=\"language-php\">")
+        .and_then(|(_, rest)| rest.split_once("</code>"))
+        .map_or_else(|| panic!("no code element in {output}"), |(text, _)| text)
+}
+
 #[test]
 fn details_renders_a_disclosure_with_the_title_as_summary() {
     assert_eq!(
@@ -71,6 +78,73 @@ fn details_attributes_and_nesting_in_a_list() {
         ),
         "<ul>\n  <li>x\n    <details>\n      <summary>Details</summary>\n      <p>a</p>\n      <p>b</p>\n    </details>\n  </li>\n</ul>"
     );
+}
+
+#[test]
+fn details_preserves_fenced_code_text_at_every_depth() {
+    let cases = [
+        (
+            "one line",
+            "::: details \"Req\"\n```php\nx\n```\n:::\n",
+            "x\n",
+        ),
+        (
+            "multiple lines",
+            "::: details \"Req\"\n```php\nx\n  y\nz\n```\n:::\n",
+            "x\n  y\nz\n",
+        ),
+        (
+            "list item",
+            "- item\n\n  ::: details \"Req\"\n  ```php\n  x\n    y\n  ```\n  :::\n",
+            "x\n  y\n",
+        ),
+        (
+            "nested details",
+            ":::: details \"Outer\"\n::: details \"Req\"\n```php\nx\n  y\n```\n:::\n::::\n",
+            "x\n  y\n",
+        ),
+    ];
+    for (name, source, expected) in cases {
+        let output = html(source, extensions::details());
+        assert_eq!(code_text(&output), expected, "{name}: {output}");
+    }
+
+    assert_eq!(
+        html(
+            "::: details \"Req\"\n```php\nx\n```\n:::\n",
+            extensions::details()
+        ),
+        "<details>\n  <summary>Req</summary>\n  <pre><code class=\"language-php\">x\n</code></pre>\n</details>"
+    );
+}
+
+#[test]
+fn details_preserves_generated_fence_payloads() {
+    for n in 0..250 {
+        let payload = if n % 2 == 0 {
+            format!("line-{n}\n")
+        } else {
+            format!("line-{n}\n  value-{n}\n")
+        };
+        let mut indented = String::new();
+        for line in payload.lines() {
+            indented.push_str("  ");
+            indented.push_str(line);
+            indented.push('\n');
+        }
+        let sources = [
+            format!("::: details \"Req\"\n```php\n{payload}```\n:::\n"),
+            format!("- item\n\n  ::: details \"Req\"\n  ```php\n{indented}  ```\n  :::\n"),
+            format!(
+                ":::: details \"Outer\"\n::: details \"Req\"\n```php\n{payload}```\n:::\n::::\n"
+            ),
+            format!("::: details \"Req\"\ntext\n\n```php\n{payload}```\n\nafter\n:::\n"),
+        ];
+        for source in sources {
+            let output = html(&source, extensions::details());
+            assert_eq!(code_text(&output), payload, "variant {n}: {source}");
+        }
+    }
 }
 
 #[test]
