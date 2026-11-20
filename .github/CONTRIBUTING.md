@@ -14,7 +14,7 @@ Two names to keep straight: the crate publishes as `carve-lang` because `carve`
 was taken on crates.io, but Rust code imports it as `carve` and the CLI binary is
 `carve`.
 
-The minimum supported Rust version is **1.85** (edition 2024), set as
+The minimum supported Rust version is **1.88** (edition 2024), set as
 `rust-version` in `Cargo.toml`.
 
 ## Running the tests
