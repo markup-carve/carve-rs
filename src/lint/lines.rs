@@ -108,10 +108,14 @@ pub(super) fn scan(
         output,
         replacing: Vec::new(),
     };
+    let mut last_nonblank = None;
     for (index, line) in lines.iter().enumerate() {
         if line.opacity != Opacity::None {
             if line.opacity == Opacity::Frontmatter {
                 frontmatter_quote_marker(line, &mut sink);
+            }
+            if !line.text.trim().is_empty() {
+                last_nonblank = Some(index);
             }
             continue;
         }
@@ -124,8 +128,12 @@ pub(super) fn scan(
         if let Some((at, text, column, host)) = below {
             description_column(line, at, text, column, host, &mut sink);
         }
-        legacy(line, previous, &mut sink);
+        let prior_block = last_nonblank.and_then(|previous| lines.get(previous));
+        legacy(line, previous, prior_block, &mut sink);
         prose(line, index, previous, &lines, &mut sink);
+        if !line.text.trim().is_empty() {
+            last_nonblank = Some(index);
+        }
     }
     drop_replaced(sink.output, &sink.replacing);
 }
@@ -420,10 +428,10 @@ pub(super) fn list_marker(text: &str) -> bool {
 }
 
 fn starts_block(text: &str) -> bool {
-    ["> ", ":: ", ": "].iter().any(|p| text.starts_with(p))
+    (text == ">" || ["> ", ":: ", ": "].iter().any(|p| text.starts_with(p)))
         || valid_attribute_line(text)
         || heading_mark(text)
-        || text.starts_with('[') && text.contains("]:")
+        || (text.starts_with('[') || text.starts_with("*[")) && text.contains("]:")
 }
 
 /// C2-B-090: one or more glued valid attribute blocks alone on the line, spaced or with an id or a key (carve#6197).
@@ -443,7 +451,6 @@ fn heading_mark(text: &str) -> bool {
 }
 
 fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
     let content_start = line.content_start.unwrap_or(0);
     let content = line.text.get(content_start..).unwrap_or("").trim_start();
     let (prefix, tail) = marker_tail(&line.text);
@@ -452,17 +459,27 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     thematic_marker(line, previous, prefix, tail, sink);
     marker_as_text(line, content_start, content, sink);
     attribute_line_like(line, sink);
-    if line.text.starts_with('>')
-        && text.len() > 1
-        && !text.starts_with("> ")
-        && !text.starts_with(">\t")
+    let raw = sink
+        .source
+        .text()
+        .get(line.start..line.start + line.text.len())
+        .unwrap_or("");
+    if raw.starts_with('>')
+        && raw.len() > 1
+        && !raw.starts_with("> ")
+        && matches!(
+            line.kind.as_str(),
+            "paragraph" | "caption" | "definition_term" | "heading" | "cell_paragraph" | "line"
+        )
     {
+        let end = line.start + raw.trim_end_matches([' ', '\t']).len();
+        let text = raw.get(1..).unwrap_or("").trim_end().to_string();
         sink.emit(
             "blockquote-marker-without-space",
             line.start,
-            line.start + line.text.trim_end_matches([' ', '\t']).len(),
+            end,
             &line.path,
-            &[("text", text.get(1..).unwrap_or(""))],
+            &[("text", &text)],
         );
     }
     table_line(line, sink);
@@ -558,6 +575,7 @@ fn item_marker_underline(
 
 fn quote_list_marker(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     if line.text.starts_with("> ")
+        && !in_caption(line)
         && previous.is_some_and(|p| p.paragraph && p.text.starts_with("> "))
         && line.text.strip_prefix("> ").is_some_and(list_marker)
     {
@@ -589,7 +607,10 @@ fn marker_tail(text: &str) -> (usize, &str) {
 }
 
 fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut Sink<'_>) {
-    if line.paragraph && (content.starts_with("~~~") || content.starts_with(":::")) {
+    if line.kind == "paragraph"
+        && line.content_start.is_some()
+        && (content.starts_with("~~~") || content.starts_with(":::"))
+    {
         let what = if content.starts_with("~~~") {
             "a tilde fence"
         } else {
@@ -674,14 +695,19 @@ fn table_line(line: &Line, sink: &mut Sink<'_>) {
     }
 }
 
-fn legacy(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
-    legacy_markup(line, previous, sink);
+fn legacy(line: &Line, previous: Option<&Line>, prior_block: Option<&Line>, sink: &mut Sink<'_>) {
+    legacy_markup(line, previous, prior_block, sink);
     legacy_context(line, previous, sink);
 }
 
-fn legacy_markup(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+fn legacy_markup(
+    line: &Line,
+    previous: Option<&Line>,
+    prior_block: Option<&Line>,
+    sink: &mut Sink<'_>,
+) {
     legacy_authored(line, sink);
-    legacy_layout(line, previous, sink);
+    legacy_layout(line, previous, prior_block, sink);
 }
 
 fn legacy_authored(line: &Line, sink: &mut Sink<'_>) {
@@ -722,14 +748,22 @@ fn legacy_authored(line: &Line, sink: &mut Sink<'_>) {
     }
 }
 
-fn legacy_layout(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+fn legacy_layout(
+    line: &Line,
+    previous: Option<&Line>,
+    prior_block: Option<&Line>,
+    sink: &mut Sink<'_>,
+) {
     let text = line.text.trim();
     if line.paragraph
         && line.text.starts_with("    ")
         && !text.is_empty()
         && line.path.matches('/').count() <= 2
-        && previous
-            .is_some_and(|p| p.text.trim().is_empty() || p.text.trim_start().starts_with('{'))
+        && !prior_block.is_some_and(|p| p.scope.container == ContainerKind::ListItem)
+        && previous.is_some_and(|p| {
+            (p.text.trim().is_empty() || p.text.trim_start().starts_with('{'))
+                && p.scope.container != ContainerKind::ListItem
+        })
     {
         sink.whole("indented-code-block", line, &[]);
     }
@@ -1179,6 +1213,8 @@ fn prose_context(
         prose_block_opener(line, previous, sink);
     }
     if list_candidate
+        && matches!(line.kind.as_str(), "paragraph" | "definition_term")
+        && !in_caption(line)
         && (paragraph_continuation(line, previous)
             || list_after_open_paragraph(line, previous)
             || previous.is_some_and(|p| {
@@ -1239,8 +1275,7 @@ fn quote_opener_candidate(line: &Line, source: &str) -> bool {
     matches!(line.kind.as_str(), "paragraph" | "caption")
         && source
             .get(line.start + at..line.start + line.text.len())
-            .and_then(|raw| raw.strip_prefix("> "))
-            .is_some_and(|tail| tail.bytes().any(|byte| !byte.is_ascii_whitespace()))
+            .is_some_and(|raw| raw == ">" || raw.starts_with("> "))
 }
 
 fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
@@ -1258,6 +1293,8 @@ fn block_opener_width(trimmed: &str) -> usize {
             .count()
     } else if trimmed.starts_with('{') {
         trimmed.find('}').map_or(1, |end| end + 1)
+    } else if trimmed.starts_with("*[") {
+        trimmed.find("]:").map_or(2, |end| end + 2)
     } else if trimmed.starts_with('[') {
         trimmed.find("]:").map_or(1, |end| end + 2)
     } else {
@@ -1329,13 +1366,8 @@ fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_
         .text()
         .get(line.start + line.text.len()..)
         .unwrap_or("");
-    let next = tail
-        .strip_prefix('\n')
-        .unwrap_or(tail)
-        .split('\n')
-        .next()
-        .unwrap_or("")
-        .trim();
+    let following = tail.strip_prefix('\n').unwrap_or(tail);
+    let next = following.split('\n').next().unwrap_or("").trim();
     if !line.paragraph
         || line.content_start.is_none()
         || (line.content_start.is_none() && (next.starts_with(":::") || next.starts_with('>')))
@@ -1344,17 +1376,30 @@ fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_
     {
         return;
     }
-    sink.emit(
+    let after_run = following
+        .lines()
+        .skip_while(|candidate| valid_attribute_line(candidate.trim()))
+        .next()
+        .unwrap_or("");
+    sink.emit_nth(
         "unattached-block-attribute",
         line.start + at,
         line.start + at + text.len(),
         &line.path,
         &[],
+        usize::from(after_run.trim().is_empty() && !following.is_empty()),
     );
 }
 
 fn bare_html(line: &Line, sink: &mut Sink<'_>) {
-    if !line.paragraph {
+    if !matches!(
+        line.kind.as_str(),
+        "paragraph" | "heading" | "cell_paragraph"
+    ) && !line.table_row
+    {
+        return;
+    }
+    if in_caption(line) {
         return;
     }
     let Some(at) = line.text.find('<') else {
@@ -1388,6 +1433,10 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
     );
 }
 
+fn in_caption(line: &Line) -> bool {
+    line.path.split('/').any(|part| part == "caption")
+}
+
 fn source_escaped(text: &[u8], at: usize) -> bool {
     text.get(..at)
         .unwrap_or(&[])
@@ -1401,7 +1450,14 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     let starts = line.text.trim_start();
-    if !(starts.starts_with("> ") || starts.starts_with(">[") || starts.starts_with(">>")) {
+    if !matches!(
+        line.kind.as_str(),
+        "paragraph" | "heading" | "cell_paragraph"
+    ) && !line.table_row
+    {
+        return;
+    }
+    if !starts.starts_with("> ") {
         return;
     }
     if let Some(at) = line.text.find("[!")
@@ -1438,10 +1494,10 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
         .iter()
         .skip(index + 1)
         .take(2)
-        .any(|other| leaf_after_quotes(other).1.starts_with('|'));
+        .any(|other| pipe_table_candidate(leaf_after_quotes(other).1));
     let above = lines.iter().take(index).rev().take(2).any(|other| {
         let text = other.text.trim_start();
-        text.starts_with('|') || text.contains("![")
+        pipe_table_candidate(text) || text.contains("![")
     });
     if below || above {
         sink.emit_nth(
@@ -1453,6 +1509,10 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
             usize::from(!below),
         );
     }
+}
+
+fn pipe_table_candidate(text: &str) -> bool {
+    text.starts_with('|') && text[1..].contains('|')
 }
 
 fn caption_like(text: &str) -> bool {

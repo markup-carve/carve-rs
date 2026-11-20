@@ -241,7 +241,7 @@ fn skip_legacy_warning(
     {
         return true;
     }
-    if warning.rule == "bare-html-tag" && hidden_html_tag(warning, positions) {
+    if warning.rule == "bare-html-tag" && ineligible_html_tag(warning, positions) {
         return true;
     }
     if warning.rule == "list-marker-below-content-column" {
@@ -267,9 +267,11 @@ fn skip_legacy_warning(
     skip_legacy_context(warning, source, parsed, positions)
 }
 
-fn hidden_html_tag(warning: &legacy::Warning, positions: &Ranges<'_>) -> bool {
+fn ineligible_html_tag(warning: &legacy::Warning, positions: &Ranges<'_>) -> bool {
     positions.around(warning.start).any(|range| {
-        range.kind == "comment" && range.start <= warning.start && warning.end <= range.end
+        matches!(range.kind.as_str(), "comment" | "caption")
+            && range.start <= warning.start
+            && warning.end <= range.end
     })
 }
 
@@ -740,6 +742,12 @@ fn colon_fence_mismatches(
         if candidate.len() >= 3 && candidate.bytes().all(|byte| byte == b':') {
             let at = line_start + line.len() - tail.len();
             let end = at + candidate.len();
+            if ranges.around(at).any(|range| {
+                range.kind == "paragraph" && range.start < line_start && at < range.end
+            }) {
+                line_start += piece.len();
+                continue;
+            }
             let container = colon_candidate_container(source, ranges, line_start, at);
             if let Some(container) = container {
                 let width = colon_opener_at(source, container.start)
