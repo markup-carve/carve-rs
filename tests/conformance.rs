@@ -132,8 +132,19 @@ pub fn options(v: &Value, files: Option<&Value>) -> Options {
 /// under its name, which is also its id.
 #[must_use]
 pub fn serving(files: &Value) -> carve::include::Resolver {
-    let mut map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut map: BTreeMap<String, Result<Vec<u8>, Cause>> = BTreeMap::new();
     for (name, f) in files.as_object().into_iter().flatten() {
+        let cause = match f["error"].as_str() {
+            Some("outside_root") => Some(Cause::OutsideRoot),
+            Some("unreadable") => Some(Cause::Unreadable),
+            Some("non_text") => Some(Cause::NonText),
+            Some("not_found") => Some(Cause::NotFound),
+            _ => None,
+        };
+        if let Some(cause) = cause {
+            map.insert(name.clone(), Err(cause));
+            continue;
+        }
         let bytes = if let Some(t) = f["text"].as_str() {
             t.as_bytes().to_vec()
         } else {
@@ -142,12 +153,17 @@ pub fn serving(files: &Value) -> carve::include::Resolver {
                 .filter_map(|i| u8::from_str_radix(hex.get(2 * i..2 * i + 2)?, 16).ok())
                 .collect()
         };
-        map.insert(name.clone(), bytes);
+        map.insert(name.clone(), Ok(bytes));
     }
     Arc::new(move |r: &Request<'_>| {
         map.get(r.path)
-            .map(|b| (b.clone(), r.path.to_string()))
+            .map(|b| {
+                b.as_ref()
+                    .map(|bytes| (bytes.clone(), r.path.to_string()))
+                    .map_err(|e| *e)
+            })
             .ok_or(Cause::NotFound)
+            .and_then(std::convert::identity)
     })
 }
 

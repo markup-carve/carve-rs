@@ -212,6 +212,11 @@ pub fn render_tree_with_diagnostics(
     let lost = !losses.is_empty();
     let mut diagnostics =
         tree_loss_diagnostics(&doc, losses, derived, &extension_nodes, &destinations);
+    if opts.strict_losses {
+        for diagnostic in &mut diagnostics {
+            diagnostic.severity = "error";
+        }
+    }
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Ok(Rendered {
         html: if opts.strict_losses && lost {
@@ -286,6 +291,11 @@ pub(crate) fn render_tree_hooked(
         &extension_nodes,
         &destinations,
     );
+    if opts.strict_losses {
+        for diagnostic in &mut diagnostics {
+            diagnostic.severity = "error";
+        }
+    }
     let dropped_losses = cap_losses(&mut diagnostics, opts);
     Rendered {
         html,
@@ -962,7 +972,12 @@ fn loss_diagnostics(
                 .iter()
                 .map(|(name, value)| (*name, value.as_str()))
                 .collect();
-            diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos)
+            let mut diagnostic =
+                diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos);
+            if opts.strict_losses {
+                diagnostic.severity = "error";
+            }
+            diagnostic
         })
         .collect();
     loss_diags
