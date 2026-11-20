@@ -29,30 +29,59 @@ use std::collections::{HashMap, HashSet};
 struct Item<'a> {
     node: &'a Value,
     path: OnceCell<String>,
-    path_node: Option<Rc<PathNode>>,
+    path_node: Option<Rc<PathNode<'a>>>,
     parents: Option<Rc<Parent<'a>>>,
     ancestors: Option<Rc<Ancestor<'a>>>,
 }
 
-struct PathNode {
-    segment: String,
+struct PathNode<'a> {
+    segment: Segment<'a>,
     len: usize,
-    previous: Option<Rc<PathNode>>,
+    previous: Option<Rc<PathNode<'a>>>,
+}
+
+#[derive(Clone, Copy)]
+enum Segment<'a> {
+    Key(&'a str),
+    Index(usize),
+}
+
+impl<'a> PathNode<'a> {
+    fn child(parent: Option<&Rc<Self>>, segment: Segment<'a>) -> Rc<Self> {
+        let width = match segment {
+            Segment::Key(key) => key.len(),
+            Segment::Index(index) => index
+                .checked_ilog10()
+                .map_or(1, |digits| digits as usize + 1),
+        };
+        Rc::new(Self {
+            len: parent.map_or(0, |node| node.len) + 1 + width,
+            segment,
+            previous: parent.cloned(),
+        })
+    }
 }
 
 impl Item<'_> {
     fn path(&self) -> &str {
         self.path.get_or_init(|| {
+            use std::fmt::Write as _;
             let mut segments = Vec::new();
             let mut current = self.path_node.as_deref();
             while let Some(node) = current {
-                segments.push(node.segment.as_str());
+                segments.push(node.segment);
                 current = node.previous.as_deref();
             }
             let mut path =
                 String::with_capacity(self.path_node.as_ref().map_or(0, |node| node.len));
             for segment in segments.into_iter().rev() {
-                path.push_str(segment);
+                path.push('/');
+                match segment {
+                    Segment::Key(key) => path.push_str(key),
+                    Segment::Index(index) => {
+                        let _ = write!(path, "{index}");
+                    }
+                }
             }
             path
         })
@@ -175,7 +204,7 @@ fn child_ancestor<'a>(
 
 fn collect(root: &Value) -> Vec<Item<'_>> {
     let mut out = Vec::new();
-    let mut pending = vec![(root, None::<Rc<PathNode>>, None, None)];
+    let mut pending = vec![(root, None::<Rc<PathNode<'_>>>, None, None)];
     while let Some((value, path, parents, ancestor)) = pending.pop() {
         match value {
             Value::Object(map) => {
@@ -213,12 +242,7 @@ fn collect(root: &Value) -> Vec<Item<'_>> {
                     } else {
                         ancestor.clone()
                     };
-                    let segment = format!("/{key}");
-                    let child_path = Some(Rc::new(PathNode {
-                        len: path.as_ref().map_or(0, |node| node.len) + segment.len(),
-                        segment,
-                        previous: path.clone(),
-                    }));
+                    let child_path = Some(PathNode::child(path.as_ref(), Segment::Key(key)));
                     pending.push((child, child_path, next.clone(), child_ancestor));
                 }
             }
@@ -227,12 +251,7 @@ fn collect(root: &Value) -> Vec<Item<'_>> {
                     if !matches!(child, Value::Object(_) | Value::Array(_)) {
                         continue;
                     }
-                    let segment = format!("/{index}");
-                    let child_path = Some(Rc::new(PathNode {
-                        len: path.as_ref().map_or(0, |node| node.len) + segment.len(),
-                        segment,
-                        previous: path.clone(),
-                    }));
+                    let child_path = Some(PathNode::child(path.as_ref(), Segment::Index(index)));
                     pending.push((child, child_path, parents.clone(), ancestor.clone()));
                 }
             }
@@ -385,23 +404,47 @@ fn check_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut S
     check_inline_node(item, sink);
 }
 
-fn list_between_columns(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
+/// Whether a path ends in `/children/N`.
+fn in_children(path: Option<&PathNode<'_>>) -> bool {
+    path.is_some_and(|node| {
+        matches!(node.segment, Segment::Index(_))
+            && node
+                .previous
+                .as_deref()
+                .is_some_and(|key| matches!(key.segment, Segment::Key("children")))
+    })
+}
+
+/// The node whose `children` array holds this item, and that node's own holder.
+fn holders<'a>(item: &'a Item<'a>) -> (Option<&'a Value>, Option<&'a Value>) {
+    let path = item.path_node.as_deref();
+    if !in_children(path) {
+        return (None, None);
+    }
+    let parent = item.ancestors.as_deref();
+    let parent_path = path
+        .and_then(|node| node.previous.as_deref())
+        .and_then(|node| node.previous.as_deref());
+    let grand = parent
+        .and_then(|a| a.parent.as_deref())
+        .filter(|_| in_children(parent_path));
+    (parent.map(|a| a.node), grand.map(|a| a.node))
+}
+
+fn list_between_columns(item: &Item<'_>, _root: &Value, sink: &mut Sink<'_>) {
     if item.node["type"] != "list_item" {
         return;
     }
-    let Some((list_path, _)) = item.path().rsplit_once("/children/") else {
+    let (Some(list), Some(outer)) = holders(item) else {
         return;
     };
-    let Some((outer_path, _)) = list_path.rsplit_once("/children/") else {
+    if outer["type"] != "list_item" {
         return;
-    };
-    let Some(outer) = lookup(root, outer_path).filter(|node| node["type"] == "list_item") else {
-        return;
-    };
+    }
     let Some((at, end)) = bounds(item.node) else {
         return;
     };
-    let Some((list_at, _)) = lookup(root, list_path).and_then(bounds) else {
+    let Some((list_at, _)) = bounds(list) else {
         return;
     };
     let Some((outer_at, _)) = bounds(outer) else {
@@ -942,10 +985,18 @@ fn list_spacing(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn list_indent(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
-    let parent_column = item
-        .path()
-        .rsplit_once("/children/")
-        .and_then(|(path, _)| lookup(root, path))
+    let path = item.path_node.as_deref();
+    let parent = if in_children(path) {
+        // The document's own path is empty and resolves to nothing.
+        path.and_then(|node| node.previous.as_deref())
+            .and_then(|node| node.previous.as_deref())
+            .and_then(|_| item.ancestors.as_deref().map(|a| a.node))
+    } else {
+        item.path()
+            .rsplit_once("/children/")
+            .and_then(|(path, _)| lookup(root, path))
+    };
+    let parent_column = parent
         .and_then(|parent| field(parent, "/pos/startColumn").as_u64())
         .unwrap_or(0);
     let first_column = item.node["children"]
@@ -2013,7 +2064,7 @@ fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, from: usize) {
 
 fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
     if item.node["type"] == "code_block"
-        || item.path().contains("/title/") && parent_kinds(item).any(|kind| kind == "code_block")
+        || parent_kinds(item).any(|kind| kind == "code_block") && item.path().contains("/title/")
     {
         return;
     }
