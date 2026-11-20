@@ -249,6 +249,86 @@ fn report(
     }
 }
 
+fn run_rule(
+    rule: &Value,
+    record: &Record,
+    value: &Value,
+    records: &Records,
+    positions: &Source<'_>,
+    out: &mut Vec<Diagnostic>,
+) {
+    let mut eval = Eval {
+        record: value,
+        lines: &records.lines,
+        line_index: record.line_index,
+        over: record.over,
+        line: records.lines[record.line_index]["text"]
+            .as_str()
+            .unwrap_or(""),
+        line_start: record.line_start,
+        vars: HashMap::new(),
+        let_expr: HashMap::new(),
+        item: None,
+        spans: HashMap::new(),
+        base: 0,
+    };
+    if let Some(lets) = rule["let"].as_object() {
+        for (key, expr) in lets {
+            eval.let_expr.insert(key.clone(), expr.clone());
+        }
+    }
+    let passed = rule.get("when").is_none_or(|when| eval.test(when));
+    if !passed {
+        return;
+    }
+    if let Some(each) = rule.get("each") {
+        let Some(items) = each["matches"].as_array() else {
+            return;
+        };
+        let subject = eval.value(&items[0]);
+        let Some(text) = subject.as_str() else {
+            return;
+        };
+        let Some(pattern) = items.get(1).and_then(Value::as_str) else {
+            return;
+        };
+        let Ok(re) = regex::Regex::new(&pattern.replace("(?<", "(?P<")) else {
+            return;
+        };
+        let base = if items[0]["f"] == "text" {
+            eval.value(&serde_json::json!({"f":"start"}))
+                .as_u64()
+                .unwrap_or(0) as usize
+        } else if items[0]["f"] == "body" {
+            eval.value(&serde_json::json!({"f":"body_start"}))
+                .as_u64()
+                .unwrap_or(0) as usize
+        } else {
+            0
+        };
+        let matches: Vec<_> = re
+            .captures_iter(text)
+            .map(|found| {
+                re.capture_names()
+                    .flatten()
+                    .filter_map(|name| {
+                        found
+                            .name(name)
+                            .map(|span| (name.to_owned(), (span.start(), span.end())))
+                    })
+                    .collect()
+            })
+            .collect();
+        for spans in matches {
+            eval.spans = spans;
+            eval.base = base;
+            report(rule, &mut eval, positions, &record.path, out);
+        }
+    } else {
+        report(rule, &mut eval, positions, &record.path, out);
+    }
+}
+
 pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec<Diagnostic> {
     let positions = Source::new(source);
     let mut out = Vec::new();
@@ -290,76 +370,7 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
                     .collect()
             });
         for rule in rules {
-            let mut eval = Eval {
-                record: value,
-                lines: &records.lines,
-                line_index: record.line_index,
-                over: record.over,
-                line: records.lines[record.line_index]["text"]
-                    .as_str()
-                    .unwrap_or(""),
-                line_start: record.line_start,
-                vars: HashMap::new(),
-                let_expr: HashMap::new(),
-                item: None,
-                spans: HashMap::new(),
-                base: 0,
-            };
-            if let Some(lets) = rule["let"].as_object() {
-                for (key, expr) in lets {
-                    eval.let_expr.insert(key.clone(), expr.clone());
-                }
-            }
-            let passed = rule.get("when").is_none_or(|when| eval.test(when));
-            if !passed {
-                continue;
-            }
-            if let Some(each) = rule.get("each") {
-                let Some(items) = each["matches"].as_array() else {
-                    continue;
-                };
-                let subject = eval.value(&items[0]);
-                let Some(text) = subject.as_str() else {
-                    continue;
-                };
-                let Some(pattern) = items.get(1).and_then(Value::as_str) else {
-                    continue;
-                };
-                let Ok(re) = regex::Regex::new(&pattern.replace("(?<", "(?P<")) else {
-                    continue;
-                };
-                let base = if items[0]["f"] == "text" {
-                    eval.value(&serde_json::json!({"f":"start"}))
-                        .as_u64()
-                        .unwrap_or(0) as usize
-                } else if items[0]["f"] == "body" {
-                    eval.value(&serde_json::json!({"f":"body_start"}))
-                        .as_u64()
-                        .unwrap_or(0) as usize
-                } else {
-                    0
-                };
-                let matches: Vec<_> = re
-                    .captures_iter(text)
-                    .map(|found| {
-                        re.capture_names()
-                            .flatten()
-                            .filter_map(|name| {
-                                found
-                                    .name(name)
-                                    .map(|span| (name.to_owned(), (span.start(), span.end())))
-                            })
-                            .collect()
-                    })
-                    .collect();
-                for spans in matches {
-                    eval.spans = spans;
-                    eval.base = base;
-                    report(rule, &mut eval, &positions, &record.path, &mut out);
-                }
-            } else {
-                report(rule, &mut eval, &positions, &record.path, &mut out);
-            }
+            run_rule(rule, record, value, records, &positions, &mut out);
         }
     }
     out

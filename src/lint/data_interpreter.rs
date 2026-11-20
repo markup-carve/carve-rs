@@ -205,6 +205,148 @@ impl Eval<'_> {
         true
     }
 
+    fn variable(&mut self, name: &str) -> Value {
+        if let Some(value) = self.vars.get(name) {
+            return value.clone();
+        }
+        let Some(expression) = self.let_expr.get(name).cloned() else {
+            return Value::Null;
+        };
+        let spans = self.spans.clone();
+        let base = self.base;
+        let value = self.value(&expression);
+        self.spans = spans;
+        self.base = base;
+        self.vars.insert(name.to_owned(), value.clone());
+        value
+    }
+
+    fn order(&mut self, op: &str, left: &Value, right: &Value) -> Value {
+        let left_value = self.value(left);
+        let right_value = self.value(right);
+        if left_value.is_null() || right_value.is_null() {
+            return Value::Bool(false);
+        }
+        let left = as_number(&left_value);
+        let right = as_number(&right_value);
+        Value::Bool(match op {
+            "lt" => left < right,
+            "le" => left <= right,
+            "gt" => left > right,
+            _ => left >= right,
+        })
+    }
+
+    fn contains_value(&mut self, left: &Value, right: &Value) -> Value {
+        let haystack = self.value(left);
+        let needle = self.value(right);
+        Value::Bool(match haystack {
+            Value::String(s) => needle.as_str().is_some_and(|n| s.contains(n)),
+            Value::Array(v) => v.contains(&needle),
+            _ => false,
+        })
+    }
+
+    fn in_value(&mut self, left: &Value, right: &Value) -> Value {
+        let subject = self.value(left);
+        Value::Bool(if let Some(key) = right.as_str() {
+            super::data_rules::model()[key]
+                .as_array()
+                .is_some_and(|v| v.contains(&subject))
+        } else {
+            right.as_array().is_some_and(|v| v.contains(&subject))
+        })
+    }
+
+    fn match_value(&self, arg: &Value, object: &serde_json::Map<String, Value>) -> Value {
+        let side = usize::from(object.get("at").and_then(Value::as_str) == Some("end"));
+        self.spans
+            .get(arg.as_str().unwrap_or(""))
+            .map_or(Value::Null, |span| {
+                Value::from((self.base + if side == 0 { span.0 } else { span.1 }) as u64)
+            })
+    }
+
+    fn starts_value(&mut self, left: &Value, right: &Value) -> Value {
+        let haystack = self.value(left);
+        let prefix = self.value(right);
+        Value::Bool(
+            haystack
+                .as_str()
+                .zip(prefix.as_str())
+                .is_some_and(|(s, p)| s.starts_with(p)),
+        )
+    }
+
+    fn if_value(&mut self, condition: &Value, yes: &Value, no: &Value) -> Value {
+        if self.test(condition) {
+            self.value(yes)
+        } else {
+            self.value(no)
+        }
+    }
+
+    fn fold_value(&mut self, op: &str, args: Option<&Vec<Value>>) -> Value {
+        Value::Bool(if op == "all" {
+            args.is_some_and(|values| values.iter().all(|item| self.test(item)))
+        } else {
+            args.is_some_and(|values| values.iter().any(|item| self.test(item)))
+        })
+    }
+
+    fn some_value(&mut self, arg: &Value) -> Value {
+        let list = self.field(arg["in"].as_str().unwrap_or(""));
+        let from = arg["from"].as_u64().unwrap_or(0) as usize;
+        let before = self.item.clone();
+        let result = list.as_array().is_some_and(|items| {
+            items.iter().skip(from).any(|item| {
+                self.item = Some(item.clone());
+                self.test(&arg["where"])
+            })
+        });
+        self.item = before;
+        Value::Bool(result)
+    }
+
+    fn shift_value(&mut self, op: &str, position: &Value, chars: &Value) -> Value {
+        let mut at = as_number(&self.value(position)).max(0) as usize;
+        let chars = as_text(&self.value(chars));
+        if op == "extend_left" {
+            while at > self.line_start
+                && self
+                    .line
+                    .as_bytes()
+                    .get(at - self.line_start - 1)
+                    .is_some_and(|b| chars.as_bytes().contains(b))
+            {
+                at -= 1;
+            }
+        } else {
+            while self
+                .line
+                .as_bytes()
+                .get(at.saturating_sub(self.line_start))
+                .is_some_and(|b| chars.as_bytes().contains(b))
+            {
+                at += 1;
+            }
+        }
+        Value::from(at as u64)
+    }
+
+    fn slice_value(&mut self, args: &[Value]) -> Value {
+        let text = as_text(&self.value(args.first().unwrap_or(&Value::Null)));
+        let from = as_number(&self.value(args.get(1).unwrap_or(&Value::Null))).max(0) as usize;
+        let to = args
+            .get(2)
+            .map_or_else(|| text.len(), |v| as_number(&self.value(v)).max(0) as usize);
+        Value::String(
+            text.get(from.min(text.len())..to.min(text.len()))
+                .unwrap_or("")
+                .to_owned(),
+        )
+    }
+
     pub fn value(&mut self, expr: &Value) -> Value {
         let Some(object) = expr.as_object() else {
             return expr.clone();
@@ -215,106 +357,64 @@ impl Eval<'_> {
         else {
             return Value::Null;
         };
+        if matches!(
+            op.as_str(),
+            "f" | "v"
+                | "has"
+                | "all"
+                | "any"
+                | "not"
+                | "if"
+                | "eq"
+                | "ne"
+                | "lt"
+                | "le"
+                | "gt"
+                | "ge"
+                | "in"
+                | "contains"
+                | "starts"
+                | "matches"
+                | "match"
+        ) {
+            self.value_core(op, arg, object)
+        } else {
+            self.value_extra(op, arg)
+        }
+    }
+
+    fn value_core(
+        &mut self,
+        op: &str,
+        arg: &Value,
+        object: &serde_json::Map<String, Value>,
+    ) -> Value {
         let args = arg.as_array();
         let arg_at = |i: usize| args.and_then(|list| list.get(i)).unwrap_or(&Value::Null);
-        match op.as_str() {
+        match op {
             "f" => self.field(arg.as_str().unwrap_or("")),
-            "v" => {
-                let name = arg.as_str().unwrap_or("");
-                if let Some(value) = self.vars.get(name) {
-                    value.clone()
-                } else if let Some(expression) = self.let_expr.get(name).cloned() {
-                    let spans = self.spans.clone();
-                    let base = self.base;
-                    let value = self.value(&expression);
-                    self.spans = spans;
-                    self.base = base;
-                    self.vars.insert(name.to_owned(), value.clone());
-                    value
-                } else {
-                    Value::Null
-                }
-            }
+            "v" => self.variable(arg.as_str().unwrap_or("")),
             "has" => Value::Bool(self.has(arg.as_str().unwrap_or(""))),
-            "all" => Value::Bool(args.is_some_and(|v| v.iter().all(|x| self.test(x)))),
-            "any" => Value::Bool(args.is_some_and(|v| v.iter().any(|x| self.test(x)))),
+            "all" | "any" => self.fold_value(op, args),
             "not" => Value::Bool(!self.test(arg)),
-            "if" => {
-                if self.test(arg_at(0)) {
-                    self.value(arg_at(1))
-                } else {
-                    self.value(arg_at(2))
-                }
-            }
+            "if" => self.if_value(arg_at(0), arg_at(1), arg_at(2)),
             "eq" => Value::Bool(self.value(arg_at(0)) == self.value(arg_at(1))),
             "ne" => Value::Bool(self.value(arg_at(0)) != self.value(arg_at(1))),
-            "lt" | "le" | "gt" | "ge" => {
-                let left_value = self.value(arg_at(0));
-                let right_value = self.value(arg_at(1));
-                if left_value.is_null() || right_value.is_null() {
-                    return Value::Bool(false);
-                }
-                let left = as_number(&left_value);
-                let right = as_number(&right_value);
-                Value::Bool(match op.as_str() {
-                    "lt" => left < right,
-                    "le" => left <= right,
-                    "gt" => left > right,
-                    _ => left >= right,
-                })
-            }
-            "in" => {
-                let subject = self.value(arg_at(0));
-                let list = arg_at(1);
-                Value::Bool(if let Some(key) = list.as_str() {
-                    super::data_rules::model()[key]
-                        .as_array()
-                        .is_some_and(|v| v.contains(&subject))
-                } else {
-                    list.as_array().is_some_and(|v| v.contains(&subject))
-                })
-            }
-            "contains" => {
-                let haystack = self.value(arg_at(0));
-                let needle = self.value(arg_at(1));
-                Value::Bool(match haystack {
-                    Value::String(s) => needle.as_str().is_some_and(|n| s.contains(n)),
-                    Value::Array(v) => v.contains(&needle),
-                    _ => false,
-                })
-            }
-            "starts" => {
-                let haystack = self.value(arg_at(0));
-                let prefix = self.value(arg_at(1));
-                Value::Bool(
-                    haystack
-                        .as_str()
-                        .zip(prefix.as_str())
-                        .is_some_and(|(s, p)| s.starts_with(p)),
-                )
-            }
+            "lt" | "le" | "gt" | "ge" => self.order(op, arg_at(0), arg_at(1)),
+            "in" => self.in_value(arg_at(0), arg_at(1)),
+            "contains" => self.contains_value(arg_at(0), arg_at(1)),
+            "starts" => self.starts_value(arg_at(0), arg_at(1)),
             "matches" => Value::Bool(self.matched(arg)),
-            "match" => {
-                let side = usize::from(object.get("at").and_then(Value::as_str) == Some("end"));
-                self.spans
-                    .get(arg.as_str().unwrap_or(""))
-                    .map_or(Value::Null, |span| {
-                        Value::from((self.base + if side == 0 { span.0 } else { span.1 }) as u64)
-                    })
-            }
-            "some" => {
-                let list = self.field(arg["in"].as_str().unwrap_or(""));
-                let from = arg["from"].as_u64().unwrap_or(0) as usize;
-                let before = self.item.clone();
-                let result = list.as_array().is_some_and(|items| {
-                    items.iter().skip(from).any(|item| {
-                        self.item = Some(item.clone());
-                        self.test(&arg["where"])
-                    })
-                });
-                self.item = before;
-                Value::Bool(result)
-            }
+            "match" => self.match_value(arg, object),
+            _ => Value::Null,
+        }
+    }
+
+    fn value_extra(&mut self, op: &str, arg: &Value) -> Value {
+        let args = arg.as_array();
+        let arg_at = |i: usize| args.and_then(|list| list.get(i)).unwrap_or(&Value::Null);
+        match op {
+            "some" => self.some_value(arg),
             "len" => Value::from(self.value(arg).as_str().map_or(0, str::len) as u64),
             "add" => Value::from(args.map_or(0, |v| {
                 v.iter().map(|x| as_number(&self.value(x))).sum::<i64>()
@@ -322,18 +422,7 @@ impl Eval<'_> {
             "sub" => {
                 Value::from(as_number(&self.value(arg_at(0))) - as_number(&self.value(arg_at(1))))
             }
-            "slice" => {
-                let text = as_text(&self.value(arg_at(0)));
-                let from = as_number(&self.value(arg_at(1))).max(0) as usize;
-                let to = args
-                    .and_then(|v| v.get(2))
-                    .map_or_else(|| text.len(), |v| as_number(&self.value(v)).max(0) as usize);
-                Value::String(
-                    text.get(from.min(text.len())..to.min(text.len()))
-                        .unwrap_or("")
-                        .to_owned(),
-                )
-            }
+            "slice" => self.slice_value(args.map_or(&[], Vec::as_slice)),
             "concat" => Value::String(args.map_or(String::new(), |v| {
                 v.iter().map(|x| as_text(&self.value(x))).collect()
             })),
@@ -353,31 +442,7 @@ impl Eval<'_> {
                         .to_owned(),
                 )
             }
-            "extend_left" | "skip_right" => {
-                let mut at = as_number(&self.value(arg_at(0))).max(0) as usize;
-                let chars = as_text(&self.value(arg_at(1)));
-                if op == "extend_left" {
-                    while at > self.line_start
-                        && self
-                            .line
-                            .as_bytes()
-                            .get(at - self.line_start - 1)
-                            .is_some_and(|b| chars.as_bytes().contains(b))
-                    {
-                        at -= 1;
-                    }
-                } else {
-                    while self
-                        .line
-                        .as_bytes()
-                        .get(at.saturating_sub(self.line_start))
-                        .is_some_and(|b| chars.as_bytes().contains(b))
-                    {
-                        at += 1;
-                    }
-                }
-                Value::from(at as u64)
-            }
+            "extend_left" | "skip_right" => self.shift_value(op, arg_at(0), arg_at(1)),
             _ => Value::Null,
         }
     }

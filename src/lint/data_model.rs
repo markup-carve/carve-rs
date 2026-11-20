@@ -81,84 +81,109 @@ fn quote_marks_space(text: &str) -> usize {
     marks
 }
 
-fn shape(body: &str) -> &'static str {
-    if body.is_empty() {
-        return "blank";
-    }
-    let first = body.as_bytes()[0];
-    if matches!(first, b'#' | b'=')
+fn shape_heading(body: &str) -> bool {
+    let Some(&first) = body.as_bytes().first() else {
+        return false;
+    };
+    matches!(first, b'#' | b'=')
         && body.as_bytes().iter().take_while(|b| **b == first).count() <= 6
         && body.as_bytes().iter().take_while(|b| **b == first).count() > 0
         && body
             .as_bytes()
             .get(body.as_bytes().iter().take_while(|b| **b == first).count())
             == Some(&b' ')
-    {
-        return "heading";
-    }
-    if first == b'>' && (body.len() == 1 || body.as_bytes().get(1) == Some(&b' ')) {
-        return "quote";
-    }
-    if body.starts_with("%%%") {
-        return "comment_block_opener";
-    }
-    if body.starts_with("%%") {
-        return "comment_only";
-    }
-    if body.starts_with("^ ") {
-        return "caption";
-    }
-    if body.starts_with("{{") && body.ends_with("}}") {
-        return "include";
-    }
-    if body.starts_with('{')
+}
+
+fn shape_attribute(body: &str) -> bool {
+    body.starts_with('{')
         && crate::attr::parse_glued(body, 0)
             .is_some_and(|(block, end)| !block.empty && end == body.len())
-    {
-        return "attribute_line";
+}
+
+fn shape_early(body: &str) -> Option<&'static str> {
+    if body.is_empty() {
+        return Some("blank");
     }
+    let first = body.as_bytes()[0];
+    if shape_heading(body) {
+        return Some("heading");
+    }
+    if first == b'>' && (body.len() == 1 || body.as_bytes().get(1) == Some(&b' ')) {
+        return Some("quote");
+    }
+    if body.starts_with("%%%") {
+        return Some("comment_block_opener");
+    }
+    if body.starts_with("%%") {
+        return Some("comment_only");
+    }
+    if body.starts_with("^ ") {
+        return Some("caption");
+    }
+    if body.starts_with("{{") && body.ends_with("}}") {
+        return Some("include");
+    }
+    if shape_attribute(body) {
+        return Some("attribute_line");
+    }
+    None
+}
+
+fn shape_block(body: &str) -> Option<&'static str> {
     if body.starts_with(":::") {
         if body
             .trim_end_matches([' ', '\t'])
             .bytes()
             .all(|b| b == b':')
         {
-            return "div_bare_run";
+            return Some("div_bare_run");
         }
-        return "div_opener";
+        return Some("div_opener");
     }
     if body.starts_with(":: ") {
-        return "term";
+        return Some("term");
     }
     if body.starts_with(": ") {
-        return "description";
+        return Some("description");
     }
     if body.starts_with('|') && body.ends_with('|') {
-        return "table_row";
+        return Some("table_row");
     }
     if body.starts_with("```") {
-        return "code_fence_opener";
+        return Some("code_fence_opener");
     }
     if body.starts_with("---") || body.starts_with("***") || body.starts_with("___") {
-        return "thematic_break";
+        return Some("thematic_break");
     }
+    None
+}
+
+fn shape_reference(body: &str) -> Option<&'static str> {
     if body.starts_with("[^") && body.contains("]:") {
-        return "footnote_definition";
+        return Some("footnote_definition");
     }
     if body.starts_with('[') && body.contains("]:") {
-        return "link_definition";
+        return Some("link_definition");
     }
+    let first = body.as_bytes().first().copied()?;
     if matches!(first, b'-' | b'*') && body.get(1..2) == Some(" ") {
-        return "bullet";
+        return Some("bullet");
     }
     if first.is_ascii_alphanumeric()
         && body
             .find(['.', ')'])
             .is_some_and(|at| body.get(at + 1..at + 2) == Some(" "))
     {
-        return "ordered";
+        return Some("ordered");
     }
-    "text"
+    None
+}
+
+fn shape(body: &str) -> &'static str {
+    shape_early(body)
+        .or_else(|| shape_block(body))
+        .or_else(|| shape_reference(body))
+        .unwrap_or("text")
 }
 
 fn column_of(source: &Source<'_>, at: usize, quotes: usize) -> usize {
@@ -439,21 +464,22 @@ fn colon_layouts<'a>(
     colons
 }
 
-#[allow(clippy::cognitive_complexity)]
-pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
-    let positions = Source::new(source);
-    let raw_lines = lines::data_lines(source, ranges);
-    let mut types = HashMap::new();
-    let mut by_path = HashMap::new();
+struct LeafIndex<'a> {
+    leaves: Vec<Option<&'a Range>>,
+    attached: Vec<bool>,
+    boundaries: Vec<Vec<&'a Range>>,
+}
+
+fn leaf_index<'a>(
+    ranges: &'a [Range],
+    types: &HashMap<String, String>,
+    count: usize,
+) -> LeafIndex<'a> {
+    let mut leaf_by_line: Vec<Option<&Range>> = vec![None; count];
+    let mut attached_by_line = vec![false; count];
+    let mut boundaries = vec![Vec::new(); count];
     for range in ranges {
-        types.insert(range.path.to_string(), range.kind.clone());
-        by_path.insert(range.path.as_str(), range);
-    }
-    let mut leaf_by_line: Vec<Option<&Range>> = vec![None; raw_lines.len()];
-    let mut attached_by_line = vec![false; raw_lines.len()];
-    let mut boundaries = vec![Vec::new(); raw_lines.len()];
-    for range in ranges {
-        if inline_holder(range.path.as_str(), &types) {
+        if inline_holder(range.path.as_str(), types) {
             continue;
         }
         if matches!(
@@ -462,7 +488,7 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         ) {
             let first = range.start_line.saturating_sub(1);
             for owners in boundaries
-                .get_mut(first..range.end_line.min(raw_lines.len()))
+                .get_mut(first..range.end_line.min(count))
                 .into_iter()
                 .flatten()
             {
@@ -493,7 +519,7 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         }
         let first = range.start_line.saturating_sub(1);
         for place in leaf_by_line
-            .get_mut(first..range.end_line.min(raw_lines.len()))
+            .get_mut(first..range.end_line.min(count))
             .into_iter()
             .flatten()
         {
@@ -502,7 +528,102 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
             }
         }
     }
-    let colons = colon_layouts(source, ranges, &boundaries, &positions);
+    LeafIndex {
+        leaves: leaf_by_line,
+        attached: attached_by_line,
+        boundaries,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lazy_line(
+    leaf: Option<&Range>,
+    leaf_kind: &str,
+    number: usize,
+    leaf_id: &str,
+    line_text: &str,
+    quote_depth: usize,
+    body_start: usize,
+    types: &HashMap<String, String>,
+    by_path: &HashMap<&str, &Range>,
+    positions: &Source<'_>,
+) -> bool {
+    let can_be_lazy = matches!(
+        leaf_kind,
+        "paragraph" | "caption" | "definition_term" | "heading" | "line" | "table_cell"
+    ) && leaf.is_some_and(|range| range.start_line != number);
+    let carried_marks = quote_marks_space(line_text);
+    let mut lazy = can_be_lazy && carried_marks < quote_depth;
+    if can_be_lazy && !lazy {
+        let mut holder = parent(leaf_id);
+        while !holder.is_empty() {
+            if types.get(holder).is_some_and(|kind| {
+                matches!(
+                    kind.as_str(),
+                    "list_item" | "footnote" | "definition_description"
+                )
+            }) {
+                let owner = owner_record(holder, types, by_path, positions);
+                lazy = column_of(positions, body_start, carried_marks)
+                    < owner["content_column"].as_u64().unwrap_or(0) as usize;
+                break;
+            }
+            holder = parent(holder);
+        }
+    }
+    lazy
+}
+
+#[allow(clippy::too_many_arguments)]
+fn colon_entries<'a>(
+    source: &str,
+    positions: &Source<'_>,
+    boundaries: &[Vec<&Range>],
+    colons: &'a [Colon<'a>],
+    active: &mut Vec<&'a Colon<'a>>,
+    next: &mut usize,
+    body_start: usize,
+    line_start: usize,
+) -> Vec<Value> {
+    while colons
+        .get(*next)
+        .is_some_and(|colon| colon.from < body_start)
+    {
+        active.push(&colons[*next]);
+        *next += 1;
+    }
+    active.retain(|colon| {
+        if colon.closed && colon.end < line_start {
+            return false;
+        }
+        if colon.end >= line_start.saturating_sub(1) {
+            return true;
+        }
+        source.get(colon.end..line_start).is_some_and(|gap| {
+            gap.bytes()
+                .all(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n' | b'>'))
+        })
+    });
+    active
+        .iter()
+        .rev()
+        .filter(|entry| entry.owner == boundary_at(body_start, boundaries, positions))
+        .map(|entry| entry.entry.clone())
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn line_records(
+    source: &str,
+    positions: &Source<'_>,
+    raw_lines: &[lines::DataLine],
+    leaf_by_line: &[Option<&Range>],
+    attached_by_line: &[bool],
+    boundaries: &[Vec<&Range>],
+    types: &HashMap<String, String>,
+    by_path: &HashMap<&str, &Range>,
+    colons: &[Colon<'_>],
+) -> Vec<Value> {
     let mut next_colon = 0;
     let mut active_colons: Vec<&Colon<'_>> = Vec::new();
     let mut base = Vec::with_capacity(raw_lines.len());
@@ -560,54 +681,28 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
             ancestors.push("document".to_owned());
         }
         let marks = quote_marks(line_text);
-        let can_be_lazy = matches!(
+        let lazy = lazy_line(
+            leaf,
             leaf_kind,
-            "paragraph" | "caption" | "definition_term" | "heading" | "line" | "table_cell"
-        ) && leaf.is_some_and(|range| range.start_line != number);
-        let carried_marks = quote_marks_space(line_text);
-        let mut lazy = can_be_lazy && carried_marks < quote_depth;
-        if can_be_lazy && !lazy {
-            let mut holder = parent(leaf_id);
-            while !holder.is_empty() {
-                if types.get(holder).is_some_and(|kind| {
-                    matches!(
-                        kind.as_str(),
-                        "list_item" | "footnote" | "definition_description"
-                    )
-                }) {
-                    let owner = owner_record(holder, &types, &by_path, &positions);
-                    lazy = column_of(&positions, body_start, carried_marks)
-                        < owner["content_column"].as_u64().unwrap_or(0) as usize;
-                    break;
-                }
-                holder = parent(holder);
-            }
-        }
-        while colons
-            .get(next_colon)
-            .is_some_and(|colon| colon.from < body_start)
-        {
-            active_colons.push(&colons[next_colon]);
-            next_colon += 1;
-        }
-        active_colons.retain(|colon| {
-            if colon.closed && colon.end < line.start {
-                return false;
-            }
-            if colon.end >= line.start.saturating_sub(1) {
-                return true;
-            }
-            source.get(colon.end..line.start).is_some_and(|gap| {
-                gap.bytes()
-                    .all(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n' | b'>'))
-            })
-        });
-        let colon: Vec<Value> = active_colons
-            .iter()
-            .rev()
-            .filter(|entry| entry.owner == boundary_at(body_start, &boundaries, &positions))
-            .map(|entry| entry.entry.clone())
-            .collect();
+            number,
+            leaf_id,
+            line_text,
+            quote_depth,
+            body_start,
+            types,
+            by_path,
+            positions,
+        );
+        let colon = colon_entries(
+            source,
+            positions,
+            boundaries,
+            colons,
+            &mut active_colons,
+            &mut next_colon,
+            body_start,
+            line.start,
+        );
         let closes = body.len() >= 3
             && body.bytes().all(|byte| byte == b':')
             && colon
@@ -625,6 +720,228 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
             "closes_container":closes,"open_colon":colon
         }));
     }
+    base
+}
+
+fn inline_record<'a>(
+    source: &str,
+    range: &'a Range,
+    line: &lines::DataLine,
+    at: usize,
+    types: &HashMap<String, String>,
+    inline_candidates: &mut HashMap<&'a str, bool>,
+) -> Option<Record> {
+    if !*inline_candidates
+        .entry(range.kind.as_str())
+        .or_insert_with(|| super::data_rules::inline_candidate(&range.kind))
+    {
+        return None;
+    }
+    if range.kind == "text"
+        && !super::data_rules::inline_text_candidate(text_at(source, range.start, range.end))
+    {
+        return None;
+    }
+    let mut ancestor = parent(range.path.as_str());
+    let mut leaf = "";
+    while !ancestor.is_empty() {
+        if let Some(kind) = types.get(ancestor) {
+            if matches!(
+                kind.as_str(),
+                "paragraph" | "caption" | "definition_term" | "heading" | "line" | "table_cell"
+            ) {
+                leaf = kind;
+                break;
+            }
+        }
+        ancestor = parent(ancestor);
+    }
+    if leaf.is_empty() {
+        return None;
+    }
+    let inline = json!({"type":range.kind,"start":range.start,"end":range.end,
+            "text":text_at(source,range.start,range.end),"leaf":leaf,
+            "parent":types.get(parent(range.path.as_str())).map_or("document",String::as_str)});
+    Some(Record {
+        value: inline,
+        path: range.path.to_string(),
+        line_start: line.start,
+        line_index: at,
+        over: "inline",
+    })
+}
+
+fn quote_depth_of(path: &str, types: &HashMap<String, String>) -> usize {
+    let mut depth = 0;
+    let mut holder = parent(path);
+    while !holder.is_empty() {
+        depth += usize::from(types.get(holder).is_some_and(|kind| kind == "block_quote"));
+        holder = parent(holder);
+    }
+    depth
+}
+
+fn block_opener_text<'a>(source: &'a str, opener: usize, kind: &str, opener_rule: bool) -> &'a str {
+    if !opener_rule && !matches!(kind, "directive" | "list") {
+        return "";
+    }
+    let end = source
+        .get(opener..)
+        .and_then(|s| s.find('\n'))
+        .map_or(source.len(), |n| opener + n);
+    trim_end(text_at(source, opener, end))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn block_owner_values(
+    item_child: bool,
+    opener_rule: bool,
+    kind: &str,
+    parent_path: &str,
+    owner: &str,
+    item_owner: &str,
+    types: &HashMap<String, String>,
+    by_path: &HashMap<&str, &Range>,
+    positions: &Source<'_>,
+) -> (Value, Value, Value) {
+    let parent_value = if item_child || matches!(kind, "paragraph" | "directive") {
+        owner_record(parent_path, types, by_path, positions)
+    } else {
+        Value::Null
+    };
+    let owner_value = if opener_rule {
+        owner_record(owner, types, by_path, positions)
+    } else {
+        Value::Null
+    };
+    let item_owner_value = if opener_rule || item_child {
+        owner_record(item_owner, types, by_path, positions)
+    } else {
+        Value::Null
+    };
+    (parent_value, owner_value, item_owner_value)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn block_record<'a, 'b>(
+    source: &str,
+    positions: &Source<'_>,
+    range: &'a Range,
+    line: &lines::DataLine,
+    at: usize,
+    types: &'b HashMap<String, String>,
+    by_path: &HashMap<&str, &Range>,
+    base: &[Value],
+    candidates: &mut HashMap<(&'a str, &'b str), bool>,
+) -> Option<Record> {
+    if matches!(
+        range.kind.as_str(),
+        "soft_break" | "hard_break" | "line_break"
+    ) {
+        return None;
+    }
+    let parent_path = parent(range.path.as_str());
+    let parent_type = types.get(parent_path).map_or("document", String::as_str);
+    if !*candidates
+        .entry((range.kind.as_str(), parent_type))
+        .or_insert_with(|| super::data_rules::block_candidate(&range.kind, parent_type))
+    {
+        return None;
+    }
+    let owner = owner_path(parent_path, types);
+    let item_owner = item_owner_path(owner, types);
+    let kind = range.kind.as_str();
+    let item_child = parent_type == "list_item" || !item_owner.is_empty();
+    let opener_rule = matches!(
+        kind,
+        "admonition"
+            | "block_quote"
+            | "code_block"
+            | "definition_term"
+            | "directive"
+            | "div"
+            | "figure_group"
+            | "heading"
+            | "line_block"
+            | "raw_block"
+            | "table"
+            | "thematic_break"
+    );
+    let block_quotes = quote_depth_of(range.path.as_str(), types);
+    let opener = if range.has_attrs {
+        opener_start(source, range.start, block_quotes)
+    } else {
+        range.start
+    };
+    let last_index = range.end_line.saturating_sub(1).min(base.len() - 1);
+    let index = range
+        .path
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0);
+    let previous = if kind == "paragraph" && index > 0 {
+        types
+            .get(&format!("{}/children/{}", parent_path, index - 1))
+            .cloned()
+    } else {
+        None
+    };
+    let block_column = if item_child {
+        column_of(positions, range.start, block_quotes)
+    } else {
+        0
+    };
+    let mark_column = if opener_rule || item_child {
+        column_of(positions, opener, block_quotes)
+    } else {
+        0
+    };
+    let opener_text = block_opener_text(source, opener, kind, opener_rule);
+    let block_text = if matches!(kind, "line" | "list" | "frontmatter") {
+        text_at(source, range.start, range.end)
+    } else {
+        ""
+    };
+    let (parent_value, owner_value, item_owner_value) = block_owner_values(
+        item_child,
+        opener_rule,
+        kind,
+        parent_path,
+        owner,
+        item_owner,
+        types,
+        by_path,
+        positions,
+    );
+    let block = json!({"type":range.kind,"path":range.path.as_str(),"start":range.start,"end":range.end,
+        "text":block_text,"column":block_column,
+        "opener_column":if range.has_attrs { block_column } else { mark_column },
+        "mark_column":mark_column,
+        "opener_start":opener,"opener_text":opener_text,
+        "after_quote_mark":text_at(source,line.start,range.start).ends_with("> "),"attributed":range.has_attrs,
+        "image_line":range.image_line,
+        "index":index,"line_index":at,"last_line_index":last_index,"prev_type":previous,
+        "owner":owner_value,"item_owner":item_owner_value,"parent":parent_value});
+    Some(Record {
+        value: block,
+        path: range.path.to_string(),
+        line_start: line.start,
+        line_index: at,
+        over: "block",
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn node_records(
+    source: &str,
+    positions: &Source<'_>,
+    raw_lines: &[lines::DataLine],
+    ranges: &[Range],
+    types: &HashMap<String, String>,
+    by_path: &HashMap<&str, &Range>,
+    base: &[Value],
+) -> Vec<Record> {
     let mut records = Vec::new();
     for (index, line) in raw_lines.iter().enumerate() {
         records.push(Record {
@@ -642,7 +959,7 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         let Some(line) = raw_lines.get(at) else {
             continue;
         };
-        let has_inline_holder = inline_holder(range.path.as_str(), &types);
+        let has_inline_holder = inline_holder(range.path.as_str(), types);
         let is_inline = has_inline_holder
             && ((range.kind == "comment" && !range.form_block)
                 || matches!(
@@ -666,173 +983,63 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
                         | "wikilink"
                 ));
         if is_inline {
-            if !*inline_candidates
-                .entry(range.kind.as_str())
-                .or_insert_with(|| super::data_rules::inline_candidate(&range.kind))
+            if let Some(record) =
+                inline_record(source, range, line, at, types, &mut inline_candidates)
             {
-                continue;
+                records.push(record);
             }
-            if range.kind == "text"
-                && !super::data_rules::inline_text_candidate(text_at(
-                    source,
-                    range.start,
-                    range.end,
-                ))
-            {
-                continue;
-            }
-            let mut ancestor = parent(range.path.as_str());
-            let mut leaf = "";
-            while !ancestor.is_empty() {
-                if let Some(kind) = types.get(ancestor) {
-                    if matches!(
-                        kind.as_str(),
-                        "paragraph"
-                            | "caption"
-                            | "definition_term"
-                            | "heading"
-                            | "line"
-                            | "table_cell"
-                    ) {
-                        leaf = kind;
-                        break;
-                    }
-                }
-                ancestor = parent(ancestor);
-            }
-            if leaf.is_empty() {
-                continue;
-            }
-            let inline = json!({"type":range.kind,"start":range.start,"end":range.end,
-                "text":text_at(source,range.start,range.end),"leaf":leaf,
-                "parent":types.get(parent(range.path.as_str())).map_or("document",String::as_str)});
-            records.push(Record {
-                value: inline,
-                path: range.path.to_string(),
-                line_start: line.start,
-                line_index: at,
-                over: "inline",
-            });
             continue;
         }
         if has_inline_holder {
             continue;
         }
-        if matches!(
-            range.kind.as_str(),
-            "soft_break" | "hard_break" | "line_break"
+        if let Some(record) = block_record(
+            source,
+            positions,
+            range,
+            line,
+            at,
+            types,
+            by_path,
+            base,
+            &mut candidates,
         ) {
-            continue;
+            records.push(record);
         }
-        let parent_path = parent(range.path.as_str());
-        let parent_type = types.get(parent_path).map_or("document", String::as_str);
-        if !*candidates
-            .entry((range.kind.as_str(), parent_type))
-            .or_insert_with(|| super::data_rules::block_candidate(&range.kind, parent_type))
-        {
-            continue;
-        }
-        let owner = owner_path(parent_path, &types);
-        let item_owner = item_owner_path(owner, &types);
-        let kind = range.kind.as_str();
-        let item_child = parent_type == "list_item" || !item_owner.is_empty();
-        let opener_rule = matches!(
-            kind,
-            "admonition"
-                | "block_quote"
-                | "code_block"
-                | "definition_term"
-                | "directive"
-                | "div"
-                | "figure_group"
-                | "heading"
-                | "line_block"
-                | "raw_block"
-                | "table"
-                | "thematic_break"
-        );
-        let mut block_quotes = 0;
-        let mut holder = parent(range.path.as_str());
-        while !holder.is_empty() {
-            block_quotes +=
-                usize::from(types.get(holder).is_some_and(|kind| kind == "block_quote"));
-            holder = parent(holder);
-        }
-        let opener = if range.has_attrs {
-            opener_start(source, range.start, block_quotes)
-        } else {
-            range.start
-        };
-        let last_index = range.end_line.saturating_sub(1).min(base.len() - 1);
-        let index = range
-            .path
-            .rsplit('/')
-            .next()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(0);
-        let previous = if kind == "paragraph" && index > 0 {
-            types
-                .get(&format!("{}/children/{}", parent_path, index - 1))
-                .cloned()
-        } else {
-            None
-        };
-        let block_column = if item_child {
-            column_of(&positions, range.start, block_quotes)
-        } else {
-            0
-        };
-        let mark_column = if opener_rule || item_child {
-            column_of(&positions, opener, block_quotes)
-        } else {
-            0
-        };
-        let opener_text = if opener_rule || matches!(kind, "directive" | "list") {
-            let end = source
-                .get(opener..)
-                .and_then(|s| s.find('\n'))
-                .map_or(source.len(), |n| opener + n);
-            trim_end(text_at(source, opener, end))
-        } else {
-            ""
-        };
-        let block_text = if matches!(kind, "line" | "list" | "frontmatter") {
-            text_at(source, range.start, range.end)
-        } else {
-            ""
-        };
-        let parent_value = if item_child || matches!(kind, "paragraph" | "directive") {
-            owner_record(parent_path, &types, &by_path, &positions)
-        } else {
-            Value::Null
-        };
-        let owner_value = if opener_rule {
-            owner_record(owner, &types, &by_path, &positions)
-        } else {
-            Value::Null
-        };
-        let item_owner_value = if opener_rule || item_child {
-            owner_record(item_owner, &types, &by_path, &positions)
-        } else {
-            Value::Null
-        };
-        let block = json!({"type":range.kind,"path":range.path.as_str(),"start":range.start,"end":range.end,
-            "text":block_text,"column":block_column,
-            "opener_column":if range.has_attrs { block_column } else { mark_column },
-            "mark_column":mark_column,
-            "opener_start":opener,"opener_text":opener_text,
-            "after_quote_mark":text_at(source,line.start,range.start).ends_with("> "),"attributed":range.has_attrs,
-            "image_line":range.image_line,
-            "index":index,"line_index":at,"last_line_index":last_index,"prev_type":previous,
-            "owner":owner_value,"item_owner":item_owner_value,"parent":parent_value});
-        records.push(Record {
-            value: block,
-            path: range.path.to_string(),
-            line_start: line.start,
-            line_index: at,
-            over: "block",
-        });
     }
+    records
+}
+
+#[allow(clippy::cognitive_complexity)]
+pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
+    let positions = Source::new(source);
+    let raw_lines = lines::data_lines(source, ranges);
+    let mut types = HashMap::new();
+    let mut by_path = HashMap::new();
+    for range in ranges {
+        types.insert(range.path.to_string(), range.kind.clone());
+        by_path.insert(range.path.as_str(), range);
+    }
+    let LeafIndex {
+        leaves: leaf_by_line,
+        attached: attached_by_line,
+        boundaries,
+    } = leaf_index(ranges, &types, raw_lines.len());
+    let colons = colon_layouts(source, ranges, &boundaries, &positions);
+    let base = line_records(
+        source,
+        &positions,
+        &raw_lines,
+        &leaf_by_line,
+        &attached_by_line,
+        &boundaries,
+        &types,
+        &by_path,
+        &colons,
+    );
+    let records = node_records(
+        source, &positions, &raw_lines, ranges, &types, &by_path, &base,
+    );
     Records {
         lines: base,
         items: records,
