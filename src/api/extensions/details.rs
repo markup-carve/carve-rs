@@ -92,25 +92,6 @@ fn has_raw_block(node: &Value) -> bool {
     false
 }
 
-fn has_multiline_code(body: &str) -> bool {
-    let mut remaining = body;
-    while let Some(open) = remaining.find("<code") {
-        remaining = &remaining[open..];
-        let Some(tag_end) = remaining.find('>') else {
-            return false;
-        };
-        remaining = &remaining[tag_end + 1..];
-        let Some(close) = remaining.find("</code>") else {
-            return false;
-        };
-        if remaining[..close].contains('\n') {
-            return true;
-        }
-        remaining = &remaining[close + "</code>".len()..];
-    }
-    false
-}
-
 /// Indent ordinary markup while preserving the bytes of literal bodies.
 fn container(
     head: &str,
@@ -121,20 +102,8 @@ fn container(
     cx: &RenderContext<'_>,
 ) -> String {
     let indent = "  ".repeat(cx.block_depth());
-        return format!(
-            "{}\n{}  {}\n{}\n{}{tail}",
-            head, indent, inner, body, indent
-        );
-    }
-    lines.push(tail.to_string());
->>>>>>> 2f555a8f (Keep inline code layout while preserving literal blocks (#4469))
-    let indent = "  ".repeat(cx.block_depth());
     let mut lines = vec![head.to_string(), format!("{indent}  {inner}")];
-    if raw_body
-        || body.contains("<textarea")
-        || (body.contains("<pre") && !body.contains("<code"))
-        || (has_multiline_code(body) && !body.contains("<pre"))
-    {
+    if raw_body || body.contains("<textarea") || (body.contains("<pre") && !body.contains("<code")) {
         lines.push(body.to_string());
     } else if !body.is_empty() {
         let mut in_code = false;

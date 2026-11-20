@@ -58,7 +58,7 @@ fn details_keeps_code_payload_bytes() {
             "::: details \"Req\"\n```php\nx\n```\n:::\n",
             extensions::details()
         ),
-        "<details>\n  <summary>Req</summary>\n<pre><code class=\"language-php\">x\n</code></pre>\n</details>"
+        "<details>\n  <summary>Req</summary>\n  <pre><code class=\"language-php\">x\n</code></pre>\n</details>"
     );
     let nested = html(
         "- item\n\n  ::: details \"Req\"\n  ```php\n  first\n    second\n  ```\n  :::\n",
