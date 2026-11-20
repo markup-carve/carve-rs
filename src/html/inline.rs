@@ -564,24 +564,25 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .get(&addr(n))
             .map(|s| Cow::Borrowed(s.as_str()));
         el.id_first = true;
-        let note_id = self
-            .note_ids
-            .get(num - 1)
-            .cloned()
-            .unwrap_or_else(|| format!("fn{num}"));
-        el.structural
-            .push(("href", Some(format!("#{note_id}").into())));
+        let href = match self.note_ids.get(num - 1) {
+            Some(id) => format!("#{id}"),
+            None => format!("#fn{num}"),
+        };
+        el.structural.push(("href", Some(href.into())));
         el.structural.push(("role", Some("doc-noteref".into())));
         if let (true, Node::FootnoteRef(r)) = (self.opts.roundtrip, n) {
             el.carriers
                 .push(("data-carve-footnote-label", Some(r.key.into())));
         }
-        let s = format!("<a{}><sup>{num}</sup></a>", el.write(self.filter()));
-        if self.in_link > 0 {
-            self.pending.push_str(&s);
+        let f = self.filter();
+        let target = if self.in_link > 0 {
+            &mut self.pending
         } else {
-            out.push_str(&s);
-        }
+            out
+        };
+        target.push_str("<a");
+        el.write_into(f, target);
+        let _ = write!(target, "><sup>{num}</sup></a>");
     }
 
     /// C2-H-095 to C2-H-097.
