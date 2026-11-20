@@ -89,6 +89,29 @@ fn details_keeps_code_payload_bytes() {
         mixed.contains("  <p>before</p>\n<div>\n x\n</div>\n  <p>after</p>"),
         "{mixed}"
     );
+    for source in [
+        "::: details \"Req\"\n```=html\n<p>hello</p>\n```\n\nhello\n:::\n",
+        "::: details \"Req\"\nhello\n\n```=html\n<p>hello</p>\n```\n:::\n",
+    ] {
+        let output = html_with(
+            source,
+            extensions::details(),
+            &Options {
+                raw_html: true,
+                ..Options::default()
+            },
+        );
+        let matches: Vec<_> = output
+            .lines()
+            .filter(|line| line.trim() == "<p>hello</p>")
+            .collect();
+        assert_eq!(matches.len(), 2, "{output}");
+        assert_eq!(
+            matches.iter().filter(|line| line.starts_with("  ")).count(),
+            1,
+            "{output}"
+        );
+    }
     let textarea = html_with(
         "::: details \"Req\"\n```=html\n<textarea>\n x\n</textarea>\n```\n:::\n",
         extensions::details(),
