@@ -863,7 +863,16 @@ fn render_parts(
             Some(&mut details.losses),
         )
     } else {
-        html::render_source(&doc, opts, input, ordered, Some(&mut details.losses))
+        // Key-value attributes come only from attribute blocks of the source.
+        let key_values = input.contains('{');
+        html::render_source(
+            &doc,
+            opts,
+            input,
+            ordered,
+            Some(&mut details.losses),
+            key_values,
+        )
     };
     Ok((out, losses))
 }
