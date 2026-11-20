@@ -356,6 +356,13 @@ fn colon_layouts<'a>(
     positions: &Source<'_>,
 ) -> Vec<Colon<'a>> {
     let mut colons = Vec::new();
+    let mut children: HashMap<&str, Vec<&Range>> = HashMap::new();
+    for range in ranges {
+        children
+            .entry(parent(range.path.as_str()))
+            .or_default()
+            .push(range);
+    }
     for range in ranges {
         if !matches!(
             range.kind.as_str(),
@@ -399,11 +406,10 @@ fn colon_layouts<'a>(
             + final_line
                 .len()
                 .saturating_sub(final_line.trim_start_matches([' ', '\t', '>']).len());
-        let closer_owned_by_child = ranges.iter().any(|child| {
-            child.path.as_str().starts_with(range.path.as_str())
-                && child.path.as_str().as_bytes().get(range.path.len()) == Some(&b'/')
-                && child.start <= closer_start
-                && child.end >= closer_start + closer.len()
+        let closer_owned_by_child = children.get(range.path.as_str()).is_some_and(|direct| {
+            direct.iter().any(|child| {
+                child.start <= closer_start && child.end >= closer_start + closer.len()
+            })
         });
         colons.push(Colon {
             from,

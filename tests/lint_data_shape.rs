@@ -21,4 +21,11 @@ fn data_shape_uses_the_attribute_grammar() {
                 .pos
                 .is_some_and(|pos| pos.start_offset == 0 && pos.end_offset == 7)
     }));
+    let nested = "::: note\n:::: warning\n::: box\n%%x\n::::\n:::\n";
+    let colons: Vec<_> = lint(nested, &options)
+        .into_iter()
+        .filter(|finding| finding.code == "colon-fence-length-mismatch")
+        .filter_map(|finding| finding.pos.map(|pos| (pos.start_offset, pos.end_offset)))
+        .collect();
+    assert_eq!(colons, [(34, 38), (39, 42)]);
 }
