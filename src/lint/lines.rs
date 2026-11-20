@@ -1283,19 +1283,24 @@ fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
 }
 
 fn quote_opener_candidate(line: &Line, source: &str) -> bool {
-    if line.text.trim_end().ends_with('>') && empty_quote_with_space(line, source) {
+    if !matches!(line.kind.as_str(), "paragraph" | "caption") {
         return false;
     }
-    let (at, _) = line_text(line);
-    matches!(line.kind.as_str(), "paragraph" | "caption")
-        && source
-            .get(line.start + at..line.start + line.text.len())
-            .is_some_and(|raw| {
-                raw == ">"
-                    || raw
-                        .strip_prefix("> ")
-                        .is_some_and(|tail| !tail.trim().is_empty())
-            })
+    let (at, text) = line_text(line);
+    if !text.starts_with('>') {
+        return false;
+    }
+    if text == ">" && empty_quote_with_space(line, source) {
+        return false;
+    }
+    source
+        .get(line.start + at..line.start + line.text.len())
+        .is_some_and(|raw| {
+            raw == ">"
+                || raw
+                    .strip_prefix("> ")
+                    .is_some_and(|tail| !tail.trim().is_empty())
+        })
 }
 
 fn empty_quote_with_space(line: &Line, source: &str) -> bool {
