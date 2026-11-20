@@ -473,9 +473,16 @@ fn thematic_marker(
     sink: &mut Sink<'_>,
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
+    // A list-looking prefix folded into text is not an item marker.
+    if prefix > line.text.len() - line.text.trim_start_matches([' ', '\t']).len()
+        && line.scope.container != ContainerKind::ListItem
+        && !line.paragraph
+    {
+        return;
+    }
     let candidate = tail.trim();
-    let after_paragraph = previous
-        .is_some_and(|p| p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty());
+    let after_paragraph =
+        previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
     if (run(candidate, "=", 3) || run(candidate, "-", 3)) && after_paragraph {
         sink.emit(
             "setext-heading-underline",
@@ -895,6 +902,7 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
     let (at, text) = leaf_text(line);
     if !line.paragraph
+        || line.kind == "definition_term"
         || !text.starts_with('[')
         || line.scope.in_footnote
         || !(line.text.starts_with([' ', '\t']) || line.scope.container != ContainerKind::None)
@@ -1112,22 +1120,22 @@ fn prose_context(
     let list_candidate = list_marker(marker_text);
     if line.scope.container == ContainerKind::ListItem
         && line.kind != "definition_term"
+        && list_candidate
         && previous.is_some_and(|p| {
             p.kind == "definition_term"
                 && p.content_start.is_some()
                 && p.scope.container == ContainerKind::ListItem
+                && visual_column(line, marker_at)
+                    > visual_column(
+                        p,
+                        p.text.len() - p.text.trim_start_matches([' ', '\t']).len(),
+                    )
         })
-        && list_candidate
     {
-        let raw = sink
-            .source
-            .text()
-            .get(line.start..line.start + line.text.len())
-            .unwrap_or("");
         sink.emit(
             "description-term-multi-line",
             line.start + marker_at,
-            line.start + raw.trim_end().len(),
+            line.start + line.text.trim_end().len(),
             &line.path,
             &[],
         );
@@ -1147,6 +1155,14 @@ fn prose_context(
     }
     if list_candidate
         && (paragraph_continuation(line, previous)
+            || previous.is_some_and(|p| {
+                p.kind == "paragraph"
+                    && !p.text.trim().is_empty()
+                    && line.scope.container == ContainerKind::ListItem
+                    && p.path.rsplit_once("/children/").is_some_and(|(parent, _)| {
+                        !parent.is_empty() && line.path.starts_with(parent)
+                    })
+            })
             || previous.is_some_and(|p| {
                 p.kind == "definition_term" && !p.text.trim().is_empty() && line.scope.in_footnote
             }))
@@ -1264,6 +1280,7 @@ fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
         .unwrap_or("")
         .trim();
     if !line.paragraph
+        || line.content_start.is_none()
         || (line.content_start.is_none() && (next.starts_with(":::") || next.starts_with('>')))
         || line.attached_attribute
         || !text.starts_with('{')
@@ -1370,7 +1387,7 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
         .iter()
         .skip(index + 1)
         .take(2)
-        .any(|other| other.text.trim_start().starts_with('|'));
+        .any(|other| leaf_after_quotes(other).1.starts_with('|'));
     let above = lines.iter().take(index).rev().take(2).any(|other| {
         let text = other.text.trim_start();
         text.starts_with('|') || text.contains("![")
