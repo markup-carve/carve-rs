@@ -3,6 +3,7 @@
 
 use super::node::{N, id, ty};
 use crate::hash::{AddrMap, AddrSet};
+use crate::view::V;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -136,23 +137,23 @@ impl<'t> Writer<'t> {
         }
     }
 
-    pub fn fact(&self, n: &Value) -> Option<&Facts> {
+    pub fn fact<'v>(&self, n: impl Into<V<'v>>) -> Option<&Facts> {
         self.facts.as_ref()?.get(&id(n))
     }
 
-    pub fn form(&self, n: &Value) -> u32 {
+    pub fn form<'v>(&self, n: impl Into<V<'v>>) -> u32 {
         self.forms.get(&id(n)).copied().unwrap_or(0)
     }
 
-    pub fn escapes_of(&self, n: &Value) -> &[usize] {
+    pub fn escapes_of<'v>(&self, n: impl Into<V<'v>>) -> &[usize] {
         self.sp.escapes.get(&id(n)).map_or(&[], Vec::as_slice)
     }
 
-    pub fn has_escapes(&self, n: &Value) -> bool {
+    pub fn has_escapes<'v>(&self, n: impl Into<V<'v>>) -> bool {
         self.sp.escapes.contains_key(&id(n))
     }
 
-    pub fn is_lost(&self, n: &Value) -> bool {
+    pub fn is_lost<'v>(&self, n: impl Into<V<'v>>) -> bool {
         self.sp.lost.contains(&id(n))
     }
 
@@ -162,7 +163,7 @@ impl<'t> Writer<'t> {
     }
 
     /// Adds `at` to the escapes of `n`, keeping them sorted and unique.
-    pub fn add_escape(&mut self, n: &Value, at: usize) {
+    pub fn add_escape<'v>(&mut self, n: impl Into<V<'v>>, at: usize) {
         let list = self.sp.escapes.entry(id(n)).or_default();
         if let Err(place) = list.binary_search(&at) {
             list.insert(place, at);
@@ -170,19 +171,21 @@ impl<'t> Writer<'t> {
     }
 
     /// A text node that stands in for markup in a probe, kept per anchor and role.
-    pub fn stand_in(&mut self, anchor: &Value, role: &str, value: &str) -> N<'t> {
+    pub fn stand_in<'v>(&mut self, anchor: impl Into<V<'v>>, role: &str, value: &str) -> N<'t> {
+        let anchor: V<'v> = anchor.into();
         let name = format!("{role} {value}");
         let pool = self.pool;
         let roles = self.stand_ins.entry(id(anchor)).or_default();
-        if let Some(known) = roles.get(&name) {
+        if let Some(&known) = roles.get(&name) {
             return known;
         }
         let node: &'t Value = pool.alloc(serde_json::json!({"type": "text", "value": value}));
+        let node = V::Json(node);
         roles.insert(name, node);
         node
     }
 
-    pub fn node_id(&mut self, n: &Value) -> usize {
+    pub fn node_id<'v>(&mut self, n: impl Into<V<'v>>) -> usize {
         let next = self.node_ids.len();
         *self.node_ids.entry(id(n)).or_insert(next)
     }
@@ -249,7 +252,8 @@ pub fn emit_lines(w: &mut Writer<'_>, prefix: &str, indent: &str, text: &str) {
 }
 
 /// C2-W-136: the key at `index` of the `attrs` of `node` has no spelling beside the field that writes the same key.
-pub fn lose_key(w: &mut Writer<'_>, node: &Value, index: usize, key: &str) {
+pub fn lose_key<'v>(w: &mut Writer<'_>, node: impl Into<V<'v>>, index: usize, key: &str) {
+    let node: V<'v> = node.into();
     let keys = w.sp.lost_keys.entry(id(node)).or_default();
     if keys.iter().any(|k| k == key) {
         return;
@@ -264,7 +268,8 @@ pub fn lose_key(w: &mut Writer<'_>, node: &Value, index: usize, key: &str) {
 }
 
 /// C2-W-011, C2-W-117: records that `node`, or its field `field`, could not be written. One entry per node.
-pub fn lose(w: &mut Writer<'_>, node: &Value, field: Option<&str>) {
+pub fn lose<'v>(w: &mut Writer<'_>, node: impl Into<V<'v>>, field: Option<&str>) {
+    let node: V<'v> = node.into();
     if !w.sp.lost.insert(id(node)) {
         return;
     }
@@ -282,7 +287,7 @@ pub fn lose(w: &mut Writer<'_>, node: &Value, field: Option<&str>) {
         ),
     };
     let step = field
-        .filter(|f| node.get(*f).is_some())
+        .filter(|f| node.get(f).is_some())
         .map(|f| format!("/{f}"));
     w.sp.losses.push(Loss {
         code,

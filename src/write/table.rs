@@ -6,15 +6,15 @@ use super::inline::{IN_CELL, line_comment_text, write_inlines};
 use super::node::{N, children, has, id, list, s, text, ty};
 use super::state::{Writer, emit, lose, lose_key};
 use super::width_data::{GCB, INCB_CONSONANT, INCB_EXTEND, INCB_LINKER, PICT, WIDE};
-use serde_json::Value;
+use crate::view::{Arr, V};
 
 const MIN_RUN: usize = 3;
 
-fn refs(nodes: &[Value]) -> Vec<&Value> {
+fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
     nodes.iter().collect()
 }
 
-fn rows_of<'t>(table: &'t Value, kind: &str) -> Vec<&'t Value> {
+fn rows_of<'t>(table: V<'t>, kind: &str) -> Vec<V<'t>> {
     children(table)
         .iter()
         .filter(|g| ty(g) == kind)
@@ -22,8 +22,8 @@ fn rows_of<'t>(table: &'t Value, kind: &str) -> Vec<&'t Value> {
         .collect()
 }
 
-fn columns(table: &Value) -> &[Value] {
-    list(table, "columns").unwrap_or(&[])
+fn columns(table: V<'_>) -> Arr<'_> {
+    list(table, "columns").unwrap_or_else(Arr::empty)
 }
 
 /// C2-B-212: a width as a percentage with the fewest digits that read back.
@@ -51,7 +51,7 @@ fn plain_decimal(value: f64) -> String {
     text.strip_suffix(".0").map_or(text.clone(), str::to_string)
 }
 
-fn column_entry(column: &Value, field: &str) -> String {
+fn column_entry(column: V<'_>, field: &str) -> String {
     match field {
         "align" => s(column, "align").unwrap_or("").to_string(),
         "valign" => match s(column, "valign") {
@@ -60,12 +60,12 @@ fn column_entry(column: &Value, field: &str) -> String {
         },
         _ => column
             .get("width")
-            .and_then(Value::as_f64)
+            .and_then(V::as_f64)
             .map_or(String::new(), percentage_text),
     }
 }
 
-fn column_list(table: &Value, field: &str) -> Option<String> {
+fn column_list(table: V<'_>, field: &str) -> Option<String> {
     let cols = columns(table);
     let last = cols
         .iter()
@@ -79,7 +79,7 @@ fn column_list(table: &Value, field: &str) -> Option<String> {
     )
 }
 
-fn is_header_row(row: &Value) -> bool {
+fn is_header_row(row: V<'_>) -> bool {
     ty(row) == "table_row"
         && children(row).iter().any(|c| super::node::flag(c, "header"))
         && children(row)
@@ -87,36 +87,36 @@ fn is_header_row(row: &Value) -> bool {
             .all(|c| super::node::flag(c, "header") || has(c, "span"))
 }
 
-fn leading_header_rows(body: &Value) -> usize {
+fn leading_header_rows(body: V<'_>) -> usize {
     children(body)
         .iter()
         .filter(|r| ty(r) == "table_row")
-        .take_while(|r| is_header_row(r))
+        .take_while(|r| is_header_row(*r))
         .count()
 }
 
-fn bodies_of(table: &Value) -> Vec<&Value> {
+fn bodies_of(table: V<'_>) -> Vec<V<'_>> {
     children(table)
         .iter()
         .filter(|g| ty(g) == "table_body")
         .collect()
 }
 
-fn partitioned(bodies: &[&Value]) -> bool {
+fn partitioned(bodies: &[V<'_>]) -> bool {
     bodies.len() > 1
         || bodies.iter().any(|b| {
             !children(b).iter().any(|r| ty(r) == "table_row")
-                || leading_header_rows(b) > 0
+                || leading_header_rows(*b) > 0
                 || has(b, "rowHeadColumns")
         })
 }
 
-fn body_keys(table: &Value) -> Vec<(String, String)> {
+fn body_keys(table: V<'_>) -> Vec<(String, String)> {
     let bodies = bodies_of(table);
     if !partitioned(&bodies) {
         return Vec::new();
     }
-    let header: Vec<usize> = bodies.iter().map(|b| leading_header_rows(b)).collect();
+    let header: Vec<usize> = bodies.iter().map(|b| leading_header_rows(*b)).collect();
     let data: Vec<String> = bodies
         .iter()
         .zip(&header)
@@ -132,7 +132,7 @@ fn body_keys(table: &Value) -> Vec<(String, String)> {
             .iter()
             .map(|b| {
                 b.get("rowHeadColumns")
-                    .map_or(String::new(), ToString::to_string)
+                    .map_or(String::new(), |v| v.to_string())
             })
             .collect();
         keys.push(("body-header-cols".into(), c.join(",")));
@@ -143,7 +143,7 @@ fn body_keys(table: &Value) -> Vec<(String, String)> {
 /// The keys of the attribute line that the tree holds in the columns and groups (C2-W-136).
 fn table_keys(
     mut w: Option<&mut Writer<'_>>,
-    table: &Value,
+    table: V<'_>,
     first: Vec<(String, String)>,
 ) -> BlockParts {
     let mut keys = first;
@@ -205,7 +205,7 @@ fn cell_content<'t>(w: &mut Writer<'t>, cell: N<'t>, flags: u32) -> String {
     }
 }
 
-fn cell_marks(w: &mut Writer<'_>, cell: &Value) -> String {
+fn cell_marks(w: &mut Writer<'_>, cell: V<'_>) -> String {
     let horizontal = match s(cell, "align") {
         Some("left") => "<",
         Some("right") => ">",
@@ -229,7 +229,7 @@ fn cell_marks(w: &mut Writer<'_>, cell: &Value) -> String {
     }
 }
 
-fn cell_prefix(w: &mut Writer<'_>, cell: &Value, bare: bool) -> String {
+fn cell_prefix(w: &mut Writer<'_>, cell: V<'_>, bare: bool) -> String {
     let mark = cell_marks(w, cell);
     let head = if super::node::flag(cell, "header") && !bare {
         "="
@@ -255,7 +255,7 @@ fn segment(prefix: &str, content: &str) -> String {
     }
 }
 
-fn fragment_lines(w: &Writer<'_>, row: &Value, cell: &Value, count: usize) -> Option<Vec<i64>> {
+fn fragment_lines(w: &Writer<'_>, row: V<'_>, cell: V<'_>, count: usize) -> Option<Vec<i64>> {
     let wraps = w.fact(cell)?.wraps.as_ref()?;
     let below = w.fact(row).and_then(|f| f.continuation_lines).unwrap_or(0);
     if wraps.len() != count {
@@ -286,7 +286,7 @@ struct WrittenRow {
 
 fn written_cell<'t>(
     w: &mut Writer<'t>,
-    row: &Value,
+    row: V<'_>,
     cell: N<'t>,
     flags: u32,
     head: bool,
@@ -433,7 +433,7 @@ fn table_entries<'t>(w: &mut Writer<'t>, table: N<'t>, flags: u32) -> Vec<Entry<
     entries
 }
 
-fn ends_with_group_comment(table: &Value) -> bool {
+fn ends_with_group_comment(table: V<'_>) -> bool {
     children(table).last().is_some_and(|g| {
         ty(g) != "comment" && children(g).last().is_some_and(|r| ty(r) == "comment")
     })
@@ -459,7 +459,7 @@ fn pipe_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u32) {
         match e {
             Entry::Row(r) => emit_row(w, prefix, r),
             Entry::Comment(c) => {
-                let line = line_comment_text(w, c, text(c));
+                let line = line_comment_text(w, *c, text(c));
                 emit(w, prefix, &line);
             }
         }
@@ -514,7 +514,7 @@ fn align_entries(entries: &mut Vec<Entry<'_>>) {
     }
 }
 
-fn is_plain_cell(cell: &Value, header: bool) -> bool {
+fn is_plain_cell(cell: V<'_>, header: bool) -> bool {
     if super::node::flag(cell, "header") != header
         || has(cell, "span")
         || has(cell, "align")
@@ -524,20 +524,23 @@ fn is_plain_cell(cell: &Value, header: bool) -> bool {
     {
         return false;
     }
-    let [block] = children(cell) else {
+    let Some(block) = children(cell).single() else {
         return false;
     };
     if ty(block) != "cell_paragraph" {
         return false;
     }
-    match children(block) {
-        [] => true,
-        [first] => ty(first) == "text" && !has(first, "attrs"),
+    let kids = children(block);
+    match kids.len() {
+        0 => true,
+        1 => kids
+            .first()
+            .is_some_and(|first| ty(first) == "text" && !has(first, "attrs")),
         _ => false,
     }
 }
 
-fn is_plain_group(group: &Value, header: bool) -> bool {
+fn is_plain_group(group: V<'_>, header: bool) -> bool {
     ty(group) == "comment"
         || children(group).iter().all(|r| {
             ty(r) == "table_row"
@@ -546,7 +549,7 @@ fn is_plain_group(group: &Value, header: bool) -> bool {
         })
 }
 
-fn fits_delimited(table: &Value) -> bool {
+fn fits_delimited(table: V<'_>) -> bool {
     let groups = children(table);
     let head = groups.iter().filter(|g| ty(g) == "table_head").count();
     let body = groups.iter().filter(|g| ty(g) == "table_body").count();
@@ -558,20 +561,20 @@ fn fits_delimited(table: &Value) -> bool {
             .all(|g| is_plain_group(g, ty(g) == "table_head"))
 }
 
-fn first_value(cell: &Value) -> Option<&str> {
+fn first_value(cell: V<'_>) -> Option<&str> {
     children(children(cell).first()?)
         .first()
         .and_then(|n| s(n, "value"))
 }
 
-fn cell_needs_delimited(cell: &Value) -> bool {
+fn cell_needs_delimited(cell: V<'_>) -> bool {
     let Some(v) = first_value(cell).filter(|v| !v.is_empty()) else {
         return false;
     };
     v.contains('\n') || v.starts_with([' ', '\t']) || v.ends_with([' ', '\t'])
 }
 
-fn needs_delimited(table: &Value) -> bool {
+fn needs_delimited(table: V<'_>) -> bool {
     children(table).iter().any(|g| {
         ty(g) != "comment"
             && children(g)
@@ -580,7 +583,7 @@ fn needs_delimited(table: &Value) -> bool {
     })
 }
 
-fn header_rows(w: &Writer<'_>, table: &Value) -> Option<usize> {
+fn header_rows(w: &Writer<'_>, table: V<'_>) -> Option<usize> {
     let head = rows_of(table, "table_head").len();
     let all = head + rows_of(table, "table_body").len() + rows_of(table, "table_foot").len();
     let first = usize::from(all != 0);
@@ -591,7 +594,7 @@ fn header_rows(w: &Writer<'_>, table: &Value) -> Option<usize> {
     (recorded == i64::try_from(head).ok()).then_some(head)
 }
 
-fn table_format(w: &Writer<'_>, table: &Value) -> String {
+fn table_format(w: &Writer<'_>, table: V<'_>) -> String {
     if !fits_delimited(table) {
         return "pipe".into();
     }
@@ -611,7 +614,7 @@ fn table_format(w: &Writer<'_>, table: &Value) -> String {
     .into()
 }
 
-fn delimited_cell(cell: &Value, separator: &str) -> String {
+fn delimited_cell(cell: V<'_>, separator: &str) -> String {
     let v = first_value(cell).unwrap_or("");
     if !v.contains(separator) && !v.contains('"') && !v.contains('\n') {
         return v.to_string();
@@ -619,7 +622,7 @@ fn delimited_cell(cell: &Value, separator: &str) -> String {
     format!("\"{}\"", v.replace('"', "\"\""))
 }
 
-fn delimited_body(table: &Value, separator: &str) -> Vec<String> {
+fn delimited_body(table: V<'_>, separator: &str) -> Vec<String> {
     let mut body = Vec::new();
     for group in children(table) {
         if ty(group) == "comment" {
@@ -650,11 +653,7 @@ fn delimited_body(table: &Value, separator: &str) -> Vec<String> {
     body
 }
 
-fn delimited_keys(
-    w: Option<&mut Writer<'_>>,
-    table: &Value,
-    declared: Option<usize>,
-) -> BlockParts {
+fn delimited_keys(w: Option<&mut Writer<'_>>, table: V<'_>, declared: Option<usize>) -> BlockParts {
     let mut first = vec![("table".to_string(), String::new())];
     if let Some(d) = declared {
         first.push(("header-rows".into(), d.to_string()));
@@ -662,7 +661,7 @@ fn delimited_keys(
     table_keys(w, table, first)
 }
 
-fn delimited_table(w: &mut Writer<'_>, table: &Value, prefix: &str, format: &str) {
+fn delimited_table(w: &mut Writer<'_>, table: V<'_>, prefix: &str, format: &str) {
     let separator = if format == "tsv" { "\t" } else { "," };
     let declared = header_rows(w, table);
     let parts = delimited_keys(Some(w), table, declared);
@@ -695,7 +694,7 @@ pub fn write_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u3
 }
 
 /// C2-W-122: the same table attribute line before an intervening comment as before the table itself.
-pub fn table_attribute(w: &Writer<'_>, table: &Value) -> String {
+pub fn table_attribute(w: &Writer<'_>, table: V<'_>) -> String {
     if table_format(w, table) == "pipe" {
         return brace_block(table, &table_keys(None, table, Vec::new()));
     }

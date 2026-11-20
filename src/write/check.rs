@@ -13,11 +13,11 @@ use super::node::{
 };
 use super::state::{Attempt, PLACE_COLUMNS, ProbeResult, Spelling, Writer};
 use crate::hash::{AddrMap, AddrSet};
-use serde_json::{Map, Value};
-use std::borrow::Cow;
+use crate::view::{Arr, V};
+use serde_json::Value;
 use std::collections::HashSet;
 
-fn refs(nodes: &[Value]) -> Vec<&Value> {
+fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
     nodes.iter().collect()
 }
 
@@ -109,59 +109,63 @@ impl Check<'_> {
     }
 }
 
-fn same_value(a: &Value, b: Option<&Value>) -> bool {
+fn same_value(a: V<'_>, b: Option<V<'_>>) -> bool {
     let Some(b) = b else { return false };
-    match (a, b) {
-        (Value::Array(x), Value::Array(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same_value(p, Some(q)))
+    match (a.as_array(), b.as_array()) {
+        (Some(x), Some(y)) => {
+            return x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same_value(p, Some(q)));
         }
-        (Value::Object(x), Value::Object(y)) => same_fields(x, y),
-        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
-        _ => a == b,
+        (None, None) => {}
+        _ => return false,
+    }
+    match (a.is_object(), b.is_object()) {
+        (true, true) => same_fields(a, b),
+        (false, false) => super::node::equal_scalars(a, b),
+        _ => false,
     }
 }
 
-fn same_fields(l: &Map<String, Value>, r: &Map<String, Value>) -> bool {
+fn same_fields(l: V<'_>, r: V<'_>) -> bool {
     let (lf, rf) = (result_fields(l), result_fields(r));
-    l.iter()
-        .all(|(k, v)| skipped_in(l, lf, k, false) || same_value(v, r.get(k)))
-        && r.keys()
-            .all(|k| skipped_in(r, rf, k, false) || l.contains_key(k))
+    let mut same = true;
+    l.each(&mut |k, v| {
+        same = same && (skipped_in(l, lf, k, false) || same_value(v, r.get(k)));
+    });
+    r.each(&mut |k, _| {
+        same = same && (skipped_in(r, rf, k, false) || l.get(k).is_some());
+    });
+    same
 }
 
-fn is_compared(c: &Check<'_>, node: &Value, fields: Option<&Fields>, name: &str) -> bool {
+fn is_compared(c: &Check<'_>, node: V<'_>, fields: Option<&Fields>, name: &str) -> bool {
     if matches!(name, "children" | "caption") {
         return false;
     }
     if name == "data"
-        && node
-            .get("data")
-            .and_then(Value::as_object)
-            .is_some_and(|d| {
-                d.keys().all(|k| {
-                    matches!(
-                        k.as_str(),
-                        "carve.source" | "carve.style" | "carve.annotation"
-                    )
-                })
-            })
+        && node.get("data").filter(|d| d.is_object()).is_some_and(|d| {
+            let mut standard = true;
+            d.each(&mut |k, _| {
+                standard =
+                    standard && matches!(k, "carve.source" | "carve.style" | "carve.annotation");
+            });
+            standard
+        })
     {
         return false;
     }
     if name == "title" {
         return title(node).is_none();
     }
-    node.as_object()
-        .is_none_or(|m| !skipped_in(m, fields, name, c.span_marks))
+    !node.is_object() || !skipped_in(node, fields, name, c.span_marks)
 }
 
 /// C2-W-136: the `attrs` of `e` without the keys the writer reported and did not write.
-fn written_attrs<'v>(w: &Writer<'_>, e: &'v Value) -> Option<Cow<'v, Value>> {
+fn written_attrs(w: &Writer<'_>, e: V<'_>) -> Option<Value> {
     let a = e.get("attrs")?;
     let Some(keys) = w.sp.lost_keys.get(&id(e)) else {
-        return Some(Cow::Borrowed(a));
+        return Some(a.to_value());
     };
-    let mut rest = a.as_object()?.clone();
+    let mut rest = a.to_value().as_object()?.clone();
     let kept: Vec<Value> = super::node::key_values(e)
         .into_iter()
         .filter(|(k, _)| !keys.iter().any(|x| x == k))
@@ -177,34 +181,41 @@ fn written_attrs<'v>(w: &Writer<'_>, e: &'v Value) -> Option<Cow<'v, Value>> {
     if rest.get("id").is_none() && no_classes && empty {
         return None;
     }
-    Some(Cow::Owned(Value::Object(rest)))
+    Some(Value::Object(rest))
 }
 
 /// The name of the first field in which `e` and `a` differ.
-fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: &Value, a: &Value) -> Option<String> {
-    let (Some(em), Some(am)) = (e.as_object(), a.as_object()) else {
+fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<String> {
+    if !(e.is_object() && a.is_object()) {
         return None;
-    };
-    let (ef, af) = (result_fields(em), result_fields(am));
-    for (name, field) in em {
+    }
+    let (ef, af) = (result_fields(e), result_fields(a));
+    let mut fields = Vec::new();
+    e.each(&mut |name, field| fields.push((name, field)));
+    for (name, field) in fields {
         if !is_compared(c, e, ef, name) {
             continue;
         }
-        let value = if name == "attrs" {
-            written_attrs(w, e)
+        let differs = if name == "attrs" {
+            if w.sp.lost_keys.contains_key(&id(e)) {
+                written_attrs(w, e).is_some_and(|v| !same_value(V::Json(&v), a.get(name)))
+            } else {
+                !same_value(field, a.get(name))
+            }
         } else {
-            Some(Cow::Borrowed(field))
+            !same_value(field, a.get(name))
         };
-        if value.is_some_and(|v| !same_value(&v, am.get(name))) {
-            return Some(name.clone());
+        if differs {
+            return Some(name.to_string());
         }
     }
-    for name in am.keys() {
-        if !em.contains_key(name) && is_compared(c, a, af, name) {
-            return Some(name.clone());
+    let mut extra = None;
+    a.each(&mut |name, _| {
+        if extra.is_none() && e.get(name).is_none() && is_compared(c, a, af, name) {
+            extra = Some(name.to_string());
         }
-    }
-    None
+    });
+    extra
 }
 
 fn change_form<'t>(c: &mut Check<'t>, node: N<'t>) {
@@ -212,11 +223,11 @@ fn change_form<'t>(c: &mut Check<'t>, node: N<'t>) {
     c.respelled.insert(id(node));
 }
 
-fn mark(c: &mut Check<'_>, node: &Value, at: usize, escaped: bool) {
+fn mark(c: &mut Check<'_>, node: V<'_>, at: usize, escaped: bool) {
     c.marks.entry(id(node)).or_default().insert(at, escaped);
 }
 
-fn is_escaped(w: &Writer<'_>, c: &Check<'_>, node: &Value, at: usize) -> bool {
+fn is_escaped(w: &Writer<'_>, c: &Check<'_>, node: V<'_>, at: usize) -> bool {
     if let Some(&asked) = c.marks.get(&id(node)).and_then(|m| m.get(&at)) {
         return asked;
     }
@@ -287,7 +298,7 @@ fn escape_line_start<'t>(
     }
 }
 
-fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: &Value) -> bool {
+fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
     if w.form(node) > 0 || c.respelled.contains(&id(node)) {
         return false;
     }
@@ -298,7 +309,7 @@ fn has_other_form(w: &Writer<'_>, c: &Check<'_>, node: &Value) -> bool {
 }
 
 /// The last text node below `node`, or `node` itself where it is one.
-fn last_text(node: Option<&Value>) -> Option<&Value> {
+fn last_text(node: Option<V<'_>>) -> Option<V<'_>> {
     let mut at = node?;
     loop {
         if ty(at) == "text" {
@@ -361,7 +372,7 @@ fn joins_next(es: &[N<'_>], i: usize) -> bool {
     let value = i
         .checked_sub(1)
         .and_then(|p| es.get(p))
-        .and_then(|n| last_text(Some(n)))
+        .and_then(|n| last_text(Some(*n)))
         .map_or("", text);
     value.as_bytes().last().is_some_and(|b| JOINING.contains(b))
 }
@@ -381,7 +392,7 @@ fn escape_before<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usi
     let before = i
         .checked_sub(1)
         .and_then(|p| es.get(p))
-        .and_then(|n| last_text(Some(n)));
+        .and_then(|n| last_text(Some(*n)));
     let Some(&e) = es.get(i) else { return false };
     escape_end(w, c, before, true) || escape_name_sigil(w, c, before, e)
 }
@@ -563,7 +574,7 @@ fn respell<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) ->
     false
 }
 
-fn texts_below(node: &Value) -> Vec<&Value> {
+fn texts_below(node: V<'_>) -> Vec<V<'_>> {
     let mut out = Vec::new();
     for c in children(node) {
         if ty(c) == "text" {
@@ -599,7 +610,7 @@ fn escape_lone_bracket<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool 
     asked || escape_mark(w, c, &refs(children(e)), 0, 0, b'[')
 }
 
-fn content_flags(c: &Check<'_>, e: &Value) -> u32 {
+fn content_flags(c: &Check<'_>, e: V<'_>) -> u32 {
     c.flags
         | match ty(e) {
             "emphasis" => IN_EMPHASIS,
@@ -631,7 +642,7 @@ enum Takes<'t> {
 }
 
 impl Takes<'_> {
-    fn takes(&self, node: &Value, at: usize) -> bool {
+    fn takes(&self, node: V<'_>, at: usize) -> bool {
         match self {
             Self::All => true,
             Self::Across {
@@ -650,7 +661,7 @@ impl Takes<'_> {
     }
 }
 
-fn node_state(w: &Writer<'_>, c: &Check<'_>, node: &Value) -> Option<String> {
+fn node_state(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> Option<String> {
     let escapes = (ty(node) == "text")
         .then(|| w.sp.escapes.get(&id(node)))
         .flatten();
@@ -689,7 +700,7 @@ fn probe_key<'t>(
         key.push(',');
         key.push_str(&nid.to_string());
     }
-    let mut pending: Vec<&Value> = expected.to_vec();
+    let mut pending: Vec<V<'_>> = expected.to_vec();
     while let Some(n) = pending.pop() {
         pending.extend(children(n));
         if let Some(state) = node_state(w, c, n) {
@@ -740,7 +751,7 @@ fn probe_spelling<'t>(w: &Writer<'t>, expected: &[N<'t>]) -> Spelling<'t> {
         let texts = if ty(n) == "text" {
             vec![*n]
         } else {
-            texts_below(n)
+            texts_below(*n)
         };
         for t in texts {
             if let Some(own) = w.sp.escapes.get(&id(t)) {
@@ -806,9 +817,7 @@ fn probe_round<'t>(
 ) -> Option<(Vec<(N<'t>, usize)>, bool)> {
     let source = format!("{}\n", write_inlines(w, expected, flags));
     let parsed = parse_chunk(w, &source);
-    let [block] = children(&parsed) else {
-        return None;
-    };
+    let block = children(&parsed).single()?;
     if ty(block) != "paragraph" {
         return None;
     }
@@ -855,7 +864,7 @@ fn escape_content_construct<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>)
 
 const MAX_ACROSS: usize = 16;
 
-fn is_paired_mark(n: &Value) -> bool {
+fn is_paired_mark(n: V<'_>) -> bool {
     matches!(
         ty(n),
         "emphasis"
@@ -938,7 +947,7 @@ fn escape_content_line<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> b
 
 fn opens_block_alone<'t>(w: &mut Writer<'t>, c: &Check<'t>, nodes: &[N<'t>], from: usize) -> bool {
     let mut end = from;
-    while nodes.get(end).is_some_and(|n| !is_break(Some(n))) {
+    while nodes.get(end).is_some_and(|n| !is_break(Some(*n))) {
         end += 1;
     }
     let line = write_inlines(w, nodes.get(from..end).unwrap_or(&[]), c.flags);
@@ -949,12 +958,12 @@ fn opens_block_alone<'t>(w: &mut Writer<'t>, c: &Check<'t>, nodes: &[N<'t>], fro
         return false;
     }
     let doc = parse_chunk(w, &line);
-    let opens = !matches!(children(&doc), [p] if ty(p) == "paragraph");
+    let opens = children(&doc).single().is_none_or(|p| ty(p) != "paragraph");
     w.line_opens.insert(line, opens);
     opens
 }
 
-fn opener_shift(a: &Value) -> usize {
+fn opener_shift(a: V<'_>) -> usize {
     match ty(a) {
         "image" | "literal_inline" | "inline_footnote" => 1,
         "math" => {
@@ -976,7 +985,7 @@ fn opener_shift(a: &Value) -> usize {
     }
 }
 
-fn is_chain_opener(a: &Value) -> bool {
+fn is_chain_opener(a: V<'_>) -> bool {
     match ty(a) {
         "footnote_ref" => true,
         "link" | "image" | "span" | "inline_footnote" => {
@@ -986,7 +995,7 @@ fn is_chain_opener(a: &Value) -> bool {
     }
 }
 
-fn holds_closer(node: &Value) -> bool {
+fn holds_closer(node: V<'_>) -> bool {
     if ty(node) == "image" && s(node, "alt").is_some_and(|a| a.contains(']')) {
         return true;
     }
@@ -1001,7 +1010,7 @@ fn holds_closer(node: &Value) -> bool {
 
 const SPAN_TYPES: &[&str] = &["code", "literal_inline", "math"];
 
-fn escape_opener<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>, at: usize, a: &Value) {
+fn escape_opener<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>, at: usize, a: V<'_>) {
     let b = text(e).as_bytes();
     let mut start = at;
     while matches!(b.get(start), Some(b' ' | b'\t')) {
@@ -1208,9 +1217,9 @@ pub fn extend_chains<'t>(w: &Writer<'t>, c: &mut Check<'t>) {
             continue;
         }
         if text(node).as_bytes().get(*at) == Some(&b'`') {
-            escape_backticks(w, c, node, *at, a, last_bare);
+            escape_backticks(w, c, *node, *at, a, last_bare);
         } else {
-            escape_brackets(w, c, node, *at, a);
+            escape_brackets(w, c, *node, *at, a);
         }
     }
     c.chains = chains;
@@ -1268,7 +1277,7 @@ fn closed_early<'t>(
     }
 }
 
-fn is_brace_line(node: Option<&Value>) -> bool {
+fn is_brace_line(node: Option<V<'_>>) -> bool {
     node.is_some_and(|n| ty(n) == "text" && text(n).starts_with('{') && text(n).ends_with('}'))
 }
 
@@ -1312,7 +1321,7 @@ fn match_characters<'t>(
     w: &Writer<'t>,
     c: &mut Check<'t>,
     e: N<'t>,
-    a: &Value,
+    a: V<'_>,
     at: &mut Cursor,
 ) -> bool {
     let value = text(e).as_bytes();
@@ -1339,7 +1348,7 @@ fn match_characters<'t>(
     true
 }
 
-fn starts_with_closer(node: &Value, next: Option<&Value>) -> bool {
+fn starts_with_closer(node: V<'_>, next: Option<V<'_>>) -> bool {
     closing_mark(ty(node)).is_some_and(|m| {
         next.is_some_and(|n| ty(n) == "text" && text(n).as_bytes().first() == Some(&m))
     })
@@ -1379,7 +1388,7 @@ fn after_text_node<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
     es: &[N<'t>],
-    as_: &[Value],
+    as_: Arr<'_>,
     at: &mut Cursor,
     owner: N<'t>,
 ) -> bool {
@@ -1408,7 +1417,7 @@ fn match_text<'t>(
     c: &mut Check<'t>,
     e: N<'t>,
     es: &[N<'t>],
-    as_: &[Value],
+    as_: Arr<'_>,
     at: &mut Cursor,
     owner: N<'t>,
 ) -> bool {
@@ -1428,7 +1437,7 @@ fn step_over<'t>(
     w: &mut Writer<'t>,
     c: &Check<'t>,
     es: &[N<'t>],
-    as_: &[Value],
+    as_: Arr<'_>,
     at: &mut Cursor,
 ) -> bool {
     let Some(&e) = es.get(at.i) else { return false };
@@ -1453,11 +1462,11 @@ fn step_over<'t>(
 }
 
 fn comparison_behind_quote(
-    prior: Option<&Value>,
-    before: Option<&Value>,
-    t: &Value,
+    prior: Option<V<'_>>,
+    before: Option<V<'_>>,
+    t: V<'_>,
     at: usize,
-    parsed: &Value,
+    parsed: V<'_>,
 ) -> bool {
     let neighbor = prior
         .filter(|p| ty(p) == "text")
@@ -1484,7 +1493,7 @@ fn skip_construct<'t>(
     c: &mut Check<'t>,
     e: N<'t>,
     es: &[N<'t>],
-    a: &Value,
+    a: V<'_>,
     at: &mut Cursor,
 ) -> bool {
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
@@ -1509,7 +1518,7 @@ fn skip_construct<'t>(
     true
 }
 
-fn reads_on(node: &Value, next: &Value) -> bool {
+fn reads_on(node: V<'_>, next: V<'_>) -> bool {
     if has(node, "attrs") {
         return false;
     }
@@ -1548,7 +1557,7 @@ fn reads_neighbor<'t>(
     e: N<'t>,
     es: &[N<'t>],
     i: usize,
-    a: &Value,
+    a: V<'_>,
 ) -> bool {
     let next = text_at(es, i + 1);
     if let Some(n) = next {
@@ -1578,7 +1587,7 @@ fn reads_neighbor<'t>(
     before.is_some_and(|b| escape_at(w, c, b, text(b).len().saturating_sub(1)))
 }
 
-fn is_lost_code(w: &Writer<'_>, node: Option<&Value>) -> bool {
+fn is_lost_code(w: &Writer<'_>, node: Option<V<'_>>) -> bool {
     node.is_some_and(|n| ty(n) == "code" && w.is_lost(n))
 }
 
@@ -1587,7 +1596,7 @@ fn match_node<'t>(
     c: &mut Check<'t>,
     e: N<'t>,
     es: &[N<'t>],
-    as_: &[Value],
+    as_: Arr<'_>,
     at: &mut Cursor,
     owner: N<'t>,
 ) -> bool {
@@ -1633,8 +1642,8 @@ fn repair_comment_closer<'t>(
     c: &mut Check<'t>,
     es: &[N<'t>],
     at: usize,
-    e: &Value,
-    a: &Value,
+    e: V<'_>,
+    a: V<'_>,
 ) {
     if ty(e) != "comment" || ty(a) != "comment" || s(e, "form") != Some("line") {
         return;
@@ -1701,7 +1710,7 @@ fn repair_brace_before_comment<'t>(w: &Writer<'t>, c: &mut Check<'t>, es: &[N<'t
     }
 }
 
-fn set_anchor(es: &[N<'_>], as_: &[Value], at: &mut Cursor) {
+fn set_anchor(es: &[N<'_>], as_: Arr<'_>, at: &mut Cursor) {
     if at.vi != 0 || at.aj != 0 {
         return;
     }
@@ -1717,7 +1726,7 @@ fn resync<'t>(
     w: &mut Writer<'t>,
     c: &Check<'t>,
     es: &[N<'t>],
-    as_: &[Value],
+    as_: Arr<'_>,
     at: &mut Cursor,
 ) -> bool {
     let (Some(anchor), Some((_, failed_end))) = (at.anchor, as_.get(at.j).and_then(span)) else {
@@ -1756,7 +1765,7 @@ fn compare_inlines<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
     es: &[N<'t>],
-    as_: &[Value],
+    as_: Arr<'_>,
     owner: N<'t>,
 ) {
     let outer = c.owner.replace(owner);
@@ -1781,7 +1790,7 @@ fn compare_inlines<'t>(
     c.owner = outer;
 }
 
-fn compare_raw<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
+fn compare_raw<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) {
     let mut probe = Check {
         flags: c.flags,
         ..Check::default()
@@ -1798,13 +1807,13 @@ fn compare_raw<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
     }
 }
 
-fn compare_fields<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
+fn compare_fields<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) {
     if let Some(field) = differing_field(w, c, e, a) {
         c.losses.push((e, Some(field)));
     }
 }
 
-fn compare_inline<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
+fn compare_inline<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) {
     if super::extension::source_core_equivalent(e, Some(a)) {
         return;
     }
@@ -1855,7 +1864,7 @@ fn missing_block<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) {
     }
 }
 
-fn has_span_marks(table: &Value) -> bool {
+fn has_span_marks(table: V<'_>) -> bool {
     children(table).iter().any(|g| {
         ty(g) != "comment"
             && children(g)
@@ -1864,9 +1873,9 @@ fn has_span_marks(table: &Value) -> bool {
     })
 }
 
-fn compare_slots<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) {
+fn compare_slots<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) {
     match (title(e), title(a)) {
-        (Some(t), parsed) => compare_inlines(w, c, &refs(t), parsed.unwrap_or(&[]), e),
+        (Some(t), parsed) => compare_inlines(w, c, &refs(t), parsed.unwrap_or_else(Arr::empty), e),
         (None, Some(_)) => c.losses.push((e, Some("title".into()))),
         (None, None) => {}
     }
@@ -1880,7 +1889,7 @@ fn compare_slots<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value)
     }
 }
 
-fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value) -> bool {
+fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) -> bool {
     if w.is_lost(e) || super::extension::source_core_equivalent(e, Some(a)) {
         return true;
     }
@@ -1909,7 +1918,7 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value)
 }
 
 fn read_starts(
-    node: &Value,
+    node: V<'_>,
     offset: i64,
     paragraphs: &mut AddrSet<usize>,
     lines: &mut AddrSet<i64>,
@@ -1936,7 +1945,7 @@ fn read_starts(
     }
 }
 
-fn has_opener_shape(node: Option<&Value>) -> bool {
+fn has_opener_shape(node: Option<V<'_>>) -> bool {
     let Some(n) = node else { return false };
     if ty(n) != "text" {
         return true;
@@ -1948,7 +1957,7 @@ fn has_opener_shape(node: Option<&Value>) -> bool {
     }
 }
 
-fn is_pending(c: &Check<'_>, node: Option<&Value>) -> bool {
+fn is_pending(c: &Check<'_>, node: Option<V<'_>>) -> bool {
     node.is_some_and(|n| ty(n) == "text" && c.marks.contains_key(&id(n)))
 }
 
@@ -1995,7 +2004,7 @@ fn escape_opener_lines<'t>(
 }
 
 /// After a block read back as another block, finds the other lines of the group that opened a block (C2-W-092).
-pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: &Value, offset: i64) {
+pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: V<'_>, offset: i64) {
     if !c.misaligned {
         return;
     }
@@ -2013,8 +2022,8 @@ pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: &Value, off
 pub fn compare_blocks<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
-    es: &'t [Value],
-    as_: &[Value],
+    es: Arr<'t>,
+    as_: Arr<'_>,
     owner: N<'t>,
 ) {
     let before = c.changes();

@@ -5,7 +5,8 @@
 
 use crate::hash::AddrHasher;
 use crate::hash::{AddrMap, AddrSet};
-use serde_json::{Map, Value};
+use crate::view::{Arr, V};
+use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
@@ -15,79 +16,96 @@ use std::sync::OnceLock;
 /// protection buys nothing.
 type TypeMap<V> = HashMap<String, V, BuildHasherDefault<AddrHasher>>;
 
-pub type N<'t> = &'t Value;
+pub type N<'t> = V<'t>;
 
 /// The identity of a node: its address, stable while the tree is borrowed.
-pub fn id(n: &Value) -> usize {
-    std::ptr::from_ref(n).addr()
+pub fn id<'t>(n: impl Into<V<'t>>) -> usize {
+    let n: V<'t> = n.into();
+    n.addr()
 }
 
-pub fn ty(n: &Value) -> &str {
-    n.get("type").and_then(Value::as_str).unwrap_or("")
+pub fn ty<'t>(n: impl Into<V<'t>>) -> &'t str {
+    let n: V<'t> = n.into();
+    match n {
+        V::Node(node) => node.type_name(),
+        _ => n.get("type").and_then(V::as_str).unwrap_or(""),
+    }
 }
 
-pub fn is(n: Option<&Value>, t: &str) -> bool {
+pub fn is(n: Option<V<'_>>, t: &str) -> bool {
     n.is_some_and(|n| ty(n) == t)
 }
 
-pub fn children(n: &Value) -> &[Value] {
+pub fn children<'t>(n: impl Into<V<'t>>) -> Arr<'t> {
+    let n: V<'t> = n.into();
     n.get("children")
-        .and_then(Value::as_array)
-        .map_or(&[], Vec::as_slice)
+        .and_then(V::as_array)
+        .unwrap_or_else(Arr::empty)
 }
 
-pub fn list<'t>(n: &'t Value, field: &str) -> Option<&'t [Value]> {
-    n.get(field).and_then(Value::as_array).map(Vec::as_slice)
+pub fn list<'t>(n: impl Into<V<'t>>, field: &str) -> Option<Arr<'t>> {
+    let n: V<'t> = n.into();
+    n.get(field).and_then(V::as_array)
 }
 
-pub fn s<'t>(n: &'t Value, field: &str) -> Option<&'t str> {
-    n.get(field).and_then(Value::as_str)
+pub fn s<'t>(n: impl Into<V<'t>>, field: &str) -> Option<&'t str> {
+    let n: V<'t> = n.into();
+    n.get(field).and_then(V::as_str)
 }
 
-pub fn text(n: &Value) -> &str {
+pub fn text<'t>(n: impl Into<V<'t>>) -> &'t str {
+    let n: V<'t> = n.into();
     s(n, "value").unwrap_or("")
 }
 
-pub fn flag(n: &Value, field: &str) -> bool {
-    n.get(field).and_then(Value::as_bool).unwrap_or(false)
+pub fn flag<'t>(n: impl Into<V<'t>>, field: &str) -> bool {
+    let n: V<'t> = n.into();
+    n.get(field).and_then(V::as_bool).unwrap_or(false)
 }
 
-pub fn int(n: &Value, field: &str) -> Option<i64> {
-    n.get(field).and_then(Value::as_i64)
+pub fn int<'t>(n: impl Into<V<'t>>, field: &str) -> Option<i64> {
+    let n: V<'t> = n.into();
+    n.get(field).and_then(V::as_i64)
 }
 
-pub fn has(n: &Value, field: &str) -> bool {
+pub fn has<'t>(n: impl Into<V<'t>>, field: &str) -> bool {
+    let n: V<'t> = n.into();
     n.get(field).is_some_and(|v| !v.is_null())
 }
 
-pub fn caption(n: &Value) -> Option<&Value> {
+pub fn caption<'t>(n: impl Into<V<'t>>) -> Option<V<'t>> {
+    let n: V<'t> = n.into();
     n.get("caption").filter(|c| c.is_object())
 }
 
-pub fn title(n: &Value) -> Option<&[Value]> {
+pub fn title<'t>(n: impl Into<V<'t>>) -> Option<Arr<'t>> {
+    let n: V<'t> = n.into();
     list(n, "title")
 }
 
-pub fn is_break(n: Option<&Value>) -> bool {
+pub fn is_break(n: Option<V<'_>>) -> bool {
     n.is_some_and(|n| matches!(ty(n), "soft_break" | "hard_break"))
 }
 
-pub fn attrs(n: &Value) -> Option<&Map<String, Value>> {
-    n.get("attrs").and_then(Value::as_object)
+pub fn attrs<'t>(n: impl Into<V<'t>>) -> Option<V<'t>> {
+    let n: V<'t> = n.into();
+    n.get("attrs").filter(|a| a.is_object())
 }
 
-pub fn classes(n: &Value) -> Vec<&str> {
+pub fn classes<'t>(n: impl Into<V<'t>>) -> Vec<&'t str> {
+    let n: V<'t> = n.into();
     attrs(n)
         .and_then(|a| a.get("classes"))
-        .and_then(Value::as_array)
-        .map(|c| c.iter().filter_map(Value::as_str).collect())
+        .and_then(V::as_array)
+        .map(|c| c.iter().filter_map(V::as_str).collect())
         .unwrap_or_default()
 }
 
-pub fn key_values(n: &Value) -> Vec<(&str, &str)> {
+pub fn key_values<'t>(n: impl Into<V<'t>>) -> Vec<(&'t str, &'t str)> {
+    let n: V<'t> = n.into();
     attrs(n)
         .and_then(|a| a.get("keyValues"))
-        .and_then(Value::as_array)
+        .and_then(V::as_array)
         .map(|kv| {
             kv.iter()
                 .filter_map(|p| {
@@ -100,15 +118,34 @@ pub fn key_values(n: &Value) -> Vec<(&str, &str)> {
 }
 
 /// A start and an end byte of a node, from `pos`.
-pub fn span(n: &Value) -> Option<(usize, usize)> {
-    let pos = n.get("pos")?;
-    let start = usize::try_from(pos.get("startOffset")?.as_u64()?).ok()?;
-    let end = usize::try_from(pos.get("endOffset")?.as_u64()?).ok()?;
-    Some((start, end))
+pub fn span<'t>(n: impl Into<V<'t>>) -> Option<(usize, usize)> {
+    let n: V<'t> = n.into();
+    n.offsets()
 }
 
-pub fn pos_field(n: &Value, field: &str) -> Option<i64> {
-    n.get("pos")?.get(field)?.as_i64()
+pub fn pos_field<'t>(n: impl Into<V<'t>>, field: &str) -> Option<i64> {
+    let n: V<'t> = n.into();
+    n.pos()?.get(field)?.as_i64()
+}
+
+/// `serde_json::Value::pointer` on the view: RFC 6901, `~1` and `~0` unescaped, no leading zero in an index.
+pub fn pointer<'t>(n: V<'t>, path: &str) -> Option<V<'t>> {
+    if path.is_empty() {
+        return Some(n);
+    }
+    let mut at = n;
+    for part in path.strip_prefix('/')?.split('/') {
+        let part = part.replace("~1", "/").replace("~0", "~");
+        at = if let Some(items) = at.as_array() {
+            if part.starts_with('+') || (part.starts_with('0') && part.len() != 1) {
+                return None;
+            }
+            items.get(part.parse::<usize>().ok()?)?
+        } else {
+            at.get(&part)?
+        };
+    }
+    Some(at)
 }
 
 pub const INLINE_PARENTS: &[&str] = &[
@@ -134,7 +171,8 @@ pub const INLINE_PARENTS: &[&str] = &[
     "small_caps",
 ];
 
-pub fn is_inline_parent(n: &Value) -> bool {
+pub fn is_inline_parent<'t>(n: impl Into<V<'t>>) -> bool {
+    let n: V<'t> = n.into();
     INLINE_PARENTS.contains(&ty(n))
 }
 
@@ -161,37 +199,28 @@ fn slots_table() -> &'static TypeMap<Vec<Vec<String>>> {
     })
 }
 
-fn visit_value<'t>(v: &'t Value, step: &str, f: &mut dyn FnMut(&'t [Value], &str, bool)) {
-    match v {
-        Value::Array(items) => f(items, step, false),
-        Value::Object(_) if v.get("type").is_some() => f(std::slice::from_ref(v), step, true),
-        _ => {}
+fn visit_value<'t>(v: V<'t>, step: &str, f: &mut dyn FnMut(Arr<'t>, &str, bool)) {
+    if let Some(items) = v.as_array() {
+        f(items, step, false);
+    } else if v.is_object() && v.get("type").is_some() {
+        if let Some(one) = Arr::one(v) {
+            f(one, step, true);
+        }
     }
 }
 
-fn visit_path<'t>(
-    v: &'t Value,
-    parts: &[String],
-    step: &str,
-    f: &mut dyn FnMut(&'t [Value], &str, bool),
-) {
+fn visit_path<'t>(v: V<'t>, parts: &[String], step: &str, f: &mut dyn FnMut(Arr<'t>, &str, bool)) {
     let Some((first, rest)) = parts.split_first() else {
         visit_value(v, step, f);
         return;
     };
     if first == "*" {
-        match v {
-            Value::Object(m) => {
-                for (k, inner) in m {
-                    visit_path(inner, rest, &join_step(step, k), f);
-                }
+        if let Some(items) = v.as_array() {
+            for (k, inner) in items.iter().enumerate() {
+                visit_path(inner, rest, &join_step(step, &k.to_string()), f);
             }
-            Value::Array(items) => {
-                for (k, inner) in items.iter().enumerate() {
-                    visit_path(inner, rest, &join_step(step, &k.to_string()), f);
-                }
-            }
-            _ => {}
+        } else if v.is_object() {
+            v.each(&mut |k, inner| visit_path(inner, rest, &join_step(step, k), f));
         }
         return;
     }
@@ -220,11 +249,7 @@ fn escaped_key(name: &str) -> Cow<'_, str> {
 /// C2-A-024: the slots of a node in their table order; in source order a title
 /// precedes the other slots. `f` takes the nodes, the pointer step and whether
 /// the slot holds one node.
-pub fn for_each_slot<'t>(
-    n: &'t Value,
-    source_order: bool,
-    f: &mut dyn FnMut(&'t [Value], &str, bool),
-) {
+pub fn for_each_slot<'t>(n: V<'t>, source_order: bool, f: &mut dyn FnMut(Arr<'t>, &str, bool)) {
     let Some(paths) = slots_table().get(ty(n)) else {
         return;
     };
@@ -246,7 +271,7 @@ pub fn for_each_slot<'t>(
 }
 
 /// Every node below `n` in its slots, depth first.
-pub fn descendants<'t>(n: &'t Value, out: &mut Vec<&'t Value>) {
+pub fn descendants<'t>(n: V<'t>, out: &mut Vec<V<'t>>) {
     for_each_slot(n, false, &mut |nodes, _, _| {
         for c in nodes {
             out.push(c);
@@ -285,18 +310,13 @@ fn results() -> &'static Results {
 }
 
 /// The result fields of the node's type, `None` for a node without a known type.
-pub fn result_fields(node: &Map<String, Value>) -> Option<&'static Fields> {
-    results().get(node.get("type").and_then(Value::as_str)?)
+pub fn result_fields(node: V<'_>) -> Option<&'static Fields> {
+    results().get(node.get("type").and_then(V::as_str)?)
 }
 
 /// C2-A-162: positions and resolution results are not compared. `fields` is
 /// [`result_fields`] of `node`.
-pub fn skipped_in(
-    node: &Map<String, Value>,
-    fields: Option<&Fields>,
-    name: &str,
-    span_marks: bool,
-) -> bool {
+pub fn skipped_in(node: V<'_>, fields: Option<&Fields>, name: &str, span_marks: bool) -> bool {
     let Some(fields) = fields else {
         return false;
     };
@@ -313,45 +333,64 @@ pub fn skipped_in(
     }
 }
 
-/// The compared fields of `node`, in key order.
-fn compared(
-    node: &Map<String, Value>,
-    span_marks: bool,
-) -> impl Iterator<Item = (&String, &Value)> {
+/// The most fields a node of the tree has; a node with more is compared through a vector.
+const FIELDS: usize = 24;
+
+/// The compared fields of `node`, in key order, into `out`.
+fn compared<'t>(node: V<'t>, span_marks: bool, out: &mut Vec<(&'t str, V<'t>)>) {
     let fields = result_fields(node);
-    node.iter()
-        .filter(move |(k, _)| !skipped_in(node, fields, k, span_marks))
+    node.each(&mut |k, v| {
+        if !skipped_in(node, fields, k, span_marks) {
+            out.push((k, v));
+        }
+    });
 }
 
 /// Whether two neighbors of `items` are text nodes, which C2-A-161 compares joined.
-fn has_adjacent_text(items: &[Value]) -> bool {
-    items
-        .windows(2)
-        .any(|p| matches!(p, [a, b] if ty(a) == "text" && ty(b) == "text"))
+fn has_adjacent_text(items: Arr<'_>) -> bool {
+    let mut last_text = false;
+    for item in items {
+        let is_text = ty(item) == "text";
+        if is_text && last_text {
+            return true;
+        }
+        last_text = is_text;
+    }
+    false
 }
 
-fn coalesced(items: &[Value]) -> Vec<std::borrow::Cow<'_, Value>> {
-    let mut out: Vec<std::borrow::Cow<'_, Value>> = Vec::with_capacity(items.len());
+/// A node of a compared array: a text node can stand for neighbors joined, with their joined value.
+#[derive(Clone)]
+struct Item<'t> {
+    node: V<'t>,
+    joined: Option<String>,
+}
+
+fn coalesced(items: Arr<'_>) -> Vec<Item<'_>> {
+    let mut out: Vec<Item<'_>> = Vec::with_capacity(items.len());
     for item in items {
         if ty(item) == "text" {
             if let Some(last) = out.last_mut() {
-                if ty(last) == "text" {
-                    let mut merged = last.clone().into_owned();
-                    let joined = format!("{}{}", text(&merged), text(item));
-                    if let Some(m) = merged.as_object_mut() {
-                        m.insert("value".into(), Value::String(joined));
-                    }
-                    *last = std::borrow::Cow::Owned(merged);
+                if ty(last.node) == "text" {
+                    let mut joined = last
+                        .joined
+                        .take()
+                        .unwrap_or_else(|| text(last.node).to_string());
+                    joined.push_str(text(item));
+                    last.joined = Some(joined);
                     continue;
                 }
             }
         }
-        out.push(std::borrow::Cow::Borrowed(item));
+        out.push(Item {
+            node: item,
+            joined: None,
+        });
     }
     out
 }
 
-fn list_has_span_marks(table: &Value) -> bool {
+fn list_has_span_marks(table: V<'_>) -> bool {
     children(table).iter().any(|g| {
         children(g).iter().any(|r| {
             children(r)
@@ -361,51 +400,91 @@ fn list_has_span_marks(table: &Value) -> bool {
     })
 }
 
-fn equal_values(a: &Value, b: &Value, span_marks: bool) -> bool {
-    match (a, b) {
-        (Value::Array(x), Value::Array(y)) => {
-            if !has_adjacent_text(x) && !has_adjacent_text(y) {
-                return x.len() == y.len()
-                    && x.iter().zip(y).all(|(l, r)| equal_values(l, r, span_marks));
-            }
-            let (x, y) = (coalesced(x), coalesced(y));
-            x.len() == y.len()
-                && x.iter()
-                    .zip(&y)
-                    .all(|(l, r)| equal_values(l, r, span_marks))
-        }
-        (Value::Object(x), Value::Object(y)) => {
-            let inner = if x.get("type").and_then(Value::as_str) == Some("table") {
-                list_has_span_marks(a) || list_has_span_marks(b)
-            } else {
-                span_marks
-            };
-            let (mut l, mut r) = (compared(x, inner), compared(y, inner));
-            loop {
-                match (l.next(), r.next()) {
-                    (None, None) => return true,
-                    (Some((kl, p)), Some((kr, q))) if kl == kr => {
-                        if !equal_values(p, q, inner) {
-                            return false;
-                        }
-                    }
-                    _ => return false,
-                }
-            }
-        }
-        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
-        _ => a == b,
+pub fn equal_scalars(a: V<'_>, b: V<'_>) -> bool {
+    if let (Some(x), Some(y)) = (a.as_str(), b.as_str()) {
+        return x == y;
     }
+    if a.is_number() && b.is_number() {
+        return a.as_f64() == b.as_f64();
+    }
+    if let (Some(x), Some(y)) = (a.as_bool(), b.as_bool()) {
+        return x == y;
+    }
+    a.is_null() && b.is_null()
+}
+
+fn equal_arrays(x: Arr<'_>, y: Arr<'_>, span_marks: bool) -> bool {
+    if !has_adjacent_text(x) && !has_adjacent_text(y) {
+        return x.len() == y.len()
+            && x.iter()
+                .zip(y.iter())
+                .all(|(l, r)| equal_values(l, r, span_marks));
+    }
+    let (x, y) = (coalesced(x), coalesced(y));
+    x.len() == y.len()
+        && x.iter().zip(&y).all(|(l, r)| {
+            equal_objects(
+                l.node,
+                l.joined.as_deref(),
+                r.node,
+                r.joined.as_deref(),
+                span_marks,
+            )
+        })
+}
+
+/// Two objects, where `lv` and `rv` replace the `value` field of a joined text node.
+fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_marks: bool) -> bool {
+    if !(a.is_object() && b.is_object()) {
+        return lv.is_none() && rv.is_none() && equal_values(a, b, span_marks);
+    }
+    let inner = if a.get("type").and_then(V::as_str) == Some("table") {
+        list_has_span_marks(a) || list_has_span_marks(b)
+    } else {
+        span_marks
+    };
+    let mut l = Vec::with_capacity(FIELDS);
+    let mut r = Vec::with_capacity(FIELDS);
+    compared(a, inner, &mut l);
+    compared(b, inner, &mut r);
+    l.len() == r.len()
+        && l.iter().zip(&r).all(|((kl, p), (kr, q))| {
+            if kl != kr {
+                return false;
+            }
+            if *kl == "value" && (lv.is_some() || rv.is_some()) {
+                let x = lv.or_else(|| p.as_str());
+                return x.is_some() && x == rv.or_else(|| q.as_str());
+            }
+            equal_values(*p, *q, inner)
+        })
+}
+
+fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
+    match (a.as_array(), b.as_array()) {
+        (Some(x), Some(y)) => return equal_arrays(x, y, span_marks),
+        (Some(_), None) | (None, Some(_)) => return false,
+        (None, None) => {}
+    }
+    if a.is_object() || b.is_object() {
+        return a.is_object() && b.is_object() && equal_objects(a, None, b, None, span_marks);
+    }
+    equal_scalars(a, b)
+}
+
+/// C2-A-161 on two node lists, as the children of two paragraphs compare.
+pub fn lists_equal(a: Arr<'_>, b: Arr<'_>) -> bool {
+    equal_arrays(a, b, false)
 }
 
 /// C2-A-161: whether two trees are the same document.
-pub fn trees_equal(a: &Value, b: &Value) -> bool {
-    equal_values(a, b, false)
+pub fn trees_equal<'a, 'b>(a: impl Into<V<'a>>, b: impl Into<V<'b>>) -> bool {
+    equal_values(a.into(), b.into(), false)
 }
 
 /// `n` without the standard data namespaces (C2-A-193).
-pub fn without_standard_data(n: &Value) -> Value {
-    let mut copy = n.clone();
+pub fn without_standard_data(n: V<'_>) -> Value {
+    let mut copy = n.to_value();
     strip_data(&mut copy);
     copy
 }
@@ -432,7 +511,7 @@ fn strip_data(v: &mut Value) {
 }
 
 /// The plain text of inline nodes (C2-B-120).
-pub fn plain_text(nodes: &[Value]) -> String {
+pub fn plain_text(nodes: Arr<'_>) -> String {
     let mut out = String::new();
     for n in nodes {
         match ty(n) {
@@ -448,12 +527,12 @@ pub fn plain_text(nodes: &[Value]) -> String {
 }
 
 /// The JSON pointer of each wanted node in the document, by identity.
-pub fn pointers(doc: &Value, wanted: &AddrSet<usize>) -> AddrMap<usize, String> {
+pub fn pointers(doc: V<'_>, wanted: &AddrSet<usize>) -> AddrMap<usize, String> {
     let mut found = AddrMap::default();
     if wanted.is_empty() {
         return found;
     }
-    let mut stack: Vec<(&Value, String)> = vec![(doc, String::new())];
+    let mut stack: Vec<(V<'_>, String)> = vec![(doc, String::new())];
     while let Some((n, path)) = stack.pop() {
         if wanted.contains(&id(n)) {
             found.insert(id(n), path.clone());

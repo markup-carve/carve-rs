@@ -28,7 +28,50 @@ pub(crate) enum V<'a> {
     Json(&'a Value),
 }
 
+impl<'a> From<&'a Value> for V<'a> {
+    fn from(value: &'a Value) -> Self {
+        Self::Json(value)
+    }
+}
+
+impl<'a> From<&&'a Value> for V<'a> {
+    fn from(value: &&'a Value) -> Self {
+        Self::Json(value)
+    }
+}
+
+impl<'a> From<&V<'a>> for V<'a> {
+    fn from(value: &V<'a>) -> Self {
+        *value
+    }
+}
+
+impl<'a> From<&&V<'a>> for V<'a> {
+    fn from(value: &&V<'a>) -> Self {
+        **value
+    }
+}
+
 impl<'a> V<'a> {
+    /// The address of the node or value behind the view: a node's identity while the tree is borrowed.
+    pub(crate) fn addr(self) -> usize {
+        match self {
+            Self::Doc(doc) => std::ptr::from_ref(doc).addr(),
+            Self::Node(node) => std::ptr::from_ref(node).addr(),
+            Self::Json(value) => std::ptr::from_ref(value).addr(),
+            Self::Nodes(items) => items.as_ptr().addr(),
+            Self::Pos(pos) => std::ptr::from_ref(pos).addr(),
+            Self::Attrs(attrs) => std::ptr::from_ref(attrs).addr(),
+            Self::Marker(marker) => std::ptr::from_ref(marker).addr(),
+            Self::Task(task) => std::ptr::from_ref(task).addr(),
+            Self::Pair(pair) => std::ptr::from_ref(pair).addr(),
+            Self::Strs(items) => items.as_ptr().addr(),
+            Self::Segments(items) => items.as_ptr().addr(),
+            Self::Pairs(items) => items.as_ptr().addr(),
+            Self::Null | Self::Str(_) | Self::Int(_) | Self::Num(_) | Self::Bool(_) => 0,
+        }
+    }
+
     /// `serde_json` writes a non-finite float as `null`.
     pub(crate) const fn num(value: f64) -> Self {
         if value.is_finite() {
@@ -191,6 +234,60 @@ impl<'a> V<'a> {
         }
     }
 
+    pub(crate) fn as_i64(self) -> Option<i64> {
+        match self {
+            Self::Int(n) => Some(n),
+            Self::Json(value) => value.as_i64(),
+            _ => None,
+        }
+    }
+
+    /// The number as `serde_json::Number::as_f64` reads it.
+    pub(crate) fn as_f64(self) -> Option<f64> {
+        match self {
+            #[allow(clippy::cast_precision_loss)]
+            Self::Int(n) => Some(n as f64),
+            Self::Num(n) => Some(n),
+            Self::Json(Value::Number(n)) => n.as_f64(),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn is_number(self) -> bool {
+        matches!(
+            self,
+            Self::Int(_) | Self::Num(_) | Self::Json(Value::Number(_))
+        )
+    }
+
+    pub(crate) const fn is_null(self) -> bool {
+        matches!(self, Self::Null | Self::Json(Value::Null))
+    }
+
+    /// The JSON value the view reads, built.
+    pub(crate) fn to_value(self) -> Value {
+        if let Self::Json(json) = self {
+            return json.clone();
+        }
+        if let Some(items) = self.as_array() {
+            return Value::Array(items.iter().map(Self::to_value).collect());
+        }
+        if self.is_object() {
+            let mut map = serde_json::Map::new();
+            self.each(&mut |key, child| {
+                map.insert(key.to_string(), child.to_value());
+            });
+            return Value::Object(map);
+        }
+        match self {
+            Self::Str(text) => Value::String(text.to_string()),
+            Self::Int(n) => Value::from(n),
+            Self::Num(n) => Value::from(n),
+            Self::Bool(b) => Value::Bool(b),
+            _ => Value::Null,
+        }
+    }
+
     pub(crate) fn as_bool(self) -> Option<bool> {
         match self {
             Self::Bool(b) => Some(b),
@@ -264,6 +361,13 @@ fn pos_field(pos: &Pos, key: &str) -> Option<u32> {
     })
 }
 
+/// The JSON text of the value, as `serde_json::Value` displays it.
+impl std::fmt::Display for V<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_value().fmt(f)
+    }
+}
+
 impl PartialEq<&str> for V<'_> {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == Some(*other)
@@ -335,6 +439,37 @@ impl<'a> Arr<'a> {
 
     pub(crate) fn first(self) -> Option<V<'a>> {
         self.get(0)
+    }
+
+    pub(crate) fn last(self) -> Option<V<'a>> {
+        self.len().checked_sub(1).and_then(|at| self.get(at))
+    }
+
+    /// The items `start..end`, or `None` where the range is out of bounds.
+    pub(crate) fn slice(self, start: usize, end: usize) -> Option<Self> {
+        let range = start..end;
+        Some(match self {
+            Self::Nodes(items) => Self::Nodes(items.get(range)?),
+            Self::Strs(items) => Self::Strs(items.get(range)?),
+            Self::Segments(items) => Self::Segments(items.get(range)?),
+            Self::Pairs(items) => Self::Pairs(items.get(range)?),
+            Self::Json(items) => Self::Json(items.get(range)?),
+            Self::Pair(_) => (range == (0..2)).then_some(self)?,
+        })
+    }
+
+    /// The items from `start` on.
+    pub(crate) fn from(self, start: usize) -> Self {
+        self.slice(start, self.len()).unwrap_or_else(Self::empty)
+    }
+
+    /// The array of the one node `node`, as a slot that holds one node reads.
+    pub(crate) fn one(node: V<'a>) -> Option<Self> {
+        match node {
+            V::Node(node) => Some(Self::Nodes(std::slice::from_ref(node))),
+            V::Json(value) => Some(Self::Json(std::slice::from_ref(value))),
+            _ => None,
+        }
     }
 
     pub(crate) const fn iter(self) -> ArrIter<'a> {

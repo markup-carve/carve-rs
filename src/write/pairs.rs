@@ -2,7 +2,7 @@
 use super::node::{N, children, for_each_slot, id, is_inline_parent, text, ty};
 use super::state::Writer;
 use crate::pair_marks::{RULES, pairs};
-use serde_json::Value;
+use crate::view::Arr;
 
 type Place<'t> = Option<(N<'t>, usize)>;
 
@@ -70,14 +70,14 @@ fn walk<'t>(w: &Writer<'t>, node: N<'t>, found: &mut Vec<(N<'t>, usize)>) {
     });
 }
 
-pub(super) fn asked<'t>(w: &Writer<'t>, group: &'t [Value]) -> Vec<(N<'t>, usize)> {
+pub(super) fn asked<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<(N<'t>, usize)> {
     let mut found = Vec::new();
     for node in group {
         walk(w, node, &mut found);
     }
     found.retain(|(node, at)| w.escapes_of(node).binary_search(at).is_err());
     found.sort_unstable_by_key(|(node, at)| (id(node), *at));
-    found.dedup_by_key(|(node, at)| (id(node), *at));
+    found.dedup_by_key(|(node, at)| (id(*node), *at));
     found
 }
 

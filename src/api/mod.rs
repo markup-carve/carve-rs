@@ -575,21 +575,26 @@ impl Carve {
 
     /// Whether the tree holds a node of a type an enabled claim reads, so the
     /// JSON pass of the claims can change it.
-    fn may_claim(&self, tree: &Tree) -> bool {
-        let div = self.standard.tabs || self.matchers.has_form(extensions::Form::Div);
-        let inline = !self.standard.inline_matchers().is_empty()
-            || self.matchers.has_form(extensions::Form::Inline);
-        if !div
-            && !inline
+    /// Whether no matcher of the host can claim a node of any tree.
+    fn claims_nothing(&self) -> bool {
+        !(self.standard.tabs || self.matchers.has_form(extensions::Form::Div))
+            && self.standard.inline_matchers().is_empty()
+            && !self.matchers.has_form(extensions::Form::Inline)
             && self.standard.fence_matchers().is_empty()
             && self
                 .matchers
                 .names(extensions::Form::Fence)
                 .next()
                 .is_none()
-        {
+    }
+
+    fn may_claim(&self, tree: &Tree) -> bool {
+        if self.claims_nothing() {
             return false;
         }
+        let div = self.standard.tabs || self.matchers.has_form(extensions::Form::Div);
+        let inline = !self.standard.inline_matchers().is_empty()
+            || self.matchers.has_form(extensions::Form::Inline);
         let json = tree.json();
         // A fence is claimed by its language, the `syntax` of the code block.
         let syntax = |name: &str| json.contains(&format!(r#""syntax":{}"#, Value::from(name)));
@@ -904,38 +909,68 @@ impl Carve {
         }
         let opts = &*host.with_standard(opts);
         let input = input.into();
-        let parsed = host.parse_with_diagnostics(input, &opts.render)?;
-        let doc = parsed.tree.value()?;
-        let settings = crate::write::Settings {
-            align_tables: opts.align_tables,
-            extensions: opts.extensions.clone(),
-            layout: None,
-            source: None,
-        };
-        // C2-W-127: `normalize` writes as if there were no sidecar. Positions of a
-        // byte input with malformed UTF-8 do not index the replaced text.
-        let text = input.text();
         let valid = match input {
             Input::Text(_) => true,
             Input::Bytes(b) => std::str::from_utf8(b).is_ok(),
         };
-        let src = (valid && !opts.normalize).then_some(text.as_ref());
         let settings = crate::write::Settings {
-            source: valid.then(|| text.to_string()),
-            ..settings
+            align_tables: opts.align_tables,
+            extensions: opts.extensions.clone(),
+            layout: None,
+            source: valid.then(|| input.text().to_string()),
         };
+        if valid && let Some(written) = format_arena(&host, input, opts, &settings)? {
+            return Ok(written);
+        }
+        let parsed = host.parse_with_diagnostics(input, &opts.render)?;
+        let doc = parsed.tree.value()?;
+        // C2-W-127: `normalize` writes as if there were no sidecar. Positions of a
+        // byte input with malformed UTF-8 do not index the replaced text.
+        let text = input.text();
+        let src = (valid && !opts.normalize).then_some(text.as_ref());
         let (output, written) = crate::write::format_tree(&doc, src, &settings);
-        // C2-N-005: a processor whose output is Carve source expands nothing.
-        let mut diagnostics: Vec<Entry> = parsed
-            .diagnostics
-            .into_iter()
-            .filter(|e| e.code != "include-no-resolver")
-            .collect();
-        diagnostics.extend(written);
-        Ok(Written {
-            output,
-            diagnostics,
-        })
+        Ok(written_with(parsed.diagnostics, output, written))
+    }
+}
+
+/// `format` of a valid text input on the arena parse, where the owned tree would be the
+/// same: no include and no matcher of `host` that could claim a node. `None` otherwise.
+fn format_arena(
+    host: &Carve,
+    input: Input<'_>,
+    opts: &WriteOptions,
+    settings: &crate::write::Settings,
+) -> Result<Option<Written>, Error> {
+    if opts.render.includes.is_some() || !host.claims_nothing() {
+        return Ok(None);
+    }
+    check_length(input.len(), &opts.render)?;
+    let pool = crate::write::Pool::new();
+    let text = input.text();
+    let arena = Arena::for_input(&text);
+    let mut found = Vec::new();
+    let Ok((doc, _, None)) = crate::prepare(&text, &opts.render, &arena, &mut found) else {
+        return Ok(None);
+    };
+    let doc = crate::view::V::Doc(arena.alloc(doc));
+    let src = (!opts.normalize).then_some(text.as_ref());
+    let (output, written) = crate::write::format_view(doc, &pool, src, settings);
+    let (mut diagnostics, _) = record::cap_includes(&found);
+    input.remap(&mut diagnostics);
+    Ok(Some(written_with(diagnostics, output, written)))
+}
+
+/// The result of `format`: the parse record, then the writer's.
+fn written_with(parsed: Vec<Entry>, output: String, written: Vec<Entry>) -> Written {
+    // C2-N-005: a processor whose output is Carve source expands nothing.
+    let mut diagnostics: Vec<Entry> = parsed
+        .into_iter()
+        .filter(|e| e.code != "include-no-resolver")
+        .collect();
+    diagnostics.extend(written);
+    Written {
+        output,
+        diagnostics,
     }
 }
 
