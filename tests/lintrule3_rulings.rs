@@ -76,4 +76,13 @@ fn quote_line_is_blank_inside_its_quote() {
         message("- > {.c}\n  >\n", code).starts_with("A blank line follows this attribute line")
     );
     assert!(ranges("{.c}\n>>\n", code).is_empty());
+    assert!(message("> > {.c}\n>\n", code).starts_with("This attribute line reaches no block"));
+}
+
+#[test]
+fn every_attribute_line_spelling_counts_for_both_attribute_rules() {
+    let opener = "block-opener-without-blank-line";
+    assert_eq!(ranges("para\n{ .c }\n", opener), [(5, 11)]);
+    assert_eq!(ranges("para\n{#id}\n", opener), [(5, 10)]);
+    assert_eq!(ranges("{ #id }\n", "unattached-block-attribute"), [(0, 7)]);
 }

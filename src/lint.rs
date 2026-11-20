@@ -105,7 +105,8 @@ fn blank_within(source: &str, line_start: usize, start: usize, line_end: usize) 
         let trimmed = rest.trim_start_matches([' ', '\t']);
         match trimmed.strip_prefix('>') {
             Some(after) if after.is_empty() || after.starts_with(' ') => rest = after,
-            _ => break,
+            // A line that lacks a quote mark of the attribute line is outside its quote, which ended above it.
+            _ => return false,
         }
     }
     rest.trim_matches([' ', '\t']).is_empty()

@@ -420,11 +420,17 @@ pub(super) fn list_marker(text: &str) -> bool {
 }
 
 fn starts_block(text: &str) -> bool {
-    ["> ", ":: ", ": ", "{."]
-        .iter()
-        .any(|p| text.starts_with(p))
+    ["> ", ":: ", ": "].iter().any(|p| text.starts_with(p))
+        || valid_attribute_line(text)
         || heading_mark(text)
         || text.starts_with('[') && text.contains("]:")
+}
+
+/// C2-B-090: one or more glued valid attribute blocks alone on the line, spaced or with an id or a key (carve#6197).
+fn valid_attribute_line(text: &str) -> bool {
+    let text = text.trim_end_matches([' ', '\t']);
+    text.starts_with('{')
+        && crate::attr::parse_glued(text, 0).is_some_and(|(_, end)| end == text.len())
 }
 
 /// C2-B-151, C2-B-152: one to six `=` or `#` and a space.
@@ -1335,14 +1341,8 @@ fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_
         || line.content_start.is_none()
         || (line.content_start.is_none() && (next.starts_with(":::") || next.starts_with('>')))
         || line.attached_attribute
-        || !text.starts_with('{')
-        || !text.ends_with('}')
-        || text.len() < 3
+        || !valid_attribute_line(text)
     {
-        return;
-    }
-    let opener = text.as_bytes().get(1).copied().unwrap_or_default();
-    if opener != b'.' && opener != b'#' && !opener.is_ascii_lowercase() {
         return;
     }
     sink.emit(
