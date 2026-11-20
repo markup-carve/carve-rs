@@ -306,7 +306,7 @@ impl Registry {
                 continue;
             };
             let failure = match transform.transform(view.clone()) {
-                Ok(next) if next.json == view.json => {
+                Ok(next) if next.json() == view.json() => {
                     view = next;
                     None
                 }

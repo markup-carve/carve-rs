@@ -76,7 +76,7 @@ impl Writer for CarveWriter {
 
     fn write(&self, tree: &Tree, opts: &WriteOptions) -> Result<Written, Error> {
         check_extensions(&opts.extensions)?;
-        let doc = tree_value(&tree.json)?;
+        let doc = tree.value()?;
         let settings = crate::write::Settings {
             align_tables: opts.align_tables,
             extensions: opts.extensions.clone(),
