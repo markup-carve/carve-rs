@@ -314,7 +314,7 @@ fn item_owner_path<'a>(mut path: &'a str, types: &HashMap<String, String>) -> &'
     }
 }
 
-fn opener_start(source: &str, mut at: usize) -> usize {
+fn opener_start(source: &str, mut at: usize, marks: usize) -> usize {
     while source.get(at..).is_some_and(|s| s.starts_with('{')) {
         let Some(end) = source.get(at..).and_then(|s| s.find('\n')) else {
             break;
@@ -323,9 +323,22 @@ fn opener_start(source: &str, mut at: usize) -> usize {
         while source
             .as_bytes()
             .get(at)
-            .is_some_and(|b| matches!(b, b' ' | b'\t' | b'>'))
+            .is_some_and(|b| matches!(b, b' ' | b'\t'))
         {
             at += 1;
+        }
+        for _ in 0..marks {
+            if source.as_bytes().get(at) != Some(&b'>') {
+                break;
+            }
+            at += 1;
+            while source
+                .as_bytes()
+                .get(at)
+                .is_some_and(|b| matches!(b, b' ' | b'\t'))
+            {
+                at += 1;
+            }
         }
     }
     at
@@ -370,7 +383,7 @@ fn colon_layouts<'a>(
         ) {
             continue;
         }
-        let from = opener_start(source, range.start);
+        let from = opener_start(source, range.start, usize::MAX);
         let width = source
             .as_bytes()
             .get(from..)
@@ -540,6 +553,9 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
                 ancestors.push(kind.clone());
             }
             ancestor = parent(ancestor);
+        }
+        if leaf.is_some() {
+            ancestors.push("document".to_owned());
         }
         let marks = quote_marks(line_text);
         let can_be_lazy = matches!(
@@ -733,8 +749,15 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
                 | "table"
                 | "thematic_break"
         );
+        let mut block_quotes = 0;
+        let mut holder = parent(range.path.as_str());
+        while !holder.is_empty() {
+            block_quotes +=
+                usize::from(types.get(holder).is_some_and(|kind| kind == "block_quote"));
+            holder = parent(holder);
+        }
         let opener = if range.has_attrs {
-            opener_start(source, range.start)
+            opener_start(source, range.start, block_quotes)
         } else {
             range.start
         };
@@ -752,13 +775,6 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         } else {
             None
         };
-        let mut block_quotes = 0;
-        let mut holder = parent(range.path.as_str());
-        while !holder.is_empty() {
-            block_quotes +=
-                usize::from(types.get(holder).is_some_and(|kind| kind == "block_quote"));
-            holder = parent(holder);
-        }
         let block_column = if item_child {
             column_of(&positions, range.start, block_quotes)
         } else {
@@ -800,7 +816,8 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         };
         let block = json!({"type":range.kind,"path":range.path.as_str(),"start":range.start,"end":range.end,
             "text":block_text,"column":block_column,
-            "opener_column":mark_column,"mark_column":mark_column,
+            "opener_column":if range.has_attrs { block_column } else { mark_column },
+            "mark_column":mark_column,
             "opener_start":opener,"opener_text":opener_text,
             "after_quote_mark":text_at(source,line.start,range.start).ends_with("> "),"attributed":range.has_attrs,
             "image_line":range.image_line,

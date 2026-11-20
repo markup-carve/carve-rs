@@ -28,4 +28,18 @@ fn data_shape_uses_the_attribute_grammar() {
         .filter_map(|finding| finding.pos.map(|pos| (pos.start_offset, pos.end_offset)))
         .collect();
     assert_eq!(colons, [(34, 38), (39, 42)]);
+
+    let attributed_quote = "{#id}\n> > >::: references\n";
+    assert!(
+        lint(attributed_quote, &options)
+            .iter()
+            .all(|finding| finding.code != "block-opener-overindented")
+    );
+
+    let attributed_list = "- |= A |= B |\n  | 1 | 2 |\n\n  {.c}\n\ti) : a {=mark=}\n\t\n    +|\n";
+    assert!(
+        lint(attributed_list, &options)
+            .iter()
+            .all(|finding| finding.code != "list-item-block-overindented")
+    );
 }
