@@ -167,7 +167,7 @@ pub fn try_parse_resolved_bytes_in<'a>(
 pub fn parse(input: &str) -> Result<ast::owned::Document, RenderError> {
     check_source_length(input.len())?;
     let arena = Arena::for_input(input);
-    Ok(parse_in(input, &arena)?.owned())
+    Ok(parse_in(input, &arena)?.owned_with(&owned_str::Texts::of(input)))
 }
 
 #[doc(hidden)]
@@ -179,7 +179,7 @@ pub fn parse(input: &str) -> Result<ast::owned::Document, RenderError> {
 pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Document, RenderError> {
     check_source_length(input.len())?;
     let arena = Arena::for_input(input);
-    Ok(parse_resolved_in(input, opts, &arena)?.owned())
+    Ok(parse_resolved_in(input, opts, &arena)?.owned_with(&owned_str::Texts::of(input)))
 }
 
 #[doc(hidden)]
