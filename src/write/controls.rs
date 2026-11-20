@@ -6,7 +6,7 @@ use super::check::parse_written;
 use super::node::trees_equal;
 use super::state::Writer;
 use crate::hash::AddrSet;
-use serde_json::Value;
+use crate::view::V;
 
 const KEYWORD: &str = "carve-lint-disable-next-line";
 const CONTROL: &str = "%% carve-lint-disable-next-line";
@@ -19,30 +19,32 @@ pub fn keep_above(w: &Writer<'_>, written: String, original: Option<&str>) -> St
     if !written.contains(CONTROL) {
         return written;
     }
-    let tree = parse_written(w, &written);
+    let tree_value = parse_written(w, &written);
+    let tree = V::Json(&tree_value);
     let live: Vec<bool> = match original {
         Some(src) => {
-            let parsed = parse_written(w, src);
+            let parsed_value = parse_written(w, src);
+            let parsed = V::Json(&parsed_value);
             let lines: Vec<&str> = src.split('\n').collect();
-            controls(&parsed)
+            controls(parsed)
                 .iter()
-                .map(|c| suppresses_below(c, &lines))
+                .map(|c| suppresses_below(*c, &lines))
                 .collect()
         }
-        None => vec![true; controls(&tree).len()],
+        None => vec![true; controls(tree).len()],
     };
-    let dropped = drop_blanks(w, written, &tree, &live);
-    restore_blanks(w, dropped, &tree, &live)
+    let dropped = drop_blanks(w, written, tree, &live);
+    restore_blanks(w, dropped, tree, &live)
 }
 
 /// Leaves out the blank lines below each control comment of `live` that suppressed a line of the source.
-fn drop_blanks(w: &Writer<'_>, written: String, tree: &Value, live: &[bool]) -> String {
+fn drop_blanks(w: &Writer<'_>, written: String, tree: V<'_>, live: &[bool]) -> String {
     let lines: Vec<&str> = written.split('\n').collect();
     let below: AddrSet<usize> = controls(tree)
         .iter()
         .enumerate()
         .filter(|(i, _)| live.get(*i).copied().unwrap_or(false))
-        .filter_map(|(_, c)| end_line(c))
+        .filter_map(|(_, c)| end_line(*c))
         .collect();
     let spans: Vec<(usize, usize)> = blanks_below_controls(&lines)
         .into_iter()
@@ -74,17 +76,18 @@ fn drop_blanks(w: &Writer<'_>, written: String, tree: &Value, live: &[bool]) -> 
 }
 
 /// Puts a blank line below each control comment that suppressed nothing in the source and would now.
-fn restore_blanks(w: &Writer<'_>, written: String, tree: &Value, live: &[bool]) -> String {
+fn restore_blanks(w: &Writer<'_>, written: String, tree: V<'_>, live: &[bool]) -> String {
     if live.iter().all(|l| *l) {
         return written;
     }
     let lines: Vec<&str> = written.split('\n').collect();
-    let parsed = parse_written(w, &written);
-    let at: AddrSet<usize> = controls(&parsed)
+    let parsed_value = parse_written(w, &written);
+    let parsed = V::Json(&parsed_value);
+    let at: AddrSet<usize> = controls(parsed)
         .iter()
         .enumerate()
-        .filter(|(i, c)| !live.get(*i).copied().unwrap_or(true) && suppresses_below(c, &lines))
-        .filter_map(|(_, c)| end_line(c))
+        .filter(|(i, c)| !live.get(*i).copied().unwrap_or(true) && suppresses_below(**c, &lines))
+        .filter_map(|(_, c)| end_line(*c))
         .collect();
     if at.is_empty() {
         return written;
@@ -108,11 +111,12 @@ fn restore_blanks(w: &Writer<'_>, written: String, tree: &Value, live: &[bool]) 
 }
 
 /// Whether `candidate` reads back as `tree` and gives no control comment a line it did not suppress.
-fn same_controls(w: &Writer<'_>, candidate: &str, tree: &Value, live: &[bool]) -> bool {
-    let parsed = parse_written(w, candidate);
+fn same_controls(w: &Writer<'_>, candidate: &str, tree: V<'_>, live: &[bool]) -> bool {
+    let parsed_value = parse_written(w, candidate);
+    let parsed = V::Json(&parsed_value);
     let (Some(a), Some(b)) = (
-        parsed.get("children").and_then(Value::as_array),
-        tree.get("children").and_then(Value::as_array),
+        parsed.get("children").and_then(V::as_array),
+        tree.get("children").and_then(V::as_array),
     ) else {
         return false;
     };
@@ -120,12 +124,12 @@ fn same_controls(w: &Writer<'_>, candidate: &str, tree: &Value, live: &[bool]) -
         return false;
     }
     let lines: Vec<&str> = candidate.split('\n').collect();
-    let found = controls(&parsed);
+    let found = controls(parsed);
     found.len() == live.len()
         && found
             .iter()
             .zip(live)
-            .all(|(c, l)| *l || !suppresses_below(c, &lines))
+            .all(|(c, l)| *l || !suppresses_below(*c, &lines))
 }
 
 /// The runs of blank lines, as line ranges, that stand directly below a next-line control comment.
@@ -199,42 +203,42 @@ fn quote_marks(line: &str) -> &str {
 }
 
 /// The next-line control comments of a tree, in a fixed order of its nodes.
-fn controls(tree: &Value) -> Vec<&Value> {
+fn controls(tree: V<'_>) -> Vec<V<'_>> {
     let mut found = Vec::new();
     collect(tree, &mut found);
     found
 }
 
-fn collect<'v>(v: &'v Value, found: &mut Vec<&'v Value>) {
-    match v {
-        Value::Array(items) => items.iter().for_each(|x| collect(x, found)),
-        Value::Object(m) => {
-            let is_control = m.get("type").and_then(Value::as_str) == Some("comment")
-                && m.get("form").and_then(Value::as_str) == Some("line")
-                && m.get("value")
-                    .and_then(Value::as_str)
-                    .is_some_and(is_control_value);
-            if is_control {
-                found.push(v);
-            }
-            let mut keys: Vec<&String> = m.keys().collect();
-            keys.sort();
-            for key in keys {
-                if key != "pos" {
-                    collect(&m[key], found);
-                }
-            }
-        }
-        _ => {}
+fn collect<'v>(v: V<'v>, found: &mut Vec<V<'v>>) {
+    if let Some(items) = v.as_array() {
+        items.iter().for_each(|x| collect(x, found));
+        return;
     }
+    if !v.is_object() {
+        return;
+    }
+    let is_control = v.get("type").and_then(V::as_str) == Some("comment")
+        && v.get("form").and_then(V::as_str) == Some("line")
+        && v.get("value")
+            .and_then(V::as_str)
+            .is_some_and(is_control_value);
+    if is_control {
+        found.push(v);
+    }
+    // Keys in sorted order, as `serde_json` keeps them.
+    v.each(&mut |key, value| {
+        if key != "pos" {
+            collect(value, found);
+        }
+    });
 }
 
-fn end_line(comment: &Value) -> Option<usize> {
+fn end_line(comment: V<'_>) -> Option<usize> {
     let n = comment.get("pos")?.get("endLine")?.as_u64()?;
     usize::try_from(n).ok()
 }
 
 /// Whether the line below `comment` holds content, so that the comment suppresses findings on it.
-fn suppresses_below(comment: &Value, lines: &[&str]) -> bool {
+fn suppresses_below(comment: V<'_>, lines: &[&str]) -> bool {
     end_line(comment).is_none_or(|end| lines.get(end).is_some_and(|l| !is_blank(l)))
 }

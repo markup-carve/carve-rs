@@ -3,7 +3,7 @@
 
 use super::node::{attrs, classes, key_values, s, ty};
 use super::state::Writer;
-use serde_json::Value;
+use crate::view::V;
 
 /// C2-I-030: a name is one or more ASCII letters, digits, `_` and `-`.
 pub fn is_name(text: &str) -> bool {
@@ -75,15 +75,12 @@ pub struct BlockParts {
 }
 
 /// C2-W-048: the brace block of `node`, or the empty string when it has nothing to write.
-pub fn brace_block(node: &Value, extra: &BlockParts) -> String {
+pub fn brace_block(node: V<'_>, extra: &BlockParts) -> String {
     let mut parts: Vec<String> = Vec::new();
     if !extra.mark.is_empty() {
         parts.push(extra.mark.clone());
     }
-    if let Some(id) = attrs(node)
-        .and_then(|a| a.get("id"))
-        .and_then(Value::as_str)
-    {
+    if let Some(id) = attrs(node).and_then(|a| a.get("id")).and_then(V::as_str) {
         parts.push(if is_name(id) {
             format!("#{id}")
         } else {
@@ -119,7 +116,7 @@ pub fn brace_block(node: &Value, extra: &BlockParts) -> String {
     }
 }
 
-pub fn plain_block(node: &Value) -> String {
+pub fn plain_block(node: V<'_>) -> String {
     brace_block(node, &BlockParts::default())
 }
 
@@ -238,20 +235,20 @@ fn numbered(delimiter: &str, start: i64, count: usize) -> ListMarkers {
 }
 
 /// The markers of the items of the list `node`, and the start value for its attribute line.
-pub fn list_markers(w: &Writer<'_>, node: &Value) -> ListMarkers {
+pub fn list_markers(w: &Writer<'_>, node: V<'_>) -> ListMarkers {
     let count = super::node::children(node).len();
-    let marker = node.get("marker").cloned().unwrap_or_default();
-    let kind = s(&marker, "kind").unwrap_or("bullet");
+    let marker = node.at("marker");
+    let kind = s(marker, "kind").unwrap_or("bullet");
     if kind != "ordered" {
-        let c = s(&marker, "char").unwrap_or("-").to_string();
+        let c = s(marker, "char").unwrap_or("-").to_string();
         return ListMarkers {
             markers: vec![c; count],
             start: None,
         };
     }
-    let style = s(&marker, "style").unwrap_or("1");
-    let delimiter = s(&marker, "delimiter").unwrap_or(".");
-    let start = marker.get("start").and_then(Value::as_i64).unwrap_or(1);
+    let style = s(marker, "style").unwrap_or("1");
+    let delimiter = s(marker, "delimiter").unwrap_or(".");
+    let start = marker.get("start").and_then(V::as_i64).unwrap_or(1);
     if style != "1" {
         return letter_markers(style, delimiter, start, count);
     }
@@ -269,11 +266,11 @@ pub fn list_markers(w: &Writer<'_>, node: &Value) -> ListMarkers {
     }
 }
 
-fn marker_field<'a>(list: &'a Value, f: &str, default: &'a str) -> &'a str {
+fn marker_field<'a>(list: V<'a>, f: &str, default: &'a str) -> &'a str {
     list.get("marker").and_then(|m| s(m, f)).unwrap_or(default)
 }
 
-fn same_ordered_kind(a: &Value, b: &Value) -> bool {
+fn same_ordered_kind(a: V<'_>, b: V<'_>) -> bool {
     let (first, second) = (marker_field(a, "style", "1"), marker_field(b, "style", "1"));
     if marker_field(a, "delimiter", ".") != marker_field(b, "delimiter", ".") {
         return false;
@@ -290,7 +287,7 @@ fn same_ordered_kind(a: &Value, b: &Value) -> bool {
     let start = b
         .get("marker")
         .and_then(|m| m.get("start"))
-        .and_then(Value::as_i64)
+        .and_then(V::as_i64)
         .unwrap_or(1);
     if second.eq_ignore_ascii_case("i") {
         matches!(start, 1 | 5 | 10 | 50 | 100 | 500 | 1000)
@@ -301,8 +298,8 @@ fn same_ordered_kind(a: &Value, b: &Value) -> bool {
 
 /// C2-W-028: ordered lists of the two letter styles in one case and one
 /// delimiter, which need no blank line when `b` would not continue `a`.
-pub fn letter_style_pair(a: &Value, b: &Value) -> bool {
-    let ordered = |l: &Value| ty(l) == "list" && marker_field(l, "kind", "") == "ordered";
+pub fn letter_style_pair(a: V<'_>, b: V<'_>) -> bool {
+    let ordered = |l: V<'_>| ty(l) == "list" && marker_field(l, "kind", "") == "ordered";
     if !ordered(a) || !ordered(b) {
         return false;
     }
@@ -316,7 +313,7 @@ pub fn letter_style_pair(a: &Value, b: &Value) -> bool {
 }
 
 /// C2-B-049, C2-B-053: whether the list `b` directly after the list `a` would continue it.
-pub fn same_list_kind(a: &Value, b: &Value) -> bool {
+pub fn same_list_kind(a: V<'_>, b: V<'_>) -> bool {
     if ty(a) == "definition_list" {
         return ty(b) == "definition_list";
     }

@@ -5,7 +5,7 @@
 use super::node::{N, children, classes, id, list, s, span, text, ty};
 use super::state::{Facts, Wrap, Writer};
 use crate::hash::{AddrMap, AddrSet};
-use serde_json::Value;
+use crate::view::{Arr, V};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -17,9 +17,9 @@ pub struct Entry {
 }
 
 /// The entries of a sidecar JSON value (`nodes`).
-pub fn from_layout(layout: &Value) -> Vec<Entry> {
+pub fn from_layout(layout: V<'_>) -> Vec<Entry> {
     list(layout, "nodes")
-        .unwrap_or(&[])
+        .unwrap_or_else(Arr::empty)
         .iter()
         .filter_map(|e| {
             let path = s(e, "path")?.to_string();
@@ -30,28 +30,32 @@ pub fn from_layout(layout: &Value) -> Vec<Entry> {
                             line: w.get("line")?.as_i64()?,
                             path: s(w, "path")?.to_string(),
                             offset: usize::try_from(w.get("offset")?.as_u64()?).ok()?,
-                            row: w.get("row").and_then(Value::as_i64),
+                            row: w.get("row").and_then(V::as_i64),
                         })
                     })
                     .collect()
             });
-            let spelling = e.get("optionSpelling").and_then(Value::as_object).map(|m| {
-                m.iter()
-                    .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
-                    .collect()
+            let spelling = e.get("optionSpelling").filter(|m| m.is_object()).map(|m| {
+                let mut out = BTreeMap::new();
+                m.each(&mut |k, v| {
+                    if let Some(v) = v.as_str() {
+                        out.insert(k.to_string(), v.to_string());
+                    }
+                });
+                out
             });
             Some(Entry {
                 path,
                 facts: Facts {
-                    bare: e.get("bare").and_then(Value::as_bool),
-                    fenced: e.get("fenced").and_then(Value::as_bool),
-                    hard_break_opener: e.get("hardBreakOpener").and_then(Value::as_bool),
-                    continuation_lines: e.get("continuationLines").and_then(Value::as_i64),
+                    bare: e.get("bare").and_then(V::as_bool),
+                    fenced: e.get("fenced").and_then(V::as_bool),
+                    hard_break_opener: e.get("hardBreakOpener").and_then(V::as_bool),
+                    continuation_lines: e.get("continuationLines").and_then(V::as_i64),
                     wraps,
                     raw_ref: s(e, "rawRef").map(str::to_string),
                     option_spelling: spelling,
                     source_format: s(e, "sourceFormat").map(str::to_string),
-                    header_rows: e.get("headerRows").and_then(Value::as_i64),
+                    header_rows: e.get("headerRows").and_then(V::as_i64),
                 },
             })
         })
@@ -59,11 +63,11 @@ pub fn from_layout(layout: &Value) -> Vec<Entry> {
 }
 
 fn node_at<'t>(doc: N<'t>, path: &str) -> Option<N<'t>> {
-    doc.pointer(path).filter(|v| v.get("type").is_some())
+    super::node::pointer(doc, path).filter(|v| v.get("type").is_some())
 }
 
 /// C2-L-021: whether the wrap at offset 0 of the node at `path` can mark its start.
-fn starts_fragment(doc: &Value, cell: &Value, path: &str) -> bool {
+fn starts_fragment(doc: V<'_>, cell: V<'_>, path: &str) -> bool {
     let Some(cut) = path.rfind("/children/") else {
         return false;
     };
@@ -155,14 +159,14 @@ pub fn read<'t>(w: &mut Writer<'t>, doc: N<'t>, entries: &[Entry]) {
 }
 
 /// The facts the writer reads, read from `src` by the positions of its parse `doc`.
-pub fn from_source(doc: &Value, src: &str) -> Vec<Entry> {
+pub fn from_source(doc: V<'_>, src: &str) -> Vec<Entry> {
     let mut out = Vec::new();
     walk(doc, src, &mut String::new(), false, &mut out);
     out
 }
 
 /// `path` is the pointer of `node`, one buffer extended and cut back per step.
-fn walk(node: &Value, src: &str, path: &mut String, quoted: bool, out: &mut Vec<Entry>) {
+fn walk(node: V<'_>, src: &str, path: &mut String, quoted: bool, out: &mut Vec<Entry>) {
     if let Some(facts) = node_facts(node, src, path, quoted, out) {
         out.push(Entry {
             path: path.clone(),
@@ -190,7 +194,7 @@ fn walk(node: &Value, src: &str, path: &mut String, quoted: bool, out: &mut Vec<
 
 /// The facts of one node, or `None` when its type records none.
 fn node_facts(
-    node: &Value,
+    node: V<'_>,
     src: &str,
     path: &str,
     quoted: bool,
@@ -220,7 +224,7 @@ fn node_facts(
 }
 
 /// The opener line of a block, behind its attribute lines, from the column of its start.
-fn opener<'s>(node: &Value, src: &'s str) -> Option<&'s str> {
+fn opener<'s>(node: V<'_>, src: &'s str) -> Option<&'s str> {
     let (start, end) = span(node)?;
     let line_start = src.get(..start)?.rfind('\n').map_or(0, |p| p + 1);
     let column = start - line_start;
@@ -235,7 +239,7 @@ fn opener<'s>(node: &Value, src: &'s str) -> Option<&'s str> {
     None
 }
 
-fn attribute_text<'s>(node: &Value, src: &'s str) -> &'s str {
+fn attribute_text<'s>(node: V<'_>, src: &'s str) -> &'s str {
     let Some((start, end)) = span(node) else {
         return "";
     };
@@ -261,7 +265,7 @@ fn attribute_text<'s>(node: &Value, src: &'s str) -> &'s str {
         .unwrap_or("")
 }
 
-fn table_facts(node: &Value, src: &str, path: &str, out: &mut Vec<Entry>, facts: &mut Facts) {
+fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: &mut Facts) {
     let Some(head) = opener(node, src) else {
         return;
     };
@@ -356,7 +360,7 @@ fn content_fragment(fragment: &str) -> &str {
     t.trim_matches([' ', '\t'])
 }
 
-fn rows(table: &Value, src: &str, path: &str, out: &mut Vec<Entry>) {
+fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     let Some((start, end)) = span(table) else {
         return;
     };
@@ -395,7 +399,7 @@ fn rows(table: &Value, src: &str, path: &str, out: &mut Vec<Entry>) {
     }
 }
 
-fn row_facts(row: &Value, line: &str, continuation: &[&str], path: &str, out: &mut Vec<Entry>) {
+fn row_facts(row: V<'_>, line: &str, continuation: &[&str], path: &str, out: &mut Vec<Entry>) {
     if continuation.is_empty() {
         return;
     }
@@ -409,8 +413,12 @@ fn row_facts(row: &Value, line: &str, continuation: &[&str], path: &str, out: &m
     let first = fragments(line);
     let more: Vec<Vec<&str>> = continuation.iter().map(|l| fragments(l)).collect();
     for (c, cell) in children(row).iter().enumerate() {
-        let [block] = children(cell) else { continue };
-        let [t] = children(block) else { continue };
+        let Some(block) = children(cell).single() else {
+            continue;
+        };
+        let Some(t) = children(block).single() else {
+            continue;
+        };
         if ty(t) != "text" {
             continue;
         }
@@ -452,7 +460,7 @@ fn row_facts(row: &Value, line: &str, continuation: &[&str], path: &str, out: &m
     }
 }
 
-fn raw_ref(node: &Value, src: &str, quoted: bool) -> Option<String> {
+fn raw_ref(node: V<'_>, src: &str, quoted: bool) -> Option<String> {
     let (start, end) = span(node)?;
     let start = if ty(node) == "image" {
         start + 1
@@ -491,11 +499,11 @@ fn raw_ref(node: &Value, src: &str, quoted: bool) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-fn option_spelling(node: &Value, src: &str) -> Option<BTreeMap<String, String>> {
+fn option_spelling(node: V<'_>, src: &str) -> Option<BTreeMap<String, String>> {
     let (start, end) = span(node)?;
     let line = src.get(start..end)?.split('\n').next()?;
     let b = line.as_bytes();
-    let options = node.get("options")?.as_object()?;
+    let options = node.get("options").filter(|o| o.is_object())?;
     let mut out = BTreeMap::new();
     let mut at = 0;
     while at < b.len() {
@@ -532,7 +540,7 @@ fn option_spelling(node: &Value, src: &str) -> Option<BTreeMap<String, String>> 
                 })
             }
         };
-        if options.contains_key(key) && !out.contains_key(key) {
+        if options.get(key).is_some() && !out.contains_key(key) {
             out.insert(
                 key.to_string(),
                 line.get(v..v_end).unwrap_or("").to_string(),

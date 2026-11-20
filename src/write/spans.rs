@@ -3,6 +3,7 @@
 //! The writer writes a copy of the tree with the marks added; a loss path is mapped back to the
 //! supplied tree, and an added mark reports at its covering cell.
 
+use crate::view::V;
 use serde_json::{Value, json};
 
 /// The copy of the tree with the marks, and how its rows map back to the supplied ones.
@@ -217,11 +218,11 @@ fn mark_tables(
 }
 
 /// The tree with the marks of C2-W-145, or `None` where no count lacks them.
-pub fn add(doc: &Value) -> Option<Spans> {
+pub fn add(doc: V<'_>) -> Option<Spans> {
     if !has_any_counts(doc) {
         return None;
     }
-    let mut copy = doc.clone();
+    let mut copy = doc.to_value();
     let mut rows_out = Vec::new();
     let mut unspelled = Vec::new();
     mark_tables(&mut copy, "", &mut rows_out, &mut unspelled);
@@ -233,20 +234,22 @@ pub fn add(doc: &Value) -> Option<Spans> {
     })
 }
 
-fn has_any_counts(node: &Value) -> bool {
-    match node {
-        Value::Object(map) => map.iter().any(|(key, value)| match value {
-            Value::String(t) => {
-                key == "type"
-                    && t == "table_cell"
-                    && (count(node, "colspan") > 1 || count(node, "rowspan") > 1)
-            }
-            Value::Object(_) | Value::Array(_) => has_any_counts(value),
-            _ => false,
-        }),
-        Value::Array(items) => items.iter().any(has_any_counts),
-        _ => false,
+fn has_any_counts(node: V<'_>) -> bool {
+    if let Some(items) = node.as_array() {
+        return items.iter().any(has_any_counts);
     }
+    if !node.is_object() {
+        return false;
+    }
+    let counted = |field| node.get(field).and_then(V::as_i64).unwrap_or(1) > 1;
+    if node.get("type").and_then(V::as_str) == Some("table_cell")
+        && (counted("colspan") || counted("rowspan"))
+    {
+        return true;
+    }
+    let mut found = false;
+    node.each(&mut |_, value| found = found || has_any_counts(value));
+    found
 }
 
 impl Spans {

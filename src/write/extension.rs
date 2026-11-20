@@ -4,10 +4,18 @@
 
 use super::blocks::is_claimable_name;
 use super::node::{children, classes, has, s, trees_equal, ty};
+use crate::view::{Arr, V};
 use serde_json::Value;
 
+/// The children of a parsed JSON node.
+fn json_kids(v: &Value) -> &[Value] {
+    v.get("children")
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice)
+}
+
 /// Whether the body of the source form of `node` is canonical Carve.
-pub fn canonical_body(node: &Value) -> bool {
+pub fn canonical_body(node: V<'_>) -> bool {
     let Some(body) = node.get("source").and_then(|src| s(src, "body")) else {
         return false;
     };
@@ -15,7 +23,7 @@ pub fn canonical_body(node: &Value) -> bool {
 }
 
 /// C2-X-023: a core readback of the source form is allowed only for its canonical content.
-pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool {
+pub fn source_core_equivalent(expected: V<'_>, actual: Option<V<'_>>) -> bool {
     let Some(actual) = actual else { return false };
     match ty(expected) {
         "inline_extension" => inline_source_equivalent(expected, actual),
@@ -24,7 +32,7 @@ pub fn source_core_equivalent(expected: &Value, actual: Option<&Value>) -> bool 
     }
 }
 
-fn block_source_equivalent(expected: &Value, actual: &Value) -> bool {
+fn block_source_equivalent(expected: V<'_>, actual: V<'_>) -> bool {
     let Some(source) = expected.get("source") else {
         return false;
     };
@@ -61,12 +69,12 @@ fn block_source_equivalent(expected: &Value, actual: &Value) -> bool {
 
 /// C2-X-023: the inline source form reads back as the core inline extension
 /// of that name, attributes and canonical content `body`.
-fn inline_source_equivalent(expected: &Value, actual: &Value) -> bool {
+fn inline_source_equivalent(expected: V<'_>, actual: V<'_>) -> bool {
     core_inline(expected).is_some_and(|core| trees_equal(&core, actual))
 }
 
 /// The core node the inline source form of `node` reads back as.
-fn core_inline(node: &Value) -> Option<Value> {
+fn core_inline(node: V<'_>) -> Option<Value> {
     let source = node
         .get("source")
         .filter(|x| s(x, "form") == Some("inline"))?;
@@ -75,7 +83,7 @@ fn core_inline(node: &Value) -> Option<Value> {
     core.insert("type".into(), "inline_extension".into());
     core.insert("name".into(), s(source, "name")?.into());
     if let Some(attrs) = node.get("attrs") {
-        core.insert("attrs".into(), attrs.clone());
+        core.insert("attrs".into(), attrs.to_value());
     }
     core.insert("children".into(), Value::Array(content));
     Some(Value::Object(core))
@@ -95,8 +103,8 @@ fn body_inlines(body: &str) -> Option<Vec<Value>> {
     }) {
         return hit;
     }
-    let content = super::parse_plain(body).and_then(|parsed| match children(&parsed) {
-        [p] if ty(p) == "paragraph" => Some(children(p).to_vec()),
+    let content = super::parse_plain(body).and_then(|parsed| match json_kids(&parsed) {
+        [p] if ty(p) == "paragraph" => Some(json_kids(p).to_vec()),
         [] => Some(Vec::new()),
         _ => None,
     });
@@ -111,10 +119,10 @@ fn body_inlines(body: &str) -> Option<Vec<Value>> {
 
 /// `tree` with each inline extension that carries an inline source form
 /// replaced by the core node it reads back as, or `None` when it has none.
-pub fn with_core_inlines(tree: &Value) -> Option<Value> {
+pub fn with_core_inlines(tree: V<'_>) -> Option<Value> {
     fn walk(v: &mut Value, changed: &mut bool) {
-        if ty(v) == "inline_extension"
-            && let Some(core) = core_inline(v)
+        if ty(&*v) == "inline_extension"
+            && let Some(core) = core_inline(V::Json(v))
         {
             *v = core;
             *changed = true;
@@ -126,7 +134,7 @@ pub fn with_core_inlines(tree: &Value) -> Option<Value> {
             _ => {}
         }
     }
-    let mut out = tree.clone();
+    let mut out = tree.to_value();
     let mut changed = false;
     walk(&mut out, &mut changed);
     changed.then_some(out)
@@ -137,7 +145,7 @@ pub fn apply_claims(doc: &mut Value, extensions: &[String], source: &str) {
     if !extensions.iter().any(|e| e == "carve.tabs") {
         return;
     }
-    let definitions: Vec<Value> = children(doc)
+    let definitions: Vec<Value> = json_kids(doc)
         .iter()
         .filter(|n| ty(n) == "link_reference_definition")
         .cloned()
@@ -182,7 +190,7 @@ fn opener_name<'s>(node: &Value, source: &'s str) -> Option<&'s str> {
 }
 
 fn claim_tree(node: &mut Value, source: &str, definitions: &[Value]) -> bool {
-    if ty(node) == "div" && opener_name(node, source) == Some("tabs") {
+    if ty(&*node) == "div" && opener_name(node, source) == Some("tabs") {
         if let Some(claimed) = tabs(node, source, definitions) {
             *node = claimed;
             return true;
@@ -197,7 +205,7 @@ fn claim_tree(node: &mut Value, source: &str, definitions: &[Value]) -> bool {
     used
 }
 
-fn plain(nodes: &[Value]) -> String {
+fn plain(nodes: Arr<'_>) -> String {
     super::node::plain_text(nodes)
 }
 
@@ -257,17 +265,19 @@ fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Value {
 }
 
 fn tab_node(node: &Value, definitions: &[Value]) -> Value {
-    let title = super::node::title(node)
-        .map(<[Value]>::to_vec)
+    let title = node
+        .get("title")
+        .and_then(Value::as_array)
+        .cloned()
         .unwrap_or_default();
     let mut fallback = Vec::new();
     if !title.is_empty() {
         fallback.push(serde_json::json!({"type": "paragraph", "children": [{"type": "strong", "children": title}]}));
     }
-    fallback.extend(children(node).iter().cloned());
+    fallback.extend(json_kids(node).iter().cloned());
     let mut out = serde_json::json!({
         "type": "block_extension", "name": "carve.tab", "version": "1", "children": [],
-        "slots": {"title": title, "body": children(node)}, "fallback": fallback,
+        "slots": {"title": title, "body": json_kids(node)}, "fallback": fallback,
         "source": div_source(node, "tab", definitions),
     });
     if let Some(m) = out.as_object_mut() {
@@ -282,7 +292,7 @@ fn tab_node(node: &Value, definitions: &[Value]) -> Value {
 }
 
 fn tabs(node: &Value, source: &str, definitions: &[Value]) -> Option<Value> {
-    let body = children(node);
+    let body = json_kids(node);
     let is_tab = |n: &Value| {
         ty(n) == "div"
             && opener_name(n, source) == Some("tab")
@@ -294,7 +304,12 @@ fn tabs(node: &Value, source: &str, definitions: &[Value]) -> Option<Value> {
     let tabs: Vec<Value> = body.iter().map(|t| tab_node(t, definitions)).collect();
     let fallback: Vec<Value> = tabs
         .iter()
-        .flat_map(|t| super::node::list(t, "fallback").unwrap_or(&[]).to_vec())
+        .flat_map(|t| {
+            t.get("fallback")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
         .collect();
     let mut out = serde_json::json!({
         "type": "block_extension", "name": "carve.tabs", "version": "1", "children": [],

@@ -25,6 +25,7 @@ pub(crate) use table::display_width;
 
 use crate::api::{Entry, Range};
 use crate::hash::{AddrMap, AddrSet};
+use crate::view::{Arr, V};
 use check::{Check, compare_blocks, escape_openers, exhausted, extend_chains, parse_chunk};
 use node::{N, children, id, span, text, ty};
 use serde_json::Value;
@@ -48,7 +49,7 @@ impl Settings {
     /// The facts of a sidecar JSON value (C2-L-009).
     #[must_use]
     pub fn with_layout(mut self, layout: Option<&Value>) -> Self {
-        self.layout = layout.map(facts::from_layout);
+        self.layout = layout.map(|l| facts::from_layout(V::Json(l)));
         // C2-L-056: a base64 source holds bytes, not the text the positions count.
         self.source = layout
             .filter(|l| l.get("encoding").and_then(Value::as_str) != Some("base64"))
@@ -74,12 +75,26 @@ pub fn has_loss(entries: &[Entry]) -> bool {
 /// `normalize` (C2-W-127), and written. Returns the source and the writer's record.
 #[must_use]
 pub fn format_tree(doc: &Value, src: Option<&str>, settings: &Settings) -> (String, Vec<Entry>) {
+    let pool = typed_arena::Arena::new();
+    format_view(V::Json(doc), &pool, src, settings)
+}
+
+/// [`format_tree`] of a view; `pool` holds the nodes the writer makes and outlives the tree.
+pub(crate) fn format_view<'t>(
+    doc: V<'t>,
+    pool: &'t Pool,
+    src: Option<&str>,
+    settings: &Settings,
+) -> (String, Vec<Entry>) {
     let mut settings = settings.clone();
     if let Some(src) = src {
         settings.layout = Some(facts::from_source(doc, src));
     }
-    write_value(doc, &settings)
+    write_view(doc, pool, &settings)
 }
+
+/// The nodes the writer makes while it writes a tree (C2-W-089 stand-ins).
+pub(crate) type Pool = typed_arena::Arena<Value>;
 
 /// `format` of a body with every default, or `None` where the writer reports a loss.
 pub(crate) fn format_plain(body: &str) -> Option<String> {
@@ -95,10 +110,20 @@ pub(crate) fn parse_plain(body: &str) -> Option<Value> {
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
+    let pool = Pool::new();
+    write_view(V::Json(doc), &pool, settings)
+}
+
+/// [`write_value`] of a view; `pool` outlives the tree.
+pub(crate) fn write_view<'t>(
+    doc: V<'t>,
+    pool: &'t Pool,
+    settings: &Settings,
+) -> (String, Vec<Entry>) {
     let Some(marks) = spans::add(doc) else {
-        return write_tree(doc, settings);
+        return write_tree(doc, pool, settings);
     };
-    let (source, mut entries) = write_tree(&marks.doc, settings);
+    let (source, mut entries) = write_tree(V::Json(&marks.doc), pool, settings);
     for entry in &mut entries {
         if let Some(path) = &entry.path {
             entry.path = Some(marks.remap(path));
@@ -118,9 +143,8 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     (source, entries)
 }
 
-fn write_tree(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
-    let pool = typed_arena::Arena::new();
-    let mut w = Writer::new(&pool, settings.align_tables);
+fn write_tree<'t>(doc: V<'t>, pool: &'t Pool, settings: &Settings) -> (String, Vec<Entry>) {
+    let mut w = Writer::new(pool, settings.align_tables);
     w.extensions.clone_from(&settings.extensions);
     if settings.extensions.iter().any(|e| e == "carve.tabs") {
         w.matchers.push(state::Matcher {
@@ -146,7 +170,7 @@ fn write_tree(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
 }
 
 /// C2-B-085: the first definition of a term wins.
-fn read_abbreviations(w: &mut Writer<'_>, doc: &Value) {
+fn read_abbreviations(w: &mut Writer<'_>, doc: V<'_>) {
     let mut seen = HashSet::new();
     for c in children(doc) {
         if ty(c) != "abbreviation_def" {
@@ -161,10 +185,10 @@ fn read_abbreviations(w: &mut Writer<'_>, doc: &Value) {
     w.abbreviations.sort_by(|a, b| a.0.cmp(&b.0));
 }
 
-fn locate(doc: &Value, w: &Writer<'_>) -> Vec<Entry> {
+fn locate(doc: V<'_>, w: &Writer<'_>) -> Vec<Entry> {
     let wanted: AddrSet<usize> = w.sp.losses.iter().filter_map(|l| l.node).collect();
     let found = node::pointers(doc, &wanted);
-    let mut nodes: AddrMap<usize, &Value> = AddrMap::default();
+    let mut nodes: AddrMap<usize, V<'_>> = AddrMap::default();
     if !wanted.is_empty() {
         let mut all = vec![doc];
         node::descendants(doc, &mut all);
@@ -181,8 +205,8 @@ fn locate(doc: &Value, w: &Writer<'_>) -> Vec<Entry> {
             let path = place.cloned().unwrap_or_default() + l.step.as_deref().unwrap_or("");
             let range = place
                 .and(l.node)
-                .and_then(|n| nodes.get(&n))
-                .and_then(|n| span(n))
+                .and_then(|n| nodes.get(&n).copied())
+                .and_then(span)
                 .map(|(start_offset, end_offset)| Range {
                     start_offset,
                     end_offset,
@@ -205,7 +229,7 @@ fn loss_entry(code: &str, message: String, path: String, range: Option<Range>) -
     }
 }
 
-fn root_metadata_losses(doc: &Value, out: &mut Vec<Entry>) {
+fn root_metadata_losses(doc: V<'_>, out: &mut Vec<Entry>) {
     let metadata = doc.get("metadata");
     for name in ["headers", "footers", "abstract", "keywords"] {
         if metadata.and_then(|m| m.get(name)).is_some() {
@@ -239,14 +263,9 @@ fn root_metadata_losses(doc: &Value, out: &mut Vec<Entry>) {
     }
 }
 
-fn last_block<'t>(
-    nodes: &'t [Value],
-    from: usize,
-    to: usize,
-    list: Option<N<'t>>,
-) -> Option<N<'t>> {
+fn last_block<'t>(nodes: Arr<'t>, from: usize, to: usize, list: Option<N<'t>>) -> Option<N<'t>> {
     nodes
-        .get(from..to)
+        .slice(from, to)
         .and_then(|g| g.iter().rev().find(|n| ty(n) != "comment"))
         .or(list)
 }
@@ -262,7 +281,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
         at = repair_group(w, doc, from, out.is_empty());
         // C2-W-146: test the written text with the five pair rules and reparse each escape round.
         for _ in 0..16 {
-            let asked = pairs::asked(w, nodes.get(from..at).unwrap_or(&[]));
+            let asked = pairs::asked(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
             if asked.is_empty() {
                 break;
             }
@@ -302,14 +321,14 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
 }
 
 /// Whether `node` is written into one group with the block `before` above it.
-fn joins_group(w: &mut Writer<'_>, before: &Value, node: &Value) -> bool {
+fn joins_group(w: &mut Writer<'_>, before: V<'_>, node: V<'_>) -> bool {
     if ty(node) == "paragraph" {
         return ty(before) == "definition_list";
     }
     ty(node) == "comment" && blocks::blank_lines_between(w, before, None, node, false) == 0
 }
 
-fn is_bridged(w: &Writer<'_>, nodes: &[Value], from: usize, at: usize) -> bool {
+fn is_bridged(w: &Writer<'_>, nodes: Arr<'_>, from: usize, at: usize) -> bool {
     let mut prior = at.checked_sub(1);
     while let Some(p) =
         prior.filter(|&p| p >= from && nodes.get(p).is_some_and(|n| ty(n) == "comment"))
@@ -331,7 +350,7 @@ fn is_bridged(w: &Writer<'_>, nodes: &[Value], from: usize, at: usize) -> bool {
     !blocks::following_attributes(w, following).is_empty()
 }
 
-fn group_end(w: &mut Writer<'_>, nodes: &[Value], from: usize) -> usize {
+fn group_end(w: &mut Writer<'_>, nodes: Arr<'_>, from: usize) -> usize {
     let mut end = from + 1;
     while let (Some(before), Some(node)) = (nodes.get(end - 1), nodes.get(end)) {
         let bridged = is_bridged(w, nodes, from, end);
@@ -405,7 +424,7 @@ fn repair_rounds<'t>(
     };
     loop {
         let end = group_end(w, nodes, from);
-        let group = nodes.get(from..end).unwrap_or(&[]);
+        let group = nodes.slice(from, end).unwrap_or_else(Arr::empty);
         reset_lines(w);
         blocks::write_blocks(w, group, "", 0, false);
         if w.lines.is_empty() {
@@ -425,7 +444,7 @@ fn repair_rounds<'t>(
     }
 }
 
-fn refuse_repair(w: &mut Writer<'_>, node: &Value) {
+fn refuse_repair(w: &mut Writer<'_>, node: V<'_>) {
     w.sp.losses.push(state::Loss {
         code: "writer-refused",
         message: "the writer could not complete its repair for this block".into(),
@@ -434,7 +453,7 @@ fn refuse_repair(w: &mut Writer<'_>, node: &Value) {
     });
 }
 
-fn local_id(ids: &mut AddrMap<usize, usize>, n: &Value) -> usize {
+fn local_id(ids: &mut AddrMap<usize, usize>, n: V<'_>) -> usize {
     let next = ids.len();
     *ids.entry(id(n)).or_insert(next)
 }
@@ -454,9 +473,9 @@ fn push_opt(state: &mut Vec<usize>, v: Option<usize>) {
     }
 }
 
-fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: &[Value]) -> RepairKey {
+fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: Arr<'_>) -> RepairKey {
     let mut state = vec![usize::from(w.blank_first), w.sp.losses.len()];
-    let mut pending: Vec<&Value> = group.iter().collect();
+    let mut pending: Vec<V<'_>> = group.iter().collect();
     while let Some(n) = pending.pop() {
         state.push(local_id(ids, n));
         let escapes = if ty(n) == "text" {
@@ -476,7 +495,7 @@ fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: &[Value]) 
         push_opt(&mut state, attempt.map(|a| a.step));
         push_opt(&mut state, attempt.map(|a| a.escapes.len()));
         for (t, at) in attempt.map_or(&[][..], |a| a.escapes.as_slice()) {
-            state.extend([local_id(ids, t), *at]);
+            state.extend([local_id(ids, *t), *at]);
         }
         state.push(usize::from(w.is_lost(n)));
         node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
@@ -487,7 +506,7 @@ fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: &[Value]) 
     }
 }
 
-fn repeated_repair(w: &mut Writer<'_>, group: &[Value], h: &mut History) -> bool {
+fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool {
     let chars: usize = w.lines.iter().map(|l| l.len() + 1).sum();
     if h.rounds == 0 {
         h.remaining = h
@@ -523,7 +542,7 @@ fn repeated_repair(w: &mut Writer<'_>, group: &[Value], h: &mut History) -> bool
 }
 
 /// The text nodes below `nodes` in the order they are written: a title before the children.
-fn text_order(nodes: &[Value], order: &mut AddrMap<usize, usize>) {
+fn text_order(nodes: Arr<'_>, order: &mut AddrMap<usize, usize>) {
     for n in nodes {
         if ty(n) == "text" {
             let next = order.len();
@@ -533,13 +552,13 @@ fn text_order(nodes: &[Value], order: &mut AddrMap<usize, usize>) {
     }
 }
 
-fn rank(order: &AddrMap<usize, usize>, n: &Value) -> i64 {
+fn rank(order: &AddrMap<usize, usize>, n: V<'_>) -> i64 {
     order
         .get(&id(n))
         .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
 }
 
-fn leftmost<'t>(group: &[Value], escapes: &[(N<'t>, usize)]) -> Option<(N<'t>, usize)> {
+fn leftmost<'t>(group: Arr<'_>, escapes: &[(N<'t>, usize)]) -> Option<(N<'t>, usize)> {
     let mut order = AddrMap::default();
     text_order(group, &mut order);
     let mut best = *escapes.first()?;
@@ -566,7 +585,7 @@ fn defer_escapes(w: &mut Writer<'_>, deferred: &[(usize, usize)]) {
 
 fn group_tree<'t>(
     w: &mut Writer<'t>,
-    group: &'t [Value],
+    group: Arr<'t>,
     first: bool,
     escapes: AddrMap<usize, Vec<usize>>,
 ) -> Value {
@@ -580,13 +599,7 @@ fn group_tree<'t>(
 }
 
 /// C2-W-088, C2-W-091: whether the test asks for the escape `at` of `node`.
-fn is_asked<'t>(
-    w: &mut Writer<'t>,
-    group: &'t [Value],
-    first: bool,
-    node: &Value,
-    at: usize,
-) -> bool {
+fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at: usize) -> bool {
     let placed = w.sp.escapes.clone();
     let lines = w.lines.clone();
     let lead = w.lead.clone();
@@ -623,7 +636,7 @@ fn is_asked<'t>(
     asked
 }
 
-fn compare_group<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: bool) -> Check<'t> {
+fn compare_group<'t>(w: &mut Writer<'t>, doc: N<'t>, group: Arr<'t>, first: bool) -> Check<'t> {
     let source = group_source(w, first);
     let parsed = parse_chunk(w, &source);
     let mut c = Check {
@@ -631,13 +644,13 @@ fn compare_group<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: 
         ..Check::default()
     };
     compare_blocks(w, &mut c, group, children(&parsed), doc);
-    escape_openers(w, &mut c, &parsed, if first { 1 } else { 2 });
+    escape_openers(w, &mut c, V::Json(&parsed), if first { 1 } else { 2 });
     w.parsed = Some(parsed);
     c
 }
 
 /// One round of the test of C2-W-089. False when the group reads back as its blocks.
-fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: bool) -> bool {
+fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: Arr<'t>, first: bool) -> bool {
     let mut c = compare_group(w, doc, group, first);
     if drop_asked_trials(w, &mut c, group, first) && c.changes() == 0 {
         return true;
@@ -660,7 +673,7 @@ fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: &'t [Value], first: bool) -
 fn drop_asked_trials<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
-    group: &'t [Value],
+    group: Arr<'t>,
     first: bool,
 ) -> bool {
     let mut dropped = false;
@@ -685,7 +698,7 @@ fn drop_asked_trials<'t>(
     dropped
 }
 
-fn keep_leftmost_escape<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: &'t [Value]) {
+fn keep_leftmost_escape<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
     let Some(best) = leftmost(group, &c.escapes) else {
         return;
     };
@@ -727,7 +740,7 @@ fn has_opener_line(value: &str) -> bool {
 }
 
 /// C2-W-016: a lost node holds a leaf whose later line would open a block.
-fn refuse_leaf_lines(w: &mut Writer<'_>, n: &Value, depth: usize) {
+fn refuse_leaf_lines(w: &mut Writer<'_>, n: V<'_>, depth: usize) {
     if depth > 200 || matches!(ty(n), "paragraph" | "list_item") {
         return;
     }
@@ -768,7 +781,7 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
         return true;
     }
     for (n, _) in &c.losses {
-        refuse_leaf_lines(w, n, 0);
+        refuse_leaf_lines(w, *n, 0);
     }
     for (n, field) in &c.losses {
         lose(w, n, field.as_deref());
@@ -777,7 +790,7 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
 }
 
 /// C2-W-002: whether `actual` is `expected` for the readback check (C2-A-193).
-fn writer_equal(expected: &Value, actual: &Value) -> bool {
+fn writer_equal(expected: V<'_>, actual: V<'_>) -> bool {
     node::trees_equal(expected, actual)
         || extension::source_core_equivalent(expected, Some(actual))
         || node::trees_equal(&node::without_standard_data(expected), actual)
@@ -785,8 +798,8 @@ fn writer_equal(expected: &Value, actual: &Value) -> bool {
 }
 
 /// C2-W-011: a block that the rounds let pass and that reads back as another tree is reported.
-fn report_unread(w: &mut Writer<'_>, group: &[Value]) {
-    let parsed: &[Value] = w.parsed.as_ref().map_or(&[], |p| children(p));
+fn report_unread(w: &mut Writer<'_>, group: Arr<'_>) {
+    let parsed: Arr<'_> = w.parsed.as_ref().map_or_else(Arr::empty, children);
     let unread = (0..group.len().max(parsed.len())).find(|&at| {
         !matches!((parsed.get(at), group.get(at)), (Some(block), Some(e)) if writer_equal(e, block))
     });
@@ -795,7 +808,7 @@ fn report_unread(w: &mut Writer<'_>, group: &[Value]) {
     }
 }
 
-fn star_after_break(nodes: &[Value], byte: usize, parent: Option<&Value>) -> bool {
+fn star_after_break(nodes: Arr<'_>, byte: usize, parent: Option<V<'_>>) -> bool {
     for (index, n) in nodes.iter().enumerate() {
         let Some((start, end)) = span(n) else {
             continue;
@@ -866,7 +879,7 @@ fn in_raw(source: &str, at: usize, raws: &[String]) -> bool {
 }
 
 /// C2-W-088, C2-W-089: test candidate escapes within the group that wrote them.
-fn prune_group_escapes(w: &mut Writer<'_>, group: &[Value], first: bool) {
+fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool) {
     let mut source = group_source(w, first);
     let raws = std::mem::take(&mut w.raw_refs);
     let mut at = source.find('\\');
@@ -924,7 +937,11 @@ mod repair_limit_test {
             remaining: 0,
         };
 
-        assert!(repeated_repair(&mut writer, &group, &mut history));
+        assert!(repeated_repair(
+            &mut writer,
+            Arr::Json(&group),
+            &mut history
+        ));
         assert_eq!(
             writer.sp.losses.first().map(|loss| loss.code),
             Some("writer-refused")
