@@ -70,11 +70,11 @@ impl Parser<'_> {
         if shapes::caption(&k).is_some() {
             return self.caption_interrupts(walk);
         }
-        let f = self.frame(walk, m);
         if let Some(marker) = shapes::list_marker(&k) {
-            return self.marker_interrupts(&f, m, &marker);
+            return self.marker_interrupts(&self.frame(walk, m), m, &marker);
         }
         if let Some((term, _, _)) = shapes::desc_mark(&k) {
+            let f = self.frame(walk, m);
             // C2-B-190: a description that cannot open is text of the term.
             let replaces = matches!(
                 self.stack.last(),
@@ -85,7 +85,7 @@ impl Parser<'_> {
             );
             return f.desc_lists.contains(&m) && (term || replaces || self.room(1));
         }
-        walk.qbase == 0 && k.col == 0 && f.footnote && is_definition(k.rest())
+        walk.qbase == 0 && k.col == 0 && is_definition(k.rest()) && self.frame(walk, m).footnote
     }
 
     fn marker_interrupts(&self, f: &Frame, column: usize, marker: &ListMarker) -> bool {
