@@ -145,6 +145,34 @@ fn bounds(node: &Value) -> Option<(usize, usize)> {
     ))
 }
 
+fn child_ancestor<'a>(
+    node: &'a Value,
+    path_len: usize,
+    parent: Option<&Rc<Ancestor<'a>>>,
+) -> Rc<Ancestor<'a>> {
+    let kind = node["type"].as_str().unwrap_or("");
+    let here = Some((node, path_len));
+    Rc::new(Ancestor {
+        node,
+        parent: parent.cloned(),
+        in_list_item: kind == "list_item" || parent.is_some_and(|a| a.in_list_item),
+        content_owner: if matches!(kind, "definition_description" | "footnote")
+            && field(node, "/children/0/pos/startColumn")
+                .as_u64()
+                .is_some()
+        {
+            here
+        } else {
+            parent.and_then(|a| a.content_owner)
+        },
+        div_owner: if matches!(kind, "div" | "admonition" | "directive" | "figure_group") {
+            here
+        } else {
+            parent.and_then(|a| a.div_owner)
+        },
+    })
+}
+
 fn collect(root: &Value) -> Vec<Item<'_>> {
     let mut out = Vec::new();
     let mut pending = vec![(root, None::<Rc<PathNode>>, None, None)];
@@ -177,30 +205,11 @@ fn collect(root: &Value) -> Vec<Item<'_>> {
                         continue;
                     }
                     let child_ancestor = if key == "children" {
-                        let kind = value["type"].as_str().unwrap_or("");
-                        Some(Rc::new(Ancestor {
-                            node: value,
-                            parent: ancestor.clone(),
-                            in_list_item: kind == "list_item"
-                                || ancestor.as_ref().is_some_and(|a| a.in_list_item),
-                            content_owner: if matches!(kind, "definition_description" | "footnote")
-                                && field(value, "/children/0/pos/startColumn")
-                                    .as_u64()
-                                    .is_some()
-                            {
-                                Some((value, path.as_ref().map_or(0, |node| node.len)))
-                            } else {
-                                ancestor.as_ref().and_then(|a| a.content_owner)
-                            },
-                            div_owner: if matches!(
-                                kind,
-                                "div" | "admonition" | "directive" | "figure_group"
-                            ) {
-                                Some((value, path.as_ref().map_or(0, |node| node.len)))
-                            } else {
-                                ancestor.as_ref().and_then(|a| a.div_owner)
-                            },
-                        }))
+                        Some(child_ancestor(
+                            value,
+                            path.as_ref().map_or(0, |node| node.len),
+                            ancestor.as_ref(),
+                        ))
                     } else {
                         ancestor.clone()
                     };
@@ -240,7 +249,9 @@ pub(super) fn scan(
     base_tree: &Value,
     output: &mut Vec<Diagnostic>,
 ) {
-    let alternate = if options.heading_ids != crate::options::HeadingIds::default() {
+    let alternate = if options.heading_ids == crate::options::HeadingIds::default() {
+        None
+    } else {
         parse_tree_value(&crate::tree_json(
             source,
             &crate::Options {
@@ -248,8 +259,6 @@ pub(super) fn scan(
                 ..crate::Options::default()
             },
         ))
-    } else {
-        None
     };
     let tree = alternate.as_ref().unwrap_or(base_tree);
     let items = collect(tree);
