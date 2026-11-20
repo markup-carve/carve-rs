@@ -5,7 +5,7 @@
 use super::Builder;
 use crate::Arena;
 use crate::ast::{self, Node, owned::Attrs};
-use crate::block::table::{Row, TableData};
+use crate::block::table::{Pieces, Row, TableData};
 use crate::inline::{ContentKind, Join, Piece};
 
 /// Where the cell at a grid place came from.
@@ -25,6 +25,50 @@ struct Resolved {
     /// C2-B-173: a failed mark remains the cell's text.
     failed: bool,
     origin: Option<Origin>,
+}
+
+/// One value per written cell, row by row, in one list.
+struct Grid<T> {
+    cells: Vec<T>,
+    /// `starts[r]..starts[r + 1]` are the cells of row `r`.
+    starts: Vec<usize>,
+}
+
+impl<T: Copy> Grid<T> {
+    fn new(rows: &[Row], fill: T) -> Self {
+        let mut starts = Vec::with_capacity(rows.len() + 1);
+        let mut n = 0;
+        starts.push(0);
+        for r in rows {
+            n += r.cells.len();
+            starts.push(n);
+        }
+        Self {
+            cells: vec![fill; n],
+            starts,
+        }
+    }
+
+    fn row(&self, r: usize) -> &[T] {
+        match (self.starts.get(r), self.starts.get(r + 1)) {
+            (Some(&a), Some(&z)) => self.cells.get(a..z).unwrap_or(&[]),
+            _ => &[],
+        }
+    }
+
+    fn get(&self, r: usize, c: usize) -> Option<&T> {
+        self.row(r).get(c)
+    }
+
+    fn get_mut(&mut self, r: usize, c: usize) -> Option<&mut T> {
+        let a = *self.starts.get(r)?;
+        let z = *self.starts.get(r + 1)?;
+        self.cells.get_mut(a..z)?.get_mut(c)
+    }
+
+    fn rows(&self) -> impl Iterator<Item = &[T]> {
+        (0..self.starts.len().saturating_sub(1)).map(|r| self.row(r))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -72,10 +116,10 @@ impl<'a> Builder<'_, 'a> {
         let plan = body_plan(attrs.as_ref(), n - head - foot);
         let body_starts = body_starts(head, plan.as_ref());
         let spans = resolve_spans(&data.rows, head, n - foot, &body_starts);
-        for (row, resolved) in data.rows.iter_mut().zip(&spans) {
+        for (row, resolved) in data.rows.iter_mut().zip(spans.rows()) {
             for (cell, mark) in row.cells.iter_mut().zip(resolved) {
                 if mark.mark.is_some() && !cell.pieces.is_empty() {
-                    cell.pieces.remove(0);
+                    cell.pieces.remove_first();
                 }
             }
         }
@@ -214,7 +258,7 @@ impl<'a> Builder<'_, 'a> {
         }))
     }
 
-    fn group(&self, rows: &[Row], spans: &[Vec<Resolved>], span: GroupSpan) -> Node<'a> {
+    fn group(&self, rows: &[Row], spans: &Grid<Resolved>, span: GroupSpan) -> Node<'a> {
         let GroupSpan {
             lo,
             hi,
@@ -224,11 +268,7 @@ impl<'a> Builder<'_, 'a> {
         } = span;
         let mut children = Vec::new();
         for (i, row) in rows.iter().enumerate().take(hi).skip(lo) {
-            children.push(self.row(
-                row,
-                spans.get(i).map_or(&[], Vec::as_slice),
-                i < lo + header_rows,
-            ));
+            children.push(self.row(row, spans.row(i), i < lo + header_rows));
             for (s, e, value) in &row.comments {
                 children.push(self.comment(*s, *e, value));
             }
@@ -258,59 +298,60 @@ impl<'a> Builder<'_, 'a> {
     }
 
     fn row(&self, row: &Row, spans: &[Resolved], force_header: bool) -> Node<'a> {
-        let mut cells = Vec::new();
-        for (cell, sp) in row.cells.iter().zip(spans) {
-            // Gap G-009: a cell with no content has no position.
-            let blank = cell
-                .pieces
-                .iter()
-                .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
-            let positioned = !cell.joined && !blank && sp.mark.is_none();
-            let marked = sp.mark.is_some();
-            // C2-A-158: a cell that holds a span mark spans the text between its pipes.
-            let cell_positioned = !cell.joined;
-            let children = self.cell_children(cell, positioned, marked);
-            let header = (cell.header || force_header) && !marked;
-            let (attrs, lang) = if marked {
-                (None, None)
-            } else {
-                self.split_attrs(cell.attrs.clone())
-            };
-            let span = sp.mark.map(|m| {
-                if m == '<' {
-                    ast::TableCellSpan::Colspan
+        let cells = self
+            .arena
+            .fill(row.cells.iter().zip(spans).map(|(cell, sp)| {
+                // Gap G-009: a cell with no content has no position.
+                let blank = cell
+                    .pieces
+                    .iter()
+                    .all(|p| crate::block::trim_end(self.src, p.start, p.end) == p.start);
+                let positioned = !cell.joined && !blank && sp.mark.is_none();
+                let marked = sp.mark.is_some();
+                // C2-A-158: a cell that holds a span mark spans the text between its pipes.
+                let cell_positioned = !cell.joined;
+                let children = self.cell_children(cell, positioned, marked);
+                let header = (cell.header || force_header) && !marked;
+                let (attrs, lang) = if marked {
+                    (None, None)
                 } else {
-                    ast::TableCellSpan::Rowspan
-                }
-            });
-            let align = if marked {
-                None
-            } else {
-                cell.align.and_then(ast::TableCellAlign::from_name)
-            };
-            let valign = if marked {
-                None
-            } else {
-                cell.valign.and_then(ast::TableCellValign::from_name)
-            };
-            cells.push(Node::TableCell(self.arena.alloc(ast::TableCell {
-                children,
-                header,
-                span,
-                colspan: (sp.colspan > 1).then(|| i64::try_from(sp.colspan).unwrap_or(1)),
-                rowspan: (sp.rowspan > 1).then(|| i64::try_from(sp.rowspan).unwrap_or(1)),
-                align,
-                valign,
-                attrs: self.at(attrs),
-                lang,
-                pos: cell_positioned.then(|| self.src.pos(cell.start, cell.end)),
-                ..Default::default()
-            })));
-        }
+                    self.split_attrs(cell.attrs.clone())
+                };
+                let span = sp.mark.map(|m| {
+                    if m == '<' {
+                        ast::TableCellSpan::Colspan
+                    } else {
+                        ast::TableCellSpan::Rowspan
+                    }
+                });
+                let align = if marked {
+                    None
+                } else {
+                    cell.align.and_then(ast::TableCellAlign::from_name)
+                };
+                let valign = if marked {
+                    None
+                } else {
+                    cell.valign.and_then(ast::TableCellValign::from_name)
+                };
+                Node::TableCell(self.arena.alloc(ast::TableCell {
+                    children,
+                    header,
+                    span,
+                    colspan: (sp.colspan > 1).then(|| i64::try_from(sp.colspan).unwrap_or(1)),
+                    rowspan: (sp.rowspan > 1).then(|| i64::try_from(sp.rowspan).unwrap_or(1)),
+                    align,
+                    valign,
+                    attrs: self.at(attrs),
+                    lang,
+                    pos: cell_positioned.then(|| self.src.pos(cell.start, cell.end)),
+                    ..Default::default()
+                }))
+            }));
         let (attrs, lang) = self.split_attrs(row.attrs.clone());
         let pos = (!row.joined).then(|| self.src.pos(row.start, row.end));
         Node::TableRow(self.arena.alloc(ast::TableRow {
-            children: self.arena.nodes(&mut cells),
+            children: cells,
             attrs: self.at(attrs),
             lang,
             pos,
@@ -399,7 +440,7 @@ fn append_text<'a>(out: &mut Vec<Node<'a>>, arena: &'a Arena, value: &str) {
 fn head_rows(rows: &[Row]) -> usize {
     let provisional = resolve_spans(rows, rows.len(), rows.len(), &[]);
     rows.iter()
-        .zip(&provisional)
+        .zip(provisional.rows())
         .take_while(|(row, spans)| {
             let mut has_header = false;
             let mut has_other = false;
@@ -420,22 +461,16 @@ fn resolve_spans(
     head: usize,
     foot_start: usize,
     body_starts: &[usize],
-) -> Vec<Vec<Resolved>> {
-    let mut out: Vec<Vec<Resolved>> = rows
-        .iter()
-        .map(|r| {
-            vec![
-                Resolved {
-                    colspan: 1,
-                    rowspan: 1,
-                    ..Resolved::default()
-                };
-                r.cells.len()
-            ]
-        })
-        .collect();
-    let mut grid: Vec<Vec<Option<Origin>>> =
-        rows.iter().map(|r| vec![None; r.cells.len()]).collect();
+) -> Grid<Resolved> {
+    let mut out = Grid::new(
+        rows,
+        Resolved {
+            colspan: 1,
+            rowspan: 1,
+            ..Resolved::default()
+        },
+    );
+    let mut grid: Grid<Option<Origin>> = Grid::new(rows, None);
     let mut starts = vec![false; rows.len()];
     for &row in body_starts {
         if let Some(slot) = starts.get_mut(row) {
@@ -458,28 +493,28 @@ fn resolve_spans(
             );
             let set = match (cell.span, origin) {
                 (Some(m), Some(o)) => {
-                    if let Some(res) = out.get_mut(o.row).and_then(|v| v.get_mut(o.col)) {
+                    if let Some(res) = out.get_mut(o.row, o.col) {
                         if m == '<' {
                             res.colspan += 1;
                         } else {
                             res.rowspan += 1;
                         }
                     }
-                    if let Some(res) = out.get_mut(r).and_then(|v| v.get_mut(c)) {
+                    if let Some(res) = out.get_mut(r, c) {
                         res.mark = Some(m);
                         res.origin = Some(o);
                     }
                     o
                 }
                 (Some(_), None) => {
-                    if let Some(res) = out.get_mut(r).and_then(|v| v.get_mut(c)) {
+                    if let Some(res) = out.get_mut(r, c) {
                         res.failed = true;
                     }
                     Origin { row: r, col: c }
                 }
                 _ => Origin { row: r, col: c },
             };
-            if let Some(g) = grid.get_mut(r).and_then(|g| g.get_mut(c)) {
+            if let Some(g) = grid.get_mut(r, c) {
                 *g = Some(set);
             }
         }
@@ -487,11 +522,11 @@ fn resolve_spans(
     out
 }
 
-fn move_joined_marks(rows: &mut [Row], spans: &[Vec<Resolved>]) {
-    let mut moves: Vec<(Origin, Vec<Piece>)> = Vec::new();
+fn move_joined_marks(rows: &mut [Row], spans: &Grid<Resolved>) {
+    let mut moves: Vec<(Origin, Pieces)> = Vec::new();
     for (r, row) in rows.iter_mut().enumerate() {
         for (c, cell) in row.cells.iter_mut().enumerate() {
-            let origin = spans.get(r).and_then(|v| v.get(c)).and_then(|sp| sp.origin);
+            let origin = spans.get(r, c).and_then(|sp| sp.origin);
             if let Some(origin) = origin.filter(|_| !cell.pieces.is_empty()) {
                 moves.push((origin, std::mem::take(&mut cell.pieces)));
                 cell.joined = false;
@@ -519,8 +554,8 @@ fn span_origin(
     r: usize,
     c: usize,
     bounds: SpanBounds,
-    grid: &[Vec<Option<Origin>>],
-    out: &[Vec<Resolved>],
+    grid: &Grid<Option<Origin>>,
+    out: &Grid<Resolved>,
 ) -> Option<Origin> {
     let SpanBounds {
         head,
@@ -528,24 +563,14 @@ fn span_origin(
         body_start,
     } = bounds;
     match span {
-        Some('<') if c > 0 => grid
-            .get(r)
-            .and_then(|g| g.get(c - 1))
-            .copied()
-            .flatten()
-            .filter(|o| o.row == r),
+        Some('<') if c > 0 => grid.get(r, c - 1).copied().flatten().filter(|o| o.row == r),
         Some('^') if r > 0 && !(r == head && head > 0) && r != foot_start && !body_start => grid
-            .get(r - 1)
-            .and_then(|g| g.get(c))
+            .get(r - 1, c)
             .copied()
             .flatten()
             // Gap G-024: as in the oracle, a cell that spans columns takes no row span.
             .filter(|o| o.col == c)
-            .filter(|o| {
-                out.get(o.row)
-                    .and_then(|v| v.get(o.col))
-                    .is_some_and(|x| x.colspan == 1)
-            }),
+            .filter(|o| out.get(o.row, o.col).is_some_and(|x| x.colspan == 1)),
         _ => None,
     }
 }

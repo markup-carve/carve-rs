@@ -14,12 +14,72 @@ pub struct Cell {
     pub valign: Option<&'static str>,
     /// A span mark `<` or `^` (C2-B-172).
     pub span: Option<char>,
-    pub pieces: Vec<Piece>,
+    pub pieces: Pieces,
     /// The text between the pipes (C2-A-149).
     pub start: usize,
     pub end: usize,
     /// A continuation row joined a fragment into this cell (C2-A-158).
     pub joined: bool,
+}
+
+/// The source pieces of a cell: almost always one, kept without a heap block.
+#[derive(Debug, Clone)]
+pub enum Pieces {
+    One(Option<Piece>),
+    Many(Vec<Piece>),
+}
+
+impl Default for Pieces {
+    fn default() -> Self {
+        Self::One(None)
+    }
+}
+
+impl Pieces {
+    pub fn push(&mut self, p: Piece) {
+        match self {
+            Self::One(slot @ None) => *slot = Some(p),
+            Self::One(Some(first)) => *self = Self::Many(vec![*first, p]),
+            Self::Many(v) => v.push(p),
+        }
+    }
+
+    /// Drops the first piece.
+    pub fn remove_first(&mut self) {
+        match self {
+            Self::One(slot) => *slot = None,
+            Self::Many(v) if !v.is_empty() => {
+                v.remove(0);
+            }
+            Self::Many(_) => {}
+        }
+    }
+
+    /// Moves the pieces of `other` to the end, leaving it empty.
+    pub fn append(&mut self, other: &mut Self) {
+        for p in std::mem::take(other).iter() {
+            self.push(*p);
+        }
+    }
+}
+
+impl std::ops::Deref for Pieces {
+    type Target = [Piece];
+    fn deref(&self) -> &[Piece] {
+        match self {
+            Self::One(p) => p.as_slice(),
+            Self::Many(v) => v,
+        }
+    }
+}
+
+impl std::ops::DerefMut for Pieces {
+    fn deref_mut(&mut self) -> &mut [Piece] {
+        match self {
+            Self::One(p) => p.as_mut_slice(),
+            Self::Many(v) => v,
+        }
+    }
 }
 
 /// One row as written, with the comment-only lines that follow it.
@@ -44,21 +104,26 @@ pub struct TableData {
 /// backtick run and its matching run on the same line (C2-B-169).
 #[must_use]
 pub fn separators(r: &str) -> Vec<usize> {
-    let b = r.as_bytes();
     let mut out = Vec::new();
+    each_separator(r, |p| out.push(p));
+    out
+}
+
+/// Calls `f` with the offset of each separator pipe of [`separators`].
+fn each_separator(r: &str, mut f: impl FnMut(usize)) {
+    let b = r.as_bytes();
     let mut i = 0;
     while let Some(&c) = b.get(i) {
         match c {
             b'\\' => i += 2,
             b'`' => i = skip_code(b, i),
             b'|' => {
-                out.push(i);
+                f(i);
                 i += 1;
             }
             _ => i += 1,
         }
     }
-    out
 }
 
 /// Past a backtick run and its closing run of the same length, or past the
@@ -107,13 +172,13 @@ fn trim(text: &str, s: usize, e: usize) -> (usize, usize) {
 #[must_use]
 pub fn parse_cells(text: &str, s: usize, e: usize) -> Vec<Cell> {
     let area = text.get(s..e).unwrap_or("");
-    let mut bounds = vec![s];
-    bounds.extend(separators(area).into_iter().map(|p| s + p + 1));
     let mut cells = Vec::new();
-    for (k, &start) in bounds.iter().enumerate() {
-        let end = bounds.get(k + 1).map_or(e, |n| n - 1);
-        cells.push(parse_cell(text, start, end));
-    }
+    let mut start = s;
+    each_separator(area, |p| {
+        cells.push(parse_cell(text, start, s + p));
+        start = s + p + 1;
+    });
+    cells.push(parse_cell(text, start, e));
     cells
 }
 
@@ -239,11 +304,11 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
                 end: e,
                 header,
                 joined: true,
-                pieces: vec![Piece {
+                pieces: Pieces::One(Some(Piece {
                     start: a,
                     end: z.max(a),
                     join: Join::Line,
-                }],
+                })),
                 ..Cell::default()
             }),
         }
