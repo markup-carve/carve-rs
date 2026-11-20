@@ -520,7 +520,7 @@ impl UsedIds {
             }
             if let crate::ast::owned::Node::Heading(heading) = node {
                 if let Some(id) = &heading.generated_id {
-                    used.ids.insert(id.clone());
+                    used.ids.insert(id.to_string());
                 }
             }
             node.for_each_child(&mut |child| walk(child, used, depth + 1));
