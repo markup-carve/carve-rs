@@ -1378,8 +1378,7 @@ fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_
     }
     let after_run = following
         .lines()
-        .skip_while(|candidate| valid_attribute_line(candidate.trim()))
-        .next()
+        .find(|candidate| !valid_attribute_line(candidate.trim()))
         .unwrap_or("");
     sink.emit_nth(
         "unattached-block-attribute",
