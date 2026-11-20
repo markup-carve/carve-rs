@@ -271,6 +271,31 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
     out
 }
 
+pub(super) struct DataLine {
+    pub text: String,
+    pub masked: String,
+    pub start: usize,
+    pub content: Option<usize>,
+    pub path: String,
+}
+
+pub(super) fn data_lines(source: &str, ranges: &[Range]) -> Vec<DataLine> {
+    lines(source, ranges)
+        .into_iter()
+        .filter(|line| line.start < source.len() || !source.ends_with('\n'))
+        .map(|line| DataLine {
+            text: source
+                .get(line.start..line.start + line.text.len())
+                .unwrap_or("")
+                .to_owned(),
+            masked: line.text,
+            start: line.start,
+            content: line.content.map(|at| line.start + at),
+            path: line.path,
+        })
+        .collect()
+}
+
 fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<LineFacts<'a>> {
     let count = raws.len();
     // One pass per range over the lines it covers, instead of every range per line.

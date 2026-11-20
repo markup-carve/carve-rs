@@ -9,6 +9,9 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 mod controls;
+mod data_interpreter;
+mod data_model;
+mod data_rules;
 mod includes;
 mod legacy;
 mod lines;
@@ -38,6 +41,13 @@ fn catalog() -> &'static Value {
 }
 
 fn active(code: &str, opts: &LintOptions) -> bool {
+    if data_rules::data_mode() && data_rules::modeled_ids().contains(code) {
+        return false;
+    }
+    active_catalog(code, opts)
+}
+
+fn active_catalog(code: &str, opts: &LintOptions) -> bool {
     let Some(row) = catalog()["rules"]
         .as_array()
         .into_iter()
@@ -82,7 +92,8 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         includes::scan(source, opts, &mut out);
     }
     out.retain(|finding| {
-        finding.code != "table-shaped-paragraph"
+        (data_rules::data_mode() && data_rules::modeled_ids().contains(finding.code))
+            || finding.code != "table-shaped-paragraph"
             || !finding.pos.is_some_and(|pos| {
                 source
                     .get(pos.start_offset as usize..pos.end_offset as usize)
@@ -125,6 +136,9 @@ fn blank_within(source: &str, line_start: usize, start: usize, line_end: usize) 
 /// after legacy, line and node scanners have contributed their findings.
 fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     for finding in findings {
+        if data_rules::data_mode() && data_rules::modeled_ids().contains(finding.code) {
+            continue;
+        }
         let Some(pos) = finding.pos else { continue };
         let start = usize::try_from(pos.start_offset).unwrap_or(usize::MAX);
         let Some(prefix) = source.get(..start) else {
@@ -189,6 +203,25 @@ fn lint_core<'a>(
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
+    if data_rules::data_mode() {
+        if let Some(tree) = tree {
+            let start_model = std::time::Instant::now();
+            let records = data_model::records(source, tree, &positions.all);
+            let elapsed_model = start_model.elapsed();
+            out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
+            let start_rules = std::time::Instant::now();
+            out.extend(data_rules::run(&records, source, opts));
+            if std::env::var("CARVE_LINT_PROFILE").is_ok() {
+                eprintln!(
+                    "lint data profile {} bytes: model {:?}, rules {:?}, records {}",
+                    source.len(),
+                    elapsed_model,
+                    start_rules.elapsed(),
+                    records.items.len()
+                );
+            }
+        }
+    }
     let invalid_tables: Vec<_> = out
         .iter()
         .filter(|finding| finding.code == "table-attribute-invalid")
