@@ -706,7 +706,14 @@ fn fix_fragment(code: &str, text: &str) -> Option<String> {
         "deprecated-bare-highlight" => paired("=", "=", "{=", "=}"),
         "djot-emphasis-underscore" => paired("_", "_", "/", "/"),
         "djot-intraword-underscore" => paired("_", "_", "{/", "/}"),
-        "djot-superscript-caret" => paired("^", "^", "{^", "^}"),
+        // C2-T-049 permits the edit only if its replacement parses as the
+        // construct it promises. Braces inside a pair need this check.
+        "djot-superscript-caret" => paired("^", "^", "{^", "^}").filter(|replacement| {
+            let tree = carve::tree_json(replacement, &carve::Options::default());
+            serde_json::from_str::<Value>(&tree)
+                .ok()
+                .is_some_and(|tree| tree["children"][0]["children"][0]["type"] == "superscript")
+        }),
         "heading-closing-hashes" => Some(String::new()),
         "thematic-break-spelling" => Some("***".into()),
         "djot-plus-bullet" => text
@@ -717,8 +724,13 @@ fn fix_fragment(code: &str, text: &str) -> Option<String> {
 }
 
 fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
+    const MAX_PASSES: usize = 10;
     let mut source = String::from_utf8_lossy(bytes).into_owned();
-    loop {
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..MAX_PASSES {
+        if !seen.insert(source.clone()) {
+            return Ok(source.into_bytes());
+        }
         let entries = api::lint(source.as_bytes(), options).map_err(api_fail)?;
         let mut candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
         for entry in entries {
@@ -764,7 +776,7 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
             applied = true;
         }
         if !applied {
-            break;
+            return Ok(source.into_bytes());
         }
     }
     Ok(source.into_bytes())

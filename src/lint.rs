@@ -161,7 +161,8 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
 
 fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let positions = Ranges::new(source, node_ranges(source));
+    let tree = parse_tree_value(&crate::tree_json(source, &crate::Options::default()));
+    let positions = Ranges::new(source, tree.as_ref().map_or_else(Vec::new, node_ranges));
     let mut out = Vec::new();
     for warning in carve_0_1::lint_carve(source) {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
@@ -170,7 +171,9 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
     lines::scan(source, opts, &positions.all, &mut out);
-    nodes::scan(source, opts, &mut out);
+    if let Some(tree) = tree.as_ref() {
+        nodes::scan(source, opts, tree, &mut out);
+    }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     let invalid_tables: Vec<_> = out
@@ -191,7 +194,11 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         })
     });
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
-    controls::filter(source, out)
+    if let Some(tree) = tree.as_ref() {
+        controls::filter(source, out, tree)
+    } else {
+        out
+    }
 }
 
 fn skip_legacy_warning(
@@ -1085,13 +1092,9 @@ struct Range {
     footnote_key: Option<String>,
 }
 
-fn node_ranges(source: &str) -> Vec<Range> {
-    let text = crate::tree_json(source, &crate::Options::default());
-    let Some(tree) = parse_tree_value(&text) else {
-        return Vec::new();
-    };
+fn node_ranges(tree: &Value) -> Vec<Range> {
     let mut out = Vec::new();
-    let mut pending = vec![(&tree, String::new())];
+    let mut pending = vec![(tree, String::new())];
     while let Some((value, path)) = pending.pop() {
         match value {
             Value::Object(map) => {
@@ -1116,13 +1119,18 @@ fn node_ranges(source: &str) -> Vec<Range> {
                             .flatten(),
                     });
                 }
-                pending.extend(map.iter().map(|(k, v)| (v, format!("{path}/{k}"))));
+                pending.extend(
+                    map.iter()
+                        .filter(|(_, value)| matches!(value, Value::Object(_) | Value::Array(_)))
+                        .map(|(key, value)| (value, format!("{path}/{key}"))),
+                );
             }
             Value::Array(items) => {
                 pending.extend(
                     items
                         .iter()
                         .enumerate()
+                        .filter(|(_, value)| matches!(value, Value::Object(_) | Value::Array(_)))
                         .map(|(i, v)| (v, format!("{path}/{i}"))),
                 );
             }
