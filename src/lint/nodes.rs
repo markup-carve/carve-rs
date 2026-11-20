@@ -1,10 +1,10 @@
 //! Checks tied to parsed nodes and their source positions (C2-W-107).
 
-use super::view::{Arr, V};
 use super::{LintOptions, active, drop_replaced};
 use crate::Arena;
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
+use crate::view::{Arr, V};
 use std::cell::OnceCell;
 
 fn field<'a>(value: V<'a>, path: &str) -> V<'a> {

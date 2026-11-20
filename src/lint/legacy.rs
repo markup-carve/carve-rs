@@ -3,7 +3,7 @@
 //! Each record carries what a 0.1 `LintWarning` carried, so `lint_core` skips,
 //! converts and deduplicates it exactly as it did the 0.1 warning.
 
-use super::view::{Arr, V};
+use crate::view::{Arr, V};
 use std::collections::HashSet;
 
 pub(super) struct Warning {
