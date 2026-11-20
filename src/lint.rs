@@ -196,6 +196,9 @@ fn skip_legacy_warning(
     {
         return true;
     }
+    if warning.rule == "bare-html-tag" && hidden_html_tag(warning, positions) {
+        return true;
+    }
     if warning.rule == "list-marker-below-content-column" {
         if source
             .get(warning.start..)
@@ -217,6 +220,12 @@ fn skip_legacy_warning(
         }
     }
     skip_legacy_context(warning, source, parsed, positions)
+}
+
+fn hidden_html_tag(warning: &carve_0_1::LintWarning, positions: &Ranges<'_>) -> bool {
+    positions.around(warning.start).any(|range| {
+        range.kind == "comment" && range.start <= warning.start && warning.end <= range.end
+    })
 }
 
 fn skip_legacy_context(
@@ -290,6 +299,7 @@ fn skip_legacy_context(
         "github-alert-marker",
         "description-separator-below-content-column",
         "colon-fence-length-mismatch",
+        "heading-level-skip",
     ]
     .contains(&warning.rule)
     {
@@ -650,36 +660,10 @@ fn colon_fence_mismatches(
         if candidate.len() >= 3 && candidate.bytes().all(|byte| byte == b':') {
             let at = line_start + line.len() - tail.len();
             let end = at + candidate.len();
-            let previous = source
-                .get(..line_start)
-                .unwrap_or("")
-                .trim_end_matches([' ', '\t', '\n']);
-            let previous_line = previous.rsplit('\n').next().unwrap_or("").trim();
-            let previous_at =
-                if previous_line.len() >= 3 && previous_line.bytes().all(|byte| byte == b':') {
-                    Some(at)
-                } else {
-                    previous.len().checked_sub(1)
-                };
-            let container = previous_at
-                .into_iter()
-                .flat_map(|previous| ranges.around(previous))
-                .filter(|range| {
-                    range.start < at
-                        && matches!(
-                            range.kind.as_str(),
-                            "div"
-                                | "directive"
-                                | "admonition"
-                                | "figure_group"
-                                | "line_block"
-                                | "hard_break_block"
-                        )
-                })
-                .max_by_key(|range| range.start);
+            let container = colon_candidate_container(source, ranges, line_start, at);
             if let Some(container) = container {
-                let width = source
-                    .get(container.start..)
+                let width = colon_opener_at(source, container.start)
+                    .and_then(|open| source.get(open..))
                     .unwrap_or("")
                     .bytes()
                     .take_while(|byte| *byte == b':')
@@ -704,6 +688,100 @@ fn colon_fence_mismatches(
         }
         line_start += piece.len();
     }
+}
+
+fn colon_candidate_container<'r>(
+    source: &str,
+    ranges: &'r Ranges<'_>,
+    line_start: usize,
+    at: usize,
+) -> Option<&'r Range> {
+    let previous_at = source
+        .get(..line_start)
+        .unwrap_or("")
+        .trim_end_matches([' ', '\t', '\r', '\n'])
+        .len()
+        .checked_sub(1)?;
+    ranges
+        .around(previous_at)
+        .filter(|range| colon_range_open_at(source, ranges, range, at))
+        .max_by_key(|range| range.path.len())
+}
+
+fn colon_range_open_at(source: &str, ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+    if !matches!(
+        range.kind.as_str(),
+        "div" | "directive" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
+    ) || range.start >= at
+        || colon_opener_at(source, range.start) == Some(at)
+    {
+        return false;
+    }
+    !colon_crosses_owner(ranges, range, at)
+        && (at <= range.end
+            || (!colon_closed_at_end(source, range) && colon_parent_survives(ranges, range, at)))
+}
+
+fn colon_crosses_owner(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+    ranges.around(at).any(|current| {
+        matches!(
+            current.kind.as_str(),
+            "list_item" | "block_quote" | "footnote" | "definition_description"
+        ) && current
+            .path
+            .strip_prefix(&range.path)
+            .is_some_and(|rest| rest.starts_with("/children/"))
+            && current.start <= at
+            && at <= current.end
+    })
+}
+
+fn colon_parent_survives(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+    range
+        .path
+        .rsplit_once("/children/")
+        .is_some_and(|(parent, _)| {
+            ranges
+                .around(at)
+                .any(|current| current.path == parent && current.start <= at && at <= current.end)
+        })
+}
+
+/// The opener of an attributed colon container follows its attribute lines.
+fn colon_opener_at(source: &str, start: usize) -> Option<usize> {
+    let mut at = start;
+    loop {
+        let raw_line = source.get(at..)?.split('\n').next()?;
+        let line = raw_line.trim_end_matches('\r');
+        let trimmed = line.trim_start_matches([' ', '\t']);
+        if trimmed.starts_with(":::") {
+            return Some(at + line.len() - trimmed.len());
+        }
+        if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+            return None;
+        }
+        at += raw_line.len() + 1;
+    }
+}
+
+fn colon_closed_at_end(source: &str, range: &Range) -> bool {
+    let Some(open) = colon_opener_at(source, range.start) else {
+        return false;
+    };
+    let width = source
+        .get(open..)
+        .unwrap_or("")
+        .bytes()
+        .take_while(|b| *b == b':')
+        .count();
+    let final_line = source
+        .get(..range.end)
+        .unwrap_or("")
+        .rsplit('\n')
+        .next()
+        .unwrap_or("");
+    let run = final_line.trim_start_matches([' ', '\t', '>']).trim();
+    run.len() >= width && run.bytes().all(|b| b == b':')
 }
 
 fn list_columns(

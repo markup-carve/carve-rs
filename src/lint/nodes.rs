@@ -237,9 +237,63 @@ fn ids(items: &[Item<'_>]) -> HashSet<String> {
 fn check_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
     overindented_opener(item, root, sink);
     list_item_opener_overindented(item, root, sink);
+    list_between_columns(item, root, sink);
     semantic(item, sink);
     check_block_node(item, ids, root, sink);
     check_inline_node(item, sink);
+}
+
+fn list_between_columns(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
+    if item.node["type"] != "list_item" {
+        return;
+    }
+    let Some((list_path, _)) = item.path.rsplit_once("/children/") else {
+        return;
+    };
+    let Some((outer_path, _)) = list_path.rsplit_once("/children/") else {
+        return;
+    };
+    let Some(outer) = root
+        .pointer(outer_path)
+        .filter(|node| node["type"] == "list_item")
+    else {
+        return;
+    };
+    let Some((at, end)) = bounds(item.node) else {
+        return;
+    };
+    let Some((list_at, _)) = root.pointer(list_path).and_then(bounds) else {
+        return;
+    };
+    let Some((outer_at, _)) = bounds(outer) else {
+        return;
+    };
+    let column = source_column(sink.source, at);
+    let base = source_column(sink.source, outer_at);
+    let deeper = outer["children"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|child| child["type"] == "list")
+        .filter_map(|child| bounds(child).map(|(from, _)| (from, source_column(sink.source, from))))
+        .filter(|(from, mark)| *from < list_at && *mark > column)
+        .max_by_key(|(from, _)| *from)
+        .map(|(_, mark)| mark);
+    let Some(deeper) = deeper.filter(|_| base < column) else {
+        return;
+    };
+    sink.emit_range(
+        "list-marker-below-content-column",
+        at,
+        end,
+        &item.path,
+        &[
+            ("column", &column.to_string()),
+            ("contentColumn", &deeper.to_string()),
+            ("baseColumn", &base.to_string()),
+        ],
+        0,
+    );
 }
 
 fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
@@ -260,6 +314,9 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
     ) {
         return;
     }
+    let Some((from, _)) = bounds(item.node) else {
+        return;
+    };
     let mut path = item.path.as_str();
     let parent = loop {
         let Some((owner_path, _)) = path.rsplit_once("/children/") else {
@@ -270,19 +327,27 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
         };
         match owner.get("type").and_then(Value::as_str) {
             Some("list_item") => break owner,
-            Some("div" | "admonition" | "directive" | "figure_group") => path = owner_path,
+            Some("div" | "admonition" | "directive" | "figure_group" | "definition_list") => {
+                path = owner_path;
+            }
+            Some("paragraph")
+                if item.node["type"] == "image"
+                    && bounds(owner).is_some_and(|(start, _)| start == from) =>
+            {
+                path = owner_path;
+            }
             _ => return,
         }
-    };
-    let Some((from, _)) = bounds(item.node) else {
-        return;
     };
     let first = field(parent, "/children/0");
     if field(first, "/pos/startOffset").as_u64() == u64::try_from(from).ok() {
         return;
     }
-    let content = field(first, "/pos/startColumn").as_u64().unwrap_or(0);
-    let column = field(item.node, "/pos/startColumn").as_u64().unwrap_or(0);
+    let content = field(first, "/pos/startOffset")
+        .as_u64()
+        .and_then(|offset| usize::try_from(offset).ok())
+        .map_or(0, |offset| source_column(sink.source, offset));
+    let column = source_column(sink.source, from);
     if content > 0 && column > content {
         let end = sink
             .source
@@ -301,8 +366,15 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
 }
 
 fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
-    if item.parents.iter().any(|parent| parent == "list_item") {
-        return;
+    let mut ancestor = item.path.as_str();
+    while let Some((path, _)) = ancestor.rsplit_once("/children/") {
+        ancestor = path;
+        let Some(node) = root.pointer(path) else {
+            break;
+        };
+        if node["type"] == "list_item" {
+            return;
+        }
     }
     let kind = match item.node["type"].as_str().unwrap_or("") {
         "block_quote" => "quote",
@@ -354,6 +426,7 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
                 owner,
                 usize::try_from(column.saturating_sub(1)).unwrap_or(usize::MAX),
                 start_line,
+                parent.len(),
             ));
             break;
         }
@@ -366,8 +439,10 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         .parents
         .iter()
         .rposition(|parent| matches!(parent.as_str(), "definition_description" | "footnote"));
-    let (owner, standard) = if let Some((owner, column, start_line)) = content_owner
+    let div_owner = div_owner_column(item, root, sink.source);
+    let (owner, standard) = if let Some((owner, column, start_line, depth)) = content_owner
         && content_parent > quote
+        && div_owner.is_none_or(|(_, div_depth)| div_depth <= depth)
     {
         if field(item.node, "/pos/startLine").as_u64() == Some(start_line) {
             return;
@@ -382,13 +457,8 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
                     .unwrap_or(usize::MAX)
             }),
         )
-    } else if item.parents.iter().any(|parent| {
-        matches!(
-            parent.as_str(),
-            "div" | "admonition" | "directive" | "figure_group"
-        )
-    }) {
-        ("a div", 0)
+    } else if let Some((column, _)) = div_owner {
+        ("a div", column)
     } else {
         ("document", 0)
     };
@@ -419,6 +489,26 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         ],
         0,
     );
+}
+
+fn div_owner_column(item: &Item<'_>, root: &Value, source: &str) -> Option<(usize, usize)> {
+    let mut path = item.path.as_str();
+    while let Some((parent, _)) = path.rsplit_once("/children/") {
+        path = parent;
+        let node = root.pointer(parent)?;
+        if matches!(
+            node["type"].as_str(),
+            Some("div" | "admonition" | "directive" | "figure_group")
+        ) {
+            let (start, _) = bounds(node)?;
+            return Some((
+                usize::try_from(source_column(source, start).saturating_sub(1))
+                    .unwrap_or(usize::MAX),
+                parent.len(),
+            ));
+        }
+    }
+    None
 }
 
 fn check_block_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
@@ -765,7 +855,6 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
             && !line.trim().is_empty()
             && column > marker_column
             && column < content_column
-            && !super::lines::list_marker(line.get(prefix + indent..).unwrap_or("").trim())
             && item.node["children"].as_array().is_some_and(|children| {
                 children.iter().any(|child| {
                     field(child, "/pos/startOffset").as_u64() == u64::try_from(start).ok()
@@ -1547,8 +1636,18 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
         let (block, end) = crate::attr::parse_block(&value, at)?;
         let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
-        (at > 0 && !block.empty && !matches!(before, "" | ">") && !escaped(value.as_bytes(), at))
-            .then_some((at, end))
+        let quote_prefix = before == ">"
+            && !value.starts_with('>')
+            && sink
+                .source
+                .get(..from + at)
+                .is_some_and(|prefix| prefix.ends_with("> "));
+        (at > 0
+            && !block.empty
+            && !before.is_empty()
+            && !quote_prefix
+            && !escaped(value.as_bytes(), at))
+        .then_some((at, end))
     }) {
         sink.emit_range(
             "unattached-inline-attribute",

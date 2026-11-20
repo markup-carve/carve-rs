@@ -3,6 +3,7 @@
 use super::{LintOptions, Range, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
+use std::collections::HashSet;
 
 #[allow(clippy::struct_excessive_bools)] // Independent facts from separate parse and source checks.
 struct Line {
@@ -13,6 +14,7 @@ struct Line {
     path: String,
     kind: String,
     paragraph: bool,
+    paragraph_in_div: bool,
     literal_quote_prefix: bool,
     content_start: Option<usize>,
     /// Where the tree places this line's text: its first leaf, or the end of the break before it.
@@ -153,6 +155,16 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
+    let div_paths: HashSet<&str> = ranges
+        .iter()
+        .filter(|range| {
+            matches!(
+                range.kind.as_str(),
+                "div" | "directive" | "admonition" | "figure_group"
+            )
+        })
+        .map(|range| range.path.as_str())
+        .collect();
     let mut starts = Vec::new();
     let mut raws = Vec::new();
     let mut start = 0;
@@ -186,6 +198,9 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: paragraph.map_or_else(String::new, |r| r.path.clone()),
             kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
             paragraph: paragraph.is_some(),
+            paragraph_in_div: paragraph
+                .and_then(|range| range.path.rsplit_once("/children/"))
+                .is_some_and(|(parent, _)| div_paths.contains(parent)),
             literal_quote_prefix: fact.flags & LITERAL_QUOTE_PREFIX != 0,
             content_start: paragraph
                 .filter(|range| range.start_line == number)
@@ -224,6 +239,7 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: String::new(),
             kind: String::new(),
             paragraph: false,
+            paragraph_in_div: false,
             literal_quote_prefix: false,
             content_start: None,
             content: None,
@@ -473,9 +489,19 @@ fn thematic_marker(
     sink: &mut Sink<'_>,
 ) {
     let marker_start = prefix + tail.len() - tail.trim_start().len();
+    // A list-looking prefix folded into text is not an item marker.
+    if prefix > line.text.len() - line.text.trim_start_matches([' ', '\t']).len()
+        && line.scope.container != ContainerKind::ListItem
+        && !line.paragraph
+    {
+        return;
+    }
     let candidate = tail.trim();
-    let after_paragraph = previous
-        .is_some_and(|p| p.kind == "paragraph" && p.path == line.path && !p.text.trim().is_empty());
+    let after_paragraph =
+        previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
+    if item_marker_underline(line, prefix, candidate, after_paragraph) {
+        return;
+    }
     if (run(candidate, "=", 3) || run(candidate, "-", 3)) && after_paragraph {
         sink.emit(
             "setext-heading-underline",
@@ -509,6 +535,18 @@ fn thematic_marker(
             &[],
         );
     }
+}
+
+fn item_marker_underline(
+    line: &Line,
+    prefix: usize,
+    candidate: &str,
+    after_paragraph: bool,
+) -> bool {
+    after_paragraph
+        && (run(candidate, "-", 3) || run(candidate, "=", 3))
+        && prefix > line.text.len() - line.text.trim_start_matches([' ', '\t']).len()
+        && list_marker(line.text.trim_start_matches([' ', '\t']))
 }
 
 fn quote_list_marker(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
@@ -895,6 +933,7 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
     let (at, text) = leaf_text(line);
     if !line.paragraph
+        || (line.kind == "definition_term" && line.text.starts_with('['))
         || !text.starts_with('[')
         || line.scope.in_footnote
         || !(line.text.starts_with([' ', '\t']) || line.scope.container != ContainerKind::None)
@@ -1110,24 +1149,11 @@ fn prose_context(
 ) {
     let (marker_at, marker_text) = leaf_after_quotes(line);
     let list_candidate = list_marker(marker_text);
-    if line.scope.container == ContainerKind::ListItem
-        && line.kind != "definition_term"
-        && previous.is_some_and(|p| {
-            p.kind == "definition_term"
-                && p.content_start.is_some()
-                && p.scope.container == ContainerKind::ListItem
-        })
-        && list_candidate
-    {
-        let raw = sink
-            .source
-            .text()
-            .get(line.start..line.start + line.text.len())
-            .unwrap_or("");
+    if term_continuation_marker(line, previous, marker_at, list_candidate) {
         sink.emit(
             "description-term-multi-line",
             line.start + marker_at,
-            line.start + raw.trim_end().len(),
+            line.start + line.text.trim_end().len(),
             &line.path,
             &[],
         );
@@ -1147,6 +1173,7 @@ fn prose_context(
     }
     if list_candidate
         && (paragraph_continuation(line, previous)
+            || list_after_open_paragraph(line, previous)
             || previous.is_some_and(|p| {
                 p.kind == "definition_term" && !p.text.trim().is_empty() && line.scope.in_footnote
             }))
@@ -1162,6 +1189,42 @@ fn prose_context(
     bare_html(line, sink);
     github_alert(line, sink);
     caption_looking(line, index, lines, sink);
+}
+
+fn term_continuation_marker(
+    line: &Line,
+    previous: Option<&Line>,
+    marker_at: usize,
+    list_candidate: bool,
+) -> bool {
+    line.scope.container == ContainerKind::ListItem
+        && line.kind != "definition_term"
+        && list_candidate
+        && previous.is_some_and(|p| {
+            p.kind == "definition_term"
+                && p.content_start.is_some()
+                && p.scope.container == ContainerKind::ListItem
+                && visual_column(line, marker_at)
+                    > visual_column(
+                        p,
+                        p.text.len() - p.text.trim_start_matches([' ', '\t']).len(),
+                    )
+        })
+}
+
+fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
+    previous.is_some_and(|p| {
+        p.kind == "paragraph"
+            && p.paragraph_in_div
+            && !p.text.trim().is_empty()
+            && line.scope.container == ContainerKind::ListItem
+            && p.content.is_some_and(|content| {
+                visual_column(line, leaf_after_quotes(line).0) >= visual_column(p, content)
+            })
+            && p.path
+                .rsplit_once("/children/")
+                .is_some_and(|(parent, _)| !parent.is_empty() && line.path.starts_with(parent))
+    })
 }
 
 fn quote_opener_candidate(line: &Line) -> bool {
@@ -1264,6 +1327,7 @@ fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
         .unwrap_or("")
         .trim();
     if !line.paragraph
+        || line.content_start.is_none()
         || (line.content_start.is_none() && (next.starts_with(":::") || next.starts_with('>')))
         || line.attached_attribute
         || !text.starts_with('{')
@@ -1370,7 +1434,7 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
         .iter()
         .skip(index + 1)
         .take(2)
-        .any(|other| other.text.trim_start().starts_with('|'));
+        .any(|other| leaf_after_quotes(other).1.starts_with('|'));
     let above = lines.iter().take(index).rev().take(2).any(|other| {
         let text = other.text.trim_start();
         text.starts_with('|') || text.contains("![")

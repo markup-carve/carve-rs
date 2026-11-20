@@ -531,9 +531,9 @@
   },
   {
     "id": "unattached-block-attribute",
-    "origin": "../carve/tests/corpus/391-an-attribute-line-below-a-list-item-interrupts-it-2.crv",
-    "trigger": "- b\n{.x}\n",
-    "near": "- b\n\n",
+    "origin": "handwritten C2-B-192",
+    "trigger": "{.x}\n",
+    "near": "\n",
     "fragment": "{.x}",
     "message": "This attribute line reaches no block: a blank line or the end of its container follows, so the line is text (C2-B-192). Move it directly above the block it describes, or delete it."
   },
