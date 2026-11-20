@@ -110,7 +110,10 @@ fn shape(body: &str) -> &'static str {
     if body.starts_with("{{") && body.ends_with("}}") {
         return "include";
     }
-    if body.starts_with('{') && body.ends_with('}') {
+    if body.starts_with('{')
+        && crate::attr::parse_glued(body, 0)
+            .is_some_and(|(block, end)| !block.empty && end == body.len())
+    {
         return "attribute_line";
     }
     if body.starts_with(":::") {
