@@ -13,6 +13,9 @@ mod includes;
 mod legacy;
 mod lines;
 mod nodes;
+pub(crate) mod view;
+
+use view::V;
 
 /// Rule switches and platform selection for a lint run.
 #[derive(Debug, Clone, Default)]
@@ -69,9 +72,13 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         ..crate::Options::default()
     };
     let same = opts.includes.is_none() && opts.heading_ids == crate::options::HeadingIds::default();
-    let (tree, diagnostics) =
-        crate::tree_value_and_diagnostics(source, &crate::Options::default(), &parse, same);
-    let mut out = lint_core(source, opts, tree.as_ref());
+    let (mut out, diagnostics) = crate::with_lint_tree(
+        source,
+        &crate::Options::default(),
+        &parse,
+        same,
+        |tree, arena| lint_core(source, opts, tree, arena),
+    );
     out.extend(diagnostics);
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
@@ -163,14 +170,16 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     }
 }
 
-fn lint_core(source: &str, opts: &LintOptions, tree: Option<&Value>) -> Vec<Diagnostic> {
+fn lint_core<'a>(
+    source: &str,
+    opts: &LintOptions,
+    tree: Option<V<'a>>,
+    arena: &'a crate::Arena,
+) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
     let positions = Ranges::new(source, tree.map_or_else(Vec::new, node_ranges));
     let mut out = Vec::new();
-    for warning in tree
-        .as_ref()
-        .map_or_else(Vec::new, |tree| legacy::warnings(source, tree))
-    {
+    for warning in tree.map_or_else(Vec::new, |tree| legacy::warnings(source, tree)) {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
             continue;
         }
@@ -178,7 +187,7 @@ fn lint_core(source: &str, opts: &LintOptions, tree: Option<&Value>) -> Vec<Diag
     }
     lines::scan(source, opts, &positions.all, &mut out);
     if let Some(tree) = tree {
-        nodes::scan(source, opts, tree, &mut out);
+        nodes::scan(source, opts, tree, arena, &mut out);
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
@@ -1158,10 +1167,10 @@ impl PartialEq<&str> for LazyPath {
     }
 }
 
-fn node_ranges(tree: &Value) -> Vec<Range> {
+fn node_ranges(tree: V<'_>) -> Vec<Range> {
     let mut out = Vec::new();
     let mut keys: HashMap<&str, Rc<str>> = HashMap::new();
-    let mut pending: Vec<(&Value, Option<Rc<Step>>, usize)> = vec![(tree, None, 0)];
+    let mut pending: Vec<(V<'_>, Option<Rc<Step>>, usize)> = vec![(tree, None, 0)];
     while let Some((value, step, len)) = pending.pop() {
         let child = |segment: Segment, width: usize| {
             (
@@ -1172,51 +1181,42 @@ fn node_ranges(tree: &Value) -> Vec<Range> {
                 len + 1 + width,
             )
         };
-        match value {
-            Value::Object(map) => {
-                if let (Some(pos), Some(kind)) = (value.get("pos"), value["type"].as_str()) {
-                    let start =
-                        usize::try_from(pos["startOffset"].as_u64().unwrap_or(0)).unwrap_or(0);
-                    let end = usize::try_from(pos["endOffset"].as_u64().unwrap_or(0)).unwrap_or(0);
-                    let start_line =
-                        usize::try_from(pos["startLine"].as_u64().unwrap_or(0)).unwrap_or(0);
-                    let end_line =
-                        usize::try_from(pos["endLine"].as_u64().unwrap_or(0)).unwrap_or(0);
-                    out.push(Range {
-                        start,
-                        end,
-                        path: LazyPath {
-                            step: step.clone(),
-                            len,
-                            text: OnceCell::new(),
-                        },
-                        kind: kind.into(),
-                        start_line,
-                        end_line,
-                        has_attrs: value.get("attrs").is_some(),
-                        footnote_key: (kind == "footnote_ref")
-                            .then(|| value["key"].as_str().map(str::to_string))
-                            .flatten(),
-                    });
-                }
-                for (key, item) in map {
-                    if matches!(item, Value::Object(_) | Value::Array(_)) {
-                        let name = keys.entry(key).or_insert_with(|| Rc::from(key.as_str()));
-                        let (next, width) = child(Segment::Key(Rc::clone(name)), key.len());
-                        pending.push((item, next, width));
-                    }
+        if let Some(items) = value.as_array() {
+            for (i, item) in items.iter().enumerate() {
+                if item.is_container() {
+                    let digits = i.checked_ilog10().map_or(1, |d| d as usize + 1);
+                    let (next, width) = child(Segment::Index(i), digits);
+                    pending.push((item, next, width));
                 }
             }
-            Value::Array(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    if matches!(item, Value::Object(_) | Value::Array(_)) {
-                        let digits = i.checked_ilog10().map_or(1, |d| d as usize + 1);
-                        let (next, width) = child(Segment::Index(i), digits);
-                        pending.push((item, next, width));
-                    }
-                }
+        } else if value.is_object() {
+            if let (Some(pos), Some(kind)) = (value.pos(), value.ty().as_str()) {
+                let number =
+                    |key: &str| usize::try_from(pos.at(key).as_u64().unwrap_or(0)).unwrap_or(0);
+                out.push(Range {
+                    start: number("startOffset"),
+                    end: number("endOffset"),
+                    path: LazyPath {
+                        step: step.clone(),
+                        len,
+                        text: OnceCell::new(),
+                    },
+                    kind: kind.into(),
+                    start_line: number("startLine"),
+                    end_line: number("endLine"),
+                    has_attrs: value.get("attrs").is_some(),
+                    footnote_key: (kind == "footnote_ref")
+                        .then(|| value.at("key").as_str().map(str::to_string))
+                        .flatten(),
+                });
             }
-            _ => {}
+            value.each(&mut |key, item| {
+                if item.is_container() {
+                    let name = keys.entry(key).or_insert_with(|| Rc::from(key));
+                    let (next, width) = child(Segment::Key(Rc::clone(name)), key.len());
+                    pending.push((item, next, width));
+                }
+            });
         }
     }
     out

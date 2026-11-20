@@ -680,6 +680,32 @@ pub(crate) fn tree_value_and_diagnostics(
     (value, diagnostics)
 }
 
+/// [`tree_value_and_diagnostics`] with the tree handed to `f` as a lint view of
+/// the parsed document instead of a `serde_json::Value` copy.
+pub(crate) fn with_lint_tree<R>(
+    input: &str,
+    tree_opts: &Options,
+    opts: &Options,
+    same: bool,
+    f: impl for<'t> FnOnce(Option<lint::view::V<'t>>, &'t Arena) -> R,
+) -> (R, Vec<diagnostic::Diagnostic>) {
+    let arena = Arena::for_input(input);
+    let mut diagnostics = Vec::new();
+    let prepared = prepare(input, tree_opts, &arena, &mut diagnostics);
+    let result = match prepared {
+        Ok((doc, _, None)) => f(Some(lint::view::V::Doc(arena.alloc(doc))), &arena),
+        Ok((doc, _, Some(_))) => {
+            let value = arena.json(stamped_value(&doc));
+            f(Some(lint::view::V::Json(value)), &arena)
+        }
+        Err(_) => f(None, &arena),
+    };
+    if !same {
+        diagnostics = parse_diagnostics(input, opts);
+    }
+    (result, diagnostics)
+}
+
 /// C2-B-083, C2-B-085: only the first definition of each label wins.
 fn duplicate_definitions(
     doc: &ast::Document<'_>,

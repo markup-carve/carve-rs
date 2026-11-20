@@ -16,13 +16,14 @@ fn main() {
     println!("cargo:rerun-if-changed=spec-data");
     println!("cargo:rerun-if-changed=build.rs");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap_or_default());
-    let [arena, owned, conv] = gen_ast(
+    let [arena, owned, conv, view] = gen_ast(
         &load(&dir, "ast-schema.json"),
         &load(&dir, "node-slots.json"),
     );
     write(&out.join("ast_gen.rs"), &arena);
     write(&out.join("ast_owned_gen.rs"), &owned);
     write(&out.join("ast_conv_gen.rs"), &conv);
+    write(&out.join("ast_view_gen.rs"), &view);
     write(&out.join("tables_gen.rs"), &gen_tables(&dir));
     write(&out.join("package_info_gen.rs"), &gen_package_info(&dir));
 }
@@ -254,9 +255,10 @@ fn node_defs(defs: &Map<String, Value>, enums: &mut String) -> Vec<NodeDef> {
     out
 }
 
-/// The arena tree (`ast_gen.rs`), the owned tree (`ast_owned_gen.rs`) and the
-/// converters between them (`ast_conv_gen.rs`).
-fn gen_ast(schema: &Value, slots: &Value) -> [String; 3] {
+/// The arena tree (`ast_gen.rs`), the owned tree (`ast_owned_gen.rs`), the
+/// converters between them (`ast_conv_gen.rs`) and the lint view of the arena
+/// tree (`ast_view_gen.rs`).
+fn gen_ast(schema: &Value, slots: &Value) -> [String; 4] {
     let defs = schema
         .get("$defs")
         .and_then(Value::as_object)
@@ -279,7 +281,100 @@ fn gen_ast(schema: &Value, slots: &Value) -> [String; 3] {
     write_node_conv(&mut conv, &nodes);
     write_slots(&mut arena, &defs, slots, Fam::Arena);
     write_slots(&mut owned, &defs, slots, Fam::Owned);
-    [arena, owned, conv]
+    let mut view = String::from(head);
+    for n in &nodes {
+        write_view(&mut view, n);
+    }
+    write_node_view(&mut view, &nodes);
+    [arena, owned, conv, view]
+}
+
+// ---------------------------------------------------------------- lint view
+
+/// The view of a field `x` (a reference to the field's value without its `Option`), as serde writes it.
+fn view_expr(f: &Field) -> String {
+    match &f.kind {
+        FieldKind::Nodes => "V::Nodes(x)".into(),
+        FieldKind::NodeBox => "V::Node(x)".into(),
+        FieldKind::Str => "V::Str(x)".into(),
+        FieldKind::Strings => "V::Strs(x)".into(),
+        FieldKind::Int => "V::Int(*x)".into(),
+        FieldKind::Num => "V::num(*x)".into(),
+        FieldKind::Bool => "V::Bool(*x)".into(),
+        FieldKind::Enum(_) => "V::Str(x.as_str())".into(),
+        FieldKind::Json => match f.json.as_str() {
+            "attrs" => "V::Attrs(x)".into(),
+            "pos" => "V::Pos(x)".into(),
+            "segments" => "V::Segments(x)".into(),
+            _ => "V::Json(x)".into(),
+        },
+        FieldKind::Marker => "V::Marker(x)".into(),
+        FieldKind::Task => "V::Task(x)".into(),
+    }
+}
+
+/// `view_get` and `view_each` of a node struct: its JSON keys, `type` included, in `serde_json` map order.
+fn write_view(out: &mut String, n: &NodeDef) {
+    let ty = &n.ty;
+    let mut fields: Vec<&Field> = n.fields.iter().collect();
+    fields.sort_by(|a, b| a.json.cmp(&b.json));
+    let _ = writeln!(
+        out,
+        "impl<'a> {ty}<'a> {{\n    pub(crate) fn view_get(&'a self, key: &str) -> Option<V<'a>> {{\n        match key {{\n            \"type\" => Some(V::Str({:?})),",
+        n.name
+    );
+    for f in &fields {
+        let get = if f.required {
+            format!("Some({{ let x = &self.{}; {} }})", f.rust, view_expr(f))
+        } else {
+            format!("self.{}.as_ref().map(|x| {})", f.rust, view_expr(f))
+        };
+        let _ = writeln!(out, "            {:?} => {get},", f.json);
+    }
+    let _ = writeln!(
+        out,
+        "            _ => None,\n        }}\n    }}\n\n    pub(crate) fn view_each(&'a self, f: &mut dyn FnMut(&'a str, V<'a>)) {{"
+    );
+    let mut keys: Vec<(&str, Option<&Field>)> =
+        fields.iter().map(|f| (f.json.as_str(), Some(*f))).collect();
+    keys.push(("type", None));
+    keys.sort_by(|a, b| a.0.cmp(b.0));
+    for (key, f) in keys {
+        match f {
+            None => {
+                let _ = writeln!(out, "        f(\"type\", V::Str({:?}));", n.name);
+            }
+            Some(f) if f.required => {
+                let _ = writeln!(
+                    out,
+                    "        {{ let x = &self.{}; f({key:?}, {}); }}",
+                    f.rust,
+                    view_expr(f)
+                );
+            }
+            Some(f) => {
+                let _ = writeln!(
+                    out,
+                    "        if let Some(x) = &self.{} {{ f({key:?}, {}); }}",
+                    f.rust,
+                    view_expr(f)
+                );
+            }
+        }
+    }
+    let _ = writeln!(out, "    }}\n}}\n");
+}
+
+fn write_node_view(out: &mut String, nodes: &[NodeDef]) {
+    out.push_str("impl<'a> Node<'a> {\n    pub(crate) fn view_get(&'a self, key: &str) -> Option<V<'a>> {\n        match self {\n");
+    for n in nodes {
+        let _ = writeln!(out, "            Self::{}(n) => n.view_get(key),", n.ty);
+    }
+    out.push_str("        }\n    }\n\n    pub(crate) fn view_each(&'a self, f: &mut dyn FnMut(&'a str, V<'a>)) {\n        match self {\n");
+    for n in nodes {
+        let _ = writeln!(out, "            Self::{}(n) => n.view_each(f),", n.ty);
+    }
+    out.push_str("        }\n    }\n}\n");
 }
 
 fn collect_fields(

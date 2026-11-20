@@ -3,7 +3,7 @@
 //! Each record carries what a 0.1 `LintWarning` carried, so `lint_core` skips,
 //! converts and deduplicates it exactly as it did the 0.1 warning.
 
-use serde_json::Value;
+use super::view::{Arr, V};
 use std::collections::HashSet;
 
 pub(super) struct Warning {
@@ -14,27 +14,26 @@ pub(super) struct Warning {
 }
 
 struct Node<'a> {
-    value: &'a Value,
+    value: V<'a>,
     kind: &'a str,
     parent: Option<usize>,
     /// The key this node sits under in its parent (`children`, `caption`, ...).
     slot: &'a str,
 }
 
-fn bounds(node: &Value) -> Option<(usize, usize)> {
-    let pos = node.get("pos")?;
-    Some((
-        usize::try_from(pos["startOffset"].as_u64()?).ok()?,
-        usize::try_from(pos["endOffset"].as_u64()?).ok()?,
-    ))
+fn bounds(node: V<'_>) -> Option<(usize, usize)> {
+    node.offsets()
 }
 
-fn nodes(root: &Value) -> Vec<Node<'_>> {
+fn nodes(root: V<'_>) -> Vec<Node<'_>> {
     let mut out = Vec::new();
     let mut pending = vec![(root, None, "")];
+    let mut entries = Vec::new();
     while let Some((value, parent, slot)) = pending.pop() {
-        let Value::Object(map) = value else { continue };
-        let Some(kind) = value["type"].as_str() else {
+        if !value.is_object() {
+            continue;
+        }
+        let Some(kind) = value.ty().as_str() else {
             continue;
         };
         let at = out.len();
@@ -44,19 +43,15 @@ fn nodes(root: &Value) -> Vec<Node<'_>> {
             parent,
             slot,
         });
-        for (key, child) in map.iter().rev() {
-            if matches!(key.as_str(), "data" | "props" | "pos" | "attrs") {
+        value.each(&mut |key, child| entries.push((key, child)));
+        for (key, child) in entries.drain(..).rev() {
+            if matches!(key, "data" | "props" | "pos" | "attrs") {
                 continue;
             }
-            match child {
-                Value::Object(_) => pending.push((child, Some(at), key.as_str())),
-                Value::Array(items) => pending.extend(
-                    items
-                        .iter()
-                        .rev()
-                        .map(|item| (item, Some(at), key.as_str())),
-                ),
-                _ => {}
+            if let Some(items) = child.as_array() {
+                pending.extend(items.iter().rev().map(|item| (item, Some(at), key)));
+            } else if child.is_object() {
+                pending.push((child, Some(at), key));
             }
         }
     }
@@ -70,7 +65,7 @@ fn ancestors<'n, 'a>(all: &'n [Node<'a>], at: usize) -> impl Iterator<Item = &'n
     .filter_map(|i| all.get(i))
 }
 
-pub(super) fn warnings(source: &str, tree: &Value) -> Vec<Warning> {
+pub(super) fn warnings(source: &str, tree: V<'_>) -> Vec<Warning> {
     let all = nodes(tree);
     let mut out = Vec::new();
     let mut braced_comments = HashSet::new();
@@ -78,7 +73,7 @@ pub(super) fn warnings(source: &str, tree: &Value) -> Vec<Warning> {
     for (at, node) in all.iter().enumerate() {
         let value = node.value;
         match node.kind {
-            "comment" if value["form"] == "braced" => {
+            "comment" if value.at("form") == "braced" => {
                 braced_comments.extend(bounds(value).map(|(start, _)| start));
             }
             "footnote" => footnote_labels.extend(bounds(value).map(|(start, _)| start)),
@@ -107,7 +102,7 @@ fn visit(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
         "caption_number" => panel_number(source, all, at, out),
         "strong" if !in_footnote() => glob_strong(source, value, out),
         "list" | "definition_list" => consumed_key(source, value, "loose", out),
-        "code_block" if matches!(value["syntax"].as_str(), Some("csv" | "tsv")) => {
+        "code_block" if matches!(value.at("syntax").as_str(), Some("csv" | "tsv")) => {
             consumed_key(source, value, "table", out);
         }
         "table_cell" => reversed_marker(source, value, out),
@@ -144,9 +139,10 @@ fn bare_figure_opener(source: &str, at: usize) -> bool {
 /// PART 9 §4c: a bare `::: figure` inside an open group stays a generic container.
 fn figure_nested(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
     let Some(node) = all.get(at) else { return };
-    let attrs = &node.value["attrs"];
-    let figure = attrs.as_object().is_some_and(|map| map.len() == 1)
-        && attrs["classes"]
+    let attrs = &node.value.at("attrs");
+    let figure = attrs.object_len() == Some(1)
+        && attrs
+            .at("classes")
             .as_array()
             .is_some_and(|c| c.len() == 1 && c.first().is_some_and(|f| f == "figure"));
     if figure
@@ -160,15 +156,16 @@ fn figure_nested(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warnin
     }
 }
 
-fn panels(group: &Value) -> impl Iterator<Item = &Value> {
-    group["children"]
+fn panels(group: V<'_>) -> impl Iterator<Item = V<'_>> {
+    group
+        .at("children")
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|child| child.get("caption").is_some() || child["type"] == "table")
+        .filter(|child| child.get("caption").is_some() || child.ty() == "table")
 }
 
-fn figure_group(source: &str, group: &Value, out: &mut Vec<Warning>) {
+fn figure_group(source: &str, group: V<'_>, out: &mut Vec<Warning>) {
     if panels(group).count() == 1
         && let Some(span) = bounds(group)
         && bare_figure_opener(source, span.0)
@@ -203,7 +200,7 @@ fn panel_number(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning
     }
 }
 
-fn glob_strong(source: &str, strong: &Value, out: &mut Vec<Warning>) {
+fn glob_strong(source: &str, strong: V<'_>, out: &mut Vec<Warning>) {
     let Some((start, end)) = bounds(strong) else {
         return;
     };
@@ -232,18 +229,18 @@ fn behind_attribute_lines(source: &str, mut at: usize, end: usize) -> usize {
 }
 
 /// `consumed-key-near-miss`: a bare key one edit from the key its block reads.
-fn consumed_key(source: &str, block: &Value, key: &'static str, out: &mut Vec<Warning>) {
+fn consumed_key(source: &str, block: V<'_>, key: &'static str, out: &mut Vec<Warning>) {
     let Some((start, end)) = bounds(block) else {
         return;
     };
     let mut seen = HashSet::new();
     let pairs = block.get("attrs").and_then(|attrs| attrs.get("keyValues"));
-    for pair in pairs.and_then(Value::as_array).into_iter().flatten() {
-        let word = pair[0].as_str().unwrap_or("");
+    for pair in pairs.and_then(V::as_array).into_iter().flatten() {
+        let word = pair.item(0).as_str().unwrap_or("");
         if !seen.insert(word) {
             continue;
         }
-        if pair[1].as_str() == Some("") && near_miss(word, key) {
+        if pair.item(1).as_str() == Some("") && near_miss(word, key) {
             out.push(Warning {
                 rule: "consumed-key-near-miss",
                 start: behind_attribute_lines(source, start, end),
@@ -283,24 +280,25 @@ fn near_miss(word: &str, key: &str) -> bool {
     }
 }
 
-fn rows(table: &Value) -> impl Iterator<Item = &Value> {
-    table["children"]
+fn rows(table: V<'_>) -> impl Iterator<Item = V<'_>> {
+    table
+        .at("children")
         .as_array()
         .into_iter()
         .flatten()
-        .flat_map(|group| group["children"].as_array().into_iter().flatten())
-        .filter(|row| row["type"] == "table_row")
+        .flat_map(|group| group.at("children").as_array().into_iter().flatten())
+        .filter(|row| row.ty() == "table_row")
 }
 
-fn cells(row: &Value) -> &[Value] {
-    row["children"].as_array().map_or(&[], Vec::as_slice)
+fn cells(row: V<'_>) -> Arr<'_> {
+    row.at("children").as_array().unwrap_or_else(Arr::empty)
 }
 
 /// A CSV or TSV table, whose rows carry no source position, with a record wider than its first.
-fn wide_row(table: &Value, out: &mut Vec<Warning>) {
+fn wide_row(table: V<'_>, out: &mut Vec<Warning>) {
     let mut records = rows(table);
     let Some(first) = records.next() else { return };
-    if first.get("pos").is_some() {
+    if first.pos().is_some() {
         return;
     }
     let width = cells(first).len();
@@ -312,7 +310,7 @@ fn wide_row(table: &Value, out: &mut Vec<Warning>) {
 }
 
 /// `aligns`, `valigns` and `widths` on the attribute line above a pipe table.
-fn table_columns(source: &str, table: &Value, out: &mut Vec<Warning>) {
+fn table_columns(source: &str, table: V<'_>, out: &mut Vec<Warning>) {
     let Some((start, _)) = bounds(table) else {
         return;
     };
@@ -427,7 +425,7 @@ fn table_columns(source: &str, table: &Value, out: &mut Vec<Warning>) {
 }
 
 /// The alignment axes a cell's own marker run sets; an attribute block that also holds other keys sets none.
-fn marker_axes(source: &str, cell: &Value) -> (bool, bool) {
+fn marker_axes(source: &str, cell: V<'_>) -> (bool, bool) {
     let raw = bounds(cell)
         .and_then(|(from, to)| source.get(from..to))
         .unwrap_or("")
@@ -446,22 +444,19 @@ fn marker_axes(source: &str, cell: &Value) -> (bool, bool) {
 }
 
 /// A `^` or `<` the parser kept as cell text: the span it asks for cannot be placed.
-fn span_markers(source: &str, table: &Value, out: &mut Vec<Warning>) {
+fn span_markers(source: &str, table: V<'_>, out: &mut Vec<Warning>) {
     for row in rows(table) {
         for cell in cells(row) {
             if cell.get("span").is_some() {
                 continue;
             }
-            let [paragraph] = cell["children"].as_array().map_or(&[][..], Vec::as_slice) else {
+            let Some(paragraph) = cell.at("children").as_array().and_then(Arr::single) else {
                 continue;
             };
-            let [text] = paragraph["children"]
-                .as_array()
-                .map_or(&[][..], Vec::as_slice)
-            else {
+            let Some(text) = paragraph.at("children").as_array().and_then(Arr::single) else {
                 continue;
             };
-            let marker = match text["value"].as_str() {
+            let marker = match text.at("value").as_str() {
                 Some("^") => '^',
                 Some("<") => '<',
                 _ => continue,
@@ -481,7 +476,7 @@ fn span_markers(source: &str, table: &Value, out: &mut Vec<Warning>) {
 }
 
 /// `{…}>`: a cell attribute block glued to an alignment mark that follows it.
-fn reversed_marker(source: &str, cell: &Value, out: &mut Vec<Warning>) {
+fn reversed_marker(source: &str, cell: V<'_>, out: &mut Vec<Warning>) {
     if cell.get("attrs").is_none() {
         return;
     }
@@ -647,9 +642,9 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
         .iter()
         .filter(|node| {
             matches!(node.kind, "code_block" | "raw_block" | "frontmatter")
-                || (node.kind == "comment" && node.value["form"] != "braced")
+                || (node.kind == "comment" && node.value.at("form") != "braced")
         })
-        .filter_map(|node| bounds(node.value).map(|(a, b)| (a, b, node.value["form"] == "line")))
+        .filter_map(|node| bounds(node.value).map(|(a, b)| (a, b, node.value.at("form") == "line")))
         .collect();
     let mut line_start = 0;
     for piece in source.split_inclusive('\n') {
@@ -763,7 +758,11 @@ fn marker_between_lists(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec
     }
     let (Some((start, _)), Some((first, _)), Some((outer_at, _))) = (
         bounds(node.value),
-        list.value["children"].get(0).and_then(bounds),
+        list.value
+            .at("children")
+            .as_array()
+            .and_then(Arr::first)
+            .and_then(bounds),
         bounds(outer.value),
     ) else {
         return;
