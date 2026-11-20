@@ -74,6 +74,13 @@ fn colon_run_uses_its_actual_open_container() {
         spans("::::\n{#id .c k=v}\n:::\n", "colon-fence-length-mismatch"),
         vec![(18, 21)]
     );
+    assert_eq!(
+        spans(
+            "::::\n\n2) - > ::: glossary\n     :::\n\n     > *[HTML]: Hyper\n   term *strong*\n   word [ref][]",
+            "colon-fence-length-mismatch"
+        ),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -141,6 +148,13 @@ fn marker_in_nested_div_is_a_paragraph_line() {
         vec![(9, 22)]
     );
     assert_eq!(spans(source, "list-marker-without-blank-line"), Vec::new());
+    assert_eq!(
+        spans(
+            "- [@key]: author\n  * * *\n\n[^n]: %%\n",
+            "list-marker-without-blank-line"
+        ),
+        Vec::new()
+    );
 }
 
 #[test]

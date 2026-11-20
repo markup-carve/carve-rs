@@ -717,8 +717,23 @@ fn colon_range_open_at(source: &str, ranges: &Ranges<'_>, range: &Range, at: usi
     {
         return false;
     }
-    at <= range.end
-        || (!colon_closed_at_end(source, range) && colon_parent_survives(ranges, range, at))
+    !colon_crosses_owner(ranges, range, at)
+        && (at <= range.end
+            || (!colon_closed_at_end(source, range) && colon_parent_survives(ranges, range, at)))
+}
+
+fn colon_crosses_owner(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+    ranges.around(at).any(|current| {
+        matches!(
+            current.kind.as_str(),
+            "list_item" | "block_quote" | "footnote" | "definition_description"
+        ) && current
+            .path
+            .strip_prefix(&range.path)
+            .is_some_and(|rest| rest.starts_with("/children/"))
+            && current.start <= at
+            && at <= current.end
+    })
 }
 
 fn colon_parent_survives(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
