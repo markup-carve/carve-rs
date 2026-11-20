@@ -160,7 +160,7 @@ fn compute<'a>(
     });
     let ids = heading_ids(&all, &order, opts.heading_ids, &mut res, arena, dups);
     let captions = caption_numbers(&order, opts, &mut res);
-    let mut index = Index::new(doc, &order, &ids, &captions);
+    let mut index = Index::new(doc, &order, &ids, &captions, Needs::of(&all));
     index.files = files;
     for n in all {
         index.reference(n, &mut res, arena);
@@ -311,6 +311,44 @@ pub fn label_key(
     s.trim_end().to_string()
 }
 
+/// The lookup tables the references of a tree read.
+#[derive(Clone, Copy)]
+struct Needs {
+    /// A reference link that can fall back to a heading (C2-I-084).
+    headings: bool,
+    /// A cross-reference (C2-H-095).
+    targets: bool,
+}
+
+impl Needs {
+    fn of(all: &[&Node<'_>]) -> Self {
+        let mut needs = Needs {
+            headings: false,
+            targets: false,
+        };
+        for n in all {
+            match n {
+                Node::Link(l) if l.namespace == Some("link") && l.key.is_some() => {
+                    needs.headings |=
+                        !matches!(l.ref_form, Some(crate::ast::LinkRefForm::Shortcut));
+                }
+                Node::Xref(_) => needs.targets = true,
+                _ => {}
+            }
+        }
+        needs
+    }
+}
+
+/// NFC; ASCII is its own NFC.
+fn nfc(s: &str) -> String {
+    if s.is_ascii() {
+        s.to_string()
+    } else {
+        s.nfc().collect()
+    }
+}
+
 /// The lookup tables of reference resolution.
 struct Index<'a, 'f> {
     /// C2-N-054, C2-N-055: the definitions by file, for an expanded tree.
@@ -329,6 +367,7 @@ impl<'a> Index<'a, '_> {
         order: &Order<'_, 'a>,
         ids: &AddrMap<usize, &'a str>,
         owners: &AddrSet<usize>,
+        needs: Needs,
     ) -> Self {
         let mut links = HashMap::new();
         let mut abbrs = HashMap::new();
@@ -346,10 +385,14 @@ impl<'a> Index<'a, '_> {
         let mut heading_ids = Vec::new();
         let mut heading_by_text = HashMap::new();
         let mut targets = HashMap::new();
-        for v in &order.visits {
+        for v in order
+            .visits
+            .iter()
+            .filter(|_| needs.headings || needs.targets)
+        {
             let a = addr(v.node);
             if let Node::FigureGroup(group) = v.node {
-                if owners.contains(&a) {
+                if needs.targets && owners.contains(&a) {
                     for panel in group.children.iter().filter(|node| {
                         matches!(
                             node,
@@ -360,7 +403,7 @@ impl<'a> Index<'a, '_> {
                         )
                     }) {
                         if let Some(id) = panel.attrs().and_then(|attrs| attrs.id) {
-                            targets.entry(id.nfc().collect()).or_insert(id);
+                            targets.entry(nfc(id)).or_insert(id);
                         }
                     }
                 }
@@ -370,15 +413,19 @@ impl<'a> Index<'a, '_> {
                 _ => None,
             };
             if let Some((h, id)) = heading {
-                let i = heading_ids.len();
-                heading_by_text
-                    .entry(fold_label(&plain::text_of(h.children)).nfc().collect())
-                    .or_insert(i);
-                heading_ids.push(*id);
-                targets.entry(id.nfc().collect()).or_insert(*id);
-            } else if owners.contains(&a) && !matches!(v.node, Node::Include(_)) {
+                if needs.headings {
+                    let i = heading_ids.len();
+                    heading_by_text
+                        .entry(nfc(&fold_label(&plain::text_of(h.children))))
+                        .or_insert(i);
+                    heading_ids.push(*id);
+                }
+                if needs.targets {
+                    targets.entry(nfc(id)).or_insert(*id);
+                }
+            } else if needs.targets && owners.contains(&a) && !matches!(v.node, Node::Include(_)) {
                 if let Some(id) = v.node.attrs().and_then(|x| x.id) {
-                    targets.entry(id.nfc().collect()).or_insert(id);
+                    targets.entry(nfc(id)).or_insert(id);
                 }
             }
         }
@@ -412,7 +459,7 @@ impl<'a> Index<'a, '_> {
                 }
             }
             Node::Xref(x) => {
-                if let Some(id) = self.targets.get(&x.key.nfc().collect::<String>()) {
+                if let Some(id) = self.targets.get(&nfc(x.key)) {
                     res.insert(a, Res::Href(arena.str(&format!("#{id}"))));
                 }
             }
@@ -473,7 +520,7 @@ fn heading_key_plain(key: &str, arena: &Arena) -> String {
         join: crate::inline::Join::Line,
     }];
     let nodes = crate::inline::parse(&env, &pieces, &mut crate::inline::Scratch::default());
-    fold_label(&plain::text_of(nodes)).nfc().collect()
+    nfc(&fold_label(&plain::text_of(nodes)))
 }
 
 fn apply<'a>(n: &mut Node<'a>, res: &AddrMap<usize, Res<'a>>, depth: usize) {
