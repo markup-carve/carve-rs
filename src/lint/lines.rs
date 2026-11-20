@@ -1283,7 +1283,7 @@ fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
 }
 
 fn quote_opener_candidate(line: &Line, source: &str) -> bool {
-    if empty_quote_with_space(line, source) {
+    if line.text.trim_end().ends_with('>') && empty_quote_with_space(line, source) {
         return false;
     }
     let (at, _) = line_text(line);
@@ -1303,6 +1303,10 @@ fn empty_quote_with_space(line: &Line, source: &str) -> bool {
         .get(line.start..)
         .and_then(|tail| tail.split('\n').next())
         .is_some_and(|raw| raw.trim_start_matches([' ', '\t']) == "> ")
+}
+
+fn empty_spaced_quote_content(line: &Line, content: &str, source: &str) -> bool {
+    content == ">" && empty_quote_with_space(line, source)
 }
 
 fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
@@ -1353,8 +1357,7 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
     }
     let (prefix, content) = line_text(line);
     if !starts_block(content)
-        || empty_quote_with_space(line, sink.source.text())
-        || (content.starts_with("> ") && content[2..].trim().is_empty())
+        || empty_spaced_quote_content(line, content, sink.source.text())
         || (content.starts_with('{') && !content.ends_with('}'))
         || (content.starts_with('[') && line.scope.in_footnote)
         || quote_continues(line, previous, prefix, content)
