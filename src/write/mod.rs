@@ -434,11 +434,16 @@ fn repair_rounds<'t>(
             return end;
         }
         let f = first && !w.blank_first;
-        if !settle(w, doc, group, f) && !exhausted(w) {
+        let chunks = typed_arena::Arena::new();
+        let mut round = Round {
+            chunks: &chunks,
+            last: None,
+        };
+        if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
             if w.sp.losses.len() == reported {
-                report_unread(w, group);
+                report_unread(w, group, round.last);
             }
-            prune_group_escapes(w, group, first && !w.blank_first);
+            prune_group_escapes(w, group, first && !w.blank_first, &round);
             return end;
         }
     }
@@ -637,22 +642,40 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
     asked
 }
 
-fn compare_group<'t>(w: &mut Writer<'t>, doc: N<'t>, group: Arr<'t>, first: bool) -> Check<'t> {
-    let chunk = Chunk::new(group_source(w, first));
+/// The parses of one repair round: the last one is read by the loss report and the prune.
+struct Round<'s> {
+    chunks: &'s typed_arena::Arena<Chunk>,
+    last: Option<V<'s>>,
+}
+
+fn compare_group<'t, 's>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &mut Round<'s>,
+) -> Check<'t> {
+    let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
     let parsed = chunk.parse(w);
+    round.last = Some(parsed);
     let mut c = Check {
         source: Some(chunk.text().to_string()),
         ..Check::default()
     };
     compare_blocks(w, &mut c, group, children(parsed), doc);
     escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });
-    w.parsed = Some(chunk.text().to_string());
     c
 }
 
 /// One round of the test of C2-W-089. False when the group reads back as its blocks.
-fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: Arr<'t>, first: bool) -> bool {
-    let mut c = compare_group(w, doc, group, first);
+fn settle<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &mut Round<'_>,
+) -> bool {
+    let mut c = compare_group(w, doc, group, first, round);
     if drop_asked_trials(w, &mut c, group, first) && c.changes() == 0 {
         return true;
     }
@@ -662,7 +685,7 @@ fn settle<'t>(w: &mut Writer<'t>, doc: N<'t>, group: Arr<'t>, first: bool) -> bo
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
         // C2-W-005: what only line 1 reads differently is written below one blank line.
-        w.blank_first = compare_group(w, doc, group, false).losses.is_empty();
+        w.blank_first = compare_group(w, doc, group, false, round).losses.is_empty();
         if w.blank_first {
             return true;
         }
@@ -799,12 +822,9 @@ fn writer_equal(expected: V<'_>, actual: V<'_>) -> bool {
 }
 
 /// C2-W-011: a block that the rounds let pass and that reads back as another tree is reported.
-fn report_unread(w: &mut Writer<'_>, group: Arr<'_>) {
-    // The last read-back parse again, uncounted: only a group that keeps a loss gets here.
-    let chunk = w.parsed.clone().map(Chunk::new);
-    let parsed: Arr<'_> = chunk
-        .as_ref()
-        .map_or_else(Arr::empty, |c| children(c.read(w, Some(&w.link_keys))));
+/// `parsed` is the last read-back parse of the group.
+fn report_unread(w: &mut Writer<'_>, group: Arr<'_>, parsed: Option<V<'_>>) {
+    let parsed: Arr<'_> = parsed.map_or_else(Arr::empty, children);
     let unread = (0..group.len().max(parsed.len())).find(|&at| {
         !matches!((parsed.get(at), group.get(at)), (Some(block), Some(e)) if writer_equal(e, block))
     });
@@ -882,14 +902,14 @@ fn in_raw(source: &str, at: usize, raws: &[String]) -> bool {
 }
 
 /// C2-W-088, C2-W-089: test candidate escapes within the group that wrote them.
-fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool) {
+/// `round.last` is the last read-back parse of the group, the parse of its source as written.
+fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &Round<'_>) {
     let mut source = group_source(w, first);
     let raws = std::mem::take(&mut w.raw_refs);
     let mut at = source.find('\\');
     // The parse of `source` as it stands, read again (uncounted) after a prune only where a star asks.
-    let kept = typed_arena::Arena::new();
-    let mut parsed: Option<V<'_>> = None;
-    let mut parsed_source = w.parsed.clone();
+    let mut parsed = round.last;
+    let mut parsed_source: Option<String> = None;
     while let Some(p) = at {
         if exhausted(w) {
             if let Some(host) = group.first() {
@@ -899,7 +919,7 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool) {
         }
         let mut current = || {
             if parsed.is_none() {
-                let chunk: &Chunk = kept.alloc(Chunk::new(parsed_source.take()?));
+                let chunk: &Chunk = round.chunks.alloc(Chunk::new(parsed_source.take()?));
                 parsed = Some(chunk.read(w, Some(&w.link_keys)));
             }
             parsed
@@ -916,7 +936,6 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool) {
                 && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
             {
                 source = chunk.text().to_string();
-                w.parsed = Some(source.clone());
                 parsed = None;
                 parsed_source = Some(source.clone());
                 at = source.get(p..).and_then(|r| r.find('\\')).map(|q| q + p);
