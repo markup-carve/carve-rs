@@ -225,22 +225,27 @@ impl<'r, 'a> Order<'r, 'a> {
                     | Node::BlockQuote(_)
                     | Node::FigureGroup(_)
             ) && caption_marked(n));
-        for c in slots(n) {
-            let panel = group
-                && matches!(
+        for part in slot_lists(n) {
+            for c in part {
+                let panel = group
+                    && matches!(
+                        c,
+                        Node::Paragraph(_)
+                            | Node::CodeBlock(_)
+                            | Node::BlockQuote(_)
+                            | Node::Table(_)
+                    );
+                self.walk(
                     c,
-                    Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) | Node::Table(_)
+                    defs,
+                    Ctx {
+                        panel,
+                        in_marked_figure: marked,
+                        note: ctx.note,
+                    },
+                    depth + 1,
                 );
-            self.walk(
-                c,
-                defs,
-                Ctx {
-                    panel,
-                    in_marked_figure: marked,
-                    note: ctx.note,
-                },
-                depth + 1,
-            );
+            }
         }
         self.gather_columns(n, depth);
     }
@@ -342,6 +347,13 @@ pub fn mark_of<'r, 'a>(caption: &'r Node<'a>) -> Option<(&'r Node<'a>, &'r [Node
 /// The child slots of a node in resolution order: title, children, caption,
 /// then the slots that only some types have.
 pub fn slots<'r, 'a>(n: &'r Node<'a>) -> impl Iterator<Item = &'r Node<'a>> {
+    let [title, main, caption, a, b] = slot_lists(n);
+    title.iter().chain(main).chain(caption).chain(a).chain(b)
+}
+
+/// The slots of [`slots`] as lists, in the same order.
+#[must_use]
+pub fn slot_lists<'r, 'a>(n: &'r Node<'a>) -> [&'r [Node<'a>]; 5] {
     let title: &[Node<'a>] = match n {
         Node::Admonition(x) => x.title.as_deref(),
         Node::Directive(x) => x.title.as_deref(),
@@ -363,10 +375,6 @@ pub fn slots<'r, 'a>(n: &'r Node<'a>) -> impl Iterator<Item = &'r Node<'a>> {
         Node::RubyPair(x) => (&*x.base, &*x.annotation),
         _ => (&[], &[]),
     };
-    title
-        .iter()
-        .chain(main)
-        .chain(caption_of(n))
-        .chain(a)
-        .chain(b)
+    let caption = caption_of(n).map_or(&[][..], std::slice::from_ref);
+    [title, main, caption, a, b]
 }
