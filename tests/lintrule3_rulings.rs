@@ -41,6 +41,14 @@ fn overindented_opener_range_is_the_whole_opening_mark() {
         ranges("   {.x}\n   :::: foo\n   x\n   ::::\n", code),
         [(11, 15)]
     );
+    assert_eq!(
+        ranges("   {.x}\n    :::: foo\n    x\n    ::::\n", code),
+        [(12, 16)]
+    );
+    assert_eq!(
+        ranges("    {.x}\n   :::: foo\n   x\n   ::::\n", code),
+        [(12, 16)]
+    );
 }
 
 #[test]

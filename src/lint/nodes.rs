@@ -542,12 +542,27 @@ fn opener_behind_attributes(source: &str, mut from: usize) -> usize {
         if !attribute {
             return from;
         }
-        let next_len = source
-            .get(end + 1..)
-            .unwrap_or("")
-            .find('\n')
-            .unwrap_or(source.len() - end - 1);
-        from = end + 1 + (from - line_start).min(next_len);
+        // The opener may stand at another indent than its attribute line: find its first character on its own line.
+        let next = source.get(end + 1..).unwrap_or("");
+        let bytes = next.as_bytes();
+        let bytes = bytes
+            .get(..next.find('\n').unwrap_or(next.len()))
+            .unwrap_or(bytes);
+        let mut at = (from - line_start).min(bytes.len());
+        while bytes
+            .get(at)
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            at += 1;
+        }
+        while at > 0
+            && bytes
+                .get(at - 1)
+                .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'>'))
+        {
+            at -= 1;
+        }
+        from = end + 1 + at;
     }
 }
 
