@@ -9,6 +9,7 @@
 mod attrs;
 mod blocks;
 mod check;
+mod controls;
 mod extension;
 mod facts;
 mod inline;
@@ -36,6 +37,8 @@ pub struct Settings {
     pub extensions: Vec<String>,
     /// The sidecar facts; `None` writes the defaults of C2-W-083 (C2-W-102, C2-W-127).
     pub layout: Option<Vec<facts::Entry>>,
+    /// The source of the tree, for C2-W-144; `None` for a supplied tree.
+    pub source: Option<String>,
 }
 
 impl Settings {
@@ -43,6 +46,10 @@ impl Settings {
     #[must_use]
     pub fn with_layout(mut self, layout: Option<&Value>) -> Self {
         self.layout = layout.map(facts::from_layout);
+        self.source = layout
+            .and_then(|l| l.get("source"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
         self
     }
 }
@@ -102,7 +109,8 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
         facts::read(&mut w, doc, entries);
     }
     read_abbreviations(&mut w, doc);
-    let source = write_document(&mut w, doc);
+    let written = write_document(&mut w, doc);
+    let source = controls::keep_above(&w, written, settings.source.as_deref());
     let mut entries = locate(doc, &w);
     root_metadata_losses(doc, &mut entries);
     (source, entries)
