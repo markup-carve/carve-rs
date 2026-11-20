@@ -35,6 +35,12 @@
 #![allow(clippy::option_option)]
 // Generated AST constructors preserve their current field grouping.
 #![allow(clippy::inconsistent_struct_constructor)]
+// Existing short names and range expressions are intentional in parser and schema code.
+#![allow(
+    clippy::similar_names,
+    clippy::inefficient_to_string,
+    clippy::range_plus_one
+)]
 
 pub mod api;
 mod arena;

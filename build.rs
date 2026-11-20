@@ -2,6 +2,8 @@
 //! `spec-data/` (a verbatim copy of `spec/0.2/data/` of the carve repository).
 //! Nothing in `src/` copies a value from those files by hand.
 
+#![allow(clippy::similar_names)]
+
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
