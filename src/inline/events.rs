@@ -18,7 +18,7 @@ pub enum Ev<'a> {
     Exit {
         v0: usize,
         v1: usize,
-        attrs: Option<AttrBlock>,
+        attrs: Option<Box<AttrBlock>>,
         note: bool,
     },
     /// Text; `val` is `None` when it is the content slice. `plain` text is
@@ -53,20 +53,34 @@ pub enum Ev<'a> {
 /// Turns the settled tokens into events (into `out`, `toks` emptied);
 /// plain text runs that touch merge.
 pub fn from_tokens<'a>(toks: &mut Vec<Tok<'a>>, out: &mut Vec<Ev<'a>>) {
-    // Only inline footnotes need the opener lookup of each closer.
-    let any_note = toks.iter().any(|t| {
-        matches!(
-            t.k,
-            K::Open {
-                kind: Kind::InlineFootnote,
-                ..
-            }
-        )
-    });
-    let notes: Vec<bool> = toks
-        .iter()
-        .take(if any_note { usize::MAX } else { 0 })
-        .map(|t| {
+    out.clear();
+    out.reserve(toks.len());
+    out.extend(Stream::new(toks));
+}
+
+/// The events of the settled tokens, read as they are made (`toks` emptied).
+pub struct Stream<'t, 'a> {
+    toks: std::vec::Drain<'t, Tok<'a>>,
+    /// Per token, whether it opens an inline footnote; empty when none does.
+    notes: Vec<bool>,
+    /// The plain text run read so far, not given out yet.
+    run: Option<(usize, usize)>,
+    /// The event behind that run.
+    held: Option<Ev<'a>>,
+}
+
+const fn plain_text<'a>(v0: usize, v1: usize) -> Ev<'a> {
+    Ev::Text {
+        v0,
+        v1,
+        val: None,
+        plain: true,
+    }
+}
+
+impl<'t, 'a> Stream<'t, 'a> {
+    pub fn new(toks: &'t mut Vec<Tok<'a>>) -> Self {
+        let note = |t: &Tok<'_>| {
             matches!(
                 t.k,
                 K::Open {
@@ -74,14 +88,26 @@ pub fn from_tokens<'a>(toks: &mut Vec<Tok<'a>>, out: &mut Vec<Ev<'a>>) {
                     ..
                 }
             )
-        })
-        .collect();
-    out.clear();
-    out.reserve(toks.len());
-    for t in toks.drain(..) {
+        };
+        // Only inline footnotes need the opener lookup of each closer.
+        let notes = if toks.iter().any(note) {
+            toks.iter().map(note).collect()
+        } else {
+            Vec::new()
+        };
+        Self {
+            toks: toks.drain(..),
+            notes,
+            run: None,
+            held: None,
+        }
+    }
+
+    /// The event of a token that is not plain text; `None` for a skipped one.
+    fn event(&self, t: Tok<'a>) -> Option<Ev<'a>> {
         let Tok { v0, v1, k } = t;
-        let ev = match k {
-            K::Skip => continue,
+        Some(match k {
+            K::Skip => return None,
             K::Text { val, plain } => Ev::Text { v0, v1, val, plain },
             K::Nbsp => Ev::Nbsp { v0, v1 },
             K::Break { hard } => Ev::Break { v0, v1, hard },
@@ -95,43 +121,56 @@ pub fn from_tokens<'a>(toks: &mut Vec<Tok<'a>>, out: &mut Vec<Ev<'a>>) {
                 transparent,
             },
             K::Open { kind, .. } => Ev::Enter { kind, v0, v1 },
-            K::Close { attrs, open } => {
-                let note = notes.get(open).copied().unwrap_or(false);
-                Ev::Exit {
-                    v0,
-                    v1,
-                    attrs: attrs.map(|a| *a),
-                    note,
-                }
-            }
-            K::Attr(_) | K::Delim(_) | K::Pending | K::CaptionMark => Ev::Text {
+            K::Close { attrs, open } => Ev::Exit {
                 v0,
                 v1,
-                val: None,
-                plain: true,
+                attrs,
+                note: self.notes.get(open).copied().unwrap_or(false),
             },
-        };
-        push(out, ev);
+            K::Attr(_) | K::Delim(_) | K::Pending | K::CaptionMark => plain_text(v0, v1),
+        })
     }
 }
 
-fn push<'a>(out: &mut Vec<Ev<'a>>, ev: Ev<'a>) {
-    if let Ev::Text {
-        v0,
-        v1,
-        val: None,
-        plain: true,
-    } = ev
-        && let Some(Ev::Text {
-            v1: last,
-            val: None,
-            plain: true,
-            ..
-        }) = out.last_mut()
-        && *last == v0
-    {
-        *last = v1;
-        return;
+impl<'a> Iterator for Stream<'_, 'a> {
+    type Item = Ev<'a>;
+
+    fn next(&mut self) -> Option<Ev<'a>> {
+        if let Some(ev) = self.held.take() {
+            return Some(ev);
+        }
+        loop {
+            let Some(t) = self.toks.next() else {
+                return self.run.take().map(|(a, b)| plain_text(a, b));
+            };
+            let plain = matches!(
+                t.k,
+                K::Text {
+                    val: None,
+                    plain: true
+                } | K::Attr(_)
+                    | K::Delim(_)
+                    | K::Pending
+                    | K::CaptionMark
+            );
+            if plain {
+                // Plain text runs that touch merge.
+                match self.run {
+                    Some((a, b)) if b == t.v0 => self.run = Some((a, t.v1)),
+                    Some((a, b)) => {
+                        self.run = Some((t.v0, t.v1));
+                        return Some(plain_text(a, b));
+                    }
+                    None => self.run = Some((t.v0, t.v1)),
+                }
+                continue;
+            }
+            let Some(ev) = self.event(t) else { continue };
+            if let Some((a, b)) = self.run.take() {
+                self.held = Some(ev);
+                return Some(plain_text(a, b));
+            }
+            return Some(ev);
+        }
     }
-    out.push(ev);
 }
