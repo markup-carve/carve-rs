@@ -8,7 +8,8 @@ use super::inline::{
     IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, first_from, spelled_end, write_inlines,
 };
 use super::node::{
-    N, caption, children, has, id, is_break, is_inline_parent, s, skipped, span, text, title, ty,
+    Fields, N, caption, children, has, id, is_break, is_inline_parent, result_fields, s,
+    skipped_in, span, text, title, ty,
 };
 use super::state::{Attempt, PLACE_COLUMNS, ProbeResult, Spelling, Writer};
 use serde_json::{Map, Value};
@@ -120,12 +121,14 @@ fn same_value(a: &Value, b: Option<&Value>) -> bool {
 }
 
 fn same_fields(l: &Map<String, Value>, r: &Map<String, Value>) -> bool {
+    let (lf, rf) = (result_fields(l), result_fields(r));
     l.iter()
-        .all(|(k, v)| skipped(l, k, false) || same_value(v, r.get(k)))
-        && r.keys().all(|k| skipped(r, k, false) || l.contains_key(k))
+        .all(|(k, v)| skipped_in(l, lf, k, false) || same_value(v, r.get(k)))
+        && r.keys()
+            .all(|k| skipped_in(r, rf, k, false) || l.contains_key(k))
 }
 
-fn is_compared(c: &Check<'_>, node: &Value, name: &str) -> bool {
+fn is_compared(c: &Check<'_>, node: &Value, fields: Option<&Fields>, name: &str) -> bool {
     if matches!(name, "children" | "caption") {
         return false;
     }
@@ -148,7 +151,7 @@ fn is_compared(c: &Check<'_>, node: &Value, name: &str) -> bool {
         return title(node).is_none();
     }
     node.as_object()
-        .is_none_or(|m| !skipped(m, name, c.span_marks))
+        .is_none_or(|m| !skipped_in(m, fields, name, c.span_marks))
 }
 
 /// C2-W-136: the `attrs` of `e` without the keys the writer reported and did not write.
@@ -181,8 +184,9 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: &Value, a: &Value) -> Optio
     let (Some(em), Some(am)) = (e.as_object(), a.as_object()) else {
         return None;
     };
+    let (ef, af) = (result_fields(em), result_fields(am));
     for (name, field) in em {
-        if !is_compared(c, e, name) {
+        if !is_compared(c, e, ef, name) {
             continue;
         }
         let value = if name == "attrs" {
@@ -195,7 +199,7 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: &Value, a: &Value) -> Optio
         }
     }
     for name in am.keys() {
-        if !em.contains_key(name) && is_compared(c, a, name) {
+        if !em.contains_key(name) && is_compared(c, a, af, name) {
             return Some(name.clone());
         }
     }

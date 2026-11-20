@@ -6,6 +6,7 @@ use super::node::{N, children, classes, id, list, s, span, text, ty};
 use super::state::{Facts, Wrap, Writer};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 
 /// One node entry of a sidecar, as far as the writer reads it.
 #[derive(Debug, Clone, Default)]
@@ -155,29 +156,33 @@ pub fn read<'t>(w: &mut Writer<'t>, doc: N<'t>, entries: &[Entry]) {
 /// The facts the writer reads, read from `src` by the positions of its parse `doc`.
 pub fn from_source(doc: &Value, src: &str) -> Vec<Entry> {
     let mut out = Vec::new();
-    walk(doc, src, "", false, &mut out);
+    walk(doc, src, &mut String::new(), false, &mut out);
     out
 }
 
-fn walk(node: &Value, src: &str, path: &str, quoted: bool, out: &mut Vec<Entry>) {
+/// `path` is the pointer of `node`, one buffer extended and cut back per step.
+fn walk(node: &Value, src: &str, path: &mut String, quoted: bool, out: &mut Vec<Entry>) {
     if let Some(facts) = node_facts(node, src, path, quoted, out) {
         out.push(Entry {
-            path: path.to_string(),
+            path: path.clone(),
             facts,
         });
     }
     let inner = quoted || ty(node) == "block_quote";
+    let include = ty(node) == "include";
     super::node::for_each_slot(node, true, &mut |nodes, step, single| {
-        if ty(node) == "include" && step == "children" {
+        if include && step == "children" {
             return;
         }
         for (i, c) in nodes.iter().enumerate() {
-            let p = if single {
-                format!("{path}/{step}")
-            } else {
-                format!("{path}/{step}/{i}")
-            };
-            walk(c, src, &p, inner, out);
+            let len = path.len();
+            path.push('/');
+            path.push_str(step);
+            if !single {
+                let _ = write!(path, "/{i}");
+            }
+            walk(c, src, path, inner, out);
+            path.truncate(len);
         }
     });
 }

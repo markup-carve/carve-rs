@@ -3,9 +3,16 @@
 //! equality of C2-A-161 (positions and the results of `data/ast-results.json`
 //! are not compared).
 
+use crate::hash::AddrHasher;
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 use std::sync::OnceLock;
+
+/// The tables keyed by node type: fixed spec data, so the default hasher's
+/// protection buys nothing.
+type TypeMap<V> = HashMap<String, V, BuildHasherDefault<AddrHasher>>;
 
 pub type N<'t> = &'t Value;
 
@@ -130,12 +137,12 @@ pub fn is_inline_parent(n: &Value) -> bool {
     INLINE_PARENTS.contains(&ty(n))
 }
 
-fn slots_table() -> &'static HashMap<String, Vec<Vec<String>>> {
-    static SLOTS: OnceLock<HashMap<String, Vec<Vec<String>>>> = OnceLock::new();
+fn slots_table() -> &'static TypeMap<Vec<Vec<String>>> {
+    static SLOTS: OnceLock<TypeMap<Vec<Vec<String>>>> = OnceLock::new();
     SLOTS.get_or_init(|| {
         let data: Value = serde_json::from_str(include_str!("../../spec-data/node-slots.json"))
             .unwrap_or_default();
-        let mut out = HashMap::new();
+        let mut out = TypeMap::default();
         if let Some(nodes) = data.get("nodes").and_then(Value::as_object) {
             for (name, slots) in nodes {
                 let paths = slots
@@ -171,23 +178,16 @@ fn visit_path<'t>(
         visit_value(v, step, f);
         return;
     };
-    let join = |name: &str| {
-        if step.is_empty() {
-            crate::write::node::pointer_key(name)
-        } else {
-            format!("{step}/{}", crate::write::node::pointer_key(name))
-        }
-    };
     if first == "*" {
         match v {
             Value::Object(m) => {
                 for (k, inner) in m {
-                    visit_path(inner, rest, &join(k), f);
+                    visit_path(inner, rest, &join_step(step, k), f);
                 }
             }
             Value::Array(items) => {
                 for (k, inner) in items.iter().enumerate() {
-                    visit_path(inner, rest, &join(&k.to_string()), f);
+                    visit_path(inner, rest, &join_step(step, &k.to_string()), f);
                 }
             }
             _ => {}
@@ -195,12 +195,25 @@ fn visit_path<'t>(
         return;
     }
     if let Some(inner) = v.get(first.as_str()) {
-        visit_path(inner, rest, &join(first), f);
+        visit_path(inner, rest, &join_step(step, first), f);
     }
 }
 
-pub fn pointer_key(name: &str) -> String {
-    name.replace('~', "~0").replace('/', "~1")
+fn join_step<'a>(step: &str, name: &'a str) -> Cow<'a, str> {
+    let key = escaped_key(name);
+    if step.is_empty() {
+        key
+    } else {
+        Cow::Owned(format!("{step}/{key}"))
+    }
+}
+
+fn escaped_key(name: &str) -> Cow<'_, str> {
+    if name.contains(['~', '/']) {
+        Cow::Owned(name.replace('~', "~0").replace('/', "~1"))
+    } else {
+        Cow::Borrowed(name)
+    }
 }
 
 /// C2-A-024: the slots of a node in their table order; in source order a title
@@ -241,14 +254,15 @@ pub fn descendants<'t>(n: &'t Value, out: &mut Vec<&'t Value>) {
     });
 }
 
-type Results = HashMap<String, Vec<(String, Option<String>)>>;
+pub type Fields = Vec<(String, Option<String>)>;
+type Results = TypeMap<Fields>;
 
 fn results() -> &'static Results {
     static RESULTS: OnceLock<Results> = OnceLock::new();
     RESULTS.get_or_init(|| {
         let data: Value = serde_json::from_str(include_str!("../../spec-data/ast-results.json"))
             .unwrap_or_default();
-        let mut out = HashMap::new();
+        let mut out = TypeMap::default();
         if let Some(nodes) = data.get("nodes").and_then(Value::as_object) {
             for (name, fields) in nodes {
                 let fields = fields
@@ -269,12 +283,20 @@ fn results() -> &'static Results {
     })
 }
 
-/// C2-A-162: positions and resolution results are not compared.
-pub fn skipped(node: &Map<String, Value>, name: &str, span_marks: bool) -> bool {
-    let Some(t) = node.get("type").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(fields) = results().get(t) else {
+/// The result fields of the node's type, `None` for a node without a known type.
+pub fn result_fields(node: &Map<String, Value>) -> Option<&'static Fields> {
+    results().get(node.get("type").and_then(Value::as_str)?)
+}
+
+/// C2-A-162: positions and resolution results are not compared. `fields` is
+/// [`result_fields`] of `node`.
+pub fn skipped_in(
+    node: &Map<String, Value>,
+    fields: Option<&Fields>,
+    name: &str,
+    span_marks: bool,
+) -> bool {
+    let Some(fields) = fields else {
         return false;
     };
     if matches!(name, "pos" | "segments" | "srcByteLength") {
@@ -290,13 +312,21 @@ pub fn skipped(node: &Map<String, Value>, name: &str, span_marks: bool) -> bool 
     }
 }
 
-fn compared(node: &Map<String, Value>, span_marks: bool) -> Vec<&String> {
-    let mut names: Vec<&String> = node
-        .keys()
-        .filter(|k| !skipped(node, k, span_marks))
-        .collect();
-    names.sort();
-    names
+/// The compared fields of `node`, in key order.
+fn compared(
+    node: &Map<String, Value>,
+    span_marks: bool,
+) -> impl Iterator<Item = (&String, &Value)> {
+    let fields = result_fields(node);
+    node.iter()
+        .filter(move |(k, _)| !skipped_in(node, fields, k, span_marks))
+}
+
+/// Whether two neighbors of `items` are text nodes, which C2-A-161 compares joined.
+fn has_adjacent_text(items: &[Value]) -> bool {
+    items
+        .windows(2)
+        .any(|p| matches!(p, [a, b] if ty(a) == "text" && ty(b) == "text"))
 }
 
 fn coalesced(items: &[Value]) -> Vec<std::borrow::Cow<'_, Value>> {
@@ -333,6 +363,10 @@ fn list_has_span_marks(table: &Value) -> bool {
 fn equal_values(a: &Value, b: &Value, span_marks: bool) -> bool {
     match (a, b) {
         (Value::Array(x), Value::Array(y)) => {
+            if !has_adjacent_text(x) && !has_adjacent_text(y) {
+                return x.len() == y.len()
+                    && x.iter().zip(y).all(|(l, r)| equal_values(l, r, span_marks));
+            }
             let (x, y) = (coalesced(x), coalesced(y));
             x.len() == y.len()
                 && x.iter()
@@ -345,12 +379,18 @@ fn equal_values(a: &Value, b: &Value, span_marks: bool) -> bool {
             } else {
                 span_marks
             };
-            let (l, r) = (compared(x, inner), compared(y, inner));
-            l == r
-                && l.iter().all(|k| match (x.get(*k), y.get(*k)) {
-                    (Some(p), Some(q)) => equal_values(p, q, inner),
-                    _ => false,
-                })
+            let (mut l, mut r) = (compared(x, inner), compared(y, inner));
+            loop {
+                match (l.next(), r.next()) {
+                    (None, None) => return true,
+                    (Some((kl, p)), Some((kr, q))) if kl == kr => {
+                        if !equal_values(p, q, inner) {
+                            return false;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
         }
         (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
         _ => a == b,
