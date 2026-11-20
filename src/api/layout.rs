@@ -375,7 +375,7 @@ impl Walk<'_> {
                 );
             }
             let marker_content = skip_layout_space(source, mark_at + mark_len);
-            let content = item_content_start(ty, node, trimmed, source, marker_content);
+            let content = item_content_start(ty, source, marker_content);
             content_facts(
                 source,
                 node,
@@ -733,27 +733,14 @@ fn skip_layout_space(source: &str, mut at: usize) -> usize {
     at
 }
 
-fn item_content_start(
-    ty: &str,
-    node: &Value,
-    trimmed: &str,
-    source: &str,
-    mut content: usize,
-) -> usize {
+fn item_content_start(ty: &str, source: &str, mut content: usize) -> usize {
     if ty == "list_item" && source[content..].starts_with("{.") {
         if let Some(close) = source[content..].find('}') {
             content += close + 1;
         }
         content = skip_layout_space(source, content);
     }
-    if ty == "list_item"
-        && matches!(trimmed.as_bytes().first(), Some(b'-' | b'*'))
-        && node.get("task").is_some()
-        && source.as_bytes().get(content) == Some(&b'[')
-        && source.as_bytes().get(content + 2) == Some(&b']')
-    {
-        content = skip_layout_space(source, content + 3);
-    }
+    // C2-L-051: the task box is item text and leaves the content column alone.
     content
 }
 
