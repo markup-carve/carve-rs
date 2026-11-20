@@ -30,13 +30,14 @@ fn c2_h_165_degraded_block_uses_plain_text() {
 }
 
 #[test]
-fn c2_h_166_degraded_paragraph_in_kept_item() {
+fn c2_h_166_keeps_paragraph_in_list_at_bound() {
     let opts = Options {
         profile: Profile::Minimal,
         ..Options::default()
     };
     let input = "- - a `b` <c:d>";
-    let expected = "<ul>\n  <li>\n    <ul>\n      <li>a b c:d</li>\n    </ul>\n  </li>\n</ul>";
+    let expected =
+        "<ul>\n  <li>\n    <ul>\n      <li>a <code>b</code> c:d</li>\n    </ul>\n  </li>\n</ul>";
     assert_eq!(carve::render(input, &opts), expected);
 }
 
@@ -133,14 +134,14 @@ fn c2_h_181_supplied_abbreviation_line_break_is_spelled_as_space() {
 }
 
 #[test]
-fn c2_h_165_degraded_child_code_uses_plain_value() {
+fn c2_h_166_inline_code_adds_no_profile_level() {
     let opts = Options {
         profile: Profile::Comment,
         ..Options::default()
     };
     assert_eq!(
         carve::render("*{+{-{=```a``b```=}-}+}*", &opts),
-        "<p><strong><ins><del><mark>a``b</mark></del></ins></strong></p>"
+        "<p><strong><ins><del><mark><code>a``b</code></mark></del></ins></strong></p>"
     );
 }
 
@@ -338,14 +339,14 @@ fn c2_h_165_comment_only_paragraph_writes_nothing() {
 }
 
 #[test]
-fn c2_h_165_degraded_list_drops_empty_items() {
+fn c2_h_166_list_at_bound_keeps_empty_item() {
     let opts = Options {
         profile: Profile::Minimal,
         ..Options::default()
     };
     assert_eq!(
         carve::render("- - - {#c#}\n- b", &opts),
-        "<ul>\n  <li>\n    <ul>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
+        "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n  <li>b</li>\n</ul>"
     );
 }
 

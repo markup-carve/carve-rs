@@ -161,11 +161,11 @@ fn c2_h_165_code_in_a_degraded_cell_uses_its_value() {
 }
 
 #[test]
-fn c2_h_166_gap_g_020_children_at_the_bound_keep_their_breaks() {
+fn c2_h_166_kept_list_omits_comment_line_break() {
     use carve::options::Profile;
     assert_eq!(
         under(Profile::Minimal, "- a\n%% c\n- b"),
-        "<ul>\n  <li>a </li>\n  <li>b</li>\n</ul>"
+        "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>"
     );
 }
 

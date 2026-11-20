@@ -178,14 +178,14 @@
     "C2-H-165",
     "C2-W-116"
    ],
-   "why": "C2-H-166: For `max_nesting` the children of the document stand at level 0, and each block level and each inline level below adds one. A node at a level above the bound is outside the profile; a node at the bound stays, and its children are degraded.",
-   "summary": "comment profile nesting bound degrades code span",
+   "why": "C2-H-166: For `max_nesting`, the document stands at level 0. Each block container, including a list, block quote or div, adds one level; a top-level container stands at level 1.",
+   "summary": "comment profile nesting bound keeps code span",
    "input": "> > > > `x`",
    "options": {
     "profile": "comment"
    },
    "expected": {
-    "html": "<blockquote>\n  <blockquote>\n    <blockquote>\n      <blockquote><p>x</p></blockquote>\n    </blockquote>\n  </blockquote>\n</blockquote>",
+    "html": "<blockquote>\n  <blockquote>\n    <blockquote>\n      <blockquote><p><code>x</code></p></blockquote>\n    </blockquote>\n  </blockquote>\n</blockquote>",
     "children": [
      {
       "type": "block_quote",
@@ -3133,7 +3133,7 @@
    "clauses": [
     "C2-H-166"
    ],
-   "why": "C2-H-166: A node at a level above the bound is outside the profile; a node at the bound stays, and its children are degraded.",
+   "why": "C2-H-166: A container at the bound stays with its content; a container that would stand above the bound is outside the profile and is degraded as a whole.",
    "summary": "comment profile nesting bound at level 4",
    "input": "> > > > `",
    "options": {
@@ -4357,14 +4357,14 @@
     "C2-H-166",
     "C2-H-165"
    ],
-   "why": "C2-H-166: A `list_item` counts a level but is never degraded on its own: it keeps its `<li>`, and its blocks are degraded.",
+   "why": "C2-H-166: A `list_item` is a member of its list and adds no level.",
    "summary": "minimal nesting bound in nested list",
    "input": "- - a `b` <c:d>",
    "options": {
     "profile": "minimal"
    },
    "expected": {
-    "html": "<ul>\n  <li>\n    <ul>\n      <li>a b c:d</li>\n    </ul>\n  </li>\n</ul>",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>a <code>b</code> c:d</li>\n    </ul>\n  </li>\n</ul>",
     "children": [
      {
       "type": "list",
@@ -5148,7 +5148,7 @@
     "C2-H-166",
     "C2-B-033"
    ],
-   "why": "C2-H-166: A node at a level above the bound is outside the profile; a node at the bound stays, and its children are degraded. A `list_item` counts a level but is never degraded on its own: it keeps its `<li>`, and its blocks are degraded.",
+   "why": "C2-H-166: A container at the bound stays with its content; a container that would stand above the bound is outside the profile and is degraded as a whole. A `list_item` keeps its `<li>` when its list stays, including when another construct inside it degrades.",
    "summary": "nested list source lines under minimal profile nesting",
    "input": "- - -C2-A-034",
    "options": {
@@ -53013,21 +53013,17 @@
   {
    "id": "CC-1069",
    "clauses": [
-    "C2-W-106"
+    "C2-H-166"
    ],
-   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`.",
-   "summary": "a nesting limit degrades an allowed code span",
+   "why": "C2-H-166: Paragraphs, other non-container blocks and inline nodes add no level.",
+   "summary": "a code span inside the fourth comment quote stays",
    "kind": "render",
    "input": "> > > > `x`\n",
    "options": {
     "profile": "comment"
    },
    "expected": {
-    "diagnostics": [
-     {
-      "code": "profile-construct-degraded"
-     }
-    ]
+    "diagnostics": []
    },
    "from": []
   },
@@ -53634,21 +53630,17 @@
   {
    "id": "CC-1100",
    "clauses": [
-    "C2-W-106"
+    "C2-H-166"
    ],
-   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`.",
-   "summary": "nesting limit can degrade a type otherwise allowed by the profile",
+   "why": "C2-H-166: Paragraphs, other non-container blocks and inline nodes add no level.",
+   "summary": "a code span within the container bound has no profile loss",
    "kind": "render",
    "input": "> > > > `x`\n",
    "options": {
     "profile": "comment"
    },
    "expected": {
-    "diagnostics": [
-     {
-      "code": "profile-construct-degraded"
-     }
-    ]
+    "diagnostics": []
    },
    "from": []
   },
@@ -61352,6 +61344,331 @@
     ]
    },
    "from": []
+  },
+  {
+   "id": "CC-1401",
+   "clauses": [
+    "C2-W-144",
+    "C2-W-017"
+   ],
+   "why": "C2-W-144: A line comment that is a `carve-lint-disable-next-line` control comment (C2-B-215) and stands directly above a line that holds content in the source is written directly above the line written after it.",
+   "summary": "a next-line control comment above a heading keeps its line",
+   "kind": "format",
+   "input": "para\n\n%% carve-lint-disable-next-line\n## See [a]()\n",
+   "options": {},
+   "expected": {
+    "carve": "para\n\n%% carve-lint-disable-next-line\n== See [a]()\n"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1402",
+   "clauses": [
+    "C2-W-144",
+    "C2-W-059",
+    "C2-W-030"
+   ],
+   "why": "C2-W-144: A line comment that is a `carve-lint-disable-next-line` control comment (C2-B-215) and stands directly above a line that holds content in the source is written directly above the line written after it.",
+   "summary": "a control comment that ends an item stands directly above the next item",
+   "kind": "format",
+   "input": "- a\n\n%% carve-lint-disable-next-line\n- [b]()\n",
+   "options": {},
+   "expected": {
+    "carve": "- a\n\n  %% carve-lint-disable-next-line\n- [b]()\n"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1403",
+   "clauses": [
+    "C2-W-144",
+    "C2-B-216"
+   ],
+   "why": "C2-W-144: A line comment that is a `carve-lint-disable-next-line` control comment (C2-B-215) and stands directly above a line that holds content in the source is written directly above the line written after it.",
+   "summary": "the formatted heading stays suppressed",
+   "kind": "lint",
+   "input": "para\n\n%% carve-lint-disable-next-line\n== See [a]()\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [],
+    "notReported": [
+     "empty-link-destination"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1404",
+   "clauses": [
+    "C2-W-144",
+    "C2-W-017"
+   ],
+   "why": "C2-W-144: A control comment with a blank line below it in the source suppresses nothing and is written by the general rules, so `fmt` does not make it suppress a line either.",
+   "summary": "a control comment with a blank line below it keeps the blank line",
+   "kind": "format",
+   "input": "para\n\n%% carve-lint-disable-next-line\n\n## See [a]()\n",
+   "options": {},
+   "expected": {
+    "carve": "para\n\n%% carve-lint-disable-next-line\n\n== See [a]()\n"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1405",
+   "clauses": ["C2-B-137", "C2-B-192"],
+   "why": "C2-B-137: Such a line is not seen by block structure: no rule that opens, continues, interrupts or closes a block sees it, and it counts neither as a content line nor as a blank line. C2-B-192: Consecutive attribute lines that no block takes, because a blank line or the end of their container follows, become one closed paragraph that holds every one of those lines as text.",
+   "summary": "an attribute followed only by a comment reaches document end",
+   "kind": "lint",
+   "input": "{.c}\n%% x\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [{"code": "unattached-block-attribute", "line": 1, "column": 1, "endLine": 1, "endColumn": 5, "messageWhen": "the attribute line reaches the end of its container or document without a following blank line", "channel": "lint", "severity": "warning"}]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1406",
+   "clauses": ["C2-B-092", "C2-B-192"],
+   "why": "C2-B-192: Consecutive attribute lines that no block takes, because a blank line or the end of their container follows, become one closed paragraph that holds every one of those lines as text.",
+   "summary": "an attribute in a nested list item does not attach to a later div",
+   "kind": "lint",
+   "input": "* * {#id}\n:::\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [{"code": "unattached-block-attribute", "line": 1, "column": 5, "endLine": 1, "endColumn": 10, "messageWhen": "the attribute line reaches the end of its container or document without a following blank line", "channel": "lint", "severity": "warning"}]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1407",
+   "clauses": ["C2-B-010", "C2-B-192"],
+   "why": "C2-B-010: A line ends at LF, a CR directly before that LF is not part of the line, and a lone CR is not a line end. C2-B-192: Consecutive attribute lines that no block takes, because a blank line or the end of their container follows, become one closed paragraph that holds every one of those lines as text.",
+   "summary": "a final line feed after an attribute is document end, not a blank line",
+   "kind": "lint",
+   "input": "{.c}\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [{"code": "unattached-block-attribute", "line": 1, "column": 1, "endLine": 1, "endColumn": 5, "messageWhen": "the attribute line reaches the end of its container or document without a following blank line", "channel": "lint", "severity": "warning"}]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1408",
+   "clauses": ["C2-B-003", "C2-B-004", "C2-B-027"],
+   "why": "C2-B-003: Columns count code points from 0, starting after the quote marks of the open quotes: column 0 of quoted content is the column directly behind the innermost quote mark and its one space. C2-B-004: A leading tab advances the column to the next multiple of 4, for counting only: the bytes are kept as written, also in code.",
+   "summary": "a tab before a quote mark does not overindent a term in the quoted item",
+   "kind": "lint",
+   "input": "> i) :::\n\t>   :: term\n",
+   "options": {},
+   "expected": {
+    "notReported": ["list-item-block-overindented"]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1409",
+   "clauses": ["C2-W-088", "C2-B-137"],
+   "why": "C2-W-088: The text is written bare and parsed in its context, including the link definitions of the whole document. C2-B-137: Such a line is not seen by block structure: no rule that opens, continues, interrupts or closes a block sees it, and it counts neither as a content line nor as a blank line.",
+   "summary": "a description mark after a comment stays bare in an item paragraph",
+   "kind": "format",
+   "input": "- a\n  %% c\n  \\:: t\n",
+   "options": {},
+   "expected": {
+    "carve": "- a\n  %% c\n  :: t\n"
+   },
+   "from": []
   }
+,
+ {
+ "id": "CC-1410",
+ "clauses": [
+  "C2-B-019",
+  "C2-B-024",
+  "C2-B-031"
+ ],
+ "why": "Catalog block-opener-without-blank-line: a line that no open container owns is a lazy line of the paragraph and its candidate is its first marker, a quote mark included",
+ "summary": "a lazy quote marker before a comment fence is reported",
+ "kind": "lint",
+ "input": "  c\n  > %%%\n",
+ "options": {},
+ "expected": {
+  "diagnostics": [
+   {
+    "code": "block-opener-without-blank-line",
+    "line": 2,
+    "column": 3,
+    "endLine": 2,
+    "endColumn": 4
+   }
+  ]
+ },
+ "from": []
+},
+ {
+ "id": "CC-1411",
+ "clauses": [
+  "C2-B-003",
+  "C2-B-025"
+ ],
+ "why": "C2-B-003: Columns count code points from 0, starting after the quote marks of the open quotes",
+ "summary": "indent before a quote mark does not overindent its item block",
+ "kind": "lint",
+ "input": "> - a\n>\n  >   # H\n",
+ "options": {},
+ "expected": {
+  "notReported": [
+   "list-item-block-overindented"
+  ]
+ },
+ "from": []
+},
+ {
+ "id": "CC-1412",
+ "clauses": [
+  "C2-B-154"
+ ],
+ "why": "C2-B-154: A heading holds its marker line and every line directly below it that is indented past the column of its marker",
+ "summary": "a heading below its attribute line is not a heading continuation",
+ "kind": "lint",
+ "input": "   {.x}\n   ### H\n",
+ "options": {},
+ "expected": {
+  "notReported": [
+   "deprecated-indented-line-under-heading"
+  ]
+ },
+ "from": []
+},
+ {
+ "id": "CC-1413",
+ "clauses": [
+  "C2-B-111",
+  "C2-W-138"
+ ],
+ "why": "Catalog unclosed-container-fence: the range is the div",
+ "summary": "an unclosed div finding covers the div rather than its opening mark",
+ "kind": "parse",
+ "input": "abc\n::: note\nbody\n",
+ "options": {},
+ "expected": {
+  "diagnostics": [
+   {
+    "code": "unclosed-container-fence",
+    "line": 2,
+    "column": 1,
+    "endLine": 3,
+    "endColumn": 5
+   }
+  ]
+ },
+ "from": []
+},
+ {
+ "id": "CC-1414",
+ "clauses": [
+  "C2-H-129",
+  "C2-W-138"
+ ],
+ "why": "C2-H-129: A construct outside the profile renders in its degraded form and is reported. The report has the code `profile-construct-degraded`. C2-W-138: An entry of a run on source carries that range, in the render-loss channel too",
+ "summary": "two degraded constructs retain their own positions",
+ "kind": "render",
+ "input": "a\n\n{{ m.crv }}\n\nb\n\n> q\n",
+ "options": {
+  "profile": "minimal"
+ },
+ "expected": {
+  "diagnostics": [
+   {
+    "code": "profile-construct-degraded",
+    "line": 3,
+    "column": 1
+   },
+   {
+    "code": "profile-construct-degraded",
+    "line": 7,
+    "column": 1
+   }
+  ]
+ },
+ "from": []
+},
+ {
+  "id": "CC-1415",
+  "clauses": [
+   "C2-H-163",
+   "C2-H-166"
+  ],
+  "why": "C2-H-166: A `list_item` is a member of its list and adds no level. Paragraphs, other non-container blocks and inline nodes add no level.",
+  "summary": "minimal plain list has no profile loss",
+  "kind": "render",
+  "input": "- a\n- b",
+  "options": {
+   "profile": "minimal",
+   "strictLosses": true
+  },
+  "expected": {
+   "html": "<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>",
+   "diagnostics": []
+  },
+  "from": []
+ },
+ {
+  "id": "CC-1416",
+  "clauses": [
+   "C2-H-166"
+  ],
+  "why": "C2-H-166: A container at the bound stays with its content; a container that would stand above the bound is outside the profile and is degraded as a whole.",
+  "summary": "minimal nested list at the bound stays",
+  "kind": "render",
+  "input": "- a\n  - b",
+  "options": {
+   "profile": "minimal"
+  },
+  "expected": {
+   "html": "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>",
+   "diagnostics": []
+  },
+  "from": []
+ },
+ {
+  "id": "CC-1417",
+  "clauses": [
+   "C2-H-166"
+  ],
+  "why": "C2-H-166: A container at the bound stays with its content; a container that would stand above the bound is outside the profile and is degraded as a whole.",
+  "summary": "minimal third list exceeds the bound once",
+  "kind": "render",
+  "input": "- a\n  - b\n    - c",
+  "options": {
+   "profile": "minimal"
+  },
+  "expected": {
+   "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <p>- c</p>\n      </li>\n    </ul>\n  </li>\n</ul>",
+   "diagnostics": [
+    "profile-construct-degraded"
+   ]
+  },
+  "from": []
+ },
+ {
+  "id": "CC-1418",
+  "clauses": [
+   "C2-H-166"
+  ],
+  "why": "C2-H-166: A container at the bound stays with its content; a container that would stand above the bound is outside the profile and is degraded as a whole.",
+  "summary": "comment fifth quote exceeds the bound once",
+  "kind": "render",
+  "input": "> > > > > `x`",
+  "options": {
+   "profile": "comment"
+  },
+  "expected": {
+   "html": "<blockquote>\n  <blockquote>\n    <blockquote>\n      <blockquote><p>&gt; x</p></blockquote>\n    </blockquote>\n  </blockquote>\n</blockquote>",
+   "diagnostics": [
+    "profile-construct-degraded"
+   ]
+  },
+  "from": []
+ }
  ]
 }
