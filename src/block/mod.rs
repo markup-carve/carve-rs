@@ -987,7 +987,7 @@ impl<'a> Parser<'a> {
                 code: "unclosed-container-fence",
                 message: 0,
                 start: c.start,
-                end: c.start + len,
+                end: c.end,
                 values: vec![("width", len.to_string()), ("kind", "container".into())],
             });
         }
