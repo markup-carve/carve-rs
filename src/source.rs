@@ -3,6 +3,7 @@
 
 use crate::ast::Pos;
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Clone, Copy)]
 pub(crate) struct SourceView<'a> {
@@ -52,6 +53,8 @@ pub struct Source<'a> {
     /// For each block of `MARK` bytes, its first character boundary and the
     /// column there, so a column costs at most one block of counting.
     marks: Vec<(usize, usize)>,
+    /// The line of the last lookup: positions are mostly asked in order.
+    line_hint: AtomicUsize,
 }
 
 const MARK: usize = 256;
@@ -155,6 +158,7 @@ impl<'a> Source<'a> {
             replacements,
             bom,
             marks,
+            line_hint: AtomicUsize::new(0),
         }
     }
 
@@ -254,9 +258,19 @@ impl<'a> Source<'a> {
     /// 0-based line index of a byte offset.
     #[must_use]
     pub fn line_of(&self, at: usize) -> usize {
-        self.line_starts
-            .partition_point(|&s| s <= at)
-            .saturating_sub(1)
+        let starts = &self.line_starts;
+        let hint = self.line_hint.load(Ordering::Relaxed);
+        for line in [hint, hint + 1] {
+            if starts.get(line).is_some_and(|&s| s <= at)
+                && starts.get(line + 1).is_none_or(|&next| at < next)
+            {
+                self.line_hint.store(line, Ordering::Relaxed);
+                return line;
+            }
+        }
+        let line = starts.partition_point(|&s| s <= at).saturating_sub(1);
+        self.line_hint.store(line, Ordering::Relaxed);
+        line
     }
 
     /// 1-based line and column (code points) of an offset (C2-A-141).
@@ -326,6 +340,24 @@ mod tests {
                 (line + 1, slow(&text, start, at)),
                 "at {at}"
             );
+        }
+    }
+
+    #[test]
+    fn line_of_does_not_depend_on_the_order_of_lookups() {
+        let text = "\u{FEFF}a\n\nbc\r\nd\n\n";
+        let fresh = |at: usize| {
+            let starts: Vec<usize> = std::iter::once(3)
+                .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+                .collect();
+            starts.partition_point(|&s| s <= at).saturating_sub(1)
+        };
+        let src = Source::new(text);
+        let up: Vec<usize> = (0..=text.len()).collect();
+        let down: Vec<usize> = up.iter().rev().copied().collect();
+        let jumps: Vec<usize> = (0..=text.len()).map(|i| i * 7 % (text.len() + 1)).collect();
+        for at in up.into_iter().chain(down).chain(jumps) {
+            assert_eq!(src.line_of(at), fresh(at), "at {at}");
         }
     }
 
