@@ -74,11 +74,9 @@ fn c2_b_119_refused_div_marker_reports_inside_containers() {
 }
 
 #[test]
-fn c2_w_138_fence_as_text_on_a_paragraph_continuation() {
+fn c2_w_138_fence_on_later_paragraph_line_has_no_first_line_warning() {
     let findings = findings("a\n  ~~~\n", "block-marker-as-text");
-    assert_eq!(findings.len(), 1);
-    let pos = findings[0].pos.expect("fence range");
-    assert_eq!(pos.start_offset, 4);
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]

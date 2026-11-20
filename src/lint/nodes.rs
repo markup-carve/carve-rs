@@ -2130,7 +2130,11 @@ fn definition_term(item: &Item<'_>, sink: &mut Sink<'_>) {
             && let Some((head, tail)) = raw.split_once('\n')
         {
             let line = tail.split('\n').next().unwrap_or("");
-            let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+            let prefix = line.len() - line.trim_start_matches([' ', '\t']).len();
+            let quote = line
+                .get(prefix..)
+                .is_some_and(|text| text.starts_with("> "));
+            let indent = prefix + if quote { 2 } else { 0 };
             sink.emit_range(
                 "description-term-multi-line",
                 from + head.len() + 1 + indent,
@@ -2357,7 +2361,18 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
         *at += line.len();
         Some(out)
     }) {
-        let text = line.trim_end_matches('\n').trim_start_matches([' ', '\t']);
+        let raw_line = line.trim_end_matches('\n');
+        let mut prefix = raw_line.len() - raw_line.trim_start_matches([' ', '\t']).len();
+        while raw_line
+            .get(prefix..)
+            .is_some_and(|text| text.starts_with("> "))
+        {
+            prefix += 2;
+        }
+        let text = raw_line
+            .get(prefix..)
+            .unwrap_or("")
+            .trim_start_matches([' ', '\t']);
         let run = text.chars().take_while(|c| *c == '%').count();
         if width == 0 {
             if run >= 3 {
@@ -2400,12 +2415,6 @@ fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
         .and_then(|text| text.rfind('\n'))
         .map_or(0, |at| at + 1);
     let closer = sink.source.get(last_line_start..to).unwrap_or("");
-    let body = closer
-        .trim_start_matches([' ', '\t'])
-        .trim_end_matches([' ', '\t']);
-    if body.len() < width || !body.bytes().all(|b| b == marker) {
-        return;
-    }
     let before_first = sink
         .source
         .get(..from + first)
@@ -2413,14 +2422,27 @@ fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
         .rsplit('\n')
         .next()
         .unwrap_or("");
-    let before_last = closer
-        .get(..closer.len() - closer.trim_start_matches([' ', '\t']).len())
-        .unwrap_or("");
-    if before_first.len() != before_last.len() {
+    let quote_prefix = before_first.bytes().filter(|byte| *byte == b'>').count();
+    let mut closer_content = closer;
+    for _ in 0..quote_prefix {
+        closer_content = closer_content.trim_start_matches([' ', '\t']);
+        if let Some(rest) = closer_content.strip_prefix("> ") {
+            closer_content = rest;
+        }
+    }
+    let body = closer_content
+        .trim_start_matches([' ', '\t'])
+        .trim_end_matches([' ', '\t']);
+    if body.len() < width || !body.bytes().all(|b| b == marker) {
+        return;
+    }
+    let before_last = closer.len() - closer_content.len() + closer_content.len()
+        - closer_content.trim_start_matches([' ', '\t']).len();
+    if before_first.len() != before_last {
         sink.emit_range(
             "fence-closer-indented",
-            last_line_start + before_last.len(),
-            last_line_start + before_last.len() + body.len(),
+            last_line_start + before_last,
+            last_line_start + before_last + body.len(),
             item.path(),
             &[],
             0,

@@ -600,5 +600,152 @@
     "near": "[Text][REF]\n\n\n",
     "fragment": "[ref]: /u",
     "message": "This link reference definition is unused."
+  },
+{
+    "id": "block-opener-without-blank-line#6198",
+    "origin": "carve#6198",
+    "input": "para\n>\n",
+    "code": "block-opener-without-blank-line",
+    "reported": true
+  },
+{
+    "id": "caption-looking-paragraph#6200",
+    "origin": "carve#6200",
+    "input": ": key\n|\n",
+    "code": "caption-looking-paragraph",
+    "reported": false
+  },
+{
+    "id": "colon-fence-length-mismatch#6201",
+    "origin": "carve#6201",
+    "input": "::::\npara\n> :::\n",
+    "code": "colon-fence-length-mismatch",
+    "reported": false
+  },
+{
+    "id": "blockquote-marker-without-space#6202",
+    "origin": "carve#6202",
+    "input": ">\t\n",
+    "code": "blockquote-marker-without-space",
+    "reported": true
+  },
+{
+    "id": "block-opener-without-blank-line#6203",
+    "origin": "carve#6203",
+    "input": "para\n*[x]: y\n",
+    "code": "block-opener-without-blank-line",
+    "reported": true
+  },
+{
+    "id": "github-alert-marker#6212",
+    "origin": "carve#6212",
+    "input": ">> [!NOTE]\n",
+    "code": "github-alert-marker",
+    "reported": false
+  },
+{
+    "id": "bare-html-tag#6215",
+    "origin": "carve#6215",
+    "input": ":: a <b>\n",
+    "code": "bare-html-tag",
+    "reported": false
+  },
+{
+    "id": "indented-code-block#6216",
+    "origin": "carve#6216",
+    "input": "\t1. w.\n\n    :\n",
+    "code": "indented-code-block",
+    "reported": false
+  },
+{
+    "id": "list-marker-without-blank-line#6217",
+    "origin": "carve#6217",
+    "input": "| w | w |\n^ w\n- ::\n",
+    "code": "list-marker-without-blank-line",
+    "reported": false
+  },
+{
+    "id": "comment-fence-closer-with-text#6219",
+    "origin": "carve#6219",
+    "input": "> %%%%\n> %%%% x\n",
+    "code": "comment-fence-closer-with-text",
+    "reported": true
+  },
+{
+    "id": "description-term-multi-line#6220",
+    "origin": "carve#6220",
+    "input": "> :: w\n> w\n",
+    "code": "description-term-multi-line",
+    "reported": true
+  },
+{
+    "id": "fence-closer-indented#6221",
+    "origin": "carve#6221",
+    "input": "> ```\n>   ```\n",
+    "code": "fence-closer-indented",
+    "reported": true
+  },
+{
+    "id": "blockquote-marker-without-space#6226",
+    "origin": "carve#6226",
+    "input": "a\n> %% x\n",
+    "code": "blockquote-marker-without-space",
+    "reported": false
+  },
+{
+    "id": "github-alert-marker#6227",
+    "origin": "carve#6227",
+    "input": "> :: a\n> :: t2\n>: key\n> > [!NOTE]\n",
+    "code": "github-alert-marker",
+    "reported": false
+  },
+{
+    "id": "unattached-block-attribute#6255",
+    "origin": "carve#6255",
+    "input": "{#id .c k=v}\n{#id .c k=v}\n\n",
+    "code": "unattached-block-attribute",
+    "reported": true
+  },
+{
+    "id": "block-marker-as-text#6184",
+    "origin": "carve#6184",
+    "input": "a\n~~~js\n",
+    "code": "block-marker-as-text",
+    "reported": false
+  },
+{
+    "id": "list-marker-without-blank-line#6217-quoted",
+    "origin": "carve#6217",
+    "input": "> | w | w |\n> ^ w\n> - ::\n",
+    "code": "list-marker-without-blank-line",
+    "reported": false
+  },
+{
+    "id": "bare-html-tag#6215-caption",
+    "origin": "carve#6215",
+    "input": "| x | y |\n^ <i>\n",
+    "code": "bare-html-tag",
+    "reported": false
+  },
+{
+    "id": "blockquote-marker-without-space#CC-1157",
+    "origin": "spec:CC-1157",
+    "input": "::: |\n>a\n:::\n",
+    "code": "blockquote-marker-without-space",
+    "reported": true
+  },
+{
+    "id": "github-alert-marker#CC-1068",
+    "origin": "spec:CC-1068",
+    "input": ">[!NOTE]\n",
+    "code": "github-alert-marker",
+    "reported": true
+  },
+{
+    "id": "github-alert-marker#CC-1079",
+    "origin": "spec:CC-1079",
+    "input": "[!NOTE]: /u\n\n>[!NOTE]\n",
+    "code": "github-alert-marker",
+    "reported": true
   }
 ]
