@@ -26,8 +26,24 @@ fn joined(text: &str, mark: &str, id: &str, at: usize) -> bool {
                 || ('\u{e0100}'..='\u{e01ef}').contains(&ch)
         })
 }
+fn zs(ch: char) -> bool {
+    matches!(
+        ch,
+        ' ' | '\u{a0}' | '\u{1680}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+    ) || ('\u{2000}'..='\u{200a}').contains(&ch)
+}
 fn edge_space(ch: char) -> bool {
-    ch.is_whitespace() && ch != '\u{feff}'
+    zs(ch) || matches!(ch, '\t' | '\n' | '\r' | '\u{c}' | '\u{b}')
+}
+fn closer_space(ch: char) -> bool {
+    zs(ch) || matches!(ch, '\t' | '\n' | '\r')
+}
+fn can_open(text: &str, mark: &str, id: &str, at: usize) -> bool {
+    let after = next(text, at + mark.len());
+    !joined(text, mark, id, at)
+        && !escaped(text, at)
+        && after.is_some_and(|ch| !edge_space(ch) && !mark.starts_with(ch))
+        && (mark.len() == 2 || !before(text, at).is_some_and(char::is_alphanumeric))
 }
 fn valid(text: &str, mark: &str, start: usize, end: usize) -> bool {
     let Some(inside) = text.get(start + mark.len()..end) else {
@@ -58,7 +74,7 @@ pub(crate) fn pairs(text: &str, mark: &str, id: &str) -> Vec<(usize, usize)> {
         .and_then(|tail| tail.find(mark))
         .map(|p| p + at)
     {
-        if joined(text, mark, id, start) {
+        if !can_open(text, mark, id, start) {
             at = start + mark.len();
             continue;
         }
@@ -72,7 +88,7 @@ pub(crate) fn pairs(text: &str, mark: &str, id: &str) -> Vec<(usize, usize)> {
             else {
                 return ranges;
             };
-            if before(text, candidate).is_some_and(|ch| ch.is_whitespace() && ch != '\u{feff}')
+            if before(text, candidate).is_some_and(closer_space)
                 || escaped(text, candidate)
                 || joined(text, mark, id, candidate)
             {
@@ -95,3 +111,17 @@ pub(crate) const RULES: [(&str, &str); 5] = [
     ("~~", "markdown-strikethrough-double-tilde"),
     ("**", "markdown-strong-double-star"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::pairs;
+
+    #[test]
+    fn only_catalog_edge_spaces_exclude_bare_pairs() {
+        assert_eq!(
+            pairs("~a\u{85}~", "~", "deprecated-bare-strike"),
+            vec![(0, 5)]
+        );
+        assert!(pairs("~a\u{a0}~", "~", "deprecated-bare-strike").is_empty());
+    }
+}

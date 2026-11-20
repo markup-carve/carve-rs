@@ -53,3 +53,14 @@ fn joined_candidates_cannot_open_or_close() {
         }
     }
 }
+
+#[test]
+fn escaped_first_mark_does_not_consume_a_later_pair() {
+    let entries = carve::api::lint("\\~foo ~bar~", &LintOptions::default()).unwrap();
+    let pair = entries
+        .iter()
+        .find(|e| e.code == "deprecated-bare-strike")
+        .unwrap();
+    let range = pair.range.as_ref().unwrap();
+    assert_eq!((range.start_offset, range.end_offset), (6, 11));
+}
