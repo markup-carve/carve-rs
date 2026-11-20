@@ -788,10 +788,7 @@ fn authored_id_token(body: &str) -> Option<(usize, usize)> {
 #[derive(Default)]
 struct RenderDetails {
     places: Vec<(Option<String>, String, Option<ast::Pos>)>,
-    destinations: Vec<html::DestinationLoss>,
-    raws: Vec<html::RawLoss>,
-    carriers: Vec<html::CarrierLoss>,
-    profiles: Vec<html::ProfileLoss>,
+    losses: html::LossDetails,
     included_sources: std::collections::HashMap<String, String>,
 }
 
@@ -822,16 +819,8 @@ fn render_parts(
             include::flatten(&mut doc, arena);
         }
         let src = source::Source::new(input);
-        let (out, mut losses) = html::render_files(
-            &doc,
-            opts,
-            src.text(),
-            &files,
-            Some(&mut details.destinations),
-            Some(&mut details.raws),
-            Some(&mut details.carriers),
-            Some(&mut details.profiles),
-        );
+        let (out, mut losses) =
+            html::render_files(&doc, opts, src.text(), &files, Some(&mut details.losses));
         losses.extend(extra);
         return Ok((out, losses));
     }
@@ -842,22 +831,10 @@ fn render_parts(
             opts,
             src.render_view(),
             ordered,
-            Some(&mut details.destinations),
-            Some(&mut details.raws),
-            Some(&mut details.carriers),
-            Some(&mut details.profiles),
+            Some(&mut details.losses),
         )
     } else {
-        html::render_source(
-            &doc,
-            opts,
-            input,
-            ordered,
-            Some(&mut details.destinations),
-            Some(&mut details.raws),
-            Some(&mut details.carriers),
-            Some(&mut details.profiles),
-        )
+        html::render_source(&doc, opts, input, ordered, Some(&mut details.losses))
     };
     Ok((out, losses))
 }
@@ -919,10 +896,10 @@ fn loss_diagnostics(
 ) -> Vec<diagnostic::Diagnostic> {
     let mut places = details.places.iter().cloned();
     let source = source::Source::new(input);
-    let mut raw_losses = details.raws.iter();
-    let mut destination_losses = details.destinations.iter();
-    let mut carrier_losses = details.carriers.iter();
-    let mut profile_losses = details.profiles.iter();
+    let mut raw_losses = details.losses.raws.iter();
+    let mut destination_losses = details.losses.destinations.iter();
+    let mut carrier_losses = details.losses.carriers.iter();
+    let mut profile_losses = details.losses.profiles.iter();
     let mut carrier_cursors = std::collections::HashMap::new();
     let included_sources = &details.included_sources;
     let loss_diags: Vec<_> = losses
@@ -1264,16 +1241,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     let out = block::scan(&src);
     let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
-    let (out, losses) = html::render_mapped_source(
-        &doc,
-        opts,
-        src.render_view(),
-        ordered,
-        None,
-        None,
-        None,
-        None,
-    );
+    let (out, losses) = html::render_mapped_source(&doc, opts, src.render_view(), ordered, None);
     let losses = unallowed(losses, opts);
     if opts.strict_losses && !losses.is_empty() {
         return Err(RenderError::Losses(losses));

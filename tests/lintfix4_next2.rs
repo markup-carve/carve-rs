@@ -114,7 +114,10 @@ fn generated_variants_keep_the_correct_owner_and_span() {
         let mark = lazy.find('>').unwrap();
         assert_eq!(
             ranges(&lazy, "block-opener-without-blank-line"),
-            vec![(mark as u32, mark as u32 + 1)],
+            vec![(
+                u32::try_from(mark).unwrap(),
+                u32::try_from(mark + 1).unwrap()
+            )],
             "lazy variant {index}"
         );
 
@@ -131,8 +134,8 @@ fn generated_variants_keep_the_correct_owner_and_span() {
         );
 
         let div = format!("lead{index}\n::: note\nbody{index}\n");
-        let start = div.find(":::").unwrap() as u32;
-        let end = div.trim_end_matches('\n').len() as u32;
+        let start = u32::try_from(div.find(":::").unwrap()).unwrap();
+        let end = u32::try_from(div.trim_end_matches('\n').len()).unwrap();
         assert_eq!(
             ranges(&div, "unclosed-container-fence"),
             vec![(start, end)],
@@ -149,12 +152,12 @@ fn generated_variants_keep_the_correct_owner_and_span() {
         assert_eq!(profiles.len(), 2, "profile variant {index}");
         assert_eq!(
             profiles[0].pos.unwrap().start_offset,
-            degraded.find("{{").unwrap() as u32,
+            u32::try_from(degraded.find("{{").unwrap()).unwrap(),
             "profile include variant {index}"
         );
         assert_eq!(
             profiles[1].pos.unwrap().start_offset,
-            degraded.find("> q").unwrap() as u32,
+            u32::try_from(degraded.find("> q").unwrap()).unwrap(),
             "profile quote variant {index}"
         );
     }

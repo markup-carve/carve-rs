@@ -106,18 +106,9 @@ pub fn render_with_losses_source(
 ) -> (String, Vec<&'static str>) {
     if opts.profile != crate::options::Profile::Full && src.contains('\0') {
         let normalized = crate::source::Source::new(src);
-        render_mapped_source(
-            doc,
-            opts,
-            normalized.render_view(),
-            true,
-            None,
-            None,
-            None,
-            None,
-        )
+        render_mapped_source(doc, opts, normalized.render_view(), true, None)
     } else {
-        render_source(doc, opts, src, true, None, None, None, None)
+        render_source(doc, opts, src, true, None)
     }
 }
 
@@ -130,16 +121,7 @@ pub fn render_with_losses_source_bytes(
     src: &[u8],
 ) -> (String, Vec<&'static str>) {
     let normalized = crate::source::Source::from_bytes(src);
-    render_mapped_source(
-        doc,
-        opts,
-        normalized.render_view(),
-        true,
-        None,
-        None,
-        None,
-        None,
-    )
+    render_mapped_source(doc, opts, normalized.render_view(), true, None)
 }
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
@@ -149,25 +131,13 @@ pub(crate) fn render_source(
     opts: &Options,
     src: &str,
     ordered: bool,
-    destinations: Option<&mut Vec<DestinationLoss>>,
-    raws: Option<&mut Vec<RawLoss>>,
-    carriers: Option<&mut Vec<CarrierLoss>>,
-    profiles: Option<&mut Vec<ProfileLoss>>,
+    details: Option<&mut LossDetails>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(SourceView::direct(src));
     r.document();
-    if let Some(destinations) = destinations {
-        destinations.extend(r.destination_losses);
-    }
-    if let Some(raws) = raws {
-        raws.extend(r.raw_losses);
-    }
-    if let Some(carriers) = carriers {
-        carriers.extend(r.carrier_losses);
-    }
-    if let Some(profiles) = profiles {
-        profiles.extend(r.profile_losses);
+    if let Some(details) = details {
+        details.extend(&mut r);
     }
     (r.out, r.losses)
 }
@@ -178,25 +148,13 @@ pub(crate) fn render_files<'a>(
     opts: &Options,
     src: &str,
     files: &crate::resolve::files::Files<'a>,
-    destinations: Option<&mut Vec<DestinationLoss>>,
-    raws: Option<&mut Vec<RawLoss>>,
-    carriers: Option<&mut Vec<CarrierLoss>>,
-    profiles: Option<&mut Vec<ProfileLoss>>,
+    details: Option<&mut LossDetails>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::build(doc, opts, true, Some(files));
     r.src = Some(SourceView::direct(src));
     r.document();
-    if let Some(destinations) = destinations {
-        destinations.extend(r.destination_losses);
-    }
-    if let Some(raws) = raws {
-        raws.extend(r.raw_losses);
-    }
-    if let Some(carriers) = carriers {
-        carriers.extend(r.carrier_losses);
-    }
-    if let Some(profiles) = profiles {
-        profiles.extend(r.profile_losses);
+    if let Some(details) = details {
+        details.extend(&mut r);
     }
     (r.out, r.losses)
 }
@@ -206,25 +164,13 @@ pub(crate) fn render_mapped_source(
     opts: &Options,
     src: SourceView<'_>,
     ordered: bool,
-    destinations: Option<&mut Vec<DestinationLoss>>,
-    raws: Option<&mut Vec<RawLoss>>,
-    carriers: Option<&mut Vec<CarrierLoss>>,
-    profiles: Option<&mut Vec<ProfileLoss>>,
+    details: Option<&mut LossDetails>,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(src);
     r.document();
-    if let Some(destinations) = destinations {
-        destinations.extend(r.destination_losses);
-    }
-    if let Some(raws) = raws {
-        raws.extend(r.raw_losses);
-    }
-    if let Some(carriers) = carriers {
-        carriers.extend(r.carrier_losses);
-    }
-    if let Some(profiles) = profiles {
-        profiles.extend(r.profile_losses);
+    if let Some(details) = details {
+        details.extend(&mut r);
     }
     (r.out, r.losses)
 }
@@ -256,6 +202,23 @@ pub(crate) struct ProfileLoss {
     pub pos: Option<crate::ast::Pos>,
     pub construct: &'static str,
     pub file: Option<String>,
+}
+
+#[derive(Default)]
+pub(crate) struct LossDetails {
+    pub destinations: Vec<DestinationLoss>,
+    pub raws: Vec<RawLoss>,
+    pub carriers: Vec<CarrierLoss>,
+    pub profiles: Vec<ProfileLoss>,
+}
+
+impl LossDetails {
+    fn extend(&mut self, renderer: &mut Renderer<'_, '_>) {
+        self.destinations.append(&mut renderer.destination_losses);
+        self.raws.append(&mut renderer.raw_losses);
+        self.carriers.append(&mut renderer.carrier_losses);
+        self.profiles.append(&mut renderer.profile_losses);
+    }
 }
 
 /// About the output length: twice the source length the tree covers.
