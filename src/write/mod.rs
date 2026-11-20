@@ -268,9 +268,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
             let saved_lines = w.lines.clone();
             let saved_escapes = w.sp.escapes.clone();
             let saved_losses = w.sp.losses.len();
-            for (node, offset) in asked {
-                w.add_escape(node, offset);
-            }
+            pairs::apply(w, &asked);
             let next = repair_group(w, doc, from, out.is_empty());
             if w.sp.losses.len() > saved_losses {
                 w.lines = saved_lines;
