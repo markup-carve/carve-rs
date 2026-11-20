@@ -84,13 +84,16 @@ pub(super) fn asked<'t>(w: &Writer<'t>, group: &'t [Value]) -> Vec<(N<'t>, usize
 /// Merge the ordered requests for each text node with escapes already found by repair.
 pub(super) fn apply(w: &mut Writer<'_>, asked: &[(N<'_>, usize)]) {
     for group in asked.chunk_by(|left, right| id(left.0) == id(right.0)) {
-        let node_id = id(group[0].0);
+        let Some((node, _)) = group.first() else {
+            continue;
+        };
+        let node_id = id(node);
         let old = w.sp.escapes.remove(&node_id).unwrap_or_default();
         let mut merged = Vec::with_capacity(old.len() + group.len());
         let mut before = old.into_iter().peekable();
         for (_, at) in group {
             while before.peek().is_some_and(|earlier| earlier < at) {
-                merged.push(before.next().unwrap());
+                merged.extend(before.next());
             }
             if before.peek() == Some(at) {
                 before.next();
