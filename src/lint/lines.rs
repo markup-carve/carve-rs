@@ -3,7 +3,6 @@
 use super::{LintOptions, Range, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
-use std::collections::HashSet;
 
 #[allow(clippy::struct_excessive_bools)] // Independent facts from separate parse and source checks.
 struct Line {
@@ -14,7 +13,6 @@ struct Line {
     path: String,
     kind: String,
     paragraph: bool,
-    paragraph_in_div: bool,
     literal_quote_prefix: bool,
     content_start: Option<usize>,
     /// Where the tree places this line's text: its first leaf, or the end of the break before it.
@@ -155,16 +153,6 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
-    let div_paths: HashSet<&str> = ranges
-        .iter()
-        .filter(|range| {
-            matches!(
-                range.kind.as_str(),
-                "div" | "directive" | "admonition" | "figure_group"
-            )
-        })
-        .map(|range| range.path.as_str())
-        .collect();
     let mut starts = Vec::new();
     let mut raws = Vec::new();
     let mut start = 0;
@@ -198,9 +186,6 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: paragraph.map_or_else(String::new, |r| r.path.clone()),
             kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
             paragraph: paragraph.is_some(),
-            paragraph_in_div: paragraph
-                .and_then(|range| range.path.rsplit_once("/children/"))
-                .is_some_and(|(parent, _)| div_paths.contains(parent)),
             literal_quote_prefix: fact.flags & LITERAL_QUOTE_PREFIX != 0,
             content_start: paragraph
                 .filter(|range| range.start_line == number)
@@ -239,7 +224,6 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             path: String::new(),
             kind: String::new(),
             paragraph: false,
-            paragraph_in_div: false,
             literal_quote_prefix: false,
             content_start: None,
             content: None,
@@ -1215,7 +1199,7 @@ fn term_continuation_marker(
 fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
     previous.is_some_and(|p| {
         p.kind == "paragraph"
-            && p.paragraph_in_div
+            && !list_marker(p.text.trim_start_matches([' ', '\t']))
             && !p.text.trim().is_empty()
             && line.scope.container == ContainerKind::ListItem
             && p.content.is_some_and(|content| {
