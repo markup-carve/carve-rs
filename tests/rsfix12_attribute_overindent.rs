@@ -16,7 +16,10 @@ fn attributed_paragraphs_past_the_list_content_column_are_reported() {
             let start = source.find(attrs).unwrap();
             assert_eq!(
                 spans(&source),
-                vec![(start as u32, (start + attrs.len()) as u32)],
+                vec![(
+                    u32::try_from(start).unwrap(),
+                    u32::try_from(start + attrs.len()).unwrap()
+                )],
                 "{source}"
             );
         }
