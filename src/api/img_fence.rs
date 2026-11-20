@@ -163,10 +163,30 @@ fn node(code: &Map<String, Value>, qualified: &str) -> Map<String, Value> {
 
 /// The `<img>` of a claimed node, or `None` when the sanitizer refuses its
 /// body and the fallback is written (C2-X-050, C2-X-059).
-pub(crate) fn render(node: &Value) -> Option<String> {
+/// The authored `alt` is the alt text and the other authored attributes go on
+/// the `<img>` (C2-H-013); `attributes` writes them for a node without `alt`.
+pub(crate) fn render(node: &Value, attributes: &dyn Fn(&Value) -> String) -> Option<String> {
     let body = node.pointer("/source/body").and_then(Value::as_str)?;
     let url = image_url(body)?;
-    Some(format!("<img src=\"{url}\" alt=\"\">"))
+    let mut rest = node.clone();
+    let mut alt = String::new();
+    if let Some(pairs) = rest
+        .pointer_mut("/attrs/keyValues")
+        .and_then(Value::as_array_mut)
+    {
+        if let Some(value) = pairs
+            .iter()
+            .find(|pair| pair.get(0).and_then(Value::as_str) == Some("alt"))
+            .and_then(|pair| pair.get(1).and_then(Value::as_str))
+        {
+            crate::html::esc::attr(value, &mut alt);
+        }
+        pairs.retain(|pair| pair.get(0).and_then(Value::as_str) != Some("alt"));
+    }
+    Some(format!(
+        "<img src=\"{url}\" alt=\"{alt}\"{}>",
+        attributes(&rest)
+    ))
 }
 
 /// C2-X-059, C2-X-060: the sanitized SVG as a `data:image/svg+xml` URL.
