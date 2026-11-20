@@ -82,6 +82,8 @@ pub mod source;
 pub mod tables;
 #[doc(hidden)]
 pub mod tree;
+// The read-only tree view the lint rules and the writer read.
+mod view;
 // The canonical Carve writer (`writer.md`), reached through `api`.
 mod write;
 
@@ -687,16 +689,16 @@ pub(crate) fn with_lint_tree<R>(
     tree_opts: &Options,
     opts: &Options,
     same: bool,
-    f: impl for<'t> FnOnce(Option<lint::view::V<'t>>, &'t Arena) -> R,
+    f: impl for<'t> FnOnce(Option<view::V<'t>>, &'t Arena) -> R,
 ) -> (R, Vec<diagnostic::Diagnostic>) {
     let arena = Arena::for_input(input);
     let mut diagnostics = Vec::new();
     let prepared = prepare(input, tree_opts, &arena, &mut diagnostics);
     let result = match prepared {
-        Ok((doc, _, None)) => f(Some(lint::view::V::Doc(arena.alloc(doc))), &arena),
+        Ok((doc, _, None)) => f(Some(view::V::Doc(arena.alloc(doc))), &arena),
         Ok((doc, _, Some(_))) => {
             let value = arena.json(stamped_value(&doc));
-            f(Some(lint::view::V::Json(value)), &arena)
+            f(Some(view::V::Json(value)), &arena)
         }
         Err(_) => f(None, &arena),
     };

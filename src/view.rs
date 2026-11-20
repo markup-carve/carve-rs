@@ -1,5 +1,5 @@
 //! A read-only view of the arena tree with the `serde_json::Value` read API the
-//! lint rules use. Keys, entry order and null handling follow the tree's serde
+//! lint rules and the writer use. Keys, entry order and null handling follow the tree's serde
 //! output (`build.rs` generates the node lookups), so a rule reads exactly what
 //! it read from `serde_json::to_value` of the tree, without building that copy.
 
@@ -421,8 +421,8 @@ mod tests {
 
     #[test]
     fn view_reads_what_serde_writes() {
-        let cases: Value = serde_json::from_str(include_str!("../../tests/data/lint-cases.json"))
-            .unwrap_or_default();
+        let cases: Value =
+            serde_json::from_str(include_str!("../tests/data/lint-cases.json")).unwrap_or_default();
         let mut inputs: Vec<String> = cases
             .as_array()
             .into_iter()

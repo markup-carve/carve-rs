@@ -309,7 +309,7 @@ include!(concat!(env!("OUT_DIR"), "/ast_conv_gen.rs"));
 )]
 mod view_gen {
     use super::*;
-    use crate::lint::view::V;
+    use crate::view::V;
 
     include!(concat!(env!("OUT_DIR"), "/ast_view_gen.rs"));
 }

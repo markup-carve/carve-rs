@@ -13,9 +13,7 @@ mod includes;
 mod legacy;
 mod lines;
 mod nodes;
-pub(crate) mod view;
-
-use view::V;
+use crate::view::V;
 
 /// Rule switches and platform selection for a lint run.
 #[derive(Debug, Clone, Default)]
