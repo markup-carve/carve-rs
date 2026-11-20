@@ -44,9 +44,8 @@ pub struct Order<'r, 'a> {
     /// The note of each definition, by the address of the definition.
     note_of_def: AddrMap<usize, usize>,
     /// With [`Order::build_collecting`]: the nodes of `every_node`, gathered
-    /// on the walk, and whether the walk moved off document order.
+    /// on the walk; dropped once the walk leaves document order.
     found: Option<Vec<&'r Node<'a>>>,
-    moved: bool,
 }
 
 /// Where a footnote reference finds its definition.
@@ -123,10 +122,9 @@ impl<'r, 'a> Order<'r, 'a> {
     }
 
     /// The nodes `every_node` gives, where the walk met them in the same
-    /// order: no note, no skipped definition and no expanded include moved it.
+    /// order: no note, no skipped definition and no expanded include.
     pub(crate) fn take_found(&mut self) -> Option<Vec<&'r Node<'a>>> {
-        let found = self.found.take();
-        found.filter(|_| !self.moved)
+        self.found.take()
     }
 
     fn build_inner(
@@ -143,8 +141,7 @@ impl<'r, 'a> Order<'r, 'a> {
             }
         };
         let mut o = Order {
-            found: collect.then(Vec::new),
-            moved: files.is_some(),
+            found: (collect && files.is_none()).then(Vec::new),
             ..Order::default()
         };
         let top = Ctx {
@@ -154,7 +151,7 @@ impl<'r, 'a> Order<'r, 'a> {
         };
         for c in doc.children.iter() {
             if matches!(c, Node::Footnote(_)) {
-                o.moved = true;
+                o.found = None;
             } else {
                 o.walk(c, &defs, top, 1);
             }
@@ -183,11 +180,7 @@ impl<'r, 'a> Order<'r, 'a> {
         if depth > crate::resolve::WALK_CAP {
             return;
         }
-        if let Some(found) = self.found.as_mut()
-            && crate::resolve::gathered(n)
-        {
-            found.push(n);
-        }
+        self.gather(n);
         // No reader of the order looks at these leaves.
         if matches!(
             n,
@@ -205,12 +198,6 @@ impl<'r, 'a> Order<'r, 'a> {
             in_marked_figure: ctx.in_marked_figure,
             note: ctx.note,
         });
-        match n {
-            Node::FootnoteRef(_) | Node::Footnote(_) | Node::InlineFootnote(_) => {
-                self.moved = true;
-            }
-            _ => {}
-        }
         match n {
             Node::FootnoteRef(r) => {
                 if let Some(def) = defs.get(n, r.key) {
@@ -255,6 +242,27 @@ impl<'r, 'a> Order<'r, 'a> {
                 depth + 1,
             );
         }
+        self.gather_columns(n, depth);
+    }
+
+    /// Adds `n` to the gathered nodes. A note leaves document order: the
+    /// gathered list is dropped and `every_node` runs instead.
+    fn gather(&mut self, n: &'r Node<'a>) {
+        let Some(found) = self.found.as_mut() else {
+            return;
+        };
+        if matches!(
+            n,
+            Node::FootnoteRef(_) | Node::Footnote(_) | Node::InlineFootnote(_)
+        ) {
+            self.found = None;
+        } else if crate::resolve::gathered(n) {
+            found.push(n);
+        }
+    }
+
+    /// `every_node` reads table columns after the slots; the walk does not.
+    fn gather_columns(&mut self, n: &'r Node<'a>, depth: usize) {
         if let (Node::Table(t), Some(found)) = (n, self.found.as_mut()) {
             crate::resolve::every_node(t.columns, found, depth + 1);
         }
