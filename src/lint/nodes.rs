@@ -296,9 +296,13 @@ fn list_between_columns(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     );
 }
 
-fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
-    if !matches!(
-        item.node.get("type").and_then(Value::as_str),
+fn list_item_block_opener(node: &Value, source: &str, from: usize) -> bool {
+    if node["type"] == "paragraph" {
+        return node.get("attrs").is_some()
+            && source.get(from..).is_some_and(|s| s.starts_with('{'));
+    }
+    matches!(
+        node.get("type").and_then(Value::as_str),
         Some(
             "block_quote"
                 | "heading"
@@ -311,12 +315,16 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
                 | "thematic_break"
                 | "table"
         )
-    ) {
-        return;
-    }
+    )
+}
+
+fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     let Some((from, _)) = bounds(item.node) else {
         return;
     };
+    if !list_item_block_opener(item.node, sink.source, from) {
+        return;
+    }
     let mut path = item.path.as_str();
     let parent = loop {
         let Some((owner_path, _)) = path.rsplit_once("/children/") else {

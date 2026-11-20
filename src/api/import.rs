@@ -256,25 +256,26 @@ impl super::Carve {
         opts: ImportOptions,
         limits: &LossOptions,
     ) -> Result<Imported, Error> {
-        // The importer builds this tree from checked nodes and applies its own
-        // depth limits. Avoid serializing and re-reading it as external JSON.
+        // The importer already owns the checked JSON value. The public tree
+        // needs its wire form, but the writer can read this value directly.
+        let settings = crate::write::Settings {
+            extensions: self
+                .standard
+                .tabs
+                .then(|| "carve.tabs".to_string())
+                .into_iter()
+                .collect(),
+            ..crate::write::Settings::default()
+        };
+        let (source, writer_diagnostics) = crate::write::write_value(&imported.tree, &settings);
         let tree = Tree::trusted(imported.tree, None).map_err(|e| Error::ImportInput {
             message: format!("the imported tree cannot be decoded: {e}"),
         })?;
         let allowed = |e: &Entry| limits.allow_losses.contains(&e.code);
         let mut diagnostics = imported.diagnostics;
         diagnostics.retain(|e| !(e.channel == "render-loss" && allowed(e)));
-        let written = match self.write_with_diagnostics(&tree, &super::WriteOptions::default()) {
-            Err(Error::Write { .. }) if opts.strict_losses => {
-                let mut codes = losses(&diagnostics);
-                codes.push("writer-refused".into());
-                return Err(Error::Render { codes });
-            }
-            other => other?,
-        };
         diagnostics.extend(
-            written
-                .diagnostics
+            writer_diagnostics
                 .into_iter()
                 .filter(|e| !(e.channel == "render-loss" && allowed(e))),
         );
@@ -296,7 +297,7 @@ impl super::Carve {
         });
         Ok(Imported {
             tree,
-            source: written.output,
+            source,
             diagnostics,
             suppressed_diagnostics,
         })
