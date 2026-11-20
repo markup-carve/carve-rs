@@ -190,8 +190,10 @@ impl super::Carve {
         opts: ImportOptions,
         limits: &LossOptions,
     ) -> Result<Imported, Error> {
-        let tree = Tree::from_value(&imported.tree).map_err(|e| Error::ImportInput {
-            message: format!("the imported tree fails the reader checks: {e}"),
+        // The importer builds this tree from checked nodes and applies its own
+        // depth limits. Avoid serializing and re-reading it as external JSON.
+        let tree = Tree::trusted(imported.tree, None).map_err(|e| Error::ImportInput {
+            message: format!("the imported tree cannot be decoded: {e}"),
         })?;
         let allowed = |e: &Entry| limits.allow_losses.contains(&e.code);
         let mut diagnostics = imported.diagnostics;
