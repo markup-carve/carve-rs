@@ -33,6 +33,13 @@ fn core(source: &str) -> String {
     api::render(source, &Options::default()).unwrap()
 }
 
+fn code_text(output: &str) -> &str {
+    output
+        .split_once("<code class=\"language-php\">")
+        .and_then(|(_, rest)| rest.split_once("</code>"))
+        .map_or_else(|| panic!("no code element in {output}"), |(text, _)| text)
+}
+
 #[test]
 fn details_renders_a_disclosure_with_the_title_as_summary() {
     assert_eq!(
@@ -99,12 +106,7 @@ fn details_preserves_fenced_code_text_at_every_depth() {
     ];
     for (name, source, expected) in cases {
         let output = html(source, extensions::details());
-        let code = output
-            .split_once("<code class=\"language-php\">")
-            .and_then(|(_, rest)| rest.split_once("</code>"))
-            .map(|(text, _)| text)
-            .unwrap_or_else(|| panic!("{name}: no code element in {output}"));
-        assert_eq!(code, expected, "{name}: {output}");
+        assert_eq!(code_text(&output), expected, "{name}: {output}");
     }
 
     assert_eq!(
@@ -124,10 +126,12 @@ fn details_preserves_generated_fence_payloads() {
         } else {
             format!("line-{n}\n  value-{n}\n")
         };
-        let indented = payload
-            .lines()
-            .map(|line| format!("  {line}\n"))
-            .collect::<String>();
+        let mut indented = String::new();
+        for line in payload.lines() {
+            indented.push_str("  ");
+            indented.push_str(line);
+            indented.push('\n');
+        }
         let sources = [
             format!("::: details \"Req\"\n```php\n{payload}```\n:::\n"),
             format!("- item\n\n  ::: details \"Req\"\n  ```php\n{indented}  ```\n  :::\n"),
@@ -138,12 +142,7 @@ fn details_preserves_generated_fence_payloads() {
         ];
         for source in sources {
             let output = html(&source, extensions::details());
-            let code = output
-                .split_once("<code class=\"language-php\">")
-                .and_then(|(_, rest)| rest.split_once("</code>"))
-                .map(|(text, _)| text)
-                .unwrap_or_else(|| panic!("no code element in {output}"));
-            assert_eq!(code, payload, "variant {n}: {source}");
+            assert_eq!(code_text(&output), payload, "variant {n}: {source}");
         }
     }
 }
