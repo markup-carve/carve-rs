@@ -390,6 +390,7 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     let Some((from, _)) = bounds(item.node) else {
         return;
     };
+    let from = opener_behind_attributes(sink.source, from);
     let before = sink.source.get(..from).unwrap_or("");
     let prefix = before.rsplit('\n').next().unwrap_or("");
     let raw = sink.source.get(from..).unwrap_or("");
@@ -479,7 +480,12 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     sink.emit_range(
         "block-opener-overindented",
         from,
-        from + if kind == "code fence" { 1 } else { marker },
+        // The whole opening mark; a quote and a table row open with one character (carve#6192).
+        from + if matches!(kind, "quote" | "table row") {
+            1
+        } else {
+            marker
+        },
         &item.path,
         &[
             ("kind", kind),
@@ -509,6 +515,55 @@ fn div_owner_column(item: &Item<'_>, root: &Value, source: &str) -> Option<(usiz
         }
     }
     None
+}
+
+/// Where the opening mark of a block stands: an attributed block starts at its attribute lines (C2-W-138).
+fn opener_behind_attributes(source: &str, mut from: usize) -> usize {
+    loop {
+        let line_start = source
+            .get(..from)
+            .and_then(|before| before.rfind('\n'))
+            .map_or(0, |at| at + 1);
+        let Some(end) = source
+            .get(from..)
+            .and_then(|rest| rest.find('\n'))
+            .map(|at| from + at)
+        else {
+            return from;
+        };
+        let rest = source
+            .get(from..end)
+            .unwrap_or("")
+            .trim_end_matches([' ', '\t']);
+        let attribute = rest.len() >= 2
+            && rest.starts_with('{')
+            && rest.ends_with('}')
+            && !rest[1..rest.len() - 1].contains(['{', '}']);
+        if !attribute {
+            return from;
+        }
+        // The opener may stand at another indent than its attribute line: find its first character on its own line.
+        let next = source.get(end + 1..).unwrap_or("");
+        let bytes = next.as_bytes();
+        let bytes = bytes
+            .get(..next.find('\n').unwrap_or(next.len()))
+            .unwrap_or(bytes);
+        let mut at = (from - line_start).min(bytes.len());
+        while bytes
+            .get(at)
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            at += 1;
+        }
+        while at > 0
+            && bytes
+                .get(at - 1)
+                .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'>'))
+        {
+            at -= 1;
+        }
+        from = end + 1 + at;
+    }
 }
 
 fn check_block_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
