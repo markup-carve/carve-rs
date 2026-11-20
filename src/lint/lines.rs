@@ -1133,10 +1133,7 @@ fn prose_context(
         );
     }
     if paragraph_continuation(line, previous) {
-        if line.literal_quote_prefix
-            && matches!(line.kind.as_str(), "paragraph" | "caption")
-            && quote_has_visible_content(line)
-        {
+        if quote_opener_candidate(line) {
             let at = line.text.len() - line.text.trim_start().len();
             sink.emit(
                 "block-opener-without-blank-line",
@@ -1167,11 +1164,14 @@ fn prose_context(
     caption_looking(line, index, lines, sink);
 }
 
-fn quote_has_visible_content(line: &Line) -> bool {
-    line.text
-        .trim_start()
-        .strip_prefix('>')
-        .is_some_and(|tail| tail.bytes().any(|b| b != 0 && !b.is_ascii_whitespace()))
+fn quote_opener_candidate(line: &Line) -> bool {
+    line.literal_quote_prefix
+        && matches!(line.kind.as_str(), "paragraph" | "caption")
+        && line
+            .text
+            .trim_start()
+            .strip_prefix('>')
+            .is_some_and(|tail| tail.bytes().any(|b| b != 0 && !b.is_ascii_whitespace()))
 }
 
 fn paragraph_continuation(line: &Line, previous: Option<&Line>) -> bool {
