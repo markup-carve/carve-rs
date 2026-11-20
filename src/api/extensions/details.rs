@@ -103,7 +103,8 @@ fn container(
 ) -> String {
     let indent = "  ".repeat(cx.block_depth());
     let mut lines = vec![head.to_string(), format!("{indent}  {inner}")];
-    if raw_body || body.contains("<textarea") || (body.contains("<pre") && !body.contains("<code")) {
+    if raw_body || body.contains("<textarea") || (body.contains("<pre") && !body.contains("<code"))
+    {
         lines.push(body.to_string());
     } else if !body.is_empty() {
         let mut in_code = false;
