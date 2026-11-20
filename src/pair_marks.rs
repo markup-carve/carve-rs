@@ -39,6 +39,9 @@ fn closer_space(ch: char) -> bool {
     zs(ch) || matches!(ch, '\t' | '\n' | '\r')
 }
 fn can_open(text: &str, mark: &str, id: &str, at: usize) -> bool {
+    if !id.starts_with("deprecated-bare-") {
+        return true;
+    }
     if joined(text, mark, id, at) || escaped(text, at) {
         return false;
     }
