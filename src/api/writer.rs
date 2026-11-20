@@ -81,6 +81,7 @@ impl Writer for CarveWriter {
             align_tables: opts.align_tables,
             extensions: opts.extensions.clone(),
             layout: None,
+            source: None,
         }
         .with_layout(opts.layout.as_ref().filter(|_| !opts.normalize));
         let (output, diagnostics) = crate::write::write_value(&doc, &settings);

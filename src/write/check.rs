@@ -54,6 +54,25 @@ pub fn parse_chunk_keys(w: &mut Writer<'_>, src: &str, keys: Option<&HashSet<Str
     v
 }
 
+/// The tree of the whole written document, for the check of C2-W-144; it is
+/// no repair parse of a group, so it counts toward no limit.
+pub fn parse_written(w: &Writer<'_>, src: &str) -> Value {
+    let scope = crate::tree::Scope {
+        link_keys: w.link_keys.clone(),
+        abbreviations: w.abbreviations.clone(),
+        findings: Vec::new(),
+    };
+    let source = crate::source::Source::new(src);
+    let out = crate::block::scan(&source);
+    let arena = crate::Arena::for_input(src);
+    let (doc, _) = crate::tree::build_scoped(&source, &arena, out.events, Some(&scope));
+    let mut v = serde_json::to_value(&doc).unwrap_or_default();
+    if !w.extensions.is_empty() {
+        super::extension::apply_claims(&mut v, &w.extensions, src);
+    }
+    v
+}
+
 /// C2-W-133: whether the repair of the group has parsed more than its limit.
 pub fn exhausted(w: &Writer<'_>) -> bool {
     w.work_chars > w.work_limit

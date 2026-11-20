@@ -850,6 +850,7 @@ impl Carve {
             align_tables: opts.align_tables,
             extensions: opts.extensions.clone(),
             layout: None,
+            source: None,
         };
         // C2-W-127: `normalize` writes as if there were no sidecar. Positions of a
         // byte input with malformed UTF-8 do not index the replaced text.
@@ -859,6 +860,10 @@ impl Carve {
             Input::Bytes(b) => std::str::from_utf8(b).is_ok(),
         };
         let src = (valid && !opts.normalize).then_some(text.as_ref());
+        let settings = crate::write::Settings {
+            source: valid.then(|| text.to_string()),
+            ..settings
+        };
         let (output, written) = crate::write::format_tree(&doc, src, &settings);
         // C2-N-005: a processor whose output is Carve source expands nothing.
         let mut diagnostics: Vec<Entry> = parsed
