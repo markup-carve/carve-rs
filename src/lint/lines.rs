@@ -1133,7 +1133,14 @@ fn prose_context(
         );
     }
     if paragraph_continuation(line, previous) {
-        if line.literal_quote_prefix && matches!(line.kind.as_str(), "paragraph" | "caption") {
+        if line.literal_quote_prefix
+            && matches!(line.kind.as_str(), "paragraph" | "caption")
+            && line
+                .text
+                .trim_start()
+                .strip_prefix('>')
+                .is_some_and(|tail| tail.bytes().any(|b| b != 0 && !b.is_ascii_whitespace()))
+        {
             let at = line.text.len() - line.text.trim_start().len();
             sink.emit(
                 "block-opener-without-blank-line",
