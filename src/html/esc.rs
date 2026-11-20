@@ -29,13 +29,55 @@ static TEXT_BYTES: ByteSet = ByteSet::new(b"&<>", CONTROLS, Some(0x7F));
 /// The same for attribute values, quotes included.
 static ATTR_BYTES: ByteSet = ByteSet::new(b"&<>\"'", CONTROLS, Some(0x7F));
 
+const ONES: u64 = u64::from_ne_bytes([0x01; 8]);
+const HIGHS: u64 = u64::from_ne_bytes([0x80; 8]);
+
+/// The high bit of each byte of `v` that is zero; exact for the lowest one.
+const fn zero_bytes(v: u64) -> u64 {
+    v.wrapping_sub(ONES) & !v & HIGHS
+}
+
+/// The length of the leading run of printable ASCII in `b` that holds none of
+/// `&<>` and, with `quotes`, none of `"'`: bytes `look` never matches.
+fn plain_run(b: &[u8], quotes: bool) -> usize {
+    let mut at = 0;
+    for chunk in b.chunks_exact(8) {
+        let x = u64::from_le_bytes(chunk.try_into().unwrap_or([0; 8]));
+        let below = x.wrapping_sub(ONES * 0x20) & !x;
+        let above = x.wrapping_add(ONES) | x;
+        let mut hit = (below | above) & HIGHS
+            | zero_bytes(x ^ (ONES * u64::from(b'&')))
+            | zero_bytes(x ^ (ONES * u64::from(b'<')))
+            | zero_bytes(x ^ (ONES * u64::from(b'>')));
+        if quotes {
+            hit |= zero_bytes(x ^ (ONES * u64::from(b'"')))
+                | zero_bytes(x ^ (ONES * u64::from(b'\'')));
+        }
+        if hit != 0 {
+            return at + (hit.trailing_zeros() / 8) as usize;
+        }
+        at += 8;
+    }
+    at
+}
+
 /// Writes `s` with each character `rep` maps replaced; only the characters
-/// that start at a byte of `look` are tested.
-fn escape(s: &str, out: &mut String, look: &ByteSet, rep: impl Fn(char) -> Option<&'static str>) {
+/// that start at a byte of `look` are tested. `quotes` tells `plain_run`
+/// whether `look` holds the quotes.
+fn escape(
+    s: &str,
+    out: &mut String,
+    look: &ByteSet,
+    quotes: bool,
+    rep: impl Fn(char) -> Option<&'static str>,
+) {
     let b = s.as_bytes();
     let mut from = 0;
     let mut i = 0;
-    while let Some(k) = b.get(i..).and_then(|r| look.find(r)) {
+    while let Some(k) = b.get(i..).and_then(|r| {
+        let skip = plain_run(r, quotes);
+        r.get(skip..).and_then(|t| look.find(t)).map(|k| k + skip)
+    }) {
         i += k;
         let Some(c) = s.get(i..).and_then(|r| r.chars().next()) else {
             break;
@@ -77,7 +119,7 @@ fn attr_rep(c: char) -> Option<&'static str> {
 
 /// Appends text content (C2-H-002).
 pub fn text(s: &str, out: &mut String) {
-    escape(s, out, &TEXT_BYTES, text_rep);
+    escape(s, out, &TEXT_BYTES, false, text_rep);
 }
 
 /// Text content as a new string.
@@ -91,7 +133,7 @@ pub fn text_str(s: &str) -> String {
 /// Appends an attribute value (C2-H-003): a no-break space and the
 /// bidirectional controls stay.
 pub fn attr(s: &str, out: &mut String) {
-    escape(s, out, &ATTR_BYTES, attr_rep);
+    escape(s, out, &ATTR_BYTES, true, attr_rep);
 }
 
 #[cfg(test)]
@@ -139,6 +181,22 @@ mod tests {
             let mut a = String::new();
             attr(s, &mut a);
             assert_eq!(a, reference(s, attr_rep));
+        }
+    }
+
+    #[test]
+    fn plain_run_stops_at_the_first_byte_the_table_matches() {
+        for (look, quotes) in [(&TEXT_BYTES, false), (&ATTR_BYTES, true)] {
+            for byte in 0..=255u8 {
+                for at in 0..20 {
+                    let mut b = vec![b'a'; 20];
+                    if let Some(x) = b.get_mut(at) {
+                        *x = byte;
+                    }
+                    let want = look.find(&b).unwrap_or(b.len()).min(b.len() / 8 * 8);
+                    assert!(plain_run(&b, quotes) == want, "byte {byte} at {at}");
+                }
+            }
         }
     }
 
