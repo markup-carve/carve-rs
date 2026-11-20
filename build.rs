@@ -294,8 +294,8 @@ fn gen_ast(schema: &Value, slots: &Value) -> [String; 4] {
 /// The view of a field `x` (a reference to the field's value without its `Option`), as serde writes it.
 fn view_expr(f: &Field) -> String {
     match &f.kind {
-        FieldKind::Nodes => "V::Nodes(&**x)".into(),
-        FieldKind::NodeBox => "V::Node(&**x)".into(),
+        FieldKind::Nodes => "V::Nodes(x)".into(),
+        FieldKind::NodeBox => "V::Node(x)".into(),
         FieldKind::Str => "V::Str(x)".into(),
         FieldKind::Strings => "V::Strs(x)".into(),
         FieldKind::Int => "V::Int(*x)".into(),
@@ -313,7 +313,7 @@ fn view_expr(f: &Field) -> String {
     }
 }
 
-/// `view_get` and `view_each` of a node struct: its JSON keys, `type` included, in serde_json's map order.
+/// `view_get` and `view_each` of a node struct: its JSON keys, `type` included, in `serde_json` map order.
 fn write_view(out: &mut String, n: &NodeDef) {
     let ty = &n.ty;
     let mut fields: Vec<&Field> = n.fields.iter().collect();

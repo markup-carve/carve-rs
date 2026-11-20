@@ -29,7 +29,7 @@ pub(crate) enum V<'a> {
 }
 
 impl<'a> V<'a> {
-    /// serde_json writes a non-finite float as `null`.
+    /// `serde_json` writes a non-finite float as `null`.
     pub(crate) const fn num(value: f64) -> Self {
         if value.is_finite() {
             Self::Num(value)
@@ -194,7 +194,7 @@ impl<'a> V<'a> {
         self.is_object() || self.is_array()
     }
 
-    /// Calls `f` with each key and value of an object, in serde_json's map order.
+    /// Calls `f` with each key and value of an object, in `serde_json` map order.
     pub(crate) fn each(self, f: &mut dyn FnMut(&'a str, Self)) {
         match self {
             Self::Doc(doc) => doc.view_each(f),
@@ -415,12 +415,12 @@ mod tests {
 
     #[test]
     fn view_reads_what_serde_writes() {
-        let cases: Value =
-            serde_json::from_str(include_str!("../../tests/data/lint-cases.json")).unwrap();
+        let cases: Value = serde_json::from_str(include_str!("../../tests/data/lint-cases.json"))
+            .unwrap_or_default();
         let mut inputs: Vec<String> = cases
             .as_array()
-            .unwrap()
-            .iter()
+            .into_iter()
+            .flatten()
             .flat_map(|case| [case["trigger"].as_str(), case["near"].as_str()])
             .flatten()
             .map(str::to_string)
@@ -437,16 +437,16 @@ mod tests {
                 &crate::Options::default(),
                 true,
                 |tree, _| {
-                    let tree = tree.unwrap();
                     assert_eq!(
-                        to_json(tree),
-                        crate::tree_json_value(input, &crate::Options::default()).unwrap(),
+                        tree.map(to_json),
+                        crate::tree_json_value(input, &crate::Options::default()),
                         "{input}"
                     );
-                    true
+                    tree.is_some()
                 },
             );
-            assert!(checked);
+            assert!(checked, "{input}");
         }
+        assert!(inputs.len() > 100);
     }
 }

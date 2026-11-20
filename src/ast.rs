@@ -301,6 +301,12 @@ pub mod owned {
 include!(concat!(env!("OUT_DIR"), "/ast_gen.rs"));
 include!(concat!(env!("OUT_DIR"), "/ast_conv_gen.rs"));
 
+// Generated field lookups for the lint view: one closure per field keeps the generator uniform.
+#[allow(
+    clippy::wildcard_imports,
+    clippy::redundant_closure,
+    clippy::cognitive_complexity
+)]
 mod view_gen {
     use super::*;
     use crate::lint::view::V;

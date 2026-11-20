@@ -54,10 +54,10 @@ impl Item<'_> {
         self.path.get_or_init(|| {
             use std::fmt::Write as _;
             let mut segments = Vec::new();
-            let mut current = self.path_node.as_deref();
+            let mut current = self.path_node;
             while let Some(node) = current {
                 segments.push(node.segment);
-                current = node.previous.as_deref();
+                current = node.previous;
             }
             let mut path =
                 String::with_capacity(self.path_node.as_ref().map_or(0, |node| node.len));
@@ -82,10 +82,10 @@ struct Parent<'a> {
 }
 
 fn parent_nodes<'i, 'a>(item: &'i Item<'a>) -> impl Iterator<Item = &'i Parent<'a>> {
-    std::iter::successors(item.parents.as_deref(), |parent| parent.previous.as_deref())
+    std::iter::successors(item.parents, |parent| parent.previous)
 }
 
-fn parent_kinds<'i, 'a>(item: &'i Item<'a>) -> impl Iterator<Item = &'a str> {
+fn parent_kinds<'a>(item: &Item<'a>) -> impl Iterator<Item = &'a str> {
     parent_nodes(item).map(|parent| parent.kind)
 }
 
@@ -98,9 +98,7 @@ struct Ancestor<'a> {
 }
 
 fn ancestors<'i, 'a>(item: &'i Item<'a>) -> impl Iterator<Item = &'i Ancestor<'a>> {
-    std::iter::successors(item.ancestors.as_deref(), |ancestor| {
-        ancestor.parent.as_deref()
-    })
+    std::iter::successors(item.ancestors, |ancestor| ancestor.parent)
 }
 
 struct Sink<'a> {
@@ -222,7 +220,7 @@ fn collect<'a>(root: V<'a>, arena: &'a Arena) -> Vec<Item<'a>> {
                     return;
                 }
                 let child_ancestor = if key == "children" {
-                    Some(&*child_ancestor(
+                    Some(child_ancestor(
                         arena,
                         value,
                         path.map_or(0, |node| node.len),
@@ -406,23 +404,22 @@ fn in_children(path: Option<&PathNode<'_>>) -> bool {
         matches!(node.segment, Segment::Index(_))
             && node
                 .previous
-                .as_deref()
                 .is_some_and(|key| matches!(key.segment, Segment::Key("children")))
     })
 }
 
 /// The node whose `children` array holds this item, and that node's own holder.
 fn holders<'a>(item: &Item<'a>) -> (Option<V<'a>>, Option<V<'a>>) {
-    let path = item.path_node.as_deref();
+    let path = item.path_node;
     if !in_children(path) {
         return (None, None);
     }
-    let parent = item.ancestors.as_deref();
+    let parent = item.ancestors;
     let parent_path = path
-        .and_then(|node| node.previous.as_deref())
-        .and_then(|node| node.previous.as_deref());
+        .and_then(|node| node.previous)
+        .and_then(|node| node.previous);
     let grand = parent
-        .and_then(|a| a.parent.as_deref())
+        .and_then(|a| a.parent)
         .filter(|_| in_children(parent_path));
     (parent.map(|a| a.node), grand.map(|a| a.node))
 }
@@ -987,12 +984,12 @@ fn list_spacing(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn list_indent<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
-    let path = item.path_node.as_deref();
+    let path = item.path_node;
     let parent = if in_children(path) {
         // The document's own path is empty and resolves to nothing.
-        path.and_then(|node| node.previous.as_deref())
-            .and_then(|node| node.previous.as_deref())
-            .and_then(|_| item.ancestors.as_deref().map(|a| a.node))
+        path.and_then(|node| node.previous)
+            .and_then(|node| node.previous)
+            .and_then(|_| item.ancestors.map(|a| a.node))
     } else {
         item.path()
             .rsplit_once("/children/")
@@ -1005,7 +1002,7 @@ fn list_indent<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         .node
         .at("children")
         .as_array()
-        .and_then(|children| children.first())
+        .and_then(Arr::first)
         .and_then(|first| field(first, "/pos/startColumn").as_u64());
     if let Some(first_column) = first_column {
         for (index, child) in item
@@ -1536,9 +1533,9 @@ fn table_cells(
         let text = cell
             .at("children")
             .as_array()
-            .and_then(|a| a.first())
+            .and_then(Arr::first)
             .and_then(|p| p.at("children").as_array())
-            .and_then(|a| a.first())
+            .and_then(Arr::first)
             .and_then(|text| text.at("value").as_str())
             .unwrap_or("");
         cell_alignment(cell, raw, text, &path, sink);
@@ -1869,7 +1866,7 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     text_platform_refs(item, sink, &value, from);
     djot_text(item, sink, &value, from);
     unclosed_emphasis(item, sink, from);
-    let parent = item.parents.as_deref().map_or("", |parent| parent.kind);
+    let parent = item.parents.map_or("", |parent| parent.kind);
     let delimiter = if parent == "strong" {
         "{*"
     } else if parent == "emphasis" {
