@@ -726,5 +726,12 @@
     "input": "| x | y |\n^ <i>\n",
     "code": "bare-html-tag",
     "reported": false
+  },
+{
+    "id": "blockquote-marker-without-space#CC-1157",
+    "origin": "spec:CC-1157",
+    "input": "::: |\n>a\n:::\n",
+    "code": "blockquote-marker-without-space",
+    "reported": true
   }
 ]

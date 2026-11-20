@@ -204,8 +204,16 @@ fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             quotes: fact.quotes,
             table_row: fact.flags & TABLE_ROW != 0,
             start,
-            path: paragraph.map_or_else(String::new, |r| r.path.to_string()),
-            kind: paragraph.map_or_else(String::new, |r| r.kind.clone()),
+            path: paragraph
+                .or(fact.line_block)
+                .map_or_else(String::new, |r| r.path.to_string()),
+            kind: paragraph.map_or_else(
+                || {
+                    fact.line_block
+                        .map_or_else(String::new, |_| "line".to_string())
+                },
+                |r| r.kind.clone(),
+            ),
             paragraph: paragraph.is_some(),
             paragraph_in_div: paragraph
                 .and_then(|range| range.path.rsplit_once("/children/"))
@@ -280,7 +288,7 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
         mark_content(&mut facts, range);
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
-        if paragraph_like || flags != 0 {
+        if paragraph_like || flags != 0 || kind == "line_block" {
             let first = range.start_line.max(1) - 1;
             let covered = facts.get_mut(first..range.end_line.min(count));
             for fact in covered.into_iter().flatten() {
@@ -294,6 +302,9 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<L
                     })
                 {
                     fact.paragraph = Some(range);
+                }
+                if kind == "line_block" {
+                    fact.line_block = Some(range);
                 }
             }
         }
@@ -373,6 +384,7 @@ struct LineFacts<'r> {
     content: Option<usize>,
     quotes: usize,
     paragraph: Option<&'r Range>,
+    line_block: Option<&'r Range>,
     masks: Vec<&'r Range>,
 }
 
@@ -1398,12 +1410,12 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
     {
         return;
     }
-    if in_caption(line) {
-        return;
-    }
     let Some(at) = line.text.find('<') else {
         return;
     };
+    if in_caption(line) {
+        return;
+    }
     if source_escaped(line.text.as_bytes(), at) {
         return;
     }
@@ -1449,14 +1461,14 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     let starts = line.text.trim_start();
+    if !starts.starts_with("> ") {
+        return;
+    }
     if !matches!(
         line.kind.as_str(),
         "paragraph" | "heading" | "cell_paragraph"
     ) && !line.table_row
     {
-        return;
-    }
-    if !starts.starts_with("> ") {
         return;
     }
     if let Some(at) = line.text.find("[!")
