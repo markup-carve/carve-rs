@@ -77,19 +77,52 @@ fn attrs_with(node: &Value, base: &[&str], cx: &RenderContext<'_>) -> String {
     cx.attributes(&with_attrs(node, cls, key_values(attrs)))
 }
 
-fn has_raw_block(node: &Value) -> bool {
+fn raw_values(node: &Value) -> Vec<&str> {
+    let mut values = Vec::new();
     let mut pending = vec![node];
     while let Some(value) = pending.pop() {
         if value.get("type").and_then(Value::as_str) == Some("raw_block") {
-            return true;
+            if value.get("format").and_then(Value::as_str) == Some("html")
+                && let Some(raw) = value.get("value").and_then(Value::as_str)
+            {
+                values.push(raw);
+            }
+            continue;
         }
         match value {
             Value::Array(items) => pending.extend(items),
+            Value::Object(fields) if fields.contains_key("type") => {
+                pending.extend(
+                    [fields.get("children"), fields.get("slots")]
+                        .into_iter()
+                        .flatten(),
+                );
+            }
             Value::Object(fields) => pending.extend(fields.values()),
             _ => {}
         }
     }
-    false
+    values
+}
+
+fn raw_spans(body: &str, node: &Value) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    if let Some(slot) = node.pointer("/slots/body") {
+        for raw in raw_values(slot) {
+            let rendered = if body.contains(raw) {
+                raw
+            } else {
+                raw.trim_end_matches('\n')
+            };
+            if !rendered.is_empty() {
+                spans.extend(
+                    body.match_indices(rendered)
+                        .map(|(at, _)| (at, at + rendered.len())),
+                );
+            }
+        }
+    }
+    spans
 }
 
 /// Indent ordinary markup while preserving the bytes of literal bodies.
@@ -98,25 +131,25 @@ fn container(
     inner: &str,
     body: &str,
     tail: &str,
-    raw_body: bool,
+    node: &Value,
     cx: &RenderContext<'_>,
 ) -> String {
     let indent = "  ".repeat(cx.block_depth());
     let mut lines = vec![head.to_string(), format!("{indent}  {inner}")];
-    if !body.is_empty()
-        && (raw_body
-            || body.contains("<textarea")
-            || (body.contains("<pre") && !body.contains("<code")))
-    {
-        lines.push(body.to_string());
-    } else if !body.is_empty() {
+    if !body.is_empty() {
+        let raw = raw_spans(body, node);
         let mut in_code = false;
+        let mut in_pre = false;
+        let mut in_textarea = false;
+        let mut offset = 0;
         for line in body.split('\n') {
-            // Core code blocks put their literal value between these tags.
-            // Indenting a continuation line, including the closing-tag line,
-            // would change the value of the code element.
+            // Raw blocks stand at column zero. An extra prefix inside their
+            // value, or after a pre/code/textarea newline, changes its text.
+            let in_raw = raw
+                .iter()
+                .any(|&(start, end)| start <= offset && offset < end);
             let starts_code = line.contains("<pre") && line.contains("<code");
-            if in_code {
+            if in_raw || in_code || in_pre || in_textarea {
                 lines.push(line.to_string());
             } else if line.is_empty() {
                 lines.push(indent.clone());
@@ -129,6 +162,19 @@ fn container(
             if in_code && line.contains("</code>") {
                 in_code = false;
             }
+            if line.contains("<pre") && !starts_code {
+                in_pre = true;
+            }
+            if line.contains("</pre>") {
+                in_pre = false;
+            }
+            if line.contains("<textarea") {
+                in_textarea = true;
+            }
+            if line.contains("</textarea>") {
+                in_textarea = false;
+            }
+            offset += line.len() + 1;
         }
     }
     lines.push(format!("{indent}{tail}"));
@@ -178,7 +224,7 @@ fn render_disclosure(
         &format!("<summary>{}</summary>", summary(node, label, cx)?),
         &body(node, cx)?,
         "</details>",
-        node.pointer("/slots/body").is_some_and(has_raw_block),
+        node,
         cx,
     ))
 }
@@ -255,7 +301,7 @@ impl Renderer for SpoilerBlock {
             ),
             &body(node, cx)?,
             "</section>",
-            node.pointer("/slots/body").is_some_and(has_raw_block),
+            node,
             cx,
         ))
     }

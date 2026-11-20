@@ -77,6 +77,18 @@ fn details_keeps_code_payload_bytes() {
         },
     );
     assert!(raw.contains("<div>\n x\n</div>"), "{raw}");
+    let mixed = html_with(
+        "::: details \"Req\"\nbefore\n\n```=html\n<div>\n x\n</div>\n```\n\nafter\n:::\n",
+        extensions::details(),
+        &Options {
+            raw_html: true,
+            ..Options::default()
+        },
+    );
+    assert!(
+        mixed.contains("  <p>before</p>\n<div>\n x\n</div>\n  <p>after</p>"),
+        "{mixed}"
+    );
     let textarea = html_with(
         "::: details \"Req\"\n```=html\n<textarea>\n x\n</textarea>\n```\n:::\n",
         extensions::details(),
