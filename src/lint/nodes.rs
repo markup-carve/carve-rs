@@ -314,6 +314,9 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
     ) {
         return;
     }
+    let Some((from, _)) = bounds(item.node) else {
+        return;
+    };
     let mut path = item.path.as_str();
     let parent = loop {
         let Some((owner_path, _)) = path.rsplit_once("/children/") else {
@@ -327,11 +330,13 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
             Some("div" | "admonition" | "directive" | "figure_group" | "definition_list") => {
                 path = owner_path;
             }
+            Some("paragraph")
+                if item.node["type"] == "image"
+                    && bounds(owner).is_some_and(|(start, _)| start == from) => {
+                path = owner_path;
+            }
             _ => return,
         }
-    };
-    let Some((from, _)) = bounds(item.node) else {
-        return;
     };
     let first = field(parent, "/children/0");
     if field(first, "/pos/startOffset").as_u64() == u64::try_from(from).ok() {

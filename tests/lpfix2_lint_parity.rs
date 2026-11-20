@@ -19,6 +19,13 @@ fn list_opener_uses_its_owner_and_visual_column() {
         spans("* a\n\n\t## H\n", "list-item-block-overindented"),
         vec![(6, 10)]
     );
+    assert_eq!(
+        spans(
+            "10. {{ x.crv }}\n\n     ![alt](i.png)\n",
+            "list-item-block-overindented"
+        ),
+        vec![(22, 35)]
+    );
 }
 
 #[test]

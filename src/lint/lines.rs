@@ -1118,20 +1118,7 @@ fn prose_context(
 ) {
     let (marker_at, marker_text) = leaf_after_quotes(line);
     let list_candidate = list_marker(marker_text);
-    if line.scope.container == ContainerKind::ListItem
-        && line.kind != "definition_term"
-        && list_candidate
-        && previous.is_some_and(|p| {
-            p.kind == "definition_term"
-                && p.content_start.is_some()
-                && p.scope.container == ContainerKind::ListItem
-                && visual_column(line, marker_at)
-                    > visual_column(
-                        p,
-                        p.text.len() - p.text.trim_start_matches([' ', '\t']).len(),
-                    )
-        })
-    {
+    if term_continuation_marker(line, previous, marker_at, list_candidate) {
         sink.emit(
             "description-term-multi-line",
             line.start + marker_at,
@@ -1155,14 +1142,7 @@ fn prose_context(
     }
     if list_candidate
         && (paragraph_continuation(line, previous)
-            || previous.is_some_and(|p| {
-                p.kind == "paragraph"
-                    && !p.text.trim().is_empty()
-                    && line.scope.container == ContainerKind::ListItem
-                    && p.path.rsplit_once("/children/").is_some_and(|(parent, _)| {
-                        !parent.is_empty() && line.path.starts_with(parent)
-                    })
-            })
+            || list_after_open_paragraph(line, previous)
             || previous.is_some_and(|p| {
                 p.kind == "definition_term" && !p.text.trim().is_empty() && line.scope.in_footnote
             }))
@@ -1178,6 +1158,38 @@ fn prose_context(
     bare_html(line, sink);
     github_alert(line, sink);
     caption_looking(line, index, lines, sink);
+}
+
+fn term_continuation_marker(
+    line: &Line,
+    previous: Option<&Line>,
+    marker_at: usize,
+    list_candidate: bool,
+) -> bool {
+    line.scope.container == ContainerKind::ListItem
+        && line.kind != "definition_term"
+        && list_candidate
+        && previous.is_some_and(|p| {
+            p.kind == "definition_term"
+                && p.content_start.is_some()
+                && p.scope.container == ContainerKind::ListItem
+                && visual_column(line, marker_at)
+                    > visual_column(
+                        p,
+                        p.text.len() - p.text.trim_start_matches([' ', '\t']).len(),
+                    )
+        })
+}
+
+fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
+    previous.is_some_and(|p| {
+        p.kind == "paragraph"
+            && !p.text.trim().is_empty()
+            && line.scope.container == ContainerKind::ListItem
+            && p.path
+                .rsplit_once("/children/")
+                .is_some_and(|(parent, _)| !parent.is_empty() && line.path.starts_with(parent))
+    })
 }
 
 fn quote_opener_candidate(line: &Line) -> bool {
