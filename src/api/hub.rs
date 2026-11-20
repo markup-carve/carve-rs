@@ -104,7 +104,8 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
             }
             NodeValue::HtmlBlock(block) => {
                 let literal = placeholder(sink, "html", &block.literal) + "\n";
-                node.data.borrow_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock::new(literal));
+                node.data.borrow_mut().value =
+                    NodeValue::HtmlBlock(NodeHtmlBlock { literal, ..block });
             }
             NodeValue::HtmlInline(text) => {
                 let span = format!(r#"<span data-carve-raw="html">{}</span>"#, escape(&text));
@@ -226,8 +227,15 @@ fn alert<'a>(arena: &'a comrak::Arena<'a>, quote: comrak::nodes::Node<'a>) {
         }
         Some(_) => return,
     }
-    let block =
-        |literal: String| arena.alloc(NodeValue::HtmlBlock(NodeHtmlBlock::new(literal)).into());
+    let block = |literal: String| {
+        arena.alloc(
+            NodeValue::HtmlBlock(NodeHtmlBlock {
+                literal,
+                ..NodeHtmlBlock::default()
+            })
+            .into(),
+        )
+    };
     quote.insert_before(block(format!("<aside class=\"admonition {kind}\">\n")));
     let children: Vec<_> = quote.children().collect();
     for child in children {

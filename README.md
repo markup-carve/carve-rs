@@ -2,6 +2,8 @@
 
 The Rust engine of the [Carve](https://markup-carve.github.io/carve/) markup language, version 0.2: parse, resolve, render HTML, format, lint and import. The crate is published as `carve-lang` and imported as `carve`; it also builds the `carve` command.
 
+Carve 0.2 requires Rust 1.88 or newer.
+
 Its public library is the module `carve::api`. The rest of the crate is engine internals: those modules are hidden from rustdoc and may change in any commit.
 
 The calls follow `spec/0.2/tooling.md` (C2-T-005), spelled the Rust way (C2-T-001): `parseWithDiagnostics` becomes `parse_with_diagnostics`, `strictLosses` becomes `strict_losses`. Run `cargo doc --open` for the full reference.

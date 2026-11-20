@@ -13,7 +13,7 @@ which the published crate does not carry.
 
 ### Breaking
 
-- The crate is now the Carve 0.2 engine: the `carve2` crate moves to the root as `carve-lang` (imported as `carve`), its library is `carve::api`, and the `carve2` binary, including the WASI `carve2 call`, is now `carve` (`carve call`). The 0.1 engine, its API, CLI, docs and the `experimental-event-parser` features are removed; `README.md` maps every 0.1 call to its 0.2 counterpart. The `fs` feature (default on) still removes every code path that opens a file. Rust 1.85 is the new minimum. The Markdown, plain-text and ANSI writers return as `markdown`, `plain` and `ansi` writer targets in a later change.
+- The crate is now the Carve 0.2 engine: the `carve2` crate moves to the root as `carve-lang` (imported as `carve`), its library is `carve::api`, and the `carve2` binary, including the WASI `carve2 call`, is now `carve` (`carve call`). The 0.1 engine, its API, CLI, docs and the `experimental-event-parser` features are removed; `README.md` maps every 0.1 call to its 0.2 counterpart. The `fs` feature (default on) still removes every code path that opens a file. Rust 1.88 is the new minimum. The Markdown, plain-text and ANSI writers return as `markdown`, `plain` and `ansi` writer targets in a later change.
 
 ### Fixes
 

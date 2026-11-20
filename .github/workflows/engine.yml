@@ -15,13 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  msrv:
+    name: Build on Rust 1.88
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check on the declared MSRV
+        run: cargo +1.88.0 check --locked
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.88.0
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Format
