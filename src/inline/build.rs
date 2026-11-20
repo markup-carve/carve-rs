@@ -6,7 +6,7 @@ use super::content::Content;
 use super::delim::Ctx;
 use super::events::Ev;
 use super::smart::{Out, Prev, Smart};
-use super::token::Kind;
+use super::token::{Kind, LinkTarget};
 use super::{Env, Scratch, abbr};
 use crate::Arena;
 use crate::ast::{
@@ -48,20 +48,17 @@ struct Builder<'r, 'e, 'a> {
     outs: Vec<Out>,
 }
 
-/// Builds the inline nodes of one content.
+/// Builds the inline nodes of one content; `next_flow` is per event, empty
+/// when no abbreviation and no comment needs it.
 #[must_use]
 pub(super) fn build<'a>(
     c: &Content<'_, 'a>,
     ctx: &Ctx<'_>,
     env: &Env<'_, 'a>,
     s: &mut Scratch<'a>,
+    evs: impl Iterator<Item = Ev<'a>>,
+    next_flow: &[Option<char>],
 ) -> &'a mut [Node<'a>] {
-    let mut evs = std::mem::take(&mut s.evs);
-    let next_flow = if env.abbreviations.is_empty() && ctx.comments.is_empty() {
-        Vec::new()
-    } else {
-        next_flow(ctx.t, &evs)
-    };
     let mut lists = std::mem::take(&mut s.lists);
     let mut b = Builder {
         c,
@@ -78,7 +75,7 @@ pub(super) fn build<'a>(
         comment_to: None,
         outs: std::mem::take(&mut s.outs),
     };
-    for (i, ev) in evs.drain(..).enumerate() {
+    for (i, ev) in evs.enumerate() {
         b.event(ev, next_flow.get(i).copied().flatten());
     }
     b.flush();
@@ -89,7 +86,6 @@ pub(super) fn build<'a>(
     }
     let out = b.a.nodes(&mut b.root);
     b.lists.push(b.root);
-    s.evs = evs;
     s.lists = b.lists;
     s.join = b.join;
     s.outs = b.outs;
@@ -118,7 +114,7 @@ fn first_char(t: &str, ev: &Ev<'_>) -> Option<Option<char>> {
 }
 
 /// For each event, the first flow character after it (C2-I-099).
-fn next_flow(t: &str, evs: &[Ev<'_>]) -> Vec<Option<char>> {
+pub(super) fn next_flow(t: &str, evs: &[Ev<'_>]) -> Vec<Option<char>> {
     let mut out = vec![None; evs.len()];
     let mut next = None;
     for (i, ev) in evs.iter().enumerate().rev() {
@@ -138,8 +134,9 @@ fn set_pos(node: &mut Node<'_>, pos: Option<Pos>) {
     }
 }
 
-fn apply_attrs<'a>(a: &'a Arena, node: &mut Node<'a>, attrs: Option<AttrBlock>) {
-    let Some(mut block) = attrs else { return };
+fn apply_attrs<'a>(a: &'a Arena, node: &mut Node<'a>, attrs: Option<Box<AttrBlock>>) {
+    let Some(block) = attrs else { return };
+    let mut block = *block;
     if !matches!(node, Node::Span(_)) {
         crate::ast::owned::dedupe_keys(&mut block.attrs.key_values);
     }
@@ -209,12 +206,13 @@ fn container(a: &Arena, kind: Kind) -> Option<Node<'_>> {
     Some(match kind {
         Kind::Styled(name) => styled(a, name)?,
         Kind::Span => Node::Span(a.alloc(Span::default())),
-        Kind::Link {
-            href,
-            tooltip,
-            key,
-            form,
-        } => {
+        Kind::Link(link) => {
+            let LinkTarget {
+                href,
+                tooltip,
+                key,
+                form,
+            } = *link;
             let namespace = key.as_ref().map(|_| "link");
             Node::Link(a.alloc(Link {
                 href: href.map(|h| a.str(&h)),
@@ -450,7 +448,7 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
         });
     }
 
-    fn exit(&mut self, mut f: Frame<'a>, v0: usize, v1: usize, attrs: Option<AttrBlock>) {
+    fn exit(&mut self, mut f: Frame<'a>, v0: usize, v1: usize, attrs: Option<Box<AttrBlock>>) {
         if f.kind == Kind::InlineFootnote {
             self.flow_prev = None;
         }

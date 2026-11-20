@@ -167,7 +167,11 @@ impl<'e, 'a> Content<'e, 'a> {
 
     /// Line, column and source offset of a content offset.
     fn point(&self, v: usize) -> (usize, usize, usize) {
-        let i = self.segs.partition_point(|s| s.v <= v).saturating_sub(1);
+        let i = if self.segs.len() == 1 {
+            0
+        } else {
+            self.segs.partition_point(|s| s.v <= v).saturating_sub(1)
+        };
         let Some(seg) = self.segs.get(i) else {
             return (1, 1, 0);
         };
@@ -280,6 +284,9 @@ impl<'e, 'a> Content<'e, 'a> {
     /// True when the source of `v0..v1` is one contiguous slice.
     #[must_use]
     pub fn contiguous(&self, v0: usize, v1: usize) -> bool {
+        if self.joins.is_empty() {
+            return true;
+        }
         let i = self.joins.partition_point(|&(p, _)| p < v0);
         self.joins.get(i).is_none_or(|&(p, _)| p >= v1)
     }

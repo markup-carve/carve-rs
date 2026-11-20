@@ -58,21 +58,35 @@ pub fn char_before(t: &str, comments: &[(usize, usize)], mut i: usize) -> Option
 }
 
 #[derive(Clone, Copy)]
-struct Entry {
+pub struct Entry {
     tok: usize,
     mark: char,
     braced: bool,
 }
 
 /// Pairs delimiters, attaches attribute blocks and settles the caption mark.
-pub fn resolve<'a>(toks: &mut [Tok<'a>], ctx: &Ctx<'_>, arena: &'a Arena) {
-    group(toks, 0, toks.len(), 0, ctx);
+/// `stacks` keeps the delimiter stacks of one bracket level each for the next content.
+pub fn resolve<'a>(
+    toks: &mut [Tok<'a>],
+    ctx: &Ctx<'_>,
+    arena: &'a Arena,
+    stacks: &mut Vec<Vec<Entry>>,
+) {
+    group(toks, 0, toks.len(), 0, ctx, stacks);
     attach(toks, arena);
     caption(toks, arena);
 }
 
-fn group(toks: &mut [Tok], lo: usize, hi: usize, base: usize, ctx: &Ctx<'_>) {
-    let mut stack: Vec<Entry> = Vec::new();
+fn group(
+    toks: &mut [Tok],
+    lo: usize,
+    hi: usize,
+    base: usize,
+    ctx: &Ctx<'_>,
+    stacks: &mut Vec<Vec<Entry>>,
+) {
+    let mut stack = stacks.pop().unwrap_or_default();
+    stack.clear();
     let mut k = lo;
     while k < hi {
         match toks.get(k).map(|t| &t.k) {
@@ -82,7 +96,7 @@ fn group(toks: &mut [Tok], lo: usize, hi: usize, base: usize, ctx: &Ctx<'_>) {
                 ..
             }) => {
                 let close = *close;
-                group(toks, k + 1, close.min(hi), base + 1, ctx);
+                group(toks, k + 1, close.min(hi), base + 1, ctx, stacks);
                 k = close.max(k) + 1;
                 continue;
             }
@@ -94,9 +108,10 @@ fn group(toks: &mut [Tok], lo: usize, hi: usize, base: usize, ctx: &Ctx<'_>) {
         }
         k += 1;
     }
-    for e in stack {
+    for e in stack.drain(..) {
         text(toks, e.tok);
     }
+    stacks.push(stack);
 }
 
 fn text(toks: &mut [Tok], k: usize) {

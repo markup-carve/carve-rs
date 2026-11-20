@@ -145,6 +145,8 @@ pub struct Scratch<'a> {
     join: String,
     outs: Vec<smart::Out>,
     frames: Vec<build::Frame<'a>>,
+    scan: scan::Bufs,
+    stacks: Vec<Vec<delim::Entry>>,
 }
 
 /// A buffer this long is not kept: one huge content must not pin its memory.
@@ -201,16 +203,25 @@ fn parse_in<'a>(env: &Env<'_, 'a>, pieces: &[Piece], s: &mut Scratch<'a>) -> &'a
         return nodes;
     }
     let content = content::Content::new_in(env, pieces, s);
-    let scanned = scan::scan(&content, env, std::mem::take(&mut s.toks));
-    let mut toks = scanned.toks;
+    let scan::Scanned { mut toks, comments } =
+        scan::scan(&content, env, std::mem::take(&mut s.toks), &mut s.scan);
     let ctx = delim::Ctx {
         t: &content.text,
-        comments: &scanned.comments,
+        comments: &comments,
     };
-    delim::resolve(&mut toks, &ctx, env.arena);
-    events::from_tokens(&mut toks, &mut s.evs);
+    delim::resolve(&mut toks, &ctx, env.arena, &mut s.stacks);
+    let out = if env.abbreviations.is_empty() && comments.is_empty() {
+        build::build(&content, &ctx, env, s, events::Stream::new(&mut toks), &[])
+    } else {
+        let mut evs = std::mem::take(&mut s.evs);
+        events::from_tokens(&mut toks, &mut evs);
+        let next_flow = build::next_flow(ctx.t, &evs);
+        let out = build::build(&content, &ctx, env, s, evs.drain(..), &next_flow);
+        s.evs = evs;
+        out
+    };
     s.toks = toks;
-    let out = build::build(&content, &ctx, env, s);
+    s.scan.comments = comments;
     content.recycle(s);
     out
 }
@@ -255,6 +266,12 @@ fn plain_piece<'a>(env: &Env<'_, 'a>, pieces: &[Piece]) -> Option<&'a mut [Node<
     })))
 }
 
+static PLAIN: crate::chars::ByteSet = crate::chars::ByteSet::new(
+    b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    b" .,;?)",
+    None,
+);
+
 /// The start and text of a piece of ASCII letters, digits, inner spaces and
 /// a few punctuation marks: nothing in it starts a construct.
 fn plain_span<'a>(env: &Env<'_, 'a>, p: &Piece) -> Option<(usize, &'a str)> {
@@ -265,15 +282,16 @@ fn plain_span<'a>(env: &Env<'_, 'a>, p: &Piece) -> Option<(usize, &'a str)> {
         t.trim_end_matches([' ', '\t'])
     };
     let b = trimmed.as_bytes();
-    // `.` starts only the `...` run (smart typography); the others start nothing.
-    let plain =
-        |c: &u8| c.is_ascii_alphanumeric() || matches!(c, b' ' | b'.' | b',' | b';' | b'?' | b')');
-    if !b.first().is_some_and(u8::is_ascii_alphanumeric)
-        || b.last() == Some(&b' ')
-        || !b.iter().all(plain)
-        || trimmed.contains("..")
-    {
+    if !b.first().is_some_and(u8::is_ascii_alphanumeric) || b.last() == Some(&b' ') {
         return None;
+    }
+    // `.` starts only the `...` run (smart typography); the others start nothing.
+    let mut prev = 0;
+    for &c in b {
+        if !PLAIN.has(c) || (c == b'.' && prev == b'.') {
+            return None;
+        }
+        prev = c;
     }
     Some((
         p.start + (t.len() - t.trim_start_matches([' ', '\t']).len()),

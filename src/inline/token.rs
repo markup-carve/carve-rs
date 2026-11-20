@@ -10,14 +10,18 @@ pub enum Kind {
     /// A delimiter span; the node type name from `tables::DELIMITERS`.
     Styled(&'static str),
     Span,
-    Link {
-        href: Option<String>,
-        tooltip: Option<String>,
-        key: Option<String>,
-        form: Option<LinkRefForm>,
-    },
+    /// Boxed so that a token stays small.
+    Link(Box<LinkTarget>),
     InlineFootnote,
     Extension(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkTarget {
+    pub href: Option<String>,
+    pub tooltip: Option<String>,
+    pub key: Option<String>,
+    pub form: Option<LinkRefForm>,
 }
 
 /// How an opener formed.

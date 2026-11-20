@@ -40,6 +40,10 @@ pub const fn is_flank_space(c: char) -> bool {
 /// A combining mark, a variation selector or a zero-width joiner (C2-I-050).
 #[must_use]
 pub fn is_joining(c: char) -> bool {
+    // Category M starts at U+0300.
+    if c.is_ascii() {
+        return false;
+    }
     matches!(c, '\u{200D}' | '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
         || in_ranges(c, UNICODE_M)
 }

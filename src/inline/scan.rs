@@ -4,7 +4,7 @@
 
 use super::atoms::{self, Angle, Label};
 use super::content::Content;
-use super::token::{Delim, K, Kind, Sort, Tok};
+use super::token::{Delim, K, Kind, LinkTarget, Sort, Tok};
 use super::{ContentKind, Env, Join};
 use crate::ast::{
     Autolink, Code, Comment, CommentForm, CriticComment, FootnoteRef, Image, ImageRefForm,
@@ -39,6 +39,15 @@ struct DepthMark {
     mark: char,
     braced: bool,
     at: usize,
+}
+
+/// The stacks of one scan, kept for the next content.
+#[derive(Default)]
+pub struct Bufs {
+    brackets: Vec<Bracket>,
+    open_delims: Vec<DepthMark>,
+    barriers: Vec<usize>,
+    pub comments: Vec<(usize, usize)>,
 }
 
 /// The result of the scan.
@@ -76,11 +85,22 @@ struct Scanner<'r, 'e, 'a> {
 
 /// Runs the scan over one content.
 #[must_use]
-pub fn scan<'a>(c: &Content<'_, 'a>, env: &Env<'_, 'a>, mut toks: Vec<Tok<'a>>) -> Scanned<'a> {
+pub fn scan<'a>(
+    c: &Content<'_, 'a>,
+    env: &Env<'_, 'a>,
+    mut toks: Vec<Tok<'a>>,
+    bufs: &mut Bufs,
+) -> Scanned<'a> {
     let t = c.text.as_str();
     toks.clear();
-    // Each byte that starts a form makes about one token and ends a text run.
-    toks.reserve(2 * t.bytes().filter(|&b| FORM_START.has(b)).count() + 1);
+    let mut brackets = std::mem::take(&mut bufs.brackets);
+    brackets.clear();
+    let mut open_delims = std::mem::take(&mut bufs.open_delims);
+    open_delims.clear();
+    let mut comments = std::mem::take(&mut bufs.comments);
+    comments.clear();
+    let mut barriers = std::mem::take(&mut bufs.barriers);
+    comment_only_starts(t, &mut barriers);
     let mut s = Scanner {
         c,
         t,
@@ -88,14 +108,14 @@ pub fn scan<'a>(c: &Content<'_, 'a>, env: &Env<'_, 'a>, mut toks: Vec<Tok<'a>>) 
         env,
         toks,
         text_from: None,
-        brackets: Vec::new(),
-        open_delims: Vec::new(),
+        brackets,
+        open_delims,
         last_star: None,
         last_slash: None,
         no_label_from: None,
         attr_fail: None,
-        comments: Vec::new(),
-        barriers: comment_only_starts(t),
+        comments,
+        barriers,
         last_pct: None,
         last_hash: None,
         caption_done: env.kind != ContentKind::Caption,
@@ -109,14 +129,20 @@ pub fn scan<'a>(c: &Content<'_, 'a>, env: &Env<'_, 'a>, mut toks: Vec<Tok<'a>>) 
     }
     s.flush();
     s.finish_brackets();
+    bufs.brackets = s.brackets;
+    bufs.open_delims = s.open_delims;
+    bufs.barriers = s.barriers;
     Scanned {
         toks: s.toks,
         comments: s.comments,
     }
 }
 
-fn comment_only_starts(text: &str) -> Vec<usize> {
-    let mut starts = Vec::new();
+fn comment_only_starts(text: &str, starts: &mut Vec<usize>) {
+    starts.clear();
+    if !text.contains("%%") {
+        return;
+    }
     let mut at = 0;
     for line in text.split_inclusive('\n') {
         if crate::block::shapes::comment_only(line.trim_start_matches([' ', '\t'])) {
@@ -124,7 +150,6 @@ fn comment_only_starts(text: &str) -> Vec<usize> {
         }
         at += line.len();
     }
-    starts
 }
 
 /// The first bytes `Scanner::step` reads a form at.
@@ -890,18 +915,18 @@ impl<'a> Scanner<'_, '_, 'a> {
             return;
         }
         let kind = match target {
-            Target::Direct { href, tooltip } => Kind::Link {
+            Target::Direct { href, tooltip } => Kind::Link(Box::new(LinkTarget {
                 href: Some(href),
                 tooltip,
                 key: None,
                 form: None,
-            },
-            Target::Ref { key, form } => Kind::Link {
+            })),
+            Target::Ref { key, form } => Kind::Link(Box::new(LinkTarget {
                 href: None,
                 tooltip: None,
                 key: Some(key),
                 form: Some(form),
-            },
+            })),
         };
         self.form(top, i, end, kind, None);
     }
@@ -953,7 +978,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     }
 
     fn finish_brackets(&mut self) {
-        for top in std::mem::take(&mut self.brackets) {
+        for top in self.brackets.drain(..) {
             if let Some(t) = self.toks.get_mut(top.tok) {
                 t.make_text(true);
             }
