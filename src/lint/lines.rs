@@ -902,7 +902,7 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
     let (at, text) = leaf_text(line);
     if !line.paragraph
-        || line.kind == "definition_term"
+        || (line.kind == "definition_term" && line.text.starts_with('['))
         || !text.starts_with('[')
         || line.scope.in_footnote
         || !(line.text.starts_with([' ', '\t']) || line.scope.container != ContainerKind::None)
@@ -1186,6 +1186,9 @@ fn list_after_open_paragraph(line: &Line, previous: Option<&Line>) -> bool {
         p.kind == "paragraph"
             && !p.text.trim().is_empty()
             && line.scope.container == ContainerKind::ListItem
+            && p.content.is_some_and(|content| {
+                visual_column(line, leaf_after_quotes(line).0) >= visual_column(p, content)
+            })
             && p.path
                 .rsplit_once("/children/")
                 .is_some_and(|(parent, _)| !parent.is_empty() && line.path.starts_with(parent))

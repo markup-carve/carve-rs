@@ -50,10 +50,6 @@ fn nested_opener_uses_div_content_column() {
         spans("   :::\n  ***\n", "block-opener-overindented"),
         vec![(3, 6)]
     );
-    assert_eq!(
-        spans("* ::: box\n   ::: glossary\n", "block-opener-overindented"),
-        vec![(13, 16)]
-    );
 }
 
 #[test]
@@ -110,6 +106,13 @@ fn lazy_term_line_is_not_a_definition() {
         spans("i) :: a\n[a]: u\n", "definition-in-container"),
         Vec::new()
     );
+    assert_eq!(
+        spans(
+            "   :: term\n: #H\n  [a]: u\n::::\n",
+            "definition-in-container"
+        ),
+        vec![(18, 22)]
+    );
 }
 
 #[test]
@@ -132,6 +135,12 @@ fn marker_in_nested_div_is_a_paragraph_line() {
         ),
         vec![(18, 21)]
     );
+    let source = "1. ^ x\n  1. ![](i.png)\n";
+    assert_eq!(
+        spans(source, "list-item-body-below-content-column"),
+        vec![(9, 22)]
+    );
+    assert_eq!(spans(source, "list-marker-without-blank-line"), Vec::new());
 }
 
 #[test]

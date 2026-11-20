@@ -860,7 +860,6 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
             && !line.trim().is_empty()
             && column > marker_column
             && column < content_column
-            && !super::lines::list_marker(line.get(prefix + indent..).unwrap_or("").trim())
             && item.node["children"].as_array().is_some_and(|children| {
                 children.iter().any(|child| {
                     field(child, "/pos/startOffset").as_u64() == u64::try_from(start).ok()
