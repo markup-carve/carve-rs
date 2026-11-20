@@ -70,7 +70,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let same = opts.includes.is_none() && opts.heading_ids == crate::options::HeadingIds::default();
     let (tree, diagnostics) =
         crate::tree_value_and_diagnostics(source, &crate::Options::default(), &parse, same);
-    let mut out = lint_core(source, opts, tree);
+    let mut out = lint_core(source, opts, tree.as_ref());
     out.extend(diagnostics);
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
@@ -162,9 +162,9 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     }
 }
 
-fn lint_core(source: &str, opts: &LintOptions, tree: Option<Value>) -> Vec<Diagnostic> {
+fn lint_core(source: &str, opts: &LintOptions, tree: Option<&Value>) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let positions = Ranges::new(source, tree.as_ref().map_or_else(Vec::new, node_ranges));
+    let positions = Ranges::new(source, tree.map_or_else(Vec::new, node_ranges));
     let mut out = Vec::new();
     for warning in tree
         .as_ref()
@@ -176,7 +176,7 @@ fn lint_core(source: &str, opts: &LintOptions, tree: Option<Value>) -> Vec<Diagn
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
     lines::scan(source, opts, &positions.all, &mut out);
-    if let Some(tree) = tree.as_ref() {
+    if let Some(tree) = tree {
         nodes::scan(source, opts, tree, &mut out);
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
@@ -199,7 +199,7 @@ fn lint_core(source: &str, opts: &LintOptions, tree: Option<Value>) -> Vec<Diagn
         })
     });
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
-    if let Some(tree) = tree.as_ref() {
+    if let Some(tree) = tree {
         controls::filter(source, out, tree)
     } else {
         out

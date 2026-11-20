@@ -4,7 +4,7 @@
 //! converts and deduplicates it exactly as it did the 0.1 warning.
 
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 pub(super) struct Warning {
     pub(super) rule: &'static str,
@@ -88,9 +88,7 @@ pub(super) fn warnings(source: &str, tree: &Value) -> Vec<Warning> {
             }
             "footnote" => footnote_labels.extend(bounds(value).map(|(start, _)| start)),
             "list" | "definition_list" => consumed_key(source, value, "loose", &mut out),
-            "code_block"
-                if matches!(value["syntax"].as_str(), Some("csv" | "tsv")) =>
-            {
+            "code_block" if matches!(value["syntax"].as_str(), Some("csv" | "tsv")) => {
                 consumed_key(source, value, "table", &mut out);
             }
             "table" => {
@@ -125,7 +123,12 @@ fn push(out: &mut Vec<Warning>, rule: &'static str, (start, end): (usize, usize)
 
 /// The opener line at `at` reads `::: figure` and nothing else.
 fn bare_figure_opener(source: &str, at: usize) -> bool {
-    let line = source.get(at..).unwrap_or("").split('\n').next().unwrap_or("");
+    let line = source
+        .get(at..)
+        .unwrap_or("")
+        .split('\n')
+        .next()
+        .unwrap_or("");
     let rest = line.trim_start_matches(':');
     line.len() - rest.len() >= 3 && rest.trim_end() == " figure"
 }
@@ -135,7 +138,9 @@ fn figure_nested(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warnin
     let Some(node) = all.get(at) else { return };
     let attrs = &node.value["attrs"];
     let figure = attrs.as_object().is_some_and(|map| map.len() == 1)
-        && attrs["classes"].as_array().is_some_and(|c| c.len() == 1 && c[0] == "figure");
+        && attrs["classes"]
+            .as_array()
+            .is_some_and(|c| c.len() == 1 && c.first().is_some_and(|f| f == "figure"));
     if figure
         && bounds(node.value).is_some_and(|(start, _)| bare_figure_opener(source, start))
         && node.value.get("title").is_none()
@@ -203,7 +208,12 @@ fn glob_strong(source: &str, strong: &Value, out: &mut Vec<Warning>) {
 /// The offset of a block's first line behind its attribute lines.
 fn behind_attribute_lines(source: &str, mut at: usize, end: usize) -> usize {
     while at < end {
-        let line = source.get(at..end).unwrap_or("").split('\n').next().unwrap_or("");
+        let line = source
+            .get(at..end)
+            .unwrap_or("")
+            .split('\n')
+            .next()
+            .unwrap_or("");
         let trimmed = line.trim_matches([' ', '\t', '\r']);
         if !(trimmed.starts_with('{') && trimmed.ends_with('}')) {
             break;
@@ -219,7 +229,8 @@ fn consumed_key(source: &str, block: &Value, key: &'static str, out: &mut Vec<Wa
         return;
     };
     let mut seen = HashSet::new();
-    for pair in block["attrs"]["keyValues"].as_array().into_iter().flatten() {
+    let pairs = block.get("attrs").and_then(|attrs| attrs.get("keyValues"));
+    for pair in pairs.and_then(Value::as_array).into_iter().flatten() {
         let word = pair[0].as_str().unwrap_or("");
         if !seen.insert(word) {
             continue;
@@ -244,33 +255,24 @@ fn near_miss(word: &str, key: &str) -> bool {
         return true;
     }
     let (w, k) = (word.as_bytes(), key.as_bytes());
-    if w.len().abs_diff(k.len()) > 1 {
-        return false;
-    }
-    let mut d = vec![vec![0usize; k.len() + 1]; w.len() + 1];
-    for (i, row) in d.iter_mut().enumerate() {
-        if let Some(first) = row.first_mut() {
-            *first = i;
+    let prefix = w.iter().zip(k).take_while(|(a, b)| a == b).count();
+    let suffix = |from_w: usize, from_k: usize| {
+        w.get(from_w..)
+            .zip(k.get(from_k..))
+            .is_some_and(|(a, b)| a == b)
+    };
+    match w.len().cmp(&k.len()) {
+        // One substitution, or two neighbors swapped.
+        std::cmp::Ordering::Equal => {
+            suffix(prefix + 1, prefix + 1)
+                || (w.get(prefix) == k.get(prefix + 1)
+                    && w.get(prefix + 1) == k.get(prefix)
+                    && suffix(prefix + 2, prefix + 2))
         }
+        // One insertion or deletion.
+        std::cmp::Ordering::Greater => w.len() == k.len() + 1 && suffix(prefix + 1, prefix),
+        std::cmp::Ordering::Less => k.len() == w.len() + 1 && suffix(prefix, prefix + 1),
     }
-    if let Some(row) = d.first_mut() {
-        for (j, cell) in row.iter_mut().enumerate() {
-            *cell = j;
-        }
-    }
-    for i in 1..=w.len() {
-        for j in 1..=k.len() {
-            let cost = usize::from(w[i - 1] != k[j - 1]);
-            let mut best = (d[i - 1][j] + 1)
-                .min(d[i][j - 1] + 1)
-                .min(d[i - 1][j - 1] + cost);
-            if i > 1 && j > 1 && w[i - 1] == k[j - 2] && w[i - 2] == k[j - 1] {
-                best = best.min(d[i - 2][j - 2] + 1);
-            }
-            d[i][j] = best;
-        }
-    }
-    d[w.len()][k.len()] <= 1
 }
 
 fn rows(table: &Value) -> impl Iterator<Item = &Value> {
@@ -306,18 +308,19 @@ fn table_columns(source: &str, table: &Value, out: &mut Vec<Warning>) {
     let Some((start, _)) = bounds(table) else {
         return;
     };
-    let line_start = source.get(..start).and_then(|s| s.rfind('\n')).map_or(0, |at| at + 1);
+    let line_start = source
+        .get(..start)
+        .and_then(|s| s.rfind('\n'))
+        .map_or(0, |at| at + 1);
     let mut lines = source.get(line_start..).unwrap_or("").split('\n');
     let line = lines.next().unwrap_or("").trim_end_matches('\r');
     let next = lines.next().unwrap_or("").trim_end_matches('\r');
     let trimmed = line.trim_start();
-    if trimmed.starts_with('|')
-        || !["aligns", "valigns", "widths"]
-            .iter()
-            .any(|k| line.contains(&format!("{k}=")))
-        || !(trimmed.starts_with('{') && trimmed.trim_end().ends_with('}'))
-        || !next.trim_start().starts_with('|')
-    {
+    let configured = ["aligns", "valigns", "widths"]
+        .iter()
+        .any(|k| line.contains(&format!("{k}=")));
+    let attribute_line = trimmed.starts_with('{') && trimmed.trim_end().ends_with('}');
+    if !configured || !attribute_line || !next.trim_start().starts_with('|') {
         return;
     }
     let columns = next.matches('|').count().saturating_sub(1);
@@ -444,7 +447,10 @@ fn span_markers(source: &str, table: &Value, out: &mut Vec<Warning>) {
             let [paragraph] = cell["children"].as_array().map_or(&[][..], Vec::as_slice) else {
                 continue;
             };
-            let [text] = paragraph["children"].as_array().map_or(&[][..], Vec::as_slice) else {
+            let [text] = paragraph["children"]
+                .as_array()
+                .map_or(&[][..], Vec::as_slice)
+            else {
                 continue;
             };
             let marker = match text["value"].as_str() {
@@ -452,7 +458,9 @@ fn span_markers(source: &str, table: &Value, out: &mut Vec<Warning>) {
                 Some("<") => '<',
                 _ => continue,
             };
-            let Some((from, to)) = bounds(cell) else { continue };
+            let Some((from, to)) = bounds(cell) else {
+                continue;
+            };
             let raw = source.get(from..to).unwrap_or("");
             if raw.contains('\\') {
                 continue;
@@ -523,7 +531,11 @@ fn html_comment(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning
     let shown = |from: usize, len: usize| holds(from) && holds(from + len - 1);
     for (offset, _) in raw.match_indices("<!--") {
         let open = start + offset;
-        let escapes = raw[..offset].bytes().rev().take_while(|b| *b == b'\\').count();
+        let escapes = raw[..offset]
+            .bytes()
+            .rev()
+            .take_while(|b| *b == b'\\')
+            .count();
         if escapes % 2 == 1 || !shown(open, 4) {
             continue;
         }
@@ -571,7 +583,7 @@ fn differing_labels(source: &str, starts: &[usize], out: &mut Vec<Warning>) {
     let mut sorted = starts.to_vec();
     sorted.sort_unstable();
     let mut labels = HashSet::new();
-    let mut first: HashMap<String, ()> = HashMap::new();
+    let mut keys = HashSet::new();
     for start in sorted {
         let Some(label) = source
             .get(start..)
@@ -586,14 +598,14 @@ fn differing_labels(source: &str, starts: &[usize], out: &mut Vec<Warning>) {
         if labels.contains(label) {
             continue;
         }
-        if first.contains_key(&key) {
+        if keys.contains(&key) {
             push(
                 out,
                 "footnote-labels-differ-only-in-whitespace",
                 (start, start + label.len() + 4),
             );
         }
-        first.entry(key).or_insert(());
+        keys.insert(key);
         labels.insert(label);
     }
 }
@@ -620,7 +632,7 @@ fn region_keyword(body: &str) -> Option<bool> {
 
 /// A region-marker-shaped line that is not a `%% #region` marker.
 fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
-    if !source.contains("egion") && !source.contains("EGION") {
+    if !source.contains('#') {
         return;
     }
     let opaque: Vec<(usize, usize, bool)> = all
@@ -629,9 +641,7 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
             matches!(node.kind, "code_block" | "raw_block" | "frontmatter")
                 || (node.kind == "comment" && node.value["form"] != "braced")
         })
-        .filter_map(|node| {
-            bounds(node.value).map(|(a, b)| (a, b, node.value["form"] == "line"))
-        })
+        .filter_map(|node| bounds(node.value).map(|(a, b)| (a, b, node.value["form"] == "line")))
         .collect();
     let mut line_start = 0;
     for piece in source.split_inclusive('\n') {
@@ -662,7 +672,11 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
                 Some(&(_, _, line)) => percent && line && covering.next().is_none(),
             };
             if allowed {
-                push(out, "region-marker-renders-as-text", (at, at + trimmed.len()));
+                push(
+                    out,
+                    "region-marker-renders-as-text",
+                    (at, at + trimmed.len()),
+                );
             }
         }
         line_start += piece.len();
@@ -683,7 +697,13 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
     let mut line_start = start;
     for line in raw.split('\n') {
         if let Some((from, to)) = first_tag(line)
-            && line[..from].bytes().rev().take_while(|b| *b == b'\\').count() % 2 == 0
+            && line[..from]
+                .bytes()
+                .rev()
+                .take_while(|b| *b == b'\\')
+                .count()
+                % 2
+                == 0
             && holds(line_start + from)
             && holds(line_start + to - 1)
         {
@@ -712,7 +732,9 @@ fn first_tag(line: &str) -> Option<(usize, usize)> {
             return Some((at, base + close + 1));
         }
         let close = usize::from(tail.starts_with('/'));
-        tail[close..].starts_with('>').then_some((at, base + close + 1))
+        tail[close..]
+            .starts_with('>')
+            .then_some((at, base + close + 1))
     })
 }
 

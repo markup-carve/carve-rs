@@ -111,11 +111,8 @@ fn lint_include(
         includes: None,
         ..context.options.clone()
     };
-    for mut finding in lint_core(
-        slice,
-        &child_options,
-        crate::tree_json_value(slice, &crate::Options::default()),
-    ) {
+    let tree = crate::tree_json_value(slice, &crate::Options::default());
+    for mut finding in lint_core(slice, &child_options, tree.as_ref()) {
         let Some(mut pos) = finding.pos else { continue };
         pos.start_offset = pos.start_offset.saturating_add(crate::ast::Pos::at(start));
         pos.end_offset = pos.end_offset.saturating_add(crate::ast::Pos::at(start));
