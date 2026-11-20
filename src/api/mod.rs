@@ -1247,9 +1247,9 @@ pub struct TreeReadOptions<'a> {
 pub fn decode_tree_with(json: &str, options: TreeReadOptions<'_>) -> Result<Tree, Error> {
     let tree = Tree::read(json, None)?;
     if let Some(annotations) = options.annotations {
-        let mut root: Value = serde_json::from_str(&tree.json)
+        let mut root: Value = deep_json(&tree.json)
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
-        let supplied: Value = serde_json::from_str(json)
+        let supplied: Value = deep_json(json)
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
         if root.get("extensions").is_none()
             && let Some(extensions) = supplied.get("extensions")
@@ -1280,7 +1280,7 @@ pub fn validate_tree(tree: &Tree) -> Result<(), Error> {
 pub fn validate_tree_with(tree: &Tree, options: TreeReadOptions<'_>) -> Result<(), Error> {
     crate::reader::read_tree_json(&tree.json)?;
     if let Some(annotations) = options.annotations {
-        let root: Value = serde_json::from_str(&tree.json)
+        let root: Value = deep_json(&tree.json)
             .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
         crate::reader::check_annotations(&root, annotations)?;
     }
