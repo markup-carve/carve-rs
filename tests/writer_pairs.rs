@@ -64,3 +64,9 @@ fn escaped_first_mark_does_not_consume_a_later_pair() {
     let range = pair.range.as_ref().unwrap();
     assert_eq!((range.start_offset, range.end_offset), (6, 11));
 }
+
+#[test]
+fn legacy_pair_cannot_start_inside_a_longer_run() {
+    let entries = carve::api::lint("~~a~", &LintOptions::default()).unwrap();
+    assert!(!entries.iter().any(|e| e.code == "deprecated-bare-strike"));
+}

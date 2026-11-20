@@ -39,11 +39,19 @@ fn closer_space(ch: char) -> bool {
     zs(ch) || matches!(ch, '\t' | '\n' | '\r')
 }
 fn can_open(text: &str, mark: &str, id: &str, at: usize) -> bool {
-    let after = next(text, at + mark.len());
-    !joined(text, mark, id, at)
-        && !escaped(text, at)
-        && after.is_some_and(|ch| !edge_space(ch) && !mark.starts_with(ch))
-        && (mark.len() == 2 || !before(text, at).is_some_and(char::is_alphanumeric))
+    if joined(text, mark, id, at) || escaped(text, at) {
+        return false;
+    }
+    if id.starts_with("deprecated-bare-") && before(text, at) == mark.chars().next() {
+        return false;
+    }
+    let Some(after) = next(text, at + mark.len()) else {
+        return false;
+    };
+    if edge_space(after) || mark.starts_with(after) {
+        return false;
+    }
+    mark.len() == 2 || !before(text, at).is_some_and(char::is_alphanumeric)
 }
 fn valid(text: &str, mark: &str, start: usize, end: usize) -> bool {
     let Some(inside) = text.get(start + mark.len()..end) else {
