@@ -141,7 +141,7 @@ fn compute<'a>(
     files: Option<&files::Files<'a>>,
     dups: &mut Vec<Duplicate>,
 ) -> (AddrMap<usize, Res<'a>>, bool) {
-    let order = Order::build_with(doc, files);
+    let mut order = Order::build_collecting(doc, files);
     let ordered = !order.notes.is_empty()
         || order.visits.iter().any(|v| match v.node {
             Node::Xref(_) => true,
@@ -153,8 +153,11 @@ fn compute<'a>(
     for (a, n) in &order.number {
         res.insert(*a, Res::Number(to_i64(*n)));
     }
-    let mut all = Vec::new();
-    every_node(&*doc.children, &mut all, 1);
+    let all = order.take_found().unwrap_or_else(|| {
+        let mut all = Vec::new();
+        every_node(&*doc.children, &mut all, 1);
+        all
+    });
     let ids = heading_ids(&all, &order, opts.heading_ids, &mut res, arena, dups);
     let captions = caption_numbers(&order, opts, &mut res);
     let mut index = Index::new(doc, &order, &ids, &captions);
@@ -172,21 +175,12 @@ fn to_i64(n: usize) -> i64 {
 
 /// The nodes of the tree the order-free results read (an authored id,
 /// references, tables), in document order.
-fn every_node<'r, 'a>(nodes: &'r [Node<'a>], out: &mut Vec<&'r Node<'a>>, depth: usize) {
+pub(crate) fn every_node<'r, 'a>(nodes: &'r [Node<'a>], out: &mut Vec<&'r Node<'a>>, depth: usize) {
     if depth > crate::resolve::WALK_CAP {
         return;
     }
     for n in nodes {
-        if n.attrs().is_some()
-            || matches!(
-                n,
-                Node::Link(_)
-                    | Node::Image(_)
-                    | Node::Xref(_)
-                    | Node::Abbreviation(_)
-                    | Node::Table(_)
-            )
-        {
+        if gathered(n) {
             out.push(n);
         }
         let columns: &[Node<'a>] = match n {
@@ -197,6 +191,15 @@ fn every_node<'r, 'a>(nodes: &'r [Node<'a>], out: &mut Vec<&'r Node<'a>>, depth:
             every_node(std::slice::from_ref(c), out, depth + 1);
         }
     }
+}
+
+/// A node `every_node` gathers.
+pub(crate) fn gathered(n: &Node<'_>) -> bool {
+    n.attrs().is_some()
+        || matches!(
+            n,
+            Node::Link(_) | Node::Image(_) | Node::Xref(_) | Node::Abbreviation(_) | Node::Table(_)
+        )
 }
 
 /// C2-H-022 to C2-H-025: authored ids are reserved first, in document order;
@@ -241,9 +244,12 @@ pub(crate) fn heading_ids_alone<'a>(
     mode: HeadingIds,
     arena: &'a Arena,
 ) -> AddrMap<usize, &'a str> {
-    let order = Order::build(doc);
-    let mut all = Vec::new();
-    every_node(&*doc.children, &mut all, 1);
+    let mut order = Order::build_collecting(doc, None);
+    let all = order.take_found().unwrap_or_else(|| {
+        let mut all = Vec::new();
+        every_node(&*doc.children, &mut all, 1);
+        all
+    });
     heading_ids(
         &all,
         &order,
@@ -359,7 +365,11 @@ impl<'a> Index<'a, '_> {
                     }
                 }
             }
-            if let (Node::Heading(h), Some(id)) = (v.node, ids.get(&a)) {
+            let heading = match v.node {
+                Node::Heading(h) => ids.get(&a).map(|id| (h, id)),
+                _ => None,
+            };
+            if let Some((h, id)) = heading {
                 let i = heading_ids.len();
                 heading_by_text
                     .entry(fold_label(&plain::text_of(h.children)).nfc().collect())
