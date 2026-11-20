@@ -101,6 +101,9 @@ fn c2_a_167_refusal_paths_of_the_clause_cases() {
             continue;
         }
         let mut request = json!({"call": name, "options": c["options"]});
+        if let Some(annotations) = c.get("annotations") {
+            request["annotations"] = annotations.clone();
+        }
         match c.get("tree") {
             Some(tree) => request["tree"] = tree.clone(),
             None => request["source"] = c["input"].clone(),
