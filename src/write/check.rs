@@ -12,6 +12,7 @@ use super::node::{
 };
 use super::state::{Attempt, PLACE_COLUMNS, ProbeResult, Spelling, Writer};
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 fn refs(nodes: &[Value]) -> Vec<&Value> {
@@ -151,10 +152,10 @@ fn is_compared(c: &Check<'_>, node: &Value, name: &str) -> bool {
 }
 
 /// C2-W-136: the `attrs` of `e` without the keys the writer reported and did not write.
-fn written_attrs(w: &Writer<'_>, e: &Value) -> Option<Value> {
+fn written_attrs<'v>(w: &Writer<'_>, e: &'v Value) -> Option<Cow<'v, Value>> {
     let a = e.get("attrs")?;
     let Some(keys) = w.sp.lost_keys.get(&id(e)) else {
-        return Some(a.clone());
+        return Some(Cow::Borrowed(a));
     };
     let mut rest = a.as_object()?.clone();
     let kept: Vec<Value> = super::node::key_values(e)
@@ -172,7 +173,7 @@ fn written_attrs(w: &Writer<'_>, e: &Value) -> Option<Value> {
     if rest.get("id").is_none() && no_classes && empty {
         return None;
     }
-    Some(Value::Object(rest))
+    Some(Cow::Owned(Value::Object(rest)))
 }
 
 /// The name of the first field in which `e` and `a` differ.
@@ -180,16 +181,17 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: &Value, a: &Value) -> Optio
     let (Some(em), Some(am)) = (e.as_object(), a.as_object()) else {
         return None;
     };
-    for name in em.keys() {
+    for (name, field) in em {
+        if !is_compared(c, e, name) {
+            continue;
+        }
         let value = if name == "attrs" {
             written_attrs(w, e)
         } else {
-            em.get(name).cloned()
+            Some(Cow::Borrowed(field))
         };
-        if let Some(v) = value {
-            if is_compared(c, e, name) && !same_value(&v, am.get(name)) {
-                return Some(name.clone());
-            }
+        if value.is_some_and(|v| !same_value(&v, am.get(name))) {
+            return Some(name.clone());
         }
     }
     for name in am.keys() {
