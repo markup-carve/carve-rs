@@ -88,7 +88,7 @@ fn output_can_name_the_input_without_erasing_it() {
     );
     assert_eq!(
         std::fs::read_to_string(dir.join("a.crv")).unwrap(),
-        "a **b**\n"
+        "a \\*\\*b**\n"
     );
 }
 
