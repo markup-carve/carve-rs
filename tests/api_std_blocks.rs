@@ -52,6 +52,29 @@ fn details_renders_a_disclosure_with_the_title_as_summary() {
 }
 
 #[test]
+fn quoted_extension_titles_claim_after_an_escaped_quote() {
+    let title = r#"a \"c\""#;
+    let source = format!("::: details \"{title}\"\nx\n:::\n");
+    assert_eq!(
+        html(&source, extensions::details()),
+        "<details>\n  <summary>a \"c\"</summary>\n  <p>x</p>\n</details>"
+    );
+    let source = format!("::: spoiler \"{title}\"\nx\n:::\n");
+    assert!(html(&source, extensions::spoiler()).contains("a \"c\""));
+    let source = format!(":::: tabs\n::: tab \"{title}\"\nx\n:::\n::::\n");
+    let request = serde_json::json!({
+        "call": "render",
+        "source": source,
+        "options": {
+            "extensions": ["carve.tabs"],
+            "renderers": {"carve.tabs": "standard"}
+        }
+    });
+    let response: Value = serde_json::from_str(&api::json::call(&request.to_string())).unwrap();
+    assert!(response["ok"]["html"].as_str().unwrap().contains("a \"c\""));
+}
+
+#[test]
 fn details_keeps_code_payload_bytes() {
     assert_eq!(
         html(
