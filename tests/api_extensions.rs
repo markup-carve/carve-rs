@@ -5,6 +5,95 @@ use carve::api::{
     RenderContext, Renderer, Tree, extension::InsertTransform,
 };
 use serde_json::{Value, json};
+use std::sync::Arc;
+
+#[test]
+fn included_div_claims_use_the_included_file_opener() {
+    let resolver = Arc::new(|request: &carve::include::Request<'_>| {
+        let text = match request.path {
+            "frag.crv" => "::: details\nBody\n:::\n",
+            "nested.crv" => "{{ frag.crv }}\n",
+            _ => return Err(carve::include::Cause::NotFound),
+        };
+        Ok((text.as_bytes().to_vec(), request.path.to_string()))
+    });
+    let opts = Options {
+        includes: Some(carve::include::Includes::new(resolver)),
+        ..Options::default()
+    };
+    let mut host = Carve::new();
+    host.register(api::extensions::details()).unwrap();
+    let expected = "<details>\n  <summary>Details</summary>\n  <p>Body</p>\n</details>";
+    assert_eq!(host.render("{{ frag.crv }}\n", &opts).unwrap(), expected);
+    assert_eq!(host.render("{{ nested.crv }}\n", &opts).unwrap(), expected);
+    assert_eq!(
+        host.render("::: details\nTop\n:::\n\n{{ frag.crv }}\n", &opts)
+            .unwrap(),
+        format!("<details>\n  <summary>Details</summary>\n  <p>Top</p>\n</details>\n{expected}")
+    );
+}
+
+#[test]
+fn included_div_claims_survive_one_thousand_source_offsets() {
+    let resolver = Arc::new(|request: &carve::include::Request<'_>| {
+        let number: usize = request
+            .path
+            .strip_prefix("case-")
+            .and_then(|s| s.strip_suffix(".crv"))
+            .and_then(|s| s.parse().ok())
+            .ok_or(carve::include::Cause::NotFound)?;
+        let prelude = "Before.\n\n".repeat(number % 20);
+        let text = format!("{prelude}::: details\nBody\n:::\n");
+        Ok((text.into_bytes(), request.path.to_string()))
+    });
+    let opts = Options {
+        includes: Some(carve::include::Includes::new(resolver)),
+        ..Options::default()
+    };
+    let mut host = Carve::new();
+    host.register(api::extensions::details()).unwrap();
+    for number in 0..1000 {
+        let parent = match (number / 20) % 4 {
+            0 => String::new(),
+            1 => "Lead.\n\n".into(),
+            2 => "::: other\nOther.\n:::\n\n".into(),
+            _ => "::: details\nTop\n:::\n\n".into(),
+        };
+        let input = format!("{parent}{{{{ case-{number}.crv }}}}\n");
+        let html = host.render(&input, &opts).unwrap();
+        let expected = if parent.starts_with("::: details") {
+            2
+        } else {
+            1
+        };
+        assert_eq!(
+            html.matches("<details>").count(),
+            expected,
+            "case {number}: {html}"
+        );
+        assert!(
+            !html.contains("<div class=\"details\">"),
+            "case {number}: {html}"
+        );
+    }
+}
+
+#[test]
+fn standard_tabs_claim_inside_an_include() {
+    let resolver = Arc::new(|request: &carve::include::Request<'_>| {
+        let text = ":::: tabs\n::: tab \"One\"\nContent.\n:::\n::::\n";
+        Ok((text.as_bytes().to_vec(), request.path.to_string()))
+    });
+    let opts = Options {
+        includes: Some(carve::include::Includes::new(resolver)),
+        ..Options::default()
+    };
+    let mut host = Carve::new();
+    host.enable_standard("carve.tabs", true).unwrap();
+    let tree = host.parse("{{ tabs.crv }}\n", &opts).unwrap();
+    let json = api::encode_tree(&tree);
+    assert!(json.contains("\"name\":\"carve.tabs\""), "{json}");
+}
 
 fn declaration(name: &str) -> ExtensionDeclaration {
     ExtensionDeclaration {
