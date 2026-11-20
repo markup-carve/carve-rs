@@ -919,22 +919,8 @@ impl Carve {
             layout: None,
             source: valid.then(|| input.text().to_string()),
         };
-        // The writer reads the arena parse where the owned tree would be the same:
-        // no include and no matcher that could claim a node.
-        if valid && opts.render.includes.is_none() && host.claims_nothing() {
-            check_length(input.len(), &opts.render)?;
-            let pool = crate::write::Pool::new();
-            let text = input.text();
-            let arena = Arena::for_input(&text);
-            let mut found = Vec::new();
-            if let Ok((doc, _, None)) = crate::prepare(&text, &opts.render, &arena, &mut found) {
-                let doc = crate::view::V::Doc(arena.alloc(doc));
-                let src = (!opts.normalize).then_some(text.as_ref());
-                let (output, written) = crate::write::format_view(doc, &pool, src, &settings);
-                let (mut diagnostics, _) = record::cap_includes(&found);
-                input.remap(&mut diagnostics);
-                return Ok(written_with(diagnostics, output, written));
-            }
+        if valid && let Some(written) = format_arena(&host, input, opts, &settings)? {
+            return Ok(written);
         }
         let parsed = host.parse_with_diagnostics(input, &opts.render)?;
         let doc = parsed.tree.value()?;
@@ -945,6 +931,33 @@ impl Carve {
         let (output, written) = crate::write::format_tree(&doc, src, &settings);
         Ok(written_with(parsed.diagnostics, output, written))
     }
+}
+
+/// `format` of a valid text input on the arena parse, where the owned tree would be the
+/// same: no include and no matcher of `host` that could claim a node. `None` otherwise.
+fn format_arena(
+    host: &Carve,
+    input: Input<'_>,
+    opts: &WriteOptions,
+    settings: &crate::write::Settings,
+) -> Result<Option<Written>, Error> {
+    if opts.render.includes.is_some() || !host.claims_nothing() {
+        return Ok(None);
+    }
+    check_length(input.len(), &opts.render)?;
+    let pool = crate::write::Pool::new();
+    let text = input.text();
+    let arena = Arena::for_input(&text);
+    let mut found = Vec::new();
+    let Ok((doc, _, None)) = crate::prepare(&text, &opts.render, &arena, &mut found) else {
+        return Ok(None);
+    };
+    let doc = crate::view::V::Doc(arena.alloc(doc));
+    let src = (!opts.normalize).then_some(text.as_ref());
+    let (output, written) = crate::write::format_view(doc, &pool, src, settings);
+    let (mut diagnostics, _) = record::cap_includes(&found);
+    input.remap(&mut diagnostics);
+    Ok(Some(written_with(diagnostics, output, written)))
 }
 
 /// The result of `format`: the parse record, then the writer's.

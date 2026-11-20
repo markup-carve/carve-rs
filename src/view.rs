@@ -447,17 +447,14 @@ impl<'a> Arr<'a> {
 
     /// The items `start..end`, or `None` where the range is out of bounds.
     pub(crate) fn slice(self, start: usize, end: usize) -> Option<Self> {
-        if start > end || end > self.len() {
-            return None;
-        }
+        let range = start..end;
         Some(match self {
-            Self::Nodes(items) => Self::Nodes(items.get(start..end)?),
-            Self::Strs(items) => Self::Strs(items.get(start..end)?),
-            Self::Segments(items) => Self::Segments(items.get(start..end)?),
-            Self::Pairs(items) => Self::Pairs(items.get(start..end)?),
-            Self::Json(items) => Self::Json(items.get(start..end)?),
-            Self::Pair(_) if start == 0 && end == 2 => self,
-            Self::Pair(_) => return None,
+            Self::Nodes(items) => Self::Nodes(items.get(range)?),
+            Self::Strs(items) => Self::Strs(items.get(range)?),
+            Self::Segments(items) => Self::Segments(items.get(range)?),
+            Self::Pairs(items) => Self::Pairs(items.get(range)?),
+            Self::Json(items) => Self::Json(items.get(range)?),
+            Self::Pair(_) => (range == (0..2)).then_some(self)?,
         })
     }
 
