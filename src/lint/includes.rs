@@ -1,6 +1,6 @@
 //! Lint of accepted include sources (C2-N-085 to C2-N-088).
 
-use super::{LintOptions, lint_core, parse_tree_value};
+use super::{LintOptions, lint_core};
 use crate::diagnostic::{Diagnostic, IncludeSite};
 use crate::include::Resolver;
 use serde_json::Value;
@@ -29,8 +29,7 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
         includes: Some(config.clone()),
         ..crate::Options::default()
     };
-    let text = crate::tree_json(source, &render);
-    let Some(tree) = parse_tree_value(&text) else {
+    let Some(tree) = crate::tree_json_value(source, &render) else {
         return;
     };
     let Ok(sources) = stored.lock() else { return };
@@ -112,7 +111,11 @@ fn lint_include(
         includes: None,
         ..context.options.clone()
     };
-    for mut finding in lint_core(slice, &child_options) {
+    for mut finding in lint_core(
+        slice,
+        &child_options,
+        crate::tree_json_value(slice, &crate::Options::default()),
+    ) {
         let Some(mut pos) = finding.pos else { continue };
         pos.start_offset = pos.start_offset.saturating_add(crate::ast::Pos::at(start));
         pos.end_offset = pos.end_offset.saturating_add(crate::ast::Pos::at(start));

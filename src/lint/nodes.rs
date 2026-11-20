@@ -1,6 +1,6 @@
 //! Checks tied to parsed nodes and their source positions (C2-W-107).
 
-use super::{LintOptions, active, drop_replaced, parse_tree_value};
+use super::{LintOptions, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use serde_json::Value;
@@ -239,7 +239,7 @@ fn collect(root: &Value) -> Vec<Item<'_>> {
             _ => {}
         }
     }
-    out.sort_by_key(|item| bounds(item.node).map_or(0, |(start, _)| start));
+    out.sort_by_cached_key(|item| bounds(item.node).map_or(0, |(start, _)| start));
     out
 }
 
@@ -252,13 +252,13 @@ pub(super) fn scan(
     let alternate = if options.heading_ids == crate::options::HeadingIds::default() {
         None
     } else {
-        parse_tree_value(&crate::tree_json(
+        crate::tree_json_value(
             source,
             &crate::Options {
                 heading_ids: options.heading_ids,
                 ..crate::Options::default()
             },
-        ))
+        )
     };
     let tree = alternate.as_ref().unwrap_or(base_tree);
     let items = collect(tree);

@@ -2,7 +2,6 @@
 
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
-use serde::Deserialize as _;
 use serde_json::Value;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
@@ -10,6 +9,7 @@ use std::sync::OnceLock;
 
 mod controls;
 mod includes;
+mod legacy;
 mod lines;
 mod nodes;
 
@@ -62,13 +62,16 @@ fn active(code: &str, opts: &LintOptions) -> bool {
 /// Runs enabled lint rules and returns catalog diagnostics in source order.
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
-    let mut out = lint_core(source, opts);
     let parse = crate::Options {
         includes: opts.includes.clone(),
         heading_ids: opts.heading_ids,
         ..crate::Options::default()
     };
-    out.extend(crate::parse_diagnostics(source, &parse));
+    let same = opts.includes.is_none() && opts.heading_ids == crate::options::HeadingIds::default();
+    let (tree, diagnostics) =
+        crate::tree_value_and_diagnostics(source, &crate::Options::default(), &parse, same);
+    let mut out = lint_core(source, opts, tree);
+    out.extend(diagnostics);
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
     }
@@ -159,12 +162,14 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     }
 }
 
-fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
+fn lint_core(source: &str, opts: &LintOptions, tree: Option<Value>) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let tree = parse_tree_value(&crate::tree_json(source, &crate::Options::default()));
     let positions = Ranges::new(source, tree.as_ref().map_or_else(Vec::new, node_ranges));
     let mut out = Vec::new();
-    for warning in carve_0_1::lint_carve(source) {
+    for warning in tree
+        .as_ref()
+        .map_or_else(Vec::new, |tree| legacy::warnings(source, tree))
+    {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
             continue;
         }
@@ -202,7 +207,7 @@ fn lint_core(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
 }
 
 fn skip_legacy_warning(
-    warning: &carve_0_1::LintWarning,
+    warning: &legacy::Warning,
     source: &str,
     opts: &LintOptions,
     parsed: &Source<'_>,
@@ -254,14 +259,14 @@ fn skip_legacy_warning(
     skip_legacy_context(warning, source, parsed, positions)
 }
 
-fn hidden_html_tag(warning: &carve_0_1::LintWarning, positions: &Ranges<'_>) -> bool {
+fn hidden_html_tag(warning: &legacy::Warning, positions: &Ranges<'_>) -> bool {
     positions.around(warning.start).any(|range| {
         range.kind == "comment" && range.start <= warning.start && warning.end <= range.end
     })
 }
 
 fn skip_legacy_context(
-    warning: &carve_0_1::LintWarning,
+    warning: &legacy::Warning,
     source: &str,
     parsed: &Source<'_>,
     positions: &Ranges<'_>,
@@ -342,7 +347,7 @@ fn skip_legacy_context(
 
 fn overlap_in_centered_table(
     source: &str,
-    warning: &carve_0_1::LintWarning,
+    warning: &legacy::Warning,
     positions: &Ranges<'_>,
 ) -> bool {
     positions.around(warning.start).any(|range| {
@@ -356,7 +361,7 @@ fn overlap_in_centered_table(
 }
 
 fn convert_legacy_warning(
-    warning: carve_0_1::LintWarning,
+    warning: legacy::Warning,
     source: &str,
     parsed: &Source<'_>,
     positions: &Ranges<'_>,
@@ -364,7 +369,7 @@ fn convert_legacy_warning(
     let mut diagnostic = Diagnostic::new(
         warning.rule,
         &[],
-        warning.file.as_deref(),
+        None,
         Some(parsed.pos(warning.start, warning.end)),
     );
     if diagnostic.message.is_empty() || catalog_message_has_slots(warning.rule) {
@@ -1138,14 +1143,6 @@ fn node_ranges(tree: &Value) -> Vec<Range> {
         }
     }
     out
-}
-
-fn parse_tree_value(text: &str) -> Option<Value> {
-    let mut parser = serde_json::Deserializer::from_str(text);
-    parser.disable_recursion_limit();
-    let value = Value::deserialize(&mut parser).ok()?;
-    parser.end().ok()?;
-    Some(value)
 }
 
 fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
