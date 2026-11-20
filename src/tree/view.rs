@@ -431,14 +431,18 @@ mod tests {
     }
 
     fn inputs() -> Vec<String> {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("spec-conformance");
         let mut out = Vec::new();
-        for (file, list) in [
-            ("examples.json", "examples"),
-            ("clause-cases.json", "cases"),
+        for (text, list) in [
+            (
+                include_str!("../../spec-conformance/examples.json"),
+                "examples",
+            ),
+            (
+                include_str!("../../spec-conformance/clause-cases.json"),
+                "cases",
+            ),
         ] {
-            let text = std::fs::read_to_string(dir.join(file)).unwrap_or_default();
-            let mut de = serde_json::Deserializer::from_str(&text);
+            let mut de = serde_json::Deserializer::from_str(text);
             de.disable_recursion_limit();
             let data: Value = serde::Deserialize::deserialize(&mut de).unwrap_or_default();
             for case in data
