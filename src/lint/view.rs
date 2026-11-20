@@ -47,35 +47,61 @@ impl<'a> V<'a> {
                 "attrs" => node.attrs().map(Self::Attrs),
                 _ => node.view_get(key),
             },
-            Self::Pos(pos) => Some(Self::Int(i64::from(match key {
-                "startLine" => pos.start_line,
-                "endLine" => pos.end_line,
-                "startColumn" => pos.start_column,
-                "endColumn" => pos.end_column,
-                "startOffset" => pos.start_offset,
-                "endOffset" => pos.end_offset,
-                _ => return None,
-            }))),
-            Self::Attrs(attrs) => match key {
-                "id" => attrs.id.map(Self::Str),
-                "classes" => (!attrs.classes.is_empty()).then_some(Self::Strs(attrs.classes)),
-                "keyValues" => {
-                    (!attrs.key_values.is_empty()).then_some(Self::Pairs(attrs.key_values))
-                }
-                _ => None,
-            },
-            Self::Marker(marker) => match key {
-                "kind" => Some(Self::Str(marker.kind)),
-                "char" => marker.bullet.map(Self::Str),
-                "style" => marker.style.map(Self::Str),
-                "delimiter" => marker.delimiter.map(Self::Str),
-                "start" => marker.start.map(Self::Int),
-                _ => None,
-            },
-            Self::Task(task) => (key == "mark").then_some(Self::Str(task.mark)),
             Self::Json(value) => value.get(key).map(Self::Json),
-            _ => None,
+            _ => self
+                .value_fields()?
+                .into_iter()
+                .find(|(name, _)| *name == key)
+                .and_then(|(_, value)| value),
         }
+    }
+
+    /// The keys of a position, attrs, marker or task in `serde_json` map order, with the values serde
+    /// writes; absent keys are `None`, padding is an empty key.
+    fn value_fields(self) -> Option<[(&'static str, Option<Self>); 6]> {
+        let none: (&'static str, Option<Self>) = ("", None);
+        let int = |n: u32| Some(Self::Int(i64::from(n)));
+        Some(match self {
+            Self::Pos(pos) => [
+                ("endColumn", int(pos.end_column)),
+                ("endLine", int(pos.end_line)),
+                ("endOffset", int(pos.end_offset)),
+                ("startColumn", int(pos.start_column)),
+                ("startLine", int(pos.start_line)),
+                ("startOffset", int(pos.start_offset)),
+            ],
+            Self::Attrs(attrs) => [
+                (
+                    "classes",
+                    (!attrs.classes.is_empty()).then_some(Self::Strs(attrs.classes)),
+                ),
+                ("id", attrs.id.map(Self::Str)),
+                (
+                    "keyValues",
+                    (!attrs.key_values.is_empty()).then_some(Self::Pairs(attrs.key_values)),
+                ),
+                none,
+                none,
+                none,
+            ],
+            Self::Marker(marker) => [
+                ("char", marker.bullet.map(Self::Str)),
+                ("delimiter", marker.delimiter.map(Self::Str)),
+                ("kind", Some(Self::Str(marker.kind))),
+                ("start", marker.start.map(Self::Int)),
+                ("style", marker.style.map(Self::Str)),
+                none,
+            ],
+            Self::Task(task) => [
+                ("mark", Some(Self::Str(task.mark))),
+                none,
+                none,
+                none,
+                none,
+                none,
+            ],
+            _ => return None,
+        })
     }
 
     /// `value["type"]`, read off a parsed node without a key lookup.
@@ -199,51 +225,18 @@ impl<'a> V<'a> {
         match self {
             Self::Doc(doc) => doc.view_each(f),
             Self::Node(node) => node.view_each(f),
-            Self::Pos(pos) => {
-                for (key, n) in [
-                    ("endColumn", pos.end_column),
-                    ("endLine", pos.end_line),
-                    ("endOffset", pos.end_offset),
-                    ("startColumn", pos.start_column),
-                    ("startLine", pos.start_line),
-                    ("startOffset", pos.start_offset),
-                ] {
-                    f(key, Self::Int(i64::from(n)));
-                }
-            }
-            Self::Attrs(attrs) => {
-                if !attrs.classes.is_empty() {
-                    f("classes", Self::Strs(attrs.classes));
-                }
-                if let Some(id) = attrs.id {
-                    f("id", Self::Str(id));
-                }
-                if !attrs.key_values.is_empty() {
-                    f("keyValues", Self::Pairs(attrs.key_values));
-                }
-            }
-            Self::Marker(marker) => {
-                if let Some(bullet) = marker.bullet {
-                    f("char", Self::Str(bullet));
-                }
-                if let Some(delimiter) = marker.delimiter {
-                    f("delimiter", Self::Str(delimiter));
-                }
-                f("kind", Self::Str(marker.kind));
-                if let Some(start) = marker.start {
-                    f("start", Self::Int(start));
-                }
-                if let Some(style) = marker.style {
-                    f("style", Self::Str(style));
-                }
-            }
-            Self::Task(task) => f("mark", Self::Str(task.mark)),
             Self::Json(Value::Object(map)) => {
                 for (key, value) in map {
                     f(key, Self::Json(value));
                 }
             }
-            _ => {}
+            _ => {
+                for (key, value) in self.value_fields().into_iter().flatten() {
+                    if let Some(value) = value {
+                        f(key, value);
+                    }
+                }
+            }
         }
     }
 
