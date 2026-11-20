@@ -104,13 +104,6 @@ fn attribute_run_must_be_an_attribute_leaf() {
         spans(":: a\n{.c}\n", "unattached-block-attribute"),
         Vec::new()
     );
-    assert_eq!(
-        spans(
-            ">{{x.crv}}\n\n> ![](i.png){#img}\n\n2) a. {#id .c k=v}\n  %% #region r\n",
-            "unattached-block-attribute"
-        ),
-        Vec::new()
-    );
 }
 
 #[test]

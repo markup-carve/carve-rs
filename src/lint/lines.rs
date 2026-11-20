@@ -1330,8 +1330,6 @@ fn unattached_attribute(line: &Line, sink: &mut Sink<'_>) {
         || line.content_start.is_none()
         || (line.content_start.is_none() && (next.starts_with(":::") || next.starts_with('>')))
         || line.attached_attribute
-        || (at > line.text.len() - line.text.trim_start_matches([' ', '\t']).len()
-            && list_marker(line.text.trim_start_matches([' ', '\t'])))
         || !text.starts_with('{')
         || !text.ends_with('}')
         || text.len() < 3
