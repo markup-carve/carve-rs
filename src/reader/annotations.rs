@@ -93,8 +93,10 @@ fn under(endpoint: &str, node: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
-/// Checks the supplied range schema and its binding to the already accepted tree.
-pub(crate) fn check_annotations(root: &Value, annotations: &Value) -> Result<(), TreeError> {
+fn checked_ranges<'a>(
+    root: &Value,
+    annotations: &'a Value,
+) -> Result<HashMap<&'a str, &'a Value>, TreeError> {
     schema::validate(annotations, sidecar_schema()?)?;
     let mut ranges = HashMap::new();
     for (index, range) in annotations["ranges"]
@@ -128,6 +130,10 @@ pub(crate) fn check_annotations(root: &Value, annotations: &Value) -> Result<(),
             }
         }
     }
+    Ok(ranges)
+}
+
+fn check_bindings(root: &Value, ranges: &HashMap<&str, &Value>) -> Result<(), TreeError> {
     let mut seen = HashSet::new();
     let mut pending = vec![(root, String::new())];
     while let Some((value, path)) = pending.pop() {
@@ -191,4 +197,10 @@ pub(crate) fn check_annotations(root: &Value, annotations: &Value) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// Checks the supplied range schema and its binding to the already accepted tree.
+pub(crate) fn check_annotations(root: &Value, annotations: &Value) -> Result<(), TreeError> {
+    let ranges = checked_ranges(root, annotations)?;
+    check_bindings(root, &ranges)
 }
