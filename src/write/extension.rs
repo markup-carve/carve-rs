@@ -113,7 +113,7 @@ fn body_inlines(body: &str) -> Option<Vec<Value>> {
 /// replaced by the core node it reads back as, or `None` when it has none.
 pub fn with_core_inlines(tree: &Value) -> Option<Value> {
     fn walk(v: &mut Value, changed: &mut bool) {
-        if ty(v) == "inline_extension"
+        if ty(&*v) == "inline_extension"
             && let Some(core) = core_inline(v)
         {
             *v = core;
@@ -137,7 +137,7 @@ pub fn apply_claims(doc: &mut Value, extensions: &[String], source: &str) {
     if !extensions.iter().any(|e| e == "carve.tabs") {
         return;
     }
-    let definitions: Vec<Value> = children(doc)
+    let definitions: Vec<Value> = children(&*doc)
         .iter()
         .filter(|n| ty(n) == "link_reference_definition")
         .cloned()
@@ -182,7 +182,7 @@ fn opener_name<'s>(node: &Value, source: &'s str) -> Option<&'s str> {
 }
 
 fn claim_tree(node: &mut Value, source: &str, definitions: &[Value]) -> bool {
-    if ty(node) == "div" && opener_name(node, source) == Some("tabs") {
+    if ty(&*node) == "div" && opener_name(node, source) == Some("tabs") {
         if let Some(claimed) = tabs(node, source, definitions) {
             *node = claimed;
             return true;

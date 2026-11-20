@@ -277,6 +277,7 @@ fn gen_ast(schema: &Value, slots: &Value) -> [String; 3] {
     write_node_enum(&mut arena, &nodes, Fam::Arena);
     write_node_enum(&mut owned, &nodes, Fam::Owned);
     write_node_conv(&mut conv, &nodes);
+    write_view(&mut owned, &nodes);
     write_slots(&mut arena, &defs, slots, Fam::Arena);
     write_slots(&mut owned, &defs, slots, Fam::Owned);
     [arena, owned, conv]
@@ -504,6 +505,73 @@ fn write_node_enum(out: &mut String, nodes: &[NodeDef], fam: Fam) {
     );
     for n in nodes {
         let _ = writeln!(out, "            Self::{}(_) => {:?},", n.ty, n.name);
+    }
+    out.push_str("        }\n    }\n}\n\n");
+}
+
+// ---------------------------------------------------------------- typed view
+
+/// The `Field` of one owned field `v` (a reference), by its kind.
+fn view_expr(f: &Field) -> &'static str {
+    match &f.kind {
+        _ if f.json == "pos" => "Field::Pos(*v)",
+        _ if f.json == "attrs" => "Field::Attrs(v)",
+        _ if f.json == "segments" => "Field::Segments(v)",
+        FieldKind::Nodes => "Field::Nodes(v.as_slice())",
+        FieldKind::NodeBox => "Field::Node(Typed::Node(v))",
+        FieldKind::Str => "Field::Str(v)",
+        FieldKind::Int => "Field::Int(*v)",
+        FieldKind::Num => "Field::Num(*v)",
+        FieldKind::Bool => "Field::Bool(*v)",
+        FieldKind::Enum(_) => "Field::Str(v.as_str())",
+        FieldKind::Strings => "Field::Strings(v)",
+        FieldKind::Json => "Field::Json(v)",
+        FieldKind::Marker => "Field::Marker(v)",
+        FieldKind::Task => "Field::Task(v)",
+    }
+}
+
+/// `view_field` of each owned node type and of [`Node`]: a field by its wire
+/// name, as `crate::tree::view` reads it.
+fn write_view(out: &mut String, nodes: &[NodeDef]) {
+    let head = "use crate::tree::view::{Field, Typed};\n\n";
+    out.push_str(head);
+    for n in nodes {
+        let _ = writeln!(
+            out,
+            "impl {} {{\n    #[allow(clippy::match_same_arms, clippy::too_many_lines, clippy::redundant_closure)]\n    #[cfg_attr(not(test), allow(dead_code))]\n    pub(crate) fn view_field<'t>(&'t self, name: &str) -> Field<'t, Typed<'t>> {{\n        match name {{",
+            n.ty
+        );
+        for f in &n.fields {
+            let expr = view_expr(f);
+            if f.required {
+                let _ = writeln!(
+                    out,
+                    "            {:?} => {{\n                let v = &self.{};\n                {expr}\n            }}",
+                    f.json, f.rust
+                );
+            } else {
+                let _ = writeln!(
+                    out,
+                    "            {:?} => self.{}.as_ref().map_or(Field::Absent, |v| {expr}),",
+                    f.json, f.rust
+                );
+            }
+        }
+        let _ = writeln!(out, "            \"type\" => Field::Str({:?}),", n.name);
+        out.push_str("            _ => Field::Absent,\n        }\n    }\n}\n\n");
+    }
+    out.push_str("#[cfg_attr(not(test), allow(dead_code))]\nimpl Node {\n    pub(crate) fn view_field<'t>(&'t self, name: &str) -> Field<'t, Typed<'t>> {\n        match self {\n");
+    for n in nodes {
+        let _ = writeln!(out, "            Self::{}(n) => n.view_field(name),", n.ty);
+    }
+    out.push_str("        }\n    }\n\n    /// The address of the node's own struct, stable while the tree is borrowed.\n    pub(crate) fn view_addr(&self) -> usize {\n        match self {\n");
+    for n in nodes {
+        let _ = writeln!(
+            out,
+            "            Self::{}(n) => std::ptr::from_ref::<{}>(n).addr(),",
+            n.ty, n.ty
+        );
     }
     out.push_str("        }\n    }\n}\n\n");
 }

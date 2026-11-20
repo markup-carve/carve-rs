@@ -3,6 +3,7 @@
 
 mod delimited;
 mod table;
+pub(crate) mod view;
 
 use crate::Arena;
 use crate::ast::{self, Node, owned::Attrs};

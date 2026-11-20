@@ -4,6 +4,7 @@
 //! are not compared).
 
 use crate::hash::AddrHasher;
+use crate::tree::view::{AsView, View};
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -17,97 +18,77 @@ type TypeMap<V> = HashMap<String, V, BuildHasherDefault<AddrHasher>>;
 pub type N<'t> = &'t Value;
 
 /// The identity of a node: its address, stable while the tree is borrowed.
-pub fn id(n: &Value) -> usize {
-    std::ptr::from_ref(n).addr()
+pub fn id<'t, A: AsView<'t>>(n: A) -> usize {
+    n.view().id()
 }
 
-pub fn ty(n: &Value) -> &str {
-    n.get("type").and_then(Value::as_str).unwrap_or("")
+pub fn ty<'t, A: AsView<'t>>(n: A) -> &'t str {
+    n.view().ty()
 }
 
-pub fn is(n: Option<&Value>, t: &str) -> bool {
-    n.is_some_and(|n| ty(n) == t)
+pub fn is<'t, A: AsView<'t>>(n: Option<A>, t: &str) -> bool {
+    n.is_some_and(|n| n.view().ty() == t)
 }
 
-pub fn children(n: &Value) -> &[Value] {
-    n.get("children")
-        .and_then(Value::as_array)
-        .map_or(&[], Vec::as_slice)
+pub fn children<'t, A: AsView<'t>>(n: A) -> <A::V as View<'t>>::List {
+    n.view().children()
 }
 
-pub fn list<'t>(n: &'t Value, field: &str) -> Option<&'t [Value]> {
-    n.get(field).and_then(Value::as_array).map(Vec::as_slice)
+pub fn list<'t, A: AsView<'t>>(n: A, field: &str) -> Option<<A::V as View<'t>>::List> {
+    n.view().list(field)
 }
 
-pub fn s<'t>(n: &'t Value, field: &str) -> Option<&'t str> {
-    n.get(field).and_then(Value::as_str)
+pub fn s<'t, A: AsView<'t>>(n: A, field: &str) -> Option<&'t str> {
+    n.view().s(field)
 }
 
-pub fn text(n: &Value) -> &str {
-    s(n, "value").unwrap_or("")
+pub fn text<'t, A: AsView<'t>>(n: A) -> &'t str {
+    n.view().s("value").unwrap_or("")
 }
 
-pub fn flag(n: &Value, field: &str) -> bool {
-    n.get(field).and_then(Value::as_bool).unwrap_or(false)
+pub fn flag<'t, A: AsView<'t>>(n: A, field: &str) -> bool {
+    n.view().flag(field)
 }
 
-pub fn int(n: &Value, field: &str) -> Option<i64> {
-    n.get(field).and_then(Value::as_i64)
+pub fn int<'t, A: AsView<'t>>(n: A, field: &str) -> Option<i64> {
+    n.view().int(field)
 }
 
-pub fn has(n: &Value, field: &str) -> bool {
-    n.get(field).is_some_and(|v| !v.is_null())
+pub fn has<'t, A: AsView<'t>>(n: A, field: &str) -> bool {
+    n.view().has(field)
 }
 
-pub fn caption(n: &Value) -> Option<&Value> {
-    n.get("caption").filter(|c| c.is_object())
+pub fn caption<'t, A: AsView<'t>>(n: A) -> Option<A::V> {
+    n.view().node("caption")
 }
 
-pub fn title(n: &Value) -> Option<&[Value]> {
-    list(n, "title")
+pub fn title<'t, A: AsView<'t>>(n: A) -> Option<<A::V as View<'t>>::List> {
+    n.view().list("title")
 }
 
-pub fn is_break(n: Option<&Value>) -> bool {
-    n.is_some_and(|n| matches!(ty(n), "soft_break" | "hard_break"))
+pub fn is_break<'t, A: AsView<'t>>(n: Option<A>) -> bool {
+    n.is_some_and(|n| matches!(n.view().ty(), "soft_break" | "hard_break"))
 }
 
 pub fn attrs(n: &Value) -> Option<&Map<String, Value>> {
     n.get("attrs").and_then(Value::as_object)
 }
 
-pub fn classes(n: &Value) -> Vec<&str> {
-    attrs(n)
-        .and_then(|a| a.get("classes"))
-        .and_then(Value::as_array)
-        .map(|c| c.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default()
+pub fn classes<'t, A: AsView<'t>>(n: A) -> Vec<&'t str> {
+    n.view().classes()
 }
 
-pub fn key_values(n: &Value) -> Vec<(&str, &str)> {
-    attrs(n)
-        .and_then(|a| a.get("keyValues"))
-        .and_then(Value::as_array)
-        .map(|kv| {
-            kv.iter()
-                .filter_map(|p| {
-                    let p = p.as_array()?;
-                    Some((p.first()?.as_str()?, p.get(1)?.as_str()?))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+pub fn key_values<'t, A: AsView<'t>>(n: A) -> Vec<(&'t str, &'t str)> {
+    n.view().key_values()
 }
 
 /// A start and an end byte of a node, from `pos`.
-pub fn span(n: &Value) -> Option<(usize, usize)> {
-    let pos = n.get("pos")?;
-    let start = usize::try_from(pos.get("startOffset")?.as_u64()?).ok()?;
-    let end = usize::try_from(pos.get("endOffset")?.as_u64()?).ok()?;
-    Some((start, end))
+pub fn span<'t, A: AsView<'t>>(n: A) -> Option<(usize, usize)> {
+    n.view().span()
 }
 
-pub fn pos_field(n: &Value, field: &str) -> Option<i64> {
-    n.get("pos")?.get(field)?.as_i64()
+pub fn pos_field<'t, A: AsView<'t>>(n: A, field: &str) -> Option<i64> {
+    n.view().pos_field(field)
 }
 
 pub const INLINE_PARENTS: &[&str] = &[
@@ -133,8 +114,8 @@ pub const INLINE_PARENTS: &[&str] = &[
     "small_caps",
 ];
 
-pub fn is_inline_parent(n: &Value) -> bool {
-    INLINE_PARENTS.contains(&ty(n))
+pub fn is_inline_parent<'t, A: AsView<'t>>(n: A) -> bool {
+    INLINE_PARENTS.contains(&n.view().ty())
 }
 
 fn slots_table() -> &'static TypeMap<Vec<Vec<String>>> {
@@ -334,7 +315,7 @@ fn coalesced(items: &[Value]) -> Vec<std::borrow::Cow<'_, Value>> {
     for item in items {
         if ty(item) == "text" {
             if let Some(last) = out.last_mut() {
-                if ty(last) == "text" {
+                if ty(&**last) == "text" {
                     let mut merged = last.clone().into_owned();
                     let joined = format!("{}{}", text(&merged), text(item));
                     if let Some(m) = merged.as_object_mut() {

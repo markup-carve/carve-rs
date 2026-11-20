@@ -181,7 +181,7 @@ fn locate(doc: &Value, w: &Writer<'_>) -> Vec<Entry> {
             let range = place
                 .and(l.node)
                 .and_then(|n| nodes.get(&n))
-                .and_then(|n| span(n))
+                .and_then(|n| span(*n))
                 .map(|(start_offset, end_offset)| Range {
                     start_offset,
                     end_offset,
