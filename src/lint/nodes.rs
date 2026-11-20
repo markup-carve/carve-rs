@@ -1853,55 +1853,9 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     emphasis_before_attrs(item, sink, &value, from);
-    if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
-        let (block, end) = crate::attr::parse_block(&value, at)?;
-        let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
-        let quote_prefix = before == ">"
-            && !value.starts_with('>')
-            && sink
-                .source
-                .get(..from + at)
-                .is_some_and(|prefix| prefix.ends_with("> "));
-        (at > 0
-            && !block.empty
-            && !before.is_empty()
-            && !quote_prefix
-            && !escaped(value.as_bytes(), at))
-        .then_some((at, end))
-    }) {
-        sink.emit_range(
-            "unattached-inline-attribute",
-            from + at,
-            from + end,
-            item.path(),
-            &[],
-            0,
-        );
-    }
+    text_inline_attr(item, sink, &value, from);
     sigils(item, sink, &value, from);
-    if sink.options.platforms.iter().any(|p| p == "github")
-        && !parent_kinds(item).any(|kind| kind == "footnote")
-    {
-        for (at, _) in value.match_indices('#') {
-            let digits = value
-                .get(at + 1..)
-                .unwrap_or("")
-                .bytes()
-                .take_while(u8::is_ascii_digit)
-                .count();
-            if digits > 0 {
-                let token = value.get(at..at + digits + 1).unwrap_or("");
-                sink.emit_range(
-                    "platform-issue-reference",
-                    from + at,
-                    from + at + token.len(),
-                    item.path(),
-                    &[("host", "GitHub"), ("text", token)],
-                    0,
-                );
-            }
-        }
-    }
+    text_platform_refs(item, sink, &value, from);
     djot_text(item, sink, &value, from);
     unclosed_emphasis(item, sink, from);
     let parent = item.parents.as_deref().map_or("", |parent| parent.kind);
@@ -1925,6 +1879,60 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         );
     }
     bidi(item, sink);
+}
+
+fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
+    if sink.options.platforms.iter().any(|p| p == "github")
+        && !parent_kinds(item).any(|kind| kind == "footnote")
+    {
+        for (at, _) in value.match_indices('#') {
+            let digits = value
+                .get(at + 1..)
+                .unwrap_or("")
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            if digits > 0 {
+                let token = value.get(at..at + digits + 1).unwrap_or("");
+                sink.emit_range(
+                    "platform-issue-reference",
+                    from + at,
+                    from + at + token.len(),
+                    item.path(),
+                    &[("host", "GitHub"), ("text", token)],
+                    0,
+                );
+            }
+        }
+    }
+}
+
+fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
+    if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
+        let (block, end) = crate::attr::parse_block(value, at)?;
+        let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
+        let quote_prefix = before == ">"
+            && !value.starts_with('>')
+            && sink
+                .source
+                .get(..from + at)
+                .is_some_and(|prefix| prefix.ends_with("> "));
+        (at > 0
+            && !block.empty
+            && !before.is_empty()
+            && !quote_prefix
+            && !escaped(value.as_bytes(), at))
+        .then_some((at, end))
+    }) {
+        sink.emit_range(
+            "unattached-inline-attribute",
+            from + at,
+            from + end,
+            item.path(),
+            &[],
+            0,
+        );
+    }
 }
 
 fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: usize) {
