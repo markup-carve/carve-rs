@@ -269,6 +269,32 @@ fn owner_path<'a>(mut path: &'a str, types: &HashMap<String, String>) -> &'a str
     path
 }
 
+fn inline_holder(path: &str, types: &HashMap<String, String>) -> bool {
+    let mut ancestor = parent(path);
+    while !ancestor.is_empty() {
+        if types.get(ancestor).is_some_and(|kind| {
+            matches!(
+                kind.as_str(),
+                "paragraph"
+                    | "caption"
+                    | "definition_term"
+                    | "heading"
+                    | "line"
+                    | "cell_paragraph"
+                    | "code_block"
+                    | "raw_block"
+                    | "frontmatter"
+                    | "comment"
+                    | "include"
+            )
+        }) {
+            return true;
+        }
+        ancestor = parent(ancestor);
+    }
+    false
+}
+
 fn item_owner_path<'a>(mut path: &'a str, types: &HashMap<String, String>) -> &'a str {
     while types.get(path).is_some_and(|kind| {
         matches!(
@@ -392,6 +418,9 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
     let mut attached_by_line = vec![false; raw_lines.len()];
     let mut boundaries = vec![Vec::new(); raw_lines.len()];
     for range in ranges {
+        if inline_holder(range.path.as_str(), &types) {
+            continue;
+        }
         if matches!(
             range.kind.as_str(),
             "block_quote" | "list_item" | "footnote" | "definition_description"
@@ -559,6 +588,9 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         }));
     }
     let base_elapsed = clock.elapsed();
+    if std::env::var("CARVE_LINT_MODEL_DEBUG").is_ok() {
+        eprintln!("lines {}", Value::Array(base.clone()));
+    }
     let mut records = Vec::new();
     for (index, line) in raw_lines.iter().enumerate() {
         records.push(Record {
@@ -576,27 +608,29 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         let Some(line) = raw_lines.get(at) else {
             continue;
         };
-        let is_inline = (range.kind == "comment" && !range.form_block)
-            || matches!(
-                range.kind.as_str(),
-                "text"
-                    | "image"
-                    | "emphasis"
-                    | "strong"
-                    | "highlight"
-                    | "strike"
-                    | "link"
-                    | "raw_inline"
-                    | "code"
-                    | "span"
-                    | "subscript"
-                    | "superscript"
-                    | "autolink"
-                    | "reference"
-                    | "footnote_ref"
-                    | "citation"
-                    | "wikilink"
-            );
+        let has_inline_holder = inline_holder(range.path.as_str(), &types);
+        let is_inline = has_inline_holder
+            && ((range.kind == "comment" && !range.form_block)
+                || matches!(
+                    range.kind.as_str(),
+                    "text"
+                        | "image"
+                        | "emphasis"
+                        | "strong"
+                        | "highlight"
+                        | "strike"
+                        | "link"
+                        | "raw_inline"
+                        | "code"
+                        | "span"
+                        | "subscript"
+                        | "superscript"
+                        | "autolink"
+                        | "reference"
+                        | "footnote_ref"
+                        | "citation"
+                        | "wikilink"
+                ));
         if is_inline {
             let mut ancestor = parent(range.path.as_str());
             let mut leaf = "";
@@ -631,6 +665,9 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
                 line_index: at,
                 over: "inline",
             });
+            continue;
+        }
+        if has_inline_holder {
             continue;
         }
         if matches!(
@@ -749,6 +786,18 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
             base_elapsed - lines_elapsed,
             records_elapsed - base_elapsed,
             clock.elapsed() - records_elapsed
+        );
+    }
+    if std::env::var("CARVE_LINT_MODEL_DEBUG").is_ok() {
+        eprintln!(
+            "blocks {}",
+            Value::Array(
+                records
+                    .iter()
+                    .filter(|r| r.over == "block")
+                    .map(|r| r.value.clone())
+                    .collect()
+            )
         );
     }
     Records {
