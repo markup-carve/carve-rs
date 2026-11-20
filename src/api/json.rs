@@ -194,12 +194,24 @@ fn tree_call(name: &str, req: &Value) -> Result<Value, Error> {
             .get("json")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::option("json", "decodeTree takes json text"))?;
-        return Ok(json!({ "tree": tree_value(&super::decode_tree(text)?) }));
+        return Ok(
+            json!({ "tree": tree_value(&super::decode_tree_with(text, super::TreeReadOptions {
+            annotations: req.get("annotations"),
+        })?) }),
+        );
     }
     let mut tree = tree(req)?;
     tree.set_file(req.get("file").and_then(Value::as_str).map(str::to_string));
     Ok(match name {
-        "validateTree" => json!({}),
+        "validateTree" => {
+            super::validate_tree_with(
+                &tree,
+                super::TreeReadOptions {
+                    annotations: req.get("annotations"),
+                },
+            )?;
+            json!({})
+        }
         "encodeTree" => json!({ "json": super::encode_tree(&tree) }),
         "encodeEnvelope" => json!({ "json": super::encode_envelope(&tree) }),
         _ => json!({ "dependencies": dependencies(&tree) }),
