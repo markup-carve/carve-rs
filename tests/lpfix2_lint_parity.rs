@@ -54,6 +54,13 @@ fn nested_opener_uses_div_content_column() {
         spans("   :::\n  ***\n", "block-opener-overindented"),
         vec![(3, 6)]
     );
+    assert_eq!(
+        spans(
+            "{{x.crv}}\n\n[^n]: :: x y\n       : text ~sub~\n       ::: bibliography\n       :: term  \n: def \n\t:::",
+            "block-opener-overindented"
+        ),
+        vec![(51, 54)]
+    );
 }
 
 #[test]

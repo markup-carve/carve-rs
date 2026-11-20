@@ -426,6 +426,7 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
                 owner,
                 usize::try_from(column.saturating_sub(1)).unwrap_or(usize::MAX),
                 start_line,
+                parent.len(),
             ));
             break;
         }
@@ -438,8 +439,10 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         .parents
         .iter()
         .rposition(|parent| matches!(parent.as_str(), "definition_description" | "footnote"));
-    let (owner, standard) = if let Some((owner, column, start_line)) = content_owner
+    let div_owner = div_owner_column(item, root, sink.source);
+    let (owner, standard) = if let Some((owner, column, start_line, depth)) = content_owner
         && content_parent > quote
+        && div_owner.is_none_or(|(_, div_depth)| div_depth <= depth)
     {
         if field(item.node, "/pos/startLine").as_u64() == Some(start_line) {
             return;
@@ -454,7 +457,7 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
                     .unwrap_or(usize::MAX)
             }),
         )
-    } else if let Some(column) = div_owner_column(item, root, sink.source) {
+    } else if let Some((column, _)) = div_owner {
         ("a div", column)
     } else {
         ("document", 0)
@@ -488,7 +491,7 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
     );
 }
 
-fn div_owner_column(item: &Item<'_>, root: &Value, source: &str) -> Option<usize> {
+fn div_owner_column(item: &Item<'_>, root: &Value, source: &str) -> Option<(usize, usize)> {
     let mut path = item.path.as_str();
     while let Some((parent, _)) = path.rsplit_once("/children/") {
         path = parent;
@@ -498,10 +501,11 @@ fn div_owner_column(item: &Item<'_>, root: &Value, source: &str) -> Option<usize
             Some("div" | "admonition" | "directive" | "figure_group")
         ) {
             let (start, _) = bounds(node)?;
-            return Some(
+            return Some((
                 usize::try_from(source_column(source, start).saturating_sub(1))
                     .unwrap_or(usize::MAX),
-            );
+                parent.len(),
+            ));
         }
     }
     None
