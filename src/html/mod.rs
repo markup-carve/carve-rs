@@ -108,7 +108,7 @@ pub fn render_with_losses_source(
         let normalized = crate::source::Source::new(src);
         render_mapped_source(doc, opts, normalized.render_view(), true, None)
     } else {
-        render_source(doc, opts, src, true, None)
+        render_source(doc, opts, src, true, None, true)
     }
 }
 
@@ -126,16 +126,18 @@ pub fn render_with_losses_source_bytes(
 
 /// `render_with_losses_source`; `ordered` false when resolve found no note,
 /// cross-reference or titled block, so the renderer needs no order of its own.
+/// `key_values` false promises that no node of `doc` has key-value attributes.
 pub(crate) fn render_source(
     doc: &Document<'_>,
     opts: &Options,
     src: &str,
     ordered: bool,
     details: Option<&mut LossDetails>,
+    key_values: bool,
 ) -> (String, Vec<&'static str>) {
     let mut r = Renderer::with_order(doc, opts, ordered);
     r.src = Some(SourceView::direct(src));
-    r.document();
+    r.document_with(key_values);
     if let Some(details) = details {
         details.extend(&mut r);
     }
@@ -583,8 +585,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
     }
 
     fn document(&mut self) {
+        self.document_with(true);
+    }
+
+    /// `key_values` false skips the reserved carrier walk: no node holds a key-value attribute.
+    fn document_with(&mut self, key_values: bool) {
         let doc = self.doc;
-        for node in doc.children.iter() {
+        for node in doc.children.iter().filter(|_| key_values) {
             reserved_losses(
                 node,
                 &mut self.losses,
