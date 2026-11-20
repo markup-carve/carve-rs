@@ -77,6 +77,18 @@ fn details_keeps_code_payload_bytes() {
         },
     );
     assert!(raw.contains("<div>\n x\n</div>"), "{raw}");
+    let textarea = html_with(
+        "::: details \"Req\"\n```=html\n<textarea>\n x\n</textarea>\n```\n:::\n",
+        extensions::details(),
+        &Options {
+            raw_html: true,
+            ..Options::default()
+        },
+    );
+    assert!(
+        textarea.contains("<textarea>\n x\n</textarea>"),
+        "{textarea}"
+    );
 }
 
 #[test]
@@ -124,6 +136,48 @@ fn details_keeps_one_thousand_code_variants() {
             content,
             format!("{lead}x\n{second}y\n"),
             "variant {i}: {source}"
+        );
+    }
+}
+
+#[test]
+fn details_keeps_one_thousand_raw_variants() {
+    for i in 0..1_000 {
+        let prefix = if i % 2 == 0 { "" } else { "  " };
+        let lead = " ".repeat(i % 7);
+        let second = " ".repeat((i / 7) % 7);
+        let mut lines = Vec::new();
+        if !prefix.is_empty() {
+            lines.extend(["- item".to_string(), String::new()]);
+        }
+        lines.push(format!("{prefix}::: details \"Req\""));
+        if i % 3 == 0 {
+            lines.extend([format!("{prefix}before"), prefix.to_string()]);
+        }
+        lines.extend([
+            format!("{prefix}```=html"),
+            format!("{prefix}<div>"),
+            format!("{prefix}{lead}x"),
+            format!("{prefix}{second}y"),
+            format!("{prefix}</div>"),
+            format!("{prefix}```"),
+        ]);
+        if i % 5 == 0 {
+            lines.extend([prefix.to_string(), format!("{prefix}after")]);
+        }
+        lines.push(format!("{prefix}:::"));
+        let source = format!("{}\n", lines.join("\n"));
+        let rendered = html_with(
+            &source,
+            extensions::details(),
+            &Options {
+                raw_html: true,
+                ..Options::default()
+            },
+        );
+        assert!(
+            rendered.contains(&format!("<div>\n{lead}x\n{second}y\n</div>")),
+            "variant {i}: {source}\n{rendered}"
         );
     }
 }
