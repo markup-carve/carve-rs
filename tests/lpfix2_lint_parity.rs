@@ -168,3 +168,14 @@ fn later_html_tag_still_reports_after_a_comparison() {
         vec![(10, 13)]
     );
 }
+
+#[test]
+fn list_item_owner_suppresses_nested_opener_warning() {
+    assert_eq!(
+        spans(
+            "2) ***\n   ::: box\n   - [ ] task\n\n   :: x y\n   :::\n",
+            "block-opener-overindented"
+        ),
+        Vec::new()
+    );
+}

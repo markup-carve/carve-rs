@@ -463,25 +463,7 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
                     .unwrap_or(usize::MAX)
             }),
         )
-    } else if let Some((_, column)) = item
-        .path
-        .rsplit_once("/children/")
-        .and_then(|(path, _)| root.pointer(path))
-        .filter(|node| {
-            matches!(
-                node["type"].as_str(),
-                Some("div" | "admonition" | "directive" | "figure_group")
-            )
-        })
-        .and_then(bounds)
-        .map(|(start, _)| {
-            (
-                "a div",
-                usize::try_from(source_column(sink.source, start).saturating_sub(1))
-                    .unwrap_or(usize::MAX),
-            )
-        })
-    {
+    } else if let Some(column) = div_owner_column(item, root, sink.source) {
         ("a div", column)
     } else {
         ("document", 0)
@@ -513,6 +495,25 @@ fn overindented_opener(item: &Item<'_>, root: &Value, sink: &mut Sink<'_>) {
         ],
         0,
     );
+}
+
+fn div_owner_column(item: &Item<'_>, root: &Value, source: &str) -> Option<usize> {
+    let mut path = item.path.as_str();
+    while let Some((parent, _)) = path.rsplit_once("/children/") {
+        path = parent;
+        let node = root.pointer(parent)?;
+        if matches!(
+            node["type"].as_str(),
+            Some("div" | "admonition" | "directive" | "figure_group")
+        ) {
+            let (start, _) = bounds(node)?;
+            return Some(
+                usize::try_from(source_column(source, start).saturating_sub(1))
+                    .unwrap_or(usize::MAX),
+            );
+        }
+    }
+    None
 }
 
 fn check_block_node(item: &Item<'_>, ids: &HashSet<String>, root: &Value, sink: &mut Sink<'_>) {
