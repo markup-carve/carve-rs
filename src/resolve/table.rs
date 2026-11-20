@@ -224,6 +224,9 @@ pub fn resolved_valigns(
 /// Writes the table results of `n` when it is a table.
 pub(super) fn resolve_table(n: &Node, res: &mut AddrMap<usize, Res>) {
     let Node::Table(t) = n else { return };
+    if !has_layout_results(t) {
+        return;
+    }
     let placed = layout(t);
     let marks = placed.iter().any(|p| p.mark);
     if marks {
@@ -243,4 +246,31 @@ pub(super) fn resolve_table(n: &Node, res: &mut AddrMap<usize, Res>) {
             res.insert(addr(col), Res::Aligns(align, valign));
         }
     }
+}
+
+/// False when the table holds no span mark and no alignment that a column
+/// could resolve to, so the grid has no result to give.
+fn has_layout_results(t: &Table<'_>) -> bool {
+    let aligned_column = t
+        .columns
+        .iter()
+        .any(|c| matches!(c, Node::TableColumn(x) if x.align.is_some() || x.valign.is_some()));
+    if aligned_column {
+        return true;
+    }
+    t.children.iter().any(|g| {
+        let (head, rows) = match g {
+            Node::TableHead(x) => (true, &*x.children),
+            Node::TableBody(x) => (false, &*x.children),
+            Node::TableFoot(x) => (false, &*x.children),
+            _ => return false,
+        };
+        rows.iter()
+            .filter(|r| matches!(r, Node::TableRow(_)))
+            .flat_map(cells)
+            .any(|c| {
+                matches!(c, Node::TableCell(x)
+                    if x.span.is_some() || (head && (x.align.is_some() || x.valign.is_some())))
+            })
+    })
 }
