@@ -387,14 +387,27 @@ fn colon_layouts<'a>(
             }
         };
         let (line, column) = positions.line_col(from);
-        let final_line = positions.line(positions.line_of(range.end.saturating_sub(1)));
+        let final_index = positions.line_of(range.end.saturating_sub(1));
+        let final_line = positions.line(final_index);
         let closer = final_line
             .trim_start_matches([' ', '\t', '>'])
             .trim_end_matches([' ', '\t']);
+        let closer_start = positions.line_range(final_index).0
+            + final_line
+                .len()
+                .saturating_sub(final_line.trim_start_matches([' ', '\t', '>']).len());
+        let closer_owned_by_child = ranges.iter().any(|child| {
+            child.path.as_str().starts_with(range.path.as_str())
+                && child.path.as_str().as_bytes().get(range.path.len()) == Some(&b'/')
+                && child.start <= closer_start
+                && child.end >= closer_start + closer.len()
+        });
         colons.push(Colon {
             from,
             end: range.end,
-            closed: closer.len() >= width && closer.bytes().all(|byte| byte == b':'),
+            closed: !closer_owned_by_child
+                && closer.len() >= width
+                && closer.bytes().all(|byte| byte == b':'),
             owner: boundary_at(from, boundaries, positions),
             entry: json!({"width":width,"line":line,"column":column,"kind":kind,"start":from}),
         });
@@ -404,10 +417,8 @@ fn colon_layouts<'a>(
 }
 
 pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
-    let clock = std::time::Instant::now();
     let positions = Source::new(source);
     let raw_lines = lines::data_lines(source, ranges);
-    let lines_elapsed = clock.elapsed();
     let mut types = HashMap::new();
     let mut by_path = HashMap::new();
     for range in ranges {
@@ -587,22 +598,18 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
             "closes_container":closes,"open_colon":colon
         }));
     }
-    let base_elapsed = clock.elapsed();
-    if std::env::var("CARVE_LINT_MODEL_DEBUG").is_ok() {
-        eprintln!("lines {}", Value::Array(base.clone()));
-    }
     let mut records = Vec::new();
     for (index, line) in raw_lines.iter().enumerate() {
         records.push(Record {
             value: Value::Null,
             path: line.path.clone(),
-            line: base[index]["text"].as_str().unwrap_or("").to_owned(),
             line_start: line.start,
             line_index: index,
             over: "line",
         });
     }
-    let records_elapsed = clock.elapsed();
+    let mut candidates: HashMap<(&str, &str), bool> = HashMap::new();
+    let mut inline_candidates: HashMap<&str, bool> = HashMap::new();
     for range in ranges {
         let at = range.start_line.saturating_sub(1);
         let Some(line) = raw_lines.get(at) else {
@@ -632,6 +639,21 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
                         | "wikilink"
                 ));
         if is_inline {
+            if !*inline_candidates
+                .entry(range.kind.as_str())
+                .or_insert_with(|| super::data_rules::inline_candidate(&range.kind))
+            {
+                continue;
+            }
+            if range.kind == "text"
+                && !super::data_rules::inline_text_candidate(text_at(
+                    source,
+                    range.start,
+                    range.end,
+                ))
+            {
+                continue;
+            }
             let mut ancestor = parent(range.path.as_str());
             let mut leaf = "";
             while !ancestor.is_empty() {
@@ -660,7 +682,6 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
             records.push(Record {
                 value: inline,
                 path: range.path.to_string(),
-                line: base[at]["text"].as_str().unwrap_or("").to_owned(),
                 line_start: line.start,
                 line_index: at,
                 over: "inline",
@@ -678,6 +699,12 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         }
         let parent_path = parent(range.path.as_str());
         let parent_type = types.get(parent_path).map_or("document", String::as_str);
+        if !*candidates
+            .entry((range.kind.as_str(), parent_type))
+            .or_insert_with(|| super::data_rules::block_candidate(&range.kind, parent_type))
+        {
+            continue;
+        }
         let owner = owner_path(parent_path, &types);
         let item_owner = item_owner_path(owner, &types);
         let kind = range.kind.as_str();
@@ -773,32 +800,10 @@ pub(super) fn records(source: &str, ranges: &[Range]) -> Records {
         records.push(Record {
             value: block,
             path: range.path.to_string(),
-            line: base[at]["text"].as_str().unwrap_or("").to_owned(),
             line_start: line.start,
             line_index: at,
             over: "block",
         });
-    }
-    if std::env::var("CARVE_LINT_PROFILE").is_ok() {
-        eprintln!(
-            "model phases {:?} {:?} {:?} {:?}",
-            lines_elapsed,
-            base_elapsed - lines_elapsed,
-            records_elapsed - base_elapsed,
-            clock.elapsed() - records_elapsed
-        );
-    }
-    if std::env::var("CARVE_LINT_MODEL_DEBUG").is_ok() {
-        eprintln!(
-            "blocks {}",
-            Value::Array(
-                records
-                    .iter()
-                    .filter(|r| r.over == "block")
-                    .map(|r| r.value.clone())
-                    .collect()
-            )
-        );
     }
     Records {
         lines: base,

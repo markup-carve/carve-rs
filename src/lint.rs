@@ -87,7 +87,9 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         same,
         |tree, arena| lint_core(source, opts, tree, arena),
     );
-    out.extend(diagnostics);
+    out.extend(diagnostics.into_iter().filter(|diagnostic| {
+        !data_rules::data_mode() || !data_rules::modeled_ids().contains(diagnostic.code)
+    }));
     if opts.includes.is_some() {
         includes::scan(source, opts, &mut out);
     }
@@ -205,21 +207,9 @@ fn lint_core<'a>(
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     if data_rules::data_mode() {
         if tree.is_some() {
-            let start_model = std::time::Instant::now();
             let records = data_model::records(source, &positions.all);
-            let elapsed_model = start_model.elapsed();
             out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
-            let start_rules = std::time::Instant::now();
             out.extend(data_rules::run(&records, source, opts));
-            if std::env::var("CARVE_LINT_PROFILE").is_ok() {
-                eprintln!(
-                    "lint data profile {} bytes: model {:?}, rules {:?}, records {}",
-                    source.len(),
-                    elapsed_model,
-                    start_rules.elapsed(),
-                    records.items.len()
-                );
-            }
         }
     }
     let invalid_tables: Vec<_> = out

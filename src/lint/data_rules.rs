@@ -32,10 +32,58 @@ pub(super) fn modeled_ids() -> &'static HashSet<&'static str> {
     })
 }
 
+pub(super) fn block_candidate(kind: &str, parent: &str) -> bool {
+    model()["rules"].as_array().is_some_and(|rules| {
+        rules.iter().any(|rule| {
+            rule["over"] == "block"
+                && rule["types"]
+                    .as_array()
+                    .is_none_or(|types| types.iter().any(|item| item == kind))
+                && admitted(&rule["when"], "parent.type").is_none_or(|names| names.contains(parent))
+        })
+    })
+}
+
+pub(super) fn inline_candidate(kind: &str) -> bool {
+    model()["rules"].as_array().is_some_and(|rules| {
+        rules.iter().any(|rule| {
+            rule["over"] == "inline"
+                && rule["types"]
+                    .as_array()
+                    .is_some_and(|types| types.iter().any(|item| item == kind))
+        })
+    })
+}
+
+pub(super) fn inline_text_candidate(text: &str) -> bool {
+    static BRACKET_REQUIRED: OnceLock<bool> = OnceLock::new();
+    let required = BRACKET_REQUIRED.get_or_init(|| {
+        let mut found = false;
+        let guarded = model()["rules"].as_array().is_some_and(|rules| {
+            rules
+                .iter()
+                .filter(|rule| {
+                    rule["over"] == "inline"
+                        && rule["types"]
+                            .as_array()
+                            .is_some_and(|types| types.iter().any(|item| item == "text"))
+                })
+                .all(|rule| {
+                    found = true;
+                    rule["when"]["contains"].as_array().is_some_and(|args| {
+                        args.first().is_some_and(|value| value["f"] == "text")
+                            && args.get(1).is_some_and(|value| value == "[")
+                    })
+                })
+        });
+        found && guarded
+    });
+    !*required || text.contains('[')
+}
+
 pub(super) struct Record {
     pub value: Value,
     pub path: String,
-    pub line: String,
     pub line_start: usize,
     pub line_index: usize,
     pub over: &'static str,
@@ -52,6 +100,12 @@ fn rule_for(record: &Record, value: &Value, rule: &Value) -> bool {
     }
     if let Some(types) = rule["types"].as_array() {
         if !types.iter().any(|kind| kind == &value["type"]) {
+            return false;
+        }
+    }
+    if record.over == "block" {
+        let parent = value["parent"]["type"].as_str().unwrap_or("document");
+        if admitted(&rule["when"], "parent.type").is_some_and(|names| !names.contains(parent)) {
             return false;
         }
     }
@@ -73,7 +127,7 @@ fn rule_for(record: &Record, value: &Value, rule: &Value) -> bool {
     true
 }
 
-fn admitted(expr: &Value, field: &str) -> Option<HashSet<String>> {
+pub(super) fn admitted(expr: &Value, field: &str) -> Option<HashSet<String>> {
     if let Some(args) = expr.get("eq").and_then(Value::as_array) {
         if args
             .first()
@@ -206,11 +260,8 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
                 .is_some_and(|code| active_catalog(code, options))
         })
         .collect();
-    let mut buckets: HashMap<(&'static str, String), Vec<&Value>> = HashMap::new();
-    let profile = std::env::var("CARVE_LINT_PROFILE").is_ok();
-    let mut timings = [std::time::Duration::ZERO; 3];
+    let mut buckets: HashMap<(&'static str, String, String), Vec<&Value>> = HashMap::new();
     for record in &records.items {
-        let started = std::time::Instant::now();
         let value = if record.over == "line" {
             &records.lines[record.line_index]
         } else {
@@ -222,8 +273,13 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
             value["type"].as_str()
         }
         .unwrap_or("");
+        let parent = if record.over == "block" {
+            value["parent"]["type"].as_str().unwrap_or("document")
+        } else {
+            ""
+        };
         let rules = buckets
-            .entry((record.over, kind.to_owned()))
+            .entry((record.over, kind.to_owned(), parent.to_owned()))
             .or_insert_with(|| {
                 active_rules
                     .iter()
@@ -237,7 +293,9 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
                 lines: &records.lines,
                 line_index: record.line_index,
                 over: record.over,
-                line: &record.line,
+                line: records.lines[record.line_index]["text"]
+                    .as_str()
+                    .unwrap_or(""),
                 line_start: record.line_start,
                 vars: HashMap::new(),
                 let_expr: HashMap::new(),
@@ -301,20 +359,6 @@ pub(super) fn run(records: &Records, source: &str, options: &LintOptions) -> Vec
                 report(rule, &mut eval, &positions, &record.path, &mut out);
             }
         }
-        if profile {
-            let slot = match record.over {
-                "line" => 0,
-                "block" => 1,
-                _ => 2,
-            };
-            timings[slot] += started.elapsed();
-        }
-    }
-    if profile {
-        eprintln!(
-            "rule phases line {:?}, block {:?}, inline {:?}",
-            timings[0], timings[1], timings[2]
-        );
     }
     out
 }
