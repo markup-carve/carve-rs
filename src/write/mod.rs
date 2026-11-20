@@ -14,6 +14,7 @@ mod extension;
 mod facts;
 mod inline;
 mod node;
+mod spans;
 mod state;
 mod table;
 mod width_data;
@@ -92,6 +93,30 @@ pub(crate) fn parse_plain(body: &str) -> Option<Value> {
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
+    let Some(marks) = spans::add(doc) else {
+        return write_tree(doc, settings);
+    };
+    let (source, mut entries) = write_tree(&marks.doc, settings);
+    for entry in &mut entries {
+        if let Some(path) = &entry.path {
+            entry.path = Some(marks.remap(path));
+        }
+    }
+    for at in &marks.unspelled {
+        let path = format!("{at}/rowspan");
+        if !entries
+            .iter()
+            .any(|e| e.path.as_deref() == Some(path.as_str()))
+        {
+            let message =
+                "Carve source cannot spell field rowspan of a table_cell node here".to_string();
+            entries.push(loss_entry("field-unspellable", message, path, None));
+        }
+    }
+    (source, entries)
+}
+
+fn write_tree(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let pool = typed_arena::Arena::new();
     let mut w = Writer::new(&pool, settings.align_tables);
     w.extensions.clone_from(&settings.extensions);
