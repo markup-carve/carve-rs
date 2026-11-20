@@ -367,6 +367,32 @@ fn c2_t_005_tree_clause_cases() {
             continue;
         }
         let id = c["id"].as_str().unwrap_or("");
+        if let Some(annotations) = c.get("annotations") {
+            let input = c
+                .get("json")
+                .and_then(Value::as_str)
+                .map_or_else(|| c["tree"].to_string(), str::to_string);
+            let result = carve::api::decode_tree_with(
+                &input,
+                carve::api::TreeReadOptions {
+                    annotations: Some(annotations),
+                },
+            );
+            if let Some(want) = c["expected"].get("refusal") {
+                let path = want["path"].as_str();
+                let ok = matches!(&result, Err(carve::api::Error::Tree(
+                    carve::reader::TreeError::Schema { path: got, .. }
+                    | carve::reader::TreeError::Reader { path: got, .. }
+                    | carve::reader::TreeError::Decode { path: got, .. }
+                )) if path.is_none_or(|p| p == got));
+                run.check(id, "refusal", ok, || {
+                    format!("expected {want}; got {result:?}")
+                });
+            } else {
+                run.check(id, "accepted", result.is_ok(), || format!("{result:?}"));
+            }
+            continue;
+        }
         let result = if let Some(json) = c["json"].as_str() {
             carve::reader::read_tree_json(json)
         } else {
