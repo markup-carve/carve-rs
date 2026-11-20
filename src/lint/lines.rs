@@ -487,7 +487,10 @@ fn thematic_marker(
     }
     // carve#6174: the run is read behind the container prefixes, marker lines included.
     let (from, own) = line_text(line);
-    if run(own, "-_", 3) && !(own.starts_with('-') && after_paragraph) {
+    // A hyphen run below any paragraph line is left to `setext-heading-underline`, as carve-js reads it.
+    let below_paragraph =
+        previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
+    if run(own, "-_", 3) && !(own.starts_with('-') && below_paragraph) {
         sink.emit(
             "thematic-break-spelling",
             line.start + from,

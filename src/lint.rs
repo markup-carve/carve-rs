@@ -592,7 +592,12 @@ fn colon_fence_message(
             && range.end >= end
             && matches!(
                 range.kind.as_str(),
-                "div" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
+                "div"
+                    | "directive"
+                    | "admonition"
+                    | "figure_group"
+                    | "line_block"
+                    | "hard_break_block"
             )
             && source
                 .get(range.start..)
@@ -664,6 +669,7 @@ fn colon_fence_mismatches(
                         && matches!(
                             range.kind.as_str(),
                             "div"
+                                | "directive"
                                 | "admonition"
                                 | "figure_group"
                                 | "line_block"

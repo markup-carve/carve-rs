@@ -1,4 +1,4 @@
-//! The maintainer rulings of carve#6174 and #6178 (19 November).
+//! The maintainer rulings of carve#6174, #6175 and #6178 (19 November).
 
 use carve::lint::{LintOptions, lint};
 
@@ -22,6 +22,7 @@ fn line_shape_rules_read_behind_container_prefixes() {
         (">  > ----\n", "thematic-break-spelling", &[(5, 9)]),
         (":: t\n> ---\n", "thematic-break-spelling", &[]),
         (":: t\n  - ----\n", "thematic-break-spelling", &[]),
+        ("1. :\n1. ----\n", "thematic-break-spelling", &[]),
         ("a. - - -\n", "deprecated-spaced-thematic-break", &[(3, 8)]),
         ("- * * *\n", "deprecated-spaced-thematic-break", &[(2, 7)]),
         ("- - -\n", "deprecated-spaced-thematic-break", &[(0, 5)]),
@@ -51,4 +52,12 @@ fn lazy_line_offers_its_quote_mark() {
     for (source, expected) in cases {
         assert_eq!(found(source, code), *expected, "{source:?}");
     }
+}
+
+#[test]
+fn directive_is_an_open_colon_container() {
+    let code = "colon-fence-length-mismatch";
+    assert_eq!(found(":::: references\n:::\n", code), [(16, 19)]);
+    assert_eq!(found("::::\n::: glossary\n:::\n::::\n", code), []);
+    assert_eq!(found("  ::::\n::: glossary\n:::\n", code), []);
 }
