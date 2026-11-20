@@ -1229,7 +1229,38 @@ pub fn encode_envelope(tree: &Tree) -> String {
 ///
 /// [`Error::Tree`] for a tree the schema or the reader refuses.
 pub fn decode_tree(json: &str) -> Result<Tree, Error> {
-    Tree::read(json, None)
+    decode_tree_with(json, TreeReadOptions::default())
+}
+
+/// Optional sidecar passed to a tree reader (C2-T-005, C2-A-203).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TreeReadOptions<'a> {
+    /// Annotation ranges to check against this tree.
+    pub annotations: Option<&'a Value>,
+}
+
+/// Reads a tree and optionally checks its annotation ranges.
+///
+/// # Errors
+///
+/// [`Error::Tree`] for a refused tree or sidecar.
+pub fn decode_tree_with(json: &str, options: TreeReadOptions<'_>) -> Result<Tree, Error> {
+    let tree = Tree::read(json, None)?;
+    if let Some(annotations) = options.annotations {
+        let mut root: Value = serde_json::from_str(&tree.json)
+            .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
+        let supplied: Value = serde_json::from_str(json)
+            .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
+        if root.get("extensions").is_none()
+            && let Some(extensions) = supplied.get("extensions")
+            && supplied.get("document").is_some()
+            && let Some(fields) = root.as_object_mut()
+        {
+            fields.insert("extensions".to_string(), extensions.clone());
+        }
+        crate::reader::check_annotations(&root, annotations)?;
+    }
+    Ok(tree)
 }
 
 /// `validateTree`: runs the reader checks on a tree (C2-A-188).
@@ -1238,7 +1269,21 @@ pub fn decode_tree(json: &str) -> Result<Tree, Error> {
 ///
 /// [`Error::Tree`] for the refusal.
 pub fn validate_tree(tree: &Tree) -> Result<(), Error> {
+    validate_tree_with(tree, TreeReadOptions::default())
+}
+
+/// Validates a tree and optionally checks its annotation ranges.
+///
+/// # Errors
+///
+/// [`Error::Tree`] for a refused tree or sidecar.
+pub fn validate_tree_with(tree: &Tree, options: TreeReadOptions<'_>) -> Result<(), Error> {
     crate::reader::read_tree_json(&tree.json)?;
+    if let Some(annotations) = options.annotations {
+        let root: Value = serde_json::from_str(&tree.json)
+            .map_err(|e: serde_json::Error| crate::reader::TreeError::Json(e.to_string()))?;
+        crate::reader::check_annotations(&root, annotations)?;
+    }
     Ok(())
 }
 

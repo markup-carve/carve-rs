@@ -10,8 +10,10 @@ fn field<'a>(value: &'a Value, path: &str) -> &'a Value {
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+mod annotations;
 mod registered;
 mod schema;
+pub(crate) use annotations::check_annotations;
 
 /// A refused supplied tree, with its JSON path and the gate that refused it.
 #[derive(Debug, Clone, PartialEq, Eq)]
