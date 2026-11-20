@@ -1081,7 +1081,7 @@ fn loss_message(
     match code {
         "include-unresolved" => (0, vec![("path", include_path.unwrap_or_default())]),
         "profile-construct-degraded" => (
-            0,
+            usize::from(profile.is_some_and(|p| p.nesting)),
             vec![
                 ("profile", opts.profile.name().to_string()),
                 ("construct", profile.map_or("", |p| p.construct).to_string()),

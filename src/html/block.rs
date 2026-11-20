@@ -99,7 +99,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return;
         }
         self.level += 1;
+        self.profile_depth += usize::from(super::profile::profile_container(n));
         self.block_inner(n, depth);
+        self.profile_depth -= usize::from(super::profile::profile_container(n));
         self.level -= 1;
         self.long_descriptions(depth);
     }
@@ -244,7 +246,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 self.report_empty_paragraph(n);
                 return false;
             }
-            self.profile_loss(n);
+            self.profile_loss(n, true);
             let t = esc::text_str(&crate::resolve::plain::text_of(&*p.children));
             if t.is_empty() {
                 return false;
@@ -271,7 +273,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             return false;
         }
         if self.empty_after_degrade(p.children) {
-            self.profile_loss(n);
+            self.profile_loss(n, true);
             return false;
         }
         if p.role == Some(ParagraphRole::Image) && self.image_block_bare(p.children) {
@@ -396,7 +398,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             && crate::resolve::order::caption_of(only).is_none()
         {
             if let Some([p]) = self.degraded(only).as_deref() {
-                self.profile_loss(only);
+                self.profile_loss(only, true);
                 self.line(depth, &format!("{open}<p>{p}</p></blockquote>"));
                 return;
             }
@@ -530,7 +532,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         // C2-H-165 with C2-H-007: a block a profile degrades is paragraphs.
         if let Some(paras) = self.degraded(first) {
-            self.profile_loss(first);
+            self.profile_loss(first, true);
             let mut it = paras.iter();
             let head = it.next().map_or_else(String::new, |p| {
                 if tight {

@@ -201,6 +201,7 @@ pub(crate) struct CarrierLoss {
 pub(crate) struct ProfileLoss {
     pub pos: Option<crate::ast::Pos>,
     pub construct: &'static str,
+    pub nesting: bool,
     pub file: Option<String>,
 }
 
@@ -260,6 +261,8 @@ pub(crate) struct Renderer<'r, 'a> {
     /// The smart punctuation node being written is an apostrophe that locale quotes leave.
     apostrophe: bool,
     level: usize,
+    /// List, quote, and div levels for C2-H-166, separate from walk depth.
+    profile_depth: usize,
     caption_inner: Option<usize>,
     /// The `longDescription` blocks met in the block being written (C2-H-080).
     long_desc: Vec<&'r [Node<'a>]>,
@@ -346,6 +349,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             in_abbr: 0,
             apostrophe: false,
             level: 0,
+            profile_depth: 0,
             caption_inner: None,
             long_desc: Vec::new(),
             shown: Vec::new(),

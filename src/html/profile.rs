@@ -8,11 +8,12 @@ use crate::source::SourceView;
 use crate::tables::ProfileRow;
 
 impl<'r, 'a> Renderer<'r, 'a> {
-    pub(super) fn profile_loss(&mut self, n: &Node) {
+    pub(super) fn profile_loss(&mut self, n: &Node, block: bool) {
         self.losses.push("profile-construct-degraded");
         self.profile_losses.push(super::ProfileLoss {
             pos: n.pos().copied(),
             construct: n.type_name(),
+            nesting: self.profile_allows_type(n.type_name(), block) && self.exceeds_bound(n),
             file: self.file_of(n.pos()),
         });
     }
@@ -39,11 +40,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
     // C2-H-129, C2-H-165: a degraded node still reports when it leaves no text.
     pub(super) fn report_empty_paragraph(&mut self, n: &Node) {
         if !self.profile_allows(n, true) {
-            self.profile_loss(n);
+            self.profile_loss(n, true);
         } else if let Node::Paragraph(p) = n {
             for child in p.children.iter() {
                 if matches!(child, Node::CriticComment(_)) && !self.profile_allows(child, false) {
-                    self.profile_loss(child);
+                    self.profile_loss(child, false);
                 }
             }
         }
@@ -60,7 +61,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
                     self.report_empty_paragraph(child);
                 }
             } else if self.degraded(child).is_some_and(|paras| paras.is_empty()) {
-                self.profile_loss(child);
+                self.profile_loss(child, true);
             }
         }
     }
@@ -77,7 +78,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if self.degrading > 0 {
             return false;
         }
-        if row.max_nesting.is_some_and(|m| self.level > m) {
+        if self.exceeds_bound(n) {
             return false;
         }
         allows(row, n.type_name(), block)
@@ -87,7 +88,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn past_bound(&self) -> bool {
         self.profile_row()
             .and_then(|r| r.max_nesting)
-            .is_some_and(|m| self.level > m)
+            .is_some_and(|m| self.profile_depth > m)
+    }
+
+    pub(super) fn exceeds_bound(&self, n: &Node) -> bool {
+        self.profile_row()
+            .and_then(|r| r.max_nesting)
+            .is_some_and(|m| self.profile_depth + usize::from(profile_container(n)) > m)
     }
 
     pub(super) fn profile_allows_type(&self, name: &str, block: bool) -> bool {
@@ -98,14 +105,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-165: a block outside the profile becomes paragraphs of its plain
     /// text behind the mark of its kind.
     pub(super) fn degrade_block(&mut self, n: &'r Node<'a>, depth: usize) {
-        self.profile_loss(n);
+        self.profile_loss(n, true);
         for p in self.degraded(n).unwrap_or_default() {
             self.line(depth, &format!("<p>{p}</p>"));
         }
     }
 
     pub(super) fn degrade_captioned(&mut self, n: &'r Node<'a>, depth: usize) {
-        self.profile_loss(n);
+        self.profile_loss(n, true);
         let mut paras = Vec::new();
         degraded_paragraphs(n, &mut paras, 0, self.src_of(n));
         for p in paras.into_iter().filter(|p| !p.is_empty()) {
@@ -161,7 +168,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if matches!(n, Node::Comment(_)) {
             return;
         }
-        self.profile_loss(n);
+        self.profile_loss(n, false);
         if let Node::Xref(x) = n {
             let target = x.href.and_then(|href| href.strip_prefix('#'));
             if let Some(text) = target.and_then(|id| self.xref_text.get(id)) {
@@ -173,6 +180,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
         inline_plain(n, &mut s, 0);
         esc::text(&s, out);
     }
+}
+
+pub(super) fn profile_container(n: &Node) -> bool {
+    matches!(
+        n,
+        Node::List(_) | Node::BlockQuote(_) | Node::Div(_) | Node::Admonition(_)
+    )
 }
 
 fn allows(row: &ProfileRow, ty: &str, block: bool) -> bool {
