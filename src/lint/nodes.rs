@@ -260,13 +260,19 @@ fn list_item_opener_overindented(item: &Item<'_>, root: &Value, sink: &mut Sink<
     ) {
         return;
     }
-    let Some(parent) = item
-        .path
-        .rsplit_once("/children/")
-        .and_then(|(path, _)| root.pointer(path))
-        .filter(|node| node.get("type").and_then(Value::as_str) == Some("list_item"))
-    else {
-        return;
+    let mut path = item.path.as_str();
+    let parent = loop {
+        let Some((owner_path, _)) = path.rsplit_once("/children/") else {
+            return;
+        };
+        let Some(owner) = root.pointer(owner_path) else {
+            return;
+        };
+        match owner.get("type").and_then(Value::as_str) {
+            Some("list_item") => break owner,
+            Some("div" | "admonition" | "directive" | "figure_group") => path = owner_path,
+            _ => return,
+        }
     };
     let Some((from, _)) = bounds(item.node) else {
         return;

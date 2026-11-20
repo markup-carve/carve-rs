@@ -28630,21 +28630,26 @@
   {
    "id": "CC-513",
    "clauses": [
-    "C2-T-006",
-    "C2-T-040",
+    "C2-T-005",
     "C2-H-130"
    ],
-   "why": "C2-T-006: A call refuses with the typed error of its row in the table of C2-T-040, and with no other error C2-T-040: The failure categories, their status and the library error each comes from are the rows of this table. C2-H-130: `strictLosses` turns every render-loss entry into an error (C2-A-172): the render returns no output.",
-   "summary": "a render with strictLosses and a denied destination throws CarveRenderError",
+   "why": "C2-T-005: An engine offers the calls of this table. C2-H-130: `strictLosses` turns every render-loss entry into an error (C2-A-172): the render returns no output.",
+   "summary": "a diagnostic strict render with a denied destination returns empty HTML and an error record",
    "kind": "render",
    "input": "[b](javascript:y)",
    "options": {
     "strictLosses": true
    },
    "expected": {
-    "refusal": {
-     "error": "CarveRenderError"
-    }
+    "html": "",
+    "diagnostics": [
+     {
+      "code": "destination-denied",
+      "severity": "error"
+     }
+    ],
+    "diagnosticsComplete": true,
+    "suppressed": 0
    },
    "from": []
   },
@@ -48401,7 +48406,7 @@
     "C2-W-106",
     "C2-B-146"
    ],
-   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-146: A caption line is `^`, one or more spaces and content, directly below its block with no blank line and owned by the same container as that block, with no column test.",
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-146: A line of `^`, one or more spaces and content is a caption line by its shape. The host test decides only whether it attaches: the line must be directly below its block with no blank line and owned by the same container as that block, with no column test (C2-B-149).",
    "summary": "a figure label paragraph below an image",
    "kind": "lint",
    "input": "![a](a.png)\n\nFigure 1: A cat\n",
@@ -48425,7 +48430,7 @@
     "C2-W-106",
     "C2-B-146"
    ],
-   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-146: A caption line is `^`, one or more spaces and content, directly below its block with no blank line and owned by the same container as that block, with no column test.",
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-146: A line of `^`, one or more spaces and content is a caption line by its shape. The host test decides only whether it attaches: the line must be directly below its block with no blank line and owned by the same container as that block, with no column test (C2-B-149).",
    "summary": "near miss: a caption line below the image",
    "kind": "lint",
    "input": "![a](a.png)\n^ Figure 1: A cat\n",
@@ -55133,7 +55138,7 @@
     "C2-B-082",
     "C2-I-079"
    ],
-   "why": "Catalog empty-reference-definition: a line of text that holds, after its quote marks and indent, only a bracketed label with no `]` in it, a colon and nothing or only spaces and tabs after the colon, as `[a]:`, which defines nothing, once per line; a label that starts with `^` counts only if at least one non-whitespace character follows the caret, since `[^a]:` with no content is no footnote definition, and brackets that hold only spaces or nothing hold no label and are not reported; the range is the label and the colon (C2-B-083, C2-B-082, C2-I-079)",
+   "why": "Catalog empty-reference-definition: a line of text that holds, after its container prefixes and indent, only a bracketed label with no `]` in it, a colon and nothing or only spaces and tabs after the colon, as `[a]:`, which defines nothing, once per line; a label that starts with `^` counts only if at least one non-whitespace character follows the caret, since `[^a]:` with no content is no footnote definition, and brackets that hold only spaces or nothing hold no label and are not reported; the range is the label and the colon (C2-B-083, C2-B-082, C2-I-079)",
    "summary": "empty footnote definition selects footnote advice",
    "kind": "lint",
    "input": "x[^f]\n\n[^f]:\n",
@@ -55843,7 +55848,7 @@
    "clauses": [
     "C2-B-146"
    ],
-   "why": "C2-B-146: A caption line is `^`, one or more spaces and content, directly below its block with no blank line and owned by the same container as that block, with no column test.",
+   "why": "C2-B-146: A line of `^`, one or more spaces and content is a caption line by its shape. The host test decides only whether it attaches: the line must be directly below its block with no blank line and owned by the same container as that block, with no column test (C2-B-149).",
    "summary": "spaces alone do not make a caption",
    "kind": "render",
    "input": "![](a)\n^  ",
@@ -57685,7 +57690,7 @@
     "C2-H-130"
    ],
    "why": "C2-H-204: counts for neither `strictLosses` (C2-H-130) nor `maxLosses` (C2-H-205)",
-   "summary": "a loss that is not allowed still fails a strict render",
+   "summary": "an unallowed loss under strictLosses returns empty HTML and an error record",
    "kind": "render",
    "input": "[a](javascript:x)\n\nb `c`{=latex}\n",
    "options": {
@@ -57695,9 +57700,15 @@
     "strictLosses": true
    },
    "expected": {
-    "refusal": {
-     "error": "CarveRenderError"
-    }
+    "html": "",
+    "diagnostics": [
+     {
+      "code": "raw-format-dropped",
+      "severity": "error"
+     }
+    ],
+    "diagnosticsComplete": true,
+    "suppressed": 0
    },
    "from": []
   },
@@ -58051,7 +58062,7 @@
     "C2-H-130"
    ],
    "why": "C2-H-205: The cap changes no output: `strictLosses` counts every loss that is not allowed, kept or not, so a render under `strictLosses` with `maxLosses` 0 still fails on a loss.",
-   "summary": "a strict render with maxLosses 0 still fails on a loss",
+   "summary": "a strict render with maxLosses 0 returns empty HTML and counts its suppressed loss",
    "kind": "render",
    "input": "[a](javascript:x)\n",
    "options": {
@@ -58059,9 +58070,10 @@
     "strictLosses": true
    },
    "expected": {
-    "refusal": {
-     "error": "CarveRenderError"
-    }
+    "html": "",
+    "diagnostics": [],
+    "diagnosticsComplete": true,
+    "suppressed": 1
    },
    "from": []
   },
@@ -60624,6 +60636,434 @@
     "html": "<p id=\"a\">A</p>\n<p id=\"a\">C</p>\n<p>B</p>",
     "notReported": [
      "extension-transform-failed"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1371",
+   "clauses": [
+    "C2-B-146",
+    "C2-B-149"
+   ],
+   "why": "C2-B-146: A line of `^`, one or more spaces and content is a caption line by its shape. The host test decides only whether it attaches C2-B-149: A caption line with no host block is text under the same rule.",
+   "summary": "a hostless caret line stays unattached after an attribute line closes as text",
+   "kind": "render",
+   "input": "{.x}\n^ cap\n",
+   "options": {},
+   "expected": {
+    "html": "<p>{.x}</p>\n<p>^ cap</p>"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1372",
+   "clauses": [
+    "C2-X-047",
+    "C2-H-009"
+   ],
+   "why": "C2-X-047: It writes the authored id, `tabs` followed by the authored classes, and the other authored attributes in the order of C2-H-009.",
+   "summary": "the tabs wrapper writes its authored id and class after the generated tabs class",
+   "kind": "render",
+   "input": "{#t .k}\n:::: tabs\n::: tab \"A\"\na\n:::\n::::\n",
+   "options": {
+    "extensions": [
+     "carve.tabs"
+    ],
+    "renderers": {
+     "carve.tabs": "standard"
+    }
+   },
+   "expected": {
+    "html": "<div id=\"t\" class=\"tabs k\" role=\"group\" aria-label=\"Tabs\"><input type=\"radio\" name=\"tabs-1\" id=\"tabs-1-0\" checked><label for=\"tabs-1-0\">A</label><div class=\"tab-panel\" role=\"group\" aria-label=\"A\"><p>a</p></div></div>"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1373",
+   "clauses": [
+    "C2-X-048"
+   ],
+   "why": "C2-X-048: A code group uses a separate counter from 1: its Kth tab, counted from 1, has the id `codegroup-N-tab-K`.",
+   "summary": "the first code group uses codegroup-1-tab-1 for its first control",
+   "kind": "render",
+   "input": "::: code-group\n```js [NPM]\nnpm i\n```\n:::\n",
+   "options": {
+    "extensions": [
+     "carve.codeGroup"
+    ],
+    "renderers": {
+     "carve.codeGroup": "standard"
+    }
+   },
+   "expected": {
+    "html": "<div class=\"code-group\" role=\"group\" aria-label=\"Code examples\"><input type=\"radio\" name=\"codegroup-1\" id=\"codegroup-1-tab-1\" class=\"code-group-radio\" checked><label for=\"codegroup-1-tab-1\" class=\"code-group-label\">NPM</label><div class=\"code-group-panel\" role=\"group\" aria-label=\"NPM\"><pre><code class=\"language-js\">npm i\n</code></pre></div></div>"
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1374",
+   "clauses": [
+    "C2-X-050",
+    "C2-X-059"
+   ],
+   "why": "C2-X-050: When a renderer throws or returns a value that is not a string, the engine renders the extension fallback and reports a diagnostic that names the extension. C2-X-059: If it cannot, the renderer writes the fallback and reports its failure under C2-X-050.",
+   "summary": "malformed SVG reports its renderer failure",
+   "kind": "render",
+   "input": "```img\n<svg><script>x</script>\n```\n",
+   "options": {
+    "extensions": [
+     "carve.imgFence.img"
+    ],
+    "renderers": {
+     "carve.imgFence.img": "standard"
+    }
+   },
+   "expected": {
+    "html": "<pre><code class=\"language-img\">&lt;svg&gt;&lt;script&gt;x&lt;/script&gt;\n</code></pre>",
+    "diagnostics": [
+     {
+      "code": "extension-renderer-failed",
+      "channel": "render-loss",
+      "severity": "warning"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1375",
+   "clauses": [
+    "C2-N-007",
+    "C2-N-061"
+   ],
+   "why": "C2-N-007: It returns either the text of the target and an id for it, or one error cause: `not_found`, `outside_root`, `unreadable` or `non_text`. C2-N-061: Every failure leaves the include unexpanded and reports one code, the code of its cause, at the include node in the parse channel with severity warning.",
+   "summary": "a resolver outside-root result reports its include cause",
+   "kind": "parse",
+   "input": "{{ remote.crv }}\n",
+   "files": {
+    "remote.crv": {
+     "error": "outside_root"
+    }
+   },
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "include-outside-root",
+      "channel": "parse",
+      "severity": "warning",
+      "line": 1,
+      "column": 1
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1376",
+   "clauses": [
+    "C2-N-007",
+    "C2-N-013",
+    "C2-N-061"
+   ],
+   "why": "C2-N-007: It returns either the text of the target and an id for it, or one error cause: `not_found`, `outside_root`, `unreadable` or `non_text`. C2-N-013: Inside the root, a missing target is `not_found` and a file that cannot be read is `unreadable`. C2-N-061: Every failure leaves the include unexpanded and reports one code, the code of its cause, at the include node in the parse channel with severity warning.",
+   "summary": "a resolver unreadable result reports its include cause",
+   "kind": "parse",
+   "input": "{{ unreadable.crv }}\n",
+   "files": {
+    "unreadable.crv": {
+     "error": "unreadable"
+    }
+   },
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "include-unreadable",
+      "channel": "parse",
+      "severity": "warning",
+      "line": 1,
+      "column": 1
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1377",
+   "clauses": [
+    "C2-B-160",
+    "C2-B-027"
+   ],
+   "why": "Catalog thematic-break-spelling: a line of text that after its container prefixes and indent holds only a run of three or more hyphens or of three or more underscores C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "an underscore run on a task item's marker line is reported at the run",
+   "kind": "lint",
+   "input": "- [ ] ___\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "thematic-break-spelling",
+      "line": 1,
+      "column": 7,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1378",
+   "clauses": [
+    "C2-B-160",
+    "C2-B-027"
+   ],
+   "why": "Catalog deprecated-spaced-thematic-break: a line that after its container prefixes and indent holds only three or more stars, hyphens or underscores with spaces between them C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "a spaced hyphen run behind an ordered marker is reported at the run",
+   "kind": "lint",
+   "input": "a. - - -\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "deprecated-spaced-thematic-break",
+      "line": 1,
+      "column": 4,
+      "channel": "lint",
+      "severity": "warning"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1379",
+   "clauses": [
+    "C2-B-083",
+    "C2-B-027"
+   ],
+   "why": "Catalog empty-reference-definition: a line of text that holds, after its container prefixes and indent, only a bracketed label with no `]` in it, a colon and nothing or only spaces and tabs after the colon C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "an empty definition behind an ordered marker is reported at the label",
+   "kind": "lint",
+   "input": "2) [a]:\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "empty-reference-definition",
+      "line": 1,
+      "column": 4,
+      "channel": "lint",
+      "severity": "warning"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1380",
+   "clauses": [
+    "C2-B-127",
+    "C2-B-125"
+   ],
+   "why": "Catalog colon-fence-length-mismatch: inside an open colon container (a div of any name, a line block or a hard-break block) whose innermost opener run has another length C2-B-127: The name of a div decides what it is: ... `references` and `toc` give a directive",
+   "summary": "a three-colon run under an open four-colon directive is reported",
+   "kind": "lint",
+   "input": ":::: references\n:::\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "colon-fence-length-mismatch",
+      "line": 2,
+      "column": 1,
+      "channel": "lint",
+      "severity": "warning"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1381",
+   "clauses": [
+    "C2-B-127",
+    "C2-B-125"
+   ],
+   "why": "Catalog colon-fence-length-mismatch: inside an open colon container (a div of any name, a line block or a hard-break block) whose innermost opener run has another length C2-B-125: A bare colon run closes the innermost open div it is long enough for",
+   "summary": "near miss: a three-colon run closes the three-colon directive inside a four-colon div",
+   "kind": "lint",
+   "input": "::::\n::: glossary\n:::\n::::\n",
+   "options": {},
+   "expected": {
+    "notReported": [
+     "colon-fence-length-mismatch"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1382",
+   "clauses": [
+    "C2-I-035",
+    "C2-I-036"
+   ],
+   "why": "Catalog unattached-inline-attribute: a valid attribute block, or a run of glued ones, in an inline content (a paragraph, heading, term, description or table cell) that is glued to the end of no formed host C2-I-035: One that attaches to nothing is printed as written",
+   "summary": "an attribute block in a heading glued to no host is reported",
+   "kind": "lint",
+   "input": "# x {#id} y\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "unattached-inline-attribute",
+      "line": 1,
+      "column": 5,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1383",
+   "clauses": [
+    "C2-I-035",
+    "C2-I-036"
+   ],
+   "why": "Catalog unattached-inline-attribute: a valid attribute block, or a run of glued ones, in an inline content (a paragraph, heading, term, description or table cell) that is glued to the end of no formed host C2-I-035: One that attaches to nothing is printed as written",
+   "summary": "an attribute block in a term glued to no host is reported",
+   "kind": "lint",
+   "input": ":: x {#id}\n\n: y\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "unattached-inline-attribute",
+      "line": 1,
+      "column": 6,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1384",
+   "clauses": [
+    "C2-I-035",
+    "C2-I-036"
+   ],
+   "why": "Catalog unattached-inline-attribute: a valid attribute block, or a run of glued ones, in an inline content (a paragraph, heading, term, description or table cell) that is glued to the end of no formed host C2-I-035: One that attaches to nothing is printed as written",
+   "summary": "an attribute block inside a table cell glued to no host is reported",
+   "kind": "lint",
+   "input": "| x {#id} y |\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "unattached-inline-attribute",
+      "line": 1,
+      "column": 5,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1385",
+   "clauses": [
+    "C2-B-155"
+   ],
+   "why": "Catalog heading-marker-mixed: once; the range is the first heading of the document C2-B-155: `=` and `#` may mix in one document, and `heading-marker-mixed` reports it.",
+   "summary": "mixed heading markers are reported at the first heading, not at the start of the document",
+   "kind": "lint",
+   "input": "Text.\n\n= A\n\n# B\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "heading-marker-mixed",
+      "line": 3,
+      "column": 1,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1386",
+   "clauses": [
+    "C2-B-024",
+    "C2-B-025",
+    "C2-B-019"
+   ],
+   "why": "Catalog block-opener-without-blank-line: a line that no open container owns is a lazy line of the paragraph and its candidate is its first marker, a quote mark included (C2-B-024, C2-B-025) C2-B-025: With no paragraph open, a line belongs to the innermost open item, description or footnote body whose marker it is indented past",
+   "summary": "a quote line left of the item that holds the quote is a lazy line and is reported at its quote mark",
+   "kind": "lint",
+   "input": "    i) > $$x$$\n   > ## H\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "block-opener-without-blank-line",
+      "line": 2,
+      "column": 4,
+      "channel": "lint",
+      "severity": "warning"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1387",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-054",
+    "C2-B-055"
+   ],
+   "why": "Catalog list-marker-below-content-column: the marker column of the open bullet or ordered list nested in that item",
+   "summary": "a description list does not count as the deeper list for the marker warning",
+   "kind": "lint",
+   "input": "* - %%\n      :: term\n\n    - -\n",
+   "options": {},
+   "expected": {
+    "notReported": [
+     "list-marker-below-content-column"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-1388",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-025",
+    "C2-B-027"
+   ],
+   "why": "Catalog list-item-block-overindented: including a block opener inside a div in that item",
+   "summary": "an overindented quote opener inside a div inside a list item is reported",
+   "kind": "lint",
+   "input": "1. ::::\n    >\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "list-item-block-overindented",
+      "line": 2,
+      "column": 5,
+      "channel": "lint",
+      "severity": "warning"
+     }
     ]
    },
    "from": []
