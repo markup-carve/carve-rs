@@ -208,7 +208,7 @@ impl Tree {
             document: read.into_document(),
             json: bare,
             top,
-            sources: Default::default(),
+            sources: std::collections::HashMap::new(),
         })
     }
 
@@ -233,7 +233,7 @@ impl Tree {
             document,
             json,
             top,
-            sources: Default::default(),
+            sources: std::collections::HashMap::new(),
         })
     }
 
@@ -250,7 +250,7 @@ impl Tree {
             document,
             json: value.to_string(),
             top,
-            sources: Default::default(),
+            sources: std::collections::HashMap::new(),
         })
     }
 
@@ -261,7 +261,7 @@ impl Tree {
             document,
             json: String::new(),
             top,
-            sources: Default::default(),
+            sources: std::collections::HashMap::new(),
         }
     }
 }
@@ -951,7 +951,7 @@ pub fn parse<'a>(input: impl Into<Input<'a>>, opts: &Options) -> Result<Tree, Er
                 document: doc.owned(),
                 json: crate::to_json(&doc),
                 top,
-                sources: Default::default(),
+                sources: std::collections::HashMap::new(),
             })
         }
         _ => match crate::tree_parts_with_sources(&input.text(), opts) {
