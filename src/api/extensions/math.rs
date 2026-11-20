@@ -27,10 +27,15 @@ fn open(node: &Value, cx: &RenderContext<'_>) -> String {
     let attrs = node.get("attrs");
     let mut cls = vec![Value::from("math"), Value::from("display")];
     cls.extend(classes(attrs));
-    format!(
-        "<div{}>",
-        cx.attributes(&with_attrs(node, cls, key_values(attrs)))
-    )
+    let mut keys = key_values(attrs);
+    keys.retain(|pair| {
+        !pair
+            .get(0)
+            .and_then(Value::as_str)
+            .is_some_and(|name| name.eq_ignore_ascii_case("role"))
+    });
+    keys.push(json!(["role", "math"]));
+    format!("<div{}>", cx.attributes(&with_attrs(node, cls, keys)))
 }
 
 struct Interactive;

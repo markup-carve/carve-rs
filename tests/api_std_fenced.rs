@@ -368,11 +368,11 @@ fn math() -> Bundle {
 fn math_block_renders_display_math() {
     assert_eq!(
         html("```math\nx^2\n```", math()),
-        r#"<div class="math display">\[x^2\]</div>"#
+        r#"<div class="math display" role="math">\[x^2\]</div>"#
     );
     assert_eq!(
         html("```math\na<b & c>d\n```", math()),
-        r#"<div class="math display">\[a&lt;b &amp; c&gt;d\]</div>"#
+        r#"<div class="math display" role="math">\[a&lt;b &amp; c&gt;d\]</div>"#
     );
 }
 
@@ -384,7 +384,7 @@ fn math_block_takes_another_language_and_is_inert_unregistered() {
     });
     assert_eq!(
         html("```tex\nx\n```", tex),
-        r#"<div class="math display">\[x\]</div>"#
+        r#"<div class="math display" role="math">\[x\]</div>"#
     );
     assert_eq!(html("```js\nx\n```", math()), core("```js\nx\n```"));
     assert_eq!(
@@ -397,7 +397,11 @@ fn math_block_takes_another_language_and_is_inert_unregistered() {
 fn math_block_keeps_the_author_attributes_after_its_classes() {
     assert_eq!(
         html("{#e1 .big data-n=1}\n```math\nx\n```", math()),
-        r#"<div id="e1" class="math display big" data-n="1">\[x\]</div>"#
+        r#"<div id="e1" class="math display big" data-n="1" role="math">\[x\]</div>"#
+    );
+    assert_eq!(
+        html("{role=note}\n```math\nx\n```", math()),
+        r#"<div class="math display" role="math">\[x\]</div>"#
     );
 }
 
@@ -414,7 +418,7 @@ fn math_block_static_mode() {
     });
     assert_eq!(
         html_in("```math\nx\n```", built, Mode::Static),
-        r#"<div class="math display"><math display="block">x</math></div>"#
+        r#"<div class="math display" role="math"><math display="block">x</math></div>"#
     );
     assert_eq!(
         html_in("```math\nx\n```", math(), Mode::Static),
@@ -686,7 +690,7 @@ fn the_group_composes() {
     );
     assert!(out.contains(r#"<div class="code-group""#), "{out}");
     assert!(
-        out.contains(r#"<div class="math display">\[x\]</div>"#),
+        out.contains(r#"<div class="math display" role="math">\[x\]</div>"#),
         "{out}"
     );
 }
@@ -717,7 +721,7 @@ fn the_json_boundary_selects_them_by_name() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(
         v["ok"]["html"],
-        "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">a</pre>\n<div class=\"math display\">\\[x\\]</div>"
+        "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">a</pre>\n<div class=\"math display\" role=\"math\">\\[x\\]</div>"
     );
     let fallback = api::json::call(
         r#"{"call":"render","source":"```dot\na\n```","options":{"extensions":["carve.fencedRender.dot"]}}"#,
