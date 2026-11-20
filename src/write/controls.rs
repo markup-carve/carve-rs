@@ -5,8 +5,8 @@
 use super::check::parse_written;
 use super::node::trees_equal;
 use super::state::Writer;
+use crate::hash::AddrSet;
 use serde_json::Value;
-use std::collections::HashSet;
 
 const KEYWORD: &str = "carve-lint-disable-next-line";
 const CONTROL: &str = "%% carve-lint-disable-next-line";
@@ -38,7 +38,7 @@ pub fn keep_above(w: &Writer<'_>, written: String, original: Option<&str>) -> St
 /// Leaves out the blank lines below each control comment of `live` that suppressed a line of the source.
 fn drop_blanks(w: &Writer<'_>, written: String, tree: &Value, live: &[bool]) -> String {
     let lines: Vec<&str> = written.split('\n').collect();
-    let below: HashSet<usize> = controls(tree)
+    let below: AddrSet<usize> = controls(tree)
         .iter()
         .enumerate()
         .filter(|(i, _)| live.get(*i).copied().unwrap_or(false))
@@ -80,7 +80,7 @@ fn restore_blanks(w: &Writer<'_>, written: String, tree: &Value, live: &[bool]) 
     }
     let lines: Vec<&str> = written.split('\n').collect();
     let parsed = parse_written(w, &written);
-    let at: HashSet<usize> = controls(&parsed)
+    let at: AddrSet<usize> = controls(&parsed)
         .iter()
         .enumerate()
         .filter(|(i, c)| !live.get(*i).copied().unwrap_or(true) && suppresses_below(c, &lines))
@@ -151,7 +151,7 @@ fn blanks_below_controls(lines: &[&str]) -> Vec<(usize, usize)> {
 }
 
 fn without(lines: &[&str], spans: &[(usize, usize)]) -> String {
-    let dropped: HashSet<usize> = spans.iter().flat_map(|&(from, to)| from..to).collect();
+    let dropped: AddrSet<usize> = spans.iter().flat_map(|&(from, to)| from..to).collect();
     lines
         .iter()
         .enumerate()

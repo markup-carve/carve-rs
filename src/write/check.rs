@@ -12,9 +12,10 @@ use super::node::{
     skipped_in, span, text, title, ty,
 };
 use super::state::{Attempt, PLACE_COLUMNS, ProbeResult, Spelling, Writer};
+use crate::hash::{AddrMap, AddrSet};
 use serde_json::{Map, Value};
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 fn refs(nodes: &[Value]) -> Vec<&Value> {
     nodes.iter().collect()
@@ -90,9 +91,9 @@ pub struct Check<'t> {
     pub escapes: Vec<(N<'t>, usize)>,
     pub retracted: Vec<(N<'t>, usize)>,
     pub trials: Vec<(N<'t>, usize)>,
-    pub marks: HashMap<usize, HashMap<usize, bool>>,
+    pub marks: AddrMap<usize, AddrMap<usize, bool>>,
     pub forms: Vec<N<'t>>,
-    pub respelled: HashSet<usize>,
+    pub respelled: AddrSet<usize>,
     pub misaligned: bool,
     pub losses: Vec<(N<'t>, Option<String>)>,
     pub flags: u32,
@@ -622,7 +623,7 @@ enum Takes<'t> {
     Across {
         closer: usize,
         word: usize,
-        own: HashSet<usize>,
+        own: AddrSet<usize>,
         mark: Option<u8>,
     },
     #[allow(dead_code)]
@@ -734,7 +735,7 @@ fn probe_escapes<'t>(
 }
 
 fn probe_spelling<'t>(w: &Writer<'t>, expected: &[N<'t>]) -> Spelling<'t> {
-    let mut escapes = HashMap::new();
+    let mut escapes = AddrMap::default();
     for n in expected {
         let texts = if ty(n) == "text" {
             vec![*n]
@@ -749,7 +750,7 @@ fn probe_spelling<'t>(w: &Writer<'t>, expected: &[N<'t>]) -> Spelling<'t> {
     }
     Spelling {
         escapes,
-        attempts: HashMap::new(),
+        attempts: AddrMap::default(),
         losses: Vec::new(),
         lost: w.sp.lost.clone(),
         lost_keys: w.sp.lost_keys.clone(),
@@ -1199,7 +1200,7 @@ pub fn extend_chains<'t>(w: &Writer<'t>, c: &mut Check<'t>) {
     if c.chains.is_empty() {
         return;
     }
-    let placed: HashSet<(usize, usize)> = c.escapes.iter().map(|(n, at)| (id(n), *at)).collect();
+    let placed: AddrSet<(usize, usize)> = c.escapes.iter().map(|(n, at)| (id(n), *at)).collect();
     let last_bare = c.source.as_deref().and_then(last_bare_backtick);
     let chains = std::mem::take(&mut c.chains);
     for (node, at, a) in &chains {
@@ -1910,8 +1911,8 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: &Value)
 fn read_starts(
     node: &Value,
     offset: i64,
-    paragraphs: &mut HashSet<usize>,
-    lines: &mut HashSet<i64>,
+    paragraphs: &mut AddrSet<usize>,
+    lines: &mut AddrSet<i64>,
 ) {
     for block in children(node) {
         if let (Some(line), Some(col)) = (
@@ -1956,7 +1957,7 @@ fn visit_lines<'t>(
     c: &mut Check<'t>,
     nodes: &[N<'t>],
     line: &mut i64,
-    lines: &HashSet<i64>,
+    lines: &AddrSet<i64>,
     owner: N<'t>,
 ) {
     for (at, &node) in nodes.iter().enumerate() {
@@ -1979,8 +1980,8 @@ fn escape_opener_lines<'t>(
     c: &mut Check<'t>,
     e: N<'t>,
     place: usize,
-    paragraphs: &HashSet<usize>,
-    lines: &HashSet<i64>,
+    paragraphs: &AddrSet<usize>,
+    lines: &AddrSet<i64>,
 ) {
     let top = refs(children(e));
     if !paragraphs.contains(&place)
@@ -1998,8 +1999,8 @@ pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: &Value, off
     if !c.misaligned {
         return;
     }
-    let mut paragraphs = HashSet::new();
-    let mut lines = HashSet::new();
+    let mut paragraphs = AddrSet::default();
+    let mut lines = AddrSet::default();
     read_starts(parsed, offset, &mut paragraphs, &mut lines);
     for &(node, place) in &w.starts.clone() {
         if !has(node, "attrs") && !has(node, "lang") {

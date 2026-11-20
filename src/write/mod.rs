@@ -24,11 +24,12 @@ pub(crate) use blocks::include_spelling;
 pub(crate) use table::display_width;
 
 use crate::api::{Entry, Range};
+use crate::hash::{AddrMap, AddrSet};
 use check::{Check, compare_blocks, escape_openers, exhausted, extend_chains, parse_chunk};
 use node::{N, children, id, span, text, ty};
 use serde_json::Value;
 use state::{Writer, lose};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// How one write runs.
 #[derive(Debug, Clone, Default)]
@@ -161,9 +162,9 @@ fn read_abbreviations(w: &mut Writer<'_>, doc: &Value) {
 }
 
 fn locate(doc: &Value, w: &Writer<'_>) -> Vec<Entry> {
-    let wanted: HashSet<usize> = w.sp.losses.iter().filter_map(|l| l.node).collect();
+    let wanted: AddrSet<usize> = w.sp.losses.iter().filter_map(|l| l.node).collect();
     let found = node::pointers(doc, &wanted);
-    let mut nodes: HashMap<usize, &Value> = HashMap::new();
+    let mut nodes: AddrMap<usize, &Value> = AddrMap::default();
     if !wanted.is_empty() {
         let mut all = vec![doc];
         node::descendants(doc, &mut all);
@@ -382,9 +383,9 @@ const MAX_ROUNDS: usize = 8192;
 const MAX_ORDERED_ESCAPES: usize = 4;
 
 struct History {
-    ids: HashMap<usize, usize>,
-    recent: std::collections::VecDeque<String>,
-    seen: HashSet<String>,
+    ids: AddrMap<usize, usize>,
+    recent: std::collections::VecDeque<RepairKey>,
+    seen: HashSet<RepairKey>,
     rounds: usize,
     remaining: i64,
 }
@@ -398,7 +399,7 @@ fn repair_rounds<'t>(
 ) -> usize {
     let nodes = children(doc);
     let mut history = History {
-        ids: HashMap::new(),
+        ids: AddrMap::default(),
         recent: std::collections::VecDeque::new(),
         seen: HashSet::new(),
         rounds: 0,
@@ -435,47 +436,57 @@ fn refuse_repair(w: &mut Writer<'_>, node: &Value) {
     });
 }
 
-fn local_id(ids: &mut HashMap<usize, usize>, n: &Value) -> usize {
+fn local_id(ids: &mut AddrMap<usize, usize>, n: &Value) -> usize {
     let next = ids.len();
     *ids.entry(id(n)).or_insert(next)
 }
 
-/// C2-W-133: the repair state of this group.
-fn repair_key(w: &Writer<'_>, ids: &mut HashMap<usize, usize>, group: &[Value]) -> String {
-    use std::fmt::Write as _;
-    let mut key = String::new();
-    let _ = write!(
-        key,
-        "{:?}|{}|{}|",
-        w.lines,
-        w.blank_first,
-        w.sp.losses.len()
-    );
+/// C2-W-133: the repair state of a group, compared exactly: the written lines and
+/// a flat record of the per-node state with every optional part length-prefixed.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct RepairKey {
+    lines: Vec<String>,
+    state: Vec<usize>,
+}
+
+fn push_opt(state: &mut Vec<usize>, v: Option<usize>) {
+    match v {
+        Some(v) => state.extend([1, v]),
+        None => state.push(0),
+    }
+}
+
+fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: &[Value]) -> RepairKey {
+    let mut state = vec![usize::from(w.blank_first), w.sp.losses.len()];
     let mut pending: Vec<&Value> = group.iter().collect();
     while let Some(n) = pending.pop() {
-        let nid = local_id(ids, n);
+        state.push(local_id(ids, n));
         let escapes = if ty(n) == "text" {
             w.sp.escapes.get(&id(n))
         } else {
             None
         };
-        let attempt = w.sp.attempts.get(&id(n));
-        let attempt_escapes: Option<Vec<(usize, usize)>> = attempt.map(|a| {
-            a.escapes
-                .iter()
-                .map(|(t, at)| (local_id(ids, t), *at))
-                .collect()
-        });
-        let _ = write!(
-            key,
-            "[{nid},{escapes:?},{:?},{:?},{attempt_escapes:?},{}]",
-            w.forms.get(&id(n)),
-            attempt.map(|a| a.step),
-            w.is_lost(n)
+        push_opt(&mut state, escapes.map(Vec::len));
+        state.extend(escapes.into_iter().flatten());
+        push_opt(
+            &mut state,
+            w.forms
+                .get(&id(n))
+                .map(|&f| usize::try_from(f).unwrap_or(usize::MAX)),
         );
+        let attempt = w.sp.attempts.get(&id(n));
+        push_opt(&mut state, attempt.map(|a| a.step));
+        push_opt(&mut state, attempt.map(|a| a.escapes.len()));
+        for (t, at) in attempt.map_or(&[][..], |a| a.escapes.as_slice()) {
+            state.extend([local_id(ids, t), *at]);
+        }
+        state.push(usize::from(w.is_lost(n)));
         node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
     }
-    key
+    RepairKey {
+        lines: w.lines.clone(),
+        state,
+    }
 }
 
 fn repeated_repair(w: &mut Writer<'_>, group: &[Value], h: &mut History) -> bool {
@@ -514,7 +525,7 @@ fn repeated_repair(w: &mut Writer<'_>, group: &[Value], h: &mut History) -> bool
 }
 
 /// The text nodes below `nodes` in the order they are written: a title before the children.
-fn text_order(nodes: &[Value], order: &mut HashMap<usize, usize>) {
+fn text_order(nodes: &[Value], order: &mut AddrMap<usize, usize>) {
     for n in nodes {
         if ty(n) == "text" {
             let next = order.len();
@@ -524,14 +535,14 @@ fn text_order(nodes: &[Value], order: &mut HashMap<usize, usize>) {
     }
 }
 
-fn rank(order: &HashMap<usize, usize>, n: &Value) -> i64 {
+fn rank(order: &AddrMap<usize, usize>, n: &Value) -> i64 {
     order
         .get(&id(n))
         .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
 }
 
 fn leftmost<'t>(group: &[Value], escapes: &[(N<'t>, usize)]) -> Option<(N<'t>, usize)> {
-    let mut order = HashMap::new();
+    let mut order = AddrMap::default();
     text_order(group, &mut order);
     let mut best = *escapes.first()?;
     for &e in escapes {
@@ -559,7 +570,7 @@ fn group_tree<'t>(
     w: &mut Writer<'t>,
     group: &'t [Value],
     first: bool,
-    escapes: HashMap<usize, Vec<usize>>,
+    escapes: AddrMap<usize, Vec<usize>>,
 ) -> Value {
     w.sp.escapes = escapes;
     w.lines.clear();
@@ -582,10 +593,10 @@ fn is_asked<'t>(
     let lines = w.lines.clone();
     let lead = w.lead.clone();
     let starts = (w.starts.clone(), w.start_index.clone());
-    let mut order = HashMap::new();
+    let mut order = AddrMap::default();
     text_order(group, &mut order);
     let own_rank = rank(&order, node);
-    let mut left: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut left: AddrMap<usize, Vec<usize>> = AddrMap::default();
     for (text_id, offsets) in &placed {
         let r = order
             .get(text_id)
@@ -908,7 +919,7 @@ mod repair_limit_test {
             serde_json::json!({"type": "paragraph", "children": [{"type": "text", "value": "x"}]}),
         ];
         let mut history = History {
-            ids: HashMap::new(),
+            ids: AddrMap::default(),
             recent: std::collections::VecDeque::new(),
             seen: HashSet::new(),
             rounds: 1,

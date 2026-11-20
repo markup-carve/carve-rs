@@ -235,11 +235,15 @@ pub fn add(doc: &Value) -> Option<Spans> {
 
 fn has_any_counts(node: &Value) -> bool {
     match node {
-        Value::Object(map) => {
-            (map.get("type").and_then(Value::as_str) == Some("table_cell")
-                && (count(node, "colspan") > 1 || count(node, "rowspan") > 1))
-                || map.values().any(has_any_counts)
-        }
+        Value::Object(map) => map.iter().any(|(key, value)| match value {
+            Value::String(t) => {
+                key == "type"
+                    && t == "table_cell"
+                    && (count(node, "colspan") > 1 || count(node, "rowspan") > 1)
+            }
+            Value::Object(_) | Value::Array(_) => has_any_counts(value),
+            _ => false,
+        }),
         Value::Array(items) => items.iter().any(has_any_counts),
         _ => false,
     }
