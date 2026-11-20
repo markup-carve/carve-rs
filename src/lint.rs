@@ -664,6 +664,41 @@ fn colon_fence_message(
     .message
 }
 
+/// A run inside an opaque block, or one that `run_in_inner_owner` keeps from the div, is not compared with it.
+fn run_is_skipped(
+    source: &str,
+    ranges: &Ranges<'_>,
+    at: usize,
+    end: usize,
+    container: &str,
+) -> bool {
+    ranges.around(at).any(|range| {
+        range.start <= at
+            && end <= range.end
+            && matches!(range.kind.as_str(), "code_block" | "raw_block" | "comment")
+    }) || run_in_inner_owner(source, ranges, at, container)
+}
+
+/// The run cannot close a div outside its own quote, item, footnote or description (C2-B-109, carve#6194), so that div is
+/// not compared with it.
+fn run_in_inner_owner(source: &str, ranges: &Ranges<'_>, at: usize, container: &str) -> bool {
+    let inner = format!("{container}/");
+    ranges.around(at).any(|range| {
+        range.start < at
+            && at <= range.end
+            && range.path.starts_with(&inner)
+            && matches!(
+                range.kind.as_str(),
+                "block_quote"
+                    | "list_item"
+                    | "footnote"
+                    | "definition_description"
+                    | "citation_definition"
+            )
+            && !source.get(range.start..).unwrap_or("").starts_with(":::")
+    })
+}
+
 fn colon_fence_mismatches(
     source: &str,
     opts: &LintOptions,
@@ -693,29 +728,8 @@ fn colon_fence_mismatches(
                     .bytes()
                     .take_while(|byte| *byte == b':')
                     .count();
-                let opaque = ranges.around(at).any(|range| {
-                    range.start <= at
-                        && end <= range.end
-                        && matches!(range.kind.as_str(), "code_block" | "raw_block" | "comment")
-                });
-                // The run cannot close a div outside its own quote, item, footnote or description (C2-B-109,
-                // carve#6194), so that div is not compared with it.
-                let inner = format!("{}/", container.path);
-                let owned = ranges.around(at).any(|range| {
-                    range.start < at
-                        && at <= range.end
-                        && range.path.starts_with(&inner)
-                        && matches!(
-                            range.kind.as_str(),
-                            "block_quote"
-                                | "list_item"
-                                | "footnote"
-                                | "definition_description"
-                                | "citation_definition"
-                        )
-                        && !source.get(range.start..).unwrap_or("").starts_with(":::")
-                });
-                if width >= 3 && width != candidate.len() && !opaque && !owned {
+                let skipped = run_is_skipped(source, ranges, at, end, &container.path);
+                if width >= 3 && width != candidate.len() && !skipped {
                     let mut finding = Diagnostic::new(
                         "colon-fence-length-mismatch",
                         &[],
