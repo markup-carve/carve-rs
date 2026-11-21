@@ -1047,6 +1047,9 @@ fn settle<'t>(
             return true;
         }
     }
+    if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
+        return true;
+    }
     apply_changes(w, &c)
 }
 
@@ -1135,6 +1138,17 @@ fn refuse_leaf_lines(w: &mut Writer<'_>, n: V<'_>, depth: usize) {
     for c in children(n) {
         refuse_leaf_lines(w, c, depth + 1);
     }
+}
+
+/// C2-W-069, C2-W-117: the comparison of a group stops at a loss, so the bare pairs behind it that cannot
+/// pair are braced here; true when one was.
+fn braces_unpaired<'t>(w: &mut Writer<'t>, group: Arr<'t>) -> bool {
+    let forms = w.forms.len();
+    reset_lines(w);
+    w.strict_pairs = true;
+    blocks::write_blocks(w, group, "", 0, false);
+    w.strict_pairs = false;
+    w.forms.len() > forms
 }
 
 fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
