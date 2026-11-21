@@ -1,0 +1,48 @@
+name: fuzz
+
+on:
+  pull_request:
+    branches: [main, next2]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Fuzz smoke, 60 s per target
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Format
+        run: cargo fmt --check --manifest-path fuzz/Cargo.toml
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Build the targets
+        run: cargo fuzz build -O
+      - name: Seed the corpora from the conformance corpus
+        run: python3 fuzz/seeds.py .
+      - name: Run each target
+        run: |
+          for t in $(cargo fuzz list); do
+            echo "::group::$t"
+            cargo fuzz run -O "$t" "fuzz/corpus/$t" -- \
+              -max_total_time=60 -timeout=30 -rss_limit_mb=2048 -print_final_stats=1
+            echo "::endgroup::"
+          done
+      - name: Keep crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
