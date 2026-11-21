@@ -6,39 +6,42 @@ use std::sync::OnceLock;
 /// The named groups of one pair as byte spans of the text: `open`, `close`, `inner`, `before`, `after`.
 pub(super) type Pair = [(&'static str, usize, usize); 5];
 
-fn class(re: &'static OnceLock<Regex>, pattern: &str, c: char) -> bool {
+fn class(re: &'static OnceLock<Option<Regex>>, pattern: &str, c: char) -> bool {
     let mut buf = [0; 4];
-    re.get_or_init(|| Regex::new(pattern).expect("class pattern"))
-        .is_match(c.encode_utf8(&mut buf))
+    re.get_or_init(|| Regex::new(pattern).ok())
+        .as_ref()
+        .is_some_and(|re| re.is_match(c.encode_utf8(&mut buf)))
 }
 
 fn letter_or_number(c: char) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
     class(&RE, r"\A[\p{L}\p{N}]\z", c)
 }
 
 fn space(c: char) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
     matches!(c, '\t' | '\n' | '\r') || class(&RE, r"\A\p{Zs}\z", c)
 }
 
 /// A combining mark, a variation selector or a zero-width joiner (C2-I-050).
 fn joins(c: char) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
+    static RE: OnceLock<Option<Regex>> = OnceLock::new();
     matches!(c, '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}' | '\u{200D}')
         || class(&RE, r"\A\p{M}\z", c)
 }
 
 fn before(text: &str, at: usize) -> Option<char> {
-    text[..at].chars().next_back()
+    text.get(..at)?.chars().next_back()
 }
 
 fn after(text: &str, at: usize) -> Option<char> {
-    text[at..].chars().next()
+    text.get(at..)?.chars().next()
 }
 
 fn escaped(text: &str, at: usize) -> bool {
-    text.as_bytes()[..at]
+    text.as_bytes()
+        .get(..at)
+        .unwrap_or_default()
         .iter()
         .rev()
         .take_while(|&&b| b == b'\\')

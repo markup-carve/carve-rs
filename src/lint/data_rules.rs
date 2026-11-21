@@ -568,6 +568,7 @@ fn type_matches(rule: &Rule, kind: &str) -> bool {
 }
 
 /// Runs the active rules of the model over the records of one parse, lines first, then nodes in tree order.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run<'a>(
     source: &'a str,
     positions: &'a Source<'a>,
@@ -608,6 +609,7 @@ pub(super) fn run<'a>(
         }
         run_lines(&records, cache, &mut out);
         run_nodes(&records, cache, &mut out);
+        run_text_runs(&records, cache, &mut out);
         run_attributes(&records, cache, &mut out);
     });
     out
@@ -881,6 +883,35 @@ fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<(&'static R
     })
 }
 
+/// C2-W-140: the inline rules that name `text_run`, over each text run.
+fn run_text_runs(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
+    let wanted = cache.inline_rules.iter().any(|rule| {
+        rule.types
+            .as_ref()
+            .is_some_and(|types| types.contains(&"text_run"))
+    });
+    if !wanted {
+        return;
+    }
+    for at in 0..records.ranges.len() {
+        let Some(record) = records.text_run(at) else {
+            continue;
+        };
+        let bucket = cache.inline(("text_run", record.first_byte()));
+        let path = || records.path_of(record.range);
+        for rule in bucket.iter() {
+            run_rule(
+                *rule,
+                records,
+                Subject::Inline(&record),
+                record.line_index,
+                out,
+                &path,
+            );
+        }
+    }
+}
+
 /// C2-W-148: the attribute rules over each attribute record whose owner has a type they name.
 fn run_attributes(records: &Records<'_>, cache: &Cache, out: &mut Vec<Diagnostic>) {
     for (at, part) in records.attributes.parts.iter().enumerate() {
@@ -923,10 +954,6 @@ fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnos
     };
     let mut found_block = 0;
     let mut found_inline = 0;
-    let wants_runs = cache
-        .inline_rules
-        .iter()
-        .any(|rule| type_matches(rule, "text_run") && rule.types.is_some());
     let cache = RefCell::new(cache);
     for (at, range) in records.ranges.iter().enumerate() {
         let mut block = |kind: &'a str, parent: &'a str| {
@@ -977,23 +1004,6 @@ fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnos
                         &path,
                     );
                 }
-            }
-        }
-        if wants_runs && let Some(record) = records.text_run(at) {
-            let first = record.first_byte();
-            let bucket = *inline_alias
-                .entry((address("text_run"), first.map_or(256, u16::from)))
-                .or_insert_with(|| add(cache.borrow_mut().inline(("text_run", first))));
-            let path = || records.path_of(record.range);
-            for rule in buckets.borrow()[bucket].iter() {
-                run_rule(
-                    *rule,
-                    records,
-                    Subject::Inline(&record),
-                    record.line_index,
-                    out,
-                    &path,
-                );
             }
         }
     }

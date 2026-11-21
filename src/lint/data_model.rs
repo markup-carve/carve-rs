@@ -795,26 +795,8 @@ impl<'a> Records<'a> {
             F::KeyEnd => Val::num(part.key_end),
             F::Text => Val::Str(Cow::Borrowed(text_at(self.source, part.start, part.end))),
             F::Index => Val::num(part.index),
-            F::LastKey => Val::Bool(part.last_key),
-            F::Kept => Val::Bool(part.kept),
-            F::Semantic => Val::Bool(
-                part.kind == "key" && matches!(part.key.as_str(), "abbr" | "time" | "kbd"),
-            ),
-            F::SemanticValue => {
-                Val::Bool(part.kind == "key" && matches!(part.key.as_str(), "abbr" | "time"))
-            }
-            F::Entries => Val::num(if part.kind == "key" {
-                super::data_attrs::entries(&part.value).0
-            } else {
-                0
-            }),
-            F::EntryTotal => Val::Num(if part.kind == "key" {
-                super::data_attrs::entries(&part.value).1
-            } else {
-                0
-            }),
             F::Owner => Val::AttrOwner(part.owner),
-            _ => Val::Null,
+            _ => attribute_fact(part, name),
         }
     }
 
@@ -936,6 +918,7 @@ impl<'a> Records<'a> {
     }
 
     /// A key of an AST node: a scalar as a value, anything else as a node; absent is null.
+    #[allow(clippy::unused_self)]
     pub fn node_key(&self, value: &Val<'a>, key: &str) -> Val<'a> {
         let Val::Node(node) = value else {
             return Val::Null;
@@ -1569,5 +1552,27 @@ fn node_value(value: &serde_json::Value) -> Val<'_> {
         serde_json::Value::Bool(b) => Val::Bool(*b),
         serde_json::Value::Number(n) => Val::Num(n.as_i64().unwrap_or(0)),
         other => Val::Node(other),
+    }
+}
+
+/// The facts of an attribute part that its value and the later parts of its owner give.
+fn attribute_fact(part: &super::data_attrs::Part, name: F) -> Val<'static> {
+    let key = part.kind == "key";
+    match name {
+        F::LastKey => Val::Bool(part.last_key),
+        F::Kept => Val::Bool(part.kept),
+        F::Semantic => Val::Bool(key && matches!(part.key.as_str(), "abbr" | "time" | "kbd")),
+        F::SemanticValue => Val::Bool(key && matches!(part.key.as_str(), "abbr" | "time")),
+        F::Entries => Val::num(if key {
+            super::data_attrs::entries(&part.value).0
+        } else {
+            0
+        }),
+        F::EntryTotal => Val::Num(if key {
+            super::data_attrs::entries(&part.value).1
+        } else {
+            0
+        }),
+        _ => Val::Null,
     }
 }

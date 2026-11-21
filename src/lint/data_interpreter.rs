@@ -728,6 +728,36 @@ impl Scope<'_> {
                 from: arg.get("from").and_then(Value::as_u64).unwrap_or(0) as usize,
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
+            "len" => Expr::Len(Box::new(self.compile(arg))),
+            "add" => Expr::Add(list(args)),
+            "sub" => Expr::Sub(pair(0, 1)),
+            "slice" => Expr::Slice(Box::new((
+                self.compile(at(0)),
+                self.compile(at(1)),
+                args.get(2).map(|end| self.compile(end)),
+            ))),
+            "concat" => Expr::Concat(list(args)),
+            "trim_end" => Expr::TrimEnd(Box::new(self.compile(arg))),
+            "words" => Expr::Words(Box::new(self.compile(arg))),
+            "text_from" => Expr::TextFrom(Box::new(self.compile(arg))),
+            "extend_left" => Expr::Shift {
+                left: true,
+                args: pair(0, 1),
+            },
+            "skip_right" => Expr::Shift {
+                left: false,
+                args: pair(0, 1),
+            },
+            _ => self.compile_scan(op, arg, args),
+        }
+    }
+
+    /// The values that read lists and records of the document (C2-W-141).
+    fn compile_scan(&self, op: &str, arg: &'static Value, args: &'static [Value]) -> Expr {
+        let null = &Value::Null;
+        let at = |i: usize| args.get(i).unwrap_or(null);
+        let pair = |a: usize, b: usize| Box::new((self.compile(at(a)), self.compile(at(b))));
+        match op {
             "lookup" => Expr::Lookup(Box::new(Lookup {
                 inline: arg.get("over").and_then(Value::as_str) == Some("inline"),
                 types: arg
@@ -748,26 +778,6 @@ impl Scope<'_> {
             "count" => Expr::Count {
                 list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
-            },
-            "len" => Expr::Len(Box::new(self.compile(arg))),
-            "add" => Expr::Add(list(args)),
-            "sub" => Expr::Sub(pair(0, 1)),
-            "slice" => Expr::Slice(Box::new((
-                self.compile(at(0)),
-                self.compile(at(1)),
-                args.get(2).map(|end| self.compile(end)),
-            ))),
-            "concat" => Expr::Concat(list(args)),
-            "trim_end" => Expr::TrimEnd(Box::new(self.compile(arg))),
-            "words" => Expr::Words(Box::new(self.compile(arg))),
-            "text_from" => Expr::TextFrom(Box::new(self.compile(arg))),
-            "extend_left" => Expr::Shift {
-                left: true,
-                args: pair(0, 1),
-            },
-            "skip_right" => Expr::Shift {
-                left: false,
-                args: pair(0, 1),
             },
             _ => Expr::Lit(Val::Null),
         }
@@ -1116,23 +1126,30 @@ fn stateless(expr: &Expr) -> bool {
         | Expr::TrimEnd(item)
         | Expr::Words(item)
         | Expr::TextFrom(item)
+        | Expr::JsonEscape(item)
         | Expr::In(item, _) => stateless(item),
         Expr::Cmp(_, args)
         | Expr::Contains(args)
         | Expr::Starts(args)
         | Expr::Sub(args)
+        | Expr::IndexOf(args)
         | Expr::Shift { args, .. } => stateless(&args.0) && stateless(&args.1),
         Expr::If(args) => stateless(&args.0) && stateless(&args.1) && stateless(&args.2),
         Expr::Slice(args) => {
             stateless(&args.0) && stateless(&args.1) && args.2.as_ref().is_none_or(stateless)
         }
-        Expr::Some { test, .. } | Expr::Count { test, .. } => stateless(test),
-        Expr::IndexOf(args) => stateless(&args.0) && stateless(&args.1),
-        Expr::JsonEscape(item) => stateless(item),
-        Expr::Lookup(lookup) => lookup.value.as_ref().is_none_or(stateless),
+        Expr::Some { .. } | Expr::Count { .. } | Expr::Lookup(_) => stateless_scan(expr),
         Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
             true
         }
+    }
+}
+
+fn stateless_scan(expr: &Expr) -> bool {
+    match expr {
+        Expr::Some { test, .. } | Expr::Count { test, .. } => stateless(test),
+        Expr::Lookup(lookup) => lookup.value.as_ref().is_none_or(stateless),
+        _ => true,
     }
 }
 
