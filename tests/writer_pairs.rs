@@ -6,6 +6,25 @@ fn invoke(request: &Value) -> Value {
 }
 
 #[test]
+fn paired_brackets_inside_labels_stay_bare() {
+    let tree = json!({"type":"document","astVersion":"2.0","children":[
+        {"type":"paragraph","children":[{"type":"link","href":"#x","children":[
+            {"type":"span","attrs":{"classes":["c"]},"children":[
+                {"type":"text","value":"[1]"}
+            ]}
+        ]}]}
+    ]});
+    let written = invoke(&json!({"call":"writeWithDiagnostics","tree":tree}));
+    assert_eq!(written["ok"]["output"], "[[[1]]{.c}](#x)\n");
+    assert_eq!(written["ok"]["diagnostics"], json!([]));
+
+    for source in ["[[1]](#x)\n", "[a [b] c](#x)\n", "[[[1]]{.c}](#x)\n"] {
+        let formatted = invoke(&json!({"call":"formatWithDiagnostics","source":source}));
+        assert_eq!(formatted["ok"]["source"], source, "{source}");
+    }
+}
+
+#[test]
 fn bare_text_pairs_take_escaped_openers() {
     for (value, expected) in [
         ("~~s~~", "\\~\\~s~~\n"),
