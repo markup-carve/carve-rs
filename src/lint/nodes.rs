@@ -414,13 +414,22 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
     }
     let Some(parent) = parent else { return };
     let first = field(parent, "/children/0");
-    if field(first, "/pos/startOffset").as_u64() == u64::try_from(from).ok() {
-        return;
-    }
-    let content = field(first, "/pos/startOffset")
+    let first_at = field(first, "/pos/startOffset")
         .as_u64()
-        .and_then(|offset| usize::try_from(offset).ok())
-        .map_or(0, |offset| quote_column(sink.source, offset));
+        .and_then(|offset| usize::try_from(offset).ok());
+    let content = if parent.get("task").is_some() {
+        let Some((marker_at, _)) = bounds(parent) else {
+            return;
+        };
+        first_at
+            .and_then(|at| task_item_content_column(sink.source, marker_at, at))
+            .unwrap_or(0)
+    } else {
+        if first_at == Some(from) {
+            return;
+        }
+        first_at.map_or(0, |at| quote_column(sink.source, at))
+    };
     let column = quote_column(sink.source, from);
     if content > 0 && column > content {
         let end = sink
@@ -437,6 +446,16 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
             0,
         );
     }
+}
+
+/// The task box begins item content, even when authored padding separates it from its first child.
+fn task_item_content_column(source: &str, marker_at: usize, first_at: usize) -> Option<u64> {
+    let line_end = source
+        .get(marker_at..)?
+        .find('\n')
+        .map_or(source.len(), |at| marker_at + at);
+    let task_at = source.get(marker_at..first_at.min(line_end))?.rfind('[')?;
+    Some(quote_column(source, marker_at + task_at))
 }
 
 fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {

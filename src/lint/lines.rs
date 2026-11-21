@@ -469,7 +469,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let content_start = line.content_start.unwrap_or(0);
     let content = line.text.get(content_start..).unwrap_or("").trim_start();
     let (prefix, tail) = marker_tail(&line.text);
-    continuation_marker(line, prefix, tail, sink);
+    continuation_marker(line, sink);
     quote_list_marker(line, previous, sink);
     thematic_marker(line, previous, prefix, tail, sink);
     marker_as_text(line, content_start, content, sink);
@@ -500,19 +500,34 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     table_line(line, sink);
 }
 
-fn continuation_marker(line: &Line, prefix: usize, tail: &str, sink: &mut Sink<'_>) {
-    if tail.trim_end() == "+" {
-        let message = if line.text.trim_start().starts_with("- +")
-            || line.text.trim_start().starts_with("* +")
-        {
+fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
+    if !line.text.as_bytes().contains(&b'+') {
+        return;
+    }
+    let (mut start, mut text) = leaf_after_quotes(line);
+    let mut item = false;
+    while text.starts_with("- ") || text.starts_with("* ") {
+        item = true;
+        text = &text[2..];
+        start += 2;
+        let trimmed = text.trim_start_matches([' ', '\t']);
+        start += text.len() - trimmed.len();
+        text = trimmed;
+        // A quote in the item's marker-line text is not another physical-line prefix.
+        if text.starts_with("> ") {
+            return;
+        }
+    }
+    if text == "+" {
+        let message = if item {
             2
         } else {
             usize::from(line.scope.container == ContainerKind::ListItem)
         };
         sink.emit_nth(
             "deprecated-continuation-marker",
-            line.start + prefix,
-            line.start + prefix + 1,
+            line.start + start,
+            line.start + start + 1,
             &line.path,
             &[],
             message,
@@ -538,10 +553,10 @@ fn thematic_marker(
     let candidate = tail.trim();
     let after_paragraph =
         previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
-    if item_marker_underline(line, prefix, candidate, after_paragraph) {
-        return;
-    }
-    if (run(candidate, "=", 3) || run(candidate, "-", 3)) && after_paragraph {
+    if (run(candidate, "=", 3) || run(candidate, "-", 3))
+        && after_paragraph
+        && !item_marker_underline(line, prefix, candidate, after_paragraph)
+    {
         sink.emit(
             "setext-heading-underline",
             line.start + marker_start,
