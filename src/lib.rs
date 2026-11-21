@@ -220,11 +220,18 @@ pub fn render_tree_with_diagnostics(
     heading_shift::apply(doc.children, opts.heading_shift);
     let files = resolve_tree(&mut doc, opts, &arena);
     let (html, losses, derived, extension_nodes, destinations) =
-        html::render_tree_parts(&doc, opts, files.as_ref(), None);
+        html::render_tree_parts(&doc, opts, files.as_ref(), None, None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
-    let mut diagnostics =
-        tree_loss_diagnostics(&doc, losses, derived, &extension_nodes, &destinations, opts);
+    let mut diagnostics = tree_loss_diagnostics(
+        &doc,
+        losses,
+        derived,
+        &extension_nodes,
+        &destinations,
+        opts,
+        None,
+    );
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
             diagnostic.severity = "error";
@@ -293,9 +300,10 @@ pub(crate) fn render_arena_hooked<'a>(
     opts: &Options,
     files: Option<&resolve::files::Files<'a>>,
     hook: &dyn html::ExtensionHook,
+    shift_override: Option<&heading_shift::Found>,
 ) -> Rendered {
     let (html, losses, derived, extension_nodes, destinations) =
-        html::render_tree_parts(doc, opts, files, Some(hook));
+        html::render_tree_parts(doc, opts, files, Some(hook), shift_override.cloned());
     let mut diagnostics = tree_loss_diagnostics(
         doc,
         unallowed(losses, opts),
@@ -303,6 +311,7 @@ pub(crate) fn render_arena_hooked<'a>(
         &extension_nodes,
         &destinations,
         opts,
+        shift_override,
     );
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
@@ -491,6 +500,7 @@ fn tree_loss_diagnostics(
     extension_nodes: &[(usize, String)],
     destination_losses: &[html::DestinationLoss],
     opts: &Options,
+    shift_override: Option<&heading_shift::Found>,
 ) -> Vec<diagnostic::Diagnostic> {
     let shift = opts.heading_shift.to_string();
     let mut extensions = extension_nodes.iter();
@@ -509,10 +519,17 @@ fn tree_loss_diagnostics(
                 (None, _) => Vec::new(),
             };
             let pos = (code == heading_shift::ABOVE_6)
-                .then(|| heading_shift::first_above_6(doc.children, &|_| None))
+                .then(|| {
+                    shift_override
+                        .cloned()
+                        .unwrap_or_else(|| heading_shift::first_above_6(doc.children, &|_| None))
+                })
                 .flatten()
                 .and_then(|(pos, _)| pos);
             let mut finding = diagnostic::Diagnostic::new(code, &values, None, pos);
+            if code == heading_shift::ABOVE_6 {
+                finding.message = heading_shift::message(opts.heading_shift);
+            }
             finding.path = match code {
                 "extension-fallback-rendered" => {
                     name.and_then(|(target, _)| node_path(doc.children, *target))
@@ -1111,6 +1128,9 @@ fn loss_diagnostics(
                 .collect();
             let mut diagnostic =
                 diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos);
+            if *c == heading_shift::ABOVE_6 {
+                diagnostic.message = heading_shift::message(opts.heading_shift);
+            }
             if opts.strict_losses {
                 diagnostic.severity = "error";
             }

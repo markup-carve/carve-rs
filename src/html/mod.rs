@@ -59,9 +59,11 @@ pub(crate) fn render_tree_parts<'a>(
     opts: &Options,
     files: Option<&crate::resolve::files::Files<'a>>,
     hook: Option<&dyn ExtensionHook>,
+    shift_override: Option<crate::heading_shift::Found>,
 ) -> TreeParts {
     let mut r = Renderer::build(doc, opts, true, files);
     r.hook = hook;
+    r.shift_override = shift_override;
     r.document();
     (
         r.out,
@@ -303,6 +305,7 @@ pub(crate) struct Renderer<'r, 'a> {
     /// The row of `opts.profile` in the profile table.
     profile: Option<&'static crate::tables::ProfileRow>,
     hook: Option<&'r dyn ExtensionHook>,
+    shift_override: Option<crate::heading_shift::Found>,
     /// Spare node lists, reused across list items.
     node_lists: Vec<Vec<&'r Node<'a>>>,
 }
@@ -404,6 +407,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             hidden: AddrSet::default(),
             profile,
             hook: None,
+            shift_override: None,
             node_lists: Vec::new(),
         };
         r.index();
@@ -455,7 +459,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
         let files = self.files;
         let file_of = |pos: &crate::ast::Pos| files?.file_of_pos(pos).map(str::to_string);
-        if let Some(found) = crate::heading_shift::first_above_6(self.doc.children, &file_of) {
+        let shifted = self
+            .shift_override
+            .clone()
+            .unwrap_or_else(|| crate::heading_shift::first_above_6(self.doc.children, &file_of));
+        if let Some(found) = shifted {
             self.losses.push(crate::heading_shift::ABOVE_6);
             self.shift_loss = Some(found);
         }
@@ -732,11 +740,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         }
     }
 
-    /// C2-H-208: the level before `headingShift`, after the id carrier.
+    /// C2-H-208: the rendered element level minus N, after the id carrier.
     fn source_level(&self, heading: &Node, el: &mut El<'_>) {
         let Node::Heading(h) = heading else { return };
         let shift = i64::from(self.opts.heading_shift);
-        if self.opts.roundtrip && shift != 0 && h.level > shift {
+        if self.opts.roundtrip && shift != 0 {
             el.carriers.push((
                 "data-carve-source-level",
                 Some((h.level - shift).to_string().into()),

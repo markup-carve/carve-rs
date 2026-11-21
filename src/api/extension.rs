@@ -588,7 +588,7 @@ impl<'a> Host<'a> {
         // unchanged, so the nodes it renders need no reader checks either.
         // Only the HTML is kept, so the loss record is not built.
         let files = crate::resolve_tree(&mut doc, self.opts, &arena);
-        crate::html::render_tree_parts(&doc, self.opts, files.as_ref(), Some(self)).0
+        crate::html::render_tree_parts(&doc, self.opts, files.as_ref(), Some(self), None).0
     }
 }
 
@@ -713,6 +713,34 @@ impl DocumentTransform for InsertTransform {
             .filter(|l| index < l.len())
             .ok_or_else(missing)?;
         list.insert(index + 1, self.node.clone());
+        let mut next = Tree::from_value(&value)?;
+        next.set_file(view.top.clone());
+        Ok(next)
+    }
+}
+
+/// A conformance host action that sets a heading's level after the core shift.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetLevelTransform {
+    pub after: String,
+    pub level: i64,
+}
+
+impl DocumentTransform for SetLevelTransform {
+    fn transform(&self, view: Tree) -> Result<Tree, Error> {
+        let mut value: Value = crate::api::deep_json(&super::encode_tree(&view))
+            .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
+        let missing = || {
+            Error::option(
+                "documentTransforms",
+                format!("no heading at {}", self.after),
+            )
+        };
+        let heading = value.pointer_mut(&self.after).ok_or_else(missing)?;
+        if heading.get("type").and_then(Value::as_str) != Some("heading") {
+            return Err(missing());
+        }
+        heading["level"] = Value::from(self.level);
         let mut next = Tree::from_value(&value)?;
         next.set_file(view.top.clone());
         Ok(next)

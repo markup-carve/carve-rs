@@ -752,20 +752,33 @@ impl Carve {
         // reads none. A host claimer sees the resolved tree, as in `parse`.
         let early_claims = self.matchers.engine_only();
         let early = early_claims && self.extensions.parsed_arena_transforms_only();
+        let mut early_shift_override = None;
         let (mut doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
             if early_claims {
                 claimed = self.claim_arena(doc, &arena, text);
-                crate::heading_shift::apply(doc.children, opts.heading_shift);
+                let shifted = crate::heading_shift::apply(doc.children, opts.heading_shift);
+                early_shift_override = crate::heading_shift::shifted_fact(
+                    shifted,
+                    opts.heading_shift,
+                    self.extensions.has_transforms(),
+                );
             }
             if early && claimed.is_ok() {
                 self.extensions.transform_parsed_arena(doc, &arena);
             }
         })
         .ok()?;
+        let mut late_shift_override = None;
         if !early_claims {
             claimed = self.claim_arena(&mut doc, &arena, text);
-            crate::heading_shift::apply(doc.children, opts.heading_shift);
+            let shifted = crate::heading_shift::apply(doc.children, opts.heading_shift);
+            late_shift_override = crate::heading_shift::shifted_fact(
+                shifted,
+                opts.heading_shift,
+                self.extensions.has_transforms(),
+            );
         }
+        let shift_override = early_shift_override.or(late_shift_override);
         let (mut diagnostics, suppressed) = record::cap_includes(&found);
         let changed = match claimed {
             Ok((entries, changed)) => {
@@ -793,13 +806,20 @@ impl Carve {
             (doc, None)
         };
         Some(
-            self.render_arena(&doc, files.as_ref(), opts, Vec::new(), refuse_loss)
-                .map(|mut rendered| {
-                    diagnostics.append(&mut rendered.diagnostics);
-                    rendered.diagnostics = diagnostics;
-                    rendered.suppressed_diagnostics += suppressed;
-                    rendered
-                }),
+            self.render_arena(
+                &doc,
+                files.as_ref(),
+                opts,
+                Vec::new(),
+                refuse_loss,
+                shift_override.as_ref(),
+            )
+            .map(|mut rendered| {
+                diagnostics.append(&mut rendered.diagnostics);
+                rendered.diagnostics = diagnostics;
+                rendered.suppressed_diagnostics += suppressed;
+                rendered
+            }),
         )
     }
 
@@ -839,11 +859,18 @@ impl Carve {
         refuse_loss: bool,
     ) -> Result<Rendered, Error> {
         let mut tree = tree;
+        let mut shifted = None;
         if opts.heading_shift != 0 {
             // C2-H-208: the shift comes before the first document transform.
-            crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
+            shifted =
+                crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
             tree.json = std::sync::OnceLock::new();
         }
+        let shift_override = crate::heading_shift::shifted_fact(
+            shifted,
+            opts.heading_shift,
+            self.extensions.has_transforms(),
+        );
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
         let (view, transform_entries) = if self.extensions.owned_transforms_only() {
             let mut resolved = crate::resolved_owned(tree.document(), opts);
@@ -859,7 +886,14 @@ impl Carve {
         let arena = crate::Arena::new();
         let mut doc = view.document().in_arena(&arena);
         let files = crate::resolve_tree(&mut doc, opts, &arena);
-        self.render_arena(&doc, files.as_ref(), opts, transform_entries, refuse_loss)
+        self.render_arena(
+            &doc,
+            files.as_ref(),
+            opts,
+            transform_entries,
+            refuse_loss,
+            shift_override.as_ref(),
+        )
     }
 
     /// Renders a tree in an arena that [`crate::resolve_tree`] resolved with
@@ -871,6 +905,7 @@ impl Carve {
         opts: &Options,
         transform_entries: Vec<Entry>,
         refuse_loss: bool,
+        shift_override: Option<&crate::heading_shift::Found>,
     ) -> Result<Rendered, Error> {
         let used_ids = || standard::UsedIds::of_arena(doc);
         let host = extension::Host::new(
@@ -881,7 +916,7 @@ impl Carve {
             &used_ids,
             doc.extensions,
         );
-        let rendered = crate::render_arena_hooked(doc, opts, files, &host);
+        let rendered = crate::render_arena_hooked(doc, opts, files, &host, shift_override);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
         diagnostics.extend(entries);
