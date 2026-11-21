@@ -293,6 +293,13 @@ fn is_step(path: &[String], name: &str) -> bool {
     matches!(path, [only] if only == name)
 }
 
+/// The slot paths of a node type, split at their dots, without the metadata slots.
+pub fn slot_paths(ty: &str) -> &'static [Vec<String>] {
+    slots_table()
+        .get(ty)
+        .map_or(&[], |slots| slots.paths.as_slice())
+}
+
 pub fn for_each_slot<'t>(n: V<'t>, source_order: bool, f: &mut dyn FnMut(Arr<'t>, &str, bool)) {
     let Some(slots) = slots_table().get(ty(n)) else {
         return;
