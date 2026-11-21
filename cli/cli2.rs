@@ -488,47 +488,80 @@ fn string_map(v: &Value) -> Result<BTreeMap<String, String>, i32> {
 fn display(path: &str) -> &str {
     if path == "-" { "<stdin>" } else { path }
 }
-struct Positions {
+struct Positions<'a> {
+    bytes: &'a [u8],
     line_starts: Vec<usize>,
-    chars: Vec<usize>,
+    marks: Vec<(usize, usize)>,
 }
 
-impl Positions {
-    fn new(bytes: &[u8]) -> Self {
+impl<'a> Positions<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
         let mut line_starts = vec![0];
         for (at, byte) in bytes.iter().enumerate() {
             if *byte == b'\n' {
                 line_starts.push(at + 1);
             }
         }
-        let mut chars = vec![0; bytes.len() + 1];
+        if bytes.is_ascii() {
+            return Self {
+                bytes,
+                line_starts,
+                marks: Vec::new(),
+            };
+        }
+        const STEP: usize = 256;
+        let mut marks = vec![(0, 0)];
         let mut at = 0;
         let mut count = 0;
         for chunk in bytes.utf8_chunks() {
             for ch in chunk.valid().chars() {
-                let end = at + ch.len_utf8();
-                chars[at + 1..=end].fill(count + 1);
-                at = end;
+                at += ch.len_utf8();
                 count += 1;
+                while marks.len() * STEP <= at {
+                    marks.push((at, count));
+                }
             }
             if !chunk.invalid().is_empty() {
-                let end = at + chunk.invalid().len();
-                chars[at + 1..=end].fill(count + 1);
-                at = end;
+                at += chunk.invalid().len();
                 count += 1;
+                while marks.len() * STEP <= at {
+                    marks.push((at, count));
+                }
             }
         }
-        Self { line_starts, chars }
+        Self {
+            bytes,
+            line_starts,
+            marks,
+        }
+    }
+
+    fn chars_before(&self, offset: usize) -> usize {
+        if self.marks.is_empty() {
+            return offset;
+        }
+        let mark = self.marks.partition_point(|(at, _)| *at <= offset) - 1;
+        let (at, count) = self.marks[mark];
+        count
+            + String::from_utf8_lossy(&self.bytes[at..offset])
+                .chars()
+                .count()
     }
 
     fn place(&self, offset: usize) -> (usize, usize) {
-        let offset = offset.min(self.chars.len() - 1);
+        let offset = offset.min(self.bytes.len());
         let line = self.line_starts.partition_point(|start| *start <= offset);
         let start = self.line_starts[line - 1];
-        (line, self.chars[offset] - self.chars[start] + 1)
+        (
+            line,
+            self.chars_before(offset) - self.chars_before(start) + 1,
+        )
     }
 }
 fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
+    if entries.is_empty() {
+        return Vec::new();
+    }
     let positions = Positions::new(bytes);
     entries
         .iter()
@@ -544,6 +577,9 @@ fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
         .collect()
 }
 fn lines(path: &str, bytes: &[u8], entries: &[Entry], stderr: bool) -> Result<(), i32> {
+    if entries.is_empty() {
+        return Ok(());
+    }
     let mut text = String::new();
     let positions = Positions::new(bytes);
     for e in entries {
@@ -1247,6 +1283,7 @@ mod position_tests {
         for source in ["_a_ ".repeat(32_768), "_a_\n".repeat(32_768)] {
             let bytes = source.as_bytes();
             let positions = Positions::new(bytes);
+            assert!(positions.marks.is_empty());
             for (number, offset) in (0..bytes.len()).step_by(4).enumerate() {
                 let expected = if bytes[offset + 3] == b'\n' {
                     (number + 1, 1)
@@ -1268,5 +1305,13 @@ mod position_tests {
         assert_eq!(positions.place(4), (1, 4));
         assert_eq!(positions.place(5), (2, 1));
         assert_eq!(positions.place(7), (2, 2));
+    }
+
+    #[test]
+    fn sparse_character_marks_do_not_grow_per_byte() {
+        let source = "é".repeat(65_536);
+        let positions = Positions::new(source.as_bytes());
+        assert!(positions.marks.len() < source.len() / 128);
+        assert_eq!(positions.place(source.len()), (1, 65_537));
     }
 }
