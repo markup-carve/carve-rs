@@ -260,9 +260,12 @@ impl<'r, 'a> Renderer<'r, 'a> {
         let Some(tag) = wrapper_tag(n) else {
             match n {
                 Node::Code(c) => {
-                    let el = El::new(c.attrs, c.lang).with_dir(c.dir);
                     out.push_str("<code");
-                    el.write_into(self.filter(), out);
+                    if c.attrs.is_some() || c.lang.is_some() || c.dir.is_some() {
+                        El::new(c.attrs, c.lang)
+                            .with_dir(c.dir)
+                            .write_into(self.filter(), out);
+                    }
                     out.push('>');
                     esc::text(c.value, out);
                     out.push_str("</code>");
@@ -284,13 +287,9 @@ impl<'r, 'a> Renderer<'r, 'a> {
             }
             return;
         };
-        let mut el = El::new(n.attrs(), lang_of(n)).with_dir(n.dir());
-        if matches!(n, Node::SmallCaps(_)) {
-            el.base.push("smallcaps".into());
-        }
         out.push('<');
         out.push_str(tag);
-        el.write_into(self.filter(), out);
+        self.wrapper_attrs(n, out);
         out.push('>');
         if let Some(c) = n.children() {
             self.inlines(c, out);
@@ -298,6 +297,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
+    }
+
+    /// The attributes of a wrapper element; nothing for a bare one.
+    fn wrapper_attrs(&self, n: &Node<'_>, out: &mut String) {
+        let (attrs, lang, dir) = (n.attrs(), lang_of(n), n.dir());
+        let small = matches!(n, Node::SmallCaps(_));
+        if attrs.is_none() && lang.is_none() && dir.is_none() && !small {
+            return;
+        }
+        let mut el = El::new(attrs, lang).with_dir(dir);
+        if small {
+            el.base.push("smallcaps".into());
+        }
+        el.write_into(self.filter(), out);
     }
 
     fn wrap_span(
@@ -558,24 +571,25 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .get(&addr(n))
             .map(|s| Cow::Borrowed(s.as_str()));
         el.id_first = true;
-        let note_id = self
-            .note_ids
-            .get(num - 1)
-            .cloned()
-            .unwrap_or_else(|| format!("fn{num}"));
-        el.structural
-            .push(("href", Some(format!("#{note_id}").into())));
+        let href = match self.note_ids.get(num - 1) {
+            Some(id) => format!("#{id}"),
+            None => format!("#fn{num}"),
+        };
+        el.structural.push(("href", Some(href.into())));
         el.structural.push(("role", Some("doc-noteref".into())));
         if let (true, Node::FootnoteRef(r)) = (self.opts.roundtrip, n) {
             el.carriers
                 .push(("data-carve-footnote-label", Some(r.key.into())));
         }
-        let s = format!("<a{}><sup>{num}</sup></a>", el.write(self.filter()));
-        if self.in_link > 0 {
-            self.pending.push_str(&s);
+        let f = self.filter();
+        let target = if self.in_link > 0 {
+            &mut self.pending
         } else {
-            out.push_str(&s);
-        }
+            out
+        };
+        target.push_str("<a");
+        el.write_into(f, target);
+        let _ = write!(target, "><sup>{num}</sup></a>");
     }
 
     /// C2-H-095 to C2-H-097.

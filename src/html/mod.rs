@@ -285,6 +285,8 @@ pub(crate) struct Renderer<'r, 'a> {
     /// The row of `opts.profile` in the profile table.
     profile: Option<&'static crate::tables::ProfileRow>,
     hook: Option<&'r dyn ExtensionHook>,
+    /// Spare node lists, reused across list items.
+    node_lists: Vec<Vec<&'r Node<'a>>>,
 }
 
 impl<'r, 'a> Renderer<'r, 'a> {
@@ -310,6 +312,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 || row
                     .allowed_block
                     .is_some_and(|allow| !allow.contains(&"heading"))
+        });
+        // A row that restricts nothing answers every check as no row does.
+        let profile = profile.filter(|row| {
+            !row.denied_block.is_empty()
+                || !row.denied_inline.is_empty()
+                || row.allowed_block.is_some()
+                || row.allowed_inline.is_some()
+                || row.max_nesting.is_some()
         });
         let order = if ordered || hides_headings {
             Order::build_with(doc, files)
@@ -366,6 +376,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             hidden: AddrSet::default(),
             profile,
             hook: None,
+            node_lists: Vec::new(),
         };
         r.index();
         r
