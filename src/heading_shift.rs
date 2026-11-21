@@ -38,7 +38,7 @@ pub(crate) fn first_above_6(nodes: &[Node<'_>], file_of: &dyn Fn(&Pos) -> Option
     found
 }
 
-type Found = Option<(Option<Pos>, Option<String>)>;
+pub(crate) type Found = Option<(Option<Pos>, Option<String>)>;
 
 fn find(n: &Node<'_>, file_of: &dyn Fn(&Pos) -> Option<String>, found: &mut Found) {
     if found.is_some() {
@@ -69,4 +69,27 @@ fn walk_owned(n: &mut owned::Node, by: i64) {
         return;
     }
     n.for_each_child_mut(&mut |c| walk_owned(c, by));
+}
+
+/// The first above-six heading just after shifting an owned render view.
+pub(crate) fn first_above_6_owned(nodes: &[owned::Node]) -> Found {
+    for node in nodes {
+        if let Some(found) = find_owned(node) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn find_owned(node: &owned::Node) -> Found {
+    if let owned::Node::Heading(heading) = node {
+        return (heading.level > 6).then_some((heading.pos, None));
+    }
+    let mut found = None;
+    node.for_each_child(&mut |child| {
+        if found.is_none() {
+            found = find_owned(child);
+        }
+    });
+    found
 }

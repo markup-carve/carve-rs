@@ -267,7 +267,7 @@ fn render_call(host: &Carve, name: &str, req: &Value, opts: &CallOptions) -> Res
     Ok(rendered(&host.render_with_diagnostics(input(&bytes), o)?))
 }
 
-/// PROVISIONAL: `host.documentTransforms`, a list of `{name, after, insert}`
+/// PROVISIONAL: `host.documentTransforms`, a list of `{name, after, insert}` or `{name, after, setLevel}`
 /// that inserts the node `insert` after the node at the pointer `after`, in
 /// order (C2-X-053). `name` is the qualified name of the inserted extension.
 fn host(req: &Value) -> Result<Carve, Error> {
@@ -294,18 +294,29 @@ fn host(req: &Value) -> Result<Carve, Error> {
                         Error::option("documentTransforms", format!("{k} is missing or not text"))
                     })
             };
-            let node = item
-                .get("insert")
-                .filter(|n| n.is_object())
-                .cloned()
-                .ok_or_else(|| {
-                    Error::option("documentTransforms", "insert is missing or not a node")
-                })?;
+            let node = item.get("insert").filter(|n| n.is_object()).cloned();
+            let set_level = item.get("setLevel").and_then(Value::as_i64);
+            if node.is_some() == set_level.is_some() {
+                return Err(Error::option(
+                    "documentTransforms",
+                    "provide insert or setLevel",
+                ));
+            }
             let version = node
-                .get("version")
+                .as_ref()
+                .and_then(|n| n.get("version"))
                 .and_then(Value::as_str)
                 .unwrap_or("1")
                 .to_string();
+            let after = text("after")?;
+            let transform: Box<dyn super::DocumentTransform> = if let Some(node) = node {
+                Box::new(super::extension::InsertTransform { after, node })
+            } else {
+                Box::new(super::extension::SetLevelTransform {
+                    after,
+                    level: set_level.unwrap_or(1),
+                })
+            };
             host.register_extension(super::Extension {
                 declaration: super::ExtensionDeclaration {
                     name: text("name")?,
@@ -314,10 +325,7 @@ fn host(req: &Value) -> Result<Carve, Error> {
                     slots: Vec::new(),
                 },
                 renderers: Vec::new(),
-                transform: Some(Box::new(super::extension::InsertTransform {
-                    after: text("after")?,
-                    node,
-                })),
+                transform: Some(transform),
             })?;
         }
     }

@@ -228,3 +228,59 @@ fn c2_h_208_a_heading_in_a_degraded_container_is_reported() {
         out.html
     );
 }
+
+#[test]
+fn c2_h_208_a_document_transform_keeps_the_shift_fact_and_final_carrier() {
+    let cases = [
+        (
+            "====== A\n",
+            2,
+            "<h2 data-carve-source-level=\"1\">A</h2>",
+            vec!["heading-shift-above-6"],
+        ),
+        (
+            "= A\n",
+            7,
+            "<div data-carve-source-level=\"6\" role=\"heading\" aria-level=\"7\">A</div>",
+            vec![],
+        ),
+        (
+            "= A\n",
+            1,
+            "<h1 data-carve-source-level=\"0\">A</h1>",
+            vec![],
+        ),
+    ];
+    for (source, level, html, codes) in cases {
+        let out = call(&json!({
+            "call": "renderWithDiagnostics",
+            "source": source,
+            "options": {"headingShift": 1, "roundtrip": true, "sections": false, "headingIds": "off"},
+            "host": {"documentTransforms": [{"name": "sample.level", "after": "/children/0", "setLevel": level}]}
+        }));
+        assert_eq!(out["ok"]["html"], html, "{out}");
+        let actual: Vec<_> = out["ok"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["code"].as_str().unwrap())
+            .collect();
+        assert_eq!(actual, codes, "{out}");
+    }
+}
+
+#[test]
+fn c2_h_208_an_inserted_heading_gets_the_final_level_carrier() {
+    let out = call(&json!({
+        "call": "renderWithDiagnostics",
+        "source": "= A\n",
+        "options": {"headingShift": 1, "roundtrip": true, "sections": false, "headingIds": "off"},
+        "host": {"documentTransforms": [{"name": "sample.add", "after": "/children/0",
+            "insert": {"type": "heading", "level": 3, "children": [{"type": "text", "value": "B"}]}}]}
+    }));
+    assert_eq!(
+        out["ok"]["html"],
+        "<h2 data-carve-source-level=\"1\">A</h2>\n<h3 data-carve-source-level=\"2\">B</h3>",
+        "{out}"
+    );
+}
