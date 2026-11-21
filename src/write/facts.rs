@@ -383,11 +383,11 @@ fn content_fragment(fragment: &str) -> &str {
 fn table_source_line(line: &str, column: usize, first: bool) -> &str {
     let anchored = line.get(column..).unwrap_or("");
     if first {
-        return anchored
-            .starts_with('|')
-            .then_some(anchored)
-            .unwrap_or("")
-            .trim_end_matches('\r');
+        return if anchored.starts_with('|') {
+            anchored.trim_end_matches('\r')
+        } else {
+            ""
+        };
     }
     let early_continuation = line.get(..column).and_then(|prefix| prefix.find('+'));
     let at = early_continuation
