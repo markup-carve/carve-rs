@@ -387,6 +387,12 @@ pub(super) struct InlineRec<'a> {
     parent: &'a str,
 }
 
+impl InlineRec<'_> {
+    pub fn first_byte(&self) -> Option<u8> {
+        self.text.as_bytes().first().copied()
+    }
+}
+
 /// The record a rule runs over.
 pub(super) enum Subject<'r, 'a> {
     Line(usize),
@@ -1169,21 +1175,7 @@ impl<'a> Records<'a> {
             {
                 return Node::Skip;
             }
-            let mut holder = range.holder;
-            let mut leaf = None;
-            while let Some(up) = holder {
-                let node = &self.holders[up as usize];
-                if let Some(kind) = node
-                    .range
-                    .map(|range| self.kind(range))
-                    .filter(|kind| text_leaf(kind))
-                {
-                    leaf = Some(kind);
-                    break;
-                }
-                holder = node.up;
-            }
-            let Some(leaf) = leaf else {
+            let Some(leaf) = self.inline_leaf(range) else {
                 return Node::Skip;
             };
             return Node::Inline(InlineRec {
@@ -1205,6 +1197,75 @@ impl<'a> Records<'a> {
             return Node::Skip;
         }
         Node::Block(self.block_record(at, line_index, parent_kind))
+    }
+
+    /// The text leaf that holds an inline node.
+    fn inline_leaf(&self, range: &Range) -> Option<&'a str> {
+        let mut holder = range.holder;
+        while let Some(up) = holder {
+            let node = &self.holders[up as usize];
+            if let Some(kind) = node
+                .range
+                .map(|range| self.kind(range))
+                .filter(|kind| text_leaf(kind))
+            {
+                return Some(kind);
+            }
+            holder = node.up;
+        }
+        None
+    }
+
+    /// The text or soft break sibling right before (`back`) or after a node of those two types. They
+    /// have no children, so it is a neighbouring range, whichever order the walk gave siblings.
+    fn run_sibling(&self, at: usize, back: bool) -> Option<usize> {
+        let range = &self.ranges[at];
+        let index = if back {
+            range.index.checked_sub(1)?
+        } else {
+            range.index + 1
+        };
+        [at.checked_sub(1), Some(at + 1)]
+            .into_iter()
+            .flatten()
+            .find(|&near| {
+                self.ranges.get(near).is_some_and(|other| {
+                    other.holder == range.holder
+                        && other.index == index
+                        && matches!(other.kind, "text" | "soft_break")
+                })
+            })
+    }
+
+    /// C2-W-140: the text run that starts at a text or soft break node, the siblings of those two
+    /// types next to it read as one record; none where the node continues a run.
+    pub fn text_run(&self, at: usize) -> Option<InlineRec<'a>> {
+        let range = &self.ranges[at];
+        if !matches!(range.kind, "text" | "soft_break")
+            || !self.inline_held(range)
+            || self.run_sibling(at, true).is_some()
+        {
+            return None;
+        }
+        let line_index = range.start_line.saturating_sub(1);
+        if line_index >= self.lines.len() {
+            return None;
+        }
+        let mut last = at;
+        while let Some(next) = self.run_sibling(last, false) {
+            last = next;
+        }
+        let end = self.ranges[last].end;
+        Some(InlineRec {
+            range: at as u32,
+            kind: "text_run",
+            line_index,
+            start: range.start,
+            end,
+            text: text_at(self.source, range.start, end),
+            leaf: self.inline_leaf(range)?,
+            parent: self.holder_kind(range.holder),
+        })
     }
 
     fn block_record(&self, at: usize, line_index: usize, parent_kind: &'a str) -> BlockRec<'a> {

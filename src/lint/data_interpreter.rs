@@ -426,7 +426,8 @@ fn anchored_first(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
 }
 
 pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
-    let re = RegexBuilder::new(&text.replace("(?<", "(?P<"))
+    let text = &text.replace("(?<", "(?P<");
+    let re = RegexBuilder::new(text)
         .case_insensitive(flags.contains('i'))
         .build()
         .ok()?;
@@ -441,7 +442,7 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
     let hir = regex_syntax::ParserBuilder::new()
         .case_insensitive(flags.contains('i'))
         .build()
-        .parse(&text.replace("(?<", "(?P<"))
+        .parse(text)
         .ok();
     let mut set = Box::new([false; 256]);
     let first = hir

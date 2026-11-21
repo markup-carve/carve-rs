@@ -16,6 +16,7 @@ mod includes;
 mod legacy;
 mod lines;
 mod nodes;
+mod pairs;
 use crate::view::V;
 mod walk;
 

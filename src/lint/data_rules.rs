@@ -6,6 +6,7 @@ use super::data_interpreter::{
     pattern, quick_rejects, quick_tests,
 };
 use super::data_model::{LineRec, Node, Records, Subject};
+use super::pairs;
 use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
@@ -73,6 +74,8 @@ struct Entry {
 struct Each {
     subject: Expr,
     pattern: Option<Pattern>,
+    /// `pairs`: the mark of the pair scan and whether it is strict (C2-W-147).
+    pairs: Option<(&'static str, bool)>,
     base: Option<Expr>,
 }
 
@@ -165,7 +168,8 @@ fn compile_rule(rule: &'static Value) -> Rule {
         })
         .collect();
     let each = rule.get("each").and_then(|each| {
-        let items = each["matches"].as_array()?;
+        let pairs = each["pairs"].as_array();
+        let items = pairs.or_else(|| each["matches"].as_array())?;
         let subject = items.first()?;
         let base = match subject.get("f").and_then(Value::as_str) {
             Some("text") => Some(field_expr("start")),
@@ -177,7 +181,12 @@ fn compile_rule(rule: &'static Value) -> Rule {
             pattern: items
                 .get(1)
                 .and_then(Value::as_str)
+                .filter(|_| pairs.is_none())
                 .and_then(|text| pattern(text, "")),
+            pairs: pairs.and_then(|items| {
+                let mark = items.get(1)?.as_str()?;
+                Some((mark, items.get(2).and_then(Value::as_str) == Some("strict")))
+            }),
             base,
         })
     });
@@ -349,10 +358,19 @@ fn run_rule<'a>(
     let Val::Str(text) = subject else {
         return;
     };
+    let base = eval.offset(each.base.as_ref());
+    if let Some((mark, strict)) = each.pairs {
+        for pair in pairs::scan(&text, mark, strict) {
+            eval.spans.clear();
+            eval.spans.extend(pair);
+            eval.base = base;
+            report(rule, open, &mut eval, out, path);
+        }
+        return;
+    }
     let Some(pattern) = &each.pattern else {
         return;
     };
-    let base = eval.offset(each.base.as_ref());
     for found in pattern.re.captures_iter(&text) {
         eval.spans.clear();
         for &(name, index) in &pattern.groups {
@@ -733,6 +751,10 @@ fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnos
     };
     let mut found_block = 0;
     let mut found_inline = 0;
+    let wants_runs = cache
+        .inline_rules
+        .iter()
+        .any(|rule| type_matches(rule, "text_run") && rule.types.is_some());
     let cache = RefCell::new(cache);
     for (at, range) in records.ranges.iter().enumerate() {
         let mut block = |kind: &'a str, parent: &'a str| {
@@ -783,6 +805,23 @@ fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnos
                         &path,
                     );
                 }
+            }
+        }
+        if wants_runs && let Some(record) = records.text_run(at) {
+            let first = record.first_byte();
+            let bucket = *inline_alias
+                .entry((address("text_run"), first.map_or(256, u16::from)))
+                .or_insert_with(|| add(cache.borrow_mut().inline(("text_run", first))));
+            let path = || records.path_of(record.range);
+            for rule in buckets.borrow()[bucket].iter() {
+                run_rule(
+                    *rule,
+                    records,
+                    Subject::Inline(&record),
+                    record.line_index,
+                    out,
+                    &path,
+                );
             }
         }
     }
