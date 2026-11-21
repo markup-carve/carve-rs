@@ -9,10 +9,10 @@
   },
   {
     "id": "bare-html-tag",
-    "origin": "../carve/tests/corpus/599-an-autolink-is-opaque-to-the-bracket-scan-3.crv",
-    "trigger": "[a <x]> b](u)\n",
-    "near": "[a  b](u)\n",
-    "fragment": "<x]>",
+    "origin": "clause cases CC-865 and CC-866",
+    "trigger": "a <b>c</b>\n",
+    "near": "a <https://example.com> c\n",
+    "fragment": "<b>",
     "message": "This bare HTML tag is escaped as text; use a raw HTML block if markup is intended."
   },
   {
@@ -362,10 +362,10 @@
   },
   {
     "id": "indented-code-block",
-    "origin": "../carve/tests/corpus/1077-a-column-after-an-astral-character-is-one-code-point-3.crv",
-    "trigger": "{title=\"😀\"}{.b\n           .c}\np\n",
-    "near": "{title=\"😀\"}{.b\n           \np\n",
-    "fragment": ".c}",
+    "origin": "clause cases CC-783 and CC-946",
+    "trigger": "a\n\n    b\n",
+    "near": "a\n    b\n",
+    "fragment": "b",
     "message": "Four-space indentation does not make a code block in Carve; this renders as a paragraph. Use a ``` fence."
   },
   {

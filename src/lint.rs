@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 mod controls;
 mod data_interpreter;
 mod data_model;
+#[macro_use]
 mod data_rules;
 mod includes;
 mod legacy;
@@ -40,40 +41,61 @@ fn catalog() -> &'static Value {
     })
 }
 
+/// What `active` reads of a catalog row, indexed by rule id once.
+struct Row {
+    usable: bool,
+    default_on: bool,
+    modeled: bool,
+}
+
+fn rows() -> &'static HashMap<&'static str, Row> {
+    static ROWS: OnceLock<HashMap<&'static str, Row>> = OnceLock::new();
+    ROWS.get_or_init(|| {
+        let mut rows = HashMap::new();
+        for row in catalog()["rules"].as_array().into_iter().flatten() {
+            let Some(id) = row["id"].as_str() else {
+                continue;
+            };
+            rows.entry(id).or_insert_with(|| Row {
+                usable: (row["channel"] == "lint" || row["channel"].is_null())
+                    && !matches!(row["status"].as_str(), Some("obsolete" | "void")),
+                default_on: row["default"].as_str().unwrap_or("on") == "on",
+                modeled: data_rules::modeled_ids().contains(id),
+            });
+        }
+        rows
+    })
+}
+
 fn active(code: &str, opts: &LintOptions) -> bool {
-    if data_rules::data_mode() && data_rules::modeled_ids().contains(code) {
+    let Some(row) = rows().get(code) else {
         return false;
-    }
-    active_catalog(code, opts)
+    };
+    !(row.modeled && data_rules::data_mode()) && row_active(code, row, opts)
 }
 
 fn active_catalog(code: &str, opts: &LintOptions) -> bool {
-    let Some(row) = catalog()["rules"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|rule| rule["id"] == code)
-    else {
-        return false;
-    };
-    if row["channel"] != "lint" && !row["channel"].is_null() {
-        return false;
-    }
-    if matches!(row["status"].as_str(), Some("obsolete" | "void")) {
+    rows()
+        .get(code)
+        .is_some_and(|row| row_active(code, row, opts))
+}
+
+fn row_active(code: &str, row: &Row, opts: &LintOptions) -> bool {
+    if !row.usable {
         return false;
     }
     if code.starts_with("platform-") && !opts.platforms.iter().any(|p| p == "github") {
         return false;
     }
-    opts.rules.get(code).map_or_else(
-        || row["default"].as_str().unwrap_or("on") == "on",
-        |setting| setting == "on",
-    )
+    opts.rules
+        .get(code)
+        .map_or(row.default_on, |setting| setting == "on")
 }
 
 /// Runs enabled lint rules and returns catalog diagnostics in source order.
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
+    let _mode = data_rules::enter();
     let parse = crate::Options {
         includes: opts.includes.clone(),
         heading_ids: opts.heading_ids,
@@ -191,7 +213,7 @@ fn lint_core<'a>(
     arena: &'a crate::Arena,
 ) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let positions = Ranges::new(source, tree.map_or_else(Vec::new, node_ranges));
+    let positions = Ranges::new(source, tree.map_or_else(Default::default, node_ranges));
     let mut out = Vec::new();
     for warning in tree.map_or_else(Vec::new, |tree| legacy::warnings(source, tree)) {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
@@ -199,16 +221,23 @@ fn lint_core<'a>(
         }
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
-    lines::scan(source, opts, &positions.all, &mut out);
+    let line_model = lines::lines(source, &positions.all);
+    lines::scan(source, opts, &positions.all, &line_model, &mut out);
     if let Some(tree) = tree {
         nodes::scan(source, opts, tree, arena, &mut out);
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     if data_rules::data_mode() && tree.is_some() {
-        let records = data_model::records(source, &positions.all);
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
-        out.extend(data_rules::run(&records, source, opts));
+        out.extend(data_rules::run(
+            source,
+            &parsed,
+            &positions.all,
+            &positions.holders,
+            &line_model,
+            opts,
+        ));
     }
     let invalid_tables: Vec<_> = out
         .iter()
@@ -1045,6 +1074,7 @@ fn drop_replaced(output: &mut Vec<Diagnostic>, replacing: &[usize]) {
 /// at one offset reads the ranges around it instead of all of them.
 struct Ranges<'a> {
     all: Vec<Range>,
+    holders: Vec<Holder>,
     source: &'a str,
     index: OnceCell<RangeIndex>,
 }
@@ -1057,9 +1087,10 @@ struct RangeIndex {
 }
 
 impl<'a> Ranges<'a> {
-    const fn new(source: &'a str, all: Vec<Range>) -> Self {
+    fn new(source: &'a str, (all, holders): (Vec<Range>, Vec<Holder>)) -> Self {
         Self {
             all,
+            holders,
             source,
             index: OnceCell::new(),
         }
@@ -1134,6 +1165,18 @@ struct Range {
     form_block: bool,
     image_line: bool,
     footnote_key: Option<String>,
+    /// The node whose `children` hold this one, as an index into `Ranges::holders`; `None` is the document.
+    holder: Option<u32>,
+    /// The last segment of the path when it is a list index, else 0.
+    index: u32,
+    /// The node before this one in its holder's `children` list, when that item is a node.
+    prev: Option<u32>,
+}
+
+/// A node that holds `children`; `range` is absent for a node without a source position.
+struct Holder {
+    range: Option<u32>,
+    up: Option<u32>,
 }
 
 /// A node's pointer, written out only when a rule reads it.
@@ -1156,6 +1199,11 @@ enum Segment {
 impl LazyPath {
     const fn len(&self) -> usize {
         self.len
+    }
+
+    /// Whether this is the document's own path, without building the text.
+    pub(super) const fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     fn as_str(&self) -> &str {
@@ -1196,11 +1244,85 @@ impl PartialEq<&str> for LazyPath {
     }
 }
 
-fn node_ranges(tree: V<'_>) -> Vec<Range> {
+fn node_range(
+    value: V<'_>,
+    pos: V<'_>,
+    kind: &str,
+    path: LazyPath,
+    holder: Option<u32>,
+    index: u32,
+) -> Range {
+    let number = |key: &str| usize::try_from(pos.at(key).as_u64().unwrap_or(0)).unwrap_or(0);
+    Range {
+        start: number("startOffset"),
+        end: number("endOffset"),
+        path,
+        kind: kind.into(),
+        start_line: number("startLine"),
+        end_line: number("endLine"),
+        has_attrs: value.get("attrs").is_some(),
+        form_block: value.at("form").as_str() == Some("block"),
+        image_line: kind == "paragraph"
+            && value
+                .at("children")
+                .as_array()
+                .and_then(super::view::Arr::single)
+                .is_some_and(|child| child.ty().as_str() == Some("image")),
+        footnote_key: (kind == "footnote_ref")
+            .then(|| value.at("key").as_str().map(str::to_string))
+            .flatten(),
+        holder,
+        index,
+        prev: None,
+    }
+}
+
+/// Records item `at` of a `children` list, made as range `made`, as the previous sibling of item `at + 1`.
+fn link_prev(slot: &mut Option<(u32, u32)>, at: u32, made: u32, out: &mut [Range]) {
+    if let Some((later, range)) = *slot
+        && later == at + 1
+        && let Some(next) = out.get_mut(range as usize)
+    {
+        next.prev = Some(made);
+    }
+    *slot = Some((at, made));
+}
+
+fn node_ranges(tree: V<'_>) -> (Vec<Range>, Vec<Holder>) {
+    struct Pending<'v> {
+        value: V<'v>,
+        step: Option<Rc<Step>>,
+        len: usize,
+        holder: Option<u32>,
+        index: Option<u32>,
+        /// The `children` list this value is an item of, as an index into `lists`.
+        list: Option<usize>,
+        direct: bool,
+    }
     let mut out = Vec::new();
+    let mut holders = Vec::new();
+    // Per `children` list: the item index and range of the item made last. Items are made last to first.
+    let mut lists: Vec<Option<(u32, u32)>> = Vec::new();
     let mut keys: HashMap<&str, Rc<str>> = HashMap::new();
-    let mut pending: Vec<(V<'_>, Option<Rc<Step>>, usize)> = vec![(tree, None, 0)];
-    while let Some((value, step, len)) = pending.pop() {
+    let mut pending = vec![Pending {
+        value: tree,
+        step: None,
+        len: 0,
+        holder: None,
+        index: None,
+        list: None,
+        direct: false,
+    }];
+    while let Some(Pending {
+        value,
+        step,
+        len,
+        holder,
+        index,
+        list,
+        direct,
+    }) = pending.pop()
+    {
         let child = |segment: Segment, width: usize| {
             (
                 Some(Rc::new(Step {
@@ -1211,51 +1333,79 @@ fn node_ranges(tree: V<'_>) -> Vec<Range> {
             )
         };
         if let Some(items) = value.as_array() {
+            let own_list = direct.then(|| {
+                lists.push(None);
+                lists.len() - 1
+            });
             for (i, item) in items.iter().enumerate() {
                 if item.is_container() {
                     let digits = i.checked_ilog10().map_or(1, |d| d as usize + 1);
                     let (next, width) = child(Segment::Index(i), digits);
-                    pending.push((item, next, width));
+                    pending.push(Pending {
+                        value: item,
+                        step: next,
+                        len: width,
+                        holder,
+                        index: u32::try_from(i).ok(),
+                        list: own_list,
+                        direct,
+                    });
                 }
             }
         } else if value.is_object() {
+            let mut own = None;
             if let (Some(pos), Some(kind)) = (value.pos(), value.ty().as_str()) {
-                let number =
-                    |key: &str| usize::try_from(pos.at(key).as_u64().unwrap_or(0)).unwrap_or(0);
-                out.push(Range {
-                    start: number("startOffset"),
-                    end: number("endOffset"),
-                    path: LazyPath {
-                        step: step.clone(),
-                        len,
-                        text: OnceCell::new(),
-                    },
-                    kind: kind.into(),
-                    start_line: number("startLine"),
-                    end_line: number("endLine"),
-                    has_attrs: value.get("attrs").is_some(),
-                    form_block: value.at("form").as_str() == Some("block"),
-                    image_line: kind == "paragraph"
-                        && value
-                            .at("children")
-                            .as_array()
-                            .and_then(super::view::Arr::single)
-                            .is_some_and(|child| child.ty().as_str() == Some("image")),
-                    footnote_key: (kind == "footnote_ref")
-                        .then(|| value.at("key").as_str().map(str::to_string))
-                        .flatten(),
-                });
+                own = u32::try_from(out.len()).ok();
+                let path = LazyPath {
+                    step: step.clone(),
+                    len,
+                    text: OnceCell::new(),
+                };
+                out.push(node_range(
+                    value,
+                    pos,
+                    kind,
+                    path,
+                    holder,
+                    index.unwrap_or(0),
+                ));
+                if let (Some(slot), Some(at), Some(made)) =
+                    (list.and_then(|list| lists.get_mut(list)), index, own)
+                {
+                    link_prev(slot, at, made, &mut out);
+                }
             }
             value.each(&mut |key, item| {
                 if item.is_container() {
                     let name = keys.entry(key).or_insert_with(|| Rc::from(key));
                     let (next, width) = child(Segment::Key(Rc::clone(name)), key.len());
-                    pending.push((item, next, width));
+                    // A path's parent is the prefix before its last `/children/`; the document's is empty.
+                    let children = key == "children";
+                    let inner = if children && len > 0 {
+                        holders.push(Holder {
+                            range: own,
+                            up: holder,
+                        });
+                        u32::try_from(holders.len() - 1).ok()
+                    } else if children {
+                        None
+                    } else {
+                        holder
+                    };
+                    pending.push(Pending {
+                        value: item,
+                        step: next,
+                        len: width,
+                        holder: inner,
+                        index: None,
+                        list: None,
+                        direct: children,
+                    });
                 }
             });
         }
     }
-    out
+    (out, holders)
 }
 
 fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {

@@ -40,6 +40,7 @@ dependencies = [
  "jotdown",
  "markup5ever_rcdom",
  "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "typed-arena",

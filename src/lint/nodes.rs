@@ -495,6 +495,9 @@ fn list_item_block_opener(node: V<'_>, source: &str, from: usize) -> bool {
 }
 
 fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) {
+    if replaced!("list-item-block-overindented") {
+        return;
+    }
     let Some((from, _)) = bounds(item.node) else {
         return;
     };
@@ -544,6 +547,9 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
 }
 
 fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
+    if replaced!("block-opener-overindented") {
+        return;
+    }
     if item.ancestors.as_ref().is_some_and(|a| a.in_list_item) {
         return;
     }
@@ -900,6 +906,9 @@ fn list<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
 }
 
 fn list_loose(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("deprecated-loose-attribute") {
+        return;
+    }
     if field(item.node, "/attrs/keyValues")
         .as_array()
         .is_some_and(|pairs| {
@@ -1036,6 +1045,9 @@ fn list_indent<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
 }
 
 fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("list-item-body-below-content-column") {
+        return;
+    }
     let raw = sink.raw(item).to_string();
     let Some((from, _)) = bounds(item.node) else {
         return;
@@ -1309,6 +1321,9 @@ fn figure(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn div(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("figure-group-opener-metadata") {
+        return;
+    }
     let figure = field(item.node, "/attrs/classes")
         .as_array()
         .is_some_and(|classes| classes.iter().any(|class| class == "figure"));
@@ -2114,6 +2129,9 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
 }
 
 fn definition_term(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("description-term-multi-line") {
+        return;
+    }
     let first_line = field(item.node, "/pos/startLine").as_u64().unwrap_or(0);
     if item.node.at("children").as_array().is_some_and(|children| {
         children.iter().any(|child| {
@@ -2148,6 +2166,9 @@ fn definition_term(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn emphasis(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("comment-shaped-emphasis") {
+        return;
+    }
     if sink.raw(item).starts_with("/*") && sink.raw(item).ends_with("*/") {
         sink.emit("comment-shaped-emphasis", item, &[], 0);
     }
@@ -2312,6 +2333,9 @@ fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn highlight(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("djot-highlight-braces") {
+        return;
+    }
     if sink.raw(item).starts_with("{=") {
         sink.emit("djot-highlight-braces", item, &[], 0);
     }

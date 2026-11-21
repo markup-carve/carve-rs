@@ -201,6 +201,9 @@ fn panel_number(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning
 }
 
 fn glob_strong(source: &str, strong: V<'_>, out: &mut Vec<Warning>) {
+    if replaced!("glob-shaped-strong") {
+        return;
+    }
     let Some((start, end)) = bounds(strong) else {
         return;
     };
@@ -555,6 +558,9 @@ fn html_comment(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning
 
 /// `{% … %}` braced comments shaped like template tags.
 fn template_tags(source: &str, comments: &HashSet<usize>, out: &mut Vec<Warning>) {
+    if replaced!("braced-comment-in-a-template-source") {
+        return;
+    }
     if comments.is_empty() {
         return;
     }
@@ -688,6 +694,9 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
 
 /// The first tag-shaped run on each line of a paragraph, where a reader sees it as text.
 fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
+    if replaced!("bare-html-tag") {
+        return;
+    }
     let Some((start, end)) = all.get(at).and_then(|node| bounds(node.value)) else {
         return;
     };
