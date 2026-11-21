@@ -96,3 +96,11 @@ fn captions_next_to_tables() {
 fn footnotes() {
     check("footnotes", "Text[^n].\n\n[^n]: note\n  - one\n- x\n\n");
 }
+
+#[test]
+fn bracket_runs() {
+    check("open brackets", "[");
+    check("brackets before one gap", "[[[[a] ( ");
+    check("gaps without a closing parenthesis", "[a] (");
+    check("blank destinations", "[a] (    ");
+}
