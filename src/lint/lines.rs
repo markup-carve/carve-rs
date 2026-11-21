@@ -100,7 +100,7 @@ impl Sink<'_> {
 pub(super) fn scan(
     source: &str,
     options: &LintOptions,
-    ranges: &[Range],
+    ranges: &[Range<'_>],
     lines: &[Line],
     output: &mut Vec<Diagnostic>,
 ) {
@@ -166,16 +166,16 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
     sink.output.push(finding);
 }
 
-pub(super) fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
-    let div_paths: HashSet<&str> = ranges
+pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
+    let div_paths: HashSet<String> = ranges
         .iter()
         .filter(|range| {
             matches!(
-                range.kind.as_str(),
+                range.kind,
                 "div" | "directive" | "admonition" | "figure_group"
             )
         })
-        .map(|range| range.path.as_str())
+        .map(|range| range.path.text())
         .collect();
     let mut starts = Vec::new();
     let mut raws = Vec::new();
@@ -202,6 +202,13 @@ pub(super) fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
                 .flatten()
                 .for_each(|b| *b = 0);
         }
+        let path = paragraph
+            .or(fact.line_block)
+            .map_or_else(String::new, |r| r.path.text());
+        let paragraph_in_div = paragraph.is_some()
+            && path
+                .rsplit_once("/children/")
+                .is_some_and(|(parent, _)| div_paths.contains(parent));
         let opaque = fact.flags & (FRONTMATTER | OPAQUE) != 0;
         out.push(Line {
             escaped: (!opaque).then(|| escape_masked(raw, &bytes)).flatten(),
@@ -209,20 +216,16 @@ pub(super) fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
             quotes: fact.quotes,
             table_row: fact.flags & TABLE_ROW != 0,
             start,
-            path: paragraph
-                .or(fact.line_block)
-                .map_or_else(String::new, |r| r.path.to_string()),
+            path,
             kind: paragraph.map_or_else(
                 || {
                     fact.line_block
                         .map_or_else(String::new, |_| "line".to_string())
                 },
-                |r| r.kind.clone(),
+                |r| r.kind.to_string(),
             ),
             paragraph: paragraph.is_some(),
-            paragraph_in_div: paragraph
-                .and_then(|range| range.path.rsplit_once("/children/"))
-                .is_some_and(|(parent, _)| div_paths.contains(parent)),
+            paragraph_in_div,
             literal_quote_prefix: fact.flags & LITERAL_QUOTE_PREFIX != 0,
             content_start: paragraph
                 .filter(|range| range.start_line == number)
@@ -277,12 +280,12 @@ pub(super) fn lines(source: &str, ranges: &[Range]) -> Vec<Line> {
     out
 }
 
-fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range]) -> Vec<LineFacts<'a>> {
+fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range<'a>]) -> Vec<LineFacts<'a>> {
     let count = raws.len();
     // One pass per range over the lines it covers, instead of every range per line.
     let mut facts = vec![LineFacts::default(); count];
     for range in ranges {
-        let kind = range.kind.as_str();
+        let kind = range.kind;
         if kind == "text"
             && let Some(line) = range.start_line.checked_sub(1)
             && starts.get(line) == Some(&range.start)
@@ -344,7 +347,7 @@ fn mask_opaque_lines<'a>(
     starts: &[usize],
     raws: &[&str],
     facts: &mut [LineFacts<'a>],
-    range: &'a Range,
+    range: &'a Range<'a>,
 ) {
     let first = starts
         .partition_point(|s| *s <= range.start)
@@ -366,8 +369,8 @@ fn mask_opaque_lines<'a>(
 }
 
 /// A leaf block starts its first line's text, and each break ends where the next line's text starts.
-fn mark_content(facts: &mut [LineFacts<'_>], range: &Range) {
-    let content = match range.kind.as_str() {
+fn mark_content(facts: &mut [LineFacts<'_>], range: &Range<'_>) {
+    let content = match range.kind {
         "soft_break" | "hard_break" => Some((range.end_line, range.end)),
         "paragraph" | "caption" | "line" | "heading" | "definition_term" | "thematic_break"
         | "table_row" => Some((range.start_line, range.start)),
@@ -408,9 +411,9 @@ struct LineFacts<'r> {
     flags: u8,
     content: Option<usize>,
     quotes: usize,
-    paragraph: Option<&'r Range>,
-    line_block: Option<&'r Range>,
-    masks: Vec<&'r Range>,
+    paragraph: Option<&'r Range<'r>>,
+    line_block: Option<&'r Range<'r>>,
+    masks: Vec<&'r Range<'r>>,
 }
 
 fn is_opaque_leaf(kind: &str) -> bool {
@@ -491,7 +494,7 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let content_start = line.content_start.unwrap_or(0);
     let content = line.text.get(content_start..).unwrap_or("").trim_start();
     let (prefix, tail) = marker_tail(&line.text);
-    continuation_marker(line, prefix, tail, sink);
+    continuation_marker(line, sink);
     quote_list_marker(line, previous, sink);
     thematic_marker(line, previous, prefix, tail, sink);
     marker_as_text(line, content_start, content, sink);
@@ -522,22 +525,37 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     table_line(line, sink);
 }
 
-fn continuation_marker(line: &Line, prefix: usize, tail: &str, sink: &mut Sink<'_>) {
+fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
     if replaced!("deprecated-continuation-marker") {
         return;
     }
-    if tail.trim_end() == "+" {
-        let message = if line.text.trim_start().starts_with("- +")
-            || line.text.trim_start().starts_with("* +")
-        {
+    if !line.text.as_bytes().contains(&b'+') {
+        return;
+    }
+    let (mut start, mut text) = leaf_after_quotes(line);
+    let mut item = false;
+    while text.starts_with("- ") || text.starts_with("* ") {
+        item = true;
+        text = &text[2..];
+        start += 2;
+        let trimmed = text.trim_start_matches([' ', '\t']);
+        start += text.len() - trimmed.len();
+        text = trimmed;
+        // A quote in the item's marker-line text is not another physical-line prefix.
+        if text.starts_with("> ") {
+            return;
+        }
+    }
+    if text == "+" {
+        let message = if item {
             2
         } else {
             usize::from(line.scope.container == ContainerKind::ListItem)
         };
         sink.emit_nth(
             "deprecated-continuation-marker",
-            line.start + prefix,
-            line.start + prefix + 1,
+            line.start + start,
+            line.start + start + 1,
             &line.path,
             &[],
             message,
@@ -570,10 +588,10 @@ fn thematic_marker(
     let candidate = tail.trim();
     let after_paragraph =
         previous.is_some_and(|p| p.kind == "paragraph" && !p.text.trim().is_empty());
-    if item_marker_underline(line, prefix, candidate, after_paragraph) {
-        return;
-    }
-    if (run(candidate, "=", 3) || run(candidate, "-", 3)) && after_paragraph {
+    if (run(candidate, "=", 3) || run(candidate, "-", 3))
+        && after_paragraph
+        && !item_marker_underline(line, prefix, candidate, after_paragraph)
+    {
         sink.emit(
             "setext-heading-underline",
             line.start + marker_start,
@@ -878,12 +896,12 @@ fn quote_tail(text: &str, quotes: usize) -> (usize, &str) {
 
 /// The description lists and the lines where a term or description starts, for the column rule.
 struct DescriptionLists<'r> {
-    lists: Vec<&'r Range>,
+    lists: Vec<&'r Range<'r>>,
     entry_lines: std::collections::HashSet<usize>,
 }
 
 impl<'r> DescriptionLists<'r> {
-    fn new(ranges: &'r [Range]) -> Self {
+    fn new(ranges: &'r [Range<'r>]) -> Self {
         Self {
             lists: ranges
                 .iter()
@@ -891,12 +909,7 @@ impl<'r> DescriptionLists<'r> {
                 .collect(),
             entry_lines: ranges
                 .iter()
-                .filter(|r| {
-                    matches!(
-                        r.kind.as_str(),
-                        "definition_term" | "definition_description"
-                    )
-                })
+                .filter(|r| matches!(r.kind, "definition_term" | "definition_description"))
                 .map(|r| r.start_line)
                 .collect(),
         }

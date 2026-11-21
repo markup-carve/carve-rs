@@ -1,5 +1,6 @@
 //! Checks tied to parsed nodes and their source positions (C2-W-107).
 
+use super::walk::{PathNode, Segment, Walk, path_text};
 use super::{LintOptions, active, drop_replaced};
 use crate::Arena;
 use crate::diagnostic::Diagnostic;
@@ -13,72 +14,26 @@ fn field<'a>(value: V<'a>, path: &str) -> V<'a> {
 
 use std::collections::{HashMap, HashSet};
 
-struct Item<'a> {
-    node: V<'a>,
-    path: OnceCell<String>,
-    path_node: Option<&'a PathNode<'a>>,
-    parents: Option<&'a Parent<'a>>,
-    ancestors: Option<&'a Ancestor<'a>>,
-}
-
-struct PathNode<'a> {
-    segment: Segment<'a>,
-    len: usize,
-    previous: Option<&'a PathNode<'a>>,
-}
-
-#[derive(Clone, Copy)]
-enum Segment<'a> {
-    Key(&'a str),
-    Index(usize),
-}
-
-impl<'a> PathNode<'a> {
-    fn child(arena: &'a Arena, parent: Option<&'a Self>, segment: Segment<'a>) -> &'a Self {
-        let width = match segment {
-            Segment::Key(key) => key.len(),
-            Segment::Index(index) => index
-                .checked_ilog10()
-                .map_or(1, |digits| digits as usize + 1),
-        };
-        arena.alloc(Self {
-            len: parent.map_or(0, |node| node.len) + 1 + width,
-            segment,
-            previous: parent,
-        })
-    }
+pub(super) struct Item<'a> {
+    pub(super) node: V<'a>,
+    /// The node's start and end offsets.
+    pub(super) bounds: Option<(usize, usize)>,
+    pub(super) path: OnceCell<String>,
+    pub(super) path_node: Option<&'a PathNode<'a>>,
+    pub(super) parents: Option<&'a Parent<'a>>,
+    pub(super) ancestors: Option<&'a Ancestor<'a>>,
 }
 
 impl Item<'_> {
     fn path(&self) -> &str {
-        self.path.get_or_init(|| {
-            use std::fmt::Write as _;
-            let mut segments = Vec::new();
-            let mut current = self.path_node;
-            while let Some(node) = current {
-                segments.push(node.segment);
-                current = node.previous;
-            }
-            let mut path =
-                String::with_capacity(self.path_node.as_ref().map_or(0, |node| node.len));
-            for segment in segments.into_iter().rev() {
-                path.push('/');
-                match segment {
-                    Segment::Key(key) => path.push_str(key),
-                    Segment::Index(index) => {
-                        let _ = write!(path, "{index}");
-                    }
-                }
-            }
-            path
-        })
+        self.path.get_or_init(|| path_text(self.path_node))
     }
 }
 
-struct Parent<'a> {
-    kind: &'a str,
-    depth: usize,
-    previous: Option<&'a Parent<'a>>,
+pub(super) struct Parent<'a> {
+    pub(super) kind: &'a str,
+    pub(super) depth: usize,
+    pub(super) previous: Option<&'a Parent<'a>>,
 }
 
 fn parent_nodes<'i, 'a>(item: &'i Item<'a>) -> impl Iterator<Item = &'i Parent<'a>> {
@@ -89,7 +44,7 @@ fn parent_kinds<'a>(item: &Item<'a>) -> impl Iterator<Item = &'a str> {
     parent_nodes(item).map(|parent| parent.kind)
 }
 
-struct Ancestor<'a> {
+pub(super) struct Ancestor<'a> {
     node: V<'a>,
     parent: Option<&'a Ancestor<'a>>,
     in_list_item: bool,
@@ -119,7 +74,7 @@ impl Sink<'_> {
         values: &[(&str, &str)],
         message: usize,
     ) {
-        let Some((from, to)) = bounds(item.node) else {
+        let Some((from, to)) = item.bounds else {
             return;
         };
         self.emit_range(code, from, to, item.path(), values, message);
@@ -147,7 +102,7 @@ impl Sink<'_> {
     }
 
     fn raw<'a>(&'a self, item: &Item<'_>) -> &'a str {
-        bounds(item.node)
+        item.bounds
             .and_then(|(a, b)| self.source.get(a..b))
             .unwrap_or("")
     }
@@ -157,7 +112,7 @@ fn bounds(node: V<'_>) -> Option<(usize, usize)> {
     node.offsets()
 }
 
-fn child_ancestor<'a>(
+pub(super) fn child_ancestor<'a>(
     arena: &'a Arena,
     node: V<'a>,
     path_len: usize,
@@ -186,67 +141,15 @@ fn child_ancestor<'a>(
     })
 }
 
-fn collect<'a>(root: V<'a>, arena: &'a Arena) -> Vec<Item<'a>> {
-    let mut out = Vec::new();
-    let mut pending = vec![(root, None::<&PathNode<'_>>, None, None)];
-    while let Some((value, path, parents, ancestor)) = pending.pop() {
-        if let Some(items) = value.as_array() {
-            for (index, child) in items.iter().enumerate() {
-                if !child.is_container() {
-                    continue;
-                }
-                let child_path = Some(PathNode::child(arena, path, Segment::Index(index)));
-                pending.push((child, child_path, parents, ancestor));
-            }
-        } else if value.is_object() {
-            let next = if let Some(kind) = value.ty().as_str() {
-                out.push(Item {
-                    node: value,
-                    path: OnceCell::new(),
-                    path_node: path,
-                    parents,
-                    ancestors: ancestor,
-                });
-                Some(&*arena.alloc(Parent {
-                    kind,
-                    depth: parents.map_or(0, |parent| parent.depth + 1),
-                    previous: parents,
-                }))
-            } else {
-                parents
-            };
-            value.each(&mut |key, child| {
-                if matches!(key, "data" | "props" | "pos" | "segments") || !child.is_container() {
-                    return;
-                }
-                let child_ancestor = if key == "children" {
-                    Some(child_ancestor(
-                        arena,
-                        value,
-                        path.map_or(0, |node| node.len),
-                        ancestor,
-                    ))
-                } else {
-                    ancestor
-                };
-                let child_path = Some(PathNode::child(arena, path, Segment::Key(key)));
-                pending.push((child, child_path, next, child_ancestor));
-            });
-        }
-    }
-    out.sort_by_cached_key(|item| bounds(item.node).map_or(0, |(start, _)| start));
-    out
-}
-
 pub(super) fn scan<'a>(
     source: &str,
     options: &LintOptions,
     base_tree: V<'a>,
-    arena: &'a Arena,
+    base_items: Vec<Item<'a>>,
     output: &mut Vec<Diagnostic>,
 ) {
     if options.heading_ids == crate::options::HeadingIds::default() {
-        scan_tree(source, options, base_tree, arena, output);
+        scan_tree(source, options, base_tree, base_items, output);
         return;
     }
     let opts = crate::Options {
@@ -255,11 +158,11 @@ pub(super) fn scan<'a>(
     };
     let (scanned, _) = crate::with_lint_tree(source, &opts, &opts, true, |alternate, arena| {
         alternate
-            .map(|tree| scan_tree(source, options, tree, arena, output))
+            .map(|tree| scan_tree(source, options, tree, Walk::items(tree, arena), output))
             .is_some()
     });
     if !scanned {
-        scan_tree(source, options, base_tree, arena, output);
+        scan_tree(source, options, base_tree, base_items, output);
     }
 }
 
@@ -267,10 +170,10 @@ fn scan_tree<'a>(
     source: &str,
     options: &LintOptions,
     tree: V<'a>,
-    arena: &'a Arena,
+    mut items: Vec<Item<'a>>,
     output: &mut Vec<Diagnostic>,
 ) {
-    let items = collect(tree, arena);
+    items.sort_by_cached_key(|item| item.bounds.map_or(0, |(start, _)| start));
     let mut sink = Sink {
         source,
         positions: Source::new(source),
@@ -284,8 +187,7 @@ fn scan_tree<'a>(
             .map(str::to_string)
             .collect(),
     };
-    let ids = ids(&items);
-    let targets = id_targets(&items);
+    let (ids, targets) = id_index(&items);
     let targets = TargetIndex::new(&targets);
     for item in &items {
         check_node(item, &ids, tree, &mut sink);
@@ -303,30 +205,37 @@ struct IdTarget<'a> {
     eligible: bool,
 }
 
-fn id_targets<'a>(items: &[Item<'a>]) -> Vec<IdTarget<'a>> {
-    items
-        .iter()
-        .filter_map(|item| {
-            let id = field(item.node, "/attrs/id")
-                .as_str()
-                .or_else(|| item.node.at("generatedId").as_str())?;
-            let kind = item.node.ty().as_str().unwrap_or("node");
-            let captioned = field(item.node, "/caption/children")
-                .as_array()
-                .is_some_and(|children| {
-                    children.iter().any(|child| {
-                        child.at("children").as_array().is_some_and(|inlines| {
-                            inlines.iter().any(|inline| inline.ty() == "caption_number")
-                        })
+/// Every attribute and generated id, and the cross-reference target of each node that has one.
+fn id_index<'a>(items: &[Item<'a>]) -> (HashSet<String>, Vec<IdTarget<'a>>) {
+    let mut ids = HashSet::new();
+    let mut targets = Vec::new();
+    for item in items {
+        let attribute = item.node.at("attrs").at("id").as_str();
+        let generated = item.node.at("generatedId").as_str();
+        ids.extend(attribute.into_iter().chain(generated).map(str::to_string));
+        let Some(id) = attribute.or(generated) else {
+            continue;
+        };
+        let kind = item.node.ty().as_str().unwrap_or("node");
+        let captioned = item
+            .node
+            .at("caption")
+            .at("children")
+            .as_array()
+            .is_some_and(|children| {
+                children.iter().any(|child| {
+                    child.at("children").as_array().is_some_and(|inlines| {
+                        inlines.iter().any(|inline| inline.ty() == "caption_number")
                     })
-                });
-            Some(IdTarget {
-                id,
-                kind,
-                eligible: kind == "heading" || captioned,
-            })
-        })
-        .collect()
+                })
+            });
+        targets.push(IdTarget {
+            id,
+            kind,
+            eligible: kind == "heading" || captioned,
+        });
+    }
+    (ids, targets)
 }
 
 /// The first target of each id, and of each ASCII-folded id among the eligible ones.
@@ -376,22 +285,11 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
     }
 }
 
-fn ids(items: &[Item<'_>]) -> HashSet<String> {
-    let mut ids = HashSet::new();
-    for item in items {
-        if let Some(id) = field(item.node, "/attrs/id").as_str() {
-            ids.insert(id.to_string());
-        }
-        if let Some(id) = item.node.at("generatedId").as_str() {
-            ids.insert(id.to_string());
-        }
-    }
-    ids
-}
-
 fn check_node<'a>(item: &Item<'a>, ids: &HashSet<String>, root: V<'a>, sink: &mut Sink<'_>) {
     overindented_opener(item, root, sink);
-    list_item_opener_overindented(item, root, sink);
+    if !replaced!("list-item-block-overindented") {
+        list_item_opener_overindented(item, root, sink);
+    }
     list_between_columns(item, root, sink);
     semantic(item, sink);
     check_block_node(item, ids, root, sink);
@@ -434,7 +332,7 @@ fn list_between_columns<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) 
     if outer.ty() != "list_item" {
         return;
     }
-    let Some((at, end)) = bounds(item.node) else {
+    let Some((at, end)) = item.bounds else {
         return;
     };
     let Some((list_at, _)) = bounds(list) else {
@@ -495,10 +393,7 @@ fn list_item_block_opener(node: V<'_>, source: &str, from: usize) -> bool {
 }
 
 fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) {
-    if replaced!("list-item-block-overindented") {
-        return;
-    }
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     if !list_item_block_opener(item.node, sink.source, from) {
@@ -521,13 +416,22 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
     }
     let Some(parent) = parent else { return };
     let first = field(parent, "/children/0");
-    if field(first, "/pos/startOffset").as_u64() == u64::try_from(from).ok() {
-        return;
-    }
-    let content = field(first, "/pos/startOffset")
+    let first_at = field(first, "/pos/startOffset")
         .as_u64()
-        .and_then(|offset| usize::try_from(offset).ok())
-        .map_or(0, |offset| quote_column(sink.source, offset));
+        .and_then(|offset| usize::try_from(offset).ok());
+    let content = if parent.get("task").is_some() {
+        let Some((marker_at, _)) = bounds(parent) else {
+            return;
+        };
+        first_at
+            .and_then(|at| task_item_content_column(sink.source, marker_at, at))
+            .unwrap_or(0)
+    } else {
+        if first_at == Some(from) {
+            return;
+        }
+        first_at.map_or(0, |at| quote_column(sink.source, at))
+    };
     let column = quote_column(sink.source, from);
     if content > 0 && column > content {
         let end = sink
@@ -544,6 +448,16 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
             0,
         );
     }
+}
+
+/// The task box begins item content, even when authored padding separates it from its first child.
+fn task_item_content_column(source: &str, marker_at: usize, first_at: usize) -> Option<u64> {
+    let line_end = source
+        .get(marker_at..)?
+        .find('\n')
+        .map_or(source.len(), |at| marker_at + at);
+    let task_at = source.get(marker_at..first_at.min(line_end))?.rfind('[')?;
+    Some(quote_column(source, marker_at + task_at))
 }
 
 fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
@@ -564,7 +478,7 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         "table" => "table row",
         _ => return,
     };
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let from = opener_behind_attributes(sink.source, from);
@@ -909,7 +823,10 @@ fn list_loose(item: &Item<'_>, sink: &mut Sink<'_>) {
     if replaced!("deprecated-loose-attribute") {
         return;
     }
-    if field(item.node, "/attrs/keyValues")
+    if item
+        .node
+        .at("attrs")
+        .at("keyValues")
         .as_array()
         .is_some_and(|pairs| {
             pairs.iter().any(|pair| {
@@ -1049,7 +966,7 @@ fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
         return;
     }
     let raw = sink.raw(item).to_string();
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let marker_column = source_column(sink.source, from);
@@ -1168,7 +1085,7 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
         && trimmed
             .get(marker..)
             .is_some_and(|body| body.trim().len() > run.len())
-        && let Some((from, _)) = bounds(item.node)
+        && let Some((from, _)) = item.bounds
         && let Some(offset) = trimmed.rfind(run)
     {
         sink.emit_range(
@@ -1184,7 +1101,7 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
         && raw.ends_with('}')
     {
         let block = &raw[at..];
-        let from = bounds(item.node).map_or(0, |(start, _)| start + at);
+        let from = item.bounds.map_or(0, |(start, _)| start + at);
         sink.emit_range(
             "heading-trailing-attribute",
             from,
@@ -1198,7 +1115,7 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn heading_continuation(item: &Item<'_>, raw: &str, sink: &mut Sink<'_>) {
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let mut offset = 0;
@@ -1257,7 +1174,7 @@ fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
     {
         sink.emit("frontmatter-shaped-thematic-break", item, &[], 0);
     }
-    if let Some((from, _)) = bounds(item.node) {
+    if let Some((from, _)) = item.bounds {
         let mut offset = 0;
         for line in raw.split_inclusive('\n') {
             if let Some((key, rest)) = line.split_once(':') {
@@ -1422,7 +1339,10 @@ fn table(item: &Item<'_>, sink: &mut Sink<'_>) {
 fn table_attributes(item: &Item<'_>, sink: &mut Sink<'_>) {
     let raw = sink.raw(item).to_string();
     let pipe = raw.lines().any(|line| line.trim_start().starts_with('|'));
-    for pair in field(item.node, "/attrs/keyValues")
+    for pair in item
+        .node
+        .at("attrs")
+        .at("keyValues")
         .as_array()
         .into_iter()
         .flatten()
@@ -1434,7 +1354,7 @@ fn table_attributes(item: &Item<'_>, sink: &mut Sink<'_>) {
         } else if matches!(
             key,
             "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows"
-        ) && let Some((from, _)) = bounds(item.node)
+        ) && let Some((from, _)) = item.bounds
             && let Some(at) = raw.find(&format!("{key}="))
         {
             let token = raw[at..]
@@ -1471,7 +1391,7 @@ fn table_attributes(item: &Item<'_>, sink: &mut Sink<'_>) {
             if count > rows && rows > 0 {
                 let count = count.to_string();
                 let effective = rows.to_string();
-                if let Some((from, _)) = bounds(item.node) {
+                if let Some((from, _)) = item.bounds {
                     sink.emit_range(
                         "table-row-count-clamped",
                         from + at,
@@ -1487,7 +1407,7 @@ fn table_attributes(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn comment_splits_table_row(item: &Item<'_>, sink: &mut Sink<'_>) {
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let raw = sink.raw(item).to_string();
@@ -1526,6 +1446,27 @@ fn comment_splits_table_row(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
+/// A cell's pointer below its table, written out only for a finding.
+struct CellPath<'p> {
+    table: &'p str,
+    group: usize,
+    row: usize,
+    cell: usize,
+}
+
+impl CellPath<'_> {
+    fn row_text(&self) -> String {
+        format!(
+            "{}/children/{}/children/{}",
+            self.table, self.group, self.row
+        )
+    }
+
+    fn text(&self) -> String {
+        format!("{}/children/{}", self.row_text(), self.cell)
+    }
+}
+
 fn table_cells(
     row: V<'_>,
     group_index: usize,
@@ -1538,9 +1479,12 @@ fn table_cells(
         return;
     };
     for (cell_index, cell) in cells.iter().enumerate() {
-        let path = format!(
-            "{table_path}/children/{group_index}/children/{row_index}/children/{cell_index}"
-        );
+        let path = CellPath {
+            table: table_path,
+            group: group_index,
+            row: row_index,
+            cell: cell_index,
+        };
         let raw = bounds(cell)
             .and_then(|(a, b)| sink.source.get(a..b))
             .unwrap_or("")
@@ -1560,7 +1504,7 @@ fn table_cells(
     }
 }
 
-fn cell_alignment(cell: V<'_>, raw: &str, text: &str, path: &str, sink: &mut Sink<'_>) {
+fn cell_alignment(cell: V<'_>, raw: &str, text: &str, path: &CellPath<'_>, sink: &mut Sink<'_>) {
     if let Some(mark) = text.as_bytes().first().copied()
         && matches!(mark, b'<' | b'>' | b'~')
         && text.as_bytes().get(1) == Some(&b' ')
@@ -1579,7 +1523,7 @@ fn cell_alignment(cell: V<'_>, raw: &str, text: &str, path: &str, sink: &mut Sin
                 "deprecated-cell-alignment",
                 at,
                 at + 1,
-                path,
+                &path.text(),
                 &[("prefix", &prefix), ("braced", &braced)],
                 0,
             );
@@ -1592,7 +1536,7 @@ fn cell_blocked(
     text: &str,
     row_index: usize,
     cell_index: usize,
-    path: &str,
+    path: &CellPath<'_>,
     sink: &mut Sink<'_>,
 ) {
     if (text == "^" && row_index == 0 || text == "<" && cell_index == 0)
@@ -1606,7 +1550,7 @@ fn cell_blocked(
                 "table-span-marker-blocked",
                 from,
                 to,
-                path,
+                &path.text(),
                 &[],
                 if text == "^" { 2 } else { 0 },
             );
@@ -1614,7 +1558,13 @@ fn cell_blocked(
     }
 }
 
-fn cell_span_attribute(cell: V<'_>, raw: &str, head_row: bool, path: &str, sink: &mut Sink<'_>) {
+fn cell_span_attribute(
+    cell: V<'_>,
+    raw: &str,
+    head_row: bool,
+    path: &CellPath<'_>,
+    sink: &mut Sink<'_>,
+) {
     if cell.at("span").as_str().is_some()
         && cell.at("header") == false
         && raw.starts_with('=')
@@ -1625,7 +1575,7 @@ fn cell_span_attribute(cell: V<'_>, raw: &str, head_row: bool, path: &str, sink:
             "table-span-marker-attribute",
             from,
             from + 1,
-            path,
+            &path.text(),
             &[("marker", "^"), ("direction", "above it")],
             1,
         );
@@ -1644,7 +1594,7 @@ fn cell_span_attribute(cell: V<'_>, raw: &str, head_row: bool, path: &str, sink:
                 "table-span-marker-attribute",
                 from,
                 to,
-                path,
+                &path.text(),
                 &[("marker", marker), ("direction", direction)],
                 0,
             );
@@ -1657,7 +1607,7 @@ fn cell_row_attribute(
     cell: V<'_>,
     raw: &str,
     last: bool,
-    path: &str,
+    path: &CellPath<'_>,
     sink: &mut Sink<'_>,
 ) {
     if last
@@ -1674,10 +1624,8 @@ fn cell_row_attribute(
             {
                 return;
             }
-            let row_path = path
-                .rsplit_once("/children/")
-                .map_or(path, |(parent, _)| parent);
-            sink.emit_range("table-row-attribute-as-cell", from, to, row_path, &[], 0);
+            let row_path = path.row_text();
+            sink.emit_range("table-row-attribute-as-cell", from, to, &row_path, &[], 0);
         }
     }
 }
@@ -1691,10 +1639,13 @@ fn include(item: &Item<'_>, sink: &mut Sink<'_>) {
             field(item.node, "/options/code").as_str(),
             Some("csv" | "tsv")
         )
-        && field(item.node, "/attrs/keyValues")
+        && item
+            .node
+            .at("attrs")
+            .at("keyValues")
             .as_array()
             .is_some_and(|pairs| pairs.iter().any(|pair| pair.item(0) == "table"))
-        && let Some((from, _)) = bounds(item.node)
+        && let Some((from, _)) = item.bounds
         && let Some(at) = sink.raw(item).find("@lines:")
     {
         let token = sink.raw(item)[at..]
@@ -1724,8 +1675,8 @@ fn semantic_keys(options: &LintOptions) -> crate::api::extensions::SemanticKeys 
 fn semantic(item: &Item<'_>, sink: &mut Sink<'_>) {
     let kind = item.node.ty().as_str().unwrap_or("");
     let keys = semantic_keys(sink.options);
-    let pairs = field(item.node, "/attrs/keyValues").as_array();
-    let Some(((from, to), pairs)) = bounds(item.node).zip(pairs) else {
+    let pairs = item.node.at("attrs").at("keyValues").as_array();
+    let Some(((from, to), pairs)) = item.bounds.zip(pairs) else {
         return;
     };
     let source = sink.source;
@@ -1856,7 +1807,7 @@ fn text_delimiters(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usiz
 
 fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     let value = sink.raw(item).to_string();
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     text_delimiters(item, sink, &value, from);
@@ -2053,7 +2004,7 @@ fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
     {
         return;
     }
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let raw = sink.raw(item).to_string();
@@ -2144,7 +2095,7 @@ fn definition_term(item: &Item<'_>, sink: &mut Sink<'_>) {
         })
     }) {
         let raw = sink.raw(item).to_string();
-        if let Some((from, _)) = bounds(item.node)
+        if let Some((from, _)) = item.bounds
             && let Some((head, tail)) = raw.split_once('\n')
         {
             let line = tail.split('\n').next().unwrap_or("");
@@ -2177,7 +2128,7 @@ fn emphasis(item: &Item<'_>, sink: &mut Sink<'_>) {
 
 fn paragraph_delimiters(item: &Item<'_>, sink: &mut Sink<'_>) {
     let raw = sink.raw(item).to_string();
-    if let Some((from, _)) = bounds(item.node) {
+    if let Some((from, _)) = item.bounds {
         if raw.contains('\n') {
             for (mark, code) in [
                 ("=", "deprecated-bare-highlight"),
@@ -2294,7 +2245,7 @@ fn span_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, marker: char, name: &
     {
         return;
     }
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let opening = sink.positions.pos(from, from);
@@ -2356,7 +2307,7 @@ fn mention(item: &Item<'_>, sink: &mut Sink<'_>) {
 
 fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
     if item.node.at("form") == "line" {
-        let Some((from, to)) = bounds(item.node) else {
+        let Some((from, to)) = item.bounds else {
             return;
         };
         let prefix = sink.source.get(..from).unwrap_or("");
@@ -2375,7 +2326,7 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
     if item.node.at("form") != "block" {
         return;
     }
-    let Some((from, _)) = bounds(item.node) else {
+    let Some((from, _)) = item.bounds else {
         return;
     };
     let raw = sink.raw(item).to_string();
@@ -2419,7 +2370,7 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
-    let Some((from, to)) = bounds(item.node) else {
+    let Some((from, to)) = item.bounds else {
         return;
     };
     let raw = sink.source.get(from..to).unwrap_or("");
@@ -2620,7 +2571,7 @@ fn unused_footnotes(items: &[Item<'_>], sink: &mut Sink<'_>) {
     for item in items.iter().filter(|item| item.node.ty() == "footnote") {
         if let Some(key) = item.node.at("key").as_str()
             && !used.contains(key)
-            && let Some((from, _)) = bounds(item.node)
+            && let Some((from, _)) = item.bounds
             && let Some(label_start) = sink.raw(item).find("[^")
             && let Some(end) = sink.raw(item)[label_start..].find("]:")
         {

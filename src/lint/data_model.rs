@@ -410,7 +410,7 @@ pub(super) enum Node<'a> {
 pub(super) struct Records<'a> {
     source: &'a str,
     positions: &'a Source<'a>,
-    pub ranges: &'a [Range],
+    pub ranges: &'a [Range<'a>],
     holders: &'a [Holder],
     root: Option<u32>,
     pub lines: Vec<LineRec<'a>>,
@@ -425,14 +425,14 @@ impl<'a> Records<'a> {
     pub fn new(
         source: &'a str,
         positions: &'a Source<'a>,
-        ranges: &'a [Range],
+        ranges: &'a [Range<'a>],
         holders: &'a [Holder],
         model: &'a [Line],
     ) -> Self {
         let mut holder_quotes = Vec::with_capacity(holders.len());
         let mut holder_inline = Vec::with_capacity(holders.len());
         for holder in holders {
-            let kind = holder.range.map(|at| ranges[at as usize].kind.as_str());
+            let kind = holder.range.map(|at| ranges[at as usize].kind);
             let up = holder.up.map(|up| up as usize);
             holder_quotes.push(
                 up.map_or(0, |up| holder_quotes[up]) + usize::from(kind == Some("block_quote")),
@@ -467,7 +467,7 @@ impl<'a> Records<'a> {
     }
 
     fn kind(&self, range: u32) -> &'a str {
-        self.ranges[range as usize].kind.as_str()
+        self.ranges[range as usize].kind
     }
 
     /// Block quotes at or above a holder.
@@ -500,7 +500,7 @@ impl<'a> Records<'a> {
     }
 
     pub fn path_of(&self, range: u32) -> String {
-        self.ranges[range as usize].path.to_string()
+        self.ranges[range as usize].path.as_str().to_owned()
     }
 
     /// The types of the blocks that hold a leaf, innermost first, then the document.
@@ -851,8 +851,7 @@ impl<'a> Records<'a> {
                     *slot = true;
                 }
             }
-            if !LINE_LEAVES.contains(&range.kind.as_str())
-                || (range.kind == "comment" && !range.form_block)
+            if !LINE_LEAVES.contains(&range.kind) || (range.kind == "comment" && !range.form_block)
             {
                 continue;
             }
@@ -878,7 +877,7 @@ impl<'a> Records<'a> {
         for (at, range) in self.ranges.iter().enumerate() {
             if self.inline_held(range)
                 || !matches!(
-                    range.kind.as_str(),
+                    range.kind,
                     "block_quote" | "list_item" | "footnote" | "definition_description"
                 )
             {
@@ -930,7 +929,7 @@ impl<'a> Records<'a> {
         }
         let mut colons = Vec::new();
         for (at, range) in self.ranges.iter().enumerate() {
-            if !colon_kind(range.kind.as_str()) {
+            if !colon_kind(range.kind) {
                 continue;
             }
             let from = opener_start(source, range.start, usize::MAX);
@@ -944,7 +943,7 @@ impl<'a> Records<'a> {
             if width < 3 {
                 continue;
             }
-            let kind = match range.kind.as_str() {
+            let kind = match range.kind {
                 "admonition" => "admonition",
                 "figure_group" => "figure group",
                 "line_block" => "line block",
@@ -997,7 +996,7 @@ impl<'a> Records<'a> {
         let LeafIndex { leaves, attached } = self.leaf_index(count);
         let has_colons = self.ranges.iter().any(|range| {
             matches!(
-                range.kind.as_str(),
+                range.kind,
                 "div" | "directive" | "admonition" | "figure_group" | "line_block"
             )
         });
@@ -1021,7 +1020,7 @@ impl<'a> Records<'a> {
                 if range.kind == "comment" && range.form_block {
                     "comment_block"
                 } else {
-                    range.kind.as_str()
+                    range.kind
                 }
             });
             let raw = text_at(source, line.start, line.start + line.text.len());
@@ -1137,7 +1136,7 @@ impl<'a> Records<'a> {
         if line_index >= self.lines.len() {
             return Node::Skip;
         }
-        let kind = range.kind.as_str();
+        let kind = range.kind;
         if self.inline_held(range) {
             let text = text_at(self.source, range.start, range.end);
             if !inline(kind, text)
@@ -1185,7 +1184,7 @@ impl<'a> Records<'a> {
 
     fn block_record(&self, at: usize, line_index: usize, parent_kind: &'a str) -> BlockRec<'a> {
         let range = &self.ranges[at];
-        let kind = range.kind.as_str();
+        let kind = range.kind;
         let mut owner = range.holder;
         while self
             .holder_range(owner)

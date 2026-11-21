@@ -2,9 +2,11 @@
 
 use super::Renderer;
 use super::attrs::El;
-use super::block::{attr_str, visible};
+use super::block::visible;
+use super::esc;
 use crate::ast::Node;
 use crate::resolve::order::addr;
+use std::fmt::Write as _;
 
 impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-158, C2-H-169: the directive's blocks, then the section with its
@@ -79,12 +81,23 @@ impl<'r, 'a> Renderer<'r, 'a> {
                 _ => el.carriers.push(("data-carve-inline-footnote", None)),
             }
         }
-        self.line(depth, &format!("<li{}>", el.write(self.filter())));
+        let f = self.filter();
+        self.line_with(depth, |_, out| {
+            out.push_str("<li");
+            el.write_into(f, out);
+            out.push('>');
+            true
+        });
         match def {
             Node::Footnote(f) => self.note_body(&*f.children, &back, depth + 1),
             Node::InlineFootnote(f) => {
-                let inner = self.leaf(f.children);
-                self.line(depth + 1, &format!("<p>{inner}{back}</p>"));
+                self.line_with(depth + 1, |r, out| {
+                    out.push_str("<p>");
+                    r.leaf_into(f.children, out);
+                    out.push_str(&back);
+                    out.push_str("</p>");
+                    true
+                });
             }
             _ => {}
         }
@@ -101,10 +114,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
         });
         for (i, c) in children.iter().enumerate() {
             if ends_in_paragraph && Some(i) == last {
-                if let Some(s) = self.paragraph(c, false) {
-                    let body = s.strip_suffix("</p>").unwrap_or(&s);
-                    self.line(depth, &format!("{body}{back}</p>"));
-                }
+                self.line_with(depth, |r, out| {
+                    if !r.paragraph_into(c, false, out) {
+                        return false;
+                    }
+                    if out.ends_with("</p>") {
+                        out.truncate(out.len() - "</p>".len());
+                    }
+                    out.push_str(back);
+                    out.push_str("</p>");
+                    true
+                });
             } else {
                 self.block(c, depth);
             }
@@ -120,23 +140,24 @@ impl<'r, 'a> Renderer<'r, 'a> {
         };
         let label = self.opts.label("footnoteBacklink");
         let many = note.refs.len() > 1;
-        let mut parts = Vec::new();
+        let mut out = String::new();
         for (k, r) in note.refs.iter().enumerate() {
-            let id = self.mark_ids.get(&addr(r)).cloned().unwrap_or_default();
-            let (aria, sup) = if many {
-                (
-                    format!("{label} {}", k + 1),
-                    format!("<sup>{}</sup>", k + 1),
-                )
+            if k > 0 {
+                out.push(' ');
+            }
+            out.push_str("<a href=\"#");
+            esc::attr(
+                self.mark_ids.get(&addr(r)).map_or("", String::as_str),
+                &mut out,
+            );
+            out.push_str("\" role=\"doc-backlink\" aria-label=\"");
+            esc::attr(label, &mut out);
+            if many {
+                let _ = write!(out, " {}\">\u{21a9}<sup>{}</sup></a>", k + 1, k + 1);
             } else {
-                (label.to_string(), String::new())
-            };
-            parts.push(format!(
-                "<a href=\"#{}\" role=\"doc-backlink\" aria-label=\"{}\">\u{21a9}{sup}</a>",
-                attr_str(&id),
-                attr_str(&aria)
-            ));
+                out.push_str("\">\u{21a9}</a>");
+            }
         }
-        parts.join(" ")
+        out
     }
 }

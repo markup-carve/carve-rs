@@ -466,7 +466,7 @@ fn plain_type(kind: &FieldKind, arena: bool) -> &'static str {
         FieldKind::Nodes => ("&'a mut [Node<'a>]", "Vec<Node>"),
         FieldKind::NodeBox => ("&'a mut Node<'a>", "Box<Node>"),
         FieldKind::Strings => ("&'a [&'a str]", "Vec<String>"),
-        _ => ("&'a str", "String"),
+        _ => ("&'a str", "crate::ast::owned::Str"),
     };
     if arena { a } else { o }
 }
@@ -648,9 +648,9 @@ fn to_owned_expr(f: &Field) -> String {
     }
     let one = |v: &str| -> String {
         match &f.kind {
-            FieldKind::Nodes => format!("{v}.iter().map(Node::owned).collect()"),
-            FieldKind::NodeBox => format!("Box::new({v}.owned())"),
-            FieldKind::Str => format!("{v}.to_string()"),
+            FieldKind::Nodes => format!("{v}.iter().map(|n| n.owned_with(t)).collect()"),
+            FieldKind::NodeBox => format!("Box::new({v}.owned_with(t))"),
+            FieldKind::Str => format!("t.str({v})"),
             FieldKind::Strings => format!("{v}.iter().map(|s| (*s).to_string()).collect()"),
             FieldKind::Json if f.json == "segments" => format!("{v}.to_vec()"),
             FieldKind::Json if f.json != "attrs" => format!("{v}.clone()"),
@@ -668,7 +668,6 @@ fn to_owned_expr(f: &Field) -> String {
         };
         let e = wrap(one("v"));
         match e.as_str() {
-            "v.to_string()" => format!("{x}.map(str::to_string)"),
             "v.clone()" => format!("{x}.cloned()"),
             _ => format!("{x}{get}.map(|v| {e})"),
         }
@@ -692,7 +691,9 @@ fn write_conv(out: &mut String, n: &NodeDef) {
         out,
         concat!(
             "        }}\n    }}\n}}\n\nimpl {ty}<'_> {{\n    /// The node as an owned value.\n    #[must_use]\n",
-            "    pub fn owned(&self) -> owned::{ty} {{\n        owned::{ty} {{"
+            "    pub fn owned(&self) -> owned::{ty} {{\n        self.owned_with(&crate::owned_str::Texts::NONE)\n    }}\n\n",
+            "    #[allow(clippy::needless_pass_by_value, unused_variables)]\n",
+            "    pub(crate) fn owned_with(&self, t: &crate::owned_str::Texts<'_>) -> owned::{ty} {{\n        owned::{ty} {{"
         ),
         ty = ty
     );
@@ -716,12 +717,13 @@ fn write_node_conv(out: &mut String, nodes: &[NodeDef]) {
     }
     out.push_str(concat!(
         "        }\n    }\n}\n\nimpl Node<'_> {\n    /// The tree as an owned value.\n    #[must_use]\n",
-        "    pub fn owned(&self) -> owned::Node {\n        match self {\n"
+        "    pub fn owned(&self) -> owned::Node {\n        self.owned_with(&crate::owned_str::Texts::NONE)\n    }\n\n",
+        "    pub(crate) fn owned_with(&self, t: &crate::owned_str::Texts<'_>) -> owned::Node {\n        match self {\n"
     ));
     for n in nodes {
         let _ = writeln!(
             out,
-            "            Node::{0}(n) => owned::Node::{0}(Box::new(n.owned())),",
+            "            Node::{0}(n) => owned::Node::{0}(Box::new(n.owned_with(t))),",
             n.ty
         );
     }
@@ -975,7 +977,7 @@ fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
         let get = if arena {
             "n.dir"
         } else {
-            "n.dir.as_deref().map(String::as_str)"
+            "n.dir.as_deref().map(crate::ast::owned::Str::as_str)"
         };
         let _ = writeln!(a.dir, "            Self::{ty}(n) => {get},");
     }

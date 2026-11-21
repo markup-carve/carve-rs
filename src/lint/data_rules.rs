@@ -370,7 +370,7 @@ fn type_matches(rule: &Rule, kind: &str) -> bool {
 pub(super) fn run<'a>(
     source: &'a str,
     positions: &'a Source<'a>,
-    ranges: &'a [Range],
+    ranges: &'a [Range<'a>],
     holders: &'a [Holder],
     model: &'a [Line],
     options: &LintOptions,

@@ -442,8 +442,7 @@ pub(crate) struct Host<'a> {
     failed: RefCell<Vec<String>>,
     /// Read from the resolved view on the first control id the render takes.
     ids: RefCell<Option<super::standard::UsedIds>>,
-    view: &'a Tree,
-    resolved: bool,
+    used_ids: &'a dyn Fn() -> super::standard::UsedIds,
     /// The declarations of the view, so a slot's extension nodes read back.
     declared: Value,
 }
@@ -454,8 +453,8 @@ impl<'a> Host<'a> {
         standard: super::standard::Standard,
         fields: &'a super::extensions::HostFields,
         opts: &'a Options,
-        view: &'a Tree,
-        resolved: bool,
+        used_ids: &'a dyn Fn() -> super::standard::UsedIds,
+        declared: Option<&Value>,
     ) -> Self {
         Self {
             registry,
@@ -464,36 +463,19 @@ impl<'a> Host<'a> {
             opts,
             failed: RefCell::new(Vec::new()),
             ids: RefCell::new(None),
-            view,
-            resolved,
-            declared: view.document().extensions.clone().unwrap_or(Value::Null),
+            used_ids,
+            declared: declared.cloned().unwrap_or(Value::Null),
         }
     }
 
     fn next_id(&self, prefix: &str) -> String {
         let mut ids = self.ids.borrow_mut();
-        ids.get_or_insert_with(|| {
-            if self.resolved {
-                super::standard::UsedIds::of_owned(self.view.document())
-            } else {
-                let resolved = crate::resolved_owned(self.view.document(), self.opts);
-                super::standard::UsedIds::of_owned(&resolved)
-            }
-        })
-        .next(prefix)
+        ids.get_or_insert_with(self.used_ids).next(prefix)
     }
 
     fn next_tabs_id(&self, count: usize, aria: bool) -> String {
         let mut ids = self.ids.borrow_mut();
-        ids.get_or_insert_with(|| {
-            if self.resolved {
-                super::standard::UsedIds::of_owned(self.view.document())
-            } else {
-                let resolved = crate::resolved_owned(self.view.document(), self.opts);
-                super::standard::UsedIds::of_owned(&resolved)
-            }
-        })
-        .next_tabs(count, aria)
+        ids.get_or_insert_with(self.used_ids).next_tabs(count, aria)
     }
 
     /// The `extension-renderer-failed` entries of the call (C2-X-050).

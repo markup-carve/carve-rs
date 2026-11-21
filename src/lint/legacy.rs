@@ -13,49 +13,16 @@ pub(super) struct Warning {
     pub(super) message: String,
 }
 
-struct Node<'a> {
-    value: V<'a>,
-    kind: &'a str,
-    parent: Option<usize>,
+pub(super) struct Node<'a> {
+    pub(super) value: V<'a>,
+    pub(super) kind: &'a str,
+    pub(super) parent: Option<usize>,
     /// The key this node sits under in its parent (`children`, `caption`, ...).
-    slot: &'a str,
+    pub(super) slot: &'a str,
 }
 
 fn bounds(node: V<'_>) -> Option<(usize, usize)> {
     node.offsets()
-}
-
-fn nodes(root: V<'_>) -> Vec<Node<'_>> {
-    let mut out = Vec::new();
-    let mut pending = vec![(root, None, "")];
-    let mut entries = Vec::new();
-    while let Some((value, parent, slot)) = pending.pop() {
-        if !value.is_object() {
-            continue;
-        }
-        let Some(kind) = value.ty().as_str() else {
-            continue;
-        };
-        let at = out.len();
-        out.push(Node {
-            value,
-            kind,
-            parent,
-            slot,
-        });
-        value.each(&mut |key, child| entries.push((key, child)));
-        for (key, child) in entries.drain(..).rev() {
-            if matches!(key, "data" | "props" | "pos" | "attrs") {
-                continue;
-            }
-            if let Some(items) = child.as_array() {
-                pending.extend(items.iter().rev().map(|item| (item, Some(at), key)));
-            } else if child.is_object() {
-                pending.push((child, Some(at), key));
-            }
-        }
-    }
-    out
 }
 
 fn ancestors<'n, 'a>(all: &'n [Node<'a>], at: usize) -> impl Iterator<Item = &'n Node<'a>> {
@@ -65,12 +32,15 @@ fn ancestors<'n, 'a>(all: &'n [Node<'a>], at: usize) -> impl Iterator<Item = &'n
     .filter_map(|i| all.get(i))
 }
 
-pub(super) fn warnings(source: &str, tree: V<'_>) -> Vec<Warning> {
-    let all = nodes(tree);
+/// The findings for `all`, the typed nodes with each subtree after its node, visited in `order`.
+pub(super) fn warnings(source: &str, all: &[Node<'_>], order: &[u32]) -> Vec<Warning> {
     let mut out = Vec::new();
     let mut braced_comments = HashSet::new();
     let mut footnote_labels = Vec::new();
-    for (at, node) in all.iter().enumerate() {
+    for (at, node) in order
+        .iter()
+        .filter_map(|at| all.get(*at as usize).map(|node| (*at as usize, node)))
+    {
         let value = node.value;
         match node.kind {
             "comment" if value.at("form") == "braced" => {
@@ -82,12 +52,12 @@ pub(super) fn warnings(source: &str, tree: V<'_>) -> Vec<Warning> {
                 table_columns(source, value, &mut out);
                 span_markers(source, value, &mut out);
             }
-            _ => visit(source, &all, at, &mut out),
+            _ => visit(source, all, at, &mut out),
         }
     }
     template_tags(source, &braced_comments, &mut out);
     differing_labels(source, &footnote_labels, &mut out);
-    region_markers(source, &all, &mut out);
+    region_markers(source, all, &mut out);
     out.sort_by(|a, b| (a.start, a.end, a.rule).cmp(&(b.start, b.end, b.rule)));
     out
 }

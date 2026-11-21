@@ -134,6 +134,8 @@ impl Task<'_> {
 pub mod owned {
     use serde::{Deserialize, Serialize};
 
+    pub use crate::owned_str::Str;
+
     /// `attrs` of a node (C2-A-032): id, classes and the ordered key pairs.
     #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
