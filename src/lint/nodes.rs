@@ -413,10 +413,21 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
         }
     }
     let Some(parent) = parent else { return };
-    let Some((marker_at, _)) = bounds(parent) else {
-        return;
+    let first = field(parent, "/children/0");
+    let first_at = field(first, "/pos/startOffset")
+        .as_u64()
+        .and_then(|offset| usize::try_from(offset).ok());
+    let content = if parent.get("task").is_some() {
+        let Some((marker_at, _)) = bounds(parent) else {
+            return;
+        };
+        item_content_column(sink.source, marker_at).unwrap_or(0)
+    } else {
+        if first_at == Some(from) {
+            return;
+        }
+        first_at.map_or(0, |at| quote_column(sink.source, at))
     };
-    let content = item_content_column(sink.source, marker_at).unwrap_or(0);
     let column = quote_column(sink.source, from);
     if content > 0 && column > content {
         let end = sink
