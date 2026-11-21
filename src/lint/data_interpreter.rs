@@ -989,6 +989,77 @@ pub(super) fn holds(haystack: &str, needle: &str) -> bool {
     false
 }
 
+/// The conjuncts of a top-level `all` that are a filtered pattern over a field, by index: tests a
+/// record can fail before anything is evaluated (a field reads no `let` and no match).
+pub(super) fn quick_tests(when: &Expr) -> Vec<usize> {
+    let Expr::All(items) = when else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(at, item)| match item {
+            Expr::Matches {
+                subject,
+                pattern: Some(pattern),
+                ..
+            } if pattern.filters() && matches!(**subject, Expr::Field(_)) => Some(at),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether one of the quick tests of a rule's `when` fails for this record; a rule whose own test
+/// fails reports nothing, so these may run first and in any order.
+pub(super) fn quick_rejects(
+    when: &Expr,
+    tests: &[usize],
+    records: &Records<'_>,
+    subject: &Subject<'_, '_>,
+) -> bool {
+    let Expr::All(items) = when else {
+        return false;
+    };
+    tests.iter().any(|&at| {
+        let Some(Expr::Matches {
+            subject: field,
+            pattern: Some(pattern),
+            ..
+        }) = items.get(at)
+        else {
+            return false;
+        };
+        let Expr::Field(path) = &**field else {
+            return false;
+        };
+        match resolve_path(records, subject, path) {
+            Val::Str(text) => !pattern.may_match(&text),
+            Val::Id(id) => !pattern.may_match(records.id_text(id)),
+            // `matches` of anything but a text is false.
+            _ => true,
+        }
+    })
+}
+
+/// A field path of the subject record outside a `some` (where `Item` has no value).
+fn resolve_path<'a>(records: &Records<'a>, subject: &Subject<'_, 'a>, path: &[Seg]) -> Val<'a> {
+    let mut found = match path.first() {
+        Some(Seg::Field(name)) => records.subject_field(subject, *name),
+        _ => return Val::Null,
+    };
+    for seg in path.iter().skip(1) {
+        if found.is_null() {
+            break;
+        }
+        found = match seg {
+            Seg::Field(name) => records.field(&found, *name),
+            Seg::At(index) => records.list_item(&found, *index),
+            Seg::Item => Val::Null,
+        };
+    }
+    found
+}
+
 pub(super) fn field_expr(name: &str) -> Expr {
     Expr::Field(path(name))
 }
@@ -1373,27 +1444,6 @@ impl<'a> Eval<'_, 'a> {
                 truth(&value)
             }
         }
-    }
-
-    /// Whether a pattern prefilter of a later conjunct of a top-level `all` already fails; only for a
-    /// rule's own test, whose failure leaves nothing behind.
-    pub fn rejects(&mut self, expr: &Expr) -> bool {
-        let Expr::All(items) = expr else {
-            return false;
-        };
-        items.iter().skip(1).any(|item| match item {
-            Expr::Matches {
-                subject,
-                pattern: Some(pattern),
-                ..
-            } if pattern.filters() && matches!(**subject, Expr::Field(_)) => {
-                // A field reads no `let` and no match, so reading it early changes nothing.
-                let value = self.value(subject);
-                self.str_of(&value)
-                    .is_none_or(|haystack| !pattern.may_match(haystack))
-            }
-            _ => false,
-        })
     }
 
     pub fn offset(&mut self, expr: Option<&Expr>) -> usize {

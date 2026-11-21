@@ -823,7 +823,8 @@ fn legacy_layout(
     sink: &mut Sink<'_>,
 ) {
     let text = line.text.trim();
-    if line.paragraph
+    if !replaced!("indented-code-block")
+        && line.paragraph
         && line.text.starts_with("    ")
         && !text.is_empty()
         && line.path.matches('/').count() <= 2

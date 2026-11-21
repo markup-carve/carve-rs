@@ -2,7 +2,8 @@
 #![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
 use super::data_interpreter::{
-    Eval, Expr, F, Facts, Pattern, Scope, Val, field_expr, held_literals, holds, pattern, truth,
+    Eval, Expr, F, Facts, Pattern, Scope, Val, field_expr, held_literals, holds, pattern,
+    quick_rejects, quick_tests,
 };
 use super::data_model::{LineRec, Node, Records, Subject};
 use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
@@ -83,6 +84,8 @@ struct Rule {
     each: Option<Each>,
     range: Option<(Expr, Expr)>,
     entries: Vec<Entry>,
+    /// The quick tests of `when`, by index into its top-level `all`.
+    quick: Vec<usize>,
 }
 
 struct Compiled {
@@ -181,12 +184,13 @@ fn compile_rule(rule: &'static Value) -> Rule {
         types: rule.get("types").map(names),
         verbatim: names(&rule["verbatim"]),
         lets,
-        when,
         each,
         range: rule
             .get("range")
             .map(|range| (scope.compile(&range["start"]), scope.compile(&range["end"]))),
         entries,
+        quick: when.as_ref().map(quick_tests).unwrap_or_default(),
+        when,
     }
 }
 
@@ -303,6 +307,11 @@ fn run_rule<'a>(
     out: &mut Vec<Diagnostic>,
     path: &dyn Fn() -> String,
 ) {
+    if let Some(when) = &rule.when
+        && quick_rejects(when, &rule.quick, records, &subject)
+    {
+        return;
+    }
     let line = &records.lines[line_index];
     let mut eval = Eval {
         records,
@@ -315,11 +324,7 @@ fn run_rule<'a>(
         spans: Vec::new(),
         base: 0,
     };
-    if !rule
-        .when
-        .as_ref()
-        .is_none_or(|when| !eval.rejects(when) && eval.test(when))
-    {
+    if !rule.when.as_ref().is_none_or(|when| eval.test(when)) {
         return;
     }
     let Some(each) = &rule.each else {
@@ -607,7 +612,10 @@ fn line_bucket(
 
 fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
     let mut leaves: Vec<&str> = Vec::new();
-    let mut by_key: Small<u64, Bucket> = HashMap::default();
+    let mut by_key: Small<u64, usize> = HashMap::default();
+    let mut buckets: Vec<Bucket> = Vec::new();
+    // Neighboring lines often share their facts: the last key is checked before the map.
+    let mut last: Option<(u64, usize)> = None;
     for (index, line) in records.lines.iter().enumerate() {
         let leaf = line.leaf_kind;
         let at = leaves
@@ -620,7 +628,7 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
             });
         let text = line.text.as_bytes().first().copied();
         let body = line.body().as_bytes().first().copied();
-        let first = truth(&records.subject_field(&Subject::Line(index), F::LeafFirst));
+        let first = records.leaf_first(index);
         let prev_same = records.prev_same_leaf(index);
         let mut held = 0u64;
         for (bit, (on_body, needle)) in cache.literals.iter().enumerate() {
@@ -634,10 +642,11 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
             | (u64::from(text.map_or(256, u16::from)) << 40)
             | (u64::from(body.map_or(256, u16::from)) << 31)
             | held;
-        let bucket = by_key
-            .entry(((at as u64) << 51) | facts)
-            .or_insert_with(|| {
-                cache.line(leaf, facts, |cache| {
+        let key = ((at as u64) << 51) | facts;
+        let found = match last {
+            Some((known, found)) if known == key => found,
+            _ => *by_key.entry(key).or_insert_with(|| {
+                buckets.push(cache.line(leaf, facts, |cache| {
                     line_bucket(
                         &cache.line_rules,
                         &cache.literals,
@@ -646,11 +655,13 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
                         prev_same,
                         held,
                     )
-                })
-            })
-            .clone();
+                }));
+                buckets.len() - 1
+            }),
+        };
+        last = Some((key, found));
         let path = || records.lines[index].path.to_owned();
-        for rule in bucket.iter() {
+        for rule in buckets[found].iter() {
             run_rule(*rule, records, Subject::Line(index), index, out, &path);
         }
     }

@@ -1080,7 +1080,8 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
     let trimmed = raw.trim_end();
     // C2-B-153: an `=` heading too; the run needs heading text before it, so `= ##` is left alone.
     let marker = trimmed.len() - trimmed.trim_start_matches(['#', '=']).len();
-    if let Some(run) = trimmed.split_whitespace().last()
+    if !replaced!("heading-closing-hashes", "heading-trailing-attribute")
+        && let Some(run) = trimmed.split_whitespace().last()
         && run.chars().all(|c| c == '#')
         && trimmed
             .get(marker..)
@@ -1097,7 +1098,8 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
             0,
         );
     }
-    if let Some(at) = raw.rfind("{.").into_iter().chain(raw.rfind("{#")).max()
+    if !replaced!("heading-closing-hashes", "heading-trailing-attribute")
+        && let Some(at) = raw.rfind("{.").into_iter().chain(raw.rfind("{#")).max()
         && raw.ends_with('}')
     {
         let block = &raw[at..];
@@ -2370,6 +2372,9 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("fence-closer-indented") {
+        return;
+    }
     let Some((from, to)) = item.bounds else {
         return;
     };

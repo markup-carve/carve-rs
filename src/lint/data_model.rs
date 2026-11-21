@@ -595,6 +595,13 @@ impl<'a> Records<'a> {
         false
     }
 
+    /// `leaf_first` of a line.
+    pub fn leaf_first(&self, index: usize) -> bool {
+        self.lines[index]
+            .leaf
+            .is_some_and(|leaf| self.ranges[leaf as usize].start_line == index + 1)
+    }
+
     /// `prev.leaf_id == leaf_id` of a line.
     pub fn prev_same_leaf(&self, index: usize) -> bool {
         index
