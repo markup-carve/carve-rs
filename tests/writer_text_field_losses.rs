@@ -28,7 +28,7 @@ fn fields() -> [(&'static str, Value); 3] {
     ]
 }
 
-fn paragraph(children: Vec<Value>) -> Value {
+fn paragraph(children: &[Value]) -> Value {
     json!({ "type": "document", "astVersion": "2.0", "children": [{ "type": "paragraph", "children": children }] })
 }
 
@@ -37,7 +37,7 @@ fn a_field_on_a_line_end_space_text_is_reported() {
     for (name, value) in fields() {
         let mut spaces = text("  ");
         spaces[name] = value;
-        let tree = paragraph(vec![text("a"), spaces]);
+        let tree = paragraph(&[text("a"), spaces]);
         assert_eq!(
             losses(&tree),
             ["structure-unspellable /children/0"],
@@ -51,7 +51,7 @@ fn a_field_on_a_text_after_a_text_is_reported() {
     for (name, value) in fields() {
         let mut b = text("b");
         b[name] = value;
-        let tree = paragraph(vec![text("a"), b]);
+        let tree = paragraph(&[text("a"), b]);
         assert_eq!(
             losses(&tree),
             ["structure-unspellable /children/0"],
@@ -60,14 +60,14 @@ fn a_field_on_a_text_after_a_text_is_reported() {
     }
 }
 
-fn hosts(children: Vec<Value>) -> Vec<Value> {
+fn hosts(children: &[Value]) -> Vec<Value> {
     let doc =
         |block: Value| json!({ "type": "document", "astVersion": "2.0", "children": [block] });
     vec![
-        doc(json!({ "type": "paragraph", "children": children.clone() })),
-        doc(json!({ "type": "heading", "level": 2, "children": children.clone() })),
+        doc(json!({ "type": "paragraph", "children": children })),
+        doc(json!({ "type": "heading", "level": 2, "children": children })),
         doc(
-            json!({ "type": "line_block", "children": [{ "type": "line", "children": children.clone() }] }),
+            json!({ "type": "line_block", "children": [{ "type": "line", "children": children }] }),
         ),
         doc(
             json!({ "type": "paragraph", "children": [text("x "), { "type": "emphasis", "children": children }] }),
@@ -93,7 +93,7 @@ fn every_variant_of_a_field_on_text_reports_a_loss() {
                 vec![text("a"), t.clone(), text("y"), t.clone()],
             ];
             for shape in shapes {
-                for tree in hosts(shape) {
+                for tree in hosts(&shape) {
                     let found = losses(&tree);
                     assert!(!found.is_empty(), "{name} {value:?}: {tree}");
                     checked += 1;
