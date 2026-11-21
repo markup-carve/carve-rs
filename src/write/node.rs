@@ -508,11 +508,37 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
     if !(a.is_object() && b.is_object()) {
         return lv.is_none() && rv.is_none() && equal_values(a, b, span_marks);
     }
-    let inner = if a.get("type").and_then(V::as_str) == Some("table") {
+    let inner = if ty(a) == "table" {
         list_has_span_marks(a) || list_has_span_marks(b)
     } else {
         span_marks
     };
+    if let (V::Node(x), V::Node(y)) = (a, b) {
+        let fields = result_fields(a);
+        let mut same = true;
+        let zipped = x.view_zip(y, &mut |k, p, q| {
+            if !same {
+                return;
+            }
+            let p = p.filter(|_| !skipped_in(a, fields, k, inner));
+            let q = q.filter(|_| !skipped_in(b, fields, k, inner));
+            same = match (p, q) {
+                (None, None) => true,
+                (Some(p), Some(q)) => {
+                    if k == "value" && (lv.is_some() || rv.is_some()) {
+                        let x = lv.or_else(|| p.as_str());
+                        x.is_some() && x == rv.or_else(|| q.as_str())
+                    } else {
+                        equal_values(p, q, inner)
+                    }
+                }
+                _ => false,
+            };
+        });
+        if zipped {
+            return same;
+        }
+    }
     let l = Compared::of(a, inner);
     let fields = result_fields(b);
     let mut at = 0;

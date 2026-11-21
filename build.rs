@@ -5,7 +5,7 @@
 #![allow(clippy::similar_names)]
 
 use serde_json::{Map, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -318,18 +318,30 @@ fn write_view(out: &mut String, n: &NodeDef) {
     let ty = &n.ty;
     let mut fields: Vec<&Field> = n.fields.iter().collect();
     fields.sort_by(|a, b| a.json.cmp(&b.json));
-    let _ = writeln!(
-        out,
-        "impl<'a> {ty}<'a> {{\n    pub(crate) fn view_get(&'a self, key: &str) -> Option<V<'a>> {{\n        match key {{\n            \"type\" => Some(V::Str({:?})),",
-        n.name
-    );
+    // The keys grouped by their first byte, so a lookup compares only the keys that can match.
+    let mut arms: BTreeMap<u8, Vec<(String, String)>> = BTreeMap::new();
+    arms.entry(b't')
+        .or_default()
+        .push(("type".into(), format!("Some(V::Str({:?}))", n.name)));
     for f in &fields {
         let get = if f.required {
             format!("Some({{ let x = &self.{}; {} }})", f.rust, view_expr(f))
         } else {
             format!("self.{}.as_ref().map(|x| {})", f.rust, view_expr(f))
         };
-        let _ = writeln!(out, "            {:?} => {get},", f.json);
+        let first = f.json.as_bytes().first().copied().unwrap_or(0);
+        arms.entry(first).or_default().push((f.json.clone(), get));
+    }
+    let _ = writeln!(
+        out,
+        "impl<'a> {ty}<'a> {{\n    pub(crate) fn view_get(&'a self, key: &str) -> Option<V<'a>> {{\n        match key.as_bytes().first() {{"
+    );
+    for (first, keys) in &arms {
+        let _ = writeln!(out, "            Some({first}) => match key {{");
+        for (key, get) in keys {
+            let _ = writeln!(out, "                {key:?} => {get},");
+        }
+        let _ = writeln!(out, "                _ => None,\n            }},");
     }
     let _ = writeln!(
         out,
@@ -339,7 +351,7 @@ fn write_view(out: &mut String, n: &NodeDef) {
         fields.iter().map(|f| (f.json.as_str(), Some(*f))).collect();
     keys.push(("type", None));
     keys.sort_by(|a, b| a.0.cmp(b.0));
-    for (key, f) in keys {
+    for &(key, f) in &keys {
         match f {
             None => {
                 let _ = writeln!(out, "        f(\"type\", V::Str({:?}));", n.name);
@@ -362,6 +374,39 @@ fn write_view(out: &mut String, n: &NodeDef) {
             }
         }
     }
+    // `view_zip`: the keys of two nodes of this type in `view_each` order, each with the
+    // value of either side; a key absent on both sides is skipped.
+    let _ = writeln!(
+        out,
+        "    }}\n\n    pub(crate) fn view_zip<'b>(&'a self, o: &'b {ty}<'b>, f: &mut dyn FnMut(&'static str, Option<V<'a>>, Option<V<'b>>)) {{"
+    );
+    for &(key, f) in &keys {
+        match f {
+            None => {
+                let _ = writeln!(
+                    out,
+                    "        f(\"type\", Some(V::Str({0:?})), Some(V::Str({0:?})));",
+                    n.name
+                );
+            }
+            Some(f) if f.required => {
+                let _ = writeln!(
+                    out,
+                    "        f({key:?}, Some({{ let x = &self.{0}; {1} }}), Some({{ let x = &o.{0}; {1} }}));",
+                    f.rust,
+                    view_expr(f)
+                );
+            }
+            Some(f) => {
+                let _ = writeln!(
+                    out,
+                    "        if self.{0}.is_some() || o.{0}.is_some() {{ f({key:?}, self.{0}.as_ref().map(|x| {1}), o.{0}.as_ref().map(|x| {1})); }}",
+                    f.rust,
+                    view_expr(f)
+                );
+            }
+        }
+    }
     let _ = writeln!(out, "    }}\n}}\n");
 }
 
@@ -374,7 +419,15 @@ fn write_node_view(out: &mut String, nodes: &[NodeDef]) {
     for n in nodes {
         let _ = writeln!(out, "            Self::{}(n) => n.view_each(f),", n.ty);
     }
-    out.push_str("        }\n    }\n}\n");
+    out.push_str("        }\n    }\n\n    /// [`view_zip`] of two nodes of one type; false, without a call, for two types.\n    pub(crate) fn view_zip<'b>(&'a self, o: &'b Node<'b>, f: &mut dyn FnMut(&'static str, Option<V<'a>>, Option<V<'b>>)) -> bool {\n        match (self, o) {\n");
+    for n in nodes {
+        let _ = writeln!(
+            out,
+            "            (Self::{0}(a), Node::{0}(b)) => {{ a.view_zip(b, f); true }}",
+            n.ty
+        );
+    }
+    out.push_str("            _ => false,\n        }\n    }\n}\n");
 }
 
 fn collect_fields(

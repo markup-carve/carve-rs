@@ -193,11 +193,13 @@ fn cell_content<'t>(w: &mut Writer<'t>, cell: N<'t>, flags: u32) -> String {
     if blocks.len() > 1 || blocks.first().is_some_and(|b| ty(b) != "cell_paragraph") {
         lose(w, cell, None);
     }
-    let parts: Vec<String> = blocks
-        .iter()
-        .map(|b| write_inlines(w, &refs(children(b)), flags | IN_CELL))
-        .collect();
-    let content = parts.join(" ");
+    let mut content = String::new();
+    for (at, b) in blocks.iter().enumerate() {
+        if at > 0 {
+            content.push(' ');
+        }
+        content.push_str(&write_inlines(w, &refs(children(b)), flags | IN_CELL));
+    }
     if content == "^" || content == "<" {
         format!("\\{content}")
     } else {
@@ -236,23 +238,30 @@ fn cell_prefix(w: &mut Writer<'_>, cell: V<'_>, bare: bool) -> String {
     } else {
         ""
     };
-    head.to_string()
-        + &brace_block(
+    let block = brace_block(
             cell,
             &BlockParts {
                 mark,
                 pipes: true,
                 ..BlockParts::default()
             },
-        )
+        );
+    if head.is_empty() {
+        block
+    } else {
+        head.to_string() + &block
+    }
 }
 
 fn segment(prefix: &str, content: &str) -> String {
-    if content.is_empty() {
-        format!("{prefix} ")
-    } else {
-        format!("{prefix} {content} ")
+    let mut out = String::with_capacity(prefix.len() + content.len() + 2);
+    out.push_str(prefix);
+    out.push(' ');
+    if !content.is_empty() {
+        out.push_str(content);
+        out.push(' ');
     }
+    out
 }
 
 fn fragment_lines(w: &Writer<'_>, row: V<'_>, cell: V<'_>, count: usize) -> Option<Vec<i64>> {
@@ -304,10 +313,12 @@ fn written_cell<'t>(
             places: Vec::new(),
         };
     }
-    let parts: Vec<String> = cell_content(w, cell, flags)
-        .split('\n')
-        .map(str::to_string)
-        .collect();
+    let content = cell_content(w, cell, flags);
+    let mut parts: Vec<String> = if content.contains('\n') {
+        content.split('\n').map(str::to_string).collect()
+    } else {
+        vec![content]
+    };
     if let Some(places) = fragment_lines(w, row, cell, parts.len() - 1) {
         return WrittenCell {
             prefix: cell_prefix(w, cell, bare),
@@ -320,7 +331,11 @@ fn written_cell<'t>(
         .and_then(|f| f.wraps.as_ref())
         .map_or(0, Vec::len);
     let skip = usize::from(wraps == parts.len() - 1 && parts.first().is_some_and(String::is_empty));
-    let joined = parts.get(skip..).unwrap_or(&[]).join(" ");
+    let joined = if parts.len() == 1 && skip == 0 {
+        parts.pop().unwrap_or_default()
+    } else {
+        parts.get(skip..).unwrap_or(&[]).join(" ")
+    };
     WrittenCell {
         prefix: cell_prefix(w, cell, bare),
         parts: vec![joined],
@@ -344,11 +359,17 @@ fn written_row<'t>(
         below = below.max(c.places.last().copied().unwrap_or(0));
     }
     let count = usize::try_from(below).unwrap_or(0) + 1;
-    let mut lines = vec![vec![" ".to_string(); cells.len()]; count];
+    let mut lines = Vec::with_capacity(count);
+    lines.push(
+        cells
+            .iter()
+            .map(|c| segment(&c.prefix, c.parts.first().map_or("", String::as_str)))
+            .collect::<Vec<_>>(),
+    );
+    if count > 1 {
+        lines.resize(count, vec![" ".to_string(); cells.len()]);
+    }
     for (column, cell) in cells.iter().enumerate() {
-        if let Some(slot) = lines.first_mut().and_then(|l| l.get_mut(column)) {
-            *slot = segment(&cell.prefix, cell.parts.first().map_or("", String::as_str));
-        }
         for (at, &line) in cell.places.iter().enumerate() {
             let line = usize::try_from(line).unwrap_or(0);
             if let Some(slot) = lines.get_mut(line).and_then(|l| l.get_mut(column)) {
@@ -391,13 +412,21 @@ fn align_columns(rows: &mut [WrittenRow]) {
 
 fn emit_row(w: &mut Writer<'_>, prefix: &str, row: &WrittenRow) {
     for (at, line) in row.lines.iter().enumerate() {
-        let lead = if at == 0 { "|" } else { "+" };
-        let body = format!("{lead}{}|", line.join("|"));
-        emit(
-            w,
-            prefix,
-            &if at == 0 { body + &row.attribute } else { body },
+        let mut body = String::with_capacity(
+            line.iter().map(|p| p.len() + 1).sum::<usize>() + 1 + row.attribute.len(),
         );
+        body.push(if at == 0 { '|' } else { '+' });
+        for (k, part) in line.iter().enumerate() {
+            if k > 0 {
+                body.push('|');
+            }
+            body.push_str(part);
+        }
+        body.push('|');
+        if at == 0 {
+            body.push_str(&row.attribute);
+        }
+        emit(w, prefix, &body);
     }
 }
 
