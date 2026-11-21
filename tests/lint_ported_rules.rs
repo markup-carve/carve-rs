@@ -31,6 +31,7 @@ fn ported_rules_still_report() {
         ("*.c,*.h\n", "glob-shaped-strong"),
         ("<!-- a\nb -->\n", "html-comment-renders-as-text"),
         ("- a\n  - b\n - c\n", "list-marker-below-content-column"),
+        ("- a\n    - b\n  - c\n", "list-marker-below-content-column"),
         ("{aligns=left}\n| a | b |\n", "table-column-arity"),
         ("{aligns=left}\n|={>} A |\n| a |\n", "table-column-overlap"),
         ("{widths=60,50}\n| a | b |\n", "table-width-total"),
@@ -47,7 +48,6 @@ fn ported_rules_stay_quiet() {
     for (input, code) in [
         ("%% #region a\n", "region-marker-renders-as-text"),
         ("\\<!--x-->\n", "html-comment-renders-as-text"),
-        ("- a\n    - b\n  - c\n", "list-marker-below-content-column"),
         (
             "{valigns=\"middle\"}\n| a |\n|{?v style=\"color: red;\"} b |\n",
             "table-column-overlap",

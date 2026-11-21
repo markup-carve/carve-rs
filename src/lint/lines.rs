@@ -640,25 +640,28 @@ fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     let (mut start, mut text) = leaf_after_quotes(line);
+    // Message 2 needs the `+` directly behind an item marker; a quote mark between them gives message 1.
     let mut item = false;
-    while text.starts_with("- ") || text.starts_with("* ") {
-        item = true;
-        text = &text[2..];
-        start += 2;
+    let mut in_item = line.scope.container == ContainerKind::ListItem;
+    loop {
+        let skip = if let Some(width) = item_marker_width(text) {
+            item = true;
+            in_item = true;
+            width
+        } else if text.starts_with("> ") {
+            item = false;
+            2
+        } else {
+            break;
+        };
+        text = &text[skip..];
+        start += skip;
         let trimmed = text.trim_start_matches([' ', '\t']);
         start += text.len() - trimmed.len();
         text = trimmed;
-        // A quote in the item's marker-line text is not another physical-line prefix.
-        if text.starts_with("> ") {
-            return;
-        }
     }
     if text == "+" {
-        let message = if item {
-            2
-        } else {
-            usize::from(line.scope.container == ContainerKind::ListItem)
-        };
+        let message = if item { 2 } else { usize::from(in_item) };
         sink.emit_nth(
             "deprecated-continuation-marker",
             line.start + start,
@@ -668,6 +671,37 @@ fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
             message,
         );
     }
+}
+
+/// The width of a bullet or ordered marker and its task box at the start of `text`, up to the space after them.
+fn item_marker_width(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
+    let mut at = match bytes.first()? {
+        b'-' | b'*' => 1,
+        _ if (1..=9).contains(&digits) && matches!(bytes.get(digits), Some(b'.' | b')')) => {
+            digits + 1
+        }
+        b if b.is_ascii_alphabetic() && matches!(bytes.get(1), Some(b'.' | b')')) => 2,
+        _ => return None,
+    };
+    if !matches!(bytes.get(at), Some(b' ' | b'\t')) {
+        return None;
+    }
+    let spaces = bytes
+        .get(at..)
+        .unwrap_or(&[])
+        .iter()
+        .take_while(|b| matches!(b, b' ' | b'\t'))
+        .count();
+    if bytes.get(at + spaces) == Some(&b'[')
+        && matches!(bytes.get(at + spaces + 1), Some(b' ' | b'x' | b'X'))
+        && bytes.get(at + spaces + 2) == Some(&b']')
+        && matches!(bytes.get(at + spaces + 3), Some(b' ' | b'\t'))
+    {
+        at += spaces + 3;
+    }
+    Some(at + 1)
 }
 
 fn thematic_marker(
@@ -1507,17 +1541,9 @@ fn quote_opener_candidate(line: &Line, source: &str) -> bool {
     if !text.starts_with('>') {
         return false;
     }
-    if text == ">" && empty_quote_with_space(line, source) {
-        return false;
-    }
     source
         .get(line.start + at..line.start + line.text.len())
-        .is_some_and(|raw| {
-            raw == ">"
-                || raw
-                    .strip_prefix("> ")
-                    .is_some_and(|tail| !tail.trim().is_empty())
-        })
+        .is_some_and(|raw| raw == ">" || raw.starts_with("> "))
 }
 
 fn empty_quote_with_space(line: &Line, source: &str) -> bool {
