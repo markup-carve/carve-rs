@@ -10,8 +10,16 @@ struct Control {
     ids: Vec<String>,
 }
 
-pub(super) fn filter(source: &str, findings: Vec<Diagnostic>, tree: V<'_>) -> Vec<Diagnostic> {
-    let mut controls = collect(source, tree);
+/// `comments` are the line comments of the tree, in walk order.
+pub(super) fn filter(
+    source: &str,
+    findings: Vec<Diagnostic>,
+    comments: &[V<'_>],
+) -> Vec<Diagnostic> {
+    let mut controls: Vec<Control> = comments
+        .iter()
+        .filter_map(|comment| parse(source, *comment))
+        .collect();
     controls.sort_by_key(|control| control.line);
     let mut line_scoped: HashMap<u32, Vec<&Control>> = HashMap::new();
     for control in &controls {
@@ -64,24 +72,6 @@ fn update_state(state: &mut HashMap<String, bool>, control: &Control) {
             state.insert(id.clone(), control.kind == "disable");
         }
     }
-}
-
-fn collect(source: &str, root: V<'_>) -> Vec<Control> {
-    let mut out = Vec::new();
-    let mut pending = vec![root];
-    while let Some(value) = pending.pop() {
-        if let Some(items) = value.as_array() {
-            pending.extend(items);
-        } else if value.is_object() {
-            if value.ty() == "comment" && value.at("form") == "line" {
-                if let Some(control) = parse(source, value) {
-                    out.push(control);
-                }
-            }
-            value.each(&mut |_, child| pending.push(child));
-        }
-    }
-    out
 }
 
 fn parse(source: &str, comment: V<'_>) -> Option<Control> {

@@ -92,12 +92,32 @@ impl<'a> V<'a> {
             },
             Self::Json(value) => value.get(key).map(Self::Json),
             Self::Pos(pos) => pos_field(pos, key).map(|n| Self::Int(i64::from(n))),
+            Self::Attrs(attrs) => match key {
+                "classes" => (!attrs.classes.is_empty()).then_some(Self::Strs(attrs.classes)),
+                "id" => attrs.id.map(Self::Str),
+                "keyValues" => {
+                    (!attrs.key_values.is_empty()).then_some(Self::Pairs(attrs.key_values))
+                }
+                _ => None,
+            },
             _ => self
                 .value_fields()?
                 .into_iter()
                 .find(|(name, _)| *name == key)
                 .and_then(|(_, value)| value),
         }
+    }
+
+    /// Whether a walk can meet a node below this value: positions, attrs, markers, tasks and
+    /// arrays of strings, pairs or positions hold none.
+    pub(crate) const fn may_hold_nodes(self) -> bool {
+        matches!(
+            self,
+            Self::Doc(_)
+                | Self::Node(_)
+                | Self::Nodes(_)
+                | Self::Json(Value::Object(_) | Value::Array(_))
+        )
     }
 
     /// The keys of a position, attrs, marker or task in `serde_json` map order, with the values serde

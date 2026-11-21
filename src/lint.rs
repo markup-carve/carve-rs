@@ -5,7 +5,6 @@ use crate::source::Source;
 use serde_json::Value;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 use std::sync::OnceLock;
 
 mod controls;
@@ -14,6 +13,7 @@ mod legacy;
 mod lines;
 mod nodes;
 use crate::view::V;
+mod walk;
 
 /// Rule switches and platform selection for a lint run.
 #[derive(Debug, Clone, Default)]
@@ -175,17 +175,25 @@ fn lint_core<'a>(
     arena: &'a crate::Arena,
 ) -> Vec<Diagnostic> {
     let parsed = Source::new(source);
-    let positions = Ranges::new(source, tree.map_or_else(Vec::new, node_ranges));
+    let walk::Walk {
+        ranges,
+        items,
+        legacy,
+        legacy_order,
+        comments,
+    } = tree.map_or_else(walk::Walk::empty, |tree| walk::Walk::new(tree, arena));
+    let positions = Ranges::new(source, ranges);
     let mut out = Vec::new();
-    for warning in tree.map_or_else(Vec::new, |tree| legacy::warnings(source, tree)) {
+    for warning in legacy::warnings(source, &legacy, &legacy_order) {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
             continue;
         }
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
+    drop((legacy, legacy_order));
     lines::scan(source, opts, &positions.all, &mut out);
     if let Some(tree) = tree {
-        nodes::scan(source, opts, tree, arena, &mut out);
+        nodes::scan(source, opts, tree, items, &mut out);
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
@@ -207,11 +215,7 @@ fn lint_core<'a>(
         })
     });
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
-    if let Some(tree) = tree {
-        controls::filter(source, out, tree)
-    } else {
-        out
-    }
+    controls::filter(source, out, &comments)
 }
 
 fn skip_legacy_warning(
@@ -269,7 +273,7 @@ fn skip_legacy_warning(
 
 fn ineligible_html_tag(warning: &legacy::Warning, positions: &Ranges<'_>) -> bool {
     positions.around(warning.start).any(|range| {
-        matches!(range.kind.as_str(), "comment" | "caption")
+        matches!(range.kind, "comment" | "caption")
             && range.start <= warning.start
             && warning.end <= range.end
     })
@@ -428,7 +432,7 @@ fn referenced_footnote_platform_tokens(
     let references: HashSet<&str> = ranges
         .all
         .iter()
-        .filter_map(|range| range.footnote_key.as_deref())
+        .filter_map(|range| range.footnote_key)
         .collect();
     let mut offset = 0;
     for piece in source.split_inclusive('\n') {
@@ -474,7 +478,7 @@ fn referenced_footnote_platform_tokens(
 
 fn opaque_definition(ranges: &Ranges<'_>, offset: usize) -> bool {
     ranges.around(offset).any(|range| {
-        ["code_block", "raw_block", "frontmatter", "comment"].contains(&range.kind.as_str())
+        ["code_block", "raw_block", "frontmatter", "comment"].contains(&range.kind)
             && range.start <= offset
             && offset < range.end
     })
@@ -648,7 +652,7 @@ fn colon_fence_message(
         range.start < opener
             && range.end >= end
             && matches!(
-                range.kind.as_str(),
+                range.kind,
                 "div"
                     | "directive"
                     | "admonition"
@@ -697,7 +701,7 @@ fn run_is_skipped(
     ranges.around(at).any(|range| {
         range.start <= at
             && end <= range.end
-            && matches!(range.kind.as_str(), "code_block" | "raw_block" | "comment")
+            && matches!(range.kind, "code_block" | "raw_block" | "comment")
     }) || run_in_inner_owner(source, ranges, at, container)
 }
 
@@ -708,9 +712,9 @@ fn run_in_inner_owner(source: &str, ranges: &Ranges<'_>, at: usize, container: &
     ranges.around(at).any(|range| {
         range.start < at
             && at <= range.end
-            && range.path.starts_with(&inner)
+            && range.path.text().starts_with(&inner)
             && matches!(
-                range.kind.as_str(),
+                range.kind,
                 "block_quote"
                     | "list_item"
                     | "footnote"
@@ -756,7 +760,7 @@ fn colon_fence_mismatches(
                     .bytes()
                     .take_while(|byte| *byte == b':')
                     .count();
-                let skipped = run_is_skipped(source, ranges, at, end, &container.path);
+                let skipped = run_is_skipped(source, ranges, at, end, &container.path.text());
                 if width >= 3 && width != candidate.len() && !skipped {
                     let mut finding = Diagnostic::new(
                         "colon-fence-length-mismatch",
@@ -765,7 +769,7 @@ fn colon_fence_mismatches(
                         Some(positions.pos(at, end)),
                     );
                     finding.message = colon_fence_message(source, ranges, at, end, candidate);
-                    finding.path = Some(container.path.to_string());
+                    finding.path = Some(container.path.text());
                     output.push(finding);
                 }
             }
@@ -779,7 +783,7 @@ fn colon_candidate_container<'r>(
     ranges: &'r Ranges<'_>,
     line_start: usize,
     at: usize,
-) -> Option<&'r Range> {
+) -> Option<&'r Range<'r>> {
     let previous_at = source
         .get(..line_start)
         .unwrap_or("")
@@ -792,9 +796,9 @@ fn colon_candidate_container<'r>(
         .max_by_key(|range| range.path.len())
 }
 
-fn colon_range_open_at(source: &str, ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+fn colon_range_open_at(source: &str, ranges: &Ranges<'_>, range: &Range<'_>, at: usize) -> bool {
     if !matches!(
-        range.kind.as_str(),
+        range.kind,
         "div" | "directive" | "admonition" | "figure_group" | "line_block" | "hard_break_block"
     ) || range.start >= at
         || colon_opener_at(source, range.start) == Some(at)
@@ -806,23 +810,26 @@ fn colon_range_open_at(source: &str, ranges: &Ranges<'_>, range: &Range, at: usi
             || (!colon_closed_at_end(source, range) && colon_parent_survives(ranges, range, at)))
 }
 
-fn colon_crosses_owner(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+fn colon_crosses_owner(ranges: &Ranges<'_>, range: &Range<'_>, at: usize) -> bool {
+    let base = range.path.text();
     ranges.around(at).any(|current| {
         matches!(
-            current.kind.as_str(),
+            current.kind,
             "list_item" | "block_quote" | "footnote" | "definition_description"
         ) && current
             .path
-            .strip_prefix(range.path.as_str())
+            .text()
+            .strip_prefix(base.as_str())
             .is_some_and(|rest| rest.starts_with("/children/"))
             && current.start <= at
             && at <= current.end
     })
 }
 
-fn colon_parent_survives(ranges: &Ranges<'_>, range: &Range, at: usize) -> bool {
+fn colon_parent_survives(ranges: &Ranges<'_>, range: &Range<'_>, at: usize) -> bool {
     range
         .path
+        .text()
         .rsplit_once("/children/")
         .is_some_and(|(parent, _)| {
             ranges
@@ -848,7 +855,7 @@ fn colon_opener_at(source: &str, start: usize) -> Option<usize> {
     }
 }
 
-fn colon_closed_at_end(source: &str, range: &Range) -> bool {
+fn colon_closed_at_end(source: &str, range: &Range<'_>) -> bool {
     let Some(open) = colon_opener_at(source, range.start) else {
         return false;
     };
@@ -1023,7 +1030,7 @@ fn drop_replaced(output: &mut Vec<Diagnostic>, replacing: &[usize]) {
 /// The node ranges, with the ranges that touch each source line, so a lookup
 /// at one offset reads the ranges around it instead of all of them.
 struct Ranges<'a> {
-    all: Vec<Range>,
+    all: Vec<Range<'a>>,
     source: &'a str,
     index: OnceCell<RangeIndex>,
 }
@@ -1036,7 +1043,7 @@ struct RangeIndex {
 }
 
 impl<'a> Ranges<'a> {
-    const fn new(source: &'a str, all: Vec<Range>) -> Self {
+    const fn new(source: &'a str, all: Vec<Range<'a>>) -> Self {
         Self {
             all,
             source,
@@ -1070,7 +1077,7 @@ impl<'a> Ranges<'a> {
     }
 
     /// The ranges on the line of `at`, in tree order: every range that holds `at` is among them.
-    fn around(&self, at: usize) -> impl Iterator<Item = &Range> {
+    fn around(&self, at: usize) -> impl Iterator<Item = &Range<'a>> {
         let index = self.index();
         let line = index
             .line_starts
@@ -1092,7 +1099,7 @@ impl<'a> Ranges<'a> {
     }
 
     /// The image that starts last before `at`; the later one in tree order on a tie.
-    fn last_image_before(&self, at: usize) -> Option<&Range> {
+    fn last_image_before(&self, at: usize) -> Option<&Range<'a>> {
         let images = &self.index().images;
         let before = images.partition_point(|(start, _)| *start < at);
         before
@@ -1102,130 +1109,36 @@ impl<'a> Ranges<'a> {
     }
 }
 
-struct Range {
+struct Range<'a> {
     start: usize,
     end: usize,
-    path: LazyPath,
-    kind: String,
+    path: LazyPath<'a>,
+    kind: &'a str,
     start_line: usize,
     end_line: usize,
     has_attrs: bool,
-    footnote_key: Option<String>,
+    footnote_key: Option<&'a str>,
 }
 
 /// A node's pointer, written out only when a rule reads it.
-struct LazyPath {
-    step: Option<Rc<Step>>,
-    len: usize,
-    text: OnceCell<String>,
+struct LazyPath<'a> {
+    node: Option<&'a walk::PathNode<'a>>,
 }
 
-struct Step {
-    segment: Segment,
-    previous: Option<Rc<Step>>,
-}
-
-enum Segment {
-    Key(Rc<str>),
-    Index(usize),
-}
-
-impl LazyPath {
-    const fn len(&self) -> usize {
-        self.len
+impl LazyPath<'_> {
+    fn len(&self) -> usize {
+        self.node.map_or(0, |node| node.len)
     }
 
-    fn as_str(&self) -> &str {
-        self.text.get_or_init(|| {
-            use std::fmt::Write as _;
-            let mut steps = Vec::new();
-            let mut current = self.step.as_deref();
-            while let Some(step) = current {
-                steps.push(&step.segment);
-                current = step.previous.as_deref();
-            }
-            let mut text = String::with_capacity(self.len);
-            for segment in steps.into_iter().rev() {
-                text.push('/');
-                match segment {
-                    Segment::Key(key) => text.push_str(key),
-                    Segment::Index(index) => {
-                        let _ = write!(text, "{index}");
-                    }
-                }
-            }
-            text
-        })
+    fn text(&self) -> String {
+        walk::path_text(self.node)
     }
 }
 
-impl std::ops::Deref for LazyPath {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl PartialEq<&str> for LazyPath {
+impl PartialEq<&str> for LazyPath<'_> {
     fn eq(&self, other: &&str) -> bool {
-        self.len == other.len() && self.as_str() == *other
+        self.len() == other.len() && self.text() == *other
     }
-}
-
-fn node_ranges(tree: V<'_>) -> Vec<Range> {
-    let mut out = Vec::new();
-    let mut keys: HashMap<&str, Rc<str>> = HashMap::new();
-    let mut pending: Vec<(V<'_>, Option<Rc<Step>>, usize)> = vec![(tree, None, 0)];
-    while let Some((value, step, len)) = pending.pop() {
-        let child = |segment: Segment, width: usize| {
-            (
-                Some(Rc::new(Step {
-                    segment,
-                    previous: step.clone(),
-                })),
-                len + 1 + width,
-            )
-        };
-        if let Some(items) = value.as_array() {
-            for (i, item) in items.iter().enumerate() {
-                if item.is_container() {
-                    let digits = i.checked_ilog10().map_or(1, |d| d as usize + 1);
-                    let (next, width) = child(Segment::Index(i), digits);
-                    pending.push((item, next, width));
-                }
-            }
-        } else if value.is_object() {
-            if let (Some(pos), Some(kind)) = (value.pos(), value.ty().as_str()) {
-                let number =
-                    |key: &str| usize::try_from(pos.at(key).as_u64().unwrap_or(0)).unwrap_or(0);
-                out.push(Range {
-                    start: number("startOffset"),
-                    end: number("endOffset"),
-                    path: LazyPath {
-                        step: step.clone(),
-                        len,
-                        text: OnceCell::new(),
-                    },
-                    kind: kind.into(),
-                    start_line: number("startLine"),
-                    end_line: number("endLine"),
-                    has_attrs: value.get("attrs").is_some(),
-                    footnote_key: (kind == "footnote_ref")
-                        .then(|| value.at("key").as_str().map(str::to_string))
-                        .flatten(),
-                });
-            }
-            value.each(&mut |key, item| {
-                if item.is_container() {
-                    let name = keys.entry(key).or_insert_with(|| Rc::from(key));
-                    let (next, width) = child(Segment::Key(Rc::clone(name)), key.len());
-                    pending.push((item, next, width));
-                }
-            });
-        }
-    }
-    out
 }
 
 fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
@@ -1233,7 +1146,7 @@ fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
         .around(start)
         .filter(|r| r.start <= start && end <= r.end)
         .max_by_key(|r| r.path.len())
-        .map(|r| r.path.to_string())
+        .map(|r| r.path.text())
 }
 
 #[cfg(test)]
