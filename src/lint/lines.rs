@@ -6,19 +6,22 @@ use crate::source::Source;
 use std::collections::HashSet;
 
 #[allow(clippy::struct_excessive_bools)] // Independent facts from separate parse and source checks.
-struct Line {
-    text: String,
+pub(super) struct Line {
+    pub(super) text: String,
+    /// The text with each backslash-escaped punctuation character read as NUL, for the data rules; set only
+    /// when that differs from `text`.
+    pub(super) escaped: Option<String>,
     quotes: usize,
     table_row: bool,
-    start: usize,
-    path: String,
+    pub(super) start: usize,
+    pub(super) path: String,
     kind: String,
     paragraph: bool,
     paragraph_in_div: bool,
     literal_quote_prefix: bool,
     content_start: Option<usize>,
     /// Where the tree places this line's text: its first leaf, or the end of the break before it.
-    content: Option<usize>,
+    pub(super) content: Option<usize>,
     opacity: Opacity,
     attached_attribute: bool,
     scope: Scope,
@@ -98,9 +101,9 @@ pub(super) fn scan(
     source: &str,
     options: &LintOptions,
     ranges: &[Range<'_>],
+    lines: &[Line],
     output: &mut Vec<Diagnostic>,
 ) {
-    let lines = lines(source, ranges);
     let lists = DescriptionLists::new(ranges);
     let mut sink = Sink {
         source: Source::new(source),
@@ -121,7 +124,7 @@ pub(super) fn scan(
         }
         let previous = index.checked_sub(1).and_then(|i| lines.get(i));
         markers(line, previous, &mut sink);
-        let below = lists.below_list_column(line, index, &lines);
+        let below = lists.below_list_column(line, index, lines);
         if below.is_none() {
             markdown_definition(line, previous, &mut sink);
         }
@@ -130,7 +133,7 @@ pub(super) fn scan(
         }
         let prior_block = last_nonblank.and_then(|previous| lines.get(previous));
         legacy(line, previous, prior_block, &mut sink);
-        prose(line, index, previous, &lines, &mut sink);
+        prose(line, index, previous, lines, &mut sink);
         if !line.text.trim().is_empty() {
             last_nonblank = Some(index);
         }
@@ -163,7 +166,7 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
     sink.output.push(finding);
 }
 
-fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
+pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
     let div_paths: HashSet<String> = ranges
         .iter()
         .filter(|range| {
@@ -206,7 +209,9 @@ fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
             && path
                 .rsplit_once("/children/")
                 .is_some_and(|(parent, _)| div_paths.contains(parent));
+        let opaque = fact.flags & (FRONTMATTER | OPAQUE) != 0;
         out.push(Line {
+            escaped: (!opaque).then(|| escape_masked(raw, &bytes)).flatten(),
             text: String::from_utf8_lossy(&bytes).into_owned(),
             quotes: fact.quotes,
             table_row: fact.flags & TABLE_ROW != 0,
@@ -253,6 +258,7 @@ fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
     if source.ends_with('\n') || source.is_empty() {
         out.push(Line {
             text: String::new(),
+            escaped: None,
             quotes: 0,
             table_row: false,
             start: source.len(),
@@ -316,6 +322,25 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range<'a>]) -> V
         }
     }
     facts
+}
+
+/// C2-B-010: a punctuation character behind an odd run of backslashes is escaped; counted on the raw line.
+fn escape_masked(raw: &str, masked: &[u8]) -> Option<String> {
+    let raw = raw.as_bytes();
+    if !raw.contains(&b'\\') {
+        return None;
+    }
+    let mut bytes = masked.to_vec();
+    let mut changed = false;
+    let mut slashes = 0;
+    for (byte, out) in raw.iter().zip(bytes.iter_mut()) {
+        if byte.is_ascii_punctuation() && *out != 0 && slashes % 2 == 1 {
+            *out = 0;
+            changed = true;
+        }
+        slashes = if *byte == b'\\' { slashes + 1 } else { 0 };
+    }
+    changed.then(|| String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn mask_opaque_lines<'a>(
@@ -501,6 +526,9 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 }
 
 fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
+    if replaced!("deprecated-continuation-marker") {
+        return;
+    }
     if !line.text.as_bytes().contains(&b'+') {
         return;
     }
@@ -542,6 +570,13 @@ fn thematic_marker(
     tail: &str,
     sink: &mut Sink<'_>,
 ) {
+    if replaced!(
+        "deprecated-spaced-thematic-break",
+        "setext-heading-underline",
+        "thematic-break-spelling"
+    ) {
+        return;
+    }
     let marker_start = prefix + tail.len() - tail.trim_start().len();
     // A list-looking prefix folded into text is not an item marker.
     if prefix > line.text.len() - line.text.trim_start_matches([' ', '\t']).len()
@@ -604,6 +639,9 @@ fn item_marker_underline(
 }
 
 fn quote_list_marker(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    if replaced!("list-marker-without-blank-line") {
+        return;
+    }
     if line.text.starts_with("> ")
         && !in_caption(line)
         && previous.is_some_and(|p| p.paragraph && p.text.starts_with("> "))
@@ -785,7 +823,8 @@ fn legacy_layout(
     sink: &mut Sink<'_>,
 ) {
     let text = line.text.trim();
-    if line.paragraph
+    if !replaced!("indented-code-block")
+        && line.paragraph
         && line.text.starts_with("    ")
         && !text.is_empty()
         && line.path.matches('/').count() <= 2
@@ -997,6 +1036,9 @@ fn legacy_context(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 
 // C2-B-081: a definition-shaped line behind container marks, a list marker or description mark included.
 fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
+    if replaced!("definition-in-container") {
+        return;
+    }
     let (at, text) = leaf_text(line);
     if !line.paragraph
         || (line.kind == "definition_term" && line.text.starts_with('['))
@@ -1023,6 +1065,9 @@ fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
 
 // C2-B-075: a quote mark or list marker opening a term's text, on the term's first line only.
 fn term_folded(line: &Line, sink: &mut Sink<'_>) {
+    if replaced!("definition-term-block-folded") {
+        return;
+    }
     if line.kind != "definition_term" || line.content_start.is_none() {
         return;
     }
@@ -1065,7 +1110,9 @@ fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sin
 fn prose_tokens(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
     let (from, trimmed) = line_text(line);
-    blank_reference_label(line, sink);
+    if !replaced!("blank-reference-label") {
+        blank_reference_label(line, sink);
+    }
     if line.paragraph
         && trimmed.starts_with('[')
         && trimmed.ends_with("]:")
@@ -1147,6 +1194,9 @@ fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn empty_include_path(line: &Line, sink: &mut Sink<'_>) {
+    if replaced!("empty-include-path") {
+        return;
+    }
     let text = line.text.as_str();
     if let Some(at) = text.find("{{")
         && line.paragraph
@@ -1239,6 +1289,16 @@ fn prose_context(
     lines: &[Line],
     sink: &mut Sink<'_>,
 ) {
+    if replaced!(
+        "bare-html-tag",
+        "block-opener-without-blank-line",
+        "caption-looking-paragraph",
+        "description-term-multi-line",
+        "github-alert-marker",
+        "list-marker-without-blank-line"
+    ) {
+        return;
+    }
     let (marker_at, marker_text) = leaf_after_quotes(line);
     let list_candidate = list_marker(marker_text);
     if term_continuation_marker(line, previous, marker_at, list_candidate) {
@@ -1392,6 +1452,9 @@ fn quote_continues(line: &Line, previous: Option<&Line>, prefix: usize, content:
 }
 
 fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    if replaced!("block-opener-without-blank-line") {
+        return;
+    }
     // C2-B-019, C2-B-200: only a paragraph or caption line is a candidate; a term's later line is not.
     if !matches!(
         line.kind.as_str(),
@@ -1432,6 +1495,9 @@ fn prose_block_opener(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>)
 }
 
 fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
+    if replaced!("unattached-block-attribute") {
+        return;
+    }
     // C2-W-107: a later line of a paragraph is its text, which block-opener-without-blank-line reports (carve#6195).
     if previous.is_some_and(|previous| previous.paragraph && previous.path == line.path) {
         return;
@@ -1467,6 +1533,9 @@ fn unattached_attribute(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_
 }
 
 fn bare_html(line: &Line, sink: &mut Sink<'_>) {
+    if replaced!("bare-html-tag") {
+        return;
+    }
     if !matches!(
         line.kind.as_str(),
         "paragraph" | "heading" | "cell_paragraph"
@@ -1524,6 +1593,9 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 }
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
+    if replaced!("github-alert-marker") {
+        return;
+    }
     let starts = line.text.trim_start();
     // GitHub also writes the alert mark immediately after `>`; this is still a
     // useful migration warning even though Carve reads the glued line as text.
@@ -1561,6 +1633,9 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
 }
 
 fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_>) {
+    if replaced!("caption-looking-paragraph") {
+        return;
+    }
     let start = line.content_start.unwrap_or(0);
     let tail = line.text.get(start..).unwrap_or("");
     let marker = start + tail.len() - tail.trim_start().len();

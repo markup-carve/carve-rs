@@ -7,7 +7,7 @@
 
 use super::legacy;
 use super::nodes::{self, Item};
-use super::{LazyPath, Range};
+use super::{Holder, LazyPath, Range};
 use crate::Arena;
 use crate::view::V;
 use std::cell::OnceCell;
@@ -71,6 +71,8 @@ pub(super) struct Walk<'a> {
     pub(super) legacy_order: Vec<u32>,
     /// The line comments, the candidates for lint controls.
     pub(super) comments: Vec<V<'a>>,
+    /// The nodes that hold `children`, which the ranges point into.
+    pub(super) holders: Vec<Holder>,
 }
 
 /// What the node rules carry down; `None` below `data`, `props`, `pos` and `segments`.
@@ -94,6 +96,18 @@ struct Entry<'a> {
     path: Option<&'a PathNode<'a>>,
     rules: Option<Rules<'a>>,
     old: Old,
+    place: Place,
+}
+
+/// Where a value sits for the data rules: its holder, its index in a `children` list and that list.
+#[derive(Clone, Copy, Default)]
+struct Place {
+    holder: Option<u32>,
+    index: Option<u32>,
+    /// The `children` list this value is an item of, as an index into `Visit::lists`.
+    list: Option<usize>,
+    /// The value is a `children` list.
+    children: bool,
 }
 
 struct Visit<'a> {
@@ -103,6 +117,9 @@ struct Visit<'a> {
     /// The 0.1 nodes in walk order, with their parent's index in this list.
     old: Vec<legacy::Node<'a>>,
     pending: Vec<Entry<'a>>,
+    /// Per `children` list: the item index and range of the item recorded last. Items are met last
+    /// to first.
+    lists: Vec<Option<(u32, u32)>>,
 }
 
 impl<'a> Walk<'a> {
@@ -113,6 +130,7 @@ impl<'a> Walk<'a> {
             legacy: Vec::new(),
             legacy_order: Vec::new(),
             comments: Vec::new(),
+            holders: Vec::new(),
         }
     }
 
@@ -144,7 +162,9 @@ impl<'a> Walk<'a> {
                 } else {
                     Old::No
                 },
+                place: Place::default(),
             }],
+            lists: Vec::new(),
         };
         while let Some(entry) = visit.pending.pop() {
             if let Some(items) = entry.value.as_array() {
@@ -166,9 +186,26 @@ impl<'a> Visit<'a> {
             Old::Items(parent, slot) => Old::Node(Some(parent), slot),
             _ => Old::No,
         };
+        let list = (self.full && entry.place.children).then(|| {
+            self.lists.push(None);
+            self.lists.len() - 1
+        });
         for (index, item) in items.iter().enumerate() {
             if item.is_container() {
-                self.push(item, entry.path, Segment::Index(index), entry.rules, old);
+                let place = Place {
+                    holder: entry.place.holder,
+                    index: u32::try_from(index).ok(),
+                    list,
+                    children: entry.place.children,
+                };
+                self.push(
+                    item,
+                    entry.path,
+                    Segment::Index(index),
+                    entry.rules,
+                    old,
+                    place,
+                );
             }
         }
     }
@@ -180,6 +217,7 @@ impl<'a> Visit<'a> {
         segment: Segment<'a>,
         rules: Option<Rules<'a>>,
         old: Old,
+        place: Place,
     ) {
         if !value.may_hold_nodes() || (!self.full && rules.is_none()) {
             return;
@@ -189,15 +227,18 @@ impl<'a> Visit<'a> {
             path: Some(PathNode::child(self.arena, parent, segment)),
             rules,
             old,
+            place,
         });
     }
 
     fn object(&mut self, entry: &Entry<'a>) {
         let value = entry.value;
         let kind = value.ty().as_str();
-        if self.full {
-            self.record(entry, kind);
-        }
+        let own = if self.full {
+            self.record(entry, kind)
+        } else {
+            None
+        };
         let parents = entry.rules.map(|rules| self.item(entry, kind, rules));
         let old = match (entry.old, kind) {
             (Old::Node(parent, slot), Some(_)) => {
@@ -219,23 +260,58 @@ impl<'a> Visit<'a> {
                 .zip(parents)
                 .and_then(|(rules, parents)| self.child_rules(entry, key, rules, parents));
             let old = old.map_or(Old::No, |at| old_child(at, key, child));
-            self.push(child, entry.path, Segment::Key(key), rules, old);
+            let place = self.child_place(entry, key, own);
+            self.push(child, entry.path, Segment::Key(key), rules, old, place);
         });
     }
 
-    /// The range of a positioned node and the line comment candidates.
-    fn record(&mut self, entry: &Entry<'a>, kind: Option<&'a str>) {
+    /// The place of a child under `key`. A path's holder is the node before its last `/children/`;
+    /// the document's children have none.
+    fn child_place(&mut self, entry: &Entry<'a>, key: &str, own: Option<u32>) -> Place {
+        if !self.full {
+            return Place::default();
+        }
+        if key != "children" {
+            return Place {
+                holder: entry.place.holder,
+                ..Place::default()
+            };
+        }
+        let holder = if entry.path.is_some() {
+            self.walk.holders.push(Holder {
+                range: own,
+                up: entry.place.holder,
+            });
+            u32::try_from(self.walk.holders.len() - 1).ok()
+        } else {
+            None
+        };
+        Place {
+            holder,
+            index: None,
+            list: None,
+            children: true,
+        }
+    }
+
+    /// The range of a positioned node and the line comment candidates; the new range's index.
+    fn record(&mut self, entry: &Entry<'a>, kind: Option<&'a str>) -> Option<u32> {
         let value = entry.value;
-        let Some(kind) = kind else { return };
+        let kind = kind?;
+        let mut own = None;
         if let Some(pos) = value.pos() {
             let number = |key: &str| match pos {
                 V::Pos(pos) => pos_number(pos, key),
                 _ => usize::try_from(pos.at(key).as_u64().unwrap_or(0)).unwrap_or(0),
             };
+            own = u32::try_from(self.walk.ranges.len()).ok();
             self.walk.ranges.push(Range {
                 start: number("startOffset"),
                 end: number("endOffset"),
-                path: LazyPath { node: entry.path },
+                path: LazyPath {
+                    node: entry.path,
+                    text: OnceCell::new(),
+                },
                 kind,
                 start_line: number("startLine"),
                 end_line: number("endLine"),
@@ -243,11 +319,29 @@ impl<'a> Visit<'a> {
                 footnote_key: (kind == "footnote_ref")
                     .then(|| value.at("key").as_str())
                     .flatten(),
+                form_block: value.at("form") == "block",
+                image_line: kind == "paragraph"
+                    && value
+                        .at("children")
+                        .as_array()
+                        .and_then(crate::view::Arr::single)
+                        .is_some_and(|child| child.ty().as_str() == Some("image")),
+                holder: entry.place.holder,
+                index: entry.place.index.unwrap_or(0),
+                prev: None,
             });
+            if let (Some(slot), Some(at), Some(made)) = (
+                entry.place.list.and_then(|list| self.lists.get_mut(list)),
+                entry.place.index,
+                own,
+            ) {
+                super::link_prev(slot, at, made, &mut self.walk.ranges);
+            }
         }
         if kind == "comment" && value.at("form") == "line" {
             self.walk.comments.push(value);
         }
+        own
     }
 
     /// Records a typed node for the node rules; the parent chain its children carry.

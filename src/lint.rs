@@ -8,6 +8,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 mod controls;
+mod data_interpreter;
+mod data_model;
+#[macro_use]
+mod data_rules;
 mod includes;
 mod legacy;
 mod lines;
@@ -37,33 +41,61 @@ fn catalog() -> &'static Value {
     })
 }
 
+/// What `active` reads of a catalog row, indexed by rule id once.
+struct Row {
+    usable: bool,
+    default_on: bool,
+    modeled: bool,
+}
+
+fn rows() -> &'static HashMap<&'static str, Row> {
+    static ROWS: OnceLock<HashMap<&'static str, Row>> = OnceLock::new();
+    ROWS.get_or_init(|| {
+        let mut rows = HashMap::new();
+        for row in catalog()["rules"].as_array().into_iter().flatten() {
+            let Some(id) = row["id"].as_str() else {
+                continue;
+            };
+            rows.entry(id).or_insert_with(|| Row {
+                usable: (row["channel"] == "lint" || row["channel"].is_null())
+                    && !matches!(row["status"].as_str(), Some("obsolete" | "void")),
+                default_on: row["default"].as_str().unwrap_or("on") == "on",
+                modeled: data_rules::modeled_ids().contains(id),
+            });
+        }
+        rows
+    })
+}
+
 fn active(code: &str, opts: &LintOptions) -> bool {
-    let Some(row) = catalog()["rules"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|rule| rule["id"] == code)
-    else {
+    let Some(row) = rows().get(code) else {
         return false;
     };
-    if row["channel"] != "lint" && !row["channel"].is_null() {
-        return false;
-    }
-    if matches!(row["status"].as_str(), Some("obsolete" | "void")) {
+    !(row.modeled && data_rules::data_mode()) && row_active(code, row, opts)
+}
+
+fn active_catalog(code: &str, opts: &LintOptions) -> bool {
+    rows()
+        .get(code)
+        .is_some_and(|row| row_active(code, row, opts))
+}
+
+fn row_active(code: &str, row: &Row, opts: &LintOptions) -> bool {
+    if !row.usable {
         return false;
     }
     if code.starts_with("platform-") && !opts.platforms.iter().any(|p| p == "github") {
         return false;
     }
-    opts.rules.get(code).map_or_else(
-        || row["default"].as_str().unwrap_or("on") == "on",
-        |setting| setting == "on",
-    )
+    opts.rules
+        .get(code)
+        .map_or(row.default_on, |setting| setting == "on")
 }
 
 /// Runs enabled lint rules and returns catalog diagnostics in source order.
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
+    let _mode = data_rules::enter();
     let includes = opts.includes.is_some() && source.contains("{{");
     let parse = crate::Options {
         includes: opts.includes.clone().filter(|_| includes),
@@ -78,12 +110,15 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         same,
         |tree, arena| lint_core(source, opts, tree, arena),
     );
-    out.extend(diagnostics);
+    out.extend(diagnostics.into_iter().filter(|diagnostic| {
+        !data_rules::data_mode() || !data_rules::modeled_ids().contains(diagnostic.code)
+    }));
     if includes {
         includes::scan(source, opts, &mut out);
     }
     out.retain(|finding| {
-        finding.code != "table-shaped-paragraph"
+        (data_rules::data_mode() && data_rules::modeled_ids().contains(finding.code))
+            || finding.code != "table-shaped-paragraph"
             || !finding.pos.is_some_and(|pos| {
                 source
                     .get(pos.start_offset as usize..pos.end_offset as usize)
@@ -131,7 +166,8 @@ fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
             "list-marker-without-blank-line"
                 | "unattached-block-attribute"
                 | "region-marker-renders-as-text"
-        ) {
+        ) || (data_rules::data_mode() && data_rules::modeled_ids().contains(finding.code))
+        {
             continue;
         }
         let Some(pos) = finding.pos else { continue };
@@ -190,8 +226,9 @@ fn lint_core<'a>(
         legacy,
         legacy_order,
         comments,
+        holders,
     } = tree.map_or_else(walk::Walk::empty, |tree| walk::Walk::new(tree, arena));
-    let positions = Ranges::new(source, ranges);
+    let positions = Ranges::new(source, ranges, holders);
     let mut out = Vec::new();
     for warning in legacy::warnings(source, &legacy, &legacy_order) {
         if skip_legacy_warning(&warning, source, opts, &parsed, &positions) {
@@ -200,12 +237,24 @@ fn lint_core<'a>(
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
     drop((legacy, legacy_order));
-    lines::scan(source, opts, &positions.all, &mut out);
+    let line_model = lines::lines(source, &positions.all);
+    lines::scan(source, opts, &positions.all, &line_model, &mut out);
     if let Some(tree) = tree {
         nodes::scan(source, opts, tree, items, &mut out);
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
+    if data_rules::data_mode() && tree.is_some() {
+        out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
+        out.extend(data_rules::run(
+            source,
+            &parsed,
+            &positions.all,
+            &positions.holders,
+            &line_model,
+            opts,
+        ));
+    }
     let invalid_tables: Vec<_> = out
         .iter()
         .filter(|finding| finding.code == "table-attribute-invalid")
@@ -1040,6 +1089,7 @@ fn drop_replaced(output: &mut Vec<Diagnostic>, replacing: &[usize]) {
 /// at one offset reads the ranges around it instead of all of them.
 struct Ranges<'a> {
     all: Vec<Range<'a>>,
+    holders: Vec<Holder>,
     source: &'a str,
     index: OnceCell<RangeIndex>,
 }
@@ -1052,9 +1102,10 @@ struct RangeIndex {
 }
 
 impl<'a> Ranges<'a> {
-    const fn new(source: &'a str, all: Vec<Range<'a>>) -> Self {
+    const fn new(source: &'a str, all: Vec<Range<'a>>, holders: Vec<Holder>) -> Self {
         Self {
             all,
+            holders,
             source,
             index: OnceCell::new(),
         }
@@ -1127,16 +1178,43 @@ struct Range<'a> {
     end_line: usize,
     has_attrs: bool,
     footnote_key: Option<&'a str>,
+    /// A comment written as a block.
+    form_block: bool,
+    /// A paragraph whose only child is an image.
+    image_line: bool,
+    /// The holder whose `children` hold this node; `None` for the document's own children.
+    holder: Option<u32>,
+    /// The node's index in its `children` list.
+    index: u32,
+    /// The range of the item before it in the same `children` list.
+    prev: Option<u32>,
+}
+
+/// A node that holds `children`: its range, if it has one, and the holder that holds it.
+struct Holder {
+    range: Option<u32>,
+    up: Option<u32>,
 }
 
 /// A node's pointer, written out only when a rule reads it.
 struct LazyPath<'a> {
     node: Option<&'a walk::PathNode<'a>>,
+    /// The pointer text, built on first use by the data rules.
+    text: OnceCell<String>,
 }
 
 impl LazyPath<'_> {
     fn len(&self) -> usize {
         self.node.map_or(0, |node| node.len)
+    }
+
+    /// Whether this is the document's own path, without building the text.
+    const fn is_empty(&self) -> bool {
+        self.node.is_none()
+    }
+
+    fn as_str(&self) -> &str {
+        self.text.get_or_init(|| self.text())
     }
 
     fn text(&self) -> String {
@@ -1148,6 +1226,17 @@ impl PartialEq<&str> for LazyPath<'_> {
     fn eq(&self, other: &&str) -> bool {
         self.len() == other.len() && self.text() == *other
     }
+}
+
+/// Records item `at` of a `children` list, made as range `made`, as the previous sibling of item `at + 1`.
+fn link_prev(slot: &mut Option<(u32, u32)>, at: u32, made: u32, out: &mut [Range<'_>]) {
+    if let Some((later, range)) = *slot
+        && later == at + 1
+        && let Some(next) = out.get_mut(range as usize)
+    {
+        next.prev = Some(made);
+    }
+    *slot = Some((at, made));
 }
 
 fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {

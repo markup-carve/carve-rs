@@ -287,7 +287,9 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
 
 fn check_node<'a>(item: &Item<'a>, ids: &HashSet<String>, root: V<'a>, sink: &mut Sink<'_>) {
     overindented_opener(item, root, sink);
-    list_item_opener_overindented(item, root, sink);
+    if !replaced!("list-item-block-overindented") {
+        list_item_opener_overindented(item, root, sink);
+    }
     list_between_columns(item, root, sink);
     semantic(item, sink);
     check_block_node(item, ids, root, sink);
@@ -459,6 +461,9 @@ fn task_item_content_column(source: &str, marker_at: usize, first_at: usize) -> 
 }
 
 fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
+    if replaced!("block-opener-overindented") {
+        return;
+    }
     if item.ancestors.as_ref().is_some_and(|a| a.in_list_item) {
         return;
     }
@@ -815,6 +820,9 @@ fn list<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
 }
 
 fn list_loose(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("deprecated-loose-attribute") {
+        return;
+    }
     if item
         .node
         .at("attrs")
@@ -954,6 +962,9 @@ fn list_indent<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
 }
 
 fn list_item(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("list-item-body-below-content-column") {
+        return;
+    }
     let raw = sink.raw(item).to_string();
     let Some((from, _)) = item.bounds else {
         return;
@@ -1069,7 +1080,8 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
     let trimmed = raw.trim_end();
     // C2-B-153: an `=` heading too; the run needs heading text before it, so `= ##` is left alone.
     let marker = trimmed.len() - trimmed.trim_start_matches(['#', '=']).len();
-    if let Some(run) = trimmed.split_whitespace().last()
+    if !replaced!("heading-closing-hashes", "heading-trailing-attribute")
+        && let Some(run) = trimmed.split_whitespace().last()
         && run.chars().all(|c| c == '#')
         && trimmed
             .get(marker..)
@@ -1086,7 +1098,8 @@ fn heading(item: &Item<'_>, sink: &mut Sink<'_>) {
             0,
         );
     }
-    if let Some(at) = raw.rfind("{.").into_iter().chain(raw.rfind("{#")).max()
+    if !replaced!("heading-closing-hashes", "heading-trailing-attribute")
+        && let Some(at) = raw.rfind("{.").into_iter().chain(raw.rfind("{#")).max()
         && raw.ends_with('}')
     {
         let block = &raw[at..];
@@ -1227,6 +1240,9 @@ fn figure(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn div(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("figure-group-opener-metadata") {
+        return;
+    }
     let figure = field(item.node, "/attrs/classes")
         .as_array()
         .is_some_and(|classes| classes.iter().any(|class| class == "figure"));
@@ -2098,6 +2114,9 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
 }
 
 fn definition_term(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("description-term-multi-line") {
+        return;
+    }
     let first_line = field(item.node, "/pos/startLine").as_u64().unwrap_or(0);
     if item.node.at("children").as_array().is_some_and(|children| {
         children.iter().any(|child| {
@@ -2132,6 +2151,9 @@ fn definition_term(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn emphasis(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("comment-shaped-emphasis") {
+        return;
+    }
     if sink.raw(item).starts_with("/*") && sink.raw(item).ends_with("*/") {
         sink.emit("comment-shaped-emphasis", item, &[], 0);
     }
@@ -2296,6 +2318,9 @@ fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn highlight(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("djot-highlight-braces") {
+        return;
+    }
     if sink.raw(item).starts_with("{=") {
         sink.emit("djot-highlight-braces", item, &[], 0);
     }
@@ -2379,6 +2404,9 @@ fn comment(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn code_block(item: &Item<'_>, sink: &mut Sink<'_>) {
+    if replaced!("fence-closer-indented") {
+        return;
+    }
     let Some((from, to)) = item.bounds else {
         return;
     };
