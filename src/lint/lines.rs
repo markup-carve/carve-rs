@@ -1679,9 +1679,10 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
     if !after.is_ascii_alphabetic() && *after != b'/' {
         return;
     }
-    let Some(end) = line.text.get(at + 2..).and_then(|s| s.find('>')) else {
+    let Some(end) = tag_end(line.text.get(at..).unwrap_or("")) else {
         return;
     };
+    let end = end - 3;
     let inside = line.text.get(at + 1..at + 2 + end).unwrap_or("");
     if inside.contains("://") || inside.contains('@') || inside.starts_with("/#") {
         return;
@@ -1693,6 +1694,34 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
         &line.path,
         &[],
     );
+}
+
+/// The length of the catalog tag shape `</?[A-Za-z][A-Za-z0-9_:-]*(?:\s[^<>]*)?/?>` at the start of `text`.
+fn tag_end(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut at = 1 + usize::from(bytes.get(1) == Some(&b'/'));
+    if !bytes.get(at)?.is_ascii_alphabetic() {
+        return None;
+    }
+    at += 1;
+    while bytes
+        .get(at)
+        .is_some_and(|b| b.is_ascii_alphanumeric() || b"_:-".contains(b))
+    {
+        at += 1;
+    }
+    let rest = &text[at..];
+    if rest.starts_with('>') {
+        return Some(at + 1);
+    }
+    if rest.starts_with("/>") {
+        return Some(at + 2);
+    }
+    if !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let close = rest.find(['<', '>'])?;
+    rest[close..].starts_with('>').then_some(at + close + 1)
 }
 
 fn in_caption(line: &Line) -> bool {
@@ -1714,10 +1743,13 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     if replaced!("github-alert-marker") {
         return;
     }
-    let starts = line.text.trim_start();
+    let starts = line.text.trim_start_matches([' ', '\t']);
     // GitHub also writes the alert mark immediately after `>`; this is still a
     // useful migration warning even though Carve reads the glued line as text.
-    if !starts.starts_with("> ") && !starts.starts_with(">[") {
+    let glued = starts.strip_prefix('>').is_none_or(|rest| {
+        !(rest.is_empty() || rest.starts_with([' ', '\t']) || rest.starts_with("[!"))
+    });
+    if glued {
         return;
     }
     if !matches!(
@@ -1757,7 +1789,7 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
     let start = line.content_start.unwrap_or(0);
     let tail = line.text.get(start..).unwrap_or("");
     let marker = start + tail.len() - tail.trim_start().len();
-    if !line.paragraph || !caption_like(tail.trim_start()) {
+    if line.kind != "paragraph" || !caption_like(tail.trim_start()) {
         return;
     }
     let below = lines
