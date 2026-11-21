@@ -305,7 +305,7 @@ fn line_facts<'a>(
             fact.flags |= LITERAL_QUOTE_PREFIX;
         }
         mark_content(&mut facts, range);
-        mark_span_start(&mut facts, range, ranges, holders);
+        mark_span_start(&mut facts, range);
         mark_leaf(&mut facts, range, ranges, holders);
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
@@ -402,23 +402,17 @@ fn mask_opaque_lines<'a>(
     }
 }
 
-/// Records where the first non-text inline child of a paragraph starts on its line (C2-B-090).
-fn mark_span_start(
-    facts: &mut [LineFacts<'_>],
-    range: &Range<'_>,
-    ranges: &[Range<'_>],
-    holders: &[Holder],
-) {
+/// Records where the first non-text inline node in this line's leaf starts (C2-B-090).
+fn mark_span_start(facts: &mut [LineFacts<'_>], range: &Range<'_>) {
     if !matches!(range.kind, "text" | "soft_break" | "hard_break")
-        && range
-            .holder
-            .and_then(|at| holders.get(at as usize)?.range)
-            .and_then(|at| ranges.get(at as usize))
-            .is_some_and(|parent| parent.kind == "paragraph")
+        && !text_leaf(range.kind)
         && let Some(fact) = range
             .start_line
             .checked_sub(1)
             .and_then(|l| facts.get_mut(l))
+        && fact
+            .leaf
+            .is_some_and(|leaf| leaf.start <= range.start && range.start < leaf.end)
         && fact.span_start.is_none_or(|known| range.start < known)
     {
         fact.span_start = Some(range.start);
@@ -1774,10 +1768,19 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     let starts = line.text.trim_start_matches([' ', '\t']);
+    const ALERT_TAGS: [&str; 5] = [
+        "[!NOTE]",
+        "[!TIP]",
+        "[!IMPORTANT]",
+        "[!WARNING]",
+        "[!CAUTION]",
+    ];
     // GitHub also writes the alert mark immediately after `>`; this is still a
     // useful migration warning even though Carve reads the glued line as text.
     let glued = starts.strip_prefix('>').is_none_or(|rest| {
-        !(rest.is_empty() || rest.starts_with([' ', '\t']) || rest.starts_with("[!"))
+        !(rest.is_empty()
+            || rest.starts_with([' ', '\t'])
+            || ALERT_TAGS.iter().any(|tag| rest.starts_with(tag)))
     });
     if glued {
         return;
@@ -1789,23 +1792,17 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     {
         return;
     }
-    if let Some(at) = line.text.find("[!")
-        && line.text.get(at..).is_some_and(|s| {
-            [
-                "[!NOTE]",
-                "[!TIP]",
-                "[!IMPORTANT]",
-                "[!WARNING]",
-                "[!CAUTION]",
-            ]
+    if let Some((at, tag)) = line.text.match_indices("[!").find_map(|(at, _)| {
+        let rest = line.text.get(at..)?;
+        ALERT_TAGS
             .iter()
-            .any(|token| s.starts_with(token))
-        })
-    {
+            .find(|tag| rest.starts_with(**tag))
+            .map(|tag| (at, *tag))
+    }) {
         sink.emit(
             "github-alert-marker",
             line.start + at,
-            line.start + line.text.len(),
+            line.start + at + tag.len(),
             &line.path,
             &[],
         );
