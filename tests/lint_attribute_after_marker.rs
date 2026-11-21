@@ -7,7 +7,11 @@ fn found(source: &str, code: &str) -> Vec<(usize, usize)> {
     lint(source, &LintOptions::default())
         .into_iter()
         .filter(|finding| finding.code == code)
-        .filter_map(|finding| finding.pos.map(|pos| (pos.start_offset, pos.end_offset)))
+        .filter_map(|finding| {
+            finding
+                .pos
+                .map(|pos| (pos.start_offset as usize, pos.end_offset as usize))
+        })
         .collect()
 }
 
@@ -31,7 +35,10 @@ fn a_failed_attribute_line_after_a_container_marker_is_reported() {
 fn carve_rs_4573_reproductions() {
     assert_eq!(found("> {_x\n", "block-marker-as-text"), [(2, 5)]);
     assert_eq!(found("- {.x y\n", "block-marker-as-text"), [(2, 7)]);
-    assert_eq!(found(":: t\n: {_\nmore\n", "block-marker-as-text"), [(7, 9)]);
+    assert_eq!(
+        found(":: t\n: {_\nmore\n", "block-marker-as-text"),
+        [(7, 9)]
+    );
     assert_eq!(found("> {_e_} x\n", "block-marker-as-text"), []);
     assert_eq!(found("> {.c}\n", "block-marker-as-text"), []);
 }

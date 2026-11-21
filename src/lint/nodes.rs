@@ -1883,31 +1883,49 @@ fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: u
     }
 }
 
+/// Each unattached glued run once, in the inline hosts the rule names; a line block's line is none.
 fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    if let Some((at, end)) = value.match_indices('{').find_map(|(at, _)| {
-        let (block, end) = crate::attr::parse_block(value, at)?;
-        let before = sink.source.get(..from + at)?.rsplit('\n').next()?.trim();
+    if parent_kinds(item).any(|kind| kind == "line") {
+        return;
+    }
+    let mut next = 0;
+    for (at, _) in value.match_indices('{') {
+        if at < next {
+            continue;
+        }
+        let Some((block, end)) = crate::attr::parse_glued(value, at) else {
+            continue;
+        };
+        let Some(before) = sink
+            .source
+            .get(..from + at)
+            .and_then(|prefix| prefix.rsplit('\n').next())
+            .map(str::trim)
+        else {
+            continue;
+        };
         let quote_prefix = before == ">"
             && !value.starts_with('>')
             && sink
                 .source
                 .get(..from + at)
                 .is_some_and(|prefix| prefix.ends_with("> "));
-        (at > 0
+        if at > 0
             && !block.empty
             && !before.is_empty()
             && !quote_prefix
-            && !escaped(value.as_bytes(), at))
-        .then_some((at, end))
-    }) {
-        sink.emit_range(
-            "unattached-inline-attribute",
-            from + at,
-            from + end,
-            item.path(),
-            &[],
-            0,
-        );
+            && !escaped(value.as_bytes(), at)
+        {
+            sink.emit_range(
+                "unattached-inline-attribute",
+                from + at,
+                from + end,
+                item.path(),
+                &[],
+                0,
+            );
+            next = end;
+        }
     }
 }
 
