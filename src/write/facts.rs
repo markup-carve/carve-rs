@@ -379,6 +379,23 @@ fn content_fragment(fragment: &str) -> &str {
     t.trim_matches([' ', '\t'])
 }
 
+/// A table's later lines can start in another column than its first row.
+fn table_source_line(line: &str, column: usize, first: bool) -> &str {
+    let early_continuation = (!first)
+        .then(|| line.get(..column).and_then(|prefix| prefix.find('+')))
+        .flatten();
+    let at = early_continuation
+        .or_else(|| {
+            line.get(column..)
+                .filter(|tail| tail.starts_with(['|', '+']))
+                .map(|_| column)
+        })
+        .or_else(|| line.find(['|', '+']));
+    at.and_then(|at| line.get(at..))
+        .unwrap_or("")
+        .trim_end_matches('\r')
+}
+
 fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     let Some((start, end)) = span(table) else {
         return;
@@ -393,22 +410,7 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     };
     let mut lines: Vec<(&str, Vec<&str>)> = Vec::new();
     for line in body.split('\n') {
-        // A container can put its first row and later continuation rows in
-        // different columns (for example, the task marker on the first line).
-        let early_continuation = (!lines.is_empty())
-            .then(|| line.get(..column).and_then(|prefix| prefix.find('+')))
-            .flatten();
-        let at = early_continuation
-            .or_else(|| {
-                line.get(column..)
-                    .filter(|tail| tail.starts_with(['|', '+']))
-                    .map(|_| column)
-            })
-            .or_else(|| line.find(['|', '+']));
-        let l = at
-            .and_then(|at| line.get(at..))
-            .unwrap_or("")
-            .trim_end_matches('\r');
+        let l = table_source_line(line, column, lines.is_empty());
         if l.starts_with('|') {
             lines.push((l, Vec::new()));
         } else if l.starts_with('+') {
