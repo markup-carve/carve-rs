@@ -810,7 +810,7 @@ impl Carve {
                 opts,
                 Vec::new(),
                 refuse_loss,
-                shift_override,
+                shift_override.as_ref(),
             )
             .map(|mut rendered| {
                 diagnostics.append(&mut rendered.diagnostics);
@@ -885,7 +885,7 @@ impl Carve {
             opts,
             transform_entries,
             refuse_loss,
-            shift_override,
+            shift_override.as_ref(),
         )
     }
 
@@ -898,7 +898,7 @@ impl Carve {
         opts: &Options,
         transform_entries: Vec<Entry>,
         refuse_loss: bool,
-        shift_override: Option<crate::heading_shift::Found>,
+        shift_override: Option<&crate::heading_shift::Found>,
     ) -> Result<Rendered, Error> {
         let used_ids = || standard::UsedIds::of_arena(doc);
         let host = extension::Host::new(
@@ -909,7 +909,7 @@ impl Carve {
             &used_ids,
             doc.extensions,
         );
-        let rendered = crate::render_arena_hooked(doc, opts, files, &host, shift_override.as_ref());
+        let rendered = crate::render_arena_hooked(doc, opts, files, &host, shift_override);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
         diagnostics.extend(entries);
