@@ -375,6 +375,26 @@ fn run_rule<'a>(
     let Some(pattern) = &each.pattern else {
         return;
     };
+    if let Some(branches) = &pattern.branches {
+        for found in pattern.re.find_iter(&text) {
+            let (from, span) = (found.start(), found.as_str());
+            eval.spans.clear();
+            let branch = branches.iter().find(|(re, _)| re.is_match(span));
+            if let Some((re, groups)) = branch.filter(|(_, groups)| !groups.is_empty())
+                && let Some(captures) = re.captures(span)
+            {
+                for &(name, index) in groups {
+                    if let Some(group) = captures.get(index) {
+                        eval.spans
+                            .push((name, from + group.start(), from + group.end()));
+                    }
+                }
+            }
+            eval.base = base;
+            report(rule, open, &mut eval, out, path);
+        }
+        return;
+    }
     for found in pattern.re.captures_iter(&text) {
         eval.spans.clear();
         for &(name, index) in &pattern.groups {

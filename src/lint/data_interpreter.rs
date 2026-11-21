@@ -254,6 +254,38 @@ pub(super) struct Pattern {
     needs: Option<Box<[bool; 256]>>,
     /// The pattern is `STRIP_QUOTES`, read without the regex engine.
     strip_quotes: bool,
+    /// For a top-level alternation without look-around in which some branch has no group: each branch
+    /// anchored at the start, with its groups. A span the whole pattern finds is the match of the first
+    /// branch that matches at its start, so only that branch's groups need the capture engine.
+    pub branches: Option<Vec<(Regex, Vec<(&'static str, usize)>)>>,
+}
+
+/// The branches of a top-level alternation without look-around, each anchored at the start, with the
+/// names and indices of their groups; none unless some branch has no group.
+fn branch_patterns(
+    hir: &regex_syntax::hir::Hir,
+) -> Option<Vec<(Regex, Vec<(&'static str, usize)>)>> {
+    let regex_syntax::hir::HirKind::Alternation(items) = hir.kind() else {
+        return None;
+    };
+    if !hir.properties().look_set().is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let re = Regex::new(&format!("\\A(?:{item})")).ok()?;
+        let groups = re
+            .capture_names()
+            .enumerate()
+            .filter_map(|(index, name)| {
+                name.map(|name| (&*Box::leak(name.to_owned().into_boxed_str()), index))
+            })
+            .collect();
+        out.push((re, groups));
+    }
+    out.iter()
+        .any(|(_, groups): &(Regex, Vec<_>)| groups.is_empty())
+        .then_some(out)
 }
 
 /// The rows' pattern for the content of a line behind its blanks and quote marks: it matches every line
@@ -533,7 +565,7 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
         .build()
         .ok()?;
     // The names live as long as the compiled model, which is never dropped.
-    let groups = re
+    let groups: Vec<(&'static str, usize)> = re
         .capture_names()
         .enumerate()
         .filter_map(|(index, name)| {
@@ -580,8 +612,13 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
         }
         set
     });
+    let branches = hir
+        .as_ref()
+        .filter(|_| !groups.is_empty())
+        .and_then(branch_patterns);
     Some(Pattern {
         strip_quotes: original == STRIP_QUOTES && flags.is_empty(),
+        branches,
         re,
         groups,
         first,
@@ -2191,6 +2228,57 @@ fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> 
 #[cfg(test)]
 mod tests {
     use super::{STRIP_QUOTES, pattern, strip_quotes};
+
+    #[test]
+    fn branches_give_the_groups_the_whole_pattern_gives() {
+        let text = r"(?<link>\[[^\]\n]+\][ \t]+\((?<dest>[^)\n]*)\))|\[[^\]\n]+\][ \t]+\([^)\n]*|\[[^\]\n]*";
+        let compiled = pattern(text, "").expect("pattern");
+        let branches = compiled.branches.as_ref().expect("branches");
+        let parts = ["[", "]", "a", " ", "(", ")", "\t", "[a] ("];
+        let mut inputs = vec![String::new()];
+        for _ in 0..5 {
+            inputs = inputs
+                .iter()
+                .flat_map(|head| parts.iter().map(move |part| format!("{head}{part}")))
+                .collect();
+        }
+        for input in &inputs {
+            let whole: Vec<Vec<Option<(usize, usize)>>> = compiled
+                .re
+                .captures_iter(input)
+                .map(|caps| {
+                    compiled
+                        .groups
+                        .iter()
+                        .map(|&(_, index)| caps.get(index).map(|m| (m.start(), m.end())))
+                        .collect()
+                })
+                .collect();
+            let split: Vec<Vec<Option<(usize, usize)>>> = compiled
+                .re
+                .find_iter(input)
+                .map(|found| {
+                    let span = found.as_str();
+                    let (re, groups) = branches
+                        .iter()
+                        .find(|(re, _)| re.is_match(span))
+                        .expect("a branch");
+                    let caps = re.captures(span);
+                    compiled
+                        .groups
+                        .iter()
+                        .map(|&(name, _)| {
+                            let index = groups.iter().find(|(own, _)| *own == name)?.1;
+                            let group = caps.as_ref()?.get(index)?;
+                            Some((found.start() + group.start(), found.start() + group.end()))
+                        })
+                        .collect()
+                })
+                .collect();
+            assert_eq!(whole, split, "{input:?}");
+        }
+        assert_eq!(inputs.len(), 32_768);
+    }
 
     #[test]
     fn strip_quotes_reads_the_group_the_regex_reads() {
