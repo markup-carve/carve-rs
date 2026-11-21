@@ -438,6 +438,14 @@ fn append_text<'a>(out: &mut Vec<Node<'a>>, arena: &'a Arena, value: &str) {
 
 /// C2-B-178: leading rows with a header cell and no other cell.
 fn head_rows(rows: &[Row]) -> usize {
+    if !has_marks(rows) {
+        return rows
+            .iter()
+            .take_while(|row| {
+                row.cells.iter().any(|c| c.header) && row.cells.iter().all(|c| c.header)
+            })
+            .count();
+    }
     let provisional = resolve_spans(rows, rows.len(), rows.len(), &[]);
     rows.iter()
         .zip(provisional.rows())
@@ -456,6 +464,11 @@ fn head_rows(rows: &[Row]) -> usize {
         .count()
 }
 
+fn has_marks(rows: &[Row]) -> bool {
+    rows.iter()
+        .any(|r| r.cells.iter().any(|c| c.span.is_some()))
+}
+
 fn resolve_spans(
     rows: &[Row],
     head: usize,
@@ -470,6 +483,9 @@ fn resolve_spans(
             ..Resolved::default()
         },
     );
+    if !has_marks(rows) {
+        return out;
+    }
     let mut grid: Grid<Option<Origin>> = Grid::new(rows, None);
     let mut starts = vec![false; rows.len()];
     for &row in body_starts {
