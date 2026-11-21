@@ -465,7 +465,8 @@ fn head_rows(rows: &[Row]) -> usize {
 }
 
 fn has_marks(rows: &[Row]) -> bool {
-    rows.iter().any(|r| r.cells.iter().any(|c| c.span.is_some()))
+    rows.iter()
+        .any(|r| r.cells.iter().any(|c| c.span.is_some()))
 }
 
 fn resolve_spans(

@@ -245,7 +245,8 @@ fn has_any_counts(node: V<'_>) -> bool {
         let mut found = false;
         node.each(&mut |_, value| {
             found = found
-                || (matches!(value, V::Node(_) | V::Nodes(_) | V::Json(_)) && has_any_counts(value));
+                || (matches!(value, V::Node(_) | V::Nodes(_) | V::Json(_))
+                    && has_any_counts(value));
         });
         return found;
     }

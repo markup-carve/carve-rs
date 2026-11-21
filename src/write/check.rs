@@ -198,34 +198,44 @@ fn field_differs(w: &Writer<'_>, e: V<'_>, name: &str, field: V<'_>, other: Opti
     !same_value(field, other)
 }
 
+/// [`differing_field`] of two typed nodes, their fields zipped; `None` for two node types.
+fn differing_node_field(
+    w: &Writer<'_>,
+    c: &Check<'_>,
+    e: V<'_>,
+    a: V<'_>,
+) -> Option<Option<&'static str>> {
+    let (V::Node(x), V::Node(y)) = (e, a) else {
+        return None;
+    };
+    // Two nodes of one type share their result fields.
+    let fields = result_fields(e);
+    let (mut first, mut extra) = (None, None);
+    let zipped = x.view_zip(y, &mut |name, field, other| match field {
+        Some(field) => {
+            if first.is_none()
+                && is_compared(c, e, fields, name)
+                && field_differs(w, e, name, field, other)
+            {
+                first = Some(name);
+            }
+        }
+        None => {
+            if extra.is_none() && is_compared(c, a, fields, name) {
+                extra = Some(name);
+            }
+        }
+    });
+    zipped.then(|| first.or(extra))
+}
+
 /// The name of the first field in which `e` and `a` differ.
 fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<String> {
     if !(e.is_object() && a.is_object()) {
         return None;
     }
-    if let (V::Node(x), V::Node(y)) = (e, a) {
-        // A zip pairs two nodes of one type, which share their result fields.
-        let ef = result_fields(e);
-        let af = ef;
-        let (mut first, mut extra) = (None, None);
-        let zipped = x.view_zip(y, &mut |name, field, other| match field {
-            Some(field) => {
-                if first.is_none()
-                    && is_compared(c, e, ef, name)
-                    && field_differs(w, e, name, field, other)
-                {
-                    first = Some(name);
-                }
-            }
-            None => {
-                if extra.is_none() && is_compared(c, a, af, name) {
-                    extra = Some(name);
-                }
-            }
-        });
-        if zipped {
-            return first.or(extra).map(str::to_string);
-        }
+    if let Some(name) = differing_node_field(w, c, e, a) {
+        return name.map(str::to_string);
     }
     let (ef, af) = (result_fields(e), result_fields(a));
     let mut first = None;

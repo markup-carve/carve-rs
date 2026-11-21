@@ -35,8 +35,11 @@ impl Hasher for TypeHasher {
         let rest = chunks.remainder();
         if !rest.is_empty() {
             let mut word = [0u8; 8];
-            word.get_mut(..rest.len()).unwrap_or(&mut []).copy_from_slice(rest);
-            self.0.write_usize(usize::from_le_bytes(word) ^ (rest.len() << 59));
+            word.get_mut(..rest.len())
+                .unwrap_or(&mut [])
+                .copy_from_slice(rest);
+            self.0
+                .write_usize(usize::from_le_bytes(word) ^ (rest.len() << 59));
         }
     }
 }
@@ -178,25 +181,25 @@ pub fn is_inline_parent<'t>(n: impl Into<V<'t>>) -> bool {
     matches!(
         ty(n),
         "paragraph"
-        | "heading"
-        | "definition_term"
-        | "cell_paragraph"
-        | "line"
-        | "citation_definition"
-        | "emphasis"
-        | "strong"
-        | "underline"
-        | "strike"
-        | "highlight"
-        | "superscript"
-        | "subscript"
-        | "insert"
-        | "delete"
-        | "span"
-        | "link"
-        | "inline_footnote"
-        | "inline_extension"
-        | "small_caps"
+            | "heading"
+            | "definition_term"
+            | "cell_paragraph"
+            | "line"
+            | "citation_definition"
+            | "emphasis"
+            | "strong"
+            | "underline"
+            | "strike"
+            | "highlight"
+            | "superscript"
+            | "subscript"
+            | "insert"
+            | "delete"
+            | "span"
+            | "link"
+            | "inline_footnote"
+            | "inline_extension"
+            | "small_caps"
     )
 }
 
@@ -504,6 +507,49 @@ fn equal_arrays(x: Arr<'_>, y: Arr<'_>, span_marks: bool) -> bool {
 }
 
 /// Two objects, where `lv` and `rv` replace the `value` field of a joined text node.
+/// The `value` of a joined text node stands in for its own (C2-A-161).
+fn equal_field(
+    k: &str,
+    p: V<'_>,
+    q: V<'_>,
+    joined: (Option<&str>, Option<&str>),
+    span_marks: bool,
+) -> bool {
+    let (lv, rv) = joined;
+    if k == "value" && (lv.is_some() || rv.is_some()) {
+        let x = lv.or_else(|| p.as_str());
+        return x.is_some() && x == rv.or_else(|| q.as_str());
+    }
+    equal_values(p, q, span_marks)
+}
+
+/// [`equal_objects`] of two typed nodes, their fields zipped; `None` for two node types.
+fn equal_nodes(
+    a: V<'_>,
+    b: V<'_>,
+    joined: (Option<&str>, Option<&str>),
+    inner: bool,
+) -> Option<bool> {
+    let (V::Node(x), V::Node(y)) = (a, b) else {
+        return None;
+    };
+    let fields = result_fields(a);
+    let mut same = true;
+    let zipped = x.view_zip(y, &mut |k, p, q| {
+        if !same {
+            return;
+        }
+        let p = p.filter(|_| !skipped_in(a, fields, k, inner));
+        let q = q.filter(|_| !skipped_in(b, fields, k, inner));
+        same = match (p, q) {
+            (None, None) => true,
+            (Some(p), Some(q)) => equal_field(k, p, q, joined, inner),
+            _ => false,
+        };
+    });
+    zipped.then_some(same)
+}
+
 fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_marks: bool) -> bool {
     if !(a.is_object() && b.is_object()) {
         return lv.is_none() && rv.is_none() && equal_values(a, b, span_marks);
@@ -513,31 +559,8 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
     } else {
         span_marks
     };
-    if let (V::Node(x), V::Node(y)) = (a, b) {
-        let fields = result_fields(a);
-        let mut same = true;
-        let zipped = x.view_zip(y, &mut |k, p, q| {
-            if !same {
-                return;
-            }
-            let p = p.filter(|_| !skipped_in(a, fields, k, inner));
-            let q = q.filter(|_| !skipped_in(b, fields, k, inner));
-            same = match (p, q) {
-                (None, None) => true,
-                (Some(p), Some(q)) => {
-                    if k == "value" && (lv.is_some() || rv.is_some()) {
-                        let x = lv.or_else(|| p.as_str());
-                        x.is_some() && x == rv.or_else(|| q.as_str())
-                    } else {
-                        equal_values(p, q, inner)
-                    }
-                }
-                _ => false,
-            };
-        });
-        if zipped {
-            return same;
-        }
+    if let Some(same) = equal_nodes(a, b, (lv, rv), inner) {
+        return same;
     }
     let l = Compared::of(a, inner);
     let fields = result_fields(b);
@@ -552,13 +575,7 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
             return;
         };
         at += 1;
-        same = kl == kr
-            && if kl == "value" && (lv.is_some() || rv.is_some()) {
-                let x = lv.or_else(|| p.as_str());
-                x.is_some() && x == rv.or_else(|| q.as_str())
-            } else {
-                equal_values(p, q, inner)
-            };
+        same = kl == kr && equal_field(kl, p, q, (lv, rv), inner);
     });
     same && at == l.len
 }

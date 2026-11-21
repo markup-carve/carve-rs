@@ -239,13 +239,13 @@ fn cell_prefix(w: &mut Writer<'_>, cell: V<'_>, bare: bool) -> String {
         ""
     };
     let block = brace_block(
-            cell,
-            &BlockParts {
-                mark,
-                pipes: true,
-                ..BlockParts::default()
-            },
-        );
+        cell,
+        &BlockParts {
+            mark,
+            pipes: true,
+            ..BlockParts::default()
+        },
+    );
     if head.is_empty() {
         block
     } else {
