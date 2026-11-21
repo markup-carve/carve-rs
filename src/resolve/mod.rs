@@ -130,8 +130,36 @@ pub(crate) fn resolve_files<'a>(
             apply(c, &results, 1);
         }
     }
+    // C2-I-098: resolution may refill a copy the inline pass omitted. Keep
+    // the resolved tree within one parse-wide budget in document order.
+    let mut abbreviation_remaining = crate::tables::DERIVED_TEXT_BYTES.max(
+        usize::try_from(doc.src_byte_length.unwrap_or(0))
+            .unwrap_or(0)
+            .saturating_mul(crate::tables::DERIVED_TEXT_FACTOR),
+    );
+    for node in doc.children.iter_mut() {
+        bound_abbreviation_expansions(node, &mut abbreviation_remaining, 1);
+    }
     doc.stages = Some(&STAGES);
     ordered
+}
+
+fn bound_abbreviation_expansions(node: &mut Node<'_>, remaining: &mut usize, depth: usize) {
+    if depth > WALK_CAP {
+        return;
+    }
+    if let Node::Abbreviation(abbr) = node
+        && let Some(expansion) = abbr.expansion
+    {
+        if expansion.len() <= *remaining {
+            *remaining -= expansion.len();
+        } else {
+            abbr.expansion = None;
+        }
+    }
+    node.for_each_child_mut(&mut |child| {
+        bound_abbreviation_expansions(child, remaining, depth + 1);
+    });
 }
 
 fn compute<'a>(

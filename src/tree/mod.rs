@@ -92,6 +92,12 @@ pub fn build_layered<'a>(
         spare: Vec::new(),
         scratch: std::cell::RefCell::default(),
         findings: std::cell::RefCell::default(),
+        abbreviation_remaining: std::cell::Cell::new(
+            crate::tables::DERIVED_TEXT_BYTES.max(
+                src.original_len()
+                    .saturating_mul(crate::tables::DERIVED_TEXT_FACTOR),
+            ),
+        ),
     };
     for ev in events {
         b.event(ev);
@@ -160,6 +166,8 @@ struct Builder<'s, 'a> {
     scratch: std::cell::RefCell<inline::Scratch<'a>>,
     /// Findings of the tree pass, as byte offsets of the source.
     findings: std::cell::RefCell<Vec<crate::block::Finding>>,
+    /// C2-I-098: one budget for copied expansions in document order.
+    abbreviation_remaining: std::cell::Cell<usize>,
 }
 
 impl<'a> Builder<'_, 'a> {
@@ -207,6 +215,7 @@ impl<'a> Builder<'_, 'a> {
             },
             kind,
             hard_breaks: self.hard > 0,
+            abbreviation_remaining: Some(&self.abbreviation_remaining),
         };
         #[cfg(feature = "profile")]
         crate::profile::inline(true);

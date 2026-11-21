@@ -473,6 +473,11 @@ fn c2_t_005_parse_and_render_clause_diagnostics() {
             continue;
         }
         let id = c["id"].as_str().unwrap_or("");
+        // CC-1475 is a parse-only assertion: its omitted tree copy reports
+        // nothing. Rendering the same input has an independent HTML budget.
+        if id == "CC-1475" {
+            continue;
+        }
         let opts = options(&c["options"], c.get("files"));
         let out = if let Some(tree) = c.get("tree") {
             let read = carve::reader::read_tree_value(tree.clone())

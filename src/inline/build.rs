@@ -491,9 +491,18 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
                 .get(idx)
                 .map_or(("", ""), |(k, e)| (k.as_str(), e.as_str()));
             let pos = self.pos(v0 + a, v0 + b);
+            let copy = self.env.abbreviation_remaining.is_none_or(|remaining| {
+                let left = remaining.get();
+                if expansion.len() > left {
+                    false
+                } else {
+                    remaining.set(left - expansion.len());
+                    true
+                }
+            });
             let node = Abbreviation {
                 key: self.a.str(key),
-                expansion: Some(self.a.str(expansion)),
+                expansion: copy.then(|| self.a.str(expansion)),
                 namespace: "abbr",
                 pos,
                 ..Default::default()
