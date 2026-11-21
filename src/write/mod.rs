@@ -449,9 +449,10 @@ fn repair_rounds<'t>(
         let mut round = Round {
             chunks: &chunks,
             last: None,
+            equal: false,
         };
         if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
-            if w.sp.losses.len() == reported {
+            if w.sp.losses.len() == reported && !round.equal {
                 report_unread(w, group, round.last);
             }
             prune_group_escapes(w, group, first && !w.blank_first, &round);
@@ -657,6 +658,8 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
 struct Round<'s> {
     chunks: &'s typed_arena::Arena<Chunk>,
     last: Option<V<'s>>,
+    /// The last read-back parse was already proved equal to the group.
+    equal: bool,
 }
 
 fn compare_group<'t, 's>(
@@ -673,7 +676,15 @@ fn compare_group<'t, 's>(
         source: Some(chunk.text().to_string()),
         ..Check::default()
     };
-    compare_blocks(w, &mut c, group, children(parsed), doc);
+    let actual = children(parsed);
+    round.equal = group.len() == actual.len()
+        && group
+            .iter()
+            .zip(actual)
+            .all(|(expected, read_back)| node::trees_equal(expected, read_back));
+    if !round.equal {
+        compare_blocks(w, &mut c, group, actual, doc);
+    }
     escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });
     c
 }
