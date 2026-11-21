@@ -752,10 +752,15 @@ impl Carve {
         // reads none. A host claimer sees the resolved tree, as in `parse`.
         let early_claims = self.matchers.engine_only();
         let early = early_claims && self.extensions.parsed_arena_transforms_only();
+        let mut early_shift_override = None;
         let (mut doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
             if early_claims {
                 claimed = self.claim_arena(doc, &arena, text);
                 crate::heading_shift::apply(doc.children, opts.heading_shift);
+                if opts.heading_shift != 0 && self.extensions.has_transforms() {
+                    early_shift_override =
+                        Some(crate::heading_shift::first_above_6(doc.children, &|_| None));
+                }
             }
             if early && claimed.is_ok() {
                 self.extensions.transform_parsed_arena(doc, &arena);
@@ -766,8 +771,12 @@ impl Carve {
             claimed = self.claim_arena(&mut doc, &arena, text);
             crate::heading_shift::apply(doc.children, opts.heading_shift);
         }
-        let shift_override = (opts.heading_shift != 0 && self.extensions.has_transforms())
-            .then(|| crate::heading_shift::first_above_6(doc.children, &|_| None));
+        let shift_override = if early_claims {
+            early_shift_override
+        } else {
+            (opts.heading_shift != 0 && self.extensions.has_transforms())
+                .then(|| crate::heading_shift::first_above_6(doc.children, &|_| None))
+        };
         let (mut diagnostics, suppressed) = record::cap_includes(&found);
         let changed = match claimed {
             Ok((entries, changed)) => {
