@@ -1071,10 +1071,10 @@ impl<'a> Eval<'_, 'a> {
     }
 
     /// The text of a value that is a string in the model: a text or a leaf id.
-    fn str_of(&self, value: &Val<'a>) -> Option<Cow<'a, str>> {
+    fn str_of<'v>(&self, value: &'v Val<'a>) -> Option<&'v str> {
         match value {
-            Val::Str(s) => Some(s.clone()),
-            Val::Id(id) => Some(Cow::Borrowed(self.records.id_text(*id))),
+            Val::Str(s) => Some(s),
+            Val::Id(id) => Some(self.records.id_text(*id)),
             _ => None,
         }
     }
@@ -1131,15 +1131,15 @@ impl<'a> Eval<'_, 'a> {
         let Some(haystack) = self.str_of(&value) else {
             return false;
         };
-        if !pattern.may_match(&haystack) {
+        if !pattern.may_match(haystack) {
             return false;
         }
         // `captures` allocates its slots, so it runs only once a match is known to exist.
-        let found = pattern.re.is_match(&haystack);
+        let found = pattern.re.is_match(haystack);
         if pattern.groups.is_empty() || !found {
             return found;
         }
-        let Some(found) = pattern.re.captures(&haystack) else {
+        let Some(found) = pattern.re.captures(haystack) else {
             return false;
         };
         self.spans.clear();
@@ -1175,16 +1175,22 @@ impl<'a> Eval<'_, 'a> {
 
     fn order(&mut self, op: Cmp, left: &Expr, right: &Expr) -> bool {
         let left = self.value(left);
-        let right = self.value(right);
+        let owned;
+        let right: &Val<'a> = if let Expr::Lit(literal) = right {
+            literal
+        } else {
+            owned = self.value(right);
+            &owned
+        };
         match op {
-            Cmp::Eq => return self.same(&left, &right),
-            Cmp::Ne => return !self.same(&left, &right),
+            Cmp::Eq => return self.same(&left, right),
+            Cmp::Ne => return !self.same(&left, right),
             _ => {}
         }
         if left.is_null() || right.is_null() {
             return false;
         }
-        let (left, right) = (self.number(&left), self.number(&right));
+        let (left, right) = (self.number(&left), self.number(right));
         match op {
             Cmp::Lt => left < right,
             Cmp::Le => left <= right,
@@ -1203,7 +1209,7 @@ impl<'a> Eval<'_, 'a> {
         }
         self.str_of(&haystack)
             .zip(self.str_of(&needle))
-            .is_some_and(|(s, n)| holds(&s, &n))
+            .is_some_and(|(s, n)| holds(s, n))
     }
 
     fn some(&mut self, list: &Path, from: usize, test: &Expr) -> bool {
@@ -1277,7 +1283,7 @@ impl<'a> Eval<'_, 'a> {
                 }),
             Expr::Len(arg) => {
                 let value = self.value(arg);
-                Val::num(self.str_of(&value).map_or(0, |s| s.len()))
+                Val::num(self.str_of(&value).map_or(0, str::len))
             }
             Expr::Add(args) => {
                 let mut sum = 0;
@@ -1350,7 +1356,7 @@ impl<'a> Eval<'_, 'a> {
                 let prefix = self.value(&args.1);
                 self.str_of(&haystack)
                     .zip(self.str_of(&prefix))
-                    .is_some_and(|(s, p)| s.starts_with(p.as_ref()))
+                    .is_some_and(|(s, p)| s.starts_with(p))
             }
             Expr::Matches {
                 subject,
@@ -1384,7 +1390,7 @@ impl<'a> Eval<'_, 'a> {
                 // A field reads no `let` and no match, so reading it early changes nothing.
                 let value = self.value(subject);
                 self.str_of(&value)
-                    .is_none_or(|haystack| !pattern.may_match(&haystack))
+                    .is_none_or(|haystack| !pattern.may_match(haystack))
             }
             _ => false,
         })

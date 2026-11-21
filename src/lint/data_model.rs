@@ -245,73 +245,76 @@ fn block_opener_text<'a>(source: &'a str, opener: usize, kind: &str, opener_rule
     trim_end(text_at(source, opener, end))
 }
 
-const INLINE_HOLDERS: [&str; 11] = [
-    "paragraph",
-    "caption",
-    "definition_term",
-    "heading",
-    "line",
-    "cell_paragraph",
-    "code_block",
-    "raw_block",
-    "frontmatter",
-    "comment",
-    "include",
-];
-const TEXT_LEAVES: [&str; 6] = [
-    "paragraph",
-    "caption",
-    "definition_term",
-    "heading",
-    "line",
-    "table_cell",
-];
-const LINE_LEAVES: [&str; 11] = [
-    "paragraph",
-    "caption",
-    "definition_term",
-    "heading",
-    "line",
-    "table_cell",
-    "table_row",
-    "code_block",
-    "raw_block",
-    "frontmatter",
-    "comment",
-];
-const INLINE_KINDS: [&str; 17] = [
-    "text",
-    "image",
-    "emphasis",
-    "strong",
-    "highlight",
-    "strike",
-    "link",
-    "raw_inline",
-    "code",
-    "span",
-    "subscript",
-    "superscript",
-    "autolink",
-    "reference",
-    "footnote_ref",
-    "citation",
-    "wikilink",
-];
-const OPENER_RULE_KINDS: [&str; 12] = [
-    "admonition",
-    "block_quote",
-    "code_block",
-    "definition_term",
-    "directive",
-    "div",
-    "figure_group",
-    "heading",
-    "line_block",
-    "raw_block",
-    "table",
-    "thematic_break",
-];
+/// Whether a holder of this type is a block quote, and whether it holds inline nodes.
+fn holder_flags(kind: &str) -> (bool, bool) {
+    match kind {
+        "block_quote" => (true, false),
+        "paragraph" | "caption" | "definition_term" | "heading" | "line" | "cell_paragraph"
+        | "code_block" | "raw_block" | "frontmatter" | "comment" | "include" => (false, true),
+        _ => (false, false),
+    }
+}
+fn text_leaf(kind: &str) -> bool {
+    matches!(
+        kind,
+        "paragraph" | "caption" | "definition_term" | "heading" | "line" | "table_cell"
+    )
+}
+fn line_leaf(kind: &str) -> bool {
+    matches!(
+        kind,
+        "paragraph"
+            | "caption"
+            | "definition_term"
+            | "heading"
+            | "line"
+            | "table_cell"
+            | "table_row"
+            | "code_block"
+            | "raw_block"
+            | "frontmatter"
+            | "comment"
+    )
+}
+fn inline_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "text"
+            | "image"
+            | "emphasis"
+            | "strong"
+            | "highlight"
+            | "strike"
+            | "link"
+            | "raw_inline"
+            | "code"
+            | "span"
+            | "subscript"
+            | "superscript"
+            | "autolink"
+            | "reference"
+            | "footnote_ref"
+            | "citation"
+            | "wikilink"
+    )
+}
+fn opener_rule_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "admonition"
+            | "block_quote"
+            | "code_block"
+            | "definition_term"
+            | "directive"
+            | "div"
+            | "figure_group"
+            | "heading"
+            | "line_block"
+            | "raw_block"
+            | "table"
+            | "thematic_break"
+    )
+}
 
 fn verbatim(kind: &str) -> bool {
     matches!(
@@ -422,21 +425,10 @@ impl<'a> Records<'a> {
     ) -> Self {
         let mut holder_quotes = Vec::with_capacity(holders.len());
         let mut holder_inline = Vec::with_capacity(holders.len());
-        // A type name is one `&'static str` per type, so its flags are looked up by address.
-        let mut flags: [Option<(&str, bool, bool)>; 64] = [None; 64];
         for holder in holders {
-            let (quote, inline) = holder.range.map_or((false, false), |at| {
-                let kind = ranges[at as usize].kind;
-                let slot = &mut flags[(kind.as_ptr() as usize >> 3) & 63];
-                if let Some((known, quote, inline)) = *slot {
-                    if std::ptr::eq(known, kind) {
-                        return (quote, inline);
-                    }
-                }
-                let found = (kind == "block_quote", INLINE_HOLDERS.contains(&kind));
-                *slot = Some((kind, found.0, found.1));
-                found
-            });
+            let (quote, inline) = holder
+                .range
+                .map_or((false, false), |at| holder_flags(ranges[at as usize].kind));
             let up = holder.up.map(|up| up as usize);
             holder_quotes.push(up.map_or(0, |up| holder_quotes[up]) + usize::from(quote));
             holder_inline.push(up.is_some_and(|up| holder_inline[up]) || inline);
@@ -579,7 +571,7 @@ impl<'a> Records<'a> {
             return false;
         };
         let range = &self.ranges[leaf as usize];
-        let can_be_lazy = TEXT_LEAVES.contains(&line.leaf_kind) && range.start_line != index + 1;
+        let can_be_lazy = text_leaf(line.leaf_kind) && range.start_line != index + 1;
         if !can_be_lazy {
             return false;
         }
@@ -847,13 +839,20 @@ impl<'a> Records<'a> {
 struct LeafIndex {
     leaves: Vec<Option<u32>>,
     attached: Vec<bool>,
+    /// Whether any block can be a colon fence.
+    has_colons: bool,
 }
 
 impl<'a> Records<'a> {
     fn leaf_index(&self, count: usize) -> LeafIndex {
         let mut leaves: Vec<Option<u32>> = vec![None; count];
         let mut attached = vec![false; count];
+        let mut has_colons = false;
         for (at, range) in self.ranges.iter().enumerate() {
+            has_colons |= matches!(
+                range.kind,
+                "div" | "directive" | "admonition" | "figure_group" | "line_block"
+            );
             if self.inline_held(range) {
                 continue;
             }
@@ -862,8 +861,7 @@ impl<'a> Records<'a> {
                     *slot = true;
                 }
             }
-            if !LINE_LEAVES.contains(&range.kind) || (range.kind == "comment" && !range.form_block)
-            {
+            if !line_leaf(range.kind) || (range.kind == "comment" && !range.form_block) {
                 continue;
             }
             let first = range.start_line.saturating_sub(1);
@@ -879,7 +877,11 @@ impl<'a> Records<'a> {
                 }
             }
         }
-        LeafIndex { leaves, attached }
+        LeafIndex {
+            leaves,
+            attached,
+            has_colons,
+        }
     }
 
     /// The containers that hold each line, for the owner of a colon fence.
@@ -1004,13 +1006,11 @@ impl<'a> Records<'a> {
             .filter(|line| line.start < source.len() || !source.ends_with('\n'))
             .collect();
         let count = model.len();
-        let LeafIndex { leaves, attached } = self.leaf_index(count);
-        let has_colons = self.ranges.iter().any(|range| {
-            matches!(
-                range.kind,
-                "div" | "directive" | "admonition" | "figure_group" | "line_block"
-            )
-        });
+        let LeafIndex {
+            leaves,
+            attached,
+            has_colons,
+        } = self.leaf_index(count);
         let boundaries = if has_colons {
             self.boundaries(count)
         } else {
@@ -1151,7 +1151,7 @@ impl<'a> Records<'a> {
         if self.inline_held(range) {
             let text = text_at(self.source, range.start, range.end);
             if !inline(kind, text)
-                || !((kind == "comment" && !range.form_block) || INLINE_KINDS.contains(&kind))
+                || !((kind == "comment" && !range.form_block) || inline_kind(kind))
             {
                 return Node::Skip;
             }
@@ -1162,7 +1162,7 @@ impl<'a> Records<'a> {
                 if let Some(kind) = node
                     .range
                     .map(|range| self.kind(range))
-                    .filter(|kind| TEXT_LEAVES.contains(kind))
+                    .filter(|kind| text_leaf(kind))
                 {
                     leaf = Some(kind);
                     break;
@@ -1227,7 +1227,7 @@ impl<'a> Records<'a> {
                 .min(self.lines.len().saturating_sub(1)),
             quotes,
             item_child: parent_kind == "list_item" || item_owner.is_some(),
-            opener_rule: OPENER_RULE_KINDS.contains(&kind),
+            opener_rule: opener_rule_kind(kind),
             opener_start: if range.has_attrs {
                 opener_start(self.source, range.start, quotes)
             } else {
