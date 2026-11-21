@@ -120,18 +120,18 @@ fn fenced_hosts() -> Vec<Carve> {
     ))
     .unwrap();
     all.register(extensions::code_callouts()).unwrap();
-    let mut built = Carve::new();
-    built
+    let mut statics = Carve::new();
+    statics
         .register(extensions::mermaid(extensions::PresetOptions {
             build: Some(build("mermaid")),
             wrap_in_figure: true,
             ..Default::default()
         }))
         .unwrap();
-    built
+    statics
         .register(extensions::chart(extensions::PresetOptions::default()))
         .unwrap();
-    built
+    statics
         .register(extensions::math_block(extensions::MathBlockOptions {
             build: Some(std::sync::Arc::new(|tex: &str, _| {
                 format!("<math>{tex}</math>")
@@ -139,13 +139,13 @@ fn fenced_hosts() -> Vec<Carve> {
             ..Default::default()
         }))
         .unwrap();
-    built
+    statics
         .register(extensions::code_group(extensions::CodeGroupOptions {
             mode: extensions::CodeGroupMode::Aria,
             ..Default::default()
         }))
         .unwrap();
-    vec![all, built]
+    vec![all, statics]
 }
 
 /// The typed claims of a source render give what the JSON claims of
