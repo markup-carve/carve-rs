@@ -96,12 +96,13 @@ fn row_active(code: &str, row: &Row, opts: &LintOptions) -> bool {
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let _mode = data_rules::enter();
+    let includes = opts.includes.is_some() && source.contains("{{");
     let parse = crate::Options {
-        includes: opts.includes.clone(),
+        includes: opts.includes.clone().filter(|_| includes),
         heading_ids: opts.heading_ids,
         ..crate::Options::default()
     };
-    let same = opts.includes.is_none() && opts.heading_ids == crate::options::HeadingIds::default();
+    let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();
     let (mut out, diagnostics) = crate::with_lint_tree(
         source,
         &crate::Options::default(),
@@ -112,7 +113,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     out.extend(diagnostics.into_iter().filter(|diagnostic| {
         !data_rules::data_mode() || !data_rules::modeled_ids().contains(diagnostic.code)
     }));
-    if opts.includes.is_some() {
+    if includes {
         includes::scan(source, opts, &mut out);
     }
     out.retain(|finding| {
@@ -160,7 +161,13 @@ fn blank_within(source: &str, line_start: usize, start: usize, line_end: usize) 
 /// after legacy, line and node scanners have contributed their findings.
 fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     for finding in findings {
-        if data_rules::data_mode() && data_rules::modeled_ids().contains(finding.code) {
+        if !matches!(
+            finding.code,
+            "list-marker-without-blank-line"
+                | "unattached-block-attribute"
+                | "region-marker-renders-as-text"
+        ) || (data_rules::data_mode() && data_rules::modeled_ids().contains(finding.code))
+        {
             continue;
         }
         let Some(pos) = finding.pos else { continue };
@@ -1242,8 +1249,21 @@ fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Diagnostic, drop_replaced};
+    use super::{Diagnostic, LintOptions, drop_replaced};
     use crate::ast::Pos;
+    use crate::include::{Cause, Includes};
+    use std::sync::Arc;
+
+    #[test]
+    fn configured_resolver_without_include_opener_parses_once() {
+        let options = LintOptions {
+            includes: Some(Includes::new(Arc::new(|_| Err(Cause::NotFound)))),
+            ..LintOptions::default()
+        };
+        crate::PREPARE_COUNT.with(|count| count.set(0));
+        let _ = super::lint("| a | b |\n", &options);
+        crate::PREPARE_COUNT.with(|count| assert_eq!(count.get(), 1));
+    }
 
     fn finding(code: &'static str, start: u32, end: u32) -> Diagnostic {
         let pos = Pos {

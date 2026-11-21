@@ -85,17 +85,17 @@ struct Rules<'a> {
 /// Whether the 0.1 walk reaches a value: as a node under its parent's key, or as an array whose
 /// items it reaches.
 #[derive(Clone, Copy)]
-enum Old<'a> {
+enum Old {
     No,
-    Node(Option<usize>, &'a str),
-    Items(usize, &'a str),
+    Node(Option<usize>, legacy::Slot),
+    Items(usize, legacy::Slot),
 }
 
 struct Entry<'a> {
     value: V<'a>,
     path: Option<&'a PathNode<'a>>,
     rules: Option<Rules<'a>>,
-    old: Old<'a>,
+    old: Old,
     place: Place,
 }
 
@@ -157,7 +157,11 @@ impl<'a> Walk<'a> {
                     parents: None,
                     ancestor: None,
                 }),
-                old: if full { Old::Node(None, "") } else { Old::No },
+                old: if full {
+                    Old::Node(None, legacy::Slot::Other)
+                } else {
+                    Old::No
+                },
                 place: Place::default(),
             }],
             lists: Vec::new(),
@@ -212,7 +216,7 @@ impl<'a> Visit<'a> {
         parent: Option<&'a PathNode<'a>>,
         segment: Segment<'a>,
         rules: Option<Rules<'a>>,
-        old: Old<'a>,
+        old: Old,
         place: Place,
     ) {
         if !value.may_hold_nodes() || (!self.full && rules.is_none()) {
@@ -237,10 +241,9 @@ impl<'a> Visit<'a> {
         };
         let parents = entry.rules.map(|rules| self.item(entry, kind, rules));
         let old = match (entry.old, kind) {
-            (Old::Node(parent, slot), Some(kind)) => {
+            (Old::Node(parent, slot), Some(_)) => {
                 self.old.push(legacy::Node {
                     value,
-                    kind,
                     parent,
                     slot,
                 });
@@ -400,13 +403,13 @@ fn pos_number(pos: &crate::ast::Pos, key: &str) -> usize {
     .unwrap_or(0)
 }
 
-fn old_child<'a>(at: usize, key: &'a str, child: V<'a>) -> Old<'a> {
+fn old_child<'a>(at: usize, key: &'a str, child: V<'a>) -> Old {
     if matches!(key, "data" | "props" | "pos" | "attrs") {
         Old::No
     } else if child.is_array() {
-        Old::Items(at, key)
+        Old::Items(at, legacy::Slot::of(key))
     } else if child.is_object() {
-        Old::Node(Some(at), key)
+        Old::Node(Some(at), legacy::Slot::of(key))
     } else {
         Old::No
     }

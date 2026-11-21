@@ -277,19 +277,8 @@ pub(crate) fn resolve_tree_unflattened<'a>(
 }
 
 /// [`render_tree_with_diagnostics`] with a host's extension renderers
-/// (C2-X-052). Losses are not refused here; the caller applies `strictLosses`.
-pub(crate) fn render_tree_hooked(
-    tree: &ast::owned::Document,
-    opts: &Options,
-    hook: &dyn html::ExtensionHook,
-) -> Rendered {
-    let arena = Arena::new();
-    let mut doc = tree.in_arena(&arena);
-    let files = resolve_tree(&mut doc, opts, &arena);
-    render_arena_hooked(&doc, opts, files.as_ref(), hook)
-}
-
-/// [`render_tree_hooked`] of a tree in an arena that [`resolve_tree`] resolved.
+/// (C2-X-052), of a tree in an arena that [`resolve_tree`] resolved. Losses
+/// are not refused here; the caller applies `strictLosses`.
 pub(crate) fn render_arena_hooked<'a>(
     doc: &ast::Document<'a>,
     opts: &Options,
@@ -607,6 +596,11 @@ fn prepare<'a>(
     prepare_with(input, opts, arena, diags, &mut |_| {})
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static PREPARE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// [`prepare`] that hands the parsed tree to `before_resolve` before it is
 /// resolved, so a host's claims share the one resolution (carve-rs#4366).
 pub(crate) fn prepare_with<'a>(
@@ -616,6 +610,8 @@ pub(crate) fn prepare_with<'a>(
     diags: &mut Vec<diagnostic::Diagnostic>,
     before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
 ) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    #[cfg(test)]
+    PREPARE_COUNT.with(|count| count.set(count.get() + 1));
     check_source_length(input.len())?;
     let src = source::Source::new(input);
     let out = block::scan(&src);

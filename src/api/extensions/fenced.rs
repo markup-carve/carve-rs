@@ -1,8 +1,8 @@
 //! `fencedRender` and its diagram presets (carve-js#5068).
 
 use super::{
-    Bundle, Claim, Form, Matcher, authored, bare_fallback, classes, declaration, fence_source,
-    key_values, payload_text, with_attrs,
+    Bundle, Claim, Form, Made, Matcher, Parts, authored, bare_fallback, classes, declaration,
+    fence_source, key_values, moved_fallback, payload_text, typed, typed_payload, with_attrs,
 };
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
@@ -119,6 +119,40 @@ impl Look {
         cx.attributes(&with_attrs(node, cls, kv))
     }
 
+    /// [`Look::attributes`] of a typed node.
+    fn typed_attributes(
+        &self,
+        node: &crate::ast::BlockExtension<'_>,
+        cx: &RenderContext<'_>,
+    ) -> String {
+        let parts = Parts::of(node.attrs);
+        let authored_name = parts.authored("aria-label") || parts.authored("aria-labelledby");
+        let write_name = !self.label.is_empty() && !authored_name;
+        let write_role = !parts.authored("role") && (authored_name || !self.label.is_empty());
+        let mut parts = parts.with_classes(&[self.css_class.as_str()]);
+        if write_role {
+            parts.key_values.push(("role", "img"));
+        }
+        if write_name {
+            parts.key_values.push(("aria-label", self.label.as_str()));
+        }
+        cx.write_parts(&parts, node.pos.as_ref())
+    }
+
+    fn interactive(&self, payload: &str, attributes: &str, cx: &RenderContext<'_>) -> String {
+        let source = fence_source(payload);
+        let body = match self.mode {
+            ContentMode::Json => format!(
+                r#"<script type="application/json">{}</script>"#,
+                guard_script(source)
+            ),
+            // `>` stays so arrow syntax reaches the client library as written.
+            ContentMode::Text => source.replace('&', "&amp;").replace('<', "&lt;"),
+        };
+        let tag = self.tag.name();
+        self.figure(format!("<{tag}{attributes}>{body}</{tag}>"), cx)
+    }
+
     fn figure(&self, html: String, cx: &RenderContext<'_>) -> String {
         match &self.figure {
             Some(class) => format!(
@@ -141,20 +175,21 @@ struct Interactive(Arc<Look>);
 impl Renderer for Interactive {
     fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
         let look = &self.0;
-        let source = fence_source(payload_text(node));
-        let body = match look.mode {
-            ContentMode::Json => format!(
-                r#"<script type="application/json">{}</script>"#,
-                guard_script(source)
-            ),
-            // `>` stays so arrow syntax reaches the client library as written.
-            ContentMode::Text => source.replace('&', "&amp;").replace('<', "&lt;"),
-        };
-        let tag = look.tag.name();
-        Ok(look.figure(
-            format!("<{tag}{}>{body}</{tag}>", look.attributes(node, cx)),
+        Ok(look.interactive(payload_text(node), &look.attributes(node, cx), cx))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        let look = &self.0;
+        Some(Ok(look.interactive(
+            typed_payload(node),
+            &look.typed_attributes(node, cx),
             cx,
-        ))
+        )))
     }
 }
 
@@ -168,6 +203,20 @@ impl Renderer for BuildTime {
             format!("<div{}>{built}</div>", look.attributes(node, cx)),
             cx,
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        let look = &self.0;
+        let built = (self.1)(fence_source(typed_payload(node)));
+        Some(Ok(look.figure(
+            format!("<div{}>{built}</div>", look.typed_attributes(node, cx)),
+            cx,
+        )))
     }
 }
 
@@ -189,6 +238,23 @@ fn claim_fence(claim: &Claim<'_>) -> Option<Value> {
         "payload": [{"format": "text/plain", "value": value}],
         "fallback": [bare_fallback(claim.node)],
     }))
+}
+
+fn claim_fence_typed<'a>(
+    name: &str,
+    node: &mut crate::ast::Node<'a>,
+    arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    let crate::ast::Node::CodeBlock(code) = node else {
+        return None;
+    };
+    let value = code.value;
+    Some(Made {
+        props: Some(json!({"language": name})),
+        payload: Some(json!([{"format": "text/plain", "value": value}])),
+        slots: None,
+        fallback: moved_fallback(node, arena),
+    })
 }
 
 /// A bundle that claims the fences of `options.language` and renders each
@@ -246,7 +312,10 @@ pub fn fenced_render(options: FencedRenderOptions) -> Result<Bundle, Error> {
             extension: name,
             form: Form::Fence,
             name: word.clone(),
-            claimer: Box::new(super::Engine(claim_fence)),
+            claimer: Box::new(super::TypedEngine(
+                claim_fence,
+                super::Typed(claim_fence_typed),
+            )),
         });
     }
     Ok(bundle)

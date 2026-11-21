@@ -15,10 +15,38 @@ pub(super) struct Warning {
 
 pub(super) struct Node<'a> {
     pub(super) value: V<'a>,
-    pub(super) kind: &'a str,
     pub(super) parent: Option<usize>,
-    /// The key this node sits under in its parent (`children`, `caption`, ...).
-    pub(super) slot: &'a str,
+    /// Only these two parent slots affect a legacy rule.
+    pub(super) slot: Slot,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Slot {
+    Children,
+    Caption,
+    Other,
+}
+
+impl Slot {
+    pub(super) fn of(key: &str) -> Self {
+        match key {
+            "children" => Self::Children,
+            "caption" => Self::Caption,
+            _ => Self::Other,
+        }
+    }
+}
+
+impl Node<'_> {
+    fn kind(&self) -> &str {
+        self.value.ty().as_str().unwrap_or("")
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn legacy_walk_record_is_compact() {
+    assert!(std::mem::size_of::<Node<'static>>() <= 48);
 }
 
 fn bounds(node: V<'_>) -> Option<(usize, usize)> {
@@ -42,7 +70,7 @@ pub(super) fn warnings(source: &str, all: &[Node<'_>], order: &[u32]) -> Vec<War
         .filter_map(|at| all.get(*at as usize).map(|node| (*at as usize, node)))
     {
         let value = node.value;
-        match node.kind {
+        match node.kind() {
             "comment" if value.at("form") == "braced" => {
                 braced_comments.extend(bounds(value).map(|(start, _)| start));
             }
@@ -65,8 +93,8 @@ pub(super) fn warnings(source: &str, all: &[Node<'_>], order: &[u32]) -> Vec<War
 fn visit(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
     let Some(node) = all.get(at) else { return };
     let value = node.value;
-    let in_footnote = || ancestors(all, at).any(|n| n.kind == "footnote");
-    match node.kind {
+    let in_footnote = || ancestors(all, at).any(|n| n.kind() == "footnote");
+    match node.kind() {
         "div" => figure_nested(source, all, at, out),
         "figure_group" => figure_group(source, value, out),
         "caption_number" => panel_number(source, all, at, out),
@@ -119,7 +147,7 @@ fn figure_nested(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warnin
         && bounds(node.value).is_some_and(|(start, _)| bare_figure_opener(source, start))
         && node.value.get("title").is_none()
         && node.value.get("label").is_none()
-        && ancestors(all, at).any(|n| n.kind == "figure_group")
+        && ancestors(all, at).any(|n| n.kind() == "figure_group")
         && let Some(span) = bounds(node.value)
     {
         push(out, "figure-group-nested", span);
@@ -153,14 +181,14 @@ fn panel_number(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning
         return;
     };
     let Some(node) = all.get(at) else { return };
-    if node.slot == "children"
-        && paragraph.kind == "paragraph"
-        && paragraph.slot == "children"
-        && caption.kind == "caption"
-        && caption.slot == "caption"
-        && group.kind == "figure_group"
-        && panel.slot == "children"
-        && (panel.value.get("caption").is_some() || panel.kind == "table")
+    if node.slot == Slot::Children
+        && paragraph.kind() == "paragraph"
+        && paragraph.slot == Slot::Children
+        && caption.kind() == "caption"
+        && caption.slot == Slot::Caption
+        && group.kind() == "figure_group"
+        && panel.slot == Slot::Children
+        && (panel.value.get("caption").is_some() || panel.kind() == "table")
         && let Some(span) = bounds(node.value)
         && bounds(caption.value)
             .and_then(|(from, _)| source.get(from..span.0))
@@ -487,7 +515,7 @@ fn visible_ranges(all: &[Node<'_>], at: usize) -> Vec<(usize, usize)> {
     (at + 1..all.len())
         .take_while(|&i| inside(i))
         .filter_map(|i| all.get(i))
-        .filter(|node| matches!(node.kind, "text" | "smart_punctuation"))
+        .filter(|node| matches!(node.kind(), "text" | "smart_punctuation"))
         .filter_map(|node| bounds(node.value))
         .collect()
 }
@@ -617,8 +645,8 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
     let opaque: Vec<(usize, usize, bool)> = all
         .iter()
         .filter(|node| {
-            matches!(node.kind, "code_block" | "raw_block" | "frontmatter")
-                || (node.kind == "comment" && node.value.at("form") != "braced")
+            matches!(node.kind(), "code_block" | "raw_block" | "frontmatter")
+                || (node.kind() == "comment" && node.value.at("form") != "braced")
         })
         .filter_map(|node| bounds(node.value).map(|(a, b)| (a, b, node.value.at("form") == "line")))
         .collect();
@@ -732,7 +760,7 @@ fn marker_between_lists(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec
     let (Some(list), Some(outer)) = (chain.next(), chain.next()) else {
         return;
     };
-    if list.kind != "list" || outer.kind != "list_item" {
+    if list.kind() != "list" || outer.kind() != "list_item" {
         return;
     }
     let (Some((start, _)), Some((first, _)), Some((outer_at, _))) = (

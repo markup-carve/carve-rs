@@ -29,7 +29,7 @@ use crate::view::{Arr, V};
 use check::{Check, Chunk, compare_blocks, escape_openers, exhausted, extend_chains};
 use node::{N, children, id, span, text, ty};
 use serde_json::Value;
-use state::{Writer, lose};
+use state::{GroupCertificate, Writer, lose};
 use std::collections::HashSet;
 
 /// How one write runs.
@@ -105,6 +105,96 @@ pub(crate) fn format_plain(body: &str) -> Option<String> {
 
 pub(crate) fn parse_plain(body: &str) -> Option<Value> {
     crate::api::writer::tree_value(&crate::tree_json(body, &crate::Options::default())).ok()
+}
+
+#[cfg(test)]
+thread_local! {
+    static REPAIR_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PAIR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod plain_table_certificate_test {
+    use super::*;
+
+    fn format_typed(src: &str) -> String {
+        let arena = crate::Arena::for_input(src);
+        let doc =
+            crate::parse_resolved_in(src, &crate::Options::default(), &arena).unwrap_or_default();
+        let pool = Pool::new();
+        let (out, losses) = format_view(V::Doc(&doc), &pool, Some(src), &Settings::default());
+        assert_eq!(losses.len(), 0);
+        out
+    }
+
+    #[test]
+    fn ordinary_rows_need_no_repair_parse() {
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let pairs_before = PAIR_SCANS.with(std::cell::Cell::get);
+        let output = format_typed("|alpha|beta|\n|7|x|\n");
+        assert_eq!(output, "| alpha | beta |\n| 7 | x |\n");
+        assert_eq!(REPAIR_PARSES.with(std::cell::Cell::get) - before, 0);
+        assert_eq!(PAIR_SCANS.with(std::cell::Cell::get) - pairs_before, 0);
+    }
+
+    #[test]
+    fn marked_cells_keep_the_repair_parse() {
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let output = format_typed("|*alpha*|beta|\n");
+        assert_eq!(output, "| *alpha* | beta |\n");
+        assert!(REPAIR_PARSES.with(std::cell::Cell::get) > before);
+    }
+
+    #[test]
+    fn explicit_empty_text_keeps_the_repair_parse() {
+        use crate::ast::{
+            CellParagraph, Document, Node, Table, TableBody, TableCell, TableColumn, TableRow, Text,
+        };
+
+        let arena = crate::Arena::new();
+        let text = Node::Text(arena.alloc(Text::default()));
+        let paragraph = Node::CellParagraph(arena.alloc(CellParagraph {
+            children: arena.one(text),
+            ..CellParagraph::default()
+        }));
+        let cell = Node::TableCell(arena.alloc(TableCell {
+            children: arena.one(paragraph),
+            ..TableCell::default()
+        }));
+        let row = Node::TableRow(arena.alloc(TableRow {
+            children: arena.one(cell),
+            ..TableRow::default()
+        }));
+        let body = Node::TableBody(arena.alloc(TableBody {
+            children: arena.one(row),
+            ..TableBody::default()
+        }));
+        let table = Node::Table(arena.alloc(Table {
+            children: arena.one(body),
+            columns: arena.one(Node::TableColumn(arena.alloc(TableColumn::default()))),
+            ..Table::default()
+        }));
+        let doc = Document {
+            ast_version: "2.0",
+            children: arena.one(table),
+            ..Document::default()
+        };
+        let pool = Pool::new();
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let _ = format_view(V::Doc(&doc), &pool, None, &Settings::default());
+        assert!(REPAIR_PARSES.with(std::cell::Cell::get) > before);
+    }
+
+    #[test]
+    fn zero_cell_row_keeps_its_closing_pipe() {
+        let mut doc = parse_plain("||\n").unwrap_or_default();
+        if let Some(row_children) = doc.pointer_mut("/children/0/children/0/children/0/children") {
+            *row_children = serde_json::json!([]);
+        }
+        let (out, losses) = write_value(&doc, &Settings::default());
+        assert_eq!(out, "||\n");
+        assert!(losses.iter().any(|e| e.code == "structure-unspellable"));
+    }
 }
 
 /// Writes the tree `doc` (its JSON value, read and checked).
@@ -281,6 +371,11 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
         at = repair_group(w, doc, from, out.is_empty());
         // C2-W-146: test the written text with the five pair rules and reparse each escape round.
         for _ in 0..16 {
+            if w.group_certificate == GroupCertificate::PlainRows {
+                break;
+            }
+            #[cfg(test)]
+            PAIR_SCANS.with(|count| count.set(count.get() + 1));
             let asked = pairs::asked(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
             if asked.is_empty() {
                 break;
@@ -397,6 +492,7 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 }
 
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
+    w.group_certificate = GroupCertificate::None;
     let reported = w.sp.losses.len();
     let end = repair_rounds(w, doc, from, first, reported);
     w.work_limit = usize::MAX;
@@ -441,6 +537,10 @@ fn repair_rounds<'t>(
         if w.lines.is_empty() {
             return end;
         }
+        if table::certifies_plain_rows(w, group) {
+            w.group_certificate = GroupCertificate::PlainRows;
+            return end;
+        }
         if repeated_repair(w, group, &mut history) {
             return end;
         }
@@ -449,9 +549,10 @@ fn repair_rounds<'t>(
         let mut round = Round {
             chunks: &chunks,
             last: None,
+            equal: false,
         };
         if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
-            if w.sp.losses.len() == reported {
+            if w.sp.losses.len() == reported && !round.equal {
                 report_unread(w, group, round.last);
             }
             prune_group_escapes(w, group, first && !w.blank_first, &round);
@@ -657,6 +758,8 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
 struct Round<'s> {
     chunks: &'s typed_arena::Arena<Chunk>,
     last: Option<V<'s>>,
+    /// The last read-back parse was already proved equal to the group.
+    equal: bool,
 }
 
 fn compare_group<'t, 's>(
@@ -666,6 +769,8 @@ fn compare_group<'t, 's>(
     first: bool,
     round: &mut Round<'s>,
 ) -> Check<'t> {
+    #[cfg(test)]
+    REPAIR_PARSES.with(|count| count.set(count.get() + 1));
     let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
     let parsed = chunk.parse(w);
     round.last = Some(parsed);
@@ -673,7 +778,15 @@ fn compare_group<'t, 's>(
         source: Some(chunk.text().to_string()),
         ..Check::default()
     };
-    compare_blocks(w, &mut c, group, children(parsed), doc);
+    let actual = children(parsed);
+    round.equal = group.len() == actual.len()
+        && group
+            .iter()
+            .zip(actual)
+            .all(|(expected, read_back)| node::trees_equal(expected, read_back));
+    if !round.equal {
+        compare_blocks(w, &mut c, group, actual, doc);
+    }
     escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });
     c
 }

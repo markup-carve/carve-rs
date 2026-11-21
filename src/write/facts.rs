@@ -402,9 +402,15 @@ fn table_source_line(line: &str, column: usize, first: bool) -> &str {
 }
 
 fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
-    let Some((start, end)) = span(table) else {
+    let Some((start, table_end)) = span(table) else {
         return;
     };
+    // A table's source span includes its caption. Caption text cannot supply
+    // row or continuation spelling facts, even when it contains `+` or `|`.
+    let end = table
+        .get("caption")
+        .and_then(span)
+        .map_or(table_end, |(caption_start, _)| caption_start.min(table_end));
     let line_start = src
         .get(..start)
         .and_then(|p| p.rfind('\n'))
