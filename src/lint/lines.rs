@@ -193,8 +193,13 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
         let number = index + 1;
         let paragraph = fact.paragraph;
         let mut bytes = raw.as_bytes().to_vec();
+        // C2-B-027: the quote marks that prefix a later line of a span are no span characters.
+        let prefix = super::data_model::quoted_start_pub(raw, fact.quotes);
         for range in fact.masks {
-            let from = range.start.saturating_sub(start).min(bytes.len());
+            let mut from = range.start.saturating_sub(start).min(bytes.len());
+            if range.start < start {
+                from = from.max(prefix.min(bytes.len()));
+            }
             let to = range.end.saturating_sub(start).min(bytes.len());
             bytes
                 .get_mut(from..to)
