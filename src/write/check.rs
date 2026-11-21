@@ -2117,6 +2117,7 @@ fn read_starts(
     offset: i64,
     paragraphs: &mut AddrSet<usize>,
     lines: &mut AddrSet<i64>,
+    first_div_line: &mut Option<i64>,
 ) {
     for block in children(node) {
         if let (Some(line), Some(col)) = (
@@ -2124,6 +2125,10 @@ fn read_starts(
             super::node::pos_field(block, "startColumn"),
         ) {
             lines.insert(line - offset);
+            if ty(block) == "div" {
+                *first_div_line =
+                    Some(first_div_line.map_or(line - offset, |first| first.min(line - offset)));
+            }
             if ty(block) == "paragraph" {
                 if let (Ok(l), Ok(cc)) = (usize::try_from(line - offset), usize::try_from(col - 1))
                 {
@@ -2132,10 +2137,10 @@ fn read_starts(
             }
         }
         if !is_inline_parent(block) {
-            read_starts(block, offset, paragraphs, lines);
+            read_starts(block, offset, paragraphs, lines, first_div_line);
         }
         if let Some(cap) = caption(block) {
-            read_starts(cap, offset, paragraphs, lines);
+            read_starts(cap, offset, paragraphs, lines, first_div_line);
         }
     }
 }
@@ -2197,17 +2202,32 @@ fn visit_lines<'t>(
     nodes: &[N<'t>],
     line: &mut i64,
     lines: &AddrSet<i64>,
+    first_div_line: Option<i64>,
     owner: N<'t>,
 ) {
     for (at, &node) in nodes.iter().enumerate() {
         if has(node, "children") {
-            visit_lines(w, c, &refs(children(node)), line, lines, owner);
+            visit_lines(
+                w,
+                c,
+                &refs(children(node)),
+                line,
+                lines,
+                first_div_line,
+                owner,
+            );
         }
         if !is_break(Some(node)) {
             continue;
         }
         *line += 1;
-        if lines.contains(line) && has_opener_shape(nodes, at + 1) && !is_pending(c, nodes, at + 1)
+        let later_div_fence = first_div_line.is_some_and(|first| *line >= first)
+            && nodes
+                .get(at + 1)
+                .is_some_and(|n| ty(*n) == "text" && text(*n).starts_with(":::"));
+        if (lines.contains(line) || later_div_fence)
+            && has_opener_shape(nodes, at + 1)
+            && !is_pending(c, nodes, at + 1)
         {
             escape_line_start(w, c, nodes, at + 1, owner);
         }
@@ -2221,13 +2241,14 @@ fn escape_opener_lines<'t>(
     place: usize,
     paragraphs: &AddrSet<usize>,
     lines: &AddrSet<i64>,
+    first_div_line: Option<i64>,
 ) {
     let top = refs(children(e));
     if !paragraphs.contains(&place) && has_opener_shape(&top, 0) && !is_pending(c, &top, 0) {
         escape_line_start(w, c, &top, 0, e);
     }
     let mut line = i64::try_from(place / PLACE_COLUMNS).unwrap_or(0);
-    visit_lines(w, c, &top, &mut line, lines, e);
+    visit_lines(w, c, &top, &mut line, lines, first_div_line, e);
 }
 
 /// After a block read back as another block, finds the other lines of the group that opened a block (C2-W-092).
@@ -2237,10 +2258,17 @@ pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: V<'_>, offs
     }
     let mut paragraphs = AddrSet::default();
     let mut lines = AddrSet::default();
-    read_starts(parsed, offset, &mut paragraphs, &mut lines);
+    let mut first_div_line = None;
+    read_starts(
+        parsed,
+        offset,
+        &mut paragraphs,
+        &mut lines,
+        &mut first_div_line,
+    );
     for &(node, place) in &w.starts.clone() {
         if !has(node, "attrs") && !has(node, "lang") {
-            escape_opener_lines(w, c, node, place, &paragraphs, &lines);
+            escape_opener_lines(w, c, node, place, &paragraphs, &lines, first_div_line);
         }
     }
 }
