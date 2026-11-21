@@ -1266,8 +1266,7 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
         && at.1 + 1 < source.line_count()
     {
         let (from, to) = source.line_range(at.1 + 1);
-        let next = source.line(at.1 + 1);
-        let Some(mark) = next.find("[^").or_else(|| next.find('{')) else {
+        let Some(mark) = source.line(at.1 + 1).find(['[', '{']) else {
             break;
         };
         at = ((from + mark).min(to), at.1 + 1);

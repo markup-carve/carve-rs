@@ -27,6 +27,13 @@ fn attributes_leave_the_content_column_at_the_marker() {
         found("{#id}\n[^f]: x\n\n         ::: d\n", overindented),
         [(24, 27)]
     );
+    assert_eq!(
+        found(
+            "{#id}\n{.a k='[^x]'}\n[^f]: x\n       ::: d\n",
+            overindented
+        ),
+        [(35, 38)]
+    );
 
     let below = "list-item-body-below-content-column";
     assert_eq!(found("1. {.c}\n   c\n   %%%\n", below), []);
