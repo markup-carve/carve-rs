@@ -266,6 +266,13 @@ fn c2_h_208_a_document_transform_keeps_the_shift_fact_and_final_carrier() {
             .map(|d| d["code"].as_str().unwrap())
             .collect();
         assert_eq!(actual, codes, "{out}");
+        if !codes.is_empty() {
+            assert_eq!(
+                out["ok"]["diagnostics"][0]["message"],
+                "The heading shift of 1 raises a heading above level 6.",
+                "{out}"
+            );
+        }
     }
 }
 

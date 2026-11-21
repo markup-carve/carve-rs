@@ -93,3 +93,8 @@ fn find_owned(node: &owned::Node) -> Found {
     });
     found
 }
+
+/// The catalog wording of C2-H-208, independent of a later transform's final HTML.
+pub(crate) fn message(shift: u8) -> String {
+    format!("The heading shift of {shift} raises a heading above level 6.")
+}

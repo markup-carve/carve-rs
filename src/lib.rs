@@ -527,6 +527,9 @@ fn tree_loss_diagnostics(
                 .flatten()
                 .and_then(|(pos, _)| pos);
             let mut finding = diagnostic::Diagnostic::new(code, &values, None, pos);
+            if code == heading_shift::ABOVE_6 {
+                finding.message = heading_shift::message(opts.heading_shift);
+            }
             finding.path = match code {
                 "extension-fallback-rendered" => {
                     name.and_then(|(target, _)| node_path(doc.children, *target))
@@ -1125,6 +1128,9 @@ fn loss_diagnostics(
                 .collect();
             let mut diagnostic =
                 diagnostic::Diagnostic::nth(c, variant, &values, file.as_deref(), pos);
+            if *c == heading_shift::ABOVE_6 {
+                diagnostic.message = heading_shift::message(opts.heading_shift);
+            }
             if opts.strict_losses {
                 diagnostic.severity = "error";
             }
