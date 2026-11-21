@@ -307,88 +307,10 @@ impl Matchers {
         opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
     ) -> Result<Vec<Entry>, Error> {
-        use crate::ast::owned::Node;
-        fn slot(value: &mut Value, pass: &mut Pass<'_>, depth: usize) {
-            if depth > crate::resolve::WALK_CAP {
-                return;
-            }
-            match value {
-                Value::Array(items) => {
-                    for item in items {
-                        slot(item, pass, depth + 1);
-                    }
-                }
-                Value::Object(map) => {
-                    if let Some(next) = pass.claim(map) {
-                        *map = next;
-                    }
-                    let extension = is_extension(map);
-                    for (key, child) in map.iter_mut() {
-                        if descends(key, extension) {
-                            slot(child, pass, depth + 1);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        fn claim_candidate(node: &mut Node, pass: &mut Pass<'_>) -> Result<(), Error> {
-            if !matches!(
-                node,
-                Node::CodeBlock(_) | Node::Div(_) | Node::InlineExtension(_)
-            ) {
-                return Ok(());
-            }
-            let value = serde_json::to_value(&*node)
-                .map_err(|e| Error::option("extensions", e.to_string()))?;
-            if let Some(map) = value.as_object()
-                && let Some(next) = pass.claim(map)
-            {
-                *node = serde_json::from_value(Value::Object(next))
-                    .map_err(|e| Error::option("extensions", e.to_string()))?;
-            }
-            Ok(())
-        }
-        fn walk(node: &mut Node, pass: &mut Pass<'_>, depth: usize) -> Result<(), Error> {
-            if depth > crate::resolve::WALK_CAP {
-                return Ok(());
-            }
-            claim_candidate(node, pass)?;
-            match node {
-                Node::BlockExtension(ext) => {
-                    for child in &mut ext.children {
-                        walk(child, pass, depth + 1)?;
-                    }
-                    if let Some(slots) = &mut ext.slots {
-                        slot(slots, pass, depth + 1);
-                    }
-                }
-                Node::InlineExtension(ext) => {
-                    for child in &mut ext.children {
-                        walk(child, pass, depth + 1)?;
-                    }
-                    if let Some(slots) = &mut ext.slots {
-                        slot(slots, pass, depth + 1);
-                    }
-                }
-                _ => {
-                    let mut failure = None;
-                    node.for_each_child_mut(&mut |child| {
-                        if failure.is_none() {
-                            failure = walk(child, pass, depth + 1).err();
-                        }
-                    });
-                    if let Some(error) = failure {
-                        return Err(error);
-                    }
-                }
-            }
-            Ok(())
-        }
         let definitions = doc
             .children
             .iter()
-            .filter(|node| matches!(node, Node::LinkReferenceDefinition(_)))
+            .filter(|node| matches!(node, crate::ast::owned::Node::LinkReferenceDefinition(_)))
             .map(serde_json::to_value)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| Error::option("extensions", e.to_string()))?;
@@ -401,19 +323,85 @@ impl Matchers {
             entries: Vec::new(),
         };
         for node in &mut doc.children {
-            walk(node, &mut pass, 0)?;
+            owned_walk(node, &mut pass, 0)?;
         }
-        let Pass { used, entries, .. } = pass;
-        if !used.is_empty() {
-            let names: Vec<(&str, Value)> = used
-                .iter()
-                .map(|d| (d.name.as_str(), json!(d.slots)))
-                .collect();
-            let mut declaration = json!({"extensions": doc.extensions});
-            super::standard::declare_names(&mut declaration, &names);
-            doc.extensions = declaration.get("extensions").cloned();
+        let (used, entries) = (pass.used, pass.entries);
+        if let Some(extensions) = declare_used(&used, doc.extensions.as_ref()) {
+            doc.extensions = Some(extensions);
         }
         Ok(entries)
+    }
+
+    /// [`Matchers::apply_owned`] of a tree in an arena. Only a node a matcher
+    /// can claim, and an extension node with slots, crosses into the owned
+    /// tree; the rest of the tree is walked in place (carve-rs#4366). True in
+    /// the second place when a claim changed the tree.
+    pub(crate) fn apply_arena<'a>(
+        &self,
+        doc: &mut crate::ast::Document<'a>,
+        arena: &'a crate::Arena,
+        opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
+        declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
+    ) -> Result<(Vec<Entry>, bool), Error> {
+        use crate::ast::Node;
+        fn walk<'a>(
+            node: &mut Node<'a>,
+            arena: &'a crate::Arena,
+            pass: &mut Pass<'_>,
+            depth: usize,
+        ) -> Result<(), Error> {
+            if depth > crate::resolve::WALK_CAP {
+                return Ok(());
+            }
+            let slots = match node {
+                Node::BlockExtension(ext) => ext.slots.is_some(),
+                Node::InlineExtension(ext) => ext.slots.is_some(),
+                _ => false,
+            };
+            if slots || pass.may_claim(node) {
+                let mut owned = node.owned();
+                owned_walk(&mut owned, pass, depth)?;
+                *node = owned.in_arena(arena);
+                return Ok(());
+            }
+            let mut failure = None;
+            let mut visit = |child: &mut Node<'a>| {
+                if failure.is_none() {
+                    failure = walk(child, arena, pass, depth + 1).err();
+                }
+            };
+            match node {
+                Node::BlockExtension(ext) => ext.children.iter_mut().for_each(&mut visit),
+                Node::InlineExtension(ext) => ext.children.iter_mut().for_each(&mut visit),
+                _ => node.for_each_child_mut(&mut visit),
+            }
+            failure.map_or(Ok(()), Err)
+        }
+        let definitions = doc
+            .children
+            .iter()
+            .filter(|node| matches!(node, Node::LinkReferenceDefinition(_)))
+            .map(|node| serde_json::to_value(node.owned()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| Error::option("extensions", e.to_string()))?;
+        let mut pass = Pass {
+            matchers: self,
+            opener,
+            declared,
+            definitions,
+            used: Vec::new(),
+            entries: Vec::new(),
+        };
+        for node in doc.children.iter_mut() {
+            walk(node, arena, &mut pass, 0)?;
+        }
+        let (used, entries) = (pass.used, pass.entries);
+        // Every claim declares the extension it used.
+        let changed = !used.is_empty();
+        if let Some(extensions) = declare_used(&used, doc.extensions) {
+            doc.extensions = Some(arena.json(extensions));
+        }
+        Ok((entries, changed))
     }
 
     pub(crate) fn has_form(&self, form: Form) -> bool {
@@ -502,6 +490,112 @@ impl Matchers {
     }
 }
 
+type OwnedNode = crate::ast::owned::Node;
+
+/// The claims inside the JSON slots of an extension node.
+fn slot(value: &mut Value, pass: &mut Pass<'_>, depth: usize) {
+    if depth > crate::resolve::WALK_CAP {
+        return;
+    }
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                slot(item, pass, depth + 1);
+            }
+        }
+        Value::Object(map) => {
+            if let Some(next) = pass.claim(map) {
+                *map = next;
+            }
+            let extension = is_extension(map);
+            for (key, child) in map.iter_mut() {
+                if descends(key, extension) {
+                    slot(child, pass, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn claim_candidate(node: &mut OwnedNode, pass: &mut Pass<'_>) -> Result<(), Error> {
+    let fits = match node {
+        OwnedNode::CodeBlock(code) => pass.names(Form::Fence, code.syntax.as_deref()),
+        OwnedNode::Div(div) => pass.div_fits(div.pos.as_ref()),
+        OwnedNode::InlineExtension(ext) => {
+            ext.version.is_none() && pass.names(Form::Inline, Some(&ext.name))
+        }
+        _ => false,
+    };
+    // Only a node a matcher takes crosses into JSON for its claimer.
+    if !fits {
+        return Ok(());
+    }
+    let value =
+        serde_json::to_value(&*node).map_err(|e| Error::option("extensions", e.to_string()))?;
+    if let Some(map) = value.as_object()
+        && let Some(next) = pass.claim(map)
+    {
+        *node = serde_json::from_value(Value::Object(next))
+            .map_err(|e| Error::option("extensions", e.to_string()))?;
+    }
+    Ok(())
+}
+
+/// The claim walk of the owned tree: a candidate is claimed first, then the
+/// walk enters the node that stands in its place.
+fn owned_walk(node: &mut OwnedNode, pass: &mut Pass<'_>, depth: usize) -> Result<(), Error> {
+    if depth > crate::resolve::WALK_CAP {
+        return Ok(());
+    }
+    claim_candidate(node, pass)?;
+    match node {
+        OwnedNode::BlockExtension(ext) => {
+            for child in &mut ext.children {
+                owned_walk(child, pass, depth + 1)?;
+            }
+            if let Some(slots) = &mut ext.slots {
+                slot(slots, pass, depth + 1);
+            }
+        }
+        OwnedNode::InlineExtension(ext) => {
+            for child in &mut ext.children {
+                owned_walk(child, pass, depth + 1)?;
+            }
+            if let Some(slots) = &mut ext.slots {
+                slot(slots, pass, depth + 1);
+            }
+        }
+        _ => {
+            let mut failure = None;
+            node.for_each_child_mut(&mut |child| {
+                if failure.is_none() {
+                    failure = owned_walk(child, pass, depth + 1).err();
+                }
+            });
+            if let Some(error) = failure {
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `extensions` of a tree with the declarations of the claims used
+/// added (C2-A-017); `None` when no claim was used.
+fn declare_used(used: &[ExtensionDeclaration], extensions: Option<&Value>) -> Option<Value> {
+    if used.is_empty() {
+        return None;
+    }
+    let names: Vec<(&str, Value)> = used
+        .iter()
+        .map(|d| (d.name.as_str(), json!(d.slots)))
+        .collect();
+    let mut declaration = json!({"extensions": extensions});
+    super::standard::declare_names(&mut declaration, &names);
+    declaration.get("extensions").cloned()
+}
+
 fn is_extension(map: &Map<String, Value>) -> bool {
     matches!(
         map.get("type").and_then(Value::as_str),
@@ -529,6 +623,37 @@ struct Pass<'a> {
 }
 
 impl Pass<'_> {
+    /// Whether a matcher of `form` claims the source name `name`.
+    fn names(&self, form: Form, name: Option<&str>) -> bool {
+        name.is_some_and(|name| {
+            self.matchers
+                .list
+                .iter()
+                .any(|m| m.form == form && m.name == name)
+        })
+    }
+
+    /// Whether a div matcher claims the div opened at `pos` of the top file.
+    fn div_fits(&self, pos: Option<&crate::ast::Pos>) -> bool {
+        self.matchers.has_form(Form::Div)
+            && pos.is_some_and(|pos| {
+                self.names(Form::Div, (self.opener)(None, pos.start()).as_deref())
+            })
+    }
+
+    /// [`claim_candidate`]'s test of an arena node.
+    fn may_claim(&self, node: &crate::ast::Node<'_>) -> bool {
+        use crate::ast::Node;
+        match node {
+            Node::CodeBlock(code) => self.names(Form::Fence, code.syntax),
+            Node::Div(div) => self.div_fits(div.pos.as_ref()),
+            Node::InlineExtension(ext) => {
+                ext.version.is_none() && self.names(Form::Inline, Some(ext.name))
+            }
+            _ => false,
+        }
+    }
+
     /// The source name of a code block or div.
     fn source_name(&self, node: &Map<String, Value>) -> Option<String> {
         match node.get("type").and_then(Value::as_str)? {

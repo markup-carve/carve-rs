@@ -286,10 +286,20 @@ pub(crate) fn render_tree_hooked(
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
     let files = resolve_tree(&mut doc, opts, &arena);
+    render_arena_hooked(&doc, opts, files.as_ref(), hook)
+}
+
+/// [`render_tree_hooked`] of a tree in an arena that [`resolve_tree`] resolved.
+pub(crate) fn render_arena_hooked<'a>(
+    doc: &ast::Document<'a>,
+    opts: &Options,
+    files: Option<&resolve::files::Files<'a>>,
+    hook: &dyn html::ExtensionHook,
+) -> Rendered {
     let (html, losses, derived, extension_nodes, destinations) =
-        html::render_tree_parts(&doc, opts, files.as_ref(), Some(hook));
+        html::render_tree_parts(doc, opts, files, Some(hook));
     let mut diagnostics = tree_loss_diagnostics(
-        &doc,
+        doc,
         unallowed(losses, opts),
         derived,
         &extension_nodes,
@@ -588,7 +598,7 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
 
 /// Parses, expands (C2-N-006) and resolves; true in the second place when
 /// the resolution order is needed, in the third when an include was expanded.
-fn prepare<'a>(
+pub(crate) fn prepare<'a>(
     input: &'a str,
     opts: &Options,
     arena: &'a Arena,
