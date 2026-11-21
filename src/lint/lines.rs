@@ -527,6 +527,7 @@ fn is_opaque_leaf(kind: &str) -> bool {
     matches!(
         kind,
         "code"
+            | "autolink"
             | "raw_inline"
             | "literal_inline"
             | "math"
@@ -1692,39 +1693,37 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
     {
         return;
     }
-    let Some(at) = line.text.find('<') else {
-        return;
-    };
-    if in_caption(line) {
+    if !line.text.contains('<') || in_caption(line) {
         return;
     }
-    if source_escaped(line.text.as_bytes(), at) {
+    // The first tag shape on the line (catalog row); a `<` that starts none is text.
+    let mut from = 0;
+    while let Some(found) = line.text.get(from..).and_then(|rest| rest.find('<')) {
+        let at = from + found;
+        from = at + 1;
+        let rest = line.text.get(at..).unwrap_or("");
+        if rest.starts_with("<!--") {
+            let Some(close) = rest.get(4..).and_then(|body| body.find("-->")) else {
+                return;
+            };
+            from = at + 4 + close + 3;
+            continue;
+        }
+        if source_escaped(line.text.as_bytes(), at) {
+            continue;
+        }
+        let Some(len) = tag_end(rest) else {
+            continue;
+        };
+        sink.emit(
+            "bare-html-tag",
+            line.start + at,
+            line.start + at + len,
+            &line.path,
+            &[],
+        );
         return;
     }
-    if line.text.get(at..).is_some_and(|s| s.starts_with("<!--")) {
-        return;
-    }
-    let Some(after) = line.text.as_bytes().get(at + 1) else {
-        return;
-    };
-    if !after.is_ascii_alphabetic() && *after != b'/' {
-        return;
-    }
-    let Some(end) = tag_end(line.text.get(at..).unwrap_or("")) else {
-        return;
-    };
-    let end = end - 3;
-    let inside = line.text.get(at + 1..at + 2 + end).unwrap_or("");
-    if inside.contains("://") || inside.contains('@') || inside.starts_with("/#") {
-        return;
-    }
-    sink.emit(
-        "bare-html-tag",
-        line.start + at,
-        line.start + at + end + 3,
-        &line.path,
-        &[],
-    );
 }
 
 /// The length of the catalog tag shape `</?[A-Za-z][A-Za-z0-9_:-]*(?:\s[^<>]*)?/?>` at the start of `text`.

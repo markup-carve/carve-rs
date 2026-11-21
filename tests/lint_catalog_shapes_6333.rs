@@ -18,6 +18,8 @@ fn bare_html_tag_needs_the_catalog_tag_shape() {
         "a <x]> b\n",
         "a <x/y> b\n",
         "a <x\"> b\n",
+        "a <x-1:_> b\n",
+        "| <h:i> |\n",
     ] {
         assert!(ranges(input, "bare-html-tag").is_empty(), "{input:?}");
     }
@@ -27,6 +29,9 @@ fn bare_html_tag_needs_the_catalog_tag_shape() {
         ("a </x> b\n", (2, 6)),
         ("a <x y=\"]\"> b\n", (2, 11)),
         ("a <x-1:b_c\tz> b\n", (2, 13)),
+        ("a <x/y> <b>\n", (8, 11)),
+        ("| a <x/y> <b> |\n", (10, 13)),
+        ("| a <!-- c --> <x]> <b> |\n", (20, 23)),
     ] {
         assert_eq!(ranges(input, "bare-html-tag"), [range], "{input:?}");
     }
