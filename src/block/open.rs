@@ -3,7 +3,7 @@
 use super::events::{ContainerKind, LeafKind};
 use super::line::Cursor;
 use super::shapes::{self, ListMarker, MarkerKind};
-use super::table::{self, Row};
+use super::table::{self, Pieces, Row};
 use super::{Closed, Container, Kind, Leaf, OpenLeaf, Parser, Pending, Walk};
 use crate::attr::AttrBlock;
 use crate::inline::{Join, Piece};
@@ -12,15 +12,30 @@ use crate::tables::{BLOCK_DEPTH, LIST_END_BLANK_LINES};
 /// The lists, description lists and marker owners a line can reach:
 /// those inside the innermost quote whose mark it carries and outside every
 /// quote whose mark it lacks (C2-B-020).
-struct Frame {
-    lists: Vec<usize>,
-    desc_lists: Vec<usize>,
+struct Frame<'s> {
+    reach: &'s [Container],
     owner: bool,
     footnote: bool,
 }
 
+impl Frame<'_> {
+    fn lists(&self) -> impl DoubleEndedIterator<Item = usize> + '_ {
+        self.reach.iter().filter_map(|c| match c.kind {
+            Kind::List { col, .. } => Some(col),
+            _ => None,
+        })
+    }
+
+    fn desc_lists(&self) -> impl Iterator<Item = usize> + '_ {
+        self.reach.iter().filter_map(|c| match c.kind {
+            Kind::DescList { col, .. } => Some(col),
+            _ => None,
+        })
+    }
+}
+
 impl Parser<'_> {
-    fn frame(&self, walk: &Walk<'_>, m: usize) -> Frame {
+    fn frame(&self, walk: &Walk<'_>, m: usize) -> Frame<'_> {
         let lo = self
             .stack
             .iter()
@@ -34,30 +49,19 @@ impl Parser<'_> {
             .skip(walk.matched)
             .find(|(_, c)| matches!(c.kind, Kind::Quote))
             .map_or(self.stack.len(), |(i, _)| i);
-        let mut f = Frame {
-            lists: Vec::new(),
-            desc_lists: Vec::new(),
-            owner: false,
-            footnote: false,
-        };
-        for c in self.stack.get(lo..hi).unwrap_or(&[]) {
-            match &c.kind {
-                Kind::List { col, .. } => f.lists.push(*col),
-                Kind::DescList { col, .. } => f.desc_lists.push(*col),
-                k => {
-                    if let Some((marker, _)) = k.indent_cols() {
-                        if m > marker {
-                            f.owner = true;
-                        }
-                    }
-                }
-            }
+        let reach = self.stack.get(lo..hi).unwrap_or(&[]);
+        let owner = reach.iter().any(|c| {
+            !matches!(c.kind, Kind::List { .. } | Kind::DescList { .. })
+                && c.kind.indent_cols().is_some_and(|(marker, _)| m > marker)
+        });
+        Frame {
+            reach,
+            owner,
+            footnote: self
+                .stack
+                .iter()
+                .any(|c| matches!(c.kind, Kind::Footnote { .. })),
         }
-        f.footnote = self
-            .stack
-            .iter()
-            .any(|c| matches!(c.kind, Kind::Footnote { .. }));
-        f
     }
 
     /// Whether the line ends the open paragraph-like leaf (the six interrupters).
@@ -83,7 +87,7 @@ impl Parser<'_> {
                     ..
                 })
             );
-            return f.desc_lists.contains(&m) && (term || replaces || self.room(1));
+            return f.desc_lists().any(|c| c == m) && (term || replaces || self.room(1));
         }
         walk.qbase == 0 && k.col == 0 && is_definition(k.rest()) && self.frame(walk, m).footnote
     }
@@ -95,12 +99,12 @@ impl Parser<'_> {
                 leaf: Leaf::Term { .. },
                 ..
             })
-        ) && f.desc_lists.iter().any(|&owner| column >= owner)
+        ) && f.desc_lists().any(|owner| column >= owner)
         {
             return false;
         }
         // C2-B-190: a nested marker that cannot open is paragraph text.
-        let can_replace = f.lists.iter().any(|&owner| column <= owner);
+        let can_replace = f.lists().any(|owner| column <= owner);
         (can_replace || self.room(2)) && list_interrupts(f, column, marker)
     }
 
@@ -321,7 +325,7 @@ impl Parser<'_> {
             };
             self.set_leaf(
                 Leaf::Term {
-                    pieces: vec![piece],
+                    pieces: Pieces::One(Some(piece)),
                 },
                 k.offset(),
                 e,
@@ -488,7 +492,7 @@ impl Parser<'_> {
                 Leaf::Heading {
                     level,
                     marker_col: m,
-                    pieces: vec![piece],
+                    pieces: Pieces::One(Some(piece)),
                 },
                 start,
                 e,
@@ -555,7 +559,7 @@ impl Parser<'_> {
         };
         self.set_leaf(
             Leaf::Para {
-                pieces: vec![piece],
+                pieces: Pieces::One(Some(piece)),
             },
             start,
             e,
@@ -761,7 +765,7 @@ impl Parser<'_> {
         };
         self.leaf = Some(OpenLeaf {
             leaf: Leaf::Caption {
-                pieces: vec![piece],
+                pieces: Pieces::One(Some(piece)),
             },
             start: k.offset(),
             end: e,
@@ -803,15 +807,15 @@ impl Parser<'_> {
 
 /// Interrupter (b) on the frame of the line (C2-B-015, C2-B-054, C2-B-055, C2-B-056).
 fn list_interrupts(f: &Frame, m: usize, mk: &ListMarker) -> bool {
-    if f.lists.contains(&m) {
+    if f.lists().any(|c| c == m) {
         return true;
     }
-    if let Some(&inner) = f.lists.last() {
+    if let Some(inner) = f.lists().next_back() {
         if m < inner {
             return true;
         }
     }
-    if f.desc_lists.contains(&m) {
+    if f.desc_lists().any(|c| c == m) {
         // C2-B-022: without a list to close, a description stays lazy.
         return false;
     }
