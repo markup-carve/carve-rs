@@ -9,12 +9,37 @@ use crate::view::{Arr, V};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::OnceLock;
 
 /// The tables keyed by node type: fixed spec data, so the default hasher's
 /// protection buys nothing.
-type TypeMap<V> = HashMap<String, V, BuildHasherDefault<AddrHasher>>;
+type TypeMap<V> = HashMap<String, V, BuildHasherDefault<TypeHasher>>;
+
+/// [`AddrHasher`]'s multiply, taken over eight bytes of a type name at a time.
+#[derive(Default, Clone, Copy)]
+struct TypeHasher(AddrHasher);
+
+impl Hasher for TypeHasher {
+    fn finish(&self) -> u64 {
+        self.0.finish()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            let mut word = [0u8; 8];
+            word.copy_from_slice(chunk);
+            self.0.write_usize(usize::from_le_bytes(word));
+        }
+        let rest = chunks.remainder();
+        if !rest.is_empty() {
+            let mut word = [0u8; 8];
+            word.get_mut(..rest.len()).unwrap_or(&mut []).copy_from_slice(rest);
+            self.0.write_usize(usize::from_le_bytes(word) ^ (rest.len() << 59));
+        }
+    }
+}
 
 pub type N<'t> = V<'t>;
 
@@ -148,43 +173,48 @@ pub fn pointer<'t>(n: V<'t>, path: &str) -> Option<V<'t>> {
     Some(at)
 }
 
-pub const INLINE_PARENTS: &[&str] = &[
-    "paragraph",
-    "heading",
-    "definition_term",
-    "cell_paragraph",
-    "line",
-    "citation_definition",
-    "emphasis",
-    "strong",
-    "underline",
-    "strike",
-    "highlight",
-    "superscript",
-    "subscript",
-    "insert",
-    "delete",
-    "span",
-    "link",
-    "inline_footnote",
-    "inline_extension",
-    "small_caps",
-];
-
 pub fn is_inline_parent<'t>(n: impl Into<V<'t>>) -> bool {
     let n: V<'t> = n.into();
-    INLINE_PARENTS.contains(&ty(n))
+    matches!(
+        ty(n),
+        "paragraph"
+        | "heading"
+        | "definition_term"
+        | "cell_paragraph"
+        | "line"
+        | "citation_definition"
+        | "emphasis"
+        | "strong"
+        | "underline"
+        | "strike"
+        | "highlight"
+        | "superscript"
+        | "subscript"
+        | "insert"
+        | "delete"
+        | "span"
+        | "link"
+        | "inline_footnote"
+        | "inline_extension"
+        | "small_caps"
+    )
 }
 
-fn slots_table() -> &'static TypeMap<Vec<Vec<String>>> {
-    static SLOTS: OnceLock<TypeMap<Vec<Vec<String>>>> = OnceLock::new();
+/// The slot paths of a node type, and whether one of them is the `title` alone.
+struct TypeSlots {
+    paths: Vec<Vec<String>>,
+    title: bool,
+}
+
+fn slots_table() -> &'static TypeMap<TypeSlots> {
+    static SLOTS: OnceLock<TypeMap<TypeSlots>> = OnceLock::new();
     SLOTS.get_or_init(|| {
         let data: Value = serde_json::from_str(include_str!("../../spec-data/node-slots.json"))
             .unwrap_or_default();
         let mut out = TypeMap::default();
         if let Some(nodes) = data.get("nodes").and_then(Value::as_object) {
             for (name, slots) in nodes {
-                let paths = slots
+                let paths: Vec<Vec<String>> = slots
                     .as_array()
                     .into_iter()
                     .flatten()
@@ -192,7 +222,8 @@ fn slots_table() -> &'static TypeMap<Vec<Vec<String>>> {
                     .filter(|p| !p.starts_with("metadata."))
                     .map(|p| p.split('.').map(str::to_string).collect())
                     .collect();
-                out.insert(name.clone(), paths);
+                let title = paths.iter().any(|p| is_step(p, "title"));
+                out.insert(name.clone(), TypeSlots { paths, title });
             }
         }
         out
@@ -249,21 +280,29 @@ fn escaped_key(name: &str) -> Cow<'_, str> {
 /// C2-A-024: the slots of a node in their table order; in source order a title
 /// precedes the other slots. `f` takes the nodes, the pointer step and whether
 /// the slot holds one node.
+fn is_step(path: &[String], name: &str) -> bool {
+    matches!(path, [only] if only == name)
+}
+
 pub fn for_each_slot<'t>(n: V<'t>, source_order: bool, f: &mut dyn FnMut(Arr<'t>, &str, bool)) {
-    let Some(paths) = slots_table().get(ty(n)) else {
+    let Some(slots) = slots_table().get(ty(n)) else {
         return;
     };
-    if source_order
-        && paths
-            .iter()
-            .any(|p| p.len() == 1 && p.first().is_some_and(|x| x == "title"))
-    {
+    if source_order && slots.title {
         if let Some(t) = n.get("title") {
             visit_value(t, "title", f);
         }
     }
-    for p in paths {
-        if source_order && p.len() == 1 && p.first().is_some_and(|x| x == "title") {
+    for p in &slots.paths {
+        if source_order && slots.title && is_step(p, "title") {
+            continue;
+        }
+        if let V::Node(node) = n
+            && is_step(p, "children")
+        {
+            if let Some(kids) = node.children() {
+                visit_value(V::Nodes(kids), "children", f);
+            }
             continue;
         }
         visit_path(n, p, "", f);
@@ -311,7 +350,11 @@ fn results() -> &'static Results {
 
 /// The result fields of the node's type, `None` for a node without a known type.
 pub fn result_fields(node: V<'_>) -> Option<&'static Fields> {
-    results().get(node.get("type").and_then(V::as_str)?)
+    let name = match node {
+        V::Node(n) => n.type_name(),
+        _ => node.get("type").and_then(V::as_str)?,
+    };
+    results().get(name)
 }
 
 /// C2-A-162: positions and resolution results are not compared. `fields` is
@@ -333,10 +376,10 @@ pub fn skipped_in(node: V<'_>, fields: Option<&Fields>, name: &str, span_marks: 
     }
 }
 
-/// The most fields a node of the tree has; a node with more is compared through a vector.
-const FIELDS: usize = 24;
+/// The compared fields of a node held on the stack; a node with more spills to a vector.
+const FIELDS: usize = 12;
 
-/// The compared fields of one node, on the stack up to [`FIELDS`].
+/// The compared fields of one node, in key order.
 struct Compared<'t> {
     inline: [(&'t str, V<'t>); FIELDS],
     len: usize,
@@ -344,7 +387,6 @@ struct Compared<'t> {
 }
 
 impl<'t> Compared<'t> {
-    /// The compared fields of `node`, in key order.
     fn of(node: V<'t>, span_marks: bool) -> Self {
         let mut out = Self {
             inline: [("", V::Null); FIELDS],
@@ -358,20 +400,19 @@ impl<'t> Compared<'t> {
             }
             if let Some(slot) = out.inline.get_mut(out.len) {
                 *slot = (k, v);
-                out.len += 1;
             } else {
                 out.spill.push((k, v));
             }
+            out.len += 1;
         });
         out
     }
 
-    fn count(&self) -> usize {
-        self.len + self.spill.len()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &(&'t str, V<'t>)> {
-        self.inline.get(..self.len).unwrap_or(&[]).iter().chain(&self.spill)
+    fn get(&self, at: usize) -> Option<&(&'t str, V<'t>)> {
+        self.inline
+            .get(..self.len.min(FIELDS))
+            .and_then(|i| i.get(at))
+            .or_else(|| self.spill.get(at.checked_sub(FIELDS)?))
     }
 }
 
@@ -473,18 +514,27 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
         span_marks
     };
     let l = Compared::of(a, inner);
-    let r = Compared::of(b, inner);
-    l.count() == r.count()
-        && l.iter().zip(r.iter()).all(|((kl, p), (kr, q))| {
-            if kl != kr {
-                return false;
-            }
-            if *kl == "value" && (lv.is_some() || rv.is_some()) {
+    let fields = result_fields(b);
+    let mut at = 0;
+    let mut same = true;
+    b.each(&mut |kr, q| {
+        if !same || skipped_in(b, fields, kr, inner) {
+            return;
+        }
+        let Some(&(kl, p)) = l.get(at) else {
+            same = false;
+            return;
+        };
+        at += 1;
+        same = kl == kr
+            && if kl == "value" && (lv.is_some() || rv.is_some()) {
                 let x = lv.or_else(|| p.as_str());
-                return x.is_some() && x == rv.or_else(|| q.as_str());
-            }
-            equal_values(*p, *q, inner)
-        })
+                x.is_some() && x == rv.or_else(|| q.as_str())
+            } else {
+                equal_values(p, q, inner)
+            };
+    });
+    same && at == l.len
 }
 
 fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
