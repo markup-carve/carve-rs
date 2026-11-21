@@ -18,6 +18,7 @@ mod pairs;
 mod spans;
 mod state;
 mod table;
+mod trim;
 mod width_data;
 
 pub(crate) use blocks::include_spelling;
@@ -210,6 +211,42 @@ pub(crate) fn write_view<'t>(
     pool: &'t Pool,
     settings: &Settings,
 ) -> (String, Vec<Entry>) {
+    // A parse gives no such spaces, so only a supplied JSON tree is trimmed.
+    let recorded = |at: &str| {
+        settings
+            .layout
+            .iter()
+            .flatten()
+            .find(|entry| entry.path == at)
+            .and_then(|entry| entry.facts.source_format.as_deref())
+    };
+    let delimited = |table: &Value, at: &str| table::writes_delimited(V::Json(table), recorded(at));
+    if let V::Json(value) = doc
+        && let Some(trimmed) = trim::trim(value, &delimited)
+    {
+        let pool = Pool::new();
+        let moved;
+        let settings = if let Some(layout) = &settings.layout {
+            moved = Settings {
+                layout: Some(trimmed.forward_layout(layout)),
+                ..settings.clone()
+            };
+            &moved
+        } else {
+            settings
+        };
+        let (source, mut entries) = write_marked(V::Json(&trimmed.doc), &pool, settings);
+        for entry in &mut entries {
+            if let Some(path) = &entry.path {
+                entry.path = Some(trimmed.remap(path));
+            }
+        }
+        return (source, entries);
+    }
+    write_marked(doc, pool, settings)
+}
+
+fn write_marked<'t>(doc: V<'t>, pool: &'t Pool, settings: &Settings) -> (String, Vec<Entry>) {
     let Some(marks) = spans::add(doc) else {
         return write_tree(doc, pool, settings);
     };

@@ -797,6 +797,13 @@ fn header_rows(w: &Writer<'_>, table: V<'_>) -> Option<usize> {
     (recorded == i64::try_from(head).ok()).then_some(head)
 }
 
+/// C2-W-066: whether the table is written in a delimited form, given the format its sidecar
+/// records, where a cell keeps the spaces and tabs at its ends as data.
+pub(super) fn writes_delimited(table: V<'_>, recorded: Option<&str>) -> bool {
+    delimited_shape(table)
+        .is_some_and(|(rows, needs)| rows == 0 || needs || matches!(recorded, Some("csv" | "tsv")))
+}
+
 fn table_format(w: &Writer<'_>, table: V<'_>) -> String {
     let Some((rows, needs_delimited)) = delimited_shape(table) else {
         return "pipe".into();
