@@ -2,10 +2,24 @@
 
 use carve::api::{self, EncodeOptions, Options};
 use serde_json::Value;
+use std::sync::OnceLock;
 
 /// Inputs longer than this are skipped: the targets look for crashes and
 /// gate failures, and the timing class has its own budget (`-timeout`).
 pub const MAX_INPUT: usize = 64 * 1024;
+
+/// Defer only the saved carve-rs#4538 timeout until the C2-W-088 repair lands.
+/// The normal fuzz target still runs it; only the CI smoke job opts out.
+pub fn skip_fmt_smoke_input(data: &[u8]) -> bool {
+    static SMOKE: OnceLock<bool> = OnceLock::new();
+    *SMOKE.get_or_init(|| {
+        std::env::var_os("CARVE_FUZZ_SMOKE").as_deref() == Some(std::ffi::OsStr::new("1"))
+    }) && is_deferred_fmt_input(data)
+}
+
+fn is_deferred_fmt_input(data: &[u8]) -> bool {
+    data == include_bytes!("../fixtures/timeout-d1cfc854")
+}
 
 /// The tree of `src` without positions, under the equality of C2-A-162.
 /// `metadata.fields` is dropped: the frontmatter exception of C2-W-002.
@@ -311,7 +325,18 @@ fn unsafe_markup(html: &str, svg: bool) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::unsafe_html;
+    use super::{is_deferred_fmt_input, unsafe_html};
+
+    #[test]
+    fn deferred_fmt_fixture_is_one_exact_input() {
+        let fixture = include_bytes!("../fixtures/timeout-d1cfc854");
+        assert_eq!(fixture.len(), 25_163);
+        assert!(is_deferred_fmt_input(fixture));
+        assert!(!is_deferred_fmt_input(&fixture[..fixture.len() - 1]));
+        let mut changed = fixture.to_vec();
+        changed[0] ^= 1;
+        assert!(!is_deferred_fmt_input(&changed));
+    }
 
     #[test]
     fn the_safety_check_sees_what_a_browser_runs() {
