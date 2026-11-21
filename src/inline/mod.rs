@@ -159,6 +159,7 @@ impl Scratch<'_> {
         if self.text.capacity() > KEEP
             || self.toks.capacity() > KEEP / 16
             || self.evs.capacity() > KEEP / 16
+            || self.direct.capacity() > KEEP / 16
         {
             *self = Self::default();
         }
