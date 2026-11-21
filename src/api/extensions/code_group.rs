@@ -6,6 +6,7 @@ use super::{
 };
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -52,24 +53,28 @@ struct Look {
 
 /// `node` is what the panel renders: the code block, or a node a document
 /// transform put in its place.
-struct Panel {
-    block: Value,
-    node: Value,
+struct Panel<'n> {
+    block: Cow<'n, Value>,
+    node: &'n Value,
     label: String,
     selected: bool,
 }
 
 fn has_selected(attrs: Option<&Value>) -> bool {
-    key_values(attrs)
-        .iter()
-        .any(|kv| kv.get(0).and_then(Value::as_str) == Some("selected"))
+    attrs
+        .and_then(|a| a.get("keyValues"))
+        .and_then(Value::as_array)
+        .is_some_and(|kvs| {
+            kvs.iter()
+                .any(|kv| kv.get(0).and_then(Value::as_str) == Some("selected"))
+        })
 }
 
 /// The code block of a panel; a transform such as codeCallouts may have
 /// replaced it by a node with it as its one fallback block.
-fn code_of(node: &Value) -> Option<Value> {
+fn code_of(node: &Value) -> Option<Cow<'_, Value>> {
     match node.get("type").and_then(Value::as_str)? {
-        "code_block" => Some(node.clone()),
+        "code_block" => Some(Cow::Borrowed(node)),
         "block_extension" => {
             let fallback = node.get("fallback")?.as_array()?;
             let [code] = fallback.as_slice() else {
@@ -82,13 +87,13 @@ fn code_of(node: &Value) -> Option<Value> {
             if let (Some(attrs), Some(map)) = (node.get("attrs"), code.as_object_mut()) {
                 map.insert("attrs".into(), attrs.clone());
             }
-            Some(code)
+            Some(Cow::Owned(code))
         }
         _ => None,
     }
 }
 
-fn panels(slots: Option<&Value>, cx: &RenderContext<'_>) -> Vec<Panel> {
+fn panels<'n>(slots: Option<&'n Value>, cx: &RenderContext<'_>) -> Vec<Panel<'n>> {
     let mut out: Vec<Panel> = Vec::new();
     for child in slots
         .and_then(|s| s.get("panels"))
@@ -115,7 +120,7 @@ fn panels(slots: Option<&Value>, cx: &RenderContext<'_>) -> Vec<Panel> {
             .map_or_else(|| format!("Code {}", out.len() + 1), str::to_string);
         out.push(Panel {
             block,
-            node: child.clone(),
+            node: child,
             label,
             selected: false,
         });
@@ -130,10 +135,10 @@ fn panels(slots: Option<&Value>, cx: &RenderContext<'_>) -> Vec<Panel> {
     out
 }
 
-fn without_selected(node: &Value) -> Value {
+fn without_selected(node: &Value) -> Cow<'_, Value> {
     let attrs = node.get("attrs");
     if !has_selected(attrs) {
-        return node.clone();
+        return Cow::Borrowed(node);
     }
     let rest: Vec<Value> = key_values(attrs)
         .into_iter()
@@ -141,7 +146,7 @@ fn without_selected(node: &Value) -> Value {
         .collect();
     let mut out = node.clone();
     let Some(map) = out.as_object_mut() else {
-        return out;
+        return Cow::Owned(out);
     };
     if let Some(a) = map.get_mut("attrs").and_then(Value::as_object_mut) {
         if rest.is_empty() {
@@ -153,7 +158,7 @@ fn without_selected(node: &Value) -> Value {
             map.remove("attrs");
         }
     }
-    out
+    Cow::Owned(out)
 }
 
 /// The extension node a group renders, as its JSON value or typed.
@@ -224,7 +229,7 @@ impl Look {
         format!("<div{}>", cx.write_parts(&parts, node.pos.as_ref()))
     }
 
-    fn code(&self, panel: &Panel, cx: &RenderContext<'_>) -> Result<String, Error> {
+    fn code(&self, panel: &Panel<'_>, cx: &RenderContext<'_>) -> Result<String, Error> {
         if let Some(h) = &self.highlighter {
             let value = panel
                 .block
@@ -236,7 +241,7 @@ impl Look {
                 panel.block.get("syntax").and_then(Value::as_str),
             ));
         }
-        cx.render_blocks(&Value::Array(vec![without_selected(&panel.node)]))
+        cx.render_block(&without_selected(panel.node))
     }
 
     fn css(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {

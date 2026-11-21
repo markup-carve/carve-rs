@@ -93,6 +93,13 @@ impl RenderContext<'_> {
         self.host.render_list(nodes)
     }
 
+    /// [`RenderContext::render_blocks`] of one block node.
+    pub(crate) fn render_block(&self, node: &Value) -> Result<String, Error> {
+        let node: crate::ast::owned::Node = serde::Deserialize::deserialize(node)
+            .map_err(|e: serde_json::Error| Error::option("nodes", e.to_string()))?;
+        self.host.render_nodes(&[node])
+    }
+
     /// The plain text of inline nodes, as an accessible name reads it.
     #[must_use]
     pub fn plain_text(&self, nodes: &[Value]) -> String {
@@ -566,10 +573,14 @@ impl<'a> Host<'a> {
     fn render_list(&self, nodes: &Value) -> Result<String, Error> {
         let children: Vec<crate::ast::owned::Node> = serde::Deserialize::deserialize(nodes)
             .map_err(|e: serde_json::Error| Error::option("nodes", e.to_string()))?;
+        self.render_nodes(&children)
+    }
+
+    fn render_nodes(&self, children: &[crate::ast::owned::Node]) -> Result<String, Error> {
         let arena = crate::Arena::new();
         let mut doc = crate::ast::Document {
             ast_version: "2.0",
-            children: arena.nodes_from(&children),
+            children: arena.nodes_from(children),
             extensions: self.declared,
             ..Default::default()
         };
