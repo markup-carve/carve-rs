@@ -2,8 +2,8 @@
 use carve::api::{self, Carve, WriteOptions};
 use serde_json::{Value, json};
 
-fn write(children: Vec<Value>) -> (String, Vec<String>) {
-    let input = json!({"type":"document", "astVersion":"2.0", "children":[
+fn write(children: &[Value]) -> (String, Vec<String>) {
+    let input = json!({"type":"document", "astVersion":"2.0", "extensions":[{"name":"carve.source","version":"1","required":false,"slots":[]}], "children":[
         {"type":"paragraph", "children":children}
     ]});
     let tree = api::decode_tree(&input.to_string()).unwrap();
@@ -20,7 +20,7 @@ fn write(children: Vec<Value>) -> (String, Vec<String>) {
 
 #[test]
 fn escape_after_lost_indentation() {
-    let (output, losses) = write(vec![
+    let (output, losses) = write(&[
         json!({"type":"text", "value":" w"}),
         json!({"type":"text", "value":"a *b*"}),
     ]);
@@ -30,7 +30,7 @@ fn escape_after_lost_indentation() {
 
 #[test]
 fn field_after_lost_indentation() {
-    let (output, losses) = write(vec![
+    let (output, losses) = write(&[
         json!({"type":"text", "value":" \t"}),
         json!({"type":"text", "value":" w", "dir":"rtl"}),
     ]);
@@ -49,10 +49,20 @@ fn field_after_lost_indentation() {
 
 #[test]
 fn pair_after_lost_indentation() {
-    let (output, losses) = write(vec![
+    let (output, losses) = write(&[
         json!({"type":"text", "value":" w"}),
         json!({"type":"emphasis", "children":[{"type":"text", "value":"b "}]}),
     ]);
     assert_eq!(output, " w{/b /}\n");
+    assert_eq!(losses, ["field-unspellable /children/0/children/0/value"]);
+}
+
+#[test]
+fn standard_data_after_loss_is_not_a_field_loss() {
+    let (output, losses) = write(&[
+        json!({"type":"text", "value":" w"}),
+        json!({"type":"text", "value":"a", "data":{"carve.source":{"format":"html", "locator":{"part":"input"}, "importer":{"name":"x", "version":"1"}}}}),
+    ]);
+    assert_eq!(output, " wa\n");
     assert_eq!(losses, ["field-unspellable /children/0/children/0/value"]);
 }

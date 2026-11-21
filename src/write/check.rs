@@ -1479,7 +1479,10 @@ fn match_text<'t>(
     // A prior lost node does not license a later field to disappear silently.
     if !c.losses.is_empty() {
         for name in ["lang", "dir", "metadata", "attrs", "data"] {
-            if e.get(name).is_some() && a.get(name).is_none() {
+            if is_compared(c, e, result_fields(e), name)
+                && e.get(name).is_some()
+                && a.get(name).is_none()
+            {
                 c.losses.push((e, Some(String::new())));
                 break;
             }
@@ -1839,7 +1842,9 @@ fn step_over_lost_text(c: &mut Check<'_>, es: &[N<'_>], as_: Arr<'_>, at: &mut C
     }
     if ["lang", "dir", "metadata", "attrs", "data"]
         .into_iter()
-        .any(|name| expected.get(name).is_some())
+        .any(|name| {
+            is_compared(c, expected, result_fields(expected), name) && expected.get(name).is_some()
+        })
         && let Some((node, field)) = c.losses.last_mut()
         && id(*node) == id(expected)
     {
@@ -1875,7 +1880,8 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
         return false;
     }
     if c.changes() == 0 {
-        c.losses.extend(es[at.i..i].iter().map(|e| (*e, None)));
+        c.losses
+            .extend(es.get(at.i..i).unwrap_or_default().iter().map(|e| (*e, None)));
     }
     at.i = i + 1;
     at.j = j + 1;
