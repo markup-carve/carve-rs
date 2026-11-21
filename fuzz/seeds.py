@@ -68,6 +68,9 @@ for i, s in enumerate(carve):
         put("safety", bytes([sel]) + s.encode())
         put("export", bytes([sel]) + s.encode())
     put("import", bytes([0x01 + i % 3]) + s.encode())
+# Retain the carve-rs#4538 reproducer for normal fuzzing. The CI smoke job
+# defers exactly these bytes until the C2-W-088 fix lands.
+put("fmt", (root / "fuzz/fixtures/timeout-d1cfc854").read_bytes())
 for s in html:
     put("import", b"\x00" + s.encode())
 for s in markdown:
