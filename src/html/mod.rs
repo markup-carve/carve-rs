@@ -448,14 +448,17 @@ impl<'r, 'a> Renderer<'r, 'a> {
             .map(str::to_string)
     }
 
-    /// C2-H-208: reports the first heading a shift raised above 6.
-    pub(super) fn report_shift(&mut self, n: &Node) {
-        let Node::Heading(h) = n else { return };
-        if self.opts.heading_shift == 0 || h.level <= 6 || self.shift_loss.is_some() {
+    /// C2-H-208: the first heading of the view a shift raised above 6.
+    fn report_shift(&mut self) {
+        if self.opts.heading_shift == 0 {
             return;
         }
-        self.losses.push(crate::heading_shift::ABOVE_6);
-        self.shift_loss = Some((h.pos, self.file_of(h.pos.as_ref())));
+        let files = self.files;
+        let file_of = |pos: &crate::ast::Pos| files?.file_of_pos(pos).map(str::to_string);
+        if let Some(found) = crate::heading_shift::first_above_6(self.doc.children, &file_of) {
+            self.losses.push(crate::heading_shift::ABOVE_6);
+            self.shift_loss = Some(found);
+        }
     }
 
     fn hidden_heading(&self, href: &str) -> bool {
@@ -643,6 +646,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// `key_values` false skips the reserved carrier walk: no node holds a key-value attribute.
     fn document_with(&mut self, key_values: bool) {
         let doc = self.doc;
+        self.report_shift();
         for node in doc.children.iter().filter(|_| key_values) {
             reserved_losses(
                 node,

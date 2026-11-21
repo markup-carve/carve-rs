@@ -349,7 +349,6 @@ impl<'r, 'a> Renderer<'r, 'a> {
             self.id_carriers(n, &mut el);
         }
         self.source_level(n, &mut el);
-        self.report_shift(n);
         let tag = match h.level {
             1 => "h1",
             2 => "h2",

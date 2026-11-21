@@ -502,7 +502,11 @@ fn tree_loss_diagnostics(
                 (None, heading_shift::ABOVE_6) => vec![("shift", shift.as_str())],
                 (None, _) => Vec::new(),
             };
-            let mut finding = diagnostic::Diagnostic::new(code, &values, None, None);
+            let pos = (code == heading_shift::ABOVE_6)
+                .then(|| heading_shift::first_above_6(doc.children, &|_| None))
+                .flatten()
+                .and_then(|(pos, _)| pos);
+            let mut finding = diagnostic::Diagnostic::new(code, &values, None, pos);
             finding.path = match code {
                 "extension-fallback-rendered" => {
                     name.and_then(|(target, _)| node_path(doc.children, *target))

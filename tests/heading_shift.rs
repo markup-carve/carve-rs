@@ -185,3 +185,46 @@ fn c2_h_208_extension_is_gone() {
     }));
     assert!(out.get("error").is_some(), "{out}");
 }
+
+#[test]
+fn c2_h_208_a_host_render_places_the_loss_at_the_heading() {
+    let mut host = Carve::new();
+    host.register(extensions::heading_numbers(
+        extensions::HeadingNumbersOptions::default(),
+    ))
+    .unwrap();
+    let opts = Options {
+        heading_shift: 1,
+        ..Options::default()
+    };
+    let out = host
+        .render_with_diagnostics("= A\n\n====== B\n", &opts)
+        .unwrap();
+    let loss: Vec<_> = out
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "heading-shift-above-6")
+        .collect();
+    assert_eq!(loss.len(), 1, "{:?}", out.diagnostics);
+    assert_eq!(loss[0].range.map(|r| r.start_offset), Some(5));
+}
+
+#[test]
+fn c2_h_208_a_heading_in_a_degraded_container_is_reported() {
+    let opts = Options {
+        heading_shift: 1,
+        profile: carve::options::Profile::Comment,
+        ..Options::default()
+    };
+    let out = api::render_with_diagnostics("> ====== A\n", &opts).unwrap();
+    let codes: Vec<_> = out.diagnostics.iter().map(|d| d.code.as_str()).collect();
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|c| **c == "heading-shift-above-6")
+            .count(),
+        1,
+        "{codes:?} {}",
+        out.html
+    );
+}
