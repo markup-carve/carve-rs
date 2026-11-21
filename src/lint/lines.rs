@@ -320,7 +320,7 @@ fn masked(raw: &str, start: usize, fact: &LineFacts<'_>) -> Vec<u8> {
     let mut bytes = raw.as_bytes().to_vec();
     // C2-B-027: the quote marks that prefix a later line of a span are no span characters (data
     // rules only; the hand-written ones keep their reading).
-    let prefix = super::data_model::quoted_start_pub(raw, fact.quotes);
+    let prefix = super::data_model::quote_prefix_end(raw, fact.quotes);
     let data = super::data_rules::data_mode();
     for range in &fact.masks {
         let mut from = range.start.saturating_sub(start).min(bytes.len());

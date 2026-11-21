@@ -22,6 +22,27 @@ pub(super) fn quoted_start_pub(text: &str, marks: usize) -> usize {
     quoted_start(text, marks)
 }
 
+/// The end of up to `marks` quote marks, each with the blanks before it and one blank after it: the
+/// prefix that C2-B-027 leaves outside a span that crosses into the line.
+pub(super) fn quote_prefix_end(text: &str, marks: usize) -> usize {
+    let bytes = text.as_bytes();
+    let blank = |at: usize| bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t'));
+    let mut at = 0;
+    for _ in 0..marks {
+        while blank(at) {
+            at += 1;
+        }
+        if bytes.get(at) != Some(&b'>') {
+            break;
+        }
+        at += 1;
+        if blank(at) {
+            at += 1;
+        }
+    }
+    at
+}
+
 fn quoted_start(text: &str, marks: usize) -> usize {
     let bytes = text.as_bytes();
     let mut at = 0;
@@ -370,7 +391,6 @@ pub(super) struct BlockRec<'a> {
     pub line_index: usize,
     last_line_index: usize,
     quotes: usize,
-    item_child: bool,
     opener_rule: bool,
     opener_start: usize,
     column: OnceCell<usize>,
@@ -1221,7 +1241,7 @@ impl<'a> Records<'a> {
             };
         }
         let line_index = range.start_line.saturating_sub(1);
-        let block = self.block_record(at as usize, line_index, self.holder_kind(range.holder));
+        let block = self.block_record(at as usize, line_index);
         self.block_field(&block, name)
     }
 
@@ -1356,26 +1376,18 @@ impl<'a> Records<'a> {
 impl<'a> Records<'a> {
     fn block_column(&self, block: &BlockRec<'a>) -> usize {
         *block.column.get_or_init(|| {
-            if block.item_child {
-                column_of(
-                    self.positions,
-                    self.ranges[block.range as usize].start,
-                    block.quotes,
-                )
-            } else {
-                0
-            }
+            column_of(
+                self.positions,
+                self.ranges[block.range as usize].start,
+                block.quotes,
+            )
         })
     }
 
     fn block_mark_column(&self, block: &BlockRec<'a>) -> usize {
-        *block.mark_column.get_or_init(|| {
-            if block.opener_rule || block.item_child {
-                column_of(self.positions, block.opener_start, block.quotes)
-            } else {
-                0
-            }
-        })
+        *block
+            .mark_column
+            .get_or_init(|| column_of(self.positions, block.opener_start, block.quotes))
     }
 
     fn prev_type(&self, block: &BlockRec<'a>) -> Option<&'a str> {
@@ -1469,7 +1481,11 @@ impl<'a> Records<'a> {
                     *slot = true;
                 }
             }
-            if !line_leaf(range.kind) || (range.kind == "comment" && !range.form_block) {
+            // A joined row has no pos, so it is the leaf of no line.
+            if range.joined
+                || !line_leaf(range.kind)
+                || (range.kind == "comment" && !range.form_block)
+            {
                 continue;
             }
             let first = range.start_line.saturating_sub(1);
@@ -1784,7 +1800,7 @@ impl<'a> Records<'a> {
         if !block(kind, parent_kind) {
             return Node::Skip;
         }
-        Node::Block(self.block_record(at, line_index, parent_kind))
+        Node::Block(self.block_record(at, line_index))
     }
 
     /// The text leaf that holds an inline node.
@@ -1856,7 +1872,7 @@ impl<'a> Records<'a> {
         })
     }
 
-    fn block_record(&self, at: usize, line_index: usize, parent_kind: &'a str) -> BlockRec<'a> {
+    fn block_record(&self, at: usize, line_index: usize) -> BlockRec<'a> {
         let range = &self.ranges[at];
         let kind = range.kind;
         let mut owner = range.holder;
@@ -1889,7 +1905,6 @@ impl<'a> Records<'a> {
                 .saturating_sub(1)
                 .min(self.lines.len().saturating_sub(1)),
             quotes,
-            item_child: parent_kind == "list_item" || item_owner.is_some(),
             opener_rule: opener_rule_kind(kind),
             opener_start: if range.has_attrs {
                 opener_start(self.source, range.start, quotes)

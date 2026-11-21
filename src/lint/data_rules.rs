@@ -386,6 +386,16 @@ pub(super) fn nodes(ranges: &[Range<'_>], values: &[V<'_>]) -> Vec<Option<Value>
         .collect()
 }
 
+/// The node of one record, cut as `nodes` cuts it.
+pub(super) fn node_of(kind: &str, value: V<'_>) -> Option<Value> {
+    let compiled = compiled();
+    let keep = |key: &str| compiled.node_keys.contains(key);
+    compiled
+        .node_types
+        .get(kind)
+        .map(|depth| value.to_value_within(*depth, &keep))
+}
+
 pub(super) fn modeled_ids() -> &'static HashSet<&'static str> {
     &compiled().ids
 }

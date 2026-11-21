@@ -249,12 +249,15 @@ fn lint_core<'a>(
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     if let Some(tree) = tree.filter(|_| data_rules::data_mode()) {
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
+        let mut positions = positions;
+        let mut nodes = data_rules::nodes(&positions.all, &values);
+        joined_rows(source, tree, &mut positions, &values, &mut nodes);
         out.extend(data_rules::run(
             source,
             &parsed,
             &positions.all,
             &positions.holders,
-            &data_rules::nodes(&positions.all, &values),
+            &nodes,
             &values,
             tree,
             &line_model,
@@ -1194,6 +1197,9 @@ struct Range<'a> {
     index: u32,
     /// The range of the item before it in the same `children` list.
     prev: Option<u32>,
+    /// A table row without `pos` that a continuation row joined, placed by its source layout entry
+    /// for the data rules (C2-W-150).
+    joined: bool,
 }
 
 /// A node that holds `children`: its range, if it has one, and the holder that holds it.
@@ -1231,6 +1237,142 @@ impl LazyPath<'_> {
 impl PartialEq<&str> for LazyPath<'_> {
     fn eq(&self, other: &&str) -> bool {
         self.len() == other.len() && self.text() == *other
+    }
+}
+
+/// C2-W-150: a table row that a continuation row joined omits `pos` (C2-A-158) and still has a block
+/// record, placed where its source layout entry is.
+fn joined_rows(
+    source: &str,
+    tree: V<'_>,
+    positions: &mut Ranges<'_>,
+    values: &[V<'_>],
+    nodes: &mut Vec<Option<serde_json::Value>>,
+) {
+    let mut rows = Vec::new();
+    for (table, (range, value)) in positions.all.iter().zip(values).enumerate() {
+        if range.kind != "table" {
+            continue;
+        }
+        let groups = value.at("children");
+        for (group, rows_of) in groups
+            .as_array()
+            .into_iter()
+            .flat_map(|a| a.iter())
+            .enumerate()
+        {
+            let list = rows_of.at("children");
+            for (index, row) in list
+                .as_array()
+                .into_iter()
+                .flat_map(|a| a.iter())
+                .enumerate()
+            {
+                if row.ty() == "table_row" && row.pos().is_none() {
+                    rows.push((table, group, index, row));
+                }
+            }
+        }
+    }
+    if rows.is_empty() {
+        return;
+    }
+    let entries = crate::api::layout::entries(source, &tree.to_value());
+    let line_of = |at: usize| source[..at.min(source.len())].matches('\n').count() + 1;
+    for (table, group, index, row) in rows {
+        let table_path = positions.all[table].path.as_str().to_owned();
+        let group_path = format!("{table_path}/children/{group}");
+        let path = format!("{group_path}/children/{index}");
+        let Some(entry) = entries
+            .iter()
+            .find(|entry| entry.get("path").and_then(serde_json::Value::as_str) == Some(&path))
+        else {
+            continue;
+        };
+        let byte = |key: &str| {
+            entry
+                .get(key)
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|at| usize::try_from(at).ok())
+        };
+        let (Some(start), Some(end)) = (byte("startByte"), byte("endByte")) else {
+            continue;
+        };
+        let Some(group_range) = positions
+            .all
+            .iter()
+            .position(|range| range.path.as_str() == group_path)
+            .and_then(|at| u32::try_from(at).ok())
+        else {
+            continue;
+        };
+        let Some(parent) = positions
+            .holders
+            .iter()
+            .position(|holder| holder.range == Some(group_range))
+            .and_then(|at| u32::try_from(at).ok())
+        else {
+            continue;
+        };
+        let (Ok(index), Ok(made)) = (u32::try_from(index), u32::try_from(positions.all.len()))
+        else {
+            continue;
+        };
+        let sibling = |at: Option<u32>| {
+            at.and_then(|at| {
+                positions.all.iter().position(|range| {
+                    range.holder == Some(parent) && range.index == at && !range.joined
+                })
+            })
+        };
+        let prev = sibling(index.checked_sub(1)).and_then(|at| u32::try_from(at).ok());
+        let next = sibling(index.checked_add(1));
+        // The cells that have ranges sit in the holder of the row, whose path node is the row's.
+        let cell = positions.all.iter().find(|range| {
+            range.kind == "table_cell"
+                && range.holder.is_some_and(|holder| {
+                    positions.holders[holder as usize].up == Some(parent)
+                        && positions.holders[holder as usize].range.is_none()
+                })
+                && range
+                    .path
+                    .node
+                    .and_then(|node| node.previous?.previous)
+                    .is_some_and(|node| matches!(node.segment, walk::Segment::Index(at) if at == index as usize))
+        });
+        let (node, holder) = cell.map_or((None, None), |cell| {
+            (
+                cell.path.node.and_then(|node| node.previous?.previous),
+                cell.holder,
+            )
+        });
+        let text = OnceCell::new();
+        if node.is_none() {
+            let _ = text.set(path);
+        }
+        positions.all.push(Range {
+            start,
+            end,
+            path: LazyPath { node, text },
+            kind: "table_row",
+            start_line: line_of(start),
+            end_line: line_of(end.saturating_sub(1).max(start)),
+            has_attrs: false,
+            footnote_key: None,
+            form_block: false,
+            image_line: false,
+            holder: Some(parent),
+            index,
+            prev,
+            joined: true,
+        });
+        nodes.push(data_rules::node_of("table_row", row));
+        if let Some(holder) = holder {
+            positions.holders[holder as usize].range = Some(made);
+        }
+        if let Some(next) = next {
+            positions.all[next].prev = Some(made);
+        }
     }
 }
 

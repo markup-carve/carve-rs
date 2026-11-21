@@ -332,6 +332,7 @@ impl<'a> Visit<'a> {
                 holder: entry.place.holder,
                 index: entry.place.index.unwrap_or(0),
                 prev: None,
+                joined: false,
             });
             self.walk.values.push(value);
             if let (Some(slot), Some(at), Some(made)) = (
