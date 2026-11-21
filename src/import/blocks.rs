@@ -473,12 +473,31 @@ impl Cx {
         if let Some(a) = chosen.authored {
             mapped.attrs.id = Some(a);
         }
+        let level = self.source_level(id, level);
         let children = self.inline_children(id);
         let mut m = node("heading");
         m.insert("level".into(), level.into());
         m.insert("children".into(), Value::Array(children));
         mapped.apply(&mut m);
         Value::Object(m)
+    }
+
+    /// C2-H-186: `data-carve-source-level` gives the level before `headingShift`
+    /// when it is a decimal integer from 1 without a leading zero below `level`.
+    fn source_level(&mut self, id: Id, level: u64) -> u64 {
+        let name = super::attrs::SOURCE_LEVEL;
+        let Some(value) = self.dom.attr(id, name) else {
+            return level;
+        };
+        let read = (!value.starts_with('0') && value.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| value.parse::<u64>().ok())
+            .flatten()
+            .filter(|&n| n >= 1 && n < level);
+        if let Some(n) = read {
+            return n;
+        }
+        self.ignored_carrier(id, name, "the value is no level below the element's");
+        level
     }
 
     fn heading_id(&mut self, id: Id) -> HeadingId {
@@ -508,7 +527,7 @@ impl Cx {
         HeadingId { authored: own }
     }
 
-    fn heading_level(&self, id: Id) -> Option<u64> {
+    pub(super) fn heading_level(&self, id: Id) -> Option<u64> {
         let tag = self.dom.tag(id)?;
         if let Some(d) = tag.strip_prefix('h')
             && d.len() == 1

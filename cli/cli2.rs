@@ -471,6 +471,29 @@ fn set_loss_options(args: &Args, options: &mut Options) -> Result<(), i32> {
         options.max_losses =
             usize::try_from(limit).map_err(|_| usage("--max-render-losses is too large"))?;
     }
+    set_heading_shift(args, options)
+}
+/// C2-H-208, C2-H-209: `--heading-shift` up to the maximum of its option
+/// row, refused for the plain-text and ANSI exports.
+fn set_heading_shift(args: &Args, options: &mut Options) -> Result<(), i32> {
+    let Some(shift) = value(args, "heading-shift").and_then(Value::as_u64) else {
+        return Ok(());
+    };
+    if let Some(target) = str_value(args, "to").filter(|t| matches!(*t, "plain" | "ansi")) {
+        return Err(usage(format!(
+            "--heading-shift does not apply to --to {target}"
+        )));
+    }
+    let rows: Value = serde_json::from_str(include_str!("../spec-data/options.json")).unwrap();
+    let max = rows["options"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["name"] == "headingShift"))
+        .and_then(|row| row["maximum"].as_u64())
+        .unwrap_or(0);
+    options.heading_shift = u8::try_from(shift)
+        .ok()
+        .filter(|n| u64::from(*n) <= max)
+        .ok_or_else(|| usage(format!("--heading-shift takes a count from 0 to {max}")))?;
     Ok(())
 }
 fn string_map(v: &Value) -> Result<BTreeMap<String, String>, i32> {

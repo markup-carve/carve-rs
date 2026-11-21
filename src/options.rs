@@ -139,6 +139,8 @@ pub struct Options {
     pub allow_losses: Vec<String>,
     /// C2-H-205: the render-loss entries the record keeps.
     pub max_losses: usize,
+    /// C2-H-208: added to every heading level of the render view, 0 to 5.
+    pub heading_shift: u8,
     pub social: Option<Social>,
     /// C2-N-003: the resolver and limits of include expansion; `None` expands nothing.
     pub includes: Option<crate::include::Includes>,
@@ -216,6 +218,7 @@ impl Default for Options {
             soft_break: SoftBreak::default(),
             allow_losses: Vec::new(),
             max_losses: DEFAULT_MAX_LOSSES,
+            heading_shift: 0,
             social: None,
             includes: None,
             code_block_renderer: None,

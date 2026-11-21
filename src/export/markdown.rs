@@ -1311,7 +1311,21 @@ fn heading(m: &mut State<'_, '_>, node: &Value) -> R {
         Some(r) => r.replace(&text, "$1\\$2").into_owned(),
         None => text,
     };
-    let level = usize::try_from(int(node, "level").unwrap_or(1).clamp(1, 6)).unwrap_or(1);
+    let raw_level = int(node, "level").unwrap_or(1);
+    // C2-H-209: Markdown spells levels 1 to 6; the first level a shift raised past 6 is reported.
+    if raw_level > 6 && m.x.heading_shift != 0 && !m.x.shift_reported {
+        m.x.shift_reported = true;
+        let shift = m.x.heading_shift.to_string();
+        let message = crate::diagnostic::Diagnostic::new(
+            crate::heading_shift::ABOVE_6,
+            &[("shift", shift.as_str())],
+            None,
+            None,
+        )
+        .message;
+        m.x.loss(node, crate::heading_shift::ABOVE_6, message);
+    }
+    let level = usize::try_from(raw_level.clamp(1, 6)).unwrap_or(1);
     Ok(format!(
         "{}{}\n\n",
         "#".repeat(level),

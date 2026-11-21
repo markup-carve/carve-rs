@@ -146,6 +146,22 @@ fn refusal(expected: &Value, result: &Result<String, Error>, out: &mut Vec<Strin
     }
 }
 
+fn boundary_refusal(case: &Value, input: &str, out: &mut Vec<String>) {
+    let request =
+        serde_json::json!({"call": "format", "source": input, "options": case["options"]});
+    let reply: Value =
+        serde_json::from_str(&api::json::call(&request.to_string())).unwrap_or_default();
+    let want = &case["expected"]["refusal"];
+    let path = want["path"].as_str().unwrap_or("").trim_start_matches('/');
+    if reply["error"]["name"] != want["error"]
+        || !reply["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains(path))
+    {
+        out.push(format!("expected refusal {want}; got {reply}"));
+    }
+}
+
 fn written(expected: &Value, result: &Result<Written, Error>, out: &mut Vec<String>) {
     match result {
         Ok(w) => {
@@ -239,7 +255,10 @@ fn writer_clause_cases() {
             }
             Some("format") => {
                 let input = c["input"].as_str().unwrap_or("");
-                if expected.get("refusal").is_some() {
+                if c["options"].get("headingShift").is_some() {
+                    // C2-T-005: a render option has no typed format field; the JSON boundary refuses it.
+                    boundary_refusal(c, input, &mut problems);
+                } else if expected.get("refusal").is_some() {
                     refusal(expected, &carve.format(input, &opts), &mut problems);
                 } else {
                     written(

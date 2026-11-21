@@ -34,6 +34,9 @@ pub struct ExportOptions {
     pub strict_losses: bool,
     /// The schemes a link or an image may use; a denied destination is written empty and reported.
     pub url_policy: UrlPolicy,
+    /// `headingShift` (C2-H-209): read by the Markdown export, which writes a
+    /// level above 6 as 6; plain text and ANSI refuse any value, 0 included.
+    pub heading_shift: Option<u8>,
 }
 
 impl Default for ExportOptions {
@@ -42,6 +45,7 @@ impl Default for ExportOptions {
             smart_typography: true,
             strict_losses: false,
             url_policy: UrlPolicy::default(),
+            heading_shift: None,
         }
     }
 }
@@ -54,6 +58,7 @@ impl ExportOptions {
             smart_typography: opts.smart_typography,
             strict_losses: opts.strict_losses,
             url_policy: opts.url_policy.clone(),
+            heading_shift: (opts.heading_shift != 0).then_some(opts.heading_shift),
         }
     }
 }
@@ -83,6 +88,9 @@ impl Target {
         EXPORT_TARGETS.into_iter().find(|t| t.name() == name)
     }
 }
+
+/// C2-H-208: the largest `headingShift`.
+const MAX_HEADING_SHIFT: u64 = 5;
 
 /// The targets of the exports, in the order the writer registry lists them.
 pub const EXPORT_TARGETS: [Target; 3] = [Target::Markdown, Target::Plain, Target::Ansi];
@@ -137,9 +145,26 @@ pub fn to_ansi(tree: &Tree, options: &ExportOptions) -> Result<Written, Error> {
 ///
 /// As [`to_markdown`].
 pub fn export_to(target: Target, tree: &Tree, options: &ExportOptions) -> Result<Written, Error> {
+    if target != Target::Markdown && options.heading_shift.is_some() {
+        return Err(Error::option(
+            "headingShift",
+            format!("the {} export does not read it", target.name()),
+        ));
+    }
+    if options
+        .heading_shift
+        .is_some_and(|n| u64::from(n) > MAX_HEADING_SHIFT)
+    {
+        return Err(Error::option(
+            "headingShift",
+            "the value is not a count from 0 to 5",
+        ));
+    }
     // The tree is resolved again on a copy, as a render does: a supplied tree's results are no input.
     let arena = crate::Arena::new();
     let mut doc = tree.document().in_arena(&arena);
+    let shift = options.heading_shift.unwrap_or(0);
+    crate::heading_shift::apply(doc.children, shift);
     let resolve_opts = crate::options::Options::default();
     let _ = crate::resolve_tree_unflattened(&mut doc, &resolve_opts, &arena);
     let xref_text = crate::html::xref_targets(&doc, &resolve_opts)
