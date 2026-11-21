@@ -1535,10 +1535,14 @@ impl<'a> Eval<'_, 'a> {
                 let value = self.value(arg);
                 Val::num(self.str_of(&value).map_or(0, str::len))
             }
+            // Arithmetic on an absent value is absent, so a comparison with it does not hold (C2-W-141).
             Expr::Add(args) => {
                 let mut sum = 0;
                 for arg in args {
                     let value = self.value(arg);
+                    if value.is_null() {
+                        return Val::Null;
+                    }
                     sum += self.number(&value);
                 }
                 Val::Num(sum)
@@ -1546,6 +1550,9 @@ impl<'a> Eval<'_, 'a> {
             Expr::Sub(args) => {
                 let left = self.value(&args.0);
                 let right = self.value(&args.1);
+                if left.is_null() || right.is_null() {
+                    return Val::Null;
+                }
                 Val::Num(self.number(&left) - self.number(&right))
             }
             Expr::Slice(args) => self.slice(&args.0, &args.1, args.2.as_ref()),
