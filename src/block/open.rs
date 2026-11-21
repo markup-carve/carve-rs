@@ -67,6 +67,11 @@ impl Parser<'_> {
     /// Whether the line ends the open paragraph-like leaf (the six interrupters).
     pub(super) fn interrupts(&self, walk: &Walk<'_>) -> bool {
         let k = walk.cur.after_blanks();
+        if !may_open(&k) {
+            let m = k.col - walk.qbase;
+            return shapes::list_marker(&k)
+                .is_some_and(|marker| self.marker_interrupts(&self.frame(walk, m), m, &marker));
+        }
         if fence_line(&k) || shapes::table_row(&k).is_some() || shapes::thematic_break(&k) {
             return true;
         }
@@ -391,6 +396,10 @@ impl Parser<'_> {
         first: bool,
     ) -> Option<(Cursor<'c>, Option<usize>)> {
         let _ = first;
+        if !may_open(k) {
+            let mk = shapes::list_marker(k)?;
+            return self.room(2).then(|| (self.open_list(k, m, &mk), None));
+        }
         if let Some(after) = shapes::quote_mark(k) {
             if !self.room(1) {
                 return None;
@@ -476,6 +485,10 @@ impl Parser<'_> {
     fn open_leaf(&mut self, k: &Cursor<'_>, m: usize, e: usize, first: bool) {
         let r = k.rest();
         let start = k.offset();
+        if !may_open(k) {
+            self.open_paragraph(start, e);
+            return;
+        }
         if shapes::thematic_break(k) {
             let (s, attrs) = self.take_pending(start, None);
             self.push_leaf_event(LeafKind::Thematic, s, start + r.len(), attrs);
@@ -552,6 +565,10 @@ impl Parser<'_> {
             );
             return;
         }
+        self.open_paragraph(start, e);
+    }
+
+    fn open_paragraph(&mut self, start: usize, e: usize) {
         let piece = Piece {
             start,
             end: e,
@@ -855,6 +872,16 @@ fn start_attribute(attrs: Option<&mut AttrBlock>, style: shapes::Style, value: &
 }
 
 /// Interrupter (a): a fence line (C2-B-014).
+/// The first bytes of every block shape but a list marker: fences, tables,
+/// thematic breaks, captions, quotes, headings, attribute and include lines,
+/// definitions and description marks.
+static OPENER_START: crate::chars::ByteSet = crate::chars::ByteSet::new(b"`%:|*^[>=#{", b"", None);
+
+/// False when no shape but a list marker can start at `k`.
+fn may_open(k: &Cursor<'_>) -> bool {
+    k.peek_byte().is_some_and(|b| OPENER_START.has(b))
+}
+
 fn fence_line(k: &Cursor<'_>) -> bool {
     shapes::code_fence_opener(k).is_some()
         || shapes::fence_run(k, b'%') >= 3
