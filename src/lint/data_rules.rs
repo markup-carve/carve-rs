@@ -2,8 +2,8 @@
 #![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
 use super::data_interpreter::{
-    Eval, Expr, F, Facts, Pattern, Scope, Val, field_expr, held_literals, holds, pattern,
-    quick_rejects, quick_tests,
+    Eval, Expr, F, Facts, Pattern, Scope, Val, entry_quick_tests, field_expr, held_literals, holds,
+    pattern, quick_rejects, quick_tests,
 };
 use super::data_model::{LineRec, Node, Records, Subject};
 use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
@@ -60,6 +60,8 @@ enum Over {
 
 struct Entry {
     when: Option<Expr>,
+    /// The quick tests of `when` that run before anything stateful.
+    quick: Vec<usize>,
     message: usize,
     start: Option<&'static Expr>,
     end: Option<&'static Expr>,
@@ -146,8 +148,10 @@ fn compile_rule(rule: &'static Value) -> Rule {
                     merged.push((key, value));
                 }
             }
+            let when = entry.get("when").map(|when| scope.compile(when));
             Entry {
-                when: entry.get("when").map(|when| scope.compile(when)),
+                quick: when.as_ref().map(entry_quick_tests).unwrap_or_default(),
+                when,
                 message: entry["message"].as_u64().unwrap_or(0) as usize,
                 start: None,
                 end: None,
@@ -310,6 +314,16 @@ fn run_rule<'a>(
     if let Some(when) = &rule.when
         && quick_rejects(when, &rule.quick, records, &subject)
     {
+        return;
+    }
+    // Every open entry failing a quick test means no report, whatever the rule's own test says.
+    if rule.entries.iter().enumerate().all(|(at, entry)| {
+        (at < 64 && open & (1 << at) == 0)
+            || entry
+                .when
+                .as_ref()
+                .is_some_and(|when| quick_rejects(when, &entry.quick, records, &subject))
+    }) {
         return;
     }
     let line = &records.lines[line_index];

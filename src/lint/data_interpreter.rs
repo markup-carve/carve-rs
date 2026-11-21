@@ -1009,6 +1009,65 @@ pub(super) fn quick_tests(when: &Expr) -> Vec<usize> {
         .collect()
 }
 
+/// Whether a test can neither set groups nor fill a `let`, so skipping it changes nothing later.
+fn stateless(expr: &Expr) -> bool {
+    match expr {
+        Expr::Var(_) => false,
+        Expr::Matches {
+            subject, pattern, ..
+        } => pattern.as_ref().is_none_or(|p| p.groups.is_empty()) && stateless(subject),
+        Expr::All(items) | Expr::Any(items) | Expr::Add(items) | Expr::Concat(items) => {
+            items.iter().all(stateless)
+        }
+        Expr::Not(item)
+        | Expr::Len(item)
+        | Expr::TrimEnd(item)
+        | Expr::Words(item)
+        | Expr::TextFrom(item)
+        | Expr::In(item, _) => stateless(item),
+        Expr::Cmp(_, args)
+        | Expr::Contains(args)
+        | Expr::Starts(args)
+        | Expr::Sub(args)
+        | Expr::Shift { args, .. } => stateless(&args.0) && stateless(&args.1),
+        Expr::If(args) => stateless(&args.0) && stateless(&args.1) && stateless(&args.2),
+        Expr::Slice(args) => {
+            stateless(&args.0) && stateless(&args.1) && args.2.as_ref().is_none_or(stateless)
+        }
+        Expr::Some { test, .. } => stateless(test),
+        Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
+            true
+        }
+    }
+}
+
+/// For a report entry's test: the quick tests that run before anything stateful, so an entry they
+/// fail can be skipped without changing what a later entry reads. `usize::MAX` stands for a test
+/// that is itself one filtered `matches`.
+pub(super) fn entry_quick_tests(when: &Expr) -> Vec<usize> {
+    if quick_test(when) {
+        return vec![usize::MAX];
+    }
+    let Expr::All(items) = when else {
+        return Vec::new();
+    };
+    let mut tests = Vec::new();
+    for (at, item) in items.iter().enumerate() {
+        if quick_test(item) {
+            tests.push(at);
+        }
+        if !stateless(item) {
+            break;
+        }
+    }
+    tests
+}
+
+fn quick_test(expr: &Expr) -> bool {
+    matches!(expr, Expr::Matches { subject, pattern: Some(pattern), .. }
+        if pattern.filters() && matches!(**subject, Expr::Field(_)))
+}
+
 /// Whether one of the quick tests of a rule's `when` fails for this record; a rule whose own test
 /// fails reports nothing, so these may run first and in any order.
 pub(super) fn quick_rejects(
@@ -1017,15 +1076,17 @@ pub(super) fn quick_rejects(
     records: &Records<'_>,
     subject: &Subject<'_, '_>,
 ) -> bool {
-    let Expr::All(items) = when else {
-        return false;
-    };
     tests.iter().any(|&at| {
+        let item = match when {
+            _ if at == usize::MAX => Some(when),
+            Expr::All(items) => items.get(at),
+            _ => None,
+        };
         let Some(Expr::Matches {
             subject: field,
             pattern: Some(pattern),
             ..
-        }) = items.get(at)
+        }) = item
         else {
             return false;
         };
