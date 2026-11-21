@@ -501,19 +501,30 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 }
 
 fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
-    let (start, text) = leaf_after_quotes(line);
-    let item_plus = text == "- +" || text == "* +";
-    if text == "+" || item_plus {
-        let message = if item_plus {
+    let (mut start, mut text) = leaf_after_quotes(line);
+    let mut item = false;
+    while text.starts_with("- ") || text.starts_with("* ") {
+        item = true;
+        text = &text[2..];
+        start += 2;
+        let trimmed = text.trim_start_matches([' ', '\t']);
+        start += text.len() - trimmed.len();
+        text = trimmed;
+        // A quote in the item's marker-line text is not another physical-line prefix.
+        if text.starts_with("> ") {
+            return;
+        }
+    }
+    if text == "+" {
+        let message = if item {
             2
         } else {
             usize::from(line.scope.container == ContainerKind::ListItem)
         };
-        let plus = start + usize::from(item_plus) * 2;
         sink.emit_nth(
             "deprecated-continuation-marker",
-            line.start + plus,
-            line.start + plus + 1,
+            line.start + start,
+            line.start + start + 1,
             &line.path,
             &[],
             message,

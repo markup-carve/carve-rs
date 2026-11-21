@@ -34,6 +34,13 @@ fn plus_inside_a_quote_on_an_item_marker_line_is_not_a_continuation() {
         ranges("> +\n", "deprecated-continuation-marker"),
         vec![(2, 3)]
     );
+    for source in ["- - +\n", "- * +\n"] {
+        assert_eq!(
+            ranges(source, "deprecated-continuation-marker"),
+            vec![(4, 5)],
+            "{source:?}"
+        );
+    }
 }
 
 #[test]
