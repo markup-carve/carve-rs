@@ -36,6 +36,8 @@ jobs:
       - name: Seed the corpora from the conformance corpus
         run: python3 fuzz/seeds.py .
       - name: Run each target
+        env:
+          CARVE_FUZZ_SMOKE: "1"
         run: |
           for t in $(cargo fuzz list); do
             echo "::group::$t"
