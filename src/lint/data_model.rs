@@ -90,86 +90,77 @@ fn shape_attribute(body: &str) -> bool {
             .is_some_and(|(block, end)| !block.empty && end == body.len())
 }
 
-fn shape_early(body: &str) -> Option<&'static str> {
-    if body.is_empty() {
-        return Some("blank");
-    }
-    let first = body.as_bytes()[0];
-    if shape_heading(body) {
-        return Some("heading");
-    }
-    if first == b'>' && (body.len() == 1 || body.as_bytes().get(1) == Some(&b' ')) {
-        return Some("quote");
-    }
-    if body.starts_with("%%%") {
-        return Some("comment_block_opener");
-    }
-    if body.starts_with("%%") {
-        return Some("comment_only");
-    }
-    if body.starts_with("^ ") {
-        return Some("caption");
-    }
-    if body.starts_with("{{") && body.ends_with("}}") {
-        return Some("include");
-    }
-    if shape_attribute(body) {
-        return Some("attribute_line");
-    }
-    None
+fn shape_quote(body: &str) -> bool {
+    body.starts_with('>') && (body.len() == 1 || body.as_bytes().get(1) == Some(&b' '))
 }
 
-fn shape_block(body: &str) -> Option<&'static str> {
-    if body.starts_with(":::") {
-        if trim_end(body).bytes().all(|b| b == b':') {
-            return Some("div_bare_run");
-        }
-        return Some("div_opener");
-    }
-    if body.starts_with(":: ") {
-        return Some("term");
-    }
-    if body.starts_with(": ") {
-        return Some("description");
-    }
-    if body.starts_with('|') && body.ends_with('|') {
-        return Some("table_row");
-    }
-    if body.starts_with("```") {
-        return Some("code_fence_opener");
-    }
-    if body.starts_with("---") || body.starts_with("***") || body.starts_with("___") {
-        return Some("thematic_break");
-    }
-    None
+fn shape_div_bare_run(body: &str) -> bool {
+    body.starts_with(":::") && trim_end(body).bytes().all(|b| b == b':')
 }
 
-fn shape_reference(body: &str) -> Option<&'static str> {
-    if body.starts_with("[^") && body.contains("]:") {
-        return Some("footnote_definition");
-    }
-    if body.starts_with('[') && body.contains("]:") {
-        return Some("link_definition");
-    }
-    let first = body.as_bytes().first().copied()?;
-    if matches!(first, b'-' | b'*') && body.get(1..2) == Some(" ") {
-        return Some("bullet");
-    }
-    if first.is_ascii_alphanumeric()
+fn shape_bullet(body: &str) -> bool {
+    body.starts_with(['-', '*']) && body.get(1..2) == Some(" ")
+}
+
+fn shape_ordered(body: &str) -> bool {
+    body.as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphanumeric)
         && body
             .find(['.', ')'])
             .is_some_and(|at| body.get(at + 1..at + 2) == Some(" "))
-    {
-        return Some("ordered");
-    }
-    None
 }
 
+/// The line shapes in the order the first that fits names the line; a line no shape fits is `text`.
+type ShapeTest = fn(&str) -> bool;
+
+const SHAPES: [(&str, ShapeTest); 20] = [
+    ("blank", str::is_empty),
+    ("heading", shape_heading),
+    ("quote", shape_quote),
+    ("comment_block_opener", |b| b.starts_with("%%%")),
+    ("comment_only", |b| b.starts_with("%%")),
+    ("caption", |b| b.starts_with("^ ")),
+    ("include", |b| b.starts_with("{{") && b.ends_with("}}")),
+    ("attribute_line", shape_attribute),
+    ("div_bare_run", shape_div_bare_run),
+    ("div_opener", |b| b.starts_with(":::")),
+    ("term", |b| b.starts_with(":: ")),
+    ("description", |b| b.starts_with(": ")),
+    ("table_row", |b| b.starts_with('|') && b.ends_with('|')),
+    ("code_fence_opener", |b| b.starts_with("```")),
+    ("thematic_break", |b| {
+        b.starts_with("---") || b.starts_with("***") || b.starts_with("___")
+    }),
+    ("footnote_definition", |b| {
+        b.starts_with("[^") && b.contains("]:")
+    }),
+    ("link_definition", |b| {
+        b.starts_with('[') && b.contains("]:")
+    }),
+    ("bullet", shape_bullet),
+    ("ordered", shape_ordered),
+    ("text", |_| true),
+];
+
 fn shape(body: &str) -> &'static str {
-    shape_early(body)
-        .or_else(|| shape_block(body))
-        .or_else(|| shape_reference(body))
-        .unwrap_or("text")
+    SHAPES
+        .iter()
+        .find(|(_, fits)| fits(body))
+        .map_or("text", |(name, _)| *name)
+}
+
+/// Whether `shape(body) == name`, testing only the shapes up to `name`.
+pub(super) fn shape_is(body: &str, name: &str) -> bool {
+    for (known, fits) in &SHAPES {
+        if fits(body) {
+            return *known == name;
+        }
+        if *known == name {
+            return false;
+        }
+    }
+    false
 }
 
 fn column_of(source: &Source<'_>, at: usize, quotes: usize) -> usize {
@@ -431,26 +422,35 @@ impl<'a> Records<'a> {
     ) -> Self {
         let mut holder_quotes = Vec::with_capacity(holders.len());
         let mut holder_inline = Vec::with_capacity(holders.len());
+        // A type name is one `&'static str` per type, so its flags are looked up by address.
+        let mut flags: [Option<(&str, bool, bool)>; 64] = [None; 64];
         for holder in holders {
-            let kind = holder.range.map(|at| ranges[at as usize].kind);
+            let (quote, inline) = holder.range.map_or((false, false), |at| {
+                let kind = ranges[at as usize].kind;
+                let slot = &mut flags[(kind.as_ptr() as usize >> 3) & 63];
+                if let Some((known, quote, inline)) = *slot {
+                    if std::ptr::eq(known, kind) {
+                        return (quote, inline);
+                    }
+                }
+                let found = (kind == "block_quote", INLINE_HOLDERS.contains(&kind));
+                *slot = Some((kind, found.0, found.1));
+                found
+            });
             let up = holder.up.map(|up| up as usize);
-            holder_quotes.push(
-                up.map_or(0, |up| holder_quotes[up]) + usize::from(kind == Some("block_quote")),
-            );
-            holder_inline.push(
-                up.is_some_and(|up| holder_inline[up])
-                    || kind.is_some_and(|kind| INLINE_HOLDERS.contains(&kind)),
-            );
+            holder_quotes.push(up.map_or(0, |up| holder_quotes[up]) + usize::from(quote));
+            holder_inline.push(up.is_some_and(|up| holder_inline[up]) || inline);
         }
         let mut records = Self {
             source,
             positions,
             ranges,
             holders,
+            // The walk records a node before its children, so the document range, if any, comes first.
             root: ranges
-                .iter()
-                .position(|range| range.path.is_empty())
-                .map(|at| at as u32),
+                .first()
+                .filter(|range| range.path.is_empty())
+                .map(|_| 0),
             lines: Vec::new(),
             colons: Vec::new(),
             line_colons: Vec::new(),
@@ -601,6 +601,17 @@ impl<'a> Records<'a> {
             holder = node.up;
         }
         false
+    }
+
+    /// `prev.leaf_id == leaf_id` of a line.
+    pub fn prev_same_leaf(&self, index: usize) -> bool {
+        index
+            .checked_sub(1)
+            .is_some_and(|prev| self.lines[prev].leaf == self.lines[index].leaf)
+    }
+
+    pub fn line_shape_is(&self, index: usize, name: &str) -> bool {
+        shape_is(self.lines[index].body, name)
     }
 
     fn neighbor(&self, index: usize, name: F) -> Option<usize> {

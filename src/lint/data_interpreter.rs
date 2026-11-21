@@ -63,6 +63,8 @@ pub(super) enum F {
     Width,
     Kind,
     Unknown,
+    /// Not a field: the fact that the previous line has the same leaf (`prev.leaf_id == leaf_id`).
+    PrevSameLeaf,
 }
 
 const FIELDS: &[(&str, F)] = &[
@@ -162,24 +164,125 @@ pub(super) enum Cmp {
 #[derive(Debug)]
 pub(super) struct Pattern {
     pub re: Regex,
-    pub groups: Vec<&'static str>,
+    /// The names and capture indices of its named groups.
+    pub groups: Vec<(&'static str, usize)>,
     /// For a pattern anchored at the start that cannot match the empty text: the bytes a match starts with.
     pub first: Option<Box<[bool; 256]>>,
+    /// For a pattern anchored at the end of the text that cannot match the empty text: the bytes a match ends with.
+    last: Option<Box<[bool; 256]>>,
+    /// For an alternation whose every branch is anchored at the start or at the end: the bytes a match
+    /// starts with at the start and those it ends with at the end.
+    edges: Option<Box<Edges>>,
     /// Bytes of which every match holds at least one.
     needs: Option<Box<[bool; 256]>>,
 }
 
+/// What an alternation of start- and end-anchored branches needs at the edges of the text: a branch
+/// with a literal next to its anchor gives that literal, any other one its start or end bytes.
+#[derive(Debug, Default)]
+struct Edges {
+    prefixes: Vec<Vec<u8>>,
+    suffixes: Vec<Vec<u8>>,
+    first: Option<Box<[bool; 256]>>,
+    last: Option<Box<[bool; 256]>>,
+}
+
+impl Edges {
+    fn admit(&self, text: &[u8]) -> bool {
+        self.prefixes.iter().any(|prefix| text.starts_with(prefix))
+            || self.suffixes.iter().any(|suffix| text.ends_with(suffix))
+            || self
+                .first
+                .as_ref()
+                .is_some_and(|set| text.first().is_some_and(|byte| set[usize::from(*byte)]))
+            || self
+                .last
+                .as_ref()
+                .is_some_and(|set| text.last().is_some_and(|byte| set[usize::from(*byte)]))
+    }
+
+    fn branch(&mut self, hir: &regex_syntax::hir::Hir) -> bool {
+        if let Some(prefix) = edge_literal(hir, false) {
+            self.prefixes.push(prefix);
+            return true;
+        }
+        if let Some(suffix) = edge_literal(hir, true) {
+            self.suffixes.push(suffix);
+            return true;
+        }
+        let mut set = Box::new([false; 256]);
+        if anchored_first(hir, &mut set) {
+            let first = self.first.get_or_insert_with(|| Box::new([false; 256]));
+            first.iter_mut().zip(set.iter()).for_each(|(a, b)| *a |= b);
+            return true;
+        }
+        let mut set = Box::new([false; 256]);
+        if anchored_last(hir, &mut set) {
+            let last = self.last.get_or_insert_with(|| Box::new([false; 256]));
+            last.iter_mut().zip(set.iter()).for_each(|(a, b)| *a |= b);
+            return true;
+        }
+        false
+    }
+}
+
+/// The literal bytes right after a leading `^` (or right before a trailing `$` when `end`).
+fn edge_literal(hir: &regex_syntax::hir::Hir, end: bool) -> Option<Vec<u8>> {
+    use regex_syntax::hir::{HirKind, Look};
+    let HirKind::Concat(items) = hir.kind() else {
+        return match hir.kind() {
+            HirKind::Capture(capture) => edge_literal(&capture.sub, end),
+            _ => None,
+        };
+    };
+    let anchor = if end { Look::End } else { Look::Start };
+    let mut order: Vec<&regex_syntax::hir::Hir> = items.iter().collect();
+    if end {
+        order.reverse();
+    }
+    if !matches!(order.first().map(|item| item.kind()), Some(HirKind::Look(look)) if *look == anchor)
+    {
+        return None;
+    }
+    let mut literal: Vec<u8> = Vec::new();
+    for item in order.iter().skip(1) {
+        let HirKind::Literal(bytes) = item.kind() else {
+            break;
+        };
+        if end {
+            let mut joined = bytes.0.to_vec();
+            joined.extend_from_slice(&literal);
+            literal = joined;
+        } else {
+            literal.extend_from_slice(&bytes.0);
+        }
+    }
+    (!literal.is_empty()).then_some(literal)
+}
+
 impl Pattern {
     /// Whether the text can match at all, from its first byte; a quick test before the regex runs.
+    pub fn filters(&self) -> bool {
+        self.first.is_some() || self.last.is_some() || self.edges.is_some() || self.needs.is_some()
+    }
+
     pub fn may_match(&self, text: &str) -> bool {
         self.first.as_ref().is_none_or(|first| {
             text.as_bytes()
                 .first()
                 .is_some_and(|byte| first[usize::from(*byte)])
+        }) && self.last.as_ref().is_none_or(|last| {
+            text.as_bytes()
+                .last()
+                .is_some_and(|byte| last[usize::from(*byte)])
         }) && self
-            .needs
+            .edges
             .as_ref()
-            .is_none_or(|needs| text.as_bytes().iter().any(|byte| needs[usize::from(*byte)]))
+            .is_none_or(|edges| edges.admit(text.as_bytes()))
+            && self
+                .needs
+                .as_ref()
+                .is_none_or(|needs| text.as_bytes().iter().any(|byte| needs[usize::from(*byte)]))
     }
 }
 
@@ -218,6 +321,45 @@ fn first_bytes(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
         HirKind::Alternation(items) => items
             .iter()
             .fold(false, |nullable, item| first_bytes(item, set) || nullable),
+    }
+}
+
+/// Adds the bytes `hir` can end with to `set`; returns whether it can match the empty text.
+fn last_bytes(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
+    use regex_syntax::hir::HirKind;
+    match hir.kind() {
+        HirKind::Literal(literal) => {
+            if let Some(byte) = literal.0.last() {
+                set[usize::from(*byte)] = true;
+            }
+            literal.0.is_empty()
+        }
+        HirKind::Repetition(repetition) => last_bytes(&repetition.sub, set) || repetition.min == 0,
+        HirKind::Capture(capture) => last_bytes(&capture.sub, set),
+        HirKind::Concat(items) => items.iter().rev().all(|item| last_bytes(item, set)),
+        HirKind::Alternation(items) => items
+            .iter()
+            .fold(false, |nullable, item| last_bytes(item, set) || nullable),
+        // A class or look ends a match the same way it starts one.
+        _ => first_bytes(hir, set),
+    }
+}
+
+/// The end bytes of a pattern whose every match ends at the end of the text, if it has any.
+fn anchored_last(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
+    use regex_syntax::hir::{HirKind, Look};
+    match hir.kind() {
+        HirKind::Concat(items)
+            if matches!(
+                items.last().map(regex_syntax::hir::Hir::kind),
+                Some(HirKind::Look(Look::End))
+            ) =>
+        {
+            !items.iter().rev().skip(1).all(|item| last_bytes(item, set))
+        }
+        HirKind::Capture(capture) => anchored_last(&capture.sub, set),
+        HirKind::Alternation(items) => items.iter().all(|item| anchored_last(item, set)),
+        _ => false,
     }
 }
 
@@ -291,8 +433,10 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
     // The names live as long as the compiled model, which is never dropped.
     let groups = re
         .capture_names()
-        .flatten()
-        .map(|name| &*Box::leak(name.to_owned().into_boxed_str()))
+        .enumerate()
+        .filter_map(|(index, name)| {
+            name.map(|name| (&*Box::leak(name.to_owned().into_boxed_str()), index))
+        })
         .collect();
     let hir = regex_syntax::ParserBuilder::new()
         .case_insensitive(flags.contains('i'))
@@ -304,6 +448,29 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
         .as_ref()
         .filter(|hir| anchored_first(hir, &mut set))
         .map(|_| set);
+    let mut end_set = Box::new([false; 256]);
+    let last = hir
+        .as_ref()
+        .filter(|hir| anchored_last(hir, &mut end_set))
+        .map(|_| end_set);
+    let edges = hir.as_ref().and_then(|hir| {
+        let mut edges = Box::<Edges>::default();
+        let all = match hir.kind() {
+            regex_syntax::hir::HirKind::Alternation(items) => {
+                items.iter().all(|item| edges.branch(item))
+            }
+            // One branch: worth it only for a literal longer than the first or last byte.
+            _ => {
+                edges.branch(hir)
+                    && edges
+                        .prefixes
+                        .iter()
+                        .chain(&edges.suffixes)
+                        .any(|lit| lit.len() > 1)
+            }
+        };
+        all.then_some(edges)
+    });
     let needs = hir.as_ref().and_then(needed_bytes).map(|bytes| {
         let mut set = Box::new([false; 256]);
         for byte in bytes {
@@ -315,6 +482,8 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
         re,
         groups,
         first,
+        last,
+        edges,
         needs,
     })
 }
@@ -333,6 +502,8 @@ pub(super) enum Expr {
     In(Box<Self>, Vec<Val<'static>>),
     Contains(Box<(Self, Self)>),
     Starts(Box<(Self, Self)>),
+    /// `eq` of a line's own `shape` with a literal, decided without naming the shape.
+    ShapeIs(&'static str),
     Matches {
         subject: Box<Self>,
         pattern: Option<Pattern>,
@@ -402,7 +573,7 @@ impl Scope<'_> {
         let pair = |a: usize, b: usize| Box::new((self.compile(at(a)), self.compile(at(b))));
         let list = |items: &'static [Value]| items.iter().map(|item| self.compile(item)).collect();
         if let Some((_, cmp)) = COMPARISONS.iter().find(|(name, _)| name == op) {
-            return Expr::Cmp(*cmp, pair(0, 1));
+            return self.comparison(*cmp, at(0), at(1));
         }
         match op.as_str() {
             "f" => Expr::Field(path(arg.as_str().unwrap_or(""))),
@@ -420,6 +591,21 @@ impl Scope<'_> {
             },
             _ => self.compile_extra(op, arg, args),
         }
+    }
+
+    /// A comparison; `eq` and `ne` of a line's own `shape` with a literal test that shape alone.
+    fn comparison(&self, cmp: Cmp, left: &'static Value, right: &'static Value) -> Expr {
+        if let (Cmp::Eq | Cmp::Ne, Some("shape"), Some(name)) =
+            (cmp, left.get("f").and_then(Value::as_str), right.as_str())
+        {
+            let test = Expr::ShapeIs(name);
+            return if matches!(cmp, Cmp::Eq) {
+                test
+            } else {
+                Expr::Not(Box::new(test))
+            };
+        }
+        Expr::Cmp(cmp, Box::new((self.compile(left), self.compile(right))))
     }
 
     fn variable(&self, name: &str) -> Expr {
@@ -505,7 +691,10 @@ pub(super) struct Facts<'k> {
     /// The first byte of the record's own `text`, and of a line's `body`; `None` inside is an empty value.
     pub text_first: Option<Option<u8>>,
     pub body_first: Option<Option<u8>>,
+    /// Flags of the record, and `PrevSameLeaf` for a line.
     pub flags: &'k [(F, bool)],
+    /// Whether a block is the first child of its parent (`index` 0).
+    pub first_child: Option<bool>,
     /// Literals the record's own `text` or `body` is known to hold or not.
     pub holds: &'k [(bool, &'static str, bool)],
 }
@@ -532,6 +721,23 @@ fn literal_text(expr: &Expr) -> Option<&str> {
     }
 }
 
+/// `prev.leaf_id` against `leaf_id`, in either order.
+fn prev_same_leaf(args: &(Expr, Expr)) -> bool {
+    let is = |expr: &Expr, want: &[F]| match expr {
+        Expr::Field(path) => {
+            path.len() == want.len()
+                && path
+                    .iter()
+                    .zip(want)
+                    .all(|(seg, f)| matches!(seg, Seg::Field(name) if name == f))
+        }
+        _ => false,
+    };
+    let prev = [F::Prev, F::LeafId];
+    let own = [F::LeafId];
+    (is(&args.0, &prev) && is(&args.1, &own)) || (is(&args.0, &own) && is(&args.1, &prev))
+}
+
 impl Facts<'_> {
     /// The name the facts give an operand: the record's kind or its parent's type.
     fn name(&self, expr: &Expr, over_line: bool) -> Option<&str> {
@@ -554,9 +760,7 @@ impl Facts<'_> {
     /// The truth of a primitive test when the facts fix it.
     fn known(&self, expr: &Expr, over_line: bool) -> Option<bool> {
         match expr {
-            Expr::Cmp(op @ (Cmp::Eq | Cmp::Ne), args) => self
-                .equal(&args.0, literal_text(&args.1)?, over_line)
-                .map(|same| same == matches!(op, Cmp::Eq)),
+            Expr::Cmp(op, args) => self.compared(*op, args, over_line),
             Expr::In(subject, members) => {
                 let name = self.name(subject, over_line)?;
                 Some(
@@ -577,8 +781,66 @@ impl Facts<'_> {
                 ..
             } => self.may_start(subject, pattern),
             Expr::Field(_) => self.flag(expr),
+            Expr::ShapeIs(name) => self.shape_known(name),
             _ => None,
         }
+    }
+
+    fn compared(&self, op: Cmp, args: &(Expr, Expr), over_line: bool) -> Option<bool> {
+        let eq = match op {
+            Cmp::Eq => true,
+            Cmp::Ne => false,
+            _ if !over_line && own(&args.0) == Some(F::Index) => {
+                return self.index_known(op, &args.1);
+            }
+            _ => return None,
+        };
+        if over_line && prev_same_leaf(args) {
+            return self
+                .flags
+                .iter()
+                .find(|(flag, _)| *flag == F::PrevSameLeaf)
+                .map(|(_, same)| *same == eq);
+        }
+        if !over_line && own(&args.0) == Some(F::Index) {
+            return self.index_known(op, &args.1);
+        }
+        self.equal(&args.0, literal_text(&args.1)?, over_line)
+            .map(|same| same == eq)
+    }
+
+    /// A comparison of a block's `index` with a number: index 0 decides every comparison, a later
+    /// child only `ge 1` and `gt 0`.
+    fn index_known(&self, op: Cmp, limit: &Expr) -> Option<bool> {
+        let Expr::Lit(Val::Num(limit)) = *limit else {
+            return None;
+        };
+        if !self.first_child? {
+            return match op {
+                Cmp::Ge => (limit <= 1).then_some(true),
+                Cmp::Gt => (limit <= 0).then_some(true),
+                _ => None,
+            };
+        }
+        Some(match op {
+            Cmp::Eq => limit == 0,
+            Cmp::Ne => limit != 0,
+            Cmp::Lt => 0 < limit,
+            Cmp::Le => 0 <= limit,
+            Cmp::Gt => 0 > limit,
+            Cmp::Ge => 0 >= limit,
+        })
+    }
+
+    /// The shapes a line can only have with a known first byte of its body.
+    fn shape_known(&self, name: &str) -> Option<bool> {
+        let first = self.body_first?;
+        let needed = match name {
+            "attribute_line" => b'{',
+            "div_bare_run" => b':',
+            _ => return None,
+        };
+        (first != Some(needed)).then_some(false)
     }
 
     /// Whether an operand equals a literal, when the facts fix it.
@@ -615,6 +877,48 @@ impl Facts<'_> {
             .iter()
             .find(|(on_body, text, _)| *on_body == body && *text == needle)
             .map(|(_, _, held)| *held)
+    }
+
+    /// Whether the facts make a test false before it reaches anything that leaves state behind (a
+    /// match that sets groups, a `let`); such a report entry can be skipped without changing what a
+    /// later entry reads.
+    pub fn skips(&self, expr: &Expr, over_line: bool) -> bool {
+        match expr {
+            Expr::All(items) => {
+                for item in items {
+                    if self.skips(item, over_line) {
+                        return true;
+                    }
+                    if !self.sure(item, over_line) {
+                        return false;
+                    }
+                }
+                false
+            }
+            Expr::Any(items) => items.iter().all(|item| self.skips(item, over_line)),
+            Expr::Not(item) => self.sure(item, over_line),
+            _ => self.known(expr, over_line) == Some(false),
+        }
+    }
+
+    /// Whether the facts make a test true without it leaving state behind.
+    fn sure(&self, expr: &Expr, over_line: bool) -> bool {
+        match expr {
+            Expr::All(items) => items.iter().all(|item| self.sure(item, over_line)),
+            Expr::Any(items) => {
+                for item in items {
+                    if self.sure(item, over_line) {
+                        return true;
+                    }
+                    if !self.skips(item, over_line) {
+                        return false;
+                    }
+                }
+                false
+            }
+            Expr::Not(item) => self.skips(item, over_line),
+            _ => self.known(expr, over_line) == Some(true),
+        }
     }
 
     /// The truth of a test under the facts, when they decide it.
@@ -667,6 +971,22 @@ pub(super) fn held_literals(expr: &Expr, out: &mut Vec<(bool, &'static str)>) {
         }
         _ => {}
     }
+}
+
+/// `haystack.contains(needle)` for the short literals of the model: the first byte of an ASCII-led
+/// needle is found with the `memchr` path of a `char` search, then the rest is compared.
+pub(super) fn holds(haystack: &str, needle: &str) -> bool {
+    let Some(&lead) = needle.as_bytes().first().filter(|byte| byte.is_ascii()) else {
+        return haystack.contains(needle);
+    };
+    let mut rest = haystack;
+    while let Some(at) = rest.find(char::from(lead)) {
+        if rest[at..].starts_with(needle) {
+            return true;
+        }
+        rest = &rest[at + 1..];
+    }
+    false
 }
 
 pub(super) fn field_expr(name: &str) -> Expr {
@@ -823,8 +1143,8 @@ impl<'a> Eval<'_, 'a> {
             return false;
         };
         self.spans.clear();
-        for &name in &pattern.groups {
-            if let Some(span) = found.name(name) {
+        for &(name, index) in &pattern.groups {
+            if let Some(span) = found.get(index) {
                 self.spans.push((name, span.start(), span.end()));
             }
         }
@@ -883,7 +1203,7 @@ impl<'a> Eval<'_, 'a> {
         }
         self.str_of(&haystack)
             .zip(self.str_of(&needle))
-            .is_some_and(|(s, n)| s.contains(n.as_ref()))
+            .is_some_and(|(s, n)| holds(&s, &n))
     }
 
     fn some(&mut self, list: &Path, from: usize, test: &Expr) -> bool {
@@ -1038,11 +1358,36 @@ impl<'a> Eval<'_, 'a> {
                 base,
             } => self.matched(subject, pattern.as_ref(), base.as_ref()),
             Expr::Some { list, from, test } => self.some(list, *from, test),
+            Expr::ShapeIs(name) => match self.subject {
+                Subject::Line(index) => self.records.line_shape_is(index, name),
+                _ => false,
+            },
             _ => {
                 let value = self.value(expr);
                 truth(&value)
             }
         }
+    }
+
+    /// Whether a pattern prefilter of a later conjunct of a top-level `all` already fails; only for a
+    /// rule's own test, whose failure leaves nothing behind.
+    pub fn rejects(&mut self, expr: &Expr) -> bool {
+        let Expr::All(items) = expr else {
+            return false;
+        };
+        items.iter().skip(1).any(|item| match item {
+            Expr::Matches {
+                subject,
+                pattern: Some(pattern),
+                ..
+            } if pattern.filters() && matches!(**subject, Expr::Field(_)) => {
+                // A field reads no `let` and no match, so reading it early changes nothing.
+                let value = self.value(subject);
+                self.str_of(&value)
+                    .is_none_or(|haystack| !pattern.may_match(&haystack))
+            }
+            _ => false,
+        })
     }
 
     pub fn offset(&mut self, expr: Option<&Expr>) -> usize {

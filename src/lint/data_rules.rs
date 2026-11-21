@@ -2,16 +2,17 @@
 #![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
 use super::data_interpreter::{
-    Eval, Expr, F, Facts, Pattern, Scope, Val, field_expr, held_literals, pattern, truth,
+    Eval, Expr, F, Facts, Pattern, Scope, Val, field_expr, held_literals, holds, pattern, truth,
 };
 use super::data_model::{LineRec, Node, Records, Subject};
 use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use serde_json::Value;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 #[allow(clippy::expect_used)] // The pinned model is a checked build input.
@@ -254,11 +255,15 @@ macro_rules! replaced {
 
 fn report(
     rule: &'static Rule,
+    open: u64,
     eval: &mut Eval<'_, '_>,
     out: &mut Vec<Diagnostic>,
     path: &dyn Fn() -> String,
 ) {
-    for entry in &rule.entries {
+    for (at, entry) in rule.entries.iter().enumerate() {
+        if at < 64 && open & (1 << at) == 0 {
+            continue;
+        }
         if !entry.when.as_ref().is_none_or(|when| eval.test(when)) {
             continue;
         }
@@ -291,7 +296,7 @@ fn report(
 }
 
 fn run_rule<'a>(
-    rule: &'static Rule,
+    (rule, open): (&'static Rule, u64),
     records: &Records<'a>,
     subject: Subject<'_, 'a>,
     line_index: usize,
@@ -310,11 +315,15 @@ fn run_rule<'a>(
         spans: Vec::new(),
         base: 0,
     };
-    if !rule.when.as_ref().is_none_or(|when| eval.test(when)) {
+    if !rule
+        .when
+        .as_ref()
+        .is_none_or(|when| !eval.rejects(when) && eval.test(when))
+    {
         return;
     }
     let Some(each) = &rule.each else {
-        report(rule, &mut eval, out, path);
+        report(rule, open, &mut eval, out, path);
         return;
     };
     let subject = eval.value(&each.subject);
@@ -326,17 +335,14 @@ fn run_rule<'a>(
     };
     let base = eval.offset(each.base.as_ref());
     for found in pattern.re.captures_iter(&text) {
-        eval.spans = pattern
-            .groups
-            .iter()
-            .filter_map(|&name| {
-                found
-                    .name(name)
-                    .map(|span| (name, span.start(), span.end()))
-            })
-            .collect();
+        eval.spans.clear();
+        for &(name, index) in &pattern.groups {
+            if let Some(span) = found.get(index) {
+                eval.spans.push((name, span.start(), span.end()));
+            }
+        }
         eval.base = base;
-        report(rule, &mut eval, out, path);
+        report(rule, open, &mut eval, out, path);
     }
 }
 
@@ -350,14 +356,38 @@ impl Hasher for Mix {
     }
 
     fn write(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            self.write_u64(u64::from(*byte));
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            let mut word = [0; 8];
+            word.copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(word));
         }
+        let mut tail = [0; 8];
+        tail[..chunks.remainder().len()].copy_from_slice(chunks.remainder());
+        self.write_u64(u64::from_le_bytes(tail) ^ (bytes.len() as u64) << 56);
     }
 
     fn write_u64(&mut self, value: u64) {
         self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
     }
+
+    fn write_u8(&mut self, value: u8) {
+        self.write_u64(u64::from(value));
+    }
+
+    fn write_u16(&mut self, value: u16) {
+        self.write_u64(u64::from(value));
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
+    }
+}
+
+/// The address of a type name: the parse hands out the same `&'static str` for a type, so this finds
+/// a known bucket without comparing text; a second address for the same text only adds an alias.
+fn address(text: &str) -> (usize, usize) {
+    (text.as_ptr() as usize, text.len())
 }
 
 fn type_matches(rule: &Rule, kind: &str) -> bool {
@@ -375,26 +405,174 @@ pub(super) fn run<'a>(
     model: &'a [Line],
     options: &LintOptions,
 ) -> Vec<Diagnostic> {
-    let active: Vec<&'static Rule> = compiled()
+    let active: Vec<usize> = compiled()
         .rules
         .iter()
-        .filter(|rule| active_catalog(rule.id, options))
+        .enumerate()
+        .filter(|(_, rule)| active_catalog(rule.id, options))
+        .map(|(at, _)| at)
         .collect();
     let mut out = Vec::new();
     if active.is_empty() {
         return out;
     }
     let records = Records::new(source, positions, ranges, holders, model);
-    let over = |kind: Over| -> Vec<&'static Rule> {
-        active
-            .iter()
-            .copied()
-            .filter(|rule| rule.over == kind)
-            .collect()
-    };
-    run_lines(&records, &over(Over::Line), &mut out);
-    run_nodes(&records, &over(Over::Block), &over(Over::Inline), &mut out);
+    CACHE.with(|cache| {
+        // A nested lint (none today) gets buckets of its own instead of the shared ones.
+        let mut own;
+        let mut shared = cache.try_borrow_mut();
+        let cache = if let Ok(cache) = shared.as_deref_mut() {
+            cache
+        } else {
+            own = Cache::default();
+            &mut own
+        };
+        if cache.active != active {
+            *cache = Cache::new(active);
+        }
+        run_lines(&records, cache, &mut out);
+        run_nodes(&records, cache, &mut out);
+    });
     out
+}
+
+/// The rules of a bucket with the report entries its facts leave open (bit `i` for entry `i`; entries
+/// past 64 always run), shared between the calls that meet the same facts.
+type Bucket = Rc<[(&'static Rule, u64)]>;
+
+/// The rules the facts do not rule out, each with its open report entries.
+fn open_rules(
+    rules: &[&'static Rule],
+    facts: &Facts<'_>,
+    over_line: bool,
+    keep: impl Fn(&Rule) -> bool,
+) -> Vec<(&'static Rule, u64)> {
+    rules
+        .iter()
+        .copied()
+        .filter(|rule| {
+            keep(rule)
+                && rule
+                    .when
+                    .as_ref()
+                    .is_none_or(|when| facts.decide(when, over_line) != Some(false))
+        })
+        .map(|rule| {
+            let mut open = u64::MAX;
+            for (at, entry) in rule.entries.iter().enumerate().take(64) {
+                if entry
+                    .when
+                    .as_ref()
+                    .is_some_and(|when| facts.skips(when, over_line))
+                {
+                    open &= !(1 << at);
+                }
+            }
+            (rule, open)
+        })
+        .filter(|(_, open)| *open != 0)
+        .collect()
+}
+type Small<K, V> = HashMap<K, V, BuildHasherDefault<Mix>>;
+
+/// The active rules of the last calls and their buckets, keyed by the facts that decide them; a call
+/// with other active rules starts over.
+#[derive(Default)]
+struct Cache {
+    active: Vec<usize>,
+    line_rules: Vec<&'static Rule>,
+    block_rules: Vec<&'static Rule>,
+    inline_rules: Vec<&'static Rule>,
+    literals: Vec<(bool, &'static str)>,
+    lines: Small<String, Small<u64, Bucket>>,
+    blocks: Small<String, Small<String, [Option<Bucket>; 8]>>,
+    inlines: Small<String, Small<u16, Bucket>>,
+}
+
+thread_local! {
+    static CACHE: RefCell<Cache> = RefCell::new(Cache::default());
+}
+
+impl Cache {
+    fn new(active: Vec<usize>) -> Self {
+        let rules = &compiled().rules;
+        let over = |kind: Over| -> Vec<&'static Rule> {
+            active
+                .iter()
+                .map(|at| &rules[*at])
+                .filter(|rule| rule.over == kind)
+                .collect()
+        };
+        let line_rules = over(Over::Line);
+        let mut literals = Vec::new();
+        for rule in &line_rules {
+            if let Some(when) = &rule.when {
+                held_literals(when, &mut literals);
+            }
+        }
+        // The key keeps 31 bits for literals; a literal past them is simply not decided.
+        literals.truncate(31);
+        Self {
+            line_rules,
+            block_rules: over(Over::Block),
+            inline_rules: over(Over::Inline),
+            literals,
+            active,
+            ..Self::default()
+        }
+    }
+
+    fn line(
+        &mut self,
+        leaf: &str,
+        key: u64,
+        make: impl FnOnce(&Self) -> Vec<(&'static Rule, u64)>,
+    ) -> Bucket {
+        if let Some(bucket) = self.lines.get(leaf).and_then(|known| known.get(&key)) {
+            return bucket.clone();
+        }
+        let bucket: Bucket = make(self).into();
+        self.lines
+            .entry(leaf.to_owned())
+            .or_default()
+            .insert(key, bucket.clone());
+        bucket
+    }
+
+    fn block(&mut self, key: BlockKey<'_>) -> Bucket {
+        let (kind, parent, attributed, image_line, first_child) = key;
+        let slot =
+            usize::from(attributed) * 4 + usize::from(image_line) * 2 + usize::from(first_child);
+        if let Some(bucket) = self
+            .blocks
+            .get(kind)
+            .and_then(|known| known.get(parent))
+            .and_then(|known| known[slot].as_ref())
+        {
+            return bucket.clone();
+        }
+        let bucket: Bucket = block_bucket(&self.block_rules, key).into();
+        self.blocks
+            .entry(kind.to_owned())
+            .or_default()
+            .entry(parent.to_owned())
+            .or_default()[slot] = Some(bucket.clone());
+        bucket
+    }
+
+    fn inline(&mut self, key: InlineKey<'_>) -> Bucket {
+        let (kind, first) = key;
+        let slot = first.map_or(256, u16::from);
+        if let Some(bucket) = self.inlines.get(kind).and_then(|known| known.get(&slot)) {
+            return bucket.clone();
+        }
+        let bucket: Bucket = inline_bucket(&self.inline_rules, key).into();
+        self.inlines
+            .entry(kind.to_owned())
+            .or_default()
+            .insert(slot, bucket.clone());
+        bucket
+    }
 }
 
 /// The line rules a bucket of lines needs: those its facts do not rule out.
@@ -403,8 +581,9 @@ fn line_bucket(
     literals: &[(bool, &'static str)],
     line: &LineRec<'_>,
     first: bool,
+    prev_same: bool,
     held: u64,
-) -> Vec<&'static Rule> {
+) -> Vec<(&'static Rule, u64)> {
     let leaf = line.leaf_kind;
     let verbatim = compiled().verbatim_leaves.contains(&leaf);
     let holds: Vec<(bool, &'static str, bool)> = literals
@@ -417,38 +596,24 @@ fn line_bucket(
         parent: None,
         text_first: Some(line.text.as_bytes().first().copied()),
         body_first: Some(line.body().as_bytes().first().copied()),
-        flags: &[(F::LeafFirst, first)],
+        flags: &[(F::LeafFirst, first), (F::PrevSameLeaf, prev_same)],
+        first_child: None,
         holds: &holds,
     };
-    rules
-        .iter()
-        .copied()
-        .filter(|rule| {
-            (!verbatim || rule.verbatim.contains(&leaf))
-                && rule
-                    .when
-                    .as_ref()
-                    .is_none_or(|when| facts.decide(when, true) != Some(false))
-        })
-        .collect()
+    open_rules(rules, &facts, true, |rule| {
+        !verbatim || rule.verbatim.contains(&leaf)
+    })
 }
 
-fn run_lines(records: &Records<'_>, rules: &[&'static Rule], out: &mut Vec<Diagnostic>) {
-    let mut literals = Vec::new();
-    for rule in rules {
-        if let Some(when) = &rule.when {
-            held_literals(when, &mut literals);
-        }
-    }
-    // The key keeps 31 bits for literals; a literal past them is simply not decided.
-    literals.truncate(31);
+fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
     let mut leaves: Vec<&str> = Vec::new();
-    let mut by_key: HashMap<u64, Vec<&'static Rule>, BuildHasherDefault<Mix>> = HashMap::default();
+    let mut by_key: Small<u64, Bucket> = HashMap::default();
     for (index, line) in records.lines.iter().enumerate() {
         let leaf = line.leaf_kind;
         let at = leaves
             .iter()
-            .position(|known| *known == leaf)
+            // A second address for the same leaf type only adds a bucket with the same rules.
+            .position(|known| std::ptr::eq(*known, leaf))
             .unwrap_or_else(|| {
                 leaves.push(leaf);
                 leaves.len() - 1
@@ -456,56 +621,64 @@ fn run_lines(records: &Records<'_>, rules: &[&'static Rule], out: &mut Vec<Diagn
         let text = line.text.as_bytes().first().copied();
         let body = line.body().as_bytes().first().copied();
         let first = truth(&records.subject_field(&Subject::Line(index), F::LeafFirst));
+        let prev_same = records.prev_same_leaf(index);
         let mut held = 0u64;
-        for (bit, (on_body, needle)) in literals.iter().enumerate() {
-            if (if *on_body { line.body() } else { line.text }).contains(needle) {
+        for (bit, (on_body, needle)) in cache.literals.iter().enumerate() {
+            if holds(if *on_body { line.body() } else { line.text }, needle) {
                 held |= 1 << bit;
             }
         }
-        let key = ((at as u64) << 50)
+        // Bits: 31 literals, 9 each for the first byte of body and text, then the two flags.
+        let facts = (u64::from(prev_same) << 50)
             | (u64::from(first) << 49)
             | (u64::from(text.map_or(256, u16::from)) << 40)
             | (u64::from(body.map_or(256, u16::from)) << 31)
             | held;
         let bucket = by_key
-            .entry(key)
-            .or_insert_with(|| line_bucket(rules, &literals, line, first, held));
+            .entry(((at as u64) << 51) | facts)
+            .or_insert_with(|| {
+                cache.line(leaf, facts, |cache| {
+                    line_bucket(
+                        &cache.line_rules,
+                        &cache.literals,
+                        line,
+                        first,
+                        prev_same,
+                        held,
+                    )
+                })
+            })
+            .clone();
         let path = || records.lines[index].path.to_owned();
         for rule in bucket.iter() {
-            run_rule(rule, records, Subject::Line(index), index, out, &path);
+            run_rule(*rule, records, Subject::Line(index), index, out, &path);
         }
     }
 }
 
-/// What a block's bucket is keyed by: its type, its parent's type, and its `attributed` and `image_line`.
-type BlockKey<'a> = (&'a str, &'a str, bool, bool);
+/// What a block's bucket is keyed by: its type, its parent's type, its `attributed` and `image_line`,
+/// and whether it is the first child.
+type BlockKey<'a> = (&'a str, &'a str, bool, bool, bool);
+/// A block key by the addresses of its type names.
+type BlockAlias = ((usize, usize), (usize, usize), bool, bool, bool);
 /// What an inline's bucket is keyed by: its type and the first byte of its text.
 type InlineKey<'a> = (&'a str, Option<u8>);
 
-fn block_bucket(rules: &[&'static Rule], key: BlockKey<'_>) -> Vec<&'static Rule> {
-    let (kind, parent, attributed, image_line) = key;
+fn block_bucket(rules: &[&'static Rule], key: BlockKey<'_>) -> Vec<(&'static Rule, u64)> {
+    let (kind, parent, attributed, image_line, first_child) = key;
     let facts = Facts {
         kind,
         parent: Some(parent),
         text_first: None,
         body_first: None,
         flags: &[(F::Attributed, attributed), (F::ImageLine, image_line)],
+        first_child: Some(first_child),
         holds: &[],
     };
-    rules
-        .iter()
-        .copied()
-        .filter(|rule| {
-            type_matches(rule, kind)
-                && rule
-                    .when
-                    .as_ref()
-                    .is_none_or(|when| facts.decide(when, false) != Some(false))
-        })
-        .collect()
+    open_rules(rules, &facts, false, |rule| type_matches(rule, kind))
 }
 
-fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<&'static Rule> {
+fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<(&'static Rule, u64)> {
     let (kind, first) = key;
     let facts = Facts {
         kind,
@@ -513,65 +686,58 @@ fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<&'static Ru
         text_first: Some(first),
         body_first: None,
         flags: &[],
+        first_child: None,
         holds: &[],
     };
-    rules
-        .iter()
-        .copied()
-        .filter(|rule| {
-            rule.types
-                .as_ref()
-                .is_some_and(|types| types.contains(&kind))
-                && rule
-                    .when
-                    .as_ref()
-                    .is_none_or(|when| facts.decide(when, false) != Some(false))
-        })
-        .collect()
+    open_rules(rules, &facts, false, |rule| {
+        rule.types
+            .as_ref()
+            .is_some_and(|types| types.contains(&kind))
+    })
 }
 
-fn run_nodes<'a>(
-    records: &Records<'a>,
-    block_rules: &[&'static Rule],
-    inline_rules: &[&'static Rule],
-    out: &mut Vec<Diagnostic>,
-) {
+fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
     let text_needs_bracket = compiled().text_needs_bracket;
-    let mut by_block: Vec<(BlockKey<'a>, Vec<&'static Rule>)> = Vec::new();
-    let mut by_inline: Vec<(InlineKey<'a>, Vec<&'static Rule>)> = Vec::new();
+    let mut block_alias: Small<BlockAlias, usize> = HashMap::default();
+    let mut inline_alias: Small<((usize, usize), u16), usize> = HashMap::default();
+    let buckets: RefCell<Vec<Bucket>> = RefCell::new(Vec::new());
+    let add = |bucket: Bucket| {
+        let mut buckets = buckets.borrow_mut();
+        buckets.push(bucket);
+        buckets.len() - 1
+    };
     let mut found_block = 0;
     let mut found_inline = 0;
+    let cache = RefCell::new(cache);
     for (at, range) in records.ranges.iter().enumerate() {
         let mut block = |kind: &'a str, parent: &'a str| {
-            let key = (kind, parent, range.has_attrs, range.image_line);
-            found_block = by_block
-                .iter()
-                .position(|(known, _)| *known == key)
-                .unwrap_or_else(|| {
-                    by_block.push((key, block_bucket(block_rules, key)));
-                    by_block.len() - 1
-                });
-            !by_block[found_block].1.is_empty()
+            let key = (
+                kind,
+                parent,
+                range.has_attrs,
+                range.image_line,
+                range.index == 0,
+            );
+            found_block = *block_alias
+                .entry((address(kind), address(parent), key.2, key.3, key.4))
+                .or_insert_with(|| add(cache.borrow_mut().block(key)));
+            !buckets.borrow()[found_block].is_empty()
         };
         let mut inline = |kind: &'a str, text: &'a str| {
-            let key = (kind, text.as_bytes().first().copied());
-            found_inline = by_inline
-                .iter()
-                .position(|(known, _)| *known == key)
-                .unwrap_or_else(|| {
-                    by_inline.push((key, inline_bucket(inline_rules, key)));
-                    by_inline.len() - 1
-                });
-            !by_inline[found_inline].1.is_empty()
+            let first = text.as_bytes().first().copied();
+            found_inline = *inline_alias
+                .entry((address(kind), first.map_or(256, u16::from)))
+                .or_insert_with(|| add(cache.borrow_mut().inline((kind, first))));
+            !buckets.borrow()[found_inline].is_empty()
                 && (kind != "text" || !text_needs_bracket || text.contains('['))
         };
         match records.node(at, &mut block, &mut inline) {
             Node::Skip => {}
             Node::Block(record) => {
                 let path = || records.path_of(record.range);
-                for rule in &by_block[found_block].1 {
+                for rule in buckets.borrow()[found_block].iter() {
                     run_rule(
-                        rule,
+                        *rule,
                         records,
                         Subject::Block(&record),
                         record.line_index,
@@ -582,9 +748,9 @@ fn run_nodes<'a>(
             }
             Node::Inline(record) => {
                 let path = || records.path_of(record.range);
-                for rule in &by_inline[found_inline].1 {
+                for rule in buckets.borrow()[found_inline].iter() {
                     run_rule(
-                        rule,
+                        *rule,
                         records,
                         Subject::Inline(&record),
                         record.line_index,

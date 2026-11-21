@@ -1109,7 +1109,9 @@ fn prose(line: &Line, index: usize, previous: Option<&Line>, lines: &[Line], sin
 fn prose_tokens(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
     let (from, trimmed) = line_text(line);
-    blank_reference_label(line, sink);
+    if !replaced!("blank-reference-label") {
+        blank_reference_label(line, sink);
+    }
     if line.paragraph
         && trimmed.starts_with('[')
         && trimmed.ends_with("]:")
@@ -1155,9 +1157,6 @@ fn prose_tokens(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 // C2-I-079: a footnote label, a full reference's label or a definition label of only spaces and tabs;
 // a task box and a bracket pair with no reference glued to it are no label.
 fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
-    if replaced!("blank-reference-label") {
-        return;
-    }
     let text = line.text.as_str();
     let (from, _) = leaf_text(line);
     // Every `[` before one `]` shares it: found once, not once per `[`.
