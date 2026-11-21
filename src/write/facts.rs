@@ -379,6 +379,28 @@ fn content_fragment(fragment: &str) -> &str {
     t.trim_matches([' ', '\t'])
 }
 
+/// A table's later lines can start in another column than its first row.
+fn table_source_line(line: &str, column: usize, first: bool) -> &str {
+    let anchored = line.get(column..).unwrap_or("");
+    if first {
+        return if anchored.starts_with('|') {
+            anchored.trim_end_matches('\r')
+        } else {
+            ""
+        };
+    }
+    let early_continuation = line.get(..column).and_then(|prefix| prefix.find('+'));
+    let at = early_continuation
+        .or_else(|| anchored.starts_with(['|', '+']).then_some(column))
+        .or_else(|| line.find(['|', '+']));
+    let Some(at) = at else { return "" };
+    let prefix = line.get(..at).unwrap_or("");
+    if prefix.contains("%%") || prefix.contains('{') {
+        return "";
+    }
+    line.get(at..).unwrap_or("").trim_end_matches('\r')
+}
+
 fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     let Some((start, end)) = span(table) else {
         return;
@@ -393,7 +415,7 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     };
     let mut lines: Vec<(&str, Vec<&str>)> = Vec::new();
     for line in body.split('\n') {
-        let l = line.get(column..).unwrap_or("").trim_end_matches('\r');
+        let l = table_source_line(line, column, lines.is_empty());
         if l.starts_with('|') {
             lines.push((l, Vec::new()));
         } else if l.starts_with('+') {
