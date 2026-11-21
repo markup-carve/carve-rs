@@ -308,15 +308,15 @@ impl<'a> V<'a> {
         }
     }
 
-    /// The JSON value the view reads, cut at `depth` levels: an object below them is an empty object
-    /// and an array is null, so the presence of a key stays readable.
-    pub(crate) fn to_value_within(self, depth: usize) -> Value {
+    /// The JSON value the view reads, cut at `depth` levels and to the keys `keep` takes: an object
+    /// below them is an empty object and an array is null, so the presence of a key stays readable.
+    pub(crate) fn to_value_within(self, depth: usize, keep: &dyn Fn(&str) -> bool) -> Value {
         if let Some(items) = self.as_array() {
             return match depth.checked_sub(1) {
                 Some(below) => Value::Array(
                     items
                         .iter()
-                        .map(|item| item.to_value_within(below))
+                        .map(|item| item.to_value_within(below, keep))
                         .collect(),
                 ),
                 None => Value::Null,
@@ -326,7 +326,9 @@ impl<'a> V<'a> {
             let mut map = serde_json::Map::new();
             if let Some(below) = depth.checked_sub(1) {
                 self.each(&mut |key, child| {
-                    map.insert(key.to_string(), child.to_value_within(below));
+                    if keep(key) {
+                        map.insert(key.to_string(), child.to_value_within(below, keep));
+                    }
                 });
             }
             return Value::Object(map);
