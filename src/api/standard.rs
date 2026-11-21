@@ -339,6 +339,54 @@ pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Opt
     children.extend(definitions.iter().cloned());
     let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
     let text = write_claim_source(&doc)?;
+    let title = at(node, "/title").as_array().map(|title| plain_text(title));
+    div_record(&text, name, title, node.get("groupLabel").cloned())
+}
+
+/// [`div_source`] of a div in an arena, written from a typed copy of it and
+/// the definitions; the same as the write of its JSON value.
+pub(crate) fn div_source_typed(
+    node: &crate::ast::Node<'_>,
+    name: &str,
+    definitions: &[crate::ast::owned::Node],
+) -> Option<Value> {
+    let crate::ast::Node::Div(div) = node else {
+        return None;
+    };
+    let mut children = Vec::with_capacity(definitions.len() + 1);
+    children.push(node.owned());
+    children.extend(definitions.iter().cloned());
+    let arena = crate::Arena::new();
+    let doc = crate::ast::owned::Document {
+        ast_version: "2.0".into(),
+        children,
+        ..Default::default()
+    }
+    .in_arena(&arena);
+    let doc = &*arena.alloc(doc);
+    let pool = crate::write::Pool::new();
+    let (text, entries) = crate::write::write_view(
+        crate::view::V::Doc(doc),
+        &pool,
+        &crate::write::Settings::default(),
+    );
+    if crate::write::has_loss(&entries) {
+        return None;
+    }
+    let title = match &div.title {
+        Some(title) => Some(plain_text(serde_json::to_value(&**title).ok()?.as_array()?)),
+        None => None,
+    };
+    div_record(&text, name, title, div.group_label.map(Value::from))
+}
+
+/// The source record of a claimed div from the written document.
+fn div_record(
+    text: &str,
+    name: &str,
+    title: Option<String>,
+    group_label: Option<Value>,
+) -> Option<Value> {
     let lines: Vec<&str> = text.split('\n').collect();
     let open = lines.iter().position(|l| l.starts_with(":::"))?;
     let opener = lines.get(open)?;
@@ -348,11 +396,11 @@ pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Opt
     let mut source = Map::new();
     source.insert("form".into(), "div".into());
     source.insert("name".into(), name.into());
-    if let Some(title) = at(node, "/title").as_array() {
-        source.insert("title".into(), plain_text(title).into());
+    if let Some(title) = title {
+        source.insert("title".into(), title.into());
     }
-    if let Some(label) = node.get("groupLabel") {
-        source.insert("groupLabel".into(), label.clone());
+    if let Some(label) = group_label {
+        source.insert("groupLabel".into(), label);
     }
     let body = if body.is_empty() { body } else { body + "\n" };
     source.insert("body".into(), body.into());

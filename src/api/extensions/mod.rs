@@ -124,6 +124,65 @@ pub trait Claimer: Send + Sync {
     fn engine(&self) -> bool {
         false
     }
+
+    /// The typed form of an engine claimer, which claims in the arena.
+    #[doc(hidden)]
+    fn typed(&self) -> Option<&Typed> {
+        None
+    }
+}
+
+/// An engine claimer on the arena tree, with the result of the JSON one
+/// (carve-rs#4366): given the source name, the candidate and the arena, it
+/// builds the parts of the extension node and moves the core node into its
+/// fallback, or declines and leaves the candidate as it was.
+#[doc(hidden)]
+pub struct Typed(
+    pub(crate) for<'a> fn(&str, &mut crate::ast::Node<'a>, &'a crate::Arena) -> Option<Made<'a>>,
+);
+
+/// What a [`Typed`] claimer makes; the engine attaches name, version,
+/// source, attributes and position.
+#[doc(hidden)]
+pub struct Made<'a> {
+    pub(crate) props: Option<Value>,
+    pub(crate) payload: Option<Value>,
+    pub(crate) slots: Option<Value>,
+    pub(crate) fallback: &'a mut [crate::ast::Node<'a>],
+}
+
+/// The core node moved out of `node` without its attributes, as the one
+/// fallback block of a claim (C2-X-035).
+pub(crate) fn moved_fallback<'a>(
+    node: &mut crate::ast::Node<'a>,
+    arena: &'a crate::Arena,
+) -> &'a mut [crate::ast::Node<'a>] {
+    let placeholder =
+        crate::ast::Node::ThematicBreak(arena.alloc(crate::ast::ThematicBreak::default()));
+    let mut core = std::mem::replace(node, placeholder);
+    match &mut core {
+        crate::ast::Node::CodeBlock(code) => code.attrs = None,
+        crate::ast::Node::Paragraph(paragraph) => paragraph.attrs = None,
+        _ => {}
+    }
+    arena.one(core)
+}
+
+/// An engine claimer with its typed form.
+pub(crate) struct TypedEngine(pub(crate) fn(&Claim<'_>) -> Option<Value>, pub(crate) Typed);
+
+impl Claimer for TypedEngine {
+    fn claim(&self, claim: &Claim<'_>) -> Result<Option<Value>, Error> {
+        Ok((self.0)(claim))
+    }
+
+    fn engine(&self) -> bool {
+        true
+    }
+
+    fn typed(&self) -> Option<&Typed> {
+        Some(&self.1)
+    }
 }
 
 /// A claimer of this crate's standard extensions.
@@ -319,6 +378,7 @@ impl Matchers {
             opener,
             declared,
             definitions,
+            definition_nodes: Vec::new(),
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -358,11 +418,21 @@ impl Matchers {
                 Node::InlineExtension(ext) => ext.slots.is_some(),
                 _ => false,
             };
-            if slots || pass.may_claim(node) {
-                let mut owned = node.owned();
-                owned_walk(&mut owned, pass, depth)?;
-                *node = owned.in_arena(arena);
-                return Ok(());
+            let candidate = !slots && pass.may_claim(node);
+            let typed = if candidate {
+                pass.claim_typed(node, arena, depth)?
+            } else {
+                None
+            };
+            match typed {
+                Some(true) => return Ok(()),
+                None if slots || candidate => {
+                    let mut owned = node.owned();
+                    owned_walk(&mut owned, pass, depth)?;
+                    *node = owned.in_arena(arena);
+                    return Ok(());
+                }
+                _ => {}
             }
             let mut failure = None;
             let mut visit = |child: &mut Node<'a>| {
@@ -377,11 +447,15 @@ impl Matchers {
             }
             failure.map_or(Ok(()), Err)
         }
-        let definitions = doc
+        let definition_nodes: Vec<crate::ast::owned::Node> = doc
             .children
             .iter()
             .filter(|node| matches!(node, Node::LinkReferenceDefinition(_)))
-            .map(|node| serde_json::to_value(node.owned()))
+            .map(Node::owned)
+            .collect();
+        let definitions = definition_nodes
+            .iter()
+            .map(serde_json::to_value)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| Error::option("extensions", e.to_string()))?;
         let mut pass = Pass {
@@ -389,6 +463,7 @@ impl Matchers {
             opener,
             declared,
             definitions,
+            definition_nodes,
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -462,6 +537,7 @@ impl Matchers {
             opener,
             declared,
             definitions: super::standard::definitions(doc),
+            definition_nodes: Vec::new(),
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -621,6 +697,8 @@ struct Pass<'a> {
     opener: &'a dyn Fn(Option<&str>, usize) -> Option<String>,
     declared: &'a dyn Fn(&str) -> Option<ExtensionDeclaration>,
     definitions: Vec<Value>,
+    /// The definitions as typed nodes, for the typed claims.
+    definition_nodes: Vec<crate::ast::owned::Node>,
     used: Vec<ExtensionDeclaration>,
     entries: Vec<Entry>,
 }
@@ -655,6 +733,82 @@ impl Pass<'_> {
             }
             _ => false,
         }
+    }
+
+    /// The claim of a candidate by a typed engine claimer: `None` when its
+    /// matcher has none, so the owned claim runs; `Some(true)` when it was
+    /// claimed, with the claims inside its slots made; `Some(false)` when the
+    /// core node stays and the walk enters it.
+    fn claim_typed<'a>(
+        &mut self,
+        node: &mut crate::ast::Node<'a>,
+        arena: &'a crate::Arena,
+        depth: usize,
+    ) -> Result<Option<bool>, Error> {
+        use crate::ast::Node;
+        let (form, name) = match node {
+            Node::CodeBlock(code) => (Form::Fence, code.syntax.map(str::to_string)),
+            Node::Div(div) => (
+                Form::Div,
+                div.pos.and_then(|pos| (self.opener)(None, pos.start())),
+            ),
+            _ => return Ok(None),
+        };
+        let matchers = self.matchers;
+        let Some(m) = name.and_then(|name| {
+            matchers
+                .list
+                .iter()
+                .find(|m| m.form == form && m.name == name)
+        }) else {
+            return Ok(None);
+        };
+        let (Some(typed), Some(decl)) = (m.claimer.typed(), (self.declared)(&m.extension)) else {
+            return Ok(None);
+        };
+        let source = match node {
+            Node::CodeBlock(code) => Some(typed_fence_source(&m.name, code)?),
+            _ => super::standard::div_source_typed(node, &m.name, &self.definition_nodes),
+        };
+        let Some(source) = source else {
+            self.fail(
+                "extension-transform-failed",
+                &format!(
+                    "The extension {} could not write its claim source; the core node was retained",
+                    m.extension
+                ),
+            );
+            return Ok(Some(false));
+        };
+        let (attrs, pos) = match node {
+            Node::CodeBlock(code) => (code.attrs, code.pos),
+            Node::Div(div) => (div.attrs.and_then(|a| remaining_typed(a, arena)), div.pos),
+            _ => return Ok(None),
+        };
+        let Some(made) = (typed.0)(&m.name, node, arena) else {
+            return Ok(Some(false));
+        };
+        let mut slots = made.slots;
+        if let Some(slots) = &mut slots {
+            slot(slots, self, depth + 1);
+        }
+        let ext = crate::ast::BlockExtension {
+            name: arena.str(&m.extension),
+            version: arena.str(&decl.version),
+            props: made.props.map(|v| arena.json(v)),
+            payload: made.payload.map(|v| arena.json(v)),
+            slots: slots.map(|v| arena.json(v)),
+            fallback: made.fallback,
+            source: Some(arena.json(source)),
+            attrs,
+            pos,
+            ..Default::default()
+        };
+        *node = Node::BlockExtension(arena.alloc(ext));
+        if !self.used.iter().any(|d| d.name == decl.name) {
+            self.used.push(decl);
+        }
+        Ok(Some(true))
     }
 
     /// The source name of a code block or div.
@@ -887,6 +1041,36 @@ fn source_record(
     }
 }
 
+/// [`source_record`] of a claimed fence.
+fn typed_fence_source(name: &str, code: &crate::ast::CodeBlock<'_>) -> Result<Value, Error> {
+    let mut source = Map::new();
+    source.insert("form".into(), "fence".into());
+    source.insert("name".into(), name.into());
+    source.insert("body".into(), code.value.into());
+    if let Some(title) = &code.title {
+        let title = serde_json::to_value(&**title)
+            .map_err(|e| Error::option("extensions", e.to_string()))?;
+        let title = title.as_array().map_or(&[][..], Vec::as_slice);
+        source.insert("title".into(), super::standard::plain_text(title).into());
+    }
+    if let Some(label) = code.group_label {
+        source.insert("groupLabel".into(), label.into());
+    }
+    Ok(Value::Object(source))
+}
+
+/// [`remaining_attrs`] of typed attributes.
+fn remaining_typed<'a>(
+    attrs: &'a crate::ast::Attrs<'a>,
+    arena: &'a crate::Arena,
+) -> Option<&'a crate::ast::Attrs<'a>> {
+    let rest = crate::ast::Attrs {
+        classes: attrs.classes.get(1..).unwrap_or(&[]),
+        ..*attrs
+    };
+    (!rest.is_empty()).then(|| &*arena.alloc(rest))
+}
+
 /// C2-X-009: the attributes of a claimed div after its source name class.
 fn remaining_attrs(attrs: &Value) -> Option<Value> {
     let mut rest = attrs.as_object()?.clone();
@@ -981,6 +1165,56 @@ pub(crate) fn fence_source(value: &str) -> &str {
 
 pub(crate) fn payload_text(node: &Value) -> &str {
     node.pointer("/payload/0/value")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
+/// The attribute parts of an extension element, read from the typed node.
+pub(crate) struct Parts<'n> {
+    pub(crate) id: Option<&'n str>,
+    pub(crate) classes: Vec<&'n str>,
+    pub(crate) key_values: Vec<(&'n str, &'n str)>,
+}
+
+impl<'n> Parts<'n> {
+    pub(crate) fn of(attrs: Option<&'n crate::ast::Attrs<'n>>) -> Self {
+        Self {
+            id: attrs.and_then(|a| a.id),
+            classes: attrs.map_or_else(Vec::new, |a| a.classes.to_vec()),
+            key_values: attrs.map_or_else(Vec::new, |a| a.key_values.to_vec()),
+        }
+    }
+
+    /// [`authored`] of the typed attributes.
+    pub(crate) fn authored(&self, name: &str) -> bool {
+        self.key_values
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case(name))
+    }
+
+    /// `base` ahead of the authored classes.
+    pub(crate) fn with_classes(mut self, base: &[&'n str]) -> Self {
+        let mut classes = base.to_vec();
+        classes.append(&mut self.classes);
+        self.classes = classes;
+        self
+    }
+}
+
+/// The block extension node a typed renderer reads.
+pub(crate) fn typed<'n, 'a>(
+    node: &'n crate::ast::Node<'a>,
+) -> Option<&'n crate::ast::BlockExtension<'a>> {
+    match node {
+        crate::ast::Node::BlockExtension(e) => Some(&**e),
+        _ => None,
+    }
+}
+
+/// [`payload_text`] of a typed node.
+pub(crate) fn typed_payload<'a>(node: &crate::ast::BlockExtension<'a>) -> &'a str {
+    node.payload
+        .and_then(|p| p.pointer("/0/value"))
         .and_then(Value::as_str)
         .unwrap_or("")
 }

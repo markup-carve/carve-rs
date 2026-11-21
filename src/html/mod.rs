@@ -84,6 +84,17 @@ pub(crate) trait ExtensionHook {
         depth: usize,
     ) -> Option<Result<String, ()>>;
 
+    /// [`ExtensionHook::render`] of the typed node; `None` when its renderer
+    /// reads the JSON value, `Some(None)` when no renderer takes it.
+    fn render_node(
+        &self,
+        _node: &crate::ast::Node<'_>,
+        _block: bool,
+        _depth: usize,
+    ) -> Option<Option<Result<String, ()>>> {
+        None
+    }
+
     /// The span keys of a registered `semanticSpan` (C2-H-075).
     fn semantic_keys(&self) -> Option<crate::api::extensions::SemanticKeys> {
         None
@@ -392,8 +403,11 @@ impl<'r, 'a> Renderer<'r, 'a> {
         depth: usize,
     ) -> Option<bool> {
         let hook = self.hook?;
-        let value = serde_json::to_value(n).ok()?;
-        match hook.render(&value, block, depth)? {
+        let rendered = match hook.render_node(n, block, depth) {
+            Some(rendered) => rendered?,
+            None => hook.render(&serde_json::to_value(n).ok()?, block, depth)?,
+        };
+        match rendered {
             Ok(html) => {
                 match out {
                     Some(out) => out.push_str(&html),

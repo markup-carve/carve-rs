@@ -1,8 +1,8 @@
 //! `mathBlock` (carve-js#5068).
 
 use super::{
-    Bundle, Claim, Form, Matcher, bare_fallback, classes, declaration, fence_source, key_values,
-    payload_text, with_attrs,
+    Bundle, Claim, Form, Made, Matcher, Parts, bare_fallback, classes, declaration, fence_source,
+    key_values, moved_fallback, payload_text, typed, typed_payload, with_attrs,
 };
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
@@ -38,6 +38,16 @@ fn open(node: &Value, cx: &RenderContext<'_>) -> String {
     format!("<div{}>", cx.attributes(&with_attrs(node, cls, keys)))
 }
 
+/// [`open`] of a typed node.
+fn typed_open(node: &crate::ast::BlockExtension<'_>, cx: &RenderContext<'_>) -> String {
+    let mut parts = Parts::of(node.attrs).with_classes(&["math", "display"]);
+    parts
+        .key_values
+        .retain(|(name, _)| !name.eq_ignore_ascii_case("role"));
+    parts.key_values.push(("role", "math"));
+    format!("<div{}>", cx.write_parts(&parts, node.pos.as_ref()))
+}
+
 struct Interactive;
 
 impl Renderer for Interactive {
@@ -47,6 +57,19 @@ impl Renderer for Interactive {
             open(node, cx),
             cx.escape(fence_source(payload_text(node)))
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        Some(Ok(format!(
+            "{}\\[{}\\]</div>",
+            typed_open(node, cx),
+            cx.escape(fence_source(typed_payload(node)))
+        )))
     }
 }
 
@@ -59,6 +82,19 @@ impl Renderer for BuildTime {
             open(node, cx),
             (self.0)(fence_source(payload_text(node)), true)
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        Some(Ok(format!(
+            "{}{}</div>",
+            typed_open(node, cx),
+            (self.0)(fence_source(typed_payload(node)), true)
+        )))
     }
 }
 
@@ -81,6 +117,23 @@ fn claim(claim: &Claim<'_>) -> Option<Value> {
     }))
 }
 
+fn claim_typed<'a>(
+    _name: &str,
+    node: &mut crate::ast::Node<'a>,
+    arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    let crate::ast::Node::CodeBlock(code) = node else {
+        return None;
+    };
+    let value = code.value;
+    Some(Made {
+        props: None,
+        payload: Some(json!([{"format": "application/x-tex", "value": value}])),
+        slots: None,
+        fallback: moved_fallback(node, arena),
+    })
+}
+
 /// A `math` fence as `<div class="math display">\[...\]</div>`, the
 /// delimiters `KaTeX` and `MathJax` read for display math.
 #[must_use]
@@ -101,7 +154,7 @@ pub fn math_block(options: MathBlockOptions) -> Bundle {
             extension: NAME.into(),
             form: Form::Fence,
             name: options.language.unwrap_or_else(|| "math".into()),
-            claimer: Box::new(super::Engine(claim)),
+            claimer: Box::new(super::TypedEngine(claim, super::Typed(claim_typed))),
         }],
     }
 }

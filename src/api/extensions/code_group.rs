@@ -1,8 +1,12 @@
 //! `codeGroup` (carve-js#5068).
 
-use super::{Bundle, Claim, Form, Matcher, authored, classes, declaration, key_values, with_attrs};
+use super::{
+    Bundle, Claim, Form, Made, Matcher, Parts, authored, classes, declaration, key_values, typed,
+    with_attrs,
+};
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -49,24 +53,28 @@ struct Look {
 
 /// `node` is what the panel renders: the code block, or a node a document
 /// transform put in its place.
-struct Panel {
-    block: Value,
-    node: Value,
+struct Panel<'n> {
+    block: Cow<'n, Value>,
+    node: &'n Value,
     label: String,
     selected: bool,
 }
 
 fn has_selected(attrs: Option<&Value>) -> bool {
-    key_values(attrs)
-        .iter()
-        .any(|kv| kv.get(0).and_then(Value::as_str) == Some("selected"))
+    attrs
+        .and_then(|a| a.get("keyValues"))
+        .and_then(Value::as_array)
+        .is_some_and(|kvs| {
+            kvs.iter()
+                .any(|kv| kv.get(0).and_then(Value::as_str) == Some("selected"))
+        })
 }
 
 /// The code block of a panel; a transform such as codeCallouts may have
 /// replaced it by a node with it as its one fallback block.
-fn code_of(node: &Value) -> Option<Value> {
+fn code_of(node: &Value) -> Option<Cow<'_, Value>> {
     match node.get("type").and_then(Value::as_str)? {
-        "code_block" => Some(node.clone()),
+        "code_block" => Some(Cow::Borrowed(node)),
         "block_extension" => {
             let fallback = node.get("fallback")?.as_array()?;
             let [code] = fallback.as_slice() else {
@@ -79,16 +87,16 @@ fn code_of(node: &Value) -> Option<Value> {
             if let (Some(attrs), Some(map)) = (node.get("attrs"), code.as_object_mut()) {
                 map.insert("attrs".into(), attrs.clone());
             }
-            Some(code)
+            Some(Cow::Owned(code))
         }
         _ => None,
     }
 }
 
-fn panels(node: &Value, cx: &RenderContext<'_>) -> Vec<Panel> {
+fn panels<'n>(slots: Option<&'n Value>, cx: &RenderContext<'_>) -> Vec<Panel<'n>> {
     let mut out: Vec<Panel> = Vec::new();
-    for child in node
-        .pointer("/slots/panels")
+    for child in slots
+        .and_then(|s| s.get("panels"))
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -112,7 +120,7 @@ fn panels(node: &Value, cx: &RenderContext<'_>) -> Vec<Panel> {
             .map_or_else(|| format!("Code {}", out.len() + 1), str::to_string);
         out.push(Panel {
             block,
-            node: child.clone(),
+            node: child,
             label,
             selected: false,
         });
@@ -127,10 +135,10 @@ fn panels(node: &Value, cx: &RenderContext<'_>) -> Vec<Panel> {
     out
 }
 
-fn without_selected(node: &Value) -> Value {
+fn without_selected(node: &Value) -> Cow<'_, Value> {
     let attrs = node.get("attrs");
     if !has_selected(attrs) {
-        return node.clone();
+        return Cow::Borrowed(node);
     }
     let rest: Vec<Value> = key_values(attrs)
         .into_iter()
@@ -138,7 +146,7 @@ fn without_selected(node: &Value) -> Value {
         .collect();
     let mut out = node.clone();
     let Some(map) = out.as_object_mut() else {
-        return out;
+        return Cow::Owned(out);
     };
     if let Some(a) = map.get_mut("attrs").and_then(Value::as_object_mut) {
         if rest.is_empty() {
@@ -150,17 +158,40 @@ fn without_selected(node: &Value) -> Value {
             map.remove("attrs");
         }
     }
-    out
+    Cow::Owned(out)
+}
+
+/// The extension node a group renders, as its JSON value or typed.
+#[derive(Clone, Copy)]
+enum Group<'n, 'a> {
+    Json(&'n Value),
+    Typed(&'n crate::ast::BlockExtension<'a>),
+}
+
+impl Group<'_, '_> {
+    fn slots(&self) -> Option<&Value> {
+        match self {
+            Self::Json(node) => node.get("slots"),
+            Self::Typed(node) => node.slots,
+        }
+    }
 }
 
 impl Look {
-    fn wrapper(&self, node: &Value, cx: &RenderContext<'_>, role: &str) -> String {
-        let attrs = node.get("attrs");
-        let name = self
-            .group_label
+    fn name(&self, cx: &RenderContext<'_>) -> String {
+        self.group_label
             .clone()
             .or_else(|| cx.label("codeGroup").map(str::to_string))
-            .unwrap_or_else(|| "Code examples".to_string());
+            .unwrap_or_else(|| "Code examples".to_string())
+    }
+
+    fn wrapper(&self, group: Group<'_, '_>, cx: &RenderContext<'_>, role: &str) -> String {
+        let node = match group {
+            Group::Json(node) => node,
+            Group::Typed(node) => return self.typed_wrapper(node, cx, role),
+        };
+        let attrs = node.get("attrs");
+        let name = self.name(cx);
         let mut kv = key_values(attrs);
         if !authored(attrs, "role") {
             kv.push(json!(["role", role]));
@@ -178,7 +209,26 @@ impl Look {
         format!("<div{}>", cx.attributes(&with_attrs(node, cls, kv)))
     }
 
-    fn code(&self, panel: &Panel, cx: &RenderContext<'_>) -> Result<String, Error> {
+    fn typed_wrapper(
+        &self,
+        node: &crate::ast::BlockExtension<'_>,
+        cx: &RenderContext<'_>,
+        role: &str,
+    ) -> String {
+        let name = self.name(cx);
+        let mut parts = Parts::of(node.attrs);
+        if !parts.authored("role") {
+            parts.key_values.push(("role", role));
+        }
+        if !name.is_empty() && !parts.authored("aria-label") && !parts.authored("aria-labelledby") {
+            parts.key_values.push(("aria-label", name.as_str()));
+        }
+        parts.classes.retain(|c| *c != self.wrapper);
+        let parts = parts.with_classes(&[self.wrapper.as_str()]);
+        format!("<div{}>", cx.write_parts(&parts, node.pos.as_ref()))
+    }
+
+    fn code(&self, panel: &Panel<'_>, cx: &RenderContext<'_>) -> Result<String, Error> {
         if let Some(h) = &self.highlighter {
             let value = panel
                 .block
@@ -190,11 +240,11 @@ impl Look {
                 panel.block.get("syntax").and_then(Value::as_str),
             ));
         }
-        cx.render_blocks(&Value::Array(vec![without_selected(&panel.node)]))
+        cx.render_block(&without_selected(panel.node))
     }
 
-    fn css(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let panels = panels(node, cx);
+    fn css(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let panels = panels(node.slots(), cx);
         let group = cx.next_id(&self.prefix);
         let a = |v: &str| cx.escape_attribute(v);
         let (mut controls, mut bodies) = (String::new(), String::new());
@@ -225,8 +275,8 @@ impl Look {
         ))
     }
 
-    fn aria(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let panels = panels(node, cx);
+    fn aria(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let panels = panels(node.slots(), cx);
         let group = cx.next_id(&self.prefix);
         let a = |v: &str| cx.escape_attribute(v);
         let (mut controls, mut bodies) = (String::new(), String::new());
@@ -262,10 +312,10 @@ impl Look {
 
     /// C2-X-052: one section per panel headed by its label, no controls and
     /// no generated ids.
-    fn build_time(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+    fn build_time(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
         let a = |v: &str| cx.escape_attribute(v);
         let mut sections = String::new();
-        for p in panels(node, cx) {
+        for p in panels(node.slots(), cx) {
             let _ = write!(
                 sections,
                 r#"<section class="{}"><h3 class="{}">{}</h3>{}</section>"#,
@@ -284,8 +334,8 @@ impl Look {
 
 struct Interactive(Arc<Look>);
 
-impl Renderer for Interactive {
-    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+impl Interactive {
+    fn group(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
         match self.0.mode {
             CodeGroupMode::Css => self.0.css(node, cx),
             CodeGroupMode::Aria => self.0.aria(node, cx),
@@ -293,11 +343,33 @@ impl Renderer for Interactive {
     }
 }
 
+impl Renderer for Interactive {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        self.group(Group::Json(node), cx)
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        Some(self.group(Group::Typed(typed(node)?), cx))
+    }
+}
+
 struct BuildTime(Arc<Look>);
 
 impl Renderer for BuildTime {
     fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        self.0.build_time(node, cx)
+        self.0.build_time(Group::Json(node), cx)
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        Some(self.0.build_time(Group::Typed(typed(node)?), cx))
     }
 }
 
@@ -327,6 +399,36 @@ fn claim(claim: &Claim<'_>) -> Option<Value> {
         "slots": {"panels": panels},
         "fallback": body,
     }))
+}
+
+fn claim_typed<'a>(
+    _name: &str,
+    node: &mut crate::ast::Node<'a>,
+    _arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    use crate::ast::Node;
+    let Node::Div(div) = node else {
+        return None;
+    };
+    let panels: Vec<&Node<'_>> = div
+        .children
+        .iter()
+        .filter(|n| !matches!(n, Node::Comment(_)))
+        .collect();
+    if panels.is_empty() || !panels.iter().all(|n| matches!(n, Node::CodeBlock(_))) {
+        return None;
+    }
+    let panels = panels
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    Some(Made {
+        props: None,
+        payload: None,
+        slots: Some(json!({"panels": panels})),
+        fallback: std::mem::take(&mut div.children),
+    })
 }
 
 /// `::: code-group` of code blocks as one switcher with a panel per block.
@@ -362,7 +464,7 @@ pub fn code_group(options: CodeGroupOptions) -> Bundle {
             extension: NAME.into(),
             form: Form::Div,
             name: "code-group".into(),
-            claimer: Box::new(super::Engine(claim)),
+            claimer: Box::new(super::TypedEngine(claim, super::Typed(claim_typed))),
         }],
     }
 }

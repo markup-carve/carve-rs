@@ -1,6 +1,8 @@
 //! `codeCallouts` (carve-js#5068): a document transform (C2-X-053).
 
-use super::{Bundle, classes, declaration, key_values, payload_text, with_attrs};
+use super::{
+    Bundle, Parts, classes, declaration, key_values, payload_text, typed, typed_payload, with_attrs,
+};
 use crate::api::{Channel, DocumentTransform, Error, Extension, RenderContext, Renderer, Tree};
 use crate::ast::owned::{self, Node};
 use serde_json::{Value, json};
@@ -277,8 +279,9 @@ fn declared(extensions: Option<&Value>) -> Option<Value> {
 /// The binding of the transform on a tree in an arena: a node it rewrites
 /// is built as the owned binding builds it and copied into the arena.
 mod arena {
-    use super::{code_node, item, marker, slot_has_marker};
+    use super::{item, marker, slot_has_marker};
     use crate::ast::Node;
+    use serde_json::json;
 
     fn has_marker(node: &Node<'_>) -> bool {
         matches!(node, Node::CodeBlock(code) if code.value.split('\n').any(|line| marker(line).is_some()))
@@ -324,17 +327,55 @@ mod arena {
         })
     }
 
+    /// [`super::code_node`] in the arena; the code block moves into the fallback.
+    fn code_node<'a>(node: &mut Node<'a>, arena: &'a crate::Arena) {
+        let Node::CodeBlock(code) = node else {
+            return;
+        };
+        let ext = crate::ast::BlockExtension {
+            name: super::CODE,
+            version: "1",
+            attrs: code.attrs,
+            pos: code.pos,
+            payload: Some(arena.json(json!([{"format": "text/plain", "value": code.value}]))),
+            props: code
+                .syntax
+                .map(|language| arena.json(json!({"language": language}))),
+            ..Default::default()
+        };
+        let ext = arena.alloc(ext);
+        ext.fallback = crate::api::extensions::moved_fallback(node, arena);
+        *node = Node::BlockExtension(ext);
+    }
+
+    /// [`super::list_node`] in the arena; the paragraph moves into the fallback.
+    fn list_node<'a>(node: &mut Node<'a>, arena: &'a crate::Arena) {
+        let Node::Paragraph(paragraph) = node else {
+            return;
+        };
+        let Ok(lines) = serde_json::to_value(&*paragraph.children) else {
+            return;
+        };
+        let ext = crate::ast::BlockExtension {
+            name: super::LIST,
+            version: "1",
+            attrs: paragraph.attrs,
+            pos: paragraph.pos,
+            slots: Some(arena.json(json!({"lines": lines}))),
+            ..Default::default()
+        };
+        let ext = arena.alloc(ext);
+        ext.fallback = crate::api::extensions::moved_fallback(node, arena);
+        *node = Node::BlockExtension(ext);
+    }
+
     fn bind<'a>(nodes: &mut [Node<'a>], arena: &'a crate::Arena) {
         let mut at = 0;
         while let Some(node) = nodes.get_mut(at) {
             if has_marker(node) {
-                if let Node::CodeBlock(code) = node {
-                    *node = code_node(&code.owned()).in_arena(arena);
-                }
+                code_node(node, arena);
                 if let Some(next) = nodes.get_mut(at + 1).filter(|n| is_list(n)) {
-                    if let Node::Paragraph(paragraph) = next {
-                        *next = super::list_node(&paragraph.owned()).in_arena(arena);
-                    }
+                    list_node(next, arena);
                     at += 1;
                 }
             }
@@ -354,6 +395,10 @@ mod arena {
                 _ => false,
             };
             if slots {
+                // Nothing to bind in it: the owned binding would leave it as it is.
+                if !any_marker(std::slice::from_ref(node), depth) {
+                    continue;
+                }
                 // A node with slots binds as the owned tree does; its own
                 // level is bound above, so `bind` finds nothing on it again.
                 let mut one = vec![node.owned()];
@@ -370,9 +415,14 @@ mod arena {
 
 struct Code;
 
-impl Renderer for Code {
-    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let body: Vec<String> = payload_text(node)
+impl Code {
+    fn html(
+        payload: &str,
+        language: Option<&str>,
+        attributes: &str,
+        cx: &RenderContext<'_>,
+    ) -> String {
+        let body: Vec<String> = payload
             .split('\n')
             .map(|line| {
                 let Some((at, n)) = marker(line) else {
@@ -387,25 +437,49 @@ impl Renderer for Code {
                 )
             })
             .collect();
-        let code = node
-            .pointer("/props/language")
-            .and_then(Value::as_str)
+        let code = language
             .map(|l| format!(r#" class="language-{}""#, cx.escape_attribute(l)))
             .unwrap_or_default();
-        Ok(format!(
-            "<pre{}><code{code}>{}</code></pre>",
-            cx.attributes(node),
+        format!(
+            "<pre{attributes}><code{code}>{}</code></pre>",
             body.join("\n")
+        )
+    }
+}
+
+impl Renderer for Code {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        Ok(Self::html(
+            payload_text(node),
+            node.pointer("/props/language").and_then(Value::as_str),
+            &cx.attributes(node),
+            cx,
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        Some(Ok(Self::html(
+            typed_payload(node),
+            node.props
+                .and_then(|p| p.get("language"))
+                .and_then(Value::as_str),
+            &cx.write_parts(&Parts::of(node.attrs), node.pos.as_ref()),
+            cx,
+        )))
     }
 }
 
 struct List;
 
-impl Renderer for List {
-    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let slot = node
-            .pointer("/slots/lines")
+impl List {
+    fn items(slots: Option<&Value>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let slot = slots
+            .and_then(|s| s.get("lines"))
             .and_then(Value::as_array)
             .map_or(&[][..], Vec::as_slice);
         let mut items = String::new();
@@ -421,6 +495,13 @@ impl Renderer for List {
                 cx.render_inlines(&Value::Array(rest))?
             );
         }
+        Ok(items)
+    }
+}
+
+impl Renderer for List {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let items = Self::items(node.get("slots"), cx)?;
         let attrs = node.get("attrs");
         let mut cls = vec![Value::from("callouts")];
         cls.extend(classes(attrs));
@@ -428,6 +509,21 @@ impl Renderer for List {
             "<ol{}>{items}</ol>",
             cx.attributes(&with_attrs(node, cls, key_values(attrs)))
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        Some(Self::items(node.slots, cx).map(|items| {
+            let parts = Parts::of(node.attrs).with_classes(&["callouts"]);
+            format!(
+                "<ol{}>{items}</ol>",
+                cx.write_parts(&parts, node.pos.as_ref())
+            )
+        }))
     }
 }
 
