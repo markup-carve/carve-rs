@@ -13,6 +13,7 @@ mod smart;
 mod token;
 
 pub(crate) use atoms::{Label, code_span, label};
+pub(crate) use direct::{Seg, line_segments};
 
 use crate::Arena;
 use crate::ast::Node;
@@ -77,6 +78,7 @@ pub(crate) struct Env<'e, 'a> {
     pub abbreviations: Terms<'e>,
     pub kind: ContentKind,
     pub hard_breaks: bool,
+    pub abbreviation_remaining: Option<&'e std::cell::Cell<usize>>,
 }
 
 /// The link keys of a document and of the documents around it, read in
@@ -186,6 +188,7 @@ pub fn parse<'a>(
         },
         kind: env.kind,
         hard_breaks: env.hard_breaks,
+        abbreviation_remaining: None,
     };
     parse_env(&env, pieces, s)
 }
@@ -202,26 +205,44 @@ pub(crate) fn parse_env<'a>(
 }
 
 fn parse_in<'a>(env: &Env<'_, 'a>, pieces: &[Piece], s: &mut Scratch<'a>) -> &'a mut [Node<'a>] {
+    #[cfg(debug_assertions)]
+    let before = env.abbreviation_remaining.map(std::cell::Cell::get);
     match direct::route(env, pieces, &mut s.direct) {
         Ok(nodes) => {
             #[cfg(debug_assertions)]
             {
+                let after = env.abbreviation_remaining.map(std::cell::Cell::get);
+                if let (Some(remaining), Some(before)) = (env.abbreviation_remaining, before) {
+                    remaining.set(before);
+                }
                 let full = full(env, pieces, s, Known::default());
                 assert_eq!(
                     &*nodes, &*full,
                     "direct inline route differs from the full pass"
                 );
+                if let (Some(remaining), Some(after)) = (env.abbreviation_remaining, after) {
+                    remaining.set(after);
+                }
             }
             nodes
         }
         Err(known) => {
             let out = full(env, pieces, s, known);
             #[cfg(debug_assertions)]
-            assert_eq!(
-                &*out,
-                &*full(env, pieces, s, Known::default()),
-                "the known plain prefix changes the full pass"
-            );
+            {
+                let after = env.abbreviation_remaining.map(std::cell::Cell::get);
+                if let (Some(remaining), Some(before)) = (env.abbreviation_remaining, before) {
+                    remaining.set(before);
+                }
+                assert_eq!(
+                    &*out,
+                    &*full(env, pieces, s, Known::default()),
+                    "the known plain prefix changes the full pass"
+                );
+                if let (Some(remaining), Some(after)) = (env.abbreviation_remaining, after) {
+                    remaining.set(after);
+                }
+            }
             out
         }
     }

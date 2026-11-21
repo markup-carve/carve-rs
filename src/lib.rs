@@ -567,6 +567,22 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         return Err(RenderError::TooLong { profile, limit });
     }
     if let Some(html) = fast_plain::render(input, opts) {
+        #[cfg(debug_assertions)]
+        {
+            let arena = Arena::for_input(input);
+            let generic = render_parts(
+                input,
+                opts,
+                &arena,
+                &mut Vec::new(),
+                &mut RenderDetails::default(),
+            );
+            assert_eq!(
+                generic.ok().map(|(h, _)| h).as_deref(),
+                Some(html.as_str()),
+                "the streaming path differs from the generic render"
+            );
+        }
         return Ok(html);
     }
     let arena = Arena::for_input(input);
@@ -1250,11 +1266,17 @@ fn derived_overflow_pos(input: &str, opts: &Options) -> Option<ast::Pos> {
     let arena = Arena::for_input(input);
     let doc = parse_resolved_in(input, opts, &arena).ok()?;
     let order = resolve::order::Order::build(&doc);
+    let mut definitions = std::collections::HashMap::new();
+    for node in doc.children.iter() {
+        if let ast::Node::AbbreviationDef(def) = node {
+            definitions.entry(def.key).or_insert(def.expansion);
+        }
+    }
     let mut remaining =
         tables::DERIVED_TEXT_BYTES.max(input.len().saturating_mul(tables::DERIVED_TEXT_FACTOR));
     for visit in order.visits {
         if let ast::Node::Abbreviation(abbr) = visit.node
-            && let Some(expansion) = abbr.expansion
+            && let Some(expansion) = definitions.get(abbr.key).copied().or(abbr.expansion)
         {
             if expansion.len() > remaining {
                 return abbr.pos;

@@ -154,7 +154,13 @@ impl<'r, 'a> Renderer<'r, 'a> {
     #[inline]
     fn inline_inner_other(&mut self, n: &'r Node<'a>, out: &mut String) {
         match n {
-            Node::Abbreviation(a) => match (&a.expansion, self.in_abbr) {
+            Node::Abbreviation(a) => match (
+                self.files
+                    .and_then(|files| files.abbr(n, a.key))
+                    .or_else(|| self.abbreviation_definitions.get(a.key).copied())
+                    .or(a.expansion),
+                self.in_abbr,
+            ) {
                 (Some(e), 0) if self.charge_derived(e.len(), n) => {
                     let mut el = El::new(a.attrs, a.lang).with_dir(a.dir);
                     el.structural.push(("title", Some((*e).into())));
