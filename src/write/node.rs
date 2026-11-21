@@ -3,7 +3,6 @@
 //! equality of C2-A-161 (positions and the results of `data/ast-results.json`
 //! are not compared).
 
-use crate::hash::AddrHasher;
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
 use serde_json::Value;
@@ -16,13 +15,21 @@ use std::sync::OnceLock;
 /// protection buys nothing.
 type TypeMap<V> = HashMap<String, V, BuildHasherDefault<TypeHasher>>;
 
-/// [`AddrHasher`]'s multiply, taken over eight bytes of a type name at a time.
+/// One multiply per eight bytes of a type name, as [`crate::hash::AddrHasher`] takes one per address.
 #[derive(Default, Clone, Copy)]
-struct TypeHasher(AddrHasher);
+struct TypeHasher(u64);
+
+impl TypeHasher {
+    const K: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    fn mix(&mut self, word: u64) {
+        self.0 = (self.0 ^ word).wrapping_mul(Self::K);
+    }
+}
 
 impl Hasher for TypeHasher {
     fn finish(&self) -> u64 {
-        self.0.finish()
+        self.0.rotate_left(26)
     }
 
     fn write(&mut self, bytes: &[u8]) {
@@ -30,7 +37,7 @@ impl Hasher for TypeHasher {
         for chunk in &mut chunks {
             let mut word = [0u8; 8];
             word.copy_from_slice(chunk);
-            self.0.write_usize(usize::from_le_bytes(word));
+            self.mix(u64::from_le_bytes(word));
         }
         let rest = chunks.remainder();
         if !rest.is_empty() {
@@ -38,8 +45,7 @@ impl Hasher for TypeHasher {
             word.get_mut(..rest.len())
                 .unwrap_or(&mut [])
                 .copy_from_slice(rest);
-            self.0
-                .write_usize(usize::from_le_bytes(word) ^ (rest.len() << 59));
+            self.mix(u64::from_le_bytes(word) ^ (u64::try_from(rest.len()).unwrap_or(0) << 59));
         }
     }
 }
