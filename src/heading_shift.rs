@@ -98,3 +98,8 @@ fn find_owned(node: &owned::Node) -> Found {
 pub(crate) fn message(shift: u8) -> String {
     format!("The heading shift of {shift} raises a heading above level 6.")
 }
+
+/// A known shift result, including a known absence, for a view with later transforms.
+pub(crate) fn shifted_fact(nodes: &[Node<'_>], shift: u8, has_transforms: bool) -> Option<Found> {
+    (shift != 0 && has_transforms).then(|| first_above_6(nodes, &|_| None))
+}

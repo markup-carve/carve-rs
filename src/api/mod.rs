@@ -757,10 +757,11 @@ impl Carve {
             if early_claims {
                 claimed = self.claim_arena(doc, &arena, text);
                 crate::heading_shift::apply(doc.children, opts.heading_shift);
-                if opts.heading_shift != 0 && self.extensions.has_transforms() {
-                    early_shift_override =
-                        Some(crate::heading_shift::first_above_6(doc.children, &|_| None));
-                }
+                early_shift_override = crate::heading_shift::shifted_fact(
+                    doc.children,
+                    opts.heading_shift,
+                    self.extensions.has_transforms(),
+                );
             }
             if early && claimed.is_ok() {
                 self.extensions.transform_parsed_arena(doc, &arena);
@@ -771,12 +772,13 @@ impl Carve {
             claimed = self.claim_arena(&mut doc, &arena, text);
             crate::heading_shift::apply(doc.children, opts.heading_shift);
         }
-        let shift_override = if early_claims {
-            early_shift_override
-        } else {
-            (opts.heading_shift != 0 && self.extensions.has_transforms())
-                .then(|| crate::heading_shift::first_above_6(doc.children, &|_| None))
-        };
+        let shift_override = early_shift_override.or_else(|| {
+            crate::heading_shift::shifted_fact(
+                doc.children,
+                opts.heading_shift,
+                self.extensions.has_transforms(),
+            )
+        });
         let (mut diagnostics, suppressed) = record::cap_includes(&found);
         let changed = match claimed {
             Ok((entries, changed)) => {
