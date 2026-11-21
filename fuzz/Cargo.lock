@@ -34,7 +34,9 @@ name = "carve-fuzz"
 version = "0.0.0"
 dependencies = [
  "carve-lang",
+ "html5ever",
  "libfuzzer-sys",
+ "markup5ever_rcdom",
  "serde_json",
 ]
 

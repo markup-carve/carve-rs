@@ -27,6 +27,8 @@ jobs:
           workspaces: fuzz
       - name: Format
         run: cargo fmt --check --manifest-path fuzz/Cargo.toml
+      - name: Check the safety oracle
+        run: cargo test --manifest-path fuzz/Cargo.toml --lib
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked --version 0.13.2
       - name: Build the targets
