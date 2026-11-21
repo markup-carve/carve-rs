@@ -173,6 +173,47 @@ pub fn parse_snapshot_with_identity(
     Ok(result)
 }
 
+/// The changes sorted by start, checked against the source.
+fn ordered_changes(
+    source: &str,
+    changes: &[TextChange],
+) -> Result<Vec<TextChange>, IncrementalParseError> {
+    let mut ordered = changes.to_vec();
+    ordered.sort_by_key(|change| change.range.start);
+    // The last change's error first, as in 0.1.
+    for change in ordered.iter().rev() {
+        if change.range.start > change.range.end || change.range.end > source.len() {
+            return Err(IncrementalParseError("text change is out of bounds".into()));
+        }
+        if !source.is_char_boundary(change.range.start)
+            || !source.is_char_boundary(change.range.end)
+        {
+            return Err(IncrementalParseError(
+                "text change splits a UTF-8 code point".into(),
+            ));
+        }
+    }
+    if ordered
+        .windows(2)
+        .any(|pair| matches!(pair, [a, b] if a.range.end > b.range.start))
+    {
+        return Err(IncrementalParseError("text changes overlap".into()));
+    }
+    Ok(ordered)
+}
+
+fn applied(source: &str, ordered: &[TextChange]) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut cursor = 0;
+    for change in ordered {
+        out.push_str(source.get(cursor..change.range.start).unwrap_or(""));
+        out.push_str(&change.replacement);
+        cursor = change.range.end;
+    }
+    out.push_str(source.get(cursor..).unwrap_or(""));
+    out
+}
+
 /// Applies text changes to a snapshot and parses the resulting source.
 ///
 /// # Errors
@@ -190,35 +231,8 @@ pub fn reparse(
         identity: old_identity,
         mut next_identity_id,
     } = snapshot;
-    let mut ordered = changes.to_vec();
-    ordered.sort_by_key(|change| change.range.start);
-    // The last change's error first, as in 0.1.
-    for change in ordered.iter().rev() {
-        if change.range.start > change.range.end || change.range.end > old_source.len() {
-            return Err(IncrementalParseError("text change is out of bounds".into()));
-        }
-        if !old_source.is_char_boundary(change.range.start)
-            || !old_source.is_char_boundary(change.range.end)
-        {
-            return Err(IncrementalParseError(
-                "text change splits a UTF-8 code point".into(),
-            ));
-        }
-    }
-    if ordered
-        .windows(2)
-        .any(|pair| matches!(pair, [a, b] if a.range.end > b.range.start))
-    {
-        return Err(IncrementalParseError("text changes overlap".into()));
-    }
-    let mut source = String::with_capacity(old_source.len());
-    let mut cursor = 0;
-    for change in &ordered {
-        source.push_str(old_source.get(cursor..change.range.start).unwrap_or(""));
-        source.push_str(&change.replacement);
-        cursor = change.range.end;
-    }
-    source.push_str(old_source.get(cursor..).unwrap_or(""));
+    let ordered = ordered_changes(&old_source, changes)?;
+    let source = applied(&old_source, &ordered);
     let old_tree = match old_identity {
         Some(_) => Some(tree_value(&old_document)?),
         None => None,
@@ -348,14 +362,7 @@ fn paragraph_splice(
         if change.range.start < start || change.range.end > end {
             continue;
         }
-        let mut fragment = source.get(start..end)?.to_owned();
-        fragment.replace_range(
-            change.range.start - start..change.range.end - start,
-            &change.replacement,
-        );
-        if fragment.is_empty() || fragment.starts_with(' ') || fragment.ends_with(' ') {
-            return None;
-        }
+        let fragment = edited_fragment(source, start..end, change)?;
         *attempted_bytes = fragment.len();
         let mut replacement = super::parse(fragment.as_str(), &Options::default())
             .ok()?
@@ -375,6 +382,17 @@ fn paragraph_splice(
         });
     }
     None
+}
+
+/// The paragraph's text after the edit, when it can still stand alone.
+fn edited_fragment(source: &str, paragraph: Range<usize>, change: &TextChange) -> Option<String> {
+    let mut fragment = source.get(paragraph.clone())?.to_owned();
+    fragment.replace_range(
+        change.range.start - paragraph.start..change.range.end - paragraph.start,
+        &change.replacement,
+    );
+    (!fragment.is_empty() && !fragment.starts_with(' ') && !fragment.ends_with(' '))
+        .then_some(fragment)
 }
 
 fn apply_splice(mut document: Document, splice: Splice) -> (Document, usize) {
@@ -467,20 +485,13 @@ fn byte_span(node: &Value) -> Option<(usize, usize)> {
     (start <= end).then_some((start, end))
 }
 
-/// Keeps the id of each old node that no change touches and that the new
-/// tree holds once, unchanged, at its shifted span; every other node gets a
-/// new id, so an id is never reused for different content.
-fn retain_identity(
-    old_tree: &Value,
-    new_document: &Document,
+/// The id of each old node no change touches, keyed by its shifted span and
+/// content; `None` where two old nodes share a key.
+fn kept_old_ids(
+    old_nodes: &HashMap<String, NodeKey>,
     changes: &[TextChange],
     previous: &NodeIdentity,
-    next_id: &mut usize,
-) -> Result<NodeIdentity, IncrementalParseError> {
-    let old_nodes: HashMap<String, NodeKey> = node_keys(old_tree)
-        .into_iter()
-        .map(|key| (key.path.clone(), key))
-        .collect();
+) -> HashMap<(usize, usize, u64), Option<String>> {
     let mut shifts = vec![0isize];
     for change in changes {
         let last = shifts.last().copied().unwrap_or(0);
@@ -488,7 +499,7 @@ fn retain_identity(
         let removed = isize::try_from(change.range.len()).unwrap_or(isize::MAX);
         shifts.push(last.saturating_add(grown).saturating_sub(removed));
     }
-    let mut old_keys: HashMap<(usize, usize, u64), Option<String>> = HashMap::new();
+    let mut old_keys = HashMap::new();
     for entry in previous.nodes.iter().filter(|entry| !entry.path.is_empty()) {
         let Some(NodeKey {
             span: Some((start, end)),
@@ -518,6 +529,24 @@ fn retain_identity(
             .and_modify(|id| *id = None)
             .or_insert_with(|| Some(entry.id.clone()));
     }
+    old_keys
+}
+
+/// Keeps the id of each old node that no change touches and that the new
+/// tree holds once, unchanged, at its shifted span; every other node gets a
+/// new id, so an id is never reused for different content.
+fn retain_identity(
+    old_tree: &Value,
+    new_document: &Document,
+    changes: &[TextChange],
+    previous: &NodeIdentity,
+    next_id: &mut usize,
+) -> Result<NodeIdentity, IncrementalParseError> {
+    let old_nodes: HashMap<String, NodeKey> = node_keys(old_tree)
+        .into_iter()
+        .map(|key| (key.path.clone(), key))
+        .collect();
+    let mut old_keys = kept_old_ids(&old_nodes, changes, previous);
     let fresh = node_keys(&tree_value(new_document)?);
     let key_of = |node: &NodeKey| node.span.map(|(start, end)| (start, end, node.content));
     let mut counts: HashMap<(usize, usize, u64), usize> = HashMap::new();
