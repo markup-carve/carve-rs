@@ -46,11 +46,10 @@ pub use index_terms::{IndexOptions, index};
 pub use list_table::list_table;
 pub use math::{MathBlockOptions, MathBuilder, math_block};
 pub use navigation::{
-    AutolinkOptions, CrossrefStyle, ExternalLinksOptions, HeadingLevelShiftOptions,
-    HeadingNumbersOptions, HeadingPermalinksOptions, HeadingReferenceOptions, LinkPolicyOptions,
-    ListType, Position, TableOfContentsOptions, autolink, external_links, heading_level_shift,
-    heading_numbers, heading_permalinks, heading_reference, link_policy, table_of_contents,
-    toc_placement,
+    AutolinkOptions, CrossrefStyle, ExternalLinksOptions, HeadingNumbersOptions,
+    HeadingPermalinksOptions, HeadingReferenceOptions, LinkPolicyOptions, ListType, Position,
+    TableOfContentsOptions, autolink, external_links, heading_numbers, heading_permalinks,
+    heading_reference, link_policy, table_of_contents, toc_placement,
 };
 pub use semantic_span::{SEMANTIC_SPAN_KEYS, semantic_span};
 pub use smart_quotes::{
@@ -339,7 +338,6 @@ fn standard_other(name: &str) -> Option<Bundle> {
 fn navigation_standard(name: &str) -> Option<Bundle> {
     match name {
         "carve.externalLinks" => Some(external_links(ExternalLinksOptions::default())),
-        "carve.headingLevelShift" => Some(heading_level_shift(HeadingLevelShiftOptions::default())),
         "carve.headingPermalinks" => Some(heading_permalinks(HeadingPermalinksOptions::default())),
         "carve.headingNumbers" => Some(heading_numbers(HeadingNumbersOptions::default())),
         "carve.headingReference" => Some(heading_reference(HeadingReferenceOptions::default())),

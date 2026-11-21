@@ -9,6 +9,7 @@ use crate::tables::ProfileRow;
 
 impl<'r, 'a> Renderer<'r, 'a> {
     pub(super) fn profile_loss(&mut self, n: &Node, block: bool) {
+        self.report_shift(n);
         self.losses.push("profile-construct-degraded");
         self.profile_losses.push(super::ProfileLoss {
             pos: n.pos().copied(),

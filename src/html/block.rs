@@ -348,6 +348,8 @@ impl<'r, 'a> Renderer<'r, 'a> {
         if own_id {
             self.id_carriers(n, &mut el);
         }
+        self.source_level(n, &mut el);
+        self.report_shift(n);
         let tag = match h.level {
             1 => "h1",
             2 => "h2",
@@ -356,9 +358,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
             5 => "h5",
             6 => "h6",
             _ => {
-                el.structural.push(("role", Some("heading".into())));
-                el.structural
-                    .push(("aria-level", Some(h.level.to_string().into())));
+                // C2-H-208: the source level stands before `role` and `aria-level`.
+                let after = if el
+                    .carriers
+                    .iter()
+                    .any(|(k, _)| *k == "data-carve-source-level")
+                {
+                    &mut el.carriers
+                } else {
+                    &mut el.structural
+                };
+                after.push(("role", Some("heading".into())));
+                after.push(("aria-level", Some(h.level.to_string().into())));
                 "div"
             }
         };

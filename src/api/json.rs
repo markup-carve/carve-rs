@@ -137,14 +137,13 @@ fn helper_call(name: &str, req: &Value, opts: &CallOptions) -> Result<Value, Err
 /// The options of a request; a `write` to an export target also reads the
 /// export options of the render stage.
 fn call_options(name: &str, req: &Value) -> Result<CallOptions, Error> {
-    let export = matches!(name, "write" | "writeWithDiagnostics")
-        && req
-            .get("target")
-            .and_then(Value::as_str)
-            .and_then(crate::export::Target::from_name)
-            .is_some();
-    if export {
-        super::options::export_from_json(name, req.get("options"))
+    let export = req
+        .get("target")
+        .and_then(Value::as_str)
+        .and_then(crate::export::Target::from_name)
+        .filter(|_| matches!(name, "write" | "writeWithDiagnostics"));
+    if let Some(target) = export {
+        super::options::export_from_json(name, target, req.get("options"))
     } else {
         super::options::from_json(name, req.get("options"))
     }

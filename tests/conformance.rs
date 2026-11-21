@@ -83,6 +83,9 @@ pub fn options(v: &Value, files: Option<&Value>) -> Options {
     if let Some(n) = v["maxLosses"].as_u64() {
         o.max_losses = usize::try_from(n).unwrap_or(usize::MAX);
     }
+    if let Some(n) = v["headingShift"].as_u64() {
+        o.heading_shift = u8::try_from(n).unwrap_or(u8::MAX);
+    }
     for (key, slot) in [
         ("sourceLines", &mut o.source_lines),
         ("roundtrip", &mut o.roundtrip),

@@ -393,6 +393,7 @@ fn streamable(opts: &Options) -> bool {
         && !opts.roundtrip
         && opts.includes.is_none()
         && opts.soft_break == crate::options::SoftBreak::Newline
+        && opts.heading_shift == 0
 }
 
 /// The HTML of a plain source when every block can be streamed safely.

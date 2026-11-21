@@ -105,9 +105,22 @@ pub(crate) fn from_json(call: &str, value: Option<&Value>) -> Result<CallOptions
 }
 
 /// The options of a `write` call to an export target, which reads the
-/// render options `smartTypography`, `strictLosses` and `urlPolicy`.
-pub(crate) fn export_from_json(call: &str, value: Option<&Value>) -> Result<CallOptions, Error> {
-    from_json_in(call, &["format", "render"], value)
+/// render options `smartTypography`, `strictLosses` and `urlPolicy`, and the
+/// Markdown export `headingShift`; plain text and ANSI refuse it (C2-H-209).
+pub(crate) fn export_from_json(
+    call: &str,
+    target: crate::export::Target,
+    value: Option<&Value>,
+) -> Result<CallOptions, Error> {
+    if target != crate::export::Target::Markdown
+        && value.and_then(|v| v.get("headingShift")).is_some()
+    {
+        return Err(Error::option(
+            "headingShift",
+            format!("the {} export does not read it", target.name()),
+        ));
+    }
+    from_json_in(call, &["export-markdown", "format", "render"], value)
 }
 
 fn from_json_in(
@@ -192,9 +205,23 @@ fn enumerated(o: &mut Options, name: &str, v: &Value) -> Result<(), Error> {
                 .and_then(|n| usize::try_from(n).ok())
                 .ok_or_else(|| Error::option(name, "the value is not a count"))?;
         }
+        "headingShift" => o.heading_shift = count_up_to(name, v)?,
         _ => return Err(Error::option(name, "this engine does not read it")),
     }
     Ok(())
+}
+
+/// A `count` option no larger than the `maximum` of its row (C2-H-137).
+fn count_up_to(name: &str, v: &Value) -> Result<u8, Error> {
+    let max = option_rows()
+        .iter()
+        .find(|r| r["name"] == name)
+        .and_then(|r| r["maximum"].as_u64())
+        .unwrap_or(u64::MAX);
+    v.as_u64()
+        .filter(|n| *n <= max)
+        .and_then(|n| u8::try_from(n).ok())
+        .ok_or_else(|| Error::option(name, format!("the value is not a count from 0 to {max}")))
 }
 
 fn structure(o: &mut Options, name: &str, v: &Value) -> Result<(), Error> {

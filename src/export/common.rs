@@ -60,6 +60,8 @@ pub struct Exporter<'v> {
     pub definitions: HashMap<String, Option<String>>,
     pub smart_typography: bool,
     pub url_policy: UrlPolicy,
+    pub heading_shift: u8,
+    pub shift_reported: bool,
     losses: Vec<Loss>,
     /// Bytes of derived text still allowed in this run.
     pub derived_left: usize,
@@ -92,6 +94,8 @@ impl<'v> Exporter<'v> {
             definitions,
             smart_typography: options.smart_typography,
             url_policy: options.url_policy.clone(),
+            heading_shift: options.heading_shift.unwrap_or(0),
+            shift_reported: false,
             losses: Vec::new(),
             derived_left: crate::tables::DERIVED_TEXT_BYTES,
             derived_reported: false,

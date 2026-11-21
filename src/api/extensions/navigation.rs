@@ -254,37 +254,6 @@ pub fn external_links(options: ExternalLinksOptions) -> Bundle {
     bundle("carve.externalLinks", ExternalLinks(options))
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct HeadingLevelShiftOptions {
-    pub shift: u8,
-}
-impl Default for HeadingLevelShiftOptions {
-    fn default() -> Self {
-        Self { shift: 1 }
-    }
-}
-struct HeadingLevelShift(HeadingLevelShiftOptions);
-impl DocumentTransform for HeadingLevelShift {
-    fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        edit(&view, |doc| {
-            visit(doc, &mut |node| {
-                if node.get("type").and_then(Value::as_str) == Some("heading") {
-                    if let Some(level) = node.get("level").and_then(Value::as_u64) {
-                        node.insert(
-                            "level".into(),
-                            (level + u64::from(self.0.shift.min(5))).min(6).into(),
-                        );
-                    }
-                }
-            });
-        })
-    }
-}
-#[must_use]
-pub fn heading_level_shift(options: HeadingLevelShiftOptions) -> Bundle {
-    bundle("carve.headingLevelShift", HeadingLevelShift(options))
-}
-
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)] // independent public extension options
 pub struct HeadingPermalinksOptions {

@@ -20,10 +20,12 @@ fn external_links_cover_links_and_autolinks() {
 
 #[test]
 fn navigation_factories_preserve_heading_and_link_behavior() {
-    let shifted = html(
-        "= A\n",
-        extensions::heading_level_shift(extensions::HeadingLevelShiftOptions::default()),
-    );
+    // C2-H-208: the shift is the core option `headingShift`, not an extension.
+    let opts = Options {
+        heading_shift: 1,
+        ..Options::default()
+    };
+    let shifted = Carve::new().render("= A\n", &opts).unwrap();
     assert!(shifted.contains("<h2>A</h2>"), "{shifted}");
     let permalink = html(
         "= A\n",

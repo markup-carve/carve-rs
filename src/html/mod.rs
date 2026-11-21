@@ -224,6 +224,8 @@ pub(crate) struct LossDetails {
     pub raws: Vec<RawLoss>,
     pub carriers: Vec<CarrierLoss>,
     pub profiles: Vec<ProfileLoss>,
+    /// C2-H-208: the first heading a shift raised above 6, as a position and a file.
+    pub shift: Option<(Option<crate::ast::Pos>, Option<String>)>,
 }
 
 impl LossDetails {
@@ -232,6 +234,9 @@ impl LossDetails {
         self.raws.append(&mut renderer.raw_losses);
         self.carriers.append(&mut renderer.carrier_losses);
         self.profiles.append(&mut renderer.profile_losses);
+        if self.shift.is_none() {
+            self.shift = renderer.shift_loss.take();
+        }
     }
 }
 
@@ -292,6 +297,7 @@ pub(crate) struct Renderer<'r, 'a> {
     raw_losses: Vec<RawLoss>,
     carrier_losses: Vec<CarrierLoss>,
     profile_losses: Vec<ProfileLoss>,
+    shift_loss: Option<(Option<crate::ast::Pos>, Option<String>)>,
     /// Comments of comment-only lines and the break each takes (C2-H-069).
     hidden: AddrSet<usize>,
     /// The row of `opts.profile` in the profile table.
@@ -394,6 +400,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             raw_losses: Vec::new(),
             carrier_losses: Vec::new(),
             profile_losses: Vec::new(),
+            shift_loss: None,
             hidden: AddrSet::default(),
             profile,
             hook: None,
@@ -439,6 +446,16 @@ impl<'r, 'a> Renderer<'r, 'a> {
         self.files
             .and_then(|files| pos.and_then(|pos| files.file_of_pos(pos)))
             .map(str::to_string)
+    }
+
+    /// C2-H-208: reports the first heading a shift raised above 6.
+    pub(super) fn report_shift(&mut self, n: &Node) {
+        let Node::Heading(h) = n else { return };
+        if self.opts.heading_shift == 0 || h.level <= 6 || self.shift_loss.is_some() {
+            return;
+        }
+        self.losses.push(crate::heading_shift::ABOVE_6);
+        self.shift_loss = Some((h.pos, self.file_of(h.pos.as_ref())));
     }
 
     fn hidden_heading(&self, href: &str) -> bool {
@@ -708,6 +725,18 @@ impl<'r, 'a> Renderer<'r, 'a> {
             el.carriers.push(("data-carve-explicit-id", None));
         } else if h.generated_id.is_some() {
             el.carriers.push(("data-carve-generated-id", None));
+        }
+    }
+
+    /// C2-H-208: the level before `headingShift`, after the id carrier.
+    fn source_level(&self, heading: &Node, el: &mut El<'_>) {
+        let Node::Heading(h) = heading else { return };
+        let shift = i64::from(self.opts.heading_shift);
+        if self.opts.roundtrip && shift != 0 && h.level > shift {
+            el.carriers.push((
+                "data-carve-source-level",
+                Some((h.level - shift).to_string().into()),
+            ));
         }
     }
 }

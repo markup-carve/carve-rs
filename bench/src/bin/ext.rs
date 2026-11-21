@@ -329,7 +329,6 @@ const STANDARD: &[&str] = &[
     "carve.semanticSpan",
     "carve.smartQuotes",
     "carve.externalLinks",
-    "carve.headingLevelShift",
     "carve.headingPermalinks",
     "carve.headingNumbers",
     "carve.headingReference",

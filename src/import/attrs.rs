@@ -140,7 +140,11 @@ pub(crate) const CARRIERS: &[&str] = &[
     "data-carve-div",
     "data-carve-line-block",
     "data-carve-src",
+    "data-carve-source-level",
 ];
+
+/// C2-H-208: the level of a heading before `headingShift`.
+pub(crate) const SOURCE_LEVEL: &str = "data-carve-source-level";
 
 pub(crate) fn is_carrier(name: &str) -> bool {
     CARRIERS.contains(&name)
@@ -331,6 +335,9 @@ impl Cx {
         let list = self.dom.attrs(id).to_vec();
         let mut entries = Vec::new();
         for (name, value) in list {
+            if name == SOURCE_LEVEL && self.heading_level(id).is_none() {
+                self.ignored_carrier(id, SOURCE_LEVEL, "the element is no heading");
+            }
             if !is_authored(&name, &value, omit) {
                 continue;
             }

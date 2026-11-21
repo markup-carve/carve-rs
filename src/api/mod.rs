@@ -748,6 +748,7 @@ impl Carve {
         let (mut doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
             if early_claims {
                 claimed = self.claim_arena(doc, &arena, text);
+                crate::heading_shift::apply(doc.children, opts.heading_shift);
             }
             if early && claimed.is_ok() {
                 self.extensions.transform_parsed_arena(doc, &arena);
@@ -756,6 +757,7 @@ impl Carve {
         .ok()?;
         if !early_claims {
             claimed = self.claim_arena(&mut doc, &arena, text);
+            crate::heading_shift::apply(doc.children, opts.heading_shift);
         }
         let (mut diagnostics, suppressed) = record::cap_includes(&found);
         let changed = match claimed {
@@ -829,6 +831,12 @@ impl Carve {
         opts: &Options,
         refuse_loss: bool,
     ) -> Result<Rendered, Error> {
+        let mut tree = tree;
+        if opts.heading_shift != 0 {
+            // C2-H-208: the shift comes before the first document transform.
+            crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
+            tree.json = std::sync::OnceLock::new();
+        }
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
         let (view, transform_entries) = if self.extensions.owned_transforms_only() {
             let mut resolved = crate::resolved_owned(tree.document(), opts);

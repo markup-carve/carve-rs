@@ -58,6 +58,7 @@ pub mod export;
 mod fast_plain;
 #[doc(hidden)]
 pub mod hash;
+mod heading_shift;
 #[doc(hidden)]
 pub mod html;
 mod import;
@@ -191,6 +192,7 @@ pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Documen
 pub fn render_tree(tree: &ast::owned::Document, opts: &Options) -> Result<String, RenderError> {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
+    heading_shift::apply(doc.children, opts.heading_shift);
     resolve::clear_results(&mut doc);
     resolve::resolve(&mut doc, opts, &arena);
     let (html, losses) = html::render_with_losses(&doc, opts);
@@ -209,13 +211,14 @@ pub fn render_tree_with_diagnostics(
 ) -> Result<Rendered, RenderError> {
     let arena = Arena::new();
     let mut doc = tree.in_arena(&arena);
+    heading_shift::apply(doc.children, opts.heading_shift);
     let files = resolve_tree(&mut doc, opts, &arena);
     let (html, losses, derived, extension_nodes, destinations) =
         html::render_tree_parts(&doc, opts, files.as_ref(), None);
     let losses = unallowed(losses, opts);
     let lost = !losses.is_empty();
     let mut diagnostics =
-        tree_loss_diagnostics(&doc, losses, derived, &extension_nodes, &destinations);
+        tree_loss_diagnostics(&doc, losses, derived, &extension_nodes, &destinations, opts);
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
             diagnostic.severity = "error";
@@ -293,6 +296,7 @@ pub(crate) fn render_arena_hooked<'a>(
         derived,
         &extension_nodes,
         &destinations,
+        opts,
     );
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
@@ -480,7 +484,9 @@ fn tree_loss_diagnostics(
     derived: Option<usize>,
     extension_nodes: &[(usize, String)],
     destination_losses: &[html::DestinationLoss],
+    opts: &Options,
 ) -> Vec<diagnostic::Diagnostic> {
+    let shift = opts.heading_shift.to_string();
     let mut extensions = extension_nodes.iter();
     let mut destinations = destination_losses.iter();
     losses
@@ -491,12 +497,12 @@ fn tree_loss_diagnostics(
             } else {
                 None
             };
-            let mut finding = diagnostic::Diagnostic::new(
-                code,
-                &name.map_or(Vec::new(), |(_, name)| vec![("name", name.as_str())]),
-                None,
-                None,
-            );
+            let values = match (name, code) {
+                (Some((_, name)), _) => vec![("name", name.as_str())],
+                (None, heading_shift::ABOVE_6) => vec![("shift", shift.as_str())],
+                (None, _) => Vec::new(),
+            };
+            let mut finding = diagnostic::Diagnostic::new(code, &values, None, None);
             finding.path = match code {
                 "extension-fallback-rendered" => {
                     name.and_then(|(target, _)| node_path(doc.children, *target))
@@ -893,7 +899,10 @@ fn render_parts(
     diags: &mut Vec<diagnostic::Diagnostic>,
     details: &mut RenderDetails,
 ) -> Result<(String, Vec<&'static str>), RenderError> {
-    let (mut doc, ordered, files) = prepare(input, opts, arena, diags)?;
+    // C2-H-208: after includes, before the first transform; resolution reads no level.
+    let (mut doc, ordered, files) = prepare_with(input, opts, arena, diags, &mut |doc| {
+        heading_shift::apply(doc.children, opts.heading_shift);
+    })?;
     include::unexpanded(doc.children, None, &mut details.places);
     if let Some(files) = files {
         details.included_sources.extend(
@@ -1036,11 +1045,15 @@ fn loss_diagnostics(
             } else {
                 None
             };
+            let shift = (*c == heading_shift::ABOVE_6)
+                .then_some(details.losses.shift.as_ref())
+                .flatten();
             let file = include_file.or_else(|| {
                 raw.and_then(|r| r.file.clone())
                     .or_else(|| destination.and_then(|d| d.file.clone()))
                     .or_else(|| carrier.and_then(|c| c.file.clone()))
                     .or_else(|| profile.and_then(|p| p.file.clone()))
+                    .or_else(|| shift.and_then(|s| s.1.clone()))
             });
             let included_source = file
                 .as_deref()
@@ -1063,6 +1076,7 @@ fn loss_diagnostics(
                 },
                 &mut carrier_cursors,
             );
+            let pos = shift.map_or(pos, |s| s.0);
             let (variant, values) =
                 loss_message(c, raw, destination, carrier, profile, opts, include_path);
             let values: Vec<_> = values
@@ -1183,6 +1197,7 @@ fn loss_message(
 ) -> (usize, Vec<(&'static str, String)>) {
     match code {
         "include-unresolved" => (0, vec![("path", include_path.unwrap_or_default())]),
+        heading_shift::ABOVE_6 => (0, vec![("shift", opts.heading_shift.to_string())]),
         "profile-construct-degraded" => (
             usize::from(profile.is_some_and(|p| p.nesting)),
             vec![
@@ -1398,6 +1413,7 @@ pub fn try_render_bytes(input: &[u8], opts: &Options) -> Result<String, RenderEr
     let arena = Arena::for_input(src.text());
     let out = block::scan(&src);
     let mut doc = tree::build(&src, &arena, out.events, &out.own_starts);
+    heading_shift::apply(doc.children, opts.heading_shift);
     let ordered = resolve::resolve_ordered(&mut doc, opts, &arena);
     let (out, losses) = html::render_mapped_source(&doc, opts, src.render_view(), ordered, None);
     let losses = unallowed(losses, opts);

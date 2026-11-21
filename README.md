@@ -227,6 +227,8 @@ assert_eq!(html, r#"<div class="math display" role="math">\[x^2\]</div>"#);
 
 The render options `soft_break` (`softBreak`: `newline`, `space` or `br`), `allow_losses` (`allowLosses`, render-loss codes left out of the record and of `strict_losses`) and `max_losses` (`maxLosses`, default 100; later losses are counted in `suppressed_diagnostics`) follow C2-H-203 to C2-H-205.
 
+`heading_shift` (`headingShift`, a count from 0 to 5, flag `--heading-shift`) adds N to the level of every heading of the render, after includes and before the first registered transform, so extensions see the shifted levels and level options such as `TableOfContentsOptions` or `HeadingPermalinksOptions::levels` name them. A level above 6 is written as `<div role="heading" aria-level="N">` and reported once as `heading-shift-above-6`; under `roundtrip` each heading carries `data-carve-source-level`, which the HTML importer reads back. Ids, the tree and the formatter keep the authored levels (C2-H-208). The Markdown export reads it too and writes a level above 6 as 6 (`ExportOptions::heading_shift`); the plain-text and ANSI exports refuse it (C2-H-209). It replaces the 0.1 extension `heading_level_shift()`.
+
 ## Bindings and the JSON boundary
 
 `api::json::call(&str) -> String` takes one JSON request and returns one JSON response. Bindings (carve-py with PyO3, carve-rb with magnus, carve-wasm with wasm-bindgen) can wrap this single function instead of mirroring every Rust type, and hosts that run the WASI build use it through `carve call`.
