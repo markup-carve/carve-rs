@@ -532,6 +532,21 @@ impl<'a> Records<'a> {
         }))
     }
 
+    /// The ranges of the blocks that hold a range, innermost first, the document left out.
+    fn holder_chain(&self, at: u32) -> impl Iterator<Item = u32> + '_ {
+        let mut holder = self.ranges[at as usize].holder;
+        std::iter::from_fn(move || {
+            while let Some(up) = holder {
+                let node = &self.holders[up as usize];
+                holder = node.up;
+                if node.range.is_some() {
+                    return node.range;
+                }
+            }
+            None
+        })
+    }
+
     /// The content and marker columns of the node at a holder's path.
     fn owner(&self, holder: Option<u32>) -> (usize, Option<usize>) {
         let slot = holder.map_or(0, |at| at as usize + 1);
@@ -732,21 +747,20 @@ impl<'a> Records<'a> {
         self.lookups.borrow_mut().insert(id, index);
     }
 
-    pub fn lookup_key(&self, id: usize, key: &LookupKey) -> Val<'a> {
-        self.lookups.borrow()[&id]
-            .keys
-            .get(key)
-            .cloned()
-            .unwrap_or(Val::Null)
+    /// The first record of a key, or with `after` the first of it that starts after that offset.
+    pub fn lookup_key(&self, id: usize, key: &LookupKey, after: Option<usize>) -> Option<u32> {
+        let lookups = self.lookups.borrow();
+        let found = lookups[&id].keys.get(key)?;
+        let at = after.map_or(0, |start| found.partition_point(|(from, _)| *from <= start));
+        found.get(at).map(|(_, record)| *record)
     }
 
-    /// The field of the last record of the lookup that starts before `start`.
-    pub fn lookup_before(&self, id: usize, start: usize) -> Val<'a> {
+    /// The last record of the lookup that starts before `start`.
+    pub fn lookup_before(&self, id: usize, start: usize) -> Option<u32> {
         let lookups = self.lookups.borrow();
         let before = &lookups[&id].before;
         let at = before.partition_point(|(from, _)| *from < start);
-        at.checked_sub(1)
-            .map_or(Val::Null, |at| before[at].1.clone())
+        at.checked_sub(1).map(|at| before[at].1)
     }
 
     /// The block or inline records of these types in document order, with their starts.
@@ -839,6 +853,7 @@ impl<'a> Records<'a> {
             Val::Colons(line) => self.colon_ids(*line).len(),
             Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
             Val::Node(node) => node.as_array().map_or(0, Vec::len),
+            Val::BlockAncestors(at) | Val::AncestorIds(at) => self.holder_chain(*at).count() + 1,
             _ => 0,
         }
     }
@@ -853,6 +868,18 @@ impl<'a> Records<'a> {
                 .ancestors(*leaf)
                 .nth(index)
                 .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind))),
+            Val::BlockAncestors(at) => self
+                .holder_chain(*at)
+                .map(|range| self.kind(range))
+                .chain(["document"])
+                .nth(index)
+                .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind))),
+            Val::AncestorIds(at) => self
+                .holder_chain(*at)
+                .map(i64::from)
+                .chain([-1])
+                .nth(index)
+                .map_or(Val::Null, Val::Num),
             Val::Node(node) => node
                 .as_array()
                 .and_then(|items| items.get(index))
@@ -900,6 +927,8 @@ impl<'a> Records<'a> {
         let source = self.source;
         match name {
             F::Node => self.tree_node(block.range),
+            F::Ancestors => Val::BlockAncestors(block.range),
+            F::AncestorIds => Val::AncestorIds(block.range),
             F::Type => Val::Str(Cow::Borrowed(block.kind)),
             F::Start => Val::num(range.start),
             F::End => Val::num(range.end),

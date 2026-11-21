@@ -63,6 +63,7 @@ pub(super) enum F {
     Width,
     Kind,
     Node,
+    AncestorIds,
     Unknown,
     /// Not a field: the fact that the previous line has the same leaf (`prev.leaf_id == leaf_id`).
     PrevSameLeaf,
@@ -76,6 +77,7 @@ const FIELDS: &[(&str, F)] = &[
     ("leaf_head", F::LeafHead),
     ("leaf_next", F::LeafNext),
     ("ancestors", F::Ancestors),
+    ("ancestor_ids", F::AncestorIds),
     ("attached_here", F::AttachedHere),
     ("blank", F::Blank),
     ("body", F::Body),
@@ -543,6 +545,7 @@ pub(super) enum Expr {
     /// A field of a record of the document found by key, or the last one before (C2-W-141).
     Lookup(Box<Lookup>),
     IndexOf(Box<(Self, Self)>),
+    JsonEscape(Box<Self>),
     Len(Box<Self>),
     Add(Vec<Self>),
     Sub(Box<(Self, Self)>),
@@ -564,6 +567,7 @@ pub(super) struct Lookup {
     pub key: Option<Expr>,
     pub value: Option<Expr>,
     pub before: bool,
+    pub after: bool,
     pub field: Path,
 }
 
@@ -704,9 +708,11 @@ impl Scope<'_> {
                 key: arg.get("key").map(|key| self.compile(key)),
                 value: arg.get("value").map(|value| self.compile(value)),
                 before: arg.get("before").and_then(Value::as_bool) == Some(true),
+                after: arg.get("after").and_then(Value::as_bool) == Some(true),
                 field: path(arg.get("field").and_then(Value::as_str).unwrap_or("")),
             })),
             "index_of" => Expr::IndexOf(pair(0, 1)),
+            "json_escape" => Expr::JsonEscape(Box::new(self.compile(arg))),
             "count" => Expr::Count {
                 list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
@@ -1090,6 +1096,7 @@ fn stateless(expr: &Expr) -> bool {
         }
         Expr::Some { test, .. } | Expr::Count { test, .. } => stateless(test),
         Expr::IndexOf(args) => stateless(&args.0) && stateless(&args.1),
+        Expr::JsonEscape(item) => stateless(item),
         Expr::Lookup(lookup) => lookup.value.as_ref().is_none_or(stateless),
         Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
             true
@@ -1217,6 +1224,9 @@ pub(super) enum Val<'a> {
     Node(&'a Value),
     /// The block or inline record of a range, as `item` of a lookup.
     Rec(u32),
+    /// The types and the identities of the blocks that hold a block (C2-W-141).
+    BlockAncestors(u32),
+    AncestorIds(u32),
 }
 
 impl Val<'_> {
@@ -1401,6 +1411,10 @@ impl<'a> Eval<'_, 'a> {
                 matches!(needle, Val::Str(_)) && self.records.ancestors(leaf).any(|kind| kind == n)
             });
         }
+        if matches!(haystack, Val::BlockAncestors(_)) {
+            return (0..self.records.list_len(&haystack))
+                .any(|at| self.same(&self.records.list_item(&haystack, at), &needle));
+        }
         self.str_of(&haystack)
             .zip(self.str_of(&needle))
             .is_some_and(|(s, n)| holds(s, n))
@@ -1427,32 +1441,39 @@ impl<'a> Eval<'_, 'a> {
             let built = self.build_lookup(lookup);
             self.records.store_lookup(id, built);
         }
-        if lookup.before {
-            let start = self.records.subject_field(&self.subject, F::Start);
-            let start = self.number(&start).max(0) as usize;
-            return self.records.lookup_before(id, start);
-        }
-        let value = lookup
-            .value
-            .as_ref()
-            .map_or(Val::Null, |value| self.value(value));
-        self.records.lookup_key(id, &LookupKey::of(&value))
+        let start = self.records.subject_field(&self.subject, F::Start);
+        let start = self.number(&start).max(0) as usize;
+        let found = if lookup.before {
+            self.records.lookup_before(id, start)
+        } else {
+            let value = lookup
+                .value
+                .as_ref()
+                .map_or(Val::Null, |value| self.value(value));
+            let after = lookup.after.then_some(start);
+            self.records.lookup_key(id, &LookupKey::of(&value), after)
+        };
+        found.map_or(Val::Null, |at| {
+            resolve_from(self.records, Val::Rec(at), &lookup.field)
+        })
     }
 
-    /// The records of a lookup in document order, each with its key and the field it gives.
+    /// The records of a lookup in document order with their starts, by key unless it is `before`.
     fn build_lookup(&mut self, lookup: &Lookup) -> LookupIndex {
         let saved = (self.item.take(), std::mem::take(&mut self.spans));
         let mut index = LookupIndex::default();
         for (at, start) in self.records.lookup_records(lookup.inline, &lookup.types) {
-            let record = Val::Rec(at);
-            let field = owned(&resolve_from(self.records, record.clone(), &lookup.field));
             if lookup.before {
-                index.before.push((start, field));
+                index.before.push((start, at));
                 continue;
             }
-            self.item = Some(record);
+            self.item = Some(Val::Rec(at));
             let key = lookup.key.as_ref().map_or(Val::Null, |key| self.value(key));
-            index.keys.entry(LookupKey::of(&key)).or_insert(field);
+            index
+                .keys
+                .entry(LookupKey::of(&key))
+                .or_default()
+                .push((start, at));
         }
         (self.item, self.spans) = saved;
         index
@@ -1533,7 +1554,16 @@ impl<'a> Eval<'_, 'a> {
                 }),
             Expr::Len(arg) => {
                 let value = self.value(arg);
-                Val::num(self.str_of(&value).map_or(0, str::len))
+                match value {
+                    Val::Str(_) => Val::num(self.str_of(&value).map_or(0, str::len)),
+                    Val::Null => Val::Null,
+                    list => Val::num(self.records.list_len(&list)),
+                }
+            }
+            Expr::JsonEscape(arg) => {
+                let text = self.string(arg);
+                let quoted = serde_json::to_string(&*text).unwrap_or_default();
+                Val::Str(Cow::Owned(quoted[1..quoted.len() - 1].to_owned()))
             }
             // Arithmetic on an absent value is absent, so a comparison with it does not hold (C2-W-141).
             Expr::Add(args) => {
@@ -1665,21 +1695,12 @@ impl LookupKey {
     }
 }
 
-/// The index of one lookup for one call: the field of the first record per key, and for `before`
-/// the starts and fields of the records in document order.
+/// The index of one lookup for one call: the starts and records per key, and for `before` those of
+/// every record, each in document order.
 #[derive(Default, Debug)]
 pub(super) struct LookupIndex {
-    pub keys: std::collections::HashMap<LookupKey, Val<'static>>,
-    pub before: Vec<(usize, Val<'static>)>,
-}
-
-fn owned(value: &Val<'_>) -> Val<'static> {
-    match value {
-        Val::Bool(b) => Val::Bool(*b),
-        Val::Num(n) => Val::Num(*n),
-        Val::Str(text) => Val::Str(Cow::Owned(text.to_string())),
-        _ => Val::Null,
-    }
+    pub keys: std::collections::HashMap<LookupKey, Vec<(usize, u32)>>,
+    pub before: Vec<(usize, u32)>,
 }
 
 fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> Val<'a> {
