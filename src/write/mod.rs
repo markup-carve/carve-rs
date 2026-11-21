@@ -121,6 +121,21 @@ pub(crate) fn format_plain(body: &str) -> Option<String> {
     (!has_loss(&losses)).then_some(out)
 }
 
+/// [`format_plain`] in the context of a document with the link keys `keys`:
+/// an escape or a shortcut reference in `body` is read as it reads there.
+pub(crate) fn format_in_context(body: &str, keys: &LinkKeys) -> Option<String> {
+    if keys.is_empty() {
+        return format_plain(body);
+    }
+    let doc = crate::tree_value_in_context(body, keys)?;
+    let settings = Settings {
+        link_keys: Some(std::sync::Arc::clone(keys)),
+        ..Settings::default()
+    };
+    let (out, losses) = format_tree(&doc, Some(body), &settings);
+    (!has_loss(&losses)).then_some(out)
+}
+
 pub(crate) fn parse_plain(body: &str) -> Option<Value> {
     crate::api::writer::tree_value(&crate::tree_json(body, &crate::Options::default())).ok()
 }
