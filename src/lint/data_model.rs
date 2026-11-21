@@ -538,11 +538,13 @@ impl<'a> Records<'a> {
         if !matches!(kind, "list_item" | "footnote" | "definition_description") {
             return (column_of(source, range.start, quotes), marker);
         }
-        let first = source.line(range.start_line.saturating_sub(1));
-        let marker_at = range
-            .start
-            .saturating_sub(source.line_range(range.start_line.saturating_sub(1)).0);
-        let suffix = first.get(marker_at..).unwrap_or("");
+        let (start, first) = if kind == "footnote" {
+            footnote_marker(source, range.start, range.start_line.saturating_sub(1))
+        } else {
+            (range.start, range.start_line.saturating_sub(1))
+        };
+        let marker_at = start - source.line_range(first).0;
+        let suffix = source.line(first).get(marker_at..).unwrap_or("");
         let marker_len = match kind {
             "definition_description" => 1,
             "footnote" => suffix.find(':').map_or(0, |i| i + 1),
@@ -550,17 +552,21 @@ impl<'a> Records<'a> {
             _ => suffix.find(['.', ')']).map_or(0, |i| i + 1),
         };
         let bytes = self.source.as_bytes();
-        let mut at = range.start + marker_len;
-        while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
-            at += 1;
-        }
-        if kind == "list_item" && self.source.get(at..).is_some_and(|s| s.starts_with("{.")) {
-            if let Some(close) = self.source.get(at..).and_then(|s| s.find('}')) {
+        let mut at = start + marker_len;
+        // C2-B-101: only brace blocks glued to an item marker are its attributes.
+        if kind == "list_item" {
+            while self.source.get(at..).is_some_and(|s| s.starts_with('{')) {
+                let Some(close) = self.source[at..].find(['}', '\n']) else {
+                    break;
+                };
+                if bytes[at + close] != b'}' {
+                    break;
+                }
                 at += close + 1;
             }
-            while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
-                at += 1;
-            }
+        }
+        while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
+            at += 1;
         }
         (column_of(source, at, quotes), marker)
     }
@@ -1247,4 +1253,24 @@ impl<'a> Records<'a> {
             item_owner,
         }
     }
+}
+
+/// The start of a footnote's marker and its line: its range starts at its attribute lines
+/// (C2-B-090), so the marker stands on the first line below them.
+fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, usize) {
+    let mut at = (start, line);
+    while source
+        .text()
+        .get(at.0..)
+        .is_some_and(|rest| rest.starts_with('{'))
+        && at.1 + 1 < source.line_count()
+    {
+        let (from, to) = source.line_range(at.1 + 1);
+        let next = source.line(at.1 + 1);
+        let Some(mark) = next.find("[^").or_else(|| next.find('{')) else {
+            break;
+        };
+        at = ((from + mark).min(to), at.1 + 1);
+    }
+    at
 }
