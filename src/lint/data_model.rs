@@ -1432,9 +1432,12 @@ impl<'a> Records<'a> {
                 block.kind,
                 block.opener_rule,
             ))),
-            F::AfterQuoteMark => Val::Bool(
-                text_at(source, self.lines[block.line_index].start, range.start).ends_with("> "),
-            ),
+            // C2-B-031: read before opener_start, which for an attributed block is past its attribute lines.
+            F::AfterQuoteMark => {
+                let at = block.opener_start.min(source.len());
+                let line = source[..at].rfind('\n').map_or(0, |n| n + 1);
+                Val::Bool(text_at(source, line, at).ends_with("> "))
+            }
             F::Attributed => Val::Bool(range.has_attrs),
             F::ImageLine => Val::Bool(range.image_line),
             F::Index => Val::num(range.index as usize),
