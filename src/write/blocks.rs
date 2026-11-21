@@ -1150,7 +1150,9 @@ pub fn blank_lines_between(
             return LIST_BOUNDARY_BLANKS;
         }
         if letter_style_pair(l, node) {
-            return 0;
+            // The next list's attribute line would be a lazy line of the open paragraph above it (C2-B-024).
+            let attrs = list_attributes(node, list_markers(w, node).start.as_ref());
+            return usize::from(!attrs.is_empty() && takes_line_below(w, l));
         }
     }
     usize::from(!nested)

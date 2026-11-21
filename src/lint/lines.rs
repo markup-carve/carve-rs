@@ -1237,49 +1237,50 @@ fn link_gap(line: &Line, sink: &mut Sink<'_>) {
     if !line.paragraph {
         return;
     }
-    let text = line.text.as_str();
-    let bytes = text.as_bytes();
-    let find = |from: usize, byte: u8| {
-        bytes
-            .get(from..)
+    // The catalog row's matches, left to right without overlap: a `[` with no label, gap and `(` behind it
+    // consumes its run up to the `]`, so each byte is searched once.
+    let text = line.escaped.as_deref().unwrap_or(&line.text).as_bytes();
+    let next = |from: usize, byte: u8| {
+        text.get(from..)
             .and_then(|rest| rest.iter().position(|b| *b == byte))
             .map(|at| from + at)
     };
-    // C2-I-069: the matches run left to right without overlap, so a run of `[` before one label is one gap
-    // from its first bracket, and every scan moves past what it read.
     let mut at = 0;
-    while let Some(open) = find(at, b'[') {
-        if open > 0 && bytes.get(open - 1) == Some(&b'\\') {
-            at = open + 1;
-            continue;
-        }
-        let Some(close) = find(open + 1, b']') else {
+    while let Some(open) = next(at, b'[') {
+        let Some(close) = next(open + 1, b']') else {
             return;
         };
-        let gap = bytes
+        at = close;
+        if close == open + 1 {
+            continue;
+        }
+        let gap = text
             .get(close + 1..)
             .unwrap_or_default()
             .iter()
             .take_while(|b| matches!(b, b' ' | b'\t'))
             .count();
-        if close == open + 1 || gap == 0 || bytes.get(close + 1 + gap) != Some(&b'(') {
-            at = close;
+        if gap == 0 || text.get(close + 1 + gap) != Some(&b'(') {
             continue;
         }
         let from = close + gap + 2;
-        let Some(end) = find(from, b')') else {
+        let Some(end) = next(from, b')') else {
             return;
         };
-        if !text[from..end].trim().is_empty() {
-            sink.emit(
-                "link-gap-before-destination",
-                line.start + open,
-                line.start + end + 1,
-                &line.path,
-                &[],
-            );
-        }
         at = end + 1;
+        if String::from_utf8_lossy(text.get(from..end).unwrap_or_default())
+            .trim()
+            .is_empty()
+        {
+            continue;
+        }
+        sink.emit(
+            "link-gap-before-destination",
+            line.start + open,
+            line.start + end + 1,
+            &line.path,
+            &[],
+        );
     }
 }
 

@@ -103,4 +103,6 @@ fn bracket_runs() {
     check("brackets before one gap", "[[[[a] ( ");
     check("gaps without a closing parenthesis", "[a] (");
     check("blank destinations", "[a] (    ");
+    check("labels sharing a destination", "[[a] (x) ");
+    check("destinations spanning labels", "[[a] (x [b] ");
 }
