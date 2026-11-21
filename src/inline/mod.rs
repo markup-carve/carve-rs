@@ -13,6 +13,7 @@ mod smart;
 mod token;
 
 pub(crate) use atoms::{Label, code_span, label};
+pub(crate) use direct::{Seg, line_segments};
 
 use crate::Arena;
 use crate::ast::Node;

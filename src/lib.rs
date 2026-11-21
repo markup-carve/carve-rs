@@ -567,6 +567,22 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
         return Err(RenderError::TooLong { profile, limit });
     }
     if let Some(html) = fast_plain::render(input, opts) {
+        #[cfg(debug_assertions)]
+        {
+            let arena = Arena::for_input(input);
+            let generic = render_parts(
+                input,
+                opts,
+                &arena,
+                &mut Vec::new(),
+                &mut RenderDetails::default(),
+            );
+            assert_eq!(
+                generic.ok().map(|(h, _)| h).as_deref(),
+                Some(html.as_str()),
+                "the streaming path differs from the generic render"
+            );
+        }
         return Ok(html);
     }
     let arena = Arena::for_input(input);
