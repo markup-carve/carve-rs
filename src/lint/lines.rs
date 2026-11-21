@@ -1238,60 +1238,46 @@ fn link_gap(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     let text = line.text.as_str();
-    let next = |from: usize, byte: u8| {
-        text.as_bytes()
+    let bytes = text.as_bytes();
+    let find = |from: usize, byte: u8| {
+        bytes
             .get(from..)
             .and_then(|rest| rest.iter().position(|b| *b == byte))
             .map(|at| from + at)
     };
-    // Every `[` before one `]` shares that bracket and what follows it, and the `)` searches only move right,
-    // so each bracket, gap and destination is scanned once rather than once per `[`.
-    let mut close: Option<Option<usize>> = None;
-    let mut paren: Option<(usize, Option<usize>)> = None;
-    let mut settled: (usize, Option<usize>) = (usize::MAX, None);
-    for (open, _) in text.match_indices('[') {
-        if open > 0 && text.as_bytes().get(open - 1) == Some(&b'\\') {
+    // C2-I-069: the matches run left to right without overlap, so a run of `[` before one label is one gap
+    // from its first bracket, and every scan moves past what it read.
+    let mut at = 0;
+    while let Some(open) = find(at, b'[') {
+        if open > 0 && bytes[open - 1] == b'\\' {
+            at = open + 1;
             continue;
         }
-        if close.is_none_or(|found| found.is_some_and(|at| at <= open)) {
-            close = Some(next(open + 1, b']'));
-        }
-        let Some(Some(close)) = close else {
-            continue;
+        let Some(close) = find(open + 1, b']') else {
+            return;
         };
-        if close == open + 1 {
+        let gap = bytes[close + 1..]
+            .iter()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .count();
+        if close == open + 1 || gap == 0 || bytes.get(close + 1 + gap) != Some(&b'(') {
+            at = close;
             continue;
         }
-        if settled.0 != close {
-            let gap = text[close + 1..]
-                .bytes()
-                .take_while(u8::is_ascii_whitespace)
-                .count();
-            let from = close + gap + 2;
-            let end = if gap == 0 || text.as_bytes().get(close + 1 + gap) != Some(&b'(') {
-                None
-            } else {
-                if paren.is_none_or(|(searched, found)| {
-                    found.is_some_and(|at| at < from) || searched > from
-                }) {
-                    paren = Some((from, next(from, b')')));
-                }
-                paren
-                    .and_then(|(_, found)| found)
-                    .filter(|&end| !text[from..end].trim().is_empty())
-            };
-            settled = (close, end);
-        }
-        let Some(end) = settled.1 else {
-            continue;
+        let from = close + gap + 2;
+        let Some(end) = find(from, b')') else {
+            return;
         };
-        sink.emit(
-            "link-gap-before-destination",
-            line.start + open,
-            line.start + end + 1,
-            &line.path,
-            &[],
-        );
+        if !text[from..end].trim().is_empty() {
+            sink.emit(
+                "link-gap-before-destination",
+                line.start + open,
+                line.start + end + 1,
+                &line.path,
+                &[],
+            );
+        }
+        at = end + 1;
     }
 }
 
