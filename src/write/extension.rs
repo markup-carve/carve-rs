@@ -148,12 +148,9 @@ pub fn apply_claims(doc: &mut Value, extensions: &[String], source: &str) {
         return;
     }
     let keys = super::link_keys(json_kids(doc));
-    let mut used = false;
-    if let Some(kids) = doc.get_mut("children").and_then(Value::as_array_mut) {
-        for child in kids.iter_mut() {
-            used |= claim_tree(child, source, &keys);
-        }
-    }
+    let used = doc
+        .get_mut("children")
+        .is_some_and(|kids| claim_tree(kids, source, &keys));
     if used {
         if let Some(m) = doc.as_object_mut() {
             m.insert(
@@ -187,18 +184,35 @@ fn opener_name<'s>(node: &Value, source: &'s str) -> Option<&'s str> {
     None
 }
 
-fn claim_tree(node: &mut Value, source: &str, keys: &Keys) -> bool {
-    if ty(&*node) == "div" && opener_name(node, source) == Some("tabs") {
-        if let Some(claimed) = tabs(node, source, keys) {
-            *node = claimed;
-            return true;
-        }
-    }
+/// Claims in every block list below `v`, the slots of a claimed group included (C2-X-045).
+fn claim_tree(v: &mut Value, source: &str, keys: &Keys) -> bool {
     let mut used = false;
-    if let Some(kids) = node.get_mut("children").and_then(Value::as_array_mut) {
-        for child in kids.iter_mut() {
-            used |= claim_tree(child, source, keys);
+    match v {
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                if ty(&*item) == "div"
+                    && opener_name(item, source) == Some("tabs")
+                    && let Some(claimed) = tabs(item, source, keys)
+                {
+                    *item = claimed;
+                    used = true;
+                }
+                used |= claim_tree(item, source, keys);
+            }
         }
+        Value::Object(map) => {
+            let extension = matches!(
+                map.get("type").and_then(Value::as_str),
+                Some("block_extension" | "inline_extension")
+            );
+            for (key, child) in map.iter_mut() {
+                if (extension && key == "fallback") || key == "source" || key == "pos" {
+                    continue;
+                }
+                used |= claim_tree(child, source, keys);
+            }
+        }
+        _ => {}
     }
     used
 }
