@@ -10,28 +10,10 @@ use carve::api::{
 use serde_json::Value;
 
 /// `(entry id, reason)`.
-const HELD: &[(&str, &str)] = &[
-    (
-        "CC-1480",
-        "carve#6308: attribute line of a list below a list of another style; engine gap in STATUS.md",
-    ),
-    (
-        "CC-1482",
-        "carve#6308: attribute line of a list below a list of another style; engine gap in STATUS.md",
-    ),
-    (
-        "CC-1483",
-        "carve#6308: attribute line of a list below a list of another style; engine gap in STATUS.md",
-    ),
-    (
-        "CC-1484",
-        "carve#6308: attribute line of a list below a list of another style; engine gap in STATUS.md",
-    ),
-    (
-        "CC-1493",
-        "carve#6304: one repair budget per document; markup-carve/carve-rs#4538",
-    ),
-];
+const HELD: &[(&str, &str)] = &[(
+    "CC-1493",
+    "carve#6304: one repair budget per document; markup-carve/carve-rs#4538",
+)];
 
 fn load(path: &str) -> Value {
     let text = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))
