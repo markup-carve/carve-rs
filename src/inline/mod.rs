@@ -331,16 +331,22 @@ fn plain_span<'a>(env: &Env<'_, 'a>, p: &Piece) -> Result<(usize, &'a str), Know
     }
     // `.` starts only the `...` run (smart typography), `,` a braced mark
     // before `}`; the others start nothing.
-    let mut prev = 0;
-    for (i, &c) in b.iter().enumerate() {
-        if !PLAIN.has(c) || (c == b'.' && prev == b'.') {
-            let read = b.get(..i).unwrap_or_default();
-            return Err(Known {
-                scan: read.iter().position(|&x| x == b',').unwrap_or(i),
-                smart: if prev == b'.' { i - 1 } else { i },
-            });
-        }
-        prev = c;
+    let stop = b.iter().position(|&c| !PLAIN.has(c)).unwrap_or(b.len());
+    let read = b.get(..stop).unwrap_or_default();
+    let stop = read
+        .windows(2)
+        .position(|w| w == b"..")
+        .map_or(stop, |d| d + 1);
+    if stop < b.len() {
+        let read = b.get(..stop).unwrap_or_default();
+        return Err(Known {
+            scan: read.iter().position(|&x| x == b',').unwrap_or(stop),
+            smart: if read.last() == Some(&b'.') {
+                stop - 1
+            } else {
+                stop
+            },
+        });
     }
     if b.last() == Some(&b' ') {
         return Err(Known::default());
