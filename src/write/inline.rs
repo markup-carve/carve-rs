@@ -414,12 +414,125 @@ fn escape_leading_caret(w: &mut Writer<'_>, kids: Arr<'_>, flags: u32) {
     }
 }
 
+#[derive(Clone, Copy)]
+enum BracketPlace<'t> {
+    Text(N<'t>, usize),
+    Count(usize),
+}
+
+#[derive(Default)]
+struct BracketScan<'t> {
+    open: Vec<BracketPlace<'t>>,
+    size: usize,
+    lone: Vec<(N<'t>, usize)>,
+    lone_count: usize,
+}
+
+fn pop_brackets(scan: &mut BracketScan<'_>, count: usize) {
+    let mut left = count.min(scan.size);
+    scan.size -= left;
+    while left > 0 {
+        match scan.open.pop() {
+            Some(BracketPlace::Text(..)) => left -= 1,
+            Some(BracketPlace::Count(n)) if n > left => {
+                scan.open.push(BracketPlace::Count(n - left));
+                left = 0;
+            }
+            Some(BracketPlace::Count(n)) => left -= n,
+            None => break,
+        }
+    }
+}
+
+fn counted_brackets(scan: &mut BracketScan<'_>, (closers, openers): (usize, usize)) {
+    scan.lone_count += closers.saturating_sub(scan.size);
+    pop_brackets(scan, closers);
+    if openers == 0 {
+        return;
+    }
+    if let Some(BracketPlace::Count(n)) = scan.open.last_mut() {
+        *n += openers;
+    } else {
+        scan.open.push(BracketPlace::Count(openers));
+    }
+    scan.size += openers;
+}
+
+fn link_bracket_counts<'t>(w: &mut Writer<'t>, link: N<'t>) -> (usize, usize) {
+    if let Some(&counts) = w.link_brackets.get(&id(link)) {
+        return counts;
+    }
+    let mut scan = BracketScan::default();
+    scan_link_brackets(w, children(link), &mut scan);
+    let counts = (scan.lone_count, scan.size);
+    w.link_brackets.insert(id(link), counts);
+    counts
+}
+
+/// Scan one link label. A nested link is a boundary for bracket pairs in the
+/// containing label; counts stand in for its own brackets to keep deep scans linear.
+fn scan_link_brackets<'t>(w: &mut Writer<'t>, nodes: Arr<'t>, scan: &mut BracketScan<'t>) {
+    for node in nodes {
+        match ty(node) {
+            "text" => {
+                for (at, ch) in text(node).bytes().enumerate() {
+                    if ch == b'[' {
+                        scan.open.push(BracketPlace::Text(node, at));
+                        scan.size += 1;
+                    } else if ch == b']' {
+                        if scan.size > 0 {
+                            pop_brackets(scan, 1);
+                        } else {
+                            scan.lone.push((node, at));
+                            scan.lone_count += 1;
+                        }
+                    }
+                }
+            }
+            "link" => {
+                for place in scan.open.drain(..) {
+                    if let BracketPlace::Text(n, at) = place {
+                        scan.lone.push((n, at));
+                    }
+                }
+                scan.lone_count += scan.size;
+                scan.size = 0;
+                let counts = link_bracket_counts(w, node);
+                counted_brackets(scan, counts);
+            }
+            "citation_group" => {}
+            _ => scan_link_brackets(w, children(node), scan),
+        }
+    }
+}
+
+/// C2-W-125 case five: brackets of text without a partner in this link label
+/// must not take the link's closer, including across a nested link boundary.
+fn escape_lone_link_brackets<'t>(w: &mut Writer<'t>, link: N<'t>) {
+    if !w.link_escapes.contains_key(&id(link)) {
+        let mut scan = BracketScan::default();
+        scan_link_brackets(w, children(link), &mut scan);
+        let mut positions = scan.lone;
+        positions.extend(scan.open.into_iter().filter_map(|p| match p {
+            BracketPlace::Text(n, at) => Some((n, at)),
+            BracketPlace::Count(_) => None,
+        }));
+        w.link_escapes.insert(id(link), positions);
+    }
+    if let Some(positions) = w.link_escapes.get(&id(link)).cloned() {
+        for (node, at) in positions {
+            w.add_escape(node, at);
+        }
+    }
+}
+
 fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     if let Some(raw) = raw_reference(w, node, flags) {
         w.raw_refs.push(raw.clone());
         return raw;
     }
     escape_leading_caret(w, children(node), flags);
+    escape_lone_link_brackets(w, node);
     let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
     let content = collapsed_content(w, node, content, flags);
     format!(

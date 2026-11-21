@@ -3,7 +3,7 @@
 use carve::api::{Carve, WriteOptions};
 use serde_json::Value;
 
-/// The quote of CC-1493: its repair fits in 24,000,000 characters, two of them do not.
+/// The quote of CC-1493, whose round now escapes all reported constructs.
 fn heavy_quote() -> String {
     let path = format!(
         "{}/spec-conformance/clause-cases.json",
@@ -41,8 +41,8 @@ fn one_heavy_group_fits_the_budget() {
 }
 
 #[test]
-fn later_groups_are_refused_once_the_document_budget_is_spent() {
+fn later_groups_complete_with_batched_repairs() {
     let quote = heavy_quote();
     let source = format!("{quote}\n\nplain\n\n{quote}\n\n{quote}\n");
-    assert_eq!(refused_paths(&source), ["/children/2", "/children/3"]);
+    assert!(refused_paths(&source).is_empty());
 }

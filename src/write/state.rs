@@ -101,6 +101,9 @@ pub struct Writer<'t> {
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
+    /// C2-W-125: unmatched bracket counts and escape positions of link labels.
+    pub link_brackets: AddrMap<usize, (usize, usize)>,
+    pub link_escapes: AddrMap<usize, Vec<(N<'t>, usize)>>,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
@@ -140,6 +143,8 @@ impl<'t> Writer<'t> {
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
+            link_brackets: AddrMap::default(),
+            link_escapes: AddrMap::default(),
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),
@@ -294,10 +299,17 @@ pub fn lose<'v>(w: &mut Writer<'_>, node: impl Into<V<'v>>, field: Option<&str>)
         ),
         Some(f) => (
             "field-unspellable",
-            format!(
-                "Carve source cannot spell field {f} of a {} node here",
-                ty(node)
-            ),
+            if f.is_empty() {
+                format!(
+                    "Carve source cannot spell a field of a {} node here",
+                    ty(node)
+                )
+            } else {
+                format!(
+                    "Carve source cannot spell field {f} of a {} node here",
+                    ty(node)
+                )
+            },
         ),
     };
     let step = field

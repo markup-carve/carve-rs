@@ -3,8 +3,8 @@
 //! line separates are written and tested on their own; a group is parsed again
 //! and written again until it reads back as its blocks (C2-W-089).
 //!
-//! This engine finds every escape by the repair of C2-W-088 alone, with the
-//! work limit of C2-W-133; the bytes are those the clauses define (C2-W-010).
+//! This engine places every opener found by a repair round of C2-W-088, with
+//! the work limit of C2-W-133; the bytes are those the clauses define (C2-W-010).
 
 mod attrs;
 mod blocks;
@@ -263,6 +263,35 @@ mod plain_table_certificate_test {
         let (out, losses) = write_value(&doc, &Settings::default());
         assert_eq!(out, "||\n");
         assert!(losses.iter().any(|e| e.code == "structure-unspellable"));
+    }
+}
+
+#[cfg(test)]
+mod batched_repair_test {
+    use super::*;
+
+    #[test]
+    fn dense_superscripts_need_only_a_few_rounds() {
+        let mut de = serde_json::Deserializer::from_str(include_str!(
+            "../../spec-conformance/clause-cases.json"
+        ));
+        de.disable_recursion_limit();
+        let cases: Value = serde::Deserialize::deserialize(&mut de).expect("pinned clause cases");
+        let case = cases["cases"]
+            .as_array()
+            .and_then(|cases| cases.iter().find(|c| c["id"] == "CC-1566"))
+            .expect("CC-1566");
+        let source = case["input"].as_str().expect("source");
+        let expected = case["expected"]["carve"].as_str().expect("output");
+        let tree = parse_plain(source).expect("parsed source");
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let (output, losses) = format_tree(&tree, Some(source), &Settings::default());
+        let rounds = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+        assert_eq!(output, expected);
+        assert!(losses.is_empty());
+        // This paragraph nests to the inline depth cap. Its repair rounds may
+        // follow that depth, but no longer one round per escaped byte.
+        assert!(rounds <= 200, "{rounds} read-back parses for one paragraph");
     }
 }
 
@@ -659,7 +688,6 @@ const MIN_REPAIR_ROUNDS: usize = 32;
 const WORK_FACTOR: usize = 1000;
 const WORK_FLOOR: usize = 24_000_000;
 const MAX_ROUNDS: usize = 8192;
-const MAX_ORDERED_ESCAPES: usize = 4;
 
 struct History {
     ids: AddrMap<usize, usize>,
@@ -704,7 +732,6 @@ fn repair_rounds<'t>(
         let mut round = Round {
             chunks: &chunks,
             last: None,
-            source: None,
             equal: false,
         };
         if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
@@ -813,182 +840,10 @@ fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool 
     refuse
 }
 
-/// The text nodes below `nodes` in the order they are written: a title before the children.
-fn text_order(nodes: Arr<'_>, order: &mut AddrMap<usize, usize>) {
-    for n in nodes {
-        if ty(n) == "text" {
-            let next = order.len();
-            order.insert(id(n), next);
-        }
-        node::for_each_slot(n, true, &mut |kids, _, _| text_order(kids, order));
-    }
-}
-
-fn rank(order: &AddrMap<usize, usize>, n: V<'_>) -> i64 {
-    order
-        .get(&id(n))
-        .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
-}
-
-fn leftmost<'t>(group: Arr<'_>, escapes: &[(N<'t>, usize)]) -> Option<(N<'t>, usize)> {
-    let mut order = AddrMap::default();
-    text_order(group, &mut order);
-    let mut best = *escapes.first()?;
-    for &e in escapes {
-        let (r, b) = (rank(&order, e.0), rank(&order, best.0));
-        if r < b || (r == b && e.1 < best.1) {
-            best = e;
-        }
-    }
-    Some(best)
-}
-
-fn defer_escapes(w: &mut Writer<'_>, deferred: &[(usize, usize)]) {
-    for attempt in w.sp.attempts.values_mut() {
-        let before = attempt.escapes.len();
-        attempt
-            .escapes
-            .retain(|(n, at)| !deferred.contains(&(id(n), *at)));
-        if attempt.escapes.len() != before {
-            attempt.step = attempt.step.saturating_sub(1);
-        }
-    }
-}
-
-/// The group written with `escapes`, for a parse.
-fn group_chunk<'t>(
-    w: &mut Writer<'t>,
-    group: Arr<'t>,
-    first: bool,
-    escapes: AddrMap<usize, Vec<usize>>,
-) -> Chunk {
-    w.sp.escapes = escapes;
-    written_chunk(w, group, first)
-}
-
-/// The group written with the escapes `w` holds, for a parse.
-fn written_chunk<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool) -> Chunk {
-    w.lines.clear();
-    w.lead = None;
-    w.clear_starts();
-    blocks::write_blocks(w, group, "", 0, false);
-    Chunk::new(group_source(w, first))
-}
-
-/// C2-W-088, C2-W-091: whether the test asks for the escape `at` of `node`.
-/// `read` is the group's last read-back source and its parse, reused where the text without the escape is the same.
-fn is_asked<'t>(
-    w: &mut Writer<'t>,
-    group: Arr<'t>,
-    first: bool,
-    (node, at): (V<'_>, usize),
-    read: Option<(&str, V<'_>)>,
-) -> bool {
-    let lines = w.lines.clone();
-    let lead = w.lead.clone();
-    let starts = (w.starts.clone(), w.start_index.clone());
-    let mut order = AddrMap::default();
-    text_order(group, &mut order);
-    let own_rank = rank(&order, node);
-    let asked = if own_rank < 0 {
-        asked_outside(w, group, first, (node, at), &order, read)
-    } else {
-        asked_in_group(w, group, first, (node, at), (&order, own_rank), read)
-    };
-    w.lines = lines;
-    w.lead = lead;
-    w.starts = starts.0;
-    w.start_index = starts.1;
-    asked
-}
-
-/// [`is_asked`] for a node of the group: the escapes of the text behind it are set aside in place, so the
-/// work is that of the group and not of every escape the document holds.
-fn asked_in_group<'t>(
-    w: &mut Writer<'t>,
-    group: Arr<'t>,
-    first: bool,
-    (node, at): (V<'_>, usize),
-    (order, own_rank): (&AddrMap<usize, usize>, i64),
-    read: Option<(&str, V<'_>)>,
-) -> bool {
-    let mut behind = Vec::new();
-    for (text_id, &r) in order {
-        if i64::try_from(r).unwrap_or(i64::MAX) > own_rank
-            && let Some(offsets) = w.sp.escapes.remove(text_id)
-        {
-            behind.push((*text_id, offsets));
-        }
-    }
-    let own = w.sp.escapes.get(&id(node)).cloned();
-    if let Some(offsets) = &own {
-        let before = offsets.iter().copied().filter(|&o| o < at).collect();
-        w.sp.escapes.insert(id(node), before);
-    }
-    let without = written_chunk(w, group, first);
-    let list = w.sp.escapes.entry(id(node)).or_default();
-    list.push(at);
-    list.sort_unstable();
-    let with = written_chunk(w, group, first);
-    let with = with.parse(w);
-    let asked = match read {
-        Some((text, parsed)) if text == without.text() => !node::trees_equal(with, parsed),
-        _ => !node::trees_equal(with, without.parse(w)),
-    };
-    match own {
-        Some(offsets) => w.sp.escapes.insert(id(node), offsets),
-        None => w.sp.escapes.remove(&id(node)),
-    };
-    w.sp.escapes.extend(behind);
-    asked
-}
-
-/// [`is_asked`] for a node outside the order of the group: only its own escapes before `at` stay.
-fn asked_outside<'t>(
-    w: &mut Writer<'t>,
-    group: Arr<'t>,
-    first: bool,
-    (node, at): (V<'_>, usize),
-    order: &AddrMap<usize, usize>,
-    read: Option<(&str, V<'_>)>,
-) -> bool {
-    let own_rank = -1;
-    let placed = w.sp.escapes.clone();
-    let mut left: AddrMap<usize, Vec<usize>> = AddrMap::default();
-    for (text_id, offsets) in &placed {
-        let r = order
-            .get(text_id)
-            .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX));
-        if r < own_rank {
-            left.insert(*text_id, offsets.clone());
-        } else if *text_id == id(node) {
-            left.insert(
-                *text_id,
-                offsets.iter().copied().filter(|&o| o < at).collect(),
-            );
-        }
-    }
-    let mut escaped = left.clone();
-    let list = escaped.entry(id(node)).or_default();
-    list.push(at);
-    list.sort_unstable();
-    let without = group_chunk(w, group, first, left);
-    let with = group_chunk(w, group, first, escaped);
-    let with = with.parse(w);
-    let asked = match read {
-        Some((text, parsed)) if text == without.text() => !node::trees_equal(with, parsed),
-        _ => !node::trees_equal(with, without.parse(w)),
-    };
-    w.sp.escapes = placed;
-    asked
-}
-
 /// The parses of one repair round: the last one is read by the loss report and the prune.
 struct Round<'s> {
     chunks: &'s typed_arena::Arena<Chunk>,
     last: Option<V<'s>>,
-    /// The source `last` was parsed from.
-    source: Option<&'s str>,
     /// The last read-back parse was already proved equal to the group.
     equal: bool,
 }
@@ -1005,7 +860,6 @@ fn compare_group<'t, 's>(
     let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
     let parsed = chunk.parse(w);
     round.last = Some(parsed);
-    round.source = Some(chunk.text());
     let mut c = Check {
         source: Some(chunk.text().to_string()),
         ..Check::default()
@@ -1032,13 +886,6 @@ fn settle<'t>(
     round: &mut Round<'_>,
 ) -> bool {
     let mut c = compare_group(w, doc, group, first, round);
-    let read = round.source.zip(round.last);
-    if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
-        return true;
-    }
-    if c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
-        keep_leftmost_escape(w, &mut c, group);
-    }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
         // C2-W-005: what only line 1 reads differently is written below one blank line.
@@ -1051,50 +898,6 @@ fn settle<'t>(
         return true;
     }
     apply_changes(w, &c)
-}
-
-/// Drops the escapes of trials that were already asked; true when any was dropped.
-fn drop_asked_trials<'t>(
-    w: &mut Writer<'t>,
-    c: &mut Check<'t>,
-    group: Arr<'t>,
-    first: bool,
-    read: Option<(&str, V<'_>)>,
-) -> bool {
-    let mut dropped = false;
-    let trials = if c.trials.len() <= MAX_ORDERED_ESCAPES {
-        c.trials.clone()
-    } else {
-        Vec::new()
-    };
-    for (n, at) in trials {
-        if is_asked(w, group, first, (n, at), read) {
-            continue;
-        }
-        if let Some(p) = c
-            .escapes
-            .iter()
-            .position(|(e, a)| id(e) == id(n) && *a == at)
-        {
-            c.escapes.remove(p);
-        }
-        dropped = true;
-    }
-    dropped
-}
-
-fn keep_leftmost_escape<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
-    let Some(best) = leftmost(group, &c.escapes) else {
-        return;
-    };
-    let deferred: Vec<(usize, usize)> = c
-        .escapes
-        .iter()
-        .filter(|(n, at)| !(id(n) == id(best.0) && *at == best.1))
-        .map(|(n, at)| (id(n), *at))
-        .collect();
-    defer_escapes(w, &deferred);
-    c.escapes = vec![best];
 }
 
 const LINE_LEAVES: &[&str] = &[
