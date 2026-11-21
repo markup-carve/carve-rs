@@ -1098,8 +1098,13 @@ fn prose_tokens(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 fn blank_reference_label(line: &Line, sink: &mut Sink<'_>) {
     let text = line.text.as_str();
     let (from, _) = leaf_text(line);
+    // Every `[` before one `]` shares it: found once, not once per `[`.
+    let mut next_close: Option<Option<usize>> = None;
     for (open, _) in text.match_indices('[').filter(|(at, _)| *at >= from) {
-        let Some(close) = text[open + 1..].find(']').map(|at| open + 1 + at) else {
+        if next_close.is_none_or(|found| found.is_some_and(|at| at <= open)) {
+            next_close = Some(text[open + 1..].find(']').map(|at| open + 1 + at));
+        }
+        let Some(Some(close)) = next_close else {
             continue;
         };
         let inner = &text[open + 1..close];
@@ -1155,32 +1160,53 @@ fn link_gap(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     let text = line.text.as_str();
+    let next = |from: usize, byte: u8| {
+        text.as_bytes()
+            .get(from..)
+            .and_then(|rest| rest.iter().position(|b| *b == byte))
+            .map(|at| from + at)
+    };
+    // Every `[` before one `]` shares that bracket and what follows it, and the `)` searches only move right,
+    // so each bracket, gap and destination is scanned once rather than once per `[`.
+    let mut close: Option<Option<usize>> = None;
+    let mut paren: Option<(usize, Option<usize>)> = None;
+    let mut settled: (usize, Option<usize>) = (usize::MAX, None);
     for (open, _) in text.match_indices('[') {
         if open > 0 && text.as_bytes().get(open - 1) == Some(&b'\\') {
             continue;
         }
-        let Some(close) = text[open + 1..].find(']').map(|at| open + 1 + at) else {
+        if close.is_none_or(|found| found.is_some_and(|at| at <= open)) {
+            close = Some(next(open + 1, b']'));
+        }
+        let Some(Some(close)) = close else {
             continue;
         };
         if close == open + 1 {
             continue;
         }
-        let gap = text[close + 1..]
-            .bytes()
-            .take_while(u8::is_ascii_whitespace)
-            .count();
-        if gap == 0 || text.as_bytes().get(close + 1 + gap) != Some(&b'(') {
-            continue;
+        if settled.0 != close {
+            let gap = text[close + 1..]
+                .bytes()
+                .take_while(u8::is_ascii_whitespace)
+                .count();
+            let from = close + gap + 2;
+            let end = if gap == 0 || text.as_bytes().get(close + 1 + gap) != Some(&b'(') {
+                None
+            } else {
+                if paren.is_none_or(|(searched, found)| {
+                    found.is_some_and(|at| at < from) || searched > from
+                }) {
+                    paren = Some((from, next(from, b')')));
+                }
+                paren
+                    .and_then(|(_, found)| found)
+                    .filter(|&end| !text[from..end].trim().is_empty())
+            };
+            settled = (close, end);
         }
-        let Some(end) = text[close + gap + 2..]
-            .find(')')
-            .map(|at| close + gap + 2 + at)
-        else {
+        let Some(end) = settled.1 else {
             continue;
         };
-        if text[close + gap + 2..end].trim().is_empty() {
-            continue;
-        }
         sink.emit(
             "link-gap-before-destination",
             line.start + open,
