@@ -352,6 +352,7 @@ fn marker_parts(source: &str, node: &Node<'_, '_>, out: &mut Vec<Part>) {
 /// prefixes of its quotes; returns where the block's own text starts.
 fn line_parts(source: &str, node: &Node<'_, '_>, out: &mut Vec<Part>) -> usize {
     let b = source.as_bytes();
+    let first = out.len();
     for (number, &(line_start, line_end)) in node.lines.iter().enumerate() {
         let from = if number == 0 {
             node.start
@@ -369,6 +370,8 @@ fn line_parts(source: &str, node: &Node<'_, '_>, out: &mut Vec<Part>) -> usize {
             return from;
         }
     }
+    // Only brace lines: the block is that text, its braces attached to nothing (C2-B-192).
+    out.truncate(first);
     node.start
 }
 
