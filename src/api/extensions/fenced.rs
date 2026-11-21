@@ -1,8 +1,8 @@
 //! `fencedRender` and its diagram presets (carve-js#5068).
 
 use super::{
-    Bundle, Claim, Form, Matcher, Parts, authored, bare_fallback, classes, declaration,
-    fence_source, key_values, payload_text, typed, typed_payload, with_attrs,
+    Bundle, Claim, Form, Made, Matcher, Parts, authored, bare_fallback, classes, declaration,
+    fence_source, key_values, moved_fallback, payload_text, typed, typed_payload, with_attrs,
 };
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
@@ -240,6 +240,23 @@ fn claim_fence(claim: &Claim<'_>) -> Option<Value> {
     }))
 }
 
+fn claim_fence_typed<'a>(
+    name: &str,
+    node: &mut crate::ast::Node<'a>,
+    arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    let crate::ast::Node::CodeBlock(code) = node else {
+        return None;
+    };
+    let value = code.value;
+    Some(Made {
+        props: Some(json!({"language": name})),
+        payload: Some(json!([{"format": "text/plain", "value": value}])),
+        slots: None,
+        fallback: moved_fallback(node, arena),
+    })
+}
+
 /// A bundle that claims the fences of `options.language` and renders each
 /// as a diagram element for a client library, or through `options.build`
 /// in static mode.
@@ -295,7 +312,7 @@ pub fn fenced_render(options: FencedRenderOptions) -> Result<Bundle, Error> {
             extension: name,
             form: Form::Fence,
             name: word.clone(),
-            claimer: Box::new(super::Engine(claim_fence)),
+            claimer: Box::new(super::TypedEngine(claim_fence, super::Typed(claim_fence_typed))),
         });
     }
     Ok(bundle)

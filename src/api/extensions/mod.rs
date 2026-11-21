@@ -124,6 +124,62 @@ pub trait Claimer: Send + Sync {
     fn engine(&self) -> bool {
         false
     }
+
+    /// The typed form of an engine claimer, which claims in the arena.
+    #[doc(hidden)]
+    fn typed(&self) -> Option<&Typed> {
+        None
+    }
+}
+
+/// An engine claimer on the arena tree, with the result of the JSON one
+/// (carve-rs#4366): given the source name, the candidate and the arena, it
+/// builds the parts of the extension node and moves the core node into its
+/// fallback, or declines and leaves the candidate as it was.
+#[doc(hidden)]
+pub struct Typed(
+    pub(crate) for<'a> fn(&str, &mut crate::ast::Node<'a>, &'a crate::Arena) -> Option<Made<'a>>,
+);
+
+/// What a [`Typed`] claimer makes; the engine attaches name, version,
+/// source, attributes and position.
+#[doc(hidden)]
+pub struct Made<'a> {
+    pub(crate) props: Option<Value>,
+    pub(crate) payload: Option<Value>,
+    pub(crate) slots: Option<Value>,
+    pub(crate) fallback: &'a mut [crate::ast::Node<'a>],
+}
+
+/// The core node moved out of `node` without its attributes, as the one
+/// fallback block of a claim (C2-X-035).
+pub(crate) fn moved_fallback<'a>(
+    node: &mut crate::ast::Node<'a>,
+    arena: &'a crate::Arena,
+) -> &'a mut [crate::ast::Node<'a>] {
+    let placeholder = crate::ast::Node::ThematicBreak(arena.alloc(Default::default()));
+    let mut core = std::mem::replace(node, placeholder);
+    if let crate::ast::Node::CodeBlock(code) = &mut core {
+        code.attrs = None;
+    }
+    arena.one(core)
+}
+
+/// An engine claimer with its typed form.
+pub(crate) struct TypedEngine(pub(crate) fn(&Claim<'_>) -> Option<Value>, pub(crate) Typed);
+
+impl Claimer for TypedEngine {
+    fn claim(&self, claim: &Claim<'_>) -> Result<Option<Value>, Error> {
+        Ok((self.0)(claim))
+    }
+
+    fn engine(&self) -> bool {
+        true
+    }
+
+    fn typed(&self) -> Option<&Typed> {
+        Some(&self.1)
+    }
 }
 
 /// A claimer of this crate's standard extensions.
@@ -358,11 +414,22 @@ impl Matchers {
                 Node::InlineExtension(ext) => ext.slots.is_some(),
                 _ => false,
             };
-            if slots || pass.may_claim(node) {
-                let mut owned = node.owned();
-                owned_walk(&mut owned, pass, depth)?;
-                *node = owned.in_arena(arena);
-                return Ok(());
+            let candidate = !slots && pass.may_claim(node);
+            let typed = if candidate {
+                pass.claim_typed(node, arena, depth)?
+            } else {
+                None
+            };
+            match typed {
+                Some(true) => return Ok(()),
+                Some(false) => {}
+                None if slots || candidate => {
+                    let mut owned = node.owned();
+                    owned_walk(&mut owned, pass, depth)?;
+                    *node = owned.in_arena(arena);
+                    return Ok(());
+                }
+                None => {}
             }
             let mut failure = None;
             let mut visit = |child: &mut Node<'a>| {
@@ -657,6 +724,86 @@ impl Pass<'_> {
         }
     }
 
+    /// The claim of a candidate by a typed engine claimer: `None` when its
+    /// matcher has none, so the owned claim runs; `Some(true)` when it was
+    /// claimed, with the claims inside its slots made; `Some(false)` when the
+    /// core node stays and the walk enters it.
+    fn claim_typed<'a>(
+        &mut self,
+        node: &mut crate::ast::Node<'a>,
+        arena: &'a crate::Arena,
+        depth: usize,
+    ) -> Result<Option<bool>, Error> {
+        use crate::ast::Node;
+        let (form, name) = match node {
+            Node::CodeBlock(code) => (Form::Fence, code.syntax.map(str::to_string)),
+            Node::Div(div) => (
+                Form::Div,
+                div.pos.and_then(|pos| (self.opener)(None, pos.start())),
+            ),
+            _ => return Ok(None),
+        };
+        let matchers = self.matchers;
+        let Some(m) = name.and_then(|name| {
+            matchers
+                .list
+                .iter()
+                .find(|m| m.form == form && m.name == name)
+        }) else {
+            return Ok(None);
+        };
+        let (Some(typed), Some(decl)) = (m.claimer.typed(), (self.declared)(&m.extension)) else {
+            return Ok(None);
+        };
+        let source = match node {
+            Node::CodeBlock(code) => Some(typed_fence_source(&m.name, code)?),
+            _ => {
+                let value = serde_json::to_value(&*node)
+                    .map_err(|e| Error::option("extensions", e.to_string()))?;
+                super::standard::div_source(&value, &m.name, &self.definitions)
+            }
+        };
+        let Some(source) = source else {
+            self.fail(
+                "extension-transform-failed",
+                &format!(
+                    "The extension {} could not write its claim source; the core node was retained",
+                    m.extension
+                ),
+            );
+            return Ok(Some(false));
+        };
+        let (attrs, pos) = match node {
+            Node::CodeBlock(code) => (code.attrs, code.pos),
+            Node::Div(div) => (div.attrs.and_then(|a| remaining_typed(a, arena)), div.pos),
+            _ => return Ok(None),
+        };
+        let Some(made) = (typed.0)(&m.name, node, arena) else {
+            return Ok(Some(false));
+        };
+        let mut slots = made.slots;
+        if let Some(slots) = &mut slots {
+            slot(slots, self, depth + 1);
+        }
+        let ext = crate::ast::BlockExtension {
+            name: arena.str(&m.extension),
+            version: arena.str(&decl.version),
+            props: made.props.map(|v| arena.json(v)),
+            payload: made.payload.map(|v| arena.json(v)),
+            slots: slots.map(|v| arena.json(v)),
+            fallback: made.fallback,
+            source: Some(arena.json(source)),
+            attrs,
+            pos,
+            ..Default::default()
+        };
+        *node = Node::BlockExtension(arena.alloc(ext));
+        if !self.used.iter().any(|d| d.name == decl.name) {
+            self.used.push(decl);
+        }
+        Ok(Some(true))
+    }
+
     /// The source name of a code block or div.
     fn source_name(&self, node: &Map<String, Value>) -> Option<String> {
         match node.get("type").and_then(Value::as_str)? {
@@ -885,6 +1032,36 @@ fn source_record(
             Some(Value::Object(source))
         }
     }
+}
+
+/// [`source_record`] of a claimed fence.
+fn typed_fence_source(name: &str, code: &crate::ast::CodeBlock<'_>) -> Result<Value, Error> {
+    let mut source = Map::new();
+    source.insert("form".into(), "fence".into());
+    source.insert("name".into(), name.into());
+    source.insert("body".into(), code.value.into());
+    if let Some(title) = &code.title {
+        let title = serde_json::to_value(&**title)
+            .map_err(|e| Error::option("extensions", e.to_string()))?;
+        let title = title.as_array().map_or(&[][..], Vec::as_slice);
+        source.insert("title".into(), super::standard::plain_text(title).into());
+    }
+    if let Some(label) = code.group_label {
+        source.insert("groupLabel".into(), label.into());
+    }
+    Ok(Value::Object(source))
+}
+
+/// [`remaining_attrs`] of typed attributes.
+fn remaining_typed<'a>(
+    attrs: &'a crate::ast::Attrs<'a>,
+    arena: &'a crate::Arena,
+) -> Option<&'a crate::ast::Attrs<'a>> {
+    let rest = crate::ast::Attrs {
+        classes: attrs.classes.get(1..).unwrap_or(&[]),
+        ..*attrs
+    };
+    (!rest.is_empty()).then(|| &*arena.alloc(rest))
 }
 
 /// C2-X-009: the attributes of a claimed div after its source name class.

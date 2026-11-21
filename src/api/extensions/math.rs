@@ -1,8 +1,8 @@
 //! `mathBlock` (carve-js#5068).
 
 use super::{
-    Bundle, Claim, Form, Matcher, Parts, bare_fallback, classes, declaration, fence_source,
-    key_values, payload_text, typed, typed_payload, with_attrs,
+    Bundle, Claim, Form, Made, Matcher, Parts, bare_fallback, classes, declaration, fence_source,
+    key_values, moved_fallback, payload_text, typed, typed_payload, with_attrs,
 };
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
@@ -117,6 +117,23 @@ fn claim(claim: &Claim<'_>) -> Option<Value> {
     }))
 }
 
+fn claim_typed<'a>(
+    _name: &str,
+    node: &mut crate::ast::Node<'a>,
+    arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    let crate::ast::Node::CodeBlock(code) = node else {
+        return None;
+    };
+    let value = code.value;
+    Some(Made {
+        props: None,
+        payload: Some(json!([{"format": "application/x-tex", "value": value}])),
+        slots: None,
+        fallback: moved_fallback(node, arena),
+    })
+}
+
 /// A `math` fence as `<div class="math display">\[...\]</div>`, the
 /// delimiters `KaTeX` and `MathJax` read for display math.
 #[must_use]
@@ -137,7 +154,7 @@ pub fn math_block(options: MathBlockOptions) -> Bundle {
             extension: NAME.into(),
             form: Form::Fence,
             name: options.language.unwrap_or_else(|| "math".into()),
-            claimer: Box::new(super::Engine(claim)),
+            claimer: Box::new(super::TypedEngine(claim, super::Typed(claim_typed))),
         }],
     }
 }

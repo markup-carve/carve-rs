@@ -1,7 +1,7 @@
 //! `codeGroup` (carve-js#5068).
 
 use super::{
-    Bundle, Claim, Form, Matcher, Parts, authored, classes, declaration, key_values, typed,
+    Bundle, Claim, Form, Made, Matcher, Parts, authored, classes, declaration, key_values, typed,
     with_attrs,
 };
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
@@ -397,6 +397,36 @@ fn claim(claim: &Claim<'_>) -> Option<Value> {
     }))
 }
 
+fn claim_typed<'a>(
+    _name: &str,
+    node: &mut crate::ast::Node<'a>,
+    _arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    use crate::ast::Node;
+    let Node::Div(div) = node else {
+        return None;
+    };
+    let panels: Vec<&Node<'_>> = div
+        .children
+        .iter()
+        .filter(|n| !matches!(n, Node::Comment(_)))
+        .collect();
+    if panels.is_empty() || !panels.iter().all(|n| matches!(n, Node::CodeBlock(_))) {
+        return None;
+    }
+    let panels = panels
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    Some(Made {
+        props: None,
+        payload: None,
+        slots: Some(json!({"panels": panels})),
+        fallback: std::mem::take(&mut div.children),
+    })
+}
+
 /// `::: code-group` of code blocks as one switcher with a panel per block.
 #[must_use]
 pub fn code_group(options: CodeGroupOptions) -> Bundle {
@@ -430,7 +460,7 @@ pub fn code_group(options: CodeGroupOptions) -> Bundle {
             extension: NAME.into(),
             form: Form::Div,
             name: "code-group".into(),
-            claimer: Box::new(super::Engine(claim)),
+            claimer: Box::new(super::TypedEngine(claim, super::Typed(claim_typed))),
         }],
     }
 }
