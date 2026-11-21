@@ -3,39 +3,8 @@
 
 use std::sync::OnceLock;
 
-use carve::api::{Carve, extensions};
+use carve::api::Carve;
 use libfuzzer_sys::fuzz_target;
-
-const STANDARD: &[&str] = &[
-    "carve.cite",
-    "carve.codeGroup",
-    "carve.details",
-    "carve.fencedRender.mermaid",
-    "carve.imgFence.image",
-    "carve.imgFence.img",
-    "carve.mathBlock",
-    "carve.spoiler",
-    "carve.spoilerBlock",
-    "carve.tab",
-    "carve.tabs",
-    "carve.wiki",
-];
-
-fn host(renderers: bool) -> Carve {
-    let mut carve = Carve::new();
-    for name in STANDARD {
-        let _ = carve.enable_standard(name, renderers);
-    }
-    for bundle in [
-        extensions::glossary(),
-        extensions::list_table(),
-        extensions::code_callouts(),
-        extensions::semantic_span(),
-    ] {
-        let _ = carve.register(bundle);
-    }
-    carve
-}
 
 fuzz_target!(|data: &[u8]| {
     static HOSTS: OnceLock<[Carve; 2]> = OnceLock::new();
@@ -45,7 +14,12 @@ fuzz_target!(|data: &[u8]| {
     if rest.len() > carve_fuzz::MAX_INPUT {
         return;
     }
-    let hosts = HOSTS.get_or_init(|| [host(true), host(false)]);
+    let hosts = HOSTS.get_or_init(|| {
+        [
+            carve_fuzz::extension_host(true),
+            carve_fuzz::extension_host(false),
+        ]
+    });
     let carve = &hosts[usize::from(sel & 1)];
     let opts = carve_fuzz::options(sel);
     if let Ok(tree) = carve.parse(rest, &opts) {
