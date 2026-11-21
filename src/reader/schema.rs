@@ -39,6 +39,8 @@ fn check(
     path: &str,
     regexes: &mut HashMap<String, Regex>,
 ) -> Result<(), Failure> {
+    #[cfg(test)]
+    CHECK_VISITS.with(|count| count.set(count.get() + 1));
     if let Some(reference) = rule["$ref"].as_str() {
         let Some(target) = reference.strip_prefix("#/") else {
             return Err(fail(path, "external schema reference"));
@@ -330,6 +332,19 @@ fn check_object(
     path: &str,
     regexes: &mut HashMap<String, Regex>,
 ) -> Result<(), Failure> {
+    // A one-of over typed nodes must reject a wrong branch before descending
+    // into its children. Otherwise every wrong branch recursively validates
+    // the whole subtree before the `type` property is reached.
+    if let (Some(actual), Some(expected)) = (
+        object.get("type").and_then(Value::as_str),
+        rule.get("properties")
+            .and_then(|p| p.get("type"))
+            .and_then(|t| t.get("const"))
+            .and_then(Value::as_str),
+    ) && actual != expected
+    {
+        return Err(fail(&format!("{path}/type"), "constant differs"));
+    }
     if rule["minProperties"]
         .as_u64()
         .is_some_and(|n| object.len() < usize::try_from(n).unwrap_or(usize::MAX))
@@ -356,6 +371,11 @@ fn check_object(
         check_property(key, value, rule, root, path, regexes)?;
     }
     check_dependent_required(object, rule, path)
+}
+
+#[cfg(test)]
+thread_local! {
+    static CHECK_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn check_property(
@@ -424,4 +444,30 @@ fn check_dependent_required(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod typed_branch_depth_test {
+    use super::*;
+
+    #[test]
+    fn wrong_root_kind_does_not_rescan_nested_children() {
+        let mut child = serde_json::json!({"type":"text", "value":"x"});
+        for _ in 0..8 {
+            child = serde_json::json!({"type":"superscript", "children":[child]});
+        }
+        let doc = serde_json::json!({"type":"document", "astVersion":"2.0", "children":[child]});
+        let fallback = Value::Null;
+        let definitions = super::super::definitions();
+        assert!(definitions.is_ok());
+        let schema = definitions.unwrap_or(&fallback);
+        CHECK_VISITS.with(|count| count.set(0));
+        let result = validate(&doc, schema);
+        let visits = CHECK_VISITS.with(std::cell::Cell::get);
+        assert!(result.is_err());
+        assert!(
+            visits < 1_000,
+            "{visits} schema visits for one wrong root child"
+        );
+    }
 }
