@@ -145,8 +145,7 @@ fn pinned_lint_clause_cases() {
     // The pinned catalog has two older ranges that conflict with later cases
     // for the same diagnostics. Keep checking every other expectation while
     // the spec resolves CC-813 against CC-1174 and CC-891 against CC-1163.
-    // CC-1477 is the open engine gap carve-rs#4547.
-    let unresolved = ["CC-813:", "CC-891:", "CC-1477:"];
+    let unresolved = ["CC-813:", "CC-891:"];
     let regressions: Vec<_> = failures
         .iter()
         .filter(|failure| !unresolved.iter().any(|id| failure.starts_with(id)))
