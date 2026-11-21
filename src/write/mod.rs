@@ -29,7 +29,7 @@ use crate::view::{Arr, V};
 use check::{Check, Chunk, compare_blocks, escape_openers, exhausted, extend_chains};
 use node::{N, children, id, span, text, ty};
 use serde_json::Value;
-use state::{Writer, lose};
+use state::{GroupCertificate, Writer, lose};
 use std::collections::HashSet;
 
 /// How one write runs.
@@ -320,7 +320,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
         at = repair_group(w, doc, from, out.is_empty());
         // C2-W-146: test the written text with the five pair rules and reparse each escape round.
         for _ in 0..16 {
-            if w.certified_plain_rows {
+            if w.group_certificate == GroupCertificate::PlainRows {
                 break;
             }
             #[cfg(test)]
@@ -441,7 +441,7 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 }
 
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
-    w.certified_plain_rows = false;
+    w.group_certificate = GroupCertificate::None;
     let reported = w.sp.losses.len();
     let end = repair_rounds(w, doc, from, first, reported);
     w.work_limit = usize::MAX;
@@ -487,7 +487,7 @@ fn repair_rounds<'t>(
             return end;
         }
         if table::certifies_plain_rows(w, group) {
-            w.certified_plain_rows = true;
+            w.group_certificate = GroupCertificate::PlainRows;
             return end;
         }
         if repeated_repair(w, group, &mut history) {
