@@ -76,6 +76,7 @@ pub struct Spelling<'t> {
     pub lost_keys: AddrMap<usize, Vec<String>>,
 }
 
+#[allow(clippy::struct_excessive_bools)] // Independent switches of one write.
 pub struct Writer<'t> {
     pub pool: &'t typed_arena::Arena<Value>,
     pub matchers: Vec<Matcher>,
@@ -109,6 +110,8 @@ pub struct Writer<'t> {
     pub written_chars: usize,
     /// The verbatim references written (C2-W-075): their backslashes are the author's.
     pub raw_refs: Vec<String>,
+    /// The last write of a group that keeps a loss: the bare pairs that cannot pair take their braced form.
+    pub strict_pairs: bool,
 }
 
 impl<'t> Writer<'t> {
@@ -144,6 +147,7 @@ impl<'t> Writer<'t> {
             work_limit: usize::MAX,
             written_chars: 0,
             raw_refs: Vec::new(),
+            strict_pairs: false,
         }
     }
 

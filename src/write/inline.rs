@@ -963,11 +963,39 @@ fn glued_part<'t>(
         }
     }
     let part = write_part(w, nodes, at, end, flags);
-    if mark.is_none() || part.is_empty() || part.chars().next() != before {
+    if mark.is_none() || part.is_empty() {
+        return part;
+    }
+    let strict = w.strict_pairs
+        && !w.is_lost(node)
+        && cannot_pair(&part, mark, before, nodes.get(end).copied());
+    if part.chars().next() != before && !strict {
         return part;
     }
     w.forms.insert(id(node), 1);
     write_part(w, nodes, at, end, flags)
+}
+
+/// C2-W-069: a bare pair whose opener cannot open or whose closer cannot close at its neighbors
+/// (C2-I-047, C2-I-048). A character before the opener that an escape could join is left to the repair.
+fn cannot_pair(part: &str, mark: Option<char>, before: Option<char>, next: Option<N<'_>>) -> bool {
+    let Some(content) = mark
+        .and_then(|m| part.strip_prefix(m)?.strip_suffix(m))
+        .filter(|content| !content.is_empty())
+    else {
+        return false;
+    };
+    if before.is_some_and(|b| "\\!^$`{".contains(b)) {
+        return false;
+    }
+    let space = |c: Option<char>| c.is_none_or(crate::chars::is_flank_space);
+    let after = next
+        .filter(|n| ty(*n) == "text")
+        .and_then(|n| text(n).chars().next());
+    before.is_some_and(crate::chars::is_word)
+        || space(content.chars().next())
+        || space(content.chars().last())
+        || after.is_some_and(crate::chars::is_word)
 }
 
 /// C2-I-102: in a hard-break block a line ending alone at the start of a line is a blank line.
