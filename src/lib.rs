@@ -598,11 +598,23 @@ pub fn try_render(input: &str, opts: &Options) -> Result<String, RenderError> {
 
 /// Parses, expands (C2-N-006) and resolves; true in the second place when
 /// the resolution order is needed, in the third when an include was expanded.
-pub(crate) fn prepare<'a>(
+fn prepare<'a>(
     input: &'a str,
     opts: &Options,
     arena: &'a Arena,
     diags: &mut Vec<diagnostic::Diagnostic>,
+) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    prepare_with(input, opts, arena, diags, &mut |_| {})
+}
+
+/// [`prepare`] that hands the parsed tree to `before_resolve` before it is
+/// resolved, so a host's claims share the one resolution (carve-rs#4366).
+pub(crate) fn prepare_with<'a>(
+    input: &'a str,
+    opts: &Options,
+    arena: &'a Arena,
+    diags: &mut Vec<diagnostic::Diagnostic>,
+    before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
 ) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
     check_source_length(input.len())?;
     let src = source::Source::new(input);
@@ -631,6 +643,7 @@ pub(crate) fn prepare<'a>(
     }
     let files = (expanded && input.contains("{{"))
         .then(|| resolve::files::Files::build(&doc, included_sources));
+    before_resolve(&mut doc);
     let mut dups = Vec::new();
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
     for (id, pos, at) in dups {

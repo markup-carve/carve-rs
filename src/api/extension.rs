@@ -198,6 +198,24 @@ pub trait DocumentTransform: Send + Sync {
     /// infallible and leave the tree valid.
     #[doc(hidden)]
     fn transform_owned(&self, _view: &mut crate::ast::owned::Document) {}
+
+    /// Whether this owned transform reads no resolution result (C2-A-135),
+    /// so it may run with the claims on the parsed tree in an arena, before
+    /// the one resolve of the render (carve-rs#4366).
+    #[doc(hidden)]
+    fn supports_parsed_arena(&self) -> bool {
+        false
+    }
+
+    /// The arena form for transforms that opt in above, with the same
+    /// result as [`DocumentTransform::transform_owned`].
+    #[doc(hidden)]
+    fn transform_parsed_arena<'a>(
+        &self,
+        _doc: &mut crate::ast::Document<'a>,
+        _arena: &'a crate::Arena,
+    ) {
+    }
 }
 
 /// One registration: a declaration with its renderers and an optional transform.
@@ -290,6 +308,23 @@ impl Registry {
                 .iter()
                 .filter_map(|e| e.transform.as_ref())
                 .all(|transform| transform.supports_owned())
+    }
+
+    pub(crate) fn parsed_arena_transforms_only(&self) -> bool {
+        self.list
+            .iter()
+            .filter_map(|e| e.transform.as_ref())
+            .all(|transform| transform.supports_parsed_arena())
+    }
+
+    pub(crate) fn transform_parsed_arena<'a>(
+        &self,
+        doc: &mut crate::ast::Document<'a>,
+        arena: &'a crate::Arena,
+    ) {
+        for transform in self.list.iter().filter_map(|e| e.transform.as_ref()) {
+            transform.transform_parsed_arena(doc, arena);
+        }
     }
 
     pub(crate) fn transform_owned(&self, view: &mut crate::ast::owned::Document) {
@@ -495,8 +530,8 @@ impl<'a> Host<'a> {
     }
 
     fn render_list(&self, nodes: &Value) -> Result<String, Error> {
-        let children: Vec<crate::ast::owned::Node> = serde_json::from_value(nodes.clone())
-            .map_err(|e| Error::option("nodes", e.to_string()))?;
+        let children: Vec<crate::ast::owned::Node> = serde::Deserialize::deserialize(nodes)
+            .map_err(|e: serde_json::Error| Error::option("nodes", e.to_string()))?;
         let doc = crate::ast::owned::Document {
             ast_version: "2.0".into(),
             children,
