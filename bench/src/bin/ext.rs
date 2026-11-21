@@ -47,6 +47,12 @@ fn allocs(f: &dyn Fn() -> usize) -> u64 {
 struct Instructions(i32);
 
 impl Instructions {
+    #[cfg(not(target_os = "linux"))]
+    fn open() -> Option<Self> {
+        None
+    }
+
+    #[cfg(target_os = "linux")]
     fn open() -> Option<Self> {
         // perf_event_attr: type HARDWARE, size, config INSTRUCTIONS, flags
         // disabled | exclude_kernel | exclude_hv.
