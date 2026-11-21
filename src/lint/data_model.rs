@@ -800,13 +800,7 @@ impl<'a> Records<'a> {
             F::Type => Val::Str(Cow::Borrowed(block.kind)),
             F::Start => Val::num(range.start),
             F::End => Val::num(range.end),
-            F::Text => Val::Str(Cow::Borrowed(
-                if matches!(block.kind, "line" | "list" | "frontmatter") {
-                    text_at(source, range.start, range.end)
-                } else {
-                    ""
-                },
-            )),
+            F::Text => Val::Str(Cow::Borrowed(text_at(source, range.start, range.end))),
             F::Column => Val::num(self.block_column(block)),
             F::OpenerColumn => Val::num(if range.has_attrs {
                 self.block_column(block)
@@ -1068,6 +1062,13 @@ impl<'a> Records<'a> {
                 },
                 |at| line.start + at,
             );
+            let body_start = if leaf_kind == "caption"
+                && leaf_range.is_some_and(|range| range.start_line == index + 1)
+            {
+                caption_text(source, body_start)
+            } else {
+                body_start
+            };
             let from = body_start.saturating_sub(line.start).min(line_text.len());
             let body = trim_end(line_text.get(from..).unwrap_or(""));
             let first_colon = self.line_colons.len() as u32;
@@ -1272,4 +1273,12 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
         at = ((from + mark).min(to), at.1 + 1);
     }
     at
+}
+
+/// C2-B-147: the text of an attached caption starts behind its `^` mark and the spaces after it.
+fn caption_text(source: &str, at: usize) -> usize {
+    let Some(rest) = source.get(at..).and_then(|rest| rest.strip_prefix('^')) else {
+        return at;
+    };
+    source.len() - rest.trim_start_matches([' ', '\t']).len()
 }
