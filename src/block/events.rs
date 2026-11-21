@@ -3,7 +3,7 @@
 //! close, with the facts set at close (C2-B-191).
 
 use super::shapes::{DivInfo, FenceInfo, MarkerKind};
-use super::table::TableData;
+use super::table::{Pieces, TableData};
 use crate::attr::AttrBlock;
 use crate::inline::Piece;
 
@@ -33,19 +33,19 @@ pub enum ContainerKind {
 #[derive(Debug, Clone)]
 pub enum LeafKind {
     Paragraph {
-        pieces: Vec<Piece>,
+        pieces: Pieces,
         role: Option<Role>,
     },
     Heading {
         level: u8,
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     Term {
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     /// A caption attaches to the block that closed directly above (C2-B-146).
     Caption {
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     Code {
         value: String,

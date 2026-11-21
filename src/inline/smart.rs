@@ -61,6 +61,7 @@ impl Smart {
         v1: usize,
         next_flow: Option<char>,
         out: &mut Vec<Out>,
+        plain_to: usize,
     ) {
         let t = ctx.t;
         let next_flow = ctx
@@ -75,6 +76,15 @@ impl Smart {
             Prev::Char(c) => Some(c),
             _ => None,
         };
+        // Text before `plain_to` starts no replacement: skip it as `find_smart` would.
+        let known = plain_to.min(v1);
+        if known > p {
+            if let Some(last) = t.get(p..known).and_then(|s| s.chars().next_back()) {
+                self.prev = Prev::Char(last);
+                plain_before = Some(last);
+            }
+            p = known;
+        }
         while p < v1 {
             let Some(rest) = t.get(p..v1) else { break };
             let Some(c) = rest.chars().next() else { break };

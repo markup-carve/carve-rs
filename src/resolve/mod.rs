@@ -141,6 +141,9 @@ fn compute<'a>(
     files: Option<&files::Files<'a>>,
     dups: &mut Vec<Duplicate>,
 ) -> (AddrMap<usize, Res<'a>>, bool) {
+    if files.is_none() && result_free(doc.children, 1) {
+        return (AddrMap::default(), false);
+    }
     let mut order = Order::build_collecting(doc, files);
     let ordered = !order.notes.is_empty()
         || order.visits.iter().any(|v| match v.node {
@@ -167,6 +170,59 @@ fn compute<'a>(
         table::resolve_table(n, &mut res);
     }
     (res, ordered)
+}
+
+/// True when no node takes a result or an entry of the order: no id,
+/// number, reference, caption, note or table, and no attributes.
+fn result_free(nodes: &[Node<'_>], depth: usize) -> bool {
+    if depth > WALK_CAP {
+        return false;
+    }
+    nodes
+        .iter()
+        .all(|n| bare_children(n).is_some_and(|c| c.is_empty() || result_free(c, depth + 1)))
+}
+
+/// The children of a node `result_free` accepts, none for any other node.
+fn bare_children<'r, 'a>(n: &'r Node<'a>) -> Option<&'r [Node<'a>]> {
+    let (bare, children): (bool, &[Node<'a>]) = match n {
+        Node::Paragraph(x) => (x.attrs.is_none() && x.caption.is_none(), &*x.children),
+        Node::BlockQuote(x) => (x.attrs.is_none() && x.caption.is_none(), &*x.children),
+        Node::List(x) => (x.attrs.is_none(), &*x.children),
+        Node::ListItem(x) => (x.attrs.is_none(), &*x.children),
+        _ => return bare_inline(n),
+    };
+    bare.then_some(children)
+}
+
+fn bare_inline<'r, 'a>(n: &'r Node<'a>) -> Option<&'r [Node<'a>]> {
+    let (attrs, children) = match n {
+        Node::Emphasis(x) => (x.attrs, &*x.children),
+        Node::Strong(x) => (x.attrs, &*x.children),
+        Node::Underline(x) => (x.attrs, &*x.children),
+        Node::Strike(x) => (x.attrs, &*x.children),
+        Node::Highlight(x) => (x.attrs, &*x.children),
+        Node::Superscript(x) => (x.attrs, &*x.children),
+        Node::Subscript(x) => (x.attrs, &*x.children),
+        Node::Insert(x) => (x.attrs, &*x.children),
+        Node::Delete(x) => (x.attrs, &*x.children),
+        _ => return bare_leaf(n).then_some(&[]),
+    };
+    attrs.is_none().then_some(children)
+}
+
+fn bare_leaf(n: &Node<'_>) -> bool {
+    let attrs = match n {
+        Node::Text(x) => x.attrs,
+        Node::SoftBreak(x) => x.attrs,
+        Node::HardBreak(x) => x.attrs,
+        Node::NonBreakingSpace(x) => x.attrs,
+        Node::SmartPunctuation(x) => x.attrs,
+        Node::Code(x) => x.attrs,
+        Node::ThematicBreak(x) => x.attrs,
+        _ => return false,
+    };
+    attrs.is_none()
 }
 
 fn to_i64(n: usize) -> i64 {

@@ -199,24 +199,46 @@ pub(crate) fn parse_env<'a>(
 }
 
 fn parse_in<'a>(env: &Env<'_, 'a>, pieces: &[Piece], s: &mut Scratch<'a>) -> &'a mut [Node<'a>] {
-    if let Some(nodes) = plain_piece(env, pieces) {
-        return nodes;
-    }
+    let known = match plain_piece(env, pieces) {
+        Ok(nodes) => return nodes,
+        Err(known) => known,
+    };
     let content = content::Content::new_in(env, pieces, s);
-    let scan::Scanned { mut toks, comments } =
-        scan::scan(&content, env, std::mem::take(&mut s.toks), &mut s.scan);
+    let scan::Scanned { mut toks, comments } = scan::scan(
+        &content,
+        env,
+        std::mem::take(&mut s.toks),
+        &mut s.scan,
+        known.scan,
+    );
     let ctx = delim::Ctx {
         t: &content.text,
         comments: &comments,
     };
     delim::resolve(&mut toks, &ctx, env.arena, &mut s.stacks);
     let out = if env.abbreviations.is_empty() && comments.is_empty() {
-        build::build(&content, &ctx, env, s, events::Stream::new(&mut toks), &[])
+        build::build(
+            &content,
+            &ctx,
+            env,
+            s,
+            events::Stream::new(&mut toks),
+            &[],
+            known.smart,
+        )
     } else {
         let mut evs = std::mem::take(&mut s.evs);
         events::from_tokens(&mut toks, &mut evs);
         let next_flow = build::next_flow(ctx.t, &evs);
-        let out = build::build(&content, &ctx, env, s, evs.drain(..), &next_flow);
+        let out = build::build(
+            &content,
+            &ctx,
+            env,
+            s,
+            evs.drain(..),
+            &next_flow,
+            known.smart,
+        );
         s.evs = evs;
         out
     };
@@ -226,26 +248,45 @@ fn parse_in<'a>(env: &Env<'_, 'a>, pieces: &[Piece], s: &mut Scratch<'a>) -> &'a
     out
 }
 
+/// How far the start of a content is known to hold no form, in content
+/// offsets: the scan starts its first text run at `scan`, smart typography
+/// at `smart`.
+#[derive(Clone, Copy, Default)]
+struct Known {
+    scan: usize,
+    smart: usize,
+}
+
 /// Plain lines (`plain_span`) with no abbreviation defined and no hard break
 /// block: text nodes with a soft break between them, as the full pass builds.
-fn plain_piece<'a>(env: &Env<'_, 'a>, pieces: &[Piece]) -> Option<&'a mut [Node<'a>]> {
+/// Otherwise what `plain_span` read of the first piece.
+fn plain_piece<'a>(env: &Env<'_, 'a>, pieces: &[Piece]) -> Result<&'a mut [Node<'a>], Known> {
     let multi = pieces.len() > 1;
     if !env.abbreviations.is_empty()
         || (multi && (env.hard_breaks || env.kind == ContentKind::Cell))
         || pieces.iter().any(|p| p.join != Join::Line)
     {
-        return None;
+        return Err(Known::default());
     }
     let mut spans = [(0, ""); 8];
     if pieces.is_empty() || pieces.len() > spans.len() {
-        return None;
+        return Err(Known::default());
     }
-    for (slot, p) in spans.iter_mut().zip(pieces) {
-        *slot = plain_span(env, p)?;
+    for (n, (slot, p)) in spans.iter_mut().zip(pieces).enumerate() {
+        *slot = plain_span(env, p).map_err(|known| {
+            // The content text starts at the first piece; a line block keeps its indent.
+            if n == 0 && env.kind != ContentKind::LineBlockLine {
+                known
+            } else {
+                Known::default()
+            }
+        })?;
     }
-    let spans = spans.get(..pieces.len())?;
+    let Some(spans) = spans.get(..pieces.len()) else {
+        return Err(Known::default());
+    };
     let (src, a) = (env.src, env.arena);
-    Some(a.fill((0..spans.len() * 2 - 1).map(|i| {
+    Ok(a.fill((0..spans.len() * 2 - 1).map(|i| {
         let (start, t) = spans.get(i / 2).copied().unwrap_or_default();
         let end = start + t.len();
         if i % 2 == 0 {
@@ -273,27 +314,44 @@ static PLAIN: crate::chars::ByteSet = crate::chars::ByteSet::new(
 );
 
 /// The start and text of a piece of ASCII letters, digits, inner spaces and
-/// a few punctuation marks: nothing in it starts a construct.
-fn plain_span<'a>(env: &Env<'_, 'a>, p: &Piece) -> Option<(usize, &'a str)> {
-    let t = env.src.borrowed(p.start, p.end)?;
+/// a few punctuation marks: nothing in it starts a construct. Otherwise how
+/// much of its trimmed start is known plain.
+fn plain_span<'a>(env: &Env<'_, 'a>, p: &Piece) -> Result<(usize, &'a str), Known> {
+    let Some(t) = env.src.borrowed(p.start, p.end) else {
+        return Err(Known::default());
+    };
     let trimmed = if env.kind == ContentKind::Cell {
         t.trim_matches([' ', '\t'])
     } else {
         t.trim_end_matches([' ', '\t'])
     };
     let b = trimmed.as_bytes();
-    if !b.first().is_some_and(u8::is_ascii_alphanumeric) || b.last() == Some(&b' ') {
-        return None;
+    if !b.first().is_some_and(u8::is_ascii_alphanumeric) {
+        return Err(Known::default());
     }
-    // `.` starts only the `...` run (smart typography); the others start nothing.
-    let mut prev = 0;
-    for &c in b {
-        if !PLAIN.has(c) || (c == b'.' && prev == b'.') {
-            return None;
-        }
-        prev = c;
+    // `.` starts only the `...` run (smart typography), `,` a braced mark
+    // before `}`; the others start nothing.
+    let stop = b.iter().position(|&c| !PLAIN.has(c)).unwrap_or(b.len());
+    let read = b.get(..stop).unwrap_or_default();
+    let stop = read
+        .windows(2)
+        .position(|w| w == b"..")
+        .map_or(stop, |d| d + 1);
+    if stop < b.len() {
+        let read = b.get(..stop).unwrap_or_default();
+        return Err(Known {
+            scan: read.iter().position(|&x| x == b',').unwrap_or(stop),
+            smart: if read.last() == Some(&b'.') {
+                stop - 1
+            } else {
+                stop
+            },
+        });
     }
-    Some((
+    if b.last() == Some(&b' ') {
+        return Err(Known::default());
+    }
+    Ok((
         p.start + (t.len() - t.trim_start_matches([' ', '\t']).len()),
         trimmed,
     ))
