@@ -69,6 +69,7 @@ pub mod inline;
 pub mod lint;
 #[doc(hidden)]
 pub mod options;
+mod owned_str;
 mod pair_marks;
 #[cfg(feature = "profile")]
 pub mod profile;
@@ -166,7 +167,7 @@ pub fn try_parse_resolved_bytes_in<'a>(
 pub fn parse(input: &str) -> Result<ast::owned::Document, RenderError> {
     check_source_length(input.len())?;
     let arena = Arena::for_input(input);
-    Ok(parse_in(input, &arena)?.owned())
+    Ok(parse_in(input, &arena)?.owned_with(&owned_str::Texts::of(input)))
 }
 
 #[doc(hidden)]
@@ -178,7 +179,7 @@ pub fn parse(input: &str) -> Result<ast::owned::Document, RenderError> {
 pub fn parse_resolved(input: &str, opts: &Options) -> Result<ast::owned::Document, RenderError> {
     check_source_length(input.len())?;
     let arena = Arena::for_input(input);
-    Ok(parse_resolved_in(input, opts, &arena)?.owned())
+    Ok(parse_resolved_in(input, opts, &arena)?.owned_with(&owned_str::Texts::of(input)))
 }
 
 #[doc(hidden)]
@@ -1309,7 +1310,7 @@ pub(crate) fn tree_parts_with_sources(
                 .collect()
         });
     if files.is_none() && opts.includes.is_none() {
-        return Some((None, doc.owned(), sources));
+        return Some((None, doc.owned_with(&owned_str::Texts::of(input)), sources));
     }
     let mut v = stamped_value(&doc);
     let json = v.to_string();
