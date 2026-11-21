@@ -395,7 +395,9 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     for line in body.split('\n') {
         // A container can put its first row and later continuation rows in
         // different columns (for example, the task marker on the first line).
-        let early_continuation = line.get(..column).and_then(|prefix| prefix.find('+'));
+        let early_continuation = (!lines.is_empty())
+            .then(|| line.get(..column).and_then(|prefix| prefix.find('+')))
+            .flatten();
         let at = early_continuation
             .or_else(|| {
                 line.get(column..)
