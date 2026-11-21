@@ -705,6 +705,22 @@ pub(crate) fn parse_diagnostics(input: &str, opts: &Options) -> Vec<diagnostic::
     diagnostics
 }
 
+/// The resolved tree of `input` as JSON, read with the link keys `keys` of a
+/// document around it in scope (C2-W-089).
+#[allow(clippy::implicit_hasher)] // the inline pass reads a `HashSet<String>`
+pub(crate) fn tree_value_in_context(
+    input: &str,
+    keys: &std::collections::HashSet<String>,
+) -> Option<serde_json::Value> {
+    check_source_length(input.len()).ok()?;
+    let arena = Arena::for_input(input);
+    let src = source::Source::new(input);
+    let out = block::scan(&src);
+    let (mut doc, _) = tree::build_layered(&src, &arena, out.events, Some(keys), &[]);
+    resolve::resolve_files(&mut doc, &Options::default(), &arena, None, &mut Vec::new());
+    Some(tree_value(&doc))
+}
+
 /// The value of [`tree_json`], without the text round trip.
 pub(crate) fn tree_json_value(input: &str, opts: &Options) -> Option<serde_json::Value> {
     tree_value_and_diagnostics(input, opts, opts, true).0

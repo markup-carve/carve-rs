@@ -919,7 +919,12 @@ fn extension_spelling(node: V<'_>) -> Option<String> {
 
 fn block_extension<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
     if let Some(spelling) = extension_spelling(node) {
-        if super::extension::canonical_body(node) {
+        let keys = if w.extensions.is_empty() {
+            super::LinkKeys::default()
+        } else {
+            std::sync::Arc::clone(&w.link_keys)
+        };
+        if super::extension::canonical_body(node, &keys) {
             let attrs = plain_block(node);
             let probe = if attrs.is_empty() {
                 spelling.clone()

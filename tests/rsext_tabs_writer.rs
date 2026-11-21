@@ -75,3 +75,19 @@ see [r0].
 ";
     assert_eq!(format_tabs(src), (src.to_string(), Vec::new()));
 }
+
+/// markup-carve/carve#6345 shape 2, C2-W-089: an escaped bracket that matches a
+/// defined label keeps its escape, and the group is written back.
+#[test]
+fn an_escaped_label_in_a_tab_is_written_back() {
+    let src = "\
+[r0]: http://x/0
+
+:::: tabs
+::: tab \"T0\"
+\\[r0] lit
+:::
+::::
+";
+    assert_eq!(format_tabs(src), (src.to_string(), Vec::new()));
+}

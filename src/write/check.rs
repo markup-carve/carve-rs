@@ -65,7 +65,14 @@ impl Chunk {
         if let Some(m) = v.as_object_mut() {
             m.insert("type".into(), "document".into());
         }
-        super::extension::apply_claims(&mut v, &w.extensions, &self.text);
+        let outer = keys.map(|k| {
+            if std::ptr::eq(k, std::sync::Arc::as_ptr(&w.link_keys)) {
+                std::sync::Arc::clone(&w.link_keys)
+            } else {
+                std::sync::Arc::new(k.clone())
+            }
+        });
+        super::extension::apply_claims(&mut v, &w.extensions, &self.text, outer.as_ref());
         V::Json(self.arena.json(v))
     }
 

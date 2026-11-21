@@ -16,12 +16,13 @@ fn json_kids(v: &Value) -> &[Value] {
         .map_or(&[], Vec::as_slice)
 }
 
-/// Whether the body of the source form of `node` is canonical Carve.
-pub fn canonical_body(node: V<'_>) -> bool {
+/// Whether the body of the source form of `node` is canonical Carve in a
+/// document with the link keys `keys` (C2-X-026, C2-W-089).
+pub fn canonical_body(node: V<'_>, keys: &Keys) -> bool {
     let Some(body) = node.get("source").and_then(|src| s(src, "body")) else {
         return false;
     };
-    super::format_plain(body).is_some_and(|f| f == body)
+    super::format_in_context(body, keys).is_some_and(|f| f == body)
 }
 
 /// C2-X-023: a core readback of the source form is allowed only for its canonical content.
@@ -142,12 +143,18 @@ pub fn with_core_inlines(tree: V<'_>) -> Option<Value> {
     changed.then_some(out)
 }
 
-/// C2-X-005: the claims of the enabled standard extensions on a parsed chunk.
-pub fn apply_claims(doc: &mut Value, extensions: &[String], source: &str) {
+/// C2-X-005: the claims of the enabled standard extensions on a parsed chunk,
+/// read in a document with the link keys `outer`.
+pub fn apply_claims(doc: &mut Value, extensions: &[String], source: &str, outer: Option<&Keys>) {
     if !extensions.iter().any(|e| e == "carve.tabs") {
         return;
     }
-    let keys = super::link_keys(json_kids(doc));
+    let own = super::link_keys(json_kids(doc));
+    let keys = match outer {
+        Some(o) if own.iter().all(|k| o.contains(k)) => Arc::clone(o),
+        Some(o) => Arc::new(own.iter().chain(o.iter()).cloned().collect()),
+        None => own,
+    };
     let used = doc
         .get_mut("children")
         .is_some_and(|kids| claim_tree(kids, source, &keys));
