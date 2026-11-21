@@ -62,9 +62,7 @@ fn doubles(value: &[u8], at: usize, c: &mut BraceQuote) -> bool {
 
 fn always_escaped(value: &[u8], at: usize, flags: u32, c: &mut BraceQuote) -> bool {
     let code = value.get(at).copied().unwrap_or(0);
-    (code == b'\\' && doubles(value, at, c))
-        || (flags & IN_CELL != 0 && code == b'|')
-        || (flags & IN_BRACKET != 0 && (code == b'[' || code == b']'))
+    (code == b'\\' && doubles(value, at, c)) || (flags & IN_CELL != 0 && code == b'|')
 }
 
 /// The index of the first entry of `offsets` that is not below `from`.
@@ -135,7 +133,6 @@ fn text_node(w: &Writer<'_>, node: V<'_>, flags: u32) -> String {
         && !w.has_escapes(node)
         && !value.contains('\\')
         && (flags & IN_CELL == 0 || !value.contains('|'))
-        && (flags & IN_BRACKET == 0 || !value.contains(['[', ']']))
     {
         return value.to_string();
     }
