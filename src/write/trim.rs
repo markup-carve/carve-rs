@@ -3,9 +3,8 @@
 //! of a line holder, and without the text nodes that hold nothing else; a loss path of the copy is
 //! mapped back to the supplied tree.
 
+use super::facts::Entry;
 use super::node::slot_paths;
-use super::table::writes_delimited;
-use crate::view::V;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -27,13 +26,19 @@ pub struct Trimmed {
 }
 
 /// The copy without line-end spaces and tabs of text, or `None` where the tree has none.
-pub fn trim(doc: &Value) -> Option<Trimmed> {
+/// `delimited` says whether the table at a pointer is written in a delimited form, where a cell
+/// keeps them as data (C2-W-066) while its caption is still trimmed.
+pub fn trim(doc: &Value, delimited: &dyn Fn(&Value, &str) -> bool) -> Option<Trimmed> {
     if !has_any(doc) {
         return None;
     }
     let mut copy = doc.clone();
     let mut removed: HashMap<String, Vec<usize>> = HashMap::new();
-    trim_node(&mut copy, "", &mut removed);
+    let mut run = Run {
+        delimited,
+        removed: &mut removed,
+    };
+    trim_node(&mut copy, "", &mut run);
     let kept = removed
         .into_iter()
         .map(|(list, gone)| {
@@ -73,15 +78,21 @@ fn ty(v: &Value) -> &str {
     v.get("type").and_then(Value::as_str).unwrap_or("")
 }
 
-fn trim_node(node: &mut Value, at: &str, removed: &mut HashMap<String, Vec<usize>>) {
+struct Run<'a> {
+    delimited: &'a dyn Fn(&Value, &str) -> bool,
+    removed: &'a mut HashMap<String, Vec<usize>>,
+}
+
+fn trim_node(node: &mut Value, at: &str, run: &mut Run<'_>) {
     let kind = ty(node).to_string();
-    if kind == "table" && writes_delimited(V::Json(node)) {
-        return;
-    }
+    let cells_are_data = kind == "table" && (run.delimited)(node, at);
     let holder = LINE_HOLDERS.contains(&kind.as_str());
     for path in slot_paths(&kind) {
-        let line_end = holder && matches!(path.as_slice(), [only] if only == "children");
-        trim_path(node, path, at, line_end, removed);
+        let children = matches!(path.as_slice(), [only] if only == "children");
+        if cells_are_data && children {
+            continue;
+        }
+        trim_path(node, path, at, holder && children, run);
     }
 }
 
@@ -89,18 +100,12 @@ fn escaped(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
-fn trim_path(
-    v: &mut Value,
-    parts: &[String],
-    at: &str,
-    line_end: bool,
-    removed: &mut HashMap<String, Vec<usize>>,
-) {
+fn trim_path(v: &mut Value, parts: &[String], at: &str, line_end: bool, run: &mut Run<'_>) {
     let Some((first, rest)) = parts.split_first() else {
         if v.is_array() {
-            trim_list(v, at, line_end, removed);
+            trim_list(v, at, line_end, run);
         } else if v.get("type").is_some() && ty(v) != "text" {
-            trim_node(v, at, removed);
+            trim_node(v, at, run);
         }
         return;
     };
@@ -111,24 +116,18 @@ fn trim_path(
                 rest,
                 &format!("{at}/{}", escaped(first)),
                 line_end,
-                removed,
+                run,
             );
         }
         return;
     }
     if let Some(items) = v.as_array_mut() {
         for (k, inner) in items.iter_mut().enumerate() {
-            trim_path(inner, rest, &format!("{at}/{k}"), line_end, removed);
+            trim_path(inner, rest, &format!("{at}/{k}"), line_end, run);
         }
     } else if let Some(map) = v.as_object_mut() {
         for (k, inner) in map.iter_mut() {
-            trim_path(
-                inner,
-                rest,
-                &format!("{at}/{}", escaped(k)),
-                line_end,
-                removed,
-            );
+            trim_path(inner, rest, &format!("{at}/{}", escaped(k)), line_end, run);
         }
     }
 }
@@ -136,7 +135,8 @@ fn trim_path(
 /// The text `items[i]` with its line-end spaces and tabs, or `None` where it ends no line or has none.
 fn line_end_text(items: &[Value], i: usize, line_end: bool) -> Option<usize> {
     let item = items.get(i)?;
-    if ty(item) != "text" {
+    // The attribute block of a text follows it, so its spaces end no line.
+    if ty(item) != "text" || item.get("attrs").is_some() || item.get("data").is_some() {
         return None;
     }
     let ends = items
@@ -148,12 +148,7 @@ fn line_end_text(items: &[Value], i: usize, line_end: bool) -> Option<usize> {
 }
 
 /// Right to left, so a text before a dropped text sees what follows it then.
-fn trim_list(
-    list: &mut Value,
-    at: &str,
-    line_end: bool,
-    removed: &mut HashMap<String, Vec<usize>>,
-) {
+fn trim_list(list: &mut Value, at: &str, line_end: bool, run: &mut Run<'_>) {
     let Some(items) = list.as_array_mut() else {
         return;
     };
@@ -163,14 +158,14 @@ fn trim_list(
             continue;
         };
         if ty(item) != "text" {
-            trim_node(item, &format!("{at}/{i}"), removed);
+            trim_node(item, &format!("{at}/{i}"), run);
             continue;
         }
         match kept {
             None => {}
             Some(0) => {
                 items.remove(i);
-                removed.entry(at.to_string()).or_default().push(i);
+                run.removed.entry(at.to_string()).or_default().push(i);
             }
             Some(kept) => {
                 if let Some(Value::String(value)) = item.get_mut("value") {
@@ -190,17 +185,88 @@ impl Trimmed {
         let mut out = String::with_capacity(path.len());
         for step in path.split('/').skip(1) {
             let index = step.parse::<usize>().ok();
-            match index.and_then(|k| self.kept.get(&out).and_then(|keep| keep.get(k))) {
-                Some(orig) => {
-                    out.push('/');
-                    out.push_str(&orig.to_string());
-                }
-                None => {
-                    out.push('/');
-                    out.push_str(step);
-                }
+            let orig = index.and_then(|k| self.kept.get(&out).and_then(|keep| keep.get(k)));
+            out.push('/');
+            if let Some(orig) = orig {
+                out.push_str(&orig.to_string());
+            } else {
+                out.push_str(step);
             }
         }
         out
+    }
+
+    /// The path in the copy of a path of the supplied tree, or `None` inside a removed node.
+    pub fn forward(&self, path: &str) -> Option<String> {
+        if self.kept.is_empty() {
+            return Some(path.to_string());
+        }
+        let mut supplied = String::with_capacity(path.len());
+        let mut out = String::with_capacity(path.len());
+        for step in path.split('/').skip(1) {
+            let mapped = match (self.kept.get(&supplied), step.parse::<usize>()) {
+                (Some(keep), Ok(k)) => Some(keep.binary_search(&k).ok()?),
+                _ => None,
+            };
+            supplied.push('/');
+            supplied.push_str(step);
+            out.push('/');
+            if let Some(at) = mapped {
+                out.push_str(&at.to_string());
+            } else {
+                out.push_str(step);
+            }
+        }
+        Some(out)
+    }
+
+    /// The sidecar entries with their paths in the copy; an entry or wrap of a removed node is gone.
+    pub fn forward_layout(&self, layout: &[Entry]) -> Vec<Entry> {
+        layout
+            .iter()
+            .filter_map(|entry| {
+                let mut entry = Entry {
+                    path: self.forward(&entry.path)?,
+                    ..entry.clone()
+                };
+                if let Some(wraps) = &mut entry.facts.wraps {
+                    wraps.retain_mut(|wrap| {
+                        self.forward(&wrap.path)
+                            .map(|path| wrap.path = path)
+                            .is_some()
+                    });
+                }
+                Some(entry)
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trim;
+    use serde_json::json;
+
+    #[test]
+    fn paths_map_both_ways_around_a_removed_text() {
+        let doc = json!({ "type": "document", "children": [{ "type": "paragraph", "children": [
+            { "type": "text", "value": "a" }, { "type": "text", "value": " " },
+            { "type": "soft_break" }, { "type": "text", "value": "b" }] }] });
+        let trimmed = trim(&doc, &|_, _| false);
+        assert!(trimmed.is_some(), "a trim");
+        let Some(trimmed) = trimmed else { return };
+        assert_eq!(
+            trimmed.remap("/children/0/children/2"),
+            "/children/0/children/3"
+        );
+        assert_eq!(
+            trimmed.forward("/children/0/children/3").as_deref(),
+            Some("/children/0/children/2")
+        );
+        assert_eq!(trimmed.forward("/children/0/children/1"), None);
+        assert_eq!(
+            trimmed.forward("/children/0").as_deref(),
+            Some("/children/0")
+        );
     }
 }

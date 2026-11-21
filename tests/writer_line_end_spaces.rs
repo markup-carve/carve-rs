@@ -82,6 +82,37 @@ fn a_delimited_cell_keeps_its_spaces_as_data() {
 }
 
 #[test]
+fn the_caption_of_a_delimited_table_is_trimmed() {
+    let tree = json!({ "type": "document", "astVersion": "2.0", "children": [{ "type": "table",
+        "columns": [{ "type": "table_column" }],
+        "children": [{ "type": "table_body", "children": [{ "type": "table_row", "children": [
+            { "type": "table_cell", "header": false, "children": [{ "type": "cell_paragraph", "children": [text("x ")] }] }] }] }],
+        "caption": { "type": "caption", "children": [{ "type": "paragraph", "children": [text("cap ")] }] } }] });
+    assert_eq!(
+        write(&tree),
+        (
+            "{table header-rows=0}\n```csv\nx \n```\n^ cap\n".to_string(),
+            vec![]
+        )
+    );
+}
+
+#[test]
+fn an_attributed_text_keeps_its_report() {
+    for value in ["x ", "  "] {
+        let tree = paragraph(&[
+            text("a"),
+            json!({ "type": "text", "value": value, "attrs": { "classes": ["c"] } }),
+        ]);
+        assert_eq!(
+            write(&tree).1,
+            ["structure-unspellable /children/0"],
+            "{value:?}"
+        );
+    }
+}
+
+#[test]
 fn other_losses_are_still_reported_at_the_supplied_paths() {
     let code = paragraph(&[text("a"), json!({ "type": "code", "value": "x \ny" })]);
     assert_eq!(
