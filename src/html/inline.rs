@@ -289,14 +289,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
         };
         out.push('<');
         out.push_str(tag);
-        let (attrs, lang, dir) = (n.attrs(), lang_of(n), n.dir());
-        if attrs.is_some() || lang.is_some() || dir.is_some() || matches!(n, Node::SmallCaps(_)) {
-            let mut el = El::new(attrs, lang).with_dir(dir);
-            if matches!(n, Node::SmallCaps(_)) {
-                el.base.push("smallcaps".into());
-            }
-            el.write_into(self.filter(), out);
-        }
+        self.wrapper_attrs(n, out);
         out.push('>');
         if let Some(c) = n.children() {
             self.inlines(c, out);
@@ -304,6 +297,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
+    }
+
+    /// The attributes of a wrapper element; nothing for a bare one.
+    fn wrapper_attrs(&self, n: &Node<'_>, out: &mut String) {
+        let (attrs, lang, dir) = (n.attrs(), lang_of(n), n.dir());
+        let small = matches!(n, Node::SmallCaps(_));
+        if attrs.is_none() && lang.is_none() && dir.is_none() && !small {
+            return;
+        }
+        let mut el = El::new(attrs, lang).with_dir(dir);
+        if small {
+            el.base.push("smallcaps".into());
+        }
+        el.write_into(self.filter(), out);
     }
 
     fn wrap_span(

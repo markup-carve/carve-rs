@@ -349,6 +349,69 @@ fn nfc(s: &str) -> String {
     }
 }
 
+type Lookups<'a> = (
+    Vec<&'a str>,
+    HashMap<String, usize>,
+    HashMap<String, &'a str>,
+);
+
+/// The heading ids, the first heading of each folded plain text and the
+/// cross-reference targets, each only when `needs` asks for it.
+fn lookups<'a>(
+    order: &Order<'_, 'a>,
+    ids: &AddrMap<usize, &'a str>,
+    owners: &AddrSet<usize>,
+    needs: Needs,
+) -> Lookups<'a> {
+    let mut heading_ids = Vec::new();
+    let mut heading_by_text = HashMap::new();
+    let mut targets = HashMap::new();
+    if !needs.headings && !needs.targets {
+        return (heading_ids, heading_by_text, targets);
+    }
+    for v in &order.visits {
+        let a = addr(v.node);
+        if let (Node::FigureGroup(group), true) = (v.node, needs.targets && owners.contains(&a)) {
+            panel_targets(group, &mut targets);
+        }
+        let heading = match v.node {
+            Node::Heading(h) => ids.get(&a).map(|id| (h, id)),
+            _ => None,
+        };
+        if let Some((h, id)) = heading {
+            if needs.headings {
+                let i = heading_ids.len();
+                heading_by_text
+                    .entry(nfc(&fold_label(&plain::text_of(h.children))))
+                    .or_insert(i);
+                heading_ids.push(*id);
+            }
+            if needs.targets {
+                targets.entry(nfc(id)).or_insert(*id);
+            }
+        } else if needs.targets && owners.contains(&a) && !matches!(v.node, Node::Include(_)) {
+            if let Some(id) = v.node.attrs().and_then(|x| x.id) {
+                targets.entry(nfc(id)).or_insert(id);
+            }
+        }
+    }
+    (heading_ids, heading_by_text, targets)
+}
+
+/// The ids of the panels of a numbered figure group as targets.
+fn panel_targets<'a>(group: &crate::ast::FigureGroup<'a>, targets: &mut HashMap<String, &'a str>) {
+    for panel in group.children.iter().filter(|node| {
+        matches!(
+            node,
+            Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) | Node::Table(_)
+        )
+    }) {
+        if let Some(id) = panel.attrs().and_then(|attrs| attrs.id) {
+            targets.entry(nfc(id)).or_insert(id);
+        }
+    }
+}
+
 /// The lookup tables of reference resolution.
 struct Index<'a, 'f> {
     /// C2-N-054, C2-N-055: the definitions by file, for an expanded tree.
@@ -382,53 +445,7 @@ impl<'a> Index<'a, '_> {
                 _ => {}
             }
         }
-        let mut heading_ids = Vec::new();
-        let mut heading_by_text = HashMap::new();
-        let mut targets = HashMap::new();
-        for v in order
-            .visits
-            .iter()
-            .filter(|_| needs.headings || needs.targets)
-        {
-            let a = addr(v.node);
-            if let Node::FigureGroup(group) = v.node {
-                if needs.targets && owners.contains(&a) {
-                    for panel in group.children.iter().filter(|node| {
-                        matches!(
-                            node,
-                            Node::Paragraph(_)
-                                | Node::CodeBlock(_)
-                                | Node::BlockQuote(_)
-                                | Node::Table(_)
-                        )
-                    }) {
-                        if let Some(id) = panel.attrs().and_then(|attrs| attrs.id) {
-                            targets.entry(nfc(id)).or_insert(id);
-                        }
-                    }
-                }
-            }
-            let heading = match v.node {
-                Node::Heading(h) => ids.get(&a).map(|id| (h, id)),
-                _ => None,
-            };
-            if let Some((h, id)) = heading {
-                if needs.headings {
-                    let i = heading_ids.len();
-                    heading_by_text
-                        .entry(nfc(&fold_label(&plain::text_of(h.children))))
-                        .or_insert(i);
-                    heading_ids.push(*id);
-                }
-                if needs.targets {
-                    targets.entry(nfc(id)).or_insert(*id);
-                }
-            } else if needs.targets && owners.contains(&a) && !matches!(v.node, Node::Include(_)) {
-                if let Some(id) = v.node.attrs().and_then(|x| x.id) {
-                    targets.entry(nfc(id)).or_insert(id);
-                }
-            }
-        }
+        let (heading_ids, heading_by_text, targets) = lookups(order, ids, owners, needs);
         Index {
             files: None,
             links,
