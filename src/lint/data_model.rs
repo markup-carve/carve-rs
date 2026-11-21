@@ -1366,6 +1366,10 @@ impl<'a> Records<'a> {
                 F::Text => Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end))),
                 F::Node => self.tree_node(at),
                 F::RawRef => self.raw_ref(at),
+                F::Parent => Val::Str(Cow::Borrowed(self.holder_kind(range.holder))),
+                F::Leaf => self
+                    .inline_leaf(range)
+                    .map_or(Val::Null, |leaf| Val::Str(Cow::Borrowed(leaf))),
                 _ => Val::Null,
             };
         }

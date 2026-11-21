@@ -1,6 +1,6 @@
 //! Lint of source lines after the 0.2 parse has marked paragraphs and opaque spans.
 
-use super::{LintOptions, Range, active, drop_replaced};
+use super::{Holder, LintOptions, Range, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use std::collections::HashSet;
@@ -22,6 +22,8 @@ pub(super) struct Line {
     content_start: Option<usize>,
     /// Where the tree places this line's text: its first leaf, or the end of the break before it.
     pub(super) content: Option<usize>,
+    /// Where the first non-text inline child of a paragraph starts on this line.
+    span_start: Option<usize>,
     opacity: Opacity,
     attached_attribute: bool,
     scope: Scope,
@@ -166,7 +168,7 @@ fn frontmatter_quote_marker(line: &Line, sink: &mut Sink<'_>) {
     sink.output.push(finding);
 }
 
-pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
+pub(super) fn lines(source: &str, ranges: &[Range<'_>], holders: &[Holder]) -> Vec<Line> {
     let div_paths: HashSet<String> = ranges
         .iter()
         .filter(|range| {
@@ -186,7 +188,7 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
         start += piece.len();
     }
     let count = raws.len();
-    let facts = line_facts(&starts, &raws, ranges);
+    let facts = line_facts(&starts, &raws, ranges, holders);
     let mut out = Vec::with_capacity(count + 1);
     let lines = starts.iter().zip(raws).zip(facts);
     for (index, ((&start, raw), fact)) in lines.enumerate() {
@@ -225,6 +227,7 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
                 .content
                 .filter(|at| *at >= start && *at <= start + raw.len())
                 .map(|at| at - start),
+            span_start: fact.span_start.map(|at| at.saturating_sub(start)),
             opacity: if fact.flags & FRONTMATTER != 0 {
                 Opacity::Frontmatter
             } else if fact.flags & OPAQUE != 0 {
@@ -260,6 +263,7 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
             literal_quote_prefix: false,
             content_start: None,
             content: None,
+            span_start: None,
             opacity: Opacity::None,
             attached_attribute: false,
             scope: Scope {
@@ -271,7 +275,12 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
     out
 }
 
-fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range<'a>]) -> Vec<LineFacts<'a>> {
+fn line_facts<'a>(
+    starts: &[usize],
+    raws: &[&str],
+    ranges: &'a [Range<'a>],
+    holders: &[Holder],
+) -> Vec<LineFacts<'a>> {
     let count = raws.len();
     // One pass per range over the lines it covers, instead of every range per line.
     let mut facts = vec![LineFacts::default(); count];
@@ -286,6 +295,20 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range<'a>]) -> V
             fact.flags |= LITERAL_QUOTE_PREFIX;
         }
         mark_content(&mut facts, range);
+        if !matches!(kind, "text" | "soft_break" | "hard_break")
+            && range
+                .holder
+                .and_then(|at| holders.get(at as usize)?.range)
+                .and_then(|at| ranges.get(at as usize))
+                .is_some_and(|parent| parent.kind == "paragraph")
+            && let Some(fact) = range
+                .start_line
+                .checked_sub(1)
+                .and_then(|l| facts.get_mut(l))
+            && fact.span_start.is_none_or(|known| range.start < known)
+        {
+            fact.span_start = Some(range.start);
+        }
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
         if paragraph_like || flags != 0 || kind == "line_block" {
@@ -427,6 +450,7 @@ struct LineFacts<'r> {
     paragraph: Option<&'r Range<'r>>,
     line_block: Option<&'r Range<'r>>,
     masks: Vec<&'r Range<'r>>,
+    span_start: Option<usize>,
 }
 
 fn is_opaque_leaf(kind: &str) -> bool {
@@ -719,7 +743,14 @@ fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
         .get(1)
         .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, b'.' | b'#' | b'_'));
     let complete = crate::attr::parse_glued(text, 0).is_some_and(|(_, end)| end == text.len());
-    if line.paragraph && text.starts_with('{') && opens && !complete {
+    // C2-B-090: a brace that opens an inline node of the paragraph is no failed attribute line.
+    let brace = line.text.len() - line.text.trim_start().len();
+    if line.paragraph
+        && text.starts_with('{')
+        && opens
+        && !complete
+        && line.span_start != Some(brace)
+    {
         sink.whole(
             "block-marker-as-text",
             line,

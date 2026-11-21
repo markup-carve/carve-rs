@@ -240,7 +240,7 @@ fn lint_core<'a>(
         out.push(convert_legacy_warning(warning, source, &parsed, &positions));
     }
     drop((legacy, legacy_order));
-    let line_model = lines::lines(source, &positions.all);
+    let line_model = lines::lines(source, &positions.all, &positions.holders);
     lines::scan(source, opts, &positions.all, &line_model, &mut out);
     if let Some(tree) = tree {
         nodes::scan(source, opts, tree, items, &mut out);
