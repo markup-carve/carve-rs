@@ -16,6 +16,8 @@ struct Frame<'s> {
     reach: &'s [Container],
     owner: bool,
     footnote: bool,
+    /// The line lacks the mark of a quote that holds the open leaf.
+    lazy: bool,
 }
 
 impl Frame<'_> {
@@ -53,7 +55,8 @@ impl Parser<'_> {
         // C2-B-015: a nested list opens below a paragraph only past the marker of
         // the item, description or footnote body that holds the paragraph; inside
         // a div the marker is a lazy line (C2-B-024).
-        let in_div = matches!(self.stack.last().map(|c| &c.kind), Some(Kind::Div { .. }));
+        let lazy = walk.missing_quote.is_some();
+        let in_div = !lazy && matches!(self.stack.last().map(|c| &c.kind), Some(Kind::Div { .. }));
         let owner = !in_div
             && reach.iter().any(|c| {
                 !matches!(c.kind, Kind::List { .. } | Kind::DescList { .. })
@@ -66,6 +69,7 @@ impl Parser<'_> {
                 .stack
                 .iter()
                 .any(|c| matches!(c.kind, Kind::Footnote { .. })),
+            lazy,
         }
     }
 
@@ -109,8 +113,11 @@ impl Parser<'_> {
                 leaf: Leaf::Term { .. },
                 ..
             })
-        ) && self.term_keeps(column)
-        {
+        ) && if f.lazy {
+            f.desc_lists().any(|owner| column >= owner)
+        } else {
+            self.term_keeps(column)
+        } {
             return false;
         }
         // C2-B-190: a nested marker that cannot open is paragraph text.

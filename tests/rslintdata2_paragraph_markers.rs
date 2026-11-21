@@ -37,3 +37,24 @@ fn nested_marker_in_a_div_in_an_item_is_a_lazy_line() {
         .collect();
     assert_eq!(found, [(49, 60)]);
 }
+
+#[test]
+fn marker_on_a_lazy_line_ends_a_term_in_a_quote() {
+    let html = carve::render("i) %% c\n  > :: t\n  - -\n", &carve::Options::default());
+    assert_eq!(
+        html,
+        "<ol type=\"i\" data-delim=\")\">\n  <li>\n    <blockquote>\n      <dl>\n        <dt>t</dt>\n      </dl>\n    </blockquote>\n    <ul>\n      <li>-</li>\n    </ul>\n  </li>\n</ol>"
+    );
+}
+
+#[test]
+fn marker_on_a_lazy_line_ends_a_div_paragraph_in_a_quote() {
+    let html = carve::render(
+        "1. > ::: glossary\n    > [@key]: A\n    >:::\n    - :: term $math$\n",
+        &carve::Options::default(),
+    );
+    assert_eq!(
+        html,
+        "<ol>\n  <li>\n    <blockquote>\n      <div class=\"glossary\">\n        <p>[<span class=\"mention\"><strong>@key</strong></span>]: A\n&gt;:::</p>\n      </div>\n    </blockquote>\n    <ul>\n      <li>\n        <dl>\n          <dt>term $math$</dt>\n        </dl>\n      </li>\n    </ul>\n  </li>\n</ol>"
+    );
+}
