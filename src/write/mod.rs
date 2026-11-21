@@ -328,14 +328,16 @@ fn joins_group(w: &mut Writer<'_>, before: V<'_>, node: V<'_>) -> bool {
     ty(node) == "comment" && blocks::blank_lines_between(w, before, None, node, false) == 0
 }
 
-fn is_bridged(w: &Writer<'_>, nodes: Arr<'_>, from: usize, at: usize) -> bool {
-    let mut prior = at.checked_sub(1);
-    while let Some(p) =
-        prior.filter(|&p| p >= from && nodes.get(p).is_some_and(|n| ty(n) == "comment"))
-    {
-        prior = p.checked_sub(1);
-    }
-    let Some(prior) = prior.filter(|&p| p >= from).and_then(|p| nodes.get(p)) else {
+/// `prior` is the last block of the group before `at` that is no comment, and `following` the block behind the
+/// comment lines after `at`.
+fn is_bridged<'a>(
+    w: &Writer<'_>,
+    nodes: Arr<'a>,
+    prior: Option<V<'a>>,
+    at: usize,
+    following: Option<V<'a>>,
+) -> bool {
+    let Some(prior) = prior else {
         return false;
     };
     if !matches!(ty(prior), "list" | "definition_list" | "footnote") {
@@ -343,7 +345,7 @@ fn is_bridged(w: &Writer<'_>, nodes: Arr<'_>, from: usize, at: usize) -> bool {
     }
     let node = nodes.get(at);
     let following = if node.is_some_and(|n| ty(n) == "comment") {
-        blocks::after_comments(nodes, at)
+        following
     } else {
         node
     };
@@ -352,12 +354,21 @@ fn is_bridged(w: &Writer<'_>, nodes: Arr<'_>, from: usize, at: usize) -> bool {
 
 fn group_end(w: &mut Writer<'_>, nodes: Arr<'_>, from: usize) -> usize {
     let mut end = from + 1;
+    // Kept as the group grows, so a run of comments is walked once rather than once per comment.
+    let mut prior = nodes.get(from).filter(|n| ty(*n) != "comment");
+    let mut after = 0;
     while let (Some(before), Some(node)) = (nodes.get(end - 1), nodes.get(end)) {
-        let bridged = is_bridged(w, nodes, from, end);
+        if after <= end {
+            after = blocks::comment_lines_end(nodes, end);
+        }
+        let bridged = is_bridged(w, nodes, prior, end, nodes.get(after));
         let hoisted = ty(node) == "comment" && bridged;
         let belongs = ty(before) == "comment" && bridged;
         if !hoisted && !belongs && !joins_group(w, before, node) {
             break;
+        }
+        if ty(node) != "comment" {
+            prior = Some(node);
         }
         end += 1;
     }
