@@ -1764,10 +1764,6 @@ fn source_escaped(text: &[u8], at: usize) -> bool {
 }
 
 fn github_alert(line: &Line, sink: &mut Sink<'_>) {
-    if replaced!("github-alert-marker") {
-        return;
-    }
-    let starts = line.text.trim_start_matches([' ', '\t']);
     const ALERT_TAGS: [&str; 5] = [
         "[!NOTE]",
         "[!TIP]",
@@ -1775,6 +1771,10 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
         "[!WARNING]",
         "[!CAUTION]",
     ];
+    if replaced!("github-alert-marker") {
+        return;
+    }
+    let starts = line.text.trim_start_matches([' ', '\t']);
     // GitHub also writes the alert mark immediately after `>`; this is still a
     // useful migration warning even though Carve reads the glued line as text.
     let glued = starts.strip_prefix('>').is_none_or(|rest| {
