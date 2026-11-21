@@ -513,7 +513,7 @@ pub(crate) struct Host<'a> {
     ids: RefCell<Option<super::standard::UsedIds>>,
     used_ids: &'a dyn Fn() -> super::standard::UsedIds,
     /// The declarations of the view, so a slot's extension nodes read back.
-    declared: Value,
+    declared: Option<&'a Value>,
 }
 
 impl<'a> Host<'a> {
@@ -523,7 +523,7 @@ impl<'a> Host<'a> {
         fields: &'a super::extensions::HostFields,
         opts: &'a Options,
         used_ids: &'a dyn Fn() -> super::standard::UsedIds,
-        declared: Option<&Value>,
+        declared: Option<&'a Value>,
     ) -> Self {
         Self {
             registry,
@@ -533,7 +533,7 @@ impl<'a> Host<'a> {
             failed: RefCell::new(Vec::new()),
             ids: RefCell::new(None),
             used_ids,
-            declared: declared.cloned().unwrap_or(Value::Null),
+            declared: declared.filter(|d| d.is_array()),
         }
     }
 
@@ -566,15 +566,18 @@ impl<'a> Host<'a> {
     fn render_list(&self, nodes: &Value) -> Result<String, Error> {
         let children: Vec<crate::ast::owned::Node> = serde::Deserialize::deserialize(nodes)
             .map_err(|e: serde_json::Error| Error::option("nodes", e.to_string()))?;
-        let doc = crate::ast::owned::Document {
-            ast_version: "2.0".into(),
-            children,
-            extensions: self.declared.is_array().then(|| self.declared.clone()),
+        let arena = crate::Arena::new();
+        let mut doc = crate::ast::Document {
+            ast_version: "2.0",
+            children: arena.nodes_from(&children),
+            extensions: self.declared,
             ..Default::default()
         };
         // C2-X-034: a renderer is trusted host code, and its HTML is written
         // unchanged, so the nodes it renders need no reader checks either.
-        Ok(crate::render_tree_hooked(&doc, self.opts, self).html)
+        // Only the HTML is kept, so the loss record is not built.
+        let files = crate::resolve_tree(&mut doc, self.opts, &arena);
+        Ok(crate::html::render_tree_parts(&doc, self.opts, files.as_ref(), Some(self)).0)
     }
 }
 

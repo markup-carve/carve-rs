@@ -762,7 +762,7 @@ impl Pass<'_> {
             _ => {
                 let value = serde_json::to_value(&*node)
                     .map_err(|e| Error::option("extensions", e.to_string()))?;
-                super::standard::div_source(&value, &m.name, &self.definitions)
+                super::standard::div_source_of(value, &m.name, &self.definitions)
             }
         };
         let Some(source) = source else {

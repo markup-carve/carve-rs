@@ -277,19 +277,8 @@ pub(crate) fn resolve_tree_unflattened<'a>(
 }
 
 /// [`render_tree_with_diagnostics`] with a host's extension renderers
-/// (C2-X-052). Losses are not refused here; the caller applies `strictLosses`.
-pub(crate) fn render_tree_hooked(
-    tree: &ast::owned::Document,
-    opts: &Options,
-    hook: &dyn html::ExtensionHook,
-) -> Rendered {
-    let arena = Arena::new();
-    let mut doc = tree.in_arena(&arena);
-    let files = resolve_tree(&mut doc, opts, &arena);
-    render_arena_hooked(&doc, opts, files.as_ref(), hook)
-}
-
-/// [`render_tree_hooked`] of a tree in an arena that [`resolve_tree`] resolved.
+/// (C2-X-052), of a tree in an arena that [`resolve_tree`] resolved. Losses
+/// are not refused here; the caller applies `strictLosses`.
 pub(crate) fn render_arena_hooked<'a>(
     doc: &ast::Document<'a>,
     opts: &Options,

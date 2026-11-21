@@ -335,9 +335,16 @@ fn write_claim_source(doc: &Value) -> Option<String> {
 /// C2-X-026, C2-W-089: the source record of a claimed div, its body written
 /// with the link reference definitions of the document around it.
 pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Option<Value> {
-    let mut children = vec![node.clone()];
+    div_source_of(node.clone(), name, definitions)
+}
+
+/// [`div_source`] of a div the caller gives up.
+pub(crate) fn div_source_of(node: Value, name: &str, definitions: &[Value]) -> Option<Value> {
+    let mut children = Vec::with_capacity(definitions.len() + 1);
+    children.push(node);
     children.extend(definitions.iter().cloned());
     let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
+    let node = &doc["children"][0];
     let text = write_claim_source(&doc)?;
     let lines: Vec<&str> = text.split('\n').collect();
     let open = lines.iter().position(|l| l.starts_with(":::"))?;
