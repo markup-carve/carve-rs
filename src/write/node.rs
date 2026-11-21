@@ -336,14 +336,43 @@ pub fn skipped_in(node: V<'_>, fields: Option<&Fields>, name: &str, span_marks: 
 /// The most fields a node of the tree has; a node with more is compared through a vector.
 const FIELDS: usize = 24;
 
-/// The compared fields of `node`, in key order, into `out`.
-fn compared<'t>(node: V<'t>, span_marks: bool, out: &mut Vec<(&'t str, V<'t>)>) {
-    let fields = result_fields(node);
-    node.each(&mut |k, v| {
-        if !skipped_in(node, fields, k, span_marks) {
-            out.push((k, v));
-        }
-    });
+/// The compared fields of one node, on the stack up to [`FIELDS`].
+struct Compared<'t> {
+    inline: [(&'t str, V<'t>); FIELDS],
+    len: usize,
+    spill: Vec<(&'t str, V<'t>)>,
+}
+
+impl<'t> Compared<'t> {
+    /// The compared fields of `node`, in key order.
+    fn of(node: V<'t>, span_marks: bool) -> Self {
+        let mut out = Self {
+            inline: [("", V::Null); FIELDS],
+            len: 0,
+            spill: Vec::new(),
+        };
+        let fields = result_fields(node);
+        node.each(&mut |k, v| {
+            if skipped_in(node, fields, k, span_marks) {
+                return;
+            }
+            if let Some(slot) = out.inline.get_mut(out.len) {
+                *slot = (k, v);
+                out.len += 1;
+            } else {
+                out.spill.push((k, v));
+            }
+        });
+        out
+    }
+
+    fn count(&self) -> usize {
+        self.len + self.spill.len()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &(&'t str, V<'t>)> {
+        self.inline.get(..self.len).unwrap_or(&[]).iter().chain(&self.spill)
+    }
 }
 
 /// Whether two neighbors of `items` are text nodes, which C2-A-161 compares joined.
@@ -443,12 +472,10 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
     } else {
         span_marks
     };
-    let mut l = Vec::with_capacity(FIELDS);
-    let mut r = Vec::with_capacity(FIELDS);
-    compared(a, inner, &mut l);
-    compared(b, inner, &mut r);
-    l.len() == r.len()
-        && l.iter().zip(&r).all(|((kl, p), (kr, q))| {
+    let l = Compared::of(a, inner);
+    let r = Compared::of(b, inner);
+    l.count() == r.count()
+        && l.iter().zip(r.iter()).all(|((kl, p), (kr, q))| {
             if kl != kr {
                 return false;
             }

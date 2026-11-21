@@ -235,6 +235,20 @@ pub fn add(doc: V<'_>) -> Option<Spans> {
 }
 
 fn has_any_counts(node: V<'_>) -> bool {
+    // A typed node's other views (positions, attrs, markers, scalars) hold no node.
+    if let V::Node(n) = node {
+        if let crate::ast::Node::TableCell(cell) = n
+            && (cell.colspan.unwrap_or(1) > 1 || cell.rowspan.unwrap_or(1) > 1)
+        {
+            return true;
+        }
+        let mut found = false;
+        node.each(&mut |_, value| {
+            found = found
+                || (matches!(value, V::Node(_) | V::Nodes(_) | V::Json(_)) && has_any_counts(value));
+        });
+        return found;
+    }
     if let Some(items) = node.as_array() {
         return items.iter().any(has_any_counts);
     }

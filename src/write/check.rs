@@ -196,11 +196,10 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<
         return None;
     }
     let (ef, af) = (result_fields(e), result_fields(a));
-    let mut fields = Vec::new();
-    e.each(&mut |name, field| fields.push((name, field)));
-    for (name, field) in fields {
-        if !is_compared(c, e, ef, name) {
-            continue;
+    let mut first = None;
+    e.each(&mut |name, field| {
+        if first.is_some() || !is_compared(c, e, ef, name) {
+            return;
         }
         let differs = if name == "attrs" {
             if w.sp.lost_keys.contains_key(&id(e)) {
@@ -212,8 +211,11 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<
             !same_value(field, a.get(name))
         };
         if differs {
-            return Some(name.to_string());
+            first = Some(name);
         }
+    });
+    if let Some(name) = first {
+        return Some(name.to_string());
     }
     let mut extra = None;
     a.each(&mut |name, _| {
