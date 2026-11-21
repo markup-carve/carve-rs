@@ -89,12 +89,12 @@ fn c2_i_080_c2_i_081_unresolved_reference_message_variants() {
         (
             "[a][foo]\n\n[FOO]: /u\n",
             "Reference link",
-            "the label \"FOO\" differs only in case",
+            "the label FOO differs only in case",
         ),
         (
             "![a][foo]\n\n[FOO]: /u\n",
             "Reference image",
-            "the label \"FOO\" differs only in case",
+            "the label FOO differs only in case",
         ),
         (
             "[a][foo]\n",

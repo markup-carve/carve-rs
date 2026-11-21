@@ -789,7 +789,7 @@ fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut S
         let what = if content.starts_with("~~~") {
             "a tilde fence"
         } else {
-            "a div fence"
+            "a colon fence"
         };
         let marker = line
             .text
