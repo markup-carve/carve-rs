@@ -90,6 +90,7 @@ pub fn scan<'a>(
     env: &Env<'_, 'a>,
     mut toks: Vec<Tok<'a>>,
     bufs: &mut Bufs,
+    known: usize,
 ) -> Scanned<'a> {
     let t = c.text.as_str();
     toks.clear();
@@ -121,6 +122,11 @@ pub fn scan<'a>(
         caption_done: env.kind != ContentKind::Caption,
         i: 0,
     };
+    // `known` bytes hold no form start: `step` would be false on each of them.
+    if known > 0 && known <= s.b.len() {
+        s.text_from = Some(0);
+        s.i = known;
+    }
     while s.i < s.b.len() {
         if !s.step() {
             s.text_char();
