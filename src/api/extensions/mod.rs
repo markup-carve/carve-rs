@@ -159,8 +159,10 @@ pub(crate) fn moved_fallback<'a>(
 ) -> &'a mut [crate::ast::Node<'a>] {
     let placeholder = crate::ast::Node::ThematicBreak(arena.alloc(Default::default()));
     let mut core = std::mem::replace(node, placeholder);
-    if let crate::ast::Node::CodeBlock(code) = &mut core {
-        code.attrs = None;
+    match &mut core {
+        crate::ast::Node::CodeBlock(code) => code.attrs = None,
+        crate::ast::Node::Paragraph(paragraph) => paragraph.attrs = None,
+        _ => {}
     }
     arena.one(core)
 }

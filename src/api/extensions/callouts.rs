@@ -279,8 +279,9 @@ fn declared(extensions: Option<&Value>) -> Option<Value> {
 /// The binding of the transform on a tree in an arena: a node it rewrites
 /// is built as the owned binding builds it and copied into the arena.
 mod arena {
-    use super::{code_node, item, marker, slot_has_marker};
+    use super::{item, marker, slot_has_marker};
     use crate::ast::Node;
+    use serde_json::json;
 
     fn has_marker(node: &Node<'_>) -> bool {
         matches!(node, Node::CodeBlock(code) if code.value.split('\n').any(|line| marker(line).is_some()))
@@ -326,17 +327,55 @@ mod arena {
         })
     }
 
+    /// [`super::code_node`] in the arena; the code block moves into the fallback.
+    fn code_node<'a>(node: &mut Node<'a>, arena: &'a crate::Arena) {
+        let Node::CodeBlock(code) = node else {
+            return;
+        };
+        let ext = crate::ast::BlockExtension {
+            name: super::CODE,
+            version: "1",
+            attrs: code.attrs,
+            pos: code.pos,
+            payload: Some(arena.json(json!([{"format": "text/plain", "value": code.value}]))),
+            props: code
+                .syntax
+                .map(|language| &*arena.json(json!({"language": language}))),
+            ..Default::default()
+        };
+        let ext = arena.alloc(ext);
+        ext.fallback = crate::api::extensions::moved_fallback(node, arena);
+        *node = Node::BlockExtension(ext);
+    }
+
+    /// [`super::list_node`] in the arena; the paragraph moves into the fallback.
+    fn list_node<'a>(node: &mut Node<'a>, arena: &'a crate::Arena) {
+        let Node::Paragraph(paragraph) = node else {
+            return;
+        };
+        let Ok(lines) = serde_json::to_value(&*paragraph.children) else {
+            return;
+        };
+        let ext = crate::ast::BlockExtension {
+            name: super::LIST,
+            version: "1",
+            attrs: paragraph.attrs,
+            pos: paragraph.pos,
+            slots: Some(arena.json(json!({"lines": lines}))),
+            ..Default::default()
+        };
+        let ext = arena.alloc(ext);
+        ext.fallback = crate::api::extensions::moved_fallback(node, arena);
+        *node = Node::BlockExtension(ext);
+    }
+
     fn bind<'a>(nodes: &mut [Node<'a>], arena: &'a crate::Arena) {
         let mut at = 0;
         while let Some(node) = nodes.get_mut(at) {
             if has_marker(node) {
-                if let Node::CodeBlock(code) = node {
-                    *node = code_node(&code.owned()).in_arena(arena);
-                }
+                code_node(node, arena);
                 if let Some(next) = nodes.get_mut(at + 1).filter(|n| is_list(n)) {
-                    if let Node::Paragraph(paragraph) = next {
-                        *next = super::list_node(&paragraph.owned()).in_arena(arena);
-                    }
+                    list_node(next, arena);
                     at += 1;
                 }
             }
@@ -356,6 +395,10 @@ mod arena {
                 _ => false,
             };
             if slots {
+                // Nothing to bind in it: the owned binding would leave it as it is.
+                if !any_marker(std::slice::from_ref(node), depth) {
+                    continue;
+                }
                 // A node with slots binds as the owned tree does; its own
                 // level is bound above, so `bind` finds nothing on it again.
                 let mut one = vec![node.owned()];
