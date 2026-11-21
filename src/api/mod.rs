@@ -42,6 +42,7 @@ pub mod extensions;
 mod hub;
 mod img_fence;
 mod import;
+pub mod incremental;
 mod info;
 pub mod json;
 pub(crate) mod layout;
@@ -50,6 +51,7 @@ mod options;
 mod patch;
 mod record;
 mod standard;
+pub mod stream;
 pub mod writer;
 
 pub use crate::ast::owned::Document;
@@ -69,12 +71,17 @@ pub use extension::{
 };
 pub use hub::ImportFormat;
 pub use import::{ImportAdapter, ImportOptions, Imported, LossOptions, import_document};
+pub use incremental::{
+    IncrementalParse, IncrementalParseError, NodeIdentity, NodeIdentityEntry, ParserSnapshot,
+    TextChange, parse_snapshot, parse_snapshot_with_identity, reparse,
+};
 pub use info::{
     NODE_TYPES, NodeTypes, Position, SPEC_VERSION, SpecVersion, VERSION, heading_id, position_of,
 };
 pub use migrate::{MigrateOptions, Migrated, migrate_tree_with};
 pub use patch::{apply_patch, diff_tree, source_fingerprint, tree_fingerprint};
 pub use record::{Entry, Range};
+pub use stream::{StreamOutcome, try_render_html_streaming};
 pub use writer::{CarveWriter, HtmlWriter, WriteOptions, Writer, Writers, Written};
 
 use crate::Arena;
