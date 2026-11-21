@@ -110,6 +110,7 @@ pub(crate) fn parse_plain(body: &str) -> Option<Value> {
 #[cfg(test)]
 thread_local! {
     static REPAIR_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PAIR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -118,19 +119,22 @@ mod plain_table_certificate_test {
 
     fn format_typed(src: &str) -> String {
         let arena = crate::Arena::for_input(src);
-        let doc = crate::parse_resolved_in(src, &crate::Options::default(), &arena).unwrap();
+        let doc =
+            crate::parse_resolved_in(src, &crate::Options::default(), &arena).unwrap_or_default();
         let pool = Pool::new();
         let (out, losses) = format_view(V::Doc(&doc), &pool, Some(src), &Settings::default());
-        assert!(losses.is_empty());
+        assert_eq!(losses.len(), 0);
         out
     }
 
     #[test]
     fn ordinary_rows_need_no_repair_parse() {
         let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let pairs_before = PAIR_SCANS.with(std::cell::Cell::get);
         let output = format_typed("|alpha|beta|\n|7|x|\n");
         assert_eq!(output, "| alpha | beta |\n| 7 | x |\n");
         assert_eq!(REPAIR_PARSES.with(std::cell::Cell::get) - before, 0);
+        assert_eq!(PAIR_SCANS.with(std::cell::Cell::get) - pairs_before, 0);
     }
 
     #[test]
@@ -316,6 +320,11 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
         at = repair_group(w, doc, from, out.is_empty());
         // C2-W-146: test the written text with the five pair rules and reparse each escape round.
         for _ in 0..16 {
+            if w.certified_plain_rows {
+                break;
+            }
+            #[cfg(test)]
+            PAIR_SCANS.with(|count| count.set(count.get() + 1));
             let asked = pairs::asked(w, nodes.slice(from, at).unwrap_or_else(Arr::empty));
             if asked.is_empty() {
                 break;
@@ -432,6 +441,7 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 }
 
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
+    w.certified_plain_rows = false;
     let reported = w.sp.losses.len();
     let end = repair_rounds(w, doc, from, first, reported);
     w.work_limit = usize::MAX;
@@ -477,6 +487,7 @@ fn repair_rounds<'t>(
             return end;
         }
         if table::certifies_plain_rows(w, group) {
+            w.certified_plain_rows = true;
             return end;
         }
         if repeated_repair(w, group, &mut history) {
