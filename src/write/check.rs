@@ -1476,6 +1476,15 @@ fn match_text<'t>(
     if ty(a) != "text" {
         return skip_construct(w, c, e, es, a, at);
     }
+    // A prior lost node does not license a later field to disappear silently.
+    if !c.losses.is_empty() {
+        for name in ["lang", "dir", "metadata", "attrs", "data"] {
+            if e.get(name).is_some() && a.get(name).is_none() {
+                c.losses.push((e, Some(String::new())));
+                break;
+            }
+        }
+    }
     if !match_characters(w, c, e, a, at) {
         return false;
     }
@@ -1810,6 +1819,71 @@ fn resync<'t>(
     false
 }
 
+/// A paragraph can drop leading indentation of one supplied text while its
+/// surviving suffix joins the next node. Resume behind the surviving suffix.
+fn step_over_lost_text(c: &mut Check<'_>, es: &[N<'_>], as_: Arr<'_>, at: &mut Cursor) -> bool {
+    let (Some(&expected), Some(actual)) = (es.get(at.i), as_.get(at.j)) else {
+        return false;
+    };
+    if ty(expected) != "text" || ty(actual) != "text" || at.vi != 0 {
+        return false;
+    }
+    let value = text(expected);
+    let kept = value.trim_start_matches([' ', '\t']);
+    if kept.len() == value.len()
+        || !text(actual)
+            .get(at.aj..)
+            .is_some_and(|rest| rest.starts_with(kept))
+    {
+        return false;
+    }
+    if ["lang", "dir", "metadata", "attrs", "data"]
+        .into_iter()
+        .any(|name| expected.get(name).is_some())
+        && let Some((node, field)) = c.losses.last_mut()
+        && id(*node) == id(expected)
+    {
+        *field = Some(String::new());
+    }
+    at.i += 1;
+    at.aj += kept.len();
+    if at.aj == text(actual).len() {
+        at.j += 1;
+        at.aj = 0;
+    }
+    true
+}
+
+/// A failed comparison on one line cannot hide constructs on a later line of
+/// the same paragraph. Resume only at breaks whose source lines still align.
+fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut Cursor) -> bool {
+    let mut i = at.i + 1;
+    while i < es.len() && !is_break(es.get(i).copied()) {
+        i += 1;
+    }
+    let mut j = at.j;
+    while j < as_.len() && !is_break(as_.get(j)) {
+        j += 1;
+    }
+    let (Some(&expected), Some(actual)) = (es.get(i), as_.get(j)) else {
+        return false;
+    };
+    if ty(expected) != ty(actual)
+        || super::node::pos_field(expected, "startLine")
+            != super::node::pos_field(actual, "startLine")
+    {
+        return false;
+    }
+    if c.changes() == 0 {
+        c.losses.extend(es[at.i..i].iter().map(|e| (*e, None)));
+    }
+    at.i = i + 1;
+    at.j = j + 1;
+    at.vi = 0;
+    at.aj = 0;
+    true
+}
+
 fn compare_inlines<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
@@ -1828,7 +1902,11 @@ fn compare_inlines<'t>(
         } else {
             match_node(w, c, e, es, as_, &mut at, owner)
         };
-        if !more && !resync(w, c, es, as_, &mut at) {
+        if !more
+            && !resync(w, c, es, as_, &mut at)
+            && !step_over_lost_text(c, es, as_, &mut at)
+            && !resync_next_line(c, es, as_, &mut at)
+        {
             done = true;
             break;
         }
