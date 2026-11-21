@@ -24,6 +24,9 @@ pub(super) struct Line {
     pub(super) content: Option<usize>,
     /// Where the first non-text inline child of a paragraph starts on this line.
     span_start: Option<usize>,
+    /// Whether a text leaf block holds this line, and where that leaf starts when it starts on it.
+    leaf: bool,
+    leaf_start: Option<usize>,
     opacity: Opacity,
     attached_attribute: bool,
     scope: Scope,
@@ -228,6 +231,11 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>], holders: &[Holder]) -> V
                 .filter(|at| *at >= start && *at <= start + raw.len())
                 .map(|at| at - start),
             span_start: fact.span_start.map(|at| at.saturating_sub(start)),
+            leaf: fact.leaf.is_some(),
+            leaf_start: fact
+                .leaf
+                .filter(|range| range.start >= start && range.start < start + raw.len())
+                .map(|range| range.start - start),
             opacity: if fact.flags & FRONTMATTER != 0 {
                 Opacity::Frontmatter
             } else if fact.flags & OPAQUE != 0 {
@@ -264,6 +272,8 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>], holders: &[Holder]) -> V
             content_start: None,
             content: None,
             span_start: None,
+            leaf: false,
+            leaf_start: None,
             opacity: Opacity::None,
             attached_attribute: false,
             scope: Scope {
@@ -296,6 +306,7 @@ fn line_facts<'a>(
         }
         mark_content(&mut facts, range);
         mark_span_start(&mut facts, range, ranges, holders);
+        mark_leaf(&mut facts, range, ranges, holders);
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
         if paragraph_like || flags != 0 || kind == "line_block" {
@@ -414,6 +425,54 @@ fn mark_span_start(
     }
 }
 
+fn text_leaf(kind: &str) -> bool {
+    matches!(
+        kind,
+        "paragraph" | "caption" | "definition_term" | "heading" | "line"
+    )
+}
+
+/// The innermost text leaf block that holds each line, as the data model's `leaf` (C2-W-139).
+fn mark_leaf<'r>(
+    facts: &mut [LineFacts<'r>],
+    range: &'r Range<'r>,
+    ranges: &[Range<'_>],
+    holders: &[Holder],
+) {
+    if !text_leaf(range.kind) {
+        return;
+    }
+    // A block inside a leaf, such as a caption's paragraph, is no leaf of its own.
+    let mut holder = range.holder;
+    while let Some(at) = holder {
+        let Some(up) = holders.get(at as usize) else {
+            break;
+        };
+        if up
+            .range
+            .and_then(|r| ranges.get(r as usize))
+            .is_some_and(|r| text_leaf(r.kind))
+        {
+            return;
+        }
+        holder = up.up;
+    }
+    let first = range.start_line.max(1) - 1;
+    let count = facts.len();
+    for fact in facts
+        .get_mut(first..range.end_line.min(count))
+        .into_iter()
+        .flatten()
+    {
+        if fact
+            .leaf
+            .is_none_or(|known| known.path.len() <= range.path.len())
+        {
+            fact.leaf = Some(range);
+        }
+    }
+}
+
 /// A leaf block starts its first line's text, and each break ends where the next line's text starts.
 fn mark_content(facts: &mut [LineFacts<'_>], range: &Range<'_>) {
     let content = match range.kind {
@@ -461,6 +520,7 @@ struct LineFacts<'r> {
     line_block: Option<&'r Range<'r>>,
     masks: Vec<&'r Range<'r>>,
     span_start: Option<usize>,
+    leaf: Option<&'r Range<'r>>,
 }
 
 fn is_opaque_leaf(kind: &str) -> bool {
@@ -747,23 +807,38 @@ fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut S
 }
 
 fn attribute_line_like(line: &Line, sink: &mut Sink<'_>) {
-    let text = line.text.trim();
-    let opens = text
-        .as_bytes()
-        .get(1)
-        .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, b'.' | b'#' | b'_'));
-    let complete = crate::attr::parse_glued(text, 0).is_some_and(|(_, end)| end == text.len());
+    if !line.leaf {
+        return;
+    }
+    // The candidate starts at the leaf on its first line, else after the line's quote marks.
+    let (at, candidate) = line.leaf_start.map_or_else(
+        || {
+            let mut at = line.text.len() - line.text.trim_start_matches([' ', '\t']).len();
+            while line
+                .text
+                .get(at..)
+                .is_some_and(|rest| rest.starts_with("> "))
+            {
+                at += 2;
+                at += line.text[at..].len() - line.text[at..].trim_start_matches([' ', '\t']).len();
+            }
+            (at, &line.text[at..])
+        },
+        |at| (at, line.text.get(at..).unwrap_or("")),
+    );
+    let candidate = candidate.trim_end_matches([' ', '\t']);
+    let opens = candidate.starts_with('{')
+        && candidate
+            .as_bytes()
+            .get(1)
+            .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, b'.' | b'#' | b'_'));
     // C2-B-090: a brace that opens an inline node of the paragraph is no failed attribute line.
-    let brace = line.text.len() - line.text.trim_start().len();
-    if line.paragraph
-        && text.starts_with('{')
-        && opens
-        && !complete
-        && line.span_start != Some(brace)
-    {
-        sink.whole(
+    if opens && !valid_attribute_line(candidate) && line.span_start != Some(at) {
+        sink.emit(
             "block-marker-as-text",
-            line,
+            line.start + at,
+            line.start + at + candidate.len(),
+            &line.path,
             &[("what", "an attribute line")],
         );
     }
