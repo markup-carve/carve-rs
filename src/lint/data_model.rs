@@ -505,7 +505,11 @@ impl<'a> Records<'a> {
     pub fn ancestors(&self, leaf: Option<u32>) -> impl Iterator<Item = &'a str> + '_ {
         let mut holder = leaf.and_then(|at| self.ranges[at as usize].holder);
         let mut done = leaf.is_none();
-        std::iter::from_fn(move || {
+        // A caption holds its own text, so the caption is the first block of the line.
+        let caption = leaf
+            .filter(|&at| self.ranges[at as usize].kind == "caption")
+            .map(|_| "caption");
+        caption.into_iter().chain(std::iter::from_fn(move || {
             while let Some(at) = holder {
                 let node = &self.holders[at as usize];
                 holder = node.up;
@@ -518,7 +522,7 @@ impl<'a> Records<'a> {
             }
             done = true;
             Some("document")
-        })
+        }))
     }
 
     /// The content and marker columns of the node at a holder's path.
@@ -1068,13 +1072,6 @@ impl<'a> Records<'a> {
                 },
                 |at| line.start + at,
             );
-            let body_start = if leaf_kind == "caption"
-                && leaf_range.is_some_and(|range| range.start_line == index + 1)
-            {
-                caption_text(source, body_start)
-            } else {
-                body_start
-            };
             let from = body_start.saturating_sub(line.start).min(line_text.len());
             let body = trim_end(line_text.get(from..).unwrap_or(""));
             let first_colon = self.line_colons.len() as u32;
@@ -1334,12 +1331,4 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
         at = ((from + mark).min(to), at.1 + 1);
     }
     at
-}
-
-/// C2-B-147: the text of an attached caption starts behind its `^` mark and the spaces after it.
-fn caption_text(source: &str, at: usize) -> usize {
-    let Some(rest) = source.get(at..).and_then(|rest| rest.strip_prefix('^')) else {
-        return at;
-    };
-    source.len() - rest.trim_start_matches([' ', '\t']).len()
 }
