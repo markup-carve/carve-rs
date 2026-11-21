@@ -13,6 +13,11 @@ use serde_json::{Map, Value, json};
 pub(super) fn build(source: &str, tree: &Tree, input: Input<'_>) -> Result<Value, Error> {
     let document =
         super::deep_json(tree.json()).map_err(|error| Error::option("tree", error.to_string()))?;
+    Ok(build_from(source, &document, input))
+}
+
+/// [`build`] from the encoded tree as a value.
+pub(super) fn build_from(source: &str, document: &Value, input: Input<'_>) -> Value {
     let (encoding, original) = match input {
         Input::Bytes(bytes) if std::str::from_utf8(bytes).is_err() => ("base64", base64(bytes)),
         _ => ("utf-8", source.to_string()),
@@ -28,12 +33,12 @@ pub(super) fn build(source: &str, tree: &Tree, input: Input<'_>) -> Result<Value
         },
         tables: tables(source),
     };
-    walk.visit(&document, "", Frame::document(source));
-    Ok(json!({
+    walk.visit(document, "", Frame::document(source));
+    json!({
         "version": 2, "encoding": encoding, "source": original,
         "lineEndings": line_endings(source), "bom": source.starts_with('\u{feff}'),
         "nodes": walk.nodes,
-    }))
+    })
 }
 
 /// The layout entries of a parsed UTF-8 document, as the lint model reads them (C2-W-150).

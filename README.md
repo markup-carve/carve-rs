@@ -58,6 +58,31 @@ assert_eq!(api::render_tree(&again, &opts)?, api::render("# Title", &opts)?);
 # Ok::<(), carve::api::Error>(())
 ```
 
+## Streaming render and editor sessions
+
+These keep the 0.1 names and are also exported at the crate root.
+
+- `api::try_render_html_streaming(source, &Options, sink) -> StreamOutcome` renders and hands the HTML to `sink` in UTF-8 chunks of at most 4096 bytes. On `StreamOutcome::Complete` the chunks concatenate to `api::render`. A render that `api::render` refuses returns `StreamOutcome::NeedsAst` and never calls the sink.
+- `api::parse_snapshot(source)` and `api::parse_snapshot_with_identity(source)` return `IncrementalParse { document, source_layout_json, snapshot, changed_source, reused_previous_tree, parsed_source_bytes, node_identity }`. `api::reparse(snapshot, &[TextChange { range, replacement }])` applies nonoverlapping UTF-8 byte-range edits in the previous snapshot's coordinates and returns the next `IncrementalParse`. Its tree and layout always equal a fresh `api::parse_with_layout` of the new source. An edit inside a document of one-line plain paragraphs parses only the edited paragraph. With identity, a node outside the edited ranges whose content did not change keeps its id.
+
+```rust
+use carve::api::{self, Options, StreamOutcome, TextChange};
+
+let mut html = String::new();
+let outcome = api::try_render_html_streaming("Hello *world*", &Options::default(), |chunk| {
+    html.push_str(chunk);
+});
+assert_eq!(outcome, StreamOutcome::Complete);
+assert_eq!(html, api::render("Hello *world*", &Options::default())?);
+
+let first = api::parse_snapshot("first\n\nsecond").expect("parses");
+let edit = TextChange { range: 7..13, replacement: "revised".into() };
+let next = api::reparse(first.snapshot, &[edit]).expect("valid edit");
+assert_eq!(next.snapshot.source(), "first\n\nrevised");
+assert!(next.reused_previous_tree);
+# Ok::<(), carve::api::Error>(())
+```
+
 ## Options
 
 `api::Options` holds the parse, resolution and render options of `data/options.json` (`heading_ids`, `mode`, `profile`, `raw_html`, `url_policy`, `includes` and the rest). `api::LintOptions` holds `rules`, `platforms`, `heading_ids` and `includes`; `carve lint --heading-ids MODE` uses that same heading ID policy for fragment links. The JSON `importDocument` call accepts `labels` for generated accessible names, such as `admonitionNote`. `api::WriteOptions` holds `align_tables`, `normalize` and the render options a writer reads.
@@ -287,7 +312,8 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `bbcode_to_carve`, `migrate_bbcode` | gone: BBCode import stays in carve-js |
 | `create_ast_patch`, `apply_ast_patch`, `ast_patch_to_json`, `ast_patch_from_json`, `create_reversible_ast_patch`, `apply_reversible_ast_patch` | gone: 0.2 has no patch API (`UPGRADING.md`, Part 2) |
 | `merge_ast`, `merge_ast_with_resolver` | gone: no merge API in 0.2 |
-| `parse_snapshot`, `reparse` | gone: no incremental or editor API in 0.2 |
+| `parse_snapshot`, `parse_snapshot_with_identity`, `reparse` | same names in `api` and at the crate root: the snapshots hold 0.2 trees |
+| `try_render_html_streaming` | same name in `api` and at the crate root |
 | `to_prosemirror`, `from_prosemirror` | gone: not part of 0.2 |
 | `decision_trace`, `parse_locator` | gone: 0.1 debugging aids |
 | `stamp_carve`, `read_stamp`, `needs_review` | gone: version stamps belong to the 0.1 upgrade flow; the rewrite tool is part of carve-js |

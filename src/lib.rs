@@ -99,6 +99,12 @@ struct ReadmeExamples;
 #[doc(hidden)]
 pub use options::Options;
 
+pub use api::incremental::{
+    IncrementalParse, IncrementalParseError, ParserSnapshot, TextChange, parse_snapshot,
+    parse_snapshot_with_identity, reparse,
+};
+pub use api::stream::{StreamOutcome, try_render_html_streaming};
+
 #[doc(hidden)]
 /// Parses source into the pre-resolve tree (stage parse), in `arena`. Text
 /// values that are slices of the input borrow it.
