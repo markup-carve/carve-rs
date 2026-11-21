@@ -478,6 +478,14 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         "table" => "table row",
         _ => return,
     };
+    // `${kind}` in the catalog row: "quote", "div", or the type in words.
+    let label = match item.node.ty().as_str().unwrap_or("") {
+        "definition_term" => "definition term",
+        "code_block" => "code block",
+        "raw_block" => "raw block",
+        "table" => "table",
+        _ => kind,
+    };
     let Some((from, _)) = item.bounds else {
         return;
     };
@@ -576,7 +584,7 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         },
         item.path(),
         &[
-            ("kind", kind),
+            ("kind", label),
             ("past", &past.to_string()),
             ("columns", if past == 1 { "column" } else { "columns" }),
             ("owner", &owner),
