@@ -40,10 +40,8 @@ impl Chunk {
 
     /// The tree with the definitions of the document `w` writes.
     pub fn parse<'c>(&'c self, w: &mut Writer<'_>) -> V<'c> {
-        let keys = std::mem::take(&mut w.link_keys);
-        let doc = self.parse_keys(w, Some(&keys));
-        w.link_keys = keys;
-        doc
+        let keys = std::sync::Arc::clone(&w.link_keys);
+        self.parse_keys(w, Some(&keys))
     }
 
     /// The pre-resolve tree with the link keys `keys` and the abbreviations of

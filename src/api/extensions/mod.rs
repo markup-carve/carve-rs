@@ -364,19 +364,20 @@ impl Matchers {
         opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
     ) -> Result<Vec<Entry>, Error> {
-        let definitions = doc
-            .children
-            .iter()
-            .filter(|node| matches!(node, crate::ast::owned::Node::LinkReferenceDefinition(_)))
-            .map(serde_json::to_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| Error::option("extensions", e.to_string()))?;
+        let keys = std::sync::Arc::new(
+            doc.children
+                .iter()
+                .filter_map(|node| match node {
+                    crate::ast::owned::Node::LinkReferenceDefinition(d) => Some(d.key.to_string()),
+                    _ => None,
+                })
+                .collect(),
+        );
         let mut pass = Pass {
             matchers: self,
             opener,
             declared,
-            definitions,
-            definition_nodes: Vec::new(),
+            keys,
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -445,23 +446,20 @@ impl Matchers {
             }
             failure.map_or(Ok(()), Err)
         }
-        let definition_nodes: Vec<crate::ast::owned::Node> = doc
-            .children
-            .iter()
-            .filter(|node| matches!(node, Node::LinkReferenceDefinition(_)))
-            .map(Node::owned)
-            .collect();
-        let definitions = definition_nodes
-            .iter()
-            .map(serde_json::to_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| Error::option("extensions", e.to_string()))?;
+        let keys = std::sync::Arc::new(
+            doc.children
+                .iter()
+                .filter_map(|node| match node {
+                    Node::LinkReferenceDefinition(d) => Some(d.key.to_string()),
+                    _ => None,
+                })
+                .collect(),
+        );
         let mut pass = Pass {
             matchers: self,
             opener,
             declared,
-            definitions,
-            definition_nodes,
+            keys,
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -534,8 +532,12 @@ impl Matchers {
             matchers: self,
             opener,
             declared,
-            definitions: super::standard::definitions(doc),
-            definition_nodes: Vec::new(),
+            keys: crate::write::link_keys(
+                doc.get("children")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten(),
+            ),
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -694,9 +696,8 @@ struct Pass<'a> {
     matchers: &'a Matchers,
     opener: &'a dyn Fn(Option<&str>, usize) -> Option<String>,
     declared: &'a dyn Fn(&str) -> Option<ExtensionDeclaration>,
-    definitions: Vec<Value>,
-    /// The definitions as typed nodes, for the typed claims.
-    definition_nodes: Vec<crate::ast::owned::Node>,
+    /// The keys of the link reference definitions of the document.
+    keys: crate::write::LinkKeys,
     used: Vec<ExtensionDeclaration>,
     entries: Vec<Entry>,
 }
@@ -766,7 +767,7 @@ impl Pass<'_> {
         };
         let source = match node {
             Node::CodeBlock(code) => Some(typed_fence_source(&m.name, code)?),
-            _ => super::standard::div_source_typed(node, &m.name, &self.definition_nodes),
+            _ => super::standard::div_source_typed(node, &m.name, &self.keys),
         };
         let Some(source) = source else {
             self.fail(
@@ -871,7 +872,7 @@ impl Pass<'_> {
     }
 
     fn try_claim(&mut self, m: &Matcher, map: &Map<String, Value>, node: &Value) -> Attempt {
-        let Some(source) = source_record(m.form, &m.name, map, &self.definitions) else {
+        let Some(source) = source_record(m.form, &m.name, map, &self.keys) else {
             self.fail(
                 "extension-transform-failed",
                 &format!(
@@ -1011,10 +1012,10 @@ fn source_record(
     form: Form,
     name: &str,
     map: &Map<String, Value>,
-    definitions: &[Value],
+    keys: &crate::write::LinkKeys,
 ) -> Option<Value> {
     match form {
-        Form::Div => super::standard::div_source(&Value::Object(map.clone()), name, definitions),
+        Form::Div => super::standard::div_source(&Value::Object(map.clone()), name, keys),
         Form::Inline => Some(json!({
             "form": "inline",
             "name": name,

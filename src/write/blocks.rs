@@ -927,10 +927,13 @@ fn block_extension<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32
                 format!("{attrs}\n{spelling}")
             };
             let chunk = super::check::Chunk::new(probe);
-            let parsed = children(chunk.parse_keys(w, None)).first();
             let same = if w.extensions.is_empty() {
+                let parsed = children(chunk.parse_keys(w, None)).first();
                 super::extension::source_core_equivalent(node, parsed)
             } else {
+                // C2-X-026: the body was written in the document's context, so a
+                // shortcut reference in it reads back with the document's keys.
+                let parsed = children(chunk.parse(w)).first();
                 parsed.is_some_and(|p| super::node::trees_equal(node, p))
             };
             if same {

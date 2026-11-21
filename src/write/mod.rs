@@ -33,6 +33,21 @@ use serde_json::Value;
 use state::{GroupCertificate, Writer, lose};
 use std::collections::HashSet;
 
+/// The link keys of a document, shared by the nested writes of its source bodies.
+pub(crate) type LinkKeys = std::sync::Arc<HashSet<String>>;
+
+/// The keys of the link reference definitions among `nodes`, as the writer reads them.
+pub(crate) fn link_keys<'n>(nodes: impl IntoIterator<Item = &'n Value>) -> LinkKeys {
+    std::sync::Arc::new(
+        nodes
+            .into_iter()
+            .filter(|n| ty(*n) == "link_reference_definition")
+            .filter_map(|n| node::s(n, "key"))
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
 /// How one write runs.
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
@@ -44,6 +59,8 @@ pub struct Settings {
     pub layout: Option<Vec<facts::Entry>>,
     /// The source of the tree, for C2-W-144; `None` for a supplied tree.
     pub source: Option<String>,
+    /// The link keys of the document around a nested write, in place of its definitions.
+    pub link_keys: Option<LinkKeys>,
 }
 
 impl Settings {
@@ -112,6 +129,42 @@ pub(crate) fn parse_plain(body: &str) -> Option<Value> {
 thread_local! {
     static REPAIR_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PAIR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static WRITTEN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod nested_write_test {
+    use super::WRITTEN_BLOCKS;
+
+    /// The top-level blocks every write of a format with `carve.tabs` takes,
+    /// nested source-body writes included.
+    fn blocks_written(groups: usize) -> usize {
+        let unit = |k: usize| {
+            format!(
+                ":::: tabs\n::: tab \"T0\"\nsee [x{k}][r{k}]\n:::\n\n::: tab \"T1\"\nb\n:::\n::::\n\n[r{k}]: http://x/{k}\n"
+            )
+        };
+        let src: String = (0..groups).map(unit).collect::<Vec<_>>().join("\n");
+        let opts = crate::api::WriteOptions {
+            extensions: vec!["carve.tabs".into()],
+            ..crate::api::WriteOptions::default()
+        };
+        let before = WRITTEN_BLOCKS.with(std::cell::Cell::get);
+        let output = crate::api::Carve::new()
+            .format_with_diagnostics(src.as_str(), &opts)
+            .map_or_else(|e| e.to_string(), |w| w.output);
+        assert_eq!(output, src);
+        WRITTEN_BLOCKS.with(std::cell::Cell::get) - before
+    }
+
+    #[test]
+    fn source_bodies_do_not_copy_every_definition() {
+        let (small, large) = (blocks_written(8), blocks_written(32));
+        assert!(
+            large <= small * 5,
+            "8 groups write {small} blocks, 32 groups {large}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -302,12 +355,19 @@ fn write_tree<'t>(
             name: "tabs".into(),
         });
     }
-    w.link_keys = children(doc)
-        .iter()
-        .filter(|n| ty(n) == "link_reference_definition")
-        .filter_map(|n| node::s(n, "key"))
-        .map(str::to_string)
-        .collect();
+    w.link_keys = match &settings.link_keys {
+        Some(keys) => std::sync::Arc::clone(keys),
+        None => std::sync::Arc::new(
+            children(doc)
+                .iter()
+                .filter(|n| ty(n) == "link_reference_definition")
+                .filter_map(|n| node::s(n, "key"))
+                .map(str::to_string)
+                .collect(),
+        ),
+    };
+    #[cfg(test)]
+    WRITTEN_BLOCKS.with(|count| count.set(count.get() + children(doc).len()));
     if let Some(entries) = &settings.layout {
         facts::read(&mut w, doc, entries);
     }
