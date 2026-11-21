@@ -6,7 +6,133 @@ use super::inline::{IN_CELL, line_comment_text, write_inlines};
 use super::node::{N, children, has, id, list, s, text, ty};
 use super::state::{Writer, emit, lose, lose_key};
 use super::width_data::{GCB, INCB_CONSONANT, INCB_EXTEND, INCB_LINKER, PICT, WIDE};
+use crate::ast::Node as AstNode;
 use crate::view::{Arr, V};
+
+/// A plain pipe table whose emitted rows are their own read-back certificate.
+/// The restricted alphabet cannot start a block or inline construct, and the
+/// exact row spelling below fixes the table parser's cell boundaries.
+macro_rules! plain_meta {
+    ($n:expr) => {
+        $n.attrs.is_none()
+            && $n.data.is_none()
+            && $n.dir.is_none()
+            && $n.lang.is_none()
+            && $n.metadata.is_none()
+    };
+}
+
+pub(super) fn certifies_plain_rows(w: &Writer<'_>, group: Arr<'_>) -> bool {
+    if w.align_tables
+        || !w.abbreviations.is_empty()
+        || !w.extensions.is_empty()
+        || !w.sp.escapes.is_empty()
+        || group.len() != 1
+    {
+        return false;
+    }
+    let Some(V::Node(AstNode::Table(table))) = group.first() else {
+        return false;
+    };
+    certifies_plain_table(w, table)
+}
+
+fn certifies_plain_table(w: &Writer<'_>, table: &crate::ast::Table<'_>) -> bool {
+    if !plain_meta!(table)
+        || table.caption.is_some()
+        || table.children.len() != 1
+        || table.columns.is_empty()
+        || !table.columns.iter().all(plain_column)
+    {
+        return false;
+    }
+    let Some(AstNode::TableBody(body)) = table.children.first() else {
+        return false;
+    };
+    if !plain_meta!(body)
+        || body.row_head_columns.is_some()
+        || body.children.is_empty()
+        || body.children.len() != w.lines.len()
+    {
+        return false;
+    }
+    body.children.iter().zip(&w.lines).all(|(node, written)| {
+        let AstNode::TableRow(row) = node else {
+            return false;
+        };
+        plain_row(row, table.columns.len(), written)
+    })
+}
+
+fn plain_column(node: &AstNode<'_>) -> bool {
+    let AstNode::TableColumn(c) = node else {
+        return false;
+    };
+    plain_meta!(c) && c.align.is_none() && c.valign.is_none() && c.width.is_none()
+}
+
+fn plain_row(row: &crate::ast::TableRow<'_>, ncols: usize, written: &str) -> bool {
+    if !plain_meta!(row) || row.children.len() != ncols {
+        return false;
+    }
+    let Some(mut rest) = written.strip_prefix('|') else {
+        return false;
+    };
+    for node in row.children.iter() {
+        let AstNode::TableCell(cell) = node else {
+            return false;
+        };
+        let Some(next) = plain_cell(cell, rest) else {
+            return false;
+        };
+        rest = next;
+    }
+    rest.is_empty()
+}
+
+fn plain_cell_options(cell: &crate::ast::TableCell<'_>) -> bool {
+    plain_meta!(cell)
+        && !cell.header
+        && cell.align.is_none()
+        && cell.valign.is_none()
+        && cell.span.is_none()
+        && cell.colspan.is_none()
+        && cell.rowspan.is_none()
+        && cell.scope.is_none()
+        && cell.header_ids.is_none()
+}
+
+fn plain_cell<'a>(cell: &crate::ast::TableCell<'_>, written: &'a str) -> Option<&'a str> {
+    if !plain_cell_options(cell) || cell.children.len() != 1 {
+        return None;
+    }
+    let AstNode::CellParagraph(paragraph) = cell.children.first()? else {
+        return None;
+    };
+    if !plain_meta!(paragraph) || paragraph.children.len() > 1 {
+        return None;
+    }
+    let value = match paragraph.children.first() {
+        None => "",
+        Some(AstNode::Text(t)) if plain_meta!(t) && !t.value.is_empty() => t.value,
+        _ => return None,
+    };
+    let value = value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric())
+        .then_some(value)?;
+    consume_plain_cell(written, value)
+}
+
+fn consume_plain_cell<'a>(written: &'a str, value: &str) -> Option<&'a str> {
+    let rest = written.strip_prefix(' ')?.strip_prefix(value)?;
+    let rest = if value.is_empty() {
+        rest
+    } else {
+        rest.strip_prefix(' ')?
+    };
+    rest.strip_prefix('|')
+}
 
 const MIN_RUN: usize = 3;
 
@@ -284,13 +410,15 @@ fn fragment_lines(w: &Writer<'_>, row: V<'_>, cell: V<'_>, count: usize) -> Opti
 
 struct WrittenCell {
     prefix: String,
-    parts: Vec<String>,
+    first: String,
+    extra: Vec<String>,
     places: Vec<i64>,
 }
 
 struct WrittenRow {
     lines: Vec<Vec<String>>,
     attribute: String,
+    direct: Option<String>,
 }
 
 fn written_cell<'t>(
@@ -309,20 +437,26 @@ fn written_cell<'t>(
     if let Some(mark) = span {
         return WrittenCell {
             prefix: if head { "=".into() } else { String::new() },
-            parts: vec![mark.into()],
+            first: mark.into(),
+            extra: Vec::new(),
             places: Vec::new(),
         };
     }
     let content = cell_content(w, cell, flags);
-    let mut parts: Vec<String> = if content.contains('\n') {
-        content.split('\n').map(str::to_string).collect()
-    } else {
-        vec![content]
-    };
+    if !content.contains('\n') {
+        return WrittenCell {
+            prefix: cell_prefix(w, cell, bare),
+            first: content,
+            extra: Vec::new(),
+            places: Vec::new(),
+        };
+    }
+    let mut parts: Vec<String> = content.split('\n').map(str::to_string).collect();
     if let Some(places) = fragment_lines(w, row, cell, parts.len() - 1) {
         return WrittenCell {
             prefix: cell_prefix(w, cell, bare),
-            parts,
+            first: parts.remove(0),
+            extra: parts,
             places,
         };
     }
@@ -338,7 +472,8 @@ fn written_cell<'t>(
     };
     WrittenCell {
         prefix: cell_prefix(w, cell, bare),
-        parts: vec![joined],
+        first: joined,
+        extra: Vec::new(),
         places: Vec::new(),
     }
 }
@@ -359,11 +494,40 @@ fn written_row<'t>(
         below = below.max(c.places.last().copied().unwrap_or(0));
     }
     let count = usize::try_from(below).unwrap_or(0) + 1;
+    let attribute = plain_block(row);
+    if count == 1 && !w.align_tables {
+        let size = cells
+            .iter()
+            .map(|cell| cell.prefix.len() + cell.first.len() + 3)
+            .sum::<usize>()
+            + attribute.len()
+            + 1;
+        let mut body = String::with_capacity(size);
+        body.push('|');
+        for cell in &cells {
+            body.push_str(&cell.prefix);
+            body.push(' ');
+            if !cell.first.is_empty() {
+                body.push_str(&cell.first);
+                body.push(' ');
+            }
+            body.push('|');
+        }
+        if cells.is_empty() {
+            body.push('|');
+        }
+        body.push_str(&attribute);
+        return WrittenRow {
+            lines: Vec::new(),
+            attribute: String::new(),
+            direct: Some(body),
+        };
+    }
     let mut lines = Vec::with_capacity(count);
     lines.push(
         cells
             .iter()
-            .map(|c| segment(&c.prefix, c.parts.first().map_or("", String::as_str)))
+            .map(|c| segment(&c.prefix, &c.first))
             .collect::<Vec<_>>(),
     );
     if count > 1 {
@@ -373,13 +537,14 @@ fn written_row<'t>(
         for (at, &line) in cell.places.iter().enumerate() {
             let line = usize::try_from(line).unwrap_or(0);
             if let Some(slot) = lines.get_mut(line).and_then(|l| l.get_mut(column)) {
-                *slot = segment("", cell.parts.get(at + 1).map_or("", String::as_str));
+                *slot = segment("", cell.extra.get(at).map_or("", String::as_str));
             }
         }
     }
     WrittenRow {
         lines,
-        attribute: plain_block(row),
+        attribute,
+        direct: None,
     }
 }
 
@@ -411,6 +576,10 @@ fn align_columns(rows: &mut [WrittenRow]) {
 }
 
 fn emit_row(w: &mut Writer<'_>, prefix: &str, row: &WrittenRow) {
+    if let Some(body) = &row.direct {
+        emit(w, prefix, body);
+        return;
+    }
     for (at, line) in row.lines.iter().enumerate() {
         let mut body = String::with_capacity(
             line.iter().map(|p| p.len() + 1).sum::<usize>() + 1 + row.attribute.len(),
@@ -569,25 +738,39 @@ fn is_plain_cell(cell: V<'_>, header: bool) -> bool {
     }
 }
 
-fn is_plain_group(group: V<'_>, header: bool) -> bool {
-    ty(group) == "comment"
-        || children(group).iter().all(|r| {
-            ty(r) == "table_row"
-                && !has(r, "attrs")
-                && children(r).iter().all(|c| is_plain_cell(c, header))
-        })
-}
-
-fn fits_delimited(table: V<'_>) -> bool {
+/// The row count and whether a delimited form is required, if the table can use one.
+fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
     let groups = children(table);
-    let head = groups.iter().filter(|g| ty(g) == "table_head").count();
-    let body = groups.iter().filter(|g| ty(g) == "table_body").count();
-    head + body == groups.len()
-        && head <= 1
-        && body <= 1
-        && groups
-            .iter()
-            .all(|g| is_plain_group(g, ty(g) == "table_head"))
+    let mut head = 0;
+    let mut body = 0;
+    let mut rows = 0;
+    let mut needs = false;
+    for group in groups {
+        let header = match ty(group) {
+            "table_head" => {
+                head += 1;
+                true
+            }
+            "table_body" => {
+                body += 1;
+                false
+            }
+            _ => return None,
+        };
+        for row in children(group) {
+            if ty(row) != "table_row" || has(row, "attrs") {
+                return None;
+            }
+            rows += 1;
+            for cell in children(row) {
+                if !is_plain_cell(cell, header) {
+                    return None;
+                }
+                needs |= cell_needs_delimited(cell);
+            }
+        }
+    }
+    (head <= 1 && body <= 1).then_some((rows, needs))
 }
 
 fn first_value(cell: V<'_>) -> Option<&str> {
@@ -603,15 +786,6 @@ fn cell_needs_delimited(cell: V<'_>) -> bool {
     v.contains('\n') || v.starts_with([' ', '\t']) || v.ends_with([' ', '\t'])
 }
 
-fn needs_delimited(table: V<'_>) -> bool {
-    children(table).iter().any(|g| {
-        ty(g) != "comment"
-            && children(g)
-                .iter()
-                .any(|r| ty(r) == "table_row" && children(r).iter().any(cell_needs_delimited))
-    })
-}
-
 fn header_rows(w: &Writer<'_>, table: V<'_>) -> Option<usize> {
     let head = rows_of(table, "table_head").len();
     let all = head + rows_of(table, "table_body").len() + rows_of(table, "table_foot").len();
@@ -624,18 +798,15 @@ fn header_rows(w: &Writer<'_>, table: V<'_>) -> Option<usize> {
 }
 
 fn table_format(w: &Writer<'_>, table: V<'_>) -> String {
-    if !fits_delimited(table) {
+    let Some((rows, needs_delimited)) = delimited_shape(table) else {
         return "pipe".into();
-    }
+    };
     if let Some(f) = w.fact(table).and_then(|f| f.source_format.as_deref()) {
         if f == "csv" || f == "tsv" {
             return f.into();
         }
     }
-    let rows = rows_of(table, "table_head").len()
-        + rows_of(table, "table_body").len()
-        + rows_of(table, "table_foot").len();
-    if rows == 0 || needs_delimited(table) {
+    if rows == 0 || needs_delimited {
         "csv"
     } else {
         "pipe"

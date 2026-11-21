@@ -59,6 +59,13 @@ pub struct ProbeResult<'t> {
     pub taken: Vec<(N<'t>, usize)>,
 }
 
+/// Whether the current group has a grammar-level read-back certificate.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum GroupCertificate {
+    None,
+    PlainRows,
+}
+
 /// The state a probe of the repair swaps in and out (write-check).
 #[derive(Debug, Default)]
 pub struct Spelling<'t> {
@@ -91,6 +98,7 @@ pub struct Writer<'t> {
     pub link_keys: HashSet<String>,
     pub prewritten: Option<usize>,
     pub parses: usize,
+    pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
@@ -125,6 +133,7 @@ impl<'t> Writer<'t> {
             link_keys: HashSet::new(),
             prewritten: None,
             parses: 0,
+            group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
