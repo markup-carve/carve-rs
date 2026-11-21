@@ -1317,8 +1317,25 @@ fn joined_rows<'t>(
         return;
     }
     let entries = crate::api::layout::entries(source, &tree.to_value());
-    let line_of = |at: usize| source[..at.min(source.len())].matches('\n').count() + 1;
-    for (table, group, index, row) in rows {
+    let spans: HashMap<&str, (usize, usize)> = entries
+        .iter()
+        .filter_map(|entry| {
+            let byte = |key: &str| {
+                entry
+                    .get(key)
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|at| usize::try_from(at).ok())
+            };
+            Some((
+                entry.get("path")?.as_str()?,
+                (byte("startByte")?, byte("endByte")?),
+            ))
+        })
+        .collect();
+    let breaks: Vec<usize> = memchr_lines(source);
+    let line_of = |at: usize| breaks.partition_point(|&brk| brk < at) + 1;
+    let mut index = JoinIndex::new(positions);
+    for (table, group, row_at, row) in rows {
         let Some(table_path) = positions
             .all
             .get(table)
@@ -1327,21 +1344,22 @@ fn joined_rows<'t>(
             continue;
         };
         let group_path = format!("{table_path}/children/{group}");
-        let path = format!("{group_path}/children/{index}");
-        let (Some((start, end)), Some(parent), Ok(index), Ok(made)) = (
-            entry_span(&entries, &path),
-            group_holder(positions, &group_path),
-            u32::try_from(index),
+        let path = format!("{group_path}/children/{row_at}");
+        let (Some(&(start, end)), Some(&parent), Ok(at), Ok(made)) = (
+            spans.get(path.as_str()),
+            index.groups.get(group_path.as_str()),
+            u32::try_from(row_at),
             u32::try_from(positions.all.len()),
         ) else {
             continue;
         };
-        let prev = index
+        let prev = at
             .checked_sub(1)
-            .and_then(|at| sibling(&positions.all, parent, at))
-            .and_then(|at| u32::try_from(at).ok());
-        let next = sibling(&positions.all, parent, index + 1);
-        let (node, holder) = row_cell(positions, parent, index);
+            .and_then(|before| index.siblings.get(&(parent, before)).copied())
+            .and_then(|before| u32::try_from(before).ok());
+        let next = index.siblings.get(&(parent, at + 1)).copied();
+        let (node, holder) = index.cells.get(&(parent, at)).copied().unzip();
+        let node = node.flatten();
         let text = OnceCell::new();
         if node.is_none() {
             let _ = text.set(path);
@@ -1358,16 +1376,84 @@ fn joined_rows<'t>(
             form_block: false,
             image_line: false,
             holder: Some(parent),
-            index,
+            index: at,
             prev,
             joined: true,
         });
+        index.siblings.insert((parent, at), made as usize);
         joined.push(row);
-        if let Some(holder) = holder.and_then(|at| positions.holders.get_mut(at as usize)) {
+        if let Some(holder) = holder.and_then(|cells| positions.holders.get_mut(cells as usize)) {
             holder.range = Some(made);
         }
-        if let Some(next) = next.and_then(|at| positions.all.get_mut(at)) {
+        if let Some(next) = next.and_then(|after| positions.all.get_mut(after)) {
             next.prev = Some(made);
+        }
+    }
+}
+
+/// The offsets of the line breaks of a source.
+fn memchr_lines(source: &str) -> Vec<usize> {
+    source
+        .bytes()
+        .enumerate()
+        .filter_map(|(at, byte)| (byte == b'\n').then_some(at))
+        .collect()
+}
+
+/// What `joined_rows` looks up, indexed once per call.
+struct JoinIndex<'a> {
+    /// The holder of the children of each table group, by the group's path.
+    groups: HashMap<String, u32>,
+    /// The range of each item of a `children` list, by holder and index.
+    siblings: HashMap<(u32, u32), usize>,
+    /// For a row without a range: the path node of the row and the holder of its cells, read off a
+    /// cell of it that has a range, by the group's holder and the row's index.
+    cells: HashMap<(u32, u32), (Option<&'a walk::PathNode<'a>>, u32)>,
+}
+
+impl<'a> JoinIndex<'a> {
+    fn new(positions: &Ranges<'a>) -> Self {
+        let holder_of: HashMap<u32, u32> = positions
+            .holders
+            .iter()
+            .enumerate()
+            .filter_map(|(at, holder)| Some((holder.range?, u32::try_from(at).ok()?)))
+            .collect();
+        let mut groups = HashMap::new();
+        let mut siblings = HashMap::new();
+        let mut cells = HashMap::new();
+        for (at, range) in positions.all.iter().enumerate() {
+            let Ok(own) = u32::try_from(at) else {
+                break;
+            };
+            if let Some(parent) = range.holder {
+                siblings.insert((parent, range.index), at);
+            }
+            if matches!(range.kind, "table_head" | "table_body" | "table_foot")
+                && let Some(&holder) = holder_of.get(&own)
+            {
+                groups.insert(range.path.as_str().to_owned(), holder);
+            }
+            let Some(cell_holder) = range.holder.filter(|_| range.kind == "table_cell") else {
+                continue;
+            };
+            let Some(row_holder) = positions.holders.get(cell_holder as usize) else {
+                continue;
+            };
+            let row = range.path.node.and_then(|node| node.previous?.previous);
+            if let (None, Some(group), Some(walk::Segment::Index(index))) = (
+                row_holder.range,
+                row_holder.up,
+                row.map(|node| node.segment),
+            ) && let Ok(index) = u32::try_from(index)
+            {
+                cells.entry((group, index)).or_insert((row, cell_holder));
+            }
+        }
+        Self {
+            groups,
+            siblings,
+            cells,
         }
     }
 }
@@ -1395,63 +1481,6 @@ fn pos_less_rows<'t>(ranges: &[Range<'_>], values: &[V<'t>]) -> Vec<(usize, usiz
         }
     }
     rows
-}
-
-/// The start and end of the layout entry of a path.
-fn entry_span(entries: &[serde_json::Value], path: &str) -> Option<(usize, usize)> {
-    let entry = entries
-        .iter()
-        .find(|entry| entry.get("path").and_then(serde_json::Value::as_str) == Some(path))?;
-    let byte = |key: &str| {
-        entry
-            .get(key)
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|at| usize::try_from(at).ok())
-    };
-    Some((byte("startByte")?, byte("endByte")?))
-}
-
-/// The holder of the children of the group at a path.
-fn group_holder(positions: &Ranges<'_>, group_path: &str) -> Option<u32> {
-    let group = positions
-        .all
-        .iter()
-        .position(|range| range.path.as_str() == group_path)
-        .and_then(|at| u32::try_from(at).ok())?;
-    positions
-        .holders
-        .iter()
-        .position(|holder| holder.range == Some(group))
-        .and_then(|at| u32::try_from(at).ok())
-}
-
-/// The range of the item at `index` of the children a holder holds.
-fn sibling(ranges: &[Range<'_>], parent: u32, index: u32) -> Option<usize> {
-    ranges
-        .iter()
-        .position(|range| range.holder == Some(parent) && range.index == index && !range.joined)
-}
-
-/// The path node of a row and the holder of its cells, read off a cell of it that has a range.
-fn row_cell<'a>(
-    positions: &Ranges<'a>,
-    parent: u32,
-    index: u32,
-) -> (Option<&'a walk::PathNode<'a>>, Option<u32>) {
-    let row_of = |range: &Range<'a>| range.path.node.and_then(|node| node.previous?.previous);
-    let cell = positions.all.iter().find(|range| {
-        range.kind == "table_cell"
-            && range.holder.is_some_and(|holder| {
-                positions
-                    .holders
-                    .get(holder as usize)
-                    .is_some_and(|holder| holder.up == Some(parent) && holder.range.is_none())
-            })
-            && row_of(range).is_some_and(
-                |node| matches!(node.segment, walk::Segment::Index(at) if at == index as usize),
-            )
-    });
-    cell.map_or((None, None), |cell| (row_of(cell), cell.holder))
 }
 
 /// Records item `at` of a `children` list, made as range `made`, as the previous sibling of item `at + 1`.

@@ -460,6 +460,8 @@ pub(super) struct Records<'a> {
     formats: RefCell<Vec<Option<&'static str>>>,
     /// The marker and content columns of each item read so far, by range.
     columns: RefCell<Vec<Option<Columns>>>,
+    /// The rows before each node among its siblings, counted so far, by range.
+    rows: RefCell<Vec<Option<usize>>>,
 }
 
 /// The marker and content columns of an item.
@@ -655,6 +657,7 @@ impl<'a> Records<'a> {
             tables: OnceCell::new(),
             formats: RefCell::new(Vec::new()),
             columns: RefCell::new(Vec::new()),
+            rows: RefCell::new(Vec::new()),
         };
         records.build_lines(model);
         records
@@ -1010,13 +1013,36 @@ impl<'a> Records<'a> {
         let Some(row) = self.row_of(at) else {
             return Val::Null;
         };
-        let mut count = 0;
-        let mut prev = self.ranges[row as usize].prev;
-        while let Some(sibling) = prev {
-            count += usize::from(self.kind(sibling) == "table_row");
-            prev = self.ranges[sibling as usize].prev;
+        Val::num(self.rows_before(row))
+    }
+
+    /// The rows before a node among its siblings, counted once per node: the nodes back to the first
+    /// one already counted are filled in from there.
+    fn rows_before(&self, node: u32) -> usize {
+        let mut chain = vec![node];
+        let mut base = 0;
+        while let Some(&last) = chain.last() {
+            if let Some(Some(known)) = self.rows.borrow().get(last as usize) {
+                base = known + usize::from(self.kind(last) == "table_row");
+                chain.pop();
+                break;
+            }
+            match self.ranges[last as usize].prev {
+                Some(prev) => chain.push(prev),
+                None => break,
+            }
         }
-        Val::num(count)
+        // `chain` runs from `node` back to the first node, or to the one before a counted node.
+        let mut rows = self.rows.borrow_mut();
+        if rows.len() < self.ranges.len() {
+            rows.resize(self.ranges.len(), None);
+        }
+        let mut before = base;
+        for &at in chain.iter().rev() {
+            rows[at as usize] = Some(before);
+            before += usize::from(self.kind(at) == "table_row");
+        }
+        rows[node as usize].unwrap_or(base)
     }
 
     fn id_records(&self) -> &[IdRec<'a>] {
@@ -1540,7 +1566,10 @@ impl<'a> Records<'a> {
             // C2-B-031: read before opener_start, which for an attributed block is past its attribute lines.
             F::AfterQuoteMark => {
                 let at = block.opener_start.min(source.len());
-                let line = source[..at].rfind('\n').map_or(0, |n| n + 1);
+                let line = source.as_bytes()[..at]
+                    .iter()
+                    .rposition(|b| *b == b'\n')
+                    .map_or(0, |n| n + 1);
                 Val::Bool(text_at(source, line, at).ends_with("> "))
             }
             F::Attributed => Val::Bool(range.has_attrs),
