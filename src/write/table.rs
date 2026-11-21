@@ -114,12 +114,17 @@ fn plain_cell<'a>(cell: &crate::ast::TableCell<'_>, written: &'a str) -> Option<
     }
     let value = match paragraph.children.first() {
         None => "",
-        Some(AstNode::Text(t)) if plain_meta!(t) => t.value,
+        Some(AstNode::Text(t)) if plain_meta!(t) && !t.value.is_empty() => t.value,
         _ => return None,
     };
-    if !value.bytes().all(|b| b.is_ascii_alphanumeric()) {
-        return None;
-    }
+    let value = value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric())
+        .then_some(value)?;
+    consume_plain_cell(written, value)
+}
+
+fn consume_plain_cell<'a>(written: &'a str, value: &str) -> Option<&'a str> {
     let rest = written.strip_prefix(' ')?.strip_prefix(value)?;
     let rest = if value.is_empty() {
         rest
@@ -506,6 +511,9 @@ fn written_row<'t>(
                 body.push_str(&cell.first);
                 body.push(' ');
             }
+            body.push('|');
+        }
+        if cells.is_empty() {
             body.push('|');
         }
         body.push_str(&attribute);

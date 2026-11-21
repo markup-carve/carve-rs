@@ -144,6 +144,57 @@ mod plain_table_certificate_test {
         assert_eq!(output, "| *alpha* | beta |\n");
         assert!(REPAIR_PARSES.with(std::cell::Cell::get) > before);
     }
+
+    #[test]
+    fn explicit_empty_text_keeps_the_repair_parse() {
+        use crate::ast::{
+            CellParagraph, Document, Node, Table, TableBody, TableCell, TableColumn, TableRow, Text,
+        };
+
+        let arena = crate::Arena::new();
+        let text = Node::Text(arena.alloc(Text::default()));
+        let paragraph = Node::CellParagraph(arena.alloc(CellParagraph {
+            children: arena.one(text),
+            ..CellParagraph::default()
+        }));
+        let cell = Node::TableCell(arena.alloc(TableCell {
+            children: arena.one(paragraph),
+            ..TableCell::default()
+        }));
+        let row = Node::TableRow(arena.alloc(TableRow {
+            children: arena.one(cell),
+            ..TableRow::default()
+        }));
+        let body = Node::TableBody(arena.alloc(TableBody {
+            children: arena.one(row),
+            ..TableBody::default()
+        }));
+        let table = Node::Table(arena.alloc(Table {
+            children: arena.one(body),
+            columns: arena.one(Node::TableColumn(arena.alloc(TableColumn::default()))),
+            ..Table::default()
+        }));
+        let doc = Document {
+            ast_version: "2.0",
+            children: arena.one(table),
+            ..Document::default()
+        };
+        let pool = Pool::new();
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let _ = format_view(V::Doc(&doc), &pool, None, &Settings::default());
+        assert!(REPAIR_PARSES.with(std::cell::Cell::get) > before);
+    }
+
+    #[test]
+    fn zero_cell_row_keeps_its_closing_pipe() {
+        let mut doc = parse_plain("||\n").unwrap_or_default();
+        if let Some(row_children) = doc.pointer_mut("/children/0/children/0/children/0/children") {
+            *row_children = serde_json::json!([]);
+        }
+        let (out, losses) = write_value(&doc, &Settings::default());
+        assert_eq!(out, "||\n");
+        assert!(losses.iter().any(|e| e.code == "structure-unspellable"));
+    }
 }
 
 /// Writes the tree `doc` (its JSON value, read and checked).
