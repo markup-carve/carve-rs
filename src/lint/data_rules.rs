@@ -569,13 +569,14 @@ fn type_matches(rule: &Rule, kind: &str) -> bool {
 
 /// Runs the active rules of the model over the records of one parse, lines first, then nodes in tree order.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn run<'a>(
+pub(super) fn run<'a, 't: 'a>(
     source: &'a str,
     positions: &'a Source<'a>,
     ranges: &'a [Range<'a>],
     holders: &'a [Holder],
     nodes: &'a [Option<Value>],
-    values: &[V<'_>],
+    values: &[V<'t>],
+    tree: V<'t>,
     model: &'a [Line],
     options: &LintOptions,
 ) -> Vec<Diagnostic> {
@@ -590,7 +591,30 @@ pub(super) fn run<'a>(
     if active.is_empty() {
         return out;
     }
-    let mut records = Records::new(source, positions, ranges, holders, nodes, model);
+    // The id records read the heading ids of the run's options; the tree here has the default ones.
+    let generated = (options.heading_ids != crate::options::HeadingIds::default()).then(|| {
+        let opts = crate::Options {
+            heading_ids: options.heading_ids,
+            ..crate::Options::default()
+        };
+        let mut ids = HashMap::new();
+        crate::with_lint_tree(source, &opts, &opts, true, |tree, _| {
+            if let Some(tree) = tree {
+                super::data_model::heading_ids(tree, &mut ids);
+            }
+        });
+        ids
+    });
+    let mut records = Records::new(
+        source,
+        positions,
+        ranges,
+        holders,
+        nodes,
+        model,
+        super::data_model::TreeFacts::read(ranges, values, Some(tree), generated.as_ref()),
+        options.extensions.clone(),
+    );
     CACHE.with(|cache| {
         // A nested lint (none today) gets buckets of its own instead of the shared ones.
         let mut own;
@@ -836,7 +860,13 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
             }),
         };
         last = Some((key, found));
-        let path = || records.lines[index].path.to_owned();
+        // C2-W-138: a finding on a line of a pipe table that holds no node names the table.
+        let path = || match records.lines[index].path {
+            "" => records
+                .line_table(index)
+                .map_or_else(String::new, |table| records.path_of(table)),
+            path => path.to_owned(),
+        };
         for rule in buckets[found].iter() {
             run_rule(*rule, records, Subject::Line(index), index, out, &path);
         }

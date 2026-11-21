@@ -1,7 +1,7 @@
 //! Source and tree records consumed by the pinned 0.2 lint model, borrowed from the parse and the line model.
 #![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
-use super::data_interpreter::{F, LookupIndex, LookupKey, Val};
+use super::data_interpreter::{F, LookupIndex, LookupKey, LookupOver, Seg, Val};
 use super::{Holder, Range, lines::Line};
 use crate::source::Source;
 use std::borrow::Cow;
@@ -300,6 +300,7 @@ fn inline_kind(kind: &str) -> bool {
             | "footnote_ref"
             | "citation"
             | "wikilink"
+            | "xref"
     )
 }
 fn opener_rule_kind(kind: &str) -> bool {
@@ -431,6 +432,112 @@ pub(super) struct Records<'a> {
     lookups: RefCell<HashMap<usize, LookupIndex>>,
     /// The attribute records of this call (C2-W-148).
     pub attributes: super::data_attrs::Table,
+    tree: TreeFacts<'a>,
+    extensions: Vec<String>,
+    layout: OnceCell<Layout>,
+    tables: OnceCell<TableLines>,
+}
+
+/// An id record (C2-W-150).
+struct IdRec<'a> {
+    id: Cow<'a, str>,
+    owner: &'a str,
+    start: usize,
+}
+
+/// What the records read from the tree beyond the ranges: the id records, the links and images with a key,
+/// and the document for the source layout.
+pub(super) struct TreeFacts<'a> {
+    ids: Vec<IdRec<'a>>,
+    keyed: std::collections::HashSet<u32>,
+    document: Option<Box<dyn Fn() -> serde_json::Value + 'a>>,
+}
+
+/// The generated id of each heading of a tree, by the start of the heading.
+pub(super) fn heading_ids(node: crate::view::V<'_>, out: &mut HashMap<usize, String>) {
+    if node.is_array() {
+        if let Some(items) = node.as_array() {
+            for item in items.iter() {
+                heading_ids(item, out);
+            }
+        }
+        return;
+    }
+    if !node.is_object() {
+        return;
+    }
+    if node.ty().as_str() == Some("heading")
+        && let (Some((start, _)), Some(id)) = (node.offsets(), node.at("generatedId").as_str())
+    {
+        out.insert(start, id.to_owned());
+    }
+    node.each(&mut |key, value| {
+        if key != "pos" && value.is_container() {
+            heading_ids(value, out);
+        }
+    });
+}
+
+impl<'a> TreeFacts<'a> {
+    /// `generated`: the heading ids of a parse with other heading id options, by the start of the heading.
+    pub fn read<'v: 'a>(
+        ranges: &[Range<'a>],
+        values: &[crate::view::V<'v>],
+        document: Option<crate::view::V<'v>>,
+        generated: Option<&HashMap<usize, String>>,
+    ) -> Self {
+        let mut seen = std::collections::HashSet::new();
+        let mut ids = Vec::new();
+        let mut keyed = std::collections::HashSet::new();
+        for (at, (range, value)) in ranges.iter().zip(values).enumerate() {
+            if matches!(range.kind, "link" | "image") && value.get("key").is_some() {
+                keyed.insert(at as u32);
+            }
+            let authored = value
+                .get("attrs")
+                .and_then(|attrs| attrs.get("id"))
+                .and_then(crate::view::V::as_str)
+                .map(Cow::Borrowed);
+            let heading = (range.kind == "heading").then(|| match generated {
+                Some(generated) => generated.get(&range.start).cloned().map(Cow::Owned),
+                None => value
+                    .get("generatedId")
+                    .and_then(crate::view::V::as_str)
+                    .map(Cow::Borrowed),
+            });
+            for id in [authored, heading.flatten()].into_iter().flatten() {
+                if seen.insert(id.clone()) {
+                    ids.push(IdRec {
+                        id,
+                        owner: range.kind,
+                        start: range.start,
+                    });
+                }
+            }
+        }
+        let document = document.map(|document| {
+            Box::new(move || document.to_value()) as Box<dyn Fn() -> serde_json::Value + 'a>
+        });
+        Self {
+            ids,
+            keyed,
+            document,
+        }
+    }
+}
+
+/// The source layout entries of the document (C2-L-009), with the entry of each path.
+struct Layout {
+    entries: Vec<serde_json::Value>,
+    by_path: HashMap<String, u32>,
+}
+
+/// For each line, the nearest line above and below it in the source of its pipe table whose raw body does not
+/// start with `%%`, and the range of that table (C2-W-149).
+struct TableLines {
+    above: Vec<Option<u32>>,
+    below: Vec<Option<u32>>,
+    table: Vec<Option<u32>>,
 }
 
 impl<'a> Records<'a> {
@@ -441,6 +548,8 @@ impl<'a> Records<'a> {
         holders: &'a [Holder],
         nodes: &'a [Option<serde_json::Value>],
         model: &'a [Line],
+        tree: TreeFacts<'a>,
+        extensions: Vec<String>,
     ) -> Self {
         let mut holder_quotes = Vec::with_capacity(holders.len());
         let mut holder_inline = Vec::with_capacity(holders.len());
@@ -471,6 +580,10 @@ impl<'a> Records<'a> {
             nodes,
             lookups: RefCell::new(HashMap::new()),
             attributes: super::data_attrs::Table::default(),
+            tree,
+            extensions,
+            layout: OnceCell::new(),
+            tables: OnceCell::new(),
         };
         records.build_lines(model);
         records
@@ -723,7 +836,202 @@ impl<'a> Records<'a> {
             F::AttachedHere => Val::Bool(line.attached),
             F::ClosesContainer => Val::Bool(line.closes),
             F::OpenColon => Val::Colons(index as u32),
+            F::AncestorIds => Val::LineAncestorIds(line.leaf),
+            F::TableAbove => self.table_lines().above[index].map_or(Val::Null, Val::Line),
+            F::TableBelow => self.table_lines().below[index].map_or(Val::Null, Val::Line),
             _ => Val::Null,
+        }
+    }
+
+    fn table_lines(&self) -> &TableLines {
+        self.tables.get_or_init(|| {
+            let count = self.lines.len();
+            let mut lines = TableLines {
+                above: vec![None; count],
+                below: vec![None; count],
+                table: vec![None; count],
+            };
+            let open = |index: usize| {
+                let line = &self.lines[index];
+                !trim_end(text_at(self.source, line.body_start, line.end)).starts_with("%%")
+            };
+            for (at, range) in self.ranges.iter().enumerate() {
+                if range.kind != "table"
+                    || range.start_line == 0
+                    || self.source_format(range) != "pipe"
+                {
+                    continue;
+                }
+                let first = range.start_line - 1;
+                let last = range.end_line.max(range.start_line).min(count);
+                let mut seen = None;
+                for index in first..last {
+                    lines.above[index] = seen;
+                    if open(index) {
+                        seen = Some(index as u32);
+                    }
+                    lines.table[index].get_or_insert(at as u32);
+                }
+                seen = None;
+                for index in (first..last).rev() {
+                    lines.below[index] = seen;
+                    if open(index) {
+                        seen = Some(index as u32);
+                    }
+                }
+            }
+            lines
+        })
+    }
+
+    /// The pipe table whose source holds a line, which names the node of a finding on it (C2-W-138).
+    pub fn line_table(&self, index: usize) -> Option<u32> {
+        self.table_lines().table.get(index).copied().flatten()
+    }
+
+    fn source_format(&self, range: &Range<'_>) -> &'static str {
+        crate::api::layout::table_source_format(self.source, range.start, range.end)
+    }
+
+    /// The source format of a table, or of the table that holds a row or cell.
+    fn table_format(&self, at: u32) -> Val<'a> {
+        let table = match self.kind(at) {
+            "table" => Some(at),
+            "table_row" | "table_cell" => {
+                self.holder_chain(at).find(|&up| self.kind(up) == "table")
+            }
+            _ => None,
+        };
+        table.map_or(Val::Null, |table| {
+            Val::Str(Cow::Borrowed(
+                self.source_format(&self.ranges[table as usize]),
+            ))
+        })
+    }
+
+    /// The row of a row or cell record.
+    fn row_of(&self, at: u32) -> Option<u32> {
+        match self.kind(at) {
+            "table_row" => Some(at),
+            "table_cell" => self.holder_range(self.ranges[at as usize].holder),
+            _ => None,
+        }
+    }
+
+    /// The group that holds the row of a row or cell record.
+    fn group_of(&self, at: u32) -> Val<'a> {
+        self.row_of(at)
+            .map(|row| self.holder_kind(self.ranges[row as usize].holder))
+            .filter(|kind| matches!(*kind, "table_head" | "table_body" | "table_foot"))
+            .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind)))
+    }
+
+    /// The position of the row of a row or cell record among the rows of its group: a comment is no row.
+    fn row_index(&self, at: u32) -> Val<'a> {
+        let Some(row) = self.row_of(at) else {
+            return Val::Null;
+        };
+        let mut count = 0;
+        let mut prev = self.ranges[row as usize].prev;
+        while let Some(sibling) = prev {
+            count += usize::from(self.kind(sibling) == "table_row");
+            prev = self.ranges[sibling as usize].prev;
+        }
+        Val::num(count)
+    }
+
+    fn id_records(&self) -> &[IdRec<'a>] {
+        &self.tree.ids
+    }
+
+    fn id_field(&self, at: u32, name: F) -> Val<'a> {
+        let record = &self.id_records()[at as usize];
+        match name {
+            F::Id => Val::Str(record.id.clone()),
+            F::Owner => Val::Str(Cow::Borrowed(record.owner)),
+            F::Index => Val::num(at as usize),
+            F::Start => Val::num(record.start),
+            F::Type => Val::Str(Cow::Borrowed("id")),
+            _ => Val::Null,
+        }
+    }
+
+    fn layout(&self) -> &Layout {
+        self.layout.get_or_init(|| {
+            let entries = self
+                .tree
+                .document
+                .as_ref()
+                .map(|document| crate::api::layout::entries(self.source, &document()))
+                .unwrap_or_default();
+            let mut by_path = HashMap::with_capacity(entries.len());
+            for (at, entry) in entries.iter().enumerate() {
+                if let Some(path) = entry.get("path").and_then(serde_json::Value::as_str) {
+                    by_path.entry(path.to_owned()).or_insert(at as u32);
+                }
+            }
+            Layout { entries, by_path }
+        })
+    }
+
+    fn layout_entry(&self, range: u32) -> Val<'a> {
+        let path = self.ranges[range as usize].path.as_str();
+        self.layout()
+            .by_path
+            .get(path)
+            .map_or(Val::Null, |at| Val::Layout(*at))
+    }
+
+    /// A fact of a layout entry by name; absent where the entry does not have it (C2-L-014).
+    fn layout_key(&self, at: u32, key: &str) -> Val<'a> {
+        match self.layout().entries[at as usize].get(key) {
+            Some(serde_json::Value::Number(n)) => Val::Num(n.as_i64().unwrap_or(0)),
+            Some(serde_json::Value::String(text)) => Val::Str(Cow::Owned(text.clone())),
+            Some(serde_json::Value::Bool(b)) => Val::Bool(*b),
+            _ => Val::Null,
+        }
+    }
+
+    /// `raw_ref` of a link or an image with a key, otherwise its text (C2-W-150).
+    fn raw_ref(&self, at: u32) -> Val<'a> {
+        let range = &self.ranges[at as usize];
+        let keyed = self.tree.keyed.contains(&at);
+        if !keyed || range.start >= range.end || range.end > self.source.len() {
+            return Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end)));
+        }
+        Val::Str(Cow::Owned(crate::api::layout::raw_ref_text(
+            self.source,
+            range.kind,
+            range.start,
+            range.end,
+            self.quotes_at(range.holder),
+        )))
+    }
+
+    pub fn column_at(&self, at: usize, quotes: usize) -> usize {
+        column_of(self.positions, at, quotes)
+    }
+
+    pub fn extensions(&self) -> Val<'a> {
+        Val::List(
+            self.extensions
+                .iter()
+                .map(|name| Val::Str(Cow::Owned(name.clone())))
+                .collect(),
+        )
+    }
+
+    /// One step of a dotted path from a value.
+    pub fn step(&self, found: &Val<'a>, seg: &Seg) -> Val<'a> {
+        match seg {
+            Seg::Field(name) => self.field(found, *name),
+            Seg::At(index) => self.list_item(found, *index),
+            Seg::AtEnd(back) => self
+                .list_len(found)
+                .checked_sub(*back)
+                .map_or(Val::Null, |at| self.list_item(found, at)),
+            Seg::Key(key) => self.node_key(found, key),
+            Seg::Item => Val::Null,
         }
     }
 
@@ -834,31 +1142,60 @@ impl<'a> Records<'a> {
         self.lookups.borrow_mut().insert(id, index);
     }
 
-    /// The first record of a key, or with `after` the first of it that starts after that offset.
-    pub fn lookup_key(&self, id: usize, key: &LookupKey, after: Option<usize>) -> Option<u32> {
+    /// Every record of a key, in document order (C2-W-150).
+    pub fn lookup_all(&self, id: usize, key: &LookupKey) -> Vec<u32> {
+        self.lookups.borrow()[&id]
+            .keys
+            .get(key)
+            .map(|found| found.iter().map(|(_, record)| *record).collect())
+            .unwrap_or_default()
+    }
+
+    /// The first record of a key; with `side` -1 the last of them that starts before `start`, with 1 the
+    /// first that starts after it (C2-W-141).
+    pub fn lookup_at(&self, id: usize, key: &LookupKey, start: usize, side: i8) -> Option<u32> {
         let lookups = self.lookups.borrow();
         let found = lookups[&id].keys.get(key)?;
-        let at = after.map_or(0, |start| found.partition_point(|(from, _)| *from <= start));
+        let at = match side {
+            0 => 0,
+            -1 => found
+                .partition_point(|(from, _)| *from < start)
+                .checked_sub(1)?,
+            _ => found.partition_point(|(from, _)| *from <= start),
+        };
         found.get(at).map(|(_, record)| *record)
     }
 
-    /// The last record of the lookup that starts before `start`.
-    pub fn lookup_before(&self, id: usize, start: usize) -> Option<u32> {
-        let lookups = self.lookups.borrow();
-        let before = &lookups[&id].before;
-        let at = before.partition_point(|(from, _)| *from < start);
-        at.checked_sub(1).map(|at| before[at].1)
-    }
-
-    /// The block or inline records of these types in document order, with their starts.
-    pub fn lookup_records(&self, inline: bool, types: &[&str]) -> Vec<(u32, usize)> {
+    /// The records a lookup reads in document order, with their starts; a block or inline lookup that
+    /// names no types reads every block or every inline node (C2-W-150).
+    pub fn lookup_records(&self, over: LookupOver, types: &[&str]) -> Vec<(u32, usize)> {
+        match over {
+            LookupOver::Line => {
+                return (0..self.lines.len())
+                    .map(|at| (at as u32, self.lines[at].start))
+                    .collect();
+            }
+            LookupOver::Id => {
+                return self
+                    .id_records()
+                    .iter()
+                    .enumerate()
+                    .map(|(at, record)| (at as u32, record.start))
+                    .collect();
+            }
+            LookupOver::Block | LookupOver::Inline => {}
+        }
+        let inline = over == LookupOver::Inline;
         let mut found: Vec<(u32, usize, usize)> = self
             .ranges
             .iter()
             .enumerate()
             .filter(|(_, range)| {
-                types.contains(&range.kind)
-                    && range.start_line.saturating_sub(1) < self.lines.len()
+                (if types.is_empty() {
+                    range.kind != "document"
+                } else {
+                    types.contains(&range.kind)
+                }) && range.start_line.saturating_sub(1) < self.lines.len()
                     && self.inline_held(range) == inline
             })
             .map(|(at, range)| (at as u32, range.start, range.end))
@@ -879,6 +1216,7 @@ impl<'a> Records<'a> {
                 F::End => Val::num(range.end),
                 F::Text => Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end))),
                 F::Node => self.tree_node(at),
+                F::RawRef => self.raw_ref(at),
                 _ => Val::Null,
             };
         }
@@ -895,6 +1233,8 @@ impl<'a> Records<'a> {
             Val::Line(at) => self.line_field(*at as usize, name),
             Val::Owner(holder) => self.owner_field(*holder, name),
             Val::Colon(at) => self.colon_field(*at, name),
+            Val::IdRec(at) => self.id_field(*at, name),
+            Val::Layout(at) => self.layout_key(*at, super::data_interpreter::field_name(name)),
             _ => Val::Null,
         }
     }
@@ -912,14 +1252,17 @@ impl<'a> Records<'a> {
                 F::Text => Val::Str(Cow::Borrowed(inline.text)),
                 F::Leaf => Val::Str(Cow::Borrowed(inline.leaf)),
                 F::Parent => Val::Str(Cow::Borrowed(inline.parent)),
+                F::RawRef if inline.kind != "text_run" => self.raw_ref(inline.range),
                 _ => Val::Null,
             },
         }
     }
 
     /// A key of an AST node: a scalar as a value, anything else as a node; absent is null.
-    #[allow(clippy::unused_self)]
     pub fn node_key(&self, value: &Val<'a>, key: &str) -> Val<'a> {
+        if let Val::Layout(at) = value {
+            return self.layout_key(*at, key);
+        }
         let Val::Node(node) = value else {
             return Val::Null;
         };
@@ -944,8 +1287,34 @@ impl<'a> Records<'a> {
             Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
             Val::Node(node) => node.as_array().map_or(0, Vec::len),
             Val::BlockAncestors(at) | Val::AncestorIds(at) => self.holder_chain(*at).count() + 1,
+            Val::LineAncestorIds(leaf) => self.ancestors(*leaf).count(),
+            Val::List(items) => items.len(),
             _ => 0,
         }
+    }
+
+    pub fn is_list(&self, value: &Val<'a>) -> bool {
+        match value {
+            Val::Node(node) => node.is_array(),
+            Val::Colons(_)
+            | Val::Ancestors(_)
+            | Val::BlockAncestors(_)
+            | Val::AncestorIds(_)
+            | Val::LineAncestorIds(_)
+            | Val::List(_) => true,
+            _ => false,
+        }
+    }
+
+    /// The identities of the blocks of a line's `ancestors`, item by item (C2-W-150).
+    fn line_ancestor_ids(&self, leaf: Option<u32>) -> impl Iterator<Item = i64> + '_ {
+        let caption = leaf.filter(|&at| self.ranges[at as usize].kind == "caption");
+        let chain = leaf.into_iter().flat_map(|at| self.holder_chain(at));
+        caption
+            .into_iter()
+            .chain(chain)
+            .map(i64::from)
+            .chain(leaf.map(|_| -1))
     }
 
     pub fn list_item(&self, list: &Val<'a>, index: usize) -> Val<'a> {
@@ -970,6 +1339,11 @@ impl<'a> Records<'a> {
                 .chain([-1])
                 .nth(index)
                 .map_or(Val::Null, Val::Num),
+            Val::LineAncestorIds(leaf) => self
+                .line_ancestor_ids(*leaf)
+                .nth(index)
+                .map_or(Val::Null, Val::Num),
+            Val::List(items) => items.get(index).cloned().unwrap_or(Val::Null),
             Val::Node(node) => node
                 .as_array()
                 .and_then(|items| items.get(index))
@@ -1006,7 +1380,7 @@ impl<'a> Records<'a> {
 
     fn prev_type(&self, block: &BlockRec<'a>) -> Option<&'a str> {
         let range = &self.ranges[block.range as usize];
-        if block.kind != "paragraph" || range.index == 0 {
+        if range.index == 0 {
             return None;
         }
         range.prev.map(|sibling| self.kind(sibling))
@@ -1060,6 +1434,11 @@ impl<'a> Records<'a> {
             F::Owner => Val::Owner(block.owner),
             F::ItemOwner => Val::Owner(block.item_owner),
             F::Parent => Val::Owner(block.parent),
+            F::Identity => Val::num(block.range as usize),
+            F::Layout => self.layout_entry(block.range),
+            F::SourceFormat => self.table_format(block.range),
+            F::Group => self.group_of(block.range),
+            F::RowIndex => self.row_index(block.range),
             _ => Val::Null,
         }
     }

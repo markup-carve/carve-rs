@@ -80,6 +80,15 @@ pub(super) enum F {
     FootRows,
     AlignOverlap,
     ValignOverlap,
+    Id,
+    Identity,
+    Layout,
+    SourceFormat,
+    Group,
+    RowIndex,
+    TableAbove,
+    TableBelow,
+    RawRef,
     Unknown,
     /// Not a field: the fact that the previous line has the same leaf (`prev.leaf_id == leaf_id`).
     PrevSameLeaf,
@@ -152,6 +161,15 @@ const FIELDS: &[(&str, F)] = &[
     ("marker_column", F::MarkerColumn),
     ("width", F::Width),
     ("kind", F::Kind),
+    ("id", F::Id),
+    ("identity", F::Identity),
+    ("layout", F::Layout),
+    ("source_format", F::SourceFormat),
+    ("group", F::Group),
+    ("row_index", F::RowIndex),
+    ("table_above", F::TableAbove),
+    ("table_below", F::TableBelow),
+    ("raw_ref", F::RawRef),
 ];
 
 fn field_id(name: &str) -> F {
@@ -175,6 +193,8 @@ pub(super) enum Seg {
     Item,
     Field(F),
     At(usize),
+    /// An index counted from the end of a list: `-1` is the last item (C2-W-141).
+    AtEnd(usize),
     /// A name no record field has: a key of an AST node (C2-W-140).
     Key(&'static str),
 }
@@ -189,6 +209,8 @@ fn path(text: &str) -> Path {
                 Seg::Item
             } else if let Ok(index) = part.parse() {
                 Seg::At(index)
+            } else if let Some(index) = part.strip_prefix('-').and_then(|n| n.parse().ok()) {
+                Seg::AtEnd(index)
             } else {
                 match field_id(part) {
                     // The names live as long as the compiled model, which is never dropped.
@@ -565,15 +587,30 @@ pub(super) enum Expr {
         end: bool,
     },
     Some {
-        list: Path,
+        list: Box<Self>,
         from: usize,
         test: Box<Self>,
     },
     /// The number of list items for which `test` holds (C2-W-141).
     Count {
-        list: Path,
+        list: Box<Self>,
         test: Box<Self>,
     },
+    /// The first list item for which `test` holds (C2-W-150).
+    Find {
+        list: Box<Self>,
+        test: Box<Self>,
+    },
+    Nth(Box<(Self, Self)>),
+    Join(Box<(Self, Self)>),
+    Lower(Box<Self>),
+    PercentDecode(Box<Self>),
+    /// The column of an offset after a number of quote marks (C2-B-004).
+    Column(Box<(Self, Self)>),
+    /// The extensions registered for the run.
+    RunExtensions,
+    /// Whether a text is a valid attribute line (C2-B-090).
+    AttributeLine(Box<Self>),
     /// A field of a record of the document found by key, or the last one before (C2-W-141).
     Lookup(Box<Lookup>),
     IndexOf(Box<(Self, Self)>),
@@ -592,15 +629,35 @@ pub(super) enum Expr {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum LookupOver {
+    Block,
+    Inline,
+    Id,
+    Line,
+}
+
 #[derive(Debug)]
 pub(super) struct Lookup {
-    pub inline: bool,
+    pub over: LookupOver,
     pub types: Vec<&'static str>,
     pub key: Option<Expr>,
     pub value: Option<Expr>,
     pub before: bool,
     pub after: bool,
+    pub all: bool,
+    pub from: Option<Expr>,
     pub field: Path,
+}
+
+impl Lookup {
+    fn record<'a>(&self, at: u32) -> Val<'a> {
+        match self.over {
+            LookupOver::Block | LookupOver::Inline => Val::Rec(at),
+            LookupOver::Id => Val::IdRec(at),
+            LookupOver::Line => Val::Line(at),
+        }
+    }
 }
 
 const COMPARISONS: &[(&str, Cmp)] = &[
@@ -679,6 +736,13 @@ impl Scope<'_> {
         Expr::Cmp(cmp, Box::new((self.compile(left), self.compile(right))))
     }
 
+    /// The `in` of `some`, `count` and `find`: a field path, or a value that gives a list (C2-W-150).
+    fn list(&self, value: &'static Value) -> Expr {
+        value
+            .as_str()
+            .map_or_else(|| self.compile(value), |text| Expr::Field(path(text)))
+    }
+
     fn variable(&self, name: &str) -> Expr {
         self.lets
             .iter()
@@ -724,7 +788,7 @@ impl Scope<'_> {
                 self.compile(at(2)),
             ))),
             "some" => Expr::Some {
-                list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
                 from: arg.get("from").and_then(Value::as_u64).unwrap_or(0) as usize,
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
@@ -759,7 +823,12 @@ impl Scope<'_> {
         let pair = |a: usize, b: usize| Box::new((self.compile(at(a)), self.compile(at(b))));
         match op {
             "lookup" => Expr::Lookup(Box::new(Lookup {
-                inline: arg.get("over").and_then(Value::as_str) == Some("inline"),
+                over: match arg.get("over").and_then(Value::as_str) {
+                    Some("inline") => LookupOver::Inline,
+                    Some("id") => LookupOver::Id,
+                    Some("line") => LookupOver::Line,
+                    _ => LookupOver::Block,
+                },
                 types: arg
                     .get("types")
                     .and_then(Value::as_array)
@@ -771,14 +840,30 @@ impl Scope<'_> {
                 value: arg.get("value").map(|value| self.compile(value)),
                 before: arg.get("before").and_then(Value::as_bool) == Some(true),
                 after: arg.get("after").and_then(Value::as_bool) == Some(true),
-                field: path(arg.get("field").and_then(Value::as_str).unwrap_or("")),
+                all: arg.get("all").and_then(Value::as_bool) == Some(true),
+                from: arg.get("from").map(|from| self.compile(from)),
+                field: arg
+                    .get("field")
+                    .and_then(Value::as_str)
+                    .map_or_else(|| Box::default(), path),
             })),
             "index_of" => Expr::IndexOf(pair(0, 1)),
             "json_escape" => Expr::JsonEscape(Box::new(self.compile(arg))),
             "count" => Expr::Count {
-                list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
+            "find" => Expr::Find {
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
+                test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
+            },
+            "nth" => Expr::Nth(pair(0, 1)),
+            "join" => Expr::Join(pair(0, 1)),
+            "column" => Expr::Column(pair(0, 1)),
+            "lower" => Expr::Lower(Box::new(self.compile(arg))),
+            "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
+            "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
+            "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
             _ => Expr::Lit(Val::Null),
         }
     }
@@ -1122,6 +1207,9 @@ fn stateless(expr: &Expr) -> bool {
             items.iter().all(stateless)
         }
         Expr::Not(item)
+        | Expr::Lower(item)
+        | Expr::PercentDecode(item)
+        | Expr::AttributeLine(item)
         | Expr::Len(item)
         | Expr::TrimEnd(item)
         | Expr::Words(item)
@@ -1133,22 +1221,35 @@ fn stateless(expr: &Expr) -> bool {
         | Expr::Starts(args)
         | Expr::Sub(args)
         | Expr::IndexOf(args)
+        | Expr::Nth(args)
+        | Expr::Join(args)
+        | Expr::Column(args)
         | Expr::Shift { args, .. } => stateless(&args.0) && stateless(&args.1),
         Expr::If(args) => stateless(&args.0) && stateless(&args.1) && stateless(&args.2),
         Expr::Slice(args) => {
             stateless(&args.0) && stateless(&args.1) && args.2.as_ref().is_none_or(stateless)
         }
-        Expr::Some { .. } | Expr::Count { .. } | Expr::Lookup(_) => stateless_scan(expr),
-        Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
-            true
+        Expr::Some { .. } | Expr::Count { .. } | Expr::Find { .. } | Expr::Lookup(_) => {
+            stateless_scan(expr)
         }
+        Expr::Lit(_)
+        | Expr::Field(_)
+        | Expr::Has(_)
+        | Expr::Match { .. }
+        | Expr::ShapeIs(_)
+        | Expr::RunExtensions => true,
     }
 }
 
 fn stateless_scan(expr: &Expr) -> bool {
     match expr {
-        Expr::Some { test, .. } | Expr::Count { test, .. } => stateless(test),
-        Expr::Lookup(lookup) => lookup.value.as_ref().is_none_or(stateless),
+        Expr::Some { list, test, .. } | Expr::Count { list, test } | Expr::Find { list, test } => {
+            stateless(list) && stateless(test)
+        }
+        Expr::Lookup(lookup) => {
+            lookup.value.as_ref().is_none_or(stateless)
+                && lookup.from.as_ref().is_none_or(stateless)
+        }
         _ => true,
     }
 }
@@ -1224,12 +1325,7 @@ fn resolve_path<'a>(records: &Records<'a>, subject: &Subject<'_, 'a>, path: &[Se
         if found.is_null() {
             break;
         }
-        found = match seg {
-            Seg::Field(name) => records.field(&found, *name),
-            Seg::At(index) => records.list_item(&found, *index),
-            Seg::Key(key) => records.node_key(&found, key),
-            Seg::Item => Val::Null,
-        };
+        found = records.step(&found, seg);
     }
     found
 }
@@ -1278,6 +1374,14 @@ pub(super) enum Val<'a> {
     /// The types and the identities of the blocks that hold a block (C2-W-141).
     BlockAncestors(u32),
     AncestorIds(u32),
+    /// The identities of the blocks of a line's `ancestors`, by its leaf (C2-W-150).
+    LineAncestorIds(Option<u32>),
+    /// An id record, by index into the id records (C2-W-150).
+    IdRec(u32),
+    /// The source layout entry of a block, by index into the layout entries (C2-L-009).
+    Layout(u32),
+    /// A list a lookup or the run gives.
+    List(std::sync::Arc<[Val<'a>]>),
 }
 
 impl Val<'_> {
@@ -1368,12 +1472,7 @@ impl<'a> Eval<'_, 'a> {
             if found.is_null() {
                 break;
             }
-            found = match seg {
-                Seg::Field(name) => self.records.field(&found, *name),
-                Seg::At(index) => self.records.list_item(&found, *index),
-                Seg::Key(key) => self.records.node_key(&found, key),
-                Seg::Item => Val::Null,
-            };
+            found = self.records.step(&found, seg);
         }
         found
     }
@@ -1462,7 +1561,7 @@ impl<'a> Eval<'_, 'a> {
                 matches!(needle, Val::Str(_)) && self.records.ancestors(leaf).any(|kind| kind == n)
             });
         }
-        if matches!(haystack, Val::BlockAncestors(_)) {
+        if self.records.is_list(&haystack) {
             return (0..self.records.list_len(&haystack))
                 .any(|at| self.same(&self.records.list_item(&haystack, at), &needle));
         }
@@ -1471,8 +1570,8 @@ impl<'a> Eval<'_, 'a> {
             .is_some_and(|(s, n)| holds(s, n))
     }
 
-    fn some(&mut self, list: &Path, from: usize, test: &Expr) -> bool {
-        let list = self.resolve(list);
+    fn some(&mut self, list: &Expr, from: usize, test: &Expr) -> bool {
+        let list = self.value(list);
         let before = self.item.take();
         let mut result = false;
         for index in from..self.records.list_len(&list) {
@@ -1492,34 +1591,49 @@ impl<'a> Eval<'_, 'a> {
             let built = self.build_lookup(lookup);
             self.records.store_lookup(id, built);
         }
-        let start = self.records.subject_field(&self.subject, F::Start);
-        let start = self.number(&start).max(0) as usize;
-        let found = if lookup.before {
-            self.records.lookup_before(id, start)
-        } else {
-            let value = lookup
-                .value
-                .as_ref()
-                .map_or(Val::Null, |value| self.value(value));
-            let after = lookup.after.then_some(start);
-            self.records.lookup_key(id, &LookupKey::of(&value), after)
+        let value = match (&lookup.key, &lookup.value) {
+            (Some(_), Some(value)) => self.value(value),
+            _ => Val::Null,
         };
-        found.map_or(Val::Null, |at| {
-            resolve_from(self.records, Val::Rec(at), &lookup.field)
-        })
+        let key = LookupKey::of(&value);
+        if lookup.all {
+            let found: Vec<Val<'a>> = self
+                .records
+                .lookup_all(id, &key)
+                .into_iter()
+                .map(|at| resolve_from(self.records, lookup.record(at), &lookup.field))
+                .collect();
+            return Val::List(found.into());
+        }
+        let start = match &lookup.from {
+            Some(from) => self.value(from),
+            None => self.records.subject_field(&self.subject, F::Start),
+        };
+        let start = self.number(&start).max(0) as usize;
+        let side = if lookup.before {
+            -1
+        } else {
+            i8::from(lookup.after)
+        };
+        self.records
+            .lookup_at(id, &key, start, side)
+            .map_or(Val::Null, |at| {
+                resolve_from(self.records, lookup.record(at), &lookup.field)
+            })
     }
 
-    /// The records of a lookup in document order with their starts, by key unless it is `before`.
+    /// The records of a lookup in document order with their starts, by key (C2-W-141).
     fn build_lookup(&mut self, lookup: &Lookup) -> LookupIndex {
         let saved = (self.item.take(), std::mem::take(&mut self.spans));
         let mut index = LookupIndex::default();
-        for (at, start) in self.records.lookup_records(lookup.inline, &lookup.types) {
-            if lookup.before {
-                index.before.push((start, at));
-                continue;
-            }
-            self.item = Some(Val::Rec(at));
-            let key = lookup.key.as_ref().map_or(Val::Null, |key| self.value(key));
+        for (at, start) in self.records.lookup_records(lookup.over, &lookup.types) {
+            let key = match &lookup.key {
+                Some(key) => {
+                    self.item = Some(lookup.record(at));
+                    self.value(key)
+                }
+                None => Val::Null,
+            };
             index
                 .keys
                 .entry(LookupKey::of(&key))
@@ -1530,8 +1644,24 @@ impl<'a> Eval<'_, 'a> {
         index
     }
 
-    fn count(&mut self, list: &Path, test: &Expr) -> usize {
-        let list = self.resolve(list);
+    fn find(&mut self, list: &Expr, test: &Expr) -> Val<'a> {
+        let list = self.value(list);
+        let before = self.item.take();
+        let mut found = Val::Null;
+        for index in 0..self.records.list_len(&list) {
+            let item = self.records.list_item(&list, index);
+            self.item = Some(item.clone());
+            if self.test(test) {
+                found = item;
+                break;
+            }
+        }
+        self.item = before;
+        found
+    }
+
+    fn count(&mut self, list: &Expr, test: &Expr) -> usize {
+        let list = self.value(list);
         let before = self.item.take();
         let mut found = 0;
         for index in 0..self.records.list_len(&list) {
@@ -1590,9 +1720,61 @@ impl<'a> Eval<'_, 'a> {
             Expr::Var(index) => self.variable(*index),
             Expr::Has(path) => Val::Bool(!self.resolve(path).is_null()),
             Expr::Count { list, test } => Val::num(self.count(list, test)),
+            Expr::Find { list, test } => self.find(list, test),
+            Expr::Nth(args) => {
+                let list = self.value(&args.0);
+                let at = self.value(&args.1);
+                let at = self.number(&at);
+                let len = self.records.list_len(&list) as i64;
+                let at = if at < 0 { len + at } else { at };
+                if at < 0 {
+                    Val::Null
+                } else {
+                    self.records.list_item(&list, at as usize)
+                }
+            }
+            Expr::Join(args) => {
+                let list = self.value(&args.0);
+                let glue = self.string(&args.1);
+                let mut out = String::new();
+                for at in 0..self.records.list_len(&list) {
+                    if at > 0 {
+                        out.push_str(&glue);
+                    }
+                    let item = self.records.list_item(&list, at);
+                    out.push_str(&self.text(&item));
+                }
+                Val::Str(Cow::Owned(out))
+            }
+            Expr::Lower(arg) => Val::Str(Cow::Owned(self.string(arg).to_lowercase())),
+            Expr::PercentDecode(arg) => {
+                let text = self.string(arg);
+                Val::Str(Cow::Owned(
+                    percent_decode(&text).unwrap_or_else(|| text.into_owned()),
+                ))
+            }
+            Expr::Column(args) => {
+                let at = self.value(&args.0);
+                let quotes = self.value(&args.1);
+                if at.is_null() {
+                    return Val::Null;
+                }
+                let (at, quotes) = (self.number(&at).max(0), self.number(&quotes).max(0));
+                Val::num(self.records.column_at(at as usize, quotes as usize))
+            }
+            Expr::RunExtensions => self.records.extensions(),
             Expr::Lookup(lookup) => self.lookup(lookup),
             Expr::IndexOf(args) => {
-                let text = self.string(&args.0);
+                let haystack = self.value(&args.0);
+                if self.records.is_list(&haystack) {
+                    let needle = self.value(&args.1);
+                    return Val::Num(
+                        (0..self.records.list_len(&haystack))
+                            .find(|&at| self.same(&self.records.list_item(&haystack, at), &needle))
+                            .map_or(-1, |at| at as i64),
+                    );
+                }
+                let text = self.text(&haystack);
                 let needle = self.string(&args.1);
                 Val::Num(text.find(&*needle).map_or(-1, |at| at as i64))
             }
@@ -1702,6 +1884,10 @@ impl<'a> Eval<'_, 'a> {
                 base,
             } => self.matched(subject, pattern.as_ref(), base.as_ref()),
             Expr::Some { list, from, test } => self.some(list, *from, test),
+            Expr::AttributeLine(arg) => {
+                let text = self.string(arg);
+                super::lines::valid_attribute_line(&text)
+            }
             Expr::ShapeIs(name) => match self.subject {
                 Subject::Line(index) => self.records.line_shape_is(index, name),
                 _ => false,
@@ -1751,7 +1937,28 @@ impl LookupKey {
 #[derive(Default, Debug)]
 pub(super) struct LookupIndex {
     pub keys: std::collections::HashMap<LookupKey, Vec<(usize, u32)>>,
-    pub before: Vec<(usize, u32)>,
+}
+
+/// `%HH` read as bytes and the bytes as UTF-8; `None` where a `%` is no escape or the bytes are no UTF-8 (C2-W-150).
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' {
+            let hex = text.get(at + 1..at + 3)?;
+            out.push(
+                u8::from_str_radix(hex, 16)
+                    .ok()
+                    .filter(|_| hex.bytes().all(|b| b.is_ascii_hexdigit()))?,
+            );
+            at += 3;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> Val<'a> {
@@ -1759,12 +1966,7 @@ fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> 
         if found.is_null() {
             break;
         }
-        found = match seg {
-            Seg::Field(name) => records.field(&found, *name),
-            Seg::At(index) => records.list_item(&found, *index),
-            Seg::Key(key) => records.node_key(&found, key),
-            Seg::Item => Val::Null,
-        };
+        found = records.step(&found, seg);
     }
     found
 }

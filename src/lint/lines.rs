@@ -488,7 +488,7 @@ fn starts_block(text: &str) -> bool {
 }
 
 /// C2-B-090: one or more glued valid attribute blocks alone on the line, spaced or with an id or a key (carve#6197).
-fn valid_attribute_line(text: &str) -> bool {
+pub(super) fn valid_attribute_line(text: &str) -> bool {
     let text = text.trim_end_matches([' ', '\t']);
     text.starts_with('{')
         && crate::attr::parse_glued(text, 0).is_some_and(|(_, end)| end == text.len())

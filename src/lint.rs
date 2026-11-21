@@ -247,7 +247,7 @@ fn lint_core<'a>(
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
-    if data_rules::data_mode() && tree.is_some() {
+    if let Some(tree) = tree.filter(|_| data_rules::data_mode()) {
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
         out.extend(data_rules::run(
             source,
@@ -256,6 +256,7 @@ fn lint_core<'a>(
             &positions.holders,
             &data_rules::nodes(&positions.all, &values),
             &values,
+            tree,
             &line_model,
             opts,
         ));
