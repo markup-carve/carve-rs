@@ -126,6 +126,14 @@ fn blank_within(source: &str, line_start: usize, start: usize, line_end: usize) 
 /// after legacy, line and node scanners have contributed their findings.
 fn select_message_variants(source: &str, findings: &mut [Diagnostic]) {
     for finding in findings {
+        if !matches!(
+            finding.code,
+            "list-marker-without-blank-line"
+                | "unattached-block-attribute"
+                | "region-marker-renders-as-text"
+        ) {
+            continue;
+        }
         let Some(pos) = finding.pos else { continue };
         let start = usize::try_from(pos.start_offset).unwrap_or(usize::MAX);
         let Some(prefix) = source.get(..start) else {
