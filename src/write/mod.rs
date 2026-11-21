@@ -464,6 +464,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
             _ => 0,
         };
         out.extend(std::iter::repeat_n(String::new(), blanks));
+        w.written_chars += blanks + w.lines.iter().map(|l| l.len() + 1).sum::<usize>();
         out.append(&mut w.lines);
         before = at.checked_sub(1).and_then(|i| nodes.get(i));
         list = last_block(nodes, from, at, list);
@@ -706,6 +707,8 @@ fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: Arr<'_>) -
 fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool {
     let chars: usize = w.lines.iter().map(|l| l.len() + 1).sum();
     if h.rounds == 0 {
+        // C2-W-133 sizes the budget by the document as written; the source only bounds it from below.
+        w.work_limit = w.work_limit.max(repair_budget(w.written_chars + chars));
         h.remaining = h
             .remaining
             .max(i64::try_from(chars * MIN_REPAIR_ROUNDS).unwrap_or(i64::MAX));
@@ -1261,5 +1264,31 @@ mod repair_limit_test {
             writer.sp.losses.first().map(|loss| loss.code),
             Some("writer-refused")
         );
+    }
+
+    #[test]
+    fn budget_grows_with_the_written_length() {
+        let pool = typed_arena::Arena::new();
+        let mut writer = Writer::new(&pool, false);
+        writer.work_limit = repair_budget(10);
+        writer.written_chars = 40_000;
+        writer.lines.push("xyz".into());
+        let group = [
+            serde_json::json!({"type": "paragraph", "children": [{"type": "text", "value": "xyz"}]}),
+        ];
+        let mut history = History {
+            ids: AddrMap::default(),
+            recent: std::collections::VecDeque::new(),
+            seen: HashSet::new(),
+            rounds: 0,
+            remaining: i64::try_from(MAX_REPAIR_CHARS).unwrap_or(i64::MAX),
+        };
+
+        assert!(!repeated_repair(
+            &mut writer,
+            Arr::Json(&group),
+            &mut history
+        ));
+        assert_eq!(writer.work_limit, 40_004 * WORK_FACTOR);
     }
 }
