@@ -1211,7 +1211,8 @@ impl<'a> Records<'a> {
             // with a brace, an item or cell at its marker, and an inline node where it ends in one.
             .filter(|(_, (range, _))| {
                 let bytes = self.source.as_bytes();
-                if range.kind == "document" || range.end <= range.start {
+                // A text never takes a brace block; one it ends in is text.
+                if matches!(range.kind, "document" | "text") || range.end <= range.start {
                     false
                 } else if self.inline_held(range) {
                     bytes.get(range.end - 1) == Some(&b'}')

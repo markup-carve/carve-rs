@@ -157,8 +157,12 @@ fn trim_path(v: &mut Value, parts: &[String], at: &str, line_end: bool, run: &mu
 /// The text `items[i]` with its line-end spaces and tabs, or `None` where it ends no line or has none.
 fn line_end_text(items: &[Value], i: usize, line_end: bool) -> Option<usize> {
     let item = items.get(i)?;
-    // The attribute block of a text follows it, so its spaces end no line.
-    if ty(item) != "text" || item.get("attrs").is_some() || item.get("data").is_some() {
+    // The attribute block of a text follows it, so its spaces end no line; a field dropped with the node is a loss.
+    if ty(item) != "text"
+        || ["attrs", "data", "lang", "dir", "metadata"]
+            .iter()
+            .any(|f| item.get(f).is_some())
+    {
         return None;
     }
     let ends = items

@@ -452,12 +452,21 @@ struct Item<'t> {
     joined: Option<String>,
 }
 
+/// A text node with no field beyond its value and geometry; only such runs join, so a field of a later one is compared.
+fn joinable_text(node: V<'_>) -> bool {
+    let mut plain = ty(node) == "text";
+    node.each(&mut |k, _| {
+        plain = plain && matches!(k, "type" | "value" | "pos" | "segments");
+    });
+    plain
+}
+
 fn coalesced(items: Arr<'_>) -> Vec<Item<'_>> {
     let mut out: Vec<Item<'_>> = Vec::with_capacity(items.len());
     for item in items {
-        if ty(item) == "text" {
+        if joinable_text(item) {
             if let Some(last) = out.last_mut() {
-                if ty(last.node) == "text" {
+                if joinable_text(last.node) {
                     let mut joined = last
                         .joined
                         .take()

@@ -1913,7 +1913,7 @@ fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usi
 
 fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: usize) {
     for (at, ch) in raw.char_indices() {
-        if !matches!(ch, '*' | '/')
+        if !matches!(ch, '*' | '/' | '_' | '~' | '=')
             || raw.as_bytes().get(at + 1) != Some(&b'{')
             || escaped(raw.as_bytes(), at)
         {
@@ -1925,13 +1925,12 @@ fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: 
         if end <= at + 1 {
             continue;
         }
-        let marker = if ch == '*' { "*" } else { "/" };
         sink.emit_range(
             "emphasis-marker-before-attributes",
             from + at,
             from + at + 1,
             item.path(),
-            &[("ch", marker)],
+            &[("ch", &ch.to_string())],
             0,
         );
     }
