@@ -78,7 +78,7 @@ impl Chunk {
     }
 }
 
-/// C2-W-133: whether the repair of the group has parsed more than its limit.
+/// C2-W-133: whether the repairs of the document have parsed more than its budget.
 pub fn exhausted(w: &Writer<'_>) -> bool {
     w.work_chars > w.work_limit
 }

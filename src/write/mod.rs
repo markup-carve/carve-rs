@@ -91,7 +91,7 @@ pub(crate) fn format_view<'t>(
     if let Some(src) = src {
         settings.layout = Some(facts::from_source(doc, src));
     }
-    write_view(doc, pool, &settings)
+    write_trimmed(doc, pool, &settings, src.map(str::len))
 }
 
 /// The nodes the writer makes while it writes a tree (C2-W-089 stand-ins).
@@ -211,6 +211,16 @@ pub(crate) fn write_view<'t>(
     pool: &'t Pool,
     settings: &Settings,
 ) -> (String, Vec<Entry>) {
+    write_trimmed(doc, pool, settings, None)
+}
+
+/// [`write_view`] with the length of the source the tree was read from, which sizes the repair budget.
+fn write_trimmed<'t>(
+    doc: V<'t>,
+    pool: &'t Pool,
+    settings: &Settings,
+    source_len: Option<usize>,
+) -> (String, Vec<Entry>) {
     // A parse gives no such spaces, so only a supplied JSON tree is trimmed.
     let recorded = |at: &str| {
         settings
@@ -235,7 +245,7 @@ pub(crate) fn write_view<'t>(
         } else {
             settings
         };
-        let (source, mut entries) = write_marked(V::Json(&trimmed.doc), &pool, settings);
+        let (source, mut entries) = write_sized(V::Json(&trimmed.doc), &pool, settings, source_len);
         for entry in &mut entries {
             if let Some(path) = &entry.path {
                 entry.path = Some(trimmed.remap(path));
@@ -243,14 +253,21 @@ pub(crate) fn write_view<'t>(
         }
         return (source, entries);
     }
-    write_marked(doc, pool, settings)
+    write_sized(doc, pool, settings, source_len)
 }
 
-fn write_marked<'t>(doc: V<'t>, pool: &'t Pool, settings: &Settings) -> (String, Vec<Entry>) {
+/// [`write_trimmed`] after the trim.
+fn write_sized<'t>(
+    doc: V<'t>,
+    pool: &'t Pool,
+    settings: &Settings,
+    source_len: Option<usize>,
+) -> (String, Vec<Entry>) {
+    let budget = repair_budget(source_len.unwrap_or_else(|| written_estimate(doc)));
     let Some(marks) = spans::add(doc) else {
-        return write_tree(doc, pool, settings);
+        return write_tree(doc, pool, settings, budget);
     };
-    let (source, mut entries) = write_tree(V::Json(&marks.doc), pool, settings);
+    let (source, mut entries) = write_tree(V::Json(&marks.doc), pool, settings, budget);
     for entry in &mut entries {
         if let Some(path) = &entry.path {
             entry.path = Some(marks.remap(path));
@@ -270,8 +287,14 @@ fn write_marked<'t>(doc: V<'t>, pool: &'t Pool, settings: &Settings) -> (String,
     (source, entries)
 }
 
-fn write_tree<'t>(doc: V<'t>, pool: &'t Pool, settings: &Settings) -> (String, Vec<Entry>) {
+fn write_tree<'t>(
+    doc: V<'t>,
+    pool: &'t Pool,
+    settings: &Settings,
+    budget: usize,
+) -> (String, Vec<Entry>) {
     let mut w = Writer::new(pool, settings.align_tables);
+    w.work_limit = budget;
     w.extensions.clone_from(&settings.extensions);
     if settings.extensions.iter().any(|e| e == "carve.tabs") {
         w.matchers.push(state::Matcher {
@@ -441,6 +464,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
             _ => 0,
         };
         out.extend(std::iter::repeat_n(String::new(), blanks));
+        w.written_chars += blanks + w.lines.iter().map(|l| l.len() + 1).sum::<usize>();
         out.append(&mut w.lines);
         before = at.checked_sub(1).and_then(|i| nodes.get(i));
         list = last_block(nodes, from, at, list);
@@ -531,9 +555,28 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
     w.group_certificate = GroupCertificate::None;
     let reported = w.sp.losses.len();
-    let end = repair_rounds(w, doc, from, first, reported);
-    w.work_limit = usize::MAX;
-    end
+    repair_rounds(w, doc, from, first, reported)
+}
+
+/// C2-W-133: one repair budget for the whole document, `len` the characters of the document as written.
+fn repair_budget(len: usize) -> usize {
+    WORK_FLOOR.max(len.saturating_mul(WORK_FACTOR))
+}
+
+/// The length of a supplied tree as written, over-estimated: every string twice, a few characters per value.
+fn written_estimate(v: V<'_>) -> usize {
+    if let Some(s) = v.as_str() {
+        return s.len().saturating_mul(2).saturating_add(2);
+    }
+    let mut sum: usize = 2;
+    if let Some(items) = v.as_array() {
+        for item in items {
+            sum = sum.saturating_add(written_estimate(item));
+        }
+    } else if v.is_object() {
+        v.each(&mut |_, value| sum = sum.saturating_add(written_estimate(value)));
+    }
+    sum
 }
 
 const MAX_REPAIR_CHARS: usize = 20_000_000;
@@ -586,6 +629,7 @@ fn repair_rounds<'t>(
         let mut round = Round {
             chunks: &chunks,
             last: None,
+            source: None,
             equal: false,
         };
         if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
@@ -663,12 +707,11 @@ fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: Arr<'_>) -
 fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool {
     let chars: usize = w.lines.iter().map(|l| l.len() + 1).sum();
     if h.rounds == 0 {
+        // C2-W-133 sizes the budget by the document as written; the source only bounds it from below.
+        w.work_limit = w.work_limit.max(repair_budget(w.written_chars + chars));
         h.remaining = h
             .remaining
             .max(i64::try_from(chars * MIN_REPAIR_ROUNDS).unwrap_or(i64::MAX));
-        w.work_limit = w
-            .work_chars
-            .saturating_add(WORK_FLOOR.max(chars.saturating_mul(WORK_FACTOR)));
     }
     h.rounds += 1;
     h.remaining -= i64::try_from(chars).unwrap_or(i64::MAX);
@@ -745,6 +788,11 @@ fn group_chunk<'t>(
     escapes: AddrMap<usize, Vec<usize>>,
 ) -> Chunk {
     w.sp.escapes = escapes;
+    written_chunk(w, group, first)
+}
+
+/// The group written with the escapes `w` holds, for a parse.
+fn written_chunk<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool) -> Chunk {
     w.lines.clear();
     w.lead = None;
     w.clear_starts();
@@ -753,14 +801,84 @@ fn group_chunk<'t>(
 }
 
 /// C2-W-088, C2-W-091: whether the test asks for the escape `at` of `node`.
-fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at: usize) -> bool {
-    let placed = w.sp.escapes.clone();
+/// `read` is the group's last read-back source and its parse, reused where the text without the escape is the same.
+fn is_asked<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    (node, at): (V<'_>, usize),
+    read: Option<(&str, V<'_>)>,
+) -> bool {
     let lines = w.lines.clone();
     let lead = w.lead.clone();
     let starts = (w.starts.clone(), w.start_index.clone());
     let mut order = AddrMap::default();
     text_order(group, &mut order);
     let own_rank = rank(&order, node);
+    let asked = if own_rank < 0 {
+        asked_outside(w, group, first, (node, at), &order, read)
+    } else {
+        asked_in_group(w, group, first, (node, at), (&order, own_rank), read)
+    };
+    w.lines = lines;
+    w.lead = lead;
+    w.starts = starts.0;
+    w.start_index = starts.1;
+    asked
+}
+
+/// [`is_asked`] for a node of the group: the escapes of the text behind it are set aside in place, so the
+/// work is that of the group and not of every escape the document holds.
+fn asked_in_group<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    (node, at): (V<'_>, usize),
+    (order, own_rank): (&AddrMap<usize, usize>, i64),
+    read: Option<(&str, V<'_>)>,
+) -> bool {
+    let mut behind = Vec::new();
+    for (text_id, &r) in order {
+        if i64::try_from(r).unwrap_or(i64::MAX) > own_rank
+            && let Some(offsets) = w.sp.escapes.remove(text_id)
+        {
+            behind.push((*text_id, offsets));
+        }
+    }
+    let own = w.sp.escapes.get(&id(node)).cloned();
+    if let Some(offsets) = &own {
+        let before = offsets.iter().copied().filter(|&o| o < at).collect();
+        w.sp.escapes.insert(id(node), before);
+    }
+    let without = written_chunk(w, group, first);
+    let list = w.sp.escapes.entry(id(node)).or_default();
+    list.push(at);
+    list.sort_unstable();
+    let with = written_chunk(w, group, first);
+    let with = with.parse(w);
+    let asked = match read {
+        Some((text, parsed)) if text == without.text() => !node::trees_equal(with, parsed),
+        _ => !node::trees_equal(with, without.parse(w)),
+    };
+    match own {
+        Some(offsets) => w.sp.escapes.insert(id(node), offsets),
+        None => w.sp.escapes.remove(&id(node)),
+    };
+    w.sp.escapes.extend(behind);
+    asked
+}
+
+/// [`is_asked`] for a node outside the order of the group: only its own escapes before `at` stay.
+fn asked_outside<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    (node, at): (V<'_>, usize),
+    order: &AddrMap<usize, usize>,
+    read: Option<(&str, V<'_>)>,
+) -> bool {
+    let own_rank = -1;
+    let placed = w.sp.escapes.clone();
     let mut left: AddrMap<usize, Vec<usize>> = AddrMap::default();
     for (text_id, offsets) in &placed {
         let r = order
@@ -780,14 +898,13 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
     list.push(at);
     list.sort_unstable();
     let without = group_chunk(w, group, first, left);
-    let without = without.parse(w);
     let with = group_chunk(w, group, first, escaped);
-    let asked = !node::trees_equal(with.parse(w), without);
+    let with = with.parse(w);
+    let asked = match read {
+        Some((text, parsed)) if text == without.text() => !node::trees_equal(with, parsed),
+        _ => !node::trees_equal(with, without.parse(w)),
+    };
     w.sp.escapes = placed;
-    w.lines = lines;
-    w.lead = lead;
-    w.starts = starts.0;
-    w.start_index = starts.1;
     asked
 }
 
@@ -795,6 +912,8 @@ fn is_asked<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool, node: V<'_>, at
 struct Round<'s> {
     chunks: &'s typed_arena::Arena<Chunk>,
     last: Option<V<'s>>,
+    /// The source `last` was parsed from.
+    source: Option<&'s str>,
     /// The last read-back parse was already proved equal to the group.
     equal: bool,
 }
@@ -811,6 +930,7 @@ fn compare_group<'t, 's>(
     let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
     let parsed = chunk.parse(w);
     round.last = Some(parsed);
+    round.source = Some(chunk.text());
     let mut c = Check {
         source: Some(chunk.text().to_string()),
         ..Check::default()
@@ -837,7 +957,8 @@ fn settle<'t>(
     round: &mut Round<'_>,
 ) -> bool {
     let mut c = compare_group(w, doc, group, first, round);
-    if drop_asked_trials(w, &mut c, group, first) && c.changes() == 0 {
+    let read = round.source.zip(round.last);
+    if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
         return true;
     }
     if c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
@@ -860,6 +981,7 @@ fn drop_asked_trials<'t>(
     c: &mut Check<'t>,
     group: Arr<'t>,
     first: bool,
+    read: Option<(&str, V<'_>)>,
 ) -> bool {
     let mut dropped = false;
     let trials = if c.trials.len() <= MAX_ORDERED_ESCAPES {
@@ -868,7 +990,7 @@ fn drop_asked_trials<'t>(
         Vec::new()
     };
     for (n, at) in trials {
-        if is_asked(w, group, first, n, at) {
+        if is_asked(w, group, first, (n, at), read) {
             continue;
         }
         if let Some(p) = c
@@ -1142,5 +1264,31 @@ mod repair_limit_test {
             writer.sp.losses.first().map(|loss| loss.code),
             Some("writer-refused")
         );
+    }
+
+    #[test]
+    fn budget_grows_with_the_written_length() {
+        let pool = typed_arena::Arena::new();
+        let mut writer = Writer::new(&pool, false);
+        writer.work_limit = repair_budget(10);
+        writer.written_chars = 40_000;
+        writer.lines.push("xyz".into());
+        let group = [
+            serde_json::json!({"type": "paragraph", "children": [{"type": "text", "value": "xyz"}]}),
+        ];
+        let mut history = History {
+            ids: AddrMap::default(),
+            recent: std::collections::VecDeque::new(),
+            seen: HashSet::new(),
+            rounds: 0,
+            remaining: i64::try_from(MAX_REPAIR_CHARS).unwrap_or(i64::MAX),
+        };
+
+        assert!(!repeated_repair(
+            &mut writer,
+            Arr::Json(&group),
+            &mut history
+        ));
+        assert_eq!(writer.work_limit, 40_004 * WORK_FACTOR);
     }
 }

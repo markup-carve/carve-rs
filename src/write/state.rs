@@ -105,6 +105,8 @@ pub struct Writer<'t> {
     pub line_opens: HashMap<String, bool>,
     pub work_chars: usize,
     pub work_limit: usize,
+    /// The characters of the groups written so far, line ends included.
+    pub written_chars: usize,
     /// The verbatim references written (C2-W-075): their backslashes are the author's.
     pub raw_refs: Vec<String>,
 }
@@ -140,6 +142,7 @@ impl<'t> Writer<'t> {
             line_opens: HashMap::new(),
             work_chars: 0,
             work_limit: usize::MAX,
+            written_chars: 0,
             raw_refs: Vec::new(),
         }
     }
