@@ -8,21 +8,26 @@ use crate::ast::{Node, Pos, owned};
 pub const ABOVE_6: &str = "heading-shift-above-6";
 
 /// Adds `shift` to every heading level, at every depth.
-pub(crate) fn apply(nodes: &mut [Node<'_>], shift: u8) {
+pub(crate) fn apply(nodes: &mut [Node<'_>], shift: u8) -> Found {
     if shift == 0 {
-        return;
+        return None;
     }
+    let mut first = None;
     for n in nodes.iter_mut() {
-        walk(n, i64::from(shift));
+        walk(n, i64::from(shift), &mut first);
     }
+    first
 }
 
-fn walk(n: &mut Node<'_>, by: i64) {
+fn walk(n: &mut Node<'_>, by: i64, first: &mut Found) {
     if let Node::Heading(h) = n {
         h.level = h.level.saturating_add(by);
+        if first.is_none() && h.level > 6 {
+            *first = Some((h.pos, None));
+        }
         return;
     }
-    n.for_each_child_mut(&mut |c| walk(c, by));
+    n.for_each_child_mut(&mut |c| walk(c, by, first));
 }
 
 /// The first heading above level 6 in document order, the loss a set shift
@@ -54,44 +59,26 @@ fn find(n: &Node<'_>, file_of: &dyn Fn(&Pos) -> Option<String>, found: &mut Foun
 }
 
 /// [`apply`] on an owned tree, the view the transforms of a host receive.
-pub(crate) fn apply_owned(nodes: &mut [owned::Node], shift: u8) {
+pub(crate) fn apply_owned(nodes: &mut [owned::Node], shift: u8) -> Found {
     if shift == 0 {
-        return;
+        return None;
     }
+    let mut first = None;
     for n in nodes.iter_mut() {
-        walk_owned(n, i64::from(shift));
+        walk_owned(n, i64::from(shift), &mut first);
     }
+    first
 }
 
-fn walk_owned(n: &mut owned::Node, by: i64) {
+fn walk_owned(n: &mut owned::Node, by: i64, first: &mut Found) {
     if let owned::Node::Heading(h) = n {
         h.level = h.level.saturating_add(by);
+        if first.is_none() && h.level > 6 {
+            *first = Some((h.pos, None));
+        }
         return;
     }
-    n.for_each_child_mut(&mut |c| walk_owned(c, by));
-}
-
-/// The first above-six heading just after shifting an owned render view.
-pub(crate) fn first_above_6_owned(nodes: &[owned::Node]) -> Found {
-    for node in nodes {
-        if let Some(found) = find_owned(node) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn find_owned(node: &owned::Node) -> Found {
-    if let owned::Node::Heading(heading) = node {
-        return (heading.level > 6).then_some((heading.pos, None));
-    }
-    let mut found = None;
-    node.for_each_child(&mut |child| {
-        if found.is_none() {
-            found = find_owned(child);
-        }
-    });
-    found
+    n.for_each_child_mut(&mut |c| walk_owned(c, by, first));
 }
 
 /// The catalog wording of C2-H-208, independent of a later transform's final HTML.
@@ -100,6 +87,6 @@ pub(crate) fn message(shift: u8) -> String {
 }
 
 /// A known shift result, including a known absence, for a view with later transforms.
-pub(crate) fn shifted_fact(nodes: &[Node<'_>], shift: u8, has_transforms: bool) -> Option<Found> {
-    (shift != 0 && has_transforms).then(|| first_above_6(nodes, &|_| None))
+pub(crate) fn shifted_fact(found: Found, shift: u8, has_transforms: bool) -> Option<Found> {
+    (shift != 0 && has_transforms).then_some(found)
 }

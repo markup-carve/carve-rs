@@ -756,9 +756,9 @@ impl Carve {
         let (mut doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
             if early_claims {
                 claimed = self.claim_arena(doc, &arena, text);
-                crate::heading_shift::apply(doc.children, opts.heading_shift);
+                let shifted = crate::heading_shift::apply(doc.children, opts.heading_shift);
                 early_shift_override = crate::heading_shift::shifted_fact(
-                    doc.children,
+                    shifted,
                     opts.heading_shift,
                     self.extensions.has_transforms(),
                 );
@@ -768,17 +768,17 @@ impl Carve {
             }
         })
         .ok()?;
+        let mut late_shift_override = None;
         if !early_claims {
             claimed = self.claim_arena(&mut doc, &arena, text);
-            crate::heading_shift::apply(doc.children, opts.heading_shift);
-        }
-        let shift_override = early_shift_override.or_else(|| {
-            crate::heading_shift::shifted_fact(
-                doc.children,
+            let shifted = crate::heading_shift::apply(doc.children, opts.heading_shift);
+            late_shift_override = crate::heading_shift::shifted_fact(
+                shifted,
                 opts.heading_shift,
                 self.extensions.has_transforms(),
-            )
-        });
+            );
+        }
+        let shift_override = early_shift_override.or(late_shift_override);
         let (mut diagnostics, suppressed) = record::cap_includes(&found);
         let changed = match claimed {
             Ok((entries, changed)) => {
@@ -859,13 +859,18 @@ impl Carve {
         refuse_loss: bool,
     ) -> Result<Rendered, Error> {
         let mut tree = tree;
+        let mut shifted = None;
         if opts.heading_shift != 0 {
             // C2-H-208: the shift comes before the first document transform.
-            crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
+            shifted =
+                crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
             tree.json = std::sync::OnceLock::new();
         }
-        let shift_override = (opts.heading_shift != 0 && self.extensions.has_transforms())
-            .then(|| crate::heading_shift::first_above_6_owned(&tree.document.children));
+        let shift_override = crate::heading_shift::shifted_fact(
+            shifted,
+            opts.heading_shift,
+            self.extensions.has_transforms(),
+        );
         // C2-X-053: transforms see the resolved view; without one the render resolves the tree itself.
         let (view, transform_entries) = if self.extensions.owned_transforms_only() {
             let mut resolved = crate::resolved_owned(tree.document(), opts);
