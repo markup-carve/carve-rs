@@ -334,14 +334,15 @@ impl Matchers {
 
     /// [`Matchers::apply_owned`] of a tree in an arena. Only a node a matcher
     /// can claim, and an extension node with slots, crosses into the owned
-    /// tree; the rest of the tree is walked in place (carve-rs#4366).
+    /// tree; the rest of the tree is walked in place (carve-rs#4366). True in
+    /// the second place when a claim changed the tree.
     pub(crate) fn apply_arena<'a>(
         &self,
         doc: &mut crate::ast::Document<'a>,
         arena: &'a crate::Arena,
         opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
         declared: &dyn Fn(&str) -> Option<ExtensionDeclaration>,
-    ) -> Result<Vec<Entry>, Error> {
+    ) -> Result<(Vec<Entry>, bool), Error> {
         use crate::ast::Node;
         fn walk<'a>(
             node: &mut Node<'a>,
@@ -395,10 +396,12 @@ impl Matchers {
             walk(node, arena, &mut pass, 0)?;
         }
         let (used, entries) = (pass.used, pass.entries);
+        // Every claim declares the extension it used.
+        let changed = !used.is_empty();
         if let Some(extensions) = declare_used(&used, doc.extensions) {
             doc.extensions = Some(arena.json(extensions));
         }
-        Ok(entries)
+        Ok((entries, changed))
     }
 
     pub(crate) fn has_form(&self, form: Form) -> bool {
@@ -414,6 +417,11 @@ impl Matchers {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.list.is_empty()
+    }
+
+    /// Whether every matcher's claimer is engine code.
+    pub(crate) fn engine_only(&self) -> bool {
+        self.list.iter().all(|m| m.claimer.engine())
     }
 
     pub(crate) fn check(&self, m: &Matcher) -> Result<(), Error> {

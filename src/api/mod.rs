@@ -705,15 +705,16 @@ impl Carve {
         Ok(rendered)
     }
 
-    /// The claims of the host's matchers on a tree of the top file in `arena`.
+    /// The claims of the host's matchers on a tree of the top file in `arena`;
+    /// true in the second place when a claim changed the tree.
     fn claim_arena<'a>(
         &self,
         doc: &mut crate::ast::Document<'a>,
         arena: &'a crate::Arena,
         text: &str,
-    ) -> Result<Vec<Entry>, Error> {
+    ) -> Result<(Vec<Entry>, bool), Error> {
         if self.claims_nothing() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), false));
         }
         // Without includes every node is of the top file.
         let opener = |file: Option<&str>, at: usize| {
@@ -737,32 +738,50 @@ impl Carve {
     ) -> Option<Result<Rendered, Error>> {
         let arena = crate::Arena::for_input(text);
         let mut found = Vec::new();
-        let mut claimed: Result<Vec<Entry>, Error> = Ok(Vec::new());
-        // C2-X-005: the claims run on the core parse; one resolve of the
-        // claimed tree gives what resolving it again after the claims gave.
-        // A transform that reads no resolution result runs here too.
-        let early = self.extensions.parsed_arena_transforms_only();
-        let (doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
-            claimed = self.claim_arena(doc, &arena, text);
+        let mut claimed: Result<(Vec<Entry>, bool), Error> = Ok((Vec::new(), false));
+        // C2-X-005: engine claimers read no resolution result, so they run on
+        // the core parse and one resolve of the claimed tree gives what
+        // resolving it again after the claims gave; so does a transform that
+        // reads none. A host claimer sees the resolved tree, as in `parse`.
+        let early_claims = self.matchers.engine_only();
+        let early = early_claims && self.extensions.parsed_arena_transforms_only();
+        let (mut doc, _, _) = crate::prepare_with(text, opts, &arena, &mut found, &mut |doc| {
+            if early_claims {
+                claimed = self.claim_arena(doc, &arena, text);
+            }
             if early && claimed.is_ok() {
                 self.extensions.transform_parsed_arena(doc, &arena);
             }
         })
         .ok()?;
-        let (mut diagnostics, suppressed) = record::cap_includes(&found);
-        match claimed {
-            Ok(entries) => diagnostics.extend(entries),
-            Err(e) => return Some(Err(e)),
+        if !early_claims {
+            claimed = self.claim_arena(&mut doc, &arena, text);
         }
-        // C2-X-053: a transform sees the resolved view, which is resolved again after it.
+        let (mut diagnostics, suppressed) = record::cap_includes(&found);
+        let changed = match claimed {
+            Ok((entries, changed)) => {
+                diagnostics.extend(entries);
+                changed && !early_claims
+            }
+            Err(e) => return Some(Err(e)),
+        };
         let (doc, files) = if early {
             (doc, None)
-        } else {
+        } else if self.extensions.has_transforms() {
+            // C2-X-053: a transform sees the resolved view, which is resolved again after it.
+            if changed {
+                let _ = crate::resolve_tree_unflattened(&mut doc, opts, &arena);
+            }
             let mut owned = doc.owned();
             self.extensions.transform_owned(&mut owned);
             let mut doc = owned.in_arena(&arena);
             let files = crate::resolve_tree(&mut doc, opts, &arena);
             (doc, files)
+        } else if changed {
+            let files = crate::resolve_tree(&mut doc, opts, &arena);
+            (doc, files)
+        } else {
+            (doc, None)
         };
         Some(
             self.render_arena(&doc, files.as_ref(), opts, Vec::new(), refuse_loss)

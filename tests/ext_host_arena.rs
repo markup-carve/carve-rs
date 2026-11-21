@@ -59,3 +59,47 @@ fn arena_render_matches_the_tree_path() {
         }
     }
 }
+
+/// A host claimer sees the resolved tree in a render as in `parse`: here the
+/// generated id of a heading in the div body.
+#[test]
+fn a_host_claimer_reads_resolved_nodes_in_a_render() {
+    struct Summary;
+    impl carve::api::Renderer for Summary {
+        fn render(
+            &self,
+            node: &serde_json::Value,
+            cx: &carve::api::RenderContext<'_>,
+        ) -> Result<String, carve::api::Error> {
+            cx.render_inlines(&node["slots"]["summary"])
+        }
+    }
+    let mut bundle = extensions::details();
+    bundle.extensions[0].declaration.name = "test.idProbe".into();
+    bundle.extensions[0].renderers = vec![(carve::api::Channel::Interactive, Box::new(Summary))];
+    bundle.matchers[0].extension = "test.idProbe".into();
+    bundle.matchers[0].claimer = Box::new(|claim: &extensions::Claim<'_>| {
+        let id = claim
+            .node
+            .pointer("/children/0/generatedId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("none")
+            .to_owned();
+        let summary = serde_json::json!([{"type": "text", "value": format!("id {id}")}]);
+        Some(serde_json::json!({
+            "type": "block_extension", "name": "test.idProbe", "version": "1",
+            "children": [], "slots": {"summary": summary, "body": []},
+            "fallback": [{"type": "paragraph", "children": summary}],
+        }))
+    });
+    let mut host = Carve::new();
+    host.register(bundle).unwrap();
+    let opts = Options::default();
+    let source = "::: details\n## Hello\n:::\n";
+    let direct = host.render(source, &opts).unwrap();
+    let tree = host
+        .render_tree(&host.parse(source, &opts).unwrap(), &opts)
+        .unwrap();
+    assert_eq!(direct, tree);
+    assert!(direct.contains("id Hello"), "{direct}");
+}
