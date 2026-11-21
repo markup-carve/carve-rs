@@ -377,6 +377,7 @@ impl Matchers {
             opener,
             declared,
             definitions,
+            definition_nodes: Vec::new(),
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -446,11 +447,15 @@ impl Matchers {
             }
             failure.map_or(Ok(()), Err)
         }
-        let definitions = doc
+        let definition_nodes: Vec<crate::ast::owned::Node> = doc
             .children
             .iter()
             .filter(|node| matches!(node, Node::LinkReferenceDefinition(_)))
-            .map(|node| serde_json::to_value(node.owned()))
+            .map(Node::owned)
+            .collect();
+        let definitions = definition_nodes
+            .iter()
+            .map(serde_json::to_value)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| Error::option("extensions", e.to_string()))?;
         let mut pass = Pass {
@@ -458,6 +463,7 @@ impl Matchers {
             opener,
             declared,
             definitions,
+            definition_nodes,
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -531,6 +537,7 @@ impl Matchers {
             opener,
             declared,
             definitions: super::standard::definitions(doc),
+            definition_nodes: Vec::new(),
             used: Vec::new(),
             entries: Vec::new(),
         };
@@ -690,6 +697,8 @@ struct Pass<'a> {
     opener: &'a dyn Fn(Option<&str>, usize) -> Option<String>,
     declared: &'a dyn Fn(&str) -> Option<ExtensionDeclaration>,
     definitions: Vec<Value>,
+    /// The definitions as typed nodes, for the typed claims.
+    definition_nodes: Vec<crate::ast::owned::Node>,
     used: Vec<ExtensionDeclaration>,
     entries: Vec<Entry>,
 }
@@ -759,11 +768,7 @@ impl Pass<'_> {
         };
         let source = match node {
             Node::CodeBlock(code) => Some(typed_fence_source(&m.name, code)?),
-            _ => {
-                let value = serde_json::to_value(&*node)
-                    .map_err(|e| Error::option("extensions", e.to_string()))?;
-                super::standard::div_source_of(value, &m.name, &self.definitions)
-            }
+            _ => super::standard::div_source_typed(node, &m.name, &self.definition_nodes),
         };
         let Some(source) = source else {
             self.fail(
