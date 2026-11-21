@@ -186,6 +186,9 @@ fn add_key(block: &mut AttrBlock, key: &str, value: String) {
 #[must_use]
 pub fn parse_glued(s: &str, at: usize) -> Option<(AttrBlock, usize)> {
     let (mut block, mut end) = parse_block(s, at)?;
+    if block.empty {
+        return Some((block, end));
+    }
     while let Some((next, e)) = parse_block(s, end) {
         if next.empty {
             break;

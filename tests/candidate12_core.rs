@@ -37,6 +37,18 @@ fn c2_b_166_row_attribute_quoted_pipe_does_not_move_closer() {
 }
 
 #[test]
+fn c2_b_167_empty_block_stops_glued_row_attribute() {
+    for source in ["| a |{}{d}", "||{}{d}", "| a | {}{.c}", "| a |{d}{}"] {
+        let html = carve::render(source, &Options::default());
+        assert_eq!(html, format!("<p>{source}</p>"), "{source}");
+    }
+    for source in ["| a |{.c}{#i}"] {
+        let html = carve::render(source, &Options::default());
+        assert!(html.starts_with("<table>"), "{source}: {html}");
+    }
+}
+
+#[test]
 fn c2_b_176_continuation_adds_header_cell() {
     let html = carve::render("|= Name |\n+ | Role |\n| Ada | Lead |", &Options::default());
     assert!(html.contains("<th scope=\"col\">Role</th>"), "{html}");
