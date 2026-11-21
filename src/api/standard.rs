@@ -210,10 +210,9 @@ pub(crate) fn claim_tabs(
     doc: &mut Value,
     opener: &dyn Fn(Option<&str>, usize) -> Option<String>,
 ) -> bool {
-    let definitions = definitions(doc);
     let cx = Claim {
         opener,
-        definitions,
+        keys: crate::write::link_keys(at(doc, "/children").as_array().into_iter().flatten()),
         failed: RefCell::new(false),
     };
     let mut claimed = false;
@@ -228,7 +227,7 @@ pub(crate) fn claim_tabs(
 
 struct Claim<'a> {
     opener: &'a dyn Fn(Option<&str>, usize) -> Option<String>,
-    definitions: Vec<Value>,
+    keys: crate::write::LinkKeys,
     failed: RefCell<bool>,
 }
 
@@ -320,42 +319,48 @@ impl Claim<'_> {
     /// C2-X-026, C2-W-089: the canonical body of the div, written with the
     /// link reference definitions of the document around it.
     fn source(&self, node: &Value, name: &str) -> Option<Value> {
-        div_source(node, name, &self.definitions)
+        div_source(node, name, &self.keys)
     }
 }
 
 /// `Carve::default().write` of a document of the engine's own claim input,
 /// as its JSON value: the reader checks and the typed decode are skipped,
 /// the writer reads the value (carve-rs#4366).
-fn write_claim_source(doc: &Value) -> Option<String> {
-    let (text, entries) = crate::write::write_value(doc, &crate::write::Settings::default());
+fn write_claim_source(doc: &Value, settings: &crate::write::Settings) -> Option<String> {
+    let (text, entries) = crate::write::write_value(doc, settings);
     (!crate::write::has_loss(&entries)).then_some(text)
+}
+
+/// The settings of the write of a source body: the link keys of the document
+/// around it stand in for its definitions, which a copy per body would make
+/// quadratic (carve-rs#4564).
+fn nested_settings(keys: &crate::write::LinkKeys) -> crate::write::Settings {
+    crate::write::Settings {
+        link_keys: Some(std::sync::Arc::clone(keys)),
+        ..crate::write::Settings::default()
+    }
 }
 
 /// C2-X-026, C2-W-089: the source record of a claimed div, its body written
 /// with the link reference definitions of the document around it.
-pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Option<Value> {
-    let mut children = vec![node.clone()];
-    children.extend(definitions.iter().cloned());
-    let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
-    let text = write_claim_source(&doc)?;
+pub(crate) fn div_source(node: &Value, name: &str, keys: &crate::write::LinkKeys) -> Option<Value> {
+    let doc = json!({"type": "document", "astVersion": "2.0", "children": [node]});
+    let text = write_claim_source(&doc, &nested_settings(keys))?;
     let title = at(node, "/title").as_array().map(|title| plain_text(title));
     div_record(&text, name, title, node.get("groupLabel").cloned())
 }
 
-/// [`div_source`] of a div in an arena, written from a typed copy of it and
-/// the definitions; the same as the write of its JSON value.
+/// [`div_source`] of a div in an arena, written from a typed copy of it; the
+/// same as the write of its JSON value.
 pub(crate) fn div_source_typed(
     node: &crate::ast::Node<'_>,
     name: &str,
-    definitions: &[crate::ast::owned::Node],
+    keys: &crate::write::LinkKeys,
 ) -> Option<Value> {
     let crate::ast::Node::Div(div) = node else {
         return None;
     };
-    let mut children = Vec::with_capacity(definitions.len() + 1);
-    children.push(node.owned());
-    children.extend(definitions.iter().cloned());
+    let children = vec![node.owned()];
     let arena = crate::Arena::new();
     let doc = crate::ast::owned::Document {
         ast_version: "2.0".into(),
@@ -365,11 +370,8 @@ pub(crate) fn div_source_typed(
     .in_arena(&arena);
     let doc = &*arena.alloc(doc);
     let pool = crate::write::Pool::new();
-    let (text, entries) = crate::write::write_view(
-        crate::view::V::Doc(doc),
-        &pool,
-        &crate::write::Settings::default(),
-    );
+    let (text, entries) =
+        crate::write::write_view(crate::view::V::Doc(doc), &pool, &nested_settings(keys));
     if crate::write::has_loss(&entries) {
         return None;
     }
@@ -407,19 +409,6 @@ fn div_record(
     Some(Value::Object(source))
 }
 
-/// The link reference definitions at the top level of a document.
-pub(crate) fn definitions(doc: &Value) -> Vec<Value> {
-    at(doc, "/children")
-        .as_array()
-        .map(|c| {
-            c.iter()
-                .filter(|n| at(n, "/type") == "link_reference_definition")
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// The body of the source form `:name[body]` of an inline extension node.
 pub(crate) fn inline_body(node: &Map<String, Value>, source: &str) -> Option<String> {
     let mut bare = node.clone();
@@ -427,7 +416,7 @@ pub(crate) fn inline_body(node: &Map<String, Value>, source: &str) -> Option<Str
     let doc = json!({"type": "document", "astVersion": "2.0", "children": [
         {"type": "paragraph", "children": [Value::Object(bare)]},
     ]});
-    let text = write_claim_source(&doc)?;
+    let text = write_claim_source(&doc, &crate::write::Settings::default())?;
     text.trim_end_matches('\n')
         .strip_prefix(&format!(":{source}["))?
         .strip_suffix(']')

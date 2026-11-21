@@ -2,10 +2,12 @@
 //! (C2-X-023, C2-X-026) and the claims the readback parse makes for the
 //! standard extensions a write enables (C2-X-005).
 
+use super::LinkKeys as Keys;
 use super::blocks::is_claimable_name;
 use super::node::{children, classes, has, s, trees_equal, ty};
 use crate::view::{Arr, V};
 use serde_json::Value;
+use std::sync::Arc;
 
 /// The children of a parsed JSON node.
 fn json_kids(v: &Value) -> &[Value] {
@@ -145,15 +147,11 @@ pub fn apply_claims(doc: &mut Value, extensions: &[String], source: &str) {
     if !extensions.iter().any(|e| e == "carve.tabs") {
         return;
     }
-    let definitions: Vec<Value> = json_kids(doc)
-        .iter()
-        .filter(|n| ty(n) == "link_reference_definition")
-        .cloned()
-        .collect();
+    let keys = super::link_keys(json_kids(doc));
     let mut used = false;
     if let Some(kids) = doc.get_mut("children").and_then(Value::as_array_mut) {
         for child in kids.iter_mut() {
-            used |= claim_tree(child, source, &definitions);
+            used |= claim_tree(child, source, &keys);
         }
     }
     if used {
@@ -189,9 +187,9 @@ fn opener_name<'s>(node: &Value, source: &'s str) -> Option<&'s str> {
     None
 }
 
-fn claim_tree(node: &mut Value, source: &str, definitions: &[Value]) -> bool {
+fn claim_tree(node: &mut Value, source: &str, keys: &Keys) -> bool {
     if ty(&*node) == "div" && opener_name(node, source) == Some("tabs") {
-        if let Some(claimed) = tabs(node, source, definitions) {
+        if let Some(claimed) = tabs(node, source, keys) {
             *node = claimed;
             return true;
         }
@@ -199,7 +197,7 @@ fn claim_tree(node: &mut Value, source: &str, definitions: &[Value]) -> bool {
     let mut used = false;
     if let Some(kids) = node.get_mut("children").and_then(Value::as_array_mut) {
         for child in kids.iter_mut() {
-            used |= claim_tree(child, source, definitions);
+            used |= claim_tree(child, source, keys);
         }
     }
     used
@@ -232,12 +230,16 @@ fn remaining_attrs(node: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
-/// C2-X-026: the body of a div source form, written in its context.
-fn source_body(node: &Value, definitions: &[Value]) -> String {
-    let mut kids = vec![node.clone()];
-    kids.extend(definitions.iter().cloned());
-    let doc = serde_json::json!({"type": "document", "astVersion": "2.0", "children": kids});
-    let text = super::write_value(&doc, &super::Settings::default()).0;
+/// C2-X-026: the body of a div source form, written in its context: the link
+/// keys of the document stand in for its definitions, which a copy per body
+/// would make quadratic.
+fn source_body(node: &Value, keys: &Keys) -> String {
+    let doc = serde_json::json!({"type": "document", "astVersion": "2.0", "children": [node]});
+    let settings = super::Settings {
+        link_keys: Some(Arc::clone(keys)),
+        ..super::Settings::default()
+    };
+    let text = super::write_value(&doc, &settings).0;
     let lines: Vec<&str> = text.split('\n').collect();
     let Some(opener) = lines.iter().position(|l| l.starts_with(":::")) else {
         return String::new();
@@ -252,9 +254,8 @@ fn source_body(node: &Value, definitions: &[Value]) -> String {
     if body.is_empty() { body } else { body + "\n" }
 }
 
-fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Value {
-    let mut src =
-        serde_json::json!({"form": "div", "name": name, "body": source_body(node, definitions)});
+fn div_source(node: &Value, name: &str, keys: &Keys) -> Value {
+    let mut src = serde_json::json!({"form": "div", "name": name, "body": source_body(node, keys)});
     if let (Some(t), Some(m)) = (super::node::title(node), src.as_object_mut()) {
         m.insert("title".into(), Value::String(plain(t)));
     }
@@ -264,7 +265,7 @@ fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Value {
     src
 }
 
-fn tab_node(node: &Value, definitions: &[Value]) -> Value {
+fn tab_node(node: &Value, keys: &Keys) -> Value {
     let title = node
         .get("title")
         .and_then(Value::as_array)
@@ -278,7 +279,7 @@ fn tab_node(node: &Value, definitions: &[Value]) -> Value {
     let mut out = serde_json::json!({
         "type": "block_extension", "name": "carve.tab", "version": "1", "children": [],
         "slots": {"title": title, "body": json_kids(node)}, "fallback": fallback,
-        "source": div_source(node, "tab", definitions),
+        "source": div_source(node, "tab", keys),
     });
     if let Some(m) = out.as_object_mut() {
         if let Some(pos) = node.get("pos") {
@@ -291,7 +292,7 @@ fn tab_node(node: &Value, definitions: &[Value]) -> Value {
     out
 }
 
-fn tabs(node: &Value, source: &str, definitions: &[Value]) -> Option<Value> {
+fn tabs(node: &Value, source: &str, keys: &Keys) -> Option<Value> {
     let body = json_kids(node);
     let is_tab = |n: &Value| {
         ty(n) == "div"
@@ -301,7 +302,7 @@ fn tabs(node: &Value, source: &str, definitions: &[Value]) -> Option<Value> {
     if body.is_empty() || !body.iter().all(is_tab) {
         return None;
     }
-    let tabs: Vec<Value> = body.iter().map(|t| tab_node(t, definitions)).collect();
+    let tabs: Vec<Value> = body.iter().map(|t| tab_node(t, keys)).collect();
     let fallback: Vec<Value> = tabs
         .iter()
         .flat_map(|t| {
@@ -314,7 +315,7 @@ fn tabs(node: &Value, source: &str, definitions: &[Value]) -> Option<Value> {
     let mut out = serde_json::json!({
         "type": "block_extension", "name": "carve.tabs", "version": "1", "children": [],
         "slots": {"tabs": tabs}, "fallback": fallback,
-        "source": div_source(node, "tabs", definitions),
+        "source": div_source(node, "tabs", keys),
     });
     if let Some(m) = out.as_object_mut() {
         if let Some(pos) = node.get("pos") {
