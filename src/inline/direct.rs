@@ -12,7 +12,7 @@ const SHORT: usize = 96;
 
 /// One part of a piece, in source offsets.
 #[derive(Clone, Copy)]
-pub(super) enum Seg {
+pub(crate) enum Seg {
     Text(usize, usize),
     /// A bare pair: the mark, the offset of the opener and the closer.
     Pair(u8, usize, usize),
@@ -75,12 +75,21 @@ pub(super) fn route<'a>(
                 return Err(first);
             }
         }
-        if piece(b, start, segs, short, stop).is_none() {
+        if piece::<false>(b, start, segs, short, stop).is_none() {
             return Err(first);
         }
         prev_end = Some(start + b.len());
     }
     Ok(nodes(env, segs))
+}
+
+/// The parts of one line as the route reads it, in offsets of `b`.
+pub(crate) fn line_segments(b: &[u8], segs: &mut Vec<Seg>) -> Option<()> {
+    segs.clear();
+    if !opens(b, true, true) {
+        return None;
+    }
+    piece::<true>(b, 0, segs, true, prefix(b).0)
 }
 
 /// Pieces joined by line breaks, no abbreviation and no break that the
@@ -167,7 +176,15 @@ fn known(b: &[u8], stop: usize, comma: Option<usize>) -> Known {
 
 /// The parts of one trimmed piece starting at source offset `at`, whose
 /// plain text ends at `stop`; pairs and code spans only in a short content.
-fn piece(b: &[u8], at: usize, segs: &mut Vec<Seg>, short: bool, stop: usize) -> Option<()> {
+// `LINE` only splits the instances: the streaming render's copy must not
+// change how the route's own copy is inlined.
+fn piece<const LINE: bool>(
+    b: &[u8],
+    at: usize,
+    segs: &mut Vec<Seg>,
+    short: bool,
+    stop: usize,
+) -> Option<()> {
     if b.get(stop).is_some_and(|&c| TEXT.has(c)) {
         // The second dot of a `..`.
         return None;
