@@ -909,7 +909,7 @@ impl Carve {
             &used_ids,
             doc.extensions,
         );
-        let rendered = crate::render_arena_hooked(doc, opts, files, &host, shift_override);
+        let rendered = crate::render_arena_hooked(doc, opts, files, &host, shift_override.as_ref());
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
         diagnostics.extend(entries);

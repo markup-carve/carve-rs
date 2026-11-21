@@ -300,10 +300,10 @@ pub(crate) fn render_arena_hooked<'a>(
     opts: &Options,
     files: Option<&resolve::files::Files<'a>>,
     hook: &dyn html::ExtensionHook,
-    shift_override: Option<heading_shift::Found>,
+    shift_override: Option<&heading_shift::Found>,
 ) -> Rendered {
     let (html, losses, derived, extension_nodes, destinations) =
-        html::render_tree_parts(doc, opts, files, Some(hook), shift_override.clone());
+        html::render_tree_parts(doc, opts, files, Some(hook), shift_override.cloned());
     let mut diagnostics = tree_loss_diagnostics(
         doc,
         unallowed(losses, opts),
@@ -311,7 +311,7 @@ pub(crate) fn render_arena_hooked<'a>(
         &extension_nodes,
         &destinations,
         opts,
-        shift_override.as_ref(),
+        shift_override,
     );
     if opts.strict_losses {
         for diagnostic in &mut diagnostics {
