@@ -47,12 +47,7 @@ pub(super) fn route<'a>(
     pieces: &[Piece],
     segs: &mut Vec<Seg>,
 ) -> Result<&'a mut [Node<'a>], Known> {
-    let cell = env.kind == ContentKind::Cell;
-    if !env.abbreviations.is_empty()
-        || pieces.is_empty()
-        || (pieces.len() > 1 && (env.hard_breaks || cell))
-        || pieces.iter().any(|p| p.join != Join::Line)
-    {
+    if !lines_only(env, pieces) {
         return Err(Known::default());
     }
     let short = pieces.iter().map(|p| p.end - p.start).sum::<usize>() <= SHORT;
@@ -61,40 +56,22 @@ pub(super) fn route<'a>(
     let mut prev_end = None;
     let mut first = Known::default();
     for (n, p) in pieces.iter().enumerate() {
-        let Some(t) = src.borrowed(p.start, p.end) else {
+        let Some((b, start)) = trimmed(env, p) else {
             return Err(Known::default());
         };
-        let mut b = t.as_bytes();
-        let mut start = p.start;
-        while let [rest @ .., b' ' | b'\t'] = b {
-            b = rest;
-        }
-        if cell {
-            while let [b' ' | b'\t', rest @ ..] = b {
-                b = rest;
-                start += 1;
-            }
-        }
-        match b.first() {
-            Some(c) if c.is_ascii_alphanumeric() => {}
-            // A content that starts with a form is mostly no simple one:
-            // every byte is tested before any other work.
-            Some(b'*' | b'/' | b'`') if short && b.iter().all(|&c| READ.has(c)) => {}
-            _ => return Err(first),
+        if !opens(b, short, true) {
+            return Err(first);
         }
         if let Some(e) = prev_end {
             segs.push(Seg::Break(e, start));
         }
         let (stop, comma) = prefix(b);
         if n == 0 {
-            // The content text starts at the first piece; a line block keeps its indent.
-            if env.kind != ContentKind::LineBlockLine
-                && b.first().is_some_and(u8::is_ascii_alphanumeric)
-                && stop < b.len()
-            {
-                first = known(b, stop, comma);
-            }
-            if !later_lines_open(src, pieces, short) {
+            first = first_known(env, b, stop, comma);
+            if !pieces.iter().skip(1).all(|p| {
+                src.borrowed(p.start, p.end)
+                    .is_some_and(|t| opens(t.as_bytes(), short, false))
+            }) {
                 return Err(first);
             }
         }
@@ -106,16 +83,54 @@ pub(super) fn route<'a>(
     Ok(nodes(env, segs))
 }
 
-/// Whether every piece after the first starts with a byte the route reads
-/// there, checked before the first piece is read.
-fn later_lines_open(src: &crate::source::Source<'_>, pieces: &[Piece], short: bool) -> bool {
-    pieces.iter().skip(1).all(|p| {
-        src.borrowed(p.start, p.end)
-            .and_then(|t| t.as_bytes().first())
-            .is_some_and(|&c| {
-                c.is_ascii_alphanumeric() || (short && matches!(c, b'*' | b'/' | b'`'))
-            })
-    })
+/// Pieces joined by line breaks, no abbreviation and no break that the
+/// route would have to tell apart.
+fn lines_only(env: &Env<'_, '_>, pieces: &[Piece]) -> bool {
+    env.abbreviations.is_empty()
+        && !pieces.is_empty()
+        && (pieces.len() == 1 || !(env.hard_breaks || env.kind == ContentKind::Cell))
+        && pieces.iter().all(|p| p.join == Join::Line)
+}
+
+/// The bytes of a piece without trailing spaces and tabs, and in a cell
+/// without leading ones, and the offset they start at.
+fn trimmed<'a>(env: &Env<'_, 'a>, p: &Piece) -> Option<(&'a [u8], usize)> {
+    let mut b = env.src.borrowed(p.start, p.end)?.as_bytes();
+    let mut start = p.start;
+    while let [rest @ .., b' ' | b'\t'] = b {
+        b = rest;
+    }
+    if env.kind == ContentKind::Cell {
+        while let [b' ' | b'\t', rest @ ..] = b {
+            b = rest;
+            start += 1;
+        }
+    }
+    Some((b, start))
+}
+
+/// Whether a piece starts with a byte the route reads there. A piece that
+/// starts with a form is mostly no simple one: with `all`, every byte is
+/// tested before any other work.
+fn opens(b: &[u8], short: bool, all: bool) -> bool {
+    match b.first() {
+        Some(c) if c.is_ascii_alphanumeric() => true,
+        Some(b'*' | b'/' | b'`') => short && (!all || b.iter().all(|&c| READ.has(c))),
+        _ => false,
+    }
+}
+
+/// What the full pass may skip of the first piece. The content text starts
+/// there; a line block keeps its indent.
+fn first_known(env: &Env<'_, '_>, b: &[u8], stop: usize, comma: Option<usize>) -> Known {
+    if env.kind != ContentKind::LineBlockLine
+        && b.first().is_some_and(u8::is_ascii_alphanumeric)
+        && stop < b.len()
+    {
+        known(b, stop, comma)
+    } else {
+        Known::default()
+    }
 }
 
 /// Where the plain text at the start of `b` ends: at the first byte that is
