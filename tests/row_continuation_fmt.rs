@@ -38,3 +38,17 @@ fn plus_in_footnote_label_does_not_steal_table_marker() {
     assert_eq!(once, expected);
     assert_eq!(carve.format(once.as_str(), &opts).unwrap(), expected);
 }
+
+#[test]
+fn pipe_in_table_attribute_does_not_steal_row_marker() {
+    let carve = Carve::new();
+    let opts = WriteOptions::default();
+    for input in [
+        "{title=\"p|q\"}\n| a |\n+ b |\n",
+        "{title=\"p|q\"}\n| a |\n+ |\n",
+    ] {
+        let once = carve.format(input, &opts).unwrap();
+        assert!(once.contains("+ "), "{input:?}: {once:?}");
+        assert_eq!(carve.format(once.as_str(), &opts).unwrap(), once);
+    }
+}
