@@ -29,10 +29,7 @@ fn item_div_opener_uses_the_marker_column_even_when_it_is_the_first_child() {
 
 #[test]
 fn plus_inside_a_quote_on_an_item_marker_line_is_not_a_continuation() {
-    assert_eq!(
-        ranges("    * > > +\n> >\n", "deprecated-continuation-marker"),
-        vec![(10, 11)]
-    );
+    assert!(ranges("    * > > +\n> >\n", "deprecated-continuation-marker").is_empty());
     assert_eq!(
         ranges("* +\n", "deprecated-continuation-marker"),
         vec![(2, 3)]

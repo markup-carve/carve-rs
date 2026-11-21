@@ -640,13 +640,14 @@ fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     let (mut start, mut text) = leaf_after_quotes(line);
-    // Message 2 needs the `+` directly behind an item marker; a quote mark between them gives message 1.
+    // The catalog reports a `+` behind quote marks alone, or the marker-line text of an item;
+    // `* > +` is neither, since the item's text is `> +`.
     let mut item = false;
-    let mut in_item = line.scope.container == ContainerKind::ListItem;
+    let mut marker_line = false;
     loop {
         let skip = if let Some(width) = item_marker_width(text) {
             item = true;
-            in_item = true;
+            marker_line = true;
             width
         } else if text.starts_with("> ") {
             item = false;
@@ -660,8 +661,12 @@ fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
         start += text.len() - trimmed.len();
         text = trimmed;
     }
-    if text == "+" {
-        let message = if item { 2 } else { usize::from(in_item) };
+    if text == "+" && (item || !marker_line) {
+        let message = if item {
+            2
+        } else {
+            usize::from(line.scope.container == ContainerKind::ListItem)
+        };
         sink.emit_nth(
             "deprecated-continuation-marker",
             line.start + start,

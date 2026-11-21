@@ -10,23 +10,28 @@ fn found(input: &str, code: &str) -> Vec<(u32, String)> {
 
 #[test]
 fn continuation_plus_behind_any_item_marker() {
-    for (input, at, here) in [
-        ("1. +\n", 3, true),
-        ("a) +\n", 3, true),
-        ("- [ ] +\n", 6, true),
-        ("1. > +\n", 5, false),
-        ("* > > +\n", 6, false),
-        ("    * > > +\n> >\n", 10, false),
+    for (input, at) in [
+        ("1. +\n", 3),
+        ("a) +\n", 3),
+        ("- [ ] +\n", 6),
+        ("- > - +\n", 6),
+        ("> - +\n", 4),
     ] {
         let found = found(input, "deprecated-continuation-marker");
         assert_eq!(found.len(), 1, "{input:?}");
         assert_eq!(found[0].0, at, "{input:?}");
-        let phrase = if here {
-            "is text here"
-        } else {
-            "inside this list item"
-        };
-        assert!(found[0].1.contains(phrase), "{input:?}: {}", found[0].1);
+        assert!(
+            found[0].1.contains("is text here"),
+            "{input:?}: {}",
+            found[0].1
+        );
+    }
+    // The item's marker-line text is `> +`, not `+` (carve-rs#4530).
+    for input in ["1. > +\n", "* > > +\n", "- [ ] > +\n"] {
+        assert!(
+            found(input, "deprecated-continuation-marker").is_empty(),
+            "{input:?}"
+        );
     }
 }
 
