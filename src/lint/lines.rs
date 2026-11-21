@@ -295,20 +295,7 @@ fn line_facts<'a>(
             fact.flags |= LITERAL_QUOTE_PREFIX;
         }
         mark_content(&mut facts, range);
-        if !matches!(kind, "text" | "soft_break" | "hard_break")
-            && range
-                .holder
-                .and_then(|at| holders.get(at as usize)?.range)
-                .and_then(|at| ranges.get(at as usize))
-                .is_some_and(|parent| parent.kind == "paragraph")
-            && let Some(fact) = range
-                .start_line
-                .checked_sub(1)
-                .and_then(|l| facts.get_mut(l))
-            && fact.span_start.is_none_or(|known| range.start < known)
-        {
-            fact.span_start = Some(range.start);
-        }
+        mark_span_start(&mut facts, range, ranges, holders);
         let paragraph_like = matches!(kind, "paragraph" | "caption" | "definition_term");
         let flags = range_flags(kind);
         if paragraph_like || flags != 0 || kind == "line_block" {
@@ -401,6 +388,29 @@ fn mask_opaque_lines<'a>(
         if range.start < line_start + raw.len() {
             fact.masks.push(range);
         }
+    }
+}
+
+/// Records where the first non-text inline child of a paragraph starts on its line (C2-B-090).
+fn mark_span_start(
+    facts: &mut [LineFacts<'_>],
+    range: &Range<'_>,
+    ranges: &[Range<'_>],
+    holders: &[Holder],
+) {
+    if !matches!(range.kind, "text" | "soft_break" | "hard_break")
+        && range
+            .holder
+            .and_then(|at| holders.get(at as usize)?.range)
+            .and_then(|at| ranges.get(at as usize))
+            .is_some_and(|parent| parent.kind == "paragraph")
+        && let Some(fact) = range
+            .start_line
+            .checked_sub(1)
+            .and_then(|l| facts.get_mut(l))
+        && fact.span_start.is_none_or(|known| range.start < known)
+    {
+        fact.span_start = Some(range.start);
     }
 }
 
