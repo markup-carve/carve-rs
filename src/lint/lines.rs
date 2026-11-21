@@ -501,6 +501,9 @@ fn markers(line: &Line, previous: Option<&Line>, sink: &mut Sink<'_>) {
 }
 
 fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
+    if !line.text.as_bytes().contains(&b'+') {
+        return;
+    }
     let (mut start, mut text) = leaf_after_quotes(line);
     let mut item = false;
     while text.starts_with("- ") || text.starts_with("* ") {
