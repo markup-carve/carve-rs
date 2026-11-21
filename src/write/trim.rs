@@ -85,15 +85,37 @@ struct Run<'a> {
 
 fn trim_node(node: &mut Value, at: &str, run: &mut Run<'_>) {
     let kind = ty(node).to_string();
-    let cells_are_data = kind == "table" && (run.delimited)(node, at);
     let holder = LINE_HOLDERS.contains(&kind.as_str());
     for path in slot_paths(&kind) {
         let children = matches!(path.as_slice(), [only] if only == "children");
-        if cells_are_data && children {
-            continue;
+        if kind == "table" && children {
+            trim_cells(node, path, at, run);
+        } else {
+            trim_path(node, path, at, holder && children, run);
         }
-        trim_path(node, path, at, holder && children, run);
     }
+}
+
+/// A table that trimming would turn delimited keeps its cells as they are, as one that is
+/// delimited already.
+fn trim_cells(table: &mut Value, path: &[String], at: &str, run: &mut Run<'_>) {
+    if (run.delimited)(table, at) {
+        return;
+    }
+    let saved = table.get("children").cloned();
+    let mut removed = HashMap::new();
+    let mut cells = Run {
+        delimited: run.delimited,
+        removed: &mut removed,
+    };
+    trim_path(table, path, at, false, &mut cells);
+    if (run.delimited)(table, at) {
+        if let (Some(saved), Some(map)) = (saved, table.as_object_mut()) {
+            map.insert("children".into(), saved);
+        }
+        return;
+    }
+    run.removed.extend(removed);
 }
 
 fn escaped(key: &str) -> String {

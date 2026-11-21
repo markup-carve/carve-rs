@@ -98,6 +98,24 @@ fn the_caption_of_a_delimited_table_is_trimmed() {
 }
 
 #[test]
+fn a_table_that_trimming_would_turn_delimited_keeps_its_cells() {
+    let cell = |children: Vec<Value>| json!({ "type": "table_cell", "header": false, "children": [{ "type": "cell_paragraph", "children": children }] });
+    let tree = json!({ "type": "document", "astVersion": "2.0", "children": [{ "type": "table",
+        "columns": [{ "type": "table_column" }, { "type": "table_column" }],
+        "children": [{ "type": "table_body", "children": [{ "type": "table_row", "children": [
+            cell(vec![text("a"), text(" ")]), cell(vec![text(" b")])] }] }] }] });
+    let (source, losses) = write(&tree);
+    assert_eq!(source, "| a  |  b |\n");
+    assert_eq!(
+        losses
+            .iter()
+            .map(|l| l.split(' ').next().unwrap_or(""))
+            .collect::<Vec<_>>(),
+        ["structure-unspellable", "field-unspellable"]
+    );
+}
+
+#[test]
 fn an_attributed_text_keeps_its_report() {
     for value in ["x ", "  "] {
         let tree = paragraph(&[
