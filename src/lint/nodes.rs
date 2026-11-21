@@ -2010,8 +2010,38 @@ fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
+    let bytes = value.as_bytes();
+    let mut underscores = value.match_indices('_').map(|(at, _)| at).peekable();
+    while let Some(start) = underscores.next() {
+        let Some(&end) = underscores.peek() else {
+            break;
+        };
+        if bytes
+            .get(start.wrapping_sub(1))
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+            || bytes.get(start + 1).is_none_or(u8::is_ascii_whitespace)
+            || escaped(bytes, start)
+            || end == start + 1
+            || bytes.get(end - 1).is_some_and(u8::is_ascii_whitespace)
+            || bytes
+                .get(end + 1)
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+            || escaped(bytes, end)
+            || value[start + 1..end].contains("\n\n")
+        {
+            continue;
+        }
+        sink.emit_range(
+            "djot-emphasis-underscore",
+            from + start,
+            from + end + 1,
+            item.path(),
+            &[],
+            0,
+        );
+        break;
+    }
     for (mark, code) in [
-        ("_", "djot-emphasis-underscore"),
         ("~", "djot-subscript-tilde"),
         ("{=", "djot-highlight-braces"),
         ("^", "djot-superscript-caret"),
@@ -2032,7 +2062,6 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
             );
         }
     }
-    let bytes = value.as_bytes();
     for (open, _) in value.match_indices('_') {
         if open == 0
             || bytes

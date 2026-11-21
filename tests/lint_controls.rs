@@ -1,5 +1,26 @@
 use carve::lint::{LintOptions, lint};
 
+#[test]
+fn djot_underscore_respects_both_word_boundaries() {
+    let mut options = LintOptions::default();
+    options
+        .rules
+        .insert("djot-emphasis-underscore".into(), "on".into());
+    for source in ["x_a_\n", "3_a_\n", "__a_\n", "x_a_ x_a_\n"] {
+        assert!(
+            !lint(source, &options)
+                .iter()
+                .any(|entry| entry.code == "djot-emphasis-underscore"),
+            "{source:?}"
+        );
+    }
+    assert!(
+        lint("_a_\n", &options)
+            .iter()
+            .any(|entry| entry.code == "djot-emphasis-underscore")
+    );
+}
+
 fn lines(source: &str) -> Vec<u32> {
     lint(source, &LintOptions::default())
         .into_iter()

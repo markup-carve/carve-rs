@@ -488,25 +488,54 @@ fn string_map(v: &Value) -> Result<BTreeMap<String, String>, i32> {
 fn display(path: &str) -> &str {
     if path == "-" { "<stdin>" } else { path }
 }
-#[allow(clippy::naive_bytecount)] // Only line-feed bytes count as line breaks.
-fn place(bytes: &[u8], offset: usize) -> (usize, usize) {
-    let prefix = &bytes[..offset.min(bytes.len())];
-    let start = prefix
-        .iter()
-        .rposition(|b| *b == b'\n')
-        .map_or(0, |p| p + 1);
-    (
-        prefix.iter().filter(|b| **b == b'\n').count() + 1,
-        String::from_utf8_lossy(&prefix[start..]).chars().count() + 1,
-    )
+struct Positions {
+    line_starts: Vec<usize>,
+    chars: Vec<usize>,
+}
+
+impl Positions {
+    fn new(bytes: &[u8]) -> Self {
+        let mut line_starts = vec![0];
+        for (at, byte) in bytes.iter().enumerate() {
+            if *byte == b'\n' {
+                line_starts.push(at + 1);
+            }
+        }
+        let mut chars = vec![0; bytes.len() + 1];
+        let mut at = 0;
+        let mut count = 0;
+        for chunk in bytes.utf8_chunks() {
+            for ch in chunk.valid().chars() {
+                let end = at + ch.len_utf8();
+                chars[at + 1..=end].fill(count + 1);
+                at = end;
+                count += 1;
+            }
+            if !chunk.invalid().is_empty() {
+                let end = at + chunk.invalid().len();
+                chars[at + 1..=end].fill(count + 1);
+                at = end;
+                count += 1;
+            }
+        }
+        Self { line_starts, chars }
+    }
+
+    fn place(&self, offset: usize) -> (usize, usize) {
+        let offset = offset.min(self.chars.len() - 1);
+        let line = self.line_starts.partition_point(|start| *start <= offset);
+        let start = self.line_starts[line - 1];
+        (line, self.chars[offset] - self.chars[start] + 1)
+    }
 }
 fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
+    let positions = Positions::new(bytes);
     entries
         .iter()
         .map(|entry| {
             let mut v = serde_json::to_value(entry).unwrap();
             if let Some(range) = entry.range {
-                let (line, column) = place(bytes, range.start_offset);
+                let (line, column) = positions.place(range.start_offset);
                 v["line"] = json!(line);
                 v["column"] = json!(column);
             }
@@ -516,8 +545,9 @@ fn located(entries: &[Entry], bytes: &[u8]) -> Vec<Value> {
 }
 fn lines(path: &str, bytes: &[u8], entries: &[Entry], stderr: bool) -> Result<(), i32> {
     let mut text = String::new();
+    let positions = Positions::new(bytes);
     for e in entries {
-        let (line, column) = e.range.map_or((0, 0), |r| place(bytes, r.start_offset));
+        let (line, column) = e.range.map_or((0, 0), |r| positions.place(r.start_offset));
         let name = e.file.as_deref().unwrap_or(display(path));
         if line == 0 {
             let _ = writeln!(text, "{name}: {} {} {}", e.severity, e.code, e.message);
@@ -1206,4 +1236,37 @@ pub fn run(arguments: &[String]) -> i32 {
         }
     }
     status
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::Positions;
+
+    #[test]
+    fn dense_positions_on_one_line_and_many_lines() {
+        for source in ["_a_ ".repeat(32_768), "_a_\n".repeat(32_768)] {
+            let bytes = source.as_bytes();
+            let positions = Positions::new(bytes);
+            for (number, offset) in (0..bytes.len()).step_by(4).enumerate() {
+                let expected = if bytes[offset + 3] == b'\n' {
+                    (number + 1, 1)
+                } else {
+                    (1, offset + 1)
+                };
+                assert_eq!(positions.place(offset), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn positions_count_code_points_and_replacement_characters() {
+        let bytes = b"a\xc3\xa9\xff\n\xce\xb2";
+        let positions = Positions::new(bytes);
+        assert_eq!(positions.place(0), (1, 1));
+        assert_eq!(positions.place(2), (1, 3));
+        assert_eq!(positions.place(3), (1, 3));
+        assert_eq!(positions.place(4), (1, 4));
+        assert_eq!(positions.place(5), (2, 1));
+        assert_eq!(positions.place(7), (2, 2));
+    }
 }
