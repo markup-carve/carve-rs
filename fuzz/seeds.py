@@ -3,7 +3,7 @@
 Seeds: every input of the conformance corpus (examples, clause cases,
 extension cases) and the .crv files under tests/. The targets that read a
 selector byte first (render, ext, safety, export, import) get the input behind fixed
-selectors; decode gets the trees of spec-trees/. Usage: python3 fuzz/seeds.py <repo root> [extra Markdown file...]
+selectors; decode gets the trees of spec-trees/. Usage: python3 fuzz/seeds.py <repo root> [--smoke] [extra Markdown file...]
 """
 
 import hashlib
@@ -14,11 +14,15 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 out = root / "fuzz" / "corpus"
+smoke = "--smoke" in sys.argv[2:]
+deferred_fmt = (root / "fuzz/fixtures/timeout-d1cfc854").read_bytes()
 
 
 def put(target, data):
     if isinstance(data, str):
         data = data.encode("utf-8")
+    if smoke and target == "fmt" and data == deferred_fmt:
+        return
     if len(data) > 60000:
         return
     d = out / target
@@ -56,7 +60,7 @@ def walk(v):
 walk(load("extensions.json"))
 for p in sorted(root.glob("tests/**/*.crv")):
     carve.append(p.read_text(encoding="utf-8", errors="replace"))
-markdown = [Path(p).read_text(encoding="utf-8") for p in sys.argv[2:]]
+markdown = [Path(p).read_text(encoding="utf-8") for p in sys.argv[2:] if p != "--smoke"]
 
 carve = list(dict.fromkeys(carve))
 for i, s in enumerate(carve):
@@ -68,9 +72,10 @@ for i, s in enumerate(carve):
         put("safety", bytes([sel]) + s.encode())
         put("export", bytes([sel]) + s.encode())
     put("import", bytes([0x01 + i % 3]) + s.encode())
-# Retain the carve-rs#4538 reproducer for normal fuzzing. The CI smoke job
-# defers exactly these bytes until the C2-W-088 fix lands.
-put("fmt", (root / "fuzz/fixtures/timeout-d1cfc854").read_bytes())
+# Retain the carve-rs#4538 reproducer for normal fuzzing, but omit this one
+# seed from CI smoke until the C2-W-088 fix lands.
+if not smoke:
+    put("fmt", deferred_fmt)
 for s in html:
     put("import", b"\x00" + s.encode())
 for s in markdown:
