@@ -181,10 +181,15 @@ fn field_id(name: &str) -> F {
 
 /// The name of a field, as an AST key when the field reads a node of the tree.
 pub(super) fn field_name(id: F) -> &'static str {
-    FIELDS
-        .iter()
-        .find(|(_, known)| *known == id)
-        .map_or("", |(name, _)| name)
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        let mut names = vec![""; F::PrevSameLeaf as usize + 1];
+        for (name, known) in FIELDS {
+            names[*known as usize] = name;
+        }
+        names
+    });
+    names.get(id as usize).copied().unwrap_or("")
 }
 
 /// One step of a dotted field path.
@@ -247,6 +252,29 @@ pub(super) struct Pattern {
     edges: Option<Box<Edges>>,
     /// Bytes of which every match holds at least one.
     needs: Option<Box<[bool; 256]>>,
+    /// The pattern is `STRIP_QUOTES`, read without the regex engine.
+    strip_quotes: bool,
+}
+
+/// The rows' pattern for the content of a line behind its blanks and quote marks: it matches every line
+/// text, and its group is what the greedy prefix and the trailing blanks leave.
+const STRIP_QUOTES: &str = "^[ \\t]*(?:> [ \\t]*)*(?<c>.*?)[ \\t]*$";
+
+/// The group of `STRIP_QUOTES` in a text without a line break.
+fn strip_quotes(text: &str) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    let blanks = |mut at: usize| {
+        while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
+            at += 1;
+        }
+        at
+    };
+    let mut start = blanks(0);
+    while bytes.get(start) == Some(&b'>') && bytes.get(start + 1) == Some(&b' ') {
+        start = blanks(start + 2);
+    }
+    let end = start + text[start..].trim_end_matches([' ', '\t']).len();
+    (start, end)
 }
 
 /// What an alternation of start- and end-anchored branches needs at the edges of the text: a branch
@@ -498,6 +526,7 @@ fn anchored_first(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
 }
 
 pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
+    let original = text;
     let text = &text.replace("(?<", "(?P<");
     let re = RegexBuilder::new(text)
         .case_insensitive(flags.contains('i'))
@@ -552,6 +581,7 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
         set
     });
     Some(Pattern {
+        strip_quotes: original == STRIP_QUOTES && flags.is_empty(),
         re,
         groups,
         first,
@@ -654,6 +684,8 @@ pub(super) struct Lookup {
     pub all: bool,
     pub from: Option<Expr>,
     pub field: Path,
+    /// Lookups over the same records with the same key share one index per call.
+    pub site: usize,
 }
 
 impl Lookup {
@@ -917,6 +949,7 @@ impl Scope<'_> {
                     .get("field")
                     .and_then(Value::as_str)
                     .map_or_else(|| Box::default(), path),
+                site: lookup_site(arg),
             })),
             "index_of" => Expr::IndexOf(pair(0, 1)),
             "json_escape" => Expr::JsonEscape(Box::new(self.compile(arg))),
@@ -1597,6 +1630,14 @@ impl<'a> Eval<'_, 'a> {
         let Some(haystack) = self.str_of(&value) else {
             return false;
         };
+        if pattern.strip_quotes && !haystack.contains('\n') {
+            let (start, end) = strip_quotes(haystack);
+            self.spans.clear();
+            self.spans
+                .extend(pattern.groups.iter().map(|&(name, _)| (name, start, end)));
+            self.base = base.map_or(0, |path| self.number(&self.resolve(path)).max(0) as usize);
+            return true;
+        }
         if !pattern.may_match(haystack) {
             return false;
         }
@@ -1698,7 +1739,7 @@ impl<'a> Eval<'_, 'a> {
     }
 
     fn lookup(&mut self, lookup: &Lookup) -> Val<'a> {
-        let id = std::ptr::from_ref(lookup).addr();
+        let id = lookup.site;
         if !self.records.has_lookup(id) {
             let built = self.build_lookup(lookup);
             self.records.store_lookup(id, built);
@@ -2066,6 +2107,42 @@ pub(super) struct LookupIndex {
     pub keys: std::collections::HashMap<LookupKey, Vec<(usize, u32)>>,
 }
 
+/// The index site of a lookup: one per kind of records, types and key, numbered as the model compiles.
+/// A key that reads anything but its `item` is the rule's own, so it gets a site of its own.
+fn lookup_site(arg: &'static Value) -> usize {
+    fn item_only(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => {
+                map.get("f")
+                    .and_then(Value::as_str)
+                    .is_none_or(|field| field == "item" || field.starts_with("item."))
+                    && !map.contains_key("v")
+                    && !map.contains_key("match")
+                    && map.values().all(item_only)
+            }
+            Value::Array(items) => items.iter().all(item_only),
+            _ => true,
+        }
+    }
+    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let key = &arg["key"];
+    let signature = if !item_only(key) {
+        format!("{:p}", std::ptr::from_ref(arg))
+    } else {
+        format!("{} {} {}", arg["over"], arg["types"], key)
+    };
+    let mut sites = SITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    sites
+        .iter()
+        .position(|known| *known == signature)
+        .unwrap_or_else(|| {
+            sites.push(signature);
+            sites.len() - 1
+        })
+}
+
 /// The field a `let` value is a slice of, where it is that slice or the empty text: `slice` of a field,
 /// or `if` whose branches are such a slice and `""`.
 fn sliced_field(value: &'static Value) -> Option<&'static str> {
@@ -2109,4 +2186,32 @@ fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> 
         found = records.step(&found, seg);
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{STRIP_QUOTES, pattern, strip_quotes};
+
+    #[test]
+    fn strip_quotes_reads_the_group_the_regex_reads() {
+        let re = pattern(STRIP_QUOTES, "").expect("pattern").re;
+        let parts = [
+            "", " ", "\t", ">", "> ", ">\t", ":", "a", " >", "x ", "\u{e9}", "\0",
+        ];
+        let mut checked = 0;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        let text = format!("{a}{b}{c}{d}");
+                        let found = re.captures(&text).and_then(|caps| caps.get(1));
+                        let expected = found.map(|group| (group.start(), group.end()));
+                        assert_eq!(Some(strip_quotes(&text)), expected, "{text:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 12 * 12 * 12 * 12);
+    }
 }

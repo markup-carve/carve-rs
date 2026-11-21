@@ -1268,37 +1268,37 @@ impl data_model::NodeTree for TreeNodes<'_, '_> {
             .values
             .get(at)
             .or_else(|| self.joined.get(at.wrapping_sub(self.values.len())))
-            .copied()?;
+            .copied()
+            .filter(|node| node.is_object())?;
         self.handle(node)
     }
 
-    fn child(&self, node: u32, step: data_model::Step) -> Option<u32> {
-        let node = *self.made.borrow().get(node as usize)?;
-        let child = match step {
-            data_model::Step::Key(key) => node.get(key),
-            data_model::Step::Index(index) => node.as_array().and_then(|items| items.get(index)),
-        }?;
-        self.handle(child)
-    }
-
-    fn leaf(&self, node: u32) -> data_model::Leaf<'_> {
+    fn step(&self, node: u32, step: data_model::Step) -> data_model::Leaf<'_> {
         use data_model::Leaf;
-        let Some(node) = self.made.borrow().get(node as usize).copied() else {
+        let Some(value) = self.made.borrow().get(node as usize).copied() else {
             return Leaf::Absent;
         };
-        if node.is_null() {
-            Leaf::Absent
-        } else if let Some(text) = node.as_str() {
+        let found = match step {
+            data_model::Step::Key(key) => value.get(key),
+            data_model::Step::Index(index) => value.as_array().and_then(|items| items.get(index)),
+        };
+        let Some(found) = found.filter(|found| !found.is_null()) else {
+            return Leaf::Absent;
+        };
+        if let Some(text) = found.as_str() {
             Leaf::Str(text)
-        } else if let Some(b) = node.as_bool() {
+        } else if let Some(b) = found.as_bool() {
             Leaf::Bool(b)
-        } else if node.is_number() {
-            Leaf::Num(node.as_i64().unwrap_or(0))
-        } else if let Some(items) = node.as_array() {
-            Leaf::List(items.len())
+        } else if found.is_number() {
+            Leaf::Num(found.as_i64().unwrap_or(0))
         } else {
-            Leaf::Object
+            self.handle(found).map_or(Leaf::Absent, Leaf::Node)
         }
+    }
+
+    fn len(&self, node: u32) -> Option<usize> {
+        let value = self.made.borrow().get(node as usize).copied()?;
+        value.as_array().map(|items| items.len())
     }
 }
 

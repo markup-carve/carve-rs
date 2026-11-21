@@ -448,8 +448,8 @@ pub(super) struct Records<'a> {
     owners: Vec<OnceCell<(usize, Option<usize>)>>,
     /// The tree node of each range, read in place (C2-W-140).
     nodes: &'a dyn NodeTree,
-    /// The lookups of this call, by the address of their compiled expression.
-    lookups: RefCell<HashMap<usize, LookupIndex>>,
+    /// The lookup indexes of this call, by site.
+    lookups: RefCell<Vec<Option<LookupIndex>>>,
     /// The attribute records of this call (C2-W-148).
     pub attributes: super::data_attrs::Table,
     tree: TreeFacts<'a>,
@@ -457,7 +457,23 @@ pub(super) struct Records<'a> {
     layout: OnceCell<Layout>,
     tables: OnceCell<TableLines>,
     /// The source format of each table read so far, by range.
-    formats: RefCell<HashMap<u32, &'static str>>,
+    formats: RefCell<Vec<Option<&'static str>>>,
+    /// The marker and content columns of each item read so far, by range.
+    columns: RefCell<Vec<Option<(Option<usize>, Option<usize>)>>>,
+}
+
+/// The value of `slot` in a per-range cache, made on first read.
+fn memo<T: Copy>(
+    cache: &RefCell<Vec<Option<T>>>,
+    slot: u32,
+    len: usize,
+    make: impl FnOnce() -> T,
+) -> std::cell::RefMut<'_, T> {
+    let mut cache = cache.borrow_mut();
+    if cache.len() < len {
+        cache.resize(len, None);
+    }
+    std::cell::RefMut::map(cache, |cache| cache[slot as usize].get_or_insert_with(make))
 }
 
 /// One step into a tree node: a key of an object or an index of a list.
@@ -467,23 +483,24 @@ pub(super) enum Step {
     Index(usize),
 }
 
-/// What a node handle holds.
+/// What a step into a tree node finds: a scalar, or a list or an object by its handle.
 pub(super) enum Leaf<'s> {
     Absent,
     Str(&'s str),
     Num(i64),
     Bool(bool),
-    List(usize),
-    Object,
+    /// A list or an object, by its handle.
+    Node(u32),
 }
 
 /// The tree node of each range, read in place through handles, so a rule converts nothing it reads.
 pub(super) trait NodeTree {
     /// The handle of the node of a range.
     fn root(&self, range: u32) -> Option<u32>;
-    /// The handle of a key or an item of the value of a handle.
-    fn child(&self, node: u32, step: Step) -> Option<u32>;
-    fn leaf(&self, node: u32) -> Leaf<'_>;
+    /// What a key or an item of the value of a handle holds.
+    fn step(&self, node: u32, step: Step) -> Leaf<'_>;
+    /// The length of the list of a handle; none for anything else.
+    fn len(&self, node: u32) -> Option<usize>;
 }
 
 /// An id record (C2-W-150).
@@ -626,13 +643,14 @@ impl<'a> Records<'a> {
             holder_inline,
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
             nodes,
-            lookups: RefCell::new(HashMap::new()),
+            lookups: RefCell::new(Vec::new()),
             attributes: super::data_attrs::Table::default(),
             tree,
             extensions,
             layout: OnceCell::new(),
             tables: OnceCell::new(),
-            formats: RefCell::new(HashMap::new()),
+            formats: RefCell::new(Vec::new()),
+            columns: RefCell::new(Vec::new()),
         };
         records.build_lines(model);
         records
@@ -939,7 +957,7 @@ impl<'a> Records<'a> {
     }
 
     fn source_format(&self, table: u32) -> &'static str {
-        *self.formats.borrow_mut().entry(table).or_insert_with(|| {
+        *memo(&self.formats, table, self.ranges.len(), || {
             let range = &self.ranges[table as usize];
             crate::api::layout::table_source_format(self.source, range.start, range.end)
         })
@@ -1040,13 +1058,15 @@ impl<'a> Records<'a> {
         let quotes = || self.quotes_at(range.holder);
         match key {
             "markerColumn" | "contentColumn" if item && !range.joined => {
-                let (marker, content) = crate::api::layout::item_columns(
-                    self.source,
-                    range.kind,
-                    range.start,
-                    range.end,
-                    quotes(),
-                );
+                let (marker, content) = *memo(&self.columns, at, self.ranges.len(), || {
+                    crate::api::layout::item_columns(
+                        self.source,
+                        range.kind,
+                        range.start,
+                        range.end,
+                        quotes(),
+                    )
+                });
                 let fact = if key == "markerColumn" {
                     marker
                 } else {
@@ -1222,18 +1242,22 @@ impl<'a> Records<'a> {
     }
 
     pub fn has_lookup(&self, id: usize) -> bool {
-        self.lookups.borrow().contains_key(&id)
+        self.lookups.borrow().get(id).is_some_and(Option::is_some)
     }
 
     pub fn store_lookup(&self, id: usize, index: LookupIndex) {
-        self.lookups.borrow_mut().insert(id, index);
+        let mut lookups = self.lookups.borrow_mut();
+        if lookups.len() <= id {
+            lookups.resize_with(id + 1, || None);
+        }
+        lookups[id] = Some(index);
     }
 
     /// Every record of a key, in document order (C2-W-150).
     pub fn lookup_all(&self, id: usize, key: &LookupKey) -> Vec<u32> {
-        self.lookups.borrow()[&id]
-            .keys
-            .get(key)
+        self.lookups.borrow()[id]
+            .as_ref()
+            .and_then(|index| index.keys.get(key))
             .map(|found| found.iter().map(|(_, record)| *record).collect())
             .unwrap_or_default()
     }
@@ -1242,7 +1266,7 @@ impl<'a> Records<'a> {
     /// first that starts after it (C2-W-141).
     pub fn lookup_at(&self, id: usize, key: &LookupKey, start: usize, side: i8) -> Option<u32> {
         let lookups = self.lookups.borrow();
-        let found = lookups[&id].keys.get(key)?;
+        let found = lookups[id].as_ref()?.keys.get(key)?;
         let at = match side {
             0 => 0,
             -1 => found
@@ -1357,23 +1381,17 @@ impl<'a> Records<'a> {
         let Val::Node(node) = value else {
             return Val::Null;
         };
-        let Some(child) = self.nodes.child(*node, step) else {
-            return Val::Null;
-        };
-        match self.nodes.leaf(child) {
+        match self.nodes.step(*node, step) {
             Leaf::Absent => Val::Null,
             Leaf::Str(text) => Val::Str(Cow::Borrowed(text)),
             Leaf::Num(n) => Val::Num(n),
             Leaf::Bool(b) => Val::Bool(b),
-            Leaf::List(_) | Leaf::Object => Val::Node(child),
+            Leaf::Node(child) => Val::Node(child),
         }
     }
 
     fn tree_node(&self, range: u32) -> Val<'a> {
-        self.nodes
-            .root(range)
-            .filter(|&node| matches!(self.nodes.leaf(node), Leaf::Object))
-            .map_or(Val::Null, Val::Node)
+        self.nodes.root(range).map_or(Val::Null, Val::Node)
     }
 
     fn colon_ids(&self, line: u32) -> &[u32] {
@@ -1385,10 +1403,7 @@ impl<'a> Records<'a> {
         match list {
             Val::Colons(line) => self.colon_ids(*line).len(),
             Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
-            Val::Node(node) => match self.nodes.leaf(*node) {
-                Leaf::List(len) => len,
-                _ => 0,
-            },
+            Val::Node(node) => self.nodes.len(*node).unwrap_or(0),
             Val::BlockAncestors(at) | Val::AncestorIds(at) => self.holder_chain(*at).count() + 1,
             Val::LineAncestorIds(leaf) => self.ancestors(*leaf).count(),
             Val::List(items) => items.len(),
@@ -1398,7 +1413,7 @@ impl<'a> Records<'a> {
 
     pub fn is_list(&self, value: &Val<'a>) -> bool {
         match value {
-            Val::Node(node) => matches!(self.nodes.leaf(*node), Leaf::List(_)),
+            Val::Node(node) => self.nodes.len(*node).is_some(),
             Val::Colons(_)
             | Val::Ancestors(_)
             | Val::BlockAncestors(_)
