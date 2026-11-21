@@ -253,6 +253,7 @@ fn unsafe_markup(html: &str, svg: bool) -> Option<String> {
             if svg && matches!(tag.as_str(), "foreignobject" | "style" | "iframe" | "a") {
                 return Some(format!("a {tag} element in an imgFence image"));
             }
+            let mut image = false;
             if tag == "img" {
                 if let Some(data) = attr("src")
                     .as_deref()
@@ -264,7 +265,7 @@ fn unsafe_markup(html: &str, svg: bool) -> Option<String> {
                     if let Some(p) = unsafe_markup(&percent_decode(data), true) {
                         return Some(format!("imgFence image: {p}"));
                     }
-                    continue;
+                    image = true;
                 }
             }
             for a in attrs.iter() {
@@ -279,7 +280,8 @@ fn unsafe_markup(html: &str, svg: bool) -> Option<String> {
                 }
                 if (URL_ATTRIBUTES.contains(&n.as_str())
                     || URL_ATTRIBUTES.contains(&qualified.as_str()))
-                    && denied(v)
+                    && !(image && n == "src")
+                    && (denied(v) || n == "ping" && v.split_ascii_whitespace().any(denied))
                 {
                     return Some(format!("{n}={v:?} on {tag}"));
                 }
@@ -324,6 +326,9 @@ mod tests {
         assert!(unsafe_html("<script type=\"application/json\">{}</script>").is_none());
         let image = "<img src=\"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%2F%3E%3C%2Fsvg%3E\">";
         assert!(unsafe_html(image).is_none());
+        let handler = image.replace("<img ", "<img onerror=\"x\" ");
+        assert!(unsafe_html(&handler).is_some());
+        assert!(unsafe_html("<a ping=\"https://ok.test javascript:x\">x</a>").is_some());
         assert!(
             unsafe_html(
                 "<img src=\"data:image/svg+xml,%3Csvg%3E%3Cscript%3Ex%3C%2Fscript%3E%3C%2Fsvg%3E\">"
