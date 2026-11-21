@@ -488,6 +488,8 @@ fn string_map(v: &Value) -> Result<BTreeMap<String, String>, i32> {
 fn display(path: &str) -> &str {
     if path == "-" { "<stdin>" } else { path }
 }
+const POSITION_STEP: usize = 256;
+
 struct Positions<'a> {
     bytes: &'a [u8],
     line_starts: Vec<usize>,
@@ -509,7 +511,6 @@ impl<'a> Positions<'a> {
                 marks: Vec::new(),
             };
         }
-        const STEP: usize = 256;
         let mut marks = vec![(0, 0)];
         let mut at = 0;
         let mut count = 0;
@@ -517,14 +518,14 @@ impl<'a> Positions<'a> {
             for ch in chunk.valid().chars() {
                 at += ch.len_utf8();
                 count += 1;
-                while marks.len() * STEP <= at {
+                while marks.len() * POSITION_STEP <= at {
                     marks.push((at, count));
                 }
             }
             if !chunk.invalid().is_empty() {
                 at += chunk.invalid().len();
                 count += 1;
-                while marks.len() * STEP <= at {
+                while marks.len() * POSITION_STEP <= at {
                     marks.push((at, count));
                 }
             }
