@@ -460,12 +460,12 @@ fn joinable_texts(last: V<'_>, next: V<'_>) -> bool {
     let run = |k: &str| matches!(k, "type" | "value" | "pos" | "segments");
     let (mut own, mut other, mut same) = (0, 0, true);
     last.each(&mut |k, p| {
-        if !run(k) && !p.is_null() {
+        if !run(k) {
             own += 1;
             same = same && next.get(k).is_some_and(|q| equal_values(p, q, false));
         }
     });
-    next.each(&mut |k, q| other += usize::from(!run(k) && !q.is_null()));
+    next.each(&mut |k, _| other += usize::from(!run(k)));
     same && own == other
 }
 
@@ -728,6 +728,11 @@ mod tests {
         assert!(!trees_equal(
             &paragraph(&[with("a", "de"), text("b")]),
             &one
+        ));
+        let null = json!({ "type": "text", "value": "b", "lang": null });
+        assert!(!trees_equal(
+            &paragraph(&[text("a"), null]),
+            &paragraph(&[text("ab")])
         ));
         assert!(trees_equal(
             &paragraph(&[text("a"), text("b")]),
