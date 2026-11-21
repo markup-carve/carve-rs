@@ -37,6 +37,29 @@ impl Frame<'_> {
 }
 
 impl Parser<'_> {
+    /// A refused div opener is text at the depth cap (C2-B-190), so it cannot
+    /// end the paragraph above it. A bare run that closes an open div can.
+    fn fence_interrupts(&self, k: &Cursor<'_>) -> bool {
+        if shapes::code_fence_opener(k).is_some() || shapes::fence_run(k, b'%') >= 3 {
+            return true;
+        }
+        let Some((len, info)) = shapes::div_opener(k) else {
+            return false;
+        };
+        self.room(1)
+            || (k.rest().get(len..).is_some_and(crate::chars::is_blank_line)
+                && info.name.is_none()
+                && info.sigil.is_none()
+                && info.title.is_none()
+                && info.label.is_none()
+                && self
+                    .stack
+                    .iter()
+                    .rev()
+                    .take_while(|c| matches!(c.kind, Kind::Div { .. }))
+                    .any(|c| matches!(c.kind, Kind::Div { len: open_len, .. } if open_len <= len)))
+    }
+
     fn frame(&self, walk: &Walk<'_>, m: usize) -> Frame<'_> {
         let lo = self
             .stack
@@ -81,7 +104,10 @@ impl Parser<'_> {
             return shapes::list_marker(&k)
                 .is_some_and(|marker| self.marker_interrupts(&self.frame(walk, m), m, &marker));
         }
-        if fence_line(&k) || shapes::table_row_shape(&k).is_some() || shapes::thematic_break(&k) {
+        if self.fence_interrupts(&k)
+            || shapes::table_row_shape(&k).is_some()
+            || shapes::thematic_break(&k)
+        {
             return true;
         }
         let m = k.col - walk.qbase;
@@ -915,12 +941,6 @@ static OPENER_START: crate::chars::ByteSet = crate::chars::ByteSet::new(b"`%:|*^
 /// False when no shape but a list marker can start at `k`.
 fn may_open(k: &Cursor<'_>) -> bool {
     k.peek_byte().is_some_and(|b| OPENER_START.has(b))
-}
-
-fn fence_line(k: &Cursor<'_>) -> bool {
-    shapes::code_fence_opener(k).is_some()
-        || shapes::fence_run(k, b'%') >= 3
-        || shapes::div_opener(k).is_some()
 }
 
 fn is_definition(r: &str) -> bool {
