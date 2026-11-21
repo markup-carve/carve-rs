@@ -188,6 +188,10 @@ fn set(out: &mut CallOptions, name: &str, v: &Value) -> Result<(), Error> {
             out.adapter = enum_value(name, v, super::ImportAdapter::from_name)?;
             Ok(())
         }
+        "headingShift" => {
+            out.options.heading_shift = count_up_to(name, v)?;
+            Ok(())
+        }
         _ => enumerated(&mut out.options, name, v),
     }
 }
@@ -205,7 +209,6 @@ fn enumerated(o: &mut Options, name: &str, v: &Value) -> Result<(), Error> {
                 .and_then(|n| usize::try_from(n).ok())
                 .ok_or_else(|| Error::option(name, "the value is not a count"))?;
         }
-        "headingShift" => o.heading_shift = count_up_to(name, v)?,
         _ => return Err(Error::option(name, "this engine does not read it")),
     }
     Ok(())
