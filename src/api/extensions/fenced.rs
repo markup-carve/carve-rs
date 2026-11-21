@@ -312,7 +312,10 @@ pub fn fenced_render(options: FencedRenderOptions) -> Result<Bundle, Error> {
             extension: name,
             form: Form::Fence,
             name: word.clone(),
-            claimer: Box::new(super::TypedEngine(claim_fence, super::Typed(claim_fence_typed))),
+            claimer: Box::new(super::TypedEngine(
+                claim_fence,
+                super::Typed(claim_fence_typed),
+            )),
         });
     }
     Ok(bundle)

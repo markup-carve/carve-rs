@@ -374,9 +374,7 @@ pub(crate) fn div_source_typed(
         return None;
     }
     let title = match &div.title {
-        Some(title) => Some(plain_text(
-            serde_json::to_value(&**title).ok()?.as_array()?,
-        )),
+        Some(title) => Some(plain_text(serde_json::to_value(&**title).ok()?.as_array()?)),
         None => None,
     };
     div_record(&text, name, title, div.group_label.map(Value::from))

@@ -220,8 +220,7 @@ impl Look {
         if !parts.authored("role") {
             parts.key_values.push(("role", role));
         }
-        if !name.is_empty() && !parts.authored("aria-label") && !parts.authored("aria-labelledby")
-        {
+        if !name.is_empty() && !parts.authored("aria-label") && !parts.authored("aria-labelledby") {
             parts.key_values.push(("aria-label", name.as_str()));
         }
         parts.classes.retain(|c| *c != self.wrapper);

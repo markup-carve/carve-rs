@@ -55,16 +55,7 @@ impl Instructions {
         attr[1] = 1;
         attr[5] = 1 | (1 << 5) | (1 << 6);
         // SAFETY: `attr` is a zeroed perf_event_attr of the size it declares.
-        let fd = unsafe {
-            libc::syscall(
-                libc::SYS_perf_event_open,
-                attr.as_ptr(),
-                0,
-                -1,
-                -1,
-                0,
-            )
-        };
+        let fd = unsafe { libc::syscall(libc::SYS_perf_event_open, attr.as_ptr(), 0, -1, -1, 0) };
         i32::try_from(fd).ok().filter(|fd| *fd >= 0).map(Self)
     }
 
@@ -289,7 +280,9 @@ fn count(only: Option<&str>, opts: &Options) {
         eprintln!("the kernel refuses the instruction counter");
         return;
     };
-    println!("| bundle | size | core Minstr | hosted Minstr | factor | 0.1.14 Minstr | hosted/0.1 |");
+    println!(
+        "| bundle | size | core Minstr | hosted Minstr | factor | 0.1.14 Minstr | hosted/0.1 |"
+    );
     for name in BUNDLES {
         if only.is_some_and(|o| o != name) {
             continue;

@@ -340,7 +340,7 @@ mod arena {
             payload: Some(arena.json(json!([{"format": "text/plain", "value": code.value}]))),
             props: code
                 .syntax
-                .map(|language| &*arena.json(json!({"language": language}))),
+                .map(|language| arena.json(json!({"language": language}))),
             ..Default::default()
         };
         let ext = arena.alloc(ext);
@@ -416,7 +416,12 @@ mod arena {
 struct Code;
 
 impl Code {
-    fn html(payload: &str, language: Option<&str>, attributes: &str, cx: &RenderContext<'_>) -> String {
+    fn html(
+        payload: &str,
+        language: Option<&str>,
+        attributes: &str,
+        cx: &RenderContext<'_>,
+    ) -> String {
         let body: Vec<String> = payload
             .split('\n')
             .map(|line| {
@@ -435,7 +440,10 @@ impl Code {
         let code = language
             .map(|l| format!(r#" class="language-{}""#, cx.escape_attribute(l)))
             .unwrap_or_default();
-        format!("<pre{attributes}><code{code}>{}</code></pre>", body.join("\n"))
+        format!(
+            "<pre{attributes}><code{code}>{}</code></pre>",
+            body.join("\n")
+        )
     }
 }
 

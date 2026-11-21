@@ -157,7 +157,8 @@ pub(crate) fn moved_fallback<'a>(
     node: &mut crate::ast::Node<'a>,
     arena: &'a crate::Arena,
 ) -> &'a mut [crate::ast::Node<'a>] {
-    let placeholder = crate::ast::Node::ThematicBreak(arena.alloc(Default::default()));
+    let placeholder =
+        crate::ast::Node::ThematicBreak(arena.alloc(crate::ast::ThematicBreak::default()));
     let mut core = std::mem::replace(node, placeholder);
     match &mut core {
         crate::ast::Node::CodeBlock(code) => code.attrs = None,
@@ -425,14 +426,13 @@ impl Matchers {
             };
             match typed {
                 Some(true) => return Ok(()),
-                Some(false) => {}
                 None if slots || candidate => {
                     let mut owned = node.owned();
                     owned_walk(&mut owned, pass, depth)?;
                     *node = owned.in_arena(arena);
                     return Ok(());
                 }
-                None => {}
+                _ => {}
             }
             let mut failure = None;
             let mut visit = |child: &mut Node<'a>| {
