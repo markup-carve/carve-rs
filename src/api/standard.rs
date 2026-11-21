@@ -2,7 +2,7 @@
 //! `carve.tabs` and `carve.tab` pair (C2-X-039 to C2-X-048, C2-X-056). The
 //! claim runs as a separate pass over the parsed tree (C2-X-005).
 
-use super::{Error, Tree, WriteOptions};
+use super::Error;
 use serde_json::{Map, Value, json};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -324,18 +324,21 @@ impl Claim<'_> {
     }
 }
 
+/// `Carve::default().write` of a document of the engine's own claim input,
+/// as its JSON value: the reader checks and the typed decode are skipped,
+/// the writer reads the value (carve-rs#4366).
+fn write_claim_source(doc: &Value) -> Option<String> {
+    let (text, entries) = crate::write::write_value(doc, &crate::write::Settings::default());
+    (!crate::write::has_loss(&entries)).then_some(text)
+}
+
 /// C2-X-026, C2-W-089: the source record of a claimed div, its body written
 /// with the link reference definitions of the document around it.
 pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Option<Value> {
     let mut children = vec![node.clone()];
     children.extend(definitions.iter().cloned());
     let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
-    // The node and the definitions are the engine's own claim input, so the
-    // reader checks, which cost far more than the write, are skipped.
-    let tree = Tree::engine(doc)?;
-    let text = super::Carve::default()
-        .write(&tree, &WriteOptions::default())
-        .ok()?;
+    let text = write_claim_source(&doc)?;
     let lines: Vec<&str> = text.split('\n').collect();
     let open = lines.iter().position(|l| l.starts_with(":::"))?;
     let opener = lines.get(open)?;
@@ -376,9 +379,7 @@ pub(crate) fn inline_body(node: &Map<String, Value>, source: &str) -> Option<Str
     let doc = json!({"type": "document", "astVersion": "2.0", "children": [
         {"type": "paragraph", "children": [Value::Object(bare)]},
     ]});
-    let text = super::Carve::default()
-        .write(&Tree::engine(doc)?, &WriteOptions::default())
-        .ok()?;
+    let text = write_claim_source(&doc)?;
     text.trim_end_matches('\n')
         .strip_prefix(&format!(":{source}["))?
         .strip_suffix(']')

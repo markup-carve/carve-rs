@@ -243,12 +243,128 @@ impl DocumentTransform for Transform {
             return;
         }
         bind_tree(&mut doc.children, 0);
-        let mut declarations = json!({"extensions": doc.extensions});
-        crate::api::standard::declare_names(
-            &mut declarations,
-            &[(CODE, json!([])), (LIST, json!(["lines"]))],
-        );
-        doc.extensions = declarations.get_mut("extensions").cloned();
+        doc.extensions = declared(doc.extensions.as_ref());
+    }
+
+    // The binding reads code text and paragraph shapes, no resolution result.
+    fn supports_parsed_arena(&self) -> bool {
+        true
+    }
+
+    fn transform_parsed_arena<'a>(
+        &self,
+        doc: &mut crate::ast::Document<'a>,
+        arena: &'a crate::Arena,
+    ) {
+        if !arena::any_marker(doc.children, 0) {
+            return;
+        }
+        arena::bind_tree(doc.children, arena, 0);
+        doc.extensions = declared(doc.extensions).map(|v| arena.json(v));
+    }
+}
+
+/// The `extensions` of a document with the two callout extensions declared.
+fn declared(extensions: Option<&Value>) -> Option<Value> {
+    let mut declarations = json!({"extensions": extensions});
+    crate::api::standard::declare_names(
+        &mut declarations,
+        &[(CODE, json!([])), (LIST, json!(["lines"]))],
+    );
+    declarations.get_mut("extensions").cloned()
+}
+
+/// The binding of the transform on a tree in an arena: a node it rewrites
+/// is built as the owned binding builds it and copied into the arena.
+mod arena {
+    use super::{code_node, item, marker, slot_has_marker};
+    use crate::ast::Node;
+
+    fn has_marker(node: &Node<'_>) -> bool {
+        matches!(node, Node::CodeBlock(code) if code.value.split('\n').any(|line| marker(line).is_some()))
+    }
+
+    fn is_list(node: &Node<'_>) -> bool {
+        let Node::Paragraph(paragraph) = node else {
+            return false;
+        };
+        if paragraph.role.is_some() || paragraph.caption.is_some() {
+            return false;
+        }
+        let mut first = true;
+        let mut count = 0;
+        for child in &*paragraph.children {
+            match child {
+                Node::SoftBreak(_) => first = true,
+                Node::Text(text) if first && item(text.value).is_some() => {
+                    first = false;
+                    count += 1;
+                }
+                _ if first => return false,
+                _ => {}
+            }
+        }
+        count > 0
+    }
+
+    pub(super) fn any_marker(nodes: &[Node<'_>], depth: usize) -> bool {
+        if depth > crate::resolve::WALK_CAP {
+            return false;
+        }
+        nodes.iter().any(|node| {
+            has_marker(node)
+                || node
+                    .children()
+                    .is_some_and(|children| any_marker(children, depth + 1))
+                || match node {
+                    Node::BlockExtension(ext) => ext.slots.is_some_and(slot_has_marker),
+                    Node::InlineExtension(ext) => ext.slots.is_some_and(slot_has_marker),
+                    _ => false,
+                }
+        })
+    }
+
+    fn bind<'a>(nodes: &mut [Node<'a>], arena: &'a crate::Arena) {
+        let mut at = 0;
+        while let Some(node) = nodes.get_mut(at) {
+            if has_marker(node) {
+                if let Node::CodeBlock(code) = node {
+                    *node = code_node(&code.owned()).in_arena(arena);
+                }
+                if let Some(next) = nodes.get_mut(at + 1).filter(|n| is_list(n)) {
+                    if let Node::Paragraph(paragraph) = next {
+                        *next = super::list_node(&paragraph.owned()).in_arena(arena);
+                    }
+                    at += 1;
+                }
+            }
+            at += 1;
+        }
+    }
+
+    pub(super) fn bind_tree<'a>(nodes: &mut [Node<'a>], arena: &'a crate::Arena, depth: usize) {
+        if depth > crate::resolve::WALK_CAP {
+            return;
+        }
+        bind(nodes, arena);
+        for node in nodes {
+            let slots = match node {
+                Node::BlockExtension(ext) => ext.slots.is_some(),
+                Node::InlineExtension(ext) => ext.slots.is_some(),
+                _ => false,
+            };
+            if slots {
+                // A node with slots binds as the owned tree does; its own
+                // level is bound above, so `bind` finds nothing on it again.
+                let mut one = vec![node.owned()];
+                super::bind_tree(&mut one, depth);
+                if let Some(bound) = one.first() {
+                    *node = bound.in_arena(arena);
+                }
+            } else if let Some(children) = node.children_mut() {
+                bind_tree(children, arena, depth + 1);
+            }
+        }
     }
 }
 

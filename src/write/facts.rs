@@ -7,7 +7,6 @@ use super::state::{Facts, Wrap, Writer};
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 
 /// One node entry of a sidecar, as far as the writer reads it.
 #[derive(Debug, Clone, Default)]
@@ -184,12 +183,32 @@ fn walk(node: V<'_>, src: &str, path: &mut String, quoted: bool, out: &mut Vec<E
             path.push('/');
             path.push_str(step);
             if !single {
-                let _ = write!(path, "/{i}");
+                path.push('/');
+                push_index(path, i);
             }
             walk(c, src, path, inner, out);
             path.truncate(len);
         }
     });
+}
+
+fn push_index(path: &mut String, i: usize) {
+    let mut digits = [0u8; 20];
+    let mut at = digits.len();
+    let mut n = i;
+    loop {
+        at -= 1;
+        if let Some(d) = digits.get_mut(at) {
+            *d = b'0' + u8::try_from(n % 10).unwrap_or(0);
+        }
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    for &d in digits.get(at..).unwrap_or(&[]) {
+        path.push(char::from(d));
+    }
 }
 
 /// The facts of one node, or `None` when its type records none.
@@ -360,6 +379,28 @@ fn content_fragment(fragment: &str) -> &str {
     t.trim_matches([' ', '\t'])
 }
 
+/// A table's later lines can start in another column than its first row.
+fn table_source_line(line: &str, column: usize, first: bool) -> &str {
+    let anchored = line.get(column..).unwrap_or("");
+    if first {
+        return if anchored.starts_with('|') {
+            anchored.trim_end_matches('\r')
+        } else {
+            ""
+        };
+    }
+    let early_continuation = line.get(..column).and_then(|prefix| prefix.find('+'));
+    let at = early_continuation
+        .or_else(|| anchored.starts_with(['|', '+']).then_some(column))
+        .or_else(|| line.find(['|', '+']));
+    let Some(at) = at else { return "" };
+    let prefix = line.get(..at).unwrap_or("");
+    if prefix.contains("%%") || prefix.contains('{') {
+        return "";
+    }
+    line.get(at..).unwrap_or("").trim_end_matches('\r')
+}
+
 fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     let Some((start, end)) = span(table) else {
         return;
@@ -374,7 +415,7 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     };
     let mut lines: Vec<(&str, Vec<&str>)> = Vec::new();
     for line in body.split('\n') {
-        let l = line.get(column..).unwrap_or("").trim_end_matches('\r');
+        let l = table_source_line(line, column, lines.is_empty());
         if l.starts_with('|') {
             lines.push((l, Vec::new()));
         } else if l.starts_with('+') {
@@ -387,15 +428,18 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     for (g, group) in children(table).iter().enumerate() {
         for (r, row) in children(group).iter().enumerate() {
             if ty(row) == "table_row" {
-                rows.push((format!("{path}/children/{g}/children/{r}"), row));
+                rows.push((g, r, row));
             }
         }
     }
     if rows.len() != lines.len() {
         return;
     }
-    for ((row_path, row), (first, more)) in rows.into_iter().zip(lines) {
-        row_facts(row, first, &more, &row_path, out);
+    for ((g, r, row), (first, more)) in rows.into_iter().zip(lines) {
+        if !more.is_empty() {
+            let row_path = format!("{path}/children/{g}/children/{r}");
+            row_facts(row, first, &more, &row_path, out);
+        }
     }
 }
 

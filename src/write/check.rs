@@ -190,30 +190,65 @@ fn written_attrs(w: &Writer<'_>, e: V<'_>) -> Option<Value> {
     Some(Value::Object(rest))
 }
 
+/// Whether the field `name` of `e` reads back as `other`, the same field of the parse.
+fn field_differs(w: &Writer<'_>, e: V<'_>, name: &str, field: V<'_>, other: Option<V<'_>>) -> bool {
+    if name == "attrs" && w.sp.lost_keys.contains_key(&id(e)) {
+        return written_attrs(w, e).is_some_and(|v| !same_value(V::Json(&v), other));
+    }
+    !same_value(field, other)
+}
+
+/// [`differing_field`] of two typed nodes, their fields zipped; `None` for two node types.
+fn differing_node_field(
+    w: &Writer<'_>,
+    c: &Check<'_>,
+    e: V<'_>,
+    a: V<'_>,
+) -> Option<Option<&'static str>> {
+    let (V::Node(x), V::Node(y)) = (e, a) else {
+        return None;
+    };
+    // Two nodes of one type share their result fields.
+    let fields = result_fields(e);
+    let (mut first, mut extra) = (None, None);
+    let zipped = x.view_zip(y, &mut |name, field, other| match field {
+        Some(field) => {
+            if first.is_none()
+                && is_compared(c, e, fields, name)
+                && field_differs(w, e, name, field, other)
+            {
+                first = Some(name);
+            }
+        }
+        None => {
+            if extra.is_none() && is_compared(c, a, fields, name) {
+                extra = Some(name);
+            }
+        }
+    });
+    zipped.then(|| first.or(extra))
+}
+
 /// The name of the first field in which `e` and `a` differ.
 fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<String> {
     if !(e.is_object() && a.is_object()) {
         return None;
     }
+    if let Some(name) = differing_node_field(w, c, e, a) {
+        return name.map(str::to_string);
+    }
     let (ef, af) = (result_fields(e), result_fields(a));
-    let mut fields = Vec::new();
-    e.each(&mut |name, field| fields.push((name, field)));
-    for (name, field) in fields {
-        if !is_compared(c, e, ef, name) {
-            continue;
+    let mut first = None;
+    e.each(&mut |name, field| {
+        if first.is_some() || !is_compared(c, e, ef, name) {
+            return;
         }
-        let differs = if name == "attrs" {
-            if w.sp.lost_keys.contains_key(&id(e)) {
-                written_attrs(w, e).is_some_and(|v| !same_value(V::Json(&v), a.get(name)))
-            } else {
-                !same_value(field, a.get(name))
-            }
-        } else {
-            !same_value(field, a.get(name))
-        };
-        if differs {
-            return Some(name.to_string());
+        if field_differs(w, e, name, field, a.get(name)) {
+            first = Some(name);
         }
+    });
+    if let Some(name) = first {
+        return Some(name.to_string());
     }
     let mut extra = None;
     a.each(&mut |name, _| {

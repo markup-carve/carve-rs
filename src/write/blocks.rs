@@ -1050,12 +1050,13 @@ fn is_comment_line(node: Option<V<'_>>) -> bool {
     node.is_some_and(|n| ty(n) == "comment" && s(n, "form") != Some("block"))
 }
 
-pub fn after_comments(nodes: Arr<'_>, at: usize) -> Option<V<'_>> {
+/// The index of the first block behind `at` that is no comment line, or `nodes.len()`.
+pub fn comment_lines_end(nodes: Arr<'_>, at: usize) -> usize {
     let mut next = at + 1;
     while is_comment_line(nodes.get(next)) {
         next += 1;
     }
-    nodes.get(next)
+    next
 }
 
 fn is_region_marker(node: V<'_>) -> bool {
@@ -1185,13 +1186,12 @@ fn before_sibling<'t>(
     w: &mut Writer<'t>,
     nodes: Arr<'t>,
     at: usize,
-    before: Option<N<'t>>,
+    (before, following): (Option<N<'t>>, Option<V<'t>>),
     list_before: Option<N<'t>>,
     prefix: &str,
     layout: Layout,
 ) {
     let Some(node) = nodes.get(at) else { return };
-    let following = after_comments(nodes, at);
     let attributes = match before {
         Some(b)
             if is_comment_line(Some(node))
@@ -1231,10 +1231,23 @@ fn write_siblings<'t>(
 ) {
     let mut before: Option<N<'t>> = None;
     let mut list_before: Option<N<'t>> = None;
+    // Kept across a run of comment lines, which is walked once rather than once per comment.
+    let mut after = 0;
     let mut at = 0;
     while let Some(node) = nodes.get(at) {
         let start = w.lines.len();
-        before_sibling(w, nodes, at, before, list_before, prefix, layout);
+        if after <= at {
+            after = comment_lines_end(nodes, at);
+        }
+        before_sibling(
+            w,
+            nodes,
+            at,
+            (before, nodes.get(after)),
+            list_before,
+            prefix,
+            layout,
+        );
         mark_fence_before_comment(w, node, nodes.get(at + 1));
         let written = w.lines.len();
         if ty(node) == "code_block" && caption(node).is_some() {

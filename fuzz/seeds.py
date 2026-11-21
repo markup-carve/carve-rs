@@ -2,7 +2,7 @@
 
 Seeds: every input of the conformance corpus (examples, clause cases,
 extension cases) and the .crv files under tests/. The targets that read a
-selector byte first (render, ext, import) get the input behind fixed
+selector byte first (render, ext, safety, export, import) get the input behind fixed
 selectors; decode gets the trees of spec-trees/. Usage: python3 fuzz/seeds.py <repo root> [extra Markdown file...]
 """
 
@@ -65,6 +65,8 @@ for i, s in enumerate(carve):
     for sel in (0x00, (0x21, 0x46, 0x93, 0x5C)[i % 4]):
         put("render", bytes([sel]) + s.encode())
         put("ext", bytes([sel]) + s.encode())
+        put("safety", bytes([sel]) + s.encode())
+        put("export", bytes([sel]) + s.encode())
     put("import", bytes([0x01 + i % 3]) + s.encode())
 for s in html:
     put("import", b"\x00" + s.encode())

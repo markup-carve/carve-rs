@@ -15,7 +15,7 @@ use crate::source::Source;
 use events::{ContainerKind, Event, LeafKind, LineBlockEntry, Role};
 use line::Cursor;
 use shapes::{FenceInfo, MarkerKind};
-use table::TableData;
+use table::{Pieces, TableData};
 
 /// The result of the block pass.
 #[derive(Debug, Default)]
@@ -108,18 +108,18 @@ impl Kind {
 #[derive(Debug, Clone)]
 enum Leaf {
     Para {
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     Heading {
         level: u8,
         marker_col: usize,
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     Term {
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     Caption {
-        pieces: Vec<Piece>,
+        pieces: Pieces,
     },
     Code {
         len: usize,
@@ -788,15 +788,14 @@ impl<'a> Parser<'a> {
         while self.stack.len() > p.depth {
             self.pop_container();
         }
-        let pieces = p
-            .lines
-            .iter()
-            .map(|&(s, e)| Piece {
+        let mut pieces = Pieces::default();
+        for &(s, e) in &p.lines {
+            pieces.push(Piece {
                 start: s,
                 end: e,
                 join: Join::Line,
-            })
-            .collect();
+            });
+        }
         self.push_leaf_event(
             LeafKind::Paragraph { pieces, role: None },
             p.start,

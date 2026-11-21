@@ -46,6 +46,8 @@ struct Builder<'r, 'e, 'a> {
     comment_to: Option<usize>,
     /// The pieces of one smart typography run, kept for the next run.
     outs: Vec<Out>,
+    /// No smart typography starts before this content offset.
+    plain_to: usize,
 }
 
 /// Builds the inline nodes of one content; `next_flow` is per event, empty
@@ -58,6 +60,7 @@ pub(super) fn build<'a>(
     s: &mut Scratch<'a>,
     evs: impl Iterator<Item = Ev<'a>>,
     next_flow: &[Option<char>],
+    plain_to: usize,
 ) -> &'a mut [Node<'a>] {
     let mut lists = std::mem::take(&mut s.lists);
     let mut b = Builder {
@@ -74,6 +77,7 @@ pub(super) fn build<'a>(
         flow_prev: None,
         comment_to: None,
         outs: std::mem::take(&mut s.outs),
+        plain_to,
     };
     for (i, ev) in evs.enumerate() {
         b.event(ev, next_flow.get(i).copied().flatten());
@@ -511,7 +515,8 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
             return;
         }
         let mut outs = std::mem::take(&mut self.outs);
-        self.smart.run(self.ctx, v0, v1, next_flow, &mut outs);
+        self.smart
+            .run(self.ctx, v0, v1, next_flow, &mut outs, self.plain_to);
         for o in outs.drain(..) {
             match o {
                 Out::Text(a, b) => {
