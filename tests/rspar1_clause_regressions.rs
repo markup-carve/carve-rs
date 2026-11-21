@@ -53,8 +53,8 @@ fn c2_b_081_definition_in_quote_reports_label_and_colon() {
 fn c2_b_028_structural_openers_report_indent_in_each_owner() {
     for (source, offset, owner) in [
         (" > a", 1, "document"),
-        (">  # h", 3, "a quote"),
-        ("::: note\n  # h\n:::", 11, "a div"),
+        (">  # h", 3, "block quote"),
+        ("::: note\n  # h\n:::", 11, "admonition"),
     ] {
         let findings = findings(source, "block-opener-overindented");
         assert_eq!(findings.len(), 1, "{source:?}: {findings:?}");
@@ -69,7 +69,7 @@ fn c2_b_119_refused_div_marker_reports_inside_containers() {
         let markers = findings(source, "block-marker-as-text");
         assert_eq!(markers.len(), 1, "{source:?}: {markers:?}");
         assert_eq!(markers[0].pos.expect("range").start_offset, 2);
-        assert!(markers[0].message.contains("a div fence"));
+        assert!(markers[0].message.contains("a colon fence"));
     }
 }
 
@@ -340,7 +340,7 @@ fn c2_i_096_crossref_case_variant_uses_the_catalog_phrase() {
     assert_eq!(crossrefs.len(), 1);
     assert_eq!(
         crossrefs[0].message,
-        "Cross-reference </#Intro> matches no id; the id \"intro\" differs only in case, and cross-references are case-sensitive, so it renders as the literal text \"</#Intro>\"."
+        "Cross-reference </#Intro> matches no id; the id intro differs only in case, and cross-references are case-sensitive, so it renders as the literal text \"</#Intro>\"."
     );
 }
 

@@ -527,6 +527,7 @@ fn is_opaque_leaf(kind: &str) -> bool {
     matches!(
         kind,
         "code"
+            | "autolink"
             | "raw_inline"
             | "literal_inline"
             | "math"
@@ -640,20 +641,28 @@ fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
         return;
     }
     let (mut start, mut text) = leaf_after_quotes(line);
+    // The catalog reports a `+` behind quote marks alone, or the marker-line text of an item;
+    // `* > +` is neither, since the item's text is `> +`.
     let mut item = false;
-    while text.starts_with("- ") || text.starts_with("* ") {
-        item = true;
-        text = &text[2..];
-        start += 2;
+    let mut marker_line = false;
+    loop {
+        let skip = if let Some(width) = item_marker_width(text) {
+            item = true;
+            marker_line = true;
+            width
+        } else if text.starts_with("> ") {
+            item = false;
+            2
+        } else {
+            break;
+        };
+        text = &text[skip..];
+        start += skip;
         let trimmed = text.trim_start_matches([' ', '\t']);
         start += text.len() - trimmed.len();
         text = trimmed;
-        // A quote in the item's marker-line text is not another physical-line prefix.
-        if text.starts_with("> ") {
-            return;
-        }
     }
-    if text == "+" {
+    if text == "+" && (item || !marker_line) {
         let message = if item {
             2
         } else {
@@ -668,6 +677,37 @@ fn continuation_marker(line: &Line, sink: &mut Sink<'_>) {
             message,
         );
     }
+}
+
+/// The width of a bullet or ordered marker and its task box at the start of `text`, up to the space after them.
+fn item_marker_width(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
+    let mut at = match bytes.first()? {
+        b'-' | b'*' => 1,
+        _ if (1..=9).contains(&digits) && matches!(bytes.get(digits), Some(b'.' | b')')) => {
+            digits + 1
+        }
+        b if b.is_ascii_alphabetic() && matches!(bytes.get(1), Some(b'.' | b')')) => 2,
+        _ => return None,
+    };
+    if !matches!(bytes.get(at), Some(b' ' | b'\t')) {
+        return None;
+    }
+    let spaces = bytes
+        .get(at..)
+        .unwrap_or(&[])
+        .iter()
+        .take_while(|b| matches!(b, b' ' | b'\t'))
+        .count();
+    if bytes.get(at + spaces) == Some(&b'[')
+        && matches!(bytes.get(at + spaces + 1), Some(b' ' | b'x' | b'X'))
+        && bytes.get(at + spaces + 2) == Some(&b']')
+        && matches!(bytes.get(at + spaces + 3), Some(b' ' | b'\t'))
+    {
+        at += spaces + 3;
+    }
+    Some(at + 1)
 }
 
 fn thematic_marker(
@@ -789,7 +829,7 @@ fn marker_as_text(line: &Line, content_start: usize, content: &str, sink: &mut S
         let what = if content.starts_with("~~~") {
             "a tilde fence"
         } else {
-            "a div fence"
+            "a colon fence"
         };
         let marker = line
             .text
@@ -1507,17 +1547,9 @@ fn quote_opener_candidate(line: &Line, source: &str) -> bool {
     if !text.starts_with('>') {
         return false;
     }
-    if text == ">" && empty_quote_with_space(line, source) {
-        return false;
-    }
     source
         .get(line.start + at..line.start + line.text.len())
-        .is_some_and(|raw| {
-            raw == ">"
-                || raw
-                    .strip_prefix("> ")
-                    .is_some_and(|tail| !tail.trim().is_empty())
-        })
+        .is_some_and(|raw| raw == ">" || raw.starts_with("> "))
 }
 
 fn empty_quote_with_space(line: &Line, source: &str) -> bool {
@@ -1661,38 +1693,65 @@ fn bare_html(line: &Line, sink: &mut Sink<'_>) {
     {
         return;
     }
-    let Some(at) = line.text.find('<') else {
-        return;
-    };
-    if in_caption(line) {
+    if !line.text.contains('<') || in_caption(line) {
         return;
     }
-    if source_escaped(line.text.as_bytes(), at) {
+    // The first tag shape on the line (catalog row); a `<` that starts none is text.
+    let mut from = 0;
+    while let Some(found) = line.text.get(from..).and_then(|rest| rest.find('<')) {
+        let at = from + found;
+        from = at + 1;
+        let rest = line.text.get(at..).unwrap_or("");
+        if rest.starts_with("<!--") {
+            let Some(close) = rest.get(4..).and_then(|body| body.find("-->")) else {
+                return;
+            };
+            from = at + 4 + close + 3;
+            continue;
+        }
+        if source_escaped(line.text.as_bytes(), at) {
+            continue;
+        }
+        let Some(len) = tag_end(rest) else {
+            continue;
+        };
+        sink.emit(
+            "bare-html-tag",
+            line.start + at,
+            line.start + at + len,
+            &line.path,
+            &[],
+        );
         return;
     }
-    if line.text.get(at..).is_some_and(|s| s.starts_with("<!--")) {
-        return;
+}
+
+/// The length of the catalog tag shape `</?[A-Za-z][A-Za-z0-9_:-]*(?:\s[^<>]*)?/?>` at the start of `text`.
+fn tag_end(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut at = 1 + usize::from(bytes.get(1) == Some(&b'/'));
+    if !bytes.get(at)?.is_ascii_alphabetic() {
+        return None;
     }
-    let Some(after) = line.text.as_bytes().get(at + 1) else {
-        return;
-    };
-    if !after.is_ascii_alphabetic() && *after != b'/' {
-        return;
+    at += 1;
+    while bytes
+        .get(at)
+        .is_some_and(|b| b.is_ascii_alphanumeric() || b"_:-".contains(b))
+    {
+        at += 1;
     }
-    let Some(end) = line.text.get(at + 2..).and_then(|s| s.find('>')) else {
-        return;
-    };
-    let inside = line.text.get(at + 1..at + 2 + end).unwrap_or("");
-    if inside.contains("://") || inside.contains('@') || inside.starts_with("/#") {
-        return;
+    let rest = &text[at..];
+    if rest.starts_with('>') {
+        return Some(at + 1);
     }
-    sink.emit(
-        "bare-html-tag",
-        line.start + at,
-        line.start + at + end + 3,
-        &line.path,
-        &[],
-    );
+    if rest.starts_with("/>") {
+        return Some(at + 2);
+    }
+    if !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let close = rest.find(['<', '>'])?;
+    rest[close..].starts_with('>').then_some(at + close + 1)
 }
 
 fn in_caption(line: &Line) -> bool {
@@ -1714,10 +1773,13 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     if replaced!("github-alert-marker") {
         return;
     }
-    let starts = line.text.trim_start();
+    let starts = line.text.trim_start_matches([' ', '\t']);
     // GitHub also writes the alert mark immediately after `>`; this is still a
     // useful migration warning even though Carve reads the glued line as text.
-    if !starts.starts_with("> ") && !starts.starts_with(">[") {
+    let glued = starts.strip_prefix('>').is_none_or(|rest| {
+        !(rest.is_empty() || rest.starts_with([' ', '\t']) || rest.starts_with("[!"))
+    });
+    if glued {
         return;
     }
     if !matches!(
@@ -1757,7 +1819,7 @@ fn caption_looking(line: &Line, index: usize, lines: &[Line], sink: &mut Sink<'_
     let start = line.content_start.unwrap_or(0);
     let tail = line.text.get(start..).unwrap_or("");
     let marker = start + tail.len() - tail.trim_start().len();
-    if !line.paragraph || !caption_like(tail.trim_start()) {
+    if line.kind != "paragraph" || !caption_like(tail.trim_start()) {
         return;
     }
     let below = lines

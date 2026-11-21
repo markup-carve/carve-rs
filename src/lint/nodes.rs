@@ -273,7 +273,7 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
             0,
         );
     } else if let Some(target) = targets.folded.get(&key.to_ascii_lowercase()) {
-        let phrase = format!("the id \"{}\" differs only in case", target.id);
+        let phrase = format!("the id {} differs only in case", target.id);
         sink.emit(
             "broken-crossref",
             item,
@@ -478,6 +478,14 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         "table" => "table row",
         _ => return,
     };
+    // `${kind}` in the catalog row: "quote", "div", or the type in words.
+    let label = match item.node.ty().as_str().unwrap_or("") {
+        "definition_term" => "definition term",
+        "code_block" => "code block",
+        "raw_block" => "raw block",
+        "table" => "table",
+        _ => kind,
+    };
     let Some((from, _)) = item.bounds else {
         return;
     };
@@ -506,8 +514,8 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         .and_then(|a| a.content_owner)
         .and_then(|(node, depth)| {
             let owner = match node.ty().as_str() {
-                Some("definition_description") => "a description",
-                Some("footnote") => "a footnote body",
+                Some("definition_description") => "definition description".to_string(),
+                Some("footnote") => "footnote".to_string(),
                 _ => return None,
             };
             field(node, "/children/0/pos/startColumn")
@@ -531,7 +539,7 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
     let div_owner = div_owner_column(item, root, sink.source);
     let (owner, standard) = if let Some((owner, column, start_line, depth)) = content_owner
         && content_parent > quote
-        && div_owner.is_none_or(|(_, div_depth)| div_depth <= depth)
+        && div_owner.is_none_or(|(_, _, div_depth)| div_depth <= depth)
     {
         if field(item.node, "/pos/startLine").as_u64() == Some(start_line) {
             return;
@@ -539,17 +547,17 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         (owner, column)
     } else if quote.is_some() {
         (
-            "a quote",
+            "block quote".to_string(),
             prefix.rfind('>').map_or(0, |at| {
                 let end = (at + 2).min(prefix.len());
                 usize::try_from(source_column(&prefix[..end], end).saturating_sub(1))
                     .unwrap_or(usize::MAX)
             }),
         )
-    } else if let Some((column, _)) = div_owner {
-        ("a div", column)
+    } else if let Some((kind, column, _)) = div_owner {
+        (kind.replace('_', " "), column)
     } else {
-        ("document", 0)
+        ("document".to_string(), 0)
     };
     let column = prefix.chars().fold(
         0,
@@ -576,19 +584,25 @@ fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {
         },
         item.path(),
         &[
-            ("kind", kind),
+            ("kind", label),
             ("past", &past.to_string()),
             ("columns", if past == 1 { "column" } else { "columns" }),
-            ("owner", owner),
+            ("owner", &owner),
         ],
         0,
     );
 }
 
-fn div_owner_column<'a>(item: &Item<'a>, _root: V<'a>, source: &str) -> Option<(usize, usize)> {
+/// The type, column and depth of the div-like owner.
+fn div_owner_column<'a>(
+    item: &Item<'a>,
+    _root: V<'a>,
+    source: &str,
+) -> Option<(&'a str, usize, usize)> {
     let (node, depth) = item.ancestors.as_ref()?.div_owner?;
     let (start, _) = bounds(node)?;
     Some((
+        node.ty().as_str().unwrap_or("div"),
         usize::try_from(source_column(source, start).saturating_sub(1)).unwrap_or(usize::MAX),
         depth,
     ))
@@ -800,7 +814,7 @@ fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
         .cloned();
     let image = item.node.ty() == "image";
     let message = usize::from(similar.is_none()) + usize::from(image) * 2;
-    let phrase = similar.map(|label| format!("the label \"{label}\" differs only in case"));
+    let phrase = similar.map(|label| format!("the label {label} differs only in case"));
     sink.emit(
         "unresolved-reference-link",
         item,

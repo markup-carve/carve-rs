@@ -753,7 +753,7 @@ fn column(source: &str, at: usize) -> usize {
     line.rsplit('\n').next().unwrap_or("").chars().count() + 1
 }
 
-/// A list item whose marker sits left of its list's first marker and right of the item that holds the list.
+/// A list item whose marker sits left of its list's first marker and right of the marker of the item that holds the list.
 fn marker_between_lists(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
     let Some(node) = all.get(at) else { return };
     let mut chain = ancestors(all, at);
@@ -775,14 +775,8 @@ fn marker_between_lists(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec
         return;
     };
     let mark = column(source, start);
-    let outer_mark = column(source, outer_at);
-    let width = source
-        .get(outer_at..)
-        .unwrap_or("")
-        .split(['\n', ' ', '\t'])
-        .next()
-        .map_or(1, |token| token.chars().count());
-    if outer_mark < mark && mark < outer_mark + width + 1 && mark < column(source, first) {
+    // C2-B-055: anywhere between the two lists' columns, also past the outer item's content column.
+    if column(source, outer_at) < mark && mark < column(source, first) {
         push(out, "list-marker-below-content-column", (start, start + 1));
     }
 }
