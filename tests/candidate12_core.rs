@@ -42,10 +42,9 @@ fn c2_b_167_empty_block_stops_glued_row_attribute() {
         let html = carve::render(source, &Options::default());
         assert_eq!(html, format!("<p>{source}</p>"), "{source}");
     }
-    for source in ["| a |{.c}{#i}"] {
-        let html = carve::render(source, &Options::default());
-        assert!(html.starts_with("<table>"), "{source}: {html}");
-    }
+    let source = "| a |{.c}{#i}";
+    let html = carve::render(source, &Options::default());
+    assert!(html.starts_with("<table>"), "{source}: {html}");
 }
 
 #[test]
