@@ -59,3 +59,19 @@ z
     let expected = src.replace("::::: tab \"D\"\nz\n:::::", "::: tab \"D\"\nz\n:::");
     assert_eq!(format_tabs(src), (expected, Vec::new()));
 }
+
+/// C2-X-026: a tab body is written in the document's context, so a shortcut
+/// reference to a definition outside the group reads back as a link.
+#[test]
+fn a_shortcut_reference_in_a_tab_is_written_back() {
+    let src = "\
+[r0]: http://x/0
+
+:::: tabs
+::: tab \"T0\"
+see [r0].
+:::
+::::
+";
+    assert_eq!(format_tabs(src), (src.to_string(), Vec::new()));
+}
