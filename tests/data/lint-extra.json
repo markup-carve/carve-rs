@@ -1,0 +1,274 @@
+[
+  {
+    "id": "braced-comment-in-a-template-source",
+    "trigger": "{% if user %}x{% endif %}",
+    "near": "plain text",
+    "options": {}
+  },
+  {
+    "id": "caption-looking-paragraph",
+    "trigger": "| a |\n\nTable: t\n",
+    "near": "| a |\n\nText\n",
+    "options": {}
+  },
+  {
+    "id": "carve-version-unsupported",
+    "trigger": "---\ncarve: 99.0\n---\n\nx\n",
+    "near": "---\ncarve: 0.2.0\n---\n\nx\n",
+    "options": {}
+  },
+  {
+    "id": "comment-splits-table-row",
+    "trigger": "| a |\n%% x\n+ b |\n",
+    "near": "| a |\n%% x\n| b |\n",
+    "options": {}
+  },
+  {
+    "id": "consumed-key-near-miss",
+    "trigger": "{tabel}\n```csv\na,b\n```\n",
+    "near": "| a |\n",
+    "options": {}
+  },
+  {
+    "id": "delimited-table-wide-row",
+    "trigger": "{table}\n```csv\na,b\nc,d,e\n```\n",
+    "near": "{table}\n```csv\na,b\nc,d\n```\n",
+    "options": {}
+  },
+  {
+    "id": "deprecated-table-attribute",
+    "trigger": "{header-rows=1}\n| a |\n",
+    "near": "| a |\n",
+    "options": {}
+  },
+  {
+    "id": "djot-emphasis-underscore",
+    "trigger": "_x_\n",
+    "near": "x\n",
+    "options": {
+      "rules": {
+        "djot-emphasis-underscore": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-heading-continuation",
+    "trigger": "# A\nB\n",
+    "near": "# A\n\nB\n",
+    "options": {
+      "rules": {
+        "djot-heading-continuation": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-highlight-braces",
+    "trigger": "{=x=}\n",
+    "near": "x\n",
+    "options": {
+      "rules": {
+        "djot-highlight-braces": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-intraword-underscore",
+    "trigger": "a_b_c\n",
+    "near": "abc\n",
+    "options": {
+      "rules": {
+        "djot-intraword-underscore": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-plus-bullet",
+    "trigger": "+ x\n",
+    "near": "x\n",
+    "options": {
+      "rules": {
+        "djot-plus-bullet": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-subscript-tilde",
+    "trigger": "~x~\n",
+    "near": "x\n",
+    "options": {
+      "rules": {
+        "djot-subscript-tilde": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-subscript-tilde-braced",
+    "trigger": "{~x~}\n",
+    "near": "x\n",
+    "options": {
+      "rules": {
+        "djot-subscript-tilde-braced": "on"
+      }
+    }
+  },
+  {
+    "id": "djot-superscript-caret",
+    "trigger": "^x^\n",
+    "near": "x\n",
+    "options": {
+      "rules": {
+        "djot-superscript-caret": "on"
+      }
+    }
+  },
+  {
+    "id": "duplicate-reference-url",
+    "options": { "rules": { "duplicate-reference-url": "on" } },
+    "trigger": "[a]: /u\n[b]: /u\n",
+    "near": "[a]: /u\n[b]: /v\n"
+  },
+  {
+    "id": "empty-include-path",
+    "trigger": "{{ }}\n",
+    "near": "{{ a.crv }}\n",
+    "options": {}
+  },
+  {
+    "id": "figure-group-panel-number",
+    "trigger": "::: figure\n![a](a.png)\n^ Panel #: A\n:::\n^ Figure #: G\n",
+    "near": "::: figure\n![a](a.png)\n^ Panel A\n:::\n^ Figure #: G\n",
+    "options": {}
+  },
+  {
+    "id": "footnote-labels-differ-only-in-whitespace",
+    "trigger": "x[^a b]\n\n[^a b]: one\n[^a  b]: two\n",
+    "near": "x[^a b]\n\n[^a b]: one\n",
+    "options": {},
+    "message": "Footnote definition [^a  b] normalizes to the same key as [^a b]; the first definition wins. Normalized key: \"a b\"."
+  },
+  {
+    "id": "heading-marker-mixed",
+    "trigger": "# A\n\n= B\n",
+    "near": "# A\n\n# B\n",
+    "options": {}
+  },
+  {
+    "id": "html-comment-renders-as-text",
+    "trigger": "a <!-- x -->\n",
+    "near": "a x\n",
+    "options": {}
+  },
+  {
+    "id": "include-attributes-unused",
+    "trigger": "{.x}\n{{ a.crv }}\n",
+    "near": "{{ a.crv }}\n",
+    "options": {}
+  },
+  {
+    "id": "include-lines-table-rows-hint",
+    "trigger": "{table}\n{{ a.csv @lines:1-5 @code:csv }}\n",
+    "near": "{table}\n{{ a.csv @rows:1-2 @code:csv }}\n",
+    "options": {
+      "include": {
+        "a.csv": "a,b\nc,d\n"
+      }
+    }
+  },
+  {
+    "id": "platform-issue-reference",
+    "trigger": "See #123.\n",
+    "near": "See item 123.\n",
+    "options": {
+      "platforms": [
+        "github"
+      ]
+    }
+  },
+  {
+    "id": "platform-mention-token",
+    "trigger": "Hi @alice.\n",
+    "near": "Hi alice.\n",
+    "options": {
+      "platforms": [
+        "github"
+      ]
+    }
+  },
+  {
+    "id": "quote-fence-ends-the-quote-above",
+    "trigger": "> q\n::: >\nx\n:::\n",
+    "near": "> q\n\n::: >\nx\n:::\n",
+    "options": {}
+  },
+  {
+    "id": "region-marker-renders-as-text",
+    "trigger": "#region a\n",
+    "near": "%% #region a\n",
+    "options": {}
+  },
+  {
+    "id": "semantic-attribute-outside-span",
+    "trigger": "`x`{kbd}\n",
+    "near": "[x]{kbd}\n",
+    "options": {}
+  },
+  {
+    "id": "semantic-attribute-value-ignored",
+    "trigger": "[x]{kbd=yes}\n",
+    "near": "[x]{kbd}\n",
+    "options": {}
+  },
+  {
+    "id": "table-attribute-invalid",
+    "trigger": "{aligns=diagonal}\n| a |\n",
+    "near": "{aligns=left}\n| a |\n",
+    "options": {}
+  },
+  {
+    "id": "table-column-arity",
+    "trigger": "{aligns=left}\n| a | b |\n",
+    "near": "{aligns=left,right}\n| a | b |\n",
+    "options": {}
+  },
+  {
+    "id": "table-column-overlap",
+    "trigger": "{aligns=left}\n|={>} a |\n| x |\n",
+    "near": "{aligns=left}\n|= a |\n| x |\n",
+    "options": {}
+  },
+  {
+    "id": "table-marker-run-padding",
+    "trigger": "|{.x}< a |\n",
+    "near": "|{.x} < a |\n",
+    "options": {},
+    "message": "\"{.x}<\" attaches the cell attribute block, but the following \"<\" is text and does not align the cell. Write \"{< .x}\" with the marker inside the first brace block to align it, or \"{.x} <\" to keep the mark as text."
+  },
+  {
+    "id": "table-row-count-clamped",
+    "trigger": "{header-rows=5 table}\n```csv\na,b\n```\n",
+    "near": "{header-rows=1 table}\n```csv\na,b\n```\n",
+    "options": {}
+  },
+  {
+    "id": "table-width-total",
+    "trigger": "{widths=60,50}\n| a | b |\n",
+    "near": "{widths=50,50}\n| a | b |\n",
+    "options": {}
+  },
+  {
+    "id": "tight-list-item-with-blank-line",
+    "trigger": "- a\n\n  b\n- c\n",
+    "near": "- a\n- c\n",
+    "options": {
+      "rules": {
+        "tight-list-item-with-blank-line": "on"
+      }
+    }
+  },
+  {
+    "id": "uneven-list-indent",
+    "trigger": "  - a\n- b\n",
+    "near": "- a\n- b\n",
+    "options": {}
+  }
+]

@@ -1,0 +1,379 @@
+//! The source as the parser reads it (C2-B-010, C2-B-165, C2-B-218) and the
+//! conversion from byte offsets to tree positions (C2-A-140, C2-A-141).
+
+use crate::ast::Pos;
+use std::borrow::Cow;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Clone, Copy)]
+pub(crate) struct SourceView<'a> {
+    text: &'a str,
+    replacements: &'a [(usize, usize)],
+}
+
+impl<'a> SourceView<'a> {
+    pub(crate) const fn direct(text: &'a str) -> Self {
+        Self {
+            text,
+            replacements: &[],
+        }
+    }
+
+    fn decoded_offset(self, original: usize) -> usize {
+        let before = self
+            .replacements
+            .partition_point(|&(end, extra)| end.saturating_sub(extra) <= original);
+        let extra = before
+            .checked_sub(1)
+            .and_then(|i| self.replacements.get(i))
+            .map_or(0, |&(_, extra)| extra);
+        original.saturating_add(extra)
+    }
+
+    pub(crate) fn slice(self, pos: Pos) -> Option<&'a str> {
+        let start = self.decoded_offset(pos.start());
+        let end = self.decoded_offset(pos.end());
+        self.text.get(start..end)
+    }
+}
+
+/// The normalized source: U+0000 read as U+FFFD, the byte-order mark kept in
+/// place but skipped by the line scan. Offsets into `text` are converted back
+/// to offsets of the original bytes when a position is built.
+#[derive(Debug)]
+pub struct Source<'a> {
+    /// The input itself unless it holds U+0000.
+    text: Cow<'a, str>,
+    /// Byte offset of the first character of each line in `text`.
+    line_starts: Vec<usize>,
+    /// Decoded end and cumulative extra bytes after each replacement.
+    replacements: Vec<(usize, usize)>,
+    /// Length of the byte-order mark at the start, 0 or 3.
+    bom: usize,
+    /// For each block of `MARK` bytes, its first character boundary and the
+    /// column there, so a column costs at most one block of counting.
+    marks: Vec<(usize, usize)>,
+    /// The line of the last lookup: positions are mostly asked in order.
+    line_hint: AtomicUsize,
+}
+
+const MARK: usize = 256;
+
+/// The first character boundary of each `MARK` block with its 0-based
+/// column, counted in code points from the start of its line.
+fn column_marks(text: &str) -> Vec<(usize, usize)> {
+    let mut marks = Vec::with_capacity(text.len() / MARK + 1);
+    let mut col = 0;
+    for (i, c) in text.char_indices() {
+        while marks.len() * MARK <= i {
+            marks.push((i, col));
+        }
+        // Line 0 starts behind a byte-order mark (`line_starts`).
+        col = match c {
+            '\n' => 0,
+            '\u{FEFF}' if i == 0 => 0,
+            _ => col + 1,
+        };
+    }
+    marks
+}
+
+fn append_valid(
+    valid: &str,
+    text: &mut String,
+    replacements: &mut Vec<(usize, usize)>,
+    extra: &mut usize,
+) {
+    if !valid.contains('\0') {
+        text.push_str(valid);
+        return;
+    }
+    for c in valid.chars() {
+        if c == '\0' {
+            text.push('\u{FFFD}');
+            *extra += 2;
+            replacements.push((text.len(), *extra));
+        } else {
+            text.push(c);
+        }
+    }
+}
+
+impl<'a> Source<'a> {
+    /// Reads `input` (C2-B-218: U+0000 is read as U+FFFD).
+    #[must_use]
+    pub fn new(input: &'a str) -> Self {
+        if !input.contains('\0') {
+            return Self::from_parts(Cow::Borrowed(input), Vec::new());
+        }
+        let mut text = String::with_capacity(input.len() + 16);
+        let mut replacements = Vec::new();
+        let mut extra = 0;
+        append_valid(input, &mut text, &mut replacements, &mut extra);
+        Self::from_parts(Cow::Owned(text), replacements)
+    }
+
+    /// C2-B-218: decode maximal ill-formed UTF-8 subparts to one U+FFFD each.
+    #[must_use]
+    pub fn from_bytes(input: &'a [u8]) -> Self {
+        if let Ok(valid) = std::str::from_utf8(input) {
+            return Self::new(valid);
+        }
+        let mut text = String::with_capacity(input.len());
+        let mut replacements = Vec::new();
+        let mut extra = 0;
+        let mut rest = input;
+        while let Err(error) = std::str::from_utf8(rest) {
+            let valid = error.valid_up_to();
+            if let Ok(prefix) = std::str::from_utf8(rest.get(..valid).unwrap_or_default()) {
+                append_valid(prefix, &mut text, &mut replacements, &mut extra);
+            }
+            let bad = error
+                .error_len()
+                .unwrap_or(rest.len().saturating_sub(valid));
+            text.push('\u{FFFD}');
+            extra += 3usize.saturating_sub(bad);
+            replacements.push((text.len(), extra));
+            rest = rest.get(valid + bad..).unwrap_or_default();
+        }
+        if let Ok(tail) = std::str::from_utf8(rest) {
+            append_valid(tail, &mut text, &mut replacements, &mut extra);
+        }
+        Self::from_parts(Cow::Owned(text), replacements)
+    }
+
+    fn from_parts(text: Cow<'a, str>, replacements: Vec<(usize, usize)>) -> Self {
+        let bom = if text.starts_with('\u{FEFF}') { 3 } else { 0 };
+        let mut line_starts = Vec::with_capacity(text.len() / 32 + 1);
+        line_starts.push(bom);
+        line_starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+        let marks = if text.is_ascii() {
+            Vec::new()
+        } else {
+            column_marks(&text)
+        };
+        Self {
+            text,
+            line_starts,
+            replacements,
+            bom,
+            marks,
+            line_hint: AtomicUsize::new(0),
+        }
+    }
+
+    /// The normalized text.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub(crate) fn render_view(&self) -> SourceView<'_> {
+        SourceView {
+            text: self.text(),
+            replacements: &self.replacements,
+        }
+    }
+
+    /// A slice of the normalized text that lives as long as the input: none
+    /// when the range is out of bounds or the text is a normalized copy.
+    #[must_use]
+    pub fn borrowed(&self, start: usize, end: usize) -> Option<&'a str> {
+        match self.text {
+            Cow::Borrowed(t) => t.get(start..end),
+            Cow::Owned(_) => None,
+        }
+    }
+
+    /// The offset of `s` in the text, when `s` is a slice of a borrowed text.
+    #[must_use]
+    pub fn offset_of(&self, s: &str) -> Option<usize> {
+        let Cow::Borrowed(t) = self.text else {
+            return None;
+        };
+        let at = s.as_ptr().addr().checked_sub(t.as_ptr().addr())?;
+        (at + s.len() <= t.len()).then_some(at)
+    }
+
+    /// Length of a leading byte-order mark (C2-B-165).
+    #[must_use]
+    pub const fn bom_len(&self) -> usize {
+        self.bom
+    }
+
+    /// Number of lines; a source that ends with LF has an empty last line.
+    #[must_use]
+    pub fn line_count(&self) -> usize {
+        self.line_starts.len()
+    }
+
+    /// Byte range of line `i` (0-based) without its LF and without a CR
+    /// directly before the LF (C2-B-010).
+    #[must_use]
+    pub fn line_range(&self, i: usize) -> (usize, usize) {
+        let start = self.line_starts.get(i).copied().unwrap_or(self.text.len());
+        match self.line_starts.get(i + 1) {
+            Some(&next) => {
+                let lf = next - 1;
+                let cr = lf > start && self.text.as_bytes().get(lf - 1) == Some(&b'\r');
+                (start, if cr { lf - 1 } else { lf })
+            }
+            None => (start, self.text.len()),
+        }
+    }
+
+    /// The text of line `i` as `line_range` gives it.
+    #[must_use]
+    pub fn line(&self, i: usize) -> &str {
+        let (s, e) = self.line_range(i);
+        self.text.get(s..e).unwrap_or("")
+    }
+
+    /// Byte offset of the end of line `i` including its line ending.
+    #[must_use]
+    pub fn line_end_with_break(&self, i: usize) -> usize {
+        self.line_starts
+            .get(i + 1)
+            .copied()
+            .unwrap_or(self.text.len())
+    }
+
+    /// A slice of the normalized text, empty when the range is out of bounds.
+    #[must_use]
+    pub fn slice(&self, start: usize, end: usize) -> &str {
+        self.text.get(start..end).unwrap_or("")
+    }
+
+    /// Offset in the original bytes for an offset into `text`.
+    #[must_use]
+    pub fn original_offset(&self, at: usize) -> usize {
+        let before = self.replacements.partition_point(|&(end, _)| end <= at);
+        let extra = before
+            .checked_sub(1)
+            .and_then(|i| self.replacements.get(i))
+            .map_or(0, |&(_, extra)| extra);
+        at.saturating_sub(extra)
+    }
+
+    /// 0-based line index of a byte offset.
+    #[must_use]
+    pub fn line_of(&self, at: usize) -> usize {
+        let starts = &self.line_starts;
+        let hint = self.line_hint.load(Ordering::Relaxed);
+        for line in [hint, hint + 1] {
+            if starts.get(line).is_some_and(|&s| s <= at)
+                && starts.get(line + 1).is_none_or(|&next| at < next)
+            {
+                self.line_hint.store(line, Ordering::Relaxed);
+                return line;
+            }
+        }
+        let line = starts.partition_point(|&s| s <= at).saturating_sub(1);
+        self.line_hint.store(line, Ordering::Relaxed);
+        line
+    }
+
+    /// 1-based line and column (code points) of an offset (C2-A-141).
+    #[must_use]
+    pub fn line_col(&self, at: usize) -> (usize, usize) {
+        let line = self.line_of(at);
+        let start = self.line_starts.get(line).copied().unwrap_or(0);
+        let at = at.max(start);
+        let (from, base) = if self.marks.is_empty() {
+            (at, at - start)
+        } else {
+            let k = at / MARK;
+            match self
+                .marks
+                .get(k)
+                .filter(|m| m.0 <= at)
+                .or_else(|| k.checked_sub(1).and_then(|j| self.marks.get(j)))
+            {
+                Some(&(b, c)) if b >= start && b <= at => (b, c),
+                _ => (start, 0),
+            }
+        };
+        let col = base + self.text.get(from..at).map_or(0, |s| s.chars().count());
+        (line + 1, col + 1)
+    }
+
+    /// The position of a byte range of `text`.
+    #[must_use]
+    pub fn pos(&self, start: usize, end: usize) -> Pos {
+        let (start_line, start_column) = self.line_col(start);
+        let (end_line, end_column) = self.line_col(end);
+        Pos {
+            start_line: Pos::at(start_line),
+            end_line: Pos::at(end_line),
+            start_column: Pos::at(start_column),
+            end_column: Pos::at(end_column),
+            start_offset: Pos::at(self.original_offset(start)),
+            end_offset: Pos::at(self.original_offset(end)),
+        }
+    }
+
+    /// Byte length of the original source (`srcByteLength`, C2-A-010).
+    #[must_use]
+    pub fn original_len(&self) -> usize {
+        self.original_offset(self.text.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Source;
+
+    fn slow(text: &str, start: usize, at: usize) -> usize {
+        text.get(start..at).map_or(0, |s| s.chars().count()) + 1
+    }
+
+    #[test]
+    fn c2_a_141_columns_count_code_points_on_long_lines() {
+        let line = "é".repeat(300) + "a" + &"ü".repeat(200);
+        let text = format!("\u{FEFF}x{line}\n{line}\nab");
+        let src = Source::new(&text);
+        for (at, _) in text.char_indices().filter(|&(i, _)| i >= 3) {
+            let line = src.line_of(at);
+            let start = src.line_range(line).0;
+            assert_eq!(
+                src.line_col(at),
+                (line + 1, slow(&text, start, at)),
+                "at {at}"
+            );
+        }
+    }
+
+    #[test]
+    fn line_of_does_not_depend_on_the_order_of_lookups() {
+        let text = "\u{FEFF}a\n\nbc\r\nd\n\n";
+        let fresh = |at: usize| {
+            let starts: Vec<usize> = std::iter::once(3)
+                .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+                .collect();
+            starts.partition_point(|&s| s <= at).saturating_sub(1)
+        };
+        let src = Source::new(text);
+        let up: Vec<usize> = (0..=text.len()).collect();
+        let down: Vec<usize> = up.iter().rev().copied().collect();
+        let jumps: Vec<usize> = (0..=text.len()).map(|i| i * 7 % (text.len() + 1)).collect();
+        for at in up.into_iter().chain(down).chain(jumps) {
+            assert_eq!(src.line_of(at), fresh(at), "at {at}");
+        }
+    }
+
+    #[test]
+    fn c2_b_218_replacement_spans_original_bytes() {
+        let src = Source::from_bytes(b"a\xffb");
+        assert_eq!(src.text(), "a\u{FFFD}b");
+        assert_eq!(src.original_len(), 3);
+        assert_eq!(src.pos(1, 4).start_offset, 1);
+        assert_eq!(src.pos(1, 4).end_offset, 2);
+
+        let src = Source::from_bytes(b"a\xe2\x82b");
+        assert_eq!(src.text(), "a\u{FFFD}b");
+        assert_eq!(src.original_len(), 4);
+        assert_eq!(src.pos(1, 4).start_offset, 1);
+        assert_eq!(src.pos(1, 4).end_offset, 3);
+        assert_eq!(src.pos(4, 5).start_offset, 3);
+    }
+}

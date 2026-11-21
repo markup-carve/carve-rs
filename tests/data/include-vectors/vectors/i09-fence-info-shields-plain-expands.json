@@ -1,0 +1,25 @@
+{
+  "name": "i09-fence-info-shields-plain-expands",
+  "description": "A fenced block with an info string shields; a plain directive after it still expands.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-002",
+    "C2-N-042"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre><code class=\"language-js\">{{ child }}\n</code></pre>\n<p>EXPANDED</p>",
+    "fmt": "```js\n{{ child }}\n```\n\n{{ child }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "```js\n{{ child }}\n```\n\n{{ child }}",
+  "files": {
+    "child": "EXPANDED"
+  }
+}

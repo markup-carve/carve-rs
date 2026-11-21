@@ -1,0 +1,45 @@
+{
+  "name": "i06-depth-limit",
+  "description": "Past the depth limit the directive stays literal; the unreached target is reported unresolved (never read).",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-064",
+    "C2-N-065",
+    "C2-N-066",
+    "C2-N-083",
+    "C2-N-084"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ b }}</p>",
+    "fmt": "{{ a }}\n",
+    "warnings": [
+      {
+        "code": "include-depth",
+        "file": "a"
+      },
+      {
+        "code": "include-unresolved",
+        "file": "a"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a",
+        "read": true
+      },
+      {
+        "id": "b",
+        "read": false
+      }
+    ]
+  },
+  "entry": "{{ a }}",
+  "files": {
+    "a": "{{ b }}",
+    "b": "Deep."
+  },
+  "options": {
+    "depth": 1
+  }
+}

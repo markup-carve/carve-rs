@@ -1,0 +1,26 @@
+{
+  "name": "i08-auto-min-child-level",
+  "description": "auto uses the minimum child heading level, preserving the internal gap.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-048",
+    "C2-N-049",
+    "C2-N-050"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"One\">\n  <h1>One</h1>\n  <section id=\"Deep\">\n    <h3>Deep</h3>\n  </section>\n  <section id=\"Shallow\">\n    <h2>Shallow</h2>\n  </section>\n</section>",
+    "fmt": "= One\n\n{{ child @shift:auto }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "# One\n\n{{ child @shift:auto }}",
+  "files": {
+    "child": "### Deep\n\n## Shallow"
+  }
+}

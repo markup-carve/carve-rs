@@ -1,0 +1,19 @@
+{
+  "name": "i14-fmt-not-shape-wellformed-escaped",
+  "description": "A run with no closing braces is not a directive and is escaped normally.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-201",
+    "C2-W-058"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ oops</p>",
+    "fmt": "{{ oops\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "note": "text; keep as a writer vector",
+  "entry": "{{ oops",
+  "files": {}
+}

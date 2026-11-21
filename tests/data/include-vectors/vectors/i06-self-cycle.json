@@ -1,0 +1,35 @@
+{
+  "name": "i06-self-cycle",
+  "description": "A file that includes itself is caught as a cycle.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-064",
+    "C2-N-065",
+    "C2-N-066"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>Self.</p>\n<p>{{ a }}</p>",
+    "fmt": "{{ a }}\n",
+    "warnings": [
+      {
+        "code": "include-cycle",
+        "file": "a"
+      },
+      {
+        "code": "include-unresolved",
+        "file": "a"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ a }}",
+  "files": {
+    "a": "Self.\n\n{{ a }}"
+  }
+}

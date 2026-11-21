@@ -1,0 +1,27 @@
+{
+  "name": "i01c-code-table-csv",
+  "description": "The carve#3335 example: `{table}` above a csv code include makes the table an authored `{table}` csv fence makes.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-042",
+    "C2-N-043",
+    "C2-N-044",
+    "C2-N-045"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">Plan</th><th scope=\"col\">Seats</th><th scope=\"col\">Price</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>Starter</td><td>1</td><td>$0</td></tr>\n    <tr><td>Team</td><td>10</td><td>$49, billed yearly</td></tr>\n  </tbody>\n</table>",
+    "fmt": "{table}\n{{ data/plans.csv @code:csv }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "data/plans.csv",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{table}\n{{ data/plans.csv @code:csv }}",
+  "files": {
+    "data/plans.csv": "Plan,Seats,Price\nStarter,1,\"$0\"\nTeam,10,\"$49, billed yearly\"\n"
+  }
+}

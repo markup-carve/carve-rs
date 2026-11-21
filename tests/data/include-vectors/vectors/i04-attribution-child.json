@@ -1,0 +1,33 @@
+{
+  "name": "i04-attribution-child",
+  "description": "A warning raised while expanding a child (a heading clamp) is attributed to the child.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-015",
+    "C2-N-019"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"Deep\">\n  <h6>Deep</h6>\n</section>",
+    "fmt": "{{ child.crv @shift:1 }}\n",
+    "warnings": [
+      {
+        "code": "include-heading-clamp",
+        "file": "child.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "child.crv",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child.crv @shift:1 }}",
+  "files": {
+    "child.crv": "###### Deep"
+  },
+  "options": {
+    "file": "book.crv"
+  }
+}

@@ -7,179 +7,66 @@ Thanks for your interest in contributing.
 ```bash
 git clone https://github.com/markup-carve/carve-rs
 cd carve-rs
-
-# The spec corpus is a submodule; the conformance tests need it.
-git submodule update --init
-
 cargo build --locked --all-targets
 ```
-
-Without the submodule, corpus-driven tests fail with an error naming it rather
-than skipping.
 
 Two names to keep straight: the crate publishes as `carve-lang` because `carve`
 was taken on crates.io, but Rust code imports it as `carve` and the CLI binary is
 `carve`.
 
-The minimum supported Rust version is **1.75**, set as `rust-version` in
-`Cargo.toml`. CI compiles the whole tree against that floor on every pull
-request, so a dependency that raises its own minimum is caught before merge.
+The minimum supported Rust version is **1.88** (edition 2024), set as
+`rust-version` in `Cargo.toml`.
 
 ## Running the tests
 
 ```bash
-cargo install cargo-nextest      # once
-cargo nextest run -E 'not binary(perf_regressions)'
-cargo test --doc
+cargo test -- --skip c2_fixed_oracle_corpus_and_clause_differences
+cargo test --test corpus
 ```
 
-**Use nextest.** It is what CI runs, and it gives every test a process of its
-own, so a test that sets a small stack or re-executes its own binary cannot
-disturb its neighbors.
-
-Doctests need the second line because nextest does not run them, by design: they
-need a compiler invocation per test rather than a binary to schedule.
-`src/extensions/` carries worked examples as doctests, so dropping
-`cargo test --doc` would stop testing them while the run stayed green.
-
-### Where a test goes
-
-Almost every integration test compiles into ONE binary, `suite`
-(`tests/suite/main.rs`). One binary per file meant about 750 crates to compile
-and link on every CI run. A new `tests/foo.rs` needs no registration: the
-`suite_modules!()` macro (`tests/suite/registry/`) declares a module for every
-`tests/*.rs` when the suite compiles, except the files `Cargo.toml` builds as
-their own `[[test]]` target. A file that needs shared helpers writes
-`use crate::common;` rather than `mod common;`. `perf_regressions`, `includes`
-and `include_conformance` stay separate targets, because CI selects them by name.
-
-rustc does not track the directory listing, so a file added after your last
-build stays out of the suite until the suite recompiles, and
-`registry::every_test_file_is_compiled` fails with that message. Editing any
-suite file, or `touch tests/suite/main.rs`, brings it in. A removed file is picked
-up on its own.
-
-`cargo fmt` does not reach modules a macro declares, so format the test files
-directly. CI checks both:
-
-```bash
-cargo fmt --all
-rustfmt --edition 2021 tests/*.rs
-```
-
-To narrow a run, filter on the file's module: `cargo nextest run -E 'test(/^corpus::/)'`
-or `cargo test --test suite corpus::`. A test that re-runs its own binary with
-`--exact` has to name itself as `module::test`; `common::exact_test_name` builds
-that from `module_path!()`.
-
-### The timing suite
-
-`tests/perf_regressions.rs` asserts wall-clock ratios, which is why the filter
-above excludes it. It runs in `.github/workflows/guards.yml` on a runner of its
-own, on pushes to `main` and nightly, rather than on the pull-request path.
-
-A reading taken on a loaded machine is void. When these tests shared a runner
-with the rest of the suite, one of them reported 1.79x, its documented regression
-signature, on commits that changed no engine code. Locally that means an
-otherwise idle machine and `--test-threads 1`:
-
-```bash
-cargo nextest run -E 'binary(perf_regressions)' --test-threads 1
-```
-
-For a branch, ask CI instead:
-
-```bash
-gh workflow run guards.yml -R markup-carve/carve-rs --ref <branch>
-```
+The README examples run as doctests, so `cargo test --doc` covers them.
 
 ## The other gates
 
-CI runs each of these, and each is worth a local pass before pushing:
+CI (`.github/workflows/engine.yml`) runs each of these:
 
 | Command | What it checks |
 |---------|----------------|
-| `cargo check --tests --all-features` | compiles, including the test targets a `--lib` check skips |
-| `cargo fmt --all -- --check` | formatting |
-| `rustfmt --check --edition 2021 tests/*.rs` | formatting of the suite's test files, which `cargo fmt` does not reach |
-| `cargo clippy --locked --all-targets -- -D warnings` | lints, with warnings fatal |
-| `cargo build --locked --no-default-features` | the `fs` feature is the only code in the crate that opens a file |
-| `python3 tools/sync-implemented.py --check` | whether a missing corpus category is a list problem or an engine one |
-| `python3 tools/seam-matrix.py --check` | every seam-matrix family is registered and populated, and every named shape has a row. It guards the generator; nothing in CI runs the emitted rows through an engine |
+| `cargo fmt --check` | formatting, also with `--manifest-path bench/Cargo.toml` |
+| `cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::cognitive_complexity` | lints |
+| `cargo clippy --lib --no-default-features` and `cargo test --no-default-features --test the_library_opens_no_file_without_the_fs_feature` | without `fs` the library holds no code that opens a file |
+| `python3 tools/check_complexity.py` | at most 15 cyclomatic complexity per hand-written function (needs `lizard`) |
+| `sh tools/consumer-smoke.sh` | the packaged crate in a downstream consumer |
+| `cargo build --release --target wasm32-wasip1 --bin carve` and `node tools/wasi-smoke.mjs` | the WASI command that carve-go and hugo-carve run |
 
-`RUSTFLAGS: -D warnings` is set for the whole CI workflow, so a warning fails the
-build there even outside the clippy job.
+## Conformance and the spec data
 
-`tools/check-schema-map.py` checks the ProseMirror schema map against
-carve-grammars. It needs a checkout of that repository, so it is easier to read
-the CI job than to reproduce it locally. A declared divergence says why as one of
-three reason kinds, two of which name the ProseMirror node they claim upstream
-does or does not publish; the checker resolves that name on every run, so such a
-reason goes false by itself. The decisions it compares include the
-`markCarrierNodes` and `preservationNodes` entries, which belong to no Carve type
-and which this engine's loader reads. `python3 -m unittest discover -s tools -p 'test_*.py'`
-covers those gates and the seam matrix's, with `CARVE_GRAMMARS_DIR` pointing at
-the checkout.
-
-## Conformance and the corpus
-
-Part of the suite is driven by the shared spec corpus in `tests/spec`, so a spec
-bump can change expectations with no local edit.
-
-A corpus category this engine does not support yet is declared rather than
-quietly absent. `IMPLEMENTED` in `tests/corpus.rs` lists the categories that must
-pass, `KNOWN_GAPS` beside it lists the ones deliberately deferred, and it is
-empty today. The list is guarded from both directions: a corpus category missing
-from `IMPLEMENTED` fails the build, and an `IMPLEMENTED` entry with no corpus
-pair fails it too. Implementing a feature therefore means adding its category to
-the list as well as making the parser handle it. `tools/sync-implemented.py`
-without `--check` adds exactly the categories that already render byte-exact.
-
-`docs/conformance.md` covers how the corpus runners are wired.
+`build.rs` generates the tables from `spec-data/`, a verbatim copy of
+`spec/0.2/data/` of markup-carve/carve at the commit in
+`spec-data/SOURCE_COMMIT`. `spec-conformance/` and `spec-trees/` copy its
+`conformance/` and `trees/`. CI fails when a copy differs from the pinned
+commit, so moving the pin is one commit that updates copies and pin together.
 
 ## Project layout
 
 ```
 src/
-├── lib.rs             # public API
-├── main.rs            # the `carve` CLI
-├── parse.rs, parse/   # block and inline parsing
-├── ast.rs             # AST node types
-├── render*.rs, render/            # HTML, Markdown, plain text, ANSI, Carve
-├── html_import.rs, html_import/   # HTML importer
-├── djot_migrate.rs, djot_migrate/ # Djot importer
-├── markdown_import.rs, markdown_import/ # Markdown importer
-├── extensions/        # opt-in extensions
-├── prosemirror/       # editor bridge
-├── includes.rs        # file inclusion (behind the `fs` feature)
-├── profile.rs         # allowed constructs for untrusted input
-├── source/            # source-preserving layout and patch helpers
-└── table/             # table measurement and span helpers
-tests/                 # integration tests plus the corpus runners
-tests/spec/            # git submodule: markup-carve/carve
-tools/                 # the Python guards CI runs
+├── lib.rs             # crate root; the public library is `api`
+├── main.rs            # the `carve` CLI (needs the `fs` feature)
+├── api/               # the calls of tooling.md, errors, writers, JSON boundary
+├── reader/, block/, inline/   # parsing
+├── resolve/           # references, notes, ids
+├── html/              # HTML renderer
+├── write/             # canonical Carve writer
+├── import/            # HTML importer
+├── include/           # include expansion; `include/fs.rs` behind `fs`
+└── lint/              # lint rules
+tests/                 # integration tests and their fixtures
+spec-data/, spec-conformance/, spec-trees/   # pinned copies from the spec
+bench/                 # timing program (own workspace)
+consumer-smoke/        # downstream consumer check (own workspace)
+tools/                 # CI helpers
 ```
-
-## Bindings that pin this engine
-
-carve-rb, carve-py, carve-wasm and carve-go each pin a carve-rs revision. If your
-change moves the AST, the wire format or rendered output, those pins are the
-downstream blast radius. `docs/development.md` describes the pin shapes and
-`docs/engine-pin-guard.md` the guard that reads them, including what it cannot
-see.
-
-## Versions on main
-
-Between releases `main` reads the next version with a `-dev` suffix, for
-example `0.1.9-dev`, so `carve --version` and the `generated-by` provenance
-stamp never name a release a build is not. The cut drops the suffix in
-`Cargo.toml` and `Cargo.lock` together with the changelog section; once the
-release is published, the next pull request moves `main` to the following
-`-dev` version.
-
-`tests/the_version_a_build_reports_is_the_one_that_shipped.rs` checks the
-shape, and `.github/workflows/release.yml` refuses to publish a crate or
-attach binaries for any tag that is not a plain `X.Y.Z`.
 
 ## Spec changes
 
@@ -204,6 +91,6 @@ description.
 - Make the test able to fail. Revert the fix and watch it go red before you trust
   it; several bugs across the Carve engines survived behind a check that
   structurally could not see what it was checking.
-- Tests, `fmt`, `clippy` and the MSRV check green.
+- Tests, `fmt` and `clippy` green.
 - Say what behavior changed in the description. The reasoning belongs in the
   commit body.

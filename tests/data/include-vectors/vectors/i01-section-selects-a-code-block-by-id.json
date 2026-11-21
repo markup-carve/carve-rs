@@ -1,0 +1,27 @@
+{
+  "name": "i01-section-selects-a-code-block-by-id",
+  "description": "A #name no heading carries selects the first block with that explicit id, alone and keeping its id (I1a).",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre id=\"dough\"><code class=\"language-text\">flour\n</code></pre>",
+    "fmt": "{{ c.crv #dough }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "c.crv",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ c.crv #dough }}\n",
+  "files": {
+    "c.crv": "# Bread\n\nIntro.\n\n{#dough}\n```text\nflour\n```\n\nafter\n"
+  }
+}

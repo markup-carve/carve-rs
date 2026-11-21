@@ -1,3 +1,0 @@
-# Title
-
-See [Title](#title).

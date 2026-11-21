@@ -1,0 +1,33 @@
+{
+  "name": "i12-fmt-shift-preserved",
+  "description": "A stated (signed) shift survives formatting.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-H-133",
+    "C2-W-058",
+    "C2-L-055"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv @shift:1 }}</p>",
+    "fmt": "{{ chapter.crv @shift:+1 }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-no-resolver`, no spans (C2-H-133); `fmt` writes `@shift:1`, the decoded integer (C2-W-058)",
+  "entry": "{{ chapter.crv @shift:+1 }}",
+  "files": {}
+}

@@ -1,0 +1,35 @@
+{
+  "name": "i05-explicit-heading-id-collision-warns",
+  "description": "An explicit id collision across files is renamed AND reported: it is a cross-reference target.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-058"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"intro\">\n  <h1>A</h1>\n  <p>First.</p>\n</section>\n<section id=\"intro\">\n  <h1>B</h1>\n  <p>Second.</p>\n</section>",
+    "fmt": "{{ a.crv }}\n\n{{ b.crv }}\n",
+    "warnings": [
+      {
+        "code": "duplicate-id",
+        "file": "b.crv"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      },
+      {
+        "id": "b.crv",
+        "read": true
+      }
+    ]
+  },
+  "note": "no rename: `duplicate-id` replaces `include-id-rename` (C2-N-058)",
+  "entry": "{{ a.crv }}\n\n{{ b.crv }}\n",
+  "files": {
+    "a.crv": "{#intro}\n# A\n\nFirst.\n",
+    "b.crv": "{#intro}\n# B\n\nSecond.\n"
+  }
+}

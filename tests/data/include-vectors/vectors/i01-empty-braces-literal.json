@@ -1,0 +1,20 @@
+{
+  "name": "i01-empty-braces-literal",
+  "description": "Empty braces are ordinary text: no warning, no dependency.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>{{ }}</p>",
+    "fmt": "{{ }}\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "entry": "{{ }}",
+  "files": {}
+}

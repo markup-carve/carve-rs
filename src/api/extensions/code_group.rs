@@ -1,0 +1,470 @@
+//! `codeGroup` (carve-js#5068).
+
+use super::{
+    Bundle, Claim, Form, Made, Matcher, Parts, authored, classes, declaration, key_values, typed,
+    with_attrs,
+};
+use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
+use serde_json::{Value, json};
+use std::borrow::Cow;
+use std::fmt::Write as _;
+use std::sync::Arc;
+
+/// How the interactive channel switches panels.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CodeGroupMode {
+    /// Radio inputs, no script.
+    #[default]
+    Css,
+    /// Tab roles; a script switches the panels.
+    Aria,
+}
+
+/// Replaces the core code block HTML of a panel: code and language in.
+pub type Highlighter = Arc<dyn Fn(&str, Option<&str>) -> String + Send + Sync>;
+
+/// The options of [`code_group`].
+#[derive(Clone, Default)]
+pub struct CodeGroupOptions {
+    pub mode: CodeGroupMode,
+    pub wrapper_class: Option<String>,
+    pub panel_class: Option<String>,
+    pub label_class: Option<String>,
+    pub radio_class: Option<String>,
+    /// The prefix of the generated ids; default `codegroup`.
+    pub id_prefix: Option<String>,
+    /// The name of the group; default the `codeGroup` label (C2-H-125).
+    pub group_label: Option<String>,
+    pub highlighter: Option<Highlighter>,
+}
+
+const NAME: &str = "carve.codeGroup";
+
+struct Look {
+    mode: CodeGroupMode,
+    wrapper: String,
+    panel: String,
+    label: String,
+    radio: String,
+    prefix: String,
+    group_label: Option<String>,
+    highlighter: Option<Highlighter>,
+}
+
+/// `node` is what the panel renders: the code block, or a node a document
+/// transform put in its place.
+struct Panel<'n> {
+    block: Cow<'n, Value>,
+    node: &'n Value,
+    label: String,
+    selected: bool,
+}
+
+fn has_selected(attrs: Option<&Value>) -> bool {
+    attrs
+        .and_then(|a| a.get("keyValues"))
+        .and_then(Value::as_array)
+        .is_some_and(|kvs| {
+            kvs.iter()
+                .any(|kv| kv.get(0).and_then(Value::as_str) == Some("selected"))
+        })
+}
+
+/// The code block of a panel; a transform such as codeCallouts may have
+/// replaced it by a node with it as its one fallback block.
+fn code_of(node: &Value) -> Option<Cow<'_, Value>> {
+    match node.get("type").and_then(Value::as_str)? {
+        "code_block" => Some(Cow::Borrowed(node)),
+        "block_extension" => {
+            let fallback = node.get("fallback")?.as_array()?;
+            let [code] = fallback.as_slice() else {
+                return None;
+            };
+            if code.get("type").and_then(Value::as_str) != Some("code_block") {
+                return None;
+            }
+            let mut code = code.clone();
+            if let (Some(attrs), Some(map)) = (node.get("attrs"), code.as_object_mut()) {
+                map.insert("attrs".into(), attrs.clone());
+            }
+            Some(Cow::Owned(code))
+        }
+        _ => None,
+    }
+}
+
+fn panels<'n>(slots: Option<&'n Value>, cx: &RenderContext<'_>) -> Vec<Panel<'n>> {
+    let mut out: Vec<Panel> = Vec::new();
+    for child in slots
+        .and_then(|s| s.get("panels"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(block) = code_of(child) else {
+            continue;
+        };
+        let title = block
+            .get("title")
+            .and_then(Value::as_array)
+            .map(|t| cx.plain_text(t).trim().to_string())
+            .unwrap_or_default();
+        let group = block
+            .get("groupLabel")
+            .and_then(Value::as_str)
+            .map_or("", str::trim);
+        let syntax = block.get("syntax").and_then(Value::as_str).unwrap_or("");
+        let label = [group, title.as_str(), syntax]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .map_or_else(|| format!("Code {}", out.len() + 1), str::to_string);
+        out.push(Panel {
+            block,
+            node: child,
+            label,
+            selected: false,
+        });
+    }
+    let marked = out
+        .iter()
+        .position(|p| has_selected(p.block.get("attrs")))
+        .unwrap_or(0);
+    if let Some(p) = out.get_mut(marked) {
+        p.selected = true;
+    }
+    out
+}
+
+fn without_selected(node: &Value) -> Cow<'_, Value> {
+    let attrs = node.get("attrs");
+    if !has_selected(attrs) {
+        return Cow::Borrowed(node);
+    }
+    let rest: Vec<Value> = key_values(attrs)
+        .into_iter()
+        .filter(|kv| kv.get(0).and_then(Value::as_str) != Some("selected"))
+        .collect();
+    let mut out = node.clone();
+    let Some(map) = out.as_object_mut() else {
+        return Cow::Owned(out);
+    };
+    if let Some(a) = map.get_mut("attrs").and_then(Value::as_object_mut) {
+        if rest.is_empty() {
+            a.remove("keyValues");
+        } else {
+            a.insert("keyValues".into(), Value::Array(rest));
+        }
+        if a.is_empty() {
+            map.remove("attrs");
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// The extension node a group renders, as its JSON value or typed.
+#[derive(Clone, Copy)]
+enum Group<'n, 'a> {
+    Json(&'n Value),
+    Typed(&'n crate::ast::BlockExtension<'a>),
+}
+
+impl Group<'_, '_> {
+    fn slots(&self) -> Option<&Value> {
+        match self {
+            Self::Json(node) => node.get("slots"),
+            Self::Typed(node) => node.slots,
+        }
+    }
+}
+
+impl Look {
+    fn name(&self, cx: &RenderContext<'_>) -> String {
+        self.group_label
+            .clone()
+            .or_else(|| cx.label("codeGroup").map(str::to_string))
+            .unwrap_or_else(|| "Code examples".to_string())
+    }
+
+    fn wrapper(&self, group: Group<'_, '_>, cx: &RenderContext<'_>, role: &str) -> String {
+        let node = match group {
+            Group::Json(node) => node,
+            Group::Typed(node) => return self.typed_wrapper(node, cx, role),
+        };
+        let attrs = node.get("attrs");
+        let name = self.name(cx);
+        let mut kv = key_values(attrs);
+        if !authored(attrs, "role") {
+            kv.push(json!(["role", role]));
+        }
+        if !name.is_empty() && !authored(attrs, "aria-label") && !authored(attrs, "aria-labelledby")
+        {
+            kv.push(json!(["aria-label", name]));
+        }
+        let mut cls = vec![Value::from(self.wrapper.as_str())];
+        cls.extend(
+            classes(attrs)
+                .into_iter()
+                .filter(|c| c.as_str() != Some(&self.wrapper)),
+        );
+        format!("<div{}>", cx.attributes(&with_attrs(node, cls, kv)))
+    }
+
+    fn typed_wrapper(
+        &self,
+        node: &crate::ast::BlockExtension<'_>,
+        cx: &RenderContext<'_>,
+        role: &str,
+    ) -> String {
+        let name = self.name(cx);
+        let mut parts = Parts::of(node.attrs);
+        if !parts.authored("role") {
+            parts.key_values.push(("role", role));
+        }
+        if !name.is_empty() && !parts.authored("aria-label") && !parts.authored("aria-labelledby") {
+            parts.key_values.push(("aria-label", name.as_str()));
+        }
+        parts.classes.retain(|c| *c != self.wrapper);
+        let parts = parts.with_classes(&[self.wrapper.as_str()]);
+        format!("<div{}>", cx.write_parts(&parts, node.pos.as_ref()))
+    }
+
+    fn code(&self, panel: &Panel<'_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        if let Some(h) = &self.highlighter {
+            let value = panel
+                .block
+                .get("value")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            return Ok(h(
+                value.trim_end_matches('\n'),
+                panel.block.get("syntax").and_then(Value::as_str),
+            ));
+        }
+        cx.render_block(&without_selected(panel.node))
+    }
+
+    fn css(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let panels = panels(node.slots(), cx);
+        let group = cx.next_id(&self.prefix);
+        let a = |v: &str| cx.escape_attribute(v);
+        let (mut controls, mut bodies) = (String::new(), String::new());
+        for (i, p) in panels.iter().enumerate() {
+            let id = format!("{group}-tab-{}", i + 1);
+            let _ = write!(
+                controls,
+                r#"<input type="radio" name="{}" id="{}" class="{}"{}><label for="{}" class="{}">{}</label>"#,
+                a(&group),
+                a(&id),
+                a(&self.radio),
+                if p.selected { " checked" } else { "" },
+                a(&id),
+                a(&self.label),
+                cx.escape(&p.label)
+            );
+            let _ = write!(
+                bodies,
+                r#"<div class="{}" role="group" aria-label="{}">{}</div>"#,
+                a(&self.panel),
+                a(&p.label),
+                self.code(p, cx)?
+            );
+        }
+        Ok(format!(
+            "{}{controls}{bodies}</div>",
+            self.wrapper(node, cx, "group")
+        ))
+    }
+
+    fn aria(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let panels = panels(node.slots(), cx);
+        let group = cx.next_id(&self.prefix);
+        let a = |v: &str| cx.escape_attribute(v);
+        let (mut controls, mut bodies) = (String::new(), String::new());
+        for (i, p) in panels.iter().enumerate() {
+            let tab = format!("{group}-tab-{}", i + 1);
+            let body = format!("{group}-panel-{}", i + 1);
+            // `type="button"`: a bare button inside a form would submit it.
+            let _ = write!(
+                controls,
+                r#"<button type="button" role="tab" id="{}" aria-selected="{}" aria-controls="{}" class="{}"{}>{}</button>"#,
+                a(&tab),
+                p.selected,
+                a(&body),
+                a(&self.label),
+                if p.selected { "" } else { r#" tabindex="-1""# },
+                cx.escape(&p.label)
+            );
+            let _ = write!(
+                bodies,
+                r#"<div role="tabpanel" id="{}" aria-labelledby="{}" class="{}"{}>{}</div>"#,
+                a(&body),
+                a(&tab),
+                a(&self.panel),
+                if p.selected { "" } else { " hidden" },
+                self.code(p, cx)?
+            );
+        }
+        Ok(format!(
+            "{}{controls}{bodies}</div>",
+            self.wrapper(node, cx, "tablist")
+        ))
+    }
+
+    /// C2-X-052: one section per panel headed by its label, no controls and
+    /// no generated ids.
+    fn build_time(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let a = |v: &str| cx.escape_attribute(v);
+        let mut sections = String::new();
+        for p in panels(node.slots(), cx) {
+            let _ = write!(
+                sections,
+                r#"<section class="{}"><h3 class="{}">{}</h3>{}</section>"#,
+                a(&self.panel),
+                a(&self.label),
+                cx.escape(&p.label),
+                self.code(&p, cx)?
+            );
+        }
+        Ok(format!(
+            "{}{sections}</div>",
+            self.wrapper(node, cx, "group")
+        ))
+    }
+}
+
+struct Interactive(Arc<Look>);
+
+impl Interactive {
+    fn group(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        match self.0.mode {
+            CodeGroupMode::Css => self.0.css(node, cx),
+            CodeGroupMode::Aria => self.0.aria(node, cx),
+        }
+    }
+}
+
+impl Renderer for Interactive {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        self.group(Group::Json(node), cx)
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        Some(self.group(Group::Typed(typed(node)?), cx))
+    }
+}
+
+struct BuildTime(Arc<Look>);
+
+impl Renderer for BuildTime {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        self.0.build_time(Group::Json(node), cx)
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        Some(self.0.build_time(Group::Typed(typed(node)?), cx))
+    }
+}
+
+fn claim(claim: &Claim<'_>) -> Option<Value> {
+    if claim.form != Form::Div {
+        return None;
+    }
+    let body = claim.node.get("children")?.as_array()?;
+    let panels: Vec<Value> = body
+        .iter()
+        .filter(|n| n.get("type").and_then(Value::as_str) != Some("comment"))
+        .cloned()
+        .collect();
+    // Like tabs (C2-X-040): other blocks keep the div, so no authored content is dropped.
+    if panels.is_empty()
+        || !panels
+            .iter()
+            .all(|n| n.get("type").and_then(Value::as_str) == Some("code_block"))
+    {
+        return None;
+    }
+    Some(json!({
+        "type": "block_extension",
+        "name": NAME,
+        "version": "1",
+        "children": [],
+        "slots": {"panels": panels},
+        "fallback": body,
+    }))
+}
+
+fn claim_typed<'a>(
+    _name: &str,
+    node: &mut crate::ast::Node<'a>,
+    _arena: &'a crate::Arena,
+) -> Option<Made<'a>> {
+    use crate::ast::Node;
+    let Node::Div(div) = node else {
+        return None;
+    };
+    let panels: Vec<&Node<'_>> = div
+        .children
+        .iter()
+        .filter(|n| !matches!(n, Node::Comment(_)))
+        .collect();
+    if panels.is_empty() || !panels.iter().all(|n| matches!(n, Node::CodeBlock(_))) {
+        return None;
+    }
+    let panels = panels
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    Some(Made {
+        props: None,
+        payload: None,
+        slots: Some(json!({"panels": panels})),
+        fallback: std::mem::take(&mut div.children),
+    })
+}
+
+/// `::: code-group` of code blocks as one switcher with a panel per block.
+#[must_use]
+pub fn code_group(options: CodeGroupOptions) -> Bundle {
+    let look = Arc::new(Look {
+        mode: options.mode,
+        wrapper: options.wrapper_class.unwrap_or_else(|| "code-group".into()),
+        panel: options
+            .panel_class
+            .unwrap_or_else(|| "code-group-panel".into()),
+        label: options
+            .label_class
+            .unwrap_or_else(|| "code-group-label".into()),
+        radio: options
+            .radio_class
+            .unwrap_or_else(|| "code-group-radio".into()),
+        prefix: options.id_prefix.unwrap_or_else(|| "codegroup".into()),
+        group_label: options.group_label,
+        highlighter: options.highlighter,
+    });
+    Bundle {
+        extensions: vec![Extension {
+            declaration: declaration(NAME, &["panels"]),
+            renderers: vec![
+                (Channel::Interactive, Box::new(Interactive(look.clone()))),
+                (Channel::BuildTime, Box::new(BuildTime(look))),
+            ],
+            transform: None,
+        }],
+        host: super::HostFields::default(),
+        matchers: vec![Matcher {
+            extension: NAME.into(),
+            form: Form::Div,
+            name: "code-group".into(),
+            claimer: Box::new(super::TypedEngine(claim, super::Typed(claim_typed))),
+        }],
+    }
+}

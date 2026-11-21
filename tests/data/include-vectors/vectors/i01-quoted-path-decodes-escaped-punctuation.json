@@ -1,0 +1,28 @@
+{
+  "name": "i01-quoted-path-decodes-escaped-punctuation",
+  "description": "A backslash before ASCII punctuation in a quoted path yields the character, as in a quoted attribute value: the spelled name is the decoy.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>decoded</p>",
+    "fmt": "{{ a.crv }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "a.crv",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ \"a\\.crv\" }}",
+  "files": {
+    "a\\.crv": "kept",
+    "a.crv": "decoded"
+  }
+}

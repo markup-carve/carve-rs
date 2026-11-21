@@ -1,0 +1,27 @@
+{
+  "name": "i01-two-adjacent-options",
+  "description": "An unquoted option value ends at the next marker, so two options need no space between them (carve#2778).",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"B\">\n  <h2>B</h2>\n  <p>yes</p>\n</section>",
+    "fmt": "{{ child @lines:5-7 @shift:1 }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child @shift:1@lines:5-7 }}",
+  "files": {
+    "child": "# A\n\nskip\n\n# B\n\nyes"
+  }
+}

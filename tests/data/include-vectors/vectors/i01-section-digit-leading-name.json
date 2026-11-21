@@ -1,0 +1,27 @@
+{
+  "name": "i01-section-digit-leading-name",
+  "description": "The #name is an explicit_identifier, so a digit-leading name forms a directive and selects its block (I1a).",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre id=\"2024-plan\"><code class=\"language-text\">ship it\n</code></pre>",
+    "fmt": "{{ c.crv #2024-plan }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "c.crv",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ c.crv #2024-plan }}\n",
+  "files": {
+    "c.crv": "{#2024-plan}\n```text\nship it\n```\n\nafter\n"
+  }
+}

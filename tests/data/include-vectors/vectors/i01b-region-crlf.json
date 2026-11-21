@@ -1,0 +1,28 @@
+{
+  "name": "i01b-region-crlf",
+  "description": "CRLF marker lines are recognized and the selected lines keep their content.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-037",
+    "C2-N-038",
+    "C2-N-039",
+    "C2-N-040",
+    "C2-N-041"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<p>Body.</p>",
+    "fmt": "{{ child @region:demo }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child @region:demo }}",
+  "files": {
+    "child": "Before.\r\n%% #region demo\r\nBody.\r\n%% #endregion demo\r\nAfter.\r\n"
+  }
+}

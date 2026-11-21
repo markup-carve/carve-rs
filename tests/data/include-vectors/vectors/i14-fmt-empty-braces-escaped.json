@@ -1,0 +1,19 @@
+{
+  "name": "i14-fmt-empty-braces-escaped",
+  "description": "Empty braces are escaped normally at format time (path-is-required agrees at both recognition points).",
+  "verdict": "changed",
+  "clauses": [
+    "C2-B-202",
+    "C2-W-058"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ }}</p>",
+    "fmt": "{{ }}\n",
+    "warnings": [],
+    "dependencies": []
+  },
+  "note": "text with `empty-include-path` (C2-B-202); no include semantics; keep as a writer vector",
+  "entry": "{{ }}",
+  "files": {}
+}

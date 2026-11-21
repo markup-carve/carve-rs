@@ -1,0 +1,309 @@
+//! Tables (C2-H-055 to C2-H-059, C2-H-061, C2-H-152, C2-H-153).
+
+use super::Renderer;
+use super::attrs::El;
+use crate::ast::{Node, Table, TableCellScope};
+use crate::hash::AddrMap;
+use crate::resolve::order::addr;
+use crate::resolve::table::{GroupKind, layout};
+
+/// The table attributes that are read and never written (C2-H-153).
+const READ_ONLY_KEYS: &[&str] = &[
+    "aligns",
+    "valigns",
+    "widths",
+    "header-rows",
+    "footer-rows",
+    "body-rows",
+    "body-header-rows",
+    "body-header-cols",
+];
+
+#[derive(Clone, Copy)]
+struct CellPlace {
+    kind: GroupKind,
+    row_heads: Option<i64>,
+    col: Option<usize>,
+    depth: usize,
+}
+
+fn row_head_column(col: Option<usize>, count: Option<i64>) -> bool {
+    col.and_then(|i| i64::try_from(i).ok())
+        .zip(count)
+        .is_some_and(|(i, n)| i < n)
+}
+
+fn table_column<'r, 'a>(
+    table: &'r Table<'a>,
+    col: Option<usize>,
+) -> Option<&'r crate::ast::TableColumn<'a>> {
+    match col.and_then(|i| table.columns.get(i)) {
+        Some(Node::TableColumn(column)) => Some(column),
+        _ => None,
+    }
+}
+
+impl<'r, 'a> Renderer<'r, 'a> {
+    pub(super) fn table(&mut self, n: &'r Node<'a>, depth: usize, panel: bool) {
+        let Node::Table(t) = n else { return };
+        let mut el = self.el(t.attrs, t.lang, n);
+        el.skip_keys = READ_ONLY_KEYS;
+        if panel {
+            el.base.push("carve-figure-panel".into());
+        }
+        let open = format!("<table{}>", el.write(self.filter()));
+        self.line(depth, &open);
+        if let Some(c) = &t.caption {
+            self.caption(c, "caption", depth + 1);
+        }
+        self.colgroup(t, depth + 1);
+        let placed = layout(t);
+        let columns: AddrMap<usize, usize> = placed.iter().map(|p| (addr(p.node), p.col)).collect();
+        for g in t.children.iter() {
+            self.group(t, g, &columns, depth + 1);
+        }
+        self.line(depth, "</table>");
+    }
+
+    /// C2-H-152.
+    fn colgroup(&mut self, t: &Table, depth: usize) {
+        let widths: Vec<Option<f64>> = t
+            .columns
+            .iter()
+            .map(|c| {
+                if let Node::TableColumn(c) = c {
+                    c.width
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if widths.iter().all(Option::is_none) {
+            return;
+        }
+        self.line(depth, "<colgroup>");
+        for w in widths {
+            match w {
+                Some(w) => self.line(
+                    depth + 1,
+                    &format!("<col style=\"width: {}%;\">", percent(w)),
+                ),
+                None => self.line(depth + 1, "<col>"),
+            }
+        }
+        self.line(depth, "</colgroup>");
+    }
+
+    fn group(
+        &mut self,
+        t: &'r Table<'a>,
+        g: &'r Node<'a>,
+        columns: &AddrMap<usize, usize>,
+        depth: usize,
+    ) {
+        let (tag, kind, children, row_heads) = match g {
+            Node::TableHead(x) => ("thead", GroupKind::Head, &x.children, None),
+            Node::TableBody(x) => ("tbody", GroupKind::Body, &x.children, x.row_head_columns),
+            Node::TableFoot(x) => ("tfoot", GroupKind::Foot, &x.children, None),
+            _ => return,
+        };
+        if !children.iter().any(|r| matches!(r, Node::TableRow(_))) {
+            return;
+        }
+        let el = self.el(g.attrs(), None, g);
+        let f = self.filter();
+        self.line_with(depth, |_, out| {
+            out.push('<');
+            out.push_str(tag);
+            el.write_into(f, out);
+            out.push('>');
+            true
+        });
+        for r in children.iter() {
+            self.row(t, r, kind, row_heads, columns, depth + 1);
+        }
+        self.line_with(depth, |_, out| {
+            out.push_str("</");
+            out.push_str(tag);
+            out.push('>');
+            true
+        });
+    }
+
+    fn row(
+        &mut self,
+        t: &'r Table<'a>,
+        r: &'r Node<'a>,
+        kind: GroupKind,
+        row_heads: Option<i64>,
+        columns: &AddrMap<usize, usize>,
+        depth: usize,
+    ) {
+        let Node::TableRow(row) = r else { return };
+        let el = self.el(row.attrs, row.lang, r);
+        let f = self.filter();
+        self.line_with(depth, |r, out| {
+            out.push_str("<tr");
+            el.write_into(f, out);
+            out.push('>');
+            for c in row.children.iter() {
+                r.cell(
+                    t,
+                    c,
+                    CellPlace {
+                        kind,
+                        row_heads,
+                        col: columns.get(&addr(c)).copied(),
+                        depth,
+                    },
+                    out,
+                );
+            }
+            out.push_str("</tr>");
+            true
+        });
+    }
+
+    /// C2-H-056 to C2-H-058.
+    fn cell(&mut self, t: &Table, c: &'r Node<'a>, place: CellPlace, out: &mut String) {
+        let Node::TableCell(x) = c else { return };
+        if x.span.is_some() {
+            return;
+        }
+        let CellPlace {
+            kind,
+            row_heads,
+            col,
+            depth,
+        } = place;
+        let column = table_column(t, col);
+        let mut el = El::new(x.attrs, x.lang);
+        el.dir = x.dir;
+        el.skip_keys = &["rowspan", "colspan"];
+        if let Some(v) = x.rowspan.filter(|v| *v > 1) {
+            el.structural.push(("rowspan", Some(v.to_string().into())));
+        }
+        if let Some(v) = x.colspan.filter(|v| *v > 1) {
+            el.structural.push(("colspan", Some(v.to_string().into())));
+        }
+        let header = x.header || row_head_column(col, row_heads);
+        let scope = x.scope.map(TableCellScope::as_str).or_else(|| {
+            header.then_some(if kind == GroupKind::Head {
+                "col"
+            } else {
+                "row"
+            })
+        });
+        if let Some(s) = scope {
+            el.structural.push(("scope", Some(s.into())));
+        }
+        if let Some(ids) = &x.header_ids {
+            el.structural.push(("headers", Some(ids.join(" ").into())));
+        }
+        let align = x
+            .align
+            .map(super::super::ast::TableCellAlign::as_str)
+            .or_else(|| {
+                column
+                    .and_then(|c| c.resolved_align)
+                    .map(super::super::ast::TableColumnResolvedAlign::as_str)
+            });
+        if let Some(a) = align {
+            el.style_after.push(format!("text-align: {a};"));
+        }
+        let valign = x
+            .valign
+            .map(super::super::ast::TableCellValign::as_str)
+            .or_else(|| {
+                column
+                    .and_then(|c| c.resolved_valign)
+                    .map(super::super::ast::TableColumnResolvedValign::as_str)
+            });
+        if let Some(v) = valign {
+            el.style_after.push(format!("vertical-align: {v};"));
+        }
+        let tag = if header { "th" } else { "td" };
+        out.push('<');
+        out.push_str(tag);
+        el.write_into(self.filter(), out);
+        out.push('>');
+        self.level += 1;
+        self.cell_into(x.children, depth, out);
+        self.level -= 1;
+        out.push_str("</");
+        out.push_str(tag);
+        out.push('>');
+    }
+
+    fn cell_into(&mut self, children: &'r [Node<'a>], depth: usize, out: &mut String) {
+        if let [Node::CellParagraph(p)] = children {
+            self.leaf_into(p.children, out);
+        } else {
+            let rest = self.cell_first(children, out);
+            let inner = self.cell_content(rest, depth + 1);
+            if !inner.is_empty() {
+                out.push('\n');
+                out.push_str(&inner);
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+            }
+        }
+    }
+
+    fn cell_first(&mut self, children: &'r [Node<'a>], out: &mut String) -> &'r [Node<'a>] {
+        let Some(first) = children.first() else {
+            return children;
+        };
+        match first {
+            p @ Node::Paragraph(_) if crate::resolve::order::caption_of(p).is_none() => {
+                out.push_str(&self.cell_paragraph(p));
+            }
+            Node::Include(i) if i.caption.is_none() => {
+                self.losses.push("include-unresolved");
+                out.push_str("<p>");
+                out.push_str(&super::esc::text_str(&super::block::include_text(i)));
+                out.push_str("</p>");
+            }
+            _ => return children,
+        }
+        children.get(1..).unwrap_or_default()
+    }
+
+    fn cell_paragraph(&mut self, node: &'r Node<'a>) -> String {
+        let html = self.paragraph(node, false).unwrap_or_default();
+        if html.is_empty() || html.starts_with("<p") {
+            html
+        } else {
+            format!("<p>{html}</p>")
+        }
+    }
+
+    fn cell_content(&mut self, children: &'r [Node<'a>], depth: usize) -> String {
+        let saved = std::mem::take(&mut self.out);
+        let started = std::mem::replace(&mut self.started, false);
+        for c in children {
+            match c {
+                Node::CellParagraph(p) => {
+                    let s = self.leaf(p.children);
+                    self.line(depth, &s);
+                }
+                p @ Node::Paragraph(_) if crate::resolve::order::caption_of(p).is_none() => {
+                    let html = self.cell_paragraph(p);
+                    if !html.is_empty() {
+                        self.line(depth, &html);
+                    }
+                }
+                other => self.block(other, depth),
+            }
+        }
+        self.started = started;
+        std::mem::replace(&mut self.out, saved)
+    }
+}
+
+/// A width as a percentage without trailing zeros (C2-H-152).
+fn percent(w: f64) -> String {
+    (w * 100.0).to_string()
+}

@@ -1,0 +1,28 @@
+{
+  "name": "i09a-options-split-tag-mention",
+  "description": "The core splits #pick into a tag and @shift into a mention; recognition reassembles the run.",
+  "verdict": "unchanged",
+  "clauses": [
+    "C2-N-002",
+    "C2-N-024",
+    "C2-N-026",
+    "C2-N-034",
+    "C2-N-035"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<section id=\"pick\">\n  <h2>B</h2>\n  <p>yes</p>\n</section>",
+    "fmt": "{{ child #pick @shift:1 }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "child",
+        "read": true
+      }
+    ]
+  },
+  "entry": "{{ child #pick @shift:1 }}",
+  "files": {
+    "child": "{#pick}\n# B\n\nyes"
+  }
+}

@@ -1,0 +1,126 @@
+name: engine
+
+on:
+  push:
+    branches: [main, next2]
+  pull_request:
+    branches: [main, next2]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msrv:
+    name: Build on Rust 1.88
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check on the declared MSRV
+        run: cargo +1.88.0 check --locked
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.88.0
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: |
+          cargo fmt --check
+          cargo fmt --check --manifest-path bench/Cargo.toml
+      # cognitive_complexity is a nursery lint: named here, its threshold of 15 is in clippy.toml.
+      - name: Clippy, pedantic and cognitive complexity included
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::cognitive_complexity
+      # Without `fs` the library holds no code that opens a file (echo-carve builds it so).
+      - name: Library without the fs feature
+        run: |
+          cargo clippy --lib --no-default-features -- -D warnings -W clippy::pedantic
+          cargo test --no-default-features --test the_library_opens_no_file_without_the_fs_feature
+      # The timing program is its own workspace (it depends on the 0.1 crate).
+      - name: Clippy of the timing program
+        run: cargo clippy --manifest-path bench/Cargo.toml -- -D warnings -W clippy::pedantic
+      - name: Cyclomatic complexity at most 15 per hand-written function
+        run: |
+          python3 -m venv "$RUNNER_TEMP/complexity-venv"
+          "$RUNNER_TEMP/complexity-venv/bin/pip" install --disable-pip-version-check lizard==1.24.3
+          "$RUNNER_TEMP/complexity-venv/bin/python" tools/check_complexity.py
+      - name: Conformance corpus of the specification and tree fixtures
+        run: cargo test --test conformance
+      - name: Specification examples and clause tests
+        run: cargo test -- --skip c2_fixed_oracle_corpus_and_clause_differences
+      - name: Fixed oracle corpus and recorded clause differences
+        run: cargo test --test corpus
+
+  # The public API as downstreams consume it: the packaged crate from a path
+  # dependency, the wasm32-wasip1 command that carve-go and hugo-carve run,
+  # and the wasm32 library that carve-wasm wraps.
+  api-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1, wasm32-unknown-unknown
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Format of the consumer
+        run: cargo fmt --check --manifest-path consumer-smoke/Cargo.toml
+      - name: Packaged crate in a downstream consumer
+        run: sh tools/consumer-smoke.sh "$RUNNER_TEMP/consumer"
+      - name: WASI command
+        run: |
+          cargo build --release --target wasm32-wasip1 --bin carve
+          node tools/wasi-smoke.mjs target/wasm32-wasip1/release/carve.wasm
+      - name: wasm32 library for wasm-bindgen
+        run: cargo build --release --target wasm32-unknown-unknown --lib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: carve-wasm32-wasip1
+          path: target/wasm32-wasip1/release/carve.wasm
+
+  # The tables are normative and build.rs generates Rust from spec-data/.
+  # Each file there must equal spec/0.2/data/ of the carve repository at the
+  # commit in spec-data/SOURCE_COMMIT, and spec-conformance/ and spec-trees/
+  # must equal its conformance/ and trees/, so an edited copy fails here.
+  # Moving the pin is a deliberate commit that updates copies and pin together.
+  spec-data-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: markup-carve/carve
+          ref: next2
+          fetch-depth: 0
+          path: carve-spec
+      - name: Compare spec-data with the pinned spec tables
+        run: |
+          pin=$(cat spec-data/SOURCE_COMMIT)
+          git -C carve-spec checkout --quiet "$pin"
+          status=0
+          for f in spec-data/*.json; do
+            cmp "$f" "carve-spec/spec/0.2/data/$(basename "$f")" || status=1
+          done
+          # The conformance corpus and the tree fixtures are the gate of the engine.
+          diff -r spec-conformance carve-spec/spec/0.2/conformance || status=1
+          diff -r spec-trees carve-spec/spec/0.2/trees || status=1
+          exit $status

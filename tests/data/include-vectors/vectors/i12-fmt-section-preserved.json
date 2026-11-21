@@ -1,0 +1,31 @@
+{
+  "name": "i12-fmt-section-preserved",
+  "description": "A #section selection survives formatting.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-003",
+    "C2-H-133"
+  ],
+  "resolver": "none",
+  "expected": {
+    "html": "<p>{{ chapter.crv #intro }}</p>",
+    "fmt": "{{ chapter.crv #intro }}\n",
+    "warnings": [
+      {
+        "code": "include-no-resolver"
+      },
+      {
+        "code": "include-unresolved"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "chapter.crv",
+        "read": false
+      }
+    ]
+  },
+  "note": "`include-no-resolver`, no spans (C2-H-133)",
+  "entry": "{{ chapter.crv #intro }}",
+  "files": {}
+}

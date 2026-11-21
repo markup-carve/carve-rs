@@ -1,0 +1,27 @@
+{
+  "name": "i01c-code-region",
+  "description": "The carve#3320 example: a region included as a js code block, byte for byte.",
+  "verdict": "changed",
+  "clauses": [
+    "C2-N-016",
+    "C2-N-042",
+    "C2-N-080"
+  ],
+  "resolver": "virtual",
+  "expected": {
+    "html": "<pre><code class=\"language-js\">const server = http.createServer(handler)\nserver.listen(3000)\n</code></pre>",
+    "fmt": "{{ src/server.js @region:start @code:js }}\n",
+    "warnings": [],
+    "dependencies": [
+      {
+        "id": "src/server.js",
+        "read": true
+      }
+    ]
+  },
+  "note": "HTML unchanged; the `flattened` golden has no 0.2 counterpart (C2-N-016, C2-N-080)",
+  "entry": "{{ src/server.js@region:start @code:js }}",
+  "files": {
+    "src/server.js": "import http from 'node:http'\n\n// #region start\nconst server = http.createServer(handler)\nserver.listen(3000)\n// #endregion start\n"
+  }
+}

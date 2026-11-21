@@ -1,0 +1,676 @@
+//! C2-W-106: one reporting and one non-reporting input for each active lint rule.
+
+use carve::include::{Cause, Includes};
+use carve::lint::{LintOptions, lint};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+fn check(id: &str, data: &str) {
+    let cases: Value = serde_json::from_str(data).expect("cases");
+    let case = cases
+        .as_array()
+        .expect("list")
+        .iter()
+        .find(|c| c["id"] == id)
+        .expect("rule fixture");
+    let mut options = LintOptions::default();
+    if let Some(rules) = case["options"]["rules"].as_object() {
+        for (code, state) in rules {
+            options
+                .rules
+                .insert(code.clone(), state.as_str().unwrap_or("").into());
+        }
+    }
+    if let Some(platforms) = case["options"]["platforms"].as_array() {
+        options.platforms = platforms
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect();
+    }
+    if let Some(files) = case["options"]["include"].as_object() {
+        let files: HashMap<String, Vec<u8>> = files
+            .iter()
+            .filter_map(|(name, text)| {
+                text.as_str()
+                    .map(|text| (name.clone(), text.as_bytes().to_vec()))
+            })
+            .collect();
+        let resolver = Arc::new(move |request: &carve::include::Request<'_>| {
+            files
+                .get(request.path)
+                .cloned()
+                .map(|bytes| (bytes, request.path.to_string()))
+                .ok_or(Cause::NotFound)
+        });
+        options.includes = Some(Includes::new(resolver));
+    }
+    let trigger = case["trigger"].as_str().expect("trigger");
+    let near = case["near"].as_str().expect("near");
+    let yes = lint(trigger, &options);
+    let no = lint(near, &options);
+    let finding = yes
+        .iter()
+        .find(|d| d.code == id)
+        .unwrap_or_else(|| panic!("{id}: no finding in {yes:?}"));
+    assert!(
+        finding.pos.is_some() && finding.path.is_some(),
+        "{id}: missing location {finding:?}"
+    );
+    assert!(
+        !finding.message.is_empty() && !finding.message.contains("${"),
+        "{id}: unfilled message {finding:?}"
+    );
+    if let Some(expected) = case["message"].as_str() {
+        assert_eq!(finding.message, expected, "{id}");
+    }
+    assert!(
+        !no.iter().any(|d| d.code == id),
+        "{id}: near case reports: {no:?}"
+    );
+}
+
+macro_rules! rule {
+    ($name:ident, $code:literal, $data:literal) => {
+        #[test]
+        fn $name() {
+            check($code, include_str!($data));
+        }
+    };
+}
+
+macro_rules! held_rule {
+    ($name:ident, $code:literal, $data:literal) => {
+        #[test]
+        #[ignore = "lint behavior is held outside the core stage"]
+        fn $name() {
+            check($code, include_str!($data));
+        }
+    };
+}
+
+rule!(
+    lint_a11y_image_alt,
+    "a11y/image-alt",
+    "data/lint-cases.json"
+);
+rule!(lint_bare_html_tag, "bare-html-tag", "data/lint-cases.json");
+rule!(
+    lint_bidi_control_in_source,
+    "bidi-control-in-source",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_block_marker_as_text,
+    "block-marker-as-text",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_block_opener_overindented,
+    "block-opener-overindented",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_block_opener_without_blank_line,
+    "block-opener-without-blank-line",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_blockquote_marker_without_space,
+    "blockquote-marker-without-space",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_braced_span_opener_as_text,
+    "braced-span-opener-as-text",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_broken_crossref,
+    "broken-crossref",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_broken_fragment_link,
+    "broken-fragment-link",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_colon_fence_length_mismatch,
+    "colon-fence-length-mismatch",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_comment_fence_closer_with_text,
+    "comment-fence-closer-with-text",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_comment_in_reference_label,
+    "comment-in-reference-label",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_comment_line_in_line_block,
+    "comment-line-in-line-block",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_comment_shaped_emphasis,
+    "comment-shaped-emphasis",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_definition_in_container,
+    "definition-in-container",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_definition_term_block_folded,
+    "definition-term-block-folded",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_bare_highlight,
+    "deprecated-bare-highlight",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_bare_strike,
+    "deprecated-bare-strike",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_bare_underline,
+    "deprecated-bare-underline",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_cell_alignment,
+    "deprecated-cell-alignment",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_continuation_marker,
+    "deprecated-continuation-marker",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_indented_line_under_heading,
+    "deprecated-indented-line-under-heading",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_loose_attribute,
+    "deprecated-loose-attribute",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_separator_row,
+    "deprecated-separator-row",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_spaced_thematic_break,
+    "deprecated-spaced-thematic-break",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_deprecated_substitution_arrow,
+    "deprecated-substitution-arrow",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_description_separator_below_content_column,
+    "description-separator-below-content-column",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_description_term_multi_line,
+    "description-term-multi-line",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_emphasis_as_heading,
+    "emphasis-as-heading",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_emphasis_marker_before_attributes,
+    "emphasis-marker-before-attributes",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_empty_link_destination,
+    "empty-link-destination",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_empty_reference_definition,
+    "empty-reference-definition",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_fence_closer_indented,
+    "fence-closer-indented",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_figure_group_empty,
+    "figure-group-empty",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_figure_group_nested,
+    "figure-group-nested",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_figure_group_opener_metadata,
+    "figure-group-opener-metadata",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_figure_group_single_panel,
+    "figure-group-single-panel",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_footnotes_placement_in_container,
+    "footnotes-placement-in-container",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_frontmatter_shaped_thematic_break,
+    "frontmatter-shaped-thematic-break",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_github_alert_marker,
+    "github-alert-marker",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_glob_shaped_strong,
+    "glob-shaped-strong",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_heading_closing_hashes,
+    "heading-closing-hashes",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_heading_level_skip,
+    "heading-level-skip",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_heading_trailing_attribute,
+    "heading-trailing-attribute",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_indented_code_block,
+    "indented-code-block",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_link_gap_before_destination,
+    "link-gap-before-destination",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_list_item_block_overindented,
+    "list-item-block-overindented",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_list_item_body_below_content_column,
+    "list-item-body-below-content-column",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_list_marker_below_content_column,
+    "list-marker-below-content-column",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_list_marker_without_blank_line,
+    "list-marker-without-blank-line",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_markdown_definition_paragraph,
+    "markdown-definition-paragraph",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_markdown_strikethrough_double_tilde,
+    "markdown-strikethrough-double-tilde",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_markdown_strong_double_star,
+    "markdown-strong-double-star",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_non_descriptive_link_text,
+    "non-descriptive-link-text",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_ordered_list_kind_split,
+    "ordered-list-kind-split",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_ordered_marker_right_aligned,
+    "ordered-marker-right-aligned",
+    "data/lint-cases.json"
+);
+held_rule!(
+    lint_references_placement_in_container,
+    "references-placement-in-container",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_setext_heading_underline,
+    "setext-heading-underline",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_sigil_after_letter,
+    "sigil-after-letter",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_table_row_attribute_as_cell,
+    "table-row-attribute-as-cell",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_table_row_cell_count,
+    "table-row-cell-count",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_table_shaped_paragraph,
+    "table-shaped-paragraph",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_table_span_marker_blocked,
+    "table-span-marker-blocked",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_table_span_marker_attribute,
+    "table-span-marker-attribute",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_thematic_break_spelling,
+    "thematic-break-spelling",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unattached_block_attribute,
+    "unattached-block-attribute",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unattached_caption,
+    "unattached-caption",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unattached_inline_attribute,
+    "unattached-inline-attribute",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unclosed_braced_comment,
+    "unclosed-braced-comment",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unclosed_inline_emphasis,
+    "unclosed-inline-emphasis",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unresolved_footnote,
+    "unresolved-footnote",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unresolved_reference_link,
+    "unresolved-reference-link",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unused_footnote_definition,
+    "unused-footnote-definition",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_unused_link_reference_definition,
+    "unused-link-reference-definition",
+    "data/lint-cases.json"
+);
+rule!(
+    lint_braced_comment_in_a_template_source,
+    "braced-comment-in-a-template-source",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_caption_looking_paragraph,
+    "caption-looking-paragraph",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_carve_version_unsupported,
+    "carve-version-unsupported",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_comment_splits_table_row,
+    "comment-splits-table-row",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_consumed_key_near_miss,
+    "consumed-key-near-miss",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_delimited_table_wide_row,
+    "delimited-table-wide-row",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_deprecated_table_attribute,
+    "deprecated-table-attribute",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_emphasis_underscore,
+    "djot-emphasis-underscore",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_heading_continuation,
+    "djot-heading-continuation",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_highlight_braces,
+    "djot-highlight-braces",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_intraword_underscore,
+    "djot-intraword-underscore",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_plus_bullet,
+    "djot-plus-bullet",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_subscript_tilde,
+    "djot-subscript-tilde",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_subscript_tilde_braced,
+    "djot-subscript-tilde-braced",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_djot_superscript_caret,
+    "djot-superscript-caret",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_duplicate_reference_url,
+    "duplicate-reference-url",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_empty_include_path,
+    "empty-include-path",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_figure_group_panel_number,
+    "figure-group-panel-number",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_footnote_labels_differ_only_in_whitespace,
+    "footnote-labels-differ-only-in-whitespace",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_heading_marker_mixed,
+    "heading-marker-mixed",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_html_comment_renders_as_text,
+    "html-comment-renders-as-text",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_include_attributes_unused,
+    "include-attributes-unused",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_include_lines_table_rows_hint,
+    "include-lines-table-rows-hint",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_platform_issue_reference,
+    "platform-issue-reference",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_platform_mention_token,
+    "platform-mention-token",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_quote_fence_ends_the_quote_above,
+    "quote-fence-ends-the-quote-above",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_region_marker_renders_as_text,
+    "region-marker-renders-as-text",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_semantic_attribute_outside_span,
+    "semantic-attribute-outside-span",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_semantic_attribute_value_ignored,
+    "semantic-attribute-value-ignored",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_table_attribute_invalid,
+    "table-attribute-invalid",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_table_column_arity,
+    "table-column-arity",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_table_column_overlap,
+    "table-column-overlap",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_table_marker_run_padding,
+    "table-marker-run-padding",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_table_row_count_clamped,
+    "table-row-count-clamped",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_table_width_total,
+    "table-width-total",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_tight_list_item_with_blank_line,
+    "tight-list-item-with-blank-line",
+    "data/lint-extra.json"
+);
+rule!(
+    lint_uneven_list_indent,
+    "uneven-list-indent",
+    "data/lint-extra.json"
+);
+
+/// C2-B-044: the split is reported for a one-letter roman-letter first
+/// marker with fewer than three blank lines before the next list.
+#[test]
+fn ordered_list_kind_split_bounds() {
+    let reports = |source: &str| {
+        lint(source, &LintOptions::default())
+            .iter()
+            .any(|d| d.code == "ordered-list-kind-split")
+    };
+    for source in [
+        "v. a\nvi. b\n",
+        "v. a\n\nvi. b\n",
+        "v. a\n\n\nvi. b\n",
+        "i) a\nj) b\n",
+        "I.  a\nJ.  b\n",
+    ] {
+        assert!(reports(source), "{source:?}");
+    }
+    for source in [
+        "v. a\n\n\n\nvi. b\n",
+        "b. a\nii. b\n",
+        "v. a\nw. b\nvi. c\n",
+        "i. a\nJ. b\n",
+    ] {
+        assert!(!reports(source), "{source:?}");
+    }
+}
