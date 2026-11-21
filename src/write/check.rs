@@ -1880,8 +1880,12 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
         return false;
     }
     if c.changes() == 0 {
-        c.losses
-            .extend(es.get(at.i..i).unwrap_or_default().iter().map(|e| (*e, None)));
+        c.losses.extend(
+            es.get(at.i..i)
+                .unwrap_or_default()
+                .iter()
+                .map(|e| (*e, None)),
+        );
     }
     at.i = i + 1;
     at.j = j + 1;
