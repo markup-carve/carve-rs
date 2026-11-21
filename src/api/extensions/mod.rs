@@ -984,3 +984,53 @@ pub(crate) fn payload_text(node: &Value) -> &str {
         .and_then(Value::as_str)
         .unwrap_or("")
 }
+
+/// The attribute parts of an extension element, read from the typed node.
+pub(crate) struct Parts<'n> {
+    pub(crate) id: Option<&'n str>,
+    pub(crate) classes: Vec<&'n str>,
+    pub(crate) key_values: Vec<(&'n str, &'n str)>,
+}
+
+impl<'n> Parts<'n> {
+    pub(crate) fn of(attrs: Option<&'n crate::ast::Attrs<'n>>) -> Self {
+        Self {
+            id: attrs.and_then(|a| a.id),
+            classes: attrs.map_or_else(Vec::new, |a| a.classes.to_vec()),
+            key_values: attrs.map_or_else(Vec::new, |a| a.key_values.to_vec()),
+        }
+    }
+
+    /// [`authored`] of the typed attributes.
+    pub(crate) fn authored(&self, name: &str) -> bool {
+        self.key_values
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case(name))
+    }
+
+    /// `base` ahead of the authored classes.
+    pub(crate) fn with_classes(mut self, base: &[&'n str]) -> Self {
+        let mut classes = base.to_vec();
+        classes.append(&mut self.classes);
+        self.classes = classes;
+        self
+    }
+}
+
+/// The block extension node a typed renderer reads.
+pub(crate) fn typed<'n, 'a>(
+    node: &'n crate::ast::Node<'a>,
+) -> Option<&'n crate::ast::BlockExtension<'a>> {
+    match node {
+        crate::ast::Node::BlockExtension(e) => Some(&**e),
+        _ => None,
+    }
+}
+
+/// [`payload_text`] of a typed node.
+pub(crate) fn typed_payload<'a>(node: &crate::ast::BlockExtension<'a>) -> &'a str {
+    node.payload
+        .and_then(|p| p.pointer("/0/value"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}

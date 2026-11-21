@@ -1,6 +1,9 @@
 //! `codeGroup` (carve-js#5068).
 
-use super::{Bundle, Claim, Form, Matcher, authored, classes, declaration, key_values, with_attrs};
+use super::{
+    Bundle, Claim, Form, Matcher, Parts, authored, classes, declaration, key_values, typed,
+    with_attrs,
+};
 use crate::api::{Channel, Error, Extension, RenderContext, Renderer};
 use serde_json::{Value, json};
 use std::fmt::Write as _;
@@ -85,10 +88,10 @@ fn code_of(node: &Value) -> Option<Value> {
     }
 }
 
-fn panels(node: &Value, cx: &RenderContext<'_>) -> Vec<Panel> {
+fn panels(slots: Option<&Value>, cx: &RenderContext<'_>) -> Vec<Panel> {
     let mut out: Vec<Panel> = Vec::new();
-    for child in node
-        .pointer("/slots/panels")
+    for child in slots
+        .and_then(|s| s.get("panels"))
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -153,14 +156,37 @@ fn without_selected(node: &Value) -> Value {
     out
 }
 
+/// The extension node a group renders, as its JSON value or typed.
+#[derive(Clone, Copy)]
+enum Group<'n, 'a> {
+    Json(&'n Value),
+    Typed(&'n crate::ast::BlockExtension<'a>),
+}
+
+impl Group<'_, '_> {
+    fn slots(&self) -> Option<&Value> {
+        match self {
+            Self::Json(node) => node.get("slots"),
+            Self::Typed(node) => node.slots,
+        }
+    }
+}
+
 impl Look {
-    fn wrapper(&self, node: &Value, cx: &RenderContext<'_>, role: &str) -> String {
-        let attrs = node.get("attrs");
-        let name = self
-            .group_label
+    fn name(&self, cx: &RenderContext<'_>) -> String {
+        self.group_label
             .clone()
             .or_else(|| cx.label("codeGroup").map(str::to_string))
-            .unwrap_or_else(|| "Code examples".to_string());
+            .unwrap_or_else(|| "Code examples".to_string())
+    }
+
+    fn wrapper(&self, group: Group<'_, '_>, cx: &RenderContext<'_>, role: &str) -> String {
+        let node = match group {
+            Group::Json(node) => node,
+            Group::Typed(node) => return self.typed_wrapper(node, cx, role),
+        };
+        let attrs = node.get("attrs");
+        let name = self.name(cx);
         let mut kv = key_values(attrs);
         if !authored(attrs, "role") {
             kv.push(json!(["role", role]));
@@ -178,6 +204,26 @@ impl Look {
         format!("<div{}>", cx.attributes(&with_attrs(node, cls, kv)))
     }
 
+    fn typed_wrapper(
+        &self,
+        node: &crate::ast::BlockExtension<'_>,
+        cx: &RenderContext<'_>,
+        role: &str,
+    ) -> String {
+        let name = self.name(cx);
+        let mut parts = Parts::of(node.attrs);
+        if !parts.authored("role") {
+            parts.key_values.push(("role", role));
+        }
+        if !name.is_empty() && !parts.authored("aria-label") && !parts.authored("aria-labelledby")
+        {
+            parts.key_values.push(("aria-label", name.as_str()));
+        }
+        parts.classes.retain(|c| *c != self.wrapper);
+        let parts = parts.with_classes(&[self.wrapper.as_str()]);
+        format!("<div{}>", cx.write_parts(&parts, node.pos.as_ref()))
+    }
+
     fn code(&self, panel: &Panel, cx: &RenderContext<'_>) -> Result<String, Error> {
         if let Some(h) = &self.highlighter {
             let value = panel
@@ -193,8 +239,8 @@ impl Look {
         cx.render_blocks(&Value::Array(vec![without_selected(&panel.node)]))
     }
 
-    fn css(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let panels = panels(node, cx);
+    fn css(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let panels = panels(node.slots(), cx);
         let group = cx.next_id(&self.prefix);
         let a = |v: &str| cx.escape_attribute(v);
         let (mut controls, mut bodies) = (String::new(), String::new());
@@ -225,8 +271,8 @@ impl Look {
         ))
     }
 
-    fn aria(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let panels = panels(node, cx);
+    fn aria(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let panels = panels(node.slots(), cx);
         let group = cx.next_id(&self.prefix);
         let a = |v: &str| cx.escape_attribute(v);
         let (mut controls, mut bodies) = (String::new(), String::new());
@@ -262,10 +308,10 @@ impl Look {
 
     /// C2-X-052: one section per panel headed by its label, no controls and
     /// no generated ids.
-    fn build_time(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+    fn build_time(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
         let a = |v: &str| cx.escape_attribute(v);
         let mut sections = String::new();
-        for p in panels(node, cx) {
+        for p in panels(node.slots(), cx) {
             let _ = write!(
                 sections,
                 r#"<section class="{}"><h3 class="{}">{}</h3>{}</section>"#,
@@ -284,8 +330,8 @@ impl Look {
 
 struct Interactive(Arc<Look>);
 
-impl Renderer for Interactive {
-    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+impl Interactive {
+    fn group(&self, node: Group<'_, '_>, cx: &RenderContext<'_>) -> Result<String, Error> {
         match self.0.mode {
             CodeGroupMode::Css => self.0.css(node, cx),
             CodeGroupMode::Aria => self.0.aria(node, cx),
@@ -293,11 +339,33 @@ impl Renderer for Interactive {
     }
 }
 
+impl Renderer for Interactive {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        self.group(Group::Json(node), cx)
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        Some(self.group(Group::Typed(typed(node)?), cx))
+    }
+}
+
 struct BuildTime(Arc<Look>);
 
 impl Renderer for BuildTime {
     fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        self.0.build_time(node, cx)
+        self.0.build_time(Group::Json(node), cx)
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        Some(self.0.build_time(Group::Typed(typed(node)?), cx))
     }
 }
 

@@ -1,6 +1,8 @@
 //! `codeCallouts` (carve-js#5068): a document transform (C2-X-053).
 
-use super::{Bundle, classes, declaration, key_values, payload_text, with_attrs};
+use super::{
+    Bundle, Parts, classes, declaration, key_values, payload_text, typed, typed_payload, with_attrs,
+};
 use crate::api::{Channel, DocumentTransform, Error, Extension, RenderContext, Renderer, Tree};
 use crate::ast::owned::{self, Node};
 use serde_json::{Value, json};
@@ -370,9 +372,9 @@ mod arena {
 
 struct Code;
 
-impl Renderer for Code {
-    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let body: Vec<String> = payload_text(node)
+impl Code {
+    fn html(payload: &str, language: Option<&str>, attributes: &str, cx: &RenderContext<'_>) -> String {
+        let body: Vec<String> = payload
             .split('\n')
             .map(|line| {
                 let Some((at, n)) = marker(line) else {
@@ -387,25 +389,46 @@ impl Renderer for Code {
                 )
             })
             .collect();
-        let code = node
-            .pointer("/props/language")
-            .and_then(Value::as_str)
+        let code = language
             .map(|l| format!(r#" class="language-{}""#, cx.escape_attribute(l)))
             .unwrap_or_default();
-        Ok(format!(
-            "<pre{}><code{code}>{}</code></pre>",
-            cx.attributes(node),
-            body.join("\n")
+        format!("<pre{attributes}><code{code}>{}</code></pre>", body.join("\n"))
+    }
+}
+
+impl Renderer for Code {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        Ok(Self::html(
+            payload_text(node),
+            node.pointer("/props/language").and_then(Value::as_str),
+            &cx.attributes(node),
+            cx,
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        Some(Ok(Self::html(
+            typed_payload(node),
+            node.props
+                .and_then(|p| p.get("language"))
+                .and_then(Value::as_str),
+            &cx.write_parts(&Parts::of(node.attrs), node.pos.as_ref()),
+            cx,
+        )))
     }
 }
 
 struct List;
 
-impl Renderer for List {
-    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let slot = node
-            .pointer("/slots/lines")
+impl List {
+    fn items(slots: Option<&Value>, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let slot = slots
+            .and_then(|s| s.get("lines"))
             .and_then(Value::as_array)
             .map_or(&[][..], Vec::as_slice);
         let mut items = String::new();
@@ -421,6 +444,13 @@ impl Renderer for List {
                 cx.render_inlines(&Value::Array(rest))?
             );
         }
+        Ok(items)
+    }
+}
+
+impl Renderer for List {
+    fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
+        let items = Self::items(node.get("slots"), cx)?;
         let attrs = node.get("attrs");
         let mut cls = vec![Value::from("callouts")];
         cls.extend(classes(attrs));
@@ -428,6 +458,21 @@ impl Renderer for List {
             "<ol{}>{items}</ol>",
             cx.attributes(&with_attrs(node, cls, key_values(attrs)))
         ))
+    }
+
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let node = typed(node)?;
+        Some(Self::items(node.slots, cx).map(|items| {
+            let parts = Parts::of(node.attrs).with_classes(&["callouts"]);
+            format!(
+                "<ol{}>{items}</ol>",
+                cx.write_parts(&parts, node.pos.as_ref())
+            )
+        }))
     }
 }
 

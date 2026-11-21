@@ -41,6 +41,54 @@ fn allocs(f: &dyn Fn() -> usize) -> u64 {
     ALLOCS.load(Relaxed) - before
 }
 
+/// User-space instructions retired by the calling thread, which neither the
+/// load nor the clock of the machine moves; `None` where the kernel refuses
+/// the counter.
+struct Instructions(i32);
+
+impl Instructions {
+    fn open() -> Option<Self> {
+        // perf_event_attr: type HARDWARE, size, config INSTRUCTIONS, flags
+        // disabled | exclude_kernel | exclude_hv.
+        let mut attr = [0u64; 16];
+        attr[0] = 128 << 32;
+        attr[1] = 1;
+        attr[5] = 1 | (1 << 5) | (1 << 6);
+        // SAFETY: `attr` is a zeroed perf_event_attr of the size it declares.
+        let fd = unsafe {
+            libc::syscall(
+                libc::SYS_perf_event_open,
+                attr.as_ptr(),
+                0,
+                -1,
+                -1,
+                0,
+            )
+        };
+        i32::try_from(fd).ok().filter(|fd| *fd >= 0).map(Self)
+    }
+
+    fn count(&self, f: &dyn Fn() -> usize) -> u64 {
+        let mut n = 0u64;
+        // SAFETY: reset, enable and disable on an owned counter fd; the read
+        // fills one u64.
+        unsafe {
+            libc::ioctl(self.0, 0x2403, 0);
+            libc::ioctl(self.0, 0x2400, 0);
+            black_box(f());
+            libc::ioctl(self.0, 0x2401, 0);
+            libc::read(self.0, (&raw mut n).cast(), 8);
+        }
+        n
+    }
+
+    /// The least count of a few calls, after a warm-up call.
+    fn least(&self, f: &dyn Fn() -> usize) -> u64 {
+        black_box(f());
+        (0..5).map(|_| self.count(f)).min().unwrap_or(0)
+    }
+}
+
 use carve::api::{self, Carve, Options, extensions};
 
 const UNIT: &str = "## Section heading\n\nA paragraph with *emphasis*, `code`, a [link](https://example.com) and \"quotes\" in it.\n\n```mermaid\ngraph TD; A-->B\n```\n\n- first item\n- second item\n\n```math\na^2 + b^2 = c^2\n```\n\n::: code-group\n```js [NPM]\nnpm i\n```\n\n```sh\nyarn add\n```\n:::\n\n```js\nlet a = 1 <1>\n```\n<1> First\n\n";
@@ -191,17 +239,15 @@ fn main() {
         .iter()
         .position(|a| a == "--only")
         .and_then(|i| args.get(i + 1));
+    // `--count`: user-space instructions per render instead of time.
+    if args.iter().any(|a| a == "--count") {
+        count(only.map(String::as_str), &opts);
+        return;
+    }
     println!(
         "| bundle | size | core ms | hosted ms | factor | 0.1.14 hosted ms | hosted/0.1 | core allocs | hosted allocs |"
     );
-    for name in [
-        "details",
-        "mermaid",
-        "math",
-        "codeGroup",
-        "callouts",
-        "fenced4",
-    ] {
+    for name in BUNDLES {
         if only.is_some_and(|o| o != name) {
             continue;
         }
@@ -224,6 +270,44 @@ fn main() {
                 "| {name} | {kib}k | {core:.3} | {hosted:.3} | {:.2} | {old:.3} | {:.2} | {core_allocs} | {hosted_allocs} |",
                 hosted / core,
                 hosted / old
+            );
+        }
+    }
+}
+
+const BUNDLES: [&str; 6] = [
+    "details",
+    "mermaid",
+    "math",
+    "codeGroup",
+    "callouts",
+    "fenced4",
+];
+
+fn count(only: Option<&str>, opts: &Options) {
+    let Some(counter) = Instructions::open() else {
+        eprintln!("the kernel refuses the instruction counter");
+        return;
+    };
+    println!("| bundle | size | core Minstr | hosted Minstr | factor | 0.1.14 Minstr | hosted/0.1 |");
+    for name in BUNDLES {
+        if only.is_some_and(|o| o != name) {
+            continue;
+        }
+        let carve = host(name);
+        for kib in [2usize, 8, 32, 128] {
+            let src = doc(kib * 1024);
+            let core = counter.least(&|| api::render(src.as_str(), opts).map_or(0, |h| h.len()));
+            let hosted = counter.least(&|| carve.render(src.as_str(), opts).map_or(0, |h| h.len()));
+            let old = counter.least(&|| old_render(&src, name));
+            let m = |n: u64| n as f64 / 1e6;
+            println!(
+                "| {name} | {kib}k | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} |",
+                m(core),
+                m(hosted),
+                hosted as f64 / core as f64,
+                m(old),
+                hosted as f64 / old as f64
             );
         }
     }

@@ -148,6 +148,29 @@ impl RenderContext<'_> {
         })
     }
 
+    /// [`RenderContext::attributes`] of typed attribute parts and the
+    /// position of the node.
+    pub(crate) fn write_parts(
+        &self,
+        parts: &super::extensions::Parts<'_>,
+        pos: Option<&crate::ast::Pos>,
+    ) -> String {
+        use crate::html::attrs::{El, Filter};
+        let attrs = crate::ast::Attrs {
+            id: parts.id,
+            classes: &parts.classes,
+            key_values: &parts.key_values,
+        };
+        let mut element = El::new((!attrs.is_empty()).then_some(&attrs), None);
+        if self.block && self.host.opts.source_lines {
+            element.source_line = pos.map(|p| p.start_line);
+        }
+        element.write(Filter {
+            roundtrip: self.host.opts.roundtrip,
+            policy: Some(&self.host.opts.url_policy),
+        })
+    }
+
     /// The HTML of a list of inline nodes, such as an inline slot.
     ///
     /// # Errors
@@ -176,6 +199,17 @@ pub trait Renderer: Send + Sync {
     /// Any error; the engine writes the fallback and reports
     /// `extension-renderer-failed` (C2-X-050).
     fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error>;
+
+    /// The typed form of [`Renderer::render`] for engine renderers, with the
+    /// same result; `None` renders the node's JSON value instead.
+    #[doc(hidden)]
+    fn render_typed(
+        &self,
+        _node: &crate::ast::Node<'_>,
+        _cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        None
+    }
 }
 
 /// A document transform (C2-X-053): takes a copy of the resolved render view
@@ -544,6 +578,20 @@ impl<'a> Host<'a> {
     }
 }
 
+impl Host<'_> {
+    /// The renderer of the selected channel for an extension node.
+    fn renderer(&self, name: &str, version: Option<&str>) -> Option<&dyn Renderer> {
+        let channel = Channel::of(self.opts.mode);
+        self.registry
+            .list
+            .iter()
+            .filter(|e| e.declaration.name == name)
+            .filter(|e| version.is_none_or(|v| v == e.declaration.version))
+            .find_map(|e| e.renderers.iter().find(|(c, _)| *c == channel))
+            .map(|(_, r)| &**r)
+    }
+}
+
 impl crate::html::ExtensionHook for Host<'_> {
     fn semantic_keys(&self) -> Option<super::extensions::SemanticKeys> {
         self.fields.semantic_keys
@@ -589,15 +637,7 @@ impl crate::html::ExtensionHook for Host<'_> {
                 }),
             );
         }
-        let channel = Channel::of(self.opts.mode);
-        let renderer = self
-            .registry
-            .list
-            .iter()
-            .filter(|e| e.declaration.name == name)
-            .filter(|e| version.is_none_or(|v| v == e.declaration.version))
-            .find_map(|e| e.renderers.iter().find(|(c, _)| *c == channel))
-            .map(|(_, r)| r)?;
+        let renderer = self.renderer(name, version)?;
         let cx = RenderContext {
             host: self,
             block,
@@ -606,6 +646,35 @@ impl crate::html::ExtensionHook for Host<'_> {
         Some(renderer.render(node, &cx).map_err(|_| {
             self.failed.borrow_mut().push(name.to_string());
         }))
+    }
+
+    fn render_node(
+        &self,
+        node: &crate::ast::Node<'_>,
+        block: bool,
+        depth: usize,
+    ) -> Option<Option<Result<String, ()>>> {
+        let (name, version) = match node {
+            crate::ast::Node::BlockExtension(e) => (e.name, Some(e.version)),
+            _ => return None,
+        };
+        let standard = (name == "carve.tabs" && self.standard.tabs_renderer)
+            || self.standard.renders(name);
+        if standard && version == Some("1") {
+            return None;
+        }
+        let Some(renderer) = self.renderer(name, version) else {
+            return Some(None);
+        };
+        let cx = RenderContext {
+            host: self,
+            block,
+            depth,
+        };
+        let rendered = renderer.render_typed(node, &cx)?;
+        Some(Some(rendered.map_err(|_| {
+            self.failed.borrow_mut().push(name.to_string());
+        })))
     }
 }
 
