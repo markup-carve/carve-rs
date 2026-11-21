@@ -251,6 +251,7 @@ fn compiled() -> &'static Compiled {
         let mut node_types: HashMap<&'static str, usize> = HashMap::new();
         let mut node_keys = HashSet::new();
         for rule in model()["rules"].as_array().into_iter().flatten() {
+            lookup_reads(rule, &mut node_types, &mut node_keys);
             let depth = node_reads(rule, &mut node_keys);
             if depth > 0 {
                 for kind in names(&rule["types"]) {
@@ -310,6 +311,38 @@ fn node_reads(value: &'static Value, keys: &mut HashSet<&'static str>) -> usize 
             .max()
             .unwrap_or(0),
         _ => 0,
+    }
+}
+
+/// The nodes the lookups of a rule read: `item.node.…` in a key and `node.…` as the field.
+fn lookup_reads(
+    value: &'static Value,
+    types: &mut HashMap<&'static str, usize>,
+    keys: &mut HashSet<&'static str>,
+) {
+    match value {
+        Value::Object(map) if map.contains_key("lookup") => {
+            let lookup = &map["lookup"];
+            let mut depth = 0;
+            item_reads(&lookup["key"], keys, &mut depth);
+            let depth = depth
+                .saturating_sub(1)
+                .max(node_reads(&lookup["field"], keys));
+            if depth > 0 {
+                for kind in names(&lookup["types"]) {
+                    let known = types.entry(kind).or_default();
+                    *known = (*known).max(depth);
+                }
+            }
+            lookup_reads(lookup, types, keys);
+        }
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| lookup_reads(item, types, keys)),
+        Value::Object(map) => map
+            .values()
+            .for_each(|item| lookup_reads(item, types, keys)),
+        _ => {}
     }
 }
 

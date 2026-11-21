@@ -540,6 +540,9 @@ pub(super) enum Expr {
         list: Path,
         test: Box<Self>,
     },
+    /// A field of a record of the document found by key, or the last one before (C2-W-141).
+    Lookup(Box<Lookup>),
+    IndexOf(Box<(Self, Self)>),
     Len(Box<Self>),
     Add(Vec<Self>),
     Sub(Box<(Self, Self)>),
@@ -552,6 +555,16 @@ pub(super) enum Expr {
         left: bool,
         args: Box<(Self, Self)>,
     },
+}
+
+#[derive(Debug)]
+pub(super) struct Lookup {
+    pub inline: bool,
+    pub types: Vec<&'static str>,
+    pub key: Option<Expr>,
+    pub value: Option<Expr>,
+    pub before: bool,
+    pub field: Path,
 }
 
 const COMPARISONS: &[(&str, Cmp)] = &[
@@ -679,6 +692,21 @@ impl Scope<'_> {
                 from: arg.get("from").and_then(Value::as_u64).unwrap_or(0) as usize,
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
+            "lookup" => Expr::Lookup(Box::new(Lookup {
+                inline: arg.get("over").and_then(Value::as_str) == Some("inline"),
+                types: arg
+                    .get("types")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect(),
+                key: arg.get("key").map(|key| self.compile(key)),
+                value: arg.get("value").map(|value| self.compile(value)),
+                before: arg.get("before").and_then(Value::as_bool) == Some(true),
+                field: path(arg.get("field").and_then(Value::as_str).unwrap_or("")),
+            })),
+            "index_of" => Expr::IndexOf(pair(0, 1)),
             "count" => Expr::Count {
                 list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
@@ -1061,6 +1089,8 @@ fn stateless(expr: &Expr) -> bool {
             stateless(&args.0) && stateless(&args.1) && args.2.as_ref().is_none_or(stateless)
         }
         Expr::Some { test, .. } | Expr::Count { test, .. } => stateless(test),
+        Expr::IndexOf(args) => stateless(&args.0) && stateless(&args.1),
+        Expr::Lookup(lookup) => lookup.value.as_ref().is_none_or(stateless),
         Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
             true
         }
@@ -1185,6 +1215,8 @@ pub(super) enum Val<'a> {
     Colons(u32),
     /// A node of the tree or a value inside it that is no scalar (C2-W-140).
     Node(&'a Value),
+    /// The block or inline record of a range, as `item` of a lookup.
+    Rec(u32),
 }
 
 impl Val<'_> {
@@ -1389,6 +1421,43 @@ impl<'a> Eval<'_, 'a> {
         result
     }
 
+    fn lookup(&mut self, lookup: &Lookup) -> Val<'a> {
+        let id = std::ptr::from_ref(lookup).addr();
+        if !self.records.has_lookup(id) {
+            let built = self.build_lookup(lookup);
+            self.records.store_lookup(id, built);
+        }
+        if lookup.before {
+            let start = self.records.subject_field(&self.subject, F::Start);
+            let start = self.number(&start).max(0) as usize;
+            return self.records.lookup_before(id, start);
+        }
+        let value = lookup
+            .value
+            .as_ref()
+            .map_or(Val::Null, |value| self.value(value));
+        self.records.lookup_key(id, &LookupKey::of(&value))
+    }
+
+    /// The records of a lookup in document order, each with its key and the field it gives.
+    fn build_lookup(&mut self, lookup: &Lookup) -> LookupIndex {
+        let saved = (self.item.take(), std::mem::take(&mut self.spans));
+        let mut index = LookupIndex::default();
+        for (at, start) in self.records.lookup_records(lookup.inline, &lookup.types) {
+            let record = Val::Rec(at);
+            let field = owned(&resolve_from(self.records, record.clone(), &lookup.field));
+            if lookup.before {
+                index.before.push((start, field));
+                continue;
+            }
+            self.item = Some(record);
+            let key = lookup.key.as_ref().map_or(Val::Null, |key| self.value(key));
+            index.keys.entry(LookupKey::of(&key)).or_insert(field);
+        }
+        (self.item, self.spans) = saved;
+        index
+    }
+
     fn count(&mut self, list: &Path, test: &Expr) -> usize {
         let list = self.resolve(list);
         let before = self.item.take();
@@ -1449,6 +1518,12 @@ impl<'a> Eval<'_, 'a> {
             Expr::Var(index) => self.variable(*index),
             Expr::Has(path) => Val::Bool(!self.resolve(path).is_null()),
             Expr::Count { list, test } => Val::num(self.count(list, test)),
+            Expr::Lookup(lookup) => self.lookup(lookup),
+            Expr::IndexOf(args) => {
+                let text = self.string(&args.0);
+                let needle = self.string(&args.1);
+                Val::Num(text.find(&*needle).map_or(-1, |at| at as i64))
+            }
             Expr::Match { group, end } => self
                 .spans
                 .iter()
@@ -1561,4 +1636,56 @@ impl<'a> Eval<'_, 'a> {
         let value = self.value(expr);
         self.text(&value)
     }
+}
+
+/// A key of a lookup, owned so the index outlives the values it was built from.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub(super) enum LookupKey {
+    Null,
+    Bool(bool),
+    Num(i64),
+    Str(String),
+}
+
+impl LookupKey {
+    fn of(value: &Val<'_>) -> Self {
+        match value {
+            Val::Bool(b) => Self::Bool(*b),
+            Val::Num(n) => Self::Num(*n),
+            Val::Str(text) => Self::Str(text.to_string()),
+            _ => Self::Null,
+        }
+    }
+}
+
+/// The index of one lookup for one call: the field of the first record per key, and for `before`
+/// the starts and fields of the records in document order.
+#[derive(Default, Debug)]
+pub(super) struct LookupIndex {
+    pub keys: std::collections::HashMap<LookupKey, Val<'static>>,
+    pub before: Vec<(usize, Val<'static>)>,
+}
+
+fn owned(value: &Val<'_>) -> Val<'static> {
+    match value {
+        Val::Bool(b) => Val::Bool(*b),
+        Val::Num(n) => Val::Num(*n),
+        Val::Str(text) => Val::Str(Cow::Owned(text.to_string())),
+        _ => Val::Null,
+    }
+}
+
+fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> Val<'a> {
+    for seg in path {
+        if found.is_null() {
+            break;
+        }
+        found = match seg {
+            Seg::Field(name) => records.field(&found, *name),
+            Seg::At(index) => records.list_item(&found, *index),
+            Seg::Key(key) => records.node_key(&found, key),
+            Seg::Item => Val::Null,
+        };
+    }
+    found
 }

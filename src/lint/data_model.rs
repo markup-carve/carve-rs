@@ -1,11 +1,11 @@
 //! Source and tree records consumed by the pinned 0.2 lint model, borrowed from the parse and the line model.
 #![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
-use super::data_interpreter::{F, Val};
+use super::data_interpreter::{F, LookupIndex, LookupKey, Val};
 use super::{Holder, Range, lines::Line};
 use crate::source::Source;
 use std::borrow::Cow;
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 
 fn text_at(source: &str, from: usize, to: usize) -> &str {
@@ -421,6 +421,8 @@ pub(super) struct Records<'a> {
     owners: Vec<OnceCell<(usize, Option<usize>)>>,
     /// The node of each range a `node` field can read, cut at the depth its rules read.
     nodes: &'a [Option<serde_json::Value>],
+    /// The lookups of this call, by the address of their compiled expression.
+    lookups: RefCell<HashMap<usize, LookupIndex>>,
 }
 
 impl<'a> Records<'a> {
@@ -459,6 +461,7 @@ impl<'a> Records<'a> {
             holder_inline,
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
             nodes,
+            lookups: RefCell::new(HashMap::new()),
         };
         records.build_lines(model);
         records
@@ -721,8 +724,71 @@ impl<'a> Records<'a> {
         }
     }
 
+    pub fn has_lookup(&self, id: usize) -> bool {
+        self.lookups.borrow().contains_key(&id)
+    }
+
+    pub fn store_lookup(&self, id: usize, index: LookupIndex) {
+        self.lookups.borrow_mut().insert(id, index);
+    }
+
+    pub fn lookup_key(&self, id: usize, key: &LookupKey) -> Val<'a> {
+        self.lookups.borrow()[&id]
+            .keys
+            .get(key)
+            .cloned()
+            .unwrap_or(Val::Null)
+    }
+
+    /// The field of the last record of the lookup that starts before `start`.
+    pub fn lookup_before(&self, id: usize, start: usize) -> Val<'a> {
+        let lookups = self.lookups.borrow();
+        let before = &lookups[&id].before;
+        let at = before.partition_point(|(from, _)| *from < start);
+        at.checked_sub(1)
+            .map_or(Val::Null, |at| before[at].1.clone())
+    }
+
+    /// The block or inline records of these types in document order, with their starts.
+    pub fn lookup_records(&self, inline: bool, types: &[&str]) -> Vec<(u32, usize)> {
+        let mut found: Vec<(u32, usize, usize)> = self
+            .ranges
+            .iter()
+            .enumerate()
+            .filter(|(_, range)| {
+                types.contains(&range.kind)
+                    && range.start_line.saturating_sub(1) < self.lines.len()
+                    && self.inline_held(range) == inline
+            })
+            .map(|(at, range)| (at as u32, range.start, range.end))
+            .collect();
+        found.sort_by(|a, b| a.1.cmp(&b.1).then(b.2.cmp(&a.2)));
+        found
+            .into_iter()
+            .map(|(at, start, _)| (at, start))
+            .collect()
+    }
+
+    fn record_field(&self, at: u32, name: F) -> Val<'a> {
+        let range = &self.ranges[at as usize];
+        if self.inline_held(range) {
+            return match name {
+                F::Type => Val::Str(Cow::Borrowed(range.kind)),
+                F::Start => Val::num(range.start),
+                F::End => Val::num(range.end),
+                F::Text => Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end))),
+                F::Node => self.tree_node(at),
+                _ => Val::Null,
+            };
+        }
+        let line_index = range.start_line.saturating_sub(1);
+        let block = self.block_record(at as usize, line_index, self.holder_kind(range.holder));
+        self.block_field(&block, name)
+    }
+
     pub fn field(&self, value: &Val<'a>, name: F) -> Val<'a> {
         match value {
+            Val::Rec(at) => self.record_field(*at, name),
             Val::Node(_) => self.node_key(value, super::data_interpreter::field_name(name)),
             Val::Line(at) => self.line_field(*at as usize, name),
             Val::Owner(holder) => self.owner_field(*holder, name),
