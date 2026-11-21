@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 mod controls;
+mod data_attrs;
 mod data_interpreter;
 mod data_model;
 #[macro_use]
@@ -254,6 +255,7 @@ fn lint_core<'a>(
             &positions.all,
             &positions.holders,
             &data_rules::nodes(&positions.all, &values),
+            &values,
             &line_model,
             opts,
         ));

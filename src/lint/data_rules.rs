@@ -58,6 +58,7 @@ enum Over {
     Line,
     Block,
     Inline,
+    Attribute,
 }
 
 struct Entry {
@@ -132,6 +133,7 @@ fn compile_rule(rule: &'static Value) -> Rule {
     let over = match rule["over"].as_str() {
         Some("block") => Over::Block,
         Some("inline") => Over::Inline,
+        Some("attribute") => Over::Attribute,
         _ => Over::Line,
     };
     let values = |object: &'static Value| -> Vec<(&'static str, &'static Value)> {
@@ -289,6 +291,8 @@ fn node_reads(value: &'static Value, keys: &mut HashSet<&'static str>) -> usize 
         Value::String(text) if text == "node" || text.starts_with("node.") => {
             path_depth(text, keys)
         }
+        // An attribute rule reads the node of the record's owner.
+        Value::String(text) if text.starts_with("owner.node.") => path_depth(text, keys) - 1,
         Value::Object(map)
             if map
                 .get("in")
@@ -570,6 +574,7 @@ pub(super) fn run<'a>(
     ranges: &'a [Range<'a>],
     holders: &'a [Holder],
     nodes: &'a [Option<Value>],
+    values: &[V<'_>],
     model: &'a [Line],
     options: &LintOptions,
 ) -> Vec<Diagnostic> {
@@ -584,7 +589,7 @@ pub(super) fn run<'a>(
     if active.is_empty() {
         return out;
     }
-    let records = Records::new(source, positions, ranges, holders, nodes, model);
+    let mut records = Records::new(source, positions, ranges, holders, nodes, model);
     CACHE.with(|cache| {
         // A nested lint (none today) gets buckets of its own instead of the shared ones.
         let mut own;
@@ -598,8 +603,12 @@ pub(super) fn run<'a>(
         if cache.active != active {
             *cache = Cache::new(active);
         }
+        if !cache.attribute_rules.is_empty() {
+            records.read_attributes(values);
+        }
         run_lines(&records, cache, &mut out);
         run_nodes(&records, cache, &mut out);
+        run_attributes(&records, cache, &mut out);
     });
     out
 }
@@ -651,6 +660,7 @@ struct Cache {
     line_rules: Vec<&'static Rule>,
     block_rules: Vec<&'static Rule>,
     inline_rules: Vec<&'static Rule>,
+    attribute_rules: Vec<&'static Rule>,
     literals: Vec<(bool, &'static str)>,
     lines: Small<String, Small<u64, Bucket>>,
     blocks: Small<String, Small<String, [Option<Bucket>; 8]>>,
@@ -684,6 +694,7 @@ impl Cache {
             line_rules,
             block_rules: over(Over::Block),
             inline_rules: over(Over::Inline),
+            attribute_rules: over(Over::Attribute),
             literals,
             active,
             ..Self::default()
@@ -868,6 +879,36 @@ fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<(&'static R
             .as_ref()
             .is_some_and(|types| types.contains(&kind))
     })
+}
+
+/// C2-W-148: the attribute rules over each attribute record whose owner has a type they name.
+fn run_attributes(records: &Records<'_>, cache: &Cache, out: &mut Vec<Diagnostic>) {
+    for (at, part) in records.attributes.parts.iter().enumerate() {
+        let owner = &records.attributes.owners[part.owner as usize];
+        let range = &records.ranges[owner.range as usize];
+        let kind = if range.kind == "comment" && range.form_block {
+            "comment_block"
+        } else {
+            range.kind
+        };
+        let line_index = records
+            .positions()
+            .line_of(part.start)
+            .min(records.lines.len().saturating_sub(1));
+        let path = || records.path_of(owner.range);
+        for rule in &cache.attribute_rules {
+            if type_matches(rule, kind) {
+                run_rule(
+                    (rule, u64::MAX),
+                    records,
+                    Subject::Attribute(at as u32),
+                    line_index,
+                    out,
+                    &path,
+                );
+            }
+        }
+    }
 }
 
 fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {

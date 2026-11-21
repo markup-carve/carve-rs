@@ -18,6 +18,10 @@ fn trim_end(text: &str) -> &str {
     text.trim_end_matches([' ', '\t'])
 }
 
+pub(super) fn quoted_start_pub(text: &str, marks: usize) -> usize {
+    quoted_start(text, marks)
+}
+
 fn quoted_start(text: &str, marks: usize) -> usize {
     let bytes = text.as_bytes();
     let mut at = 0;
@@ -398,6 +402,8 @@ pub(super) enum Subject<'r, 'a> {
     Line(usize),
     Block(&'r BlockRec<'a>),
     Inline(&'r InlineRec<'a>),
+    /// An attribute record, by index into the attribute table.
+    Attribute(u32),
 }
 
 /// What a block or inline node is to the records: the node classes of C2-W-139.
@@ -423,6 +429,8 @@ pub(super) struct Records<'a> {
     nodes: &'a [Option<serde_json::Value>],
     /// The lookups of this call, by the address of their compiled expression.
     lookups: RefCell<HashMap<usize, LookupIndex>>,
+    /// The attribute records of this call (C2-W-148).
+    pub attributes: super::data_attrs::Table,
 }
 
 impl<'a> Records<'a> {
@@ -462,6 +470,7 @@ impl<'a> Records<'a> {
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
             nodes,
             lookups: RefCell::new(HashMap::new()),
+            attributes: super::data_attrs::Table::default(),
         };
         records.build_lines(model);
         records
@@ -739,6 +748,102 @@ impl<'a> Records<'a> {
         }
     }
 
+    /// Builds the attribute records of the nodes that carry `attrs`.
+    pub fn read_attributes(&mut self, values: &[crate::view::V<'_>]) {
+        let nodes = self
+            .ranges
+            .iter()
+            .zip(values)
+            .enumerate()
+            // Consumed keys leave no `attrs` in the tree, so a block is read where its source opens
+            // with a brace, an item or cell at its marker, and an inline node where it ends in one.
+            .filter(|(_, (range, _))| {
+                let bytes = self.source.as_bytes();
+                if range.kind == "document" || range.end <= range.start {
+                    false
+                } else if self.inline_held(range) {
+                    bytes.get(range.end - 1) == Some(&b'}')
+                } else {
+                    matches!(range.kind, "list_item" | "table_cell")
+                        || bytes.get(range.start) == Some(&b'{')
+                }
+            })
+            .map(|(at, (range, value))| super::data_attrs::Node {
+                range: at as u32,
+                kind: range.kind,
+                value: *value,
+                start: range.start,
+                end: range.end,
+                inline: self.inline_held(range),
+                lines: (range.start_line.saturating_sub(1)..range.end_line.max(range.start_line))
+                    .map(|line| self.positions.line_range(line))
+                    .collect(),
+                quotes: self.quotes_at(range.holder),
+            });
+        self.attributes = super::data_attrs::build(self.source, nodes);
+    }
+
+    fn attribute_field(&self, at: u32, name: F) -> Val<'a> {
+        let part = &self.attributes.parts[at as usize];
+        let text = |value: &str| Val::Str(Cow::Owned(value.to_owned()));
+        match name {
+            F::Kind => Val::Str(Cow::Borrowed(part.kind)),
+            F::Key => text(&part.key),
+            F::Value => text(&part.value),
+            F::Start => Val::num(part.start),
+            F::End => Val::num(part.end),
+            F::KeyEnd => Val::num(part.key_end),
+            F::Text => Val::Str(Cow::Borrowed(text_at(self.source, part.start, part.end))),
+            F::Index => Val::num(part.index),
+            F::LastKey => Val::Bool(part.last_key),
+            F::Kept => Val::Bool(part.kept),
+            F::Semantic => Val::Bool(
+                part.kind == "key" && matches!(part.key.as_str(), "abbr" | "time" | "kbd"),
+            ),
+            F::SemanticValue => {
+                Val::Bool(part.kind == "key" && matches!(part.key.as_str(), "abbr" | "time"))
+            }
+            F::Entries => Val::num(if part.kind == "key" {
+                super::data_attrs::entries(&part.value).0
+            } else {
+                0
+            }),
+            F::EntryTotal => Val::Num(if part.kind == "key" {
+                super::data_attrs::entries(&part.value).1
+            } else {
+                0
+            }),
+            F::Owner => Val::AttrOwner(part.owner),
+            _ => Val::Null,
+        }
+    }
+
+    fn owner_record_field(&self, at: u32, name: F) -> Val<'a> {
+        let owner = &self.attributes.owners[at as usize];
+        let range = &self.ranges[owner.range as usize];
+        match name {
+            F::Type => Val::Str(Cow::Borrowed(
+                if range.kind == "comment" && range.form_block {
+                    "comment_block"
+                } else {
+                    range.kind
+                },
+            )),
+            F::Start => Val::num(owner.start),
+            F::End => Val::num(owner.end),
+            F::OpenerStart => Val::num(owner.opener_start),
+            F::Node => self.tree_node(owner.range),
+            F::Format => Val::Str(Cow::Borrowed(owner.format)),
+            F::Columns => Val::num(owner.columns),
+            F::HeadRows => Val::num(owner.rows[0]),
+            F::BodyRows => Val::num(owner.rows[1]),
+            F::FootRows => Val::num(owner.rows[2]),
+            F::AlignOverlap => Val::Str(Cow::Owned(owner.align_overlap.clone())),
+            F::ValignOverlap => Val::Str(Cow::Owned(owner.valign_overlap.clone())),
+            _ => Val::Null,
+        }
+    }
+
     pub fn has_lookup(&self, id: usize) -> bool {
         self.lookups.borrow().contains_key(&id)
     }
@@ -803,6 +908,7 @@ impl<'a> Records<'a> {
     pub fn field(&self, value: &Val<'a>, name: F) -> Val<'a> {
         match value {
             Val::Rec(at) => self.record_field(*at, name),
+            Val::AttrOwner(at) => self.owner_record_field(*at, name),
             Val::Node(_) => self.node_key(value, super::data_interpreter::field_name(name)),
             Val::Line(at) => self.line_field(*at as usize, name),
             Val::Owner(holder) => self.owner_field(*holder, name),
@@ -815,6 +921,7 @@ impl<'a> Records<'a> {
         match subject {
             Subject::Line(at) => self.line_field(*at, name),
             Subject::Block(block) => self.block_field(block, name),
+            Subject::Attribute(at) => self.attribute_field(*at, name),
             Subject::Inline(inline) => match name {
                 F::Node if inline.kind != "text_run" => self.tree_node(inline.range),
                 F::Type => Val::Str(Cow::Borrowed(inline.kind)),
