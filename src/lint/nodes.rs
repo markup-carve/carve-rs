@@ -421,7 +421,9 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
         let Some((marker_at, _)) = bounds(parent) else {
             return;
         };
-        item_content_column(sink.source, marker_at).unwrap_or(0)
+        first_at
+            .and_then(|at| task_item_content_column(sink.source, marker_at, at))
+            .unwrap_or(0)
     } else {
         if first_at == Some(from) {
             return;
@@ -446,21 +448,14 @@ fn list_item_opener_overindented<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut S
     }
 }
 
-/// The item content column comes from the parsed marker. A task box begins item content, so it
-/// does not move the lint boundary past the box.
-fn item_content_column(source: &str, marker_at: usize) -> Option<u64> {
-    let line_start = source.get(..marker_at)?.rfind('\n').map_or(0, |at| at + 1);
+/// The task box begins item content, even when authored padding separates it from its first child.
+fn task_item_content_column(source: &str, marker_at: usize, first_at: usize) -> Option<u64> {
     let line_end = source
         .get(marker_at..)?
         .find('\n')
         .map_or(source.len(), |at| marker_at + at);
-    let line = source.get(line_start..line_end)?;
-    let local = marker_at.checked_sub(line_start)?;
-    let mut cursor = crate::block::line::Cursor::new(line, line_start);
-    cursor.bump_n(local);
-    let marker = crate::block::shapes::list_marker(&cursor)?;
-    let content = marker.content - usize::from(marker.task.is_some()) * 4;
-    Some(quote_column(source, line_start + content))
+    let task_at = source.get(marker_at..first_at.min(line_end))?.rfind('[')?;
+    Some(quote_column(source, marker_at + task_at))
 }
 
 fn overindented_opener<'a>(item: &Item<'a>, root: V<'a>, sink: &mut Sink<'_>) {

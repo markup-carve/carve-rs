@@ -15,6 +15,10 @@ fn item_div_opener_uses_the_marker_column_even_when_it_is_the_first_child() {
         ranges(source, "list-item-block-overindented"),
         vec![(12, 19)]
     );
+    assert_eq!(
+        ranges("- [ ]   ::: box\n", "list-item-block-overindented"),
+        vec![(8, 15)]
+    );
     for source in ["- ::: box\n", "1. ::: box\n"] {
         assert!(
             ranges(source, "list-item-block-overindented").is_empty(),
