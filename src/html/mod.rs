@@ -259,6 +259,7 @@ pub(crate) struct Renderer<'r, 'a> {
     /// The anchor id of each note, in number order (C2-H-202).
     note_ids: Vec<String>,
     links: HashMap<&'a str, &'r LinkReferenceDefinition<'a>>,
+    abbreviation_definitions: HashMap<&'a str, &'a str>,
     hidden_heading_ids: HashSet<&'a str>,
     xref_text: HashMap<String, String>,
     derived_remaining: usize,
@@ -346,6 +347,14 @@ impl<'r, 'a> Renderer<'r, 'a> {
         } else {
             HashSet::new()
         };
+        let mut abbreviation_definitions = HashMap::new();
+        for node in doc.children.iter() {
+            if let Node::AbbreviationDef(def) = node {
+                abbreviation_definitions
+                    .entry(def.key)
+                    .or_insert(def.expansion);
+            }
+        }
         let mut r = Renderer {
             opts,
             doc,
@@ -356,6 +365,7 @@ impl<'r, 'a> Renderer<'r, 'a> {
             mark_ids: AddrMap::default(),
             note_ids: Vec::new(),
             links: HashMap::new(),
+            abbreviation_definitions,
             hidden_heading_ids,
             xref_text: HashMap::new(),
             derived_remaining: crate::tables::DERIVED_TEXT_BYTES.max(

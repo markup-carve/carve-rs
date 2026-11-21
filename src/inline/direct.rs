@@ -364,6 +364,7 @@ mod tests {
                 },
                 kind,
                 hard_breaks: false,
+                abbreviation_remaining: None,
             };
             let pieces = [Piece {
                 start: 0,
