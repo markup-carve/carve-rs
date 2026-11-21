@@ -596,6 +596,11 @@ fn prepare<'a>(
     prepare_with(input, opts, arena, diags, &mut |_| {})
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static PREPARE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// [`prepare`] that hands the parsed tree to `before_resolve` before it is
 /// resolved, so a host's claims share the one resolution (carve-rs#4366).
 pub(crate) fn prepare_with<'a>(
@@ -605,6 +610,8 @@ pub(crate) fn prepare_with<'a>(
     diags: &mut Vec<diagnostic::Diagnostic>,
     before_resolve: &mut dyn FnMut(&mut ast::Document<'a>),
 ) -> Result<(ast::Document<'a>, bool, Option<resolve::files::Files<'a>>), RenderError> {
+    #[cfg(test)]
+    PREPARE_COUNT.with(|count| count.set(count.get() + 1));
     check_source_length(input.len())?;
     let src = source::Source::new(input);
     let out = block::scan(&src);

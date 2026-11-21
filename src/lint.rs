@@ -64,12 +64,13 @@ fn active(code: &str, opts: &LintOptions) -> bool {
 /// Runs enabled lint rules and returns catalog diagnostics in source order.
 #[must_use]
 pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
+    let includes = opts.includes.is_some() && source.contains("{{");
     let parse = crate::Options {
-        includes: opts.includes.clone(),
+        includes: opts.includes.clone().filter(|_| includes),
         heading_ids: opts.heading_ids,
         ..crate::Options::default()
     };
-    let same = opts.includes.is_none() && opts.heading_ids == crate::options::HeadingIds::default();
+    let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();
     let (mut out, diagnostics) = crate::with_lint_tree(
         source,
         &crate::Options::default(),
@@ -78,7 +79,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         |tree, arena| lint_core(source, opts, tree, arena),
     );
     out.extend(diagnostics);
-    if opts.includes.is_some() {
+    if includes {
         includes::scan(source, opts, &mut out);
     }
     out.retain(|finding| {
@@ -1151,8 +1152,21 @@ fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Diagnostic, drop_replaced};
+    use super::{Diagnostic, LintOptions, drop_replaced};
     use crate::ast::Pos;
+    use crate::include::{Cause, Includes};
+    use std::sync::Arc;
+
+    #[test]
+    fn configured_resolver_without_include_opener_parses_once() {
+        let options = LintOptions {
+            includes: Some(Includes::new(Arc::new(|_| Err(Cause::NotFound)))),
+            ..LintOptions::default()
+        };
+        crate::PREPARE_COUNT.with(|count| count.set(0));
+        let _ = super::lint("| a | b |\n", &options);
+        crate::PREPARE_COUNT.with(|count| assert_eq!(count.get(), 1));
+    }
 
     fn finding(code: &'static str, start: u32, end: u32) -> Diagnostic {
         let pos = Pos {
