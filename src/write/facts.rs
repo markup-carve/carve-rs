@@ -393,7 +393,20 @@ fn rows(table: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>) {
     };
     let mut lines: Vec<(&str, Vec<&str>)> = Vec::new();
     for line in body.split('\n') {
-        let l = line.get(column..).unwrap_or("").trim_end_matches('\r');
+        // A container can put its first row and later continuation rows in
+        // different columns (for example, the task marker on the first line).
+        let early_continuation = line.get(..column).and_then(|prefix| prefix.find('+'));
+        let at = early_continuation
+            .or_else(|| {
+                line.get(column..)
+                    .filter(|tail| tail.starts_with(['|', '+']))
+                    .map(|_| column)
+            })
+            .or_else(|| line.find(['|', '+']));
+        let l = at
+            .and_then(|at| line.get(at..))
+            .unwrap_or("")
+            .trim_end_matches('\r');
         if l.starts_with('|') {
             lines.push((l, Vec::new()));
         } else if l.starts_with('+') {
