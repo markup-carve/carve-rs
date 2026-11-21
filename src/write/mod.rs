@@ -107,6 +107,41 @@ pub(crate) fn parse_plain(body: &str) -> Option<Value> {
     crate::api::writer::tree_value(&crate::tree_json(body, &crate::Options::default())).ok()
 }
 
+#[cfg(test)]
+thread_local! {
+    static REPAIR_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod plain_table_certificate_test {
+    use super::*;
+
+    fn format_typed(src: &str) -> String {
+        let arena = crate::Arena::for_input(src);
+        let doc = crate::parse_resolved_in(src, &crate::Options::default(), &arena).unwrap();
+        let pool = Pool::new();
+        let (out, losses) = format_view(V::Doc(&doc), &pool, Some(src), &Settings::default());
+        assert!(losses.is_empty());
+        out
+    }
+
+    #[test]
+    fn ordinary_rows_need_no_repair_parse() {
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let output = format_typed("|alpha|beta|\n|7|x|\n");
+        assert_eq!(output, "| alpha | beta |\n| 7 | x |\n");
+        assert_eq!(REPAIR_PARSES.with(std::cell::Cell::get) - before, 0);
+    }
+
+    #[test]
+    fn marked_cells_keep_the_repair_parse() {
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let output = format_typed("|*alpha*|beta|\n");
+        assert_eq!(output, "| *alpha* | beta |\n");
+        assert!(REPAIR_PARSES.with(std::cell::Cell::get) > before);
+    }
+}
+
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
@@ -441,6 +476,9 @@ fn repair_rounds<'t>(
         if w.lines.is_empty() {
             return end;
         }
+        if table::certifies_plain_rows(w, group) {
+            return end;
+        }
         if repeated_repair(w, group, &mut history) {
             return end;
         }
@@ -669,6 +707,8 @@ fn compare_group<'t, 's>(
     first: bool,
     round: &mut Round<'s>,
 ) -> Check<'t> {
+    #[cfg(test)]
+    REPAIR_PARSES.with(|count| count.set(count.get() + 1));
     let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
     let parsed = chunk.parse(w);
     round.last = Some(parsed);
