@@ -94,6 +94,60 @@ pub(crate) fn raw_ref_text(
     raw
 }
 
+/// The `markerColumn` and `contentColumn` facts of a list item, description or footnote entry, as the
+/// layout walk writes them, for the lint model.
+pub(crate) fn item_columns(
+    source: &str,
+    ty: &str,
+    start: usize,
+    end: usize,
+    quotes: usize,
+) -> (Option<usize>, Option<usize>) {
+    if start > end || end > source.len() {
+        return (None, None);
+    }
+    let first = &source[start..line_end(source, start).min(end)];
+    let mark_start = if first.trim_start().starts_with('{') && line_end(source, start) < end {
+        line_end(source, start) + 1
+    } else {
+        start
+    };
+    let line = &source[mark_start..line_end(source, mark_start).min(end)];
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let mark_at = mark_start + line.len() - trimmed.len();
+    let mark_len = match ty {
+        "list_item" => list_marker_len(trimmed),
+        "definition_description" => 1,
+        _ => trimmed.find(':').map_or(0, |n| n + 1),
+    };
+    if mark_len == 0 || mark_len > trimmed.len() {
+        return (None, None);
+    }
+    let marker_content = skip_layout_space(source, mark_at + mark_len);
+    let content = item_content_start(ty, source, marker_content);
+    let line_end = line_end(source, start);
+    let content = if content < line_end {
+        Some(content)
+    } else {
+        (ty == "list_item" && marker_content < line_end).then_some(marker_content)
+    };
+    (
+        Some(column_of(source, mark_at, quotes)),
+        content.map(|at| column_of(source, at, quotes)),
+    )
+}
+
+/// The `blankLinesAfter` fact of a block whose parent is not a quote, as the layout walk writes it.
+pub(crate) fn blank_lines_after(source: &str, end: usize, limit: usize, quotes: usize) -> usize {
+    let walk = Walk {
+        source,
+        nodes: Vec::new(),
+        tables: Vec::new(),
+        offsets: None,
+    };
+    walk.blank_after(end.min(source.len()), limit, quotes, false)
+}
+
 fn tables(source: &str) -> Vec<(usize, TableData)> {
     if !source.contains('|') {
         return Vec::new();

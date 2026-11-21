@@ -611,6 +611,12 @@ pub(super) enum Expr {
     RunExtensions,
     /// Whether a text is a valid attribute line (C2-B-090).
     AttributeLine(Box<Self>),
+    /// A `matches` on a `let` that is a slice of `field` or empty: the match starts with one of the
+    /// pattern's first bytes, so `field` must hold one before the `let` is computed.
+    Within {
+        field: Path,
+        test: Box<Self>,
+    },
     /// A field of a record of the document found by key, or the last one before (C2-W-141).
     Lookup(Box<Lookup>),
     IndexOf(Box<(Self, Self)>),
@@ -673,6 +679,8 @@ const COMPARISONS: &[(&str, Cmp)] = &[
 pub(super) struct Scope<'m> {
     pub model: &'static Value,
     pub lets: &'m [&'static str],
+    /// The rule being compiled, whose `let` values the compiler reads.
+    pub rule: &'static Value,
 }
 
 fn literal(value: &'static Value) -> Val<'static> {
@@ -706,6 +714,11 @@ impl Scope<'_> {
         match op.as_str() {
             "f" => Expr::Field(path(arg.as_str().unwrap_or(""))),
             "v" => self.variable(arg.as_str().unwrap_or("")),
+            "all" if args.iter().all(|item| self.order_free(item)) => {
+                let mut items: Vec<Expr> = list(args);
+                items.sort_by_key(scans);
+                Expr::All(items)
+            }
             "all" => Expr::All(list(args)),
             "any" => Expr::Any(list(args)),
             "not" => Expr::Not(Box::new(self.compile(arg))),
@@ -734,6 +747,52 @@ impl Scope<'_> {
             };
         }
         Expr::Cmp(cmp, Box::new((self.compile(left), self.compile(right))))
+    }
+
+    /// Whether a test neither sets nor reads match groups, so the items of an `all` of such tests may
+    /// run in any order; a `let` may read the groups of its own `matches`.
+    fn order_free(&self, value: &'static Value) -> bool {
+        fn groups(value: &Value, out: &mut Vec<String>) {
+            match value {
+                Value::Object(map) => {
+                    if let Some(pattern) = map
+                        .get("matches")
+                        .and_then(|args| args.get(1))
+                        .and_then(Value::as_str)
+                    {
+                        let mut rest = pattern;
+                        while let Some(at) = rest.find("(?<") {
+                            rest = &rest[at + 3..];
+                            out.push(rest.split('>').next().unwrap_or("").to_owned());
+                        }
+                    }
+                    map.values().for_each(|item| groups(item, out));
+                }
+                Value::Array(items) => items.iter().for_each(|item| groups(item, out)),
+                _ => {}
+            }
+        }
+        fn reads(value: &Value, own: &[String], scope: &Scope<'_>, depth: usize) -> bool {
+            match value {
+                Value::Object(map) => {
+                    if let Some(group) = map.get("match").and_then(Value::as_str) {
+                        return own.iter().any(|known| known == group);
+                    }
+                    if let Some(name) = map.get("v").and_then(Value::as_str) {
+                        let body = &scope.rule["let"][name];
+                        let mut mine = Vec::new();
+                        groups(body, &mut mine);
+                        return depth < 8 && reads(body, &mine, scope, depth + 1);
+                    }
+                    map.values().all(|item| reads(item, own, scope, depth))
+                }
+                Value::Array(items) => items.iter().all(|item| reads(item, own, scope, depth)),
+                _ => true,
+            }
+        }
+        let mut set = Vec::new();
+        groups(value, &mut set);
+        set.is_empty() && reads(value, &[], self, 0)
     }
 
     /// The `in` of `some`, `count` and `find`: a field path, or a value that gives a list (C2-W-150).
@@ -768,10 +827,22 @@ impl Scope<'_> {
             .get(1)
             .and_then(Value::as_str)
             .and_then(|text| pattern(text, args.get(2).and_then(Value::as_str).unwrap_or("")));
-        Expr::Matches {
+        let within = subject
+            .get("v")
+            .and_then(Value::as_str)
+            .and_then(|name| sliced_field(&self.rule["let"][name]))
+            .filter(|_| compiled.as_ref().is_some_and(|p| p.first.is_some()));
+        let test = Expr::Matches {
             subject: Box::new(self.compile(subject)),
             pattern: compiled,
             base: subject.get("f").and_then(Value::as_str).and_then(base_path),
+        };
+        match within {
+            Some(field) => Expr::Within {
+                field: path(field),
+                test: Box::new(test),
+            },
+            None => test,
         }
     }
 
@@ -1196,6 +1267,46 @@ pub(super) fn quick_tests(when: &Expr) -> Vec<usize> {
         .collect()
 }
 
+/// Whether an expression reads records other than its own: a lookup, or a test over a list.
+fn scans(expr: &Expr) -> bool {
+    match expr {
+        Expr::Lookup(_) | Expr::Some { .. } | Expr::Count { .. } | Expr::Find { .. } => true,
+        Expr::All(items) | Expr::Any(items) | Expr::Add(items) | Expr::Concat(items) => {
+            items.iter().any(scans)
+        }
+        Expr::Within { test: item, .. }
+        | Expr::Not(item)
+        | Expr::Lower(item)
+        | Expr::PercentDecode(item)
+        | Expr::AttributeLine(item)
+        | Expr::Len(item)
+        | Expr::TrimEnd(item)
+        | Expr::Words(item)
+        | Expr::TextFrom(item)
+        | Expr::JsonEscape(item)
+        | Expr::In(item, _) => scans(item),
+        Expr::Matches { subject, .. } => scans(subject),
+        Expr::Cmp(_, args)
+        | Expr::Contains(args)
+        | Expr::Starts(args)
+        | Expr::Sub(args)
+        | Expr::IndexOf(args)
+        | Expr::Nth(args)
+        | Expr::Join(args)
+        | Expr::Column(args)
+        | Expr::Shift { args, .. } => scans(&args.0) || scans(&args.1),
+        Expr::If(args) => scans(&args.0) || scans(&args.1) || scans(&args.2),
+        Expr::Slice(args) => scans(&args.0) || scans(&args.1) || args.2.as_ref().is_some_and(scans),
+        Expr::Var(_) => true,
+        Expr::Lit(_)
+        | Expr::Field(_)
+        | Expr::Has(_)
+        | Expr::Match { .. }
+        | Expr::ShapeIs(_)
+        | Expr::RunExtensions => false,
+    }
+}
+
 /// Whether a test can neither set groups nor fill a `let`, so skipping it changes nothing later.
 fn stateless(expr: &Expr) -> bool {
     match expr {
@@ -1206,7 +1317,8 @@ fn stateless(expr: &Expr) -> bool {
         Expr::All(items) | Expr::Any(items) | Expr::Add(items) | Expr::Concat(items) => {
             items.iter().all(stateless)
         }
-        Expr::Not(item)
+        Expr::Within { test: item, .. }
+        | Expr::Not(item)
         | Expr::Lower(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
@@ -1365,8 +1477,8 @@ pub(super) enum Val<'a> {
     Colon(u32),
     Ancestors(Option<u32>),
     Colons(u32),
-    /// A node of the tree or a value inside it that is no scalar (C2-W-140).
-    Node(&'a Value),
+    /// A node of the tree or a value inside it that is no scalar, by its handle (C2-W-140).
+    Node(u32),
     /// The block or inline record of a range, as `item` of a lookup.
     Rec(u32),
     /// The owner of an attribute record, by index into the attribute table (C2-W-148).
@@ -1888,6 +2000,21 @@ impl<'a> Eval<'_, 'a> {
                 let text = self.string(arg);
                 super::lines::valid_attribute_line(&text)
             }
+            Expr::Within { field, test } => {
+                let first = match &**test {
+                    Expr::Matches {
+                        pattern: Some(pattern),
+                        ..
+                    } => pattern.first.as_deref(),
+                    _ => None,
+                };
+                let held = self.resolve(field);
+                let possible = match (first, self.str_of(&held)) {
+                    (Some(first), Some(text)) => text.bytes().any(|b| first[b as usize]),
+                    _ => true,
+                };
+                possible && self.test(test)
+            }
             Expr::ShapeIs(name) => match self.subject {
                 Subject::Line(index) => self.records.line_shape_is(index, name),
                 _ => false,
@@ -1937,6 +2064,19 @@ impl LookupKey {
 #[derive(Default, Debug)]
 pub(super) struct LookupIndex {
     pub keys: std::collections::HashMap<LookupKey, Vec<(usize, u32)>>,
+}
+
+/// The field a `let` value is a slice of, where it is that slice or the empty text: `slice` of a field,
+/// or `if` whose branches are such a slice and `""`.
+fn sliced_field(value: &'static Value) -> Option<&'static str> {
+    if let Some(args) = value.get("slice").and_then(Value::as_array) {
+        return args.first()?.get("f")?.as_str();
+    }
+    let args = value.get("if")?.as_array()?;
+    if args.get(2)?.as_str() != Some("") {
+        return None;
+    }
+    sliced_field(args.get(1)?)
 }
 
 /// `%HH` read as bytes and the bytes as UTF-8; `None` where a `%` is no escape or the bytes are no UTF-8 (C2-W-150).

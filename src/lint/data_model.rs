@@ -446,8 +446,8 @@ pub(super) struct Records<'a> {
     holder_quotes: Vec<usize>,
     holder_inline: Vec<bool>,
     owners: Vec<OnceCell<(usize, Option<usize>)>>,
-    /// The node of each range a `node` field can read, cut at the depth its rules read.
-    nodes: &'a [Option<serde_json::Value>],
+    /// The tree node of each range, read in place (C2-W-140).
+    nodes: &'a dyn NodeTree,
     /// The lookups of this call, by the address of their compiled expression.
     lookups: RefCell<HashMap<usize, LookupIndex>>,
     /// The attribute records of this call (C2-W-148).
@@ -456,6 +456,34 @@ pub(super) struct Records<'a> {
     extensions: Vec<String>,
     layout: OnceCell<Layout>,
     tables: OnceCell<TableLines>,
+    /// The source format of each table read so far, by range.
+    formats: RefCell<HashMap<u32, &'static str>>,
+}
+
+/// One step into a tree node: a key of an object or an index of a list.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Step {
+    Key(&'static str),
+    Index(usize),
+}
+
+/// What a node handle holds.
+pub(super) enum Leaf<'s> {
+    Absent,
+    Str(&'s str),
+    Num(i64),
+    Bool(bool),
+    List(usize),
+    Object,
+}
+
+/// The tree node of each range, read in place through handles, so a rule converts nothing it reads.
+pub(super) trait NodeTree {
+    /// The handle of the node of a range.
+    fn root(&self, range: u32) -> Option<u32>;
+    /// The handle of a key or an item of the value of a handle.
+    fn child(&self, node: u32, step: Step) -> Option<u32>;
+    fn leaf(&self, node: u32) -> Leaf<'_>;
 }
 
 /// An id record (C2-W-150).
@@ -566,7 +594,7 @@ impl<'a> Records<'a> {
         positions: &'a Source<'a>,
         ranges: &'a [Range<'a>],
         holders: &'a [Holder],
-        nodes: &'a [Option<serde_json::Value>],
+        nodes: &'a dyn NodeTree,
         model: &'a [Line],
         tree: TreeFacts<'a>,
         extensions: Vec<String>,
@@ -604,6 +632,7 @@ impl<'a> Records<'a> {
             extensions,
             layout: OnceCell::new(),
             tables: OnceCell::new(),
+            formats: RefCell::new(HashMap::new()),
         };
         records.build_lines(model);
         records
@@ -878,7 +907,7 @@ impl<'a> Records<'a> {
             for (at, range) in self.ranges.iter().enumerate() {
                 if range.kind != "table"
                     || range.start_line == 0
-                    || self.source_format(range) != "pipe"
+                    || self.source_format(at as u32) != "pipe"
                 {
                     continue;
                 }
@@ -909,8 +938,11 @@ impl<'a> Records<'a> {
         self.table_lines().table.get(index).copied().flatten()
     }
 
-    fn source_format(&self, range: &Range<'_>) -> &'static str {
-        crate::api::layout::table_source_format(self.source, range.start, range.end)
+    fn source_format(&self, table: u32) -> &'static str {
+        *self.formats.borrow_mut().entry(table).or_insert_with(|| {
+            let range = &self.ranges[table as usize];
+            crate::api::layout::table_source_format(self.source, range.start, range.end)
+        })
     }
 
     /// The source format of a table, or of the table that holds a row or cell.
@@ -923,9 +955,7 @@ impl<'a> Records<'a> {
             _ => None,
         };
         table.map_or(Val::Null, |table| {
-            Val::Str(Cow::Borrowed(
-                self.source_format(&self.ranges[table as usize]),
-            ))
+            Val::Str(Cow::Borrowed(self.source_format(table)))
         })
     }
 
@@ -994,17 +1024,54 @@ impl<'a> Records<'a> {
         })
     }
 
-    fn layout_entry(&self, range: u32) -> Val<'a> {
-        let path = self.ranges[range as usize].path.as_str();
-        self.layout()
-            .by_path
-            .get(path)
-            .map_or(Val::Null, |at| Val::Layout(*at))
+    /// The layout entry of a block, by its range; its facts are read on demand.
+    fn layout_entry(range: u32) -> Val<'a> {
+        Val::Layout(range)
     }
 
-    /// A fact of a layout entry by name; absent where the entry does not have it (C2-L-014).
+    /// A fact of the layout entry of a block by name; absent where the entry does not have it (C2-L-014).
+    /// The facts the rows read most are computed for the one block; any other comes from the whole layout.
     fn layout_key(&self, at: u32, key: &str) -> Val<'a> {
-        match self.layout().entries[at as usize].get(key) {
+        let range = &self.ranges[at as usize];
+        let item = matches!(
+            range.kind,
+            "list_item" | "footnote" | "definition_description"
+        );
+        let quotes = || self.quotes_at(range.holder);
+        match key {
+            "markerColumn" | "contentColumn" if item && !range.joined => {
+                let (marker, content) = crate::api::layout::item_columns(
+                    self.source,
+                    range.kind,
+                    range.start,
+                    range.end,
+                    quotes(),
+                );
+                let fact = if key == "markerColumn" {
+                    marker
+                } else {
+                    content
+                };
+                return fact.map_or(Val::Null, Val::num);
+            }
+            "blankLinesAfter" if self.holder_kind(range.holder) == "list_item" && !range.joined => {
+                let limit = self
+                    .holder_range(range.holder)
+                    .map_or(self.source.len(), |up| self.ranges[up as usize].end);
+                return Val::num(crate::api::layout::blank_lines_after(
+                    self.source,
+                    range.end,
+                    limit,
+                    quotes(),
+                ));
+            }
+            _ => {}
+        }
+        let path = range.path.as_str();
+        let Some(&entry) = self.layout().by_path.get(path) else {
+            return Val::Null;
+        };
+        match self.layout().entries[entry as usize].get(key) {
             Some(serde_json::Value::Number(n)) => Val::Num(n.as_i64().unwrap_or(0)),
             Some(serde_json::Value::String(text)) => Val::Str(Cow::Owned(text.clone())),
             Some(serde_json::Value::Bool(b)) => Val::Bool(*b),
@@ -1249,7 +1316,7 @@ impl<'a> Records<'a> {
         match value {
             Val::Rec(at) => self.record_field(*at, name),
             Val::AttrOwner(at) => self.owner_record_field(*at, name),
-            Val::Node(_) => self.node_key(value, super::data_interpreter::field_name(name)),
+            Val::Node(..) => self.node_key(value, super::data_interpreter::field_name(name)),
             Val::Line(at) => self.line_field(*at as usize, name),
             Val::Owner(holder) => self.owner_field(*holder, name),
             Val::Colon(at) => self.colon_field(*at, name),
@@ -1279,20 +1346,33 @@ impl<'a> Records<'a> {
     }
 
     /// A key of an AST node: a scalar as a value, anything else as a node; absent is null.
-    pub fn node_key(&self, value: &Val<'a>, key: &str) -> Val<'a> {
+    pub fn node_key(&self, value: &Val<'a>, key: &'static str) -> Val<'a> {
         if let Val::Layout(at) = value {
             return self.layout_key(*at, key);
         }
+        self.node_step(value, Step::Key(key))
+    }
+
+    fn node_step(&self, value: &Val<'a>, step: Step) -> Val<'a> {
         let Val::Node(node) = value else {
             return Val::Null;
         };
-        node.get(key).map_or(Val::Null, node_value)
+        let Some(child) = self.nodes.child(*node, step) else {
+            return Val::Null;
+        };
+        match self.nodes.leaf(child) {
+            Leaf::Absent => Val::Null,
+            Leaf::Str(text) => Val::Str(Cow::Borrowed(text)),
+            Leaf::Num(n) => Val::Num(n),
+            Leaf::Bool(b) => Val::Bool(b),
+            Leaf::List(_) | Leaf::Object => Val::Node(child),
+        }
     }
 
     fn tree_node(&self, range: u32) -> Val<'a> {
         self.nodes
-            .get(range as usize)
-            .and_then(Option::as_ref)
+            .root(range)
+            .filter(|&node| matches!(self.nodes.leaf(node), Leaf::Object))
             .map_or(Val::Null, Val::Node)
     }
 
@@ -1305,7 +1385,10 @@ impl<'a> Records<'a> {
         match list {
             Val::Colons(line) => self.colon_ids(*line).len(),
             Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
-            Val::Node(node) => node.as_array().map_or(0, Vec::len),
+            Val::Node(node) => match self.nodes.leaf(*node) {
+                Leaf::List(len) => len,
+                _ => 0,
+            },
             Val::BlockAncestors(at) | Val::AncestorIds(at) => self.holder_chain(*at).count() + 1,
             Val::LineAncestorIds(leaf) => self.ancestors(*leaf).count(),
             Val::List(items) => items.len(),
@@ -1315,7 +1398,7 @@ impl<'a> Records<'a> {
 
     pub fn is_list(&self, value: &Val<'a>) -> bool {
         match value {
-            Val::Node(node) => node.is_array(),
+            Val::Node(node) => matches!(self.nodes.leaf(*node), Leaf::List(_)),
             Val::Colons(_)
             | Val::Ancestors(_)
             | Val::BlockAncestors(_)
@@ -1364,10 +1447,7 @@ impl<'a> Records<'a> {
                 .nth(index)
                 .map_or(Val::Null, Val::Num),
             Val::List(items) => items.get(index).cloned().unwrap_or(Val::Null),
-            Val::Node(node) => node
-                .as_array()
-                .and_then(|items| items.get(index))
-                .map_or(Val::Null, node_value),
+            node @ Val::Node(..) => self.node_step(node, Step::Index(index)),
             _ => Val::Null,
         }
     }
@@ -1450,7 +1530,7 @@ impl<'a> Records<'a> {
             F::ItemOwner => Val::Owner(block.item_owner),
             F::Parent => Val::Owner(block.parent),
             F::Identity => Val::num(block.range as usize),
-            F::Layout => self.layout_entry(block.range),
+            F::Layout => Self::layout_entry(block.range),
             F::SourceFormat => self.table_format(block.range),
             F::Group => self.group_of(block.range),
             F::RowIndex => self.row_index(block.range),
@@ -1940,16 +2020,6 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
         at = ((from + mark).min(to), at.1 + 1);
     }
     at
-}
-
-fn node_value(value: &serde_json::Value) -> Val<'_> {
-    match value {
-        serde_json::Value::Null => Val::Null,
-        serde_json::Value::String(text) => Val::Str(Cow::Borrowed(text)),
-        serde_json::Value::Bool(b) => Val::Bool(*b),
-        serde_json::Value::Number(n) => Val::Num(n.as_i64().unwrap_or(0)),
-        other => Val::Node(other),
-    }
 }
 
 /// The facts of an attribute part that its value and the later parts of its owner give.

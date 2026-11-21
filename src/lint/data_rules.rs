@@ -101,10 +101,6 @@ struct Compiled {
     verbatim_leaves: Vec<&'static str>,
     /// Every inline rule over `text` first requires a `[` in its text.
     text_needs_bracket: bool,
-    /// The types of the records whose rules read their `node` (C2-W-140), with the depth they read.
-    node_types: HashMap<&'static str, usize>,
-    /// The keys those rules read.
-    node_keys: HashSet<&'static str>,
 }
 
 fn names(value: &'static Value) -> Vec<&'static str> {
@@ -125,6 +121,7 @@ fn compile_rule(rule: &'static Value) -> Rule {
     let scope = Scope {
         model: model(),
         lets: &let_names,
+        rule,
     };
     let lets = let_names
         .iter()
@@ -250,150 +247,13 @@ fn compiled() -> &'static Compiled {
                         && args.get(1).is_some_and(|value| value == "[")
                 })
             });
-        let mut node_types: HashMap<&'static str, usize> = HashMap::new();
-        let mut node_keys = HashSet::new();
-        for rule in model()["rules"].as_array().into_iter().flatten() {
-            lookup_reads(rule, &mut node_types, &mut node_keys);
-            let depth = node_reads(rule, &mut node_keys);
-            if depth > 0 {
-                for kind in names(&rule["types"]) {
-                    let known = node_types.entry(kind).or_default();
-                    *known = (*known).max(depth);
-                }
-            }
-        }
         Compiled {
-            node_types,
-            node_keys,
             ids: rules.iter().map(|rule| rule.id).collect(),
             rules,
             verbatim_leaves: names(&model()["verbatim_leaves"]),
             text_needs_bracket,
         }
     })
-}
-
-/// How deep a rule reads into its `node`, counting list items as a level, and the keys it reads;
-/// 0 for a rule that reads no `node` (C2-W-140).
-fn node_reads(value: &'static Value, keys: &mut HashSet<&'static str>) -> usize {
-    let path_depth = |text: &'static str, keys: &mut HashSet<&'static str>| {
-        let parts: Vec<&'static str> = text.split('.').collect();
-        keys.extend(
-            parts
-                .iter()
-                .skip(1)
-                .copied()
-                .filter(|part| part.parse::<usize>().is_err()),
-        );
-        parts.len()
-    };
-    match value {
-        Value::String(text) if text == "node" || text.starts_with("node.") => {
-            path_depth(text, keys)
-        }
-        // An attribute rule reads the node of the record's owner.
-        Value::String(text) if text.starts_with("owner.node.") => path_depth(text, keys) - 1,
-        Value::Object(map)
-            if map
-                .get("in")
-                .and_then(Value::as_str)
-                .is_some_and(|list| list.starts_with("node.")) =>
-        {
-            let list = path_depth(map["in"].as_str().unwrap_or(""), keys);
-            let mut item = 0;
-            item_reads(&map["where"], keys, &mut item);
-            list + item
-        }
-        Value::Array(items) => items
-            .iter()
-            .map(|item| node_reads(item, keys))
-            .max()
-            .unwrap_or(0),
-        Value::Object(map) => map
-            .values()
-            .map(|item| node_reads(item, keys))
-            .max()
-            .unwrap_or(0),
-        _ => 0,
-    }
-}
-
-/// The nodes the lookups of a rule read: `item.node.…` in a key and `node.…` as the field.
-fn lookup_reads(
-    value: &'static Value,
-    types: &mut HashMap<&'static str, usize>,
-    keys: &mut HashSet<&'static str>,
-) {
-    match value {
-        Value::Object(map) if map.contains_key("lookup") => {
-            let lookup = &map["lookup"];
-            let mut depth = 0;
-            item_reads(&lookup["key"], keys, &mut depth);
-            let depth = depth
-                .saturating_sub(1)
-                .max(node_reads(&lookup["field"], keys));
-            if depth > 0 {
-                for kind in names(&lookup["types"]) {
-                    let known = types.entry(kind).or_default();
-                    *known = (*known).max(depth);
-                }
-            }
-            lookup_reads(lookup, types, keys);
-        }
-        Value::Array(items) => items
-            .iter()
-            .for_each(|item| lookup_reads(item, types, keys)),
-        Value::Object(map) => map
-            .values()
-            .for_each(|item| lookup_reads(item, types, keys)),
-        _ => {}
-    }
-}
-
-/// The deepest `item.…` path under a `some` or `count` over a node list, the item itself counted.
-fn item_reads(value: &'static Value, keys: &mut HashSet<&'static str>, depth: &mut usize) {
-    match value {
-        Value::String(text) if text.starts_with("item.") => {
-            let parts: Vec<&'static str> = text.split('.').collect();
-            keys.extend(
-                parts
-                    .iter()
-                    .skip(1)
-                    .copied()
-                    .filter(|part| part.parse::<usize>().is_err()),
-            );
-            *depth = (*depth).max(parts.len());
-        }
-        Value::Array(items) => items.iter().for_each(|item| item_reads(item, keys, depth)),
-        Value::Object(map) => map.values().for_each(|item| item_reads(item, keys, depth)),
-        _ => {}
-    }
-}
-
-/// The nodes a `node` field can read, by range, cut to the depth and keys their rules read.
-pub(super) fn nodes(ranges: &[Range<'_>], values: &[V<'_>]) -> Vec<Option<Value>> {
-    let compiled = compiled();
-    let keep = |key: &str| compiled.node_keys.contains(key);
-    ranges
-        .iter()
-        .zip(values)
-        .map(|(range, value)| {
-            compiled
-                .node_types
-                .get(range.kind)
-                .map(|depth| value.to_value_within(*depth, &keep))
-        })
-        .collect()
-}
-
-/// The node of one record, cut as `nodes` cuts it.
-pub(super) fn node_of(kind: &str, value: V<'_>) -> Option<Value> {
-    let compiled = compiled();
-    let keep = |key: &str| compiled.node_keys.contains(key);
-    compiled
-        .node_types
-        .get(kind)
-        .map(|depth| value.to_value_within(*depth, &keep))
 }
 
 pub(super) fn modeled_ids() -> &'static HashSet<&'static str> {
@@ -584,7 +444,7 @@ pub(super) fn run<'a, 't: 'a>(
     positions: &'a Source<'a>,
     ranges: &'a [Range<'a>],
     holders: &'a [Holder],
-    nodes: &'a [Option<Value>],
+    nodes: &'a dyn super::data_model::NodeTree,
     values: &[V<'t>],
     tree: V<'t>,
     model: &'a [Line],

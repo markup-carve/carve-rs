@@ -250,8 +250,13 @@ fn lint_core<'a>(
     if let Some(tree) = tree.filter(|_| data_rules::data_mode()) {
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
         let mut positions = positions;
-        let mut nodes = data_rules::nodes(&positions.all, &values);
-        joined_rows(source, tree, &mut positions, &values, &mut nodes);
+        let mut joined = Vec::new();
+        joined_rows(source, tree, &mut positions, &values, &mut joined);
+        let nodes = TreeNodes {
+            values: &values,
+            joined,
+            made: std::cell::RefCell::new(Vec::new()),
+        };
         out.extend(data_rules::run(
             source,
             &parsed,
@@ -1240,14 +1245,71 @@ impl PartialEq<&str> for LazyPath<'_> {
     }
 }
 
+/// The tree nodes of the ranges, the rows of `joined_rows` after those of the walk, and the values
+/// the data rules have stepped into, by handle.
+struct TreeNodes<'v, 't> {
+    values: &'v [V<'t>],
+    joined: Vec<V<'t>>,
+    made: std::cell::RefCell<Vec<V<'t>>>,
+}
+
+impl<'t> TreeNodes<'_, 't> {
+    fn handle(&self, node: V<'t>) -> Option<u32> {
+        let mut made = self.made.borrow_mut();
+        made.push(node);
+        u32::try_from(made.len() - 1).ok()
+    }
+}
+
+impl data_model::NodeTree for TreeNodes<'_, '_> {
+    fn root(&self, range: u32) -> Option<u32> {
+        let at = range as usize;
+        let node = self
+            .values
+            .get(at)
+            .or_else(|| self.joined.get(at.wrapping_sub(self.values.len())))
+            .copied()?;
+        self.handle(node)
+    }
+
+    fn child(&self, node: u32, step: data_model::Step) -> Option<u32> {
+        let node = *self.made.borrow().get(node as usize)?;
+        let child = match step {
+            data_model::Step::Key(key) => node.get(key),
+            data_model::Step::Index(index) => node.as_array().and_then(|items| items.get(index)),
+        }?;
+        self.handle(child)
+    }
+
+    fn leaf(&self, node: u32) -> data_model::Leaf<'_> {
+        use data_model::Leaf;
+        let Some(node) = self.made.borrow().get(node as usize).copied() else {
+            return Leaf::Absent;
+        };
+        if node.is_null() {
+            Leaf::Absent
+        } else if let Some(text) = node.as_str() {
+            Leaf::Str(text)
+        } else if let Some(b) = node.as_bool() {
+            Leaf::Bool(b)
+        } else if node.is_number() {
+            Leaf::Num(node.as_i64().unwrap_or(0))
+        } else if let Some(items) = node.as_array() {
+            Leaf::List(items.len())
+        } else {
+            Leaf::Object
+        }
+    }
+}
+
 /// C2-W-150: a table row that a continuation row joined omits `pos` (C2-A-158) and still has a block
 /// record, placed where its source layout entry is.
-fn joined_rows(
+fn joined_rows<'t>(
     source: &str,
     tree: V<'_>,
     positions: &mut Ranges<'_>,
-    values: &[V<'_>],
-    nodes: &mut Vec<Option<serde_json::Value>>,
+    values: &[V<'t>],
+    joined: &mut Vec<V<'t>>,
 ) {
     let mut rows = Vec::new();
     for (table, (range, value)) in positions.all.iter().zip(values).enumerate() {
@@ -1366,7 +1428,7 @@ fn joined_rows(
             prev,
             joined: true,
         });
-        nodes.push(data_rules::node_of("table_row", row));
+        joined.push(row);
         if let Some(holder) = holder {
             positions.holders[holder as usize].range = Some(made);
         }
