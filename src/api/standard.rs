@@ -330,7 +330,9 @@ pub(crate) fn div_source(node: &Value, name: &str, definitions: &[Value]) -> Opt
     let mut children = vec![node.clone()];
     children.extend(definitions.iter().cloned());
     let doc = json!({"type": "document", "astVersion": "2.0", "children": children});
-    let tree = Tree::from_value(&doc).ok()?;
+    // The node and the definitions are the engine's own claim input, so the
+    // reader checks, which cost far more than the write, are skipped.
+    let tree = Tree::engine(doc)?;
     let text = super::Carve::default()
         .write(&tree, &WriteOptions::default())
         .ok()?;
@@ -375,7 +377,7 @@ pub(crate) fn inline_body(node: &Map<String, Value>, source: &str) -> Option<Str
         {"type": "paragraph", "children": [Value::Object(bare)]},
     ]});
     let text = super::Carve::default()
-        .write(&Tree::from_value(&doc).ok()?, &WriteOptions::default())
+        .write(&Tree::engine(doc)?, &WriteOptions::default())
         .ok()?;
     text.trim_end_matches('\n')
         .strip_prefix(&format!(":{source}["))?
@@ -510,39 +512,35 @@ pub(crate) struct UsedIds {
 }
 
 impl UsedIds {
-    pub(crate) fn of_owned(view: &crate::ast::owned::Document) -> Self {
-        fn walk(node: &crate::ast::owned::Node, used: &mut UsedIds, depth: usize) {
+    /// The ids of a resolved render view in an arena.
+    pub(crate) fn of_arena(view: &crate::ast::Document<'_>) -> Self {
+        fn walk(node: &crate::ast::Node<'_>, used: &mut UsedIds, depth: usize) {
             if depth > crate::resolve::WALK_CAP {
                 return;
             }
-            if let Some(id) = node.attrs().and_then(|attrs| attrs.id.as_deref()) {
+            if let Some(id) = node.attrs().and_then(|attrs| attrs.id) {
                 used.ids.insert(id.to_string());
             }
-            if let crate::ast::owned::Node::Heading(heading) = node {
-                if let Some(id) = &heading.generated_id {
-                    used.ids.insert(id.to_string());
-                }
+            if let crate::ast::Node::Heading(heading) = node
+                && let Some(id) = heading.generated_id
+            {
+                used.ids.insert(id.to_string());
             }
             node.for_each_child(&mut |child| walk(child, used, depth + 1));
-            match node {
-                crate::ast::owned::Node::BlockExtension(ext) => {
-                    if let Some(slots) = &ext.slots {
-                        used.scan_json(slots);
-                    }
-                }
-                crate::ast::owned::Node::InlineExtension(ext) => {
-                    if let Some(slots) = &ext.slots {
-                        used.scan_json(slots);
-                    }
-                }
-                _ => {}
+            let slots = match node {
+                crate::ast::Node::BlockExtension(ext) => ext.slots,
+                crate::ast::Node::InlineExtension(ext) => ext.slots,
+                _ => None,
+            };
+            if let Some(slots) = slots {
+                used.scan_json(slots);
             }
         }
         let mut used = Self::default();
-        if let Some(id) = view.attrs.as_ref().and_then(|attrs| attrs.id.as_deref()) {
+        if let Some(id) = view.attrs.and_then(|attrs| attrs.id) {
             used.ids.insert(id.to_string());
         }
-        for node in &view.children {
+        for node in &*view.children {
             walk(node, &mut used, 0);
         }
         used
@@ -602,6 +600,16 @@ impl UsedIds {
     }
 }
 
+/// Whether the tabs wrapper writes the authored attribute `key`.
+fn wrapper_keeps(node: &Value, key: &str) -> bool {
+    !(crate::html::url::dropped_name(key)
+        || crate::html::attrs::RESERVED
+            .iter()
+            .any(|reserved| reserved.eq_ignore_ascii_case(key))
+        || key.eq_ignore_ascii_case("class")
+        || (at(node, "/attrs/id").is_string() && key.eq_ignore_ascii_case("id")))
+}
+
 /// Builds the tabs wrapper with the standard authored-attribute rules.
 fn tabs_wrapper(node: &Value, cx: &super::RenderContext<'_>, aria: bool, label: &str) -> String {
     let mut wrapper = String::from("<div");
@@ -626,13 +634,7 @@ fn tabs_wrapper(node: &Value, cx: &super::RenderContext<'_>, aria: bool, label: 
             ) else {
                 continue;
             };
-            if crate::html::url::dropped_name(key)
-                || crate::html::attrs::RESERVED
-                    .iter()
-                    .any(|reserved| reserved.eq_ignore_ascii_case(key))
-                || key.eq_ignore_ascii_case("class")
-                || (at(node, "/attrs/id").is_string() && key.eq_ignore_ascii_case("id"))
-            {
+            if !wrapper_keeps(node, key) {
                 continue;
             }
             let value =

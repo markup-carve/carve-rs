@@ -276,6 +276,21 @@ impl Tree {
         })
     }
 
+    /// A tree of engine-built nodes, decoded without the reader checks and
+    /// without writing its wire form until a caller asks for it.
+    pub(crate) fn engine(mut value: Value) -> Option<Self> {
+        if let Some(map) = value.as_object_mut() {
+            map.remove("type");
+        }
+        let document = serde_json::from_value(value).ok()?;
+        Some(Self::parsed(
+            document,
+            None,
+            None,
+            std::collections::HashMap::new(),
+        ))
+    }
+
     /// Rebuild the wire form after an engine transform changed the owned AST.
     /// The host needs the tree as an AST for rendering and as canonical JSON
     /// for the public boundary; this avoids decoding that JSON back to an AST.
@@ -688,50 +703,82 @@ impl Carve {
             return render_with_diagnostics(input, opts);
         }
         check_length(input.len(), opts)?;
-        let parsed = if self.standard.is_empty()
-            && self.extensions.owned_transforms_only()
+        if let Input::Text(text) = input
+            && self.standard.is_empty()
             && opts.includes.is_none()
+            && (!self.extensions.has_transforms() || self.extensions.owned_transforms_only())
+            && let Some(rendered) = self.render_text(text, opts, refuse_loss)
         {
-            // This tree goes straight to the owned render path. The public
-            // parse call still rebuilds its JSON after claims, but a render
-            // never exposes that intermediate wire form.
-            let mut parsed = parse_with_diagnostics(input, opts)?;
-            if self.may_claim(&parsed.tree) {
-                let opener = |file: Option<&str>, at: usize| match file {
-                    Some(id) => parsed
-                        .tree
-                        .sources
-                        .get(id)
-                        .and_then(|source| standard::opener_name(source, at)),
-                    None => match input {
-                        Input::Text(source) => standard::opener_name(source, at),
-                        Input::Bytes(bytes) => {
-                            let line = bytes
-                                .get(at..)?
-                                .split(|&b| b == b'\n')
-                                .map(String::from_utf8_lossy)
-                                .find(|line| !standard::is_attribute_line(line))?;
-                            standard::opener_name(&line, 0)
-                        }
-                    },
-                };
-                let claimed =
-                    self.matchers
-                        .apply_owned(&mut parsed.tree.document, &opener, &|name| {
-                            self.extensions.declaration(name)
-                        })?;
-                parsed.diagnostics.extend(claimed);
-            }
-            parsed
-        } else {
-            self.parse_with_diagnostics(input, opts)?
-        };
+            return rendered;
+        }
+        let parsed = self.parse_with_diagnostics(input, opts)?;
         let mut rendered = self.render_view(parsed.tree, opts, refuse_loss)?;
         let mut diagnostics = parsed.diagnostics;
         diagnostics.append(&mut rendered.diagnostics);
         rendered.diagnostics = diagnostics;
         rendered.suppressed_diagnostics += parsed.suppressed_diagnostics;
         Ok(rendered)
+    }
+
+    /// The render of a source in one arena: parse, claims, transforms and
+    /// render, with no owned or JSON copy of the whole tree (carve-rs#4366).
+    /// `None` when the parse refuses the source, which the general path reports.
+    fn render_text(
+        &self,
+        text: &str,
+        opts: &Options,
+        refuse_loss: bool,
+    ) -> Option<Result<Rendered, Error>> {
+        let arena = crate::Arena::for_input(text);
+        let mut found = Vec::new();
+        let (mut doc, _, _) = crate::prepare(text, opts, &arena, &mut found).ok()?;
+        let (mut diagnostics, suppressed) = record::cap_includes(&found);
+        let mut changed = false;
+        if !self.claims_nothing() {
+            // Without includes every node is of the top file.
+            let opener = |file: Option<&str>, at: usize| {
+                file.is_none()
+                    .then(|| standard::opener_name(text, at))
+                    .flatten()
+            };
+            match self
+                .matchers
+                .apply_arena(&mut doc, &arena, &opener, &|name| {
+                    self.extensions.declaration(name)
+                }) {
+                Ok((claimed, claims)) => {
+                    diagnostics.extend(claimed);
+                    changed = claims;
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        let mut doc = if self.extensions.has_transforms() {
+            if changed {
+                let _ = crate::resolve_tree_unflattened(&mut doc, opts, &arena);
+            }
+            let mut owned = doc.owned();
+            self.extensions.transform_owned(&mut owned);
+            changed = true;
+            owned.in_arena(&arena)
+        } else {
+            doc
+        };
+        // The parse resolved the tree; only a changed tree is resolved again.
+        let files = if changed {
+            crate::resolve_tree(&mut doc, opts, &arena)
+        } else {
+            None
+        };
+        Some(
+            self.render_arena(&doc, files.as_ref(), opts, Vec::new(), refuse_loss)
+                .map(|mut rendered| {
+                    diagnostics.append(&mut rendered.diagnostics);
+                    rendered.diagnostics = diagnostics;
+                    rendered.suppressed_diagnostics += suppressed;
+                    rendered
+                }),
+        )
     }
 
     /// `render` of a supplied tree with the registered extensions.
@@ -781,15 +828,32 @@ impl Carve {
         } else {
             (tree, Vec::new())
         };
+        let arena = crate::Arena::new();
+        let mut doc = view.document().in_arena(&arena);
+        let files = crate::resolve_tree(&mut doc, opts, &arena);
+        self.render_arena(&doc, files.as_ref(), opts, transform_entries, refuse_loss)
+    }
+
+    /// Renders a tree in an arena that [`crate::resolve_tree`] resolved with
+    /// the registered renderers, and finishes the record.
+    fn render_arena<'a>(
+        &self,
+        doc: &crate::ast::Document<'a>,
+        files: Option<&crate::resolve::files::Files<'a>>,
+        opts: &Options,
+        transform_entries: Vec<Entry>,
+        refuse_loss: bool,
+    ) -> Result<Rendered, Error> {
+        let used_ids = || standard::UsedIds::of_arena(doc);
         let host = extension::Host::new(
             &self.extensions,
             self.standard,
             &self.host,
             opts,
-            &view,
-            self.extensions.has_transforms(),
+            &used_ids,
+            doc.extensions,
         );
-        let rendered = crate::render_tree_hooked(view.document(), opts, &host);
+        let rendered = crate::render_arena_hooked(doc, opts, files, &host);
         let (entries, suppressed) = record::cap_includes(&rendered.diagnostics);
         let mut diagnostics = transform_entries;
         diagnostics.extend(entries);
