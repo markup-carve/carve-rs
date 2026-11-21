@@ -452,30 +452,36 @@ struct Item<'t> {
     joined: Option<String>,
 }
 
-/// A text node with no field beyond its value and geometry; only such runs join, so a field of a later one is compared.
-fn joinable_text(node: V<'_>) -> bool {
-    let mut plain = ty(node) == "text";
-    node.each(&mut |k, _| {
-        plain = plain && matches!(k, "type" | "value" | "pos" | "segments");
+/// Two text nodes whose other fields agree; only such runs join, so a field that differs is compared.
+fn joinable_texts(last: V<'_>, next: V<'_>) -> bool {
+    if ty(last) != "text" || ty(next) != "text" {
+        return false;
+    }
+    let run = |k: &str| matches!(k, "type" | "value" | "pos" | "segments");
+    let (mut own, mut other, mut same) = (0, 0, true);
+    last.each(&mut |k, p| {
+        if !run(k) {
+            own += 1;
+            same = same && next.get(k).is_some_and(|q| equal_values(p, q, false));
+        }
     });
-    plain
+    next.each(&mut |k, _| other += usize::from(!run(k)));
+    same && own == other
 }
 
 fn coalesced(items: Arr<'_>) -> Vec<Item<'_>> {
     let mut out: Vec<Item<'_>> = Vec::with_capacity(items.len());
     for item in items {
-        if joinable_text(item) {
-            if let Some(last) = out.last_mut() {
-                if joinable_text(last.node) {
-                    let mut joined = last
-                        .joined
-                        .take()
-                        .unwrap_or_else(|| text(last.node).to_string());
-                    joined.push_str(text(item));
-                    last.joined = Some(joined);
-                    continue;
-                }
-            }
+        if let Some(last) = out.last_mut()
+            && joinable_texts(last.node, item)
+        {
+            let mut joined = last
+                .joined
+                .take()
+                .unwrap_or_else(|| text(last.node).to_string());
+            joined.push_str(text(item));
+            last.joined = Some(joined);
+            continue;
         }
         out.push(Item {
             node: item,
@@ -695,4 +701,42 @@ pub fn pointers(doc: V<'_>, wanted: &AddrSet<usize>) -> AddrMap<usize, String> {
         });
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trees_equal;
+    use serde_json::{Value, json};
+
+    fn paragraph(children: &[Value]) -> Value {
+        json!({ "type": "paragraph", "children": children })
+    }
+
+    #[test]
+    fn adjacent_texts_join_only_where_their_other_fields_agree() {
+        let with = |v: &str, lang: &str| json!({ "type": "text", "value": v, "lang": lang });
+        let text = |v: &str| json!({ "type": "text", "value": v });
+        let one = paragraph(&[with("ab", "de")]);
+        assert!(trees_equal(
+            &paragraph(&[with("a", "de"), with("b", "de")]),
+            &one
+        ));
+        assert!(!trees_equal(
+            &paragraph(&[with("a", "de"), with("b", "fr")]),
+            &one
+        ));
+        assert!(!trees_equal(
+            &paragraph(&[with("a", "de"), text("b")]),
+            &one
+        ));
+        let null = json!({ "type": "text", "value": "b", "lang": null });
+        assert!(!trees_equal(
+            &paragraph(&[text("a"), null]),
+            &paragraph(&[text("ab")])
+        ));
+        assert!(trees_equal(
+            &paragraph(&[text("a"), text("b")]),
+            &paragraph(&[text("ab")])
+        ));
+    }
 }
