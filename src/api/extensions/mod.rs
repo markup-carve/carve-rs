@@ -419,6 +419,11 @@ impl Matchers {
         self.list.is_empty()
     }
 
+    /// Whether every matcher's claimer is engine code.
+    pub(crate) fn engine_only(&self) -> bool {
+        self.list.iter().all(|m| m.claimer.engine())
+    }
+
     pub(crate) fn check(&self, m: &Matcher) -> Result<(), Error> {
         if self
             .list
@@ -533,9 +538,7 @@ fn claim_candidate(node: &mut OwnedNode, pass: &mut Pass<'_>) -> Result<(), Erro
     }
     let value =
         serde_json::to_value(&*node).map_err(|e| Error::option("extensions", e.to_string()))?;
-    if let Some(map) = value.as_object()
-        && let Some(next) = pass.claim(map)
-    {
+    if let Some(next) = pass.claim_value(&value) {
         *node = serde_json::from_value(Value::Object(next))
             .map_err(|e| Error::option("extensions", e.to_string()))?;
     }
@@ -677,6 +680,20 @@ impl Pass<'_> {
     }
 
     fn claim(&mut self, map: &Map<String, Value>) -> Option<Map<String, Value>> {
+        self.claim_in(map, None)
+    }
+
+    /// [`Pass::claim`] of a node the caller holds as a whole value, which the
+    /// claim reads without a copy.
+    fn claim_value(&mut self, node: &Value) -> Option<Map<String, Value>> {
+        self.claim_in(node.as_object()?, Some(node))
+    }
+
+    fn claim_in(
+        &mut self,
+        map: &Map<String, Value>,
+        whole: Option<&Value>,
+    ) -> Option<Map<String, Value>> {
         let ty = map.get("type").and_then(Value::as_str)?;
         if !matches!(ty, "code_block" | "div" | "inline_extension") {
             return None;
@@ -688,7 +705,10 @@ impl Pass<'_> {
             if !fits(m, ty, name.as_deref(), map) {
                 continue;
             }
-            let node = node.get_or_insert_with(|| Value::Object(map.clone()));
+            let node: &Value = match whole {
+                Some(whole) => whole,
+                None => node.get_or_insert_with(|| Value::Object(map.clone())),
+            };
             match self.try_claim(m, map, node) {
                 Attempt::Declined => {}
                 Attempt::Retained => return None,
@@ -919,7 +939,8 @@ pub(crate) fn classes(attrs: Option<&Value>) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// `node` with its attributes replaced by `id` (kept), `classes` and `key_values`.
+/// The `pos` of `node` and its attributes replaced by `id` (kept), `classes`
+/// and `key_values`, for an element's attribute list.
 pub(crate) fn with_attrs(node: &Value, classes: Vec<Value>, key_values: Vec<Value>) -> Value {
     let mut attrs = Map::new();
     if let Some(id) = node.pointer("/attrs/id") {
@@ -931,15 +952,16 @@ pub(crate) fn with_attrs(node: &Value, classes: Vec<Value>, key_values: Vec<Valu
     if !key_values.is_empty() {
         attrs.insert("keyValues".into(), Value::Array(key_values));
     }
-    let mut out = node.clone();
-    if let Some(map) = out.as_object_mut() {
-        if attrs.is_empty() {
-            map.remove("attrs");
-        } else {
-            map.insert("attrs".into(), Value::Object(attrs));
-        }
+    // Every caller hands the result to `RenderContext::attributes`, which
+    // reads only `attrs` and `pos`, so the rest of the node is not copied.
+    let mut out = Map::new();
+    if let Some(pos) = node.get("pos") {
+        out.insert("pos".into(), pos.clone());
     }
-    out
+    if !attrs.is_empty() {
+        out.insert("attrs".into(), Value::Object(attrs));
+    }
+    Value::Object(out)
 }
 
 /// The code block a fence claim carries as its fallback, without the

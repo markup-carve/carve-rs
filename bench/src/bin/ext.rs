@@ -1,14 +1,45 @@
 //! Times extension-hosted render against core render, 0.2 and 0.1 (carve-rs#4366).
 //!
-//! `cargo run --release --manifest-path bench/Cargo.toml --bin ext -- [--rounds N] [--profile BUNDLE]`
+//! `cargo run --release --manifest-path bench/Cargo.toml --bin ext -- [--rounds N] [--only BUNDLE] [--profile BUNDLE]`
 //!
-//! Per size (2, 8, 32, 128 KiB) and bundle: the median wall time of `Carve::render`
+//! Per size (2, 8, 32, 128 KiB) and bundle: the median thread CPU time, in alternating rounds, of `Carve::render`
 //! with the bundle registered, core `render`, and 0.1.14 `render_html_with_options`
 //! with the matching 0.1 extension, and the factor hosted / core.
 #![allow(clippy::cast_precision_loss)]
 
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
-use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::time::{Duration, Instant};
+
+struct Counting;
+
+static ALLOCS: AtomicU64 = AtomicU64::new(0);
+
+// SAFETY: forwards every call to the system allocator unchanged; the counter is a side effect only.
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        ALLOCS.fetch_add(1, Relaxed);
+        unsafe { System.alloc(l) }
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        unsafe { System.dealloc(p, l) }
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
+        ALLOCS.fetch_add(1, Relaxed);
+        unsafe { System.realloc(p, l, n) }
+    }
+}
+
+#[global_allocator]
+static GLOBAL: Counting = Counting;
+
+/// Allocations of one call of `f`, which a loaded machine does not disturb.
+fn allocs(f: &dyn Fn() -> usize) -> u64 {
+    let before = ALLOCS.load(Relaxed);
+    black_box(f());
+    ALLOCS.load(Relaxed) - before
+}
 
 use carve::api::{self, Carve, Options, extensions};
 
@@ -22,19 +53,41 @@ fn doc(size: usize) -> String {
     s
 }
 
-fn median(rounds: usize, mut f: impl FnMut() -> usize) -> f64 {
-    for _ in 0..3 {
-        black_box(f());
-    }
-    let mut t: Vec<f64> = (0..rounds)
-        .map(|_| {
-            let s = Instant::now();
+/// CPU time of the calling thread, which a loaded machine disturbs less than
+/// wall time.
+fn cpu_now() -> Duration {
+    let mut t = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `t` is a valid, writable timespec for the call.
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &raw mut t) };
+    Duration::new(
+        u64::try_from(t.tv_sec).unwrap_or(0),
+        u32::try_from(t.tv_nsec).unwrap_or(0),
+    )
+}
+
+/// Median thread CPU times of `fs`, measured in alternating rounds so a
+/// change of the machine's load reaches every function alike.
+fn medians<const N: usize>(rounds: usize, fs: [&dyn Fn() -> usize; N]) -> [f64; N] {
+    for f in &fs {
+        for _ in 0..3 {
             black_box(f());
-            s.elapsed().as_secs_f64() * 1e3
-        })
-        .collect();
-    t.sort_by(f64::total_cmp);
-    t[t.len() / 2]
+        }
+    }
+    let mut times: [Vec<f64>; N] = std::array::from_fn(|_| Vec::with_capacity(rounds));
+    for _ in 0..rounds {
+        for (f, t) in fs.iter().zip(times.iter_mut()) {
+            let s = cpu_now();
+            black_box(f());
+            t.push((cpu_now() - s).as_secs_f64() * 1e3);
+        }
+    }
+    times.map(|mut t| {
+        t.sort_by(f64::total_cmp);
+        t[t.len() / 2]
+    })
 }
 
 fn host(name: &str) -> Carve {
@@ -133,7 +186,14 @@ fn main() {
         }
         return;
     }
-    println!("| bundle | size | core ms | hosted ms | factor | 0.1.14 hosted ms | hosted/0.1 |");
+    // `--only NAME`: times that bundle alone.
+    let only = args
+        .iter()
+        .position(|a| a == "--only")
+        .and_then(|i| args.get(i + 1));
+    println!(
+        "| bundle | size | core ms | hosted ms | factor | 0.1.14 hosted ms | hosted/0.1 | core allocs | hosted allocs |"
+    );
     for name in [
         "details",
         "mermaid",
@@ -142,19 +202,26 @@ fn main() {
         "callouts",
         "fenced4",
     ] {
+        if only.is_some_and(|o| o != name) {
+            continue;
+        }
         let carve = host(name);
         for kib in [2usize, 8, 32, 128] {
             let src = doc(kib * 1024);
             let r = if kib >= 128 { rounds.min(15) } else { rounds };
-            let core = median(r, || {
-                api::render(src.as_str(), &opts).map_or(0, |h| h.len())
-            });
-            let hosted = median(r, || {
-                carve.render(src.as_str(), &opts).map_or(0, |h| h.len())
-            });
-            let old = median(r, || old_render(&src, name));
+            let [core, hosted, old] = medians(
+                r,
+                [
+                    &|| api::render(src.as_str(), &opts).map_or(0, |h| h.len()),
+                    &|| carve.render(src.as_str(), &opts).map_or(0, |h| h.len()),
+                    &|| old_render(&src, name),
+                ],
+            );
+            let core_allocs = allocs(&|| api::render(src.as_str(), &opts).map_or(0, |h| h.len()));
+            let hosted_allocs =
+                allocs(&|| carve.render(src.as_str(), &opts).map_or(0, |h| h.len()));
             println!(
-                "| {name} | {kib}k | {core:.3} | {hosted:.3} | {:.2} | {old:.3} | {:.2} |",
+                "| {name} | {kib}k | {core:.3} | {hosted:.3} | {:.2} | {old:.3} | {:.2} | {core_allocs} | {hosted_allocs} |",
                 hosted / core,
                 hosted / old
             );
@@ -205,7 +272,44 @@ fn inputs() -> Vec<String> {
         out.push(format!("- {}\n", a.replace('\n', "\n  ")));
         out.push(format!("{a}\n{}", ext[(i + 1) % ext.len()]));
     }
+    out.extend(family());
     out.push(doc(8 * 1024));
+    out
+}
+
+/// Claimed and transformed nodes next to what the resolve fills in: ref
+/// links, notes, abbreviations, headings and ids, in each container.
+fn family() -> Vec<String> {
+    let lines = [
+        "<1> See [the ref][r] and [^n].",
+        "<1> *Term* HTML and `code`",
+        "<1> One\n<2> Two [x](u)",
+        "<1> {#cid} Marked",
+    ];
+    let blocks = [
+        "```js\nlet a = 1 <1>\nlet b = 2 <2>\n```\n{LINE}\n",
+        "::: code-group\n```js [A]\na <1>\n```\n\n```sh\nb\n```\n:::\n{LINE}\n",
+        "::: details \"S [r]\"\n# Inside\n\n{LINE}\n:::\n",
+        "```mermaid\ngraph TD; A-->B <1>\n```\n{LINE}\n",
+        "```math\nx <1>\n```\n{LINE}\n",
+    ];
+    let tail = "\n# Head\n\n# Head\n\n[r]: /dest\n[^n]: A note.\n*[HTML]: Hyper\n";
+    let mut out = Vec::new();
+    for block in blocks {
+        for line in lines {
+            let body = block.replace("{LINE}", line);
+            for wrap in 0..4 {
+                let wrapped = match wrap {
+                    1 => format!("> {}", body.trim_end().replace('\n', "\n> ")),
+                    2 => format!("- {}", body.trim_end().replace('\n', "\n  ")),
+                    3 => format!("::: note\n{body}:::\n"),
+                    _ => body.clone(),
+                };
+                out.push(format!("{wrapped}{tail}"));
+                out.push(format!("# Top {{#t}}\n\n{wrapped}\n{wrapped}{tail}"));
+            }
+        }
+    }
     out
 }
 
