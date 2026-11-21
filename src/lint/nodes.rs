@@ -2013,6 +2013,9 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
     let bytes = value.as_bytes();
     let mut underscores = value.match_indices('_').map(|(at, _)| at).peekable();
     while let Some(start) = underscores.next() {
+        while underscores.peek().is_some_and(|end| escaped(bytes, *end)) {
+            underscores.next();
+        }
         let Some(&end) = underscores.peek() else {
             break;
         };

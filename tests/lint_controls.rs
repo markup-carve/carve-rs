@@ -19,6 +19,11 @@ fn djot_underscore_respects_both_word_boundaries() {
             .iter()
             .any(|entry| entry.code == "djot-emphasis-underscore")
     );
+    assert!(
+        lint("_a\\_b_\n", &options)
+            .iter()
+            .any(|entry| entry.code == "djot-emphasis-underscore")
+    );
 }
 
 fn lines(source: &str) -> Vec<u32> {
