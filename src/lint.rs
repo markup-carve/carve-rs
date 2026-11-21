@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 mod controls;
+mod data_attrs;
 mod data_interpreter;
 mod data_model;
 #[macro_use]
@@ -16,6 +17,7 @@ mod includes;
 mod legacy;
 mod lines;
 mod nodes;
+mod pairs;
 use crate::view::V;
 mod walk;
 
@@ -227,6 +229,7 @@ fn lint_core<'a>(
         legacy_order,
         comments,
         holders,
+        values,
     } = tree.map_or_else(walk::Walk::empty, |tree| walk::Walk::new(tree, arena));
     let positions = Ranges::new(source, ranges, holders);
     let mut out = Vec::new();
@@ -244,13 +247,24 @@ fn lint_core<'a>(
     }
     colon_fence_mismatches(source, opts, &positions, &mut out);
     referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
-    if data_rules::data_mode() && tree.is_some() {
+    if let Some(tree) = tree.filter(|_| data_rules::data_mode()) {
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
+        let mut positions = positions;
+        let mut joined = Vec::new();
+        joined_rows(source, tree, &mut positions, &values, &mut joined);
+        let nodes = TreeNodes {
+            values: &values,
+            joined,
+            made: std::cell::RefCell::new(Vec::new()),
+        };
         out.extend(data_rules::run(
             source,
             &parsed,
             &positions.all,
             &positions.holders,
+            &nodes,
+            &values,
+            tree,
             &line_model,
             opts,
         ));
@@ -1169,6 +1183,7 @@ impl<'a> Ranges<'a> {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)] // Independent facts of a node, read by separate rules.
 struct Range<'a> {
     start: usize,
     end: usize,
@@ -1188,6 +1203,9 @@ struct Range<'a> {
     index: u32,
     /// The range of the item before it in the same `children` list.
     prev: Option<u32>,
+    /// A table row without `pos` that a continuation row joined, placed by its source layout entry
+    /// for the data rules (C2-W-150).
+    joined: bool,
 }
 
 /// A node that holds `children`: its range, if it has one, and the holder that holds it.
@@ -1226,6 +1244,243 @@ impl PartialEq<&str> for LazyPath<'_> {
     fn eq(&self, other: &&str) -> bool {
         self.len() == other.len() && self.text() == *other
     }
+}
+
+/// The tree nodes of the ranges, the rows of `joined_rows` after those of the walk, and the values
+/// the data rules have stepped into, by handle.
+struct TreeNodes<'v, 't> {
+    values: &'v [V<'t>],
+    joined: Vec<V<'t>>,
+    made: std::cell::RefCell<Vec<V<'t>>>,
+}
+
+impl<'t> TreeNodes<'_, 't> {
+    fn handle(&self, node: V<'t>) -> Option<u32> {
+        let mut made = self.made.borrow_mut();
+        made.push(node);
+        u32::try_from(made.len() - 1).ok()
+    }
+}
+
+impl data_model::NodeTree for TreeNodes<'_, '_> {
+    fn root(&self, range: u32) -> Option<u32> {
+        let at = range as usize;
+        let node = self
+            .values
+            .get(at)
+            .or_else(|| self.joined.get(at.wrapping_sub(self.values.len())))
+            .copied()
+            .filter(|node| node.is_object())?;
+        self.handle(node)
+    }
+
+    fn step(&self, node: u32, step: data_model::Step) -> data_model::Leaf<'_> {
+        use data_model::Leaf;
+        let Some(value) = self.made.borrow().get(node as usize).copied() else {
+            return Leaf::Absent;
+        };
+        let found = match step {
+            data_model::Step::Key(key) => value.get(key),
+            data_model::Step::Index(index) => value.as_array().and_then(|items| items.get(index)),
+        };
+        let Some(found) = found.filter(|found| !found.is_null()) else {
+            return Leaf::Absent;
+        };
+        if let Some(text) = found.as_str() {
+            Leaf::Str(text)
+        } else if let Some(b) = found.as_bool() {
+            Leaf::Bool(b)
+        } else if found.is_number() {
+            Leaf::Num(found.as_i64().unwrap_or(0))
+        } else {
+            self.handle(found).map_or(Leaf::Absent, Leaf::Node)
+        }
+    }
+
+    fn len(&self, node: u32) -> Option<usize> {
+        let value = self.made.borrow().get(node as usize).copied()?;
+        value.as_array().map(crate::view::Arr::len)
+    }
+}
+
+/// C2-W-150: a table row that a continuation row joined omits `pos` (C2-A-158) and still has a block
+/// record, placed where its source layout entry is.
+fn joined_rows<'t>(
+    source: &str,
+    tree: V<'_>,
+    positions: &mut Ranges<'_>,
+    values: &[V<'t>],
+    joined: &mut Vec<V<'t>>,
+) {
+    let rows = pos_less_rows(&positions.all, values);
+    if rows.is_empty() {
+        return;
+    }
+    let entries = crate::api::layout::entries(source, &tree.to_value());
+    let spans: HashMap<&str, (usize, usize)> = entries
+        .iter()
+        .filter_map(|entry| {
+            let byte = |key: &str| {
+                entry
+                    .get(key)
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|at| usize::try_from(at).ok())
+            };
+            Some((
+                entry.get("path")?.as_str()?,
+                (byte("startByte")?, byte("endByte")?),
+            ))
+        })
+        .collect();
+    let breaks: Vec<usize> = memchr_lines(source);
+    let line_of = |at: usize| breaks.partition_point(|&brk| brk < at) + 1;
+    let mut index = JoinIndex::new(positions);
+    for (table, group, row_at, row) in rows {
+        let Some(table_path) = positions
+            .all
+            .get(table)
+            .map(|range| range.path.as_str().to_owned())
+        else {
+            continue;
+        };
+        let group_path = format!("{table_path}/children/{group}");
+        let path = format!("{group_path}/children/{row_at}");
+        let (Some(&(start, end)), Some(&parent), Ok(at), Ok(made)) = (
+            spans.get(path.as_str()),
+            index.groups.get(group_path.as_str()),
+            u32::try_from(row_at),
+            u32::try_from(positions.all.len()),
+        ) else {
+            continue;
+        };
+        let prev = at
+            .checked_sub(1)
+            .and_then(|before| index.siblings.get(&(parent, before)).copied())
+            .and_then(|before| u32::try_from(before).ok());
+        let next = index.siblings.get(&(parent, at + 1)).copied();
+        let (node, holder) = index.cells.get(&(parent, at)).copied().unzip();
+        let node = node.flatten();
+        let text = OnceCell::new();
+        if node.is_none() {
+            let _ = text.set(path);
+        }
+        positions.all.push(Range {
+            start,
+            end,
+            path: LazyPath { node, text },
+            kind: "table_row",
+            start_line: line_of(start),
+            end_line: line_of(end.saturating_sub(1).max(start)),
+            has_attrs: false,
+            footnote_key: None,
+            form_block: false,
+            image_line: false,
+            holder: Some(parent),
+            index: at,
+            prev,
+            joined: true,
+        });
+        index.siblings.insert((parent, at), made as usize);
+        joined.push(row);
+        if let Some(holder) = holder.and_then(|cells| positions.holders.get_mut(cells as usize)) {
+            holder.range = Some(made);
+        }
+        if let Some(next) = next.and_then(|after| positions.all.get_mut(after)) {
+            next.prev = Some(made);
+        }
+    }
+}
+
+/// The offsets of the line breaks of a source.
+fn memchr_lines(source: &str) -> Vec<usize> {
+    source
+        .bytes()
+        .enumerate()
+        .filter_map(|(at, byte)| (byte == b'\n').then_some(at))
+        .collect()
+}
+
+/// What `joined_rows` looks up, indexed once per call.
+struct JoinIndex<'a> {
+    /// The holder of the children of each table group, by the group's path.
+    groups: HashMap<String, u32>,
+    /// The range of each item of a `children` list, by holder and index.
+    siblings: HashMap<(u32, u32), usize>,
+    /// For a row without a range: the path node of the row and the holder of its cells, read off a
+    /// cell of it that has a range, by the group's holder and the row's index.
+    cells: HashMap<(u32, u32), (Option<&'a walk::PathNode<'a>>, u32)>,
+}
+
+impl<'a> JoinIndex<'a> {
+    fn new(positions: &Ranges<'a>) -> Self {
+        let holder_of: HashMap<u32, u32> = positions
+            .holders
+            .iter()
+            .enumerate()
+            .filter_map(|(at, holder)| Some((holder.range?, u32::try_from(at).ok()?)))
+            .collect();
+        let mut groups = HashMap::new();
+        let mut siblings = HashMap::new();
+        let mut cells = HashMap::new();
+        for (at, range) in positions.all.iter().enumerate() {
+            let Ok(own) = u32::try_from(at) else {
+                break;
+            };
+            if let Some(parent) = range.holder {
+                siblings.insert((parent, range.index), at);
+            }
+            if matches!(range.kind, "table_head" | "table_body" | "table_foot")
+                && let Some(&holder) = holder_of.get(&own)
+            {
+                groups.insert(range.path.as_str().to_owned(), holder);
+            }
+            let Some(cell_holder) = range.holder.filter(|_| range.kind == "table_cell") else {
+                continue;
+            };
+            let Some(row_holder) = positions.holders.get(cell_holder as usize) else {
+                continue;
+            };
+            let row = range.path.node.and_then(|node| node.previous?.previous);
+            if let (None, Some(group), Some(walk::Segment::Index(index))) = (
+                row_holder.range,
+                row_holder.up,
+                row.map(|node| node.segment),
+            ) && let Ok(index) = u32::try_from(index)
+            {
+                cells.entry((group, index)).or_insert((row, cell_holder));
+            }
+        }
+        Self {
+            groups,
+            siblings,
+            cells,
+        }
+    }
+}
+
+/// The table rows without `pos`: the table's range, the group and row indexes, and the row.
+fn pos_less_rows<'t>(ranges: &[Range<'_>], values: &[V<'t>]) -> Vec<(usize, usize, usize, V<'t>)> {
+    let mut rows = Vec::new();
+    for (table, (range, value)) in ranges.iter().zip(values).enumerate() {
+        if range.kind != "table" {
+            continue;
+        }
+        let groups = value.at("children");
+        let groups = groups
+            .as_array()
+            .into_iter()
+            .flat_map(crate::view::Arr::iter);
+        for (group, rows_of) in groups.enumerate() {
+            let list = rows_of.at("children");
+            let list = list.as_array().into_iter().flat_map(crate::view::Arr::iter);
+            for (index, row) in list.enumerate() {
+                if row.ty() == "table_row" && row.pos().is_none() {
+                    rows.push((table, group, index, row));
+                }
+            }
+        }
+    }
+    rows
 }
 
 /// Records item `at` of a `children` list, made as range `made`, as the previous sibling of item `at + 1`.

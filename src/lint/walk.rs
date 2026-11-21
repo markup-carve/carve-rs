@@ -73,6 +73,8 @@ pub(super) struct Walk<'a> {
     pub(super) comments: Vec<V<'a>>,
     /// The nodes that hold `children`, which the ranges point into.
     pub(super) holders: Vec<Holder>,
+    /// The node of each range, for the `node` field of the data rules.
+    pub(super) values: Vec<V<'a>>,
 }
 
 /// What the node rules carry down; `None` below `data`, `props`, `pos` and `segments`.
@@ -131,6 +133,7 @@ impl<'a> Walk<'a> {
             legacy_order: Vec::new(),
             comments: Vec::new(),
             holders: Vec::new(),
+            values: Vec::new(),
         }
     }
 
@@ -329,7 +332,9 @@ impl<'a> Visit<'a> {
                 holder: entry.place.holder,
                 index: entry.place.index.unwrap_or(0),
                 prev: None,
+                joined: false,
             });
+            self.walk.values.push(value);
             if let (Some(slot), Some(at), Some(made)) = (
                 entry.place.list.and_then(|list| self.lists.get_mut(list)),
                 entry.place.index,

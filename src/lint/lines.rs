@@ -192,16 +192,7 @@ pub(super) fn lines(source: &str, ranges: &[Range<'_>]) -> Vec<Line> {
     for (index, ((&start, raw), fact)) in lines.enumerate() {
         let number = index + 1;
         let paragraph = fact.paragraph;
-        let mut bytes = raw.as_bytes().to_vec();
-        for range in fact.masks {
-            let from = range.start.saturating_sub(start).min(bytes.len());
-            let to = range.end.saturating_sub(start).min(bytes.len());
-            bytes
-                .get_mut(from..to)
-                .into_iter()
-                .flatten()
-                .for_each(|b| *b = 0);
-        }
+        let bytes = masked(raw, start, &fact);
         let path = paragraph
             .or(fact.line_block)
             .map_or_else(String::new, |r| r.path.text());
@@ -322,6 +313,28 @@ fn line_facts<'a>(starts: &[usize], raws: &[&str], ranges: &'a [Range<'a>]) -> V
         }
     }
     facts
+}
+
+/// The line with the characters of its masked spans read as NUL.
+fn masked(raw: &str, start: usize, fact: &LineFacts<'_>) -> Vec<u8> {
+    let mut bytes = raw.as_bytes().to_vec();
+    // C2-B-027: the quote marks that prefix a later line of a span are no span characters (data
+    // rules only; the hand-written ones keep their reading).
+    let prefix = super::data_model::quote_prefix_end(raw, fact.quotes);
+    let data = super::data_rules::data_mode();
+    for range in &fact.masks {
+        let mut from = range.start.saturating_sub(start).min(bytes.len());
+        if data && range.start < start {
+            from = from.max(prefix.min(bytes.len()));
+        }
+        let to = range.end.saturating_sub(start).min(bytes.len());
+        bytes
+            .get_mut(from..to)
+            .into_iter()
+            .flatten()
+            .for_each(|b| *b = 0);
+    }
+    bytes
 }
 
 /// C2-B-010: a punctuation character behind an odd run of backslashes is escaped; counted on the raw line.
@@ -475,7 +488,7 @@ fn starts_block(text: &str) -> bool {
 }
 
 /// C2-B-090: one or more glued valid attribute blocks alone on the line, spaced or with an id or a key (carve#6197).
-fn valid_attribute_line(text: &str) -> bool {
+pub(super) fn valid_attribute_line(text: &str) -> bool {
     let text = text.trim_end_matches([' ', '\t']);
     text.starts_with('{')
         && crate::attr::parse_glued(text, 0).is_some_and(|(_, end)| end == text.len())

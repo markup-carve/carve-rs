@@ -44,7 +44,7 @@ mod img_fence;
 mod import;
 mod info;
 pub mod json;
-mod layout;
+pub(crate) mod layout;
 mod migrate;
 mod options;
 mod patch;

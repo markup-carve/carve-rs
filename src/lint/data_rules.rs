@@ -6,9 +6,11 @@ use super::data_interpreter::{
     pattern, quick_rejects, quick_tests,
 };
 use super::data_model::{LineRec, Node, Records, Subject};
+use super::pairs;
 use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
+use crate::view::V;
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -56,6 +58,7 @@ enum Over {
     Line,
     Block,
     Inline,
+    Attribute,
 }
 
 struct Entry {
@@ -73,6 +76,8 @@ struct Entry {
 struct Each {
     subject: Expr,
     pattern: Option<Pattern>,
+    /// `pairs`: the mark of the pair scan and whether it is strict (C2-W-147).
+    pairs: Option<(&'static str, bool)>,
     base: Option<Expr>,
 }
 
@@ -116,6 +121,7 @@ fn compile_rule(rule: &'static Value) -> Rule {
     let scope = Scope {
         model: model(),
         lets: &let_names,
+        rule,
     };
     let lets = let_names
         .iter()
@@ -124,6 +130,7 @@ fn compile_rule(rule: &'static Value) -> Rule {
     let over = match rule["over"].as_str() {
         Some("block") => Over::Block,
         Some("inline") => Over::Inline,
+        Some("attribute") => Over::Attribute,
         _ => Over::Line,
     };
     let values = |object: &'static Value| -> Vec<(&'static str, &'static Value)> {
@@ -165,7 +172,8 @@ fn compile_rule(rule: &'static Value) -> Rule {
         })
         .collect();
     let each = rule.get("each").and_then(|each| {
-        let items = each["matches"].as_array()?;
+        let pairs = each["pairs"].as_array();
+        let items = pairs.or_else(|| each["matches"].as_array())?;
         let subject = items.first()?;
         let base = match subject.get("f").and_then(Value::as_str) {
             Some("text") => Some(field_expr("start")),
@@ -177,7 +185,12 @@ fn compile_rule(rule: &'static Value) -> Rule {
             pattern: items
                 .get(1)
                 .and_then(Value::as_str)
+                .filter(|_| pairs.is_none())
                 .and_then(|text| pattern(text, "")),
+            pairs: pairs.and_then(|items| {
+                let mark = items.get(1)?.as_str()?;
+                Some((mark, items.get(2).and_then(Value::as_str) == Some("strict")))
+            }),
             base,
         })
     });
@@ -345,14 +358,55 @@ fn run_rule<'a>(
         report(rule, open, &mut eval, out, path);
         return;
     };
+    run_each(rule, open, each, &mut eval, out, path);
+}
+
+/// The report entries of a rule with `each`, once per match or pair of its text.
+fn run_each(
+    rule: &'static Rule,
+    open: u64,
+    each: &Each,
+    eval: &mut Eval<'_, '_>,
+    out: &mut Vec<Diagnostic>,
+    path: &dyn Fn() -> String,
+) {
     let subject = eval.value(&each.subject);
     let Val::Str(text) = subject else {
         return;
     };
+    let base = eval.offset(each.base.as_ref());
+    if let Some((mark, strict)) = each.pairs {
+        for pair in pairs::scan(&text, mark, strict) {
+            eval.spans.clear();
+            eval.spans.extend(pair);
+            eval.base = base;
+            report(rule, open, eval, out, path);
+        }
+        return;
+    }
     let Some(pattern) = &each.pattern else {
         return;
     };
-    let base = eval.offset(each.base.as_ref());
+    if let Some(branches) = &pattern.branches {
+        for found in pattern.re.find_iter(&text) {
+            let (from, span) = (found.start(), found.as_str());
+            eval.spans.clear();
+            let branch = branches.iter().find(|(re, _)| re.is_match(span));
+            if let Some((re, groups)) = branch.filter(|(_, groups)| !groups.is_empty())
+                && let Some(captures) = re.captures(span)
+            {
+                for &(name, index) in groups {
+                    if let Some(group) = captures.get(index) {
+                        eval.spans
+                            .push((name, from + group.start(), from + group.end()));
+                    }
+                }
+            }
+            eval.base = base;
+            report(rule, open, eval, out, path);
+        }
+        return;
+    }
     for found in pattern.re.captures_iter(&text) {
         eval.spans.clear();
         for &(name, index) in &pattern.groups {
@@ -361,7 +415,7 @@ fn run_rule<'a>(
             }
         }
         eval.base = base;
-        report(rule, open, &mut eval, out, path);
+        report(rule, open, eval, out, path);
     }
 }
 
@@ -416,11 +470,15 @@ fn type_matches(rule: &Rule, kind: &str) -> bool {
 }
 
 /// Runs the active rules of the model over the records of one parse, lines first, then nodes in tree order.
-pub(super) fn run<'a>(
+#[allow(clippy::too_many_arguments)]
+pub(super) fn run<'a, 't: 'a>(
     source: &'a str,
     positions: &'a Source<'a>,
     ranges: &'a [Range<'a>],
     holders: &'a [Holder],
+    nodes: &'a dyn super::data_model::NodeTree,
+    values: &[V<'t>],
+    tree: V<'t>,
     model: &'a [Line],
     options: &LintOptions,
 ) -> Vec<Diagnostic> {
@@ -435,7 +493,30 @@ pub(super) fn run<'a>(
     if active.is_empty() {
         return out;
     }
-    let records = Records::new(source, positions, ranges, holders, model);
+    // The id records read the heading ids of the run's options; the tree here has the default ones.
+    let generated = (options.heading_ids != crate::options::HeadingIds::default()).then(|| {
+        let opts = crate::Options {
+            heading_ids: options.heading_ids,
+            ..crate::Options::default()
+        };
+        let mut ids = HashMap::new();
+        crate::with_lint_tree(source, &opts, &opts, true, |tree, _| {
+            if let Some(tree) = tree {
+                super::data_model::heading_ids(tree, &mut ids);
+            }
+        });
+        ids
+    });
+    let mut records = Records::new(
+        source,
+        positions,
+        ranges,
+        holders,
+        nodes,
+        model,
+        super::data_model::TreeFacts::read(ranges, values, Some(tree), generated.as_ref()),
+        options.extensions.clone(),
+    );
     CACHE.with(|cache| {
         // A nested lint (none today) gets buckets of its own instead of the shared ones.
         let mut own;
@@ -449,8 +530,13 @@ pub(super) fn run<'a>(
         if cache.active != active {
             *cache = Cache::new(active);
         }
+        if !cache.attribute_rules.is_empty() {
+            records.read_attributes(values);
+        }
         run_lines(&records, cache, &mut out);
         run_nodes(&records, cache, &mut out);
+        run_text_runs(&records, cache, &mut out);
+        run_attributes(&records, cache, &mut out);
     });
     out
 }
@@ -502,6 +588,7 @@ struct Cache {
     line_rules: Vec<&'static Rule>,
     block_rules: Vec<&'static Rule>,
     inline_rules: Vec<&'static Rule>,
+    attribute_rules: Vec<&'static Rule>,
     literals: Vec<(bool, &'static str)>,
     lines: Small<String, Small<u64, Bucket>>,
     blocks: Small<String, Small<String, [Option<Bucket>; 8]>>,
@@ -535,6 +622,7 @@ impl Cache {
             line_rules,
             block_rules: over(Over::Block),
             inline_rules: over(Over::Inline),
+            attribute_rules: over(Over::Attribute),
             literals,
             active,
             ..Self::default()
@@ -674,7 +762,13 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
             }),
         };
         last = Some((key, found));
-        let path = || records.lines[index].path.to_owned();
+        // C2-W-138: a finding on a line of a pipe table that holds no node names the table.
+        let path = || match records.lines[index].path {
+            "" => records
+                .line_table(index)
+                .map_or_else(String::new, |table| records.path_of(table)),
+            path => path.to_owned(),
+        };
         for rule in buckets[found].iter() {
             run_rule(*rule, records, Subject::Line(index), index, out, &path);
         }
@@ -719,6 +813,65 @@ fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<(&'static R
             .as_ref()
             .is_some_and(|types| types.contains(&kind))
     })
+}
+
+/// C2-W-140: the inline rules that name `text_run`, over each text run.
+fn run_text_runs(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
+    let wanted = cache.inline_rules.iter().any(|rule| {
+        rule.types
+            .as_ref()
+            .is_some_and(|types| types.contains(&"text_run"))
+    });
+    if !wanted {
+        return;
+    }
+    for at in 0..records.ranges.len() {
+        let Some(record) = records.text_run(at) else {
+            continue;
+        };
+        let bucket = cache.inline(("text_run", record.first_byte()));
+        let path = || records.path_of(record.range);
+        for rule in bucket.iter() {
+            run_rule(
+                *rule,
+                records,
+                Subject::Inline(&record),
+                record.line_index,
+                out,
+                &path,
+            );
+        }
+    }
+}
+
+/// C2-W-148: the attribute rules over each attribute record whose owner has a type they name.
+fn run_attributes(records: &Records<'_>, cache: &Cache, out: &mut Vec<Diagnostic>) {
+    for (at, part) in records.attributes.parts.iter().enumerate() {
+        let owner = &records.attributes.owners[part.owner as usize];
+        let range = &records.ranges[owner.range as usize];
+        let kind = if range.kind == "comment" && range.form_block {
+            "comment_block"
+        } else {
+            range.kind
+        };
+        let line_index = records
+            .positions()
+            .line_of(part.start)
+            .min(records.lines.len().saturating_sub(1));
+        let path = || records.path_of(owner.range);
+        for rule in &cache.attribute_rules {
+            if type_matches(rule, kind) {
+                run_rule(
+                    (rule, u64::MAX),
+                    records,
+                    Subject::Attribute(at as u32),
+                    line_index,
+                    out,
+                    &path,
+                );
+            }
+        }
+    }
 }
 
 fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {

@@ -62,6 +62,33 @@ pub(super) enum F {
     MarkerColumn,
     Width,
     Kind,
+    Node,
+    AncestorIds,
+    Key,
+    Value,
+    KeyEnd,
+    Kept,
+    LastKey,
+    Semantic,
+    SemanticValue,
+    Entries,
+    EntryTotal,
+    Format,
+    Columns,
+    HeadRows,
+    BodyRows,
+    FootRows,
+    AlignOverlap,
+    ValignOverlap,
+    Id,
+    Identity,
+    Layout,
+    SourceFormat,
+    Group,
+    RowIndex,
+    TableAbove,
+    TableBelow,
+    RawRef,
     Unknown,
     /// Not a field: the fact that the previous line has the same leaf (`prev.leaf_id == leaf_id`).
     PrevSameLeaf,
@@ -75,6 +102,23 @@ const FIELDS: &[(&str, F)] = &[
     ("leaf_head", F::LeafHead),
     ("leaf_next", F::LeafNext),
     ("ancestors", F::Ancestors),
+    ("ancestor_ids", F::AncestorIds),
+    ("key", F::Key),
+    ("value", F::Value),
+    ("key_end", F::KeyEnd),
+    ("kept", F::Kept),
+    ("last_key", F::LastKey),
+    ("semantic", F::Semantic),
+    ("semantic_value", F::SemanticValue),
+    ("entries", F::Entries),
+    ("entry_total", F::EntryTotal),
+    ("format", F::Format),
+    ("columns", F::Columns),
+    ("head_rows", F::HeadRows),
+    ("body_rows", F::BodyRows),
+    ("foot_rows", F::FootRows),
+    ("align_overlap", F::AlignOverlap),
+    ("valign_overlap", F::ValignOverlap),
     ("attached_here", F::AttachedHere),
     ("blank", F::Blank),
     ("body", F::Body),
@@ -112,10 +156,20 @@ const FIELDS: &[(&str, F)] = &[
     ("parent", F::Parent),
     ("prev_type", F::PrevType),
     ("type", F::Type),
+    ("node", F::Node),
     ("content_column", F::ContentColumn),
     ("marker_column", F::MarkerColumn),
     ("width", F::Width),
     ("kind", F::Kind),
+    ("id", F::Id),
+    ("identity", F::Identity),
+    ("layout", F::Layout),
+    ("source_format", F::SourceFormat),
+    ("group", F::Group),
+    ("row_index", F::RowIndex),
+    ("table_above", F::TableAbove),
+    ("table_below", F::TableBelow),
+    ("raw_ref", F::RawRef),
 ];
 
 fn field_id(name: &str) -> F {
@@ -125,12 +179,29 @@ fn field_id(name: &str) -> F {
         .map_or(F::Unknown, |(_, id)| *id)
 }
 
+/// The name of a field, as an AST key when the field reads a node of the tree.
+pub(super) fn field_name(id: F) -> &'static str {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        let mut names = vec![""; F::PrevSameLeaf as usize + 1];
+        for (name, known) in FIELDS {
+            names[*known as usize] = name;
+        }
+        names
+    });
+    names.get(id as usize).copied().unwrap_or("")
+}
+
 /// One step of a dotted field path.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Seg {
     Item,
     Field(F),
     At(usize),
+    /// An index counted from the end of a list: `-1` is the last item (C2-W-141).
+    AtEnd(usize),
+    /// A name no record field has: a key of an AST node (C2-W-140).
+    Key(&'static str),
 }
 
 pub(super) type Path = Box<[Seg]>;
@@ -143,8 +214,14 @@ fn path(text: &str) -> Path {
                 Seg::Item
             } else if let Ok(index) = part.parse() {
                 Seg::At(index)
+            } else if let Some(index) = part.strip_prefix('-').and_then(|n| n.parse().ok()) {
+                Seg::AtEnd(index)
             } else {
-                Seg::Field(field_id(part))
+                match field_id(part) {
+                    // The names live as long as the compiled model, which is never dropped.
+                    F::Unknown => Seg::Key(Box::leak(part.to_owned().into_boxed_str())),
+                    id => Seg::Field(id),
+                }
             }
         })
         .collect()
@@ -175,6 +252,62 @@ pub(super) struct Pattern {
     edges: Option<Box<Edges>>,
     /// Bytes of which every match holds at least one.
     needs: Option<Box<[bool; 256]>>,
+    /// The pattern is `STRIP_QUOTES`, read without the regex engine.
+    strip_quotes: bool,
+    /// For a top-level alternation without look-around in which some branch has no group: each branch
+    /// anchored at the start, with its groups. A span the whole pattern finds is the match of the first
+    /// branch that matches at its start, so only that branch's groups need the capture engine.
+    pub branches: Option<Branches>,
+}
+
+/// The branches of an alternation, each with the names and indices of its groups.
+pub(super) type Branches = Vec<(Regex, Vec<(&'static str, usize)>)>;
+
+/// The branches of a top-level alternation without look-around, each anchored at the start, with the
+/// names and indices of their groups; none unless some branch has no group.
+fn branch_patterns(hir: &regex_syntax::hir::Hir) -> Option<Branches> {
+    let regex_syntax::hir::HirKind::Alternation(items) = hir.kind() else {
+        return None;
+    };
+    if !hir.properties().look_set().is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let re = Regex::new(&format!("\\A(?:{item})")).ok()?;
+        let groups = re
+            .capture_names()
+            .enumerate()
+            .filter_map(|(index, name)| {
+                name.map(|name| (&*Box::leak(name.to_owned().into_boxed_str()), index))
+            })
+            .collect();
+        out.push((re, groups));
+    }
+    out.iter()
+        .any(|(_, groups): &(Regex, Vec<_>)| groups.is_empty())
+        .then_some(out)
+}
+
+/// The rows' pattern for the content of a line behind its blanks and quote marks: it matches every line
+/// text, and its group is what the greedy prefix and the trailing blanks leave.
+const STRIP_QUOTES: &str = "^[ \\t]*(?:> [ \\t]*)*(?<c>.*?)[ \\t]*$";
+
+/// The group of `STRIP_QUOTES` in a text without a line break.
+fn strip_quotes(text: &str) -> (usize, usize) {
+    let bytes = text.as_bytes();
+    let blanks = |mut at: usize| {
+        while bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t')) {
+            at += 1;
+        }
+        at
+    };
+    let mut start = blanks(0);
+    while bytes.get(start) == Some(&b'>') && bytes.get(start + 1) == Some(&b' ') {
+        start = blanks(start + 2);
+    }
+    let end = start + text[start..].trim_end_matches([' ', '\t']).len();
+    (start, end)
 }
 
 /// What an alternation of start- and end-anchored branches needs at the edges of the text: a branch
@@ -426,12 +559,14 @@ fn anchored_first(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
 }
 
 pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
-    let re = RegexBuilder::new(&text.replace("(?<", "(?P<"))
+    let original = text;
+    let text = &text.replace("(?<", "(?P<");
+    let re = RegexBuilder::new(text)
         .case_insensitive(flags.contains('i'))
         .build()
         .ok()?;
     // The names live as long as the compiled model, which is never dropped.
-    let groups = re
+    let groups: Vec<(&'static str, usize)> = re
         .capture_names()
         .enumerate()
         .filter_map(|(index, name)| {
@@ -441,7 +576,7 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
     let hir = regex_syntax::ParserBuilder::new()
         .case_insensitive(flags.contains('i'))
         .build()
-        .parse(&text.replace("(?<", "(?P<"))
+        .parse(text)
         .ok();
     let mut set = Box::new([false; 256]);
     let first = hir
@@ -478,7 +613,13 @@ pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
         }
         set
     });
+    let branches = hir
+        .as_ref()
+        .filter(|_| !groups.is_empty())
+        .and_then(branch_patterns);
     Some(Pattern {
+        strip_quotes: original == STRIP_QUOTES && flags.is_empty(),
+        branches,
         re,
         groups,
         first,
@@ -514,10 +655,40 @@ pub(super) enum Expr {
         end: bool,
     },
     Some {
-        list: Path,
+        list: Box<Self>,
         from: usize,
         test: Box<Self>,
     },
+    /// The number of list items for which `test` holds (C2-W-141).
+    Count {
+        list: Box<Self>,
+        test: Box<Self>,
+    },
+    /// The first list item for which `test` holds (C2-W-150).
+    Find {
+        list: Box<Self>,
+        test: Box<Self>,
+    },
+    Nth(Box<(Self, Self)>),
+    Join(Box<(Self, Self)>),
+    Lower(Box<Self>),
+    PercentDecode(Box<Self>),
+    /// The column of an offset after a number of quote marks (C2-B-004).
+    Column(Box<(Self, Self)>),
+    /// The extensions registered for the run.
+    RunExtensions,
+    /// Whether a text is a valid attribute line (C2-B-090).
+    AttributeLine(Box<Self>),
+    /// A `matches` on a `let` that is a slice of `field` or empty: the match starts with one of the
+    /// pattern's first bytes, so `field` must hold one before the `let` is computed.
+    Within {
+        field: Path,
+        test: Box<Self>,
+    },
+    /// A field of a record of the document found by key, or the last one before (C2-W-141).
+    Lookup(Box<Lookup>),
+    IndexOf(Box<(Self, Self)>),
+    JsonEscape(Box<Self>),
     Len(Box<Self>),
     Add(Vec<Self>),
     Sub(Box<(Self, Self)>),
@@ -530,6 +701,39 @@ pub(super) enum Expr {
         left: bool,
         args: Box<(Self, Self)>,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum LookupOver {
+    Block,
+    Inline,
+    Id,
+    Line,
+}
+
+#[derive(Debug)]
+pub(super) struct Lookup {
+    pub over: LookupOver,
+    pub types: Vec<&'static str>,
+    pub key: Option<Expr>,
+    pub value: Option<Expr>,
+    pub before: bool,
+    pub after: bool,
+    pub all: bool,
+    pub from: Option<Expr>,
+    pub field: Path,
+    /// Lookups over the same records with the same key share one index per call.
+    pub site: usize,
+}
+
+impl Lookup {
+    fn record<'a>(&self, at: u32) -> Val<'a> {
+        match self.over {
+            LookupOver::Block | LookupOver::Inline => Val::Rec(at),
+            LookupOver::Id => Val::IdRec(at),
+            LookupOver::Line => Val::Line(at),
+        }
+    }
 }
 
 const COMPARISONS: &[(&str, Cmp)] = &[
@@ -545,6 +749,8 @@ const COMPARISONS: &[(&str, Cmp)] = &[
 pub(super) struct Scope<'m> {
     pub model: &'static Value,
     pub lets: &'m [&'static str],
+    /// The rule being compiled, whose `let` values the compiler reads.
+    pub rule: &'static Value,
 }
 
 fn literal(value: &'static Value) -> Val<'static> {
@@ -578,7 +784,7 @@ impl Scope<'_> {
         match op.as_str() {
             "f" => Expr::Field(path(arg.as_str().unwrap_or(""))),
             "v" => self.variable(arg.as_str().unwrap_or("")),
-            "all" => Expr::All(list(args)),
+            "all" => self.all(args),
             "any" => Expr::Any(list(args)),
             "not" => Expr::Not(Box::new(self.compile(arg))),
             "in" => self.member(at(0), at(1)),
@@ -608,6 +814,68 @@ impl Scope<'_> {
         Expr::Cmp(cmp, Box::new((self.compile(left), self.compile(right))))
     }
 
+    /// An `all`; the items of one whose tests are order free run with the scans last.
+    fn all(&self, args: &'static [Value]) -> Expr {
+        let mut items: Vec<Expr> = args.iter().map(|item| self.compile(item)).collect();
+        if args.iter().all(|item| self.order_free(item)) {
+            items.sort_by_key(scans);
+        }
+        Expr::All(items)
+    }
+
+    /// Whether a test neither sets nor reads match groups, so the items of an `all` of such tests may
+    /// run in any order; a `let` may read the groups of its own `matches`.
+    fn order_free(&self, value: &'static Value) -> bool {
+        fn groups(value: &Value, out: &mut Vec<String>) {
+            match value {
+                Value::Object(map) => {
+                    if let Some(pattern) = map
+                        .get("matches")
+                        .and_then(|args| args.get(1))
+                        .and_then(Value::as_str)
+                    {
+                        let mut rest = pattern;
+                        while let Some(at) = rest.find("(?<") {
+                            rest = &rest[at + 3..];
+                            out.push(rest.split('>').next().unwrap_or("").to_owned());
+                        }
+                    }
+                    map.values().for_each(|item| groups(item, out));
+                }
+                Value::Array(items) => items.iter().for_each(|item| groups(item, out)),
+                _ => {}
+            }
+        }
+        fn reads(value: &Value, own: &[String], scope: &Scope<'_>, depth: usize) -> bool {
+            match value {
+                Value::Object(map) => {
+                    if let Some(group) = map.get("match").and_then(Value::as_str) {
+                        return own.iter().any(|known| known == group);
+                    }
+                    if let Some(name) = map.get("v").and_then(Value::as_str) {
+                        let body = &scope.rule["let"][name];
+                        let mut mine = Vec::new();
+                        groups(body, &mut mine);
+                        return depth < 8 && reads(body, &mine, scope, depth + 1);
+                    }
+                    map.values().all(|item| reads(item, own, scope, depth))
+                }
+                Value::Array(items) => items.iter().all(|item| reads(item, own, scope, depth)),
+                _ => true,
+            }
+        }
+        let mut set = Vec::new();
+        groups(value, &mut set);
+        set.is_empty() && reads(value, &[], self, 0)
+    }
+
+    /// The `in` of `some`, `count` and `find`: a field path, or a value that gives a list (C2-W-150).
+    fn list(&self, value: &'static Value) -> Expr {
+        value
+            .as_str()
+            .map_or_else(|| self.compile(value), |text| Expr::Field(path(text)))
+    }
+
     fn variable(&self, name: &str) -> Expr {
         self.lets
             .iter()
@@ -633,10 +901,22 @@ impl Scope<'_> {
             .get(1)
             .and_then(Value::as_str)
             .and_then(|text| pattern(text, args.get(2).and_then(Value::as_str).unwrap_or("")));
-        Expr::Matches {
+        let within = subject
+            .get("v")
+            .and_then(Value::as_str)
+            .and_then(|name| sliced_field(&self.rule["let"][name]))
+            .filter(|_| compiled.as_ref().is_some_and(|p| p.first.is_some()));
+        let test = Expr::Matches {
             subject: Box::new(self.compile(subject)),
             pattern: compiled,
             base: subject.get("f").and_then(Value::as_str).and_then(base_path),
+        };
+        match within {
+            Some(field) => Expr::Within {
+                field: path(field),
+                test: Box::new(test),
+            },
+            None => test,
         }
     }
 
@@ -653,7 +933,7 @@ impl Scope<'_> {
                 self.compile(at(2)),
             ))),
             "some" => Expr::Some {
-                list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
                 from: arg.get("from").and_then(Value::as_u64).unwrap_or(0) as usize,
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
@@ -677,7 +957,70 @@ impl Scope<'_> {
                 left: false,
                 args: pair(0, 1),
             },
+            _ => self.compile_scan(op, arg, args),
+        }
+    }
+
+    /// The values over lists and texts of C2-W-150.
+    fn compile_list(&self, op: &str, arg: &'static Value, args: &'static [Value]) -> Expr {
+        let null = &Value::Null;
+        let at = |i: usize| args.get(i).unwrap_or(null);
+        let pair = |a: usize, b: usize| Box::new((self.compile(at(a)), self.compile(at(b))));
+        match op {
+            "find" => Expr::Find {
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
+                test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
+            },
+            "nth" => Expr::Nth(pair(0, 1)),
+            "join" => Expr::Join(pair(0, 1)),
+            "column" => Expr::Column(pair(0, 1)),
+            "lower" => Expr::Lower(Box::new(self.compile(arg))),
+            "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
+            "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
+            "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
             _ => Expr::Lit(Val::Null),
+        }
+    }
+
+    /// The values that read lists and records of the document (C2-W-141).
+    fn compile_scan(&self, op: &str, arg: &'static Value, args: &'static [Value]) -> Expr {
+        let null = &Value::Null;
+        let at = |i: usize| args.get(i).unwrap_or(null);
+        let pair = |a: usize, b: usize| Box::new((self.compile(at(a)), self.compile(at(b))));
+        match op {
+            "lookup" => Expr::Lookup(Box::new(Lookup {
+                over: match arg.get("over").and_then(Value::as_str) {
+                    Some("inline") => LookupOver::Inline,
+                    Some("id") => LookupOver::Id,
+                    Some("line") => LookupOver::Line,
+                    _ => LookupOver::Block,
+                },
+                types: arg
+                    .get("types")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect(),
+                key: arg.get("key").map(|key| self.compile(key)),
+                value: arg.get("value").map(|value| self.compile(value)),
+                before: arg.get("before").and_then(Value::as_bool) == Some(true),
+                after: arg.get("after").and_then(Value::as_bool) == Some(true),
+                all: arg.get("all").and_then(Value::as_bool) == Some(true),
+                from: arg.get("from").map(|from| self.compile(from)),
+                field: arg
+                    .get("field")
+                    .and_then(Value::as_str)
+                    .map_or_else(Box::default, path),
+                site: lookup_site(arg),
+            })),
+            "index_of" => Expr::IndexOf(pair(0, 1)),
+            "json_escape" => Expr::JsonEscape(Box::new(self.compile(arg))),
+            "count" => Expr::Count {
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
+                test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
+            },
+            _ => self.compile_list(op, arg, args),
         }
     }
 }
@@ -1009,6 +1352,49 @@ pub(super) fn quick_tests(when: &Expr) -> Vec<usize> {
         .collect()
 }
 
+/// Whether an expression reads records other than its own: a lookup, or a test over a list.
+fn scans(expr: &Expr) -> bool {
+    match expr {
+        Expr::Lookup(_)
+        | Expr::Some { .. }
+        | Expr::Count { .. }
+        | Expr::Find { .. }
+        | Expr::Var(_) => true,
+        Expr::All(items) | Expr::Any(items) | Expr::Add(items) | Expr::Concat(items) => {
+            items.iter().any(scans)
+        }
+        Expr::Within { test: item, .. }
+        | Expr::Not(item)
+        | Expr::Lower(item)
+        | Expr::PercentDecode(item)
+        | Expr::AttributeLine(item)
+        | Expr::Len(item)
+        | Expr::TrimEnd(item)
+        | Expr::Words(item)
+        | Expr::TextFrom(item)
+        | Expr::JsonEscape(item)
+        | Expr::In(item, _) => scans(item),
+        Expr::Matches { subject, .. } => scans(subject),
+        Expr::Cmp(_, args)
+        | Expr::Contains(args)
+        | Expr::Starts(args)
+        | Expr::Sub(args)
+        | Expr::IndexOf(args)
+        | Expr::Nth(args)
+        | Expr::Join(args)
+        | Expr::Column(args)
+        | Expr::Shift { args, .. } => scans(&args.0) || scans(&args.1),
+        Expr::If(args) => scans(&args.0) || scans(&args.1) || scans(&args.2),
+        Expr::Slice(args) => scans(&args.0) || scans(&args.1) || args.2.as_ref().is_some_and(scans),
+        Expr::Lit(_)
+        | Expr::Field(_)
+        | Expr::Has(_)
+        | Expr::Match { .. }
+        | Expr::ShapeIs(_)
+        | Expr::RunExtensions => false,
+    }
+}
+
 /// Whether a test can neither set groups nor fill a `let`, so skipping it changes nothing later.
 fn stateless(expr: &Expr) -> bool {
     match expr {
@@ -1019,25 +1405,52 @@ fn stateless(expr: &Expr) -> bool {
         Expr::All(items) | Expr::Any(items) | Expr::Add(items) | Expr::Concat(items) => {
             items.iter().all(stateless)
         }
-        Expr::Not(item)
+        Expr::Within { test: item, .. }
+        | Expr::Not(item)
+        | Expr::Lower(item)
+        | Expr::PercentDecode(item)
+        | Expr::AttributeLine(item)
         | Expr::Len(item)
         | Expr::TrimEnd(item)
         | Expr::Words(item)
         | Expr::TextFrom(item)
+        | Expr::JsonEscape(item)
         | Expr::In(item, _) => stateless(item),
         Expr::Cmp(_, args)
         | Expr::Contains(args)
         | Expr::Starts(args)
         | Expr::Sub(args)
+        | Expr::IndexOf(args)
+        | Expr::Nth(args)
+        | Expr::Join(args)
+        | Expr::Column(args)
         | Expr::Shift { args, .. } => stateless(&args.0) && stateless(&args.1),
         Expr::If(args) => stateless(&args.0) && stateless(&args.1) && stateless(&args.2),
         Expr::Slice(args) => {
             stateless(&args.0) && stateless(&args.1) && args.2.as_ref().is_none_or(stateless)
         }
-        Expr::Some { test, .. } => stateless(test),
-        Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
-            true
+        Expr::Some { .. } | Expr::Count { .. } | Expr::Find { .. } | Expr::Lookup(_) => {
+            stateless_scan(expr)
         }
+        Expr::Lit(_)
+        | Expr::Field(_)
+        | Expr::Has(_)
+        | Expr::Match { .. }
+        | Expr::ShapeIs(_)
+        | Expr::RunExtensions => true,
+    }
+}
+
+fn stateless_scan(expr: &Expr) -> bool {
+    match expr {
+        Expr::Some { list, test, .. } | Expr::Count { list, test } | Expr::Find { list, test } => {
+            stateless(list) && stateless(test)
+        }
+        Expr::Lookup(lookup) => {
+            lookup.value.as_ref().is_none_or(stateless)
+                && lookup.from.as_ref().is_none_or(stateless)
+        }
+        _ => true,
     }
 }
 
@@ -1112,11 +1525,7 @@ fn resolve_path<'a>(records: &Records<'a>, subject: &Subject<'_, 'a>, path: &[Se
         if found.is_null() {
             break;
         }
-        found = match seg {
-            Seg::Field(name) => records.field(&found, *name),
-            Seg::At(index) => records.list_item(&found, *index),
-            Seg::Item => Val::Null,
-        };
+        found = records.step(&found, seg);
     }
     found
 }
@@ -1156,6 +1565,23 @@ pub(super) enum Val<'a> {
     Colon(u32),
     Ancestors(Option<u32>),
     Colons(u32),
+    /// A node of the tree or a value inside it that is no scalar, by its handle (C2-W-140).
+    Node(u32),
+    /// The block or inline record of a range, as `item` of a lookup.
+    Rec(u32),
+    /// The owner of an attribute record, by index into the attribute table (C2-W-148).
+    AttrOwner(u32),
+    /// The types and the identities of the blocks that hold a block (C2-W-141).
+    BlockAncestors(u32),
+    AncestorIds(u32),
+    /// The identities of the blocks of a line's `ancestors`, by its leaf (C2-W-150).
+    LineAncestorIds(Option<u32>),
+    /// An id record, by index into the id records (C2-W-150).
+    IdRec(u32),
+    /// The source layout entry of a block, by index into the layout entries (C2-L-009).
+    Layout(u32),
+    /// A list a lookup or the run gives.
+    List(std::sync::Arc<[Val<'a>]>),
 }
 
 impl Val<'_> {
@@ -1246,11 +1672,7 @@ impl<'a> Eval<'_, 'a> {
             if found.is_null() {
                 break;
             }
-            found = match seg {
-                Seg::Field(name) => self.records.field(&found, *name),
-                Seg::At(index) => self.records.list_item(&found, *index),
-                Seg::Item => Val::Null,
-            };
+            found = self.records.step(&found, seg);
         }
         found
     }
@@ -1263,6 +1685,14 @@ impl<'a> Eval<'_, 'a> {
         let Some(haystack) = self.str_of(&value) else {
             return false;
         };
+        if pattern.strip_quotes && !haystack.contains('\n') {
+            let (start, end) = strip_quotes(haystack);
+            self.spans.clear();
+            self.spans
+                .extend(pattern.groups.iter().map(|&(name, _)| (name, start, end)));
+            self.base = base.map_or(0, |path| self.number(&self.resolve(path)).max(0) as usize);
+            return true;
+        }
         if !pattern.may_match(haystack) {
             return false;
         }
@@ -1339,13 +1769,17 @@ impl<'a> Eval<'_, 'a> {
                 matches!(needle, Val::Str(_)) && self.records.ancestors(leaf).any(|kind| kind == n)
             });
         }
+        if self.records.is_list(&haystack) {
+            return (0..self.records.list_len(&haystack))
+                .any(|at| self.same(&self.records.list_item(&haystack, at), &needle));
+        }
         self.str_of(&haystack)
             .zip(self.str_of(&needle))
             .is_some_and(|(s, n)| holds(s, n))
     }
 
-    fn some(&mut self, list: &Path, from: usize, test: &Expr) -> bool {
-        let list = self.resolve(list);
+    fn some(&mut self, list: &Expr, from: usize, test: &Expr) -> bool {
+        let list = self.value(list);
         let before = self.item.take();
         let mut result = false;
         for index in from..self.records.list_len(&list) {
@@ -1357,6 +1791,93 @@ impl<'a> Eval<'_, 'a> {
         }
         self.item = before;
         result
+    }
+
+    fn lookup(&mut self, lookup: &Lookup) -> Val<'a> {
+        let id = lookup.site;
+        if !self.records.has_lookup(id) {
+            let built = self.build_lookup(lookup);
+            self.records.store_lookup(id, built);
+        }
+        let value = match (&lookup.key, &lookup.value) {
+            (Some(_), Some(value)) => self.value(value),
+            _ => Val::Null,
+        };
+        let key = LookupKey::of(&value);
+        if lookup.all {
+            let found: Vec<Val<'a>> = self
+                .records
+                .lookup_all(id, &key)
+                .into_iter()
+                .map(|at| resolve_from(self.records, lookup.record(at), &lookup.field))
+                .collect();
+            return Val::List(found.into());
+        }
+        let start = match &lookup.from {
+            Some(from) => self.value(from),
+            None => self.records.subject_field(&self.subject, F::Start),
+        };
+        let start = self.number(&start).max(0) as usize;
+        let side = if lookup.before {
+            -1
+        } else {
+            i8::from(lookup.after)
+        };
+        self.records
+            .lookup_at(id, &key, start, side)
+            .map_or(Val::Null, |at| {
+                resolve_from(self.records, lookup.record(at), &lookup.field)
+            })
+    }
+
+    /// The records of a lookup in document order with their starts, by key (C2-W-141).
+    fn build_lookup(&mut self, lookup: &Lookup) -> LookupIndex {
+        let saved = (self.item.take(), std::mem::take(&mut self.spans));
+        let mut index = LookupIndex::default();
+        for (at, start) in self.records.lookup_records(lookup.over, &lookup.types) {
+            let key = match &lookup.key {
+                Some(key) => {
+                    self.item = Some(lookup.record(at));
+                    self.value(key)
+                }
+                None => Val::Null,
+            };
+            index
+                .keys
+                .entry(LookupKey::of(&key))
+                .or_default()
+                .push((start, at));
+        }
+        (self.item, self.spans) = saved;
+        index
+    }
+
+    fn find(&mut self, list: &Expr, test: &Expr) -> Val<'a> {
+        let list = self.value(list);
+        let before = self.item.take();
+        let mut found = Val::Null;
+        for index in 0..self.records.list_len(&list) {
+            let item = self.records.list_item(&list, index);
+            self.item = Some(item.clone());
+            if self.test(test) {
+                found = item;
+                break;
+            }
+        }
+        self.item = before;
+        found
+    }
+
+    fn count(&mut self, list: &Expr, test: &Expr) -> usize {
+        let list = self.value(list);
+        let before = self.item.take();
+        let mut found = 0;
+        for index in 0..self.records.list_len(&list) {
+            self.item = Some(self.records.list_item(&list, index));
+            found += usize::from(self.test(test));
+        }
+        self.item = before;
+        found
     }
 
     fn shift(&mut self, left: bool, position: &Expr, chars: &Expr) -> Val<'a> {
@@ -1406,6 +1927,65 @@ impl<'a> Eval<'_, 'a> {
             Expr::Field(path) => self.resolve(path),
             Expr::Var(index) => self.variable(*index),
             Expr::Has(path) => Val::Bool(!self.resolve(path).is_null()),
+            Expr::Count { list, test } => Val::num(self.count(list, test)),
+            Expr::Find { list, test } => self.find(list, test),
+            Expr::Nth(args) => {
+                let list = self.value(&args.0);
+                let at = self.value(&args.1);
+                let at = self.number(&at);
+                let len = self.records.list_len(&list) as i64;
+                let at = if at < 0 { len + at } else { at };
+                if at < 0 {
+                    Val::Null
+                } else {
+                    self.records.list_item(&list, at as usize)
+                }
+            }
+            Expr::Join(args) => {
+                let list = self.value(&args.0);
+                let glue = self.string(&args.1);
+                let mut out = String::new();
+                for at in 0..self.records.list_len(&list) {
+                    if at > 0 {
+                        out.push_str(&glue);
+                    }
+                    let item = self.records.list_item(&list, at);
+                    out.push_str(&self.text(&item));
+                }
+                Val::Str(Cow::Owned(out))
+            }
+            Expr::Lower(arg) => Val::Str(Cow::Owned(self.string(arg).to_lowercase())),
+            Expr::PercentDecode(arg) => {
+                let text = self.string(arg);
+                Val::Str(Cow::Owned(
+                    percent_decode(&text).unwrap_or_else(|| text.into_owned()),
+                ))
+            }
+            Expr::Column(args) => {
+                let at = self.value(&args.0);
+                let quotes = self.value(&args.1);
+                if at.is_null() {
+                    return Val::Null;
+                }
+                let (at, quotes) = (self.number(&at).max(0), self.number(&quotes).max(0));
+                Val::num(self.records.column_at(at as usize, quotes as usize))
+            }
+            Expr::RunExtensions => self.records.extensions(),
+            Expr::Lookup(lookup) => self.lookup(lookup),
+            Expr::IndexOf(args) => {
+                let haystack = self.value(&args.0);
+                if self.records.is_list(&haystack) {
+                    let needle = self.value(&args.1);
+                    return Val::Num(
+                        (0..self.records.list_len(&haystack))
+                            .find(|&at| self.same(&self.records.list_item(&haystack, at), &needle))
+                            .map_or(-1, |at| at as i64),
+                    );
+                }
+                let text = self.text(&haystack);
+                let needle = self.string(&args.1);
+                Val::Num(text.find(&*needle).map_or(-1, |at| at as i64))
+            }
             Expr::Match { group, end } => self
                 .spans
                 .iter()
@@ -1415,12 +1995,25 @@ impl<'a> Eval<'_, 'a> {
                 }),
             Expr::Len(arg) => {
                 let value = self.value(arg);
-                Val::num(self.str_of(&value).map_or(0, str::len))
+                match value {
+                    Val::Str(_) => Val::num(self.str_of(&value).map_or(0, str::len)),
+                    Val::Null => Val::Null,
+                    list => Val::num(self.records.list_len(&list)),
+                }
             }
+            Expr::JsonEscape(arg) => {
+                let text = self.string(arg);
+                let quoted = serde_json::to_string(&*text).unwrap_or_default();
+                Val::Str(Cow::Owned(quoted[1..quoted.len() - 1].to_owned()))
+            }
+            // Arithmetic on an absent value is absent, so a comparison with it does not hold (C2-W-141).
             Expr::Add(args) => {
                 let mut sum = 0;
                 for arg in args {
                     let value = self.value(arg);
+                    if value.is_null() {
+                        return Val::Null;
+                    }
                     sum += self.number(&value);
                 }
                 Val::Num(sum)
@@ -1428,6 +2021,9 @@ impl<'a> Eval<'_, 'a> {
             Expr::Sub(args) => {
                 let left = self.value(&args.0);
                 let right = self.value(&args.1);
+                if left.is_null() || right.is_null() {
+                    return Val::Null;
+                }
                 Val::Num(self.number(&left) - self.number(&right))
             }
             Expr::Slice(args) => self.slice(&args.0, &args.1, args.2.as_ref()),
@@ -1496,6 +2092,25 @@ impl<'a> Eval<'_, 'a> {
                 base,
             } => self.matched(subject, pattern.as_ref(), base.as_ref()),
             Expr::Some { list, from, test } => self.some(list, *from, test),
+            Expr::AttributeLine(arg) => {
+                let text = self.string(arg);
+                super::lines::valid_attribute_line(&text)
+            }
+            Expr::Within { field, test } => {
+                let first = match &**test {
+                    Expr::Matches {
+                        pattern: Some(pattern),
+                        ..
+                    } => pattern.first.as_deref(),
+                    _ => None,
+                };
+                let held = self.resolve(field);
+                let possible = match (first, self.str_of(&held)) {
+                    (Some(first), Some(text)) => text.bytes().any(|b| first[b as usize]),
+                    _ => true,
+                };
+                possible && self.test(test)
+            }
             Expr::ShapeIs(name) => match self.subject {
                 Subject::Line(index) => self.records.line_shape_is(index, name),
                 _ => false,
@@ -1517,5 +2132,193 @@ impl<'a> Eval<'_, 'a> {
     pub fn string(&mut self, expr: &Expr) -> Cow<'a, str> {
         let value = self.value(expr);
         self.text(&value)
+    }
+}
+
+/// A key of a lookup, owned so the index outlives the values it was built from.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub(super) enum LookupKey {
+    Null,
+    Bool(bool),
+    Num(i64),
+    Str(String),
+}
+
+impl LookupKey {
+    fn of(value: &Val<'_>) -> Self {
+        match value {
+            Val::Bool(b) => Self::Bool(*b),
+            Val::Num(n) => Self::Num(*n),
+            Val::Str(text) => Self::Str(text.to_string()),
+            _ => Self::Null,
+        }
+    }
+}
+
+/// The index of one lookup for one call: the starts and records per key, and for `before` those of
+/// every record, each in document order.
+#[derive(Default, Debug)]
+pub(super) struct LookupIndex {
+    pub keys: std::collections::HashMap<LookupKey, Vec<(usize, u32)>>,
+}
+
+/// The index site of a lookup: one per kind of records, types and key, numbered as the model compiles.
+/// A key that reads anything but its `item` is the rule's own, so it gets a site of its own.
+fn lookup_site(arg: &'static Value) -> usize {
+    fn item_only(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => {
+                map.get("f")
+                    .and_then(Value::as_str)
+                    .is_none_or(|field| field == "item" || field.starts_with("item."))
+                    && !map.contains_key("v")
+                    && !map.contains_key("match")
+                    && map.values().all(item_only)
+            }
+            Value::Array(items) => items.iter().all(item_only),
+            _ => true,
+        }
+    }
+    static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let key = &arg["key"];
+    let signature = if item_only(key) {
+        format!("{} {} {}", arg["over"], arg["types"], key)
+    } else {
+        format!("{:p}", std::ptr::from_ref(arg))
+    };
+    let mut sites = SITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    sites
+        .iter()
+        .position(|known| *known == signature)
+        .unwrap_or_else(|| {
+            sites.push(signature);
+            sites.len() - 1
+        })
+}
+
+/// The field a `let` value is a slice of, where it is that slice or the empty text: `slice` of a field,
+/// or `if` whose branches are such a slice and `""`.
+fn sliced_field(value: &'static Value) -> Option<&'static str> {
+    if let Some(args) = value.get("slice").and_then(Value::as_array) {
+        return args.first()?.get("f")?.as_str();
+    }
+    let args = value.get("if")?.as_array()?;
+    if args.get(2)?.as_str() != Some("") {
+        return None;
+    }
+    sliced_field(args.get(1)?)
+}
+
+/// `%HH` read as bytes and the bytes as UTF-8; `None` where a `%` is no escape or the bytes are no UTF-8 (C2-W-150).
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' {
+            let hex = text.get(at + 1..at + 3)?;
+            out.push(
+                u8::from_str_radix(hex, 16)
+                    .ok()
+                    .filter(|_| hex.bytes().all(|b| b.is_ascii_hexdigit()))?,
+            );
+            at += 3;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> Val<'a> {
+    for seg in path {
+        if found.is_null() {
+            break;
+        }
+        found = records.step(&found, seg);
+    }
+    found
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::{STRIP_QUOTES, pattern, strip_quotes};
+
+    #[test]
+    fn branches_give_the_groups_the_whole_pattern_gives() {
+        let text = r"(?<link>\[[^\]\n]+\][ \t]+\((?<dest>[^)\n]*)\))|\[[^\]\n]+\][ \t]+\([^)\n]*|\[[^\]\n]*";
+        let compiled = pattern(text, "").expect("pattern");
+        let branches = compiled.branches.as_ref().expect("branches");
+        let parts = ["[", "]", "a", " ", "(", ")", "\t", "[a] ("];
+        let mut inputs = vec![String::new()];
+        for _ in 0..5 {
+            inputs = inputs
+                .iter()
+                .flat_map(|head| parts.iter().map(move |part| format!("{head}{part}")))
+                .collect();
+        }
+        for input in &inputs {
+            let whole: Vec<Vec<Option<(usize, usize)>>> = compiled
+                .re
+                .captures_iter(input)
+                .map(|caps| {
+                    compiled
+                        .groups
+                        .iter()
+                        .map(|&(_, index)| caps.get(index).map(|m| (m.start(), m.end())))
+                        .collect()
+                })
+                .collect();
+            let split: Vec<Vec<Option<(usize, usize)>>> = compiled
+                .re
+                .find_iter(input)
+                .map(|found| {
+                    let span = found.as_str();
+                    let (re, groups) = branches
+                        .iter()
+                        .find(|(re, _)| re.is_match(span))
+                        .expect("a branch");
+                    let caps = re.captures(span);
+                    compiled
+                        .groups
+                        .iter()
+                        .map(|&(name, _)| {
+                            let index = groups.iter().find(|(own, _)| *own == name)?.1;
+                            let group = caps.as_ref()?.get(index)?;
+                            Some((found.start() + group.start(), found.start() + group.end()))
+                        })
+                        .collect()
+                })
+                .collect();
+            assert_eq!(whole, split, "{input:?}");
+        }
+        assert_eq!(inputs.len(), 32_768);
+    }
+
+    #[test]
+    fn strip_quotes_reads_the_group_the_regex_reads() {
+        let re = pattern(STRIP_QUOTES, "").expect("pattern").re;
+        let parts = [
+            "", " ", "\t", ">", "> ", ">\t", ":", "a", " >", "x ", "\u{e9}", "\0",
+        ];
+        let mut checked = 0;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        let text = format!("{a}{b}{c}{d}");
+                        let found = re.captures(&text).and_then(|caps| caps.get(1));
+                        let expected = found.map(|group| (group.start(), group.end()));
+                        assert_eq!(Some(strip_quotes(&text)), expected, "{text:?}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 12 * 12 * 12 * 12);
     }
 }

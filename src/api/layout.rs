@@ -26,46 +26,148 @@ pub(super) fn build(source: &str, tree: &Tree, input: Input<'_>) -> Result<Value
             }
             _ => None,
         },
-        tables: if source.contains('|') {
-            crate::block::scan(&crate::source::Source::new(source))
-                .events
-                .into_iter()
-                .filter_map(|event| {
-                    if let Event::Leaf {
-                        kind: LeafKind::Table(data),
-                        start,
-                        ..
-                    } = event
-                    {
-                        Some((start, *data))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
+        tables: tables(source),
     };
-    walk.visit(
-        &document,
-        "",
-        Frame {
-            start: 0,
-            end: source.len(),
-            quotes: 0,
-            blocks: true,
-            cell: false,
-            caption: false,
-            table: false,
-            open: false,
-        },
-    );
+    walk.visit(&document, "", Frame::document(source));
     Ok(json!({
         "version": 2, "encoding": encoding, "source": original,
         "lineEndings": line_endings(source), "bom": source.starts_with('\u{feff}'),
         "nodes": walk.nodes,
     }))
+}
+
+/// The layout entries of a parsed UTF-8 document, as the lint model reads them (C2-W-150).
+pub(crate) fn entries(source: &str, document: &Value) -> Vec<Value> {
+    let mut walk = Walk {
+        source,
+        nodes: Vec::new(),
+        offsets: None,
+        tables: tables(source),
+    };
+    walk.visit(document, "", Frame::document(source));
+    walk.nodes
+}
+
+/// The source format of the table whose source runs from `start` to `end` (C2-W-149).
+pub(crate) fn table_source_format(source: &str, start: usize, end: usize) -> &'static str {
+    if start > end || end > source.len() {
+        return "pipe";
+    }
+    source_format(source, opener(source, start, end))
+}
+
+fn source_format(source: &str, open: Option<usize>) -> &'static str {
+    match open.filter(|&at| source[at..].starts_with("```")) {
+        Some(open) if source[open..line_end(source, open)].contains("tsv") => "tsv",
+        Some(_) => "csv",
+        None => "pipe",
+    }
+}
+
+/// The reference of a link or image with a key as C2-L-022 bounds it, without the container prefixes of its lines.
+pub(crate) fn raw_ref_text(
+    source: &str,
+    ty: &str,
+    start: usize,
+    end: usize,
+    quotes: usize,
+) -> String {
+    let from = start + usize::from(ty == "image");
+    let spelling = &source[from..end];
+    let mut raw = String::new();
+    for (index, line) in spelling.split('\n').enumerate() {
+        if index > 0 {
+            raw.push('\n');
+        }
+        let mut rest = line;
+        for _ in 0..quotes {
+            rest = rest.trim_start_matches([' ', '\t']);
+            if let Some(after) = rest.strip_prefix('>') {
+                rest = after.strip_prefix(' ').unwrap_or(after);
+            }
+        }
+        raw.push_str(rest);
+    }
+    if let Some(stop) = reference_label_end(&raw) {
+        raw.truncate(stop);
+    }
+    raw
+}
+
+/// The `markerColumn` and `contentColumn` facts of a list item, description or footnote entry, as the
+/// layout walk writes them, for the lint model.
+pub(crate) fn item_columns(
+    source: &str,
+    ty: &str,
+    start: usize,
+    end: usize,
+    quotes: usize,
+) -> (Option<usize>, Option<usize>) {
+    if start > end || end > source.len() {
+        return (None, None);
+    }
+    let first = &source[start..line_end(source, start).min(end)];
+    let mark_start = if first.trim_start().starts_with('{') && line_end(source, start) < end {
+        line_end(source, start) + 1
+    } else {
+        start
+    };
+    let line = &source[mark_start..line_end(source, mark_start).min(end)];
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let mark_at = mark_start + line.len() - trimmed.len();
+    let mark_len = match ty {
+        "list_item" => list_marker_len(trimmed),
+        "definition_description" => 1,
+        _ => trimmed.find(':').map_or(0, |n| n + 1),
+    };
+    if mark_len == 0 || mark_len > trimmed.len() {
+        return (None, None);
+    }
+    let marker_content = skip_layout_space(source, mark_at + mark_len);
+    let content = item_content_start(ty, source, marker_content);
+    let line_end = line_end(source, start);
+    let content = if content < line_end {
+        Some(content)
+    } else {
+        (ty == "list_item" && marker_content < line_end).then_some(marker_content)
+    };
+    (
+        Some(column_of(source, mark_at, quotes)),
+        content.map(|at| column_of(source, at, quotes)),
+    )
+}
+
+/// The `blankLinesAfter` fact of a block whose parent is not a quote, as the layout walk writes it.
+pub(crate) fn blank_lines_after(source: &str, end: usize, limit: usize, quotes: usize) -> usize {
+    let walk = Walk {
+        source,
+        nodes: Vec::new(),
+        tables: Vec::new(),
+        offsets: None,
+    };
+    walk.blank_after(end.min(source.len()), limit, quotes, false)
+}
+
+fn tables(source: &str) -> Vec<(usize, TableData)> {
+    if !source.contains('|') {
+        return Vec::new();
+    }
+    crate::block::scan(&crate::source::Source::new(source))
+        .events
+        .into_iter()
+        .filter_map(|event| {
+            if let Event::Leaf {
+                kind: LeafKind::Table(data),
+                start,
+                ..
+            } = event
+            {
+                Some((start, *data))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn base64(bytes: &[u8]) -> String {
@@ -149,6 +251,21 @@ struct Frame {
     caption: bool,
     table: bool,
     open: bool,
+}
+
+impl Frame {
+    const fn document(source: &str) -> Self {
+        Self {
+            start: 0,
+            end: source.len(),
+            quotes: 0,
+            blocks: true,
+            cell: false,
+            caption: false,
+            table: false,
+            open: false,
+        }
+    }
 }
 
 struct Walk<'a> {
@@ -472,19 +589,7 @@ impl Walk<'_> {
                 entry.insert("headerRows".into(), head.into());
             }
         }
-        entry.insert(
-            "sourceFormat".into(),
-            if let Some(open) = open.filter(|&at| source[at..].starts_with("```")) {
-                if source[open..line_end(source, open)].contains("tsv") {
-                    "tsv"
-                } else {
-                    "csv"
-                }
-            } else {
-                "pipe"
-            }
-            .into(),
-        );
+        entry.insert("sourceFormat".into(), source_format(source, open).into());
     }
 
     fn fence_facts(
@@ -598,25 +703,7 @@ impl Walk<'_> {
         if end > self.source.len() || start >= end {
             return;
         }
-        let from = start + usize::from(ty == "image");
-        let spelling = &self.source[from..end];
-        let mut raw = String::new();
-        for (index, line) in spelling.split('\n').enumerate() {
-            if index > 0 {
-                raw.push('\n');
-            }
-            let mut rest = line;
-            for _ in 0..quotes {
-                rest = rest.trim_start_matches([' ', '\t']);
-                if let Some(after) = rest.strip_prefix('>') {
-                    rest = after.strip_prefix(' ').unwrap_or(after);
-                }
-            }
-            raw.push_str(rest);
-        }
-        if let Some(stop) = reference_label_end(&raw) {
-            raw.truncate(stop);
-        }
+        let raw = raw_ref_text(self.source, ty, start, end, quotes);
         self.nodes
             .push(json!({"path":path,"startByte":byte_start,"endByte":byte_end,"rawRef":raw}));
     }

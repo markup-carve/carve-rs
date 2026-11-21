@@ -1,11 +1,11 @@
 //! Source and tree records consumed by the pinned 0.2 lint model, borrowed from the parse and the line model.
 #![allow(clippy::indexing_slicing, clippy::cast_possible_truncation)]
 
-use super::data_interpreter::{F, Val};
+use super::data_interpreter::{F, LookupIndex, LookupKey, LookupOver, Seg, Val};
 use super::{Holder, Range, lines::Line};
 use crate::source::Source;
 use std::borrow::Cow;
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 
 fn text_at(source: &str, from: usize, to: usize) -> &str {
@@ -16,6 +16,31 @@ fn text_at(source: &str, from: usize, to: usize) -> &str {
 
 fn trim_end(text: &str) -> &str {
     text.trim_end_matches([' ', '\t'])
+}
+
+pub(super) fn quoted_start_pub(text: &str, marks: usize) -> usize {
+    quoted_start(text, marks)
+}
+
+/// The end of up to `marks` quote marks, each with the blanks before it and one blank after it: the
+/// prefix that C2-B-027 leaves outside a span that crosses into the line.
+pub(super) fn quote_prefix_end(text: &str, marks: usize) -> usize {
+    let bytes = text.as_bytes();
+    let blank = |at: usize| bytes.get(at).is_some_and(|b| matches!(b, b' ' | b'\t'));
+    let mut at = 0;
+    for _ in 0..marks {
+        while blank(at) {
+            at += 1;
+        }
+        if bytes.get(at) != Some(&b'>') {
+            break;
+        }
+        at += 1;
+        if blank(at) {
+            at += 1;
+        }
+    }
+    at
 }
 
 fn quoted_start(text: &str, marks: usize) -> usize {
@@ -296,6 +321,7 @@ fn inline_kind(kind: &str) -> bool {
             | "footnote_ref"
             | "citation"
             | "wikilink"
+            | "xref"
     )
 }
 fn opener_rule_kind(kind: &str) -> bool {
@@ -365,7 +391,6 @@ pub(super) struct BlockRec<'a> {
     pub line_index: usize,
     last_line_index: usize,
     quotes: usize,
-    item_child: bool,
     opener_rule: bool,
     opener_start: usize,
     column: OnceCell<usize>,
@@ -387,11 +412,19 @@ pub(super) struct InlineRec<'a> {
     parent: &'a str,
 }
 
+impl InlineRec<'_> {
+    pub fn first_byte(&self) -> Option<u8> {
+        self.text.as_bytes().first().copied()
+    }
+}
+
 /// The record a rule runs over.
 pub(super) enum Subject<'r, 'a> {
     Line(usize),
     Block(&'r BlockRec<'a>),
     Inline(&'r InlineRec<'a>),
+    /// An attribute record, by index into the attribute table.
+    Attribute(u32),
 }
 
 /// What a block or inline node is to the records: the node classes of C2-W-139.
@@ -413,15 +446,181 @@ pub(super) struct Records<'a> {
     holder_quotes: Vec<usize>,
     holder_inline: Vec<bool>,
     owners: Vec<OnceCell<(usize, Option<usize>)>>,
+    /// The tree node of each range, read in place (C2-W-140).
+    nodes: &'a dyn NodeTree,
+    /// The lookup indexes of this call, by site.
+    lookups: RefCell<Vec<Option<LookupIndex>>>,
+    /// The attribute records of this call (C2-W-148).
+    pub attributes: super::data_attrs::Table,
+    tree: TreeFacts<'a>,
+    extensions: Vec<String>,
+    layout: OnceCell<Layout>,
+    tables: OnceCell<TableLines>,
+    /// The source format of each table read so far, by range.
+    formats: RefCell<Vec<Option<&'static str>>>,
+    /// The marker and content columns of each item read so far, by range.
+    columns: RefCell<Vec<Option<Columns>>>,
+    /// The rows before each node among its siblings, counted so far, by range.
+    rows: RefCell<Vec<Option<usize>>>,
+}
+
+/// The marker and content columns of an item.
+type Columns = (Option<usize>, Option<usize>);
+
+/// The value of `slot` in a per-range cache, made on first read.
+fn memo<T: Copy>(
+    cache: &RefCell<Vec<Option<T>>>,
+    slot: u32,
+    len: usize,
+    make: impl FnOnce() -> T,
+) -> std::cell::RefMut<'_, T> {
+    let mut cache = cache.borrow_mut();
+    if cache.len() < len {
+        cache.resize(len, None);
+    }
+    std::cell::RefMut::map(cache, |cache| cache[slot as usize].get_or_insert_with(make))
+}
+
+/// One step into a tree node: a key of an object or an index of a list.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Step {
+    Key(&'static str),
+    Index(usize),
+}
+
+/// What a step into a tree node finds: a scalar, or a list or an object by its handle.
+pub(super) enum Leaf<'s> {
+    Absent,
+    Str(&'s str),
+    Num(i64),
+    Bool(bool),
+    /// A list or an object, by its handle.
+    Node(u32),
+}
+
+/// The tree node of each range, read in place through handles, so a rule converts nothing it reads.
+pub(super) trait NodeTree {
+    /// The handle of the node of a range.
+    fn root(&self, range: u32) -> Option<u32>;
+    /// What a key or an item of the value of a handle holds.
+    fn step(&self, node: u32, step: Step) -> Leaf<'_>;
+    /// The length of the list of a handle; none for anything else.
+    fn len(&self, node: u32) -> Option<usize>;
+}
+
+/// An id record (C2-W-150).
+struct IdRec<'a> {
+    id: Cow<'a, str>,
+    owner: &'a str,
+    start: usize,
+}
+
+/// What the records read from the tree beyond the ranges: the id records, the links and images with a key,
+/// and the document for the source layout.
+pub(super) struct TreeFacts<'a> {
+    ids: Vec<IdRec<'a>>,
+    keyed: std::collections::HashSet<u32>,
+    document: Option<Box<dyn Fn() -> serde_json::Value + 'a>>,
+}
+
+/// The generated id of each heading of a tree, by the start of the heading.
+pub(super) fn heading_ids(node: crate::view::V<'_>, out: &mut HashMap<usize, String>) {
+    if node.is_array() {
+        if let Some(items) = node.as_array() {
+            for item in items {
+                heading_ids(item, out);
+            }
+        }
+        return;
+    }
+    if !node.is_object() {
+        return;
+    }
+    if node.ty().as_str() == Some("heading")
+        && let (Some((start, _)), Some(id)) = (node.offsets(), node.at("generatedId").as_str())
+    {
+        out.insert(start, id.to_owned());
+    }
+    node.each(&mut |key, value| {
+        if key != "pos" && value.is_container() {
+            heading_ids(value, out);
+        }
+    });
+}
+
+impl<'a> TreeFacts<'a> {
+    /// `generated`: the heading ids of a parse with other heading id options, by the start of the heading.
+    pub fn read<'v: 'a>(
+        ranges: &[Range<'a>],
+        values: &[crate::view::V<'v>],
+        document: Option<crate::view::V<'v>>,
+        generated: Option<&HashMap<usize, String>>,
+    ) -> Self {
+        let mut seen = std::collections::HashSet::new();
+        let mut ids = Vec::new();
+        let mut keyed = std::collections::HashSet::new();
+        for (at, (range, value)) in ranges.iter().zip(values).enumerate() {
+            if matches!(range.kind, "link" | "image") && value.get("key").is_some() {
+                keyed.insert(at as u32);
+            }
+            let authored = value
+                .get("attrs")
+                .and_then(|attrs| attrs.get("id"))
+                .and_then(crate::view::V::as_str)
+                .map(Cow::Borrowed);
+            let heading = (range.kind == "heading").then(|| match generated {
+                Some(generated) => generated.get(&range.start).cloned().map(Cow::Owned),
+                None => value
+                    .get("generatedId")
+                    .and_then(crate::view::V::as_str)
+                    .map(Cow::Borrowed),
+            });
+            for id in [authored, heading.flatten()].into_iter().flatten() {
+                if seen.insert(id.clone()) {
+                    ids.push(IdRec {
+                        id,
+                        owner: range.kind,
+                        start: range.start,
+                    });
+                }
+            }
+        }
+        let document = document.map(|document| {
+            Box::new(move || document.to_value()) as Box<dyn Fn() -> serde_json::Value + 'a>
+        });
+        Self {
+            ids,
+            keyed,
+            document,
+        }
+    }
+}
+
+/// The source layout entries of the document (C2-L-009), with the entry of each path.
+struct Layout {
+    entries: Vec<serde_json::Value>,
+    by_path: HashMap<String, u32>,
+}
+
+/// For each line, the nearest line above and below it in the source of its pipe table whose raw body does not
+/// start with `%%`, and the range of that table (C2-W-149).
+struct TableLines {
+    above: Vec<Option<u32>>,
+    below: Vec<Option<u32>>,
+    table: Vec<Option<u32>>,
 }
 
 impl<'a> Records<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         source: &'a str,
         positions: &'a Source<'a>,
         ranges: &'a [Range<'a>],
         holders: &'a [Holder],
+        nodes: &'a dyn NodeTree,
         model: &'a [Line],
+        tree: TreeFacts<'a>,
+        extensions: Vec<String>,
     ) -> Self {
         let mut holder_quotes = Vec::with_capacity(holders.len());
         let mut holder_inline = Vec::with_capacity(holders.len());
@@ -449,6 +648,16 @@ impl<'a> Records<'a> {
             holder_quotes,
             holder_inline,
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
+            nodes,
+            lookups: RefCell::new(Vec::new()),
+            attributes: super::data_attrs::Table::default(),
+            tree,
+            extensions,
+            layout: OnceCell::new(),
+            tables: OnceCell::new(),
+            formats: RefCell::new(Vec::new()),
+            columns: RefCell::new(Vec::new()),
+            rows: RefCell::new(Vec::new()),
         };
         records.build_lines(model);
         records
@@ -499,7 +708,11 @@ impl<'a> Records<'a> {
     pub fn ancestors(&self, leaf: Option<u32>) -> impl Iterator<Item = &'a str> + '_ {
         let mut holder = leaf.and_then(|at| self.ranges[at as usize].holder);
         let mut done = leaf.is_none();
-        std::iter::from_fn(move || {
+        // A caption holds its own text, so the caption is the first block of the line.
+        let caption = leaf
+            .filter(|&at| self.ranges[at as usize].kind == "caption")
+            .map(|_| "caption");
+        caption.into_iter().chain(std::iter::from_fn(move || {
             while let Some(at) = holder {
                 let node = &self.holders[at as usize];
                 holder = node.up;
@@ -512,6 +725,21 @@ impl<'a> Records<'a> {
             }
             done = true;
             Some("document")
+        }))
+    }
+
+    /// The ranges of the blocks that hold a range, innermost first, the document left out.
+    fn holder_chain(&self, at: u32) -> impl Iterator<Item = u32> + '_ {
+        let mut holder = self.ranges[at as usize].holder;
+        std::iter::from_fn(move || {
+            while let Some(up) = holder {
+                let node = &self.holders[up as usize];
+                holder = node.up;
+                if node.range.is_some() {
+                    return node.range;
+                }
+            }
+            None
         })
     }
 
@@ -682,7 +910,272 @@ impl<'a> Records<'a> {
             F::AttachedHere => Val::Bool(line.attached),
             F::ClosesContainer => Val::Bool(line.closes),
             F::OpenColon => Val::Colons(index as u32),
+            _ => self.line_fields_150(index, name),
+        }
+    }
+
+    /// The line fields of C2-W-149 and C2-W-150.
+    fn line_fields_150(&self, index: usize, name: F) -> Val<'a> {
+        match name {
+            F::AncestorIds => Val::LineAncestorIds(self.lines[index].leaf),
+            F::TableAbove => self.table_lines().above[index].map_or(Val::Null, Val::Line),
+            F::TableBelow => self.table_lines().below[index].map_or(Val::Null, Val::Line),
             _ => Val::Null,
+        }
+    }
+
+    fn table_lines(&self) -> &TableLines {
+        self.tables.get_or_init(|| {
+            let count = self.lines.len();
+            let mut lines = TableLines {
+                above: vec![None; count],
+                below: vec![None; count],
+                table: vec![None; count],
+            };
+            let open = |index: usize| {
+                let line = &self.lines[index];
+                !trim_end(text_at(self.source, line.body_start, line.end)).starts_with("%%")
+            };
+            for (at, range) in self.ranges.iter().enumerate() {
+                if range.kind != "table"
+                    || range.start_line == 0
+                    || self.source_format(at as u32) != "pipe"
+                {
+                    continue;
+                }
+                let first = range.start_line - 1;
+                let last = range.end_line.max(range.start_line).min(count);
+                let mut seen = None;
+                for index in first..last {
+                    lines.above[index] = seen;
+                    if open(index) {
+                        seen = Some(index as u32);
+                    }
+                    lines.table[index].get_or_insert(at as u32);
+                }
+                seen = None;
+                for index in (first..last).rev() {
+                    lines.below[index] = seen;
+                    if open(index) {
+                        seen = Some(index as u32);
+                    }
+                }
+            }
+            lines
+        })
+    }
+
+    /// The pipe table whose source holds a line, which names the node of a finding on it (C2-W-138).
+    pub fn line_table(&self, index: usize) -> Option<u32> {
+        self.table_lines().table.get(index).copied().flatten()
+    }
+
+    fn source_format(&self, table: u32) -> &'static str {
+        *memo(&self.formats, table, self.ranges.len(), || {
+            let range = &self.ranges[table as usize];
+            crate::api::layout::table_source_format(self.source, range.start, range.end)
+        })
+    }
+
+    /// The source format of a table, or of the table that holds a row or cell.
+    fn table_format(&self, at: u32) -> Val<'a> {
+        let table = match self.kind(at) {
+            "table" => Some(at),
+            "table_row" | "table_cell" => {
+                self.holder_chain(at).find(|&up| self.kind(up) == "table")
+            }
+            _ => None,
+        };
+        table.map_or(Val::Null, |table| {
+            Val::Str(Cow::Borrowed(self.source_format(table)))
+        })
+    }
+
+    /// The row of a row or cell record.
+    fn row_of(&self, at: u32) -> Option<u32> {
+        match self.kind(at) {
+            "table_row" => Some(at),
+            "table_cell" => self.holder_range(self.ranges[at as usize].holder),
+            _ => None,
+        }
+    }
+
+    /// The group that holds the row of a row or cell record.
+    fn group_of(&self, at: u32) -> Val<'a> {
+        self.row_of(at)
+            .map(|row| self.holder_kind(self.ranges[row as usize].holder))
+            .filter(|kind| matches!(*kind, "table_head" | "table_body" | "table_foot"))
+            .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind)))
+    }
+
+    /// The position of the row of a row or cell record among the rows of its group: a comment is no row.
+    fn row_index(&self, at: u32) -> Val<'a> {
+        let Some(row) = self.row_of(at) else {
+            return Val::Null;
+        };
+        Val::num(self.rows_before(row))
+    }
+
+    /// The rows before a node among its siblings, counted once per node: the nodes back to the first
+    /// one already counted are filled in from there.
+    fn rows_before(&self, node: u32) -> usize {
+        let mut chain = vec![node];
+        let mut base = 0;
+        while let Some(&last) = chain.last() {
+            if let Some(Some(known)) = self.rows.borrow().get(last as usize) {
+                base = known + usize::from(self.kind(last) == "table_row");
+                chain.pop();
+                break;
+            }
+            match self.ranges[last as usize].prev {
+                Some(prev) => chain.push(prev),
+                None => break,
+            }
+        }
+        // `chain` runs from `node` back to the first node, or to the one before a counted node.
+        let mut rows = self.rows.borrow_mut();
+        if rows.len() < self.ranges.len() {
+            rows.resize(self.ranges.len(), None);
+        }
+        let mut before = base;
+        for &at in chain.iter().rev() {
+            rows[at as usize] = Some(before);
+            before += usize::from(self.kind(at) == "table_row");
+        }
+        rows[node as usize].unwrap_or(base)
+    }
+
+    fn id_records(&self) -> &[IdRec<'a>] {
+        &self.tree.ids
+    }
+
+    fn id_field(&self, at: u32, name: F) -> Val<'a> {
+        let record = &self.id_records()[at as usize];
+        match name {
+            F::Id => Val::Str(record.id.clone()),
+            F::Owner => Val::Str(Cow::Borrowed(record.owner)),
+            F::Index => Val::num(at as usize),
+            F::Start => Val::num(record.start),
+            F::Type => Val::Str(Cow::Borrowed("id")),
+            _ => Val::Null,
+        }
+    }
+
+    fn layout(&self) -> &Layout {
+        self.layout.get_or_init(|| {
+            let entries = self
+                .tree
+                .document
+                .as_ref()
+                .map(|document| crate::api::layout::entries(self.source, &document()))
+                .unwrap_or_default();
+            let mut by_path = HashMap::with_capacity(entries.len());
+            for (at, entry) in entries.iter().enumerate() {
+                if let Some(path) = entry.get("path").and_then(serde_json::Value::as_str) {
+                    by_path.entry(path.to_owned()).or_insert(at as u32);
+                }
+            }
+            Layout { entries, by_path }
+        })
+    }
+
+    /// The layout entry of a block, by its range; its facts are read on demand.
+    fn layout_entry(range: u32) -> Val<'a> {
+        Val::Layout(range)
+    }
+
+    /// A fact of the layout entry of a block by name; absent where the entry does not have it (C2-L-014).
+    /// The facts the rows read most are computed for the one block; any other comes from the whole layout.
+    fn layout_key(&self, at: u32, key: &str) -> Val<'a> {
+        let range = &self.ranges[at as usize];
+        let item = matches!(
+            range.kind,
+            "list_item" | "footnote" | "definition_description"
+        );
+        let quotes = || self.quotes_at(range.holder);
+        match key {
+            "markerColumn" | "contentColumn" if item && !range.joined => {
+                let (marker, content) = *memo(&self.columns, at, self.ranges.len(), || {
+                    crate::api::layout::item_columns(
+                        self.source,
+                        range.kind,
+                        range.start,
+                        range.end,
+                        quotes(),
+                    )
+                });
+                let fact = if key == "markerColumn" {
+                    marker
+                } else {
+                    content
+                };
+                return fact.map_or(Val::Null, Val::num);
+            }
+            "blankLinesAfter" if self.holder_kind(range.holder) == "list_item" && !range.joined => {
+                let limit = self
+                    .holder_range(range.holder)
+                    .map_or(self.source.len(), |up| self.ranges[up as usize].end);
+                return Val::num(crate::api::layout::blank_lines_after(
+                    self.source,
+                    range.end,
+                    limit,
+                    quotes(),
+                ));
+            }
+            _ => {}
+        }
+        let path = range.path.as_str();
+        let Some(&entry) = self.layout().by_path.get(path) else {
+            return Val::Null;
+        };
+        match self.layout().entries[entry as usize].get(key) {
+            Some(serde_json::Value::Number(n)) => Val::Num(n.as_i64().unwrap_or(0)),
+            Some(serde_json::Value::String(text)) => Val::Str(Cow::Owned(text.clone())),
+            Some(serde_json::Value::Bool(b)) => Val::Bool(*b),
+            _ => Val::Null,
+        }
+    }
+
+    /// `raw_ref` of a link or an image with a key, otherwise its text (C2-W-150).
+    fn raw_ref(&self, at: u32) -> Val<'a> {
+        let range = &self.ranges[at as usize];
+        let keyed = self.tree.keyed.contains(&at);
+        if !keyed || range.start >= range.end || range.end > self.source.len() {
+            return Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end)));
+        }
+        Val::Str(Cow::Owned(crate::api::layout::raw_ref_text(
+            self.source,
+            range.kind,
+            range.start,
+            range.end,
+            self.quotes_at(range.holder),
+        )))
+    }
+
+    pub fn column_at(&self, at: usize, quotes: usize) -> usize {
+        column_of(self.positions, at, quotes)
+    }
+
+    pub fn extensions(&self) -> Val<'a> {
+        Val::List(
+            self.extensions
+                .iter()
+                .map(|name| Val::Str(Cow::Owned(name.clone())))
+                .collect(),
+        )
+    }
+
+    /// One step of a dotted path from a value.
+    pub fn step(&self, found: &Val<'a>, seg: &Seg) -> Val<'a> {
+        match seg {
+            Seg::Field(name) => self.field(found, *name),
+            Seg::At(index) => self.list_item(found, *index),
+            Seg::AtEnd(back) => self
+                .list_len(found)
+                .checked_sub(*back)
+                .map_or(Val::Null, |at| self.list_item(found, at)),
+            Seg::Key(key) => self.node_key(found, key),
+            Seg::Item => Val::Null,
         }
     }
 
@@ -707,11 +1200,189 @@ impl<'a> Records<'a> {
         }
     }
 
+    /// Builds the attribute records of the nodes that carry `attrs`.
+    pub fn read_attributes(&mut self, values: &[crate::view::V<'_>]) {
+        let nodes = self
+            .ranges
+            .iter()
+            .zip(values)
+            .enumerate()
+            // Consumed keys leave no `attrs` in the tree, so a block is read where its source opens
+            // with a brace, an item or cell at its marker, and an inline node where it ends in one.
+            .filter(|(_, (range, _))| {
+                let bytes = self.source.as_bytes();
+                if range.kind == "document" || range.end <= range.start {
+                    false
+                } else if self.inline_held(range) {
+                    bytes.get(range.end - 1) == Some(&b'}')
+                } else {
+                    matches!(range.kind, "list_item" | "table_cell")
+                        || bytes.get(range.start) == Some(&b'{')
+                }
+            })
+            .map(|(at, (range, value))| super::data_attrs::Node {
+                range: at as u32,
+                kind: range.kind,
+                value: *value,
+                start: range.start,
+                end: range.end,
+                inline: self.inline_held(range),
+                lines: (range.start_line.saturating_sub(1)..range.end_line.max(range.start_line))
+                    .map(|line| self.positions.line_range(line))
+                    .collect(),
+                quotes: self.quotes_at(range.holder),
+            });
+        self.attributes = super::data_attrs::build(self.source, nodes);
+    }
+
+    fn attribute_field(&self, at: u32, name: F) -> Val<'a> {
+        let part = &self.attributes.parts[at as usize];
+        let text = |value: &str| Val::Str(Cow::Owned(value.to_owned()));
+        match name {
+            F::Kind => Val::Str(Cow::Borrowed(part.kind)),
+            F::Key => text(&part.key),
+            F::Value => text(&part.value),
+            F::Start => Val::num(part.start),
+            F::End => Val::num(part.end),
+            F::KeyEnd => Val::num(part.key_end),
+            F::Text => Val::Str(Cow::Borrowed(text_at(self.source, part.start, part.end))),
+            F::Index => Val::num(part.index),
+            F::Owner => Val::AttrOwner(part.owner),
+            _ => attribute_fact(part, name),
+        }
+    }
+
+    fn owner_record_field(&self, at: u32, name: F) -> Val<'a> {
+        let owner = &self.attributes.owners[at as usize];
+        let range = &self.ranges[owner.range as usize];
+        match name {
+            F::Type => Val::Str(Cow::Borrowed(
+                if range.kind == "comment" && range.form_block {
+                    "comment_block"
+                } else {
+                    range.kind
+                },
+            )),
+            F::Start => Val::num(owner.start),
+            F::End => Val::num(owner.end),
+            F::OpenerStart => Val::num(owner.opener_start),
+            F::Node => self.tree_node(owner.range),
+            F::Format => Val::Str(Cow::Borrowed(owner.format)),
+            F::Columns => Val::num(owner.columns),
+            F::HeadRows => Val::num(owner.rows[0]),
+            F::BodyRows => Val::num(owner.rows[1]),
+            F::FootRows => Val::num(owner.rows[2]),
+            F::AlignOverlap => Val::Str(Cow::Owned(owner.align_overlap.clone())),
+            F::ValignOverlap => Val::Str(Cow::Owned(owner.valign_overlap.clone())),
+            _ => Val::Null,
+        }
+    }
+
+    pub fn has_lookup(&self, id: usize) -> bool {
+        self.lookups.borrow().get(id).is_some_and(Option::is_some)
+    }
+
+    pub fn store_lookup(&self, id: usize, index: LookupIndex) {
+        let mut lookups = self.lookups.borrow_mut();
+        if lookups.len() <= id {
+            lookups.resize_with(id + 1, || None);
+        }
+        lookups[id] = Some(index);
+    }
+
+    /// Every record of a key, in document order (C2-W-150).
+    pub fn lookup_all(&self, id: usize, key: &LookupKey) -> Vec<u32> {
+        self.lookups.borrow()[id]
+            .as_ref()
+            .and_then(|index| index.keys.get(key))
+            .map(|found| found.iter().map(|(_, record)| *record).collect())
+            .unwrap_or_default()
+    }
+
+    /// The first record of a key; with `side` -1 the last of them that starts before `start`, with 1 the
+    /// first that starts after it (C2-W-141).
+    pub fn lookup_at(&self, id: usize, key: &LookupKey, start: usize, side: i8) -> Option<u32> {
+        let lookups = self.lookups.borrow();
+        let found = lookups[id].as_ref()?.keys.get(key)?;
+        let at = match side {
+            0 => 0,
+            -1 => found
+                .partition_point(|(from, _)| *from < start)
+                .checked_sub(1)?,
+            _ => found.partition_point(|(from, _)| *from <= start),
+        };
+        found.get(at).map(|(_, record)| *record)
+    }
+
+    /// The records a lookup reads in document order, with their starts; a block or inline lookup that
+    /// names no types reads every block or every inline node (C2-W-150).
+    pub fn lookup_records(&self, over: LookupOver, types: &[&str]) -> Vec<(u32, usize)> {
+        match over {
+            LookupOver::Line => {
+                return (0..self.lines.len())
+                    .map(|at| (at as u32, self.lines[at].start))
+                    .collect();
+            }
+            LookupOver::Id => {
+                return self
+                    .id_records()
+                    .iter()
+                    .enumerate()
+                    .map(|(at, record)| (at as u32, record.start))
+                    .collect();
+            }
+            LookupOver::Block | LookupOver::Inline => {}
+        }
+        let inline = over == LookupOver::Inline;
+        let mut found: Vec<(u32, usize, usize)> = self
+            .ranges
+            .iter()
+            .enumerate()
+            .filter(|(_, range)| {
+                (if types.is_empty() {
+                    range.kind != "document"
+                } else {
+                    types.contains(&range.kind)
+                }) && range.start_line.saturating_sub(1) < self.lines.len()
+                    && self.inline_held(range) == inline
+            })
+            .map(|(at, range)| (at as u32, range.start, range.end))
+            .collect();
+        found.sort_by(|a, b| a.1.cmp(&b.1).then(b.2.cmp(&a.2)));
+        found
+            .into_iter()
+            .map(|(at, start, _)| (at, start))
+            .collect()
+    }
+
+    fn record_field(&self, at: u32, name: F) -> Val<'a> {
+        let range = &self.ranges[at as usize];
+        if self.inline_held(range) {
+            return match name {
+                F::Type => Val::Str(Cow::Borrowed(range.kind)),
+                F::Start => Val::num(range.start),
+                F::End => Val::num(range.end),
+                F::Text => Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end))),
+                F::Node => self.tree_node(at),
+                F::RawRef => self.raw_ref(at),
+                _ => Val::Null,
+            };
+        }
+        let line_index = range.start_line.saturating_sub(1);
+        let block = self.block_record(at as usize, line_index);
+        self.block_field(&block, name)
+    }
+
     pub fn field(&self, value: &Val<'a>, name: F) -> Val<'a> {
         match value {
+            Val::Rec(at) => self.record_field(*at, name),
+            Val::AttrOwner(at) => self.owner_record_field(*at, name),
+            Val::Node(..) => self.node_key(value, super::data_interpreter::field_name(name)),
             Val::Line(at) => self.line_field(*at as usize, name),
             Val::Owner(holder) => self.owner_field(*holder, name),
             Val::Colon(at) => self.colon_field(*at, name),
+            Val::IdRec(at) => self.id_field(*at, name),
+            Val::Layout(at) => self.layout_key(*at, super::data_interpreter::field_name(name)),
             _ => Val::Null,
         }
     }
@@ -720,16 +1391,44 @@ impl<'a> Records<'a> {
         match subject {
             Subject::Line(at) => self.line_field(*at, name),
             Subject::Block(block) => self.block_field(block, name),
+            Subject::Attribute(at) => self.attribute_field(*at, name),
             Subject::Inline(inline) => match name {
+                F::Node if inline.kind != "text_run" => self.tree_node(inline.range),
                 F::Type => Val::Str(Cow::Borrowed(inline.kind)),
                 F::Start => Val::num(inline.start),
                 F::End => Val::num(inline.end),
                 F::Text => Val::Str(Cow::Borrowed(inline.text)),
                 F::Leaf => Val::Str(Cow::Borrowed(inline.leaf)),
                 F::Parent => Val::Str(Cow::Borrowed(inline.parent)),
+                F::RawRef if inline.kind != "text_run" => self.raw_ref(inline.range),
                 _ => Val::Null,
             },
         }
+    }
+
+    /// A key of an AST node: a scalar as a value, anything else as a node; absent is null.
+    pub fn node_key(&self, value: &Val<'a>, key: &'static str) -> Val<'a> {
+        if let Val::Layout(at) = value {
+            return self.layout_key(*at, key);
+        }
+        self.node_step(value, Step::Key(key))
+    }
+
+    fn node_step(&self, value: &Val<'a>, step: Step) -> Val<'a> {
+        let Val::Node(node) = value else {
+            return Val::Null;
+        };
+        match self.nodes.step(*node, step) {
+            Leaf::Absent => Val::Null,
+            Leaf::Str(text) => Val::Str(Cow::Borrowed(text)),
+            Leaf::Num(n) => Val::Num(n),
+            Leaf::Bool(b) => Val::Bool(b),
+            Leaf::Node(child) => Val::Node(child),
+        }
+    }
+
+    fn tree_node(&self, range: u32) -> Val<'a> {
+        self.nodes.root(range).map_or(Val::Null, Val::Node)
     }
 
     fn colon_ids(&self, line: u32) -> &[u32] {
@@ -740,9 +1439,36 @@ impl<'a> Records<'a> {
     pub fn list_len(&self, list: &Val<'a>) -> usize {
         match list {
             Val::Colons(line) => self.colon_ids(*line).len(),
-            Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
+            Val::Ancestors(leaf) | Val::LineAncestorIds(leaf) => self.ancestors(*leaf).count(),
+            Val::Node(node) => self.nodes.len(*node).unwrap_or(0),
+            Val::BlockAncestors(at) | Val::AncestorIds(at) => self.holder_chain(*at).count() + 1,
+            Val::List(items) => items.len(),
             _ => 0,
         }
+    }
+
+    pub fn is_list(&self, value: &Val<'a>) -> bool {
+        match value {
+            Val::Node(node) => self.nodes.len(*node).is_some(),
+            Val::Colons(_)
+            | Val::Ancestors(_)
+            | Val::BlockAncestors(_)
+            | Val::AncestorIds(_)
+            | Val::LineAncestorIds(_)
+            | Val::List(_) => true,
+            _ => false,
+        }
+    }
+
+    /// The identities of the blocks of a line's `ancestors`, item by item (C2-W-150).
+    fn line_ancestor_ids(&self, leaf: Option<u32>) -> impl Iterator<Item = i64> + '_ {
+        let caption = leaf.filter(|&at| self.ranges[at as usize].kind == "caption");
+        let chain = leaf.into_iter().flat_map(|at| self.holder_chain(at));
+        caption
+            .into_iter()
+            .chain(chain)
+            .map(i64::from)
+            .chain(leaf.map(|_| -1))
     }
 
     pub fn list_item(&self, list: &Val<'a>, index: usize) -> Val<'a> {
@@ -755,6 +1481,24 @@ impl<'a> Records<'a> {
                 .ancestors(*leaf)
                 .nth(index)
                 .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind))),
+            Val::BlockAncestors(at) => self
+                .holder_chain(*at)
+                .map(|range| self.kind(range))
+                .chain(["document"])
+                .nth(index)
+                .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind))),
+            Val::AncestorIds(at) => self
+                .holder_chain(*at)
+                .map(i64::from)
+                .chain([-1])
+                .nth(index)
+                .map_or(Val::Null, Val::Num),
+            Val::LineAncestorIds(leaf) => self
+                .line_ancestor_ids(*leaf)
+                .nth(index)
+                .map_or(Val::Null, Val::Num),
+            Val::List(items) => items.get(index).cloned().unwrap_or(Val::Null),
+            node @ Val::Node(..) => self.node_step(node, Step::Index(index)),
             _ => Val::Null,
         }
     }
@@ -763,31 +1507,23 @@ impl<'a> Records<'a> {
 impl<'a> Records<'a> {
     fn block_column(&self, block: &BlockRec<'a>) -> usize {
         *block.column.get_or_init(|| {
-            if block.item_child {
-                column_of(
-                    self.positions,
-                    self.ranges[block.range as usize].start,
-                    block.quotes,
-                )
-            } else {
-                0
-            }
+            column_of(
+                self.positions,
+                self.ranges[block.range as usize].start,
+                block.quotes,
+            )
         })
     }
 
     fn block_mark_column(&self, block: &BlockRec<'a>) -> usize {
-        *block.mark_column.get_or_init(|| {
-            if block.opener_rule || block.item_child {
-                column_of(self.positions, block.opener_start, block.quotes)
-            } else {
-                0
-            }
-        })
+        *block
+            .mark_column
+            .get_or_init(|| column_of(self.positions, block.opener_start, block.quotes))
     }
 
     fn prev_type(&self, block: &BlockRec<'a>) -> Option<&'a str> {
         let range = &self.ranges[block.range as usize];
-        if block.kind != "paragraph" || range.index == 0 {
+        if range.index == 0 {
             return None;
         }
         range.prev.map(|sibling| self.kind(sibling))
@@ -797,16 +1533,13 @@ impl<'a> Records<'a> {
         let range = &self.ranges[block.range as usize];
         let source = self.source;
         match name {
+            F::Node => self.tree_node(block.range),
+            F::Ancestors => Val::BlockAncestors(block.range),
+            F::AncestorIds => Val::AncestorIds(block.range),
             F::Type => Val::Str(Cow::Borrowed(block.kind)),
             F::Start => Val::num(range.start),
             F::End => Val::num(range.end),
-            F::Text => Val::Str(Cow::Borrowed(
-                if matches!(block.kind, "line" | "list" | "frontmatter") {
-                    text_at(source, range.start, range.end)
-                } else {
-                    ""
-                },
-            )),
+            F::Text => Val::Str(Cow::Borrowed(text_at(source, range.start, range.end))),
             F::Column => Val::num(self.block_column(block)),
             F::OpenerColumn => Val::num(if range.has_attrs {
                 self.block_column(block)
@@ -830,9 +1563,15 @@ impl<'a> Records<'a> {
                 block.kind,
                 block.opener_rule,
             ))),
-            F::AfterQuoteMark => Val::Bool(
-                text_at(source, self.lines[block.line_index].start, range.start).ends_with("> "),
-            ),
+            // C2-B-031: read before opener_start, which for an attributed block is past its attribute lines.
+            F::AfterQuoteMark => {
+                let at = block.opener_start.min(source.len());
+                let line = source.as_bytes()[..at]
+                    .iter()
+                    .rposition(|b| *b == b'\n')
+                    .map_or(0, |n| n + 1);
+                Val::Bool(text_at(source, line, at).ends_with("> "))
+            }
             F::Attributed => Val::Bool(range.has_attrs),
             F::ImageLine => Val::Bool(range.image_line),
             F::Index => Val::num(range.index as usize),
@@ -844,6 +1583,18 @@ impl<'a> Records<'a> {
             F::Owner => Val::Owner(block.owner),
             F::ItemOwner => Val::Owner(block.item_owner),
             F::Parent => Val::Owner(block.parent),
+            _ => self.block_fields_150(block.range, name),
+        }
+    }
+
+    /// The block fields of C2-W-149 and C2-W-150.
+    fn block_fields_150(&self, range: u32, name: F) -> Val<'a> {
+        match name {
+            F::Identity => Val::num(range as usize),
+            F::Layout => Self::layout_entry(range),
+            F::SourceFormat => self.table_format(range),
+            F::Group => self.group_of(range),
+            F::RowIndex => self.row_index(range),
             _ => Val::Null,
         }
     }
@@ -874,7 +1625,11 @@ impl<'a> Records<'a> {
                     *slot = true;
                 }
             }
-            if !line_leaf(range.kind) || (range.kind == "comment" && !range.form_block) {
+            // A joined row has no pos, so it is the leaf of no line.
+            if range.joined
+                || !line_leaf(range.kind)
+                || (range.kind == "comment" && !range.form_block)
+            {
                 continue;
             }
             let first = range.start_line.saturating_sub(1);
@@ -1168,21 +1923,7 @@ impl<'a> Records<'a> {
             {
                 return Node::Skip;
             }
-            let mut holder = range.holder;
-            let mut leaf = None;
-            while let Some(up) = holder {
-                let node = &self.holders[up as usize];
-                if let Some(kind) = node
-                    .range
-                    .map(|range| self.kind(range))
-                    .filter(|kind| text_leaf(kind))
-                {
-                    leaf = Some(kind);
-                    break;
-                }
-                holder = node.up;
-            }
-            let Some(leaf) = leaf else {
+            let Some(leaf) = self.inline_leaf(range) else {
                 return Node::Skip;
             };
             return Node::Inline(InlineRec {
@@ -1203,10 +1944,79 @@ impl<'a> Records<'a> {
         if !block(kind, parent_kind) {
             return Node::Skip;
         }
-        Node::Block(self.block_record(at, line_index, parent_kind))
+        Node::Block(self.block_record(at, line_index))
     }
 
-    fn block_record(&self, at: usize, line_index: usize, parent_kind: &'a str) -> BlockRec<'a> {
+    /// The text leaf that holds an inline node.
+    fn inline_leaf(&self, range: &Range) -> Option<&'a str> {
+        let mut holder = range.holder;
+        while let Some(up) = holder {
+            let node = &self.holders[up as usize];
+            if let Some(kind) = node
+                .range
+                .map(|range| self.kind(range))
+                .filter(|kind| text_leaf(kind))
+            {
+                return Some(kind);
+            }
+            holder = node.up;
+        }
+        None
+    }
+
+    /// The text or soft break sibling right before (`back`) or after a node of those two types. They
+    /// have no children, so it is a neighbouring range, whichever order the walk gave siblings.
+    fn run_sibling(&self, at: usize, back: bool) -> Option<usize> {
+        let range = &self.ranges[at];
+        let index = if back {
+            range.index.checked_sub(1)?
+        } else {
+            range.index + 1
+        };
+        [at.checked_sub(1), Some(at + 1)]
+            .into_iter()
+            .flatten()
+            .find(|&near| {
+                self.ranges.get(near).is_some_and(|other| {
+                    other.holder == range.holder
+                        && other.index == index
+                        && matches!(other.kind, "text" | "soft_break")
+                })
+            })
+    }
+
+    /// C2-W-140: the text run that starts at a text or soft break node, the siblings of those two
+    /// types next to it read as one record; none where the node continues a run.
+    pub fn text_run(&self, at: usize) -> Option<InlineRec<'a>> {
+        let range = &self.ranges[at];
+        if !matches!(range.kind, "text" | "soft_break")
+            || !self.inline_held(range)
+            || self.run_sibling(at, true).is_some()
+        {
+            return None;
+        }
+        let line_index = range.start_line.saturating_sub(1);
+        if line_index >= self.lines.len() {
+            return None;
+        }
+        let mut last = at;
+        while let Some(next) = self.run_sibling(last, false) {
+            last = next;
+        }
+        let end = self.ranges[last].end;
+        Some(InlineRec {
+            range: at as u32,
+            kind: "text_run",
+            line_index,
+            start: range.start,
+            end,
+            text: text_at(self.source, range.start, end),
+            leaf: self.inline_leaf(range)?,
+            parent: self.holder_kind(range.holder),
+        })
+    }
+
+    fn block_record(&self, at: usize, line_index: usize) -> BlockRec<'a> {
         let range = &self.ranges[at];
         let kind = range.kind;
         let mut owner = range.holder;
@@ -1239,7 +2049,6 @@ impl<'a> Records<'a> {
                 .saturating_sub(1)
                 .min(self.lines.len().saturating_sub(1)),
             quotes,
-            item_child: parent_kind == "list_item" || item_owner.is_some(),
             opener_rule: opener_rule_kind(kind),
             opener_start: if range.has_attrs {
                 opener_start(self.source, range.start, quotes)
@@ -1272,4 +2081,26 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
         at = ((from + mark).min(to), at.1 + 1);
     }
     at
+}
+
+/// The facts of an attribute part that its value and the later parts of its owner give.
+fn attribute_fact(part: &super::data_attrs::Part, name: F) -> Val<'static> {
+    let key = part.kind == "key";
+    match name {
+        F::LastKey => Val::Bool(part.last_key),
+        F::Kept => Val::Bool(part.kept),
+        F::Semantic => Val::Bool(key && matches!(part.key.as_str(), "abbr" | "time" | "kbd")),
+        F::SemanticValue => Val::Bool(key && matches!(part.key.as_str(), "abbr" | "time")),
+        F::Entries => Val::num(if key {
+            super::data_attrs::entries(&part.value).0
+        } else {
+            0
+        }),
+        F::EntryTotal => Val::Num(if key {
+            super::data_attrs::entries(&part.value).1
+        } else {
+            0
+        }),
+        _ => Val::Null,
+    }
 }
