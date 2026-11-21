@@ -419,6 +419,8 @@ pub(super) struct Records<'a> {
     holder_quotes: Vec<usize>,
     holder_inline: Vec<bool>,
     owners: Vec<OnceCell<(usize, Option<usize>)>>,
+    /// The node of each range a `node` field can read, cut at the depth its rules read.
+    nodes: &'a [Option<serde_json::Value>],
 }
 
 impl<'a> Records<'a> {
@@ -427,6 +429,7 @@ impl<'a> Records<'a> {
         positions: &'a Source<'a>,
         ranges: &'a [Range<'a>],
         holders: &'a [Holder],
+        nodes: &'a [Option<serde_json::Value>],
         model: &'a [Line],
     ) -> Self {
         let mut holder_quotes = Vec::with_capacity(holders.len());
@@ -455,6 +458,7 @@ impl<'a> Records<'a> {
             holder_quotes,
             holder_inline,
             owners: (0..=holders.len()).map(|_| OnceCell::new()).collect(),
+            nodes,
         };
         records.build_lines(model);
         records
@@ -719,6 +723,7 @@ impl<'a> Records<'a> {
 
     pub fn field(&self, value: &Val<'a>, name: F) -> Val<'a> {
         match value {
+            Val::Node(_) => self.node_key(value, super::data_interpreter::field_name(name)),
             Val::Line(at) => self.line_field(*at as usize, name),
             Val::Owner(holder) => self.owner_field(*holder, name),
             Val::Colon(at) => self.colon_field(*at, name),
@@ -731,6 +736,7 @@ impl<'a> Records<'a> {
             Subject::Line(at) => self.line_field(*at, name),
             Subject::Block(block) => self.block_field(block, name),
             Subject::Inline(inline) => match name {
+                F::Node if inline.kind != "text_run" => self.tree_node(inline.range),
                 F::Type => Val::Str(Cow::Borrowed(inline.kind)),
                 F::Start => Val::num(inline.start),
                 F::End => Val::num(inline.end),
@@ -742,6 +748,21 @@ impl<'a> Records<'a> {
         }
     }
 
+    /// A key of an AST node: a scalar as a value, anything else as a node; absent is null.
+    pub fn node_key(&self, value: &Val<'a>, key: &str) -> Val<'a> {
+        let Val::Node(node) = value else {
+            return Val::Null;
+        };
+        node.get(key).map_or(Val::Null, node_value)
+    }
+
+    fn tree_node(&self, range: u32) -> Val<'a> {
+        self.nodes
+            .get(range as usize)
+            .and_then(Option::as_ref)
+            .map_or(Val::Null, Val::Node)
+    }
+
     fn colon_ids(&self, line: u32) -> &[u32] {
         let (from, to) = self.lines[line as usize].colons;
         &self.line_colons[from as usize..to as usize]
@@ -751,6 +772,7 @@ impl<'a> Records<'a> {
         match list {
             Val::Colons(line) => self.colon_ids(*line).len(),
             Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
+            Val::Node(node) => node.as_array().map_or(0, Vec::len),
             _ => 0,
         }
     }
@@ -765,6 +787,10 @@ impl<'a> Records<'a> {
                 .ancestors(*leaf)
                 .nth(index)
                 .map_or(Val::Null, |kind| Val::Str(Cow::Borrowed(kind))),
+            Val::Node(node) => node
+                .as_array()
+                .and_then(|items| items.get(index))
+                .map_or(Val::Null, node_value),
             _ => Val::Null,
         }
     }
@@ -807,6 +833,7 @@ impl<'a> Records<'a> {
         let range = &self.ranges[block.range as usize];
         let source = self.source;
         match name {
+            F::Node => self.tree_node(block.range),
             F::Type => Val::Str(Cow::Borrowed(block.kind)),
             F::Start => Val::num(range.start),
             F::End => Val::num(range.end),
@@ -1331,4 +1358,14 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
         at = ((from + mark).min(to), at.1 + 1);
     }
     at
+}
+
+fn node_value(value: &serde_json::Value) -> Val<'_> {
+    match value {
+        serde_json::Value::Null => Val::Null,
+        serde_json::Value::String(text) => Val::Str(Cow::Borrowed(text)),
+        serde_json::Value::Bool(b) => Val::Bool(*b),
+        serde_json::Value::Number(n) => Val::Num(n.as_i64().unwrap_or(0)),
+        other => Val::Node(other),
+    }
 }

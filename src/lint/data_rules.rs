@@ -10,6 +10,7 @@ use super::pairs;
 use super::{Holder, LintOptions, Range, active_catalog, lines::Line};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
+use crate::view::V;
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -99,6 +100,8 @@ struct Compiled {
     verbatim_leaves: Vec<&'static str>,
     /// Every inline rule over `text` first requires a `[` in its text.
     text_needs_bracket: bool,
+    /// The types of the records whose rules read their `node` (C2-W-140).
+    node_types: HashSet<&'static str>,
 }
 
 fn names(value: &'static Value) -> Vec<&'static str> {
@@ -243,13 +246,41 @@ fn compiled() -> &'static Compiled {
                         && args.get(1).is_some_and(|value| value == "[")
                 })
             });
+        let node_types = model()["rules"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|rule| reads_node(rule))
+            .flat_map(|rule| names(&rule["types"]))
+            .collect();
         Compiled {
+            node_types,
             ids: rules.iter().map(|rule| rule.id).collect(),
             rules,
             verbatim_leaves: names(&model()["verbatim_leaves"]),
             text_needs_bracket,
         }
     })
+}
+
+/// Whether a rule reads a field of its `node` (`node.…`, or a list `in` under it).
+fn reads_node(rule: &Value) -> bool {
+    match rule {
+        Value::String(text) => text == "node" || text.starts_with("node."),
+        Value::Array(items) => items.iter().any(reads_node),
+        Value::Object(map) => map.values().any(reads_node),
+        _ => false,
+    }
+}
+
+/// The nodes a `node` field can read, by range: `node.attrs.keyValues.0.0` is four levels deep.
+pub(super) fn nodes(ranges: &[Range<'_>], values: &[V<'_>]) -> Vec<Option<Value>> {
+    let types = &compiled().node_types;
+    ranges
+        .iter()
+        .zip(values)
+        .map(|(range, value)| types.contains(range.kind).then(|| value.to_value_within(4)))
+        .collect()
 }
 
 pub(super) fn modeled_ids() -> &'static HashSet<&'static str> {
@@ -439,6 +470,7 @@ pub(super) fn run<'a>(
     positions: &'a Source<'a>,
     ranges: &'a [Range<'a>],
     holders: &'a [Holder],
+    nodes: &'a [Option<Value>],
     model: &'a [Line],
     options: &LintOptions,
 ) -> Vec<Diagnostic> {
@@ -453,7 +485,7 @@ pub(super) fn run<'a>(
     if active.is_empty() {
         return out;
     }
-    let records = Records::new(source, positions, ranges, holders, model);
+    let records = Records::new(source, positions, ranges, holders, nodes, model);
     CACHE.with(|cache| {
         // A nested lint (none today) gets buckets of its own instead of the shared ones.
         let mut own;

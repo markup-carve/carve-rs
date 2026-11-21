@@ -62,6 +62,7 @@ pub(super) enum F {
     MarkerColumn,
     Width,
     Kind,
+    Node,
     Unknown,
     /// Not a field: the fact that the previous line has the same leaf (`prev.leaf_id == leaf_id`).
     PrevSameLeaf,
@@ -112,6 +113,7 @@ const FIELDS: &[(&str, F)] = &[
     ("parent", F::Parent),
     ("prev_type", F::PrevType),
     ("type", F::Type),
+    ("node", F::Node),
     ("content_column", F::ContentColumn),
     ("marker_column", F::MarkerColumn),
     ("width", F::Width),
@@ -125,12 +127,22 @@ fn field_id(name: &str) -> F {
         .map_or(F::Unknown, |(_, id)| *id)
 }
 
+/// The name of a field, as an AST key when the field reads a node of the tree.
+pub(super) fn field_name(id: F) -> &'static str {
+    FIELDS
+        .iter()
+        .find(|(_, known)| *known == id)
+        .map_or("", |(name, _)| name)
+}
+
 /// One step of a dotted field path.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Seg {
     Item,
     Field(F),
     At(usize),
+    /// A name no record field has: a key of an AST node (C2-W-140).
+    Key(&'static str),
 }
 
 pub(super) type Path = Box<[Seg]>;
@@ -144,7 +156,11 @@ fn path(text: &str) -> Path {
             } else if let Ok(index) = part.parse() {
                 Seg::At(index)
             } else {
-                Seg::Field(field_id(part))
+                match field_id(part) {
+                    // The names live as long as the compiled model, which is never dropped.
+                    F::Unknown => Seg::Key(Box::leak(part.to_owned().into_boxed_str())),
+                    id => Seg::Field(id),
+                }
             }
         })
         .collect()
@@ -519,6 +535,11 @@ pub(super) enum Expr {
         from: usize,
         test: Box<Self>,
     },
+    /// The number of list items for which `test` holds (C2-W-141).
+    Count {
+        list: Path,
+        test: Box<Self>,
+    },
     Len(Box<Self>),
     Add(Vec<Self>),
     Sub(Box<(Self, Self)>),
@@ -656,6 +677,10 @@ impl Scope<'_> {
             "some" => Expr::Some {
                 list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
                 from: arg.get("from").and_then(Value::as_u64).unwrap_or(0) as usize,
+                test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
+            },
+            "count" => Expr::Count {
+                list: path(arg.get("in").and_then(Value::as_str).unwrap_or("")),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
             "len" => Expr::Len(Box::new(self.compile(arg))),
@@ -1035,7 +1060,7 @@ fn stateless(expr: &Expr) -> bool {
         Expr::Slice(args) => {
             stateless(&args.0) && stateless(&args.1) && args.2.as_ref().is_none_or(stateless)
         }
-        Expr::Some { test, .. } => stateless(test),
+        Expr::Some { test, .. } | Expr::Count { test, .. } => stateless(test),
         Expr::Lit(_) | Expr::Field(_) | Expr::Has(_) | Expr::Match { .. } | Expr::ShapeIs(_) => {
             true
         }
@@ -1116,6 +1141,7 @@ fn resolve_path<'a>(records: &Records<'a>, subject: &Subject<'_, 'a>, path: &[Se
         found = match seg {
             Seg::Field(name) => records.field(&found, *name),
             Seg::At(index) => records.list_item(&found, *index),
+            Seg::Key(key) => records.node_key(&found, key),
             Seg::Item => Val::Null,
         };
     }
@@ -1157,6 +1183,8 @@ pub(super) enum Val<'a> {
     Colon(u32),
     Ancestors(Option<u32>),
     Colons(u32),
+    /// A node of the tree or a value inside it that is no scalar (C2-W-140).
+    Node(&'a Value),
 }
 
 impl Val<'_> {
@@ -1250,6 +1278,7 @@ impl<'a> Eval<'_, 'a> {
             found = match seg {
                 Seg::Field(name) => self.records.field(&found, *name),
                 Seg::At(index) => self.records.list_item(&found, *index),
+                Seg::Key(key) => self.records.node_key(&found, key),
                 Seg::Item => Val::Null,
             };
         }
@@ -1360,6 +1389,18 @@ impl<'a> Eval<'_, 'a> {
         result
     }
 
+    fn count(&mut self, list: &Path, test: &Expr) -> usize {
+        let list = self.resolve(list);
+        let before = self.item.take();
+        let mut found = 0;
+        for index in 0..self.records.list_len(&list) {
+            self.item = Some(self.records.list_item(&list, index));
+            found += usize::from(self.test(test));
+        }
+        self.item = before;
+        found
+    }
+
     fn shift(&mut self, left: bool, position: &Expr, chars: &Expr) -> Val<'a> {
         let position = self.value(position);
         let mut at = self.number(&position).max(0) as usize;
@@ -1407,6 +1448,7 @@ impl<'a> Eval<'_, 'a> {
             Expr::Field(path) => self.resolve(path),
             Expr::Var(index) => self.variable(*index),
             Expr::Has(path) => Val::Bool(!self.resolve(path).is_null()),
+            Expr::Count { list, test } => Val::num(self.count(list, test)),
             Expr::Match { group, end } => self
                 .spans
                 .iter()

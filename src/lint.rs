@@ -228,6 +228,7 @@ fn lint_core<'a>(
         legacy_order,
         comments,
         holders,
+        values,
     } = tree.map_or_else(walk::Walk::empty, |tree| walk::Walk::new(tree, arena));
     let positions = Ranges::new(source, ranges, holders);
     let mut out = Vec::new();
@@ -252,6 +253,7 @@ fn lint_core<'a>(
             &parsed,
             &positions.all,
             &positions.holders,
+            &data_rules::nodes(&positions.all, &values),
             &line_model,
             opts,
         ));
