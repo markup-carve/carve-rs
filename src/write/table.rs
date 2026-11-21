@@ -12,6 +12,16 @@ use crate::view::{Arr, V};
 /// A plain pipe table whose emitted rows are their own read-back certificate.
 /// The restricted alphabet cannot start a block or inline construct, and the
 /// exact row spelling below fixes the table parser's cell boundaries.
+macro_rules! plain_meta {
+    ($n:expr) => {
+        $n.attrs.is_none()
+            && $n.data.is_none()
+            && $n.dir.is_none()
+            && $n.lang.is_none()
+            && $n.metadata.is_none()
+    };
+}
+
 pub(super) fn certifies_plain_rows(w: &Writer<'_>, group: Arr<'_>) -> bool {
     if w.align_tables
         || !w.abbreviations.is_empty()
@@ -21,19 +31,19 @@ pub(super) fn certifies_plain_rows(w: &Writer<'_>, group: Arr<'_>) -> bool {
     {
         return false;
     }
-    macro_rules! plain_meta {
-        ($n:expr) => {
-            $n.attrs.is_none()
-                && $n.data.is_none()
-                && $n.dir.is_none()
-                && $n.lang.is_none()
-                && $n.metadata.is_none()
-        };
-    }
     let Some(V::Node(AstNode::Table(table))) = group.first() else {
         return false;
     };
-    if !plain_meta!(table) || table.caption.is_some() || table.children.len() != 1 {
+    certifies_plain_table(w, table)
+}
+
+fn certifies_plain_table(w: &Writer<'_>, table: &crate::ast::Table<'_>) -> bool {
+    if !plain_meta!(table)
+        || table.caption.is_some()
+        || table.children.len() != 1
+        || table.columns.is_empty()
+        || !table.columns.iter().all(plain_column)
+    {
         return false;
     }
     let Some(AstNode::TableBody(body)) = table.children.first() else {
@@ -43,80 +53,80 @@ pub(super) fn certifies_plain_rows(w: &Writer<'_>, group: Arr<'_>) -> bool {
         || body.row_head_columns.is_some()
         || body.children.is_empty()
         || body.children.len() != w.lines.len()
-        || table.columns.is_empty()
     {
         return false;
     }
-    if table.columns.iter().any(|column| {
-        let AstNode::TableColumn(c) = column else {
-            return true;
-        };
-        !plain_meta!(c) || c.align.is_some() || c.valign.is_some() || c.width.is_some()
-    }) {
-        return false;
-    }
-    for (node, written) in body.children.iter().zip(&w.lines) {
+    body.children.iter().zip(&w.lines).all(|(node, written)| {
         let AstNode::TableRow(row) = node else {
             return false;
         };
-        if !plain_meta!(row) || row.children.len() != table.columns.len() {
-            return false;
-        }
-        let Some(mut rest) = written.strip_prefix('|') else {
+        plain_row(row, table.columns.len(), written)
+    })
+}
+
+fn plain_column(node: &AstNode<'_>) -> bool {
+    let AstNode::TableColumn(c) = node else {
+        return false;
+    };
+    plain_meta!(c) && c.align.is_none() && c.valign.is_none() && c.width.is_none()
+}
+
+fn plain_row(row: &crate::ast::TableRow<'_>, ncols: usize, written: &str) -> bool {
+    if !plain_meta!(row) || row.children.len() != ncols {
+        return false;
+    }
+    let Some(mut rest) = written.strip_prefix('|') else {
+        return false;
+    };
+    for node in row.children.iter() {
+        let AstNode::TableCell(cell) = node else {
             return false;
         };
-        for node in row.children.iter() {
-            let AstNode::TableCell(cell) = node else {
-                return false;
-            };
-            if !plain_meta!(cell)
-                || cell.header
-                || cell.align.is_some()
-                || cell.valign.is_some()
-                || cell.span.is_some()
-                || cell.colspan.is_some()
-                || cell.rowspan.is_some()
-                || cell.scope.is_some()
-                || cell.header_ids.is_some()
-                || cell.children.len() != 1
-            {
-                return false;
-            }
-            let Some(AstNode::CellParagraph(paragraph)) = cell.children.first() else {
-                return false;
-            };
-            if !plain_meta!(paragraph) || paragraph.children.len() > 1 {
-                return false;
-            }
-            let value = match paragraph.children.first() {
-                None => "",
-                Some(AstNode::Text(t)) if plain_meta!(t) => t.value,
-                _ => return false,
-            };
-            if !value.bytes().all(|b| b.is_ascii_alphanumeric()) {
-                return false;
-            }
-            let Some(next) = rest.strip_prefix(' ').and_then(|s| s.strip_prefix(value)) else {
-                return false;
-            };
-            let next = if value.is_empty() {
-                next
-            } else {
-                let Some(next) = next.strip_prefix(' ') else {
-                    return false;
-                };
-                next
-            };
-            let Some(next) = next.strip_prefix('|') else {
-                return false;
-            };
-            rest = next;
-        }
-        if !rest.is_empty() {
+        let Some(next) = plain_cell(cell, rest) else {
             return false;
-        }
+        };
+        rest = next;
     }
-    true
+    rest.is_empty()
+}
+
+fn plain_cell_options(cell: &crate::ast::TableCell<'_>) -> bool {
+    plain_meta!(cell)
+        && !cell.header
+        && cell.align.is_none()
+        && cell.valign.is_none()
+        && cell.span.is_none()
+        && cell.colspan.is_none()
+        && cell.rowspan.is_none()
+        && cell.scope.is_none()
+        && cell.header_ids.is_none()
+}
+
+fn plain_cell<'a>(cell: &crate::ast::TableCell<'_>, written: &'a str) -> Option<&'a str> {
+    if !plain_cell_options(cell) || cell.children.len() != 1 {
+        return None;
+    }
+    let AstNode::CellParagraph(paragraph) = cell.children.first()? else {
+        return None;
+    };
+    if !plain_meta!(paragraph) || paragraph.children.len() > 1 {
+        return None;
+    }
+    let value = match paragraph.children.first() {
+        None => "",
+        Some(AstNode::Text(t)) if plain_meta!(t) => t.value,
+        _ => return None,
+    };
+    if !value.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let rest = written.strip_prefix(' ')?.strip_prefix(value)?;
+    let rest = if value.is_empty() {
+        rest
+    } else {
+        rest.strip_prefix(' ')?
+    };
+    rest.strip_prefix('|')
 }
 
 const MIN_RUN: usize = 3;
