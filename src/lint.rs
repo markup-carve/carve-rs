@@ -1183,6 +1183,7 @@ impl<'a> Ranges<'a> {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)] // Independent facts of a node, read by separate rules.
 struct Range<'a> {
     start: usize,
     end: usize,
@@ -1298,7 +1299,7 @@ impl data_model::NodeTree for TreeNodes<'_, '_> {
 
     fn len(&self, node: u32) -> Option<usize> {
         let value = self.made.borrow().get(node as usize).copied()?;
-        value.as_array().map(|items| items.len())
+        value.as_array().map(crate::view::Arr::len)
     }
 }
 
@@ -1311,103 +1312,36 @@ fn joined_rows<'t>(
     values: &[V<'t>],
     joined: &mut Vec<V<'t>>,
 ) {
-    let mut rows = Vec::new();
-    for (table, (range, value)) in positions.all.iter().zip(values).enumerate() {
-        if range.kind != "table" {
-            continue;
-        }
-        let groups = value.at("children");
-        for (group, rows_of) in groups
-            .as_array()
-            .into_iter()
-            .flat_map(|a| a.iter())
-            .enumerate()
-        {
-            let list = rows_of.at("children");
-            for (index, row) in list
-                .as_array()
-                .into_iter()
-                .flat_map(|a| a.iter())
-                .enumerate()
-            {
-                if row.ty() == "table_row" && row.pos().is_none() {
-                    rows.push((table, group, index, row));
-                }
-            }
-        }
-    }
+    let rows = pos_less_rows(&positions.all, values);
     if rows.is_empty() {
         return;
     }
     let entries = crate::api::layout::entries(source, &tree.to_value());
     let line_of = |at: usize| source[..at.min(source.len())].matches('\n').count() + 1;
     for (table, group, index, row) in rows {
-        let table_path = positions.all[table].path.as_str().to_owned();
+        let Some(table_path) = positions
+            .all
+            .get(table)
+            .map(|range| range.path.as_str().to_owned())
+        else {
+            continue;
+        };
         let group_path = format!("{table_path}/children/{group}");
         let path = format!("{group_path}/children/{index}");
-        let Some(entry) = entries
-            .iter()
-            .find(|entry| entry.get("path").and_then(serde_json::Value::as_str) == Some(&path))
-        else {
+        let (Some((start, end)), Some(parent), Ok(index), Ok(made)) = (
+            entry_span(&entries, &path),
+            group_holder(positions, &group_path),
+            u32::try_from(index),
+            u32::try_from(positions.all.len()),
+        ) else {
             continue;
         };
-        let byte = |key: &str| {
-            entry
-                .get(key)
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|at| usize::try_from(at).ok())
-        };
-        let (Some(start), Some(end)) = (byte("startByte"), byte("endByte")) else {
-            continue;
-        };
-        let Some(group_range) = positions
-            .all
-            .iter()
-            .position(|range| range.path.as_str() == group_path)
-            .and_then(|at| u32::try_from(at).ok())
-        else {
-            continue;
-        };
-        let Some(parent) = positions
-            .holders
-            .iter()
-            .position(|holder| holder.range == Some(group_range))
-            .and_then(|at| u32::try_from(at).ok())
-        else {
-            continue;
-        };
-        let (Ok(index), Ok(made)) = (u32::try_from(index), u32::try_from(positions.all.len()))
-        else {
-            continue;
-        };
-        let sibling = |at: Option<u32>| {
-            at.and_then(|at| {
-                positions.all.iter().position(|range| {
-                    range.holder == Some(parent) && range.index == at && !range.joined
-                })
-            })
-        };
-        let prev = sibling(index.checked_sub(1)).and_then(|at| u32::try_from(at).ok());
-        let next = sibling(index.checked_add(1));
-        // The cells that have ranges sit in the holder of the row, whose path node is the row's.
-        let cell = positions.all.iter().find(|range| {
-            range.kind == "table_cell"
-                && range.holder.is_some_and(|holder| {
-                    positions.holders[holder as usize].up == Some(parent)
-                        && positions.holders[holder as usize].range.is_none()
-                })
-                && range
-                    .path
-                    .node
-                    .and_then(|node| node.previous?.previous)
-                    .is_some_and(|node| matches!(node.segment, walk::Segment::Index(at) if at == index as usize))
-        });
-        let (node, holder) = cell.map_or((None, None), |cell| {
-            (
-                cell.path.node.and_then(|node| node.previous?.previous),
-                cell.holder,
-            )
-        });
+        let prev = index
+            .checked_sub(1)
+            .and_then(|at| sibling(&positions.all, parent, at))
+            .and_then(|at| u32::try_from(at).ok());
+        let next = sibling(&positions.all, parent, index + 1);
+        let (node, holder) = row_cell(positions, parent, index);
         let text = OnceCell::new();
         if node.is_none() {
             let _ = text.set(path);
@@ -1429,13 +1363,95 @@ fn joined_rows<'t>(
             joined: true,
         });
         joined.push(row);
-        if let Some(holder) = holder {
-            positions.holders[holder as usize].range = Some(made);
+        if let Some(holder) = holder.and_then(|at| positions.holders.get_mut(at as usize)) {
+            holder.range = Some(made);
         }
-        if let Some(next) = next {
-            positions.all[next].prev = Some(made);
+        if let Some(next) = next.and_then(|at| positions.all.get_mut(at)) {
+            next.prev = Some(made);
         }
     }
+}
+
+/// The table rows without `pos`: the table's range, the group and row indexes, and the row.
+fn pos_less_rows<'t>(ranges: &[Range<'_>], values: &[V<'t>]) -> Vec<(usize, usize, usize, V<'t>)> {
+    let mut rows = Vec::new();
+    for (table, (range, value)) in ranges.iter().zip(values).enumerate() {
+        if range.kind != "table" {
+            continue;
+        }
+        let groups = value.at("children");
+        let groups = groups
+            .as_array()
+            .into_iter()
+            .flat_map(crate::view::Arr::iter);
+        for (group, rows_of) in groups.enumerate() {
+            let list = rows_of.at("children");
+            let list = list.as_array().into_iter().flat_map(crate::view::Arr::iter);
+            for (index, row) in list.enumerate() {
+                if row.ty() == "table_row" && row.pos().is_none() {
+                    rows.push((table, group, index, row));
+                }
+            }
+        }
+    }
+    rows
+}
+
+/// The start and end of the layout entry of a path.
+fn entry_span(entries: &[serde_json::Value], path: &str) -> Option<(usize, usize)> {
+    let entry = entries
+        .iter()
+        .find(|entry| entry.get("path").and_then(serde_json::Value::as_str) == Some(path))?;
+    let byte = |key: &str| {
+        entry
+            .get(key)
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|at| usize::try_from(at).ok())
+    };
+    Some((byte("startByte")?, byte("endByte")?))
+}
+
+/// The holder of the children of the group at a path.
+fn group_holder(positions: &Ranges<'_>, group_path: &str) -> Option<u32> {
+    let group = positions
+        .all
+        .iter()
+        .position(|range| range.path.as_str() == group_path)
+        .and_then(|at| u32::try_from(at).ok())?;
+    positions
+        .holders
+        .iter()
+        .position(|holder| holder.range == Some(group))
+        .and_then(|at| u32::try_from(at).ok())
+}
+
+/// The range of the item at `index` of the children a holder holds.
+fn sibling(ranges: &[Range<'_>], parent: u32, index: u32) -> Option<usize> {
+    ranges
+        .iter()
+        .position(|range| range.holder == Some(parent) && range.index == index && !range.joined)
+}
+
+/// The path node of a row and the holder of its cells, read off a cell of it that has a range.
+fn row_cell<'a>(
+    positions: &Ranges<'a>,
+    parent: u32,
+    index: u32,
+) -> (Option<&'a walk::PathNode<'a>>, Option<u32>) {
+    let row_of = |range: &Range<'a>| range.path.node.and_then(|node| node.previous?.previous);
+    let cell = positions.all.iter().find(|range| {
+        range.kind == "table_cell"
+            && range.holder.is_some_and(|holder| {
+                positions
+                    .holders
+                    .get(holder as usize)
+                    .is_some_and(|holder| holder.up == Some(parent) && holder.range.is_none())
+            })
+            && row_of(range).is_some_and(
+                |node| matches!(node.segment, walk::Segment::Index(at) if at == index as usize),
+            )
+    });
+    cell.map_or((None, None), |cell| (row_of(cell), cell.holder))
 }
 
 /// Records item `at` of a `children` list, made as range `made`, as the previous sibling of item `at + 1`.

@@ -459,8 +459,11 @@ pub(super) struct Records<'a> {
     /// The source format of each table read so far, by range.
     formats: RefCell<Vec<Option<&'static str>>>,
     /// The marker and content columns of each item read so far, by range.
-    columns: RefCell<Vec<Option<(Option<usize>, Option<usize>)>>>,
+    columns: RefCell<Vec<Option<Columns>>>,
 }
+
+/// The marker and content columns of an item.
+type Columns = (Option<usize>, Option<usize>);
 
 /// The value of `slot` in a per-range cache, made on first read.
 fn memo<T: Copy>(
@@ -522,7 +525,7 @@ pub(super) struct TreeFacts<'a> {
 pub(super) fn heading_ids(node: crate::view::V<'_>, out: &mut HashMap<usize, String>) {
     if node.is_array() {
         if let Some(items) = node.as_array() {
-            for item in items.iter() {
+            for item in items {
                 heading_ids(item, out);
             }
         }
@@ -606,6 +609,7 @@ struct TableLines {
 }
 
 impl<'a> Records<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         source: &'a str,
         positions: &'a Source<'a>,
@@ -903,7 +907,14 @@ impl<'a> Records<'a> {
             F::AttachedHere => Val::Bool(line.attached),
             F::ClosesContainer => Val::Bool(line.closes),
             F::OpenColon => Val::Colons(index as u32),
-            F::AncestorIds => Val::LineAncestorIds(line.leaf),
+            _ => self.line_fields_150(index, name),
+        }
+    }
+
+    /// The line fields of C2-W-149 and C2-W-150.
+    fn line_fields_150(&self, index: usize, name: F) -> Val<'a> {
+        match name {
+            F::AncestorIds => Val::LineAncestorIds(self.lines[index].leaf),
             F::TableAbove => self.table_lines().above[index].map_or(Val::Null, Val::Line),
             F::TableBelow => self.table_lines().below[index].map_or(Val::Null, Val::Line),
             _ => Val::Null,
@@ -1402,10 +1413,9 @@ impl<'a> Records<'a> {
     pub fn list_len(&self, list: &Val<'a>) -> usize {
         match list {
             Val::Colons(line) => self.colon_ids(*line).len(),
-            Val::Ancestors(leaf) => self.ancestors(*leaf).count(),
+            Val::Ancestors(leaf) | Val::LineAncestorIds(leaf) => self.ancestors(*leaf).count(),
             Val::Node(node) => self.nodes.len(*node).unwrap_or(0),
             Val::BlockAncestors(at) | Val::AncestorIds(at) => self.holder_chain(*at).count() + 1,
-            Val::LineAncestorIds(leaf) => self.ancestors(*leaf).count(),
             Val::List(items) => items.len(),
             _ => 0,
         }
@@ -1544,11 +1554,18 @@ impl<'a> Records<'a> {
             F::Owner => Val::Owner(block.owner),
             F::ItemOwner => Val::Owner(block.item_owner),
             F::Parent => Val::Owner(block.parent),
-            F::Identity => Val::num(block.range as usize),
-            F::Layout => Self::layout_entry(block.range),
-            F::SourceFormat => self.table_format(block.range),
-            F::Group => self.group_of(block.range),
-            F::RowIndex => self.row_index(block.range),
+            _ => self.block_fields_150(block.range, name),
+        }
+    }
+
+    /// The block fields of C2-W-149 and C2-W-150.
+    fn block_fields_150(&self, range: u32, name: F) -> Val<'a> {
+        match name {
+            F::Identity => Val::num(range as usize),
+            F::Layout => Self::layout_entry(range),
+            F::SourceFormat => self.table_format(range),
+            F::Group => self.group_of(range),
+            F::RowIndex => self.row_index(range),
             _ => Val::Null,
         }
     }

@@ -1249,14 +1249,16 @@ fn link_gap(line: &Line, sink: &mut Sink<'_>) {
     // from its first bracket, and every scan moves past what it read.
     let mut at = 0;
     while let Some(open) = find(at, b'[') {
-        if open > 0 && bytes[open - 1] == b'\\' {
+        if open > 0 && bytes.get(open - 1) == Some(&b'\\') {
             at = open + 1;
             continue;
         }
         let Some(close) = find(open + 1, b']') else {
             return;
         };
-        let gap = bytes[close + 1..]
+        let gap = bytes
+            .get(close + 1..)
+            .unwrap_or_default()
             .iter()
             .take_while(|b| matches!(b, b' ' | b'\t'))
             .count();

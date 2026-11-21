@@ -358,6 +358,18 @@ fn run_rule<'a>(
         report(rule, open, &mut eval, out, path);
         return;
     };
+    run_each(rule, open, each, &mut eval, out, path);
+}
+
+/// The report entries of a rule with `each`, once per match or pair of its text.
+fn run_each(
+    rule: &'static Rule,
+    open: u64,
+    each: &Each,
+    eval: &mut Eval<'_, '_>,
+    out: &mut Vec<Diagnostic>,
+    path: &dyn Fn() -> String,
+) {
     let subject = eval.value(&each.subject);
     let Val::Str(text) = subject else {
         return;
@@ -368,7 +380,7 @@ fn run_rule<'a>(
             eval.spans.clear();
             eval.spans.extend(pair);
             eval.base = base;
-            report(rule, open, &mut eval, out, path);
+            report(rule, open, eval, out, path);
         }
         return;
     }
@@ -391,7 +403,7 @@ fn run_rule<'a>(
                 }
             }
             eval.base = base;
-            report(rule, open, &mut eval, out, path);
+            report(rule, open, eval, out, path);
         }
         return;
     }
@@ -403,7 +415,7 @@ fn run_rule<'a>(
             }
         }
         eval.base = base;
-        report(rule, open, &mut eval, out, path);
+        report(rule, open, eval, out, path);
     }
 }
 

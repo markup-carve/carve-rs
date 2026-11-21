@@ -257,14 +257,15 @@ pub(super) struct Pattern {
     /// For a top-level alternation without look-around in which some branch has no group: each branch
     /// anchored at the start, with its groups. A span the whole pattern finds is the match of the first
     /// branch that matches at its start, so only that branch's groups need the capture engine.
-    pub branches: Option<Vec<(Regex, Vec<(&'static str, usize)>)>>,
+    pub branches: Option<Branches>,
 }
+
+/// The branches of an alternation, each with the names and indices of its groups.
+pub(super) type Branches = Vec<(Regex, Vec<(&'static str, usize)>)>;
 
 /// The branches of a top-level alternation without look-around, each anchored at the start, with the
 /// names and indices of their groups; none unless some branch has no group.
-fn branch_patterns(
-    hir: &regex_syntax::hir::Hir,
-) -> Option<Vec<(Regex, Vec<(&'static str, usize)>)>> {
+fn branch_patterns(hir: &regex_syntax::hir::Hir) -> Option<Branches> {
     let regex_syntax::hir::HirKind::Alternation(items) = hir.kind() else {
         return None;
     };
@@ -783,12 +784,7 @@ impl Scope<'_> {
         match op.as_str() {
             "f" => Expr::Field(path(arg.as_str().unwrap_or(""))),
             "v" => self.variable(arg.as_str().unwrap_or("")),
-            "all" if args.iter().all(|item| self.order_free(item)) => {
-                let mut items: Vec<Expr> = list(args);
-                items.sort_by_key(scans);
-                Expr::All(items)
-            }
-            "all" => Expr::All(list(args)),
+            "all" => self.all(args),
             "any" => Expr::Any(list(args)),
             "not" => Expr::Not(Box::new(self.compile(arg))),
             "in" => self.member(at(0), at(1)),
@@ -816,6 +812,15 @@ impl Scope<'_> {
             };
         }
         Expr::Cmp(cmp, Box::new((self.compile(left), self.compile(right))))
+    }
+
+    /// An `all`; the items of one whose tests are order free run with the scans last.
+    fn all(&self, args: &'static [Value]) -> Expr {
+        let mut items: Vec<Expr> = args.iter().map(|item| self.compile(item)).collect();
+        if args.iter().all(|item| self.order_free(item)) {
+            items.sort_by_key(scans);
+        }
+        Expr::All(items)
     }
 
     /// Whether a test neither sets nor reads match groups, so the items of an `all` of such tests may
@@ -956,6 +961,27 @@ impl Scope<'_> {
         }
     }
 
+    /// The values over lists and texts of C2-W-150.
+    fn compile_list(&self, op: &str, arg: &'static Value, args: &'static [Value]) -> Expr {
+        let null = &Value::Null;
+        let at = |i: usize| args.get(i).unwrap_or(null);
+        let pair = |a: usize, b: usize| Box::new((self.compile(at(a)), self.compile(at(b))));
+        match op {
+            "find" => Expr::Find {
+                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
+                test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
+            },
+            "nth" => Expr::Nth(pair(0, 1)),
+            "join" => Expr::Join(pair(0, 1)),
+            "column" => Expr::Column(pair(0, 1)),
+            "lower" => Expr::Lower(Box::new(self.compile(arg))),
+            "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
+            "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
+            "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
+            _ => Expr::Lit(Val::Null),
+        }
+    }
+
     /// The values that read lists and records of the document (C2-W-141).
     fn compile_scan(&self, op: &str, arg: &'static Value, args: &'static [Value]) -> Expr {
         let null = &Value::Null;
@@ -985,7 +1011,7 @@ impl Scope<'_> {
                 field: arg
                     .get("field")
                     .and_then(Value::as_str)
-                    .map_or_else(|| Box::default(), path),
+                    .map_or_else(Box::default, path),
                 site: lookup_site(arg),
             })),
             "index_of" => Expr::IndexOf(pair(0, 1)),
@@ -994,18 +1020,7 @@ impl Scope<'_> {
                 list: Box::new(self.list(arg.get("in").unwrap_or(null))),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
             },
-            "find" => Expr::Find {
-                list: Box::new(self.list(arg.get("in").unwrap_or(null))),
-                test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
-            },
-            "nth" => Expr::Nth(pair(0, 1)),
-            "join" => Expr::Join(pair(0, 1)),
-            "column" => Expr::Column(pair(0, 1)),
-            "lower" => Expr::Lower(Box::new(self.compile(arg))),
-            "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
-            "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
-            "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
-            _ => Expr::Lit(Val::Null),
+            _ => self.compile_list(op, arg, args),
         }
     }
 }
@@ -1340,7 +1355,11 @@ pub(super) fn quick_tests(when: &Expr) -> Vec<usize> {
 /// Whether an expression reads records other than its own: a lookup, or a test over a list.
 fn scans(expr: &Expr) -> bool {
     match expr {
-        Expr::Lookup(_) | Expr::Some { .. } | Expr::Count { .. } | Expr::Find { .. } => true,
+        Expr::Lookup(_)
+        | Expr::Some { .. }
+        | Expr::Count { .. }
+        | Expr::Find { .. }
+        | Expr::Var(_) => true,
         Expr::All(items) | Expr::Any(items) | Expr::Add(items) | Expr::Concat(items) => {
             items.iter().any(scans)
         }
@@ -1367,7 +1386,6 @@ fn scans(expr: &Expr) -> bool {
         | Expr::Shift { args, .. } => scans(&args.0) || scans(&args.1),
         Expr::If(args) => scans(&args.0) || scans(&args.1) || scans(&args.2),
         Expr::Slice(args) => scans(&args.0) || scans(&args.1) || args.2.as_ref().is_some_and(scans),
-        Expr::Var(_) => true,
         Expr::Lit(_)
         | Expr::Field(_)
         | Expr::Has(_)
@@ -2163,10 +2181,10 @@ fn lookup_site(arg: &'static Value) -> usize {
     }
     static SITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let key = &arg["key"];
-    let signature = if !item_only(key) {
-        format!("{:p}", std::ptr::from_ref(arg))
-    } else {
+    let signature = if item_only(key) {
         format!("{} {} {}", arg["over"], arg["types"], key)
+    } else {
+        format!("{:p}", std::ptr::from_ref(arg))
     };
     let mut sites = SITES
         .lock()
@@ -2226,6 +2244,7 @@ fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> 
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::{STRIP_QUOTES, pattern, strip_quotes};
 
