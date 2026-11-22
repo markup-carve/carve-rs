@@ -815,7 +815,9 @@ fn append_tree_node_ids<'a, 'v: 'a>(
                 owner: range.kind,
                 start: range.start,
                 heading_text: (range.kind == "heading").then(|| plain_children(value)),
-                rendered: range.kind != "frontmatter" && !(raw_html && range.kind == "raw_block"),
+                rendered: range.kind != "frontmatter"
+                    && !(range.kind == "raw_block"
+                        && (raw_html || value.at("format").as_str() != Some("html"))),
                 xref: range.kind == "heading" || numbered_caption(value),
             },
         );

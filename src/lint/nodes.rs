@@ -481,7 +481,11 @@ fn id_index<'a>(items: &[Item<'a>], raw_html: bool) -> (RenderedIds, Vec<IdTarge
         let attribute = item.node.at("attrs").at("id").as_str();
         let generated = item.node.at("generatedId").as_str();
         for id in attribute.into_iter().chain(generated) {
-            if kind != "frontmatter" && !(raw_html && kind == "raw_block") {
+            // A raw block keeps its id only as the escaped HTML of a raw html block.
+            if kind != "frontmatter"
+                && !(kind == "raw_block"
+                    && (raw_html || item.node.at("format").as_str() != Some("html")))
+            {
                 ids.add(id);
             }
             targets.push(IdTarget {

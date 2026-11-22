@@ -120,3 +120,19 @@ fn djot_pair_scan_does_not_reuse_a_closing_mark() {
     );
     assert!(messages("\\~a~\n", "djot-subscript-tilde", &options).is_empty());
 }
+
+#[test]
+fn a_dropped_raw_block_id_is_no_case_only_target() {
+    let source =
+        "{#Raw}\n```=latex\nx\n```\n\n{#Hh}\n```=html\n<b>x</b>\n```\n\n[a](#raw) [b](#hh)\n";
+    let found = messages(source, "broken-fragment-link", &LintOptions::default());
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(
+        found[0].contains("matches no id in this document"),
+        "{found:?}"
+    );
+    assert!(
+        found[1].contains("the id \"Hh\" differs only in case"),
+        "{found:?}"
+    );
+}
