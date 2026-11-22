@@ -16,8 +16,8 @@ pub(crate) use lines::is_carve_region_marker;
 /// The inclusive, one-based content lines of a named region. An empty region
 /// has an end one less than its start.
 pub fn region_lines(source: &str, name: &str, code: bool) -> Result<(usize, usize), &'static str> {
-    let lines = lines::file_lines(source);
-    let range = lines::region_range(source, &lines, name, code, &|_| false)?;
+    let source = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let range = lines::region_scan(source.lines().enumerate(), name, code, |_| false)?;
     Ok((range.from + 1, range.to))
 }
 
