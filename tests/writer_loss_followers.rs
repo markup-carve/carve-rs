@@ -133,3 +133,19 @@ fn embedded_newline_break_precedes_the_explicit_break_anchor() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn standard_data_on_surviving_text_before_a_break_is_not_a_loss() {
+    let (_, losses) = write(&[
+        json!({"type":"soft_break"}),
+        json!({"type":"text", "value":"x", "data":{"carve.source":{"format":"html", "locator":{"part":"input"}, "importer":{"name":"x", "version":"1"}}}}),
+        json!({"type":"soft_break"}),
+        json!({"type":"text", "value":"y"}),
+    ]);
+    assert!(
+        !losses
+            .iter()
+            .any(|entry| entry.contains("/children/0/children/1")),
+        "{losses:?}"
+    );
+}

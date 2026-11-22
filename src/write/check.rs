@@ -1896,7 +1896,7 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
         for &node in es.get(at.i..i).unwrap_or_default() {
             if let Some(found) = (actual_at..j).find(|&candidate| {
                 as_.get(candidate)
-                    .is_some_and(|a| super::node::trees_equal(node, a))
+                    .is_some_and(|a| super::writer_equal(node, a))
             }) {
                 actual_at = found + 1;
             } else {
