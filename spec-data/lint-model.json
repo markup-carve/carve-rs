@@ -8296,7 +8296,6 @@
             "value": {
               "f": "ancestor_ids.0"
             },
-            "before": true,
             "field": "layout.markerColumn"
           }
         },
@@ -8359,6 +8358,52 @@
             },
             "before": true,
             "field": "ancestor_ids.0"
+          }
+        },
+        "prev_index": {
+          "lookup": {
+            "over": "block",
+            "types": [
+              "list"
+            ],
+            "key": {
+              "f": "item.identity"
+            },
+            "value": {
+              "v": "prev_list"
+            },
+            "field": "index"
+          }
+        },
+        "closer_index": {
+          "lookup": {
+            "over": "block",
+            "key": {
+              "if": [
+                {
+                  "not": {
+                    "in": [
+                      {
+                        "f": "item.type"
+                      },
+                      [
+                        "list",
+                        "paragraph"
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "f": "item.ancestor_ids.0"
+                },
+                false
+              ]
+            },
+            "value": {
+              "f": "ancestor_ids.1"
+            },
+            "before": true,
+            "field": "index"
           }
         },
         "deeper": {
@@ -8472,11 +8517,38 @@
                 ]
               },
               {
-                "eq": [
+                "in": [
                   {
                     "v": "list_prev"
                   },
-                  "list"
+                  [
+                    "list",
+                    "paragraph"
+                  ]
+                ]
+              },
+              {
+                "any": [
+                  {
+                    "not": {
+                      "ge": [
+                        {
+                          "v": "closer_index"
+                        },
+                        0
+                      ]
+                    }
+                  },
+                  {
+                    "lt": [
+                      {
+                        "v": "closer_index"
+                      },
+                      {
+                        "v": "prev_index"
+                      }
+                    ]
+                  }
                 ]
               },
               {
