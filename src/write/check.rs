@@ -1083,6 +1083,26 @@ fn run_offset<'t>(es: &[N<'t>], i: usize, mut at: usize) -> Option<(N<'t>, usize
     None
 }
 
+/// C2-W-090, C2-W-099: a dash takes the escape of the bare hyphen run it
+/// stands in; `None` when that escape is already asked.
+fn dash_run_start(
+    w: &Writer<'_>,
+    c: &Check<'_>,
+    e: N<'_>,
+    start: usize,
+    a: V<'_>,
+) -> Option<usize> {
+    if ty(a) != "smart_punctuation" || !s(a, "source").is_some_and(|x| x.starts_with('-')) {
+        return Some(start);
+    }
+    let b = text(e).as_bytes();
+    let mut start = start;
+    while start > 0 && b.get(start - 1) == Some(&b'-') && !is_escaped(w, c, e, start - 1) {
+        start -= 1;
+    }
+    (!is_escaped(w, c, e, start + 1)).then_some(start)
+}
+
 fn escape_opener<'t>(
     w: &Writer<'t>,
     c: &mut Check<'t>,
@@ -1097,15 +1117,9 @@ fn escape_opener<'t>(
     while matches!(b.get(start), Some(b' ' | b'\t')) {
         start += 1;
     }
-    // C2-W-090, C2-W-099: a dash takes the escape of the bare hyphen run it stands in.
-    if ty(a) == "smart_punctuation" && s(a, "source").is_some_and(|x| x.starts_with('-')) {
-        while start > 0 && b.get(start - 1) == Some(&b'-') && !is_escaped(w, c, e, start - 1) {
-            start -= 1;
-        }
-        if is_escaped(w, c, e, start + 1) {
-            return;
-        }
-    }
+    let Some(start) = dash_run_start(w, c, e, start, a) else {
+        return;
+    };
     let shifted = start + opener_shift(a);
     // The opener's second character can sit in the next text node (C2-W-099).
     if shifted >= b.len()
