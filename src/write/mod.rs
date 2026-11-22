@@ -675,7 +675,9 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
     w.group_certificate = GroupCertificate::None;
     let reported = w.sp.losses.len();
-    let saved = SavedGroup::new(w);
+    let end = group_end(w, children(doc), from);
+    let group = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
+    let saved = SavedGroup::new(w, group);
     w.kind_failed = false;
     let end = repair_rounds(w, doc, from, first, reported);
     if (w.sp.losses.len() == reported && !w.kind_failed) || !w.kind_escapes {
@@ -684,7 +686,7 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     w.kind_failed = false;
     // C2-W-088: a group whose kind rounds leave a node unread is written by
     // rounds of the reported escapes only.
-    saved.restore(w, reported);
+    saved.restore(w, reported, group);
     w.kind_escapes = false;
     w.group_certificate = GroupCertificate::None;
     let end = repair_rounds(w, doc, from, first, reported);
@@ -692,38 +694,99 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     end
 }
 
-/// The repair state of a group before its rounds, for the C2-W-088 fallback.
+/// The repair state of a group before its rounds, for the C2-W-088 fallback:
+/// only the entries of the group's nodes and their stand-ins, so a document
+/// of many groups stays linear.
 struct SavedGroup<'t> {
     lines: Vec<String>,
-    escapes: AddrMap<usize, Vec<usize>>,
-    attempts: AddrMap<usize, state::Attempt<'t>>,
-    lost: AddrSet<usize>,
-    lost_keys: AddrMap<usize, Vec<String>>,
-    forms: AddrMap<usize, u32>,
+    ids: Vec<usize>,
+    escapes: Vec<(usize, Vec<usize>)>,
+    attempts: Vec<(usize, state::Attempt<'t>)>,
+    lost: Vec<usize>,
+    lost_keys: Vec<(usize, Vec<String>)>,
+    forms: Vec<(usize, u32)>,
     blank_first: bool,
 }
 
+fn node_ids(v: V<'_>, out: &mut Vec<usize>) {
+    if let Some(items) = v.as_array() {
+        for item in items {
+            node_ids(item, out);
+        }
+    } else if v.is_object() {
+        out.push(id(v));
+        v.each(&mut |_, value| node_ids(value, out));
+    }
+}
+
 impl<'t> SavedGroup<'t> {
-    fn new(w: &Writer<'t>) -> Self {
+    fn new(w: &Writer<'t>, group: Arr<'_>) -> Self {
+        let mut ids = Vec::new();
+        for node in group {
+            node_ids(node, &mut ids);
+        }
+        let stand_ins: Vec<usize> = ids
+            .iter()
+            .filter_map(|n| w.stand_ins.get(n))
+            .flat_map(|roles| roles.values().map(|n| id(*n)))
+            .collect();
+        ids.extend(stand_ins);
+        let take = |n: &usize| *n;
         Self {
             lines: w.lines.clone(),
-            escapes: w.sp.escapes.clone(),
-            attempts: w.sp.attempts.clone(),
-            lost: w.sp.lost.clone(),
-            lost_keys: w.sp.lost_keys.clone(),
-            forms: w.forms.clone(),
+            escapes: ids
+                .iter()
+                .filter_map(|n| w.sp.escapes.get(n).map(|e| (take(n), e.clone())))
+                .collect(),
+            attempts: ids
+                .iter()
+                .filter_map(|n| w.sp.attempts.get(n).map(|a| (take(n), a.clone())))
+                .collect(),
+            lost: ids
+                .iter()
+                .copied()
+                .filter(|n| w.sp.lost.contains(n))
+                .collect(),
+            lost_keys: ids
+                .iter()
+                .filter_map(|n| w.sp.lost_keys.get(n).map(|k| (take(n), k.clone())))
+                .collect(),
+            forms: ids
+                .iter()
+                .filter_map(|n| w.forms.get(n).map(|f| (take(n), *f)))
+                .collect(),
             blank_first: w.blank_first,
+            ids,
         }
     }
 
-    fn restore(self, w: &mut Writer<'t>, losses: usize) {
+    fn restore(self, w: &mut Writer<'t>, losses: usize, group: Arr<'_>) {
+        // Stand-ins made during the rounds belong to the group too.
+        let mut ids = self.ids;
+        let mut fresh = Vec::new();
+        for node in group {
+            node_ids(node, &mut fresh);
+        }
+        let stand_ins: Vec<usize> = fresh
+            .iter()
+            .filter_map(|n| w.stand_ins.get(n))
+            .flat_map(|roles| roles.values().map(|n| id(*n)))
+            .collect();
+        ids.extend(stand_ins);
+        for n in &ids {
+            w.sp.escapes.remove(n);
+            w.sp.attempts.remove(n);
+            w.sp.lost.remove(n);
+            w.sp.lost_keys.remove(n);
+            w.forms.remove(n);
+        }
+        w.sp.escapes.extend(self.escapes);
+        w.sp.attempts.extend(self.attempts);
+        w.sp.lost.extend(self.lost);
+        w.sp.lost_keys.extend(self.lost_keys);
+        w.forms.extend(self.forms);
         w.lines = self.lines;
-        w.sp.escapes = self.escapes;
-        w.sp.attempts = self.attempts;
         w.sp.losses.truncate(losses);
-        w.sp.lost = self.lost;
-        w.sp.lost_keys = self.lost_keys;
-        w.forms = self.forms;
         w.blank_first = self.blank_first;
     }
 }
