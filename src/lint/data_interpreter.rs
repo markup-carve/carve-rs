@@ -668,6 +668,7 @@ pub(super) enum Expr {
     Find {
         list: Box<Self>,
         test: Box<Self>,
+        field: Path,
     },
     Nth(Box<(Self, Self)>),
     Join(Box<(Self, Self)>),
@@ -970,6 +971,11 @@ impl Scope<'_> {
             "find" => Expr::Find {
                 list: Box::new(self.list(arg.get("in").unwrap_or(null))),
                 test: Box::new(self.compile(arg.get("where").unwrap_or(null))),
+                field: arg
+                    .get("field")
+                    .and_then(Value::as_str)
+                    .map(path)
+                    .unwrap_or_default(),
             },
             "nth" => Expr::Nth(pair(0, 1)),
             "join" => Expr::Join(pair(0, 1)),
@@ -1443,9 +1449,9 @@ fn stateless(expr: &Expr) -> bool {
 
 fn stateless_scan(expr: &Expr) -> bool {
     match expr {
-        Expr::Some { list, test, .. } | Expr::Count { list, test } | Expr::Find { list, test } => {
-            stateless(list) && stateless(test)
-        }
+        Expr::Some { list, test, .. }
+        | Expr::Count { list, test }
+        | Expr::Find { list, test, .. } => stateless(list) && stateless(test),
         Expr::Lookup(lookup) => {
             lookup.value.as_ref().is_none_or(stateless)
                 && lookup.from.as_ref().is_none_or(stateless)
@@ -1928,7 +1934,10 @@ impl<'a> Eval<'_, 'a> {
             Expr::Var(index) => self.variable(*index),
             Expr::Has(path) => Val::Bool(!self.resolve(path).is_null()),
             Expr::Count { list, test } => Val::num(self.count(list, test)),
-            Expr::Find { list, test } => self.find(list, test),
+            Expr::Find { list, test, field } => {
+                let found = self.find(list, test);
+                resolve_from(self.records, found, field)
+            }
             Expr::Nth(args) => {
                 let list = self.value(&args.0);
                 let at = self.value(&args.1);
