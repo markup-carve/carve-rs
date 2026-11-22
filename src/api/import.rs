@@ -473,8 +473,8 @@ impl super::Carve {
         opts: ImportOptions,
         limits: &LossOptions,
     ) -> Result<Imported, Error> {
-        // The importer already owns the checked JSON value. The public tree
-        // needs its wire form, but the writer can read this value directly.
+        // The importer already owns the checked JSON value. The writer reads it
+        // directly; the public tree builds its wire form only when requested.
         let settings = crate::write::Settings {
             extensions: self
                 .standard
@@ -485,7 +485,7 @@ impl super::Carve {
             ..crate::write::Settings::default()
         };
         let (source, writer_diagnostics) = crate::write::write_value(&imported.tree, &settings);
-        let tree = Tree::trusted(imported.tree, None).map_err(|e| Error::ImportInput {
+        let tree = Tree::trusted_imported(imported.tree).map_err(|e| Error::ImportInput {
             message: format!("the imported tree cannot be decoded: {e}"),
         })?;
         let allowed = |e: &Entry| limits.allow_losses.contains(&e.code);
@@ -527,4 +527,24 @@ fn losses(entries: &[Entry]) -> Vec<String> {
         .filter(|e| e.channel == "render-loss")
         .map(|e| e.code.clone())
         .collect()
+}
+
+#[cfg(test)]
+mod imported_wire_test {
+    use super::{ImportOptions, import_document};
+
+    #[test]
+    fn imported_tree_encodes_on_first_request() -> Result<(), String> {
+        let html = "<ul><li><p>a <em>b</em></p></li></ul>";
+        let expected = crate::import::import_html(html, false, true)
+            .map_err(|error| error.0)?
+            .tree
+            .to_string();
+        let imported =
+            import_document(html, &ImportOptions::default()).map_err(|error| error.to_string())?;
+        assert!(imported.tree.json.get().is_none());
+        assert_eq!(crate::api::encode_tree(&imported.tree), expected);
+        assert!(imported.tree.json.get().is_some());
+        Ok(())
+    }
 }

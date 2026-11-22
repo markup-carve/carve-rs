@@ -267,8 +267,22 @@ impl Tree {
 
     /// A tree the engine built from checked parts, decoded without the
     /// reader checks, which cost far more than the parse (carve-rs#4336).
-    pub(crate) fn trusted(mut value: Value, top: Option<String>) -> Result<Self, Error> {
-        let json = value.to_string();
+    pub(crate) fn trusted(value: Value, top: Option<String>) -> Result<Self, Error> {
+        Self::trusted_inner(value, top, true)
+    }
+
+    /// Importer-built trees contain only schema fields. Their wire form can be
+    /// serialized from the owned tree when a caller first requests it.
+    pub(crate) fn trusted_imported(value: Value) -> Result<Self, Error> {
+        Self::trusted_inner(value, None, false)
+    }
+
+    fn trusted_inner(
+        mut value: Value,
+        top: Option<String>,
+        keep_wire: bool,
+    ) -> Result<Self, Error> {
+        let json = keep_wire.then(|| value.to_string());
         if let Some(map) = value.as_object_mut() {
             map.remove("type");
         }
@@ -280,7 +294,7 @@ impl Tree {
         })?;
         Ok(Self {
             document,
-            json: json.into(),
+            json: json.map_or_else(std::sync::OnceLock::new, std::sync::OnceLock::from),
             top,
             sources: std::collections::HashMap::new(),
         })
