@@ -750,7 +750,7 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
 
 /// The length of `</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?/?>` at this `<`.
 fn tag_at(line: &str) -> Option<usize> {
-    let word = |c: char| c.is_alphanumeric() || c == '_' || c == ':' || c == '-';
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '-';
     let rest = line.strip_prefix('<')?;
     let rest = rest.strip_prefix('/').unwrap_or(rest);
     if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
