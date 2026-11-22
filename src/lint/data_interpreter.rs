@@ -683,6 +683,7 @@ pub(super) enum Expr {
     Nth(Box<(Self, Self)>),
     Join(Box<(Self, Self)>),
     QuotedList(Box<Self>),
+    PlainList(Box<Self>),
     Lower(Box<Self>),
     Nfc(Box<Self>),
     Fold(Box<Self>),
@@ -994,6 +995,7 @@ impl Scope<'_> {
             "nth" => Expr::Nth(pair(0, 1)),
             "join" => Expr::Join(pair(0, 1)),
             "quoted_list" => Expr::QuotedList(Box::new(self.compile(arg))),
+            "plain_list" => Expr::PlainList(Box::new(self.compile(arg))),
             "column" => Expr::Column(pair(0, 1)),
             "lower" => Expr::Lower(Box::new(self.compile(arg))),
             "nfc" => Expr::Nfc(Box::new(self.compile(arg))),
@@ -1394,6 +1396,7 @@ fn scans(expr: &Expr) -> bool {
         | Expr::Fold(item)
         | Expr::FoldSpace(item)
         | Expr::QuotedList(item)
+        | Expr::PlainList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
         | Expr::Len(item)
@@ -1440,6 +1443,7 @@ fn stateless(expr: &Expr) -> bool {
         | Expr::Fold(item)
         | Expr::FoldSpace(item)
         | Expr::QuotedList(item)
+        | Expr::PlainList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
         | Expr::Len(item)
@@ -2011,7 +2015,7 @@ impl<'a> Eval<'_, 'a> {
                 }
                 Val::Str(Cow::Owned(out))
             }
-            Expr::QuotedList(arg) => {
+            Expr::QuotedList(arg) | Expr::PlainList(arg) => {
                 let list = self.value(arg);
                 let len = self.records.list_len(&list);
                 let mut out = String::new();
@@ -2023,9 +2027,13 @@ impl<'a> Eval<'_, 'a> {
                             ", "
                         });
                     }
-                    out.push('"');
+                    if matches!(expr, Expr::QuotedList(_)) {
+                        out.push('"');
+                    }
                     out.push_str(&self.text(&self.records.list_item(&list, at)));
-                    out.push('"');
+                    if matches!(expr, Expr::QuotedList(_)) {
+                        out.push('"');
+                    }
                 }
                 Val::Str(Cow::Owned(out))
             }
