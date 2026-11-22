@@ -271,19 +271,28 @@ mod batched_repair_test {
     use super::*;
 
     #[test]
-    fn dense_superscripts_need_only_a_few_rounds() {
+    fn dense_superscripts_need_only_a_few_rounds() -> Result<(), Box<dyn std::error::Error>> {
         let mut de = serde_json::Deserializer::from_str(include_str!(
             "../../spec-conformance/clause-cases.json"
         ));
         de.disable_recursion_limit();
-        let cases: Value = serde::Deserialize::deserialize(&mut de).expect("pinned clause cases");
-        let case = cases["cases"]
-            .as_array()
-            .and_then(|cases| cases.iter().find(|c| c["id"] == "CC-1566"))
-            .expect("CC-1566");
-        let source = case["input"].as_str().expect("source");
-        let expected = case["expected"]["carve"].as_str().expect("output");
-        let tree = parse_plain(source).expect("parsed source");
+        let cases: Value = serde::Deserialize::deserialize(&mut de)?;
+        let case = cases
+            .get("cases")
+            .and_then(Value::as_array)
+            .and_then(|cases| {
+                cases
+                    .iter()
+                    .find(|c| c.get("id").and_then(Value::as_str) == Some("CC-1566"))
+            })
+            .ok_or("CC-1566")?;
+        let source = case.get("input").and_then(Value::as_str).ok_or("source")?;
+        let expected = case
+            .get("expected")
+            .and_then(|value| value.get("carve"))
+            .and_then(Value::as_str)
+            .ok_or("output")?;
+        let tree = parse_plain(source).ok_or("parsed source")?;
         let before = REPAIR_PARSES.with(std::cell::Cell::get);
         let (output, losses) = format_tree(&tree, Some(source), &Settings::default());
         let rounds = REPAIR_PARSES.with(std::cell::Cell::get) - before;
@@ -292,6 +301,7 @@ mod batched_repair_test {
         // This paragraph nests to the inline depth cap. Its repair rounds may
         // follow that depth, but no longer one round per escaped byte.
         assert!(rounds <= 200, "{rounds} read-back parses for one paragraph");
+        Ok(())
     }
 }
 
