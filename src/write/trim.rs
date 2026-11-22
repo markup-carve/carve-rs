@@ -29,7 +29,7 @@ pub struct Trimmed {
 /// `delimited` says whether the table at a pointer is written in a delimited form, where a cell
 /// keeps them as data (C2-W-066) while its caption is still trimmed.
 pub fn trim(doc: &Value, delimited: &dyn Fn(&Value, &str) -> bool) -> Option<Trimmed> {
-    if !has_any(doc) {
+    if !has_trim_target(doc) {
         return None;
     }
     let mut copy = doc.clone();
@@ -57,21 +57,40 @@ fn len_at(doc: &Value, pointer: &str) -> usize {
         .map_or(0, Vec::len)
 }
 
-/// Whether a text value ends with a space or a tab: the cheap test before any copy.
-fn has_any(v: &Value) -> bool {
-    match v {
-        Value::Array(items) => items.iter().any(has_any),
-        Value::Object(map) => {
-            if map.get("type").and_then(Value::as_str) == Some("text") {
-                return map
-                    .get("value")
-                    .and_then(Value::as_str)
-                    .is_some_and(|s| s.ends_with([' ', '\t']));
-            }
-            map.iter().any(|(k, inner)| k != "data" && has_any(inner))
+/// Check the same line positions that `trim_list` can change before copying a tree.
+fn has_trim_target(node: &Value) -> bool {
+    let kind = ty(node);
+    let holder = LINE_HOLDERS.contains(&kind);
+    slot_paths(kind).iter().any(|path| {
+        let children = matches!(path.as_slice(), [only] if only == "children");
+        has_trim_target_path(node, path, holder && children)
+    })
+}
+
+fn has_trim_target_path(value: &Value, parts: &[String], line_end: bool) -> bool {
+    let Some((first, rest)) = parts.split_first() else {
+        if let Some(items) = value.as_array() {
+            return items.iter().enumerate().any(|(i, item)| {
+                line_end_text(items, i, line_end).is_some()
+                    || (ty(item) != "text" && has_trim_target(item))
+            });
         }
-        _ => false,
+        return value.get("type").is_some() && ty(value) != "text" && has_trim_target(value);
+    };
+    if first == "*" {
+        return match value {
+            Value::Array(items) => items
+                .iter()
+                .any(|item| has_trim_target_path(item, rest, line_end)),
+            Value::Object(map) => map
+                .values()
+                .any(|item| has_trim_target_path(item, rest, line_end)),
+            _ => false,
+        };
     }
+    value
+        .get(first)
+        .is_some_and(|inner| has_trim_target_path(inner, rest, line_end))
 }
 
 fn ty(v: &Value) -> &str {
@@ -272,6 +291,15 @@ impl Trimmed {
 mod tests {
     use super::trim;
     use serde_json::json;
+
+    #[test]
+    fn spaces_before_inline_children_do_not_copy_the_tree() {
+        let doc = json!({ "type": "document", "children": [{ "type": "paragraph", "children": [
+            { "type": "text", "value": "a " },
+            { "type": "emphasis", "children": [{ "type": "text", "value": "b" }] }
+        ] }] });
+        assert!(trim(&doc, &|_, _| false).is_none());
+    }
 
     #[test]
     fn paths_map_both_ways_around_a_removed_text() {
