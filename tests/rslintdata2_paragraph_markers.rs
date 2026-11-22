@@ -1,17 +1,18 @@
-//! List markers below an open term or a paragraph in a div (C2-B-015, C2-B-024,
-//! C2-B-069, C2-B-075): JS and PHP read them as text of the open leaf.
+//! List markers below an open term or a paragraph in a div (C2-B-015, C2-B-022,
+//! C2-B-024, C2-B-069, C2-B-075): the item's and description's columns decide
+//! whether a marker opens a nested list or stays text of the open leaf.
 
 use carve::lint::{LintOptions, lint};
 
 #[test]
-fn list_marker_inside_the_item_stays_in_the_term() {
+fn list_marker_between_item_and_description_columns_opens_a_nested_list() {
     let html = carve::render(
         "a. :: key [link](u)\n:term\n  a. $$x$$\n",
         &carve::Options::default(),
     );
     assert_eq!(
         html,
-        "<ol type=\"a\">\n  <li>\n    <dl>\n      <dt>key <a href=\"u\">link</a>\n:term\na. $$x$$</dt>\n    </dl>\n  </li>\n</ol>"
+        "<ol type=\"a\">\n  <li>\n    <dl>\n      <dt>key <a href=\"u\">link</a>\n:term</dt>\n    </dl>\n    <ol type=\"a\">\n      <li>$$x$$</li>\n    </ol>\n  </li>\n</ol>"
     );
 }
 
