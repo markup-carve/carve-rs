@@ -66,3 +66,18 @@ fn standard_data_after_loss_is_not_a_field_loss() {
     assert_eq!(output, " wa\n");
     assert_eq!(losses, ["field-unspellable /children/0/children/0/value"]);
 }
+
+#[test]
+fn a_break_field_is_checked_before_resuming_on_the_next_line() {
+    let (_, losses) = write(&[
+        json!({"type":"text", "value":" w"}),
+        json!({"type":"soft_break", "dir":"rtl"}),
+        json!({"type":"text", "value":"x"}),
+    ]);
+    assert!(
+        losses
+            .iter()
+            .any(|entry| entry == "field-unspellable /children/0/children/1/dir"),
+        "{losses:?}"
+    );
+}

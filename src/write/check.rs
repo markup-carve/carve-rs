@@ -1887,8 +1887,9 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
                 .map(|e| (*e, None)),
         );
     }
-    at.i = i + 1;
-    at.j = j + 1;
+    // The aligned break can still have fields that the source lost.
+    at.i = i;
+    at.j = j;
     at.vi = 0;
     at.aj = 0;
     true
@@ -2180,5 +2181,39 @@ pub fn compare_blocks<'t>(
         missing_block(w, c, m);
     } else {
         c.losses.push((owner, None));
+    }
+}
+
+#[cfg(test)]
+mod resync_break_test {
+    use super::*;
+
+    #[test]
+    fn aligned_break_fields_are_checked_after_an_earlier_loss() {
+        let expected = [
+            serde_json::json!({"type":"text","value":"before"}),
+            serde_json::json!({"type":"soft_break","dir":"rtl"}),
+            serde_json::json!({"type":"text","value":"after"}),
+        ];
+        let actual = [
+            serde_json::json!({"type":"text","value":"different"}),
+            serde_json::json!({"type":"soft_break"}),
+            serde_json::json!({"type":"text","value":"after"}),
+        ];
+        let owner = serde_json::json!({"type":"paragraph"});
+        let nodes: Vec<_> = expected.iter().map(V::Json).collect();
+        let pool = typed_arena::Arena::new();
+        let mut writer = Writer::new(&pool, false);
+        let mut check = Check::default();
+        compare_inlines(
+            &mut writer,
+            &mut check,
+            &nodes,
+            Arr::Json(&actual),
+            V::Json(&owner),
+        );
+        assert!(check.losses.iter().any(|(node, field)| {
+            id(*node) == id(V::Json(&expected[1])) && field.as_deref() == Some("dir")
+        }));
     }
 }
