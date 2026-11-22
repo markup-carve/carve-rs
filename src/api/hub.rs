@@ -70,7 +70,7 @@ pub(crate) fn to_html(input: &str, format: ImportFormat, sink: &mut Sink) -> Res
     }
 }
 
-fn markdown_options(input: &str, gfm: bool) -> comrak::Options<'static> {
+pub(super) fn markdown_options(input: &str, gfm: bool) -> comrak::Options<'static> {
     let mut o = comrak::Options::default();
     o.extension.math_dollars = true;
     let toml = input.starts_with("+++\n") || input.starts_with("+++\r\n");

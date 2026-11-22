@@ -164,6 +164,19 @@ fn directory_import_helper_returns_authored_destination_spelling() {
         destinations.get("a(b).md").map(String::as_str),
         Some("a\\(b\\).md")
     );
+    let (_, referenced) = carve::try_migrate_markdown_for_directory_with_destinations(
+        "[x][ref]\n\n[ref]: a\\(b\\).md\n",
+    )
+    .unwrap();
+    assert_eq!(
+        referenced.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
+    let (_, fenced) = carve::try_migrate_markdown_for_directory_with_destinations(
+        "```text\n[x](a\\(b\\).md)\n```\n\n[x](a(b).md)\n",
+    )
+    .unwrap();
+    assert_eq!(fenced.get("a(b).md").map(String::as_str), Some("a(b).md"));
 }
 
 #[test]

@@ -192,68 +192,138 @@ pub fn try_migrate_markdown_for_directory_with_destinations(
     Ok((imported, destinations))
 }
 
-#[allow(clippy::cognitive_complexity)]
 fn markdown_destinations(source: &str) -> Vec<(String, String)> {
-    let bytes = source.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes.get(i) != Some(&b']') || bytes.get(i + 1) != Some(&b'(') {
-            i += 1;
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let options = super::hub::markdown_options(source, true);
+    let document = comrak::parse_document(&arena, source, &options);
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut result = Vec::new();
+    let mut code_lines = vec![false; lines.len() + 1];
+    let mut referenced = std::collections::HashSet::new();
+    for node in document.descendants() {
+        let data = node.data.borrow();
+        if matches!(data.value, NodeValue::CodeBlock(_)) {
+            for line in data.sourcepos.start.line..=data.sourcepos.end.line.min(lines.len()) {
+                if let Some(slot) = code_lines.get_mut(line) {
+                    *slot = true;
+                }
+            }
+        }
+        let destination = match &data.value {
+            NodeValue::Link(link) | NodeValue::Image(link) => &link.url,
+            _ => continue,
+        };
+        referenced.insert(destination.to_owned());
+        if let Some(raw) = node_source(&lines, data.sourcepos) {
+            if let Some((decoded, authored)) = inline_destination(raw) {
+                if decoded == *destination {
+                    result.push((decoded, authored));
+                }
+            }
+        }
+    }
+    for (line_number, line) in lines.iter().enumerate() {
+        if code_lines.get(line_number + 1) == Some(&true) {
             continue;
         }
-        let mut start = i + 2;
-        while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
-            start += 1;
-        }
-        let angle = bytes.get(start) == Some(&b'<');
-        if angle {
-            start += 1;
-        }
-        let mut end = start;
-        let mut depth = 0usize;
-        while let Some(&byte) = bytes.get(end) {
-            if byte == b'\\' && bytes.get(end + 1).is_some() {
-                end += 2;
-                continue;
+        if let Some((decoded, authored)) = reference_destination(line) {
+            if referenced.contains(&decoded) {
+                result.push((decoded, authored));
             }
-            if angle {
-                if byte == b'>' {
-                    break;
-                }
-            } else {
-                if byte == b'(' {
-                    depth += 1;
-                }
-                if byte == b')' {
-                    if depth == 0 {
-                        break;
-                    }
-                    depth -= 1;
-                }
-                if byte.is_ascii_whitespace() {
-                    break;
-                }
-            }
-            end += 1;
         }
-        if let Some(authored) = source.get(start..end) {
-            let mut decoded = String::new();
-            let mut chars = authored.chars();
-            while let Some(ch) = chars.next() {
-                if ch == '\\' {
-                    if let Some(next) = chars.next() {
-                        decoded.push(next);
-                    }
-                } else {
-                    decoded.push(ch);
-                }
-            }
-            out.push((decoded, authored.to_owned()));
-        }
-        i = end.saturating_add(1);
     }
-    out
+    result
+}
+
+fn node_source<'a>(lines: &'a [&str], pos: comrak::nodes::Sourcepos) -> Option<&'a str> {
+    if pos.start.line != pos.end.line {
+        return None;
+    }
+    lines
+        .get(pos.start.line.checked_sub(1)?)?
+        .get(pos.start.column.checked_sub(1)?..pos.end.column)
+}
+
+fn inline_destination(raw: &str) -> Option<(String, String)> {
+    let bytes = raw.as_bytes();
+    for i in (0..bytes.len().saturating_sub(1)).rev() {
+        if bytes.get(i) == Some(&b']') && bytes.get(i + 1) == Some(&b'(') {
+            let (_, decoded, authored) = markdown_destination(raw, i + 2)?;
+            return Some((decoded, authored));
+        }
+    }
+    None
+}
+
+fn reference_destination(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
+        return None;
+    }
+    let (_, after) = trimmed
+        .split_once("]: ")
+        .or_else(|| trimmed.split_once("]:"))?;
+    let raw = after.trim_start();
+    let authored = if let Some(angle) = raw.strip_prefix('<') {
+        angle.split_once('>')?.0
+    } else {
+        raw.split(|ch: char| ch.is_whitespace()).next()?
+    };
+    Some((unescape_destination(authored), authored.to_owned()))
+}
+
+fn markdown_destination(source: &str, after: usize) -> Option<(usize, String, String)> {
+    let bytes = source.as_bytes();
+    let mut start = after;
+    while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
+        start += 1;
+    }
+    let angle = bytes.get(start) == Some(&b'<');
+    if angle {
+        start += 1;
+    }
+    let mut end = start;
+    let mut depth = 0usize;
+    while let Some(&byte) = bytes.get(end) {
+        if byte == b'\\' && bytes.get(end + 1).is_some() {
+            end += 2;
+            continue;
+        }
+        if angle && byte == b'>' {
+            break;
+        }
+        if !angle {
+            if byte == b'(' {
+                depth += 1;
+            } else if byte == b')' {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            } else if byte.is_ascii_whitespace() {
+                break;
+            }
+        }
+        end += 1;
+    }
+    let authored = source.get(start..end)?;
+    Some((end, unescape_destination(authored), authored.to_owned()))
+}
+
+fn unescape_destination(authored: &str) -> String {
+    let mut decoded = String::new();
+    let mut chars = authored.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                decoded.push(next);
+            }
+        } else {
+            decoded.push(ch);
+        }
+    }
+    decoded
 }
 
 fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<String, String>) {
