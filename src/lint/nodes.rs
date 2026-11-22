@@ -189,7 +189,18 @@ pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
             let label = raw.split(']').next().unwrap_or("");
             label.bytes().any(|byte| matches!(byte, b'r' | b'R'))
         }
-        "document" | "paragraph" | "list" | "list_item" | "table" | "table_head" | "table_body"
+        // Paragraph-only hand rules inspect multiline delimiter pairs and lone emphasis.
+        // A refused braced closer can also be literal text inside a paragraph.
+        "paragraph" => {
+            raw.contains('\n')
+                || raw.contains("{/")
+                || raw
+                    .trim_start()
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| matches!(byte, b'*' | b'/' | b'_' | b'{'))
+        }
+        "document" | "list" | "list_item" | "table" | "table_head" | "table_body"
         | "table_foot" | "table_row" | "table_cell" | "table_column" | "cell_paragraph"
         | "soft_break" | "hard_break" | "line_break" => false,
         _ => true,
