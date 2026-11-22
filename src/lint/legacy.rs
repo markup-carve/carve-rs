@@ -698,6 +698,47 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
     }
 }
 
+/// Monotone source visibility queries while a line is scanned left to right.
+struct VisibleCursor {
+    ranges: Vec<(usize, usize)>,
+    index: usize,
+}
+
+impl VisibleCursor {
+    fn new(mut ranges: Vec<(usize, usize)>) -> Self {
+        if ranges.windows(2).any(|pair| pair[0].0 > pair[1].0) {
+            ranges.sort_unstable_by_key(|&(start, _)| start);
+        }
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for (start, end) in ranges {
+            if let Some(last) = merged.last_mut()
+                && start <= last.1
+            {
+                last.1 = last.1.max(end);
+            } else {
+                merged.push((start, end));
+            }
+        }
+        Self {
+            ranges: merged,
+            index: 0,
+        }
+    }
+
+    fn holds(&mut self, at: usize) -> bool {
+        while self
+            .ranges
+            .get(self.index)
+            .is_some_and(|&(_, end)| end <= at)
+        {
+            self.index += 1;
+        }
+        self.ranges
+            .get(self.index)
+            .is_some_and(|&(start, end)| start <= at && at < end)
+    }
+}
+
 /// The first visible tag-shaped run on each paragraph or heading line.
 fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
     if replaced!("bare-html-tag") {
@@ -710,8 +751,7 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
     if !raw.contains('<') {
         return;
     }
-    let visible = visible_ranges(all, at);
-    let holds = |at: usize| visible.iter().any(|&(a, b)| a <= at && at < b);
+    let mut visible = VisibleCursor::new(visible_ranges(all, at));
     let mut line_start = start;
     for line in raw.split('\n') {
         let mut cursor = 0;
@@ -726,7 +766,7 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
                 == 1;
             if let Some(comment) = line[from..].strip_prefix("<!--")
                 && !escaped
-                && holds(line_start + from)
+                && visible.holds(line_start + from)
             {
                 let Some(close) = comment.find("-->") else {
                     break;
@@ -739,7 +779,7 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
                 continue;
             };
             let to = from + length;
-            if !escaped && holds(line_start + from) && holds(line_start + to - 1) {
+            if !escaped && visible.holds(line_start + from) && visible.holds(line_start + to - 1) {
                 push(out, "bare-html-tag", (line_start + from, line_start + to));
                 break;
             }

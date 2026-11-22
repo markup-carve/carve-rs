@@ -58,6 +58,13 @@ fn bare_html_tag_in_heading_content() {
 }
 
 #[test]
+fn bare_html_tag_after_many_inline_code_candidates() {
+    let input = format!("# {}<b>\n", "`<x>` ".repeat(1_000));
+    let start = input.find("<b>").unwrap() as u32;
+    assert_eq!(ranges(&input, "bare-html-tag"), [(start, start + 3)]);
+}
+
+#[test]
 fn caption_looking_paragraph_skips_term_text() {
     for input in [
         " :: term\n: | A | B |\n  | x | y |\n",
