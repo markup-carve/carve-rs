@@ -695,16 +695,16 @@ pub(crate) fn prepare_with<'a>(
     before_resolve(&mut doc);
     let mut dups = Vec::new();
     let ordered = resolve::resolve_files(&mut doc, opts, arena, files.as_ref(), &mut dups);
-    for (id, pos, at) in dups {
+    for (id, pos, at, key) in dups {
         let file = files.as_ref().and_then(|f| f.file_at(at));
         let pos = if let Some(name) = file {
             files
                 .as_ref()
                 .and_then(|f| f.sources().find(|(id, _)| *id == name))
-                .and_then(|(_, text)| id_range(&source::Source::new(text), &id, pos))
+                .and_then(|(_, text)| key_range(&source::Source::new(text), &id, pos, key))
                 .or(pos)
         } else {
-            id_range(&src, &id, pos).or(pos)
+            key_range(&src, &id, pos, key).or(pos)
         };
         diags.push(diagnostic::Diagnostic::new(
             "duplicate-id",
@@ -842,6 +842,22 @@ fn duplicate_definitions(
         });
         diags.push(diagnostic::Diagnostic::new(code, &[], None, pos));
     }
+}
+
+/// C2-A-218: a metadata key is authored by its attribute line, so its range
+/// starts at the opening brace.
+fn key_range(
+    src: &source::Source<'_>,
+    id: &str,
+    pos: Option<ast::Pos>,
+    key: bool,
+) -> Option<ast::Pos> {
+    let range = id_range(src, id, pos)?;
+    let start = range.start_offset as usize;
+    if key && start > 0 && src.text().as_bytes().get(start - 1) == Some(&b'{') {
+        return Some(src.pos(start - 1, range.end_offset as usize));
+    }
+    Some(range)
 }
 
 fn id_range(src: &source::Source<'_>, id: &str, pos: Option<ast::Pos>) -> Option<ast::Pos> {

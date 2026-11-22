@@ -541,6 +541,11 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
     }
     let key = item.node.at("key").as_str().unwrap_or("");
     if let Some(target) = targets.exact.get(&key.nfc().collect::<String>()) {
+        // C2-W-153: a metadata key is no target, and broken-crossref stays silent.
+        if target.kind == "frontmatter" {
+            sink.emit("frontmatter-crossref", item, &[("target", key)], 0);
+            return;
+        }
         sink.emit(
             "broken-crossref",
             item,
@@ -1532,6 +1537,8 @@ fn heading_continuation(item: &Item<'_>, raw: &str, sink: &mut Sink<'_>) {
 
 fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
     let value = item.node.at("value").as_str().unwrap_or("");
+    // C2-B-231: only the line-1 block declares the version.
+    let leading = field(item.node, "/pos/startLine").as_u64() == Some(1);
     let raw = sink.raw(item).to_string();
     if raw
         .lines()
@@ -1546,7 +1553,7 @@ fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
     {
         sink.emit("frontmatter-shaped-thematic-break", item, &[], 0);
     }
-    if let Some((from, _)) = item.bounds {
+    if let Some((from, _)) = item.bounds.filter(|_| leading) {
         let mut offset = 0;
         for line in raw.split_inclusive('\n') {
             if let Some((key, rest)) = line.split_once(':') {

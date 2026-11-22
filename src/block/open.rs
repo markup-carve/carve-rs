@@ -400,7 +400,7 @@ impl Parser<'_> {
 
     /// The pending attribute lines go to the first block of the line
     /// (C2-B-091); its own attributes merge after them.
-    fn take_pending(
+    pub(super) fn take_pending(
         &mut self,
         start: usize,
         attrs: Option<AttrBlock>,

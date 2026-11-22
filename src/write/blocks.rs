@@ -231,10 +231,14 @@ fn comment(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
 
 fn frontmatter(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
     let format = s(node, "format").unwrap_or("yaml");
+    let leading = w.leading_frontmatter == Some(id(node));
+    if !leading {
+        attribute_line(w, node, prefix, &BlockParts::default());
+    }
     emit(
         w,
         prefix,
-        &if format == "yaml" {
+        &if format == "yaml" && leading {
             "---".to_string()
         } else {
             format!("---{format}")

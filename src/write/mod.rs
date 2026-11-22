@@ -28,7 +28,7 @@ use crate::api::{Entry, Range};
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
 use check::{Check, Chunk, compare_blocks, escape_openers, exhausted, extend_chains};
-use node::{N, children, id, span, text, ty};
+use node::{N, children, has, id, span, text, ty};
 use serde_json::Value;
 use state::{GroupCertificate, Writer, lose};
 use std::collections::HashSet;
@@ -497,6 +497,11 @@ fn last_block<'t>(nodes: Arr<'t>, from: usize, to: usize, list: Option<N<'t>>) -
 
 fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
     let nodes = children(doc);
+    w.leading_frontmatter = nodes
+        .iter()
+        .next()
+        .filter(|n| ty(*n) == "frontmatter" && !has(*n, "attrs"))
+        .map(id);
     let mut out: Vec<String> = Vec::new();
     let mut before: Option<N<'t>> = None;
     let mut list: Option<N<'t>> = None;
