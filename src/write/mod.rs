@@ -146,6 +146,31 @@ thread_local! {
     static REPAIR_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PAIR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static WRITTEN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PROBE_SORTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod probe_sort_test {
+    use super::PROBE_SORTED;
+
+    /// The escape offsets a probe sorts for nested links (carve-js#5262).
+    fn sorted(n: usize) -> usize {
+        let src = format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n));
+        let before = PROBE_SORTED.with(std::cell::Cell::get);
+        let written = crate::api::Carve::new()
+            .format_with_diagnostics(src.as_str(), &crate::api::WriteOptions::default());
+        assert!(written.is_ok_and(|w| w.diagnostics.is_empty()));
+        PROBE_SORTED.with(std::cell::Cell::get) - before
+    }
+
+    #[test]
+    fn probe_escapes_sort_once_per_node_and_round() {
+        let (small, large) = (sorted(300), sorted(1200));
+        assert!(
+            large <= small * 5,
+            "n = 300 sorts {small} offsets, n = 1200 {large}"
+        );
+    }
 }
 
 #[cfg(test)]

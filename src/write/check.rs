@@ -855,6 +855,8 @@ fn run_probe<'t>(
         }
         for n in touched {
             if let Some(list) = probe.escapes.get_mut(&n) {
+                #[cfg(test)]
+                super::PROBE_SORTED.with(|c| c.set(c.get() + list.len()));
                 list.sort_unstable();
             }
         }
