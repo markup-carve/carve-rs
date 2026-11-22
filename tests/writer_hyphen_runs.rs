@@ -63,3 +63,14 @@ fn split_text_is_written_like_one_text_node() {
         }
     }
 }
+
+#[test]
+fn a_long_hyphen_run_escapes_every_second_hyphen() {
+    for (value, expected) in [
+        ("x -----.", "x -\\--\\--.\n"),
+        ("x ------.", "x -\\--\\--\\-.\n"),
+        ("x -------.", "x -\\--\\--\\--.\n"),
+    ] {
+        assert_eq!(paragraph(&[value]), expected, "{value:?}");
+    }
+}

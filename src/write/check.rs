@@ -1097,6 +1097,15 @@ fn escape_opener<'t>(
     while matches!(b.get(start), Some(b' ' | b'\t')) {
         start += 1;
     }
+    // C2-W-090, C2-W-099: a dash takes the escape of the bare hyphen run it stands in.
+    if ty(a) == "smart_punctuation" && s(a, "source").is_some_and(|x| x.starts_with('-')) {
+        while start > 0 && b.get(start - 1) == Some(&b'-') && !is_escaped(w, c, e, start - 1) {
+            start -= 1;
+        }
+        if is_escaped(w, c, e, start + 1) {
+            return;
+        }
+    }
     let shifted = start + opener_shift(a);
     // The opener's second character can sit in the next text node (C2-W-099).
     if shifted >= b.len()
