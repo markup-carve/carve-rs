@@ -1930,15 +1930,22 @@ fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usi
             && !quote_prefix
             && !escaped(value.as_bytes(), at)
         {
+            let mut run_end = end;
+            while let Some((following, following_end)) = crate::attr::parse_glued(value, run_end) {
+                if following.empty {
+                    break;
+                }
+                run_end = following_end;
+            }
             sink.emit_range(
                 "unattached-inline-attribute",
                 from + at,
-                from + end,
+                from + run_end,
                 item.path(),
                 &[],
                 0,
             );
-            next = end;
+            next = run_end;
         }
     }
 }

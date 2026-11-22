@@ -409,12 +409,24 @@ fn mark_span_start(
     ranges: &[Range<'_>],
     holders: &[Holder],
 ) {
-    if !matches!(range.kind, "text" | "soft_break" | "hard_break")
-        && range
-            .holder
-            .and_then(|at| holders.get(at as usize)?.range)
-            .and_then(|at| ranges.get(at as usize))
-            .is_some_and(|parent| parent.kind == "paragraph")
+    let mut holder = range.holder;
+    let mut inline_leaf = false;
+    while let Some(at) = holder {
+        let Some(parent) = holders
+            .get(at as usize)
+            .and_then(|h| h.range)
+            .and_then(|r| ranges.get(r as usize))
+        else {
+            break;
+        };
+        if text_leaf(parent.kind) {
+            inline_leaf = true;
+            break;
+        }
+        holder = parent.holder;
+    }
+    if inline_leaf
+        && !matches!(range.kind, "text" | "soft_break" | "hard_break")
         && let Some(fact) = range
             .start_line
             .checked_sub(1)
@@ -1777,7 +1789,17 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     // GitHub also writes the alert mark immediately after `>`; this is still a
     // useful migration warning even though Carve reads the glued line as text.
     let glued = starts.strip_prefix('>').is_none_or(|rest| {
-        !(rest.is_empty() || rest.starts_with([' ', '\t']) || rest.starts_with("[!"))
+        !(rest.is_empty()
+            || rest.starts_with([' ', '\t'])
+            || [
+                "[!NOTE]",
+                "[!TIP]",
+                "[!IMPORTANT]",
+                "[!WARNING]",
+                "[!CAUTION]",
+            ]
+            .iter()
+            .any(|tag| rest.starts_with(tag)))
     });
     if glued {
         return;
@@ -1789,23 +1811,22 @@ fn github_alert(line: &Line, sink: &mut Sink<'_>) {
     {
         return;
     }
-    if let Some(at) = line.text.find("[!")
-        && line.text.get(at..).is_some_and(|s| {
-            [
-                "[!NOTE]",
-                "[!TIP]",
-                "[!IMPORTANT]",
-                "[!WARNING]",
-                "[!CAUTION]",
-            ]
-            .iter()
-            .any(|token| s.starts_with(token))
-        })
-    {
+    if let Some((at, token)) = line.text.match_indices("[!").find_map(|(at, _)| {
+        [
+            "[!NOTE]",
+            "[!TIP]",
+            "[!IMPORTANT]",
+            "[!WARNING]",
+            "[!CAUTION]",
+        ]
+        .iter()
+        .find(|tag| line.text[at..].starts_with(**tag))
+        .map(|tag| (at, *tag))
+    }) {
         sink.emit(
             "github-alert-marker",
             line.start + at,
-            line.start + line.text.len(),
+            line.start + at + token.len(),
             &line.path,
             &[],
         );
