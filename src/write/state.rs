@@ -101,6 +101,10 @@ pub struct Writer<'t> {
     /// The first document child when it is frontmatter without attributes: the
     /// one block that may use the bare opener (C2-W-052).
     pub leading_frontmatter: Option<usize>,
+    /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
+    pub kind_escapes: bool,
+    /// Set when a node of the group did not read back during the kind rounds.
+    pub kind_failed: bool,
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
@@ -144,6 +148,8 @@ impl<'t> Writer<'t> {
             link_keys: std::sync::Arc::default(),
             prewritten: None,
             leading_frontmatter: None,
+            kind_escapes: true,
+            kind_failed: false,
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
