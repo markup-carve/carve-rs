@@ -706,7 +706,11 @@ struct VisibleCursor {
 
 impl VisibleCursor {
     fn new(mut ranges: Vec<(usize, usize)>) -> Self {
-        if ranges.windows(2).any(|pair| pair[0].0 > pair[1].0) {
+        if ranges.windows(2).any(|pair| {
+            pair.first()
+                .zip(pair.get(1))
+                .is_some_and(|(left, right)| left.0 > right.0)
+        }) {
             ranges.sort_unstable_by_key(|&(start, _)| start);
         }
         let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
