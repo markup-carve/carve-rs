@@ -111,3 +111,25 @@ fn a_surviving_text_before_the_anchor_break_is_not_lost() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn embedded_newline_break_precedes_the_explicit_break_anchor() {
+    let (output, losses) = write(&[
+        json!({"type":"text", "value":" a\nb"}),
+        json!({"type":"soft_break", "dir":"rtl"}),
+        json!({"type":"text", "value":"z"}),
+    ]);
+    assert_eq!(output, " a\nb\nz\n");
+    assert!(
+        !losses
+            .iter()
+            .any(|entry| entry.contains("/children/0/children/2")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|entry| entry == "field-unspellable /children/0/children/1/dir"),
+        "{losses:?}"
+    );
+}

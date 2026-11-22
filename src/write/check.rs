@@ -1857,8 +1857,23 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
         i += 1;
     }
     let mut j = at.j;
-    while j < as_.len() && !is_break(as_.get(j)) {
-        j += 1;
+    // Text values may contain line endings that the reader turns into breaks.
+    // Those breaks precede the expected sibling break used as the anchor.
+    let embedded_breaks: usize = es[at.i..i.min(es.len())]
+        .iter()
+        .filter(|node| ty(**node) == "text")
+        .map(|node| text(*node).bytes().filter(|byte| *byte == b'\n').count())
+        .sum();
+    for skipped in 0..=embedded_breaks {
+        while j < as_.len() && !is_break(as_.get(j)) {
+            j += 1;
+        }
+        if j == as_.len() {
+            return false;
+        }
+        if skipped < embedded_breaks {
+            j += 1;
+        }
     }
     let (Some(&expected), Some(actual)) = (es.get(i), as_.get(j)) else {
         return false;
