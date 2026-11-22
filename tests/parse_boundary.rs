@@ -10,7 +10,13 @@ use std::sync::Arc;
 fn same_as_reader(input: &str, opts: &Options) {
     let tree = api::parse(input, opts).unwrap();
     let read = api::decode_tree(&carve::tree_json(input, opts)).unwrap();
-    assert_eq!(tree.document(), read.document(), "document of {input:?}");
+    // C2-A-162 excludes srcByteLength from tree equality. The JSON reader
+    // also caps the field for an untrusted wire tree (C2-H-201).
+    let mut parsed = tree.document().clone();
+    let mut decoded = read.document().clone();
+    parsed.src_byte_length = None;
+    decoded.src_byte_length = None;
+    assert_eq!(parsed, decoded, "document of {input:?}");
     assert_eq!(
         api::encode_tree(&tree),
         api::encode_tree(&read),
