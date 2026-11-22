@@ -95,3 +95,19 @@ fn leading_space_loss_keeps_its_value_path_with_other_fields() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn a_surviving_text_before_the_anchor_break_is_not_lost() {
+    let (_, losses) = write(&[
+        json!({"type":"soft_break"}),
+        json!({"type":"text", "value":"x"}),
+        json!({"type":"soft_break"}),
+        json!({"type":"text", "value":"y"}),
+    ]);
+    assert!(
+        !losses
+            .iter()
+            .any(|entry| entry.contains("/children/0/children/1")),
+        "{losses:?}"
+    );
+}

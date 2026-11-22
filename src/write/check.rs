@@ -1875,12 +1875,17 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
         return false;
     }
     if c.changes() == 0 {
-        c.losses.extend(
-            es.get(at.i..i)
-                .unwrap_or_default()
-                .iter()
-                .map(|e| (*e, None)),
-        );
+        let mut actual_at = at.j;
+        for &node in es.get(at.i..i).unwrap_or_default() {
+            if let Some(found) = (actual_at..j).find(|&candidate| {
+                as_.get(candidate)
+                    .is_some_and(|a| super::node::trees_equal(node, a))
+            }) {
+                actual_at = found + 1;
+            } else {
+                c.losses.push((node, None));
+            }
+        }
     }
     // The aligned break can still have fields that the source lost.
     at.i = i;
