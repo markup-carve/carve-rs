@@ -531,6 +531,47 @@ fn push_id<'a>(ids: &mut Vec<IdRec<'a>>, seen: &mut HashMap<String, usize>, reco
     }
 }
 
+fn append_plain_leaf(child: crate::view::V<'_>, out: &mut String) -> bool {
+    match child.ty().as_str() {
+        Some("soft_break" | "hard_break") => out.push(' '),
+        Some("non_breaking_space") => out.push('\u{a0}'),
+        Some("image") => out.push_str(child.at("alt").as_str().unwrap_or("")),
+        Some("autolink") => out.push_str(
+            child
+                .at("text")
+                .as_str()
+                .or_else(|| child.at("href").as_str())
+                .unwrap_or(""),
+        ),
+        Some("abbreviation") => out.push_str(child.at("key").as_str().unwrap_or("")),
+        Some("smart_punctuation") => {
+            out.push_str(child.at("glyph").as_str().unwrap_or(""));
+        }
+        Some("mention") => {
+            out.push('@');
+            out.push_str(child.at("target").as_str().unwrap_or(""));
+        }
+        Some("tag") => {
+            out.push('#');
+            out.push_str(child.at("name").as_str().unwrap_or(""));
+        }
+        Some("caption_number") => {
+            if let Some(number) = child.at("n").as_u64() {
+                out.push_str(&number.to_string());
+            }
+        }
+        Some("text" | "code" | "literal_inline" | "math") => {
+            out.push_str(child.at("value").as_str().unwrap_or(""));
+        }
+        Some(
+            "footnote_ref" | "inline_footnote" | "xref" | "raw_inline" | "critic_comment"
+            | "comment" | "citation_group",
+        ) => {}
+        _ => return false,
+    }
+    true
+}
+
 pub(super) fn plain_children(node: crate::view::V<'_>) -> String {
     let mut out = String::new();
     let mut pending = Vec::new();
@@ -538,12 +579,10 @@ pub(super) fn plain_children(node: crate::view::V<'_>) -> String {
         pending.extend(children.iter().rev());
     }
     while let Some(child) = pending.pop() {
-        if matches!(child.ty().as_str(), Some("soft_break" | "hard_break")) {
-            out.push(' ');
-        } else if let Some(value) = child.at("value").as_str() {
-            out.push_str(value);
-        } else if let Some(children) = child.at("children").as_array() {
-            pending.extend(children.iter().rev());
+        if !append_plain_leaf(child, &mut out) {
+            if let Some(children) = child.at("children").as_array() {
+                pending.extend(children.iter().rev());
+            }
         }
     }
     out
@@ -568,6 +607,76 @@ pub(super) struct TreeFacts<'a> {
     ids: Vec<IdRec<'a>>,
     keyed: std::collections::HashSet<u32>,
     document: Option<Box<dyn Fn() -> serde_json::Value + 'a>>,
+}
+
+fn add_raw_html_ids<'a>(
+    raw: &str,
+    owner: &'a str,
+    start: usize,
+    ids: &mut Vec<IdRec<'a>>,
+    seen: &mut HashMap<String, usize>,
+) {
+    let dom = crate::import::parse::fragment(raw);
+    for node in dom.nodes {
+        if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
+            for (key, value) in attrs {
+                if key == "id" || (name == "a" && key == "name") {
+                    push_id(
+                        ids,
+                        seen,
+                        IdRec {
+                            id: Cow::Owned(value),
+                            owner,
+                            start,
+                            heading_text: None,
+                            rendered: true,
+                            xref: false,
+                        },
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn generated_admonition_ids(
+    ranges: &[Range<'_>],
+    values: &[crate::view::V<'_>],
+    taken: &mut crate::resolve::slug::Taken,
+    collisions: bool,
+) -> HashMap<usize, String> {
+    let has_notes = ranges
+        .iter()
+        .any(|range| matches!(range.kind, "footnote_ref" | "inline_footnote"));
+    let placing = has_notes
+        .then(|| {
+            ranges.iter().zip(values).position(|(range, value)| {
+                range.holder.is_none()
+                    && range.kind == "directive"
+                    && value.at("kind") == "footnotes"
+            })
+        })
+        .flatten();
+    let mut ids = HashMap::new();
+    let mut n = 0;
+    for (at, (range, value)) in ranges.iter().zip(values).enumerate() {
+        let titled = value.get("title").is_some()
+            && (range.kind == "admonition" && !super::nodes::has_authored_name(*value)
+                || range.kind == "directive" && placing == Some(at));
+        if titled {
+            n += 1;
+            let base = format!("adm-{n}");
+            ids.insert(
+                at,
+                if collisions {
+                    taken.unique(&base)
+                } else {
+                    base
+                },
+            );
+        }
+    }
+    ids
 }
 
 /// The generated id of each heading of a tree, by the start of the heading.
@@ -595,6 +704,120 @@ pub(super) fn heading_ids(node: crate::view::V<'_>, out: &mut HashMap<usize, Str
     });
 }
 
+fn append_note_ids<'a>(
+    range: &Range<'a>,
+    value: crate::view::V<'_>,
+    counts: &mut HashMap<u64, usize>,
+    taken: &mut crate::resolve::slug::Taken,
+    collisions: bool,
+    ids: &mut Vec<IdRec<'a>>,
+    seen: &mut HashMap<String, usize>,
+) {
+    if matches!(range.kind, "footnote_ref" | "inline_footnote")
+        && let Some(number) = value.at("number").as_u64()
+    {
+        let count = counts.entry(number).or_default();
+        *count += 1;
+        if *count == 1 {
+            let base = format!("fn{number}");
+            push_id(
+                ids,
+                seen,
+                IdRec {
+                    id: Cow::Owned(if collisions {
+                        taken.unique(&base)
+                    } else {
+                        base
+                    }),
+                    owner: "footnote",
+                    start: range.start,
+                    heading_text: None,
+                    rendered: true,
+                    xref: false,
+                },
+            );
+        }
+        let suffix = if *count == 1 {
+            String::new()
+        } else {
+            format!("-{count}")
+        };
+        let base = format!("fnref{number}{suffix}");
+        push_id(
+            ids,
+            seen,
+            IdRec {
+                id: Cow::Owned(value.at("attrs").at("id").as_str().map_or_else(
+                    || {
+                        if collisions {
+                            taken.unique(&base)
+                        } else {
+                            base
+                        }
+                    },
+                    str::to_owned,
+                )),
+                owner: range.kind,
+                start: range.start,
+                heading_text: None,
+                rendered: true,
+                xref: false,
+            },
+        );
+    }
+}
+
+fn reserve_generated_prefixes(
+    values: &[crate::view::V<'_>],
+    taken: &mut crate::resolve::slug::Taken,
+) {
+    for value in values {
+        for id in [value.at("attrs").at("id"), value.at("generatedId")] {
+            if let Some(id) = id.as_str()
+                && (id.starts_with("fn") || id.starts_with("adm-"))
+            {
+                taken.reserve(id);
+            }
+        }
+    }
+}
+
+fn append_tree_node_ids<'a, 'v: 'a>(
+    range: &Range<'a>,
+    value: crate::view::V<'v>,
+    generated: Option<&HashMap<usize, String>>,
+    raw_html: bool,
+    ids: &mut Vec<IdRec<'a>>,
+    seen: &mut HashMap<String, usize>,
+) {
+    let authored = value
+        .get("attrs")
+        .and_then(|attrs| attrs.get("id"))
+        .and_then(crate::view::V::as_str)
+        .map(Cow::Borrowed);
+    let heading = (range.kind == "heading").then(|| match generated {
+        Some(generated) => generated.get(&range.start).cloned().map(Cow::Owned),
+        None => value
+            .get("generatedId")
+            .and_then(crate::view::V::as_str)
+            .map(Cow::Borrowed),
+    });
+    for id in [authored, heading.flatten()].into_iter().flatten() {
+        push_id(
+            ids,
+            seen,
+            IdRec {
+                id,
+                owner: range.kind,
+                start: range.start,
+                heading_text: (range.kind == "heading").then(|| plain_children(value)),
+                rendered: range.kind != "frontmatter" && !(raw_html && range.kind == "raw_block"),
+                xref: range.kind == "heading" || numbered_caption(value),
+            },
+        );
+    }
+}
+
 impl<'a> TreeFacts<'a> {
     /// `generated`: the heading ids of a parse with other heading id options, by the start of the heading.
     pub fn read<'v: 'a>(
@@ -609,92 +832,21 @@ impl<'a> TreeFacts<'a> {
         let mut keyed = std::collections::HashSet::new();
         let mut footnote_refs = HashMap::<u64, usize>::new();
         let mut taken = crate::resolve::slug::Taken::default();
-        for value in values {
-            for id in [value.at("attrs").at("id"), value.at("generatedId")] {
-                if let Some(id) = id.as_str()
-                    && (id.starts_with("fn") || id.starts_with("adm-"))
-                {
-                    taken.reserve(id);
-                }
-            }
-        }
+        reserve_generated_prefixes(values, &mut taken);
         let collisions = !taken.is_empty();
+        let admonitions = generated_admonition_ids(ranges, values, &mut taken, collisions);
         for (at, (range, value)) in ranges.iter().zip(values).enumerate() {
             if matches!(range.kind, "link" | "image") && value.get("key").is_some() {
                 keyed.insert(at as u32);
             }
-            let authored = value
-                .get("attrs")
-                .and_then(|attrs| attrs.get("id"))
-                .and_then(crate::view::V::as_str)
-                .map(Cow::Borrowed);
-            let heading = (range.kind == "heading").then(|| match generated {
-                Some(generated) => generated.get(&range.start).cloned().map(Cow::Owned),
-                None => value
-                    .get("generatedId")
-                    .and_then(crate::view::V::as_str)
-                    .map(Cow::Borrowed),
-            });
-            for id in [authored, heading.flatten()].into_iter().flatten() {
+            append_tree_node_ids(range, *value, generated, raw_html, &mut ids, &mut seen);
+            if let Some(id) = admonitions.get(&at) {
                 push_id(
                     &mut ids,
                     &mut seen,
                     IdRec {
-                        id,
+                        id: Cow::Owned(id.clone()),
                         owner: range.kind,
-                        start: range.start,
-                        heading_text: (range.kind == "heading").then(|| plain_children(*value)),
-                        rendered: range.kind != "frontmatter"
-                            && !(raw_html && range.kind == "raw_block"),
-                        xref: range.kind == "heading" || numbered_caption(*value),
-                    },
-                );
-            }
-            if range.kind == "footnote_ref"
-                && let Some(number) = value.at("number").as_u64()
-            {
-                let count = footnote_refs.entry(number).or_default();
-                *count += 1;
-                if *count == 1 {
-                    let base = format!("fn{number}");
-                    push_id(
-                        &mut ids,
-                        &mut seen,
-                        IdRec {
-                            id: Cow::Owned(if collisions {
-                                taken.unique(&base)
-                            } else {
-                                base
-                            }),
-                            owner: "footnote",
-                            start: range.start,
-                            heading_text: None,
-                            rendered: true,
-                            xref: false,
-                        },
-                    );
-                }
-                let suffix = if *count == 1 {
-                    String::new()
-                } else {
-                    format!("-{count}")
-                };
-                let base = format!("fnref{number}{suffix}");
-                push_id(
-                    &mut ids,
-                    &mut seen,
-                    IdRec {
-                        id: Cow::Owned(value.at("attrs").at("id").as_str().map_or_else(
-                            || {
-                                if collisions {
-                                    taken.unique(&base)
-                                } else {
-                                    base
-                                }
-                            },
-                            str::to_owned,
-                        )),
-                        owner: "footnote_ref",
                         start: range.start,
                         heading_text: None,
                         rendered: true,
@@ -702,32 +854,21 @@ impl<'a> TreeFacts<'a> {
                     },
                 );
             }
+            append_note_ids(
+                range,
+                *value,
+                &mut footnote_refs,
+                &mut taken,
+                collisions,
+                &mut ids,
+                &mut seen,
+            );
             if raw_html
                 && matches!(range.kind, "raw_block" | "raw_inline")
                 && value.at("format").as_str() == Some("html")
                 && let Some(raw) = value.at("value").as_str()
             {
-                let dom = crate::import::parse::fragment(raw);
-                for node in dom.nodes {
-                    if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
-                        for (key, value) in attrs {
-                            if key == "id" || (name == "a" && key == "name") {
-                                push_id(
-                                    &mut ids,
-                                    &mut seen,
-                                    IdRec {
-                                        id: Cow::Owned(value),
-                                        owner: range.kind,
-                                        start: range.start,
-                                        heading_text: None,
-                                        rendered: true,
-                                        xref: false,
-                                    },
-                                );
-                            }
-                        }
-                    }
-                }
+                add_raw_html_ids(raw, range.kind, range.start, &mut ids, &mut seen);
             }
         }
         let document = document.map(|document| {
@@ -1562,18 +1703,22 @@ impl<'a> Records<'a> {
             Subject::Line(at) => self.line_field(*at, name),
             Subject::Block(block) => self.block_field(block, name),
             Subject::Attribute(at) => self.attribute_field(*at, name),
-            Subject::Inline(inline) => match name {
-                F::Node if inline.kind != "text_run" => self.tree_node(inline.range),
-                F::Type => Val::Str(Cow::Borrowed(inline.kind)),
-                F::Start => Val::num(inline.start),
-                F::End => Val::num(inline.end),
-                F::Text => Val::Str(Cow::Borrowed(inline.text)),
-                F::Leaf => Val::Str(Cow::Borrowed(inline.leaf)),
-                F::Parent => Val::Str(Cow::Borrowed(inline.parent)),
-                F::RawRef if inline.kind != "text_run" => self.raw_ref(inline.range),
-                F::KeyText if inline.kind != "text_run" => self.key_text(inline.range),
-                _ => Val::Null,
-            },
+            Subject::Inline(inline) => self.inline_field(inline, name),
+        }
+    }
+
+    fn inline_field(&self, inline: &InlineRec<'a>, name: F) -> Val<'a> {
+        match name {
+            F::Node if inline.kind != "text_run" => self.tree_node(inline.range),
+            F::Type => Val::Str(Cow::Borrowed(inline.kind)),
+            F::Start => Val::num(inline.start),
+            F::End => Val::num(inline.end),
+            F::Text => Val::Str(Cow::Borrowed(inline.text)),
+            F::Leaf => Val::Str(Cow::Borrowed(inline.leaf)),
+            F::Parent => Val::Str(Cow::Borrowed(inline.parent)),
+            F::RawRef if inline.kind != "text_run" => self.raw_ref(inline.range),
+            F::KeyText if inline.kind != "text_run" => self.key_text(inline.range),
+            _ => Val::Null,
         }
     }
 

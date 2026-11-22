@@ -53,6 +53,12 @@ fn rendered_footnotes_and_raw_html_anchors_are_fragment_targets() {
     );
     let collision = "{#fn1}\n# H\n\nText[^n].\n\n[^n]: note\n\n[x](#fn1-2)\n";
     assert!(messages(collision, "broken-fragment-link", &LintOptions::default()).is_empty());
+    let inline = "Text ^[note].\n\n[x](#fn1) [y](#fnref1)\n";
+    assert!(messages(inline, "broken-fragment-link", &LintOptions::default()).is_empty());
+    let admonition = "::: note \"Title\"\ntext\n:::\n\n[x](#adm-1)\n";
+    assert!(messages(admonition, "broken-fragment-link", &LintOptions::default()).is_empty());
+    let collision = "{#adm-1}\n# H\n\n::: note \"Title\"\ntext\n:::\n\n[x](#adm-1-2)\n";
+    assert!(messages(collision, "broken-fragment-link", &LintOptions::default()).is_empty());
 }
 
 #[test]
@@ -82,7 +88,7 @@ fn reference_near_misses_use_heading_text_and_unicode_fold() {
         findings[0].contains("the label A  B differs only in case"),
         "{findings:?}"
     );
-    let normalization = "{id=\"Café\"}\n# H\n\n[x](#Café)\n";
+    let normalization = "{id=\"Café\"}\n# H\n\n[x](#Cafe\u{301})\n";
     let findings = messages(
         normalization,
         "broken-fragment-link",
@@ -91,6 +97,13 @@ fn reference_near_misses_use_heading_text_and_unicode_fold() {
     assert_eq!(findings.len(), 1);
     assert!(
         !findings[0].contains("differs only in case"),
+        "{findings:?}"
+    );
+    let image = "# ![Alt](image.png)\n\n[x][ALT]\n";
+    let findings = messages(image, "unresolved-reference-link", &LintOptions::default());
+    assert_eq!(findings.len(), 1);
+    assert!(
+        findings[0].contains("the label Alt differs only in case"),
         "{findings:?}"
     );
 }

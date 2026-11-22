@@ -279,11 +279,144 @@ impl RenderedIds {
         if self.exact.insert(id.to_string()) {
             let nfc: String = id.nfc().collect();
             let candidates = self.folded.entry(folded(id)).or_default();
-            if candidates.is_empty() || (candidates.len() == 1 && self.nfc[candidates[0]] != nfc) {
+            if candidates.len() < 2
+                && candidates
+                    .first()
+                    .and_then(|at| self.nfc.get(*at))
+                    .is_none_or(|existing| existing != &nfc)
+            {
                 candidates.push(self.ordered.len());
             }
             self.nfc.push(nfc);
             self.ordered.push(id.to_string());
+        }
+    }
+}
+
+fn add_raw_html_ids(raw: &str, ids: &mut RenderedIds) {
+    let dom = crate::import::parse::fragment(raw);
+    for node in dom.nodes {
+        if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
+            for (key, value) in attrs {
+                if key == "id" || (name == "a" && key == "name") {
+                    ids.add(&value);
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn has_authored_name(node: V<'_>) -> bool {
+    node.at("attrs")
+        .at("keyValues")
+        .as_array()
+        .is_some_and(|pairs| {
+            pairs.iter().any(|pair| {
+                pair.as_array()
+                    .and_then(crate::view::Arr::first)
+                    .and_then(V::as_str)
+                    .is_some_and(|key| {
+                        key.eq_ignore_ascii_case("aria-label")
+                            || key.eq_ignore_ascii_case("aria-labelledby")
+                    })
+            })
+        })
+}
+
+fn generated_admonition_ids(
+    items: &[Item<'_>],
+    taken: &mut crate::resolve::slug::Taken,
+    collisions: bool,
+) -> HashMap<usize, String> {
+    let has_notes = items.iter().any(|item| {
+        matches!(
+            item.node.ty().as_str(),
+            Some("footnote_ref" | "inline_footnote")
+        )
+    });
+    let placing = has_notes
+        .then(|| {
+            items.iter().position(|item| {
+                item.parents.is_none()
+                    && item.node.ty() == "directive"
+                    && item.node.at("kind") == "footnotes"
+            })
+        })
+        .flatten();
+    let mut ids = HashMap::new();
+    let mut n = 0;
+    for (at, item) in items.iter().enumerate() {
+        let kind = item.node.ty().as_str();
+        let titled = item.node.get("title").is_some()
+            && (kind == Some("admonition") && !has_authored_name(item.node)
+                || kind == Some("directive") && placing == Some(at));
+        if titled {
+            n += 1;
+            let base = format!("adm-{n}");
+            ids.insert(
+                at,
+                if collisions {
+                    taken.unique(&base)
+                } else {
+                    base
+                },
+            );
+        }
+    }
+    ids
+}
+
+fn append_note_ids(
+    item: &Item<'_>,
+    attribute: Option<&str>,
+    counts: &mut HashMap<u64, usize>,
+    taken: &mut crate::resolve::slug::Taken,
+    collisions: bool,
+    ids: &mut RenderedIds,
+) {
+    if matches!(
+        item.node.ty().as_str(),
+        Some("footnote_ref" | "inline_footnote")
+    ) && let Some(number) = item.node.at("number").as_u64()
+    {
+        let count = counts.entry(number).or_default();
+        *count += 1;
+        if *count == 1 {
+            let base = format!("fn{number}");
+            ids.add(&if collisions {
+                taken.unique(&base)
+            } else {
+                base
+            });
+        }
+        let suffix = if *count == 1 {
+            String::new()
+        } else {
+            format!("-{count}")
+        };
+        let base = format!("fnref{number}{suffix}");
+        let id = attribute.map_or_else(
+            || {
+                if collisions {
+                    taken.unique(&base)
+                } else {
+                    base
+                }
+            },
+            str::to_owned,
+        );
+        ids.add(&id);
+    }
+}
+
+fn reserve_generated_prefixes(items: &[Item<'_>], taken: &mut crate::resolve::slug::Taken) {
+    for item in items {
+        for id in [item.node.at("attrs").at("id"), item.node.at("generatedId")] {
+            if let Some(id) = id.as_str()
+                && (id.starts_with("fn") || id.starts_with("adm-"))
+            {
+                taken.reserve(id);
+            }
         }
     }
 }
@@ -299,17 +432,10 @@ fn id_index<'a>(items: &[Item<'a>], raw_html: bool) -> (RenderedIds, Vec<IdTarge
     let mut targets = Vec::new();
     let mut note_counts = HashMap::<u64, usize>::new();
     let mut taken = crate::resolve::slug::Taken::default();
-    for item in items {
-        for id in [item.node.at("attrs").at("id"), item.node.at("generatedId")] {
-            if let Some(id) = id.as_str()
-                && (id.starts_with("fn") || id.starts_with("adm-"))
-            {
-                taken.reserve(id);
-            }
-        }
-    }
+    reserve_generated_prefixes(items, &mut taken);
     let collisions = !taken.is_empty();
-    for item in items {
+    let admonitions = generated_admonition_ids(items, &mut taken, collisions);
+    for (index, item) in items.iter().enumerate() {
         let kind = item.node.ty().as_str().unwrap_or("node");
         let attribute = item.node.at("attrs").at("id").as_str();
         let generated = item.node.at("generatedId").as_str();
@@ -323,52 +449,23 @@ fn id_index<'a>(items: &[Item<'a>], raw_html: bool) -> (RenderedIds, Vec<IdTarge
                 eligible: kind == "heading" || super::data_model::numbered_caption(item.node),
             });
         }
-        if kind == "footnote_ref"
-            && let Some(number) = item.node.at("number").as_u64()
-        {
-            let count = note_counts.entry(number).or_default();
-            *count += 1;
-            if *count == 1 {
-                let base = format!("fn{number}");
-                ids.add(&if collisions {
-                    taken.unique(&base)
-                } else {
-                    base
-                });
-            }
-            let suffix = if *count == 1 {
-                String::new()
-            } else {
-                format!("-{count}")
-            };
-            let base = format!("fnref{number}{suffix}");
-            let id = attribute.map_or_else(
-                || {
-                    if collisions {
-                        taken.unique(&base)
-                    } else {
-                        base
-                    }
-                },
-                str::to_owned,
-            );
-            ids.add(&id);
+        if let Some(id) = admonitions.get(&index) {
+            ids.add(id);
         }
+        append_note_ids(
+            item,
+            attribute,
+            &mut note_counts,
+            &mut taken,
+            collisions,
+            &mut ids,
+        );
         if raw_html
             && matches!(kind, "raw_block" | "raw_inline")
             && item.node.at("format").as_str() == Some("html")
             && let Some(raw) = item.node.at("value").as_str()
         {
-            let dom = crate::import::parse::fragment(raw);
-            for node in dom.nodes {
-                if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
-                    for (key, value) in attrs {
-                        if key == "id" || (name == "a" && key == "name") {
-                            ids.add(&value);
-                        }
-                    }
-                }
-            }
+            add_raw_html_ids(raw, &mut ids);
         }
     }
     (ids, targets)
@@ -854,50 +951,61 @@ fn check_inline_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
+fn fragment_case_only<'a>(ids: &'a RenderedIds, written: &str, fragment: &str) -> Option<&'a str> {
+    let written_fold = folded(written);
+    let decoded_fold = folded(fragment);
+    let written_nfc: String = written.nfc().collect();
+    let decoded_nfc: String = fragment.nfc().collect();
+    let candidate = |key: &String, nfc: &String| {
+        ids.folded.get(key).and_then(|candidates| {
+            candidates
+                .iter()
+                .copied()
+                .find(|at| ids.nfc.get(*at).is_some_and(|candidate| candidate != nfc))
+        })
+    };
+    let at = [
+        candidate(&written_fold, &written_nfc),
+        candidate(&decoded_fold, &decoded_nfc),
+    ]
+    .into_iter()
+    .flatten()
+    .min();
+    at.and_then(|at| ids.ordered.get(at)).map(String::as_str)
+}
+
+fn link_fragment(item: &Item<'_>, ids: &RenderedIds, sink: &mut Sink<'_>, href: &str) {
+    if let Some(raw_fragment) = href.strip_prefix('#') {
+        let written = raw_fragment.split(":~:").next().unwrap_or("");
+        let fragment = percent_decode_fragment(written);
+        if sink.options.extensions.is_empty()
+            && !written.is_empty()
+            && !fragment.eq_ignore_ascii_case("top")
+            && !ids.exact.contains(written)
+            && !ids.exact.contains(&fragment)
+        {
+            let case_only = fragment_case_only(ids, written, &fragment);
+            if let Some(case_only) = case_only {
+                sink.emit(
+                    "broken-fragment-link",
+                    item,
+                    &[("href", href), ("caseOnly", case_only)],
+                    0,
+                );
+            } else {
+                sink.emit("broken-fragment-link", item, &[("href", href)], 1);
+            }
+        }
+    }
+}
+
 fn link(item: &Item<'_>, ids: &RenderedIds, sink: &mut Sink<'_>) {
     let node = item.node;
     if node.at("href") == "" {
         sink.emit("empty-link-destination", item, &[], 0);
     }
     if let Some(href) = node.at("href").as_str() {
-        if let Some(raw_fragment) = href.strip_prefix('#') {
-            let written = raw_fragment.split(":~:").next().unwrap_or("");
-            let fragment = percent_decode_fragment(written);
-            if sink.options.extensions.is_empty()
-                && !written.is_empty()
-                && !fragment.eq_ignore_ascii_case("top")
-                && !ids.exact.contains(written)
-                && !ids.exact.contains(&fragment)
-            {
-                let written_fold = folded(written);
-                let decoded_fold = folded(&fragment);
-                let written_nfc: String = written.nfc().collect();
-                let decoded_nfc: String = fragment.nfc().collect();
-                let candidate = |key: &String, nfc: &String| {
-                    ids.folded.get(key).and_then(|candidates| {
-                        candidates.iter().copied().find(|at| ids.nfc[*at] != *nfc)
-                    })
-                };
-                let at = [
-                    candidate(&written_fold, &written_nfc),
-                    candidate(&decoded_fold, &decoded_nfc),
-                ]
-                .into_iter()
-                .flatten()
-                .min();
-                let case_only = at.and_then(|at| ids.ordered.get(at));
-                if let Some(case_only) = case_only {
-                    sink.emit(
-                        "broken-fragment-link",
-                        item,
-                        &[("href", href), ("caseOnly", case_only)],
-                        0,
-                    );
-                } else {
-                    sink.emit("broken-fragment-link", item, &[("href", href)], 1);
-                }
-            }
-        }
+        link_fragment(item, ids, sink, href);
     }
     let label = node
         .at("children")
@@ -962,10 +1070,8 @@ fn percent_decode_fragment(value: &str) -> String {
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
-fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
-    let raw = sink.raw(item).to_string();
-    let key = item.node.at("key").as_str().unwrap_or("");
-    let heading_key = if key
+fn heading_reference_key(key: &str) -> std::borrow::Cow<'_, str> {
+    if key
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
     {
@@ -973,7 +1079,13 @@ fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
     } else {
         let arena = crate::Arena::new();
         std::borrow::Cow::Owned(crate::resolve::heading_key_plain(key, &arena))
-    };
+    }
+}
+
+fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
+    let raw = sink.raw(item).to_string();
+    let key = item.node.at("key").as_str().unwrap_or("");
+    let heading_key = heading_reference_key(key);
     let image = item.node.ty() == "image";
     let key_fold = folded(key);
     let heading_fold = folded(&fold_space(&heading_key));

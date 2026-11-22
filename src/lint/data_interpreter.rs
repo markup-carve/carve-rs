@@ -1653,7 +1653,47 @@ pub(super) fn truth(value: &Val<'_>) -> bool {
     }
 }
 
+fn fold_space_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut pending = false;
+    for ch in text.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\r') {
+            pending = !out.is_empty();
+        } else {
+            if pending {
+                out.push(' ');
+                pending = false;
+            }
+            out.push(ch);
+        }
+    }
+    out
+}
+
 impl<'a> Eval<'_, 'a> {
+    fn english_list(&mut self, arg: &Expr, quoted: bool) -> Val<'a> {
+        let list = self.value(arg);
+        let len = self.records.list_len(&list);
+        let mut out = String::new();
+        for at in 0..len {
+            if at > 0 {
+                out.push_str(if at + 1 == len {
+                    if len == 2 { " and " } else { ", and " }
+                } else {
+                    ", "
+                });
+            }
+            if quoted {
+                out.push('"');
+            }
+            out.push_str(&self.text(&self.records.list_item(&list, at)));
+            if quoted {
+                out.push('"');
+            }
+        }
+        Val::Str(Cow::Owned(out))
+    }
+
     fn text(&self, value: &Val<'a>) -> Cow<'a, str> {
         match value {
             Val::Str(s) => s.clone(),
@@ -1998,45 +2038,9 @@ impl<'a> Eval<'_, 'a> {
             Expr::Fold(arg) => Val::Str(Cow::Owned(
                 self.string(arg).nfc().default_case_fold().nfc().collect(),
             )),
-            Expr::FoldSpace(arg) => {
-                let text = self.string(arg);
-                let mut out = String::with_capacity(text.len());
-                let mut pending = false;
-                for ch in text.chars() {
-                    if matches!(ch, ' ' | '\t' | '\n' | '\r') {
-                        pending = !out.is_empty();
-                    } else {
-                        if pending {
-                            out.push(' ');
-                            pending = false;
-                        }
-                        out.push(ch);
-                    }
-                }
-                Val::Str(Cow::Owned(out))
-            }
-            Expr::QuotedList(arg) | Expr::PlainList(arg) => {
-                let list = self.value(arg);
-                let len = self.records.list_len(&list);
-                let mut out = String::new();
-                for at in 0..len {
-                    if at > 0 {
-                        out.push_str(if at + 1 == len {
-                            if len == 2 { " and " } else { ", and " }
-                        } else {
-                            ", "
-                        });
-                    }
-                    if matches!(expr, Expr::QuotedList(_)) {
-                        out.push('"');
-                    }
-                    out.push_str(&self.text(&self.records.list_item(&list, at)));
-                    if matches!(expr, Expr::QuotedList(_)) {
-                        out.push('"');
-                    }
-                }
-                Val::Str(Cow::Owned(out))
-            }
+            Expr::FoldSpace(arg) => Val::Str(Cow::Owned(fold_space_text(&self.string(arg)))),
+            Expr::QuotedList(arg) => self.english_list(arg, true),
+            Expr::PlainList(arg) => self.english_list(arg, false),
             Expr::PercentDecode(arg) => {
                 let text = self.string(arg);
                 Val::Str(Cow::Owned(
