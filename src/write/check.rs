@@ -847,10 +847,16 @@ fn run_probe<'t>(
             return Some(found);
         }
         found = true;
+        // One sort per node and round: one per escape made a node with many escapes quadratic.
+        let mut touched: AddrSet<usize> = AddrSet::default();
         for (n, at) in placed {
-            let list = probe.escapes.entry(id(n)).or_default();
-            list.push(at);
-            list.sort_unstable();
+            probe.escapes.entry(id(n)).or_default().push(at);
+            touched.insert(id(n));
+        }
+        for n in touched {
+            if let Some(list) = probe.escapes.get_mut(&n) {
+                list.sort_unstable();
+            }
         }
     }
     Some(found)
