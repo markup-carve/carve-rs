@@ -321,12 +321,8 @@ fn escape_line_start<'t>(
 ) {
     c.misaligned = true;
     let first = nodes.get(from).copied();
-    if let Some(f) = first.filter(|f| ty(f) == "text") {
-        for at in opener_offsets(text(f)) {
-            if escape_at(w, c, f, at) {
-                return;
-            }
-        }
+    if escape_run_opener(w, c, nodes, from) {
+        return;
     }
     let mut at = from + 1;
     while let Some(&n) = nodes.get(at) {
@@ -978,15 +974,13 @@ fn escape_content_line<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> b
         };
         if !is_break(Some(node))
             || ty(next) != "text"
-            || !has_opener_shape(Some(next))
+            || !has_opener_shape(&nodes, at + 1)
             || !opens_block_alone(w, c, &nodes, at + 1)
         {
             continue;
         }
-        for offset in opener_offsets(text(next)) {
-            if escape_at(w, c, next, offset) {
-                return true;
-            }
+        if escape_run_opener(w, c, &nodes, at + 1) {
+            return true;
         }
     }
     false
@@ -1034,6 +1028,16 @@ fn opener_shift(a: V<'_>) -> usize {
     }
 }
 
+/// The first byte of the opener of `a`, where it is known.
+fn opener_byte(a: V<'_>) -> Option<u8> {
+    match ty(a) {
+        "image" => Some(b'!'),
+        "math" => Some(b'$'),
+        "smart_punctuation" => s(a, "source").and_then(|x| x.bytes().next()),
+        _ => None,
+    }
+}
+
 fn is_chain_opener(a: V<'_>) -> bool {
     match ty(a) {
         "footnote_ref" => true,
@@ -1059,13 +1063,42 @@ fn holds_closer(node: V<'_>) -> bool {
 
 const SPAN_TYPES: &[&str] = &["code", "literal_inline", "math"];
 
-fn escape_opener<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>, at: usize, a: V<'_>) {
+/// The text node and offset `at` bytes into the run of text nodes starting at `es[i]`.
+fn run_offset<'t>(es: &[N<'t>], i: usize, mut at: usize) -> Option<(N<'t>, usize)> {
+    let mut k = i;
+    while let Some(n) = text_at(es, k) {
+        let len = text(n).len();
+        if at < len {
+            return Some((n, at));
+        }
+        at -= len;
+        k += 1;
+    }
+    None
+}
+
+fn escape_opener<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    e: N<'t>,
+    es: &[N<'t>],
+    i: usize,
+    at: usize,
+    a: V<'_>,
+) {
     let b = text(e).as_bytes();
     let mut start = at;
     while matches!(b.get(start), Some(b' ' | b'\t')) {
         start += 1;
     }
     let shifted = start + opener_shift(a);
+    // The opener's second character can sit in the next text node (C2-W-099).
+    if shifted >= b.len()
+        && b.get(start).copied() == opener_byte(a)
+        && run_offset(es, i, shifted).is_some_and(|(n, k)| escape_at(w, c, n, k))
+    {
+        return;
+    }
     if escape_at(w, c, e, shifted) {
         let opener = b.get(shifted).copied();
         if (opener == Some(b'[') && is_chain_opener(a))
@@ -1569,7 +1602,7 @@ fn skip_construct<'t>(
     if comparison_behind_quote(prior, before, e, at.vi, a) {
         escape_at(w, c, e, at.vi + 1);
     } else {
-        escape_opener(w, c, e, at.vi, a);
+        escape_opener(w, c, e, es, at.i, at.vi, a);
     }
     let Some((start, end)) = span(a) else {
         return false;
@@ -2107,20 +2140,55 @@ fn read_starts(
     }
 }
 
-fn has_opener_shape(node: Option<V<'_>>) -> bool {
-    let Some(n) = node else { return false };
+/// The text of the run of text nodes starting at `nodes[from]`: one source line may be split over several.
+fn run_text<'a>(nodes: &[V<'a>], from: usize) -> std::borrow::Cow<'a, str> {
+    let Some(first) = text_at(nodes, from) else {
+        return "".into();
+    };
+    if text_at(nodes, from + 1).is_none() {
+        return text(first).into();
+    }
+    let mut k = from;
+    let mut joined = String::new();
+    while let Some(n) = text_at(nodes, k) {
+        joined.push_str(text(n));
+        k += 1;
+    }
+    joined.into()
+}
+
+/// Escapes the block opener of the text run at `nodes[from]`, best offset first (C2-W-090, C2-W-092).
+fn escape_run_opener<'t>(w: &Writer<'t>, c: &mut Check<'t>, nodes: &[N<'t>], from: usize) -> bool {
+    opener_offsets(&run_text(nodes, from))
+        .into_iter()
+        .any(|at| run_offset(nodes, from, at).is_some_and(|(n, k)| escape_at(w, c, n, k)))
+}
+
+fn has_opener_shape(nodes: &[V<'_>], from: usize) -> bool {
+    let Some(n) = nodes.get(from) else {
+        return false;
+    };
     if ty(n) != "text" {
         return true;
     }
-    let v = text(n);
+    let v = run_text(nodes, from);
+    let v = v.as_ref();
     match v.as_bytes().first() {
         None => false,
         Some(b) => !b.is_ascii_alphanumeric() || opener_offsets(v).len() > 1,
     }
 }
 
-fn is_pending(c: &Check<'_>, node: Option<V<'_>>) -> bool {
-    node.is_some_and(|n| ty(n) == "text" && c.marks.contains_key(&id(n)))
+/// Whether an escape was already asked in the text run at `nodes[from]`.
+fn is_pending(c: &Check<'_>, nodes: &[V<'_>], from: usize) -> bool {
+    let mut k = from;
+    while let Some(n) = text_at(nodes, k) {
+        if c.marks.contains_key(&id(n)) {
+            return true;
+        }
+        k += 1;
+    }
+    false
 }
 
 fn visit_lines<'t>(
@@ -2139,8 +2207,8 @@ fn visit_lines<'t>(
             continue;
         }
         *line += 1;
-        let next = nodes.get(at + 1).copied();
-        if lines.contains(line) && has_opener_shape(next) && !is_pending(c, next) {
+        if lines.contains(line) && has_opener_shape(nodes, at + 1) && !is_pending(c, nodes, at + 1)
+        {
             escape_line_start(w, c, nodes, at + 1, owner);
         }
     }
@@ -2155,10 +2223,7 @@ fn escape_opener_lines<'t>(
     lines: &AddrSet<i64>,
 ) {
     let top = refs(children(e));
-    if !paragraphs.contains(&place)
-        && has_opener_shape(top.first().copied())
-        && !is_pending(c, top.first().copied())
-    {
+    if !paragraphs.contains(&place) && has_opener_shape(&top, 0) && !is_pending(c, &top, 0) {
         escape_line_start(w, c, &top, 0, e);
     }
     let mut line = i64::try_from(place / PLACE_COLUMNS).unwrap_or(0);
