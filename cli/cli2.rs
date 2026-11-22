@@ -268,11 +268,16 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
                 "directory import requires --from gfm --directory SOURCE --output TARGET".into(),
             );
         }
-    }
-    if parsed.command == "region" {
-        if parsed.files.is_empty() || parsed.files.len() > 2 || parsed.files[0] == "-" {
-            return Err("region expects NAME [file]".into());
+        for name in parsed.values.keys() {
+            if !["from", "directory", "output", "strict-losses"].contains(&name.as_str()) {
+                return Err(format!("--{name} is not supported for directory import"));
+            }
         }
+    }
+    if parsed.command == "region"
+        && (parsed.files.is_empty() || parsed.files.len() > 2 || parsed.files[0] == "-")
+    {
+        return Err("region expects NAME [file]".into());
     }
     if let (Some(a), Some(b)) = (
         str_value(parsed, "report-includes"),
@@ -1255,6 +1260,7 @@ fn tree_if_needed(
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 pub fn run(arguments: &[String]) -> i32 {
     let args = match parse(arguments) {
         Ok(a) => a,
@@ -1353,13 +1359,13 @@ fn region(args: &Args) -> i32 {
         Err(code) => return code,
     };
     let source = String::from_utf8_lossy(&bytes);
-    match carve::include::region_lines(&source, name, bool_value(args, "code", false)) {
-        Ok((start, end)) => output(&format!("{}\n", json!({"start":start,"end":end})))
-            .map_or_else(|code| code, |()| 0),
-        Err(_) => {
-            eprintln!("carve region: include-region-invalid");
-            1
-        }
+    if let Ok((start, end)) =
+        carve::include::region_lines(&source, name, bool_value(args, "code", false))
+    {
+        output(&format!("{}\n", json!({"start":start,"end":end}))).map_or_else(|code| code, |()| 0)
+    } else {
+        eprintln!("carve region: include-region-invalid");
+        1
     }
 }
 

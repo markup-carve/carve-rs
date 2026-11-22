@@ -154,6 +154,10 @@ pub struct Imported {
 
 /// Import one GFM document for a directory migration. Link destinations are
 /// checked after the entire output tree has been built.
+///
+/// # Errors
+///
+/// Returns an import or writer error if the document cannot be converted.
 pub fn try_migrate_markdown_for_directory(source: &str) -> Result<Imported, Error> {
     super::Carve::new().import_from(
         source,
@@ -165,6 +169,10 @@ pub fn try_migrate_markdown_for_directory(source: &str) -> Result<Imported, Erro
 
 /// The directory import and its authored link destinations. The destination
 /// map retains URL spellings that a later link audit may need to report.
+///
+/// # Errors
+///
+/// Returns an import or writer error if the document cannot be converted.
 pub fn try_migrate_markdown_for_directory_with_destinations(
     source: &str,
 ) -> Result<(Imported, std::collections::HashMap<String, String>), Error> {
@@ -176,7 +184,76 @@ pub fn try_migrate_markdown_for_directory_with_destinations(
         }
     })?;
     collect_destinations(&value, &mut destinations);
+    for (decoded, authored) in markdown_destinations(source) {
+        if let Some(value) = destinations.get_mut(&decoded) {
+            *value = authored;
+        }
+    }
     Ok((imported, destinations))
+}
+
+#[allow(clippy::cognitive_complexity)]
+fn markdown_destinations(source: &str) -> Vec<(String, String)> {
+    let bytes = source.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes.get(i) != Some(&b']') || bytes.get(i + 1) != Some(&b'(') {
+            i += 1;
+            continue;
+        }
+        let mut start = i + 2;
+        while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
+            start += 1;
+        }
+        let angle = bytes.get(start) == Some(&b'<');
+        if angle {
+            start += 1;
+        }
+        let mut end = start;
+        let mut depth = 0usize;
+        while let Some(&byte) = bytes.get(end) {
+            if byte == b'\\' && bytes.get(end + 1).is_some() {
+                end += 2;
+                continue;
+            }
+            if angle {
+                if byte == b'>' {
+                    break;
+                }
+            } else {
+                if byte == b'(' {
+                    depth += 1;
+                }
+                if byte == b')' {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                if byte.is_ascii_whitespace() {
+                    break;
+                }
+            }
+            end += 1;
+        }
+        if let Some(authored) = source.get(start..end) {
+            let mut decoded = String::new();
+            let mut chars = authored.chars();
+            while let Some(ch) = chars.next() {
+                if ch == '\\' {
+                    if let Some(next) = chars.next() {
+                        decoded.push(next);
+                    }
+                } else {
+                    decoded.push(ch);
+                }
+            }
+            out.push((decoded, authored.to_owned()));
+        }
+        i = end.saturating_add(1);
+    }
+    out
 }
 
 fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<String, String>) {

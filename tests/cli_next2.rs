@@ -105,6 +105,11 @@ fn directory_import_converts_links_assets_and_reports_without_overwrite() {
     assert_eq!(report["files"][0]["links"][0]["status"], "rewritten");
     let (again, _, _) = run(&args, "");
     assert_eq!(again, 2);
+    let mut ignored = args.to_vec();
+    ignored.extend(["--allow-loss", "bogus"]);
+    let (status, _, stderr) = run(&ignored, "");
+    assert_eq!(status, 2);
+    assert!(stderr.contains("not supported for directory import"));
 }
 
 #[test]
@@ -148,6 +153,17 @@ fn directory_import_rejects_source_containment_and_reports_missing_links() {
             .unwrap();
     assert_eq!(report["files"][0]["links"][0]["status"], "unresolved");
     assert_eq!(report["review"], serde_json::json!(["a.md"]));
+}
+
+#[test]
+fn directory_import_helper_returns_authored_destination_spelling() {
+    let (imported, destinations) =
+        carve::try_migrate_markdown_for_directory_with_destinations("[x](a\\(b\\).md)\n").unwrap();
+    assert!(imported.source.contains("a(b).md"));
+    assert_eq!(
+        destinations.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
 }
 
 #[test]

@@ -43,7 +43,8 @@ fn mapped_path(source: &str, path: &str) -> Option<String> {
 }
 
 fn html_ids(html: String) -> HashSet<String> {
-    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let dom =
+        html5ever::parse_document(RcDom::default(), html5ever::ParseOpts::default()).one(html);
     let mut ids = HashSet::new();
     let mut pending = vec![dom.document.clone()];
     while let Some(node) = pending.pop() {
@@ -72,7 +73,8 @@ fn encode_fragment(value: &str) -> String {
         {
             let mut buffer = [0; 4];
             for byte in ch.encode_utf8(&mut buffer).bytes() {
-                result.push_str(&format!("%{byte:02X}"));
+                use std::fmt::Write;
+                let _ = write!(result, "%{byte:02X}");
             }
         } else {
             result.push(ch);
@@ -127,7 +129,8 @@ fn srcset_urls(value: &str) -> Vec<String> {
 }
 
 fn html_urls(html: &str) -> Vec<(String, bool)> {
-    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let dom =
+        html5ever::parse_document(RcDom::default(), html5ever::ParseOpts::default()).one(html);
     let mut urls = Vec::new();
     let mut pending = vec![dom.document.clone()];
     while let Some(node) = pending.pop() {
@@ -165,6 +168,7 @@ fn html_urls(html: &str) -> Vec<(String, bool)> {
 /// A fragment rewritten to its heading id's case: the fragment as written, and as rewritten.
 type Recased = Option<(String, String)>;
 
+#[allow(clippy::too_many_lines)]
 fn inspect_link(
     destination: &str,
     source: &str,
@@ -213,7 +217,7 @@ fn inspect_link(
     let Some(path) = decode_url(raw_path) else {
         return Some(failure("invalid URL encoding"));
     };
-    let Some(fragment) = raw_fragment.map(decode_url).unwrap_or(Some(String::new())) else {
+    let Some(fragment) = raw_fragment.map_or(Some(String::new()), decode_url) else {
         return Some(failure("invalid URL encoding"));
     };
     let Some(target) = (if path.is_empty() {
@@ -362,6 +366,7 @@ fn check_links(
     Ok(broken)
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn check_value(
     value: &mut Value,
     source: &str,
@@ -457,6 +462,7 @@ fn markdown_stem(name: &str) -> Option<&str> {
 type Identity = Option<(u64, u64)>;
 
 #[cfg(unix)]
+#[allow(clippy::unnecessary_wraps)]
 fn identity(metadata: &fs::Metadata) -> Identity {
     use std::os::unix::fs::MetadataExt;
     Some((metadata.dev(), metadata.ino()))
@@ -493,7 +499,7 @@ fn collect(
         .map_err(|e| e.to_string())?
         .map(|entry| entry.map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
-    children.sort_by_key(|entry| entry.file_name());
+    children.sort_by_key(fs::DirEntry::file_name);
     for entry in children {
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
@@ -552,6 +558,7 @@ fn future_path(path: &Path) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
     let source =
         fs::canonicalize(source).map_err(|e| format!("cannot open source directory: {e}"))?;
@@ -696,9 +703,5 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
         "{files} file(s) converted; {assets} asset(s) copied; {review} file(s) need review; {skipped} entry(s) skipped. Report: {}",
         output.join("migration-report.json").display()
     );
-    Ok(if check_loss && (review > 0 || skipped > 0) {
-        1
-    } else {
-        0
-    })
+    Ok(u8::from(check_loss && (review > 0 || skipped > 0)))
 }
