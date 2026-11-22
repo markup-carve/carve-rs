@@ -300,6 +300,33 @@ impl<'a> Source<'a> {
     /// The position of a byte range of `text`.
     #[must_use]
     pub fn pos(&self, start: usize, end: usize) -> Pos {
+        // On an unchanged ASCII source, byte and code point columns coincide,
+        // and normalized offsets are original offsets. Tables in particular
+        // create several positions per cell, so avoid the general remapping
+        // and Unicode paths for each one.
+        if self.marks.is_empty() && self.replacements.is_empty() {
+            let start_line = self.line_of(start);
+            let start_base = self.line_starts.get(start_line).copied().unwrap_or(0);
+            let end_line = if end >= start_base
+                && self
+                    .line_starts
+                    .get(start_line + 1)
+                    .is_none_or(|&next| end < next)
+            {
+                start_line
+            } else {
+                self.line_of(end)
+            };
+            let end_base = self.line_starts.get(end_line).copied().unwrap_or(0);
+            return Pos {
+                start_line: Pos::at(start_line + 1),
+                end_line: Pos::at(end_line + 1),
+                start_column: Pos::at(start.max(start_base) - start_base + 1),
+                end_column: Pos::at(end.max(end_base) - end_base + 1),
+                start_offset: Pos::at(start),
+                end_offset: Pos::at(end),
+            };
+        }
         let (start_line, start_column) = self.line_col(start);
         let (end_line, end_column) = self.line_col(end);
         Pos {
@@ -358,6 +385,35 @@ mod tests {
         let jumps: Vec<usize> = (0..=text.len()).map(|i| i * 7 % (text.len() + 1)).collect();
         for at in up.into_iter().chain(down).chain(jumps) {
             assert_eq!(src.line_of(at), fresh(at), "at {at}");
+        }
+    }
+
+    #[test]
+    fn ascii_positions_keep_line_columns_and_offsets() {
+        let text = "|= A |= B |\n| x | y |\n\nlast line";
+        let src = Source::new(text);
+        for start in 0..=text.len() {
+            for end in start..=text.len() {
+                let pos = src.pos(start, end);
+                let (start_line, start_column) = src.line_col(start);
+                let (end_line, end_column) = src.line_col(end);
+                assert_eq!(
+                    (pos.start_line, pos.start_column, pos.start_offset),
+                    (
+                        crate::ast::Pos::at(start_line),
+                        crate::ast::Pos::at(start_column),
+                        crate::ast::Pos::at(start),
+                    )
+                );
+                assert_eq!(
+                    (pos.end_line, pos.end_column, pos.end_offset),
+                    (
+                        crate::ast::Pos::at(end_line),
+                        crate::ast::Pos::at(end_column),
+                        crate::ast::Pos::at(end),
+                    )
+                );
+            }
         }
     }
 

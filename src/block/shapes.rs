@@ -592,16 +592,32 @@ fn after_div_name(rest: &str, i: usize, base: usize, info: &mut DivInfo) -> usiz
     title_and_label(rest, j, base, false, &mut info.title, &mut info.label)
 }
 
-/// A table row (C2-B-166, C2-B-167): returns the cell area `(start, end)`
-/// (byte offsets in the line, excluding the outer pipes), the row
-/// attribute and the start of a trailing line comment.
+/// A table row (C2-B-166, C2-B-167): its separators, row attribute and
+/// the start of a trailing line comment.
+pub(crate) struct TableRowShape {
+    pub attrs: Option<AttrBlock>,
+    pub comment: Option<usize>,
+    /// Separator offsets relative to the start of the cursor's rest, through
+    /// the chosen closing pipe. The cell pass reuses these positions.
+    pub separators: super::table::Separators,
+}
+
+/// The cell area `(start, end)` in the line, row attributes and a trailing
+/// comment start. The block parser uses [`table_row_shape`] to retain the
+/// separator positions as well.
 #[must_use]
 pub fn table_row(c: &Cursor<'_>) -> Option<(usize, usize, Option<AttrBlock>, Option<usize>)> {
+    let shape = table_row_shape(c)?;
+    let last = *shape.separators.last()?;
+    Some((c.pos + 1, c.pos + last, shape.attrs, shape.comment))
+}
+
+pub(crate) fn table_row_shape(c: &Cursor<'_>) -> Option<TableRowShape> {
     let r = c.rest();
     if !r.starts_with('|') {
         return None;
     }
-    let seps = super::table::separators(r);
+    let seps = super::table::compact_separators(r);
     if seps.len() < 2 || seps.first() != Some(&0) {
         return None;
     }
@@ -610,12 +626,15 @@ pub fn table_row(c: &Cursor<'_>) -> Option<(usize, usize, Option<AttrBlock>, Opt
         let (attrs, comment) = row_tail(tail)?;
         Some((last, attrs, comment))
     })?;
-    Some((
-        c.pos + 1,
-        c.pos + last,
+    let mut seps = seps;
+    if seps.last() != Some(&last) {
+        seps.truncate(seps.partition_point(|&p| p <= last));
+    }
+    Some(TableRowShape {
         attrs,
-        comment.map(|p| c.pos + last + 1 + p),
-    ))
+        comment: comment.map(|p| c.pos + last + 1 + p),
+        separators: seps,
+    })
 }
 
 /// After the closing pipe: a row attribute glued or one space after it, then

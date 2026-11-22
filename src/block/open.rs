@@ -81,7 +81,7 @@ impl Parser<'_> {
             return shapes::list_marker(&k)
                 .is_some_and(|marker| self.marker_interrupts(&self.frame(walk, m), m, &marker));
         }
-        if fence_line(&k) || shapes::table_row(&k).is_some() || shapes::thematic_break(&k) {
+        if fence_line(&k) || shapes::table_row_shape(&k).is_some() || shapes::thematic_break(&k) {
             return true;
         }
         let m = k.col - walk.qbase;
@@ -189,7 +189,7 @@ impl Parser<'_> {
         let owned = walk.matched == self.stack.len();
         let text = self.src.text();
         if owned {
-            if let Some(parsed) = shapes::table_row(&k) {
+            if let Some(parsed) = shapes::table_row_shape(&k) {
                 let line_end = k.offset() + k.rest().len();
                 let row = table_row_data(text, &k, parsed);
                 if let Some(OpenLeaf {
@@ -756,7 +756,7 @@ impl Parser<'_> {
     }
 
     fn open_table(&mut self, k: &Cursor<'_>, e: usize) -> bool {
-        let Some(parsed) = shapes::table_row(k) else {
+        let Some(parsed) = shapes::table_row_shape(k) else {
             return false;
         };
         let _ = e;
@@ -1133,11 +1133,12 @@ pub fn display_math_line(line: &str) -> bool {
 }
 
 /// C2-A-086: a row's trailing comment is a sibling after the row.
-fn table_row_data(
-    text: &str,
-    k: &Cursor<'_>,
-    (s, z, attrs, comment): (usize, usize, Option<crate::attr::AttrBlock>, Option<usize>),
-) -> Row {
+fn table_row_data(text: &str, k: &Cursor<'_>, shape: shapes::TableRowShape) -> Row {
+    let shapes::TableRowShape {
+        attrs,
+        comment,
+        separators,
+    } = shape;
     let line_end = k.offset() + k.rest().len();
     let comments = comment.map_or_else(Vec::new, |at| {
         let value = shapes::line_comment_value(
@@ -1149,7 +1150,7 @@ fn table_row_data(
         vec![(k.base + at, line_end, value)]
     });
     Row {
-        cells: table::parse_cells(text, k.base + s, k.base + z),
+        cells: table::parse_cells_known(text, k.offset(), &separators),
         start: k.offset(),
         end: comment.map_or(line_end, |at| k.base + at),
         attrs,
