@@ -629,16 +629,46 @@ fn list_between_columns<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) 
     };
     let column = source_column(sink.source, at);
     let base = source_column(sink.source, outer_at);
-    let deeper = outer
+    let siblings: Vec<V<'_>> = outer.at("children").as_array().into_iter().flatten().collect();
+    let first = list
         .at("children")
         .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|child| child.ty() == "list")
-        .filter_map(|child| bounds(child).map(|(from, _)| (from, source_column(sink.source, from))))
-        .filter(|(from, mark)| *from < list_at && *mark > column)
-        .max_by_key(|(from, _)| *from)
-        .map(|(_, mark)| mark);
+        .and_then(|items| items.iter().next())
+        .and_then(bounds)
+        .is_some_and(|(from, _)| from == at);
+    let deeper = if first {
+        // C2-B-055: the first item of a later list is read at the column of the
+        // last list before it, unless a block other than a list or paragraph
+        // closed that list in between.
+        let Some(here) = siblings
+            .iter()
+            .position(|child| bounds(*child).is_some_and(|(from, _)| from == list_at))
+        else {
+            return;
+        };
+        let Some(previous) = siblings[..here].iter().rposition(|child| child.ty() == "list") else {
+            return;
+        };
+        if siblings[previous + 1..here]
+            .iter()
+            .any(|child| !matches!(child.ty().as_str(), Some("list" | "paragraph")))
+        {
+            return;
+        }
+        bounds(siblings[previous])
+            .map(|(from, _)| source_column(sink.source, from))
+            .filter(|mark| *mark > column)
+    } else {
+        siblings
+            .iter()
+            .filter(|child| child.ty() == "list")
+            .filter_map(|child| {
+                bounds(*child).map(|(from, _)| (from, source_column(sink.source, from)))
+            })
+            .filter(|(from, mark)| *from < list_at && *mark > column)
+            .max_by_key(|(from, _)| *from)
+            .map(|(_, mark)| mark)
+    };
     let Some(deeper) = deeper.filter(|_| base < column) else {
         return;
     };
@@ -2474,9 +2504,11 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
             let Some(tail) = value.get(start + mark.len()..) else {
                 continue;
             };
+            // The first unescaped opener decides; a closer glued to it is no pair.
             if let Some((end, _)) = tail
                 .match_indices(close)
-                .find(|(end, _)| *end > 0 && !escaped(bytes, start + mark.len() + end))
+                .find(|(end, _)| !escaped(bytes, start + mark.len() + end))
+                .filter(|(end, _)| *end > 0)
             {
                 sink.emit_range(
                     code,
@@ -2486,8 +2518,8 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
                     &[],
                     0,
                 );
-                break;
             }
+            break;
         }
     }
     for (open, _) in value.match_indices('_') {
