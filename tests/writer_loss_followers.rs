@@ -81,3 +81,17 @@ fn a_break_field_is_checked_before_resuming_on_the_next_line() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn leading_space_loss_keeps_its_value_path_with_other_fields() {
+    let (_, losses) = write(&[
+        json!({"type":"text", "value":" w", "dir":"rtl"}),
+        json!({"type":"text", "value":"tail"}),
+    ]);
+    assert!(
+        losses
+            .iter()
+            .any(|entry| entry == "field-unspellable /children/0/children/0/value"),
+        "{losses:?}"
+    );
+}

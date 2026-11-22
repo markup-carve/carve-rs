@@ -1824,7 +1824,7 @@ fn resync<'t>(
 
 /// A paragraph can drop leading indentation of one supplied text while its
 /// surviving suffix joins the next node. Resume behind the surviving suffix.
-fn step_over_lost_text(c: &mut Check<'_>, es: &[N<'_>], as_: Arr<'_>, at: &mut Cursor) -> bool {
+fn step_over_lost_text(es: &[N<'_>], as_: Arr<'_>, at: &mut Cursor) -> bool {
     let (Some(&expected), Some(actual)) = (es.get(at.i), as_.get(at.j)) else {
         return false;
     };
@@ -1839,16 +1839,6 @@ fn step_over_lost_text(c: &mut Check<'_>, es: &[N<'_>], as_: Arr<'_>, at: &mut C
             .is_some_and(|rest| rest.starts_with(kept))
     {
         return false;
-    }
-    if ["lang", "dir", "metadata", "attrs", "data"]
-        .into_iter()
-        .any(|name| {
-            is_compared(c, expected, result_fields(expected), name) && expected.get(name).is_some()
-        })
-        && let Some((node, field)) = c.losses.last_mut()
-        && id(*node) == id(expected)
-    {
-        *field = Some(String::new());
     }
     at.i += 1;
     at.aj += kept.len();
@@ -1920,7 +1910,7 @@ fn compare_inlines<'t>(
         };
         if !more
             && !resync(w, c, es, as_, &mut at)
-            && !step_over_lost_text(c, es, as_, &mut at)
+            && !step_over_lost_text(es, as_, &mut at)
             && !resync_next_line(c, es, as_, &mut at)
         {
             done = true;
