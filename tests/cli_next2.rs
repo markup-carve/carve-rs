@@ -156,6 +156,47 @@ fn directory_import_rejects_source_containment_and_reports_missing_links() {
 }
 
 #[test]
+fn directory_import_reports_invalid_utf8_as_loss() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-import-invalid-utf8-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source = root.join("source");
+    let target = root.join("target");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("a.md"), b"a\xffb\n").unwrap();
+    let (status, _, _) = run(
+        &[
+            "import",
+            "--from",
+            "gfm",
+            "--directory",
+            source.to_str().unwrap(),
+            "--output",
+            target.to_str().unwrap(),
+            "--strict-losses",
+        ],
+        "",
+    );
+    assert_eq!(status, 1);
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("migration-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["review"], serde_json::json!(["a.md"]));
+    assert!(
+        report["files"][0]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["code"] == "invalid-utf8-replaced" && row["severity"] == "warning")
+    );
+}
+
+#[test]
 fn directory_import_helper_returns_authored_destination_spelling() {
     let (imported, destinations) =
         carve::try_migrate_markdown_for_directory_with_destinations("[x](a\\(b\\).md)\n").unwrap();

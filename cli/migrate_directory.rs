@@ -650,11 +650,18 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 let migrated = carve::api::try_migrate_markdown_for_directory(&text)
                     .map_err(|e| format!("{source_name}: {e}"))?;
                 fs::write(target, migrated.source).map_err(|e| e.to_string())?;
-                let diagnostics: Vec<Value> = migrated
+                let mut diagnostics: Vec<Value> = migrated
                     .diagnostics
                     .iter()
                     .map(|d| serde_json::to_value(d).map_err(|e| e.to_string()))
                     .collect::<Result<_, _>>()?;
+                if matches!(text, std::borrow::Cow::Owned(_)) {
+                    diagnostics.push(json!({
+                        "code": "invalid-utf8-replaced",
+                        "severity": "warning",
+                        "message": "Invalid UTF-8 bytes were replaced during migration"
+                    }));
+                }
                 if diagnostics
                     .iter()
                     .any(|row| row["severity"] == "warning" || row["severity"] == "error")
