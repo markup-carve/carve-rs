@@ -534,15 +534,17 @@ mod imported_wire_test {
     use super::{ImportOptions, import_document};
 
     #[test]
-    fn imported_tree_encodes_on_first_request() {
+    fn imported_tree_encodes_on_first_request() -> Result<(), String> {
         let html = "<ul><li><p>a <em>b</em></p></li></ul>";
         let expected = crate::import::import_html(html, false, true)
-            .expect("valid HTML")
+            .map_err(|error| error.0)?
             .tree
             .to_string();
-        let imported = import_document(html, &ImportOptions::default()).expect("imported");
+        let imported =
+            import_document(html, &ImportOptions::default()).map_err(|error| error.to_string())?;
         assert!(imported.tree.json.get().is_none());
         assert_eq!(crate::api::encode_tree(&imported.tree), expected);
         assert!(imported.tree.json.get().is_some());
+        Ok(())
     }
 }
