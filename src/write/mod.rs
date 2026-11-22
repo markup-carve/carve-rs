@@ -1033,10 +1033,12 @@ fn settle<'t>(
 ) -> bool {
     let mut c = compare_group(w, doc, group, first, round);
     let read = round.source.zip(round.last);
-    if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
+    let joint_braces = joint_brace_repair(w, &c, group, first);
+    let dropped = !joint_braces && drop_asked_trials(w, &mut c, group, first, read);
+    if dropped && c.changes() == 0 {
         return true;
     }
-    if c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
+    if !joint_braces && c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
         keep_leftmost_escape(w, &mut c, group);
     }
     extend_chains(w, &mut c);
@@ -1051,6 +1053,41 @@ fn settle<'t>(
         return true;
     }
     apply_changes(w, &c)
+}
+
+/// Two brace escapes can be needed together even though neither changes the
+/// parse alone. Keep that repair when its combined spelling reads back as the
+/// group; the ordinary per-escape test handles every other candidate.
+fn joint_brace_repair<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>, first: bool) -> bool {
+    let Some((first_node, _)) = c.trials.first().copied() else {
+        return false;
+    };
+    if c.trials.len() < 2
+        || c.trials.len() != c.escapes.len()
+        || c.trials
+            .iter()
+            .any(|(n, at)| id(*n) != id(first_node) || text(*n).as_bytes().get(*at) != Some(&b'{'))
+    {
+        return false;
+    }
+    let saved = w.sp.escapes.clone();
+    let lines = w.lines.clone();
+    let lead = w.lead.clone();
+    let starts = (w.starts.clone(), w.start_index.clone());
+    for (n, at) in &c.escapes {
+        w.add_escape(n, *at);
+    }
+    let chunk = written_chunk(w, group, first);
+    let parsed = chunk.parse(w);
+    let actual = children(parsed);
+    let equal =
+        group.len() == actual.len() && group.iter().zip(actual).all(|(e, a)| writer_equal(e, a));
+    w.sp.escapes = saved;
+    w.lines = lines;
+    w.lead = lead;
+    w.starts = starts.0;
+    w.start_index = starts.1;
+    equal
 }
 
 /// Drops the escapes of trials that were already asked; true when any was dropped.

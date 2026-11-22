@@ -1322,7 +1322,14 @@ fn closed_early<'t>(
     if matches!(ty(owner), "emphasis" | "strong") && has_other_form(w, c, owner) {
         change_form(c, owner);
     } else if !m.is_some_and(|m| escape_mark(w, c, es, i, vi, m)) {
-        c.losses.push((owner, None));
+        // The wrapper has already read back. If a prior child changed and a
+        // later construct is missing, name that construct rather than the
+        // wrapper that still surrounds it (C2-W-124).
+        let lost_child = es
+            .get(i)
+            .copied()
+            .filter(|n| ty(*n) != "text" && !c.losses.is_empty());
+        c.losses.push((lost_child.unwrap_or(owner), None));
     }
 }
 
