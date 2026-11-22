@@ -184,15 +184,10 @@ pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
         "strong" | "emphasis" => raw.contains('{'),
         "strike" => raw.contains("~>"),
         "link" => {
+            // Both hand-only link labels, "here" and "read more", contain an r.
+            // Inspect only the authored label, before any destination URL.
             let label = raw.split(']').next().unwrap_or("");
-            let label = label.as_bytes();
-            [b"here".as_slice(), b"read more".as_slice()]
-                .iter()
-                .any(|word| {
-                    label
-                        .windows(word.len())
-                        .any(|part| part.eq_ignore_ascii_case(word))
-                })
+            label.bytes().any(|byte| matches!(byte, b'r' | b'R'))
         }
         "heading" | "frontmatter" | "figure_group" | "mention" | "comment" => true,
         "document" | "paragraph" | "list" | "list_item" | "table" | "table_head" | "table_body"
