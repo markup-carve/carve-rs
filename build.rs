@@ -1138,7 +1138,28 @@ fn gen_tables(dir: &Path) -> String {
     );
     gen_dispatch(&mut out, &load(dir, "line-shapes.json"));
     gen_ordered(&mut out, &load(dir, "ordered-styles.json"));
+    gen_node_slots(&mut out, &load(dir, "node-slots.json"));
     out
+}
+
+fn gen_node_slots(out: &mut String, v: &Value) {
+    out.push_str("/// (node type, slot paths in walk order)\npub const NODE_SLOTS: &[(&str, &[&str])] = &[\n");
+    for (name, slots) in v
+        .get("nodes")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let paths: Vec<String> = slots
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|p| format!("{p:?}"))
+            .collect();
+        let _ = writeln!(out, "    ({name:?}, &[{}]),", paths.join(", "));
+    }
+    out.push_str("];\n\n");
 }
 
 fn gen_unicode(out: &mut String, v: &Value) {

@@ -218,22 +218,15 @@ struct TypeSlots {
 fn slots_table() -> &'static TypeMap<TypeSlots> {
     static SLOTS: OnceLock<TypeMap<TypeSlots>> = OnceLock::new();
     SLOTS.get_or_init(|| {
-        let data: Value = serde_json::from_str(include_str!("../../spec-data/node-slots.json"))
-            .unwrap_or_default();
         let mut out = TypeMap::default();
-        if let Some(nodes) = data.get("nodes").and_then(Value::as_object) {
-            for (name, slots) in nodes {
-                let paths: Vec<Vec<String>> = slots
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .filter(|p| !p.starts_with("metadata."))
-                    .map(|p| p.split('.').map(str::to_string).collect())
-                    .collect();
-                let title = paths.iter().any(|p| is_step(p, "title"));
-                out.insert(name.clone(), TypeSlots { paths, title });
-            }
+        for (name, slots) in crate::tables::NODE_SLOTS {
+            let paths: Vec<Vec<String>> = slots
+                .iter()
+                .filter(|p| !p.starts_with("metadata."))
+                .map(|p| p.split('.').map(str::to_string).collect())
+                .collect();
+            let title = paths.iter().any(|p| is_step(p, "title"));
+            out.insert((*name).to_string(), TypeSlots { paths, title });
         }
         out
     })

@@ -72,7 +72,7 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         command: command.into(),
         ..Default::default()
     };
-    let rows = flag_rows();
+    let mut rows: Option<Vec<Value>> = None;
     let mut at = usize::from(arguments.first().is_some_and(|a| a == command));
     while at < arguments.len() {
         match arguments[at].as_str() {
@@ -102,7 +102,8 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             }
             arg if arg == "-" || !arg.starts_with('-') => parsed.files.push(arg.into()),
             _ => {
-                at = read_flag(arguments, at, &rows, &mut parsed)?;
+                let rows = rows.get_or_insert_with(flag_rows);
+                at = read_flag(arguments, at, rows, &mut parsed)?;
             }
         }
         at += 1;
