@@ -13,6 +13,14 @@ mod shift;
 pub(crate) use expand::{expand, holds_blocks, no_resolver};
 pub(crate) use lines::is_carve_region_marker;
 
+/// The inclusive, one-based content lines of a named region. An empty region
+/// has an end one less than its start.
+pub fn region_lines(source: &str, name: &str, code: bool) -> Result<(usize, usize), &'static str> {
+    let lines = lines::file_lines(source);
+    let range = lines::region_range(source, &lines, name, code, &|_| false)?;
+    Ok((range.from + 1, range.to))
+}
+
 use std::sync::Arc;
 
 /// C2-N-007: the error causes a resolver returns.

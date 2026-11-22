@@ -59,6 +59,7 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         "lint",
         "fix",
         "flatten",
+        "region",
     ];
     let command = arguments
         .first()
@@ -88,6 +89,9 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             "-w" if ["fmt", "lint", "fix"].contains(&command) => {
                 parsed.values.insert("write".into(), json!(true));
             }
+            "--code" if command == "region" => {
+                parsed.values.insert("code".into(), json!(true));
+            }
             arg if arg == "-" || !arg.starts_with('-') => parsed.files.push(arg.into()),
             _ => {
                 at = read_flag(arguments, at, &rows, &mut parsed)?;
@@ -95,7 +99,7 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         }
         at += 1;
     }
-    if parsed.files.is_empty() {
+    if parsed.files.is_empty() && command != "region" {
         parsed.files.push("-".into());
     }
     if !parsed.help && !parsed.version {
@@ -244,6 +248,11 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
     }
     if parsed.command == "import" && !parsed.values.contains_key("from") {
         return Err("import requires --from".into());
+    }
+    if parsed.command == "region" {
+        if parsed.files.is_empty() || parsed.files.len() > 2 || parsed.files[0] == "-" {
+            return Err("region expects NAME [file]".into());
+        }
     }
     if let (Some(a), Some(b)) = (
         str_value(parsed, "report-includes"),
@@ -1239,6 +1248,9 @@ pub fn run(arguments: &[String]) -> i32 {
         println!("Usage: carve {} [FLAG...] [FILE...]", args.command);
         return 0;
     }
+    if args.command == "region" {
+        return region(&args);
+    }
     let mut staged = vec![None; args.files.len()];
     if let Some(path) = str_value(&args, "output") {
         for (index, input) in args.files.iter().enumerate() {
@@ -1296,6 +1308,29 @@ pub fn run(arguments: &[String]) -> i32 {
         }
     }
     status
+}
+
+fn region(args: &Args) -> i32 {
+    let Some(name) = args.files.first() else {
+        return usage("region expects NAME [file]");
+    };
+    if name == "-" {
+        return usage("region expects NAME [file]");
+    }
+    let file = args.files.get(1).map_or("-", String::as_str);
+    let bytes = match read(file) {
+        Ok(bytes) => bytes,
+        Err(code) => return code,
+    };
+    let source = String::from_utf8_lossy(&bytes);
+    match carve::include::region_lines(&source, name, bool_value(args, "code", false)) {
+        Ok((start, end)) => output(&format!("{}\n", json!({"start":start,"end":end})))
+            .map_or_else(|code| code, |()| 0),
+        Err(_) => {
+            eprintln!("carve region: include-region-invalid");
+            1
+        }
+    }
 }
 
 #[cfg(test)]

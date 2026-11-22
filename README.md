@@ -298,7 +298,7 @@ The 0.1 engine is gone from this crate; the 0.2 `carve` command replaces the 0.1
 | `to_json`, `try_to_json_with_options` | `api::parse` then `api::encode_tree` |
 | `from_json` | `api::decode_tree` (2.0 trees only) |
 | `expand_includes` | `Options::includes` on `api::parse` and `api::render` |
-| `select_include_region` | include options on the directive (`includes.md`), expanded by `api::parse` |
+| `select_include_region` | `include::region_lines(source, name, code)` returns inclusive content line numbers; `carve region [--code] NAME [file]` prints them as JSON |
 | `lint_carve`, `lint_carve_with_options` | `api::lint` |
 | `lint_accessibility` | `api::lint`: `a11y/image-alt` and `heading-level-skip` are catalog rules |
 | `extensions::registry::by_key`, `extensions::registry::keys` | `Carve::register_extension` (provisional) |

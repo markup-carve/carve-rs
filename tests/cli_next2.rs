@@ -42,6 +42,27 @@ fn commands_use_the_same_file_and_error_contract() {
 }
 
 #[test]
+fn region_command_restores_inclusive_ranges_and_code_markers() {
+    assert_eq!(
+        run(
+            &["region", "demo", "-"],
+            "%% #region demo\nline\n%% #endregion\n"
+        ),
+        (0, "{\"end\":2,\"start\":2}\n".into(), String::new())
+    );
+    assert_eq!(
+        run(
+            &["region", "--code", "demo", "-"],
+            "// #region demo\ncode\n// #endregion\n"
+        ),
+        (0, "{\"end\":2,\"start\":2}\n".into(), String::new())
+    );
+    let (status, _, stderr) = run(&["region", "missing", "-"], "plain\n");
+    assert_eq!(status, 1);
+    assert!(stderr.contains("include-region-invalid"));
+}
+
+#[test]
 fn ast_and_reports_are_json_values() {
     let (status, stdout, stderr) = run(&["ast", "--no-positions", "--no-includes", "-"], "a\n");
     assert_eq!(status, 0);
