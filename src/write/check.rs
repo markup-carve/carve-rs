@@ -479,19 +479,10 @@ fn escape_content_start<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool
     let Some(first) = children(e).first() else {
         return false;
     };
-    if m == b']' || ty(first) != "text" || text(first).as_bytes().first() != Some(&m) {
-        return false;
-    }
-    // In a braced pair the first literal mark may be harmless; a brace
-    // immediately behind it can instead pair with a later mark and steal the
-    // outer closer. Try that brace first (C2-W-125 case one).
-    if matches!(ty(e), "superscript" | "subscript" | "insert" | "delete")
-        && text(first).as_bytes().get(1) == Some(&b'{')
-        && escape_at(w, c, first, 1)
-    {
-        return true;
-    }
-    escape_at(w, c, first, 0)
+    m != b']'
+        && ty(first) == "text"
+        && text(first).as_bytes().first() == Some(&m)
+        && escape_at(w, c, first, 0)
 }
 
 fn escape_footnote_brace<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {

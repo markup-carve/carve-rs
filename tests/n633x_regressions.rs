@@ -19,6 +19,12 @@ fn superscript_with_escaped_carets_and_braces_round_trips() {
         value
     };
     assert_eq!(tree(&written.output), tree(source));
+    assert_eq!(
+        carve
+            .format(&written.output, &WriteOptions::default())
+            .unwrap(),
+        written.output
+    );
 }
 
 #[test]
@@ -44,6 +50,33 @@ fn glued_span_loss_names_the_missing_child() {
                 "structure-unspellable",
                 Some("/children/0/children/0/children/0/children/1")
             )
+        ]
+    );
+}
+
+#[test]
+fn glued_span_loss_in_a_paragraph_names_the_missing_child() {
+    let input = json!({"type":"document","astVersion":"2.0","children":[{"type":"paragraph","children":[{"type":"emphasis","children":[{"type":"math","display":false,"value":"."},{"type":"code","value":"c"}]}]}]});
+    let tree = api::decode_tree(&input.to_string()).unwrap();
+    let written = Carve::new()
+        .write_with_diagnostics(&tree, &WriteOptions::default())
+        .unwrap();
+    let losses: Vec<_> = written
+        .diagnostics
+        .iter()
+        .map(|e| (e.code.as_str(), e.path.as_deref()))
+        .collect();
+    assert_eq!(
+        losses,
+        [
+            (
+                "field-unspellable",
+                Some("/children/0/children/0/children/0/value")
+            ),
+            (
+                "structure-unspellable",
+                Some("/children/0/children/0/children/1")
+            ),
         ]
     );
 }
