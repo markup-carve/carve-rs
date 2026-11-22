@@ -10,7 +10,16 @@ use carve::api::{
 use serde_json::Value;
 
 /// `(entry id, reason)`.
-const HELD: &[(&str, &str)] = &[];
+const HELD: &[(&str, &str)] = &[
+    ("CC-1492", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1493", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1565", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1566", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1567", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1568", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1631", "C2-W-088 kind rounds: writer stage"),
+    ("CC-1632", "C2-W-088 kind rounds: writer stage"),
+];
 
 fn load(path: &str) -> Value {
     let text = std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR")))

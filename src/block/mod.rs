@@ -137,6 +137,8 @@ enum Leaf {
     Frontmatter {
         format: String,
         value: String,
+        /// The opener line; attribute lines above it start the block.
+        opener: usize,
     },
     LineBlock {
         len: usize,
@@ -220,6 +222,8 @@ pub struct Parser<'a> {
     findings: Vec<Finding>,
     /// True while a fence leaf closes at its closing fence.
     fence_closes: bool,
+    /// Whether the line above was blank, for a typed metadata opener (C2-B-232).
+    prev_blank: bool,
 }
 
 /// Runs the block pass over a source.
@@ -246,6 +250,7 @@ pub(crate) fn scan_with_frontmatter(src: &Source, allow_frontmatter: bool) -> Bl
         line_no: 0,
         findings: Vec::new(),
         fence_closes: false,
+        prev_blank: false,
     };
     let n = src.line_count();
     for i in 0..n {
@@ -273,14 +278,22 @@ impl<'a> Parser<'a> {
         self.line_end = e;
         let text = self.src.slice(s, e);
         let cur = Cursor::new(text, s);
-        if allow_frontmatter && self.frontmatter(text, s, e) {
+        let blank_above = std::mem::replace(&mut self.prev_blank, false);
+        if self.frontmatter(text, s, e, allow_frontmatter) {
             return;
         }
-        let walk = self.walk(cur, false);
+        let mut walk = self.walk(cur, false);
         if walk.cur.is_blank() {
+            self.prev_blank = true;
             let walk = self.walk(cur, true);
             self.blank_line(&walk, s, e);
             return;
+        }
+        if self.metadata_block(&walk, text, s, e, blank_above) {
+            return;
+        }
+        if walk.matched > self.stack.len() {
+            walk = self.walk(cur, false);
         }
         // G-011: a quote owns each non-blank line its mark stands on, up to the line end.
         for c in self.stack.iter_mut().take(walk.matched) {
@@ -354,15 +367,72 @@ impl<'a> Parser<'a> {
         self.open_line(walk.cur, walk.qbase, e, blanks);
     }
 
+    /// C2-B-232, C2-B-233: after line 1 a typed opener at column 0 opens a
+    /// top-level metadata block below a blank line or top-level attribute
+    /// lines. A column-0 opener first closes the lists it stands after.
+    fn metadata_block(
+        &mut self,
+        walk: &Walk<'a>,
+        text: &str,
+        s: usize,
+        e: usize,
+        blank_above: bool,
+    ) -> bool {
+        if !text.starts_with("---") || !shapes::typed_frontmatter_opener(text) {
+            return false;
+        }
+        let lists = |c: &[Container]| {
+            c.iter()
+                .all(|c| matches!(c.kind, Kind::List { .. } | Kind::Item { .. }))
+        };
+        if self.stack.len() > 1 && lists(self.stack.get(1..).unwrap_or(&[])) {
+            self.close_to(1);
+        }
+        let matched = self
+            .stack
+            .get(1..walk.matched.min(self.stack.len()))
+            .unwrap_or(&[]);
+        if self.leaf.is_some() || !lists(matched) {
+            return false;
+        }
+        let attrs = self.pending.as_ref().map(|p| p.depth);
+        if attrs.map_or(!blank_above, |depth| depth != 1) {
+            return false;
+        }
+        let Some(format) = shapes::frontmatter_opener(text) else {
+            return false;
+        };
+        self.close_to(1);
+        let (start, attrs) = self.take_pending(s, None);
+        self.closed = None;
+        self.blank_run = 0;
+        self.leaf = Some(OpenLeaf {
+            leaf: Leaf::Frontmatter {
+                format,
+                value: String::new(),
+                opener: s,
+            },
+            start,
+            end: e,
+            attrs,
+            depth: 1,
+        });
+        true
+    }
+
     /// C2-B-161 to C2-B-165.
-    fn frontmatter(&mut self, text: &str, s: usize, e: usize) -> bool {
+    fn frontmatter(&mut self, text: &str, s: usize, e: usize, allow_opener: bool) -> bool {
         if self.line_no == 0 && self.leaf.is_none() {
+            if !allow_opener {
+                return false;
+            }
             if let Some(format) = shapes::frontmatter_opener(text) {
                 let start = s;
                 self.leaf = Some(OpenLeaf {
                     leaf: Leaf::Frontmatter {
                         format,
                         value: String::new(),
+                        opener: s,
                     },
                     start,
                     end: e,
@@ -845,8 +915,12 @@ impl<'a> Parser<'a> {
             _ => return,
         };
         let text = self.src.text();
+        let start = match open.leaf {
+            Leaf::Frontmatter { opener, .. } => opener,
+            _ => open.start,
+        };
         let run: String = text
-            .get(open.start..)
+            .get(start..)
             .unwrap_or("")
             .bytes()
             .take_while(|&b| b == ch)
@@ -864,7 +938,7 @@ impl<'a> Parser<'a> {
         self.findings.push(Finding {
             code,
             message: 0,
-            start: open.start,
+            start,
             end: open.end,
             values: vec![("marker", run.clone()), ("opener", run), ("ending", ending)],
         });
@@ -947,7 +1021,9 @@ impl<'a> Parser<'a> {
                 },
                 false,
             ),
-            Leaf::Frontmatter { format, value } => (LeafKind::Frontmatter { format, value }, false),
+            Leaf::Frontmatter { format, value, .. } => {
+                (LeafKind::Frontmatter { format, value }, false)
+            }
             Leaf::LineBlock { entries, .. } => (LeafKind::LineBlock { entries }, false),
             Leaf::Table { data } => {
                 let _ = start;

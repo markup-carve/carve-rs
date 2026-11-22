@@ -1222,6 +1222,7 @@ fn definition_in_container(line: &Line, sink: &mut Sink<'_>) {
     }
     let (at, text) = leaf_text(line);
     if !line.paragraph
+        || in_caption(line)
         || (line.kind == "definition_term" && line.text.starts_with('['))
         || !text.starts_with('[')
         || line.scope.in_footnote

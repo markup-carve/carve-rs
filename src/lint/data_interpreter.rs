@@ -7,9 +7,11 @@
 )]
 
 use super::data_model::{Records, Subject};
+use caseless::Caseless;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::borrow::Cow;
+use unicode_normalization::UnicodeNormalization;
 
 /// A field name of a record, resolved when the model is compiled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -81,6 +83,10 @@ pub(super) enum F {
     AlignOverlap,
     ValignOverlap,
     Id,
+    HeadingText,
+    Rendered,
+    Xref,
+    KeyText,
     Identity,
     Layout,
     SourceFormat,
@@ -162,6 +168,10 @@ const FIELDS: &[(&str, F)] = &[
     ("width", F::Width),
     ("kind", F::Kind),
     ("id", F::Id),
+    ("heading_text", F::HeadingText),
+    ("rendered", F::Rendered),
+    ("xref", F::Xref),
+    ("key_text", F::KeyText),
     ("identity", F::Identity),
     ("layout", F::Layout),
     ("source_format", F::SourceFormat),
@@ -672,7 +682,12 @@ pub(super) enum Expr {
     },
     Nth(Box<(Self, Self)>),
     Join(Box<(Self, Self)>),
+    QuotedList(Box<Self>),
+    PlainList(Box<Self>),
     Lower(Box<Self>),
+    Nfc(Box<Self>),
+    Fold(Box<Self>),
+    FoldSpace(Box<Self>),
     PercentDecode(Box<Self>),
     /// The column of an offset after a number of quote marks (C2-B-004).
     Column(Box<(Self, Self)>),
@@ -979,8 +994,13 @@ impl Scope<'_> {
             },
             "nth" => Expr::Nth(pair(0, 1)),
             "join" => Expr::Join(pair(0, 1)),
+            "quoted_list" => Expr::QuotedList(Box::new(self.compile(arg))),
+            "plain_list" => Expr::PlainList(Box::new(self.compile(arg))),
             "column" => Expr::Column(pair(0, 1)),
             "lower" => Expr::Lower(Box::new(self.compile(arg))),
+            "nfc" => Expr::Nfc(Box::new(self.compile(arg))),
+            "fold" => Expr::Fold(Box::new(self.compile(arg))),
+            "fold_space" => Expr::FoldSpace(Box::new(self.compile(arg))),
             "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
             "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
             "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
@@ -1372,6 +1392,11 @@ fn scans(expr: &Expr) -> bool {
         Expr::Within { test: item, .. }
         | Expr::Not(item)
         | Expr::Lower(item)
+        | Expr::Nfc(item)
+        | Expr::Fold(item)
+        | Expr::FoldSpace(item)
+        | Expr::QuotedList(item)
+        | Expr::PlainList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
         | Expr::Len(item)
@@ -1414,6 +1439,11 @@ fn stateless(expr: &Expr) -> bool {
         Expr::Within { test: item, .. }
         | Expr::Not(item)
         | Expr::Lower(item)
+        | Expr::Nfc(item)
+        | Expr::Fold(item)
+        | Expr::FoldSpace(item)
+        | Expr::QuotedList(item)
+        | Expr::PlainList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
         | Expr::Len(item)
@@ -1623,7 +1653,47 @@ pub(super) fn truth(value: &Val<'_>) -> bool {
     }
 }
 
+fn fold_space_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut pending = false;
+    for ch in text.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\r') {
+            pending = !out.is_empty();
+        } else {
+            if pending {
+                out.push(' ');
+                pending = false;
+            }
+            out.push(ch);
+        }
+    }
+    out
+}
+
 impl<'a> Eval<'_, 'a> {
+    fn english_list(&mut self, arg: &Expr, quoted: bool) -> Val<'a> {
+        let list = self.value(arg);
+        let len = self.records.list_len(&list);
+        let mut out = String::new();
+        for at in 0..len {
+            if at > 0 {
+                out.push_str(if at + 1 == len {
+                    if len == 2 { " and " } else { ", and " }
+                } else {
+                    ", "
+                });
+            }
+            if quoted {
+                out.push('"');
+            }
+            out.push_str(&self.text(&self.records.list_item(&list, at)));
+            if quoted {
+                out.push('"');
+            }
+        }
+        Val::Str(Cow::Owned(out))
+    }
+
     fn text(&self, value: &Val<'a>) -> Cow<'a, str> {
         match value {
             Val::Str(s) => s.clone(),
@@ -1964,6 +2034,13 @@ impl<'a> Eval<'_, 'a> {
                 Val::Str(Cow::Owned(out))
             }
             Expr::Lower(arg) => Val::Str(Cow::Owned(self.string(arg).to_lowercase())),
+            Expr::Nfc(arg) => Val::Str(Cow::Owned(self.string(arg).nfc().collect())),
+            Expr::Fold(arg) => Val::Str(Cow::Owned(
+                self.string(arg).nfc().default_case_fold().nfc().collect(),
+            )),
+            Expr::FoldSpace(arg) => Val::Str(Cow::Owned(fold_space_text(&self.string(arg)))),
+            Expr::QuotedList(arg) => self.english_list(arg, true),
+            Expr::PlainList(arg) => self.english_list(arg, false),
             Expr::PercentDecode(arg) => {
                 let text = self.string(arg);
                 Val::Str(Cow::Owned(

@@ -28,7 +28,8 @@ pub const WALK_CAP: usize = 2 * (crate::tables::BLOCK_DEPTH + crate::tables::INL
 
 /// An authored id that stood earlier in the tree, and where it stands again.
 /// The last part is the address of its `pos`, for the file it stands in.
-pub(crate) type Duplicate = (String, Option<crate::ast::Pos>, usize);
+/// The id, its node position, the position's address, and whether the node is frontmatter.
+pub(crate) type Duplicate = (String, Option<crate::ast::Pos>, usize, bool);
 
 /// The names of the stages this resolver completes (C2-A-135).
 pub const STAGES: [&str; 2] = ["referenceResolution", "tableAlignment"];
@@ -304,7 +305,12 @@ fn heading_ids<'a>(
             if !taken.reserve(id) {
                 // C2-A-039, C2-N-058: the later occurrence is the duplicate.
                 let at = n.pos().map_or(0, |p| std::ptr::from_ref(p).addr());
-                dups.push((id.to_string(), n.pos().copied(), at));
+                dups.push((
+                    id.to_string(),
+                    n.pos().copied(),
+                    at,
+                    matches!(n, Node::Frontmatter(_)),
+                ));
             }
         }
     }
@@ -604,7 +610,7 @@ impl<'a> Index<'a, '_> {
 }
 
 /// C2-I-084: read a reference key as inline content without resolving references.
-fn heading_key_plain(key: &str, arena: &Arena) -> String {
+pub(crate) fn heading_key_plain(key: &str, arena: &Arena) -> String {
     let src = crate::source::Source::new(key);
     let links = HashSet::new();
     let env = crate::inline::InlineEnv {

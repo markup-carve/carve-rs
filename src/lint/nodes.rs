@@ -6,6 +6,7 @@ use crate::Arena;
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use crate::view::{Arr, V};
+use caseless::Caseless;
 use std::cell::OnceCell;
 
 fn field<'a>(value: V<'a>, path: &str) -> V<'a> {
@@ -13,6 +14,7 @@ fn field<'a>(value: V<'a>, path: &str) -> V<'a> {
 }
 
 use std::collections::{HashMap, HashSet};
+use unicode_normalization::UnicodeNormalization;
 
 pub(super) struct Item<'a> {
     pub(super) node: V<'a>,
@@ -62,8 +64,8 @@ struct Sink<'a> {
     options: &'a LintOptions,
     output: &'a mut Vec<Diagnostic>,
     replacing: Vec<usize>,
-    /// The keys of the link reference definitions, in source order.
-    definitions: Vec<String>,
+    /// Link definition keys and heading text, in source order.
+    reference_targets: HashMap<String, Vec<(usize, String, bool)>>,
 }
 
 impl Sink<'_> {
@@ -157,6 +159,7 @@ pub(super) fn scan<'a>(
     }
     let opts = crate::Options {
         heading_ids: options.heading_ids,
+        raw_html: options.raw_html,
         ..crate::Options::default()
     };
     let (scanned, _) = crate::with_lint_tree(source, &opts, &opts, true, |alternate, arena| {
@@ -221,14 +224,37 @@ fn scan_tree<'a>(
         options,
         output,
         replacing: Vec::new(),
-        definitions: items
+        reference_targets: items
             .iter()
-            .filter(|item| item.node.ty() == "link_reference_definition")
-            .filter_map(|item| item.node.at("key").as_str())
-            .map(str::to_string)
-            .collect(),
+            .enumerate()
+            .filter_map(|(index, item)| match item.node.ty().as_str() {
+                Some("link_reference_definition") => item
+                    .node
+                    .at("key")
+                    .as_str()
+                    .map(|key| (index, key.to_string(), false)),
+                Some("heading")
+                    if item.node.at("attrs").at("id").as_str().is_some()
+                        || item.node.at("generatedId").as_str().is_some() =>
+                {
+                    Some((index, super::data_model::plain_children(item.node), true))
+                }
+                _ => None,
+            })
+            .fold(
+                HashMap::<String, Vec<(usize, String, bool)>>::new(),
+                |mut map, entry| {
+                    let key = if entry.2 {
+                        folded(&fold_space(&entry.1))
+                    } else {
+                        folded(&entry.1)
+                    };
+                    map.entry(key).or_default().push(entry);
+                    map
+                },
+            ),
     };
-    let (ids, targets) = id_index(&items);
+    let (ids, targets) = id_index(&items, options.raw_html);
     let targets = TargetIndex::new(&targets);
     for item in &items {
         check_node(item, &ids, tree, &mut sink);
@@ -246,55 +272,267 @@ struct IdTarget<'a> {
     eligible: bool,
 }
 
-/// Every attribute and generated id, and the cross-reference target of each node that has one.
-fn id_index<'a>(items: &[Item<'a>]) -> (HashSet<String>, Vec<IdTarget<'a>>) {
-    let mut ids = HashSet::new();
-    let mut targets = Vec::new();
+fn folded(text: &str) -> String {
+    text.nfc().default_case_fold().nfc().collect()
+}
+
+fn fold_space(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut pending = false;
+    for ch in text.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\r') {
+            pending = !out.is_empty();
+        } else {
+            if pending {
+                out.push(' ');
+                pending = false;
+            }
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn plain_list(items: &[&str]) -> String {
+    let mut out = String::new();
+    for (at, item) in items.iter().enumerate() {
+        if at > 0 {
+            out.push_str(if at + 1 == items.len() {
+                if items.len() == 2 { " and " } else { ", and " }
+            } else {
+                ", "
+            });
+        }
+        out.push_str(item);
+    }
+    out
+}
+
+struct RenderedIds {
+    exact: HashSet<String>,
+    ordered: Vec<String>,
+    nfc: Vec<String>,
+    folded: HashMap<String, Vec<usize>>,
+}
+
+impl RenderedIds {
+    fn add(&mut self, id: &str) {
+        if self.exact.insert(id.to_string()) {
+            let nfc: String = id.nfc().collect();
+            let candidates = self.folded.entry(folded(id)).or_default();
+            if candidates.len() < 2
+                && candidates
+                    .first()
+                    .and_then(|at| self.nfc.get(*at))
+                    .is_none_or(|existing| existing != &nfc)
+            {
+                candidates.push(self.ordered.len());
+            }
+            self.nfc.push(nfc);
+            self.ordered.push(id.to_string());
+        }
+    }
+}
+
+fn add_raw_html_ids(raw: &str, ids: &mut RenderedIds) {
+    let dom = crate::import::parse::fragment(raw);
+    for node in dom.nodes {
+        if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
+            for (key, value) in attrs {
+                if key == "id" || (name == "a" && key == "name") {
+                    ids.add(&value);
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn has_authored_name(node: V<'_>) -> bool {
+    node.at("attrs")
+        .at("keyValues")
+        .as_array()
+        .is_some_and(|pairs| {
+            pairs.iter().any(|pair| {
+                pair.as_array()
+                    .and_then(crate::view::Arr::first)
+                    .and_then(V::as_str)
+                    .is_some_and(|key| {
+                        key.eq_ignore_ascii_case("aria-label")
+                            || key.eq_ignore_ascii_case("aria-labelledby")
+                    })
+            })
+        })
+}
+
+fn generated_admonition_ids(
+    items: &[Item<'_>],
+    taken: &mut crate::resolve::slug::Taken,
+    collisions: bool,
+) -> HashMap<usize, String> {
+    let has_notes = items.iter().any(|item| {
+        matches!(
+            item.node.ty().as_str(),
+            Some("footnote_ref" | "inline_footnote")
+        )
+    });
+    let placing = has_notes
+        .then(|| {
+            items.iter().position(|item| {
+                item.parents.is_none()
+                    && item.node.ty() == "directive"
+                    && item.node.at("kind") == "footnotes"
+            })
+        })
+        .flatten();
+    let mut ids = HashMap::new();
+    let mut n = 0;
+    for (at, item) in items.iter().enumerate() {
+        let kind = item.node.ty().as_str();
+        let titled = item.node.get("title").is_some()
+            && (kind == Some("admonition") && !has_authored_name(item.node)
+                || kind == Some("directive") && placing == Some(at));
+        if titled {
+            n += 1;
+            let base = format!("adm-{n}");
+            ids.insert(
+                at,
+                if collisions {
+                    taken.unique(&base)
+                } else {
+                    base
+                },
+            );
+        }
+    }
+    ids
+}
+
+fn append_note_ids(
+    item: &Item<'_>,
+    attribute: Option<&str>,
+    counts: &mut HashMap<u64, usize>,
+    taken: &mut crate::resolve::slug::Taken,
+    collisions: bool,
+    ids: &mut RenderedIds,
+) {
+    if matches!(
+        item.node.ty().as_str(),
+        Some("footnote_ref" | "inline_footnote")
+    ) && let Some(number) = item.node.at("number").as_u64()
+    {
+        let count = counts.entry(number).or_default();
+        *count += 1;
+        if *count == 1 {
+            let base = format!("fn{number}");
+            ids.add(&if collisions {
+                taken.unique(&base)
+            } else {
+                base
+            });
+        }
+        let suffix = if *count == 1 {
+            String::new()
+        } else {
+            format!("-{count}")
+        };
+        let base = format!("fnref{number}{suffix}");
+        let id = attribute.map_or_else(
+            || {
+                if collisions {
+                    taken.unique(&base)
+                } else {
+                    base
+                }
+            },
+            str::to_owned,
+        );
+        ids.add(&id);
+    }
+}
+
+fn reserve_generated_prefixes(items: &[Item<'_>], taken: &mut crate::resolve::slug::Taken) {
     for item in items {
+        for id in [item.node.at("attrs").at("id"), item.node.at("generatedId")] {
+            if let Some(id) = id.as_str()
+                && (id.starts_with("fn") || id.starts_with("adm-"))
+            {
+                taken.reserve(id);
+            }
+        }
+    }
+}
+
+/// Rendered ids and cross-reference targets in source order.
+fn id_index<'a>(items: &[Item<'a>], raw_html: bool) -> (RenderedIds, Vec<IdTarget<'a>>) {
+    let mut ids = RenderedIds {
+        exact: HashSet::new(),
+        ordered: Vec::new(),
+        nfc: Vec::new(),
+        folded: HashMap::new(),
+    };
+    let mut targets = Vec::new();
+    let mut note_counts = HashMap::<u64, usize>::new();
+    let mut taken = crate::resolve::slug::Taken::default();
+    reserve_generated_prefixes(items, &mut taken);
+    let collisions = !taken.is_empty();
+    let admonitions = generated_admonition_ids(items, &mut taken, collisions);
+    for (index, item) in items.iter().enumerate() {
+        let kind = item.node.ty().as_str().unwrap_or("node");
         let attribute = item.node.at("attrs").at("id").as_str();
         let generated = item.node.at("generatedId").as_str();
-        ids.extend(attribute.into_iter().chain(generated).map(str::to_string));
-        let Some(id) = attribute.or(generated) else {
-            continue;
-        };
-        let kind = item.node.ty().as_str().unwrap_or("node");
-        let captioned = item
-            .node
-            .at("caption")
-            .at("children")
-            .as_array()
-            .is_some_and(|children| {
-                children.iter().any(|child| {
-                    child.at("children").as_array().is_some_and(|inlines| {
-                        inlines.iter().any(|inline| inline.ty() == "caption_number")
-                    })
-                })
+        for id in attribute.into_iter().chain(generated) {
+            // A raw block keeps its id only as the escaped HTML of a raw html block.
+            if kind != "frontmatter"
+                && !(kind == "raw_block"
+                    && (raw_html || item.node.at("format").as_str() != Some("html")))
+            {
+                ids.add(id);
+            }
+            targets.push(IdTarget {
+                id,
+                kind,
+                eligible: kind == "heading" || super::data_model::numbered_caption(item.node),
             });
-        targets.push(IdTarget {
-            id,
-            kind,
-            eligible: kind == "heading" || captioned,
-        });
+        }
+        if let Some(id) = admonitions.get(&index) {
+            ids.add(id);
+        }
+        append_note_ids(
+            item,
+            attribute,
+            &mut note_counts,
+            &mut taken,
+            collisions,
+            &mut ids,
+        );
+        if raw_html
+            && matches!(kind, "raw_block" | "raw_inline")
+            && item.node.at("format").as_str() == Some("html")
+            && let Some(raw) = item.node.at("value").as_str()
+        {
+            add_raw_html_ids(raw, &mut ids);
+        }
     }
     (ids, targets)
 }
 
-/// The first target of each id, and of each ASCII-folded id among the eligible ones.
+/// The first exact target and every eligible case-only target in source order.
 struct TargetIndex<'a, 't> {
-    exact: HashMap<&'a str, &'t IdTarget<'a>>,
-    folded: HashMap<String, &'t IdTarget<'a>>,
+    exact: HashMap<String, &'t IdTarget<'a>>,
+    folded: HashMap<String, Vec<&'t IdTarget<'a>>>,
 }
 
 impl<'a, 't> TargetIndex<'a, 't> {
     fn new(targets: &'t [IdTarget<'a>]) -> Self {
         let mut exact = HashMap::new();
-        let mut folded = HashMap::new();
+        let mut folded = HashMap::<String, Vec<&IdTarget<'a>>>::new();
         for target in targets {
-            exact.entry(target.id).or_insert(target);
+            exact.entry(target.id.nfc().collect()).or_insert(target);
             if target.eligible {
-                folded
-                    .entry(target.id.to_ascii_lowercase())
-                    .or_insert(target);
+                let candidates = folded.entry(super::nodes::folded(target.id)).or_default();
+                if !candidates.iter().any(|candidate| candidate.id == target.id) {
+                    candidates.push(target);
+                }
             }
         }
         Self { exact, folded }
@@ -306,15 +544,26 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
         return;
     }
     let key = item.node.at("key").as_str().unwrap_or("");
-    if let Some(target) = targets.exact.get(key) {
+    if let Some(target) = targets.exact.get(&key.nfc().collect::<String>()) {
+        // C2-W-153: a metadata key is no target, and broken-crossref stays silent.
+        if target.kind == "frontmatter" {
+            sink.emit("frontmatter-crossref", item, &[("target", key)], 0);
+            return;
+        }
         sink.emit(
             "broken-crossref",
             item,
             &[("target", key), ("id", target.id), ("kind", target.kind)],
             0,
         );
-    } else if let Some(target) = targets.folded.get(&key.to_ascii_lowercase()) {
-        let phrase = format!("the id {} differs only in case", target.id);
+    } else if let Some(candidates) = targets.folded.get(&folded(key)) {
+        let ids: Vec<&str> = candidates.iter().map(|candidate| candidate.id).collect();
+        let phrase = format!(
+            "the {} {} {} only in case",
+            if ids.len() == 1 { "id" } else { "ids" },
+            plain_list(&ids),
+            if ids.len() == 1 { "differs" } else { "differ" },
+        );
         sink.emit(
             "broken-crossref",
             item,
@@ -326,7 +575,7 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
     }
 }
 
-fn check_node<'a>(item: &Item<'a>, ids: &HashSet<String>, root: V<'a>, sink: &mut Sink<'_>) {
+fn check_node<'a>(item: &Item<'a>, ids: &RenderedIds, root: V<'a>, sink: &mut Sink<'_>) {
     overindented_opener(item, root, sink);
     if !replaced!("list-item-block-overindented") {
         list_item_opener_overindented(item, root, sink);
@@ -384,16 +633,56 @@ fn list_between_columns<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) 
     };
     let column = source_column(sink.source, at);
     let base = source_column(sink.source, outer_at);
-    let deeper = outer
+    let siblings: Vec<V<'_>> = outer
         .at("children")
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|child| child.ty() == "list")
-        .filter_map(|child| bounds(child).map(|(from, _)| (from, source_column(sink.source, from))))
-        .filter(|(from, mark)| *from < list_at && *mark > column)
-        .max_by_key(|(from, _)| *from)
-        .map(|(_, mark)| mark);
+        .collect();
+    let first = list
+        .at("children")
+        .as_array()
+        .and_then(|items| items.iter().next())
+        .and_then(bounds)
+        .is_some_and(|(from, _)| from == at);
+    let deeper = if first {
+        // C2-B-055: the first item of a later list is read at the column of the
+        // last list before it, unless a block other than a list or paragraph
+        // closed that list in between.
+        let Some(here) = siblings
+            .iter()
+            .position(|child| bounds(*child).is_some_and(|(from, _)| from == list_at))
+        else {
+            return;
+        };
+        let before = siblings.get(..here).unwrap_or(&[]);
+        let Some(previous) = before.iter().rposition(|child| child.ty() == "list") else {
+            return;
+        };
+        if before
+            .iter()
+            .skip(previous + 1)
+            .any(|child| !matches!(child.ty().as_str(), Some("list" | "paragraph")))
+        {
+            return;
+        }
+        before
+            .get(previous)
+            .copied()
+            .and_then(bounds)
+            .map(|(from, _)| source_column(sink.source, from))
+            .filter(|mark| *mark > column)
+    } else {
+        siblings
+            .iter()
+            .filter(|child| child.ty() == "list")
+            .filter_map(|child| {
+                bounds(*child).map(|(from, _)| (from, source_column(sink.source, from)))
+            })
+            .filter(|(from, mark)| *from < list_at && *mark > column)
+            .max_by_key(|(from, _)| *from)
+            .map(|(_, mark)| mark)
+    };
     let Some(deeper) = deeper.filter(|_| base < column) else {
         return;
     };
@@ -671,7 +960,8 @@ fn opener_behind_attributes(source: &str, mut from: usize) -> usize {
             && rest.starts_with('{')
             && rest.ends_with('}')
             && !rest[1..rest.len() - 1].contains(['{', '}']);
-        if !attribute {
+        let comment = crate::block::shapes::comment_only(rest);
+        if !attribute && !comment {
             return from;
         }
         // The opener may stand at another indent than its attribute line: find its first character on its own line.
@@ -698,17 +988,12 @@ fn opener_behind_attributes(source: &str, mut from: usize) -> usize {
     }
 }
 
-fn check_block_node<'a>(item: &Item<'a>, ids: &HashSet<String>, root: V<'a>, sink: &mut Sink<'_>) {
+fn check_block_node<'a>(item: &Item<'a>, ids: &RenderedIds, root: V<'a>, sink: &mut Sink<'_>) {
     check_container_node(item, ids, root, sink);
     check_leaf_node(item, sink);
 }
 
-fn check_container_node<'a>(
-    item: &Item<'a>,
-    ids: &HashSet<String>,
-    root: V<'a>,
-    sink: &mut Sink<'_>,
-) {
+fn check_container_node<'a>(item: &Item<'a>, ids: &RenderedIds, root: V<'a>, sink: &mut Sink<'_>) {
     match item.node.ty().as_str().unwrap_or("") {
         "image" => {
             if item.node.at("alt") == "" && item.node.at("decorative") != true {
@@ -756,31 +1041,61 @@ fn check_inline_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
-fn link(item: &Item<'_>, ids: &HashSet<String>, sink: &mut Sink<'_>) {
+fn fragment_case_only<'a>(ids: &'a RenderedIds, written: &str, fragment: &str) -> Option<&'a str> {
+    let written_fold = folded(written);
+    let decoded_fold = folded(fragment);
+    let written_nfc: String = written.nfc().collect();
+    let decoded_nfc: String = fragment.nfc().collect();
+    let candidate = |key: &String, nfc: &String| {
+        ids.folded.get(key).and_then(|candidates| {
+            candidates
+                .iter()
+                .copied()
+                .find(|at| ids.nfc.get(*at).is_some_and(|candidate| candidate != nfc))
+        })
+    };
+    let at = [
+        candidate(&written_fold, &written_nfc),
+        candidate(&decoded_fold, &decoded_nfc),
+    ]
+    .into_iter()
+    .flatten()
+    .min();
+    at.and_then(|at| ids.ordered.get(at)).map(String::as_str)
+}
+
+fn link_fragment(item: &Item<'_>, ids: &RenderedIds, sink: &mut Sink<'_>, href: &str) {
+    if let Some(raw_fragment) = href.strip_prefix('#') {
+        let written = raw_fragment.split(":~:").next().unwrap_or("");
+        let fragment = percent_decode_fragment(written);
+        if sink.options.extensions.is_empty()
+            && !written.is_empty()
+            && !fragment.eq_ignore_ascii_case("top")
+            && !ids.exact.contains(written)
+            && !ids.exact.contains(&fragment)
+        {
+            let case_only = fragment_case_only(ids, written, &fragment);
+            if let Some(case_only) = case_only {
+                sink.emit(
+                    "broken-fragment-link",
+                    item,
+                    &[("href", href), ("caseOnly", case_only)],
+                    0,
+                );
+            } else {
+                sink.emit("broken-fragment-link", item, &[("href", href)], 1);
+            }
+        }
+    }
+}
+
+fn link(item: &Item<'_>, ids: &RenderedIds, sink: &mut Sink<'_>) {
     let node = item.node;
     if node.at("href") == "" {
         sink.emit("empty-link-destination", item, &[], 0);
     }
     if let Some(href) = node.at("href").as_str() {
-        if let Some(raw_fragment) = href.strip_prefix('#') {
-            let fragment = percent_decode_fragment(raw_fragment);
-            if sink.options.extensions.is_empty()
-                && !fragment.eq_ignore_ascii_case("top")
-                && !ids.contains(&fragment)
-            {
-                let case_only = ids.iter().find(|id| id.eq_ignore_ascii_case(&fragment));
-                if let Some(case_only) = case_only {
-                    sink.emit(
-                        "broken-fragment-link",
-                        item,
-                        &[("href", href), ("caseOnly", case_only)],
-                        0,
-                    );
-                } else {
-                    sink.emit("broken-fragment-link", item, &[("href", href)], 1);
-                }
-            }
-        }
+        link_fragment(item, ids, sink, href);
     }
     let label = node
         .at("children")
@@ -845,17 +1160,66 @@ fn percent_decode_fragment(value: &str) -> String {
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
+fn heading_reference_key(key: &str) -> std::borrow::Cow<'_, str> {
+    if key
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+    {
+        std::borrow::Cow::Borrowed(key)
+    } else {
+        let arena = crate::Arena::new();
+        std::borrow::Cow::Owned(crate::resolve::heading_key_plain(key, &arena))
+    }
+}
+
 fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
     let raw = sink.raw(item).to_string();
     let key = item.node.at("key").as_str().unwrap_or("");
-    let similar = sink
-        .definitions
-        .iter()
-        .find(|label| *label != key && label.eq_ignore_ascii_case(key))
-        .cloned();
+    let heading_key = heading_reference_key(key);
     let image = item.node.ty() == "image";
-    let message = usize::from(similar.is_none()) + usize::from(image) * 2;
-    let phrase = similar.map(|label| format!("the label {label} differs only in case"));
+    let key_fold = folded(key);
+    let heading_fold = folded(&fold_space(&heading_key));
+    let mut similar = Vec::<(usize, &str)>::new();
+    if let Some(targets) = sink.reference_targets.get(&key_fold) {
+        similar.extend(targets.iter().filter_map(|(at, label, heading)| {
+            (!heading && label != key)
+                .then_some((*at, label.as_str()))
+                .or_else(|| {
+                    (!image
+                        && *heading
+                        && heading_fold == key_fold
+                        && label != heading_key.as_ref())
+                    .then_some((*at, label.as_str()))
+                })
+        }));
+    }
+    if !image
+        && heading_fold != key_fold
+        && let Some(targets) = sink.reference_targets.get(&heading_fold)
+    {
+        similar.extend(targets.iter().filter_map(|(at, label, heading)| {
+            (*heading && label != heading_key.as_ref()).then_some((*at, label.as_str()))
+        }));
+    }
+    similar.sort_unstable_by_key(|(at, _)| *at);
+    let labels: Vec<&str> = similar.iter().map(|(_, label)| *label).collect();
+    let message = usize::from(similar.is_empty()) + usize::from(image) * 2;
+    let phrase = (!similar.is_empty()).then(|| {
+        format!(
+            "the {} {} {} only in case",
+            if similar.len() == 1 {
+                "label"
+            } else {
+                "labels"
+            },
+            plain_list(&labels),
+            if similar.len() == 1 {
+                "differs"
+            } else {
+                "differ"
+            },
+        )
+    });
     sink.emit(
         "unresolved-reference-link",
         item,
@@ -1217,6 +1581,8 @@ fn heading_continuation(item: &Item<'_>, raw: &str, sink: &mut Sink<'_>) {
 
 fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
     let value = item.node.at("value").as_str().unwrap_or("");
+    // C2-B-231: only the line-1 block declares the version.
+    let leading = field(item.node, "/pos/startLine").as_u64() == Some(1);
     let raw = sink.raw(item).to_string();
     if raw
         .lines()
@@ -1231,7 +1597,7 @@ fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
     {
         sink.emit("frontmatter-shaped-thematic-break", item, &[], 0);
     }
-    if let Some((from, _)) = item.bounds {
+    if let Some((from, _)) = item.bounds.filter(|_| leading) {
         let mut offset = 0;
         for line in raw.split_inclusive('\n') {
             if let Some((key, rest)) = line.split_once(':') {
@@ -2145,19 +2511,29 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
         ("^", "djot-superscript-caret"),
     ] {
         let close = if mark == "{=" { "=}" } else { mark };
-        if let Some(start) = value.find(mark)
-            && let Some(tail) = value.get(start + mark.len()..)
-            && let Some(end) = tail.find(close)
-            && end > 0
-        {
-            sink.emit_range(
-                code,
-                from + start,
-                from + start + mark.len() + end + close.len(),
-                item.path(),
-                &[],
-                0,
-            );
+        for (start, _) in value.match_indices(mark) {
+            if escaped(bytes, start) {
+                continue;
+            }
+            let Some(tail) = value.get(start + mark.len()..) else {
+                continue;
+            };
+            // The first unescaped opener decides; a closer glued to it is no pair.
+            if let Some((end, _)) = tail
+                .match_indices(close)
+                .find(|(end, _)| !escaped(bytes, start + mark.len() + end))
+                .filter(|(end, _)| *end > 0)
+            {
+                sink.emit_range(
+                    code,
+                    from + start,
+                    from + start + mark.len() + end + close.len(),
+                    item.path(),
+                    &[],
+                    0,
+                );
+            }
+            break;
         }
     }
     for (open, _) in value.match_indices('_') {

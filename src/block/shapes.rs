@@ -885,6 +885,16 @@ pub fn frontmatter_opener(line: &str) -> Option<String> {
     ok.then(|| word.to_string())
 }
 
+/// A frontmatter opener that names its format, the only one that opens a
+/// metadata block after line 1 (C2-B-232).
+#[must_use]
+pub fn typed_frontmatter_opener(line: &str) -> bool {
+    frontmatter_opener(line).is_some()
+        && line
+            .strip_prefix("---")
+            .is_some_and(|rest| !rest.trim_end_matches([' ', '\t']).is_empty())
+}
+
 /// The frontmatter closer (C2-B-162).
 #[must_use]
 pub fn frontmatter_closer(line: &str) -> bool {

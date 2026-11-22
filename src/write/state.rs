@@ -98,6 +98,9 @@ pub struct Writer<'t> {
     pub abbreviations: Vec<(String, String)>,
     pub link_keys: std::sync::Arc<HashSet<String>>,
     pub prewritten: Option<usize>,
+    /// The first document child when it is frontmatter without attributes: the
+    /// one block that may use the bare opener (C2-W-052).
+    pub leading_frontmatter: Option<usize>,
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
@@ -137,6 +140,7 @@ impl<'t> Writer<'t> {
             abbreviations: Vec::new(),
             link_keys: std::sync::Arc::default(),
             prewritten: None,
+            leading_frontmatter: None,
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
