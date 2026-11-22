@@ -50,7 +50,7 @@ fn changed_rule_families_hold_across_5000_values() {
         let word = format!("v{n}");
         let attrs = format!("a {{.a{n}}}{{.b{n}}}\n");
         let start = 2;
-        let end = attrs.trim_end().len() as u32;
+        let end = u32::try_from(attrs.trim_end().len()).expect("short test input");
         assert_eq!(
             ranges(&attrs, "unattached-inline-attribute"),
             vec![(start, end)]
@@ -60,7 +60,10 @@ fn changed_rule_families_hold_across_5000_values() {
         let quote = format!(">\t{word}\n");
         assert_eq!(
             ranges(&quote, "blockquote-marker-without-space"),
-            vec![(0, quote.trim_end().len() as u32)]
+            vec![(
+                0,
+                u32::try_from(quote.trim_end().len()).expect("short test input")
+            )]
         );
         let span = format!("*{word}\n{{_{word}_}}*\n");
         assert!(ranges(&span, "block-marker-as-text").is_empty());

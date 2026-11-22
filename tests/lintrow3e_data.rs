@@ -37,7 +37,10 @@ fn corrected_data_rows_hold_across_5000_values() {
         let quote = format!(">\t{word}\n");
         assert_eq!(
             ranges(&quote, "blockquote-marker-without-space"),
-            vec![(0, quote.trim_end().len() as u32)]
+            vec![(
+                0,
+                u32::try_from(quote.trim_end().len()).expect("short test input")
+            )]
         );
         let span = format!("*{word}\n{{_{word}_}}*\n");
         assert!(ranges(&span, "block-marker-as-text").is_empty());
