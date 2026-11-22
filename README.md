@@ -87,6 +87,8 @@ assert!(next.reused_previous_tree);
 
 `api::Options` holds the parse, resolution and render options of `data/options.json` (`heading_ids`, `mode`, `profile`, `raw_html`, `url_policy`, `includes` and the rest). `api::LintOptions` holds `rules`, `platforms`, `heading_ids` and `includes`; `carve lint --heading-ids MODE` uses that same heading ID policy for fragment links. The JSON `importDocument` call accepts `labels` for generated accessible names, such as `admonitionNote`. `api::WriteOptions` holds `align_tables`, `normalize` and the render options a writer reads.
 
+For a Markdown tree, `carve import --from gfm --directory SOURCE --output TARGET` converts `.md` and `.markdown` files to `.crv`, rewrites verified local links, copies other files, and writes `migration-report.json`. The destination must not exist and must be outside the source tree. The Rust helpers `api::try_migrate_markdown_for_directory` and `api::try_migrate_markdown_for_directory_with_destinations` import one GFM document for this workflow.
+
 Typed structs cannot carry an unknown option, so the refusals of C2-H-137 happen where options arrive as data: the JSON boundary refuses an unknown option, a value outside the option's range, and an option that no stage of the call reads (`alignTables` on `render`, for example). `api::lint` checks rule ids against `data/lint-rules.json` and platforms against `data/options.json` in both forms.
 
 Includes use the resolver of `includes.md`:

@@ -6,6 +6,8 @@ use std::io::{Read, Write};
 #[path = "../cli/cli2.rs"]
 mod cli2;
 mod lint_cli;
+#[path = "../cli/migrate_directory.rs"]
+mod migrate_directory;
 
 /// The entry file and the include settings of the command line (C2-N-004).
 #[derive(Default)]

@@ -152,6 +152,55 @@ pub struct Imported {
     pub suppressed_diagnostics: usize,
 }
 
+/// Import one GFM document for a directory migration. Link destinations are
+/// checked after the entire output tree has been built.
+pub fn try_migrate_markdown_for_directory(source: &str) -> Result<Imported, Error> {
+    super::Carve::new().import_from(
+        source,
+        super::ImportFormat::Gfm,
+        &ImportOptions::default(),
+        &LossOptions::default(),
+    )
+}
+
+/// The directory import and its authored link destinations. The destination
+/// map retains URL spellings that a later link audit may need to report.
+pub fn try_migrate_markdown_for_directory_with_destinations(
+    source: &str,
+) -> Result<(Imported, std::collections::HashMap<String, String>), Error> {
+    let imported = try_migrate_markdown_for_directory(source)?;
+    let mut destinations = std::collections::HashMap::new();
+    let value: Value = serde_json::from_str(&super::encode_tree(&imported.tree)).map_err(|e| {
+        Error::ImportInput {
+            message: e.to_string(),
+        }
+    })?;
+    collect_destinations(&value, &mut destinations);
+    Ok((imported, destinations))
+}
+
+fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<String, String>) {
+    match value {
+        Value::Object(object) => {
+            for key in ["href", "src"] {
+                if let Some(destination) = object.get(key).and_then(Value::as_str) {
+                    out.entry(destination.to_owned())
+                        .or_insert_with(|| destination.to_owned());
+                }
+            }
+            for child in object.values() {
+                collect_destinations(child, out);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_destinations(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn run(
     html: &str,
     raw_html: bool,

@@ -63,6 +63,94 @@ fn region_command_restores_inclusive_ranges_and_code_markers() {
 }
 
 #[test]
+fn directory_import_converts_links_assets_and_reports_without_overwrite() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-import-directory-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source = root.join("source");
+    let target = root.join("target");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("a.md"), "Hello\n\n[Next](b.md)\n").unwrap();
+    std::fs::write(source.join("b.md"), "# Next\n").unwrap();
+    std::fs::write(source.join("image.png"), b"asset").unwrap();
+    let args = [
+        "import",
+        "--from",
+        "gfm",
+        "--directory",
+        source.to_str().unwrap(),
+        "--output",
+        target.to_str().unwrap(),
+    ];
+    let (status, stdout, stderr) = run(&args, "");
+    assert_eq!((status, stderr.as_str()), (0, ""));
+    assert!(stdout.contains("2 file(s) converted; 1 asset(s) copied"));
+    assert_eq!(
+        std::fs::read_to_string(target.join("a.crv")).unwrap(),
+        "Hello\n\n[Next](b.crv)\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("b.crv")).unwrap(),
+        "= Next\n"
+    );
+    assert_eq!(std::fs::read(target.join("image.png")).unwrap(), b"asset");
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("migration-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["files"][0]["links"][0]["status"], "rewritten");
+    let (again, _, _) = run(&args, "");
+    assert_eq!(again, 2);
+}
+
+#[test]
+fn directory_import_rejects_source_containment_and_reports_missing_links() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-import-directory-safety-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source = root.join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("a.md"), "[Missing](absent.md)\n").unwrap();
+    let nested = source.join("nested");
+    let args = [
+        "import",
+        "--from",
+        "gfm",
+        "--directory",
+        source.to_str().unwrap(),
+        "--output",
+        nested.to_str().unwrap(),
+    ];
+    assert_eq!(run(&args, "").0, 2);
+    assert!(!nested.exists());
+    let output = root.join("output");
+    let args = [
+        "import",
+        "--from",
+        "gfm",
+        "--directory",
+        source.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+    ];
+    assert_eq!(run(&args, "").0, 0);
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("migration-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["files"][0]["links"][0]["status"], "unresolved");
+    assert_eq!(report["review"], serde_json::json!(["a.md"]));
+}
+
+#[test]
 fn ast_and_reports_are_json_values() {
     let (status, stdout, stderr) = run(&["ast", "--no-positions", "--no-includes", "-"], "a\n");
     assert_eq!(status, 0);

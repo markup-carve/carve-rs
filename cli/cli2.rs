@@ -92,6 +92,14 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             "--code" if command == "region" => {
                 parsed.values.insert("code".into(), json!(true));
             }
+            "--directory" if command == "import" => {
+                at += 1;
+                let path = arguments.get(at).ok_or("missing value for --directory")?;
+                parsed.values.insert("directory".into(), json!(path));
+            }
+            arg if command == "import" && arg.starts_with("--directory=") => {
+                parsed.values.insert("directory".into(), json!(&arg[12..]));
+            }
             arg if arg == "-" || !arg.starts_with('-') => parsed.files.push(arg.into()),
             _ => {
                 at = read_flag(arguments, at, &rows, &mut parsed)?;
@@ -199,6 +207,8 @@ fn read_flag_value(kind: &str, name: &str, input: &str, row: &Value) -> Result<V
 fn enum_flag_value(name: &str, input: &str, row: &Value) -> bool {
     if name == "to" {
         ["html", "carve", "markdown", "plain", "ansi"].contains(&input)
+    } else if name == "from" {
+        ["html", "markdown", "gfm", "djot"].contains(&input)
     } else {
         row["values"]
             .as_array()
@@ -248,6 +258,16 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
     }
     if parsed.command == "import" && !parsed.values.contains_key("from") {
         return Err("import requires --from".into());
+    }
+    if parsed.command == "import" && parsed.values.contains_key("directory") {
+        if str_value(parsed, "from") != Some("gfm")
+            || !parsed.values.contains_key("output")
+            || parsed.files != ["-"]
+        {
+            return Err(
+                "directory import requires --from gfm --directory SOURCE --output TARGET".into(),
+            );
+        }
     }
     if parsed.command == "region" {
         if parsed.files.is_empty() || parsed.files.len() > 2 || parsed.files[0] == "-" {
@@ -1250,6 +1270,16 @@ pub fn run(arguments: &[String]) -> i32 {
     }
     if args.command == "region" {
         return region(&args);
+    }
+    if let Some(source) = str_value(&args, "directory") {
+        return match crate::migrate_directory::run(
+            source,
+            str_value(&args, "output").unwrap_or(""),
+            bool_value(&args, "strict-losses", false),
+        ) {
+            Ok(status) => i32::from(status),
+            Err(error) => fail("import-input-invalid", error),
+        };
     }
     let mut staged = vec![None; args.files.len()];
     if let Some(path) = str_value(&args, "output") {

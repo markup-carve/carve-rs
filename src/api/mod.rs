@@ -70,7 +70,10 @@ pub use extension::{
     Channel, DocumentTransform, Extension, ExtensionDeclaration, RenderContext, Renderer,
 };
 pub use hub::ImportFormat;
-pub use import::{ImportAdapter, ImportOptions, Imported, LossOptions, import_document};
+pub use import::{
+    ImportAdapter, ImportOptions, Imported, LossOptions, import_document,
+    try_migrate_markdown_for_directory, try_migrate_markdown_for_directory_with_destinations,
+};
 pub use incremental::{
     IncrementalParse, IncrementalParseError, NodeIdentity, NodeIdentityEntry, ParserSnapshot,
     TextChange, parse_snapshot, parse_snapshot_with_identity, reparse,
