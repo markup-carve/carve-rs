@@ -129,13 +129,23 @@ impl Parser<'_> {
     /// around the term's description list owns (C2-B-025) is term text; only a
     /// marker that closes that container can end the term.
     fn term_keeps(&self, column: usize) -> bool {
-        self.stack
+        let mut outside = self
+            .stack
             .iter()
             .rev()
             .take_while(|c| !matches!(c.kind, Kind::Quote))
-            .skip_while(|c| !matches!(c.kind, Kind::DescList { .. }))
-            .find_map(|c| c.kind.indent_cols())
-            .is_none_or(|(marker, _)| column > marker)
+            .skip_while(|c| !matches!(c.kind, Kind::DescList { .. }));
+        let desc_column = outside.next().and_then(|c| match c.kind {
+            Kind::DescList { col, .. } => Some(col),
+            _ => None,
+        });
+        let outer_marker = outside.find_map(|c| c.kind.indent_cols().map(|(marker, _)| marker));
+        if let (Some(desc), Some(marker)) = (desc_column, outer_marker) {
+            if marker < column && column < desc {
+                return false;
+            }
+        }
+        outer_marker.is_none_or(|marker| column > marker)
     }
 
     /// Interrupter (d) and Exception C2-B-018.
