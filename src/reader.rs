@@ -788,7 +788,6 @@ fn check_object(
     check_resources(value, path, resources)?;
     check_header_refs(value, path, header_ids)?;
     match value["type"].as_str() {
-        Some("document") => check_frontmatter(value, path),
         Some("table") => check_groups(value, path),
         Some("table_cell") => check_cell(value, path),
         Some("autolink")
@@ -800,10 +799,7 @@ fn check_object(
             ))
         }
         Some("smart_punctuation") => check_glyph(value, path),
-        Some("include") => {
-            check_frontmatter(value, path)?;
-            check_range(value, path)
-        }
+        Some("include") => check_range(value, path),
         Some("inline_extension" | "block_extension") => check_extension(value, path, declarations),
         _ => Ok(()),
     }
@@ -930,23 +926,6 @@ fn check_position(node: &Value, path: &str) -> Result<(), TreeError> {
             return Err(reader(
                 &format!("{path}/pos"),
                 "position ends before it starts",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn check_frontmatter(node: &Value, path: &str) -> Result<(), TreeError> {
-    for (i, child) in node["children"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .enumerate()
-    {
-        if i > 0 && child["type"] == "frontmatter" {
-            return Err(reader(
-                &format!("{path}/children/{i}"),
-                "frontmatter is not first",
             ));
         }
     }
