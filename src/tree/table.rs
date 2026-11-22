@@ -110,27 +110,30 @@ impl<'a> Builder<'_, 'a> {
             let split = r.comments.partition_point(|(start, _, _)| *start < r.end);
             r.comments.split_off(split)
         });
-        let head = head_rows(&data.rows);
+        let marked = has_marks(&data.rows);
+        let head = head_rows(&data.rows, marked);
         let n = data.rows.len();
         let foot = footer_count(attrs.as_ref()).min(n - head);
         let plan = body_plan(attrs.as_ref(), n - head - foot);
         let body_starts = body_starts(head, plan.as_ref());
-        let spans = resolve_spans(&data.rows, head, n - foot, &body_starts);
-        for (row, resolved) in data.rows.iter_mut().zip(spans.rows()) {
-            for (cell, mark) in row.cells.iter_mut().zip(resolved) {
-                if mark.mark.is_some() && !cell.pieces.is_empty() {
-                    cell.pieces.remove_first();
+        let spans = marked.then(|| resolve_spans(&data.rows, head, n - foot, &body_starts));
+        if let Some(spans) = &spans {
+            for (row, resolved) in data.rows.iter_mut().zip(spans.rows()) {
+                for (cell, mark) in row.cells.iter_mut().zip(resolved) {
+                    if mark.mark.is_some() && !cell.pieces.is_empty() {
+                        cell.pieces.remove_first();
+                    }
                 }
             }
+            move_joined_marks(&mut data.rows, spans);
         }
-        move_joined_marks(&mut data.rows, &spans);
         let ncols = data.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         let (columns, attrs) = columns(self.arena, ncols, attrs, false, plan.is_some());
         let mut groups: Vec<Node<'a>> = Vec::new();
         if head > 0 {
             groups.push(self.group(
                 &data.rows,
-                &spans,
+                spans.as_ref(),
                 GroupSpan {
                     lo: 0,
                     hi: head,
@@ -147,7 +150,7 @@ impl<'a> Builder<'_, 'a> {
                 let hi = lo + headers + count;
                 groups.push(self.group(
                     &data.rows,
-                    &spans,
+                    spans.as_ref(),
                     GroupSpan {
                         lo,
                         hi,
@@ -161,7 +164,7 @@ impl<'a> Builder<'_, 'a> {
         } else if head < n - foot {
             groups.push(self.group(
                 &data.rows,
-                &spans,
+                spans.as_ref(),
                 GroupSpan {
                     lo: head,
                     hi: n - foot,
@@ -174,7 +177,7 @@ impl<'a> Builder<'_, 'a> {
         if foot > 0 {
             groups.push(self.group(
                 &data.rows,
-                &spans,
+                spans.as_ref(),
                 GroupSpan {
                     lo: n - foot,
                     hi: n,
@@ -258,7 +261,7 @@ impl<'a> Builder<'_, 'a> {
         }))
     }
 
-    fn group(&self, rows: &[Row], spans: &Grid<Resolved>, span: GroupSpan) -> Node<'a> {
+    fn group(&self, rows: &[Row], spans: Option<&Grid<Resolved>>, span: GroupSpan) -> Node<'a> {
         let GroupSpan {
             lo,
             hi,
@@ -268,7 +271,7 @@ impl<'a> Builder<'_, 'a> {
         } = span;
         let mut children = Vec::new();
         for (i, row) in rows.iter().enumerate().take(hi).skip(lo) {
-            children.push(self.row(row, spans.row(i), i < lo + header_rows));
+            children.push(self.row(row, spans.map(|s| s.row(i)), i < lo + header_rows));
             for (s, e, value) in &row.comments {
                 children.push(self.comment(*s, *e, value));
             }
@@ -297,10 +300,16 @@ impl<'a> Builder<'_, 'a> {
         }
     }
 
-    fn row(&self, row: &Row, spans: &[Resolved], force_header: bool) -> Node<'a> {
+    fn row(&self, row: &Row, spans: Option<&[Resolved]>, force_header: bool) -> Node<'a> {
+        let plain = Resolved {
+            colspan: 1,
+            rowspan: 1,
+            ..Resolved::default()
+        };
         let cells = self
             .arena
-            .fill(row.cells.iter().zip(spans).map(|(cell, sp)| {
+            .fill(row.cells.iter().enumerate().map(|(i, cell)| {
+                let sp = spans.and_then(|s| s.get(i)).unwrap_or(&plain);
                 // Gap G-009: a cell with no content has no position.
                 let blank = cell
                     .pieces
@@ -437,8 +446,8 @@ fn append_text<'a>(out: &mut Vec<Node<'a>>, arena: &'a Arena, value: &str) {
 }
 
 /// C2-B-178: leading rows with a header cell and no other cell.
-fn head_rows(rows: &[Row]) -> usize {
-    if !has_marks(rows) {
+fn head_rows(rows: &[Row], marked: bool) -> usize {
+    if !marked {
         return rows
             .iter()
             .take_while(|row| {
@@ -483,9 +492,6 @@ fn resolve_spans(
             ..Resolved::default()
         },
     );
-    if !has_marks(rows) {
-        return out;
-    }
     let mut grid: Grid<Option<Origin>> = Grid::new(rows, None);
     let mut starts = vec![false; rows.len()];
     for &row in body_starts {

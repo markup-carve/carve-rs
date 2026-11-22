@@ -100,6 +100,56 @@ pub struct TableData {
     pub rows: Vec<Row>,
 }
 
+/// Separator offsets stay inline for an ordinary row; wide rows spill into a
+/// vector without losing the offsets already found.
+pub struct Separators {
+    inline: [usize; 8],
+    len: usize,
+    wide: Option<Vec<usize>>,
+}
+
+impl Separators {
+    fn new() -> Self {
+        Self {
+            inline: [0; 8],
+            len: 0,
+            wide: None,
+        }
+    }
+
+    #[allow(clippy::indexing_slicing)] // `len` is checked against the inline array length.
+    fn push(&mut self, offset: usize) {
+        if self.len < self.inline.len() {
+            self.inline[self.len] = offset;
+            self.len += 1;
+        } else if let Some(wide) = &mut self.wide {
+            wide.push(offset);
+        } else {
+            let mut wide = Vec::with_capacity(self.len * 2);
+            wide.extend_from_slice(&self.inline[..self.len]);
+            wide.push(offset);
+            self.wide = Some(wide);
+        }
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        if let Some(wide) = &mut self.wide {
+            wide.truncate(len);
+        } else {
+            self.len = self.len.min(len);
+        }
+    }
+}
+
+impl std::ops::Deref for Separators {
+    type Target = [usize];
+
+    #[allow(clippy::indexing_slicing)] // Inline length never exceeds the array length.
+    fn deref(&self) -> &[usize] {
+        self.wide.as_deref().unwrap_or(&self.inline[..self.len])
+    }
+}
+
 /// Byte offsets of the separator pipes of a row: not escaped, not between a
 /// backtick run and its matching run on the same line (C2-B-169).
 #[must_use]
@@ -109,8 +159,17 @@ pub fn separators(r: &str) -> Vec<usize> {
     out
 }
 
+/// The same offsets with no heap allocation for ordinary row widths.
+pub(crate) fn compact_separators(r: &str) -> Separators {
+    let mut out = Separators::new();
+    each_separator(r, |p| out.push(p));
+    out
+}
+
 /// Calls `f` with the offset of each separator pipe of [`separators`].
 fn each_separator(r: &str, mut f: impl FnMut(usize)) {
+    #[cfg(test)]
+    SEPARATOR_SCANS.with(|scans| scans.set(scans.get() + 1));
     let b = r.as_bytes();
     let mut i = 0;
     while let Some(&c) = b.get(i) {
@@ -124,6 +183,11 @@ fn each_separator(r: &str, mut f: impl FnMut(usize)) {
             _ => i += 1,
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static SEPARATOR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Past a backtick run and its closing run of the same length, or past the
@@ -168,7 +232,7 @@ fn trim(text: &str, s: usize, e: usize) -> (usize, usize) {
 }
 
 /// Splits a row line (`text` is the whole source, `s..e` the cell area
-/// between the outer pipes, `seps` the absolute separator offsets inside it).
+/// between the outer pipes).
 #[must_use]
 pub fn parse_cells(text: &str, s: usize, e: usize) -> Vec<Cell> {
     let area = text.get(s..e).unwrap_or("");
@@ -180,6 +244,15 @@ pub fn parse_cells(text: &str, s: usize, e: usize) -> Vec<Cell> {
     });
     cells.push(parse_cell(text, start, e));
     cells
+}
+
+/// Splits a recognized row using its separator positions. `base` is the
+/// source offset of the cursor's rest; separator offsets are relative to it.
+#[allow(clippy::indexing_slicing)] // Every `windows(2)` item has exactly two offsets.
+pub(crate) fn parse_cells_known(text: &str, base: usize, seps: &[usize]) -> Vec<Cell> {
+    seps.windows(2)
+        .map(|pair| parse_cell(text, base + pair[0] + 1, base + pair[1]))
+        .collect()
 }
 
 fn parse_cell(text: &str, start: usize, end: usize) -> Cell {
@@ -312,5 +385,23 @@ pub fn join_continuation(row: &mut Row, text: &str, frags: &[(usize, usize)]) {
                 ..Cell::default()
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SEPARATOR_SCANS;
+    use std::fmt::Write;
+
+    #[test]
+    fn table_rows_reuse_separator_scan() {
+        let mut input = String::from("|= A |= B |\n");
+        for i in 0..40 {
+            assert!(writeln!(&mut input, "| row {i} | `a|b` and \\| |").is_ok());
+        }
+        SEPARATOR_SCANS.with(|scans| scans.set(0));
+        let arena = crate::Arena::for_input(&input);
+        assert!(crate::parse_in(&input, &arena).is_ok());
+        SEPARATOR_SCANS.with(|scans| assert_eq!(scans.get(), 41));
     }
 }
