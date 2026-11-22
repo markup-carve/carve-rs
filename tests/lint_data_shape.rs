@@ -43,3 +43,15 @@ fn data_shape_uses_the_attribute_grammar() {
             .all(|finding| finding.code != "list-item-block-overindented")
     );
 }
+
+#[test]
+fn data_shape_keeps_paragraph_only_delimiter_diagnostics() {
+    unsafe { std::env::set_var("CARVE_LINT_RULES", "data") };
+    let findings = lint("*a {/b*/} c\n", &LintOptions::default());
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.code == "braced-span-opener-as-text"),
+        "{findings:?}"
+    );
+}

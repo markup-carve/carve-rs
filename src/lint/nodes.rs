@@ -148,6 +148,9 @@ pub(super) fn scan<'a>(
     base_items: Vec<Item<'a>>,
     output: &mut Vec<Diagnostic>,
 ) {
+    if super::data_rules::data_mode() && base_items.is_empty() {
+        return;
+    }
     if options.heading_ids == crate::options::HeadingIds::default() {
         scan_tree(source, options, base_tree, base_items, output);
         return;
@@ -163,6 +166,44 @@ pub(super) fn scan<'a>(
     });
     if !scanned {
         scan_tree(source, options, base_tree, base_items, output);
+    }
+}
+
+/// The active rules absent from the data catalog need only these node kinds and source marks.
+/// All other node rules are supplied by the interpreter. A kind not named here stays on the
+/// hand scanner, so adding a new node kind cannot silently bypass a hand-written rule.
+pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
+    match kind {
+        "text" => {
+            !raw.is_ascii()
+                || raw
+                    .bytes()
+                    .any(|byte| matches!(byte, b'{' | b'@' | b'#' | b'_' | b'*' | b'/'))
+        }
+        "code" | "math" => !raw.is_ascii(),
+        "strong" | "emphasis" => raw.contains('{'),
+        "strike" => raw.contains("~>"),
+        "link" => {
+            // Both hand-only link labels, "here" and "read more", contain an r.
+            // Inspect only the authored label, before any destination URL.
+            let label = raw.split(']').next().unwrap_or("");
+            label.bytes().any(|byte| matches!(byte, b'r' | b'R'))
+        }
+        // Paragraph-only hand rules inspect multiline delimiter pairs and lone emphasis.
+        // A refused braced closer can also be literal text inside a paragraph.
+        "paragraph" => {
+            raw.contains('\n')
+                || raw.contains("{/")
+                || raw
+                    .trim_start()
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| matches!(byte, b'*' | b'/' | b'_' | b'{'))
+        }
+        "document" | "list" | "list_item" | "table" | "table_head" | "table_body"
+        | "table_foot" | "table_row" | "table_cell" | "table_column" | "cell_paragraph"
+        | "soft_break" | "hard_break" | "line_break" => false,
+        _ => true,
     }
 }
 

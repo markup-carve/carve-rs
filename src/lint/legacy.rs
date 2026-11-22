@@ -63,6 +63,18 @@ fn ancestors<'n, 'a>(all: &'n [Node<'a>], at: usize) -> impl Iterator<Item = &'n
 /// The findings for `all`, the typed nodes with each subtree after its node, visited in `order`.
 pub(super) fn warnings(source: &str, all: &[Node<'_>], order: &[u32]) -> Vec<Warning> {
     let mut out = Vec::new();
+    if super::data_rules::data_mode() {
+        for &at in order {
+            let at = at as usize;
+            if all
+                .get(at)
+                .is_some_and(|node| node.kind() == "caption_number")
+            {
+                panel_number(source, all, at, &mut out);
+            }
+        }
+        return out;
+    }
     let mut braced_comments = HashSet::new();
     let mut footnote_labels = Vec::new();
     for (at, node) in order

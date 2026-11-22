@@ -112,8 +112,10 @@ struct Place {
     children: bool,
 }
 
-struct Visit<'a> {
+struct Visit<'a, 's> {
     arena: &'a Arena,
+    source: &'s str,
+    data: bool,
     full: bool,
     walk: Walk<'a>,
     /// The 0.1 nodes in walk order, with their parent's index in this list.
@@ -138,18 +140,20 @@ impl<'a> Walk<'a> {
     }
 
     /// Every record of `tree`.
-    pub(super) fn new(tree: V<'a>, arena: &'a Arena) -> Self {
-        Self::run(tree, arena, true)
+    pub(super) fn new(tree: V<'a>, arena: &'a Arena, source: &str, data: bool) -> Self {
+        Self::run(tree, arena, source, true, data)
     }
 
     /// Only the node-rule items of `tree`, for the alternate heading-id tree.
     pub(super) fn items(tree: V<'a>, arena: &'a Arena) -> Vec<Item<'a>> {
-        Self::run(tree, arena, false).items
+        Self::run(tree, arena, "", false, false).items
     }
 
-    fn run(tree: V<'a>, arena: &'a Arena, full: bool) -> Self {
+    fn run(tree: V<'a>, arena: &'a Arena, source: &str, full: bool, data: bool) -> Self {
         let mut visit = Visit {
             arena,
+            source,
+            data,
             full,
             walk: Self::empty(),
             old: Vec::new(),
@@ -160,7 +164,7 @@ impl<'a> Walk<'a> {
                     parents: None,
                     ancestor: None,
                 }),
-                old: if full {
+                old: if full && (!data || source.contains('#')) {
                     Old::Node(None, legacy::Slot::Other)
                 } else {
                     Old::No
@@ -183,7 +187,7 @@ impl<'a> Walk<'a> {
     }
 }
 
-impl<'a> Visit<'a> {
+impl<'a> Visit<'a, '_> {
     fn array(&mut self, entry: &Entry<'a>, items: crate::view::Arr<'a>) {
         let old = match entry.old {
             Old::Items(parent, slot) => Old::Node(Some(parent), slot),
@@ -359,14 +363,20 @@ impl<'a> Visit<'a> {
         let Some(kind) = kind else {
             return rules.parents;
         };
-        self.walk.items.push(Item {
-            node: entry.value,
-            bounds: entry.value.offsets(),
-            path: OnceCell::new(),
-            path_node: entry.path,
-            parents: rules.parents,
-            ancestors: rules.ancestor,
-        });
+        let bounds = entry.value.offsets();
+        let raw = bounds
+            .and_then(|(start, end)| self.source.get(start..end))
+            .unwrap_or("");
+        if !self.data || nodes::needs_hand_node(kind, raw) {
+            self.walk.items.push(Item {
+                node: entry.value,
+                bounds,
+                path: OnceCell::new(),
+                path_node: entry.path,
+                parents: rules.parents,
+                ancestors: rules.ancestor,
+            });
+        }
         Some(&*self.arena.alloc(nodes::Parent {
             kind,
             depth: rules.parents.map_or(0, |parent| parent.depth + 1),
