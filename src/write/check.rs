@@ -1874,8 +1874,13 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
         return false;
     };
     if ty(expected) != ty(actual)
-        || super::node::pos_field(expected, "startLine")
-            != super::node::pos_field(actual, "startLine")
+        || matches!(
+            (
+                super::node::pos_field(expected, "startLine"),
+                super::node::pos_field(actual, "startLine")
+            ),
+            (Some(left), Some(right)) if left != right
+        )
     {
         return false;
     }
@@ -2197,7 +2202,7 @@ mod resync_break_test {
         ];
         let actual = [
             serde_json::json!({"type":"text","value":"different"}),
-            serde_json::json!({"type":"soft_break"}),
+            serde_json::json!({"type":"soft_break","pos":{"startLine":1,"endLine":2,"startColumn":7,"endColumn":1,"startOffset":6,"endOffset":7}}),
             serde_json::json!({"type":"text","value":"after"}),
         ];
         let owner = serde_json::json!({"type":"paragraph"});

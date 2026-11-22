@@ -70,7 +70,7 @@ fn standard_data_after_loss_is_not_a_field_loss() {
 #[test]
 fn a_break_field_is_checked_before_resuming_on_the_next_line() {
     let (_, losses) = write(&[
-        json!({"type":"text", "value":" w"}),
+        json!({"type":"text", "value":"a\r"}),
         json!({"type":"soft_break", "dir":"rtl"}),
         json!({"type":"text", "value":"x"}),
     ]);
