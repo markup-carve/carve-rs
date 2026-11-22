@@ -107,3 +107,16 @@ fn reference_near_misses_use_heading_text_and_unicode_fold() {
         "{findings:?}"
     );
 }
+
+#[test]
+fn djot_pair_scan_does_not_reuse_a_closing_mark() {
+    let mut options = LintOptions::default();
+    options
+        .rules
+        .insert("djot-subscript-tilde".to_string(), "on".to_string());
+    assert_eq!(
+        messages("~a~b~\n", "djot-subscript-tilde", &options).len(),
+        1
+    );
+    assert!(messages("\\~a~\n", "djot-subscript-tilde", &options).is_empty());
+}
