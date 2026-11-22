@@ -1859,7 +1859,9 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
     let mut j = at.j;
     // Text values may contain line endings that the reader turns into breaks.
     // Those breaks precede the expected sibling break used as the anchor.
-    let embedded_breaks: usize = es[at.i..i.min(es.len())]
+    let embedded_breaks: usize = es
+        .get(at.i..i.min(es.len()))
+        .unwrap_or_default()
         .iter()
         .filter(|node| ty(**node) == "text")
         .map(|node| text(*node).bytes().filter(|byte| *byte == b'\n').count())
