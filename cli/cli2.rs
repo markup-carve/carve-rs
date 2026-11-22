@@ -35,10 +35,14 @@ fn usage(message: impl std::fmt::Display) -> i32 {
     fail("usage", message)
 }
 fn flag_rows() -> Vec<Value> {
-    serde_json::from_str::<Value>(include_str!("../spec-data/cli.json")).unwrap()["flags"]
-        .as_array()
+    // Only the flags: the other sections of cli.json are skipped, not built.
+    #[derive(serde::Deserialize)]
+    struct Rows {
+        flags: Vec<Value>,
+    }
+    serde_json::from_str::<Rows>(include_str!("../spec-data/cli.json"))
         .unwrap()
-        .clone()
+        .flags
 }
 fn flag_row<'a>(rows: &'a [Value], command: &str, name: &str) -> Option<&'a Value> {
     rows.iter().find(|r| {
