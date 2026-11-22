@@ -138,7 +138,7 @@
       "default": "on",
       "messages": [{"when": "the target id exists exactly but belongs to a node that is not a heading or numbered caption", "text": "Cross-reference </#${target}> names the id \"${id}\", which is on a ${kind}; a cross-reference reaches only headings and numbered captions, so it renders as the literal text \"</#${target}>\". Link to it with [text](#${id})."}, {"when": "no qualifying id matches exactly, but one or more qualifying ids differ only in case", "text": "Cross-reference </#${target}> matches no id; ${caseOnlyPhrase}, and cross-references are case-sensitive, so it renders as the literal text \"</#${target}>\"."}, {"when": "no qualifying id matches exactly or only by case, and no exact id belongs to a nonqualifying node", "text": "Cross-reference </#${target}> has no matching heading id; it renders as the literal text \"</#${target}>\"."}],
       "message_origin": "engine_0_1",
-      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id \"X\" differs only in case` for one candidate, `the ids \"X\" and \"Y\" differ only in case` for two, and `the ids \"X\", \"Y\", and \"Z\" differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id."],
+      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id X differs only in case` for one candidate, `the ids X and Y differ only in case` for two, and `the ids X, Y, and Z differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id."],
       "reports": "a cross-reference whose id, normalized to NFC, matches no heading id, authored or generated, and no id of a table, a figure or a figure group whose caption has a number mark, nor of a panel of such a group; matching is exact, so an id that differs only in case is reported; once per cross-reference, in footnote bodies too (C2-I-096, C2-I-097, C2-B-207, C2-H-022)",
       "clauses": ["C2-I-096", "C2-I-097", "C2-B-207", "C2-H-022"]
     },
@@ -150,7 +150,7 @@
       "default": "on",
       "messages": [{"when": "a rendered id differs only in case from the fragment as written or percent-decoded", "text": "Link to \"${href}\" matches no id; the id \"${caseOnly}\" differs only in case, and fragment links are case-sensitive, so the link goes nowhere."}, {"when": "no rendered id differs only in case from either the fragment as written or percent-decoded", "text": "Link to \"${href}\" matches no id in this document, so the link goes nowhere."}],
       "message_origin": "engine_0_1",
-      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id \"X\" differs only in case` for one candidate, `the ids \"X\" and \"Y\" differ only in case` for two, and `the ids \"X\", \"Y\", and \"Z\" differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id.", "For case-only comparison, test both the source fragment and its percent-decoded spelling. `${caseOnly}` names the first qualifying rendered id in source order; if both spellings find candidates, use the same order across their union."],
+      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id X differs only in case` for one candidate, `the ids X and Y differ only in case` for two, and `the ids X, Y, and Z differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id.", "For case-only comparison, test both the source fragment and its percent-decoded spelling. `${caseOnly}` names the first qualifying rendered id in source order; if both spellings find candidates, use the same order across their union."],
       "reports": "a link whose destination starts with `#` and whose fragment, the part before any `:~:` and tested both as written and percent-decoded, is not empty, is not `top` in any letter case, and is no `id` (and no `name` of an `a` element) in the rendered HTML of the document under the `headingIds` of the run (C2-T-042), heading, footnote, note mark and raw HTML ids included; once per link; not reported at all while an extension that generates ids is registered for the run, whether or not the document contains a node of that extension (C2-I-066, C2-H-022, C2-H-088, C2-H-089)",
       "clauses": ["C2-I-066", "C2-H-022", "C2-H-088", "C2-H-089"]
     },
@@ -184,9 +184,9 @@
       "messages": [{"when": "the selected declaration has a value that is not dot-separated decimal digits", "text": "The declared Carve version \"${version}\" is not a dotted numeric version. Write `0.2` as the value of this declaration, or remove it."}, {"when": "the selected declaration has a dotted numeric version greater than 0.2", "text": "This engine implements 0.2; features of the declared ${version} version may be unsupported. Write `carve: 0.2` only if the source uses 0.2 features."}],
       "message_origin": "engine_0_1",
       "message_notes": ["A quote or a backslash in `${version}` of the second message is escaped as in a JSON string."],
-      "change": "it reads the frontmatter key `carve-version` of 0.1 and the key `carve`",
-      "reports": "a frontmatter line `carve-version:` (and, by the row's change, `carve:`), with only spaces and tabs around the key and a single value token, whose value is not dot-separated decimal digits, or is such a version greater than 0.2 compared part by part as numbers with missing parts as 0, so `9.9`, `0.2.1` and `next` are reported and `0.1`, `0.2` and `0.2.0` are not; with no such frontmatter line, the same test on the `carve-version:` value of a `%%` stamp comment that ends the document; if more than one declaration meets this test, the first in source order supplies the report, `${version}` and the message condition; the range is that declaration's value token; once per document means one finding, not a document-wide range (C2-B-161)",
-      "clauses": ["C2-B-161"]
+      "change": "it reads the line-1 frontmatter key `carve-version` of 0.1 and the key `carve`; later blocks do not declare the document version",
+      "reports": "a line `carve-version:` (and, by the row's change, `carve:`) in the line-1 frontmatter block, with only spaces and tabs around the key and a single value token, whose value is not dot-separated decimal digits, or is such a version greater than 0.2 compared part by part as numbers with missing parts as 0, so `9.9`, `0.2.1` and `next` are reported and `0.1`, `0.2` and `0.2.0` are not; with no such line in the line-1 block, the same test on the `carve-version:` value of a `%%` stamp comment that ends the document; if more than one declaration meets this test, the first in source order supplies the report, `${version}` and the message condition; the range is that declaration's value token; once per document means one finding, not a document-wide range (C2-B-161, C2-B-231)",
+      "clauses": ["C2-B-161", "C2-B-231"]
     },
     {
       "id": "colon-fence-length-mismatch",
@@ -911,6 +911,17 @@
       "clauses": ["C2-B-127", "C2-H-158"]
     },
     {
+      "id": "frontmatter-crossref",
+      "severity": "error",
+      "channel": "lint",
+      "status": "new",
+      "default": "on",
+      "messages": ["Cross-reference </#${target}> names a metadata key, which has no HTML target. Read the block through the tree instead."],
+      "message_origin": "design",
+      "reports": "a cross-reference whose id belongs to a frontmatter node, once per reference, at the reference (C2-A-218, C2-W-153)",
+      "clauses": ["C2-A-218", "C2-W-153"]
+    },
+    {
       "id": "frontmatter-shaped-thematic-break",
       "severity": "warning",
       "channel": "lint",
@@ -989,7 +1000,7 @@
       "severity": "warning",
       "channel": "render-loss",
       "status": "new",
-      "messages": ["The heading shift of ${shift} raises a heading above level 6: the render writes it as a div with the role heading, the Markdown export at level 6."],
+      "messages": ["The heading shift of ${shift} raises a heading above level 6."],
       "message_origin": "data_file",
       "reports": "a render or a Markdown export with a `headingShift` other than 0 that raises at least one heading above level 6; once, at the first such heading in document order (C2-H-208, C2-H-209)",
       "clauses": ["C2-H-208", "C2-H-209"]
@@ -1858,8 +1869,8 @@
       "messages": ["This line of \"${raw}\" is text in Carve 0.2. Write \"***\" for a thematic break."],
       "message_origin": "engine_0_1",
       "change": "new trigger: a run of hyphens or underscores alone on a line, which is text in 0.2",
-      "reports": "a line of text that after its container prefixes and indent holds only a run of three or more hyphens or of three or more underscores and trailing spaces and tabs, which is no thematic break in 0.2, once per line; a hyphen run directly below a line of paragraph text is reported by `setext-heading-underline` instead, and three hyphens on line 1 open frontmatter; the range is the run (C2-B-160, C2-B-161)",
-      "clauses": ["C2-B-160", "C2-B-161"]
+      "reports": "a line of text that after its container prefixes and indent holds only a run of three or more hyphens or of three or more underscores and trailing spaces and tabs, which is no thematic break in 0.2, once per line; a hyphen run directly below a line of paragraph text is reported by `setext-heading-underline` instead, and three hyphens on line 1 open frontmatter; a typed opener that forms a later block is not text; the range is the run (C2-B-160, C2-B-161, C2-B-232)",
+      "clauses": ["C2-B-160", "C2-B-161", "C2-B-232"]
     },
     {
       "id": "tight-list-item-with-blank-line",
@@ -1972,7 +1983,7 @@
       "severity": "error",
       "channel": "parse",
       "status": "new",
-      "messages": ["The frontmatter opened on line 1 has no closing line, so the whole document is frontmatter."],
+      "messages": ["This frontmatter block has no closing line, so it runs to the end of the document."],
       "message_origin": "design",
       "reports": "frontmatter with no closer",
       "channel_reports": "frontmatter with no closer (C2-B-163)",
@@ -2024,7 +2035,7 @@
       "messages": [{"when": "the unresolved reference is a link and a label or heading differs from its key only in case", "text": "Reference link ${rawRef} matches no link definition or heading; ${caseOnlyPhrase}, and reference labels are case-sensitive, so its brackets and label remain literal, while link-text children render normally."}, {"when": "the unresolved reference is a link with no label or heading that differs only in case", "text": "Reference link ${rawRef} has no matching link definition or heading; its brackets and label remain literal, while link-text children render normally."}, {"when": "the unresolved reference is an image and a link definition label differs from its key only in case", "text": "Reference image ${rawRef} matches no link definition; ${caseOnlyPhrase}, and reference labels are case-sensitive, so its marker, brackets, label and alt text render as literal text."}, {"when": "the unresolved reference is an image with no link definition label that differs only in case", "text": "Reference image ${rawRef} has no matching link definition; its marker, brackets, label and alt text render as literal text."}],
       "message_origin": "engine_0_1",
       "change": "the full form and a wrapped label now reach the heading lookup (C2-I-080, C2-I-081)",
-      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id \"X\" differs only in case` for one candidate, `the ids \"X\" and \"Y\" differ only in case` for two, and `the ids \"X\", \"Y\", and \"Z\" differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id."],
+      "message_notes": ["For case-only candidates, compare NFC-normalized keys by Unicode case folding without changing the source spelling. Order qualifying candidates by the start of their source range, then by their id spelling as Unicode code points; select the first for a singular placeholder.", "`${caseOnlyPhrase}` is `the id X differs only in case` for one candidate, `the ids X and Y differ only in case` for two, and `the ids X, Y, and Z differ only in case` for three; for more candidates extend the comma-separated list in source order with `and` before the last. For reference labels, use `label` or `labels` in place of `id` or `ids`. `${caseOnly}` is the source spelling of the first qualifying rendered id."],
       "reports": "a full or collapsed reference, link or image, whose key matches no link definition and, for a link, no heading by the lookup of C2-I-084, once per reference; a shortcut forms only from a definition and is text otherwise, so it is never reported, and a wrapped label folds its line break to one space; the range is the reference (C2-I-081, C2-I-080, C2-A-109)",
       "clauses": ["C2-I-081", "C2-I-080", "C2-A-109", "C2-I-084"]
     },
