@@ -583,10 +583,10 @@ pub(super) fn plain_children(node: crate::view::V<'_>) -> String {
         pending.extend(children.iter().rev());
     }
     while let Some(child) = pending.pop() {
-        if !append_plain_leaf(child, &mut out) {
-            if let Some(children) = child.at("children").as_array() {
-                pending.extend(children.iter().rev());
-            }
+        if !append_plain_leaf(child, &mut out)
+            && let Some(children) = child.at("children").as_array()
+        {
+            pending.extend(children.iter().rev());
         }
     }
     out

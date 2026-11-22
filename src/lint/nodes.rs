@@ -629,7 +629,12 @@ fn list_between_columns<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) 
     };
     let column = source_column(sink.source, at);
     let base = source_column(sink.source, outer_at);
-    let siblings: Vec<V<'_>> = outer.at("children").as_array().into_iter().flatten().collect();
+    let siblings: Vec<V<'_>> = outer
+        .at("children")
+        .as_array()
+        .into_iter()
+        .flatten()
+        .collect();
     let first = list
         .at("children")
         .as_array()
@@ -646,16 +651,21 @@ fn list_between_columns<'a>(item: &Item<'a>, _root: V<'a>, sink: &mut Sink<'_>) 
         else {
             return;
         };
-        let Some(previous) = siblings[..here].iter().rposition(|child| child.ty() == "list") else {
+        let before = siblings.get(..here).unwrap_or(&[]);
+        let Some(previous) = before.iter().rposition(|child| child.ty() == "list") else {
             return;
         };
-        if siblings[previous + 1..here]
+        if before
             .iter()
+            .skip(previous + 1)
             .any(|child| !matches!(child.ty().as_str(), Some("list" | "paragraph")))
         {
             return;
         }
-        bounds(siblings[previous])
+        before
+            .get(previous)
+            .copied()
+            .and_then(bounds)
             .map(|(from, _)| source_column(sink.source, from))
             .filter(|mark| *mark > column)
     } else {

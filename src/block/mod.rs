@@ -385,10 +385,14 @@ impl<'a> Parser<'a> {
             c.iter()
                 .all(|c| matches!(c.kind, Kind::List { .. } | Kind::Item { .. }))
         };
-        if self.stack.len() > 1 && lists(&self.stack[1..]) {
+        if self.stack.len() > 1 && lists(self.stack.get(1..).unwrap_or(&[])) {
             self.close_to(1);
         }
-        if self.leaf.is_some() || !lists(&self.stack[1..walk.matched.min(self.stack.len())]) {
+        let matched = self
+            .stack
+            .get(1..walk.matched.min(self.stack.len()))
+            .unwrap_or(&[]);
+        if self.leaf.is_some() || !lists(matched) {
             return false;
         }
         let attrs = self.pending.as_ref().map(|p| p.depth);
