@@ -148,6 +148,9 @@ pub(super) fn scan<'a>(
     base_items: Vec<Item<'a>>,
     output: &mut Vec<Diagnostic>,
 ) {
+    if super::data_rules::data_mode() && base_items.is_empty() {
+        return;
+    }
     if options.heading_ids == crate::options::HeadingIds::default() {
         scan_tree(source, options, base_tree, base_items, output);
         return;
@@ -163,6 +166,39 @@ pub(super) fn scan<'a>(
     });
     if !scanned {
         scan_tree(source, options, base_tree, base_items, output);
+    }
+}
+
+/// The active rules absent from the data catalog need only these node kinds and source marks.
+/// All other node rules are supplied by the interpreter. A kind not named here stays on the
+/// hand scanner, so adding a new node kind cannot silently bypass a hand-written rule.
+pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
+    match kind {
+        "text" => {
+            !raw.is_ascii()
+                || raw
+                    .bytes()
+                    .any(|byte| matches!(byte, b'{' | b'@' | b'#' | b'_' | b'*' | b'/'))
+        }
+        "code" | "math" => !raw.is_ascii(),
+        "strong" | "emphasis" => raw.contains('{'),
+        "strike" => raw.contains("~>"),
+        "link" => {
+            let label = raw.split(']').next().unwrap_or("");
+            let label = label.as_bytes();
+            [b"here".as_slice(), b"read more".as_slice()]
+                .iter()
+                .any(|word| {
+                    label
+                        .windows(word.len())
+                        .any(|part| part.eq_ignore_ascii_case(word))
+                })
+        }
+        "heading" | "frontmatter" | "figure_group" | "mention" | "comment" => true,
+        "document" | "paragraph" | "list" | "list_item" | "table" | "table_head" | "table_body"
+        | "table_foot" | "table_row" | "table_cell" | "table_column" | "cell_paragraph"
+        | "soft_break" | "hard_break" | "line_break" => false,
+        _ => true,
     }
 }
 

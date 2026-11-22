@@ -230,7 +230,9 @@ fn lint_core<'a>(
         comments,
         holders,
         values,
-    } = tree.map_or_else(walk::Walk::empty, |tree| walk::Walk::new(tree, arena));
+    } = tree.map_or_else(walk::Walk::empty, |tree| {
+        walk::Walk::new(tree, arena, source, data_rules::data_mode())
+    });
     let positions = Ranges::new(source, ranges, holders);
     let mut out = Vec::new();
     for warning in legacy::warnings(source, &legacy, &legacy_order) {
@@ -241,7 +243,10 @@ fn lint_core<'a>(
     }
     drop((legacy, legacy_order));
     let line_model = lines::lines(source, &positions.all, &positions.holders);
-    lines::scan(source, opts, &positions.all, &line_model, &mut out);
+    // Every active line-scanner rule is supplied by the data catalog in data mode.
+    if !data_rules::data_mode() {
+        lines::scan(source, opts, &positions.all, &line_model, &mut out);
+    }
     if let Some(tree) = tree {
         nodes::scan(source, opts, tree, items, &mut out);
     }
@@ -1504,7 +1509,7 @@ fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Diagnostic, LintOptions, drop_replaced};
+    use super::{Diagnostic, LintOptions, drop_replaced, walk};
     use crate::ast::Pos;
     use crate::include::{Cause, Includes};
     use std::sync::Arc;
@@ -1518,6 +1523,26 @@ mod tests {
         crate::PREPARE_COUNT.with(|count| count.set(0));
         let _ = super::lint("| a | b |\n", &options);
         crate::PREPARE_COUNT.with(|count| assert_eq!(count.get(), 1));
+    }
+
+    #[test]
+    fn data_walk_does_not_prepare_hand_records_for_clean_tables_at_scale() {
+        for rows in [32, 512] {
+            let source = format!("|= A |= B |\n{}", "| a | b |\n".repeat(rows));
+            let opts = crate::Options::default();
+            crate::with_lint_tree(&source, &opts, &opts, true, |tree, arena| {
+                let walk = walk::Walk::new(tree.expect("parsed table"), arena, &source, true);
+                assert!(
+                    walk.items.is_empty(),
+                    "{rows} rows prepared hand-node items: {:?}",
+                    walk.items
+                        .iter()
+                        .map(|item| item.node.ty().as_str().unwrap_or("").to_string())
+                        .collect::<Vec<_>>()
+                );
+                assert!(walk.legacy.is_empty(), "{rows} rows prepared legacy nodes");
+            });
+        }
     }
 
     fn finding(code: &'static str, start: u32, end: u32) -> Diagnostic {

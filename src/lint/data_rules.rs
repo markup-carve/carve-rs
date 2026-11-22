@@ -530,7 +530,7 @@ pub(super) fn run<'a, 't: 'a>(
         if cache.active != active {
             *cache = Cache::new(active);
         }
-        if !cache.attribute_rules.is_empty() {
+        if !cache.attribute_rules.is_empty() && source.contains('{') {
             records.read_attributes(values);
         }
         run_lines(&records, cache, &mut out);
@@ -714,6 +714,15 @@ fn line_bucket(
 
 fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
     let mut leaves: Vec<&str> = Vec::new();
+    // A line's text and body are slices of the source, with escaped punctuation possibly
+    // hidden. A literal absent from the source cannot be held by any line in this call.
+    let possible: Vec<_> = cache
+        .literals
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, needle))| holds(records.positions().text(), needle))
+        .map(|(bit, (on_body, needle))| (bit, *on_body, *needle))
+        .collect();
     let mut by_key: Small<u64, usize> = HashMap::default();
     let mut buckets: Vec<Bucket> = Vec::new();
     // Neighboring lines often share their facts: the last key is checked before the map.
@@ -733,8 +742,8 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
         let first = records.leaf_first(index);
         let prev_same = records.prev_same_leaf(index);
         let mut held = 0u64;
-        for (bit, (on_body, needle)) in cache.literals.iter().enumerate() {
-            if holds(if *on_body { line.body() } else { line.text }, needle) {
+        for &(bit, on_body, needle) in &possible {
+            if holds(if on_body { line.body() } else { line.text }, needle) {
                 held |= 1 << bit;
             }
         }
@@ -770,6 +779,22 @@ fn run_lines(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>
             path => path.to_owned(),
         };
         for rule in buckets[found].iter() {
+            // These catalog rows can report only when their line contains a marker at the
+            // candidate position. Test the necessary source mark before evaluating their lets.
+            if rule.0.id == "block-marker-as-text"
+                && !line
+                    .text
+                    .bytes()
+                    .any(|byte| matches!(byte, b'~' | b':' | b'{'))
+            {
+                continue;
+            }
+            if rule.0.id == "description-separator-below-content-column" {
+                let after = super::data_model::quoted_start_pub(line.text, usize::MAX);
+                if !line.text.get(after..).unwrap_or("").starts_with(':') {
+                    continue;
+                }
+            }
             run_rule(*rule, records, Subject::Line(index), index, out, &path);
         }
     }
@@ -817,11 +842,37 @@ fn inline_bucket(rules: &[&'static Rule], key: InlineKey<'_>) -> Vec<(&'static R
 
 /// C2-W-140: the inline rules that name `text_run`, over each text run.
 fn run_text_runs(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnostic>) {
-    let wanted = cache.inline_rules.iter().any(|rule| {
-        rule.types
+    let mut hints = Vec::new();
+    let mut wanted = false;
+    for rule in &cache.inline_rules {
+        if !rule
+            .types
             .as_ref()
             .is_some_and(|types| types.contains(&"text_run"))
-    });
+        {
+            continue;
+        }
+        wanted = true;
+        if !matches!(rule.when.as_ref(), Some(Expr::Contains(_))) {
+            hints.clear();
+            break;
+        }
+        let mut literals = Vec::new();
+        if let Some(when) = &rule.when {
+            held_literals(when, &mut literals);
+        }
+        // A rule without a necessary literal must see every text run.
+        if literals.is_empty() {
+            hints.clear();
+            break;
+        }
+        hints.extend(
+            literals
+                .into_iter()
+                .filter(|(body, _)| !body)
+                .map(|(_, text)| text),
+        );
+    }
     if !wanted {
         return;
     }
@@ -829,6 +880,9 @@ fn run_text_runs(records: &Records<'_>, cache: &mut Cache, out: &mut Vec<Diagnos
         let Some(record) = records.text_run(at) else {
             continue;
         };
+        if !hints.is_empty() && !hints.iter().any(|needle| holds(record.text(), needle)) {
+            continue;
+        }
         let bucket = cache.inline(("text_run", record.first_byte()));
         let path = || records.path_of(record.range);
         for rule in bucket.iter() {
@@ -888,6 +942,28 @@ fn run_nodes<'a>(records: &Records<'a>, cache: &mut Cache, out: &mut Vec<Diagnos
     let mut found_inline = 0;
     let cache = RefCell::new(cache);
     for (at, range) in records.ranges.iter().enumerate() {
+        // Candidate tests precede the node record, its holder walk and the bucket lookup.
+        // Every text rule needs `[`, and the cell rules need an alignment, span or attribute mark.
+        if (range.kind == "text"
+            && text_needs_bracket
+            && !records
+                .positions()
+                .text()
+                .get(range.start..range.end)
+                .unwrap_or("")
+                .contains('['))
+            || (range.kind == "table_cell"
+                && !range.has_attrs
+                && !records
+                    .positions()
+                    .text()
+                    .get(range.start..range.end)
+                    .unwrap_or("")
+                    .bytes()
+                    .any(|byte| matches!(byte, b'<' | b'>' | b'~' | b'?' | b'^' | b'{')))
+        {
+            continue;
+        }
         let mut block = |kind: &'a str, parent: &'a str| {
             let key = (
                 kind,

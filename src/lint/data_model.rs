@@ -416,6 +416,10 @@ impl InlineRec<'_> {
     pub fn first_byte(&self) -> Option<u8> {
         self.text.as_bytes().first().copied()
     }
+
+    pub fn text(&self) -> &str {
+        self.text
+    }
 }
 
 /// The record a rule runs over.
