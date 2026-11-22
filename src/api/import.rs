@@ -152,6 +152,223 @@ pub struct Imported {
     pub suppressed_diagnostics: usize,
 }
 
+/// Import one GFM document for a directory migration. Link destinations are
+/// checked after the entire output tree has been built.
+///
+/// # Errors
+///
+/// Returns an import or writer error if the document cannot be converted.
+pub fn try_migrate_markdown_for_directory(source: &str) -> Result<Imported, Error> {
+    super::Carve::new().import_from(
+        source,
+        super::ImportFormat::Gfm,
+        &ImportOptions::default(),
+        &LossOptions::default(),
+    )
+}
+
+/// The directory import and its authored link destinations. The destination
+/// map retains URL spellings that a later link audit may need to report.
+///
+/// # Errors
+///
+/// Returns an import or writer error if the document cannot be converted.
+pub fn try_migrate_markdown_for_directory_with_destinations(
+    source: &str,
+) -> Result<(Imported, std::collections::HashMap<String, String>), Error> {
+    let imported = try_migrate_markdown_for_directory(source)?;
+    let mut destinations = std::collections::HashMap::new();
+    let value: Value = serde_json::from_str(&super::encode_tree(&imported.tree)).map_err(|e| {
+        Error::ImportInput {
+            message: e.to_string(),
+        }
+    })?;
+    collect_destinations(&value, &mut destinations);
+    for (decoded, authored) in markdown_destinations(source) {
+        if let Some(value) = destinations.get_mut(&decoded) {
+            *value = authored;
+        }
+    }
+    Ok((imported, destinations))
+}
+
+fn markdown_destinations(source: &str) -> Vec<(String, String)> {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let options = super::hub::markdown_options(source, true);
+    let document = comrak::parse_document(&arena, source, &options);
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut starts = vec![0];
+    for (at, byte) in source.bytes().enumerate() {
+        if byte == b'\n' {
+            starts.push(at + 1);
+        }
+    }
+    let mut result = Vec::new();
+    let mut code_lines = vec![false; lines.len() + 1];
+    let mut referenced = std::collections::HashSet::new();
+    for node in document.descendants() {
+        let data = node.data.borrow();
+        if matches!(data.value, NodeValue::CodeBlock(_)) {
+            for line in data.sourcepos.start.line..=data.sourcepos.end.line.min(lines.len()) {
+                if let Some(slot) = code_lines.get_mut(line) {
+                    *slot = true;
+                }
+            }
+        }
+        let destination = match &data.value {
+            NodeValue::Link(link) | NodeValue::Image(link) => &link.url,
+            _ => continue,
+        };
+        referenced.insert(destination.to_owned());
+        if let Some(raw) = node_source(source, &starts, data.sourcepos) {
+            if let Some(authored) = inline_destination(raw, destination) {
+                result.push((destination.to_owned(), authored));
+            }
+        }
+    }
+    for (line_number, line) in lines.iter().enumerate() {
+        if code_lines.get(line_number + 1) == Some(&true) {
+            continue;
+        }
+        if let Some((decoded, authored)) = reference_destination(line) {
+            if referenced.contains(&decoded) {
+                result.push((decoded, authored));
+            }
+        }
+    }
+    result
+}
+
+fn node_source<'a>(
+    source: &'a str,
+    starts: &[usize],
+    pos: comrak::nodes::Sourcepos,
+) -> Option<&'a str> {
+    let start = starts
+        .get(pos.start.line.checked_sub(1)?)?
+        .checked_add(pos.start.column.checked_sub(1)?)?;
+    let end = starts
+        .get(pos.end.line.checked_sub(1)?)?
+        .checked_add(pos.end.column)?;
+    let bounded = source.get(start..end)?;
+    if bounded.contains("](") && !bounded.ends_with(')') {
+        source.get(start..)
+    } else {
+        Some(bounded)
+    }
+}
+
+fn inline_destination(raw: &str, destination: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    for i in 0..bytes.len().saturating_sub(1) {
+        if bytes.get(i) == Some(&b']') && bytes.get(i + 1) == Some(&b'(') {
+            let (_, authored, angle) = markdown_destination(raw, i + 2)?;
+            if normalized_destination(&authored, angle).as_deref() == Some(destination) {
+                return Some(authored);
+            }
+        }
+    }
+    None
+}
+
+fn reference_destination(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 || !trimmed.starts_with('[') {
+        return None;
+    }
+    let (_, after) = trimmed
+        .split_once("]: ")
+        .or_else(|| trimmed.split_once("]:"))?;
+    let raw = after.trim_start();
+    let (authored, angle) = if let Some(value) = raw.strip_prefix('<') {
+        (value.split_once('>')?.0, true)
+    } else {
+        (raw.split(char::is_whitespace).next()?, false)
+    };
+    Some((
+        normalized_destination(authored, angle)?,
+        authored.to_owned(),
+    ))
+}
+
+fn normalized_destination(authored: &str, angle: bool) -> Option<String> {
+    let probe = if angle {
+        format!("[x](<{authored}>)")
+    } else {
+        format!("[x]({authored})")
+    };
+    let arena = comrak::Arena::new();
+    let document = comrak::parse_document(&arena, &probe, &comrak::Options::default());
+    document.descendants().find_map(|node| {
+        if let comrak::nodes::NodeValue::Link(link) = &node.data.borrow().value {
+            Some(link.url.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn markdown_destination(source: &str, after: usize) -> Option<(usize, String, bool)> {
+    let bytes = source.as_bytes();
+    let mut start = after;
+    while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
+        start += 1;
+    }
+    let angle = bytes.get(start) == Some(&b'<');
+    if angle {
+        start += 1;
+    }
+    let mut end = start;
+    let mut depth = 0usize;
+    while let Some(&byte) = bytes.get(end) {
+        if byte == b'\\' && bytes.get(end + 1).is_some() {
+            end += 2;
+            continue;
+        }
+        if angle && byte == b'>' {
+            break;
+        }
+        if !angle {
+            if byte == b'(' {
+                depth += 1;
+            } else if byte == b')' {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            } else if byte.is_ascii_whitespace() {
+                break;
+            }
+        }
+        end += 1;
+    }
+    let authored = source.get(start..end)?;
+    Some((end, authored.to_owned(), angle))
+}
+
+fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<String, String>) {
+    match value {
+        Value::Object(object) => {
+            for key in ["href", "src"] {
+                if let Some(destination) = object.get(key).and_then(Value::as_str) {
+                    out.entry(destination.to_owned())
+                        .or_insert_with(|| destination.to_owned());
+                }
+            }
+            for child in object.values() {
+                collect_destinations(child, out);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_destinations(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn run(
     html: &str,
     raw_html: bool,

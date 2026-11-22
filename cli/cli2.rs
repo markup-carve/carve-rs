@@ -88,6 +88,14 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             "-w" if ["fmt", "lint", "fix"].contains(&command) => {
                 parsed.values.insert("write".into(), json!(true));
             }
+            "--directory" if command == "import" => {
+                at += 1;
+                let path = arguments.get(at).ok_or("missing value for --directory")?;
+                parsed.values.insert("directory".into(), json!(path));
+            }
+            arg if command == "import" && arg.starts_with("--directory=") => {
+                parsed.values.insert("directory".into(), json!(&arg[12..]));
+            }
             arg if arg == "-" || !arg.starts_with('-') => parsed.files.push(arg.into()),
             _ => {
                 at = read_flag(arguments, at, &rows, &mut parsed)?;
@@ -195,6 +203,8 @@ fn read_flag_value(kind: &str, name: &str, input: &str, row: &Value) -> Result<V
 fn enum_flag_value(name: &str, input: &str, row: &Value) -> bool {
     if name == "to" {
         ["html", "carve", "markdown", "plain", "ansi"].contains(&input)
+    } else if name == "from" {
+        ["html", "markdown", "gfm", "djot"].contains(&input)
     } else {
         row["values"]
             .as_array()
@@ -244,6 +254,21 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
     }
     if parsed.command == "import" && !parsed.values.contains_key("from") {
         return Err("import requires --from".into());
+    }
+    if parsed.command == "import" && parsed.values.contains_key("directory") {
+        if str_value(parsed, "from") != Some("gfm")
+            || !parsed.values.contains_key("output")
+            || parsed.files != ["-"]
+        {
+            return Err(
+                "directory import requires --from gfm --directory SOURCE --output TARGET".into(),
+            );
+        }
+        for name in parsed.values.keys() {
+            if !["from", "directory", "output", "strict-losses"].contains(&name.as_str()) {
+                return Err(format!("--{name} is not supported for directory import"));
+            }
+        }
     }
     if let (Some(a), Some(b)) = (
         str_value(parsed, "report-includes"),
@@ -1226,6 +1251,7 @@ fn tree_if_needed(
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 pub fn run(arguments: &[String]) -> i32 {
     let args = match parse(arguments) {
         Ok(a) => a,
@@ -1238,6 +1264,16 @@ pub fn run(arguments: &[String]) -> i32 {
     if args.help {
         println!("Usage: carve {} [FLAG...] [FILE...]", args.command);
         return 0;
+    }
+    if let Some(source) = str_value(&args, "directory") {
+        return match crate::migrate_directory::run(
+            source,
+            str_value(&args, "output").unwrap_or(""),
+            bool_value(&args, "strict-losses", false),
+        ) {
+            Ok(status) => i32::from(status),
+            Err(error) => fail("import-input-invalid", error),
+        };
     }
     let mut staged = vec![None; args.files.len()];
     if let Some(path) = str_value(&args, "output") {
@@ -1296,6 +1332,44 @@ pub fn run(arguments: &[String]) -> i32 {
         }
     }
     status
+}
+
+pub fn region_command(args: &[String]) -> i32 {
+    let mut code = false;
+    let mut operands = Vec::new();
+    for arg in args {
+        match arg.as_str() {
+            "--code" => code = true,
+            "--help" | "-h" => {
+                println!(
+                    "Usage: carve region [--code] NAME [file]\nPrint the region's 1-based inclusive content lines as JSON."
+                );
+                return 0;
+            }
+            flag if flag.starts_with('-') && flag != "-" => {
+                eprintln!("carve region: unknown option: {flag}");
+                return 2;
+            }
+            _ => operands.push(arg.as_str()),
+        }
+    }
+    if operands.is_empty() || operands.len() > 2 {
+        eprintln!("carve region: expected NAME [file]");
+        return 2;
+    }
+    let name = operands[0];
+    let file = operands.get(1).copied().unwrap_or("-");
+    let bytes = match read(file) {
+        Ok(bytes) => bytes,
+        Err(code) => return code,
+    };
+    let source = String::from_utf8_lossy(&bytes);
+    if let Ok((start, end)) = carve::include::region_lines(&source, name, code) {
+        output(&format!("{}\n", json!({"start":start,"end":end}))).map_or_else(|code| code, |()| 0)
+    } else {
+        eprintln!("carve region: include-region-invalid");
+        1
+    }
 }
 
 #[cfg(test)]

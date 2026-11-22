@@ -73,7 +73,7 @@ pub(super) fn line_range(value: &str, count: usize) -> Option<LineRange> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(super) enum Kind {
     None,
     Malformed,
     Opener,
@@ -144,7 +144,10 @@ fn marker_tail<'l>(line: &'l str, at: usize, closer: &str, kind: Kind) -> (Kind,
 }
 
 /// C2-N-038 to C2-N-040: the region marker on the line.
-fn read_marker(line: &str, code: bool) -> (Kind, &str) {
+pub(super) fn read_marker(line: &str, code: bool) -> (Kind, &str) {
+    if !possible_marker(line, code) {
+        return (Kind::None, "");
+    }
     let Some((body, closer)) = marker_body(line, skip_blanks(line, 0), code) else {
         return (Kind::None, "");
     };
@@ -165,6 +168,12 @@ fn read_marker(line: &str, code: bool) -> (Kind, &str) {
         return (Kind::None, "");
     }
     marker_tail(line, end, closer, kind)
+}
+
+pub(super) fn possible_marker(line: &str, code: bool) -> bool {
+    let first = line.as_bytes().first().copied();
+    matches!(first, Some(b'%' | b' ' | b'\t'))
+        || code && matches!(first, Some(b'/' | b'-' | b'<' | b'#'))
 }
 
 pub(crate) fn is_carve_region_marker(line: &str) -> bool {
@@ -188,14 +197,28 @@ pub(super) fn region_range(
     code: bool,
     skip: &dyn Fn(usize) -> bool,
 ) -> Result<LineRange, &'static str> {
+    region_scan(
+        (0..lines.len()).map(|i| (i, lines.line(text, i))),
+        name,
+        code,
+        skip,
+    )
+}
+
+pub(super) fn region_scan<'a>(
+    lines: impl Iterator<Item = (usize, &'a str)>,
+    name: &str,
+    code: bool,
+    skip: impl Fn(usize) -> bool,
+) -> Result<LineRange, &'static str> {
     let mut stack: Vec<(usize, &str)> = Vec::new();
     let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let mut range = None;
-    for i in 0..lines.len() {
+    for (i, line) in lines {
         if skip(i) {
             continue;
         }
-        match read_marker(lines.line(text, i), code) {
+        match read_marker(line, code) {
             (Kind::None, _) => {}
             (Kind::Malformed, _) => return Err(REGION_MALFORMED),
             (Kind::Opener, n) => {

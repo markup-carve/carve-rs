@@ -303,8 +303,14 @@ fn schema_paragraph(node: &Value, path: &str) -> Result<(), TreeError> {
     if let Some(role @ ("image" | "math")) = role {
         let children = node["children"].as_array();
         let kind = if role == "image" { "image" } else { "math" };
-        let valid = children
-            .is_some_and(|c| c.len() == 1 && c.first().is_some_and(|child| child["type"] == kind));
+        let valid = children.is_some_and(|c| {
+            c.split_first().is_some_and(|(first, rest)| {
+                first["type"] == kind
+                    && rest
+                        .iter()
+                        .all(|child| child["type"] == "soft_break" || child["type"] == "comment")
+            })
+        });
         if !valid
             || role == "math"
                 && children

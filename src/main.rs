@@ -6,6 +6,8 @@ use std::io::{Read, Write};
 #[path = "../cli/cli2.rs"]
 mod cli2;
 mod lint_cli;
+#[path = "../cli/migrate_directory.rs"]
+mod migrate_directory;
 
 /// The entry file and the include settings of the command line (C2-N-004).
 #[derive(Default)]
@@ -19,6 +21,9 @@ struct Entry {
 
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.first().map(String::as_str) == Some("region") {
+        std::process::exit(cli2::region_command(&arguments[1..]));
+    }
     let legacy = matches!(
         arguments.first().map(String::as_str),
         Some("call" | "--batch")

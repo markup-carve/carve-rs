@@ -42,6 +42,195 @@ fn commands_use_the_same_file_and_error_contract() {
 }
 
 #[test]
+fn region_command_restores_inclusive_ranges_and_code_markers() {
+    assert_eq!(
+        run(
+            &["region", "demo", "-"],
+            "%% #region demo\nline\n%% #endregion\n"
+        ),
+        (0, "{\"end\":2,\"start\":2}\n".into(), String::new())
+    );
+    assert_eq!(
+        run(
+            &["region", "--code", "demo", "-"],
+            "// #region demo\ncode\n// #endregion\n"
+        ),
+        (0, "{\"end\":2,\"start\":2}\n".into(), String::new())
+    );
+    let (status, _, stderr) = run(&["region", "missing", "-"], "plain\n");
+    assert_eq!(status, 1);
+    assert!(stderr.contains("include-region-invalid"));
+}
+
+#[test]
+fn directory_import_converts_links_assets_and_reports_without_overwrite() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-import-directory-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source = root.join("source");
+    let target = root.join("target");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("a.md"), "Hello\n\n[Next](b.md)\n").unwrap();
+    std::fs::write(source.join("b.md"), "# Next\n").unwrap();
+    std::fs::write(source.join("image.png"), b"asset").unwrap();
+    let args = [
+        "import",
+        "--from",
+        "gfm",
+        "--directory",
+        source.to_str().unwrap(),
+        "--output",
+        target.to_str().unwrap(),
+    ];
+    let (status, stdout, stderr) = run(&args, "");
+    assert_eq!((status, stderr.as_str()), (0, ""));
+    assert!(stdout.contains("2 file(s) converted; 1 asset(s) copied"));
+    assert_eq!(
+        std::fs::read_to_string(target.join("a.crv")).unwrap(),
+        "Hello\n\n[Next](b.crv)\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("b.crv")).unwrap(),
+        "= Next\n"
+    );
+    assert_eq!(std::fs::read(target.join("image.png")).unwrap(), b"asset");
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("migration-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["files"][0]["links"][0]["status"], "rewritten");
+    let (again, _, _) = run(&args, "");
+    assert_eq!(again, 2);
+    let mut ignored = args.to_vec();
+    ignored.extend(["--allow-loss", "bogus"]);
+    let (status, _, stderr) = run(&ignored, "");
+    assert_eq!(status, 2);
+    assert!(stderr.contains("not supported for directory import"));
+}
+
+#[test]
+fn directory_import_rejects_source_containment_and_reports_missing_links() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-import-directory-safety-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source = root.join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("a.md"), "[Missing](absent.md)\n").unwrap();
+    let nested = source.join("nested");
+    let args = [
+        "import",
+        "--from",
+        "gfm",
+        "--directory",
+        source.to_str().unwrap(),
+        "--output",
+        nested.to_str().unwrap(),
+    ];
+    assert_eq!(run(&args, "").0, 2);
+    assert!(!nested.exists());
+    let output = root.join("output");
+    let args = [
+        "import",
+        "--from",
+        "gfm",
+        "--directory",
+        source.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+    ];
+    assert_eq!(run(&args, "").0, 0);
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("migration-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["files"][0]["links"][0]["status"], "unresolved");
+    assert_eq!(report["review"], serde_json::json!(["a.md"]));
+}
+
+#[test]
+fn directory_import_reports_invalid_utf8_as_loss() {
+    let root = std::env::temp_dir().join(format!(
+        "carve-import-invalid-utf8-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source = root.join("source");
+    let target = root.join("target");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("a.md"), b"a\xffb\n").unwrap();
+    let (status, _, _) = run(
+        &[
+            "import",
+            "--from",
+            "gfm",
+            "--directory",
+            source.to_str().unwrap(),
+            "--output",
+            target.to_str().unwrap(),
+            "--strict-losses",
+        ],
+        "",
+    );
+    assert_eq!(status, 1);
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(target.join("migration-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["review"], serde_json::json!(["a.md"]));
+    assert!(
+        report["files"][0]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["code"] == "invalid-utf8-replaced" && row["severity"] == "warning")
+    );
+}
+
+#[test]
+fn directory_import_helper_returns_authored_destination_spelling() {
+    let (imported, destinations) =
+        carve::try_migrate_markdown_for_directory_with_destinations("[x](a\\(b\\).md)\n").unwrap();
+    assert!(imported.source.contains("a(b).md"));
+    assert_eq!(
+        destinations.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
+    let (_, referenced) = carve::try_migrate_markdown_for_directory_with_destinations(
+        "[x][ref]\n\n[ref]: a\\(b\\).md\n",
+    )
+    .unwrap();
+    assert_eq!(
+        referenced.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
+    let (_, fenced) = carve::try_migrate_markdown_for_directory_with_destinations(
+        "```text\n[x](a\\(b\\).md)\n```\n\n[x](a(b).md)\n",
+    )
+    .unwrap();
+    assert_eq!(fenced.get("a(b).md").map(String::as_str), Some("a(b).md"));
+    let (_, entity) =
+        carve::try_migrate_markdown_for_directory_with_destinations("[x](a&amp;b.md)\n").unwrap();
+    assert_eq!(entity.get("a&b.md").map(String::as_str), Some("a&amp;b.md"));
+    let (_, multiline) =
+        carve::try_migrate_markdown_for_directory_with_destinations("[x](\n a\\(b\\).md\n)\n")
+            .unwrap();
+    assert_eq!(
+        multiline.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
+}
+
+#[test]
 fn ast_and_reports_are_json_values() {
     let (status, stdout, stderr) = run(&["ast", "--no-positions", "--no-includes", "-"], "a\n");
     assert_eq!(status, 0);

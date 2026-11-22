@@ -13,6 +13,38 @@ mod shift;
 pub(crate) use expand::{expand, holds_blocks, no_resolver};
 pub(crate) use lines::is_carve_region_marker;
 
+/// The inclusive, one-based content lines of a named region. An empty region
+/// has an end one less than its start.
+pub fn region_lines(source: &str, name: &str, code: bool) -> Result<(usize, usize), &'static str> {
+    let source = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let mut markers = Vec::new();
+    let mut start = 0;
+    let mut line_number = 0;
+    for (at, byte) in source.bytes().enumerate() {
+        if byte == b'\n' {
+            let end = if source.as_bytes().get(at.wrapping_sub(1)) == Some(&b'\r') {
+                at - 1
+            } else {
+                at
+            };
+            let line = source.get(start..end).unwrap_or("");
+            if lines::possible_marker(line, code) {
+                markers.push((line_number, line));
+            }
+            start = at + 1;
+            line_number += 1;
+        }
+    }
+    if start < source.len() {
+        let line = source.get(start..).unwrap_or("");
+        if lines::possible_marker(line, code) {
+            markers.push((line_number, line));
+        }
+    }
+    let range = lines::region_scan(markers.into_iter(), name, code, |_| false)?;
+    Ok((range.from + 1, range.to))
+}
+
 use std::sync::Arc;
 
 /// C2-N-007: the error causes a resolver returns.

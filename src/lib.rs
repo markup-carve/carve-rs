@@ -43,6 +43,10 @@
 )]
 
 pub mod api;
+/// GFM import for a directory migration, retained from the 0.1 crate API.
+pub use api::{
+    try_migrate_markdown_for_directory, try_migrate_markdown_for_directory_with_destinations,
+};
 mod arena;
 #[doc(hidden)]
 pub mod ast;
