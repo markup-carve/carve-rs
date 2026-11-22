@@ -684,7 +684,9 @@ pub(super) enum Expr {
     Join(Box<(Self, Self)>),
     QuotedList(Box<Self>),
     Lower(Box<Self>),
+    Nfc(Box<Self>),
     Fold(Box<Self>),
+    FoldSpace(Box<Self>),
     PercentDecode(Box<Self>),
     /// The column of an offset after a number of quote marks (C2-B-004).
     Column(Box<(Self, Self)>),
@@ -994,7 +996,9 @@ impl Scope<'_> {
             "quoted_list" => Expr::QuotedList(Box::new(self.compile(arg))),
             "column" => Expr::Column(pair(0, 1)),
             "lower" => Expr::Lower(Box::new(self.compile(arg))),
+            "nfc" => Expr::Nfc(Box::new(self.compile(arg))),
             "fold" => Expr::Fold(Box::new(self.compile(arg))),
+            "fold_space" => Expr::FoldSpace(Box::new(self.compile(arg))),
             "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
             "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
             "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
@@ -1386,7 +1390,9 @@ fn scans(expr: &Expr) -> bool {
         Expr::Within { test: item, .. }
         | Expr::Not(item)
         | Expr::Lower(item)
+        | Expr::Nfc(item)
         | Expr::Fold(item)
+        | Expr::FoldSpace(item)
         | Expr::QuotedList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
@@ -1430,7 +1436,9 @@ fn stateless(expr: &Expr) -> bool {
         Expr::Within { test: item, .. }
         | Expr::Not(item)
         | Expr::Lower(item)
+        | Expr::Nfc(item)
         | Expr::Fold(item)
+        | Expr::FoldSpace(item)
         | Expr::QuotedList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
@@ -1982,9 +1990,27 @@ impl<'a> Eval<'_, 'a> {
                 Val::Str(Cow::Owned(out))
             }
             Expr::Lower(arg) => Val::Str(Cow::Owned(self.string(arg).to_lowercase())),
+            Expr::Nfc(arg) => Val::Str(Cow::Owned(self.string(arg).nfc().collect())),
             Expr::Fold(arg) => Val::Str(Cow::Owned(
                 self.string(arg).nfc().default_case_fold().nfc().collect(),
             )),
+            Expr::FoldSpace(arg) => {
+                let text = self.string(arg);
+                let mut out = String::with_capacity(text.len());
+                let mut pending = false;
+                for ch in text.chars() {
+                    if matches!(ch, ' ' | '\t' | '\n' | '\r') {
+                        pending = !out.is_empty();
+                    } else {
+                        if pending {
+                            out.push(' ');
+                            pending = false;
+                        }
+                        out.push(ch);
+                    }
+                }
+                Val::Str(Cow::Owned(out))
+            }
             Expr::QuotedList(arg) => {
                 let list = self.value(arg);
                 let len = self.records.list_len(&list);

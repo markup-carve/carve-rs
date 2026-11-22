@@ -51,6 +51,8 @@ fn rendered_footnotes_and_raw_html_anchors_are_fragment_targets() {
         messages(raw, "broken-fragment-link", &LintOptions::default()).len(),
         1
     );
+    let collision = "{#fn1}\n# H\n\nText[^n].\n\n[^n]: note\n\n[x](#fn1-2)\n";
+    assert!(messages(collision, "broken-fragment-link", &LintOptions::default()).is_empty());
 }
 
 #[test]
@@ -71,6 +73,24 @@ fn reference_near_misses_use_heading_text_and_unicode_fold() {
     assert_eq!(findings.len(), 1);
     assert!(
         findings[0].contains("the id \"Straße\" differs only in case"),
+        "{findings:?}"
+    );
+    let spaced = "# A  B\n\n[x][a b]\n";
+    let findings = messages(spaced, "unresolved-reference-link", &LintOptions::default());
+    assert_eq!(findings.len(), 1);
+    assert!(
+        findings[0].contains("the label \"A  B\" differs only in case"),
+        "{findings:?}"
+    );
+    let normalization = "{id=\"Café\"}\n# H\n\n[x](#Café)\n";
+    let findings = messages(
+        normalization,
+        "broken-fragment-link",
+        &LintOptions::default(),
+    );
+    assert_eq!(findings.len(), 1);
+    assert!(
+        !findings[0].contains("differs only in case"),
         "{findings:?}"
     );
 }

@@ -65,7 +65,7 @@ struct Sink<'a> {
     output: &'a mut Vec<Diagnostic>,
     replacing: Vec<usize>,
     /// Link definition keys and heading text, in source order.
-    reference_targets: Vec<(String, bool)>,
+    reference_targets: HashMap<String, Vec<(usize, String, bool)>>,
 }
 
 impl Sink<'_> {
@@ -185,21 +185,33 @@ fn scan_tree<'a>(
         replacing: Vec::new(),
         reference_targets: items
             .iter()
-            .filter_map(|item| match item.node.ty().as_str() {
+            .enumerate()
+            .filter_map(|(index, item)| match item.node.ty().as_str() {
                 Some("link_reference_definition") => item
                     .node
                     .at("key")
                     .as_str()
-                    .map(|key| (key.to_string(), false)),
+                    .map(|key| (index, key.to_string(), false)),
                 Some("heading")
                     if item.node.at("attrs").at("id").as_str().is_some()
                         || item.node.at("generatedId").as_str().is_some() =>
                 {
-                    Some((super::data_model::plain_children(item.node), true))
+                    Some((index, super::data_model::plain_children(item.node), true))
                 }
                 _ => None,
             })
-            .collect(),
+            .fold(
+                HashMap::<String, Vec<(usize, String, bool)>>::new(),
+                |mut map, entry| {
+                    let key = if entry.2 {
+                        folded(&fold_space(&entry.1))
+                    } else {
+                        folded(&entry.1)
+                    };
+                    map.entry(key).or_default().push(entry);
+                    map
+                },
+            ),
     };
     let (ids, targets) = id_index(&items, options.raw_html);
     let targets = TargetIndex::new(&targets);
@@ -223,6 +235,23 @@ fn folded(text: &str) -> String {
     text.nfc().default_case_fold().nfc().collect()
 }
 
+fn fold_space(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut pending = false;
+    for ch in text.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\r') {
+            pending = !out.is_empty();
+        } else {
+            if pending {
+                out.push(' ');
+                pending = false;
+            }
+            out.push(ch);
+        }
+    }
+    out
+}
+
 fn quoted_list(items: &[&str]) -> String {
     let mut out = String::new();
     for (at, item) in items.iter().enumerate() {
@@ -243,11 +272,19 @@ fn quoted_list(items: &[&str]) -> String {
 struct RenderedIds {
     exact: HashSet<String>,
     ordered: Vec<String>,
+    nfc: Vec<String>,
+    folded: HashMap<String, Vec<usize>>,
 }
 
 impl RenderedIds {
     fn add(&mut self, id: &str) {
         if self.exact.insert(id.to_string()) {
+            let nfc: String = id.nfc().collect();
+            let candidates = self.folded.entry(folded(id)).or_default();
+            if candidates.is_empty() || (candidates.len() == 1 && self.nfc[candidates[0]] != nfc) {
+                candidates.push(self.ordered.len());
+            }
+            self.nfc.push(nfc);
             self.ordered.push(id.to_string());
         }
     }
@@ -258,9 +295,22 @@ fn id_index<'a>(items: &[Item<'a>], raw_html: bool) -> (RenderedIds, Vec<IdTarge
     let mut ids = RenderedIds {
         exact: HashSet::new(),
         ordered: Vec::new(),
+        nfc: Vec::new(),
+        folded: HashMap::new(),
     };
     let mut targets = Vec::new();
     let mut note_counts = HashMap::<u64, usize>::new();
+    let mut taken = crate::resolve::slug::Taken::default();
+    for item in items {
+        for id in [item.node.at("attrs").at("id"), item.node.at("generatedId")] {
+            if let Some(id) = id.as_str()
+                && (id.starts_with("fn") || id.starts_with("adm-"))
+            {
+                taken.reserve(id);
+            }
+        }
+    }
+    let collisions = !taken.is_empty();
     for item in items {
         let kind = item.node.ty().as_str().unwrap_or("node");
         let attribute = item.node.at("attrs").at("id").as_str();
@@ -281,14 +331,30 @@ fn id_index<'a>(items: &[Item<'a>], raw_html: bool) -> (RenderedIds, Vec<IdTarge
             let count = note_counts.entry(number).or_default();
             *count += 1;
             if *count == 1 {
-                ids.add(&format!("fn{number}"));
+                let base = format!("fn{number}");
+                ids.add(&if collisions {
+                    taken.unique(&base)
+                } else {
+                    base
+                });
             }
             let suffix = if *count == 1 {
                 String::new()
             } else {
                 format!("-{count}")
             };
-            ids.add(&format!("fnref{number}{suffix}"));
+            let base = format!("fnref{number}{suffix}");
+            let id = attribute.map_or_else(
+                || {
+                    if collisions {
+                        taken.unique(&base)
+                    } else {
+                        base
+                    }
+                },
+                str::to_owned,
+            );
+            ids.add(&id);
         }
         if raw_html
             && matches!(kind, "raw_block" | "raw_inline")
@@ -806,11 +872,21 @@ fn link(item: &Item<'_>, ids: &RenderedIds, sink: &mut Sink<'_>) {
             {
                 let written_fold = folded(written);
                 let decoded_fold = folded(&fragment);
-                let case_only = ids.ordered.iter().find(|id| {
-                    *id != written
-                        && *id != &fragment
-                        && (folded(id) == written_fold || folded(id) == decoded_fold)
-                });
+                let written_nfc: String = written.nfc().collect();
+                let decoded_nfc: String = fragment.nfc().collect();
+                let candidate = |key: &String, nfc: &String| {
+                    ids.folded.get(key).and_then(|candidates| {
+                        candidates.iter().copied().find(|at| ids.nfc[*at] != *nfc)
+                    })
+                };
+                let at = [
+                    candidate(&written_fold, &written_nfc),
+                    candidate(&decoded_fold, &decoded_nfc),
+                ]
+                .into_iter()
+                .flatten()
+                .min();
+                let case_only = at.and_then(|at| ids.ordered.get(at));
                 if let Some(case_only) = case_only {
                     sink.emit(
                         "broken-fragment-link",
@@ -890,18 +966,42 @@ fn percent_decode_fragment(value: &str) -> String {
 fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
     let raw = sink.raw(item).to_string();
     let key = item.node.at("key").as_str().unwrap_or("");
-    let arena = crate::Arena::new();
-    let heading_key = crate::resolve::heading_key_plain(key, &arena);
+    let heading_key = if key
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+    {
+        std::borrow::Cow::Borrowed(key)
+    } else {
+        let arena = crate::Arena::new();
+        std::borrow::Cow::Owned(crate::resolve::heading_key_plain(key, &arena))
+    };
     let image = item.node.ty() == "image";
-    let similar: Vec<&str> = sink
-        .reference_targets
-        .iter()
-        .filter(|(_, heading)| !image || !heading)
-        .filter_map(|(label, heading)| {
-            let compared = if *heading { heading_key.as_str() } else { key };
-            (label != compared && folded(label) == folded(compared)).then_some(label.as_str())
-        })
-        .collect();
+    let key_fold = folded(key);
+    let heading_fold = folded(&fold_space(&heading_key));
+    let mut similar = Vec::<(usize, &str)>::new();
+    if let Some(targets) = sink.reference_targets.get(&key_fold) {
+        similar.extend(targets.iter().filter_map(|(at, label, heading)| {
+            (!heading && label != key)
+                .then_some((*at, label.as_str()))
+                .or_else(|| {
+                    (!image
+                        && *heading
+                        && heading_fold == key_fold
+                        && label != heading_key.as_ref())
+                    .then_some((*at, label.as_str()))
+                })
+        }));
+    }
+    if !image
+        && heading_fold != key_fold
+        && let Some(targets) = sink.reference_targets.get(&heading_fold)
+    {
+        similar.extend(targets.iter().filter_map(|(at, label, heading)| {
+            (*heading && label != heading_key.as_ref()).then_some((*at, label.as_str()))
+        }));
+    }
+    similar.sort_unstable_by_key(|(at, _)| *at);
+    let labels: Vec<&str> = similar.iter().map(|(_, label)| *label).collect();
     let message = usize::from(similar.is_empty()) + usize::from(image) * 2;
     let phrase = (!similar.is_empty()).then(|| {
         format!(
@@ -911,7 +1011,7 @@ fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
             } else {
                 "labels"
             },
-            quoted_list(&similar),
+            quoted_list(&labels),
             if similar.len() == 1 {
                 "differs"
             } else {
