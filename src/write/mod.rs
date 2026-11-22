@@ -13,6 +13,7 @@ mod controls;
 mod extension;
 mod facts;
 mod inline;
+mod kinds;
 mod node;
 mod pairs;
 mod spans;
@@ -27,7 +28,7 @@ pub(crate) use table::display_width;
 use crate::api::{Entry, Range};
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
-use check::{Check, Chunk, compare_blocks, escape_openers, exhausted, extend_chains};
+use check::{Check, Chunk, compare_blocks, escape_at, escape_openers, exhausted, extend_chains};
 use node::{N, children, has, id, span, text, ty};
 use serde_json::Value;
 use state::{GroupCertificate, Writer, lose};
@@ -674,7 +675,57 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
     w.group_certificate = GroupCertificate::None;
     let reported = w.sp.losses.len();
-    repair_rounds(w, doc, from, first, reported)
+    let saved = SavedGroup::new(w);
+    w.kind_failed = false;
+    let end = repair_rounds(w, doc, from, first, reported);
+    if (w.sp.losses.len() == reported && !w.kind_failed) || !w.kind_escapes {
+        return end;
+    }
+    w.kind_failed = false;
+    // C2-W-088: a group whose kind rounds leave a node unread is written by
+    // rounds of the reported escapes only.
+    saved.restore(w, reported);
+    w.kind_escapes = false;
+    w.group_certificate = GroupCertificate::None;
+    let end = repair_rounds(w, doc, from, first, reported);
+    w.kind_escapes = true;
+    end
+}
+
+/// The repair state of a group before its rounds, for the C2-W-088 fallback.
+struct SavedGroup<'t> {
+    lines: Vec<String>,
+    escapes: AddrMap<usize, Vec<usize>>,
+    attempts: AddrMap<usize, state::Attempt<'t>>,
+    lost: AddrSet<usize>,
+    lost_keys: AddrMap<usize, Vec<String>>,
+    forms: AddrMap<usize, u32>,
+    blank_first: bool,
+}
+
+impl<'t> SavedGroup<'t> {
+    fn new(w: &Writer<'t>) -> Self {
+        Self {
+            lines: w.lines.clone(),
+            escapes: w.sp.escapes.clone(),
+            attempts: w.sp.attempts.clone(),
+            lost: w.sp.lost.clone(),
+            lost_keys: w.sp.lost_keys.clone(),
+            forms: w.forms.clone(),
+            blank_first: w.blank_first,
+        }
+    }
+
+    fn restore(self, w: &mut Writer<'t>, losses: usize) {
+        w.lines = self.lines;
+        w.sp.escapes = self.escapes;
+        w.sp.attempts = self.attempts;
+        w.sp.losses.truncate(losses);
+        w.sp.lost = self.lost;
+        w.sp.lost_keys = self.lost_keys;
+        w.forms = self.forms;
+        w.blank_first = self.blank_first;
+    }
 }
 
 /// C2-W-133: one repair budget for the whole document, `len` the characters of the document as written.
@@ -750,6 +801,9 @@ fn repair_rounds<'t>(
             equal: false,
         };
         if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
+            if w.kind_failed {
+                return end;
+            }
             if w.sp.losses.len() == reported && !round.equal {
                 report_unread(w, group, round.last);
             }
@@ -901,6 +955,15 @@ fn settle<'t>(
     round: &mut Round<'_>,
 ) -> bool {
     let mut c = compare_group(w, doc, group, first, round);
+    if w.kind_escapes {
+        // C2-W-088: a node the kind rounds leave unread sends the group to the
+        // rounds of the reported openers only.
+        if !c.losses.is_empty() && !w.sp.escapes.is_empty() {
+            w.kind_failed = true;
+            return false;
+        }
+        escape_kinds(w, &mut c, group);
+    }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
         // C2-W-005: what only line 1 reads differently is written below one blank line.
@@ -913,6 +976,38 @@ fn settle<'t>(
         return true;
     }
     apply_changes(w, &c)
+}
+
+/// C2-W-088: each kind a round reports in a block escapes every opener of
+/// that kind in the block, so the rounds are bounded by the kinds.
+fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
+    let trials: HashSet<(usize, usize)> = c.trials.iter().map(|(n, at)| (id(n), *at)).collect();
+    let reported: Vec<(N<'t>, usize)> = c
+        .escapes
+        .iter()
+        .filter(|(n, at)| !trials.contains(&(id(n), *at)))
+        .copied()
+        .collect();
+    if reported.is_empty() {
+        return;
+    }
+    let blocks = kinds::KindBlocks::new(group);
+    let mut done = HashSet::new();
+    for (node, at) in reported {
+        let Some(block) = blocks.block_of(node) else {
+            continue;
+        };
+        let line = c.line_escapes.contains(&(id(node), at));
+        let Some(key) = blocks.key(node, at, line) else {
+            continue;
+        };
+        if !done.insert((block, key.clone())) {
+            continue;
+        }
+        for (n, offset) in blocks.openers(block, &key) {
+            escape_at(w, c, n, offset);
+        }
+    }
 }
 
 const LINE_LEAVES: &[&str] = &[

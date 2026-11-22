@@ -49,10 +49,10 @@ impl<'t> KindBlocks<'t> {
                 continue;
             }
             let mut runs = Vec::new();
-            let mut edge = Edge::Line;
-            collect(children(node), &mut runs, &mut edge);
-            if let Some(last) = runs.last_mut() {
-                if edge == Edge::Line {
+            let (mut edge, mut joined) = (Edge::Line, false);
+            collect(children(node), &mut runs, &mut edge, &mut joined);
+            if joined {
+                if let Some(last) = runs.last_mut() {
                     last.after = Edge::Line;
                 }
             }
@@ -108,51 +108,45 @@ impl<'t> KindBlocks<'t> {
     }
 }
 
-fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge) {
+/// Adds the text runs of `nodes`; `joined` is true while the last leaf was text.
+fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined: &mut bool) {
     for node in nodes.iter() {
         if ty(node) == "text" {
-            match runs.last_mut() {
-                Some(run) if run.after == Edge::Markup && *edge == Edge::Markup && run.open() => {
+            match runs.last_mut().filter(|_| *joined) {
+                Some(run) => {
                     run.nodes.push((node, run.text.len()));
                     run.text.push_str(text(node));
                 }
-                _ => runs.push(Run {
+                None => runs.push(Run {
                     text: text(node).to_string(),
                     nodes: vec![(node, 0)],
                     before: *edge,
                     after: Edge::Markup,
                 }),
             }
-            runs.last_mut().map(Run::keep_open);
-            *edge = Edge::Markup;
+            *joined = true;
             continue;
         }
-        close(runs);
-        if is_break(Some(node)) {
+        let at = if is_break(Some(node)) { Edge::Line } else { Edge::Markup };
+        if *joined {
             if let Some(run) = runs.last_mut() {
-                run.after = Edge::Line;
+                run.after = at;
             }
-            *edge = Edge::Line;
-        } else {
-            *edge = Edge::Markup;
-            collect(children(node), runs, edge);
-            close(runs);
+        }
+        *joined = false;
+        *edge = at;
+        if at == Edge::Markup {
+            collect(children(node), runs, edge, joined);
+            if *joined {
+                if let Some(run) = runs.last_mut() {
+                    run.after = Edge::Markup;
+                }
+            }
+            *joined = false;
             *edge = Edge::Markup;
         }
     }
 }
-
-impl Run<'_> {
-    /// A run stays open to the next text node while nothing stands between them.
-    fn open(&self) -> bool {
-        self.nodes.last().is_some_and(|_| self.after == Edge::Markup) && !self.text.is_empty()
-            || self.nodes.is_empty()
-    }
-
-    fn keep_open(&mut self) {}
-}
-
-fn close(_runs: &mut [Run<'_>]) {}
 
 /// The shape of a line opener: its first character, or `0` and the delimiter
 /// for an ordered marker.

@@ -112,6 +112,8 @@ pub struct Check<'t> {
     pub owner: Option<N<'t>>,
     pub chains: Vec<(N<'t>, usize, Built)>,
     pub source: Option<String>,
+    /// C2-W-088: the escapes that make a line opener text, by node and offset.
+    pub line_escapes: HashSet<(usize, usize)>,
 }
 
 impl Check<'_> {
@@ -282,7 +284,7 @@ fn is_escaped(w: &Writer<'_>, c: &Check<'_>, node: V<'_>, at: usize) -> bool {
 }
 
 /// Asks for a backslash before the byte `at` of the text node. False where that character takes none.
-fn escape_at<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize) -> bool {
+pub fn escape_at<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize) -> bool {
     let b = text(node).as_bytes();
     if !b.get(at).is_some_and(u8::is_ascii_punctuation) || is_escaped(w, c, node, at) {
         return false;
@@ -321,7 +323,11 @@ fn escape_line_start<'t>(
 ) {
     c.misaligned = true;
     let first = nodes.get(from).copied();
+    let before = c.escapes.len();
     if escape_run_opener(w, c, nodes, from) {
+        for (n, at) in c.escapes.get(before..).unwrap_or(&[]) {
+            c.line_escapes.insert((id(*n), *at));
+        }
         return;
     }
     let mut at = from + 1;
