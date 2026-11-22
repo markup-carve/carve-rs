@@ -213,14 +213,23 @@ fn paired<'t>(
         return String::new();
     };
     if braced_pair(w, node, flags, bit, inside) {
-        format!("{{{mark}{content}{mark}}}")
+        enclosed(&['{', mark], &content, &[mark, '}'])
     } else {
-        format!("{mark}{content}{mark}")
+        enclosed(&[mark], &content, &[mark])
     }
 }
 
+fn enclosed(open: &[char], content: &str, close: &[char]) -> String {
+    let mut out = String::with_capacity(content.len() + 4 * (open.len() + close.len()));
+    out.extend(open);
+    out.push_str(content);
+    out.extend(close);
+    out
+}
+
 fn braced<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32, open: char, close: char) -> String {
-    content_of(w, node, flags).map_or_else(String::new, |c| format!("{{{open}{c}{close}}}"))
+    content_of(w, node, flags)
+        .map_or_else(String::new, |c| enclosed(&['{', open], &c, &[close, '}']))
 }
 
 /// C2-I-016: whether a reader would take one space from each end of `value`.
