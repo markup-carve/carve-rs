@@ -74,13 +74,16 @@ pub struct BlockParts {
     pub pipes: bool,
 }
 
-/// C2-W-048: the brace block of `node`, or the empty string when it has nothing to write.
-pub fn brace_block(node: V<'_>, extra: &BlockParts) -> String {
-    if extra.mark.is_empty()
+fn has_no_parts(node: V<'_>, extra: &BlockParts) -> bool {
+    extra.mark.is_empty()
         && extra.keys.is_empty()
         && attrs(node).is_none()
         && s(node, "lang").is_none()
-    {
+}
+
+/// C2-W-048: the brace block of `node`, or the empty string when it has nothing to write.
+pub fn brace_block(node: V<'_>, extra: &BlockParts) -> String {
+    if has_no_parts(node, extra) {
         return String::new();
     }
     let mut parts: Vec<String> = Vec::new();
