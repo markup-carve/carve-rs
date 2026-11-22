@@ -1476,6 +1476,18 @@ fn match_text<'t>(
     if ty(a) != "text" {
         return skip_construct(w, c, e, es, a, at);
     }
+    // A prior lost node does not license a later field to disappear silently.
+    if !c.losses.is_empty() {
+        for name in ["lang", "dir", "metadata", "attrs", "data"] {
+            if is_compared(c, e, result_fields(e), name)
+                && e.get(name).is_some()
+                && a.get(name).is_none()
+            {
+                c.losses.push((e, Some(String::new())));
+                break;
+            }
+        }
+    }
     if !match_characters(w, c, e, a, at) {
         return false;
     }
@@ -1810,6 +1822,96 @@ fn resync<'t>(
     false
 }
 
+/// A paragraph can drop leading indentation of one supplied text while its
+/// surviving suffix joins the next node. Resume behind the surviving suffix.
+fn step_over_lost_text(es: &[N<'_>], as_: Arr<'_>, at: &mut Cursor) -> bool {
+    let (Some(&expected), Some(actual)) = (es.get(at.i), as_.get(at.j)) else {
+        return false;
+    };
+    if ty(expected) != "text" || ty(actual) != "text" || at.vi != 0 {
+        return false;
+    }
+    let value = text(expected);
+    let kept = value.trim_start_matches([' ', '\t']);
+    if kept.len() == value.len()
+        || !text(actual)
+            .get(at.aj..)
+            .is_some_and(|rest| rest.starts_with(kept))
+    {
+        return false;
+    }
+    at.i += 1;
+    at.aj += kept.len();
+    if at.aj == text(actual).len() {
+        at.j += 1;
+        at.aj = 0;
+    }
+    true
+}
+
+/// A failed comparison on one line cannot hide constructs on a later line of
+/// the same paragraph. Resume only at breaks whose source lines still align.
+fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut Cursor) -> bool {
+    let mut i = at.i + 1;
+    while i < es.len() && !is_break(es.get(i).copied()) {
+        i += 1;
+    }
+    let mut j = at.j;
+    // Text values may contain line endings that the reader turns into breaks.
+    // Those breaks precede the expected sibling break used as the anchor.
+    let embedded_breaks: usize = es
+        .get(at.i..i.min(es.len()))
+        .unwrap_or_default()
+        .iter()
+        .filter(|node| ty(**node) == "text")
+        .map(|node| text(*node).bytes().filter(|byte| *byte == b'\n').count())
+        .sum();
+    for skipped in 0..=embedded_breaks {
+        while j < as_.len() && !is_break(as_.get(j)) {
+            j += 1;
+        }
+        if j == as_.len() {
+            return false;
+        }
+        if skipped < embedded_breaks {
+            j += 1;
+        }
+    }
+    let (Some(&expected), Some(actual)) = (es.get(i), as_.get(j)) else {
+        return false;
+    };
+    if ty(expected) != ty(actual)
+        || matches!(
+            (
+                super::node::pos_field(expected, "startLine"),
+                super::node::pos_field(actual, "startLine")
+            ),
+            (Some(left), Some(right)) if left != right
+        )
+    {
+        return false;
+    }
+    if c.changes() == 0 {
+        let mut actual_at = at.j;
+        for &node in es.get(at.i..i).unwrap_or_default() {
+            if let Some(found) = (actual_at..j).find(|&candidate| {
+                as_.get(candidate)
+                    .is_some_and(|a| super::writer_equal(node, a))
+            }) {
+                actual_at = found + 1;
+            } else {
+                c.losses.push((node, None));
+            }
+        }
+    }
+    // The aligned break can still have fields that the source lost.
+    at.i = i;
+    at.j = j;
+    at.vi = 0;
+    at.aj = 0;
+    true
+}
+
 fn compare_inlines<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
@@ -1828,7 +1930,11 @@ fn compare_inlines<'t>(
         } else {
             match_node(w, c, e, es, as_, &mut at, owner)
         };
-        if !more && !resync(w, c, es, as_, &mut at) {
+        if !more
+            && !resync(w, c, es, as_, &mut at)
+            && !step_over_lost_text(es, as_, &mut at)
+            && !resync_next_line(c, es, as_, &mut at)
+        {
             done = true;
             break;
         }
@@ -2092,5 +2198,39 @@ pub fn compare_blocks<'t>(
         missing_block(w, c, m);
     } else {
         c.losses.push((owner, None));
+    }
+}
+
+#[cfg(test)]
+mod resync_break_test {
+    use super::*;
+
+    #[test]
+    fn aligned_break_fields_are_checked_after_an_earlier_loss() {
+        let expected = [
+            serde_json::json!({"type":"text","value":"before"}),
+            serde_json::json!({"type":"soft_break","dir":"rtl"}),
+            serde_json::json!({"type":"text","value":"after"}),
+        ];
+        let actual = [
+            serde_json::json!({"type":"text","value":"different"}),
+            serde_json::json!({"type":"soft_break","pos":{"startLine":1,"endLine":2,"startColumn":7,"endColumn":1,"startOffset":6,"endOffset":7}}),
+            serde_json::json!({"type":"text","value":"after"}),
+        ];
+        let owner = serde_json::json!({"type":"paragraph"});
+        let nodes: Vec<_> = expected.iter().map(V::Json).collect();
+        let pool = typed_arena::Arena::new();
+        let mut writer = Writer::new(&pool, false);
+        let mut check = Check::default();
+        compare_inlines(
+            &mut writer,
+            &mut check,
+            &nodes,
+            Arr::Json(&actual),
+            V::Json(&owner),
+        );
+        assert!(check.losses.iter().any(|(node, field)| {
+            id(*node) == id(V::Json(&expected[1])) && field.as_deref() == Some("dir")
+        }));
     }
 }
