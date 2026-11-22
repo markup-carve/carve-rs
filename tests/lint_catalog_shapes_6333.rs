@@ -38,6 +38,33 @@ fn bare_html_tag_needs_the_catalog_tag_shape() {
 }
 
 #[test]
+fn bare_html_tag_in_heading_content() {
+    for (input, expected) in [
+        ("# a <b> c\n", vec![(4, 7)]),
+        ("# <x>\n", vec![(2, 5)]),
+        ("## </x>\n", vec![(3, 7)]),
+        ("### <x/>\n", vec![(4, 8)]),
+        ("# <x a=\"1\">\n", vec![(2, 11)]),
+        ("# \\<x>\n", vec![]),
+        ("# <!-- <x> -->\n", vec![]),
+        ("# <!-- <x> --> <b>\n", vec![(15, 18)]),
+        ("# \\<x> <b>\n", vec![(7, 10)]),
+        ("# `<!--` <b>\n", vec![(9, 12)]),
+        ("# \\<!-- <b>\n", vec![(8, 11)]),
+        ("# <xé> <b>\n", vec![(8, 11)]),
+    ] {
+        assert_eq!(ranges(input, "bare-html-tag"), expected, "{input:?}");
+    }
+}
+
+#[test]
+fn bare_html_tag_after_many_inline_code_candidates() {
+    let input = format!("# {}<b>\n", "`<x>` ".repeat(1_000));
+    let start = u32::try_from(input.find("<b>").unwrap()).unwrap();
+    assert_eq!(ranges(&input, "bare-html-tag"), [(start, start + 3)]);
+}
+
+#[test]
 fn caption_looking_paragraph_skips_term_text() {
     for input in [
         " :: term\n: | A | B |\n  | x | y |\n",

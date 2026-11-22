@@ -104,13 +104,21 @@ fn visit(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
             consumed_key(source, value, "table", out);
         }
         "table_cell" => reversed_marker(source, value, out),
-        "paragraph" if !in_footnote() => {
-            html_comment(source, all, at, out);
-            bare_tags(source, all, at, out);
-        }
+        "paragraph" | "heading" => text_rules(source, all, at, out),
         "list_item" => marker_between_lists(source, all, at, out),
         _ => {}
     }
+}
+
+fn text_rules(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
+    let Some(node) = all.get(at) else { return };
+    if node.kind() == "paragraph" {
+        if ancestors(all, at).any(|parent| parent.kind() == "footnote") {
+            return;
+        }
+        html_comment(source, all, at, out);
+    }
+    bare_tags(source, all, at, out);
 }
 
 fn push(out: &mut Vec<Warning>, rule: &'static str, (start, end): (usize, usize)) {
@@ -690,7 +698,52 @@ fn region_markers(source: &str, all: &[Node<'_>], out: &mut Vec<Warning>) {
     }
 }
 
-/// The first tag-shaped run on each line of a paragraph, where a reader sees it as text.
+/// Monotone source visibility queries while a line is scanned left to right.
+struct VisibleCursor {
+    ranges: Vec<(usize, usize)>,
+    index: usize,
+}
+
+impl VisibleCursor {
+    fn new(mut ranges: Vec<(usize, usize)>) -> Self {
+        if ranges.windows(2).any(|pair| {
+            pair.first()
+                .zip(pair.get(1))
+                .is_some_and(|(left, right)| left.0 > right.0)
+        }) {
+            ranges.sort_unstable_by_key(|&(start, _)| start);
+        }
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for (start, end) in ranges {
+            if let Some(last) = merged.last_mut()
+                && start <= last.1
+            {
+                last.1 = last.1.max(end);
+            } else {
+                merged.push((start, end));
+            }
+        }
+        Self {
+            ranges: merged,
+            index: 0,
+        }
+    }
+
+    fn holds(&mut self, at: usize) -> bool {
+        while self
+            .ranges
+            .get(self.index)
+            .is_some_and(|&(_, end)| end <= at)
+        {
+            self.index += 1;
+        }
+        self.ranges
+            .get(self.index)
+            .is_some_and(|&(start, end)| start <= at && at < end)
+    }
+}
+
+/// The first visible tag-shaped run on each paragraph or heading line.
 fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
     if replaced!("bare-html-tag") {
         return;
@@ -702,50 +755,62 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
     if !raw.contains('<') {
         return;
     }
-    let visible = visible_ranges(all, at);
-    let holds = |at: usize| visible.iter().any(|&(a, b)| a <= at && at < b);
+    let mut visible = VisibleCursor::new(visible_ranges(all, at));
     let mut line_start = start;
     for line in raw.split('\n') {
-        if let Some((from, to)) = first_tag(line)
-            && line[..from]
+        let mut cursor = 0;
+        while let Some(found) = line[cursor..].find('<') {
+            let from = cursor + found;
+            let escaped = line[..from]
                 .bytes()
                 .rev()
                 .take_while(|b| *b == b'\\')
                 .count()
                 % 2
-                == 0
-            && holds(line_start + from)
-            && holds(line_start + to - 1)
-        {
-            push(out, "bare-html-tag", (line_start + from, line_start + to));
+                == 1;
+            if let Some(comment) = line[from..].strip_prefix("<!--")
+                && !escaped
+                && visible.holds(line_start + from)
+            {
+                let Some(close) = comment.find("-->") else {
+                    break;
+                };
+                cursor = from + 4 + close + 3;
+                continue;
+            }
+            cursor = from + 1;
+            let Some(length) = tag_at(&line[from..]) else {
+                continue;
+            };
+            let to = from + length;
+            if !escaped && visible.holds(line_start + from) && visible.holds(line_start + to - 1) {
+                push(out, "bare-html-tag", (line_start + from, line_start + to));
+                break;
+            }
         }
         line_start += line.len() + 1;
     }
 }
 
-/// The first match of `</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?/?>` in `line`.
-fn first_tag(line: &str) -> Option<(usize, usize)> {
-    let word = |c: char| c.is_alphanumeric() || c == '_' || c == ':' || c == '-';
-    line.match_indices('<').find_map(|(at, _)| {
-        let rest = &line[at + 1..];
-        let rest = rest.strip_prefix('/').unwrap_or(rest);
-        if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
-            return None;
-        }
-        let name = rest.find(|c: char| !word(c)).unwrap_or(rest.len());
-        let tail = &rest[name..];
-        let base = line.len() - tail.len();
-        if tail.starts_with(char::is_whitespace)
-            && let Some(close) = tail.find(['<', '>'])
-            && tail[close..].starts_with('>')
-        {
-            return Some((at, base + close + 1));
-        }
-        let close = usize::from(tail.starts_with('/'));
-        tail[close..]
-            .starts_with('>')
-            .then_some((at, base + close + 1))
-    })
+/// The length of `</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?/?>` at this `<`.
+fn tag_at(line: &str) -> Option<usize> {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '-';
+    let rest = line.strip_prefix('<')?;
+    let rest = rest.strip_prefix('/').unwrap_or(rest);
+    if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    let name = rest.find(|c: char| !word(c)).unwrap_or(rest.len());
+    let tail = &rest[name..];
+    let base = line.len() - tail.len();
+    if tail.starts_with(char::is_whitespace)
+        && let Some(close) = tail.find(['<', '>'])
+        && tail[close..].starts_with('>')
+    {
+        return Some(base + close + 1);
+    }
+    let close = usize::from(tail.starts_with('/'));
+    tail[close..].starts_with('>').then_some(base + close + 1)
 }
 
 fn column(source: &str, at: usize) -> usize {
