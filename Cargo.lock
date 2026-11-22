@@ -34,6 +34,7 @@ name = "carve-lang"
 version = "0.1.14"
 dependencies = [
  "bumpalo",
+ "caseless",
  "comrak",
  "flate2",
  "html5ever",

@@ -517,6 +517,53 @@ struct IdRec<'a> {
     id: Cow<'a, str>,
     owner: &'a str,
     start: usize,
+    heading_text: Option<String>,
+    rendered: bool,
+    xref: bool,
+}
+
+fn push_id<'a>(ids: &mut Vec<IdRec<'a>>, seen: &mut HashMap<String, usize>, record: IdRec<'a>) {
+    if let Some(&at) = seen.get(record.id.as_ref()) {
+        ids[at].rendered |= record.rendered;
+        ids[at].xref |= record.xref;
+        if ids[at].heading_text.is_none() {
+            ids[at].heading_text = record.heading_text;
+        }
+    } else {
+        seen.insert(record.id.to_string(), ids.len());
+        ids.push(record);
+    }
+}
+
+pub(super) fn plain_children(node: crate::view::V<'_>) -> String {
+    let mut out = String::new();
+    let mut pending = Vec::new();
+    if let Some(children) = node.at("children").as_array() {
+        pending.extend(children.iter().rev());
+    }
+    while let Some(child) = pending.pop() {
+        if matches!(child.ty().as_str(), Some("soft_break" | "hard_break")) {
+            out.push(' ');
+        } else if let Some(value) = child.at("value").as_str() {
+            out.push_str(value);
+        } else if let Some(children) = child.at("children").as_array() {
+            pending.extend(children.iter().rev());
+        }
+    }
+    out
+}
+
+pub(super) fn numbered_caption(node: crate::view::V<'_>) -> bool {
+    node.at("caption")
+        .at("children")
+        .as_array()
+        .is_some_and(|children| {
+            children.iter().any(|paragraph| {
+                paragraph.at("children").as_array().is_some_and(|inlines| {
+                    inlines.iter().any(|inline| inline.ty() == "caption_number")
+                })
+            })
+        })
 }
 
 /// What the records read from the tree beyond the ranges: the id records, the links and images with a key,
@@ -559,10 +606,12 @@ impl<'a> TreeFacts<'a> {
         values: &[crate::view::V<'v>],
         document: Option<crate::view::V<'v>>,
         generated: Option<&HashMap<usize, String>>,
+        raw_html: bool,
     ) -> Self {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashMap::new();
         let mut ids = Vec::new();
         let mut keyed = std::collections::HashSet::new();
+        let mut footnote_refs = HashMap::<u64, usize>::new();
         for (at, (range, value)) in ranges.iter().zip(values).enumerate() {
             if matches!(range.kind, "link" | "image") && value.get("key").is_some() {
                 keyed.insert(at as u32);
@@ -580,12 +629,82 @@ impl<'a> TreeFacts<'a> {
                     .map(Cow::Borrowed),
             });
             for id in [authored, heading.flatten()].into_iter().flatten() {
-                if seen.insert(id.clone()) {
-                    ids.push(IdRec {
+                push_id(
+                    &mut ids,
+                    &mut seen,
+                    IdRec {
                         id,
                         owner: range.kind,
                         start: range.start,
-                    });
+                        heading_text: (range.kind == "heading").then(|| plain_children(*value)),
+                        rendered: range.kind != "frontmatter"
+                            && !(raw_html && range.kind == "raw_block"),
+                        xref: range.kind == "heading" || numbered_caption(*value),
+                    },
+                );
+            }
+            if range.kind == "footnote_ref"
+                && let Some(number) = value.at("number").as_u64()
+            {
+                let count = footnote_refs.entry(number).or_default();
+                *count += 1;
+                if *count == 1 {
+                    push_id(
+                        &mut ids,
+                        &mut seen,
+                        IdRec {
+                            id: Cow::Owned(format!("fn{number}")),
+                            owner: "footnote",
+                            start: range.start,
+                            heading_text: None,
+                            rendered: true,
+                            xref: false,
+                        },
+                    );
+                }
+                let suffix = if *count == 1 {
+                    String::new()
+                } else {
+                    format!("-{count}")
+                };
+                push_id(
+                    &mut ids,
+                    &mut seen,
+                    IdRec {
+                        id: Cow::Owned(format!("fnref{number}{suffix}")),
+                        owner: "footnote_ref",
+                        start: range.start,
+                        heading_text: None,
+                        rendered: true,
+                        xref: false,
+                    },
+                );
+            }
+            if raw_html
+                && matches!(range.kind, "raw_block" | "raw_inline")
+                && value.at("format").as_str() == Some("html")
+                && let Some(raw) = value.at("value").as_str()
+            {
+                let dom = crate::import::parse::fragment(raw);
+                for node in dom.nodes {
+                    if let crate::import::dom::Kind::Element { name, attrs, .. } = node.kind {
+                        for (key, value) in attrs {
+                            if key == "id" || (name == "a" && key == "name") {
+                                push_id(
+                                    &mut ids,
+                                    &mut seen,
+                                    IdRec {
+                                        id: Cow::Owned(value),
+                                        owner: range.kind,
+                                        start: range.start,
+                                        heading_text: None,
+                                        rendered: true,
+                                        xref: false,
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1058,6 +1177,12 @@ impl<'a> Records<'a> {
         match name {
             F::Id => Val::Str(record.id.clone()),
             F::Owner => Val::Str(Cow::Borrowed(record.owner)),
+            F::HeadingText => record
+                .heading_text
+                .as_ref()
+                .map_or(Val::Null, |text| Val::Str(Cow::Owned(text.clone()))),
+            F::Rendered => Val::Bool(record.rendered),
+            F::Xref => Val::Bool(record.xref),
             F::Index => Val::num(at as usize),
             F::Start => Val::num(record.start),
             F::Type => Val::Str(Cow::Borrowed("id")),
@@ -1154,6 +1279,19 @@ impl<'a> Records<'a> {
             range.end,
             self.quotes_at(range.holder),
         )))
+    }
+
+    fn key_text(&self, at: u32) -> Val<'a> {
+        let key = self.node_key(&self.tree_node(at), "key");
+        let Val::Str(key) = key else { return Val::Null };
+        if key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+        {
+            return Val::Str(key);
+        }
+        let arena = crate::Arena::new();
+        Val::Str(Cow::Owned(crate::resolve::heading_key_plain(&key, &arena)))
     }
 
     pub fn column_at(&self, at: usize, quotes: usize) -> usize {
@@ -1370,6 +1508,7 @@ impl<'a> Records<'a> {
                 F::Text => Val::Str(Cow::Borrowed(text_at(self.source, range.start, range.end))),
                 F::Node => self.tree_node(at),
                 F::RawRef => self.raw_ref(at),
+                F::KeyText => self.key_text(at),
                 F::Parent => Val::Str(Cow::Borrowed(self.holder_kind(range.holder))),
                 F::Leaf => self
                     .inline_leaf(range)
@@ -1410,6 +1549,7 @@ impl<'a> Records<'a> {
                 F::Leaf => Val::Str(Cow::Borrowed(inline.leaf)),
                 F::Parent => Val::Str(Cow::Borrowed(inline.parent)),
                 F::RawRef if inline.kind != "text_run" => self.raw_ref(inline.range),
+                F::KeyText if inline.kind != "text_run" => self.key_text(inline.range),
                 _ => Val::Null,
             },
         }
