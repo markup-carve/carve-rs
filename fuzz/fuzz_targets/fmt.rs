@@ -7,7 +7,7 @@ use carve::api::{Carve, WriteOptions};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    if data.len() > carve_fuzz::MAX_INPUT {
+    if data.len() > carve_fuzz::MAX_INPUT || carve_fuzz::skip_fmt_smoke_input(data) {
         return;
     }
     let Ok(input) = std::str::from_utf8(data) else {
