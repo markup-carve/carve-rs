@@ -59,7 +59,6 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         "lint",
         "fix",
         "flatten",
-        "region",
     ];
     let command = arguments
         .first()
@@ -89,9 +88,6 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             "-w" if ["fmt", "lint", "fix"].contains(&command) => {
                 parsed.values.insert("write".into(), json!(true));
             }
-            "--code" if command == "region" => {
-                parsed.values.insert("code".into(), json!(true));
-            }
             "--directory" if command == "import" => {
                 at += 1;
                 let path = arguments.get(at).ok_or("missing value for --directory")?;
@@ -107,7 +103,7 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         }
         at += 1;
     }
-    if parsed.files.is_empty() && command != "region" {
+    if parsed.files.is_empty() {
         parsed.files.push("-".into());
     }
     if !parsed.help && !parsed.version {
@@ -273,11 +269,6 @@ fn validate_args(parsed: &Args) -> Result<(), String> {
                 return Err(format!("--{name} is not supported for directory import"));
             }
         }
-    }
-    if parsed.command == "region"
-        && (parsed.files.is_empty() || parsed.files.len() > 2 || parsed.files[0] == "-")
-    {
-        return Err("region expects NAME [file]".into());
     }
     if let (Some(a), Some(b)) = (
         str_value(parsed, "report-includes"),
@@ -1274,9 +1265,6 @@ pub fn run(arguments: &[String]) -> i32 {
         println!("Usage: carve {} [FLAG...] [FILE...]", args.command);
         return 0;
     }
-    if args.command == "region" {
-        return region(&args);
-    }
     if let Some(source) = str_value(&args, "directory") {
         return match crate::migrate_directory::run(
             source,
@@ -1346,22 +1334,37 @@ pub fn run(arguments: &[String]) -> i32 {
     status
 }
 
-fn region(args: &Args) -> i32 {
-    let Some(name) = args.files.first() else {
-        return usage("region expects NAME [file]");
-    };
-    if name == "-" {
-        return usage("region expects NAME [file]");
+pub fn region_command(args: &[String]) -> i32 {
+    let mut code = false;
+    let mut operands = Vec::new();
+    for arg in args {
+        match arg.as_str() {
+            "--code" => code = true,
+            "--help" | "-h" => {
+                println!(
+                    "Usage: carve region [--code] NAME [file]\nPrint the region's 1-based inclusive content lines as JSON."
+                );
+                return 0;
+            }
+            flag if flag.starts_with('-') && flag != "-" => {
+                eprintln!("carve region: unknown option: {flag}");
+                return 2;
+            }
+            _ => operands.push(arg.as_str()),
+        }
     }
-    let file = args.files.get(1).map_or("-", String::as_str);
+    if operands.is_empty() || operands.len() > 2 {
+        eprintln!("carve region: expected NAME [file]");
+        return 2;
+    }
+    let name = operands[0];
+    let file = operands.get(1).copied().unwrap_or("-");
     let bytes = match read(file) {
         Ok(bytes) => bytes,
         Err(code) => return code,
     };
     let source = String::from_utf8_lossy(&bytes);
-    if let Ok((start, end)) =
-        carve::include::region_lines(&source, name, bool_value(args, "code", false))
-    {
+    if let Ok((start, end)) = carve::include::region_lines(&source, name, code) {
         output(&format!("{}\n", json!({"start":start,"end":end}))).map_or_else(|code| code, |()| 0)
     } else {
         eprintln!("carve region: include-region-invalid");
