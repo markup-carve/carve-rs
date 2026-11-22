@@ -189,7 +189,6 @@ pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
             let label = raw.split(']').next().unwrap_or("");
             label.bytes().any(|byte| matches!(byte, b'r' | b'R'))
         }
-        "heading" | "frontmatter" | "figure_group" | "mention" | "comment" => true,
         "document" | "paragraph" | "list" | "list_item" | "table" | "table_head" | "table_body"
         | "table_foot" | "table_row" | "table_cell" | "table_column" | "cell_paragraph"
         | "soft_break" | "hard_break" | "line_break" => false,

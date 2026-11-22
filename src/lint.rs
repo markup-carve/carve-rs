@@ -1531,16 +1531,19 @@ mod tests {
             let source = format!("|= A |= B |\n{}", "| a | b |\n".repeat(rows));
             let opts = crate::Options::default();
             crate::with_lint_tree(&source, &opts, &opts, true, |tree, arena| {
-                let walk = walk::Walk::new(tree.expect("parsed table"), arena, &source, true);
-                assert!(
-                    walk.items.is_empty(),
-                    "{rows} rows prepared hand-node items: {:?}",
-                    walk.items
-                        .iter()
-                        .map(|item| item.node.ty().as_str().unwrap_or("").to_string())
-                        .collect::<Vec<_>>()
-                );
-                assert!(walk.legacy.is_empty(), "{rows} rows prepared legacy nodes");
+                let checked = tree.map(|tree| {
+                    let walk = walk::Walk::new(tree, arena, &source, true);
+                    assert!(
+                        walk.items.is_empty(),
+                        "{rows} rows prepared hand-node items: {:?}",
+                        walk.items
+                            .iter()
+                            .map(|item| item.node.ty().as_str().unwrap_or("").to_string())
+                            .collect::<Vec<_>>()
+                    );
+                    assert!(walk.legacy.is_empty(), "{rows} rows prepared legacy nodes");
+                });
+                assert!(checked.is_some(), "parsed table");
             });
         }
     }
