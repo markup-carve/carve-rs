@@ -717,7 +717,17 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
         let mut cursor = 0;
         while let Some(found) = line[cursor..].find('<') {
             let from = cursor + found;
-            if let Some(comment) = line[from..].strip_prefix("<!--") {
+            let escaped = line[..from]
+                .bytes()
+                .rev()
+                .take_while(|b| *b == b'\\')
+                .count()
+                % 2
+                == 1;
+            if let Some(comment) = line[from..].strip_prefix("<!--")
+                && !escaped
+                && holds(line_start + from)
+            {
                 let Some(close) = comment.find("-->") else {
                     break;
                 };
@@ -729,16 +739,7 @@ fn bare_tags(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) 
                 continue;
             };
             let to = from + length;
-            if line[..from]
-                .bytes()
-                .rev()
-                .take_while(|b| *b == b'\\')
-                .count()
-                % 2
-                == 0
-                && holds(line_start + from)
-                && holds(line_start + to - 1)
-            {
+            if !escaped && holds(line_start + from) && holds(line_start + to - 1) {
                 push(out, "bare-html-tag", (line_start + from, line_start + to));
                 break;
             }

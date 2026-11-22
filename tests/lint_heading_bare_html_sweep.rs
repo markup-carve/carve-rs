@@ -9,7 +9,7 @@ fn positions(input: &str) -> Vec<(u32, u32)> {
 }
 
 #[test]
-fn heading_tag_hand_and_data_agree_across_3456_variants() {
+fn heading_tag_hand_and_data_agree_across_4320_variants() {
     let mut checked = 0;
     for level in 1..=6 {
         for quote in ["", "> ", "> > ", "- ", "> - ", "::: note\n"] {
@@ -22,6 +22,8 @@ fn heading_tag_hand_and_data_agree_across_3456_variants() {
                 "<bad ",
                 "\\<x> ",
                 "<!-- <x> --> ",
+                "\\<!-- ",
+                "`<!--` ",
             ] {
                 for tag in [
                     "<x>",
@@ -53,5 +55,5 @@ fn heading_tag_hand_and_data_agree_across_3456_variants() {
             }
         }
     }
-    assert_eq!(checked, 3456);
+    assert_eq!(checked, 4320);
 }
