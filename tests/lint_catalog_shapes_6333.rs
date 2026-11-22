@@ -38,6 +38,20 @@ fn bare_html_tag_needs_the_catalog_tag_shape() {
 }
 
 #[test]
+fn bare_html_tag_in_heading_content() {
+    for (input, expected) in [
+        ("# a <b> c\n", vec![(4, 7)]),
+        ("# <x>\n", vec![(2, 5)]),
+        ("## </x>\n", vec![(3, 7)]),
+        ("### <x/>\n", vec![(4, 8)]),
+        ("# <x a=\"1\">\n", vec![(2, 11)]),
+        ("# \\<x>\n", vec![]),
+    ] {
+        assert_eq!(ranges(input, "bare-html-tag"), expected, "{input:?}");
+    }
+}
+
+#[test]
 fn caption_looking_paragraph_skips_term_text() {
     for input in [
         " :: term\n: | A | B |\n  | x | y |\n",

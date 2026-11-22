@@ -108,6 +108,7 @@ fn visit(source: &str, all: &[Node<'_>], at: usize, out: &mut Vec<Warning>) {
             html_comment(source, all, at, out);
             bare_tags(source, all, at, out);
         }
+        "heading" => bare_tags(source, all, at, out),
         "list_item" => marker_between_lists(source, all, at, out),
         _ => {}
     }
