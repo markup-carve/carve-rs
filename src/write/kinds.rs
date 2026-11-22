@@ -51,10 +51,8 @@ impl<'t> KindBlocks<'t> {
             let mut runs = Vec::new();
             let (mut edge, mut joined) = (Edge::Line, false);
             collect(children(node), &mut runs, &mut edge, &mut joined);
-            if joined {
-                if let Some(last) = runs.last_mut() {
-                    last.after = Edge::Line;
-                }
+            if joined && let Some(last) = runs.last_mut() {
+                last.after = Edge::Line;
             }
             for (r, run) in runs.iter().enumerate() {
                 for &(n, start) in &run.nodes {
@@ -82,12 +80,12 @@ impl<'t> KindBlocks<'t> {
         let at = start + at;
         let b = run.text.as_bytes();
         let ch = *b.get(at)?;
-        if ch == b'{' {
-            if let Some(mark) = run.text.get(at + 1..).and_then(|rest| rest.chars().next()) {
-                return Some(format!("{{{mark}"));
-            }
+        if ch == b'{'
+            && let Some(mark) = run.text.get(at + 1..).and_then(|rest| rest.chars().next())
+        {
+            return Some(format!("{{{mark}"));
         }
-        if ch == b'-' && at > 0 && b[at - 1] == b'-' {
+        if ch == b'-' && before(b, at, 1) == Some(b'-') {
             return Some("--".into());
         }
         Some(char::from(ch).to_string())
@@ -110,7 +108,7 @@ impl<'t> KindBlocks<'t> {
 
 /// Adds the text runs of `nodes`; `joined` is true while the last leaf was text.
 fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined: &mut bool) {
-    for node in nodes.iter() {
+    for node in nodes {
         if ty(node) == "text" {
             match runs.last_mut().filter(|_| *joined) {
                 Some(run) => {
@@ -127,20 +125,20 @@ fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined:
             *joined = true;
             continue;
         }
-        let at = if is_break(Some(node)) { Edge::Line } else { Edge::Markup };
-        if *joined {
-            if let Some(run) = runs.last_mut() {
-                run.after = at;
-            }
+        let at = if is_break(Some(node)) {
+            Edge::Line
+        } else {
+            Edge::Markup
+        };
+        if *joined && let Some(run) = runs.last_mut() {
+            run.after = at;
         }
         *joined = false;
         *edge = at;
         if at == Edge::Markup {
             collect(children(node), runs, edge, joined);
-            if *joined {
-                if let Some(run) = runs.last_mut() {
-                    run.after = Edge::Markup;
-                }
+            if *joined && let Some(run) = runs.last_mut() {
+                run.after = Edge::Markup;
             }
             *joined = false;
             *edge = Edge::Markup;
@@ -164,6 +162,11 @@ fn line_shape(value: &str) -> String {
     value.chars().next().map_or(String::new(), String::from)
 }
 
+/// The byte `k` places before `at`.
+fn before(b: &[u8], at: usize, k: usize) -> Option<u8> {
+    at.checked_sub(k).and_then(|i| b.get(i)).copied()
+}
+
 fn alphanumeric_prefix(value: &str) -> usize {
     value.bytes().take_while(u8::is_ascii_alphanumeric).count()
 }
@@ -182,7 +185,11 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
     }
     if key == "--" {
         return (1..b.len())
-            .filter(|&at| b[at] == b'-' && b[at - 1] == b'-' && (at < 2 || b[at - 2] != b'-'))
+            .filter(|&at| {
+                b.get(at) == Some(&b'-')
+                    && before(b, at, 1) == Some(b'-')
+                    && before(b, at, 2) != Some(b'-')
+            })
             .collect();
     }
     let Some(&ch) = key.as_bytes().first() else {
@@ -190,23 +197,24 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
     };
     let mark = key.get(1..).filter(|m| !m.is_empty());
     let mut offsets = Vec::new();
-    for at in 0..b.len() {
-        if b[at] != ch {
+    for (at, &c) in b.iter().enumerate() {
+        if c != ch
+            || mark.is_some_and(|mark| {
+                !value
+                    .get(at + 1..)
+                    .is_some_and(|rest| rest.starts_with(mark))
+            })
+        {
             continue;
         }
-        if let Some(mark) = mark {
-            if !value.get(at + 1..).is_some_and(|rest| rest.starts_with(mark)) {
-                continue;
-            }
+        let opens = if ch == b'/' || ch == b'*' {
+            can_open(run, at)
+        } else {
+            before(b, at, 1) != Some(ch)
+        };
+        if opens {
+            offsets.push(at);
         }
-        if ch == b'/' || ch == b'*' {
-            if !can_open(run, at) {
-                continue;
-            }
-        } else if at > 0 && b[at - 1] == ch {
-            continue;
-        }
-        offsets.push(at);
     }
     offsets
 }
@@ -215,7 +223,10 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
 /// characters written around it.
 fn can_open(run: &Run<'_>, at: usize) -> bool {
     let value = run.text.as_str();
-    let ch = char::from(value.as_bytes()[at]);
+    let Some(&byte) = value.as_bytes().get(at) else {
+        return false;
+    };
+    let ch = char::from(byte);
     let side = |edge: Edge| (edge == Edge::Markup).then_some('!');
     let before = value
         .get(..at)
