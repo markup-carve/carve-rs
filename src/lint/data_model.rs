@@ -612,6 +612,17 @@ impl<'a> TreeFacts<'a> {
         let mut ids = Vec::new();
         let mut keyed = std::collections::HashSet::new();
         let mut footnote_refs = HashMap::<u64, usize>::new();
+        let mut taken = crate::resolve::slug::Taken::default();
+        for value in values {
+            for id in [value.at("attrs").at("id"), value.at("generatedId")] {
+                if let Some(id) = id.as_str()
+                    && (id.starts_with("fn") || id.starts_with("adm-"))
+                {
+                    taken.reserve(id);
+                }
+            }
+        }
+        let collisions = !taken.is_empty();
         for (at, (range, value)) in ranges.iter().zip(values).enumerate() {
             if matches!(range.kind, "link" | "image") && value.get("key").is_some() {
                 keyed.insert(at as u32);
@@ -649,11 +660,16 @@ impl<'a> TreeFacts<'a> {
                 let count = footnote_refs.entry(number).or_default();
                 *count += 1;
                 if *count == 1 {
+                    let base = format!("fn{number}");
                     push_id(
                         &mut ids,
                         &mut seen,
                         IdRec {
-                            id: Cow::Owned(format!("fn{number}")),
+                            id: Cow::Owned(if collisions {
+                                taken.unique(&base)
+                            } else {
+                                base
+                            }),
                             owner: "footnote",
                             start: range.start,
                             heading_text: None,
@@ -667,11 +683,21 @@ impl<'a> TreeFacts<'a> {
                 } else {
                     format!("-{count}")
                 };
+                let base = format!("fnref{number}{suffix}");
                 push_id(
                     &mut ids,
                     &mut seen,
                     IdRec {
-                        id: Cow::Owned(format!("fnref{number}{suffix}")),
+                        id: Cow::Owned(value.at("attrs").at("id").as_str().map_or_else(
+                            || {
+                                if collisions {
+                                    taken.unique(&base)
+                                } else {
+                                    base
+                                }
+                            },
+                            str::to_owned,
+                        )),
                         owner: "footnote_ref",
                         start: range.start,
                         heading_text: None,
