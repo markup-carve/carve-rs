@@ -33,7 +33,7 @@ fn numbered_caption_ids_are_crossref_candidates() {
     let findings = messages(source, "broken-crossref", &LintOptions::default());
     assert_eq!(findings.len(), 1);
     assert!(
-        findings[0].contains("the id \"tab\" differs only in case"),
+        findings[0].contains("the id tab differs only in case"),
         "{findings:?}"
     );
 }
@@ -61,7 +61,7 @@ fn reference_near_misses_use_heading_text_and_unicode_fold() {
     let findings = messages(source, "unresolved-reference-link", &LintOptions::default());
     assert_eq!(findings.len(), 2, "{findings:?}");
     assert!(
-        findings[0].contains("the label \"Heading\" differs only in case"),
+        findings[0].contains("the label Heading differs only in case"),
         "{findings:?}"
     );
     assert!(
@@ -72,14 +72,14 @@ fn reference_near_misses_use_heading_text_and_unicode_fold() {
     let findings = messages(unicode, "broken-crossref", &LintOptions::default());
     assert_eq!(findings.len(), 1);
     assert!(
-        findings[0].contains("the id \"Straße\" differs only in case"),
+        findings[0].contains("the id Straße differs only in case"),
         "{findings:?}"
     );
     let spaced = "# A  B\n\n[x][a b]\n";
     let findings = messages(spaced, "unresolved-reference-link", &LintOptions::default());
     assert_eq!(findings.len(), 1);
     assert!(
-        findings[0].contains("the label \"A  B\" differs only in case"),
+        findings[0].contains("the label A  B differs only in case"),
         "{findings:?}"
     );
     let normalization = "{id=\"Café\"}\n# H\n\n[x](#Café)\n";

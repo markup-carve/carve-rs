@@ -252,7 +252,7 @@ fn fold_space(text: &str) -> String {
     out
 }
 
-fn quoted_list(items: &[&str]) -> String {
+fn plain_list(items: &[&str]) -> String {
     let mut out = String::new();
     for (at, item) in items.iter().enumerate() {
         if at > 0 {
@@ -262,9 +262,7 @@ fn quoted_list(items: &[&str]) -> String {
                 ", "
             });
         }
-        out.push('"');
         out.push_str(item);
-        out.push('"');
     }
     out
 }
@@ -416,7 +414,7 @@ fn crossref(item: &Item<'_>, targets: &TargetIndex<'_, '_>, sink: &mut Sink<'_>)
         let phrase = format!(
             "the {} {} {} only in case",
             if ids.len() == 1 { "id" } else { "ids" },
-            quoted_list(&ids),
+            plain_list(&ids),
             if ids.len() == 1 { "differs" } else { "differ" },
         );
         sink.emit(
@@ -775,7 +773,8 @@ fn opener_behind_attributes(source: &str, mut from: usize) -> usize {
             && rest.starts_with('{')
             && rest.ends_with('}')
             && !rest[1..rest.len() - 1].contains(['{', '}']);
-        if !attribute {
+        let comment = crate::block::shapes::comment_only(rest);
+        if !attribute && !comment {
             return from;
         }
         // The opener may stand at another indent than its attribute line: find its first character on its own line.
@@ -1011,7 +1010,7 @@ fn unresolved_reference(item: &Item<'_>, sink: &mut Sink<'_>) {
             } else {
                 "labels"
             },
-            quoted_list(&labels),
+            plain_list(&labels),
             if similar.len() == 1 {
                 "differs"
             } else {
@@ -2308,19 +2307,27 @@ fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
         ("^", "djot-superscript-caret"),
     ] {
         let close = if mark == "{=" { "=}" } else { mark };
-        if let Some(start) = value.find(mark)
-            && let Some(tail) = value.get(start + mark.len()..)
-            && let Some(end) = tail.find(close)
-            && end > 0
-        {
-            sink.emit_range(
-                code,
-                from + start,
-                from + start + mark.len() + end + close.len(),
-                item.path(),
-                &[],
-                0,
-            );
+        for (start, _) in value.match_indices(mark) {
+            if escaped(bytes, start) {
+                continue;
+            }
+            let Some(tail) = value.get(start + mark.len()..) else {
+                continue;
+            };
+            if let Some((end, _)) = tail
+                .match_indices(close)
+                .find(|(end, _)| *end > 0 && !escaped(bytes, start + mark.len() + end))
+            {
+                sink.emit_range(
+                    code,
+                    from + start,
+                    from + start + mark.len() + end + close.len(),
+                    item.path(),
+                    &[],
+                    0,
+                );
+                break;
+            }
         }
     }
     for (open, _) in value.match_indices('_') {
