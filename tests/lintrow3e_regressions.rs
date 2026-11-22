@@ -43,3 +43,28 @@ fn tab_after_quote_mark_is_text() {
         vec![(0, 3)]
     );
 }
+
+#[test]
+fn changed_rule_families_hold_across_5000_values() {
+    for n in 0..1000 {
+        let word = format!("v{n}");
+        let attrs = format!("a {{.a{n}}}{{.b{n}}}\n");
+        let start = 2;
+        let end = attrs.trim_end().len() as u32;
+        assert_eq!(
+            ranges(&attrs, "unattached-inline-attribute"),
+            vec![(start, end)]
+        );
+        let alert = format!(">[!x{n}]: > [!NOTE]\n");
+        assert!(ranges(&alert, "github-alert-marker").is_empty());
+        let quote = format!(">\t{word}\n");
+        assert_eq!(
+            ranges(&quote, "blockquote-marker-without-space"),
+            vec![(0, quote.trim_end().len() as u32)]
+        );
+        let span = format!("*{word}\n{{_{word}_}}*\n");
+        assert!(ranges(&span, "block-marker-as-text").is_empty());
+        let malformed = format!("{{#id{n} {{_{word}_}}\n");
+        assert_eq!(ranges(&malformed, "block-marker-as-text").len(), 1);
+    }
+}
