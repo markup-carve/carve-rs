@@ -45,7 +45,9 @@ fn hyphen_runs_split_over_text_nodes_escape_the_second_hyphen() {
 
 #[test]
 fn split_text_is_written_like_one_text_node() {
-    for value in ["a --:", "---", "----", "x --- y", "$---", "a'-->:", "1. a"] {
+    for value in [
+        "a --:", "---", "----", "x --- y", "$---", "a'-->:", "{--}", "1. a",
+    ] {
         let whole = paragraph(&[value]);
         let cuts: Vec<usize> = (1..value.len()).collect();
         for &i in &cuts {
