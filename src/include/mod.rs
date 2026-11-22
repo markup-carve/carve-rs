@@ -17,8 +17,9 @@ pub(crate) use lines::is_carve_region_marker;
 /// has an end one less than its start.
 pub fn region_lines(source: &str, name: &str, code: bool) -> Result<(usize, usize), &'static str> {
     let source = source.strip_prefix('\u{FEFF}').unwrap_or(source);
-    let mut physical = Vec::new();
+    let mut markers = Vec::new();
     let mut start = 0;
+    let mut line_number = 0;
     for (at, byte) in source.bytes().enumerate() {
         if byte == b'\n' {
             let end = if source.as_bytes().get(at.wrapping_sub(1)) == Some(&b'\r') {
@@ -26,14 +27,21 @@ pub fn region_lines(source: &str, name: &str, code: bool) -> Result<(usize, usiz
             } else {
                 at
             };
-            physical.push(source.get(start..end).unwrap_or(""));
+            let line = source.get(start..end).unwrap_or("");
+            if lines::possible_marker(line, code) {
+                markers.push((line_number, line));
+            }
             start = at + 1;
+            line_number += 1;
         }
     }
     if start < source.len() {
-        physical.push(source.get(start..).unwrap_or(""));
+        let line = source.get(start..).unwrap_or("");
+        if lines::possible_marker(line, code) {
+            markers.push((line_number, line));
+        }
     }
-    let range = lines::region_scan(physical.into_iter().enumerate(), name, code, |_| false)?;
+    let range = lines::region_scan(markers.into_iter(), name, code, |_| false)?;
     Ok((range.from + 1, range.to))
 }
 

@@ -145,10 +145,7 @@ fn marker_tail<'l>(line: &'l str, at: usize, closer: &str, kind: Kind) -> (Kind,
 
 /// C2-N-038 to C2-N-040: the region marker on the line.
 pub(super) fn read_marker(line: &str, code: bool) -> (Kind, &str) {
-    let first = line.as_bytes().first().copied();
-    if !matches!(first, Some(b'%' | b' ' | b'\t'))
-        && (!code || !matches!(first, Some(b'/' | b'-' | b'<' | b'#')))
-    {
+    if !possible_marker(line, code) {
         return (Kind::None, "");
     }
     let Some((body, closer)) = marker_body(line, skip_blanks(line, 0), code) else {
@@ -171,6 +168,12 @@ pub(super) fn read_marker(line: &str, code: bool) -> (Kind, &str) {
         return (Kind::None, "");
     }
     marker_tail(line, end, closer, kind)
+}
+
+pub(super) fn possible_marker(line: &str, code: bool) -> bool {
+    let first = line.as_bytes().first().copied();
+    matches!(first, Some(b'%' | b' ' | b'\t'))
+        || code && matches!(first, Some(b'/' | b'-' | b'<' | b'#'))
 }
 
 pub(crate) fn is_carve_region_marker(line: &str) -> bool {
