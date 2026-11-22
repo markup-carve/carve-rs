@@ -177,6 +177,16 @@ fn directory_import_helper_returns_authored_destination_spelling() {
     )
     .unwrap();
     assert_eq!(fenced.get("a(b).md").map(String::as_str), Some("a(b).md"));
+    let (_, entity) =
+        carve::try_migrate_markdown_for_directory_with_destinations("[x](a&amp;b.md)\n").unwrap();
+    assert_eq!(entity.get("a&b.md").map(String::as_str), Some("a&amp;b.md"));
+    let (_, multiline) =
+        carve::try_migrate_markdown_for_directory_with_destinations("[x](\n a\\(b\\).md\n)\n")
+            .unwrap();
+    assert_eq!(
+        multiline.get("a(b).md").map(String::as_str),
+        Some("a\\(b\\).md")
+    );
 }
 
 #[test]

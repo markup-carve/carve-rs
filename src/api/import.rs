@@ -198,6 +198,12 @@ fn markdown_destinations(source: &str) -> Vec<(String, String)> {
     let options = super::hub::markdown_options(source, true);
     let document = comrak::parse_document(&arena, source, &options);
     let lines: Vec<&str> = source.split('\n').collect();
+    let mut starts = vec![0];
+    for (at, byte) in source.bytes().enumerate() {
+        if byte == b'\n' {
+            starts.push(at + 1);
+        }
+    }
     let mut result = Vec::new();
     let mut code_lines = vec![false; lines.len() + 1];
     let mut referenced = std::collections::HashSet::new();
@@ -215,11 +221,9 @@ fn markdown_destinations(source: &str) -> Vec<(String, String)> {
             _ => continue,
         };
         referenced.insert(destination.to_owned());
-        if let Some(raw) = node_source(&lines, data.sourcepos) {
-            if let Some((decoded, authored)) = inline_destination(raw) {
-                if decoded == *destination {
-                    result.push((decoded, authored));
-                }
+        if let Some(raw) = node_source(source, &starts, data.sourcepos) {
+            if let Some(authored) = inline_destination(raw, destination) {
+                result.push((destination.to_owned(), authored));
             }
         }
     }
@@ -236,21 +240,33 @@ fn markdown_destinations(source: &str) -> Vec<(String, String)> {
     result
 }
 
-fn node_source<'a>(lines: &'a [&str], pos: comrak::nodes::Sourcepos) -> Option<&'a str> {
-    if pos.start.line != pos.end.line {
-        return None;
-    }
-    lines
+fn node_source<'a>(
+    source: &'a str,
+    starts: &[usize],
+    pos: comrak::nodes::Sourcepos,
+) -> Option<&'a str> {
+    let start = starts
         .get(pos.start.line.checked_sub(1)?)?
-        .get(pos.start.column.checked_sub(1)?..pos.end.column)
+        .checked_add(pos.start.column.checked_sub(1)?)?;
+    let end = starts
+        .get(pos.end.line.checked_sub(1)?)?
+        .checked_add(pos.end.column)?;
+    let bounded = source.get(start..end)?;
+    if bounded.contains("](") && !bounded.ends_with(')') {
+        source.get(start..)
+    } else {
+        Some(bounded)
+    }
 }
 
-fn inline_destination(raw: &str) -> Option<(String, String)> {
+fn inline_destination(raw: &str, destination: &str) -> Option<String> {
     let bytes = raw.as_bytes();
-    for i in (0..bytes.len().saturating_sub(1)).rev() {
+    for i in 0..bytes.len().saturating_sub(1) {
         if bytes.get(i) == Some(&b']') && bytes.get(i + 1) == Some(&b'(') {
-            let (_, decoded, authored) = markdown_destination(raw, i + 2)?;
-            return Some((decoded, authored));
+            let (_, authored, angle) = markdown_destination(raw, i + 2)?;
+            if normalized_destination(&authored, angle).as_deref() == Some(destination) {
+                return Some(authored);
+            }
         }
     }
     None
@@ -265,15 +281,35 @@ fn reference_destination(line: &str) -> Option<(String, String)> {
         .split_once("]: ")
         .or_else(|| trimmed.split_once("]:"))?;
     let raw = after.trim_start();
-    let authored = if let Some(angle) = raw.strip_prefix('<') {
-        angle.split_once('>')?.0
+    let (authored, angle) = if let Some(value) = raw.strip_prefix('<') {
+        (value.split_once('>')?.0, true)
     } else {
-        raw.split(|ch: char| ch.is_whitespace()).next()?
+        (raw.split(char::is_whitespace).next()?, false)
     };
-    Some((unescape_destination(authored), authored.to_owned()))
+    Some((
+        normalized_destination(authored, angle)?,
+        authored.to_owned(),
+    ))
 }
 
-fn markdown_destination(source: &str, after: usize) -> Option<(usize, String, String)> {
+fn normalized_destination(authored: &str, angle: bool) -> Option<String> {
+    let probe = if angle {
+        format!("[x](<{authored}>)")
+    } else {
+        format!("[x]({authored})")
+    };
+    let arena = comrak::Arena::new();
+    let document = comrak::parse_document(&arena, &probe, &comrak::Options::default());
+    document.descendants().find_map(|node| {
+        if let comrak::nodes::NodeValue::Link(link) = &node.data.borrow().value {
+            Some(link.url.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn markdown_destination(source: &str, after: usize) -> Option<(usize, String, bool)> {
     let bytes = source.as_bytes();
     let mut start = after;
     while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
@@ -308,22 +344,7 @@ fn markdown_destination(source: &str, after: usize) -> Option<(usize, String, St
         end += 1;
     }
     let authored = source.get(start..end)?;
-    Some((end, unescape_destination(authored), authored.to_owned()))
-}
-
-fn unescape_destination(authored: &str) -> String {
-    let mut decoded = String::new();
-    let mut chars = authored.chars();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            if let Some(next) = chars.next() {
-                decoded.push(next);
-            }
-        } else {
-            decoded.push(ch);
-        }
-    }
-    decoded
+    Some((end, authored.to_owned(), angle))
 }
 
 fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<String, String>) {
