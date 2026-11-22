@@ -189,6 +189,18 @@ pub fn sigil_name(t: &str, i: usize) -> Option<usize> {
     while j > i && matches!(b.get(j - 1), Some(b'-' | b'.')) {
         j -= 1;
     }
+    // The run is read with every dot, before a trailing dot or hyphen goes.
+    let run = i + b
+        .get(i..)?
+        .iter()
+        .take_while(|&&c| name_char(c) || c == b'.')
+        .count();
+    if t.get(run..)
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(crate::chars::is_word_or_mark)
+    {
+        return None;
+    }
     let name = b.get(i..j)?;
     name.iter().any(u8::is_ascii_alphabetic).then_some(j)
 }

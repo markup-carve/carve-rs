@@ -48,6 +48,12 @@ pub fn is_joining(c: char) -> bool {
         || in_ranges(c, UNICODE_M)
 }
 
+/// A Unicode letter, number or mark, category L, N or M (C2-I-092).
+#[must_use]
+pub fn is_word_or_mark(c: char) -> bool {
+    is_word(c) || !c.is_ascii() && in_ranges(c, UNICODE_M)
+}
+
 /// A control (Cc) or format (Cf) character (C2-I-122).
 #[must_use]
 pub fn is_control_or_format(c: char) -> bool {
