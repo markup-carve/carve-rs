@@ -46,6 +46,9 @@ fn bare_html_tag_in_heading_content() {
         ("### <x/>\n", vec![(4, 8)]),
         ("# <x a=\"1\">\n", vec![(2, 11)]),
         ("# \\<x>\n", vec![]),
+        ("# <!-- <x> -->\n", vec![]),
+        ("# <!-- <x> --> <b>\n", vec![(15, 18)]),
+        ("# \\<x> <b>\n", vec![(7, 10)]),
     ] {
         assert_eq!(ranges(input, "bare-html-tag"), expected, "{input:?}");
     }
