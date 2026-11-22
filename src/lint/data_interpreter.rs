@@ -7,9 +7,11 @@
 )]
 
 use super::data_model::{Records, Subject};
+use caseless::Caseless;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::borrow::Cow;
+use unicode_normalization::UnicodeNormalization;
 
 /// A field name of a record, resolved when the model is compiled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -81,6 +83,10 @@ pub(super) enum F {
     AlignOverlap,
     ValignOverlap,
     Id,
+    HeadingText,
+    Rendered,
+    Xref,
+    KeyText,
     Identity,
     Layout,
     SourceFormat,
@@ -162,6 +168,10 @@ const FIELDS: &[(&str, F)] = &[
     ("width", F::Width),
     ("kind", F::Kind),
     ("id", F::Id),
+    ("heading_text", F::HeadingText),
+    ("rendered", F::Rendered),
+    ("xref", F::Xref),
+    ("key_text", F::KeyText),
     ("identity", F::Identity),
     ("layout", F::Layout),
     ("source_format", F::SourceFormat),
@@ -672,7 +682,9 @@ pub(super) enum Expr {
     },
     Nth(Box<(Self, Self)>),
     Join(Box<(Self, Self)>),
+    QuotedList(Box<Self>),
     Lower(Box<Self>),
+    Fold(Box<Self>),
     PercentDecode(Box<Self>),
     /// The column of an offset after a number of quote marks (C2-B-004).
     Column(Box<(Self, Self)>),
@@ -979,8 +991,10 @@ impl Scope<'_> {
             },
             "nth" => Expr::Nth(pair(0, 1)),
             "join" => Expr::Join(pair(0, 1)),
+            "quoted_list" => Expr::QuotedList(Box::new(self.compile(arg))),
             "column" => Expr::Column(pair(0, 1)),
             "lower" => Expr::Lower(Box::new(self.compile(arg))),
+            "fold" => Expr::Fold(Box::new(self.compile(arg))),
             "attribute_line" => Expr::AttributeLine(Box::new(self.compile(arg))),
             "percent_decode" => Expr::PercentDecode(Box::new(self.compile(arg))),
             "run" if arg.as_str() == Some("extensions") => Expr::RunExtensions,
@@ -1372,6 +1386,8 @@ fn scans(expr: &Expr) -> bool {
         Expr::Within { test: item, .. }
         | Expr::Not(item)
         | Expr::Lower(item)
+        | Expr::Fold(item)
+        | Expr::QuotedList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
         | Expr::Len(item)
@@ -1414,6 +1430,8 @@ fn stateless(expr: &Expr) -> bool {
         Expr::Within { test: item, .. }
         | Expr::Not(item)
         | Expr::Lower(item)
+        | Expr::Fold(item)
+        | Expr::QuotedList(item)
         | Expr::PercentDecode(item)
         | Expr::AttributeLine(item)
         | Expr::Len(item)
@@ -1964,6 +1982,27 @@ impl<'a> Eval<'_, 'a> {
                 Val::Str(Cow::Owned(out))
             }
             Expr::Lower(arg) => Val::Str(Cow::Owned(self.string(arg).to_lowercase())),
+            Expr::Fold(arg) => Val::Str(Cow::Owned(
+                self.string(arg).nfc().default_case_fold().nfc().collect(),
+            )),
+            Expr::QuotedList(arg) => {
+                let list = self.value(arg);
+                let len = self.records.list_len(&list);
+                let mut out = String::new();
+                for at in 0..len {
+                    if at > 0 {
+                        out.push_str(if at + 1 == len {
+                            if len == 2 { " and " } else { ", and " }
+                        } else {
+                            ", "
+                        });
+                    }
+                    out.push('"');
+                    out.push_str(&self.text(&self.records.list_item(&list, at)));
+                    out.push('"');
+                }
+                Val::Str(Cow::Owned(out))
+            }
             Expr::PercentDecode(arg) => {
                 let text = self.string(arg);
                 Val::Str(Cow::Owned(

@@ -26,6 +26,8 @@ mod walk;
 pub struct LintOptions {
     /// Heading id policy used to resolve fragment targets.
     pub heading_ids: crate::options::HeadingIds,
+    /// Whether raw HTML blocks contribute rendered anchors.
+    pub raw_html: bool,
     /// A rule id mapped to `on` or `off`.
     pub rules: HashMap<String, String>,
     /// Platform names, currently `github`.
@@ -102,6 +104,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     let parse = crate::Options {
         includes: opts.includes.clone().filter(|_| includes),
         heading_ids: opts.heading_ids,
+        raw_html: opts.raw_html,
         ..crate::Options::default()
     };
     let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();

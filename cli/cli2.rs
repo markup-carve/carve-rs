@@ -958,6 +958,7 @@ fn lint_file(
     let mut lint_opts = LintOptions {
         includes: opts.includes.clone(),
         heading_ids: opts.heading_ids,
+        raw_html: opts.raw_html,
         ..Default::default()
     };
     if let Some(map) = value(args, "rules").and_then(Value::as_object) {

@@ -514,7 +514,13 @@ pub(super) fn run<'a, 't: 'a>(
         holders,
         nodes,
         model,
-        super::data_model::TreeFacts::read(ranges, values, Some(tree), generated.as_ref()),
+        super::data_model::TreeFacts::read(
+            ranges,
+            values,
+            Some(tree),
+            generated.as_ref(),
+            options.raw_html,
+        ),
         options.extensions.clone(),
     );
     CACHE.with(|cache| {

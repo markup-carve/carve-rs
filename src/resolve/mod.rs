@@ -604,7 +604,7 @@ impl<'a> Index<'a, '_> {
 }
 
 /// C2-I-084: read a reference key as inline content without resolving references.
-fn heading_key_plain(key: &str, arena: &Arena) -> String {
+pub(crate) fn heading_key_plain(key: &str, arena: &Arena) -> String {
     let src = crate::source::Source::new(key);
     let links = HashSet::new();
     let env = crate::inline::InlineEnv {
