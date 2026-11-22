@@ -292,6 +292,7 @@ fn check_links(
     temporary: &Path,
     files: &mut [Value],
     assets: &[String],
+    trees: &HashMap<String, carve::api::Tree>,
 ) -> Result<HashSet<String>, String> {
     let outputs: HashSet<String> = files
         .iter()
@@ -302,8 +303,8 @@ fn check_links(
     let mut aliases = HashMap::new();
     for file in files.iter() {
         let output = file["output"].as_str().ok_or("invalid output name")?;
-        let source = fs::read_to_string(temporary.join(output)).map_err(|e| e.to_string())?;
-        let html = carve::api::render(&source, &carve::api::Options::default())
+        let tree = trees.get(output).ok_or("missing imported tree")?;
+        let html = carve::api::render_tree(tree, &carve::api::Options::default())
             .map_err(|e| e.to_string())?;
         let file_ids = html_ids(html);
         let mut file_aliases = HashMap::new();
@@ -332,11 +333,9 @@ fn check_links(
             .ok_or("invalid output name")?
             .to_owned();
         let path = temporary.join(&output);
-        let original = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let tree = carve::api::parse(original.as_str(), &carve::api::Options::default())
-            .map_err(|e| e.to_string())?;
+        let tree = trees.get(&output).ok_or("missing imported tree")?;
         let mut document: Value =
-            serde_json::from_str(&carve::api::encode_tree(&tree)).map_err(|e| e.to_string())?;
+            serde_json::from_str(&carve::api::encode_tree(tree)).map_err(|e| e.to_string())?;
         let mut links = Vec::new();
         let mut changed = false;
         check_value(
@@ -603,6 +602,7 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
     fs::create_dir(&temporary).map_err(|e| e.to_string())?;
     let result = (|| -> Result<(usize, usize, usize, usize), String> {
         let mut files = Vec::<Value>::new();
+        let mut trees = HashMap::<String, carve::api::Tree>::new();
         let mut assets = Vec::<String>::new();
         let mut skipped = Vec::<String>::new();
         let mut review = Vec::<String>::new();
@@ -661,10 +661,11 @@ pub fn run(source: &str, output: &str, check_loss: bool) -> Result<u8, String> {
                 {
                     review.push(source_name.clone());
                 }
+                trees.insert(destination_name.clone(), migrated.tree);
                 files.push(json!({"source": source_name, "output": destination_name, "diagnostics": diagnostics}));
             }
         }
-        let broken = check_links(&temporary, &mut files, &assets)?;
+        let broken = check_links(&temporary, &mut files, &assets, &trees)?;
         for file in &files {
             let source = file["source"].as_str().ok_or("invalid source name")?;
             if broken.contains(source) && !review.iter().any(|item| item == source) {
