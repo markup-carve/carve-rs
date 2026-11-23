@@ -156,7 +156,6 @@ enum Leaf {
 #[derive(Debug, Clone)]
 struct LineCommentFence {
     len: usize,
-    indent: usize,
     start: usize,
     end: usize,
     lines: Vec<String>,
@@ -700,7 +699,6 @@ impl<'a> Parser<'a> {
             }));
             *comment = Some(LineCommentFence {
                 len: shapes::bare_run(&k, b'%'),
-                indent: k.col - walk.qbase,
                 start: k.offset(),
                 end: e,
                 lines: Vec::new(),
@@ -1174,9 +1172,8 @@ fn line_block_comment_line(
         *comment = None;
         return parent_closes;
     }
-    let mut body = walk.body;
-    body.strip_to(walk.qbase + fence.indent);
-    fence.lines.push(body.rest().to_string());
+    // C2-B-123, C2-B-130: the body is stripped by the container only, and a straddling tab is kept (C2-B-007).
+    fence.lines.push(walk.cur.rest().to_string());
     fence.end = end;
     false
 }
