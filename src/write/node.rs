@@ -89,6 +89,9 @@ pub fn s<'t>(n: impl Into<V<'t>>, field: &str) -> Option<&'t str> {
 
 pub fn text<'t>(n: impl Into<V<'t>>) -> &'t str {
     let n: V<'t> = n.into();
+    if let V::Node(crate::ast::Node::Text(t)) = n {
+        return t.value;
+    }
     s(n, "value").unwrap_or("")
 }
 
@@ -218,22 +221,15 @@ struct TypeSlots {
 fn slots_table() -> &'static TypeMap<TypeSlots> {
     static SLOTS: OnceLock<TypeMap<TypeSlots>> = OnceLock::new();
     SLOTS.get_or_init(|| {
-        let data: Value = serde_json::from_str(include_str!("../../spec-data/node-slots.json"))
-            .unwrap_or_default();
         let mut out = TypeMap::default();
-        if let Some(nodes) = data.get("nodes").and_then(Value::as_object) {
-            for (name, slots) in nodes {
-                let paths: Vec<Vec<String>> = slots
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .filter(|p| !p.starts_with("metadata."))
-                    .map(|p| p.split('.').map(str::to_string).collect())
-                    .collect();
-                let title = paths.iter().any(|p| is_step(p, "title"));
-                out.insert(name.clone(), TypeSlots { paths, title });
-            }
+        for (name, slots) in crate::tables::NODE_SLOTS {
+            let paths: Vec<Vec<String>> = slots
+                .iter()
+                .filter(|p| !p.starts_with("metadata."))
+                .map(|p| p.split('.').map(str::to_string).collect())
+                .collect();
+            let title = paths.iter().any(|p| is_step(p, "title"));
+            out.insert((*name).to_string(), TypeSlots { paths, title });
         }
         out
     })
@@ -341,24 +337,13 @@ type Results = TypeMap<Fields>;
 fn results() -> &'static Results {
     static RESULTS: OnceLock<Results> = OnceLock::new();
     RESULTS.get_or_init(|| {
-        let data: Value = serde_json::from_str(include_str!("../../spec-data/ast-results.json"))
-            .unwrap_or_default();
         let mut out = TypeMap::default();
-        if let Some(nodes) = data.get("nodes").and_then(Value::as_object) {
-            for (name, fields) in nodes {
-                let fields = fields
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|f| {
-                        Some((
-                            f.get("field")?.as_str()?.to_string(),
-                            f.get("when").and_then(Value::as_str).map(str::to_string),
-                        ))
-                    })
-                    .collect();
-                out.insert(name.clone(), fields);
-            }
+        for (name, fields) in crate::tables::NODE_RESULTS {
+            let fields = fields
+                .iter()
+                .map(|(field, when)| ((*field).to_string(), when.map(str::to_string)))
+                .collect();
+            out.insert((*name).to_string(), fields);
         }
         out
     })

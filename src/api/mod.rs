@@ -135,7 +135,9 @@ impl Input<'_> {
     fn text(&self) -> std::borrow::Cow<'_, str> {
         match self {
             Self::Text(s) => std::borrow::Cow::Borrowed(s),
-            Self::Bytes(b) => String::from_utf8_lossy(b),
+            // `from_utf8` checks a word at a time; the lossy reader goes byte by byte.
+            Self::Bytes(b) => std::str::from_utf8(b)
+                .map_or_else(|_| String::from_utf8_lossy(b), std::borrow::Cow::Borrowed),
         }
     }
 

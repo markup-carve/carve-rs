@@ -101,9 +101,16 @@ pub struct Writer<'t> {
     /// The first document child when it is frontmatter without attributes: the
     /// one block that may use the bare opener (C2-W-052).
     pub leading_frontmatter: Option<usize>,
+    /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
+    pub kind_escapes: bool,
+    /// Set when a node of the group did not read back during the kind rounds.
+    pub kind_failed: bool,
     pub parses: usize,
     pub group_certificate: GroupCertificate,
     pub probes: HashMap<String, ProbeResult<'t>>,
+    /// C2-W-125: unmatched bracket counts and escape positions of link labels.
+    pub link_brackets: AddrMap<usize, (usize, usize)>,
+    pub link_escapes: AddrMap<usize, Vec<(N<'t>, usize)>>,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
@@ -115,6 +122,8 @@ pub struct Writer<'t> {
     pub raw_refs: Vec<String>,
     /// The last write of a group that keeps a loss: the bare pairs that cannot pair take their braced form.
     pub strict_pairs: bool,
+    /// Emptied child lists, reused by the inline writes so a nested mark allocates none.
+    pub kid_lists: Vec<Vec<N<'t>>>,
 }
 
 impl<'t> Writer<'t> {
@@ -141,9 +150,13 @@ impl<'t> Writer<'t> {
             link_keys: std::sync::Arc::default(),
             prewritten: None,
             leading_frontmatter: None,
+            kind_escapes: true,
+            kind_failed: false,
             parses: 0,
             group_certificate: GroupCertificate::None,
             probes: HashMap::new(),
+            link_brackets: AddrMap::default(),
+            link_escapes: AddrMap::default(),
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),
@@ -152,6 +165,7 @@ impl<'t> Writer<'t> {
             written_chars: 0,
             raw_refs: Vec::new(),
             strict_pairs: false,
+            kid_lists: Vec::new(),
         }
     }
 
@@ -298,10 +312,17 @@ pub fn lose<'v>(w: &mut Writer<'_>, node: impl Into<V<'v>>, field: Option<&str>)
         ),
         Some(f) => (
             "field-unspellable",
-            format!(
-                "Carve source cannot spell field {f} of a {} node here",
-                ty(node)
-            ),
+            if f.is_empty() {
+                format!(
+                    "Carve source cannot spell a field of a {} node here",
+                    ty(node)
+                )
+            } else {
+                format!(
+                    "Carve source cannot spell field {f} of a {} node here",
+                    ty(node)
+                )
+            },
         ),
     };
     let step = field

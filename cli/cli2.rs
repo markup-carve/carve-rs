@@ -35,10 +35,14 @@ fn usage(message: impl std::fmt::Display) -> i32 {
     fail("usage", message)
 }
 fn flag_rows() -> Vec<Value> {
-    serde_json::from_str::<Value>(include_str!("../spec-data/cli.json")).unwrap()["flags"]
-        .as_array()
+    // Only the flags: the other sections of cli.json are skipped, not built.
+    #[derive(serde::Deserialize)]
+    struct Rows {
+        flags: Vec<Value>,
+    }
+    serde_json::from_str::<Rows>(include_str!("../spec-data/cli.json"))
         .unwrap()
-        .clone()
+        .flags
 }
 fn flag_row<'a>(rows: &'a [Value], command: &str, name: &str) -> Option<&'a Value> {
     rows.iter().find(|r| {
@@ -68,7 +72,7 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
         command: command.into(),
         ..Default::default()
     };
-    let rows = flag_rows();
+    let mut rows: Option<Vec<Value>> = None;
     let mut at = usize::from(arguments.first().is_some_and(|a| a == command));
     while at < arguments.len() {
         match arguments[at].as_str() {
@@ -98,7 +102,8 @@ fn parse(arguments: &[String]) -> Result<Args, String> {
             }
             arg if arg == "-" || !arg.starts_with('-') => parsed.files.push(arg.into()),
             _ => {
-                at = read_flag(arguments, at, &rows, &mut parsed)?;
+                let rows = rows.get_or_insert_with(flag_rows);
+                at = read_flag(arguments, at, rows, &mut parsed)?;
             }
         }
         at += 1;
@@ -1067,7 +1072,10 @@ fn formatted(args: &Args, path: &str, bytes: &[u8], host: &Carve) -> Result<(Str
     let before = if bool_value(args, "from-ast", false) {
         strict_text(path, bytes)?.to_string()
     } else {
-        String::from_utf8_lossy(bytes).into_owned()
+        std::str::from_utf8(bytes).map_or_else(
+            |_| String::from_utf8_lossy(bytes).into_owned(),
+            str::to_string,
+        )
     };
     let after = if bool_value(args, "from-ast", false) {
         let tree = api::decode_tree(&before).map_err(api_fail)?;

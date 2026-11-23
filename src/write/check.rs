@@ -112,6 +112,8 @@ pub struct Check<'t> {
     pub owner: Option<N<'t>>,
     pub chains: Vec<(N<'t>, usize, Built)>,
     pub source: Option<String>,
+    /// C2-W-088: the escapes that make a line opener text, by node and offset.
+    pub line_escapes: HashSet<(usize, usize)>,
 }
 
 impl Check<'_> {
@@ -282,7 +284,7 @@ fn is_escaped(w: &Writer<'_>, c: &Check<'_>, node: V<'_>, at: usize) -> bool {
 }
 
 /// Asks for a backslash before the byte `at` of the text node. False where that character takes none.
-fn escape_at<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize) -> bool {
+pub fn escape_at<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: usize) -> bool {
     let b = text(node).as_bytes();
     if !b.get(at).is_some_and(u8::is_ascii_punctuation) || is_escaped(w, c, node, at) {
         return false;
@@ -321,7 +323,11 @@ fn escape_line_start<'t>(
 ) {
     c.misaligned = true;
     let first = nodes.get(from).copied();
+    let before = c.escapes.len();
     if escape_run_opener(w, c, nodes, from) {
+        for (n, at) in c.escapes.get(before..).unwrap_or(&[]) {
+            c.line_escapes.insert((id(*n), *at));
+        }
         return;
     }
     let mut at = from + 1;
@@ -841,10 +847,18 @@ fn run_probe<'t>(
             return Some(found);
         }
         found = true;
+        // One sort per node and round: one per escape made a node with many escapes quadratic.
+        let mut touched: AddrSet<usize> = AddrSet::default();
         for (n, at) in placed {
-            let list = probe.escapes.entry(id(n)).or_default();
-            list.push(at);
-            list.sort_unstable();
+            probe.escapes.entry(id(n)).or_default().push(at);
+            touched.insert(id(n));
+        }
+        for n in touched {
+            if let Some(list) = probe.escapes.get_mut(&n) {
+                #[cfg(test)]
+                super::PROBE_SORTED.with(|c| c.set(c.get() + list.len()));
+                list.sort_unstable();
+            }
         }
     }
     Some(found)
@@ -1077,6 +1091,26 @@ fn run_offset<'t>(es: &[N<'t>], i: usize, mut at: usize) -> Option<(N<'t>, usize
     None
 }
 
+/// C2-W-090, C2-W-099: a dash takes the escape of the bare hyphen run it
+/// stands in; `None` when that escape is already asked.
+fn dash_run_start(
+    w: &Writer<'_>,
+    c: &Check<'_>,
+    e: N<'_>,
+    start: usize,
+    a: V<'_>,
+) -> Option<usize> {
+    if ty(a) != "smart_punctuation" || !s(a, "source").is_some_and(|x| x.starts_with('-')) {
+        return Some(start);
+    }
+    let b = text(e).as_bytes();
+    let mut start = start;
+    while start > 0 && b.get(start - 1) == Some(&b'-') && !is_escaped(w, c, e, start - 1) {
+        start -= 1;
+    }
+    (!is_escaped(w, c, e, start + 1)).then_some(start)
+}
+
 fn escape_opener<'t>(
     w: &Writer<'t>,
     c: &mut Check<'t>,
@@ -1091,6 +1125,9 @@ fn escape_opener<'t>(
     while matches!(b.get(start), Some(b' ' | b'\t')) {
         start += 1;
     }
+    let Some(start) = dash_run_start(w, c, e, start, a) else {
+        return;
+    };
     let shifted = start + opener_shift(a);
     // The opener's second character can sit in the next text node (C2-W-099).
     if shifted >= b.len()
@@ -2117,6 +2154,7 @@ fn read_starts(
     offset: i64,
     paragraphs: &mut AddrSet<usize>,
     lines: &mut AddrSet<i64>,
+    first_div_line: &mut Option<i64>,
 ) {
     for block in children(node) {
         if let (Some(line), Some(col)) = (
@@ -2124,6 +2162,10 @@ fn read_starts(
             super::node::pos_field(block, "startColumn"),
         ) {
             lines.insert(line - offset);
+            if ty(block) == "div" {
+                *first_div_line =
+                    Some(first_div_line.map_or(line - offset, |first| first.min(line - offset)));
+            }
             if ty(block) == "paragraph" {
                 if let (Ok(l), Ok(cc)) = (usize::try_from(line - offset), usize::try_from(col - 1))
                 {
@@ -2132,10 +2174,10 @@ fn read_starts(
             }
         }
         if !is_inline_parent(block) {
-            read_starts(block, offset, paragraphs, lines);
+            read_starts(block, offset, paragraphs, lines, first_div_line);
         }
         if let Some(cap) = caption(block) {
-            read_starts(cap, offset, paragraphs, lines);
+            read_starts(cap, offset, paragraphs, lines, first_div_line);
         }
     }
 }
@@ -2197,17 +2239,32 @@ fn visit_lines<'t>(
     nodes: &[N<'t>],
     line: &mut i64,
     lines: &AddrSet<i64>,
+    first_div_line: Option<i64>,
     owner: N<'t>,
 ) {
     for (at, &node) in nodes.iter().enumerate() {
         if has(node, "children") {
-            visit_lines(w, c, &refs(children(node)), line, lines, owner);
+            visit_lines(
+                w,
+                c,
+                &refs(children(node)),
+                line,
+                lines,
+                first_div_line,
+                owner,
+            );
         }
         if !is_break(Some(node)) {
             continue;
         }
         *line += 1;
-        if lines.contains(line) && has_opener_shape(nodes, at + 1) && !is_pending(c, nodes, at + 1)
+        let later_div_fence = first_div_line.is_some_and(|first| *line >= first)
+            && nodes
+                .get(at + 1)
+                .is_some_and(|n| ty(*n) == "text" && text(*n).starts_with(":::"));
+        if (lines.contains(line) || later_div_fence)
+            && has_opener_shape(nodes, at + 1)
+            && !is_pending(c, nodes, at + 1)
         {
             escape_line_start(w, c, nodes, at + 1, owner);
         }
@@ -2221,13 +2278,14 @@ fn escape_opener_lines<'t>(
     place: usize,
     paragraphs: &AddrSet<usize>,
     lines: &AddrSet<i64>,
+    first_div_line: Option<i64>,
 ) {
     let top = refs(children(e));
     if !paragraphs.contains(&place) && has_opener_shape(&top, 0) && !is_pending(c, &top, 0) {
         escape_line_start(w, c, &top, 0, e);
     }
     let mut line = i64::try_from(place / PLACE_COLUMNS).unwrap_or(0);
-    visit_lines(w, c, &top, &mut line, lines, e);
+    visit_lines(w, c, &top, &mut line, lines, first_div_line, e);
 }
 
 /// After a block read back as another block, finds the other lines of the group that opened a block (C2-W-092).
@@ -2237,10 +2295,17 @@ pub fn escape_openers<'t>(w: &Writer<'t>, c: &mut Check<'t>, parsed: V<'_>, offs
     }
     let mut paragraphs = AddrSet::default();
     let mut lines = AddrSet::default();
-    read_starts(parsed, offset, &mut paragraphs, &mut lines);
+    let mut first_div_line = None;
+    read_starts(
+        parsed,
+        offset,
+        &mut paragraphs,
+        &mut lines,
+        &mut first_div_line,
+    );
     for &(node, place) in &w.starts.clone() {
         if !has(node, "attrs") && !has(node, "lang") {
-            escape_opener_lines(w, c, node, place, &paragraphs, &lines);
+            escape_opener_lines(w, c, node, place, &paragraphs, &lines, first_div_line);
         }
     }
 }

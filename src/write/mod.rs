@@ -3,8 +3,8 @@
 //! line separates are written and tested on their own; a group is parsed again
 //! and written again until it reads back as its blocks (C2-W-089).
 //!
-//! This engine finds every escape by the repair of C2-W-088 alone, with the
-//! work limit of C2-W-133; the bytes are those the clauses define (C2-W-010).
+//! This engine places every opener found by a repair round of C2-W-088, with
+//! the work limit of C2-W-133; the bytes are those the clauses define (C2-W-010).
 
 mod attrs;
 mod blocks;
@@ -13,6 +13,7 @@ mod controls;
 mod extension;
 mod facts;
 mod inline;
+mod kinds;
 mod node;
 mod pairs;
 mod spans;
@@ -27,7 +28,7 @@ pub(crate) use table::display_width;
 use crate::api::{Entry, Range};
 use crate::hash::{AddrMap, AddrSet};
 use crate::view::{Arr, V};
-use check::{Check, Chunk, compare_blocks, escape_openers, exhausted, extend_chains};
+use check::{Check, Chunk, compare_blocks, escape_at, escape_openers, exhausted, extend_chains};
 use node::{N, children, has, id, span, text, ty};
 use serde_json::Value;
 use state::{GroupCertificate, Writer, lose};
@@ -145,6 +146,56 @@ thread_local! {
     static REPAIR_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PAIR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static WRITTEN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PROBE_SORTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static INLINE_BUFFERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod nested_inline_write_test {
+    use super::*;
+
+    /// The inline buffers one write of a paragraph of `depth` nested superscripts makes.
+    fn buffers(depth: usize) -> usize {
+        let src = format!("{}a{}\n", "{^".repeat(depth), "^}".repeat(depth));
+        let arena = crate::Arena::for_input(&src);
+        let doc =
+            crate::parse_resolved_in(&src, &crate::Options::default(), &arena).unwrap_or_default();
+        let pool = Pool::new();
+        let mut w = Writer::new(&pool, false);
+        let before = INLINE_BUFFERS.with(std::cell::Cell::get);
+        blocks::write_blocks(&mut w, children(V::Doc(&doc)), "", 0, false);
+        assert_eq!(w.lines, [src.trim_end()]);
+        INLINE_BUFFERS.with(std::cell::Cell::get) - before
+    }
+
+    #[test]
+    fn nested_marks_write_into_one_buffer() {
+        assert_eq!(buffers(1), buffers(200));
+    }
+}
+
+#[cfg(test)]
+mod probe_sort_test {
+    use super::PROBE_SORTED;
+
+    /// The escape offsets a probe sorts for nested links (carve-js#5262).
+    fn sorted(n: usize) -> usize {
+        let src = format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n));
+        let before = PROBE_SORTED.with(std::cell::Cell::get);
+        let written = crate::api::Carve::new()
+            .format_with_diagnostics(src.as_str(), &crate::api::WriteOptions::default());
+        assert!(written.is_ok_and(|w| w.diagnostics.is_empty()));
+        PROBE_SORTED.with(std::cell::Cell::get) - before
+    }
+
+    #[test]
+    fn probe_escapes_sort_once_per_node_and_round() {
+        let (small, large) = (sorted(300), sorted(1200));
+        assert!(
+            large <= small * 5,
+            "n = 300 sorts {small} offsets, n = 1200 {large}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +314,45 @@ mod plain_table_certificate_test {
         let (out, losses) = write_value(&doc, &Settings::default());
         assert_eq!(out, "||\n");
         assert!(losses.iter().any(|e| e.code == "structure-unspellable"));
+    }
+}
+
+#[cfg(test)]
+mod batched_repair_test {
+    use super::*;
+
+    #[test]
+    fn dense_superscripts_need_only_a_few_rounds() -> Result<(), Box<dyn std::error::Error>> {
+        let mut de = serde_json::Deserializer::from_str(include_str!(
+            "../../spec-conformance/clause-cases.json"
+        ));
+        de.disable_recursion_limit();
+        let cases: Value = serde::Deserialize::deserialize(&mut de)?;
+        let case = cases
+            .get("cases")
+            .and_then(Value::as_array)
+            .and_then(|cases| {
+                cases
+                    .iter()
+                    .find(|c| c.get("id").and_then(Value::as_str) == Some("CC-1566"))
+            })
+            .ok_or("CC-1566")?;
+        let source = case.get("input").and_then(Value::as_str).ok_or("source")?;
+        let expected = case
+            .get("expected")
+            .and_then(|value| value.get("carve"))
+            .and_then(Value::as_str)
+            .ok_or("output")?;
+        let tree = parse_plain(source).ok_or("parsed source")?;
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let (output, losses) = format_tree(&tree, Some(source), &Settings::default());
+        let rounds = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+        assert_eq!(output, expected);
+        assert!(losses.is_empty());
+        // This paragraph nests to the inline depth cap. Its repair rounds may
+        // follow that depth, but no longer one round per escaped byte.
+        assert!(rounds <= 200, "{rounds} read-back parses for one paragraph");
+        Ok(())
     }
 }
 
@@ -635,7 +725,120 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
     w.group_certificate = GroupCertificate::None;
     let reported = w.sp.losses.len();
-    repair_rounds(w, doc, from, first, reported)
+    let end = group_end(w, children(doc), from);
+    let group = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
+    let saved = SavedGroup::new(w, group);
+    w.kind_failed = false;
+    let end = repair_rounds(w, doc, from, first, reported);
+    if (w.sp.losses.len() == reported && !w.kind_failed) || !w.kind_escapes {
+        return end;
+    }
+    w.kind_failed = false;
+    // C2-W-088: a group whose kind rounds leave a node unread is written by
+    // rounds of the reported escapes only.
+    saved.restore(w, reported, group);
+    w.kind_escapes = false;
+    w.group_certificate = GroupCertificate::None;
+    let end = repair_rounds(w, doc, from, first, reported);
+    w.kind_escapes = true;
+    end
+}
+
+/// The repair state of a group before its rounds, for the C2-W-088 fallback:
+/// only the entries of the group's nodes and their stand-ins, so a document
+/// of many groups stays linear.
+struct SavedGroup<'t> {
+    lines: Vec<String>,
+    ids: Vec<usize>,
+    escapes: Vec<(usize, Vec<usize>)>,
+    attempts: Vec<(usize, state::Attempt<'t>)>,
+    lost: Vec<usize>,
+    lost_keys: Vec<(usize, Vec<String>)>,
+    forms: Vec<(usize, u32)>,
+    blank_first: bool,
+}
+
+fn node_ids(v: V<'_>, out: &mut Vec<usize>) {
+    if let Some(items) = v.as_array() {
+        for item in items {
+            node_ids(item, out);
+        }
+    } else if v.is_object() {
+        out.push(id(v));
+        v.each(&mut |_, value| node_ids(value, out));
+    }
+}
+
+impl<'t> SavedGroup<'t> {
+    fn new(w: &Writer<'t>, group: Arr<'_>) -> Self {
+        let mut ids = Vec::new();
+        for node in group {
+            node_ids(node, &mut ids);
+        }
+        let stand_ins: Vec<usize> = ids
+            .iter()
+            .filter_map(|n| w.stand_ins.get(n))
+            .flat_map(|roles| roles.values().map(|n| id(*n)))
+            .collect();
+        ids.extend(stand_ins);
+        let take = |n: &usize| *n;
+        Self {
+            lines: w.lines.clone(),
+            escapes: ids
+                .iter()
+                .filter_map(|n| w.sp.escapes.get(n).map(|e| (take(n), e.clone())))
+                .collect(),
+            attempts: ids
+                .iter()
+                .filter_map(|n| w.sp.attempts.get(n).map(|a| (take(n), a.clone())))
+                .collect(),
+            lost: ids
+                .iter()
+                .copied()
+                .filter(|n| w.sp.lost.contains(n))
+                .collect(),
+            lost_keys: ids
+                .iter()
+                .filter_map(|n| w.sp.lost_keys.get(n).map(|k| (take(n), k.clone())))
+                .collect(),
+            forms: ids
+                .iter()
+                .filter_map(|n| w.forms.get(n).map(|f| (take(n), *f)))
+                .collect(),
+            blank_first: w.blank_first,
+            ids,
+        }
+    }
+
+    fn restore(self, w: &mut Writer<'t>, losses: usize, group: Arr<'_>) {
+        // Stand-ins made during the rounds belong to the group too.
+        let mut ids = self.ids;
+        let mut fresh = Vec::new();
+        for node in group {
+            node_ids(node, &mut fresh);
+        }
+        let stand_ins: Vec<usize> = fresh
+            .iter()
+            .filter_map(|n| w.stand_ins.get(n))
+            .flat_map(|roles| roles.values().map(|n| id(*n)))
+            .collect();
+        ids.extend(stand_ins);
+        for n in &ids {
+            w.sp.escapes.remove(n);
+            w.sp.attempts.remove(n);
+            w.sp.lost.remove(n);
+            w.sp.lost_keys.remove(n);
+            w.forms.remove(n);
+        }
+        w.sp.escapes.extend(self.escapes);
+        w.sp.attempts.extend(self.attempts);
+        w.sp.lost.extend(self.lost);
+        w.sp.lost_keys.extend(self.lost_keys);
+        w.forms.extend(self.forms);
+        w.lines = self.lines;
+        w.sp.losses.truncate(losses);
+        w.blank_first = self.blank_first;
+    }
 }
 
 /// C2-W-133: one repair budget for the whole document, `len` the characters of the document as written.
@@ -664,7 +867,6 @@ const MIN_REPAIR_ROUNDS: usize = 32;
 const WORK_FACTOR: usize = 1000;
 const WORK_FLOOR: usize = 24_000_000;
 const MAX_ROUNDS: usize = 8192;
-const MAX_ORDERED_ESCAPES: usize = 4;
 
 struct History {
     ids: AddrMap<usize, usize>,
@@ -713,6 +915,9 @@ fn repair_rounds<'t>(
             equal: false,
         };
         if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
+            if w.kind_failed {
+                return end;
+            }
             if w.sp.losses.len() == reported && !round.equal {
                 report_unread(w, group, round.last);
             }
@@ -738,10 +943,19 @@ fn local_id(ids: &mut AddrMap<usize, usize>, n: V<'_>) -> usize {
 
 /// C2-W-133: the repair state of a group, compared exactly: the written lines and
 /// a flat record of the per-node state with every optional part length-prefixed.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq)]
 struct RepairKey {
     lines: Vec<String>,
     state: Vec<usize>,
+}
+
+/// Hashes the lengths only: the history holds 16 keys, so a collision costs one
+/// exact comparison, while hashing every byte cost more than the comparisons.
+impl std::hash::Hash for RepairKey {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        h.write_usize(self.state.len());
+        h.write_usize(self.lines.iter().map(String::len).sum());
+    }
 }
 
 fn push_opt(state: &mut Vec<usize>, v: Option<usize>) {
@@ -818,46 +1032,80 @@ fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool 
     refuse
 }
 
-/// The text nodes below `nodes` in the order they are written: a title before the children.
-fn text_order(nodes: Arr<'_>, order: &mut AddrMap<usize, usize>) {
-    for n in nodes {
-        if ty(n) == "text" {
-            let next = order.len();
-            order.insert(id(n), next);
-        }
-        node::for_each_slot(n, true, &mut |kids, _, _| text_order(kids, order));
-    }
+/// The parses of one repair round: the last one is read by the loss report and the prune.
+struct Round<'s> {
+    chunks: &'s typed_arena::Arena<Chunk>,
+    last: Option<V<'s>>,
+    /// The source `last` was parsed from.
+    source: Option<&'s str>,
+    /// The last read-back parse was already proved equal to the group.
+    equal: bool,
 }
 
-fn rank(order: &AddrMap<usize, usize>, n: V<'_>) -> i64 {
-    order
-        .get(&id(n))
-        .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
+fn compare_group<'t, 's>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &mut Round<'s>,
+) -> Check<'t> {
+    #[cfg(test)]
+    REPAIR_PARSES.with(|count| count.set(count.get() + 1));
+    let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
+    let parsed = chunk.parse(w);
+    round.last = Some(parsed);
+    round.source = Some(chunk.text());
+    let mut c = Check {
+        source: Some(chunk.text().to_string()),
+        ..Check::default()
+    };
+    let actual = children(parsed);
+    round.equal = group.len() == actual.len()
+        && group
+            .iter()
+            .zip(actual)
+            .all(|(expected, read_back)| node::trees_equal(expected, read_back));
+    if !round.equal {
+        compare_blocks(w, &mut c, group, actual, doc);
+    }
+    escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });
+    c
 }
 
-fn leftmost<'t>(group: Arr<'_>, escapes: &[(N<'t>, usize)]) -> Option<(N<'t>, usize)> {
-    let mut order = AddrMap::default();
-    text_order(group, &mut order);
-    let mut best = *escapes.first()?;
-    for &e in escapes {
-        let (r, b) = (rank(&order, e.0), rank(&order, best.0));
-        if r < b || (r == b && e.1 < best.1) {
-            best = e;
+/// One round of the test of C2-W-089. False when the group reads back as its blocks.
+fn settle<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &mut Round<'_>,
+) -> bool {
+    let mut c = compare_group(w, doc, group, first, round);
+    let read = round.source.zip(round.last);
+    if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
+        return true;
+    }
+    if w.kind_escapes {
+        // C2-W-088: a node the kind rounds leave unread sends the group to the
+        // rounds of the reported openers only.
+        if !c.losses.is_empty() && c.changes() == 0 && !w.sp.escapes.is_empty() {
+            w.kind_failed = true;
+            return false;
+        }
+        escape_kinds(w, &mut c, group);
+    }
+    extend_chains(w, &mut c);
+    if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
+        // C2-W-005: what only line 1 reads differently is written below one blank line.
+        w.blank_first = compare_group(w, doc, group, false, round).losses.is_empty();
+        if w.blank_first {
+            return true;
         }
     }
-    Some(best)
-}
-
-fn defer_escapes(w: &mut Writer<'_>, deferred: &[(usize, usize)]) {
-    for attempt in w.sp.attempts.values_mut() {
-        let before = attempt.escapes.len();
-        attempt
-            .escapes
-            .retain(|(n, at)| !deferred.contains(&(id(n), *at)));
-        if attempt.escapes.len() != before {
-            attempt.step = attempt.step.saturating_sub(1);
-        }
+    if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
+        return true;
     }
+    apply_changes(w, &c)
 }
 
 /// The group written with `escapes`, for a parse.
@@ -988,113 +1236,6 @@ fn asked_outside<'t>(
     asked
 }
 
-/// The parses of one repair round: the last one is read by the loss report and the prune.
-struct Round<'s> {
-    chunks: &'s typed_arena::Arena<Chunk>,
-    last: Option<V<'s>>,
-    /// The source `last` was parsed from.
-    source: Option<&'s str>,
-    /// The last read-back parse was already proved equal to the group.
-    equal: bool,
-}
-
-fn compare_group<'t, 's>(
-    w: &mut Writer<'t>,
-    doc: N<'t>,
-    group: Arr<'t>,
-    first: bool,
-    round: &mut Round<'s>,
-) -> Check<'t> {
-    #[cfg(test)]
-    REPAIR_PARSES.with(|count| count.set(count.get() + 1));
-    let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
-    let parsed = chunk.parse(w);
-    round.last = Some(parsed);
-    round.source = Some(chunk.text());
-    let mut c = Check {
-        source: Some(chunk.text().to_string()),
-        ..Check::default()
-    };
-    let actual = children(parsed);
-    round.equal = group.len() == actual.len()
-        && group
-            .iter()
-            .zip(actual)
-            .all(|(expected, read_back)| node::trees_equal(expected, read_back));
-    if !round.equal {
-        compare_blocks(w, &mut c, group, actual, doc);
-    }
-    escape_openers(w, &mut c, parsed, if first { 1 } else { 2 });
-    c
-}
-
-/// One round of the test of C2-W-089. False when the group reads back as its blocks.
-fn settle<'t>(
-    w: &mut Writer<'t>,
-    doc: N<'t>,
-    group: Arr<'t>,
-    first: bool,
-    round: &mut Round<'_>,
-) -> bool {
-    let mut c = compare_group(w, doc, group, first, round);
-    let read = round.source.zip(round.last);
-    let joint_braces = joint_brace_repair(w, &c, group, first);
-    let dropped = !joint_braces && drop_asked_trials(w, &mut c, group, first, read);
-    if dropped && c.changes() == 0 {
-        return true;
-    }
-    if !joint_braces && c.escapes.len() > 1 && c.escapes.len() <= MAX_ORDERED_ESCAPES {
-        keep_leftmost_escape(w, &mut c, group);
-    }
-    extend_chains(w, &mut c);
-    if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
-        // C2-W-005: what only line 1 reads differently is written below one blank line.
-        w.blank_first = compare_group(w, doc, group, false, round).losses.is_empty();
-        if w.blank_first {
-            return true;
-        }
-    }
-    if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
-        return true;
-    }
-    apply_changes(w, &c)
-}
-
-/// Two brace escapes can be needed together even though neither changes the
-/// parse alone. Keep that repair when its combined spelling reads back as the
-/// group; the ordinary per-escape test handles every other candidate.
-fn joint_brace_repair<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>, first: bool) -> bool {
-    let Some((first_node, _)) = c.trials.first().copied() else {
-        return false;
-    };
-    if c.trials.len() < 2
-        || c.trials.len() != c.escapes.len()
-        || c.trials
-            .iter()
-            .any(|(n, at)| id(*n) != id(first_node) || text(*n).as_bytes().get(*at) != Some(&b'{'))
-    {
-        return false;
-    }
-    let saved = w.sp.escapes.clone();
-    let lines = w.lines.clone();
-    let lead = w.lead.clone();
-    let starts = (w.starts.clone(), w.start_index.clone());
-    for (n, at) in &c.escapes {
-        w.add_escape(n, *at);
-    }
-    let chunk = written_chunk(w, group, first);
-    let parsed = chunk.parse(w);
-    let actual = children(parsed);
-    let equal =
-        group.len() == actual.len() && group.iter().zip(actual).all(|(e, a)| writer_equal(e, a));
-    w.sp.escapes = saved;
-    w.lines = lines;
-    w.lead = lead;
-    w.starts = starts.0;
-    w.start_index = starts.1;
-    equal
-}
-
 /// Drops the escapes of trials that were already asked; true when any was dropped.
 fn drop_asked_trials<'t>(
     w: &mut Writer<'t>,
@@ -1104,7 +1245,8 @@ fn drop_asked_trials<'t>(
     read: Option<(&str, V<'_>)>,
 ) -> bool {
     let mut dropped = false;
-    let trials = if c.trials.len() <= MAX_ORDERED_ESCAPES {
+    // A lone ineffective trial takes no escape; several trials can work together.
+    let trials = if c.trials.len() == 1 {
         c.trials.clone()
     } else {
         Vec::new()
@@ -1125,18 +1267,53 @@ fn drop_asked_trials<'t>(
     dropped
 }
 
-fn keep_leftmost_escape<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
-    let Some(best) = leftmost(group, &c.escapes) else {
-        return;
-    };
-    let deferred: Vec<(usize, usize)> = c
+/// The text nodes below `nodes` in the order they are written: a title before the children.
+fn text_order(nodes: Arr<'_>, order: &mut AddrMap<usize, usize>) {
+    for n in nodes {
+        if ty(n) == "text" {
+            let next = order.len();
+            order.insert(id(n), next);
+        }
+        node::for_each_slot(n, true, &mut |kids, _, _| text_order(kids, order));
+    }
+}
+
+fn rank(order: &AddrMap<usize, usize>, n: V<'_>) -> i64 {
+    order
+        .get(&id(n))
+        .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
+}
+
+/// C2-W-088: each kind a round reports in a block escapes every opener of
+/// that kind in the block, so the rounds are bounded by the kinds.
+fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
+    let trials: HashSet<(usize, usize)> = c.trials.iter().map(|(n, at)| (id(n), *at)).collect();
+    let reported: Vec<(N<'t>, usize)> = c
         .escapes
         .iter()
-        .filter(|(n, at)| !(id(n) == id(best.0) && *at == best.1))
-        .map(|(n, at)| (id(n), *at))
+        .filter(|(n, at)| !trials.contains(&(id(n), *at)))
+        .copied()
         .collect();
-    defer_escapes(w, &deferred);
-    c.escapes = vec![best];
+    if reported.is_empty() {
+        return;
+    }
+    let blocks = kinds::KindBlocks::new(group);
+    let mut done = HashSet::new();
+    for (node, at) in reported {
+        let Some(block) = blocks.block_of(node) else {
+            continue;
+        };
+        let line = c.line_escapes.contains(&(id(node), at));
+        let Some(key) = blocks.key(node, at, line) else {
+            continue;
+        };
+        if !done.insert((block, key.clone())) {
+            continue;
+        }
+        for (n, offset) in blocks.openers(block, &key) {
+            escape_at(w, c, n, offset);
+        }
+    }
 }
 
 const LINE_LEAVES: &[&str] = &[

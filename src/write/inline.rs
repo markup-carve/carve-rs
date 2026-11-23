@@ -3,7 +3,7 @@
 //! content places the lines.
 
 use super::attrs::{BlockParts, brace_block, plain_block, quoted};
-use super::node::{N, children, has, id, s, text, ty};
+use super::node::{N, attrs, children, has, id, s, text, ty};
 use super::state::{Writer, lose, trim_end};
 use crate::chars::fold_label;
 use crate::hash::AddrSet;
@@ -213,14 +213,23 @@ fn paired<'t>(
         return String::new();
     };
     if braced_pair(w, node, flags, bit, inside) {
-        format!("{{{mark}{content}{mark}}}")
+        enclosed(&['{', mark], &content, &[mark, '}'])
     } else {
-        format!("{mark}{content}{mark}")
+        enclosed(&[mark], &content, &[mark])
     }
 }
 
+fn enclosed(open: &[char], content: &str, close: &[char]) -> String {
+    let mut out = String::with_capacity(content.len() + 4 * (open.len() + close.len()));
+    out.extend(open);
+    out.push_str(content);
+    out.extend(close);
+    out
+}
+
 fn braced<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32, open: char, close: char) -> String {
-    content_of(w, node, flags).map_or_else(String::new, |c| format!("{{{open}{c}{close}}}"))
+    content_of(w, node, flags)
+        .map_or_else(String::new, |c| enclosed(&['{', open], &c, &[close, '}']))
 }
 
 /// C2-I-016: whether a reader would take one space from each end of `value`.
@@ -414,12 +423,125 @@ fn escape_leading_caret(w: &mut Writer<'_>, kids: Arr<'_>, flags: u32) {
     }
 }
 
+#[derive(Clone, Copy)]
+enum BracketPlace<'t> {
+    Text(N<'t>, usize),
+    Count(usize),
+}
+
+#[derive(Default)]
+struct BracketScan<'t> {
+    open: Vec<BracketPlace<'t>>,
+    size: usize,
+    lone: Vec<(N<'t>, usize)>,
+    lone_count: usize,
+}
+
+fn pop_brackets(scan: &mut BracketScan<'_>, count: usize) {
+    let mut left = count.min(scan.size);
+    scan.size -= left;
+    while left > 0 {
+        match scan.open.pop() {
+            Some(BracketPlace::Text(..)) => left -= 1,
+            Some(BracketPlace::Count(n)) if n > left => {
+                scan.open.push(BracketPlace::Count(n - left));
+                left = 0;
+            }
+            Some(BracketPlace::Count(n)) => left -= n,
+            None => break,
+        }
+    }
+}
+
+fn counted_brackets(scan: &mut BracketScan<'_>, (closers, openers): (usize, usize)) {
+    scan.lone_count += closers.saturating_sub(scan.size);
+    pop_brackets(scan, closers);
+    if openers == 0 {
+        return;
+    }
+    if let Some(BracketPlace::Count(n)) = scan.open.last_mut() {
+        *n += openers;
+    } else {
+        scan.open.push(BracketPlace::Count(openers));
+    }
+    scan.size += openers;
+}
+
+fn link_bracket_counts<'t>(w: &mut Writer<'t>, link: N<'t>) -> (usize, usize) {
+    if let Some(&counts) = w.link_brackets.get(&id(link)) {
+        return counts;
+    }
+    let mut scan = BracketScan::default();
+    scan_link_brackets(w, children(link), &mut scan);
+    let counts = (scan.lone_count, scan.size);
+    w.link_brackets.insert(id(link), counts);
+    counts
+}
+
+/// Scan one link label. A nested link is a boundary for bracket pairs in the
+/// containing label; counts stand in for its own brackets to keep deep scans linear.
+fn scan_link_brackets<'t>(w: &mut Writer<'t>, nodes: Arr<'t>, scan: &mut BracketScan<'t>) {
+    for node in nodes {
+        match ty(node) {
+            "text" => {
+                for (at, ch) in text(node).bytes().enumerate() {
+                    if ch == b'[' {
+                        scan.open.push(BracketPlace::Text(node, at));
+                        scan.size += 1;
+                    } else if ch == b']' {
+                        if scan.size > 0 {
+                            pop_brackets(scan, 1);
+                        } else {
+                            scan.lone.push((node, at));
+                            scan.lone_count += 1;
+                        }
+                    }
+                }
+            }
+            "link" => {
+                for place in scan.open.drain(..) {
+                    if let BracketPlace::Text(n, at) = place {
+                        scan.lone.push((n, at));
+                    }
+                }
+                scan.lone_count += scan.size;
+                scan.size = 0;
+                let counts = link_bracket_counts(w, node);
+                counted_brackets(scan, counts);
+            }
+            "citation_group" => {}
+            _ => scan_link_brackets(w, children(node), scan),
+        }
+    }
+}
+
+/// C2-W-125 case five: brackets of text without a partner in this link label
+/// must not take the link's closer, including across a nested link boundary.
+fn escape_lone_link_brackets<'t>(w: &mut Writer<'t>, link: N<'t>) {
+    if !w.link_escapes.contains_key(&id(link)) {
+        let mut scan = BracketScan::default();
+        scan_link_brackets(w, children(link), &mut scan);
+        let mut positions = scan.lone;
+        positions.extend(scan.open.into_iter().filter_map(|p| match p {
+            BracketPlace::Text(n, at) => Some((n, at)),
+            BracketPlace::Count(_) => None,
+        }));
+        w.link_escapes.insert(id(link), positions);
+    }
+    if let Some(positions) = w.link_escapes.get(&id(link)).cloned() {
+        for (node, at) in positions {
+            w.add_escape(node, at);
+        }
+    }
+}
+
 fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     if let Some(raw) = raw_reference(w, node, flags) {
         w.raw_refs.push(raw.clone());
         return raw;
     }
     escape_leading_caret(w, children(node), flags);
+    escape_lone_link_brackets(w, node);
     let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
     let content = collapsed_content(w, node, content, flags);
     format!(
@@ -850,11 +972,20 @@ fn own<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> Option<String> {
     })
 }
 
-pub fn write_inline<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
-    let out = match own(w, node, flags) {
-        Some(out) => out,
-        None => children_only(w, node, flags),
+fn write_inline_into<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32, out: &mut String) {
+    if !own_into(w, node, flags, out) {
+        out.push_str(&children_only(w, node, flags));
+    }
+    let no_attrs = match node {
+        V::Node(n) => n.attrs().is_none(),
+        _ => attrs(node).is_none(),
     };
+    if no_attrs && s(node, "lang").is_none() {
+        if ty(node) == "span" {
+            out.push_str("{}");
+        }
+        return;
+    }
     // C2-W-076: the attribute block is glued to its host. C2-I-040: a span takes the block with no part.
     let block = brace_block(
         node,
@@ -864,10 +995,78 @@ pub fn write_inline<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
         },
     );
     if ty(node) == "span" && block.is_empty() {
-        format!("{out}{{}}")
+        out.push_str("{}");
     } else {
-        out + &block
+        out.push_str(&block);
     }
+}
+
+/// [`own`] written onto `out`; false, with nothing written, where `own` gives `None`.
+fn own_into<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32, out: &mut String) -> bool {
+    let (open, close) = match ty(node) {
+        "underline" => ('_', '_'),
+        "strike" => ('~', '~'),
+        "highlight" => ('=', '='),
+        "superscript" => ('^', '^'),
+        "subscript" => (',', ','),
+        "insert" => ('+', '+'),
+        "delete" => ('-', '-'),
+        "emphasis" => return paired_into(w, node, flags, ('/', 1, IN_EMPHASIS), out),
+        "strong" => return paired_into(w, node, flags, ('*', 2, IN_STRONG), out),
+        _ => {
+            let Some(part) = own(w, node, flags) else {
+                return false;
+            };
+            out.push_str(&part);
+            return true;
+        }
+    };
+    let c = children(node);
+    if c.is_empty() {
+        lose(w, node, None);
+        return true;
+    }
+    out.push('{');
+    out.push(open);
+    write_kids_into(w, c, flags, out);
+    out.push(close);
+    out.push('}');
+    true
+}
+
+fn write_kids_into<'t>(w: &mut Writer<'t>, kids: Arr<'t>, flags: u32, out: &mut String) {
+    let mut list = w.kid_lists.pop().unwrap_or_default();
+    list.extend(kids.iter());
+    write_inlines_into(w, &list, flags, out);
+    list.clear();
+    w.kid_lists.push(list);
+}
+
+/// [`paired`] written onto `out`: the opener goes in once the content is written.
+fn paired_into<'t>(
+    w: &mut Writer<'t>,
+    node: N<'t>,
+    flags: u32,
+    (mark, bit, inside): (char, u8, u32),
+    out: &mut String,
+) -> bool {
+    let c = children(node);
+    if c.is_empty() {
+        lose(w, node, None);
+        return true;
+    }
+    let start = out.len();
+    write_kids_into(w, c, flags | inside, out);
+    if braced_pair(w, node, flags, bit, inside) {
+        out.insert(start, mark);
+        out.insert(start, '{');
+        out.push(mark);
+        out.push('}');
+    } else {
+        out.insert(start, mark);
+        out.push(mark);
+    }
+    true
 }
 
 /// C2-W-112: the code span `nodes[at]` has the code span behind it glued to it.
@@ -913,44 +1112,45 @@ fn unspelled_space(w: &mut Writer<'_>, node: V<'_>) -> String {
     "\u{a0}".into()
 }
 
-fn write_part<'t>(
+fn write_part_into<'t>(
     w: &mut Writer<'t>,
     nodes: &[N<'t>],
-    at: usize,
-    end: usize,
+    (at, end): (usize, usize),
     flags: u32,
-) -> String {
+    out: &mut String,
+) {
     let Some(&node) = nodes.get(at) else {
-        return String::new();
+        return;
     };
     let next = nodes.get(at + 1).copied();
     if ty(node) == "non_breaking_space" && super::node::is(next, "soft_break") {
-        return unspelled_space(w, node);
+        out.push_str(&unspelled_space(w, node));
+        return;
     }
-    let part = if end > at + 1 {
-        code_run(nodes, at, end)
+    let start = out.len();
+    if end > at + 1 {
+        out.push_str(&code_run(nodes, at, end));
     } else {
-        write_inline(w, node, flags)
-    };
+        write_inline_into(w, node, flags, out);
+    }
     // C2-W-022: no space or tab of text stands at the end of a line.
     if ty(node) == "text" && super::node::is(next, "soft_break") {
-        trim_end(&part).to_string()
-    } else {
-        part
+        let kept = trim_end(out.get(start..).unwrap_or("")).len();
+        out.truncate(start + kept);
     }
 }
 
 /// C2-W-069: a bare mark glued to the same mark before it makes one run, so the node is braced.
-fn glued_part<'t>(
+fn glued_part_into<'t>(
     w: &mut Writer<'t>,
     nodes: &[N<'t>],
-    at: usize,
-    end: usize,
+    (at, end): (usize, usize),
     flags: u32,
     before: Option<char>,
-) -> String {
+    out: &mut String,
+) {
     let Some(&node) = nodes.get(at) else {
-        return String::new();
+        return;
     };
     let mark = match ty(node) {
         "emphasis" => Some('/'),
@@ -962,18 +1162,21 @@ fn glued_part<'t>(
             w.forms.insert(id(node), 1);
         }
     }
-    let part = write_part(w, nodes, at, end, flags);
+    let start = out.len();
+    write_part_into(w, nodes, (at, end), flags, out);
+    let part = out.get(start..).unwrap_or("");
     if mark.is_none() || part.is_empty() {
-        return part;
+        return;
     }
     let strict = w.strict_pairs
         && !w.is_lost(node)
-        && cannot_pair(&part, mark, before, nodes.get(end).copied());
+        && cannot_pair(part, mark, before, nodes.get(end).copied());
     if part.chars().next() != before && !strict {
-        return part;
+        return;
     }
+    out.truncate(start);
     w.forms.insert(id(node), 1);
-    write_part(w, nodes, at, end, flags)
+    write_part_into(w, nodes, (at, end), flags, out);
 }
 
 /// C2-W-069: a bare pair whose opener cannot open or whose closer cannot close at its neighbors
@@ -1109,7 +1312,8 @@ fn double_last_backslash<'t>(
     if let Some(&after) = nodes.get(next) {
         if !matches!(ty(after), "soft_break" | "hard_break") {
             let end = part_end(w, nodes, next);
-            let spelled = write_part(w, nodes, next, end, flags);
+            let mut spelled = String::new();
+            write_part_into(w, nodes, (next, end), flags, &mut spelled);
             let first = spelled.bytes().next();
             if first.is_some_and(|c| c != b' ' && !c.is_ascii_punctuation()) {
                 return;
@@ -1170,7 +1374,15 @@ fn place_escapes<'t>(
 }
 
 pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> String {
+    #[cfg(test)]
+    super::INLINE_BUFFERS.with(|c| c.set(c.get() + 1));
     let mut out = String::new();
+    write_inlines_into(w, nodes, flags, &mut out);
+    out
+}
+
+fn write_inlines_into<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32, out: &mut String) {
+    let base = out.len();
     let mut line_start = true;
     let mut last: Option<char> = None;
     let mut at = 0;
@@ -1183,7 +1395,7 @@ pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> Str
         }
         // C2-L-021: a fragment of a continuation row starts at this node.
         if wraps_at(w, node, flags) {
-            if out.ends_with(' ') {
+            if out.len() > base && out.ends_with(' ') {
                 out.pop();
             }
             out.push('\n');
@@ -1193,18 +1405,18 @@ pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> Str
         let end = part_end(w, nodes, at);
         let after_bang = last == Some('!')
             && !out
-                .get(..out.len().saturating_sub(1))
+                .get(base..out.len().saturating_sub(1))
                 .is_some_and(|o| o.ends_with('\\'));
         place_escapes(w, nodes, at, end, flags, after_bang);
-        let part = inline_part(w, nodes, at, end, flags, (line_start, last));
-        out.push_str(&part);
+        let start = out.len();
+        inline_part_into(w, nodes, (at, end), flags, (line_start, last), out);
+        let part = out.get(start..).unwrap_or("");
         if let Some(c) = part.chars().last() {
             last = Some(c);
         }
         line_start = last == Some('\n') || (line_start && part.is_empty());
         at = end;
     }
-    out
 }
 
 fn wraps_at(w: &Writer<'_>, node: V<'_>, flags: u32) -> bool {
@@ -1214,26 +1426,26 @@ fn wraps_at(w: &Writer<'_>, node: V<'_>, flags: u32) -> bool {
             .is_some_and(|s| s.contains(&id(node)))
 }
 
-fn inline_part<'t>(
+fn inline_part_into<'t>(
     w: &mut Writer<'t>,
     nodes: &[N<'t>],
-    at: usize,
-    end: usize,
+    (at, end): (usize, usize),
     flags: u32,
     (line_start, last): (bool, Option<char>),
-) -> String {
+    out: &mut String,
+) {
     let Some(&node) = nodes.get(at) else {
-        return String::new();
+        return;
     };
     if let Some(b) = line_start_break(node, line_start) {
-        b.to_string()
+        out.push_str(b);
     } else if ty(node) == "hard_break"
         && flags & BARE_BREAKS != 0
         && matches!(last, Some(' ' | '\t'))
     {
-        "\\\n".to_string()
+        out.push_str("\\\n");
     } else {
-        glued_part(w, nodes, at, end, flags, last)
+        glued_part_into(w, nodes, (at, end), flags, last, out);
     }
 }
 

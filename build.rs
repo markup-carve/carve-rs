@@ -646,7 +646,7 @@ fn write_node_enum(out: &mut String, nodes: &[NodeDef], fam: Fam) {
         out,
         concat!(
             "}}\n\nimpl {head} {{\n    /// The node type name as the schema spells it.\n    #[must_use]\n",
-            "    pub const fn type_name(&self) -> &'static str {{\n        match self {{"
+            "    #[inline]\n    pub const fn type_name(&self) -> &'static str {{\n        match self {{"
         ),
         head = head
     );
@@ -1138,7 +1138,52 @@ fn gen_tables(dir: &Path) -> String {
     );
     gen_dispatch(&mut out, &load(dir, "line-shapes.json"));
     gen_ordered(&mut out, &load(dir, "ordered-styles.json"));
+    gen_node_slots(&mut out, &load(dir, "node-slots.json"));
+    gen_node_results(&mut out, &load(dir, "ast-results.json"));
     out
+}
+
+fn gen_node_results(out: &mut String, v: &Value) {
+    out.push_str("/// A result field and its `when` condition.\npub type ResultField = (&'static str, Option<&'static str>);\n\n/// (node type, result fields)\npub const NODE_RESULTS: &[(&str, &[ResultField])] = &[\n");
+    for (name, fields) in v
+        .get("nodes")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let fields: Vec<String> = fields
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|f| {
+                let field = f.get("field")?.as_str()?;
+                let when = f.get("when").and_then(Value::as_str);
+                Some(format!("({field:?}, {when:?})"))
+            })
+            .collect();
+        let _ = writeln!(out, "    ({name:?}, &[{}]),", fields.join(", "));
+    }
+    out.push_str("];\n\n");
+}
+
+fn gen_node_slots(out: &mut String, v: &Value) {
+    out.push_str("/// (node type, slot paths in walk order)\npub const NODE_SLOTS: &[(&str, &[&str])] = &[\n");
+    for (name, slots) in v
+        .get("nodes")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let paths: Vec<String> = slots
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|p| format!("{p:?}"))
+            .collect();
+        let _ = writeln!(out, "    ({name:?}, &[{}]),", paths.join(", "));
+    }
+    out.push_str("];\n\n");
 }
 
 fn gen_unicode(out: &mut String, v: &Value) {
