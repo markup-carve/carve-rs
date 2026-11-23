@@ -1346,6 +1346,10 @@ fn glued_part_into<'t>(
         return;
     }
     out.truncate(start);
+    // A strict pass is a one-off, so only a form the glue alone asked for is decided again (carve#6420).
+    if !strict && w.form(node) == 0 {
+        w.glued.insert(id(node));
+    }
     w.brace(node);
     write_part_into(w, nodes, (at, end), flags, out);
 }
