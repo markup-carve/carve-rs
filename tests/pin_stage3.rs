@@ -85,8 +85,9 @@ fn bare_dot_behind_a_task_box_or_quote_mark_stays_bare() {
     }
 }
 
-/// carve#6394, C2-W-154: after a list whose last block takes a lazy line the shape has no spelling; after a
-/// list that ends in a closed block, also a nested one, the paragraph is written directly below it.
+/// carve#6394, C2-W-154: after a list that ends in a closed block, also a nested one, the paragraph is written
+/// directly below it. After a list whose last block takes a lazy line the list is written one space in (carve#6398,
+/// C2-W-155).
 #[test]
 fn typed_opener_paragraph_below_a_list() {
     let em = json!({"type": "smart_punctuation", "kind": "em_dash", "glyph": "\u{2014}", "source": "---"});
@@ -110,12 +111,14 @@ fn typed_opener_paragraph_below_a_list() {
         assert_eq!(r["ok"]["source"].as_str(), Some(source), "{source:?}: {r}");
     }
     let quote = json!({"type": "block_quote", "children": [{"type": "paragraph", "children": [text("q")]}]});
-    for last in [quote, json!({"type": "paragraph", "children": [text("a")]})] {
-        let r = reply(&json!({"call": "write", "tree": doc(json!([item(last), para]))}));
-        let diagnostics = &r["error"]["diagnostics"];
-        assert_eq!(diagnostics.as_array().map(Vec::len), Some(1), "{r}");
-        assert_eq!(diagnostics[0]["code"], "structure-unspellable", "{r}");
-        assert_eq!(diagnostics[0]["path"], "/children/1", "{r}");
+    for (last, carve) in [
+        (quote, " - > q\n\n ---yaml\nk: v\n---\n"),
+        (
+            json!({"type": "paragraph", "children": [text("a")]}),
+            " - a\n\n ---yaml\nk: v\n---\n",
+        ),
+    ] {
+        assert_eq!(written(&doc(json!([item(last), para]))), carve);
     }
 }
 
