@@ -73,7 +73,9 @@ pub(crate) fn to_html(input: &str, format: ImportFormat, sink: &mut Sink) -> Res
 pub(super) fn markdown_options(input: &str, gfm: bool) -> comrak::Options<'static> {
     let mut o = comrak::Options::default();
     o.extension.math_dollars = true;
-    let toml = input.starts_with("+++\n") || input.starts_with("+++\r\n");
+    // comrak skips a leading U+FEFF before its frontmatter scan (carve#6447).
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    let toml = start.starts_with("+++\n") || start.starts_with("+++\r\n");
     o.extension.front_matter_delimiter = Some(if toml { "+++" } else { "---" }.into());
     o.render.r#unsafe = true;
     if gfm {
