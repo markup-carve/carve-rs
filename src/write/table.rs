@@ -770,7 +770,8 @@ fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
             }
         }
     }
-    (head <= 1 && body <= 1).then_some((rows, needs))
+    // C2-L-036: a table without rows is delimited, whatever its bodies.
+    (rows == 0 || (head <= 1 && body <= 1)).then_some((rows, needs))
 }
 
 fn first_value(cell: V<'_>) -> Option<&str> {
