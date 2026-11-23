@@ -360,6 +360,9 @@ impl<'a> Parser<'a> {
         if self.continue_leaf(&walk, e) {
             return;
         }
+        if had_opaque && self.leaf.is_none() && self.comment_ends_body(&walk, e) {
+            return;
+        }
         // C2-B-135: a line that ended an opaque body is not a skipped comment line.
         if !had_opaque && self.comment_only(&walk, e) {
             // C2-B-137: a skipped comment line is not blank and not content, so
@@ -368,6 +371,31 @@ impl<'a> Parser<'a> {
             return;
         }
         self.blank_run_reset_after(&walk, e);
+    }
+
+    /// C2-B-137: a comment-only line that ends an opaque body closes the body's
+    /// container, with its list, and nothing more (carve#6439).
+    fn comment_ends_body(&mut self, walk: &Walk<'a>, e: usize) -> bool {
+        if !shapes::comment_only(walk.cur.after_blanks().rest()) {
+            return false;
+        }
+        let mut index = self.stack.len() - 1;
+        while index > walk.matched
+            && !matches!(
+                self.stack[index].kind,
+                Kind::Item { .. } | Kind::Desc { .. } | Kind::Footnote { .. } | Kind::Quote
+            )
+        {
+            index -= 1;
+        }
+        let keep = match self.stack[index - 1].kind {
+            Kind::List { .. } | Kind::DescList { .. } => index - 1,
+            _ => index,
+        };
+        self.close_to(keep);
+        self.closed = None;
+        self.blank_run = 0;
+        self.comment_only(walk, e)
     }
 
     fn region_marker(&mut self, walk: &Walk<'a>) -> bool {
