@@ -76,6 +76,17 @@ pub struct Spelling<'t> {
     pub lost_keys: AddrMap<usize, Vec<String>>,
 }
 
+/// The spelling of a typed-opener paragraph below a list, footnote or description list.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Below {
+    /// C2-W-154: on the line directly below the container, at column 0.
+    Direct,
+    /// C2-W-155: below a blank line, with the container above written one space in.
+    Indent,
+    /// C2-W-117: no spelling keeps the tree.
+    Unspellable,
+}
+
 #[allow(clippy::struct_excessive_bools)] // Independent switches of one write.
 pub struct Writer<'t> {
     pub pool: &'t typed_arena::Arena<Value>,
@@ -103,9 +114,10 @@ pub struct Writer<'t> {
     pub leading_frontmatter: Option<usize>,
     /// The document's own children, whose first line a typed opener would take (C2-W-154).
     pub top_blocks: crate::hash::AddrSet<usize>,
-    /// Typed-opener paragraphs written directly below a list, footnote or description list that takes no lazy line (C2-W-154).
-    /// The value is false where the container ends in a block that takes a lazy line: no spelling.
-    pub below_list: crate::hash::AddrMap<usize, bool>,
+    /// Typed-opener paragraphs below a list, footnote or description list, and how each is spelled (C2-W-154, C2-W-155).
+    pub below_list: crate::hash::AddrMap<usize, Below>,
+    /// C2-W-155: top-level blocks written one space in; the value is true where the attribute line stays at column 0.
+    pub indented: crate::hash::AddrMap<usize, bool>,
     /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
     pub kind_escapes: bool,
     /// Set when a node of the group did not read back during the kind rounds.
@@ -157,6 +169,7 @@ impl<'t> Writer<'t> {
             leading_frontmatter: None,
             top_blocks: crate::hash::AddrSet::default(),
             below_list: crate::hash::AddrMap::default(),
+            indented: crate::hash::AddrMap::default(),
             kind_escapes: true,
             kind_failed: false,
             parses: 0,

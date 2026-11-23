@@ -10,7 +10,7 @@ use super::inline::{
     BARE_BREAKS, IN_FIGURE_GROUP, braced_comment, line_comment_text, write_content, write_inlines,
 };
 use super::node::{N, caption, children, classes, has, id, int, list, s, text, ty};
-use super::state::{Writer, emit, emit_lines, lose, note_place};
+use super::state::{Below, Writer, emit, emit_lines, lose, note_place};
 use super::table::{table_attribute, write_table};
 use crate::view::{Arr, V};
 use serde_json::Value;
@@ -272,10 +272,10 @@ fn text_leaf<'t>(
     // C2-W-154: no escape keeps an em dash node, so a first line that reads as a
     // typed metadata opener is indented by one space, which C2-B-232 leaves as text.
     let below = w.below_list.get(&id(node)).copied();
-    if below == Some(false) {
+    if below == Some(Below::Unspellable) {
         lose(w, node, None);
     }
-    if top && ty(node) == "paragraph" && below != Some(true) {
+    if top && ty(node) == "paragraph" && below != Some(Below::Direct) {
         let first = content.split('\n').next().unwrap_or("");
         if crate::block::shapes::typed_frontmatter_opener(first) {
             content.insert(0, ' ');
@@ -1170,7 +1170,7 @@ pub fn blank_lines_between(
     if ty(node) == "comment" {
         return blank_lines_before_comment(w, before, node);
     }
-    if w.below_list.get(&id(node)) == Some(&true) {
+    if w.below_list.get(&id(node)) == Some(&Below::Direct) {
         return 0;
     }
     if let Some(l) = list_before {
@@ -1224,20 +1224,94 @@ pub fn typed_opener_paragraph(node: V<'_>) -> bool {
     ty(node) == "paragraph" && !has(node, "attrs") && starts_typed_opener(node)
 }
 
-/// C2-W-154: a top-level paragraph without attributes whose first line would read as a typed opener, directly
-/// after a list, footnote or description list whose last block takes no lazy line, is written on the next line at
-/// column 0, where the opener closes the container and stays text (C2-B-026, C2-B-232).
-/// Where the last block of the container takes a lazy line, the opener would be one, so the shape has no spelling.
-pub fn below_list(w: &Writer<'_>, nodes: Arr<'_>) -> crate::hash::AddrMap<usize, bool> {
+/// C2-W-154, C2-W-155: the spelling of each top-level paragraph without attributes whose first line would read as a
+/// typed opener, directly after a list, footnote or description list, and the top-level blocks written one space in
+/// for it. Directly below a container whose last block takes no lazy line the opener closes it (C2-B-026, C2-B-232).
+pub fn below_list(
+    w: &Writer<'_>,
+    nodes: Arr<'_>,
+) -> (
+    crate::hash::AddrMap<usize, Below>,
+    crate::hash::AddrMap<usize, bool>,
+) {
     let mut out = crate::hash::AddrMap::default();
-    for (before, node) in nodes.iter().zip(nodes.iter().skip(1)) {
-        if matches!(ty(before), "list" | "footnote" | "definition_list")
-            && typed_opener_paragraph(node)
+    let mut indented = crate::hash::AddrMap::default();
+    for at in 1..nodes.len() {
+        let (Some(before), Some(node)) = (nodes.get(at - 1), nodes.get(at)) else {
+            continue;
+        };
+        if !matches!(ty(before), "list" | "footnote" | "definition_list")
+            || !typed_opener_paragraph(node)
         {
-            out.insert(id(node), !takes_lazy_line(w, before));
+            continue;
         }
+        let below = if !takes_lazy_line(w, before) {
+            Below::Direct
+        } else if ty(before) == "footnote" {
+            Below::Unspellable
+        } else if let Some(run) = indent_run(w, nodes, at - 1) {
+            indented.extend(run);
+            Below::Indent
+        } else {
+            Below::Unspellable
+        };
+        out.insert(id(node), below);
     }
-    out
+    (out, indented)
+}
+
+/// The smallest departure that keeps a block written one space in out of the open container directly above it
+/// (C2-W-005, C2-W-155).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Departure {
+    /// Its attribute line stands at column 0 and closes the container (C2-B-097).
+    AttributeLine,
+    /// The container is written one space in as well.
+    IndentAbove,
+}
+
+/// C2-W-155: the departures in the order the clause takes them.
+const DEPARTURES: [Departure; 2] = [Departure::AttributeLine, Departure::IndentAbove];
+
+/// C2-W-155: the run of top-level blocks written one space in, from the block at `from` upward, each with whether its
+/// attribute line stays at column 0. None where the run reaches a footnote, which has no indented spelling.
+fn indent_run(w: &Writer<'_>, nodes: Arr<'_>, from: usize) -> Option<Vec<(usize, bool)>> {
+    let mut run = Vec::new();
+    let mut at = from;
+    loop {
+        let node = nodes.get(at)?;
+        // A block comment closes the container above it; a comment line does not (C2-B-137).
+        let above_at = (0..at).rev().find(|&i| !is_comment_line(nodes.get(i)));
+        let Some(above) = above_at
+            .and_then(|i| nodes.get(i))
+            .filter(|a| matches!(ty(a), "list" | "definition_list" | "footnote"))
+        else {
+            run.push((id(node), false));
+            return Some(run);
+        };
+        let departure = DEPARTURES.into_iter().find(|d| match d {
+            Departure::AttributeLine => has_attribute_line(w, node),
+            Departure::IndentAbove => ty(above) != "footnote",
+        })?;
+        // C2-B-137: a comment line closes no container, and below the blank line the container takes it too.
+        if above_at != at.checked_sub(1) {
+            return None;
+        }
+        run.push((id(node), departure == Departure::AttributeLine));
+        if departure == Departure::AttributeLine {
+            return Some(run);
+        }
+        at -= 1;
+    }
+}
+
+/// Whether the list or description list `node` is written with an attribute line above its first line.
+fn has_attribute_line(w: &Writer<'_>, node: V<'_>) -> bool {
+    if ty(node) == "list" {
+        !list_attributes(node, list_markers(w, node).start.as_ref()).is_empty()
+    } else {
+        !brace_block(node, &BlockParts::default()).is_empty()
+    }
 }
 
 fn is_nested_list(w: &Writer<'_>, before: V<'_>, node: V<'_>, at: usize) -> bool {
@@ -1336,6 +1410,12 @@ fn write_siblings<'t>(
         let written = w.lines.len();
         if ty(node) == "code_block" && caption(node).is_some() {
             at = captioned_code(w, nodes, at, prefix, flags);
+        } else if let Some(&column_0) = w.indented.get(&id(node)) {
+            // C2-W-155: one space in; an attribute line at column 0 closes the container above.
+            write_block(w, node, &format!("{prefix} "), flags);
+            if column_0 && let Some(line) = w.lines.get_mut(written) {
+                line.remove(0);
+            }
         } else {
             write_block(w, node, prefix, flags);
         }

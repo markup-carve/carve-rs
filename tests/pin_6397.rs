@@ -37,8 +37,8 @@ fn typed_opener_paragraph_below_a_closed_footnote_or_description() {
     }
 }
 
-/// carve#6397, C2-W-154: where the footnote or description ends in a block that takes a lazy line, the shape
-/// keeps the loss report.
+/// carve#6397, C2-W-154: where the footnote ends in a block that takes a lazy line, the shape keeps the loss
+/// report. A description list that ends in one is written one space in (carve#6409, C2-W-155).
 #[test]
 fn typed_opener_paragraph_below_a_lazy_footnote_or_description_is_unspellable() {
     let para = json!({"type": "paragraph", "children": [text("x")]});
@@ -61,6 +61,12 @@ fn typed_opener_paragraph_below_a_lazy_footnote_or_description_is_unspellable() 
         let tree = json!({"type": "document", "astVersion": "2.0",
             "children": [container, opener_paragraph()]});
         let r = reply(&json!({"call": "write", "tree": tree}));
+        if container["type"] == "definition_list" {
+            let source = r["ok"]["output"].as_str().unwrap_or("");
+            assert!(source.starts_with(" :: s\n : s\n :: t\n"), "{r}");
+            assert!(source.ends_with("\n\n ---yaml\nk: v\n---\n"), "{r}");
+            continue;
+        }
         let diagnostics = &r["error"]["diagnostics"];
         assert_eq!(diagnostics.as_array().map(Vec::len), Some(1), "{r}");
         assert_eq!(diagnostics[0]["code"], "structure-unspellable", "{r}");
