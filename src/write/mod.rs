@@ -1630,11 +1630,12 @@ fn stale_in_run<'t>(w: &Writer<'t>, run: Arr<'t>, stale: &mut Vec<usize>) {
             continue;
         };
         stack.push((nodes, at + 1));
-        if !matches!(ty(n), "emphasis" | "strong") || w.form(n) == 0 {
-        } else if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
-            stale.push(id(n));
-        } else {
-            behind = true;
+        if matches!(ty(n), "emphasis" | "strong") && w.form(n) > 0 {
+            if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
+                stale.push(id(n));
+            } else {
+                behind = true;
+            }
         }
         stack.push((children(n), 0));
     }
@@ -1651,39 +1652,40 @@ fn pairs_bare(nodes: Arr<'_>, at: usize) -> bool {
         "strong" => '*',
         _ => return false,
     };
-    let edge = |n: Option<V<'_>>, last: bool| -> Option<char> {
-        let mut n = n?;
-        loop {
-            if ty(n) == "text" {
-                return if last {
-                    text(n).chars().last()
-                } else {
-                    text(n).chars().next()
-                };
-            }
-            let c = children(n);
-            n = if last { c.last()? } else { c.first()? };
-        }
-    };
-    let mut marks = false;
-    let mut pending: Vec<V<'_>> = children(n).iter().collect();
-    while let Some(c) = pending.pop() {
-        marks |= ty(c) == "text" && text(c).contains(mark);
-        pending.extend(children(c).iter());
-    }
     let space = |c: Option<char>| c.is_none_or(crate::chars::is_flank_space);
     let word = |c: Option<char>| c.is_some_and(crate::chars::is_word);
-    let (first, last) = (edge(Some(n), false), edge(Some(n), true));
-    let before = at
-        .checked_sub(1)
-        .and_then(|i| nodes.get(i))
-        .filter(|p| ty(*p) == "text");
-    let after = nodes.get(at + 1).filter(|p| ty(*p) == "text");
-    !marks
-        && !space(first)
-        && !space(last)
-        && !word(before.and_then(|p| text(p).chars().last()))
-        && !word(after.and_then(|p| text(p).chars().next()))
+    let text_at = |i: Option<usize>| i.and_then(|i| nodes.get(i)).filter(|p| ty(*p) == "text");
+    !holds_mark(n, mark)
+        && !space(edge_char(n, false))
+        && !space(edge_char(n, true))
+        && !word(text_at(at.checked_sub(1)).and_then(|p| text(p).chars().last()))
+        && !word(text_at(Some(at + 1)).and_then(|p| text(p).chars().next()))
+}
+
+/// The first or last character of the text that starts or ends `n`, if a text does.
+fn edge_char(mut n: V<'_>, last: bool) -> Option<char> {
+    loop {
+        if ty(n) == "text" {
+            return if last {
+                text(n).chars().last()
+            } else {
+                text(n).chars().next()
+            };
+        }
+        let c = children(n);
+        n = if last { c.last()? } else { c.first()? };
+    }
+}
+
+fn holds_mark(n: V<'_>, mark: char) -> bool {
+    let mut pending: Vec<V<'_>> = children(n).iter().collect();
+    while let Some(c) = pending.pop() {
+        if ty(c) == "text" && text(c).contains(mark) {
+            return true;
+        }
+        pending.extend(children(c).iter());
+    }
+    false
 }
 
 /// C2-W-002: whether `actual` is `expected` for the readback check (C2-A-193).
