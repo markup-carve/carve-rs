@@ -24,11 +24,25 @@ struct Run<'t> {
     after: Edge,
     /// Whether a smart dash node stands directly before the run: its hyphens join the run (C2-W-099).
     after_dash: bool,
+    /// Whether a smart dash node stands directly after the run.
+    before_dash: bool,
 }
 
 impl Run<'_> {
     fn line_start(&self) -> bool {
         self.before == Edge::Line
+    }
+
+    /// A lone hyphen at an edge of the run that goes on into a dash node beside it (C2-I-111).
+    fn beside_dash(&self, at: usize) -> bool {
+        let b = self.text.as_bytes();
+        if b.get(at) != Some(&b'-')
+            || before(b, at, 1) == Some(b'-')
+            || b.get(at + 1) == Some(&b'-')
+        {
+            return false;
+        }
+        (at == 0 && self.after_dash) || (at + 1 == b.len() && self.before_dash)
     }
 }
 
@@ -87,7 +101,11 @@ impl<'t> KindBlocks<'t> {
         {
             return Some(format!("{{{mark}"));
         }
-        if ch == b'-' && (before(b, at, 1) == Some(b'-') || (at == 0 && run.after_dash)) {
+        if ch == b'-'
+            && (before(b, at, 1) == Some(b'-')
+                || (at == 0 && run.after_dash)
+                || run.beside_dash(at))
+        {
             return Some("--".into());
         }
         Some(char::from(ch).to_string())
@@ -112,11 +130,7 @@ impl<'t> KindBlocks<'t> {
 fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined: &mut bool) {
     let mut prev: Option<N<'t>> = None;
     for node in nodes {
-        let after_dash = prev.is_some_and(|p| {
-            ty(p) == "smart_punctuation"
-                && s(p, "source")
-                    .is_some_and(|src| !src.is_empty() && src.bytes().all(|b| b == b'-'))
-        });
+        let after_dash = prev.is_some_and(is_dash);
         prev = Some(node);
         if ty(node) == "text" {
             match runs.last_mut().filter(|_| *joined) {
@@ -130,6 +144,7 @@ fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined:
                     before: *edge,
                     after: Edge::Markup,
                     after_dash,
+                    before_dash: false,
                 }),
             }
             *joined = true;
@@ -142,6 +157,7 @@ fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined:
         };
         if *joined && let Some(run) = runs.last_mut() {
             run.after = at;
+            run.before_dash = is_dash(node);
         }
         *joined = false;
         *edge = at;
@@ -154,6 +170,11 @@ fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined:
             *edge = Edge::Markup;
         }
     }
+}
+
+fn is_dash(node: N<'_>) -> bool {
+    ty(node) == "smart_punctuation"
+        && s(node, "source").is_some_and(|src| !src.is_empty() && src.bytes().all(|b| b == b'-'))
 }
 
 /// The shape of a line opener: its first character, or `0` and the delimiter
@@ -194,11 +215,13 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
         return vec![usize::from(value.starts_with("--"))];
     }
     if key == "--" {
-        return (1..b.len())
+        // C2-W-088: a single hyphen is no potential opener of this kind, unless a dash node beside it extends it.
+        return (0..b.len())
             .filter(|&at| {
-                b.get(at) == Some(&b'-')
+                (b.get(at) == Some(&b'-')
                     && before(b, at, 1) == Some(b'-')
-                    && before(b, at, 2) != Some(b'-')
+                    && before(b, at, 2) != Some(b'-'))
+                    || run.beside_dash(at)
             })
             .collect();
     }

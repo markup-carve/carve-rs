@@ -1225,13 +1225,15 @@ pub fn typed_opener_paragraph(node: V<'_>) -> bool {
 }
 
 /// C2-W-154: a top-level paragraph without attributes whose first line would read as a typed opener, directly
-/// after a list whose last block takes no lazy line, is written on the next line at column 0, where the opener
-/// closes the list and stays text (C2-B-026, C2-B-232).
-/// Where the last block of the list takes a lazy line, the opener would be one, so the shape has no spelling.
+/// after a list, footnote or description list whose last block takes no lazy line, is written on the next line at
+/// column 0, where the opener closes the container and stays text (C2-B-026, C2-B-232).
+/// Where the last block of the container takes a lazy line, the opener would be one, so the shape has no spelling.
 pub fn below_list(w: &Writer<'_>, nodes: Arr<'_>) -> crate::hash::AddrMap<usize, bool> {
     let mut out = crate::hash::AddrMap::default();
     for (before, node) in nodes.iter().zip(nodes.iter().skip(1)) {
-        if ty(before) == "list" && typed_opener_paragraph(node) {
+        if matches!(ty(before), "list" | "footnote" | "definition_list")
+            && typed_opener_paragraph(node)
+        {
             out.insert(id(node), !takes_lazy_line(w, before));
         }
     }

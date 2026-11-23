@@ -651,8 +651,13 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
 /// Whether `node` is written into one group with the block `before` above it.
 fn joins_group(w: &mut Writer<'_>, before: V<'_>, node: V<'_>) -> bool {
     if ty(node) == "paragraph" {
-        // C2-W-154: the paragraph below the list reads back only in the list's context.
-        return ty(before) == "definition_list" || w.below_list.get(&id(node)) == Some(&true);
+        // C2-W-154: the paragraph below the container reads back only in its context, and one without a
+        // spelling is reported alone.
+        return w
+            .below_list
+            .get(&id(node))
+            .copied()
+            .unwrap_or(ty(before) == "definition_list");
     }
     ty(node) == "comment" && blocks::blank_lines_between(w, before, None, node, false) == 0
 }
