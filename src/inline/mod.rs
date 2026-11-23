@@ -151,6 +151,8 @@ pub struct Scratch<'a> {
     scan: scan::Bufs,
     stacks: Vec<Vec<delim::Entry>>,
     direct: Vec<direct::Seg>,
+    /// Holds the buffers of the thread's spare, returned on drop.
+    borrowed: bool,
 }
 
 /// A buffer this long is not kept: one huge content must not pin its memory.
@@ -163,9 +165,79 @@ impl Scratch<'_> {
             || self.evs.capacity() > KEEP / 16
             || self.direct.capacity() > KEEP / 16
         {
+            // Dropped, not returned to the spare.
+            self.borrowed = false;
             *self = Self::default();
         }
     }
+
+    /// Takes the buffers of the full pass from the last tree of the thread,
+    /// so a tree does not grow them from empty again. Only the full pass
+    /// borrows: a tree whose contents all take the direct route pays nothing.
+    fn borrow_spare(&mut self) {
+        if self.borrowed {
+            return;
+        }
+        self.borrowed = true;
+        let _ = SPARE.try_with(|spare| {
+            if let Ok(mut spare) = spare.try_borrow_mut() {
+                self.exchange(&mut spare);
+            }
+        });
+    }
+
+    /// Swaps the buffers with `other`; those typed by the arena are emptied.
+    /// Field by field: moving the whole scratch cost more than a small tree saves.
+    fn exchange(&mut self, other: &mut Scratch<'_>) {
+        use std::mem::{swap, take};
+        swap(&mut self.text, &mut other.text);
+        swap(&mut self.segs, &mut other.segs);
+        swap(&mut self.joins, &mut other.joins);
+        swap(&mut self.chars, &mut other.chars);
+        swap(&mut self.join, &mut other.join);
+        swap(&mut self.outs, &mut other.outs);
+        swap(&mut self.scan, &mut other.scan);
+        swap(&mut self.stacks, &mut other.stacks);
+        let toks = recycle(take(&mut self.toks));
+        self.toks = recycle(std::mem::replace(&mut other.toks, toks));
+        let evs = recycle(take(&mut self.evs));
+        self.evs = recycle(std::mem::replace(&mut other.evs, evs));
+        let frames = recycle(take(&mut self.frames));
+        self.frames = recycle(std::mem::replace(&mut other.frames, frames));
+        let lists = take(&mut self.lists).into_iter().map(recycle).collect();
+        self.lists = std::mem::replace(&mut other.lists, lists)
+            .into_iter()
+            .map(recycle)
+            .collect();
+    }
+}
+
+impl Drop for Scratch<'_> {
+    fn drop(&mut self) {
+        if !self.borrowed {
+            return;
+        }
+        let _ = SPARE.try_with(|spare| {
+            if let Ok(mut spare) = spare.try_borrow_mut() {
+                self.exchange(&mut spare);
+            }
+        });
+    }
+}
+
+thread_local! {
+    static SPARE: std::cell::RefCell<Scratch<'static>> = std::cell::RefCell::default();
+}
+
+/// An emptied vector with the allocation of `v`: the collect runs in place
+/// when `T` and `U` have the same layout, as they do for one type under two
+/// lifetimes.
+fn recycle<T, U>(mut v: Vec<T>) -> Vec<U> {
+    if v.capacity() == 0 {
+        return Vec::new();
+    }
+    v.clear();
+    v.into_iter().filter_map(|_| None).collect()
 }
 
 /// Parses one content into inline nodes with positions.
@@ -255,6 +327,7 @@ fn full<'a>(
     s: &mut Scratch<'a>,
     known: Known,
 ) -> &'a mut [Node<'a>] {
+    s.borrow_spare();
     let content = content::Content::new_in(env, pieces, s);
     let scan::Scanned { mut toks, comments } = scan::scan(
         &content,
@@ -307,4 +380,32 @@ fn full<'a>(
 struct Known {
     scan: usize,
     smart: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recycle_keeps_the_allocation() {
+        let mut v: Vec<token::Tok<'static>> = Vec::with_capacity(64);
+        v.push(token::Tok::new(0, 1, token::K::Nbsp));
+        let at = v.as_ptr().cast::<u8>();
+        let u: Vec<token::Tok<'_>> = recycle(v);
+        assert!(u.is_empty());
+        assert_eq!(u.capacity(), 64);
+        assert_eq!(u.as_ptr().cast::<u8>(), at);
+    }
+
+    #[test]
+    fn a_tree_starts_with_the_buffers_of_the_last_tree() {
+        let src = "{^a {^b {^c {^d {^e {^f^}^}^}^}^}^} and more text\n";
+        let arena = crate::Arena::new();
+        let _ = crate::parse_resolved_in(src, &crate::Options::default(), &arena);
+        let mut next = Scratch::default();
+        next.borrow_spare();
+        assert!(next.toks.capacity() > 0);
+        assert!(next.frames.capacity() > 0);
+        assert!(next.toks.is_empty() && next.frames.is_empty());
+    }
 }
