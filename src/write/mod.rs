@@ -511,6 +511,7 @@ fn write_tree<'t>(
 ) -> (String, Vec<Entry>) {
     let mut w = Writer::new(pool, settings.align_tables);
     w.work_limit = budget;
+    w.no_mark_text = matches!(doc, V::Json(value) if !pairs::json_has_mark_text(value));
     w.extensions.clone_from(&settings.extensions);
     if settings.extensions.iter().any(|e| e == "carve.tabs") {
         w.matchers.push(state::Matcher {

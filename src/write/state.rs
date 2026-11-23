@@ -124,6 +124,8 @@ pub struct Writer<'t> {
     pub read_comments: crate::hash::AddrSet<usize>,
     /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
     pub kind_escapes: bool,
+    /// No text of a JSON tree holds a C2-W-146 mark byte, so no group asks for a pair escape.
+    pub no_mark_text: bool,
     /// C2-W-088, C2-W-005: true while a group whose closer repairs gave no kind lost a node is written again with them.
     pub closer_kinds: bool,
     /// The bracket partners of the group in repair, by its first node and length.
@@ -181,6 +183,7 @@ impl<'t> Writer<'t> {
             indented: crate::hash::AddrMap::default(),
             read_comments: crate::hash::AddrSet::default(),
             kind_escapes: true,
+            no_mark_text: false,
             closer_kinds: false,
             partners: None,
             kind_failed: false,

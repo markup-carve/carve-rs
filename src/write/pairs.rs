@@ -85,7 +85,27 @@ fn walk<'t>(w: &Writer<'t>, node: N<'t>, run: &mut Run<'t>, found: &mut Vec<(N<'
     });
 }
 
+/// Whether a text node below `value` holds a mark byte; a JSON tree without one holds no pair.
+pub(super) fn json_has_mark_text(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Array(items) => items.iter().any(json_has_mark_text),
+        serde_json::Value::Object(map) => {
+            let marked = crate::view::json_field(value, "type").and_then(serde_json::Value::as_str)
+                == Some("text")
+                && map
+                    .get("value")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|t| t.bytes().any(is_mark_byte));
+            marked || map.values().any(json_has_mark_text)
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn asked<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<(N<'t>, usize)> {
+    if w.no_mark_text {
+        return Vec::new();
+    }
     let mut found = Vec::new();
     let mut run = Run::default();
     for node in group {
