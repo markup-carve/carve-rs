@@ -643,6 +643,20 @@ fn strip_data(v: &mut Value) {
     }
 }
 
+/// The line endings an inline node spells: its breaks and the newlines of the values below it, as [`plain_text`]
+/// writes them.
+pub fn newlines(n: V<'_>) -> usize {
+    match ty(n) {
+        "text" | "code" | "literal_inline" | "math" | "raw_inline" | "smart_punctuation" => {
+            s(n, "value")
+                .or_else(|| s(n, "text"))
+                .map_or(0, |v| v.bytes().filter(|&b| b == b'\n').count())
+        }
+        "soft_break" | "hard_break" => 1,
+        _ => children(n).iter().map(newlines).sum(),
+    }
+}
+
 /// The plain text of inline nodes (C2-B-120).
 pub fn plain_text(nodes: Arr<'_>) -> String {
     let mut out = String::new();
