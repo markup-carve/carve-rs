@@ -1003,6 +1003,7 @@ fn repair_rounds<'t>(
         rounds: 0,
         remaining: i64::try_from(MAX_REPAIR_CHARS).unwrap_or(i64::MAX),
     };
+    let mut first_round = None;
     loop {
         let end = group_end(w, nodes, from);
         let group = nodes.slice(from, end).unwrap_or_else(Arr::empty);
@@ -1015,7 +1016,7 @@ fn repair_rounds<'t>(
             w.group_certificate = GroupCertificate::PlainRows;
             return end;
         }
-        if repeated_repair(w, group, &mut history) {
+        if repeated_repair_in(w, group, &mut history, Some(&mut first_round)) {
             return end;
         }
         let f = first && !w.blank_first;
@@ -1110,7 +1111,52 @@ fn repair_key(w: &Writer<'_>, ids: &mut AddrMap<usize, usize>, group: Arr<'_>) -
     }
 }
 
+/// The key of a first round that ran before any repair state existed: its state
+/// is the local ids alone, so the walk waits for a second round that compares it.
+struct FirstKey<'g> {
+    group: Arr<'g>,
+    blank_first: bool,
+    losses: usize,
+    lines: Vec<String>,
+}
+
+fn first_key(ids: &mut AddrMap<usize, usize>, first: FirstKey<'_>) -> RepairKey {
+    let mut state = vec![usize::from(first.blank_first), first.losses];
+    let mut pending: Vec<V<'_>> = first.group.iter().collect();
+    while let Some(n) = pending.pop() {
+        state.push(local_id(ids, n));
+        // No escapes, form or attempt, and not lost (see `repair_key`).
+        state.extend([0; 5]);
+        node::for_each_slot(n, false, &mut |kids, _, _| pending.extend(kids.iter()));
+    }
+    RepairKey {
+        lines: first.lines,
+        state,
+    }
+}
+
+fn remember(h: &mut History, key: RepairKey) {
+    h.recent.push_back(key.clone());
+    h.seen.insert(key);
+    if h.recent.len() > 16 {
+        if let Some(old) = h.recent.pop_front() {
+            h.seen.remove(&old);
+        }
+    }
+}
+
+#[cfg(test)]
 fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool {
+    repeated_repair_in(w, group, h, None)
+}
+
+/// [`repeated_repair`]; with `first`, a first round without repair state defers its key there.
+fn repeated_repair_in<'g>(
+    w: &mut Writer<'_>,
+    group: Arr<'g>,
+    h: &mut History,
+    first: Option<&mut Option<FirstKey<'g>>>,
+) -> bool {
     let chars: usize = w.lines.iter().map(|l| l.len() + 1).sum();
     if h.rounds == 0 {
         // C2-W-133 sizes the budget by the document as written; the source only bounds it from below.
@@ -1122,18 +1168,35 @@ fn repeated_repair(w: &mut Writer<'_>, group: Arr<'_>, h: &mut History) -> bool 
     h.rounds += 1;
     h.remaining -= i64::try_from(chars).unwrap_or(i64::MAX);
     let refuse = h.rounds > MAX_ROUNDS || h.remaining < 0 || exhausted(w) || {
-        let key = repair_key(w, &mut h.ids, group);
-        if h.seen.contains(&key) {
-            true
-        } else {
-            h.recent.push_back(key.clone());
-            h.seen.insert(key);
-            if h.recent.len() > 16 {
-                if let Some(old) = h.recent.pop_front() {
-                    h.seen.remove(&old);
-                }
+        let deferred = first.and_then(|slot| {
+            if let Some(earlier) = slot.take() {
+                let key = first_key(&mut h.ids, earlier);
+                remember(h, key);
             }
+            let blank = h.rounds == 1
+                && w.sp.escapes.is_empty()
+                && w.forms.is_empty()
+                && w.sp.attempts.is_empty()
+                && w.sp.lost.is_empty();
+            blank.then(|| {
+                *slot = Some(FirstKey {
+                    group,
+                    blank_first: w.blank_first,
+                    losses: w.sp.losses.len(),
+                    lines: w.lines.clone(),
+                });
+            })
+        });
+        if deferred.is_some() {
             false
+        } else {
+            let key = repair_key(w, &mut h.ids, group);
+            if h.seen.contains(&key) {
+                true
+            } else {
+                remember(h, key);
+                false
+            }
         }
     };
     if refuse {
