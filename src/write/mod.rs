@@ -355,6 +355,26 @@ mod batched_repair_test {
         assert!(rounds <= 200, "{rounds} read-back parses for one paragraph");
         Ok(())
     }
+
+    #[test]
+    fn nested_links_take_a_few_repair_parses() -> Result<(), Box<dyn std::error::Error>> {
+        // carve#6411: the probe rounds escape by kind (C2-W-088), not one escape per parse.
+        for n in [146, 584] {
+            let src = format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n));
+            let tree = parse_plain(&src).ok_or("parsed source")?;
+            let before = REPAIR_PARSES.with(std::cell::Cell::get);
+            let (output, losses) = format_tree(&tree, Some(&src), &Settings::default());
+            let rounds = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+            assert!(losses.is_empty());
+            assert!(rounds < 20, "{rounds} read-back parses at n = {n}");
+            let again = parse_plain(&output).ok_or("parsed output")?;
+            assert_eq!(
+                format_tree(&again, Some(&output), &Settings::default()).0,
+                output
+            );
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1141,6 +1161,7 @@ fn settle<'t>(
             return false;
         }
         escape_kinds(w, &mut c, group);
+        escape_group_partners(w, &mut c, group, round.source);
     }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
@@ -1333,6 +1354,26 @@ fn rank(order: &AddrMap<usize, usize>, n: V<'_>) -> i64 {
     order
         .get(&id(n))
         .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
+}
+
+/// C2-W-125 case five for the group, with its bracket partners kept across its rounds.
+fn escape_group_partners<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    group: Arr<'t>,
+    source: Option<&str>,
+) {
+    // Every bracketed node writes a `]`: without one there is no partner to escape.
+    if !source.is_some_and(|source| source.contains(']')) {
+        return;
+    }
+    let key = (group.first().map_or(0, id), group.len());
+    let partners = match w.partners.take() {
+        Some((k, partners)) if k == key => partners,
+        _ => check::partner_closers(&group.iter().collect::<Vec<_>>()),
+    };
+    check::escape_partner_closers(w, c, &partners);
+    w.partners = Some((key, partners));
 }
 
 /// C2-W-088: each kind a round reports in a block escapes every opener of

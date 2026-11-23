@@ -80,6 +80,27 @@ impl<'t> KindBlocks<'t> {
         Self { blocks, owners }
     }
 
+    /// The text runs of `nodes`, the inline content of one construct inside a
+    /// leaf block: markup stands on either side of it.
+    pub fn content(nodes: &[N<'t>]) -> Self {
+        let mut runs = Vec::new();
+        let (mut edge, mut joined) = (Edge::Line, false);
+        collect(nodes.iter().copied(), &mut runs, &mut edge, &mut joined);
+        if joined && let Some(last) = runs.last_mut() {
+            last.after = Edge::Line;
+        }
+        let mut owners = AddrMap::default();
+        for (r, run) in runs.iter().enumerate() {
+            for &(n, start) in &run.nodes {
+                owners.insert(id(n), (0, r, start));
+            }
+        }
+        Self {
+            blocks: vec![runs],
+            owners,
+        }
+    }
+
     pub fn block_of(&self, node: N<'_>) -> Option<usize> {
         self.owners.get(&id(node)).map(|&(block, _, _)| block)
     }
@@ -127,7 +148,12 @@ impl<'t> KindBlocks<'t> {
 }
 
 /// Adds the text runs of `nodes`; `joined` is true while the last leaf was text.
-fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined: &mut bool) {
+fn collect<'t>(
+    nodes: impl IntoIterator<Item = N<'t>>,
+    runs: &mut Vec<Run<'t>>,
+    edge: &mut Edge,
+    joined: &mut bool,
+) {
     let mut prev: Option<N<'t>> = None;
     for node in nodes {
         let after_dash = prev.is_some_and(is_dash);
