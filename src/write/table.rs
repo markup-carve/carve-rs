@@ -743,27 +743,39 @@ fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
     let groups = children(table);
     let mut head = 0;
     let mut body = 0;
+    let mut foot = 0;
     let mut rows = 0;
     let mut needs = false;
     for group in groups {
-        let header = match ty(group) {
-            "table_head" => {
+        // C2-B-227: `header-rows`, `body-rows` and `footer-rows` spell the groups in this order;
+        // C2-B-230: `body-header-rows` spells the header rows that lead a body.
+        let header_rows = match ty(group) {
+            "table_head" if body == 0 && foot == 0 => {
                 head += 1;
-                true
+                usize::MAX
             }
-            "table_body" => {
+            "table_body" if foot == 0 && !has(group, "attrs") && !has(group, "lang") => {
                 body += 1;
-                false
+                leading_header_rows(group)
+            }
+            "table_foot"
+                if foot == 0
+                    && !children(group).is_empty()
+                    && !has(group, "attrs")
+                    && !has(group, "lang") =>
+            {
+                foot += 1;
+                0
             }
             _ => return None,
         };
-        for row in children(group) {
+        for (index, row) in children(group).iter().enumerate() {
             if ty(row) != "table_row" || has(row, "attrs") {
                 return None;
             }
             rows += 1;
             for cell in children(row) {
-                if !is_plain_cell(cell, header) {
+                if !is_plain_cell(cell, index < header_rows) {
                     return None;
                 }
                 needs |= cell_needs_delimited(cell);
@@ -771,7 +783,7 @@ fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
         }
     }
     // C2-L-036: a table without rows is delimited, whatever its bodies.
-    (rows == 0 || (head <= 1 && body <= 1)).then_some((rows, needs))
+    (rows == 0 || head <= 1).then_some((rows, needs))
 }
 
 fn first_value(cell: V<'_>) -> Option<&str> {
@@ -848,10 +860,12 @@ fn delimited_body(table: V<'_>, separator: &str) -> Vec<String> {
             });
         }
     }
+    // An empty body after the last row does not end the fence body.
     let one_cell = children(table)
-        .last()
-        .filter(|g| ty(g) != "comment")
-        .and_then(|g| children(g).last())
+        .iter()
+        .rev()
+        .take_while(|g| ty(g) != "comment")
+        .find_map(|g| children(g).last())
         .is_some_and(|r| ty(r) == "table_row" && children(r).len() == 1);
     if body.last().is_some_and(String::is_empty) && one_cell {
         if let Some(last) = body.last_mut() {

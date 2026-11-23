@@ -202,31 +202,22 @@ fn strip(v: &mut Value) {
 fn delimited_table_body_keys_round_trip() {
     let carve = Carve::new();
     let opts = WriteOptions::default();
-    for (input, expected) in [
+    for input in [
         // C2-L-036: a table without rows stays delimited, whatever its bodies.
-        (
-            "{table body-rows=0,0}\n```csv\n```\n",
-            "{table body-rows=0,0}\n```csv\n```\n",
-        ),
-        // C2-B-209: `body-header-rows` declares no `header-rows`.
-        (
-            "{table body-rows=1 body-header-rows=1}\n```csv\n```\n",
-            "{table body-rows=1 body-header-rows=1}\n```csv\n```\n",
-        ),
-        (
-            "{table x-header-rows=0}\n```csv\na\nb\n```\n",
-            "{table x-header-rows=0}\n```csv\na\nb\n```\n",
-        ),
-        (
-            "{table header-rows=x}\n```csv\na\nb\n```\n",
-            "{table header-rows=x}\n```csv\na\nb\n```\n",
-        ),
-        (
-            "{table header-rows=1}\n```csv\na\nb\n```\n",
-            "{table header-rows=1}\n```csv\na\nb\n```\n",
-        ),
+        "{table body-rows=0,0}\n```csv\n```\n",
+        // C2-L-057: `body-header-rows` declares no `header-rows`.
+        "{table body-rows=1 body-header-rows=1}\n```csv\n```\n",
+        "{table x-header-rows=0}\n```csv\na\nb\n```\n",
+        "{table header-rows=x}\n```csv\na\nb\n```\n",
+        "{table header-rows=1}\n```csv\na\nb\n```\n",
+        // C2-W-066, C2-B-227: bodies and a foot the attributes spell keep the delimited form.
+        "{table body-rows=1,1}\n```csv\nh\na\n b\n```\n",
+        "{table body-rows=1,1 body-header-rows=0,1}\n```csv\nh\n\"a\nb\"\nc\nd\n```\n",
+        "{table footer-rows=1}\n```csv\nh\n a\nc\n```\n",
+        // C2-B-226: an empty body after the last row leaves its lone empty cell quoted.
+        "{table body-rows=0}\n```csv\n\"\"\n```\n",
     ] {
-        assert_eq!(carve.format(input, &opts).unwrap(), expected, "{input}");
+        assert_eq!(carve.format(input, &opts).unwrap(), input);
     }
 }
 
