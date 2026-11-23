@@ -12,7 +12,7 @@ use crate::ast::{
 };
 use crate::chars::{ByteSet, fold_label, is_flank_space, is_joining, is_word};
 use crate::tables;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BKind {
@@ -116,6 +116,9 @@ struct Scanner<'r, 'e, 'a> {
     /// C2-I-089 tie-break: caret pairs before this offset open nothing.
     demote_until: usize,
     pass_notes: PassNotes,
+    /// Open brackets with `probes`.
+    probes_open: usize,
+    own: OwnReads,
     i: usize,
 }
 
@@ -155,6 +158,108 @@ impl Notes {
             }
         }
         changed
+    }
+}
+
+/// C2-I-089 with C2-I-118: the swallowed notes of the outermost demoting
+/// note, each read as it would read on its own, opening where the demoting
+/// note opened. The cap leaves that reading more room than the swallowed one,
+/// so a closer that pops a swallowed `[` may not pop it there. Each note
+/// keeps the count of brackets above its `[`; counts that meet the cap merge,
+/// so the groups stay sorted (lowest first) and share one shift.
+#[derive(Default)]
+struct OwnReads {
+    on: bool,
+    /// Open entries below the demoting note.
+    base: usize,
+    /// `(count - shift, first, last)` of each group; members are linked in `next`.
+    groups: VecDeque<(isize, usize, usize)>,
+    shift: isize,
+    starts: Vec<usize>,
+    next: Vec<usize>,
+}
+
+impl OwnReads {
+    fn start(&mut self, base: usize) {
+        self.on = true;
+        self.base = base;
+        self.drop_groups();
+    }
+
+    fn drop_groups(&mut self) {
+        self.groups.clear();
+        self.shift = 0;
+        self.starts.clear();
+        self.next.clear();
+    }
+
+    /// The most brackets above a note's `[` before an opener is text.
+    fn ceiling(&self) -> isize {
+        isize::try_from(tables::INLINE_DEPTH.saturating_sub(self.base + 1)).unwrap_or(0)
+    }
+
+    /// Links member `id` behind the last member of a group ending at `last`.
+    fn link(&mut self, last: usize, id: usize) {
+        if let Some(n) = self.next.get_mut(last) {
+            *n = id;
+        }
+    }
+
+    fn add(&mut self, start: usize) {
+        let id = self.starts.len();
+        self.starts.push(start);
+        self.next.push(usize::MAX);
+        let shift = self.shift;
+        match self.groups.front().copied() {
+            Some((level, _, last)) if level + shift == 0 => {
+                self.link(last, id);
+                if let Some(g) = self.groups.front_mut() {
+                    g.2 = id;
+                }
+            }
+            _ => self.groups.push_front((-shift, id, id)),
+        }
+    }
+
+    fn open(&mut self) {
+        self.shift += 1;
+        let top = self.ceiling() - self.shift;
+        let Some(last) = self.groups.back_mut() else {
+            return;
+        };
+        if last.0 <= top {
+            return;
+        }
+        last.0 = top;
+        let (_, first, end) = *last;
+        let n = self.groups.len();
+        if let Some(&(level, _, below_last)) = n.checked_sub(2).and_then(|i| self.groups.get(i))
+            && level == top
+        {
+            self.groups.pop_back();
+            self.link(below_last, first);
+            if let Some(below) = self.groups.back_mut() {
+                below.2 = end;
+            }
+        }
+    }
+
+    fn close(&mut self) {
+        if self.groups.front().is_some_and(|g| g.0 + self.shift == 0) {
+            self.groups.pop_front();
+        }
+        self.shift -= 1;
+    }
+
+    /// The notes whose `[` no closer popped.
+    fn unclosed(&self, out: &mut Vec<usize>) {
+        for &(_, first, _) in &self.groups {
+            let mut id = first;
+            while let Some(&start) = self.starts.get(id) {
+                out.push(start);
+                id = self.next.get(id).copied().unwrap_or(usize::MAX);
+            }
+        }
     }
 }
 
@@ -255,6 +360,8 @@ fn scan_pass<'a>(
         demoting_open: 0,
         demote_until: 0,
         pass_notes: PassNotes::default(),
+        probes_open: 0,
+        own: OwnReads::default(),
         i: 0,
     };
     // `known` bytes hold no form start: `step` would be false on each of them.
@@ -899,6 +1006,20 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn push_bracket(&mut self, v0: usize, v1: usize, kind: BKind) -> bool {
         let open = self.brackets.len() + self.open_delims.len();
         let delim_base = self.open_delims.len();
+        let probes = (kind == BKind::Plain && self.demoting_open > 0)
+            .then(|| v0.wrapping_sub(1))
+            .filter(|&at| self.at(at) == Some(b'^') && self.notes.demote.contains_key(&at));
+        if self.own.on {
+            self.own.open();
+            // Only swallowed notes stand between it and the demoting note,
+            // so read on its own it opens where the demoting note did.
+            if let Some(at) = probes
+                && open == self.own.base + 1 + self.probes_open
+                && self.own.ceiling() > 0
+            {
+                self.own.add(at);
+            }
+        }
         if open >= tables::INLINE_DEPTH {
             self.flush();
             self.text_from = Some(v0);
@@ -907,10 +1028,11 @@ impl<'a> Scanner<'_, '_, 'a> {
         }
         let tok = self.push(v0, v1, K::Pending);
         let demotes = kind == BKind::Footnote && self.notes.demote.contains_key(&v0);
+        if demotes && self.demoting_open == 0 {
+            self.own.start(open);
+        }
         self.demoting_open += usize::from(demotes);
-        let probes = (kind == BKind::Plain && self.demoting_open > 0)
-            .then(|| v0.wrapping_sub(1))
-            .filter(|&at| self.at(at) == Some(b'^') && self.notes.demote.contains_key(&at));
+        self.probes_open += usize::from(probes.is_some());
         self.brackets.push(Bracket {
             tok,
             kind,
@@ -931,7 +1053,16 @@ impl<'a> Scanner<'_, '_, 'a> {
             return false;
         };
         let i = self.i;
+        if self.own.on {
+            self.own.close();
+        }
         self.demoting_open -= usize::from(top.demotes);
+        self.probes_open -= usize::from(top.probes.is_some());
+        if top.demotes && self.demoting_open == 0 {
+            // Its swallowed notes would read on with caret pairs that open.
+            self.own.on = false;
+            self.own.drop_groups();
+        }
         let consumed = match top.kind.clone() {
             BKind::Footnote => {
                 if self.carets > top.carets {
@@ -1169,6 +1300,9 @@ impl<'a> Scanner<'_, '_, 'a> {
     }
 
     fn finish_brackets(&mut self) {
+        if self.own.on {
+            self.own.unclosed(&mut self.pass_notes.failed);
+        }
         for top in self.brackets.drain(..) {
             if top.demotes {
                 self.pass_notes.failed.push(top.start);
@@ -1254,6 +1388,13 @@ impl<'a> Scanner<'_, '_, 'a> {
         true
     }
 
+    /// An open delimiter takes depth the own readings do not count.
+    fn own_delim(&mut self) {
+        if !self.own.groups.is_empty() {
+            self.own.drop_groups();
+        }
+    }
+
     fn depth_base(&self) -> usize {
         self.brackets.last().map_or(0, |b| b.delim_base)
     }
@@ -1264,6 +1405,7 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn depth_open(&mut self, mark: char, at: usize) -> bool {
         if self.depth_room() {
+            self.own_delim();
             self.open_delims.push(DepthMark {
                 mark,
                 braced: true,
@@ -1333,6 +1475,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             }
             true
         } else if can_open && self.depth_room() {
+            self.own_delim();
             self.open_delims.push(DepthMark {
                 mark,
                 braced: false,
