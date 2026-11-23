@@ -127,12 +127,7 @@ pub(super) fn scan(
 /// hand scanner, so adding a new node kind cannot silently bypass a hand-written rule.
 pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
     match kind {
-        "text" => {
-            !raw.is_ascii()
-                || raw
-                    .bytes()
-                    .any(|byte| matches!(byte, b'{' | b'@' | b'#' | b'_' | b'*' | b'/'))
-        }
+        "text" => !raw.is_ascii() || raw.bytes().any(|byte| matches!(byte, b'{' | b'#')),
         "code" | "math" => !raw.is_ascii(),
         "strong" | "emphasis" => raw.contains('{'),
         "strike" => raw.contains("~>"),
@@ -142,20 +137,11 @@ pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
             let label = raw.split(']').next().unwrap_or("");
             label.bytes().any(|byte| matches!(byte, b'r' | b'R'))
         }
-        // Paragraph-only hand rules inspect multiline delimiter pairs and lone emphasis.
-        // A refused braced closer can also be literal text inside a paragraph.
-        "paragraph" => {
-            raw.contains('\n')
-                || raw.contains("{/")
-                || raw
-                    .trim_start()
-                    .bytes()
-                    .next()
-                    .is_some_and(|byte| matches!(byte, b'*' | b'/' | b'_' | b'{'))
-        }
-        "document" | "list" | "list_item" | "table" | "table_head" | "table_body"
-        | "table_foot" | "table_row" | "table_cell" | "table_column" | "cell_paragraph"
-        | "soft_break" | "hard_break" | "line_break" => false,
+        // A refused braced closer can be literal text inside a paragraph.
+        "paragraph" => raw.contains("{/"),
+        "document" | "heading" | "frontmatter" | "list" | "list_item" | "table" | "table_head"
+        | "table_body" | "table_foot" | "table_row" | "table_cell" | "table_column"
+        | "cell_paragraph" | "soft_break" | "hard_break" | "line_break" => false,
         _ => true,
     }
 }
@@ -205,11 +191,6 @@ fn check_node(item: &Item<'_>, sink: &mut Sink<'_>) {
 fn check_block_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     match item.node.ty().as_str().unwrap_or("") {
         "link" => link(item, sink),
-        "heading" => {
-            let raw = sink.raw(item).to_string();
-            heading_continuation(item, &raw, sink);
-        }
-        "frontmatter" => frontmatter(item, sink),
         "code" | "math" => bidi(item, sink),
         _ => {}
     }
@@ -267,119 +248,12 @@ fn link(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
-fn heading_continuation(item: &Item<'_>, raw: &str, sink: &mut Sink<'_>) {
-    let Some((from, _)) = item.bounds else {
-        return;
-    };
-    let mut offset = 0;
-    let quote_depth = parent_kinds(item)
-        .filter(|parent| *parent == "block_quote")
-        .count();
-    let mut seen_heading = false;
-    for line in raw.split_inclusive('\n') {
-        let at = offset;
-        offset += line.len();
-        if !seen_heading {
-            let trimmed = line.trim_start_matches([' ', '\t']);
-            let marker = trimmed.as_bytes().first().copied();
-            let run = trimmed
-                .bytes()
-                .take_while(|b| Some(*b) == marker && matches!(b, b'#' | b'='))
-                .count();
-            seen_heading = (1..=6).contains(&run) && trimmed.as_bytes().get(run) == Some(&b' ');
-            continue;
-        }
-        if line.trim_start().starts_with("%%") {
-            continue;
-        }
-        let mut content = line;
-        for _ in 0..quote_depth {
-            content = content.trim_start_matches([' ', '\t']);
-            content = content.strip_prefix("> ").unwrap_or(content);
-        }
-        if content.starts_with([' ', '\t']) && !content.trim().is_empty() {
-            sink.emit_range(
-                "deprecated-indented-line-under-heading",
-                from + at,
-                from + at + line.trim_end_matches(['\n', '\r']).len(),
-                item.path(),
-                &[],
-                0,
-            );
-        }
-        break;
-    }
-}
-
-fn frontmatter(item: &Item<'_>, sink: &mut Sink<'_>) {
-    // C2-B-231: only the line-1 block declares the version.
-    let leading = field(item.node, "/pos/startLine").as_u64() == Some(1);
-    let raw = sink.raw(item).to_string();
-    if let Some((from, _)) = item.bounds.filter(|_| leading) {
-        let mut offset = 0;
-        for line in raw.split_inclusive('\n') {
-            if let Some((key, rest)) = line.split_once(':') {
-                let key = key.trim();
-                let version = rest.trim();
-                if matches!(key, "carve" | "carve-version")
-                    && !version.is_empty()
-                    && !version.contains(char::is_whitespace)
-                    && let Some(message) = unsupported_carve_version(version)
-                {
-                    let start = from + offset + line.len() - rest.trim_start().len();
-                    sink.emit_range(
-                        "carve-version-unsupported",
-                        start,
-                        start + version.len(),
-                        item.path(),
-                        &[("version", version), ("SPEC_VERSION", "0.2.0")],
-                        message,
-                    );
-                    break;
-                }
-            }
-            offset += line.len();
-        }
-    }
-}
-
-fn unsupported_carve_version(version: &str) -> Option<usize> {
-    let parts: Option<Vec<u64>> = version
-        .split('.')
-        .map(|part| {
-            (!part.is_empty())
-                .then(|| part.parse::<u64>().ok())
-                .flatten()
-        })
-        .collect();
-    let Some(parts) = parts else { return Some(0) };
-    (parts.first().copied().unwrap_or(0) > 0
-        || parts.get(1).copied().unwrap_or(0) > 2
-        || (parts.get(1).copied().unwrap_or(0) == 2 && parts.iter().skip(2).any(|part| *part > 0)))
-    .then_some(1)
-}
-
 fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     let value = sink.raw(item).to_string();
     let Some((from, _)) = item.bounds else {
         return;
     };
-    if let Some(at) = value.find("{%").filter(|_| !value.contains("%}")) {
-        sink.emit_range(
-            "unclosed-braced-comment",
-            from + at,
-            from + value.len(),
-            item.path(),
-            &[],
-            0,
-        );
-    }
-    emphasis_before_attrs(item, sink, &value, from);
-    text_inline_attr(item, sink, &value, from);
-    sigils(item, sink, &value, from);
     text_platform_refs(item, sink, &value, from);
-    djot_text(item, sink, &value, from);
-    unclosed_emphasis(item, sink, from);
     let parent = item.parents.map_or("", |parent| parent.kind);
     let delimiter = if parent == "strong" {
         "{*"
@@ -429,152 +303,6 @@ fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: u
     }
 }
 
-/// A line block's line is no inline host, nor is a code fence title, which is plain text (C2-B-120).
-fn outside_inline_hosts(item: &Item<'_>) -> bool {
-    parent_kinds(item).any(|kind| kind == "line" || kind == "code_block")
-}
-
-/// Each unattached glued run once, in the inline hosts the rule names.
-fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    if outside_inline_hosts(item) {
-        return;
-    }
-    let mut next = 0;
-    for (at, _) in value.match_indices('{') {
-        if at < next {
-            continue;
-        }
-        let Some((block, end)) = crate::attr::parse_glued(value, at) else {
-            continue;
-        };
-        let Some(before) = sink
-            .source
-            .get(..from + at)
-            .and_then(|prefix| prefix.rsplit('\n').next())
-            .map(str::trim)
-        else {
-            continue;
-        };
-        let quote_prefix = before == ">"
-            && !value.starts_with('>')
-            && sink
-                .source
-                .get(..from + at)
-                .is_some_and(|prefix| prefix.ends_with("> "));
-        if at > 0
-            && !block.empty
-            && !before.is_empty()
-            && !quote_prefix
-            && !escaped(value.as_bytes(), at)
-        {
-            let mut run_end = end;
-            while let Some((following, following_end)) = crate::attr::parse_glued(value, run_end) {
-                if following.empty {
-                    break;
-                }
-                run_end = following_end;
-            }
-            sink.emit_range(
-                "unattached-inline-attribute",
-                from + at,
-                from + run_end,
-                item.path(),
-                &[],
-                0,
-            );
-            next = run_end;
-        }
-    }
-}
-
-fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: usize) {
-    for (at, ch) in raw.char_indices() {
-        if !matches!(ch, '*' | '/' | '_' | '~' | '=')
-            || raw.as_bytes().get(at + 1) != Some(&b'{')
-            || escaped(raw.as_bytes(), at)
-        {
-            continue;
-        }
-        let Some((_, end)) = crate::attr::parse_block(raw, at + 1) else {
-            continue;
-        };
-        if end <= at + 1 {
-            continue;
-        }
-        sink.emit_range(
-            "emphasis-marker-before-attributes",
-            from + at,
-            from + end,
-            item.path(),
-            &[("ch", &ch.to_string())],
-            0,
-        );
-    }
-}
-
-fn sigils(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    for (at, ch) in value.char_indices() {
-        if at == 0 || !matches!(ch, '@' | '#') {
-            continue;
-        }
-        let before = value.get(..at).and_then(|prefix| prefix.chars().last());
-        let after = value
-            .get(at + ch.len_utf8()..)
-            .and_then(|tail| tail.chars().next());
-        if !before.is_some_and(|c| c.is_alphanumeric() && !c.is_ascii())
-            || !after.is_some_and(|c| c.is_ascii_alphanumeric())
-        {
-            continue;
-        }
-        let mut name = value
-            .get(at + ch.len_utf8()..)
-            .unwrap_or("")
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
-        if !name.any(|c| c.is_ascii_alphabetic()) {
-            continue;
-        }
-        sink.emit_range(
-            "sigil-after-letter",
-            from + at,
-            from + at + ch.len_utf8(),
-            item.path(),
-            &[],
-            0,
-        );
-    }
-}
-
-fn unclosed_emphasis(item: &Item<'_>, sink: &mut Sink<'_>, from: usize) {
-    let raw = sink.raw(item).to_string();
-    let bytes = raw.as_bytes();
-    for at in 0..bytes.len().saturating_sub(1) {
-        let mark = bytes.get(at).copied().unwrap_or_default();
-        if !matches!(mark, b'*' | b'/')
-            || escaped(bytes, at)
-            || !bytes.get(at + 1).is_some_and(u8::is_ascii_alphanumeric)
-            || (at > 0 && bytes.get(at - 1) == Some(&b'{'))
-            || at > 0
-                && !bytes
-                    .get(at - 1)
-                    .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'(' | b'[' | b'{'))
-            || bytes.get(at + 1..).is_some_and(|tail| tail.contains(&mark))
-        {
-            continue;
-        }
-        let span = if mark == b'*' { "strong" } else { "emphasis" };
-        sink.emit_range(
-            "unclosed-inline-emphasis",
-            from + at,
-            from + at + 1,
-            item.path(),
-            &[("span", span)],
-            0,
-        );
-        break;
-    }
-}
-
 fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
     if item.node.ty() == "code_block"
         || parent_kinds(item).any(|kind| kind == "code_block") && item.path().contains("/title/")
@@ -596,40 +324,6 @@ fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
                 &[("code", &code)],
                 0,
             );
-        }
-    }
-}
-
-fn djot_text(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    let bytes = value.as_bytes();
-    for (open, _) in value.match_indices('_') {
-        if open == 0
-            || bytes
-                .get(open - 1)
-                .is_none_or(|c| !c.is_ascii_alphanumeric())
-            || bytes.get(open + 1).is_none_or(u8::is_ascii_whitespace)
-            || escaped(bytes, open)
-        {
-            continue;
-        }
-        if let Some((close, _)) = value[open + 1..].match_indices('_').find(|(at, _)| {
-            let close = open + 1 + at;
-            close > open + 1
-                && bytes
-                    .get(close - 1)
-                    .is_some_and(|c| !c.is_ascii_whitespace())
-                && bytes.get(close + 1).is_some_and(u8::is_ascii_alphanumeric)
-                && !escaped(bytes, close)
-        }) {
-            sink.emit_range(
-                "djot-intraword-underscore",
-                from + open,
-                from + open + 1 + close + 1,
-                item.path(),
-                &[],
-                0,
-            );
-            break;
         }
     }
 }
@@ -659,44 +353,6 @@ fn strong(item: &Item<'_>, sink: &mut Sink<'_>) {
     if sink.raw(item).starts_with("{*") && sink.raw(item).contains("{**}") {
         sink.emit("braced-span-opener-as-text", item, &[], 0);
     }
-    span_before_attrs(item, sink, '*', "strong");
-}
-
-fn span_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, marker: char, name: &str) {
-    if item.node.get("attrs").is_none() {
-        return;
-    }
-    let raw = sink.raw(item).to_string();
-    if !raw.starts_with(marker) || raw.starts_with("{*") || raw.starts_with("{/") {
-        return;
-    }
-    let Some(close) = raw.rfind(&format!("{marker}{{")) else {
-        return;
-    };
-    let inner = raw.get(1..close).unwrap_or("");
-    if !inner
-        .char_indices()
-        .any(|(at, ch)| ch == marker && !escaped(inner.as_bytes(), at))
-    {
-        return;
-    }
-    let Some((from, _)) = item.bounds else {
-        return;
-    };
-    let opening = sink.positions.pos(from, from);
-    sink.emit_range(
-        "emphasis-marker-before-attributes",
-        from + close,
-        from + close + marker.len_utf8(),
-        item.path(),
-        &[
-            ("marker", &marker.to_string()),
-            ("name", name),
-            ("line", &opening.start_line.to_string()),
-            ("column", &opening.start_column.to_string()),
-        ],
-        1,
-    );
 }
 
 fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {

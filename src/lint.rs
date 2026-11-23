@@ -13,7 +13,6 @@ mod data_interpreter;
 mod data_model;
 mod data_rules;
 mod includes;
-mod legacy;
 mod lines;
 mod nodes;
 mod pairs;
@@ -134,8 +133,6 @@ fn lint_core<'a>(
     let walk::Walk {
         ranges,
         items,
-        legacy,
-        legacy_order,
         comments,
         holders,
         values,
@@ -144,13 +141,6 @@ fn lint_core<'a>(
     });
     let positions = Ranges::new(source, ranges, holders);
     let mut out = Vec::new();
-    for warning in legacy::warnings(source, &legacy, &legacy_order) {
-        if skip_legacy_warning(&warning, opts) {
-            continue;
-        }
-        out.push(convert_legacy_warning(warning, &parsed, &positions));
-    }
-    drop((legacy, legacy_order));
     let line_model = lines::lines(source, &positions.all);
     if tree.is_some() {
         nodes::scan(source, opts, items, &mut out);
@@ -199,32 +189,6 @@ fn lint_core<'a>(
     controls::filter(source, out, &comments)
 }
 
-fn skip_legacy_warning(warning: &legacy::Warning, opts: &LintOptions) -> bool {
-    !active(warning.rule, opts)
-}
-
-fn convert_legacy_warning(
-    warning: legacy::Warning,
-    parsed: &Source<'_>,
-    positions: &Ranges<'_>,
-) -> Diagnostic {
-    let mut diagnostic = Diagnostic::new(
-        warning.rule,
-        &[],
-        None,
-        Some(parsed.pos(warning.start, warning.end)),
-    );
-    if diagnostic.message.is_empty() || catalog_message_has_slots(warning.rule) {
-        diagnostic.message = warning.message;
-    }
-    diagnostic.path = path_at(positions, warning.start, warning.end);
-    if warning.rule == "figure-group-panel-number"
-        && let Some(panel) = positions.last_image_before(warning.start)
-    {
-        diagnostic.pos = Some(parsed.pos(panel.start, panel.start + 1));
-    }
-    diagnostic
-}
 fn referenced_footnote_platform_tokens(
     source: &str,
     opts: &LintOptions,
@@ -288,18 +252,6 @@ fn opaque_definition(ranges: &Ranges<'_>, offset: usize) -> bool {
             && range.start <= offset
             && offset < range.end
     })
-}
-
-fn catalog_message_has_slots(code: &str) -> bool {
-    catalog()["rules"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|rule| rule["id"] == code)
-        .and_then(|row| row["messages"].as_array())
-        .and_then(|messages| messages.first())
-        .and_then(Value::as_str)
-        .is_some_and(|message| message.contains("${"))
 }
 
 /// Drops every finding that a later finding of the same code at `replacing`
@@ -372,8 +324,6 @@ struct Ranges<'a> {
 struct RangeIndex {
     line_starts: Vec<usize>,
     by_line: Vec<Vec<usize>>,
-    /// Image starts with their range index, in ascending order.
-    images: Vec<(usize, usize)>,
 }
 
 impl<'a> Ranges<'a> {
@@ -392,21 +342,15 @@ impl<'a> Ranges<'a> {
             line_starts.extend(self.source.match_indices('\n').map(|(at, _)| at + 1));
             let line_of = |at: usize| line_starts.partition_point(|s| *s <= at).saturating_sub(1);
             let mut by_line = vec![Vec::new(); line_starts.len()];
-            let mut images = Vec::new();
             for (at, range) in self.all.iter().enumerate() {
                 let lines = line_of(range.start)..=line_of(range.end.max(range.start));
                 for line in by_line.get_mut(lines).into_iter().flatten() {
                     line.push(at);
                 }
-                if range.kind == "image" {
-                    images.push((range.start, at));
-                }
             }
-            images.sort_unstable();
             RangeIndex {
                 line_starts,
                 by_line,
-                images,
             }
         })
     }
@@ -424,16 +368,6 @@ impl<'a> Ranges<'a> {
             .into_iter()
             .flatten()
             .filter_map(|at| self.all.get(*at))
-    }
-
-    /// The image that starts last before `at`; the later one in tree order on a tie.
-    fn last_image_before(&self, at: usize) -> Option<&Range<'a>> {
-        let images = &self.index().images;
-        let before = images.partition_point(|(start, _)| *start < at);
-        before
-            .checked_sub(1)
-            .and_then(|last| images.get(last))
-            .and_then(|(_, range)| self.all.get(*range))
     }
 }
 
@@ -466,6 +400,8 @@ struct Range<'a> {
 struct Holder {
     range: Option<u32>,
     up: Option<u32>,
+    /// The `title` list of its range's node: inline content whose leaf is that node, as carve-js reads it.
+    title: bool,
 }
 
 /// A node's pointer, written out only when a rule reads it.
@@ -748,14 +684,6 @@ fn link_prev(slot: &mut Option<(u32, u32)>, at: u32, made: u32, out: &mut [Range
     *slot = Some((at, made));
 }
 
-fn path_at(ranges: &Ranges<'_>, start: usize, end: usize) -> Option<String> {
-    ranges
-        .around(start)
-        .filter(|r| r.start <= start && end <= r.end)
-        .max_by_key(|r| r.path.len())
-        .map(|r| r.path.text())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{Diagnostic, LintOptions, drop_replaced, walk};
@@ -790,7 +718,6 @@ mod tests {
                             .map(|item| item.node.ty().as_str().unwrap_or("").to_string())
                             .collect::<Vec<_>>()
                     );
-                    assert!(walk.legacy.is_empty(), "{rows} rows prepared legacy nodes");
                 });
                 assert!(checked.is_some(), "parsed table");
             });

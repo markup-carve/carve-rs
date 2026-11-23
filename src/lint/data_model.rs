@@ -290,6 +290,13 @@ fn text_leaf(kind: &str) -> bool {
         "paragraph" | "caption" | "definition_term" | "heading" | "line" | "table_cell"
     )
 }
+/// An inline record's `leaf`: a cell's inline content sits in its `cell_paragraph`, as carve-js reads it.
+fn inline_leaf_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "paragraph" | "caption" | "definition_term" | "heading" | "line" | "cell_paragraph"
+    )
+}
 fn line_leaf(kind: &str) -> bool {
     matches!(
         kind,
@@ -927,7 +934,7 @@ impl<'a> Records<'a> {
                 .map_or((false, false), |at| holder_flags(ranges[at as usize].kind));
             let up = holder.up.map(|up| up as usize);
             holder_quotes.push(up.map_or(0, |up| holder_quotes[up]) + usize::from(quote));
-            holder_inline.push(up.is_some_and(|up| holder_inline[up]) || inline);
+            holder_inline.push(up.is_some_and(|up| holder_inline[up]) || inline || holder.title);
         }
         let mut records = Self {
             source,
@@ -2291,7 +2298,7 @@ impl<'a> Records<'a> {
             if let Some(kind) = node
                 .range
                 .map(|range| self.kind(range))
-                .filter(|kind| text_leaf(kind))
+                .filter(|kind| node.title || inline_leaf_kind(kind))
             {
                 return Some(kind);
             }

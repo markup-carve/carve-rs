@@ -555,9 +555,9 @@
   },
   {
     "id": "unclosed-braced-comment",
-    "origin": "../carve/tests/corpus/321-delimited-comments-4.crv",
-    "trigger": "a {% oops\n",
-    "near": "a \n",
+    "origin": "../carve/tests/corpus/321-delimited-comments-4.crv, closed behind a table row (C2-B-141)",
+    "trigger": "a {% oops\n| b |\nc %}\n",
+    "near": "a \n| b |\nc %}\n",
     "fragment": "{% oops",
     "message": "This braced comment is not closed before the next block starts, so it stays text. Close it inside its block, or use %% line comments."
   },
