@@ -2478,10 +2478,8 @@ fn rest_of_line(nodes: &[N<'_>], out: &mut String) {
     }
 }
 
+/// Attributes follow a node, so they cannot make a fence behind it valid; they are left out.
 fn spell_on_line(n: N<'_>, out: &mut String) -> bool {
-    if has(n, "attrs") {
-        return false;
-    }
     let code = || {
         n.get("value")
             .and_then(V::as_str)

@@ -89,6 +89,9 @@ fn a_fence_behind_a_marker_reads_the_rest_of_the_line() {
     let strong = json!({ "type": "strong", "children": [text("b x`")] });
     let tree = paragraph(&[text("- ``` "), strong]);
     assert_eq!(write(&tree), ("\\- ``` *b x`*\n".to_string(), vec![]));
+    let strong = json!({ "type": "strong", "attrs": { "id": "foo" }, "children": [text("b x`")] });
+    let tree = paragraph(&[text("- ``` "), strong]);
+    assert_eq!(write(&tree), ("\\- ``` *b x`*{#foo}\n".to_string(), vec![]));
 }
 
 #[test]
