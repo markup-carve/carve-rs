@@ -22,6 +22,16 @@ fn a_strong_behind_a_braced_strong_drops_the_braced_form_of_an_earlier_round() {
     check("> - {*{  *}{{*x*}\n", "> - {*{  *}\\{*x*\n");
     check("{*{  *}{{*x*}\n", "{*{  *}\\{*x*\n");
     check("{*{ *}{{*x*}\n", "{*{ *}\\{*x*\n");
+    check(
+        "{*{  *}{{*x*} {*{  *}{{*x*} {*{  *}{{*x*}\n",
+        "{*{  *}\\{*x* {*{  *}\\{*x* {*{  *}\\{*x*\n",
+    );
+}
+
+#[test]
+fn a_caption_and_an_attribution_drop_it_too() {
+    check("> q\n^ {*{  *}{{*x*}\n", "> q\n^ {*{  *}\\{*x*\n");
+    check("![a](x.png)\n^ {*{  *}{{*x*}\n", "![a](x.png)\n^ {*{  *}\\{*x*\n");
 }
 
 #[test]

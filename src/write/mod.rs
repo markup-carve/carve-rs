@@ -1577,48 +1577,42 @@ fn apply_changes<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>) -> bool 
     false
 }
 
-/// C2-W-125: a pair that first takes its braced form had read on in the rounds before, over its content
-/// and into the next pair. The braced forms that rounds gave the pairs of that stretch are taken out where
-/// the bare form pairs by itself (C2-W-069).
+/// C2-W-125: a pair that first takes its braced form had read on in the rounds before, so the braced
+/// forms those rounds and their probes gave the pairs behind it in its block are taken out where the bare
+/// form pairs by itself (C2-W-069).
 fn drop_forms_behind<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, group: Arr<'t>) {
+    let logged = std::mem::take(&mut w.new_forms);
+    w.round_forms.extend(logged);
     let mut pending: Vec<N<'t>> = group.iter().collect();
     while let Some(node) = pending.pop() {
-        if !node::is_inline_parent(node) {
+        // A title and a caption are inline runs of their own outside `children`.
+        if let Some(title) = node::title(node) {
+            drop_in_run(w, fresh, title);
+        }
+        pending.extend(node::caption(node));
+        if node::is_inline_parent(node) {
+            drop_in_run(w, fresh, children(node));
+        } else {
             pending.extend(children(node).iter());
+        }
+    }
+}
+
+fn drop_in_run<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, run: Arr<'t>) {
+    let mut behind = false;
+    let mut stack: Vec<(Arr<'t>, usize)> = vec![(run, 0)];
+    while let Some((nodes, at)) = stack.pop() {
+        let Some(n) = nodes.get(at) else {
             continue;
+        };
+        stack.push((nodes, at + 1));
+        if fresh.contains(&id(n)) {
+            behind |= matches!(ty(n), "emphasis" | "strong");
+        } else if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
+            w.round_forms.remove(&id(n));
+            w.forms.remove(&id(n));
         }
-        // The depth of the pair whose subtree is in the stretch, and whether the next pair is too.
-        let mut inside: Option<(usize, bool)> = None;
-        let mut seek = false;
-        let mut stack: Vec<(Arr<'t>, usize)> = vec![(children(node), 0)];
-        while let Some((nodes, at)) = stack.pop() {
-            let Some(n) = nodes.get(at) else {
-                continue;
-            };
-            let depth = stack.len();
-            stack.push((nodes, at + 1));
-            if let Some((d, then)) = inside
-                && depth <= d
-            {
-                inside = None;
-                seek = then;
-            }
-            let pair = matches!(ty(n), "emphasis" | "strong");
-            if pair && fresh.contains(&id(n)) {
-                inside = Some((depth, true));
-                seek = false;
-            } else if inside.is_some() || (seek && pair) {
-                if seek {
-                    inside = Some((depth, false));
-                    seek = false;
-                }
-                if w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
-                    w.round_forms.remove(&id(n));
-                    w.forms.remove(&id(n));
-                }
-            }
-            stack.push((children(n), 0));
-        }
+        stack.push((children(n), 0));
     }
 }
 
