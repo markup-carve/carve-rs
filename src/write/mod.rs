@@ -1984,6 +1984,10 @@ fn stale_in_run<'t>(w: &Writer<'t>, run: Arr<'t>, stale: &mut Vec<usize>) {
             } else {
                 behind = true;
             }
+        } else if matches!(ty(n), "emphasis" | "strong")
+            && inline::braced_by_content(n, if ty(n) == "strong" { '*' } else { '/' })
+        {
+            behind = true;
         }
         stack.push((children(n), 0));
     }

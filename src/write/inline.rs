@@ -208,6 +208,97 @@ pub fn braced_pair(w: &mut Writer<'_>, node: V<'_>, flags: u32, bit: u8, inside:
         || w.form(node) > 0
         || edge_comment(node)
         || edge_mark(node, if bit == 2 { '*' } else { '/' })
+        || braced_by_content(node, if bit == 2 { '*' } else { '/' })
+}
+
+/// C2-W-069 decided from the content alone, before any repair round (carve#6482).
+pub fn braced_by_content(node: V<'_>, mark: char) -> bool {
+    edge_space(node) || holds_pairing_mark(children(node), mark, true)
+}
+
+/// C2-W-069, C2-I-053: the content holds the node's own mark where it could open or close, or between two word
+/// characters outside a braced span. A bracket bounds the delimiter stack, and a run of two (C2-I-049) is text
+/// unless a brace beside it takes one mark.
+fn text_holds_mark(t: &str, mark: char, words: bool) -> bool {
+    use crate::chars::{is_flank_space, is_word};
+    if !t.contains(mark) {
+        return false;
+    }
+    let chars: Vec<char> = t.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars.get(i) != Some(&mark) {
+            i += 1;
+            continue;
+        }
+        let before = i.checked_sub(1).and_then(|j| chars.get(j)).copied();
+        let run = chars.iter().skip(i).take_while(|&&c| c == mark).count();
+        if run > 1 && before != Some('{') && chars.get(i + run) != Some(&'}') {
+            i += run;
+            continue;
+        }
+        let after = chars.get(i + 1).copied();
+        let counts = if before.is_some_and(is_word) && after.is_some_and(is_word) {
+            words
+        } else {
+            !(before.is_some_and(is_flank_space) && after.is_some_and(is_flank_space))
+        };
+        if counts {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn holds_pairing_mark(nodes: Arr<'_>, mark: char, words: bool) -> bool {
+    nodes.iter().any(|n| match ty(n) {
+        "text" => text_holds_mark(text(n), mark, words),
+        "link" | "image" | "span" | "inline_footnote" | "inline_extension" | "citation_group" => {
+            false
+        }
+        t => {
+            has(n, "children")
+                && holds_pairing_mark(
+                    children(n),
+                    mark,
+                    words
+                        && !matches!(
+                            t,
+                            "underline"
+                                | "strike"
+                                | "highlight"
+                                | "superscript"
+                                | "subscript"
+                                | "insert"
+                                | "delete"
+                        ),
+                )
+        }
+    })
+}
+
+/// C2-W-069 with C2-I-047, C2-I-048 and C2-I-050 (carve#6482): a bare mark does not open before whitespace or a
+/// joining character, nor close behind whitespace, so the form is braced before any repair round.
+fn edge_space(node: V<'_>) -> bool {
+    let c = children(node);
+    let opens = c.first().is_some_and(|n| match ty(n) {
+        "text" => text(n)
+            .chars()
+            .next()
+            .is_some_and(|ch| crate::chars::is_flank_space(ch) || crate::chars::is_joining(ch)),
+        "soft_break" | "non_breaking_space" => true,
+        _ => false,
+    });
+    opens
+        || c.last().is_some_and(|n| match ty(n) {
+            "text" => text(n)
+                .chars()
+                .next_back()
+                .is_some_and(crate::chars::is_flank_space),
+            "soft_break" | "hard_break" | "non_breaking_space" => true,
+            _ => false,
+        })
 }
 
 /// C2-W-069 (carve#6469): a content that starts or ends with the node's own mark would pair with the opener or
