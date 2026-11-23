@@ -34,6 +34,9 @@ struct Bracket {
     carets: usize,
     /// C2-I-089: a note of `Notes::demote`, in which a caret pair opens nothing.
     demotes: bool,
+    /// C2-I-089: the `[` of a `Notes::demote` note read inside a demoting note.
+    /// It closes where that note would, so it settles the note in this pass.
+    probes: Option<usize>,
     /// Offset behind the opener markup.
     inner: usize,
     delim_base: usize,
@@ -905,12 +908,16 @@ impl<'a> Scanner<'_, '_, 'a> {
         let tok = self.push(v0, v1, K::Pending);
         let demotes = kind == BKind::Footnote && self.notes.demote.contains_key(&v0);
         self.demoting_open += usize::from(demotes);
+        let probes = (kind == BKind::Plain && self.demoting_open > 0)
+            .then(|| v0.wrapping_sub(1))
+            .filter(|&at| self.at(at) == Some(b'^') && self.notes.demote.contains_key(&at));
         self.brackets.push(Bracket {
             tok,
             kind,
             start: v0,
             carets: self.carets,
             demotes,
+            probes,
             inner: v1,
             delim_base,
             last_star: self.last_star.take(),
@@ -1165,6 +1172,9 @@ impl<'a> Scanner<'_, '_, 'a> {
         for top in self.brackets.drain(..) {
             if top.demotes {
                 self.pass_notes.failed.push(top.start);
+            }
+            if let Some(start) = top.probes {
+                self.pass_notes.failed.push(start);
             }
             if let Some(t) = self.toks.get_mut(top.tok) {
                 t.make_text(true);
