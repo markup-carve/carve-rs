@@ -122,6 +122,8 @@ pub struct Writer<'t> {
     pub indented: crate::hash::AddrMap<usize, bool>,
     /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
     pub kind_escapes: bool,
+    /// The bracket partners of the group in repair, by its first node and length.
+    pub partners: Option<((usize, usize), super::check::Partners<'t>)>,
     /// Set when a node of the group did not read back during the kind rounds.
     pub kind_failed: bool,
     pub parses: usize,
@@ -174,6 +176,7 @@ impl<'t> Writer<'t> {
             below_list: crate::hash::AddrMap::default(),
             indented: crate::hash::AddrMap::default(),
             kind_escapes: true,
+            partners: None,
             kind_failed: false,
             parses: 0,
             group_certificate: GroupCertificate::None,
