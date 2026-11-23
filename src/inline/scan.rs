@@ -12,7 +12,7 @@ use crate::ast::{
 };
 use crate::chars::{ByteSet, fold_label, is_flank_space, is_joining, is_word};
 use crate::tables;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BKind {
@@ -28,6 +28,12 @@ enum BKind {
 struct Bracket {
     tok: usize,
     kind: BKind,
+    /// Offset of the opener.
+    start: usize,
+    /// The caret pairs read before this opener, to see one inside it.
+    carets: usize,
+    /// C2-I-089: a note of `Notes::demote`, in which a caret pair opens nothing.
+    demotes: bool,
     /// Offset behind the opener markup.
     inner: usize,
     delim_base: usize,
@@ -99,15 +105,66 @@ struct Scanner<'r, 'e, 'a> {
     /// The first pass kept a `%%` inside an open image.
     pct_in_image: bool,
     formed_now: Vec<usize>,
+    notes: &'r Notes,
+    /// Caret pairs read so far that opened.
+    carets: usize,
+    /// Open brackets with `demotes`.
+    demoting_open: usize,
+    /// C2-I-089 tie-break: caret pairs before this offset open nothing.
+    demote_until: usize,
+    pass_notes: PassNotes,
     i: usize,
 }
 
-/// Bounds the passes that narrow the images keeping a `%%` (C2-I-074).
-const MAX_IMAGE_PASSES: usize = 8;
+/// C2-I-089: the notes the passes settled.
+#[derive(Default)]
+struct Notes {
+    /// Starts of notes that closed with a caret pair inside, and their end.
+    demote: HashMap<usize, usize>,
+    /// Starts of `^[` that close only when a caret pair inside opens: text,
+    /// and caret pairs before the end open nothing.
+    tie: HashMap<usize, usize>,
+}
+
+/// What one pass read of the notes.
+#[derive(Default)]
+struct PassNotes {
+    /// `(start, end)` of notes that closed with a caret pair inside that opened.
+    caret_closed: Vec<(usize, usize)>,
+    /// Starts of demoting notes that did not close.
+    failed: Vec<usize>,
+}
+
+impl Notes {
+    /// Takes what a pass read; returns whether the next pass reads otherwise.
+    fn narrow(&mut self, pass: PassNotes) -> bool {
+        let mut changed = false;
+        for (start, end) in pass.caret_closed {
+            if !self.demote.contains_key(&start) && !self.tie.contains_key(&start) {
+                self.demote.insert(start, end);
+                changed = true;
+            }
+        }
+        for start in pass.failed {
+            if let Some(end) = self.demote.remove(&start) {
+                self.tie.insert(start, end);
+                changed = true;
+            }
+        }
+        changed
+    }
+}
+
+/// Bounds the passes that narrow the images keeping a `%%` (C2-I-074) and
+/// the notes in which a caret pair opens nothing (C2-I-089).
+const MAX_PASSES: usize = 8;
 
 /// Runs the scan over one content. A `%%` inside an open image is alt source
 /// only when that image forms, so a scan that met one runs again with the
 /// images that formed, until that set stops narrowing (C2-I-024, C2-I-074).
+/// Caret pairs open in the first pass; a note that closed with one inside
+/// reads it as text in the next, and one that then stays open is text with
+/// its caret pairs ordinary (C2-I-089).
 #[must_use]
 pub fn scan<'a>(
     c: &Content<'_, 'a>,
@@ -116,18 +173,33 @@ pub fn scan<'a>(
     bufs: &mut Bufs,
     known: usize,
 ) -> Scanned<'a> {
-    let (mut out, pct, formed_now) = scan_pass(c, env, toks, bufs, known, None);
-    if !pct {
+    let mut notes = Notes::default();
+    let (mut out, mut pct, formed_now, pass) = scan_pass(c, env, toks, bufs, known, None, &notes);
+    let mut notes_moved = notes.narrow(pass);
+    if !pct && !notes_moved {
         return out;
     }
-    let mut formed: HashSet<usize> = formed_now.into_iter().collect();
-    for _ in 0..MAX_IMAGE_PASSES {
+    let mut formed: Option<HashSet<usize>> = pct.then(|| formed_now.into_iter().collect());
+    for _ in 0..MAX_PASSES {
         bufs.comments = std::mem::take(&mut out.comments);
-        let (next, _, now) = scan_pass(c, env, out.toks, bufs, known, Some(&formed));
+        let (next, p, now, pass) =
+            scan_pass(c, env, out.toks, bufs, known, formed.as_ref(), &notes);
         out = next;
-        let before = formed.len();
-        formed.retain(|start| now.contains(start));
-        if formed.len() == before {
+        notes_moved = notes.narrow(pass);
+        let images_moved = match formed.as_mut() {
+            Some(f) => {
+                let before = f.len();
+                f.retain(|start| now.contains(start));
+                f.len() != before
+            }
+            None if p && !pct => {
+                formed = Some(now.into_iter().collect());
+                true
+            }
+            None => false,
+        };
+        pct |= p;
+        if !notes_moved && !images_moved {
             break;
         }
     }
@@ -141,7 +213,8 @@ fn scan_pass<'a>(
     bufs: &mut Bufs,
     known: usize,
     formed_images: Option<&HashSet<usize>>,
-) -> (Scanned<'a>, bool, Vec<usize>) {
+    notes: &Notes,
+) -> (Scanned<'a>, bool, Vec<usize>, PassNotes) {
     let t = c.text.as_str();
     toks.clear();
     let mut brackets = std::mem::take(&mut bufs.brackets);
@@ -174,6 +247,11 @@ fn scan_pass<'a>(
         formed_images,
         pct_in_image: false,
         formed_now: Vec::new(),
+        notes,
+        carets: 0,
+        demoting_open: 0,
+        demote_until: 0,
+        pass_notes: PassNotes::default(),
         i: 0,
     };
     // `known` bytes hold no form start: `step` would be false on each of them.
@@ -199,6 +277,7 @@ fn scan_pass<'a>(
         },
         s.pct_in_image,
         s.formed_now,
+        s.pass_notes,
     )
 }
 
@@ -306,9 +385,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             b'@' | b'#' => self.sigil(),
             b':' => self.colon(),
             b'[' => self.open_bracket(),
-            b'^' if self.at(i + 1) == Some(b'[') && !self.in_inline_note() => {
-                self.push_bracket(i, i + 2, BKind::Footnote)
-            }
+            b'^' if self.at(i + 1) == Some(b'[') => self.note_open(i),
             b']' => self.close_bracket(),
             b'*' | b'/' => self.bare(),
             c if tables::BRACED_MARKS.as_bytes().contains(&c) => self.mark_run(c),
@@ -743,16 +820,32 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn open_bracket(&mut self) -> bool {
         let i = self.i;
-        if self.at(i + 1) == Some(b'^') && !self.in_inline_note() {
+        if self.at(i + 1) == Some(b'^') && !self.caret_demoted(i) {
+            self.carets += 1;
             return self.footnote_ref(i);
         }
         self.push_bracket(i, i + 1, BKind::Plain)
     }
 
-    fn in_inline_note(&self) -> bool {
-        self.brackets
-            .iter()
-            .any(|bracket| matches!(bracket.kind, BKind::Footnote))
+    /// C2-I-089: a caret pair here opens nothing.
+    fn caret_demoted(&self, i: usize) -> bool {
+        self.demoting_open > 0 || i < self.demote_until
+    }
+
+    /// C2-I-089: `^[`; a tie-break opener is text, both characters.
+    fn note_open(&mut self, i: usize) -> bool {
+        if self.caret_demoted(i) {
+            return false;
+        }
+        if let Some(&end) = self.notes.tie.get(&i) {
+            self.demote_until = self.demote_until.max(end);
+            self.flush();
+            self.text_from = Some(i);
+            self.i = i + 2;
+            return true;
+        }
+        self.carets += 1;
+        self.push_bracket(i, i + 2, BKind::Footnote)
     }
 
     /// C2-I-087: `[^label]`; with no label the `[` is text.
@@ -810,9 +903,14 @@ impl<'a> Scanner<'_, '_, 'a> {
             return true;
         }
         let tok = self.push(v0, v1, K::Pending);
+        let demotes = kind == BKind::Footnote && self.notes.demote.contains_key(&v0);
+        self.demoting_open += usize::from(demotes);
         self.brackets.push(Bracket {
             tok,
             kind,
+            start: v0,
+            carets: self.carets,
+            demotes,
             inner: v1,
             delim_base,
             last_star: self.last_star.take(),
@@ -826,8 +924,12 @@ impl<'a> Scanner<'_, '_, 'a> {
             return false;
         };
         let i = self.i;
+        self.demoting_open -= usize::from(top.demotes);
         let consumed = match top.kind.clone() {
             BKind::Footnote => {
+                if self.carets > top.carets {
+                    self.pass_notes.caret_closed.push((top.start, i + 1));
+                }
                 self.form(&top, i, i + 1, Kind::InlineFootnote, None);
                 true
             }
@@ -1061,6 +1163,9 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     fn finish_brackets(&mut self) {
         for top in self.brackets.drain(..) {
+            if top.demotes {
+                self.pass_notes.failed.push(top.start);
+            }
             if let Some(t) = self.toks.get_mut(top.tok) {
                 t.make_text(true);
             }
