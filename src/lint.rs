@@ -400,6 +400,8 @@ struct Range<'a> {
 struct Holder {
     range: Option<u32>,
     up: Option<u32>,
+    /// The `title` list of its range's node: inline content whose leaf is that node, as carve-js reads it.
+    title: bool,
 }
 
 /// A node's pointer, written out only when a rule reads it.

@@ -207,18 +207,19 @@ impl<'a> Visit<'a, '_> {
                 .rules
                 .zip(parents)
                 .and_then(|(_, parents)| Self::child_rules(key, parents));
-            let place = self.child_place(entry, key, own);
+            let place = self.child_place(entry, key, own, child.is_array());
             self.push(child, entry.path, Segment::Key(key), rules, place);
         });
     }
 
-    /// The place of a child under `key`. A path's holder is the node before its last `/children/`;
-    /// the document's children have none.
-    fn child_place(&mut self, entry: &Entry<'a>, key: &str, own: Option<u32>) -> Place {
+    /// The place of a child under `key`. A path's holder is the node before its last `/children/` or
+    /// `/title/`; the document's children have none.
+    fn child_place(&mut self, entry: &Entry<'a>, key: &str, own: Option<u32>, list: bool) -> Place {
         if !self.full {
             return Place::default();
         }
-        if key != "children" {
+        let title = key == "title" && list && own.is_some();
+        if key != "children" && !title {
             return Place {
                 holder: entry.place.holder,
                 ..Place::default()
@@ -228,6 +229,7 @@ impl<'a> Visit<'a, '_> {
             self.walk.holders.push(Holder {
                 range: own,
                 up: entry.place.holder,
+                title,
             });
             u32::try_from(self.walk.holders.len() - 1).ok()
         } else {

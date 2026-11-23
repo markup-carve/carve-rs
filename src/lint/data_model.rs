@@ -934,7 +934,7 @@ impl<'a> Records<'a> {
                 .map_or((false, false), |at| holder_flags(ranges[at as usize].kind));
             let up = holder.up.map(|up| up as usize);
             holder_quotes.push(up.map_or(0, |up| holder_quotes[up]) + usize::from(quote));
-            holder_inline.push(up.is_some_and(|up| holder_inline[up]) || inline);
+            holder_inline.push(up.is_some_and(|up| holder_inline[up]) || inline || holder.title);
         }
         let mut records = Self {
             source,
@@ -2298,7 +2298,7 @@ impl<'a> Records<'a> {
             if let Some(kind) = node
                 .range
                 .map(|range| self.kind(range))
-                .filter(|kind| inline_leaf_kind(kind))
+                .filter(|kind| node.title || inline_leaf_kind(kind))
             {
                 return Some(kind);
             }
