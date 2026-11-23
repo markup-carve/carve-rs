@@ -132,3 +132,50 @@ fn an_unclosed_line_block_names_its_width_and_kind() {
         entry.message
     );
 }
+
+/// markup-carve/carve#6439 rows A, B, C, E, F, G and H: the Expected section, which carve-js gives too.
+#[test]
+fn carve_6439_unowned_lines_and_closers_around_a_comment_block() {
+    for (what, source, html) in [
+        (
+            "a column-0 line closes the item with the open comment",
+            "- a\n  - ::: |\n    %%%\nb\n",
+            "<ul>\n  <li>a\n    <ul>\n      <li>\n        <div class=\"line-block\">\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>b</p>",
+        ),
+        (
+            "no stanza takes a line after a closed comment",
+            "- a\n  - ::: |\n    %%%\n    x\n    %%%\nb\n",
+            "<ul>\n  <li>a\n    <ul>\n      <li>\n        <div class=\"line-block\">\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>b</p>",
+        ),
+        (
+            "a line without the quote marks closes the quotes",
+            "> > ::: |\n> > %%%\ny\n",
+            "<blockquote>\n  <blockquote>\n    <div class=\"line-block\">\n\n    </div>\n  </blockquote>\n</blockquote>\n<p>y</p>",
+        ),
+        (
+            "a below-column closer closes the comment",
+            "- - ::: |\n    %%%\n   %%%%\n    %%%\n    b\nz\n",
+            "<ul>\n  <li>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>z</p>",
+        ),
+        (
+            "a closer at column two closes the comment",
+            "- - ::: |\n    %%%\n  %%%%\n    %%%\n    b\nz\n",
+            "<ul>\n  <li>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>z</p>",
+        ),
+        (
+            "a lazy closer keeps the open stanza",
+            "- - ::: |\n    a\n    %%%\n%%%%\nz\n",
+            "<ul>\n  <li>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n          <p>a<br>\nz</p>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>",
+        ),
+        (
+            "an unowned line closes the item before a later opener",
+            "- - ::: |\n    %%%\nx\n    %%%\nz\n",
+            "<ul>\n  <li>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x</p>",
+        ),
+    ] {
+        assert_eq!(render(source), html, "{what}: {source:?}");
+        let written = fmt(source);
+        assert_eq!(tree(&written), tree(source), "{what}: {written:?}");
+        assert_eq!(fmt(&written), written);
+    }
+}
