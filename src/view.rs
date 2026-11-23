@@ -372,16 +372,6 @@ impl<'a> V<'a> {
             }
         }
     }
-
-    /// The number of keys of an object.
-    pub(crate) fn object_len(self) -> Option<usize> {
-        if !self.is_object() {
-            return None;
-        }
-        let mut n = 0;
-        self.each(&mut |_, _| n += 1);
-        Some(n)
-    }
 }
 
 fn pos_field(pos: &Pos, key: &str) -> Option<u32> {

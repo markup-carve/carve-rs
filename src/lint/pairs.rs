@@ -3,8 +3,9 @@
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// The named groups of one pair as byte spans of the text: `open`, `close`, `inner`, `before`, `after`.
-pub(super) type Pair = [(&'static str, usize, usize); 5];
+/// The named groups of one pair as byte spans of the text: `open`, `close`, `inner`, `before`, `backslashes`,
+/// `after`.
+pub(super) type Pair = [(&'static str, usize, usize); 6];
 
 fn class(re: &'static OnceLock<Option<Regex>>, pattern: &str, c: char) -> bool {
     let mut buf = [0; 4];
@@ -102,11 +103,20 @@ pub(super) fn scan(text: &str, mark: &str, strict: bool) -> Vec<Pair> {
         let close_end = close + mark.len();
         let before_start = before(text, open).map_or(open, |c| open - c.len_utf8());
         let after_end = after(text, close_end).map_or(close_end, |c| close_end + c.len_utf8());
+        let run = text
+            .as_bytes()
+            .get(..open)
+            .unwrap_or_default()
+            .iter()
+            .rev()
+            .take_while(|&&b| b == b'\\')
+            .count();
         out.push([
             ("open", open, open_end),
             ("close", close, close_end),
             ("inner", open_end, close),
             ("before", before_start, open),
+            ("backslashes", open - run, open),
             ("after", close_end, after_end),
         ]);
         from = close_end;
