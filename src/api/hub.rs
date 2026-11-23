@@ -91,7 +91,15 @@ pub(super) fn markdown_options(input: &str, gfm: bool) -> comrak::Options<'stati
 /// Markdown (`CommonMark`) or GFM to HTML with comrak, the cmark-gfm port.
 fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Error> {
     use comrak::nodes::{NodeHtmlBlock, NodeValue};
-    let options = markdown_options(input, gfm);
+    let (input, options) = match split_frontmatter(input) {
+        Some((format, value, rest)) => {
+            sink.frontmatter = Some((format, value));
+            let mut options = markdown_options(rest, gfm);
+            options.extension.front_matter_delimiter = None;
+            (rest, options)
+        }
+        None => (input, markdown_options(input, gfm)),
+    };
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, input, &options);
     let mut tight = Vec::new();
@@ -100,10 +108,6 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
         let value = node.data.borrow().value.clone();
         let html = |text: String| arena.alloc(NodeValue::HtmlInline(text).into());
         match value {
-            NodeValue::FrontMatter(text) => {
-                sink.frontmatter = Some(frontmatter(&text));
-                node.detach();
-            }
             NodeValue::HtmlBlock(block) => {
                 let literal = placeholder(sink, "html", &block.literal) + "\n";
                 node.data.borrow_mut().value =
@@ -153,25 +157,44 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
     Ok(mark_tight(&out, &tight))
 }
 
-/// `---` or `+++` lines around the frontmatter text.
-fn frontmatter(text: &str) -> (&'static str, String) {
-    let format = if text.starts_with("+++") {
-        "toml"
-    } else {
-        "yaml"
+/// A closed frontmatter at the start, after at most one U+FEFF: the format,
+/// the text between the fences and the input after the closer. The hub reads
+/// it instead of comrak, which misses a closer on the opener's next line,
+/// blanks after the opener and CR line endings (carve-rs#4633); the rule is
+/// micromark-extension-frontmatter's, as carve-js reads it.
+fn split_frontmatter(input: &str) -> Option<(&'static str, String, &str)> {
+    fn line(text: &str) -> (&str, &str) {
+        let end = text.find(['\r', '\n']).unwrap_or(text.len());
+        let (line, rest) = text.split_at(end);
+        let rest = rest
+            .strip_prefix("\r\n")
+            .or_else(|| rest.strip_prefix(['\r', '\n']))
+            .unwrap_or(rest);
+        (line, rest)
+    }
+    let is_fence = |l: &str, d: &str| {
+        l.strip_prefix(d)
+            .is_some_and(|r| r.trim_matches([' ', '\t']).is_empty())
     };
-    let lines: Vec<&str> = text.lines().collect();
-    let close = lines
-        .iter()
-        .rposition(|l| matches!(l.trim_end(), "---" | "+++"))
-        .unwrap_or(lines.len());
-    let body = lines.get(1..close).unwrap_or(&[]);
-    let value = if body.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n", body.join("\n"))
-    };
-    (format, value)
+    let start = input.strip_prefix('\u{feff}').unwrap_or(input);
+    let (opener, mut rest) = line(start);
+    let (delimiter, format) = [("---", "yaml"), ("+++", "toml")]
+        .into_iter()
+        .find(|(d, _)| is_fence(opener, d))?;
+    if opener.len() == start.len() {
+        return None;
+    }
+    let mut value = String::new();
+    while !rest.is_empty() {
+        let (l, after) = line(rest);
+        if is_fence(l, delimiter) {
+            return Some((format, value, after));
+        }
+        value.push_str(l);
+        value.push('\n');
+        rest = after;
+    }
+    None
 }
 
 /// Every list opening tag of the library HTML is a list of the tree in
