@@ -1506,6 +1506,7 @@ fn settle<'t>(
     round: &mut Round<'_>,
 ) -> bool {
     let mut c = compare_group(w, doc, group, first, round);
+    check::drop_early_trials(&mut c);
     let read = round.source.zip(round.last);
     if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
         return true;
