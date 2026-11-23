@@ -2,7 +2,7 @@
 //! kind in the leaf block that holds it. Adjacent text nodes are read as one
 //! run of text, as the parser reads them.
 
-use super::node::{N, children, id, is_break, is_inline_parent, text, ty};
+use super::node::{N, children, id, is_break, is_inline_parent, s, text, ty};
 use crate::hash::AddrMap;
 use crate::view::Arr;
 
@@ -22,6 +22,8 @@ struct Run<'t> {
     nodes: Vec<(N<'t>, usize)>,
     before: Edge,
     after: Edge,
+    /// Whether a smart dash node stands directly before the run: its hyphens join the run (C2-W-099).
+    after_dash: bool,
 }
 
 impl Run<'_> {
@@ -85,7 +87,7 @@ impl<'t> KindBlocks<'t> {
         {
             return Some(format!("{{{mark}"));
         }
-        if ch == b'-' && before(b, at, 1) == Some(b'-') {
+        if ch == b'-' && (before(b, at, 1) == Some(b'-') || (at == 0 && run.after_dash)) {
             return Some("--".into());
         }
         Some(char::from(ch).to_string())
@@ -108,7 +110,14 @@ impl<'t> KindBlocks<'t> {
 
 /// Adds the text runs of `nodes`; `joined` is true while the last leaf was text.
 fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined: &mut bool) {
+    let mut prev: Option<N<'t>> = None;
     for node in nodes {
+        let after_dash = prev.is_some_and(|p| {
+            ty(p) == "smart_punctuation"
+                && s(p, "source")
+                    .is_some_and(|src| !src.is_empty() && src.bytes().all(|b| b == b'-'))
+        });
+        prev = Some(node);
         if ty(node) == "text" {
             match runs.last_mut().filter(|_| *joined) {
                 Some(run) => {
@@ -120,6 +129,7 @@ fn collect<'t>(nodes: Arr<'t>, runs: &mut Vec<Run<'t>>, edge: &mut Edge, joined:
                     nodes: vec![(node, 0)],
                     before: *edge,
                     after: Edge::Markup,
+                    after_dash,
                 }),
             }
             *joined = true;

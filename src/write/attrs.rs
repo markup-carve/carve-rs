@@ -265,8 +265,11 @@ pub fn list_markers(w: &Writer<'_>, node: V<'_>) -> ListMarkers {
     // C2-W-044, C2-B-219: a start of more than nine digits is no marker and no start value.
     let start = if start > MAX_DECIMAL { 1 } else { start };
     // C2-L-031: a bare `)` is no marker. C2-L-030: with no fact the period takes the bare dot.
+    // C2-W-044, C2-B-229: only a marker directly behind the bare dot reads as text;
+    // a task box or quote mark between them leaves the bare dot a marker.
+    let behind_bare_dot = w.bare_dot_lead && w.lead.as_deref().is_some_and(|l| l.ends_with(". "));
     let bare =
-        delimiter == "." && !w.bare_dot_lead && w.fact(node).and_then(|f| f.bare).unwrap_or(true);
+        delimiter == "." && !behind_bare_dot && w.fact(node).and_then(|f| f.bare).unwrap_or(true);
     if !bare {
         return numbered(delimiter, start, count);
     }

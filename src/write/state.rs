@@ -101,6 +101,11 @@ pub struct Writer<'t> {
     /// The first document child when it is frontmatter without attributes: the
     /// one block that may use the bare opener (C2-W-052).
     pub leading_frontmatter: Option<usize>,
+    /// The document's own children, whose first line a typed opener would take (C2-W-154).
+    pub top_blocks: crate::hash::AddrSet<usize>,
+    /// Typed-opener paragraphs written directly below a list that takes no lazy line (C2-W-154).
+    /// The value is false where the list ends in a block that takes a lazy line: no spelling.
+    pub below_list: crate::hash::AddrMap<usize, bool>,
     /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
     pub kind_escapes: bool,
     /// Set when a node of the group did not read back during the kind rounds.
@@ -150,6 +155,8 @@ impl<'t> Writer<'t> {
             link_keys: std::sync::Arc::default(),
             prewritten: None,
             leading_frontmatter: None,
+            top_blocks: crate::hash::AddrSet::default(),
+            below_list: crate::hash::AddrMap::default(),
             kind_escapes: true,
             kind_failed: false,
             parses: 0,

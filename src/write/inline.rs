@@ -1373,6 +1373,13 @@ fn place_escapes<'t>(
     }
 }
 
+/// Writes one node without placing escapes: the escapes a list places for its end would land in the writer.
+pub fn write_inline<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
+    let mut out = String::new();
+    write_inline_into(w, node, flags, &mut out);
+    out
+}
+
 pub fn write_inlines<'t>(w: &mut Writer<'t>, nodes: &[N<'t>], flags: u32) -> String {
     #[cfg(test)]
     super::INLINE_BUFFERS.with(|c| c.set(c.get() + 1));
