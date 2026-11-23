@@ -1416,6 +1416,11 @@ pub fn run(arguments: &[String]) -> i32 {
             Err(error) => fail("import-input-invalid", error),
         };
     }
+    // Before `-o` truncates its file.
+    let standard = match StandardExtensions::from_args(&args) {
+        Ok(standard) => standard,
+        Err(code) => return code,
+    };
     let mut staged = vec![None; args.files.len()];
     if let Some(path) = str_value(&args, "output") {
         for (index, input) in args.files.iter().enumerate() {
@@ -1430,10 +1435,6 @@ pub fn run(arguments: &[String]) -> i32 {
             return fail("output-unwritable", e);
         }
     }
-    let standard = match StandardExtensions::from_args(&args) {
-        Ok(standard) => standard,
-        Err(code) => return code,
-    };
     let mut status = 0;
     let mut losses = Vec::new();
     let mut includes = Vec::new();

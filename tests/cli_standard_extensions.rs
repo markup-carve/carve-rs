@@ -153,3 +153,26 @@ fn c2_t_010_help_lists_the_flags() {
     assert!(text.contains("  --extensions json\n"), "{text}");
     assert!(text.contains("  --extension-options json\n"), "{text}");
 }
+
+#[test]
+fn c2_t_010_a_refused_extension_leaves_the_output_file() {
+    let dir = dir("output");
+    std::fs::write(dir.join("a.crv"), "a\n").unwrap();
+    std::fs::write(dir.join("out.html"), "keep").unwrap();
+    let out = carve(
+        &dir,
+        &[
+            "render",
+            "--extensions",
+            r#"["carve.nope"]"#,
+            "-o",
+            "out.html",
+            "a.crv",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("out.html")).unwrap(),
+        "keep"
+    );
+}
