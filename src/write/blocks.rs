@@ -3,8 +3,8 @@
 //! `prefix`, the prefix of its containers.
 
 use super::attrs::{
-    BlockParts, ListMarkers, brace_block, is_name, letter_style_pair, list_markers,
-    longest_bare_run, plain_block, quoted, same_list_kind,
+    BlockParts, ListMarkers, brace_block, is_name, list_markers, longest_bare_run,
+    ordered_style_pair, plain_block, quoted, same_list_kind,
 };
 use super::inline::{
     BARE_BREAKS, IN_FIGURE_GROUP, braced_comment, line_comment_text, write_content, write_inlines,
@@ -1208,7 +1208,7 @@ pub fn blank_lines_between(
         if same_list_kind(l, node) {
             return LIST_BOUNDARY_BLANKS;
         }
-        if letter_style_pair(l, node) {
+        if ordered_style_pair(l, node) {
             // The next list's attribute line would be a lazy line of the open paragraph above it (C2-B-024).
             let attrs = list_attributes(node, list_markers(w, node).start.as_ref());
             return usize::from(!attrs.is_empty() && takes_line_below(w, l));

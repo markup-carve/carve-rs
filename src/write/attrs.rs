@@ -319,20 +319,14 @@ fn same_ordered_kind(a: V<'_>, b: V<'_>) -> bool {
     }
 }
 
-/// C2-W-028: ordered lists of the two letter styles in one case and one
-/// delimiter, which need no blank line when `b` would not continue `a`.
-pub fn letter_style_pair(a: V<'_>, b: V<'_>) -> bool {
+/// C2-W-028: ordered lists of two styles and one delimiter, which need no
+/// blank line when `b` would not continue `a`.
+pub fn ordered_style_pair(a: V<'_>, b: V<'_>) -> bool {
     let ordered = |l: V<'_>| ty(l) == "list" && marker_field(l, "kind", "") == "ordered";
-    if !ordered(a) || !ordered(b) {
-        return false;
-    }
-    if marker_field(a, "delimiter", ".") != marker_field(b, "delimiter", ".") {
-        return false;
-    }
-    matches!(
-        (marker_field(a, "style", "1"), marker_field(b, "style", "1")),
-        ("a", "i") | ("i", "a") | ("A", "I") | ("I", "A")
-    )
+    ordered(a)
+        && ordered(b)
+        && marker_field(a, "delimiter", ".") == marker_field(b, "delimiter", ".")
+        && marker_field(a, "style", "1") != marker_field(b, "style", "1")
 }
 
 /// C2-B-049, C2-B-053: whether the list `b` directly after the list `a` would continue it.
