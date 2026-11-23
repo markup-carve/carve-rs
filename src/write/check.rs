@@ -626,6 +626,29 @@ fn respell<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) ->
         if !respell_step(w, c, es, i, step, &mut attempt) {
             continue;
         }
+        // C2-W-125: a brace is case one, before the case an earlier step tried; that backslash comes out.
+        let brace = c
+            .escapes
+            .get(before..)
+            .unwrap_or(&[])
+            .iter()
+            .any(|&(n, at)| text(n).as_bytes().get(at) == Some(&b'{'));
+        if brace && step != 10 {
+            let earlier = attempt.escapes.len();
+            for (n, at) in attempt.escapes.drain(..earlier) {
+                if is_escaped(w, c, n, at)
+                    && !c
+                        .escapes
+                        .get(before..)
+                        .unwrap_or(&[])
+                        .iter()
+                        .any(|&(e, a)| id(e) == id(n) && a == at)
+                {
+                    c.retracted.push((n, at));
+                    mark(c, n, at, false);
+                }
+            }
+        }
         for &escape in c.escapes.get(before..).unwrap_or(&[]) {
             attempt.escapes.push(escape);
             if step != 14 {
@@ -876,13 +899,26 @@ fn run_probe<'t>(
         std::mem::swap(&mut w.sp, &mut probe);
         let result = probe_round(w, e, expected, flags, &mut kinds);
         std::mem::swap(&mut w.sp, &mut probe);
-        let Some((asked, lossy)) = result else {
+        let Some((asked, lossy, retracted)) = result else {
             return if round == 0 { None } else { Some(found) };
         };
         let placed: Vec<(N<'t>, usize)> = asked
             .into_iter()
             .filter(|&(n, at)| takes.takes(n, at) && escape_at(w, c, n, at))
             .collect();
+        for (n, at) in retracted {
+            if let Some(list) = probe.escapes.get_mut(&id(n)) {
+                list.retain(|&x| x != at);
+            }
+            if let Some(p) = c
+                .escapes
+                .iter()
+                .position(|&(e, a)| id(e) == id(n) && a == at)
+            {
+                c.escapes.remove(p);
+            }
+            mark(c, n, at, false);
+        }
         if placed.is_empty() && lossy {
             return if round == 0 { None } else { Some(found) };
         }
@@ -920,7 +956,7 @@ fn probe_round<'t>(
     expected: &[N<'t>],
     flags: u32,
     kinds: &mut ProbeKinds<'t>,
-) -> Option<(Vec<(N<'t>, usize)>, bool)> {
+) -> Option<(Vec<(N<'t>, usize)>, bool, Vec<(N<'t>, usize)>)> {
     let chunk = Chunk::new(format!("{}\n", write_inlines(w, expected, flags)));
     let parsed = chunk.parse(w);
     let source = chunk.text().to_string();
@@ -945,7 +981,7 @@ fn probe_round<'t>(
         }
     }
     extend_chains(w, &mut probe);
-    Some((probe.escapes, !probe.losses.is_empty()))
+    Some((probe.escapes, !probe.losses.is_empty(), probe.retracted))
 }
 
 /// C2-W-088: a probe round escapes every opener of each kind its parse reports
@@ -1823,12 +1859,11 @@ fn parse_ends_in_text<'t>(
     false
 }
 
-/// Whether this round escapes a bracket of C2-W-125 in the content of `node`.
+/// Whether this round escapes in the content of `node`: a bracket of C2-W-125, or the opener of a
+/// construct the parse holds there, which already keeps `node` from reading on (C2-W-088).
 fn repairs_inside(c: &Check<'_>, node: V<'_>) -> bool {
     let texts: AddrSet<usize> = texts_below(node).into_iter().map(id).collect();
-    c.escapes
-        .iter()
-        .any(|&(n, at)| c.closers.contains(&(id(n), at)) && texts.contains(&id(n)))
+    c.escapes.iter().any(|&(n, _)| texts.contains(&id(n)))
 }
 
 fn after_text_node<'t>(
@@ -1845,7 +1880,10 @@ fn after_text_node<'t>(
         return true;
     }
     if es.get(at.i).is_none() {
-        if !escape_in_content(w, c, owner) && !escape_end(w, c, last_text(Some(owner)), true) {
+        if !escape_reading_brace(w, c, owner)
+            && !escape_in_content(w, c, owner)
+            && !escape_end(w, c, last_text(Some(owner)), true)
+        {
             c.losses.push((owner, None));
         }
     } else if at.j + 1 >= as_.len()
@@ -1858,6 +1896,27 @@ fn after_text_node<'t>(
         return respell(w, c, es, at.i) && step_over(w, c, es, as_, at);
     }
     false
+}
+
+/// C2-W-125 case one, tried before the closer of case five: the last bare `{` of the content of
+/// `owner` glued before a mark opens a braced construct that reads on past the end of `owner`.
+fn escape_reading_brace<'t>(w: &Writer<'t>, c: &mut Check<'t>, owner: N<'t>) -> bool {
+    let Some(t) = last_text(Some(owner)) else {
+        return false;
+    };
+    let b = text(t).as_bytes();
+    let brace = b.iter().rposition(|&x| x == b'{');
+    let Some(at) = brace.filter(|&at| b.get(at + 1).is_some_and(|m| b"*/_~=^,+-".contains(m)))
+    else {
+        return false;
+    };
+    if !escape_at(w, c, t, at) {
+        return false;
+    }
+    // A backslash of C2-W-125 gives no kind, and the parse behind the read-on content is not compared.
+    c.closers.insert((id(t), at));
+    c.cut = true;
+    true
 }
 
 /// A note or extension that a lone bracket of its content keeps from forming reads as text.

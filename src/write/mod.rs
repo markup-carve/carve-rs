@@ -1508,7 +1508,13 @@ fn braces_unpaired<'t>(w: &mut Writer<'t>, group: Arr<'t>) -> bool {
     w.strict_pairs = true;
     blocks::write_blocks(w, group, "", 0, false);
     w.strict_pairs = false;
-    w.forms.len() > forms
+    if w.forms.len() == forms {
+        return false;
+    }
+    // C2-W-125: a new form takes out the backslashes placed for the old one, as `apply_changes` does.
+    w.sp.escapes.clear();
+    w.sp.attempts.clear();
+    true
 }
 
 fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
