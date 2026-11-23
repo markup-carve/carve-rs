@@ -186,6 +186,27 @@ impl Scratch<'_> {
         });
     }
 
+    /// Whether any buffer is larger than the spare keeps: a tree may grow one
+    /// that `trim` does not bound, and the spare outlives the tree.
+    fn exceeds_keep(&self) -> bool {
+        let cap = KEEP / 16;
+        self.text.capacity() > KEEP
+            || self.join.capacity() > KEEP
+            || self.segs.capacity() > cap
+            || self.joins.capacity() > cap
+            || self.chars.capacity() > cap
+            || self.toks.capacity() > cap
+            || self.evs.capacity() > cap
+            || self.outs.capacity() > cap
+            || self.frames.capacity() > cap
+            || self.direct.capacity() > cap
+            || self.scan.exceeds(cap)
+            || self.lists.len() > cap
+            || self.lists.iter().any(|l| l.capacity() > cap)
+            || self.stacks.len() > cap
+            || self.stacks.iter().any(|l| l.capacity() > cap)
+    }
+
     /// Swaps the buffers with `other`; those typed by the arena are emptied.
     /// Field by field: moving the whole scratch cost more than a small tree saves.
     fn exchange(&mut self, other: &mut Scratch<'_>) {
@@ -214,7 +235,7 @@ impl Scratch<'_> {
 
 impl Drop for Scratch<'_> {
     fn drop(&mut self) {
-        if !self.borrowed {
+        if !self.borrowed || self.exceeds_keep() {
             return;
         }
         let _ = SPARE.try_with(|spare| {
@@ -407,5 +428,16 @@ mod tests {
         assert!(next.toks.capacity() > 0);
         assert!(next.frames.capacity() > 0);
         assert!(next.toks.is_empty() && next.frames.is_empty());
+    }
+
+    #[test]
+    fn the_spare_drops_a_buffer_above_the_cap() {
+        let mut big = Scratch::default();
+        big.borrow_spare();
+        big.segs = Vec::with_capacity(KEEP);
+        drop(big);
+        let mut next = Scratch::default();
+        next.borrow_spare();
+        assert!(next.segs.capacity() <= KEEP / 16);
     }
 }

@@ -51,6 +51,16 @@ pub struct Bufs {
     pub comments: Vec<(usize, usize)>,
 }
 
+impl Bufs {
+    /// Whether a buffer holds more than `cap` entries.
+    pub(super) fn exceeds(&self, cap: usize) -> bool {
+        self.brackets.capacity() > cap
+            || self.open_delims.capacity() > cap
+            || self.barriers.capacity() > cap
+            || self.comments.capacity() > cap
+    }
+}
+
 /// The result of the scan.
 pub struct Scanned<'a> {
     pub toks: Vec<Tok<'a>>,
