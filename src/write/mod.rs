@@ -176,6 +176,27 @@ mod nested_inline_write_test {
 }
 
 #[cfg(test)]
+mod prune_candidates_test {
+    use super::*;
+
+    fn candidates(src: &str) -> Vec<usize> {
+        let arena = crate::Arena::for_input(src);
+        let doc =
+            crate::parse_resolved_in(src, &crate::Options::default(), &arena).unwrap_or_default();
+        prunable_escapes(src, &[], V::Doc(&doc))
+    }
+
+    #[test]
+    fn a_brace_before_a_bare_pair_opener_is_no_candidate() {
+        // carve-rs#4660: `{*` would read as a braced opener and take the strong's mark.
+        assert_eq!(candidates("\\{*x* a\n"), [] as [usize; 0]);
+        assert_eq!(candidates("\\{/x/ a\n"), [] as [usize; 0]);
+        // No pair opens at the mark, so the trial still decides.
+        assert_eq!(candidates("\\{*x a\n"), [0]);
+    }
+}
+
+#[cfg(test)]
 mod probe_sort_test {
     use super::PROBE_SORTED;
 
@@ -2078,14 +2099,40 @@ fn prunable_escapes(source: &str, raws: &[String], parsed: V<'_>) -> Vec<usize> 
                 .map(|(at, m)| (at, at + m.len()))
         })
         .collect();
+    let mut opens: Option<AddrSet<usize>> = None;
     let mut current = || Some(parsed);
     let mut next = next_byte_after(source);
     source
         .match_indices('\\')
         .map(|(p, _)| p)
         .filter(|&p| {
-            prunable_opener(source, p, &mut current, &mut next)
+            !(source
+                .get(p + 1..p + 3)
+                .is_some_and(|m| m == "{*" || m == "{/")
+                && opens
+                    .get_or_insert_with(|| bare_pair_openers(source, parsed))
+                    .contains(&(p + 2)))
+                && prunable_opener(source, p, &mut current, &mut next)
                 && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
+        })
+        .collect()
+}
+
+/// The offsets of the bare marks that open an emphasis or strong of `parsed`, the parse of `source`. Without
+/// its backslash a `{` before such a mark reads with it as a braced opener, so the pair would not form.
+fn bare_pair_openers(source: &str, parsed: V<'_>) -> AddrSet<usize> {
+    let mut nodes = Vec::new();
+    node::descendants(parsed, &mut nodes);
+    nodes
+        .into_iter()
+        .filter_map(|n| {
+            let mark = match ty(n) {
+                "strong" => b'*',
+                "emphasis" => b'/',
+                _ => return None,
+            };
+            let (start, _) = span(n)?;
+            (source.as_bytes().get(start) == Some(&mark)).then_some(start)
         })
         .collect()
 }
