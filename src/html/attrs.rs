@@ -192,17 +192,21 @@ impl<'a> El<'a> {
     }
 
     fn merge_style(&self, authored: Option<&str>) -> String {
-        let mut parts: Vec<String> = Vec::new();
-        if let Some(b) = &self.style_before {
-            parts.push(b.clone());
-        }
-        if let Some(a) = authored.filter(|a| !a.is_empty()) {
-            parts.push(
-                a.trim_end_matches(|c: char| c == ';' || c.is_whitespace())
-                    .to_string(),
-            );
-        }
-        let mut s = parts.join("; ");
+        // C2-H-057: the authored value stays as written; only a following
+        // declaration trims it and adds the separator it needs.
+        let authored = authored.filter(|a| !a.is_empty()).map(|a| {
+            if self.style_after.is_empty() {
+                a
+            } else {
+                a.trim()
+            }
+        });
+        let mut s = match (&self.style_before, authored) {
+            (Some(b), Some(a)) => format!("{b}; {a}"),
+            (Some(b), None) => b.clone(),
+            (None, Some(a)) => a.to_string(),
+            (None, None) => String::new(),
+        };
         for d in &self.style_after {
             if !s.is_empty() {
                 s.push_str(if s.ends_with(';') { " " } else { "; " });
