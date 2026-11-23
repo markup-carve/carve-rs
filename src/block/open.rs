@@ -1002,6 +1002,12 @@ fn bracket_end(s: &str, start: usize) -> Option<usize> {
 /// failed search from one offset fails from every later one too.
 struct AltScan<'s> {
     s: &'s str,
+    /// Inner open brackets: `None` for an inline footnote, else where the text starts.
+    open: Vec<Option<usize>>,
+    /// The inline footnotes on `open`.
+    notes: usize,
+    /// The marks of the open braced spans.
+    braced: Vec<u8>,
     /// Backtick run lengths that have no closing run further on.
     dead_runs: Vec<usize>,
     /// No `%}` follows this offset.
@@ -1016,6 +1022,9 @@ impl<'s> AltScan<'s> {
     fn new(s: &'s str) -> Self {
         Self {
             s,
+            open: Vec::new(),
+            notes: 0,
+            braced: Vec::new(),
             dead_runs: Vec::new(),
             no_comment_close: usize::MAX,
             label_memo: None,
@@ -1025,62 +1034,80 @@ impl<'s> AltScan<'s> {
 
     fn close(&mut self, start: usize) -> Option<usize> {
         let b = self.s.as_bytes();
-        // Inner open brackets: `None` for an inline footnote, else where the text starts.
-        let mut open: Vec<Option<usize>> = Vec::new();
-        let mut notes = 0usize;
-        let mut braced: Vec<u8> = Vec::new();
         let mut i = start;
         while let Some(&c) = b.get(i) {
-            match c {
-                b'\\' => i += 2,
-                b'`' => i = self.code_end(i),
-                b'<' => i = angle_end(self.s, i),
-                b'{' if b.get(i + 1) == Some(&b'%') => i = self.comment_end(i),
-                b'^' if b.get(i + 1) == Some(&b'[') => {
-                    if notes > 0 {
-                        i += 1;
-                    } else {
-                        open.push(None);
-                        notes += 1;
-                        i += 2;
-                    }
-                }
-                b'[' => {
-                    let reference = if notes == 0 {
-                        self.footnote_ref_end(i)
-                    } else {
-                        None
-                    };
-                    if let Some(end) = reference {
-                        i = end;
-                    } else {
-                        open.push(Some(i + 1));
-                        i += 1;
-                    }
-                }
-                b']' => match open.pop() {
+            if let Some(next) = self.atom_end(i) {
+                i = next;
+                continue;
+            }
+            i = match c {
+                b'^' if b.get(i + 1) == Some(&b'[') => self.note_open(i),
+                b'[' => self.bracket_open(i),
+                b']' => match self.open.pop() {
                     None => return Some(i),
                     Some(None) => {
-                        notes -= 1;
-                        i += 1;
+                        self.notes -= 1;
+                        i + 1
                     }
-                    Some(Some(text)) => i = self.nested_tail_end(text, i),
+                    Some(Some(text)) => self.nested_tail_end(text, i),
                 },
-                b'{' if braced_open_mark(b, i).is_some() => {
-                    braced.push(braced_open_mark(b, i)?);
-                    i += 2;
-                }
-                _ if braced
-                    .last()
-                    .is_some_and(|&m| c == m && b.get(i + 1) == Some(&b'}')) =>
-                {
-                    braced.pop();
-                    i += 2;
-                }
-                _ => i += 1,
-            }
+                _ => self.braced_step(i),
+            };
         }
         None
+    }
+
+    /// C2-I-005, C2-I-074: behind the atom at `i`, if one starts there.
+    fn atom_end(&mut self, i: usize) -> Option<usize> {
+        let b = self.s.as_bytes();
+        match b.get(i)? {
+            b'\\' => Some(i + 2),
+            b'`' => Some(self.code_end(i)),
+            b'<' => Some(angle_end(self.s, i)),
+            b'{' if b.get(i + 1) == Some(&b'%') => Some(self.comment_end(i)),
+            _ => None,
+        }
+    }
+
+    /// C2-I-089: `^[` opens a note; inside one the caret is text.
+    fn note_open(&mut self, i: usize) -> usize {
+        if self.notes > 0 {
+            return i + 1;
+        }
+        self.open.push(None);
+        self.notes += 1;
+        i + 2
+    }
+
+    /// C2-I-087: a footnote reference is one atom outside a note; else `[` opens.
+    fn bracket_open(&mut self, i: usize) -> usize {
+        if self.notes == 0 {
+            if let Some(end) = self.footnote_ref_end(i) {
+                return end;
+            }
+        }
+        self.open.push(Some(i + 1));
+        i + 1
+    }
+
+    /// C2-I-043: a braced mark that opens or closes a span at `i`, else one byte.
+    fn braced_step(&mut self, i: usize) -> usize {
+        let b = self.s.as_bytes();
+        if b.get(i) == Some(&b'{') {
+            if let Some(mark) = braced_open_mark(b, i) {
+                self.braced.push(mark);
+                return i + 2;
+            }
+        }
+        if self
+            .braced
+            .last()
+            .is_some_and(|&m| b.get(i) == Some(&m) && b.get(i + 1) == Some(&b'}'))
+        {
+            self.braced.pop();
+            return i + 2;
+        }
+        i + 1
     }
 
     /// C2-I-014, C2-I-119: behind the code span, or behind its run when unclosed.
