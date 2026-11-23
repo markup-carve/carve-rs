@@ -358,6 +358,32 @@ fn g_008_one_empty_last_line_of_a_delimited_body_is_no_record() {
 }
 
 #[test]
+fn c2_b_227_a_delimited_table_reads_body_rows() {
+    assert_eq!(
+        html("{table body-rows=1,1}\n```csv\nh\na\nb\n```"),
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>a</td></tr>\n  </tbody>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn c2_b_230_a_delimited_body_takes_its_header_rows_and_columns() {
+    assert_eq!(
+        html(
+            "{table body-rows=1,1 body-header-rows=0,1 body-header-cols=,1}\n```tsv\nh\ta\nb\tc\nd\te\nf\tg\n```"
+        ),
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>b</td><td>c</td></tr>\n  </tbody>\n  <tbody>\n    <tr><th scope=\"row\">d</th><th scope=\"row\">e</th></tr>\n    <tr><th scope=\"row\">f</th><td>g</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn c2_b_230_a_delimited_table_keeps_body_rows_that_do_not_sum() {
+    assert_eq!(
+        html("{table body-rows=1,2}\n```csv\nh\na\nb\n```"),
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>a</td></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
 fn c2_b_082_a_footnote_label_outside_ascii_keeps_its_body() {
     assert!(html("[^\u{e9}]: T\n\n[^\u{e9}]").contains("<p>T<a href=\"#fnref1\""));
 }

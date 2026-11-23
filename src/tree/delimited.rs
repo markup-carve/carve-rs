@@ -132,7 +132,8 @@ pub(super) fn table<'a>(
     sep: char,
     declared: Option<usize>,
     footer: usize,
-) -> (&'a mut [Node<'a>], usize) {
+    attrs: Option<&Attrs>,
+) -> (&'a mut [Node<'a>], usize, bool) {
     let rows = records(body, sep);
     let n = rows.len();
     let ncols = rows.iter().map(Vec::len).max().unwrap_or(0);
@@ -146,7 +147,28 @@ pub(super) fn table<'a>(
             ..Default::default()
         })));
     }
-    if n - foot > head {
+    // C2-B-227, C2-B-230: `body-rows` splits the rows between head and foot.
+    let plan = super::table::body_plan(attrs, n - head - foot);
+    if let Some(plan) = &plan {
+        let mut lo = head;
+        for (index, &data) in plan.data_rows.iter().enumerate() {
+            let headers = plan.header_rows.get(index).copied().unwrap_or(0);
+            let hi = lo + headers + data;
+            let children = a.fill(
+                rows.iter()
+                    .enumerate()
+                    .take(hi)
+                    .skip(lo)
+                    .map(|(i, r)| row(a, r, i < lo + headers)),
+            );
+            groups.push(Node::TableBody(a.alloc(ast::TableBody {
+                children,
+                row_head_columns: plan.head_cols.get(index).copied().flatten(),
+                ..Default::default()
+            })));
+            lo = hi;
+        }
+    } else if n - foot > head {
         let children = a.fill(
             rows.iter()
                 .take(n - foot)
@@ -165,7 +187,7 @@ pub(super) fn table<'a>(
             ..Default::default()
         })));
     }
-    (a.nodes(&mut groups), ncols)
+    (a.nodes(&mut groups), ncols, plan.is_some())
 }
 
 #[cfg(test)]
