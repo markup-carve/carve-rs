@@ -7,6 +7,7 @@
 use super::inline::{
     IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, first_from, spelled_end, write_inlines,
 };
+use super::kinds::KindBlocks;
 use super::node::{
     Fields, N, caption, children, has, id, is_break, is_inline_parent, result_fields, s,
     skipped_in, span, text, title, ty,
@@ -740,8 +741,9 @@ fn probe_key<'t>(
     site: Site,
 ) -> String {
     let mut key = format!(
-        "{}|{flags}|{}|{:?}",
+        "{}{}|{flags}|{}|{:?}",
         u8::from(site == Site::Across),
+        u8::from(w.kind_escapes),
         w.node_id(e),
         node_state(w, c, e)
     );
@@ -781,7 +783,7 @@ fn probe_escapes<'t>(
         return known.found;
     }
     let before = c.escapes.len();
-    let found = run_probe(w, c, e, expected, flags, takes);
+    let found = run_probe(w, c, e, expected, flags, site, takes);
     if !exhausted(w) {
         let asked = c.escapes.get(before..).unwrap_or(&[]).to_vec();
         w.probes.insert(
@@ -824,10 +826,14 @@ fn run_probe<'t>(
     e: N<'t>,
     expected: &[N<'t>],
     flags: u32,
+    site: Site,
     takes: &Takes<'t>,
 ) -> Option<bool> {
     let mut probe = probe_spelling(w, expected);
     let mut found = false;
+    // C2-W-088: a round of the content probe escapes every opener of each kind
+    // it reports; the fallback rounds of the group escape the reported ones only.
+    let blocks = (w.kind_escapes && site == Site::Content).then(|| KindBlocks::content(expected));
     for round in 0..MAX_PROBE_ROUNDS {
         if exhausted(w) {
             return Some(found);
@@ -835,9 +841,31 @@ fn run_probe<'t>(
         std::mem::swap(&mut w.sp, &mut probe);
         let result = probe_round(w, e, expected, flags);
         std::mem::swap(&mut w.sp, &mut probe);
-        let Some((asked, lossy)) = result else {
+        let Some(Round {
+            mut asked,
+            lossy,
+            trials,
+            lines,
+        }) = result
+        else {
             return if round == 0 { None } else { Some(found) };
         };
+        if let Some(blocks) = &blocks {
+            let mut done = HashSet::new();
+            let reported: Vec<(N<'t>, usize)> = asked
+                .iter()
+                .filter(|(n, at)| !trials.contains(&(id(n), *at)))
+                .copied()
+                .collect();
+            for (n, at) in reported {
+                let line = lines.contains(&(id(n), at));
+                if let Some(key) = blocks.key(n, at, line)
+                    && done.insert(key.clone())
+                {
+                    asked.extend(blocks.openers(0, &key));
+                }
+            }
+        }
         let placed: Vec<(N<'t>, usize)> = asked
             .into_iter()
             .filter(|&(n, at)| takes.takes(n, at) && escape_at(w, c, n, at))
@@ -866,13 +894,23 @@ fn run_probe<'t>(
     Some(found)
 }
 
-/// One round of a probe, in the spelling of the probe: the escapes it asked for and whether it found losses.
+/// What one round of a probe asks for.
+struct Round<'t> {
+    asked: Vec<(N<'t>, usize)>,
+    /// Whether the round found losses.
+    lossy: bool,
+    /// The asked escapes that respell a node (C2-W-125): they give no kind.
+    trials: HashSet<(usize, usize)>,
+    lines: HashSet<(usize, usize)>,
+}
+
+/// One round of a probe, in the spelling of the probe.
 fn probe_round<'t>(
     w: &mut Writer<'t>,
     e: N<'t>,
     expected: &[N<'t>],
     flags: u32,
-) -> Option<(Vec<(N<'t>, usize)>, bool)> {
+) -> Option<Round<'t>> {
     let chunk = Chunk::new(format!("{}\n", write_inlines(w, expected, flags)));
     let parsed = chunk.parse(w);
     let source = chunk.text().to_string();
@@ -887,7 +925,12 @@ fn probe_round<'t>(
     };
     compare_inlines(w, &mut probe, expected, children(block), e);
     extend_chains(w, &mut probe);
-    Some((probe.escapes, !probe.losses.is_empty()))
+    Some(Round {
+        trials: probe.trials.iter().map(|(n, at)| (id(n), *at)).collect(),
+        lossy: !probe.losses.is_empty(),
+        lines: probe.line_escapes,
+        asked: probe.escapes,
+    })
 }
 
 fn escape_content_construct<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
