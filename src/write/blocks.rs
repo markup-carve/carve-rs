@@ -172,6 +172,23 @@ fn code_title(w: &mut Writer<'_>, node: V<'_>) -> Option<String> {
     Some(t)
 }
 
+/// How far the lead of the current line reaches past `prefix`: a task box, a label or attributes on a marker line.
+fn lead_indent(w: &Writer<'_>, prefix: &str) -> usize {
+    w.lead
+        .as_ref()
+        .map_or(0, |l| l.len().saturating_sub(w.lead_skip + prefix.len()))
+}
+
+/// C2-B-029: an opener behind a lead strips up to its indent from each line. Where a line starts with whitespace, the
+/// lines and the closer stand at the opener's column (C2-W-033); otherwise at the content column (C2-W-024).
+fn body_prefix(w: &Writer<'_>, prefix: &str, lines: &[&str]) -> String {
+    let indent = lead_indent(w, prefix);
+    if indent == 0 || !lines.iter().any(|l| l.starts_with([' ', '\t'])) {
+        return prefix.to_string();
+    }
+    format!("{prefix}{}", " ".repeat(indent))
+}
+
 fn code_block(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
     attribute_line(w, node, prefix, &BlockParts::default());
     let lines = value_lines(w, node);
@@ -185,12 +202,13 @@ fn code_block(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
         });
         info.push_str(&opener_tail(w, node, title.as_deref(), &spelled));
     }
+    let inner = body_prefix(w, prefix, &lines);
     emit(w, prefix, &(run.clone() + &info));
     for line in lines {
-        emit(w, prefix, line);
+        emit(w, &inner, line);
     }
     if !is_left_open(w, node) {
-        emit(w, prefix, &run);
+        emit(w, &inner, &run);
     }
 }
 
@@ -216,12 +234,13 @@ fn comment(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
         value.split('\n').collect()
     };
     let run = "%".repeat(MIN_RUN.max(longest_bare_run(lines.iter().copied(), b'%') + 1));
+    let inner = body_prefix(w, prefix, &lines);
     emit(w, prefix, &run);
     for line in lines {
-        emit(w, prefix, line);
+        emit(w, &inner, line);
     }
     if !is_left_open(w, node) {
-        emit(w, prefix, &run);
+        emit(w, &inner, &run);
     }
 }
 
@@ -499,10 +518,7 @@ fn body<'t>(
     width: usize,
     tight: bool,
 ) {
-    let behind = w
-        .lead
-        .as_ref()
-        .map_or(0, |l| l.len().saturating_sub(w.lead_skip + prefix.len()));
+    let behind = lead_indent(w, prefix);
     w.lead = Some(w.lead.take().unwrap_or_else(|| prefix.to_string()) + mark);
     let inner = format!("{prefix}{}", " ".repeat(behind + width));
     write_blocks(w, children(node), &inner, flags, tight);
