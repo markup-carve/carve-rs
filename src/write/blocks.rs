@@ -179,9 +179,10 @@ fn lead_indent(w: &Writer<'_>, prefix: &str) -> usize {
     })
 }
 
-/// Columns count characters: a label such as `[^é]: ` is one column per character, not per byte.
+/// Columns count characters: a label such as `[^é]: ` is one column per character, not per byte, and a tab reaches the
+/// next tab stop, as the parser reads it.
 fn columns(text: &str) -> usize {
-    text.chars().count()
+    text.chars().fold(0, crate::block::line::Cursor::col_after)
 }
 
 /// C2-B-029: an opener behind a lead strips up to its indent from each line. Where a line starts with whitespace, the

@@ -8,6 +8,8 @@ fn heading_continuations_stand_past_the_marker_in_every_container() {
         ":: T\n: = Head\n    cont\n".to_string(),
         "> = Head\n>   cont\n".to_string(),
         "[^1]: Para.\n\n  = Head\n    cont\n".to_string(),
+        // A tab in the lead reaches the next tab stop, so the marker stands at column 12.
+        "-{k=\"\tb\"} = Head\n              cont\n".to_string(),
     ];
     for key in ["1", "12", "12345"] {
         for level in 1..=3 {
