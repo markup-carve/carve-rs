@@ -151,3 +151,67 @@ fn rust_and_json_errors() {
     .unwrap();
     assert_eq!(out["error"]["path"], "/from");
 }
+
+fn codes(from: &str, source: &str) -> Vec<String> {
+    import(from, source)["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["code"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// carve#6021: an empty source item holds a comment, as a parse of `- %%`
+/// gives (C2-A-186), so the writer spells it.
+#[test]
+fn empty_items_are_a_marker_and_a_comment() {
+    let cases = [
+        ("markdown", "- [r]: https://e\n\n\n  a\n", "- %%\n\na\n"),
+        ("markdown", "-\n\na\n", "- %%\n\na\n"),
+        ("markdown", "- a\n-\n", "- a\n- %%\n"),
+        ("markdown", "1.\n2. b\n", ". %%\n. b\n"),
+        ("markdown", "> -\n> - b\n", "> - %%\n> - b\n"),
+        ("gfm", "- [x]\n", "- [x] %%\n"),
+        ("markdown", "- ![](data:x)\n", "- %%\n"),
+    ];
+    for (from, input, want) in cases {
+        assert_eq!(carve(from, input), want, "{from} {input:?}");
+        let c = codes(from, input);
+        assert!(
+            !c.iter().any(|c| c.ends_with("-unspellable")),
+            "{from} {input:?}: {c:?}"
+        );
+    }
+    let item = &import("markdown", "-\n")["tree"]["children"][0]["children"][0];
+    assert_eq!(
+        item["children"],
+        json!([{"type": "comment", "form": "line", "value": ""}])
+    );
+}
+
+/// An HTML import keeps a childless `<li>` as it stands (C2-M-074).
+#[test]
+fn html_keeps_an_empty_item_unfilled() {
+    let tree = &import("html", "<ul><li></li></ul>")["tree"];
+    assert_eq!(tree["children"][0]["children"][0]["children"], json!([]));
+}
+
+/// A block image whose `src` is denied is its alt text or nothing (C2-M-069),
+/// in any container.
+#[test]
+fn a_denied_block_image_leaves_no_image_paragraph() {
+    let cases = [
+        ("<div><img src=\"data:x\"></div>", ":::\n\n:::\n"),
+        ("<div><img src=\"data:x\" alt=\"a\"></div>", ":::\na\n:::\n"),
+        ("<img src=\"data:x\" alt=\"b\">", "b\n"),
+        ("<blockquote><img src=\"data:x\"></blockquote>", ">\n"),
+    ];
+    for (input, want) in cases {
+        assert_eq!(carve("html", input), want, "{input:?}");
+        let c = codes("html", input);
+        assert!(
+            !c.iter().any(|c| c.ends_with("-unspellable")),
+            "{input:?}: {c:?}"
+        );
+    }
+}

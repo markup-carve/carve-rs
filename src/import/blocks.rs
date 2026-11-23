@@ -1598,8 +1598,15 @@ impl Cx {
 
     fn fallback_block(&mut self, id: Id) -> Vec<Value> {
         if self.dom.is(id, "img") {
+            // A denied `src` leaves the alt text or nothing, no image (C2-M-069).
             let children = self.html_image(id);
-            return vec![json!({ "type": "paragraph", "role": "image", "children": children })];
+            return match children.as_slice() {
+                [] => Vec::new(),
+                [only] if ty(only) == "image" => {
+                    vec![json!({ "type": "paragraph", "role": "image", "children": children })]
+                }
+                _ => vec![run_paragraph(children)],
+            };
         }
         let children = self.inline(id);
         let children = self.trim_inline_edges(children, id);
