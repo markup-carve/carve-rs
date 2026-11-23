@@ -1072,7 +1072,10 @@ fn formatted(args: &Args, path: &str, bytes: &[u8], host: &Carve) -> Result<(Str
     let before = if bool_value(args, "from-ast", false) {
         strict_text(path, bytes)?.to_string()
     } else {
-        String::from_utf8_lossy(bytes).into_owned()
+        std::str::from_utf8(bytes).map_or_else(
+            |_| String::from_utf8_lossy(bytes).into_owned(),
+            str::to_string,
+        )
     };
     let after = if bool_value(args, "from-ast", false) {
         let tree = api::decode_tree(&before).map_err(api_fail)?;
