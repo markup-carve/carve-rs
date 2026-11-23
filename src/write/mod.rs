@@ -1577,9 +1577,9 @@ fn apply_changes<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>) -> bool 
     false
 }
 
-/// C2-W-125: a pair that first takes its braced form had read on in the rounds before, so the braced
-/// forms those rounds gave the pairs behind it in its block are taken out where the bare form pairs
-/// by itself (C2-W-069).
+/// C2-W-125: a pair that first takes its braced form had read on in the rounds before, over its content
+/// and into the next pair. The braced forms that rounds gave the pairs of that stretch are taken out where
+/// the bare form pairs by itself (C2-W-069).
 fn drop_forms_behind<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, group: Arr<'t>) {
     let mut pending: Vec<N<'t>> = group.iter().collect();
     while let Some(node) = pending.pop() {
@@ -1587,18 +1587,35 @@ fn drop_forms_behind<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, group: Arr<
             pending.extend(children(node).iter());
             continue;
         }
-        let mut behind = false;
+        // The depth of the pair whose subtree is in the stretch, and whether the next pair is too.
+        let mut inside: Option<(usize, bool)> = None;
+        let mut seek = false;
         let mut stack: Vec<(Arr<'t>, usize)> = vec![(children(node), 0)];
         while let Some((nodes, at)) = stack.pop() {
             let Some(n) = nodes.get(at) else {
                 continue;
             };
+            let depth = stack.len();
             stack.push((nodes, at + 1));
-            if fresh.contains(&id(n)) {
-                behind |= matches!(ty(n), "emphasis" | "strong");
-            } else if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
-                w.round_forms.remove(&id(n));
-                w.forms.remove(&id(n));
+            if let Some((d, then)) = inside
+                && depth <= d
+            {
+                inside = None;
+                seek = then;
+            }
+            let pair = matches!(ty(n), "emphasis" | "strong");
+            if pair && fresh.contains(&id(n)) {
+                inside = Some((depth, true));
+                seek = false;
+            } else if inside.is_some() || (seek && pair) {
+                if seek {
+                    inside = Some((depth, false));
+                    seek = false;
+                }
+                if w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
+                    w.round_forms.remove(&id(n));
+                    w.forms.remove(&id(n));
+                }
             }
             stack.push((children(n), 0));
         }
