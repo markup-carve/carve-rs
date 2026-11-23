@@ -710,7 +710,12 @@ impl<'a> Parser<'a> {
         }
         if !owned {
             if shapes::comment_only(k.rest()) && *stanza_open {
-                if let Some(LineBlockEntry::Line { comments, .. }) = entries.last_mut() {
+                // C2-B-123: a comment block between keeps the stanza line above.
+                let line = entries
+                    .iter_mut()
+                    .rev()
+                    .find(|entry| matches!(entry, LineBlockEntry::Line { .. }));
+                if let Some(LineBlockEntry::Line { comments, .. }) = line {
                     comments.push((k.offset(), e, shapes::line_comment_value(k.rest())));
                 }
                 *end = e;
