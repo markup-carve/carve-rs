@@ -41,7 +41,7 @@ pub struct LintOptions {
 fn catalog() -> &'static Value {
     static CATALOG: OnceLock<Value> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../spec-data/lint-rules.json")).unwrap_or(Value::Null)
+        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/lint-rules.json"))).unwrap_or(Value::Null)
     })
 }
 

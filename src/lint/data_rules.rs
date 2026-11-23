@@ -22,7 +22,7 @@ use std::sync::OnceLock;
 fn model() -> &'static Value {
     static MODEL: OnceLock<Value> = OnceLock::new();
     MODEL.get_or_init(|| {
-        serde_json::from_str(include_str!("../../spec-data/lint-model.json"))
+        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/lint-model.json")))
             .expect("pinned lint model")
     })
 }

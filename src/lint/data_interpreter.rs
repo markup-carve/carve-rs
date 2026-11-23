@@ -11,6 +11,7 @@ use caseless::Caseless;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::borrow::Cow;
+use std::sync::OnceLock;
 use unicode_normalization::UnicodeNormalization;
 
 /// A field name of a record, resolved when the model is compiled.
@@ -247,10 +248,72 @@ pub(super) enum Cmp {
     Ge,
 }
 
+/// A regex built on first use: a lint call compiles only the patterns its document reaches (carve#6487).
+#[derive(Debug)]
+pub(super) struct LazyRegex {
+    text: Box<str>,
+    case_insensitive: bool,
+    cell: OnceLock<Regex>,
+}
+
+impl LazyRegex {
+    fn new(text: String, case_insensitive: bool) -> Self {
+        Self {
+            text: text.into_boxed_str(),
+            case_insensitive,
+            cell: OnceLock::new(),
+        }
+    }
+}
+
+impl std::ops::Deref for LazyRegex {
+    type Target = Regex;
+
+    #[allow(clippy::expect_used)] // A fixed, valid pattern.
+    fn deref(&self) -> &Regex {
+        self.cell.get_or_init(|| {
+            // Parsed when the model was compiled, so only a size limit can refuse it here; a test
+            // builds every pinned pattern. One that cannot be built matches nothing, as a missing one.
+            RegexBuilder::new(&self.text)
+                .case_insensitive(self.case_insensitive)
+                .build()
+                .unwrap_or_else(|_| Regex::new(r"[^\s\S]").expect("empty class"))
+        })
+    }
+}
+
+/// The names and capture indices of the named groups of a parsed pattern, as `Regex::capture_names`
+/// numbers them.
+fn group_names(hir: &regex_syntax::hir::Hir) -> Vec<(&'static str, usize)> {
+    fn walk(hir: &regex_syntax::hir::Hir, out: &mut Vec<(&'static str, usize)>) {
+        use regex_syntax::hir::HirKind;
+        match hir.kind() {
+            HirKind::Capture(capture) => {
+                if let Some(name) = &capture.name {
+                    // The names live as long as the compiled model, which is never dropped.
+                    out.push((&*Box::leak(name.to_string().into_boxed_str()), capture.index as usize));
+                }
+                walk(&capture.sub, out);
+            }
+            HirKind::Repetition(repetition) => walk(&repetition.sub, out),
+            HirKind::Concat(items) | HirKind::Alternation(items) => {
+                for item in items {
+                    walk(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(hir, &mut out);
+    out.sort_by_key(|&(_, index)| index);
+    out
+}
+
 /// A compiled pattern of C2-W-142 with the names of its groups.
 #[derive(Debug)]
 pub(super) struct Pattern {
-    pub re: Regex,
+    pub re: LazyRegex,
     /// The names and capture indices of its named groups.
     pub groups: Vec<(&'static str, usize)>,
     /// For a pattern anchored at the start that cannot match the empty text: the bytes a match starts with.
@@ -271,7 +334,7 @@ pub(super) struct Pattern {
 }
 
 /// The branches of an alternation, each with the names and indices of its groups.
-pub(super) type Branches = Vec<(Regex, Vec<(&'static str, usize)>)>;
+pub(super) type Branches = Vec<(LazyRegex, Vec<(&'static str, usize)>)>;
 
 /// The branches of a top-level alternation without look-around, each anchored at the start, with the
 /// names and indices of their groups; none unless some branch has no group.
@@ -284,18 +347,12 @@ fn branch_patterns(hir: &regex_syntax::hir::Hir) -> Option<Branches> {
     }
     let mut out = Vec::with_capacity(items.len());
     for item in items {
-        let re = Regex::new(&format!("\\A(?:{item})")).ok()?;
-        let groups = re
-            .capture_names()
-            .enumerate()
-            .filter_map(|(index, name)| {
-                name.map(|name| (&*Box::leak(name.to_owned().into_boxed_str()), index))
-            })
-            .collect();
-        out.push((re, groups));
+        let text = format!("\\A(?:{item})");
+        let groups = group_names(&regex_syntax::Parser::new().parse(&text).ok()?);
+        out.push((LazyRegex::new(text, false), groups));
     }
     out.iter()
-        .any(|(_, groups): &(Regex, Vec<_>)| groups.is_empty())
+        .any(|(_, groups): &(LazyRegex, Vec<_>)| groups.is_empty())
         .then_some(out)
 }
 
@@ -571,23 +628,15 @@ fn anchored_first(hir: &regex_syntax::hir::Hir, set: &mut [bool; 256]) -> bool {
 pub(super) fn pattern(text: &str, flags: &str) -> Option<Pattern> {
     let original = text;
     let text = &text.replace("(?<", "(?P<");
-    let re = RegexBuilder::new(text)
-        .case_insensitive(flags.contains('i'))
-        .build()
-        .ok()?;
-    // The names live as long as the compiled model, which is never dropped.
-    let groups: Vec<(&'static str, usize)> = re
-        .capture_names()
-        .enumerate()
-        .filter_map(|(index, name)| {
-            name.map(|name| (&*Box::leak(name.to_owned().into_boxed_str()), index))
-        })
-        .collect();
+    // The regex engine parses with these same defaults, so a pattern it refuses fails here.
     let hir = regex_syntax::ParserBuilder::new()
         .case_insensitive(flags.contains('i'))
         .build()
         .parse(text)
-        .ok();
+        .ok()?;
+    let groups = group_names(&hir);
+    let re = LazyRegex::new(text.clone(), flags.contains('i'));
+    let hir = Some(hir);
     let mut set = Box::new([false; 256]);
     let first = hir
         .as_ref()
@@ -2333,6 +2382,56 @@ fn resolve_from<'a>(records: &Records<'a>, mut found: Val<'a>, path: &[Seg]) -> 
 #[allow(clippy::expect_used)]
 mod tests {
     use super::{STRIP_QUOTES, pattern, strip_quotes};
+    use regex::Regex;
+    use serde_json::Value;
+
+    fn capture_groups(re: &Regex) -> Vec<(String, usize)> {
+        re.capture_names()
+            .enumerate()
+            .filter_map(|(index, name)| name.map(|name| (name.to_owned(), index)))
+            .collect()
+    }
+
+    fn owned(groups: &[(&str, usize)]) -> Vec<(String, usize)> {
+        groups.iter().map(|&(name, index)| (name.to_owned(), index)).collect()
+    }
+
+    #[test]
+    fn every_pinned_pattern_builds_with_the_groups_its_parse_names() {
+        fn walk<'a>(value: &'a Value, out: &mut Vec<(&'a str, &'a str)>) {
+            match value {
+                Value::Object(map) => {
+                    for (key, item) in map {
+                        if key == "matches"
+                            && let Some(text) = item.get(1).and_then(Value::as_str)
+                        {
+                            out.push((text, item.get(2).and_then(Value::as_str).unwrap_or("")));
+                        }
+                        walk(item, out);
+                    }
+                }
+                Value::Array(items) => items.iter().for_each(|item| walk(item, out)),
+                _ => {}
+            }
+        }
+        let model: Value =
+            serde_json::from_str(include_str!("../../spec-data/lint-model.json")).expect("model");
+        let mut found = Vec::new();
+        walk(&model, &mut found);
+        assert!(found.len() > 100, "{}", found.len());
+        for (text, flags) in found {
+            let compiled = pattern(text, flags).expect(text);
+            let built = regex::RegexBuilder::new(&text.replace("(?<", "(?P<"))
+                .case_insensitive(flags.contains('i'))
+                .build()
+                .expect(text);
+            assert_eq!(compiled.re.as_str(), built.as_str());
+            assert_eq!(owned(&compiled.groups), capture_groups(&built), "{text}");
+            for (re, groups) in compiled.branches.iter().flatten() {
+                assert_eq!(owned(groups), capture_groups(re), "{text}");
+            }
+        }
+    }
 
     #[test]
     fn branches_give_the_groups_the_whole_pattern_gives() {

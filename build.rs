@@ -26,6 +26,10 @@ fn main() {
     write(&out.join("ast_view_gen.rs"), &view);
     write(&out.join("tables_gen.rs"), &gen_tables(&dir));
     write(&out.join("package_info_gen.rs"), &gen_package_info(&dir));
+    // The lint data without its indentation: every `carve lint` call parses it (carve#6487).
+    for name in ["lint-model.json", "lint-rules.json"] {
+        write(&out.join(name), &load(&dir, name).to_string());
+    }
 }
 
 /// `SPEC_COMMIT` and `NODE_TYPES` of the public library, from the pinned commit
