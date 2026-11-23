@@ -441,6 +441,12 @@ fn trim_line_ends(raw: &str) -> String {
     out
 }
 
+/// C2-I-079: a collapsed or shortcut reference whose key, its content, starts with a caret.
+pub fn key_is_content(node: V<'_>) -> bool {
+    matches!(s(node, "refForm"), Some("collapsed" | "shortcut"))
+        && s(node, "key").is_some_and(|k| k.starts_with('^'))
+}
+
 /// C2-W-125 case five: an unescaped leading caret of link or span text reads as a footnote reference.
 fn escape_leading_caret(w: &mut Writer<'_>, kids: Arr<'_>, flags: u32) {
     if flags & IN_NOTE != 0 {
@@ -573,7 +579,10 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
         w.raw_refs.push(raw.clone());
         return raw;
     }
-    escape_leading_caret(w, children(node), flags);
+    // A backslash before the caret would change the key; the check places it only where the link needs it.
+    if !key_is_content(node) {
+        escape_leading_caret(w, children(node), flags);
+    }
     escape_lone_link_brackets(w, node);
     let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
     let content = collapsed_content(w, node, content, flags);

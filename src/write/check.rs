@@ -5,8 +5,8 @@
 //! takes its other spelling (C2-W-005). What neither repairs is a loss.
 
 use super::inline::{
-    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, escape_offsets, first_from, spelled_end,
-    write_inlines,
+    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_NOTE, IN_STRONG, escape_offsets, first_from,
+    key_is_content, spelled_end, write_inlines,
 };
 use super::kinds::KindBlocks;
 use super::node::{
@@ -567,7 +567,7 @@ fn escape_closer_before_brace<'t>(
     escape_in_content(w, c, e)
 }
 
-const RESPELL_STEPS: usize = 15;
+const RESPELL_STEPS: usize = 17;
 
 fn respell_step<'t>(
     w: &mut Writer<'t>,
@@ -588,13 +588,14 @@ fn respell_step<'t>(
         6 => escape_closer_before_brace(w, c, es, i),
         7 => escape_after(w, c, es, i),
         8 => escape_content_line(w, c, e),
-        _ => late_respell_step(w, c, e, step, attempt),
+        _ => late_respell_step(w, c, es.get(..i).unwrap_or(&[]), e, step, attempt),
     }
 }
 
 fn late_respell_step<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
+    es: &[N<'t>],
     e: N<'t>,
     step: usize,
     attempt: &mut Attempt<'t>,
@@ -614,6 +615,8 @@ fn late_respell_step<'t>(
         }
         13 => escape_in_content(w, c, e),
         14 => escape_lone_bracket(w, c, e),
+        15 => escape_text_note(w, c, es),
+        16 => escape_key_caret(w, c, e),
         _ => false,
     }
 }
@@ -673,6 +676,43 @@ fn texts_below(node: V<'_>) -> Vec<V<'_>> {
         }
     }
     out
+}
+
+/// C2-I-089, C2-W-125: a text `^[` before the node that reads as a note closing only through a caret
+/// pair in it is text, and its caret pairs are ordinary brackets, so the node in its span does not
+/// form. Its bracket takes the backslash (C2-W-090); escaping one can make the next `^[` such a note,
+/// so each of them takes one.
+fn escape_text_note<'t>(w: &Writer<'t>, c: &mut Check<'t>, before: &[N<'t>]) -> bool {
+    let mut asked = false;
+    for &t in before {
+        if ty(t) != "text" {
+            continue;
+        }
+        let b = text(t).as_bytes();
+        for at in 0..b.len().saturating_sub(1) {
+            if b.get(at..at + 2) == Some(b"^[")
+                && !is_escaped(w, c, t, at)
+                && !is_escaped(w, c, t, at + 1)
+            {
+                asked |= escape_at(w, c, t, at + 1);
+            }
+        }
+    }
+    asked
+}
+
+/// C2-W-125 case five: the leading caret of a reference whose key is its content is written bare,
+/// and takes the backslash only where the bare caret keeps the link from forming.
+fn escape_key_caret<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
+    if ty(e) != "link" || c.flags & IN_NOTE != 0 || !key_is_content(e) {
+        return false;
+    }
+    children(e).first().is_some_and(|f| {
+        ty(f) == "text"
+            && text(f).starts_with('^')
+            && !is_escaped(w, c, f, 0)
+            && escape_at(w, c, f, 0)
+    })
 }
 
 fn escape_lone_bracket<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
