@@ -1217,14 +1217,15 @@ fn settle<'t>(
     if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
         return true;
     }
-    if !c.ousted.is_empty() {
-        oust(w, &mut c, group, first);
-    }
+    oust(w, &mut c, group, first);
     apply_changes(w, &c)
 }
 
 /// C2-W-125: the escapes a brace of case one repairs come out where the group reads back without them.
 fn oust<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: Arr<'t>, first: bool) {
+    if c.ousted.is_empty() {
+        return;
+    }
     let mut escapes = w.sp.escapes.clone();
     for &(n, at) in &c.escapes {
         let list = escapes.entry(id(n)).or_default();
