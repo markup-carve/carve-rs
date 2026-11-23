@@ -235,6 +235,9 @@ pub fn add(doc: V<'_>) -> Option<Spans> {
 }
 
 fn has_any_counts(node: V<'_>) -> bool {
+    if let V::Json(value) = node {
+        return json_has_counts(value);
+    }
     // A typed node's other views (positions, attrs, markers, scalars) hold no node.
     if let V::Node(n) = node {
         if let crate::ast::Node::TableCell(cell) = n
@@ -265,6 +268,20 @@ fn has_any_counts(node: V<'_>) -> bool {
     let mut found = false;
     node.each(&mut |_, value| found = found || has_any_counts(value));
     found
+}
+
+/// [`has_any_counts`] of a JSON value, walked without the view.
+fn json_has_counts(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => items.iter().any(json_has_counts),
+        Value::Object(map) => {
+            let counted = |field| map.get(field).and_then(Value::as_i64).unwrap_or(1) > 1;
+            (crate::view::json_field(value, "type").and_then(Value::as_str) == Some("table_cell")
+                && (counted("colspan") || counted("rowspan")))
+                || map.values().any(json_has_counts)
+        }
+        _ => false,
+    }
 }
 
 impl Spans {

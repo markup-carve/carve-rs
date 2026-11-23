@@ -94,7 +94,9 @@ fn has_trim_target_path(value: &Value, parts: &[String], line_end: bool) -> bool
 }
 
 fn ty(v: &Value) -> &str {
-    v.get("type").and_then(Value::as_str).unwrap_or("")
+    crate::view::json_field(v, "type")
+        .and_then(Value::as_str)
+        .unwrap_or("")
 }
 
 struct Run<'a> {

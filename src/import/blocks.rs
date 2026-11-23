@@ -4,7 +4,9 @@ use super::attrs::{
     self, Attrs, Mapped, Treatment, class_list, dropped_attribute, is_carrier, is_raw_span,
 };
 use super::dom::Id;
-use super::inline::{coalesce, footnote_key, node, paragraph, soft_text, ty, with};
+use super::inline::{
+    coalesce, footnote_key, node, paragraph, parent, soft_text, ty, with, with_role,
+};
 use super::notes::is_footnote_section;
 use super::{Code, Cx};
 use serde_json::{Map, Value, json};
@@ -40,7 +42,7 @@ fn run_paragraph(children: Vec<Value>) -> Value {
         && ty(only) == "math"
         && only["display"] == true
     {
-        return json!({ "type": "paragraph", "role": "math", "children": children });
+        return with_role("paragraph", "math", children);
     }
     paragraph(children)
 }
@@ -449,7 +451,7 @@ impl Cx {
         // C2-H-020: a block image keeps its `<p>`. C2-B-197: a shortcut never is one.
         let image = matches!(children.as_slice(), [only] if ty(only) == "image" && only["refForm"] != "shortcut");
         let mut base = if image {
-            json!({ "type": "paragraph", "role": "image", "children": children })
+            with_role("paragraph", "image", children)
         } else {
             run_paragraph(children)
         };
@@ -814,14 +816,14 @@ impl Cx {
             for child in self.kids(stanza) {
                 if self.dom.is(child, "br") {
                     let children = self.line_inline(&current, stanza);
-                    lines.push(json!({ "type": "line", "children": children }));
+                    lines.push(parent("line", children));
                     current.clear();
                 } else {
                     current.push(child);
                 }
             }
             let children = self.line_inline(&current, stanza);
-            lines.push(json!({ "type": "line", "children": children }));
+            lines.push(parent("line", children));
         }
         let mut m = node("line_block");
         m.insert("children".into(), Value::Array(lines));
@@ -1234,7 +1236,7 @@ impl Cx {
             self.block_children(id)
         } else {
             let inline = self.cell_inline(id);
-            vec![json!({ "type": "cell_paragraph", "children": coalesce(inline) })]
+            vec![parent("cell_paragraph", coalesce(inline))]
         };
         // C2-M-038, C2-A-091: a cell whose blocks were all dropped keeps one empty paragraph.
         if children.is_empty() {
@@ -1433,7 +1435,7 @@ impl Cx {
             children.push(with("table_body", rows, &mapped));
         }
         if !direct.is_empty() {
-            children.insert(0, json!({ "type": "table_body", "children": direct }));
+            children.insert(0, parent("table_body", direct));
         }
         if let Some(h) = head {
             let rows = self.rows(h, true);
@@ -1603,7 +1605,7 @@ impl Cx {
             return match children.as_slice() {
                 [] => Vec::new(),
                 [only] if ty(only) == "image" => {
-                    vec![json!({ "type": "paragraph", "role": "image", "children": children })]
+                    vec![with_role("paragraph", "image", children)]
                 }
                 _ => vec![run_paragraph(children)],
             };

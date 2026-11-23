@@ -3,6 +3,7 @@
 //! read from the input it left unconsumed.
 
 use super::dom::{Dom, Id, Kind, NodeData};
+use crate::hash::AddrMap;
 use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::{
     BufferQueue, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts,
@@ -14,7 +15,6 @@ use html5ever::{Attribute, ExpandedName, LocalName, QualName, local_name, ns};
 use markup5ever_rcdom::{Handle, NodeData as Rc5, RcDom};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,7 +34,7 @@ struct Tracker {
     last_end: Cell<usize>,
     current: Cell<Current>,
     current_name: RefCell<Option<LocalName>>,
-    spans: RefCell<HashMap<usize, (usize, usize)>>,
+    spans: RefCell<AddrMap<usize, (usize, usize)>>,
     keep: RefCell<Vec<Handle>>,
     /// Located elements no end tag has closed yet, in creation order.
     open: RefCell<Vec<(usize, LocalName)>>,
@@ -298,7 +298,7 @@ fn tracker(input: &str) -> Rc<Tracker> {
         last_end: Cell::new(0),
         current: Cell::new(Current::None),
         current_name: RefCell::new(None),
-        spans: RefCell::new(HashMap::new()),
+        spans: RefCell::new(AddrMap::default()),
         keep: RefCell::new(Vec::new()),
         open: RefCell::new(Vec::new()),
         input: Rc::from(input),
@@ -404,7 +404,7 @@ fn kind_of(h: &Handle) -> Kind {
 }
 
 /// Copies the parsed nodes into the arena, without recursion.
-fn convert(root: &Handle, children: &[Handle], spans: &HashMap<usize, (usize, usize)>) -> Dom {
+fn convert(root: &Handle, children: &[Handle], spans: &AddrMap<usize, (usize, usize)>) -> Dom {
     let mut dom = Dom::default();
     let top = dom.push(NodeData {
         kind: kind_of(root),
