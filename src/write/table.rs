@@ -308,7 +308,7 @@ fn table_keys(
         }
     }
     BlockParts {
-        keys,
+        trailing_keys: keys,
         skip_keys,
         ..BlockParts::default()
     }
@@ -889,11 +889,13 @@ fn delimited_body(table: V<'_>, separator: &str) -> Vec<String> {
 }
 
 fn delimited_keys(w: Option<&mut Writer<'_>>, table: V<'_>, declared: Option<usize>) -> BlockParts {
-    let mut first = vec![("table".to_string(), String::new())];
+    let mut first = Vec::new();
     if let Some(d) = declared {
         first.push(("header-rows".into(), d.to_string()));
     }
-    table_keys(w, table, first)
+    let mut parts = table_keys(w, table, first);
+    parts.keys.push(("table".into(), String::new()));
+    parts
 }
 
 fn delimited_table(w: &mut Writer<'_>, table: V<'_>, prefix: &str, format: &str) {

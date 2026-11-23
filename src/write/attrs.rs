@@ -66,6 +66,8 @@ pub struct BlockParts {
     pub mark: String,
     /// Keys that the tree holds in other fields, written before the keys of `attrs`.
     pub keys: Vec<(String, String)>,
+    /// Keys rebuilt from fields, written after the retained keys of `attrs`.
+    pub trailing_keys: Vec<(String, String)>,
     /// Classes the opener stands for (C2-W-039, C2-W-081).
     pub skip_classes: Vec<usize>,
     /// Keys of `attrs` that `keys` writes from other fields (C2-W-136).
@@ -77,6 +79,7 @@ pub struct BlockParts {
 fn has_no_parts(node: V<'_>, extra: &BlockParts) -> bool {
     extra.mark.is_empty()
         && extra.keys.is_empty()
+        && extra.trailing_keys.is_empty()
         && attrs(node).is_none()
         && s(node, "lang").is_none()
 }
@@ -118,6 +121,9 @@ pub fn brace_block(node: V<'_>, extra: &BlockParts) -> String {
         if is_key(k) && !extra.skip_keys.iter().any(|x| x == k) {
             parts.push(key_part(k, v, extra.pipes));
         }
+    }
+    for (k, v) in &extra.trailing_keys {
+        parts.push(key_part(k, v, extra.pipes));
     }
     if parts.is_empty() {
         String::new()
