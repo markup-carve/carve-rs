@@ -43,3 +43,13 @@ fn backlink_skips_a_dropped_raw_block() {
         "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>a<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     );
 }
+
+
+#[test]
+fn an_unclosed_line_block_ends_with_its_item() {
+    assert_eq!(
+        html("- ::: |\n  a\n\nz"),
+        "<ul>\n  <li>\n    <div class=\"line-block\">\n      <p>a</p>\n    </div>\n  </li>\n</ul>\n<p>z</p>"
+    );
+    assert!(html("[^f]: x\n    - ::: |\n      a\n\n[^f]").contains("<li id=\"fn1\">"));
+}
