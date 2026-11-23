@@ -25,8 +25,25 @@ pub(crate) fn with(kind: &str, children: Vec<Value>, mapped: &Mapped) -> Value {
     Value::Object(m)
 }
 
+/// A node of `kind` holding `children`, moved where `json!` would copy them.
+pub(crate) fn parent(kind: &str, children: Vec<Value>) -> Value {
+    let mut m = node(kind);
+    m.insert("children".into(), Value::Array(children));
+    Value::Object(m)
+}
+
+/// [`parent`] with a `role`.
+pub(crate) fn with_role(kind: &str, role: &str, children: Vec<Value>) -> Value {
+    let mut m = node(kind);
+    m.insert("role".into(), role.into());
+    m.insert("children".into(), Value::Array(children));
+    Value::Object(m)
+}
+
 pub(crate) fn text(value: &str) -> Value {
-    json!({ "type": "text", "value": value.replace('\0', "\u{fffd}") })
+    let mut m = node("text");
+    m.insert("value".into(), value.replace('\0', "\u{fffd}").into());
+    Value::Object(m)
 }
 
 pub(crate) fn soft_text(value: &str) -> Vec<Value> {
@@ -83,7 +100,7 @@ pub(crate) fn coalesce(children: Vec<Value>) -> Vec<Value> {
 }
 
 pub(crate) fn paragraph(children: Vec<Value>) -> Value {
-    json!({ "type": "paragraph", "children": coalesce(children) })
+    parent("paragraph", coalesce(children))
 }
 
 const EDGE_ELEMENTS: &[&str] = &[
@@ -1109,7 +1126,12 @@ fn with_destination(v: Value) -> Vec<Value> {
     let attrs = v.get("attrs").cloned();
     let span = |children: Vec<Value>| match &attrs {
         None => children,
-        Some(a) => vec![json!({ "type": "span", "children": children, "attrs": a })],
+        Some(a) => {
+            let mut m = node("span");
+            m.insert("children".into(), Value::Array(children));
+            m.insert("attrs".into(), a.clone());
+            vec![Value::Object(m)]
+        }
     };
     if kind == "link" && v.get("href").is_none() && v.get("key").is_none() {
         return span(
