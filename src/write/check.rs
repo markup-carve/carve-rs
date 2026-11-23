@@ -835,11 +835,7 @@ fn run_probe<'t>(
     let mut found = false;
     let mut kinds = ProbeKinds {
         blocks: None,
-        partners: if w.kind_escapes {
-            partner_closers(expected)
-        } else {
-            Vec::new()
-        },
+        partners: None,
     };
     for round in 0..MAX_PROBE_ROUNDS {
         if exhausted(w) {
@@ -882,7 +878,7 @@ fn run_probe<'t>(
 /// The kind blocks and bracket partners of the probed inlines, kept across the rounds of one probe.
 struct ProbeKinds<'t> {
     blocks: Option<KindBlocks<'t>>,
-    partners: Partners<'t>,
+    partners: Option<Partners<'t>>,
 }
 
 /// One round of a probe, in the spelling of the probe: the escapes it asked for and whether it found losses.
@@ -908,7 +904,13 @@ fn probe_round<'t>(
     compare_inlines(w, &mut probe, expected, children(block), e);
     if w.kind_escapes {
         escape_probe_kinds(w, &mut probe, expected, &mut kinds.blocks);
-        escape_partner_closers(w, &mut probe, &kinds.partners);
+        // Every bracketed node writes a `]`: without one there is no partner to escape.
+        if chunk.text().contains(']') {
+            let partners = kinds
+                .partners
+                .get_or_insert_with(|| partner_closers(expected));
+            escape_partner_closers(w, &mut probe, partners);
+        }
     }
     extend_chains(w, &mut probe);
     Some((probe.escapes, !probe.losses.is_empty()))

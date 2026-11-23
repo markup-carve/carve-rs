@@ -1161,13 +1161,16 @@ fn settle<'t>(
             return false;
         }
         escape_kinds(w, &mut c, group);
-        let key = (group.first().map_or(0, |n| id(n)), group.len());
-        let partners = match w.partners.take() {
-            Some((k, partners)) if k == key => partners,
-            _ => check::partner_closers(&group.iter().collect::<Vec<_>>()),
-        };
-        check::escape_partner_closers(w, &mut c, &partners);
-        w.partners = Some((key, partners));
+        // Every bracketed node writes a `]`: without one there is no partner to escape.
+        if round.source.is_some_and(|source| source.contains(']')) {
+            let key = (group.first().map_or(0, |n| id(n)), group.len());
+            let partners = match w.partners.take() {
+                Some((k, partners)) if k == key => partners,
+                _ => check::partner_closers(&group.iter().collect::<Vec<_>>()),
+            };
+            check::escape_partner_closers(w, &mut c, &partners);
+            w.partners = Some((key, partners));
+        }
     }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
