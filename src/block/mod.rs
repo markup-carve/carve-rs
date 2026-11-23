@@ -379,17 +379,20 @@ impl<'a> Parser<'a> {
         if !shapes::comment_only(walk.cur.after_blanks().rest()) {
             return false;
         }
-        let mut index = self.stack.len() - 1;
-        while index > walk.matched
-            && !matches!(
-                self.stack[index].kind,
+        let is_body_container = |c: &Container| {
+            matches!(
+                c.kind,
                 Kind::Item { .. } | Kind::Desc { .. } | Kind::Footnote { .. } | Kind::Quote
             )
-        {
-            index -= 1;
-        }
-        let keep = match self.stack[index - 1].kind {
-            Kind::List { .. } | Kind::DescList { .. } => index - 1,
+        };
+        let Some(index) = (walk.matched..self.stack.len())
+            .rev()
+            .find(|&i| i == walk.matched || self.stack.get(i).is_some_and(is_body_container))
+        else {
+            return false;
+        };
+        let keep = match self.stack.get(index.saturating_sub(1)).map(|c| &c.kind) {
+            Some(Kind::List { .. } | Kind::DescList { .. }) => index.saturating_sub(1),
             _ => index,
         };
         self.close_to(keep);
