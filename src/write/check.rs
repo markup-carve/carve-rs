@@ -650,27 +650,47 @@ fn texts_below(node: V<'_>) -> Vec<V<'_>> {
 }
 
 fn escape_lone_bracket<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
-    if !matches!(ty(e), "inline_footnote" | "inline_extension") || !has(e, "children") {
+    if !matches!(ty(e), "span" | "inline_footnote" | "inline_extension") || !has(e, "children") {
         return false;
     }
-    let mut open: Vec<(N<'t>, usize)> = Vec::new();
-    for t in texts_below(e) {
-        for (at, &b) in text(t).as_bytes().iter().enumerate() {
-            if (b != b'[' && b != b']') || is_escaped(w, c, t, at) {
-                continue;
+    !lone_brackets(w, c, e).is_empty() || escape_mark(w, c, &refs(children(e)), 0, 0, b'[')
+}
+
+/// C2-W-125 case five: escapes each bracket of the content of `e` without a partner there, the `[` that
+/// reads the node on and the `]` that ends it early. Returns the escapes, each with whether it stands
+/// inside a mark of the content.
+fn lone_brackets<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> Vec<(N<'t>, usize, bool)> {
+    let mut lone = scan_lone_brackets(w, c, e);
+    lone.retain(|&(t, at, _)| escape_at(w, c, t, at));
+    lone
+}
+
+fn has_lone_bracket(w: &Writer<'_>, c: &Check<'_>, e: V<'_>) -> bool {
+    !scan_lone_brackets(w, c, e).is_empty()
+}
+
+fn scan_lone_brackets<'t>(w: &Writer<'_>, c: &Check<'_>, e: N<'t>) -> Vec<(N<'t>, usize, bool)> {
+    let mut open: Vec<(N<'t>, usize, bool)> = Vec::new();
+    let mut lone: Vec<(N<'t>, usize, bool)> = Vec::new();
+    let mut content: Vec<(N<'t>, bool)> = children(e).iter().rev().map(|n| (n, false)).collect();
+    while let Some((n, nested)) = content.pop() {
+        if ty(n) == "text" {
+            for (at, &b) in text(n).as_bytes().iter().enumerate() {
+                if (b != b'[' && b != b']') || is_escaped(w, c, n, at) {
+                    continue;
+                }
+                if b == b'[' {
+                    open.push((n, at, nested));
+                } else if open.pop().is_none() {
+                    lone.push((n, at, nested));
+                }
             }
-            if b == b'[' {
-                open.push((t, at));
-            } else {
-                open.pop();
-            }
+        } else if closing_mark(ty(n)) != Some(b']') {
+            content.extend(children(n).iter().rev().map(|k| (k, true)));
         }
     }
-    let mut asked = false;
-    for (t, at) in open {
-        asked = escape_at(w, c, t, at) || asked;
-    }
-    asked || escape_mark(w, c, &refs(children(e)), 0, 0, b'[')
+    lone.extend(open);
+    lone
 }
 
 fn content_flags(c: &Check<'_>, e: V<'_>) -> u32 {
@@ -1681,6 +1701,10 @@ fn parse_ends_in_text<'t>(
     let prev = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
     if at.vi == 0 {
         if let (Some(p), Some(t)) = (prev, cur) {
+            if starts_with_closer(p, Some(t)) && repairs_inside(c, p) {
+                // The node read on into this text; its own repair ends it.
+                return false;
+            }
             if starts_with_closer(p, Some(t)) && escape_at(w, c, t, 0) {
                 return false;
             }
@@ -1694,6 +1718,14 @@ fn parse_ends_in_text<'t>(
         c.losses.push((owner, None));
     }
     false
+}
+
+/// Whether this round escapes a bracket of C2-W-125 in the content of `node`.
+fn repairs_inside(c: &Check<'_>, node: V<'_>) -> bool {
+    let texts: AddrSet<usize> = texts_below(node).into_iter().map(id).collect();
+    c.escapes
+        .iter()
+        .any(|&(n, at)| c.closers.contains(&(id(n), at)) && texts.contains(&id(n)))
 }
 
 fn after_text_node<'t>(
@@ -1716,12 +1748,19 @@ fn after_text_node<'t>(
     } else if at.j + 1 >= as_.len()
         && matches!(ty(owner), "emphasis" | "strong")
         && !joins_next(es, at.i)
+        && !es.get(at.i).is_some_and(|&n| reads_as_text(w, c, n))
     {
         closed_early(w, c, es, at.i, 0, owner);
     } else {
         return respell(w, c, es, at.i) && step_over(w, c, es, as_, at);
     }
     false
+}
+
+/// A note or extension that a lone bracket of its content keeps from forming reads as text.
+fn reads_as_text(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
+    matches!(ty(node), "span" | "inline_footnote" | "inline_extension")
+        && has_lone_bracket(w, c, node)
 }
 
 fn match_text<'t>(
@@ -2245,6 +2284,21 @@ fn compare_inline<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>)
     compare_fields(w, c, e, a);
     if !has(e, "children") {
         return;
+    }
+    if matches!(ty(e), "span" | "inline_footnote" | "inline_extension")
+        && !super::node::trees_equal(e, a)
+    {
+        let lone = lone_brackets(w, c, e);
+        if !lone.is_empty() {
+            for (n, at, nested) in lone {
+                c.closers.insert((id(n), at));
+                // A `]` inside a mark ended the note inside that mark: a closer, it gives no kind (C2-W-088).
+                if nested && text(n).as_bytes().get(at) == Some(&b']') {
+                    c.trials.push((n, at));
+                }
+            }
+            return;
+        }
     }
     let outer = c.flags;
     c.flags |= match ty(e) {
