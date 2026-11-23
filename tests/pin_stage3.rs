@@ -44,7 +44,9 @@ fn formatted(source: &str) -> Value {
 }
 
 fn doc(children: Value) -> Value {
-    json!({"type": "document", "astVersion": "2.0", "children": children})
+    let mut tree = json!({"type": "document", "astVersion": "2.0"});
+    tree["children"] = children;
+    tree
 }
 
 fn text(v: &str) -> Value {
