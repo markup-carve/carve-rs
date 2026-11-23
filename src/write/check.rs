@@ -120,6 +120,8 @@ pub struct Check<'t> {
     /// Escapes of a closer that ended a node early (C2-W-125 case five): a
     /// probe round gives them no kind (C2-W-088, CC-1568).
     pub closers: HashSet<(usize, usize)>,
+    /// C2-W-088: the escapes of block openers behind the marker of another block on the same line, which give no kind.
+    pub own_escapes: HashSet<(usize, usize)>,
 }
 
 impl Check<'_> {
@@ -305,16 +307,22 @@ fn escape_at_opt<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: Option<
 }
 
 /// The offsets at which a line that reads as a block opener can be made text, best first (C2-W-092).
+/// Behind the blanks that start the line, which the parse drops (C2-B-027).
 fn opener_offsets(value: &str) -> Vec<usize> {
+    let lead = value
+        .bytes()
+        .take_while(|&b| b == b' ' || b == b'\t')
+        .count();
+    let value = value.get(lead..).unwrap_or("");
     let mut offsets = Vec::new();
     if value.starts_with("--") {
-        offsets.push(1);
+        offsets.push(lead + 1);
     }
-    offsets.push(0);
+    offsets.push(lead);
     let b = value.as_bytes();
     let end = b.iter().take_while(|c| c.is_ascii_alphanumeric()).count();
     if end > 0 && matches!(b.get(end), Some(b'.' | b')')) {
-        offsets.push(end);
+        offsets.push(lead + end);
     }
     offsets
 }
@@ -330,10 +338,11 @@ fn escape_line_start<'t>(
     c.misaligned = true;
     let first = nodes.get(from).copied();
     let before = c.escapes.len();
-    if escape_run_opener(w, c, nodes, from) {
+    if let Some(mark) = escape_run_opener_at(w, c, nodes, from) {
         for (n, at) in c.escapes.get(before..).unwrap_or(&[]) {
             c.line_escapes.insert((id(*n), *at));
         }
+        escape_nested_openers(w, c, nodes, from, mark);
         return;
     }
     let mut at = from + 1;
@@ -930,6 +939,7 @@ fn escape_probe_kinds<'t>(
         .iter()
         .filter(|&&(n, at)| {
             !c.closers.contains(&(id(n), at))
+                && !c.own_escapes.contains(&(id(n), at))
                 && !c.trials.iter().any(|&(t, a)| a == at && id(t) == id(n))
         })
         .copied()
@@ -1583,6 +1593,8 @@ fn match_characters<'t>(
     e: N<'t>,
     a: V<'_>,
     at: &mut Cursor,
+    es: &[N<'t>],
+    owner: N<'t>,
 ) -> bool {
     let value = text(e).as_bytes();
     let other = text(a).as_bytes();
@@ -1593,6 +1605,17 @@ fn match_characters<'t>(
     for k in 0..length {
         if value.get(at.vi + k) == other.get(at.aj + k) {
             continue;
+        }
+        // C2-W-124, C2-W-091: the parse drops the blanks that start a line. They are the loss of the text, and the
+        // comparison goes on behind them, so that a construct there is reported in the same round.
+        if is_blank(value.get(at.vi + k)) && at_line_start(e, es, at.i, at.vi + k, owner) {
+            c.losses.push((e, Some("value".into())));
+            at.vi += k;
+            at.aj += k;
+            while is_blank(value.get(at.vi)) {
+                at.vi += 1;
+            }
+            return match_characters(w, c, e, a, at, es, owner);
         }
         if !escape_at(w, c, e, at.vi + k) {
             c.losses.push((e, Some("value".into())));
@@ -1606,6 +1629,35 @@ fn match_characters<'t>(
         at.aj = 0;
     }
     true
+}
+
+fn is_blank(b: Option<&u8>) -> bool {
+    matches!(b, Some(b' ' | b'\t'))
+}
+
+/// Whether the offset `at` of `e`, the node `es[i]` of `owner`, starts a line of the written content.
+fn at_line_start(e: V<'_>, es: &[N<'_>], i: usize, at: usize, owner: V<'_>) -> bool {
+    if at > 0 {
+        return text(e).as_bytes().get(at - 1) == Some(&b'\n');
+    }
+    if i > 0 {
+        return is_break(es.get(i - 1).copied());
+    }
+    ty(owner) == "paragraph"
+}
+
+/// Where the construct `a` starts in `e`: past the blanks that start a line, which the parse drops (a lost value,
+/// C2-W-124), except for a comment, whose source holds them (C2-I-023).
+fn construct_start(e: V<'_>, es: &[N<'_>], at: &Cursor, a: V<'_>, owner: V<'_>) -> usize {
+    let b = text(e).as_bytes();
+    if ty(a) == "comment" || !at_line_start(e, es, at.i, at.vi, owner) {
+        return at.vi;
+    }
+    let mut start = at.vi;
+    while is_blank(b.get(start)) {
+        start += 1;
+    }
+    start
 }
 
 fn starts_with_closer(node: V<'_>, next: Option<V<'_>>) -> bool {
@@ -1685,7 +1737,7 @@ fn match_text<'t>(
         return parse_ends_in_text(w, c, es, at, owner);
     };
     if ty(a) != "text" {
-        return skip_construct(w, c, e, es, a, at);
+        return skip_construct(w, c, e, es, a, at, owner);
     }
     // A prior lost node does not license a later field to disappear silently.
     if !c.losses.is_empty() {
@@ -1699,7 +1751,7 @@ fn match_text<'t>(
             }
         }
     }
-    if !match_characters(w, c, e, a, at) {
+    if !match_characters(w, c, e, a, at, es, owner) {
         return false;
     }
     at.vi < text(e).len() || after_text_node(w, c, es, as_, at, owner)
@@ -1767,6 +1819,7 @@ fn skip_construct<'t>(
     es: &[N<'t>],
     a: V<'_>,
     at: &mut Cursor,
+    owner: N<'t>,
 ) -> bool {
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
     let before = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
@@ -1778,7 +1831,8 @@ fn skip_construct<'t>(
     let Some((start, end)) = span(a) else {
         return false;
     };
-    let Some(stop) = spelled_end(w, e, at.vi, end - start, c.flags) else {
+    let from = construct_start(e, es, at, a, owner);
+    let Some(stop) = spelled_end(w, e, from, end - start, c.flags) else {
         return false;
     };
     at.vi = stop;
@@ -2336,9 +2390,187 @@ fn run_text<'a>(nodes: &[V<'a>], from: usize) -> std::borrow::Cow<'a, str> {
 
 /// Escapes the block opener of the text run at `nodes[from]`, best offset first (C2-W-090, C2-W-092).
 fn escape_run_opener<'t>(w: &Writer<'t>, c: &mut Check<'t>, nodes: &[N<'t>], from: usize) -> bool {
+    escape_run_opener_at(w, c, nodes, from).is_some()
+}
+
+/// [`escape_run_opener`], giving the offset in the run that took the backslash.
+fn escape_run_opener_at<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    nodes: &[N<'t>],
+    from: usize,
+) -> Option<usize> {
     opener_offsets(&run_text(nodes, from))
         .into_iter()
-        .any(|at| run_offset(nodes, from, at).is_some_and(|(n, k)| escape_at(w, c, n, k)))
+        .find(|&at| run_offset(nodes, from, at).is_some_and(|(n, k)| escape_at(w, c, n, k)))
+}
+
+/// C2-W-088: "A block opener behind the marker of another block on the same line ... take[s] its own escape and
+/// give[s] no kind." Each block the parse of the line starts behind `mark` takes a backslash at the character
+/// C2-W-090 escapes: the delimiter of an alphanumeric marker, the second hyphen of a hyphen run.
+fn escape_nested_openers<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    nodes: &[N<'t>],
+    from: usize,
+    mark: usize,
+) {
+    if exhausted(w) {
+        return;
+    }
+    let run = run_text(nodes, from);
+    let line = run.split('\n').next().unwrap_or("");
+    if line.len() <= mark + 1 {
+        return;
+    }
+    let mut source = line.to_string();
+    if line.len() == run.len() {
+        let mut k = from;
+        while text_at(nodes, k).is_some() {
+            k += 1;
+        }
+        rest_of_line(nodes.get(k..).unwrap_or(&[]), &mut source);
+    }
+    source.push('\n');
+    let chunk = Chunk::new(source);
+    let mut starts = Vec::new();
+    block_starts(chunk.read(w, None), line.len(), &mut starts);
+    let b = line.as_bytes();
+    for start in starts {
+        if start <= mark {
+            continue;
+        }
+        let mut at = start;
+        if b.get(at).is_some_and(u8::is_ascii_alphanumeric) {
+            while b.get(at).is_some_and(|x| !x.is_ascii_punctuation()) {
+                at += 1;
+            }
+        } else if line.get(at..).is_some_and(|r| r.starts_with("--")) {
+            at += 1;
+        }
+        if let Some((n, k)) = run_offset(nodes, from, at) {
+            if escape_at(w, c, n, k) {
+                c.own_escapes.insert((id(n), k));
+            }
+        }
+    }
+}
+
+/// The rest of a line behind its first text run, as far as the line test needs it (C2-B-118, C2-B-166): a verbatim
+/// node by its spelling, a paired span by its mark and text, another node by a letter. A node it cannot tell ends the
+/// rest with a letter.
+fn rest_of_line(nodes: &[N<'_>], out: &mut String) {
+    for &n in nodes {
+        if is_break(Some(n)) {
+            return;
+        }
+        if ty(n) == "text" {
+            match text(n).split_once('\n') {
+                Some((head, _)) => return out.push_str(head),
+                None => out.push_str(text(n)),
+            }
+            continue;
+        }
+        if !spell_on_line(n, out) {
+            out.push('x');
+            return;
+        }
+    }
+}
+
+/// Attributes follow a node, so they cannot make a fence behind it valid; they are left out.
+fn spell_on_line(n: N<'_>, out: &mut String) -> bool {
+    let code = || {
+        n.get("value")
+            .and_then(V::as_str)
+            .map(super::inline::code_span)
+    };
+    match ty(n) {
+        "code" => code().is_some_and(|c| {
+            out.push_str(&c);
+            true
+        }),
+        "math" => code().is_some_and(|c| {
+            out.push_str(if super::node::flag(n, "display") {
+                "$$"
+            } else {
+                "$"
+            });
+            out.push_str(&c);
+            true
+        }),
+        "literal_inline" => code().is_some_and(|c| {
+            out.push('!');
+            out.push_str(&c);
+            true
+        }),
+        t if t != "link" && t != "span" && closing_mark(t).is_some_and(|m| m != b']') => {
+            let Some(m) = closing_mark(t) else {
+                return false;
+            };
+            out.push(char::from(m));
+            let start = out.len();
+            if !span_text(n, out) {
+                out.truncate(start);
+                return false;
+            }
+            if let Some(head) = out.get(start..).and_then(|inner| inner.find('\n')) {
+                out.truncate(start + head);
+                return true;
+            }
+            out.push('x');
+            true
+        }
+        _ => {
+            !holds_tick(n) && {
+                out.push('x');
+                true
+            }
+        }
+    }
+}
+
+/// The text a paired span holds, a break as a line feed and other markup as `x`; false where a verbatim node or a
+/// node holding a backtick stands in it.
+fn span_text(n: N<'_>, out: &mut String) -> bool {
+    for &child in &refs(children(n)) {
+        match ty(child) {
+            "text" => out.push_str(text(child)),
+            "soft_break" | "hard_break" => out.push('\n'),
+            "code" | "math" | "literal_inline" | "raw_inline" => return false,
+            _ if has(child, "children") => {
+                if !span_text(child, out) {
+                    return false;
+                }
+            }
+            _ if holds_tick(child) => return false,
+            _ => out.push('x'),
+        }
+    }
+    true
+}
+
+fn holds_tick(n: N<'_>) -> bool {
+    let mut tick = false;
+    n.each(&mut |_, v| {
+        tick = tick || v.as_str().is_some_and(|s| s.contains('`'));
+    });
+    tick || refs(children(n)).iter().any(|&c| holds_tick(c))
+}
+
+/// The offsets below `len` where a block of `node` other than a paragraph starts.
+fn block_starts(node: V<'_>, len: usize, starts: &mut Vec<usize>) {
+    for block in children(node) {
+        let Some((start, _)) = span(block).filter(|&(start, _)| start < len) else {
+            continue;
+        };
+        if ty(block) != "paragraph" {
+            starts.push(start);
+        }
+        if !is_inline_parent(block) {
+            block_starts(block, len, starts);
+        }
+    }
 }
 
 fn has_opener_shape(nodes: &[V<'_>], from: usize) -> bool {
