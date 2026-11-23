@@ -148,6 +148,18 @@ fn c2_b_024_lazy_comments_in_line_block_stay_linear() {
 }
 
 #[test]
+fn c2_b_123_lazy_comments_after_comment_blocks_stay_linear() {
+    check("lazy comments after comment blocks", &|k| {
+        let n = 500 * k;
+        format!(
+            "- ::: |\n  a\n{}{}",
+            "  %%%\n  %%%\n".repeat(n),
+            "%% x\n".repeat(n)
+        )
+    });
+}
+
+#[test]
 fn c2_h_201_derived_text_after_budget_stays_linear() {
     check("derived text after budget", &|k| {
         let heading = "H".repeat(1000 * k);
