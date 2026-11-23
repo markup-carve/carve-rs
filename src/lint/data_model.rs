@@ -907,6 +907,15 @@ struct Layout {
     by_path: HashMap<String, u32>,
 }
 
+/// The first line at or after `line` that no range has painted, with the path halved on the way.
+fn skip_painted(next: &mut [usize], mut line: usize) -> usize {
+    while next[line] != line {
+        next[line] = next[next[line]];
+        line = next[line];
+    }
+    line
+}
+
 /// For each line, the nearest line above and below it in the source of its pipe table whose raw body does not
 /// start with `%%` (C2-W-149).
 struct TableLines {
@@ -1279,7 +1288,7 @@ impl<'a> Records<'a> {
     pub fn line_path(&self, index: usize) -> String {
         let nodes = self.line_nodes.get_or_init(|| {
             let count = self.lines.len();
-            let mut best: Vec<Option<(bool, usize, u32)>> = vec![None; count];
+            let mut candidates: Vec<(bool, usize, u32)> = Vec::new();
             for (at, range) in self.ranges.iter().enumerate() {
                 // The paragraph of a caption is held as inline content of the caption (C2-A-081).
                 if range.start_line == 0
@@ -1306,21 +1315,24 @@ impl<'a> Records<'a> {
                 } else {
                     range.path.len()
                 };
-                let key = (leaf, depth);
-                let first = range.start_line - 1;
-                for place in best
-                    .get_mut(first..range.end_line.max(range.start_line).min(count))
-                    .into_iter()
-                    .flatten()
-                {
-                    if place.is_none_or(|(tier, depth, _)| (tier, depth) <= key) {
-                        *place = Some((key.0, key.1, at as u32));
-                    }
+                candidates.push((leaf, depth, at as u32));
+            }
+            // The best range paints its lines first; a line once painted is skipped, so nested
+            // containers cost one pass per line, not one per level.
+            candidates.sort_unstable_by(|a, b| b.cmp(a));
+            let mut nodes: Vec<Option<u32>> = vec![None; count];
+            let mut next: Vec<usize> = (0..=count).collect();
+            for (.., at) in candidates {
+                let range = &self.ranges[at as usize];
+                let last = range.end_line.max(range.start_line).min(count);
+                let mut line = skip_painted(&mut next, range.start_line - 1);
+                while line < last {
+                    nodes[line] = Some(at);
+                    next[line] = line + 1;
+                    line = skip_painted(&mut next, line + 1);
                 }
             }
-            best.into_iter()
-                .map(|found| found.map(|(.., at)| at))
-                .collect()
+            nodes
         });
         nodes
             .get(index)

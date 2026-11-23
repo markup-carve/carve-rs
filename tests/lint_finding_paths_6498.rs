@@ -12,8 +12,7 @@ fn path_of(input: &str, code: &str) -> Option<String> {
 
 #[test]
 fn the_model_states_a_path_for_each_record_kind() {
-    let model: Value =
-        serde_json::from_str(include_str!("../spec-data/lint-model.json")).unwrap();
+    let model: Value = serde_json::from_str(include_str!("../spec-data/lint-model.json")).unwrap();
     let mut kinds: Vec<&str> = model["paths"]
         .as_object()
         .unwrap()
