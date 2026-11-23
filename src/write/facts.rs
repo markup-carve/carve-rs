@@ -302,7 +302,7 @@ fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: 
         }
         .into(),
     );
-    if attribute_text(node, src).contains("header-rows=") {
+    if declares_header_rows(attribute_text(node, src)) {
         let count = children(node)
             .iter()
             .filter(|g| ty(g) == "table_head")
@@ -310,6 +310,26 @@ fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: 
             .sum::<usize>();
         facts.header_rows = i64::try_from(count).ok();
     }
+}
+
+/// C2-L-057: whether the attribute lines give `header-rows` a valid count (C2-B-210).
+fn declares_header_rows(text: &str) -> bool {
+    if !text.contains("header-rows") {
+        return false;
+    }
+    let mut block = crate::attr::AttrBlock::default();
+    for line in text.lines() {
+        if let Some((parsed, _)) = line
+            .find('{')
+            .and_then(|at| crate::attr::parse_block(line, at))
+        {
+            block.merge(parsed);
+        }
+    }
+    block
+        .attrs
+        .get("header-rows")
+        .is_some_and(|v| v.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The cell fragments of a row line or a continuation line: the text between unescaped pipes.

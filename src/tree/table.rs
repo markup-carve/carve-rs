@@ -214,7 +214,8 @@ impl<'a> Builder<'_, 'a> {
             .and_then(|a| a.get("header-rows"))
             .and_then(count);
         let footer = footer_count(attrs.as_ref());
-        let (children, ncols) = super::delimited::table(self.arena, value, sep, declared, footer);
+        let (children, ncols, body_valid) =
+            super::delimited::table(self.arena, value, sep, declared, footer, attrs.as_ref());
         if let Some(quote) = super::delimited::unclosed_quote_offset(value, sep) {
             let start = pos.map_or(0, |p| p.start());
             let text = self.src.text().get(start..).unwrap_or("");
@@ -240,7 +241,7 @@ impl<'a> Builder<'_, 'a> {
             ncols,
             attrs.filter(|a| !a.is_empty()),
             true,
-            false,
+            body_valid,
         );
         Node::Table(self.arena.alloc(ast::Table {
             children,
@@ -609,10 +610,10 @@ fn count(v: &str) -> Option<usize> {
     }
 }
 
-struct BodyPlan {
-    data_rows: Vec<usize>,
-    header_rows: Vec<usize>,
-    head_cols: Vec<Option<i64>>,
+pub(super) struct BodyPlan {
+    pub(super) data_rows: Vec<usize>,
+    pub(super) header_rows: Vec<usize>,
+    pub(super) head_cols: Vec<Option<i64>>,
 }
 
 fn body_counts(value: &str) -> Option<Vec<usize>> {
@@ -645,7 +646,7 @@ fn body_head_cols(value: &str) -> Option<Vec<Option<i64>>> {
         .collect()
 }
 
-fn body_plan(attrs: Option<&Attrs>, available: usize) -> Option<BodyPlan> {
+pub(super) fn body_plan(attrs: Option<&Attrs>, available: usize) -> Option<BodyPlan> {
     let attrs = attrs?;
     let data_rows = body_counts(attrs.get("body-rows")?)?;
     let header_rows = if let Some(value) = attrs.get("body-header-rows") {
