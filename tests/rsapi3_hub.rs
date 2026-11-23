@@ -215,3 +215,25 @@ fn a_denied_block_image_leaves_no_image_paragraph() {
         );
     }
 }
+
+/// A leading U+FEFF is no content: the frontmatter opener after it is read
+/// (carve#6447).
+#[test]
+fn a_leading_bom_precedes_frontmatter() {
+    for from in ["markdown", "gfm"] {
+        for nl in ["\n", "\r\n"] {
+            let yaml = format!("\u{feff}---{nl}x: y{nl}---{nl}z{nl}");
+            assert_eq!(
+                carve(from, &yaml),
+                "---\nx: y\n---\n\nz\n",
+                "{from} {yaml:?}"
+            );
+            let toml = format!("\u{feff}+++{nl}x = 1{nl}+++{nl}z{nl}");
+            assert_eq!(
+                carve(from, &toml),
+                "---toml\nx = 1\n---\n\nz\n",
+                "{from} {toml:?}"
+            );
+        }
+    }
+}
