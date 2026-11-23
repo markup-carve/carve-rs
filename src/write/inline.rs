@@ -691,7 +691,8 @@ fn image_node(w: &mut Writer<'_>, node: V<'_>, flags: u32) -> String {
         return format!("!{raw}");
     }
     let pipes = flags & IN_CELL != 0;
-    let alt = collapsed_alt(w, node, alt_source(s(node, "alt").unwrap_or("")));
+    let alt = image_alt(w, node);
+    let alt = collapsed_alt(w, node, alt);
     let alt = if pipes { escape_pipes(&alt) } else { alt };
     format!(
         "![{alt}]{}",
@@ -719,9 +720,19 @@ fn collapsed_alt(w: &mut Writer<'_>, node: V<'_>, alt: String) -> String {
     if ok { key.to_string() } else { alt }
 }
 
-/// The end of the code span or braced comment that opens at `at` of `alt`: `Some(0)` if none opens, `None` if it has no closer.
-fn atom_end(alt: &[u8], at: usize) -> Option<usize> {
+/// The end of the code span, braced comment, autolink or cross-reference that opens at `at` of `text` (C2-I-005):
+/// `Some(0)` if none opens, `None` if a code span or comment has no closer.
+fn atom_end(text: &str, at: usize) -> Option<usize> {
+    let alt = text.as_bytes();
     let ch = alt.get(at).copied();
+    if ch == Some(b'<') {
+        return Some(match crate::inline::angle(text, at) {
+            Some(
+                crate::inline::Angle::Xref { end, .. } | crate::inline::Angle::Autolink { end, .. },
+            ) => end,
+            None => 0,
+        });
+    }
     if ch == Some(b'{') && matches!(alt.get(at + 1), Some(b'#' | b'%')) {
         let mark = alt.get(at + 1).copied().unwrap_or(b'#');
         let tail = alt.get(at + 2..).unwrap_or(&[]);
@@ -755,11 +766,12 @@ fn atom_end(alt: &[u8], at: usize) -> Option<usize> {
     None
 }
 
-fn raw_atoms(alt: &[u8], lone: &mut AddrSet<usize>) -> Vec<bool> {
+fn raw_atoms(text: &str, lone: &mut AddrSet<usize>) -> Vec<bool> {
+    let alt = text.as_bytes();
     let mut raw = vec![false; alt.len()];
     let mut at = 0;
     while at < alt.len() {
-        match atom_end(alt, at) {
+        match atom_end(text, at) {
             Some(0) => {}
             Some(end) => {
                 for r in raw.iter_mut().take(end).skip(at) {
@@ -781,36 +793,122 @@ fn raw_atoms(alt: &[u8], lone: &mut AddrSet<usize>) -> Vec<bool> {
     raw
 }
 
-fn unpartnered(alt: &[u8], raw: &[bool], lone: &mut AddrSet<usize>) {
+/// The brackets of `alt` outside raw content that have no partner in it. A `[^` and its partner read as a footnote
+/// label, so a `]` right behind `[^` counts as lone, and with `swap` a lone `]` after such a pair takes over its `[`.
+fn unpartnered(alt: &[u8], raw: &[bool], lone: &mut AddrSet<usize>, swap: bool) {
     let mut open: Vec<usize> = Vec::new();
     let mut notes: Vec<usize> = Vec::new();
-    for (at, &ch) in alt.iter().enumerate() {
+    let mut at = 0;
+    while let Some(&ch) = alt.get(at) {
         if raw.get(at) == Some(&true) {
-            continue;
-        }
-        if ch == b'[' {
+        } else if ch == b'[' {
             open.push(at);
         } else if ch != b']' {
         } else if at >= 2 && alt.get(at - 1) == Some(&b'^') && open.last() == Some(&(at - 2)) {
             lone.insert(at);
         } else if let Some(opener) = open.pop() {
-            if alt.get(opener + 1) == Some(&b'^') {
-                notes.push(at);
-            }
+            at = close_bracket(alt, opener, at, &mut notes, raw);
         } else {
-            lone.insert(notes.pop().unwrap_or(at));
+            let swapped = if swap { notes.pop() } else { None };
+            lone.insert(swapped.unwrap_or(at));
         }
+        at += 1;
     }
     lone.extend(open);
 }
 
+/// C2-I-066 to C2-I-069: the end of the link tail whose `(` is at `at` of `alt`; it stands on one line. The writer
+/// doubles every backslash before punctuation (C2-W-097), so no backslash of the alt escapes a parenthesis.
+fn tail_end(alt: &[u8], at: usize) -> Option<usize> {
+    let mut level = 0usize;
+    let mut p = at + 1;
+    while let Some(&c) = alt.get(p) {
+        if is_label_space(c) {
+            break;
+        }
+        if c == b'(' {
+            level += 1;
+        } else if c == b')' {
+            if level == 0 {
+                return Some(p + 1);
+            }
+            level -= 1;
+        }
+        p += 1;
+    }
+    if level == 0 && alt.get(p) == Some(&b' ') {
+        title_tail_end(alt, p + 1)
+    } else {
+        None
+    }
+}
+
+/// C2-I-068: the end of a quoted title at `at` of `alt`, optional spaces and `)`.
+fn title_tail_end(alt: &[u8], at: usize) -> Option<usize> {
+    let quote = *alt.get(at).filter(|&&q| q == b'"' || q == b'\'')?;
+    let mut q = at + 1;
+    while alt.get(q).is_some_and(|&c| c != quote && c != b'\n') {
+        q += 1;
+    }
+    if alt.get(q) != Some(&quote) {
+        return None;
+    }
+    q += 1;
+    while alt.get(q) == Some(&b' ') {
+        q += 1;
+    }
+    (alt.get(q) == Some(&b')')).then_some(q + 1)
+}
+
+/// Closes the pair `opener` at `at` and returns the offset the scan goes on from: a link tail glued to it is an atom.
+fn close_bracket(
+    alt: &[u8],
+    opener: usize,
+    at: usize,
+    notes: &mut Vec<usize>,
+    raw: &[bool],
+) -> usize {
+    if alt.get(opener + 1) == Some(&b'^') {
+        notes.push(at);
+        return at;
+    }
+    if alt.get(at + 1) != Some(&b'(') || raw.get(at + 1) == Some(&true) {
+        return at;
+    }
+    tail_end(alt, at + 1).map_or(at, |end| end - 1)
+}
+
+/// The spellings of an alt text that [`alt_source`] can write.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AltForm {
+    /// C2-W-097: each bracket without a partner takes a backslash.
+    Clause,
+    /// No bracket takes one.
+    Bare,
+    /// As `Clause`, but a lone `]` keeps its own backslash rather than the `]` of a `[^` pair.
+    Unswapped,
+    /// Every bracket outside raw content takes one.
+    Every,
+}
+
 /// C2-W-097: alt text doubles a backslash before ASCII punctuation or at its
-/// end, and escapes a bracket with no partner.
-fn alt_source(alt: &str) -> String {
+/// end, and escapes the brackets that `form` names.
+fn alt_source(alt: &str, form: AltForm) -> String {
     let bytes = alt.as_bytes();
     let mut lone = AddrSet::default();
-    let raw = raw_atoms(bytes, &mut lone);
-    unpartnered(bytes, &raw, &mut lone);
+    let raw = raw_atoms(alt, &mut lone);
+    match form {
+        AltForm::Clause => unpartnered(bytes, &raw, &mut lone, true),
+        AltForm::Unswapped => unpartnered(bytes, &raw, &mut lone, false),
+        AltForm::Every => lone.extend(
+            bytes
+                .iter()
+                .enumerate()
+                .filter(|&(at, &c)| raw.get(at) != Some(&true) && (c == b'[' || c == b']'))
+                .map(|(at, _)| at),
+        ),
+        AltForm::Bare => {}
+    }
     let mut out = String::with_capacity(alt.len() + 4);
     for (at, ch) in alt.char_indices() {
         let next = bytes.get(at + 1);
@@ -820,6 +918,46 @@ fn alt_source(alt: &str) -> String {
         out.push(ch);
     }
     out
+}
+
+/// C2-W-089, C2-W-097: the alt text of an image. The clause's bracket count cannot see every atom (a reference label
+/// after `[^` is taken whole, C2-I-076), so where its spelling does not read back as the image with its alt, the first
+/// of the bare, unswapped and every-bracket forms that does is taken.
+fn image_alt(w: &mut Writer<'_>, node: V<'_>) -> String {
+    let alt = s(node, "alt").unwrap_or("");
+    let spelled = alt_source(alt, AltForm::Clause);
+    // C2-W-075: a collapsed or shortcut alt is checked against its key by `collapsed_alt`.
+    let keyed = matches!(s(node, "refForm"), Some("collapsed" | "shortcut"));
+    if keyed || !may_misread(alt) {
+        return spelled;
+    }
+    let tail = if has(node, "key") { "[k]" } else { "()" };
+    if reads_back_alt(w, &spelled, alt, tail) {
+        return spelled;
+    }
+    for form in [AltForm::Bare, AltForm::Unswapped, AltForm::Every] {
+        let candidate = alt_source(alt, form);
+        if candidate != spelled && reads_back_alt(w, &candidate, alt, tail) {
+            return candidate;
+        }
+    }
+    spelled
+}
+
+/// Whether `alt` holds a bracket beside a form that changes how brackets pair: a caret (C2-I-087, C2-I-089), a tail or
+/// label glued to a closing bracket (C2-I-066, C2-I-072), or the opener of an atom (C2-I-005).
+fn may_misread(alt: &str) -> bool {
+    alt.contains(['[', ']']) && (alt.contains(['^', '(', '<', '`', '{']) || alt.contains("]["))
+}
+
+/// Whether `![spelled]` with `tail` reads as one image whose alt is `alt` (C2-I-074).
+fn reads_back_alt(w: &mut Writer<'_>, spelled: &str, alt: &str, tail: &str) -> bool {
+    let keys = std::iter::once("k".to_string()).collect();
+    let chunk = super::check::Chunk::new(format!("![{spelled}]{tail}\n"));
+    children(chunk.parse_keys(w, Some(&keys)))
+        .single()
+        .and_then(|p| children(p).single())
+        .is_some_and(|img| ty(img) == "image" && s(img, "alt") == Some(alt))
 }
 
 fn autolink_node(w: &mut Writer<'_>, node: V<'_>) -> String {
