@@ -145,6 +145,8 @@ enum Leaf {
         entries: Vec<LineBlockEntry>,
         comment: Option<LineCommentFence>,
         stanza_open: bool,
+        /// Entries scanned for the last line, and its index, so lazy comments stay linear.
+        last_line: (usize, Option<usize>),
         /// Blank lines held back (gap G-025).
         held: Vec<(usize, usize)>,
     },
@@ -648,6 +650,7 @@ impl<'a> Parser<'a> {
                     entries,
                     held,
                     stanza_open,
+                    last_line,
                 },
             end,
             ..
@@ -709,11 +712,18 @@ impl<'a> Parser<'a> {
         if !owned {
             if shapes::comment_only(k.rest()) && *stanza_open {
                 // C2-B-123: a comment block between keeps the stanza line above.
-                let line = entries
-                    .iter_mut()
-                    .rev()
-                    .find(|entry| matches!(entry, LineBlockEntry::Line { .. }));
-                if let Some(LineBlockEntry::Line { comments, .. }) = line {
+                let (scanned, at) = *last_line;
+                let at = entries
+                    .get(scanned..)
+                    .unwrap_or_default()
+                    .iter()
+                    .rposition(|entry| matches!(entry, LineBlockEntry::Line { .. }))
+                    .map(|i| i + scanned)
+                    .or(at);
+                *last_line = (entries.len(), at);
+                if let Some(LineBlockEntry::Line { comments, .. }) =
+                    at.and_then(|i| entries.get_mut(i))
+                {
                     comments.push((k.offset(), e, shapes::line_comment_value(k.rest())));
                 }
                 *end = e;

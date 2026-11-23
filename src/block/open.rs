@@ -727,6 +727,7 @@ impl Parser<'_> {
                     entries: Vec::new(),
                     comment: None,
                     stanza_open: false,
+                    last_line: (0, None),
                     held: Vec::new(),
                 },
                 start: s,
