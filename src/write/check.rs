@@ -966,6 +966,8 @@ fn oust<'t>(
             .position(|&(m, a)| id(m) == id(n) && a == at)
         {
             c.escapes.remove(p);
+        } else if w.escapes_of(n).contains(&at) {
+            c.retracted.push((n, at));
         }
         mark(c, n, at, false);
     }
@@ -977,14 +979,18 @@ struct ProbeKinds<'t> {
     partners: Option<Partners<'t>>,
 }
 
-/// One round of a probe, in the spelling of the probe: the escapes it asked for and whether it found losses.
+/// What one probe round asks for: its escapes, whether it found losses, and the escapes a brace ousts.
+type ProbeRound<'t> = (Vec<(N<'t>, usize)>, bool, Vec<(N<'t>, usize)>);
+
+/// One round of a probe, in the spelling of the probe: the escapes it asked for, whether it found losses,
+/// and the escapes a brace of case one may take out.
 fn probe_round<'t>(
     w: &mut Writer<'t>,
     e: N<'t>,
     expected: &[N<'t>],
     flags: u32,
     kinds: &mut ProbeKinds<'t>,
-) -> Option<(Vec<(N<'t>, usize)>, bool, Vec<(N<'t>, usize)>)> {
+) -> Option<ProbeRound<'t>> {
     let chunk = Chunk::new(format!("{}\n", write_inlines(w, expected, flags)));
     let parsed = chunk.parse(w);
     let source = chunk.text().to_string();

@@ -9,7 +9,11 @@ fn check(source: &str, expected: &str) {
     let written = carve.format(source, &options).unwrap();
     assert_eq!(written, expected, "{source:?}");
     let tree = carve.parse(source, &Options::default()).unwrap();
-    assert_eq!(carve.write(&tree, &options).unwrap(), expected, "{source:?}");
+    assert_eq!(
+        carve.write(&tree, &options).unwrap(),
+        expected,
+        "{source:?}"
+    );
     assert_eq!(carve.format(&written, &options).unwrap(), written);
 }
 
