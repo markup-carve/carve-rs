@@ -1217,7 +1217,56 @@ fn settle<'t>(
     if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
         return true;
     }
+    if !c.ousted.is_empty() {
+        oust(w, &mut c, group, first);
+    }
     apply_changes(w, &c)
+}
+
+/// C2-W-125: the escapes a brace of case one repairs come out where the group reads back without them.
+fn oust<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, group: Arr<'t>, first: bool) {
+    let mut escapes = w.sp.escapes.clone();
+    for &(n, at) in &c.escapes {
+        let list = escapes.entry(id(n)).or_default();
+        if let Err(place) = list.binary_search(&at) {
+            list.insert(place, at);
+        }
+    }
+    for &(n, at) in &c.ousted {
+        if let Some(list) = escapes.get_mut(&id(n)) {
+            list.retain(|&x| x != at);
+        }
+    }
+    let placed = std::mem::take(&mut w.sp.escapes);
+    let lines = w.lines.clone();
+    let lead = w.lead.clone();
+    let lead_skip = w.lead_skip;
+    let starts = (w.starts.clone(), w.start_index.clone());
+    let chunk = group_chunk(w, group, first, escapes);
+    let kids = children(chunk.parse(w));
+    let reads_back =
+        kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e));
+    w.sp.escapes = placed;
+    w.lines = lines;
+    w.lead = lead;
+    w.lead_skip = lead_skip;
+    w.starts = starts.0;
+    w.start_index = starts.1;
+    if !reads_back {
+        return;
+    }
+    let ousted = std::mem::take(&mut c.ousted);
+    for (n, at) in ousted {
+        if let Some(p) = c
+            .escapes
+            .iter()
+            .position(|&(m, a)| id(m) == id(n) && a == at)
+        {
+            c.escapes.remove(p);
+        } else if w.escapes_of(n).contains(&at) {
+            c.retracted.push((n, at));
+        }
+    }
 }
 
 /// The group written with `escapes`, for a parse.
