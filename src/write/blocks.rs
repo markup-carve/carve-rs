@@ -502,7 +502,7 @@ fn body<'t>(
     let behind = w
         .lead
         .as_ref()
-        .map_or(0, |l| l.len().saturating_sub(prefix.len()));
+        .map_or(0, |l| l.len().saturating_sub(w.lead_skip + prefix.len()));
     w.lead = Some(w.lead.take().unwrap_or_else(|| prefix.to_string()) + mark);
     let inner = format!("{prefix}{}", " ".repeat(behind + width));
     write_blocks(w, children(node), &inner, flags, tight);
@@ -646,6 +646,10 @@ fn block_quote<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
         return;
     }
     w.lead = Some(w.lead.take().unwrap_or_else(|| prefix.to_string()) + "> ");
+    w.lead_skip = w
+        .lead
+        .as_ref()
+        .map_or(0, |l| l.len().saturating_sub(prefix.len() + 2));
     write_blocks(w, kids, &format!("{prefix}> "), flags, false);
     if w.lead.is_some() {
         emit(w, prefix, "");

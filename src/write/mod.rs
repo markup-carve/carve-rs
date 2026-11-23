@@ -751,6 +751,7 @@ fn group_end(w: &mut Writer<'_>, nodes: Arr<'_>, from: usize) -> usize {
 fn reset_lines(w: &mut Writer<'_>) {
     w.lines.clear();
     w.lead = None;
+    w.lead_skip = 0;
     w.bare_dot_lead = false;
     w.prewritten = None;
     w.clear_starts();
@@ -1170,6 +1171,7 @@ fn group_chunk<'t>(
 fn written_chunk<'t>(w: &mut Writer<'t>, group: Arr<'t>, first: bool) -> Chunk {
     w.lines.clear();
     w.lead = None;
+    w.lead_skip = 0;
     w.clear_starts();
     blocks::write_blocks(w, group, "", 0, false);
     Chunk::new(group_source(w, first))
@@ -1186,6 +1188,7 @@ fn is_asked<'t>(
 ) -> bool {
     let lines = w.lines.clone();
     let lead = w.lead.clone();
+    let lead_skip = w.lead_skip;
     let starts = (w.starts.clone(), w.start_index.clone());
     let mut order = AddrMap::default();
     text_order(group, &mut order);
@@ -1197,6 +1200,7 @@ fn is_asked<'t>(
     };
     w.lines = lines;
     w.lead = lead;
+    w.lead_skip = lead_skip;
     w.starts = starts.0;
     w.start_index = starts.1;
     asked

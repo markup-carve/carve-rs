@@ -94,6 +94,8 @@ pub struct Writer<'t> {
     pub extensions: Vec<String>,
     pub lines: Vec<String>,
     pub lead: Option<String>,
+    /// Pending lead width before the innermost quote mark, beyond the continuation prefix (C2-B-003).
+    pub lead_skip: usize,
     pub bare_dot_lead: bool,
     pub sp: Spelling<'t>,
     pub forms: AddrMap<usize, u32>,
@@ -151,6 +153,7 @@ impl<'t> Writer<'t> {
             extensions: Vec::new(),
             lines: Vec::new(),
             lead: None,
+            lead_skip: 0,
             bare_dot_lead: false,
             sp: Spelling::default(),
             forms: AddrMap::default(),
@@ -271,6 +274,7 @@ pub fn trim_end(text: &str) -> &str {
 /// line has no spaces of its prefix either.
 pub fn emit(w: &mut Writer<'_>, prefix: &str, text: &str) {
     let head = w.lead.take().unwrap_or_else(|| prefix.to_string());
+    w.lead_skip = 0;
     w.bare_dot_lead = false;
     if text.is_empty() {
         w.lines.push(trim_end(&head).to_string());
