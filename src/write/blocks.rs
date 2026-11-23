@@ -848,18 +848,19 @@ fn line_block<'t>(w: &mut Writer<'t>, node: N<'t>, prefix: &str, flags: u32) {
                 continue;
             }
             let kids = children(line);
+            // C2-B-024: each lazy `%%` line below the line adds a trailing comment.
             let lazy = kids
-                .last()
-                .filter(|l| ty(l) == "comment" && s(l, "form") == Some("line"));
-            let content = if lazy.is_some() {
-                kids.slice(0, kids.len() - 1).unwrap_or_else(Arr::empty)
-            } else {
-                kids
-            };
+                .iter()
+                .rev()
+                .take_while(|l| ty(l) == "comment" && s(l, "form") == Some("line"))
+                .count();
+            let content = kids.slice(0, kids.len() - lazy).unwrap_or_else(Arr::empty);
             let written = line_content(w, &refs(content), flags | BARE_BREAKS);
             emit(w, prefix, &written);
-            if let Some(lazy) = lazy {
-                lazy_comment(w, lazy, prefix);
+            for at in kids.len() - lazy..kids.len() {
+                if let Some(comment) = kids.get(at) {
+                    lazy_comment(w, comment, prefix);
+                }
             }
         }
     });
