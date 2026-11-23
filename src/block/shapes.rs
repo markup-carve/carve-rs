@@ -422,6 +422,11 @@ fn is_raw_char(b: u8) -> bool {
 
 fn fence_info(info: &str, base: usize) -> FenceInfo {
     let mut fi = FenceInfo::default();
+    // C2-B-122: a second space behind the run leaves no language; what follows is further words.
+    if info.starts_with("  ") {
+        fi.further = further_start(info, 1, base);
+        return fi;
+    }
     let b = info.as_bytes();
     let mut i = 0;
     if b.first() == Some(&b' ') {

@@ -2304,9 +2304,10 @@ fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: u
     }
 }
 
-/// Each unattached glued run once, in the inline hosts the rule names; a line block's line is none.
+/// Each unattached glued run once, in the inline hosts the rule names; a line block's line is none,
+/// nor is a code fence title, which is plain text (C2-B-120).
 fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    if parent_kinds(item).any(|kind| kind == "line") {
+    if parent_kinds(item).any(|kind| kind == "line" || kind == "code_block") {
         return;
     }
     let mut next = 0;
@@ -2365,7 +2366,7 @@ fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: 
         {
             continue;
         }
-        let Some((_, end)) = crate::attr::parse_glued(raw, at + 1) else {
+        let Some((_, end)) = crate::attr::parse_block(raw, at + 1) else {
             continue;
         };
         if end <= at + 1 {
@@ -2374,7 +2375,7 @@ fn emphasis_before_attrs(item: &Item<'_>, sink: &mut Sink<'_>, raw: &str, from: 
         sink.emit_range(
             "emphasis-marker-before-attributes",
             from + at,
-            from + at + 1,
+            from + end,
             item.path(),
             &[("ch", &ch.to_string())],
             0,
