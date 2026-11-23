@@ -2,6 +2,7 @@
 //! with the facts of its owner.
 
 use crate::view::V;
+use std::collections::HashMap;
 
 /// The node an attribute block attaches to, with the facts of `attribute_owner_fields`.
 pub(super) struct Owner {
@@ -227,15 +228,30 @@ fn read_run(s: &str, from: usize, end: usize, cell: bool, out: &mut Vec<Part>) -
     let b = s.as_bytes();
     let mut at = from;
     while byte(b, at) == b'{' {
-        let Some(stop) = block_end(b, at, end) else {
-            return at;
-        };
         let marks = if cell && at == from {
             cell_marks(b, at)
         } else {
             0
         };
         let kept = out.len();
+        if marks == 0 {
+            // Parse first, then check the parse ends at the block's own `}`: the parse stops at the
+            // first byte no part takes, where looking for the `}` first scans up to the line end for
+            // every brace of a brace-dense line (carve#6488).
+            match read_block(s, at, end, out) {
+                Some(stop) if block_end(b, at, stop) == Some(stop) => {
+                    at = stop;
+                    continue;
+                }
+                _ => {
+                    out.truncate(kept);
+                    return at;
+                }
+            }
+        }
+        let Some(stop) = block_end(b, at, end) else {
+            return at;
+        };
         let marks_only = marks > 0 && skip_spaces(b, at + 1 + marks, stop) == stop - 1;
         if !marks_only && read_block(s, at + marks, stop, out) != Some(stop) {
             out.truncate(kept);
@@ -315,20 +331,87 @@ pub(super) struct Node<'k, 'v> {
     pub quotes: usize,
 }
 
-/// C2-I-036: the run of glued blocks that ends at the end of an inline node.
-fn inline_parts(source: &str, node: &Node<'_, '_>, out: &mut Vec<Part>) {
-    let first = out.len();
+/// The valid blocks of the inline nodes, each read once for all the nodes that hold it, so nested
+/// nodes do not each try every brace inside them (carve#6488).
+#[derive(Default)]
+struct Blocks {
+    /// The first position at or after an index that is not read yet, path-compressed.
+    unread: Vec<usize>,
+    /// The openers of the valid blocks that end at a position, by that position.
+    ending: HashMap<usize, Vec<usize>>,
+}
+
+impl Blocks {
+    fn unread(&mut self, mut i: usize) -> usize {
+        while let Some(&up) = self.unread.get(i).filter(|&&up| up != i) {
+            let skip = self.unread.get(up).copied().unwrap_or(up);
+            if let Some(slot) = self.unread.get_mut(i) {
+                *slot = skip;
+            }
+            i = skip;
+        }
+        i
+    }
+
+    /// Reads the blocks that open in `from..end` and were not read yet. A block reads the same up to
+    /// the line end as up to any end behind its `}`, so one reading serves every node.
+    fn read(&mut self, source: &str, from: usize, end: usize) {
+        let b = source.as_bytes();
+        if self.unread.is_empty() {
+            self.unread = (0..=b.len()).collect();
+        }
+        let mut scratch = Vec::new();
+        let mut at = self.unread(from);
+        while at < end {
+            if byte(b, at) == b'{' {
+                if let Some(stop) = read_block(source, at, b.len(), &mut scratch)
+                    .filter(|&stop| block_end(b, at, stop) == Some(stop))
+                {
+                    self.ending.entry(stop).or_default().push(at);
+                }
+                scratch.clear();
+            }
+            if let Some(slot) = self.unread.get_mut(at) {
+                *slot = at + 1;
+            }
+            at = self.unread(at + 1);
+        }
+    }
+}
+
+/// C2-I-036: the run of glued blocks that ends at the end of an inline node, from its leftmost brace
+/// whose run reaches that end.
+fn inline_parts(source: &str, node: &Node<'_, '_>, blocks: &mut Blocks, out: &mut Vec<Part>) {
     if node.end <= node.start || byte(source.as_bytes(), node.end - 1) != b'}' {
         return;
     }
-    let mut at = node.start + 1;
-    while let Some(found) = source.get(at..node.end).and_then(|rest| rest.find('{')) {
-        let from = at + found;
+    let first = out.len();
+    // Mostly the node's first brace opens the run.
+    if let Some(from) = source
+        .get(node.start + 1..node.end)
+        .and_then(|rest| rest.find('{'))
+        .map(|found| node.start + 1 + found)
+    {
         if read_run(source, from, node.end, false, out) == node.end {
             return;
         }
         out.truncate(first);
-        at = from + 1;
+    }
+    blocks.read(source, node.start + 1, node.end);
+    let mut leftmost = None;
+    let mut ends = vec![node.end];
+    while let Some(end) = ends.pop() {
+        for &at in blocks.ending.get(&end).into_iter().flatten() {
+            if at > node.start {
+                leftmost = Some(leftmost.map_or(at, |left: usize| left.min(at)));
+                ends.push(at);
+            }
+        }
+    }
+    if let Some(from) = leftmost {
+        if read_run(source, from, node.end, false, out) != node.end {
+            out.truncate(first);
+        }
     }
 }
 
@@ -459,11 +542,12 @@ fn finish(parts: &mut [Part], owner: u32, node: &Node<'_, '_>) {
 /// The attribute records of the nodes, in source order within each owner.
 pub(super) fn build<'k, 'v>(source: &str, nodes: impl Iterator<Item = Node<'k, 'v>>) -> Table {
     let mut table = Table::default();
+    let mut blocks = Blocks::default();
     for node in nodes {
         let first = table.parts.len();
         let mut opener = node.start;
         if node.inline {
-            inline_parts(source, &node, &mut table.parts);
+            inline_parts(source, &node, &mut blocks, &mut table.parts);
         } else if matches!(node.kind, "list_item" | "table_cell") {
             marker_parts(source, &node, &mut table.parts);
         } else {
