@@ -1161,16 +1161,7 @@ fn settle<'t>(
             return false;
         }
         escape_kinds(w, &mut c, group);
-        // Every bracketed node writes a `]`: without one there is no partner to escape.
-        if round.source.is_some_and(|source| source.contains(']')) {
-            let key = (group.first().map_or(0, id), group.len());
-            let partners = match w.partners.take() {
-                Some((k, partners)) if k == key => partners,
-                _ => check::partner_closers(&group.iter().collect::<Vec<_>>()),
-            };
-            check::escape_partner_closers(w, &mut c, &partners);
-            w.partners = Some((key, partners));
-        }
+        escape_group_partners(w, &mut c, group, round.source);
     }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
@@ -1363,6 +1354,26 @@ fn rank(order: &AddrMap<usize, usize>, n: V<'_>) -> i64 {
     order
         .get(&id(n))
         .map_or(-1, |&r| i64::try_from(r).unwrap_or(i64::MAX))
+}
+
+/// C2-W-125 case five for the group, with its bracket partners kept across its rounds.
+fn escape_group_partners<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    group: Arr<'t>,
+    source: Option<&str>,
+) {
+    // Every bracketed node writes a `]`: without one there is no partner to escape.
+    if !source.is_some_and(|source| source.contains(']')) {
+        return;
+    }
+    let key = (group.first().map_or(0, id), group.len());
+    let partners = match w.partners.take() {
+        Some((k, partners)) if k == key => partners,
+        _ => check::partner_closers(&group.iter().collect::<Vec<_>>()),
+    };
+    check::escape_partner_closers(w, c, &partners);
+    w.partners = Some((key, partners));
 }
 
 /// C2-W-088: each kind a round reports in a block escapes every opener of
