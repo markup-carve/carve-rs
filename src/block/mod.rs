@@ -323,6 +323,9 @@ impl<'a> Parser<'a> {
         }
         // C2-B-135: a line that ended an opaque body is not a skipped comment line.
         if !had_opaque && self.comment_only(&walk, e) {
+            // C2-B-137: a skipped comment line is not blank and not content, so
+            // the blank line above it stays the one C2-B-232 reads.
+            self.prev_blank = blank_above;
             return;
         }
         self.blank_run_reset_after(&walk, e);
@@ -369,7 +372,8 @@ impl<'a> Parser<'a> {
 
     /// C2-B-232, C2-B-233: after line 1 a typed opener at column 0 opens a
     /// top-level metadata block below a blank line or top-level attribute
-    /// lines. A column-0 opener first closes the lists it stands after.
+    /// lines. A column-0 opener first closes the lists and description lists it
+    /// stands after.
     fn metadata_block(
         &mut self,
         walk: &Walk<'a>,
@@ -382,8 +386,15 @@ impl<'a> Parser<'a> {
             return false;
         }
         let lists = |c: &[Container]| {
-            c.iter()
-                .all(|c| matches!(c.kind, Kind::List { .. } | Kind::Item { .. }))
+            c.iter().all(|c| {
+                matches!(
+                    c.kind,
+                    Kind::List { .. }
+                        | Kind::Item { .. }
+                        | Kind::DescList { .. }
+                        | Kind::Desc { .. }
+                )
+            })
         };
         // An open leaf above means no separation: the line continues it or
         // closes the lists as any column-0 line does (C2-B-232).
