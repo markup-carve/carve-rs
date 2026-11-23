@@ -419,6 +419,13 @@ impl<'t> Compared<'t> {
 
 /// Whether two neighbors of `items` are text nodes, which C2-A-161 compares joined.
 fn has_adjacent_text(items: Arr<'_>) -> bool {
+    if let Arr::Json(values) = items {
+        let is_text =
+            |v: &Value| crate::view::json_field(v, "type").and_then(Value::as_str) == Some("text");
+        return values
+            .windows(2)
+            .any(|w| matches!(w, [x, y] if is_text(x) && is_text(y)));
+    }
     let mut last_text = false;
     for item in items {
         let is_text = ty(item) == "text";
@@ -563,9 +570,49 @@ fn equal_nodes(
     zipped.then_some(same)
 }
 
+/// [`equal_objects`] of a JSON node and a typed node of the same type, the two
+/// sorted field lists walked side by side; `None` for any other pair.
+fn equal_json_node(
+    a: V<'_>,
+    b: V<'_>,
+    joined: (Option<&str>, Option<&str>),
+    span_marks: bool,
+) -> Option<bool> {
+    let (V::Json(value @ Value::Object(map)), V::Node(node)) = (a, b) else {
+        return None;
+    };
+    let name = node.type_name();
+    if crate::view::json_field(value, "type").and_then(Value::as_str) != Some(name) {
+        return None;
+    }
+    let inner = if name == "table" {
+        list_has_span_marks(a) || list_has_span_marks(b)
+    } else {
+        span_marks
+    };
+    let fields = results().get(name);
+    let mut left = map.iter().filter(|(k, _)| !skipped_in(a, fields, k, inner));
+    let mut same = true;
+    node.view_each(&mut |kr, q| {
+        if !same || skipped_in(b, fields, kr, inner) {
+            return;
+        }
+        same = match left.next() {
+            Some((kl, p)) => kl == kr && equal_field(kl, V::Json(p), q, joined, inner),
+            None => false,
+        };
+    });
+    Some(same && left.next().is_none())
+}
+
 fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_marks: bool) -> bool {
     if !(a.is_object() && b.is_object()) {
         return lv.is_none() && rv.is_none() && equal_values(a, b, span_marks);
+    }
+    if let (V::Json(_), V::Node(_)) = (a, b)
+        && let Some(same) = equal_json_node(a, b, (lv, rv), span_marks)
+    {
+        return same;
     }
     let inner = if ty(a) == "table" {
         list_has_span_marks(a) || list_has_span_marks(b)
@@ -594,6 +641,26 @@ fn equal_objects(a: V<'_>, lv: Option<&str>, b: V<'_>, rv: Option<&str>, span_ma
 }
 
 fn equal_values(a: V<'_>, b: V<'_>, span_marks: bool) -> bool {
+    // The JSON side of an imported tree, read without the view's dispatch.
+    if let V::Json(p) = a {
+        match p {
+            Value::String(x) => return b.as_str() == Some(x.as_str()),
+            Value::Bool(x) => return b.as_bool() == Some(*x),
+            Value::Array(x) => {
+                return b
+                    .as_array()
+                    .is_some_and(|y| equal_arrays(Arr::Json(x), y, span_marks));
+            }
+            Value::Object(_) => {
+                if let V::Node(_) = b
+                    && let Some(same) = equal_json_node(a, b, (None, None), span_marks)
+                {
+                    return same;
+                }
+            }
+            _ => {}
+        }
+    }
     match (a.as_array(), b.as_array()) {
         (Some(x), Some(y)) => return equal_arrays(x, y, span_marks),
         (Some(_), None) | (None, Some(_)) => return false,
