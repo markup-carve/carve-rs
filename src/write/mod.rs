@@ -839,13 +839,27 @@ struct SavedGroup<'t> {
 }
 
 fn node_ids(v: V<'_>, out: &mut Vec<usize>) {
-    if let Some(items) = v.as_array() {
+    if let V::Json(value) = v {
+        json_node_ids(value, out);
+    } else if let Some(items) = v.as_array() {
         for item in items {
             node_ids(item, out);
         }
     } else if v.is_object() {
         out.push(id(v));
         v.each(&mut |_, value| node_ids(value, out));
+    }
+}
+
+/// [`node_ids`] of a JSON value, walked without the view.
+fn json_node_ids(value: &Value, out: &mut Vec<usize>) {
+    match value {
+        Value::Array(items) => items.iter().for_each(|item| json_node_ids(item, out)),
+        Value::Object(map) => {
+            out.push(id(V::Json(value)));
+            map.values().for_each(|item| json_node_ids(item, out));
+        }
+        _ => {}
     }
 }
 
@@ -928,6 +942,9 @@ fn repair_budget(len: usize) -> usize {
 
 /// The length of a supplied tree as written, over-estimated: every string twice, a few characters per value.
 fn written_estimate(v: V<'_>) -> usize {
+    if let V::Json(value) = v {
+        return json_estimate(value);
+    }
     if let Some(s) = v.as_str() {
         return s.len().saturating_mul(2).saturating_add(2);
     }
@@ -940,6 +957,20 @@ fn written_estimate(v: V<'_>) -> usize {
         v.each(&mut |_, value| sum = sum.saturating_add(written_estimate(value)));
     }
     sum
+}
+
+/// [`written_estimate`] of a JSON value, walked without the view.
+fn json_estimate(value: &Value) -> usize {
+    match value {
+        Value::String(s) => s.len().saturating_mul(2).saturating_add(2),
+        Value::Array(items) => items.iter().fold(2, |sum: usize, item| {
+            sum.saturating_add(json_estimate(item))
+        }),
+        Value::Object(map) => map.values().fold(2, |sum: usize, item| {
+            sum.saturating_add(json_estimate(item))
+        }),
+        _ => 2,
+    }
 }
 
 const MAX_REPAIR_CHARS: usize = 20_000_000;

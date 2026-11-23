@@ -6,6 +6,21 @@
 use crate::ast::{Attrs, Document, Marker, Node, Pos, Task};
 use serde_json::Value;
 
+/// `value[key]`. A node object holds a few keys, which a scan finds faster
+/// than the map's ordered search; `type` sorts near the end.
+pub(crate) fn json_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    let map = value.as_object()?;
+    if map.len() > 16 {
+        return map.get(key);
+    }
+    let found = if key == "type" {
+        map.iter().rev().find(|(k, _)| k.as_str() == key)
+    } else {
+        map.iter().find(|(k, _)| k.as_str() == key)
+    };
+    found.map(|(_, v)| v)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum V<'a> {
     Null,
@@ -90,7 +105,7 @@ impl<'a> V<'a> {
                 "attrs" => node.attrs().map(Self::Attrs),
                 _ => node.view_get(key),
             },
-            Self::Json(value) => value.get(key).map(Self::Json),
+            Self::Json(value) => json_field(value, key).map(Self::Json),
             Self::Pos(pos) => pos_field(pos, key).map(|n| Self::Int(i64::from(n))),
             Self::Attrs(attrs) => match key {
                 "classes" => (!attrs.classes.is_empty()).then_some(Self::Strs(attrs.classes)),
