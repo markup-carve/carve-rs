@@ -1001,19 +1001,24 @@ fn bracket_end(s: &str, start: usize) -> Option<usize> {
             i = next?;
             continue;
         }
+        if let Some(next) = braced_step(b, i, &mut braced) {
+            i = next;
+            continue;
+        }
         match c {
             b'\\' => i += 1,
-            b'[' => depth += 1,
-            b']' if depth == 0 => return Some(i),
-            b']' => depth -= 1,
-            b'{' if braced_open_mark(b, i).is_some() => {
-                braced.push((braced_open_mark(b, i)?, i + 2));
-                i += 2;
-                continue;
+            b'[' => {
+                // C2-I-087: a footnote reference opens no bracket.
+                if let Some(end) = footnote_ref_end(s, i) {
+                    i = end;
+                    continue;
+                }
+                depth += 1;
             }
-            _ if braced_closes(b, i, &braced) => {
-                braced.pop();
-                i += 2;
+            b']' if depth == 0 => return Some(i),
+            b']' => {
+                depth -= 1;
+                i = nested_tail_end(s, i)?;
                 continue;
             }
             _ => {}
@@ -1021,6 +1026,75 @@ fn bracket_end(s: &str, start: usize) -> Option<usize> {
         i += 1;
     }
     None
+}
+
+/// The offset behind a braced-form mark that opens or closes at `i`.
+fn braced_step(b: &[u8], i: usize, braced: &mut Vec<(u8, usize)>) -> Option<usize> {
+    if b.get(i) == Some(&b'{') {
+        if let Some(mark) = braced_open_mark(b, i) {
+            braced.push((mark, i + 2));
+            return Some(i + 2);
+        }
+    }
+    braced_closes(b, i, braced).then(|| {
+        braced.pop();
+        i + 2
+    })
+}
+
+/// C2-I-076, C2-I-077: the `]` ending the label whose `[` is at `i`.
+fn label_close(s: &str, i: usize) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut at = i + 1;
+    while let Some(&c) = b.get(at) {
+        match c {
+            b']' => return Some(at),
+            b'\\' => at += 1,
+            b'%' if b.get(at + 1) == Some(&b'%')
+                && at
+                    .checked_sub(1)
+                    .and_then(|p| b.get(p))
+                    .is_none_or(|&p| p == b' ' || p == b'\t') =>
+            {
+                return None;
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    None
+}
+
+/// C2-I-087: the end of a footnote reference at `i`.
+fn footnote_ref_end(s: &str, i: usize) -> Option<usize> {
+    if s.as_bytes().get(i + 1) != Some(&b'^') {
+        return None;
+    }
+    let close = label_close(s, i + 1)?;
+    let key = s.get(i + 2..close)?;
+    (!key.chars().all(char::is_whitespace)).then_some(close + 1)
+}
+
+/// C2-I-066 to C2-I-072: the offset behind what is glued to the closing
+/// bracket at `i` of a nested pair; `None` when an open label never closes.
+fn nested_tail_end(s: &str, i: usize) -> Option<usize> {
+    let b = s.as_bytes();
+    match b.get(i + 1) {
+        Some(b'(') => Some(
+            s.get(i + 1..)
+                .and_then(paren_tail)
+                .map_or(i + 1, |rest| s.len() - rest.len()),
+        ),
+        Some(b'{') => {
+            let mut at = i + 1;
+            while let Some((_, end)) = s.get(at..).and_then(|r| crate::attr::parse_block(r, 0)) {
+                at += end;
+            }
+            Some(at)
+        }
+        Some(b'[') if b.get(i + 2) != Some(&b'^') => label_close(s, i + 1).map(|c| c + 1),
+        _ => Some(i + 1),
+    }
 }
 
 fn braced_open_mark(bytes: &[u8], i: usize) -> Option<u8> {
@@ -1038,11 +1112,33 @@ fn braced_closes(bytes: &[u8], i: usize, braced: &[(u8, usize)]) -> bool {
 
 fn bracket_opaque_end(source: &str, i: usize) -> Option<Option<usize>> {
     let bytes = source.as_bytes();
-    if bytes.get(i) == Some(&b'`') {
-        let span = crate::inline::code_span(source, i);
-        return Some(span.closed.then_some(span.end));
+    match bytes.get(i) {
+        // C2-I-014, C2-I-119: a run with no closer on the line is text.
+        Some(b'`') => {
+            let span = crate::inline::code_span(source, i);
+            let run = bytes
+                .get(i..)
+                .map_or(1, |r| r.iter().take_while(|&&c| c == b'`').count());
+            Some(Some(if span.closed { span.end } else { i + run }))
+        }
+        // C2-I-096: a cross-reference is atomic; its key holds no whitespace.
+        Some(b'<') if source.get(i + 1..).is_some_and(|r| r.starts_with("/#")) => {
+            let key = source.get(i + 3..)?;
+            let len = key.find(|c: char| c == '>' || c.is_whitespace())?;
+            (len > 0 && key.as_bytes().get(len) == Some(&b'>')).then_some(Some(i + 3 + len + 1))
+        }
+        // C2-I-073: an autolink is atomic.
+        Some(b'<') => match crate::inline::angle(source, i)? {
+            crate::inline::Angle::Autolink { end, .. } => Some(Some(end)),
+            crate::inline::Angle::Xref { .. } => None,
+        },
+        // C2-I-025: a braced comment that closes on the line.
+        Some(b'{') if bytes.get(i + 1) == Some(&b'%') => source
+            .get(i + 2..)
+            .and_then(|rest| rest.find("%}"))
+            .map(|at| Some(i + 2 + at + 2)),
+        _ => None,
     }
-    None
 }
 
 fn label_tail(s: &str, start: usize) -> Option<&str> {
