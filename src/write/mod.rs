@@ -147,6 +147,31 @@ thread_local! {
     static PAIR_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static WRITTEN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PROBE_SORTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static INLINE_BUFFERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod nested_inline_write_test {
+    use super::*;
+
+    /// The inline buffers one write of a paragraph of `depth` nested superscripts makes.
+    fn buffers(depth: usize) -> usize {
+        let src = format!("{}a{}\n", "{^".repeat(depth), "^}".repeat(depth));
+        let arena = crate::Arena::for_input(&src);
+        let doc =
+            crate::parse_resolved_in(&src, &crate::Options::default(), &arena).unwrap_or_default();
+        let pool = Pool::new();
+        let mut w = Writer::new(&pool, false);
+        let before = INLINE_BUFFERS.with(std::cell::Cell::get);
+        blocks::write_blocks(&mut w, children(V::Doc(&doc)), "", 0, false);
+        assert_eq!(w.lines, [src.trim_end()]);
+        INLINE_BUFFERS.with(std::cell::Cell::get) - before
+    }
+
+    #[test]
+    fn nested_marks_write_into_one_buffer() {
+        assert_eq!(buffers(1), buffers(200));
+    }
 }
 
 #[cfg(test)]
@@ -918,10 +943,19 @@ fn local_id(ids: &mut AddrMap<usize, usize>, n: V<'_>) -> usize {
 
 /// C2-W-133: the repair state of a group, compared exactly: the written lines and
 /// a flat record of the per-node state with every optional part length-prefixed.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq)]
 struct RepairKey {
     lines: Vec<String>,
     state: Vec<usize>,
+}
+
+/// Hashes the lengths only: the history holds 16 keys, so a collision costs one
+/// exact comparison, while hashing every byte cost more than the comparisons.
+impl std::hash::Hash for RepairKey {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        h.write_usize(self.state.len());
+        h.write_usize(self.lines.iter().map(String::len).sum());
+    }
 }
 
 fn push_opt(state: &mut Vec<usize>, v: Option<usize>) {

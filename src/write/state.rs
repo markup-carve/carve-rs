@@ -122,6 +122,8 @@ pub struct Writer<'t> {
     pub raw_refs: Vec<String>,
     /// The last write of a group that keeps a loss: the bare pairs that cannot pair take their braced form.
     pub strict_pairs: bool,
+    /// Emptied child lists, reused by the inline writes so a nested mark allocates none.
+    pub kid_lists: Vec<Vec<N<'t>>>,
 }
 
 impl<'t> Writer<'t> {
@@ -163,6 +165,7 @@ impl<'t> Writer<'t> {
             written_chars: 0,
             raw_refs: Vec::new(),
             strict_pairs: false,
+            kid_lists: Vec::new(),
         }
     }
 
