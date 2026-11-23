@@ -266,8 +266,21 @@ fn text_leaf<'t>(
     if ty(node) == "paragraph" {
         note_place(w, node, prefix);
     }
+    let top = w.lead.is_none() && prefix.is_empty() && w.top_blocks.contains(&id(node));
     w.lead = Some(w.lead.take().unwrap_or_else(|| prefix.to_string()) + mark);
-    let content = write_content(w, &refs(children(node)), flags);
+    let mut content = write_content(w, &refs(children(node)), flags);
+    // C2-W-154: no escape keeps an em dash node, so a first line that reads as a
+    // typed metadata opener is indented by one space, which C2-B-232 leaves as text.
+    let below = w.below_list.get(&id(node)).copied();
+    if below == Some(false) {
+        lose(w, node, None);
+    }
+    if top && ty(node) == "paragraph" && below != Some(true) {
+        let first = content.split('\n').next().unwrap_or("");
+        if crate::block::shapes::typed_frontmatter_opener(first) {
+            content.insert(0, ' ');
+        }
+    }
     emit_lines(w, prefix, indent, &content);
 }
 
@@ -1157,6 +1170,9 @@ pub fn blank_lines_between(
     if ty(node) == "comment" {
         return blank_lines_before_comment(w, before, node);
     }
+    if w.below_list.get(&id(node)) == Some(&true) {
+        return 0;
+    }
     if let Some(l) = list_before {
         if same_list_kind(l, node) {
             return LIST_BOUNDARY_BLANKS;
@@ -1168,6 +1184,57 @@ pub fn blank_lines_between(
         }
     }
     usize::from(!nested)
+}
+
+/// Whether a column-0 line directly below `node` would be a lazy line of a block in it (C2-B-024).
+fn takes_lazy_line(w: &Writer<'_>, node: V<'_>) -> bool {
+    match ty(node) {
+        "paragraph" | "definition_term" => true,
+        "block_quote" => !is_fenced(w, node),
+        _ if is_open_container(w, node) => children(node)
+            .last()
+            .is_some_and(|last| takes_lazy_line(w, last)),
+        _ => false,
+    }
+}
+
+/// Whether the first line of a paragraph, an em dash node with a format name behind it, reads as a typed opener.
+fn starts_typed_opener(node: V<'_>) -> bool {
+    let kids = children(node);
+    if !kids
+        .first()
+        .is_some_and(|k| ty(k) == "smart_punctuation" && s(k, "source") == Some("---"))
+    {
+        return false;
+    }
+    let mut line = String::from("---");
+    for k in kids.iter().skip(1) {
+        match ty(k) {
+            "soft_break" | "hard_break" => break,
+            "text" => line.push_str(text(k).split('\n').next().unwrap_or("")),
+            _ => return false,
+        }
+    }
+    crate::block::shapes::typed_frontmatter_opener(&line)
+}
+
+/// A paragraph without attributes whose first line would read as a typed opener (C2-W-154).
+pub fn typed_opener_paragraph(node: V<'_>) -> bool {
+    ty(node) == "paragraph" && !has(node, "attrs") && starts_typed_opener(node)
+}
+
+/// C2-W-154: a top-level paragraph without attributes whose first line would read as a typed opener, directly
+/// after a list whose last block takes no lazy line, is written on the next line at column 0, where the opener
+/// closes the list and stays text (C2-B-026, C2-B-232).
+/// Where the last block of the list takes a lazy line, the opener would be one, so the shape has no spelling.
+pub fn below_list(w: &Writer<'_>, nodes: Arr<'_>) -> crate::hash::AddrMap<usize, bool> {
+    let mut out = crate::hash::AddrMap::default();
+    for (before, node) in nodes.iter().zip(nodes.iter().skip(1)) {
+        if ty(before) == "list" && typed_opener_paragraph(node) {
+            out.insert(id(node), !takes_lazy_line(w, before));
+        }
+    }
+    out
 }
 
 fn is_nested_list(w: &Writer<'_>, before: V<'_>, node: V<'_>, at: usize) -> bool {

@@ -592,6 +592,8 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
         .next()
         .filter(|n| ty(*n) == "frontmatter" && !has(*n, "attrs"))
         .map(id);
+    w.top_blocks = nodes.iter().map(id).collect();
+    w.below_list = blocks::below_list(w, nodes);
     let mut out: Vec<String> = Vec::new();
     let mut before: Option<N<'t>> = None;
     let mut list: Option<N<'t>> = None;
@@ -649,7 +651,8 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
 /// Whether `node` is written into one group with the block `before` above it.
 fn joins_group(w: &mut Writer<'_>, before: V<'_>, node: V<'_>) -> bool {
     if ty(node) == "paragraph" {
-        return ty(before) == "definition_list";
+        // C2-W-154: the paragraph below the list reads back only in the list's context.
+        return ty(before) == "definition_list" || w.below_list.get(&id(node)) == Some(&true);
     }
     ty(node) == "comment" && blocks::blank_lines_between(w, before, None, node, false) == 0
 }
