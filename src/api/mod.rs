@@ -190,53 +190,68 @@ pub struct Tree {
     sources: std::collections::HashMap<String, String>,
 }
 
-/// The owned AST, or the importer's checked JSON value decoded on first use:
-/// an import whose caller reads only the source never pays the decode.
-#[derive(Debug, Clone)]
+/// The owned AST, or the importer's JSON value decoded on first use: an
+/// import whose caller reads only the source never pays the decode.
+#[derive(Debug)]
 struct Lazy {
     document: std::sync::OnceLock<Document>,
-    value: Option<Value>,
+    /// Taken by the decode, so a decoded tree holds one form.
+    value: std::sync::Mutex<Option<Value>>,
+}
+
+impl Clone for Lazy {
+    fn clone(&self) -> Self {
+        Self {
+            document: self.document.clone(),
+            value: std::sync::Mutex::new(self.value.lock().ok().and_then(|v| v.clone())),
+        }
+    }
 }
 
 impl From<Document> for Lazy {
     fn from(document: Document) -> Self {
         Self {
             document: document.into(),
-            value: None,
+            value: std::sync::Mutex::new(None),
         }
     }
 }
 
 impl Lazy {
-    fn imported(mut value: Value) -> Self {
-        if let Some(map) = value.as_object_mut() {
-            map.remove("type");
-        }
+    /// `value` without its `type`, which [`Lazy::check`] has decoded in a debug build.
+    fn imported(value: Value) -> Self {
         Self {
             document: std::sync::OnceLock::new(),
-            value: Some(value),
+            value: std::sync::Mutex::new(Some(value)),
         }
     }
 
-    fn decode(value: Option<&Value>) -> Document {
-        let decoded = value.map(serde::Deserialize::deserialize);
-        debug_assert!(
-            decoded.as_ref().is_none_or(Result::is_ok),
-            "an imported tree decodes"
-        );
-        decoded.and_then(Result::ok).unwrap_or_default()
+    /// The importer builds only schema fields, so its tree always decodes; a
+    /// debug build proves that on every import instead of on first read.
+    fn check(value: &mut Value) -> Result<(), String> {
+        if let Some(map) = value.as_object_mut() {
+            map.remove("type");
+        }
+        if cfg!(debug_assertions) {
+            <Document as serde::Deserialize>::deserialize(&*value).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn decode(value: Option<Value>) -> Document {
+        value
+            .and_then(|v| serde_json::from_value::<Document>(v).ok())
+            .unwrap_or_default()
     }
 
     fn get(&self) -> &Document {
         self.document
-            .get_or_init(|| Self::decode(self.value.as_ref()))
+            .get_or_init(|| Self::decode(self.value.lock().ok().and_then(|mut v| v.take())))
     }
 
     fn take(&mut self) -> Document {
-        let value = self.value.take();
-        self.document
-            .take()
-            .unwrap_or_else(|| Self::decode(value.as_ref()))
+        let value = self.value.get_mut().ok().and_then(Option::take);
+        self.document.take().unwrap_or_else(|| Self::decode(value))
     }
 
     fn with_mut<R>(&mut self, f: impl FnOnce(&mut Document) -> R) -> R {
@@ -340,14 +355,20 @@ impl Tree {
 
     /// Importer-built trees contain only schema fields. The owned tree is
     /// decoded, and its wire form serialized, when a caller first requests it.
-    pub(crate) fn trusted_imported(value: Value) -> Self {
-        Self {
+    pub(crate) fn trusted_imported(mut value: Value) -> Result<Self, Error> {
+        Lazy::check(&mut value).map_err(|reason| {
+            Error::Tree(crate::reader::TreeError::Decode {
+                path: String::new(),
+                reason,
+            })
+        })?;
+        Ok(Self {
             document: Lazy::imported(value),
             json: std::sync::OnceLock::new(),
             canonical: true,
             top: None,
             sources: std::collections::HashMap::new(),
-        }
+        })
     }
 
     fn trusted_inner(

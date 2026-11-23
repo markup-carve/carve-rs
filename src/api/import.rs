@@ -485,7 +485,9 @@ impl super::Carve {
             ..crate::write::Settings::default()
         };
         let (source, writer_diagnostics) = crate::write::write_value(&imported.tree, &settings);
-        let tree = Tree::trusted_imported(imported.tree);
+        let tree = Tree::trusted_imported(imported.tree).map_err(|e| Error::ImportInput {
+            message: format!("the imported tree cannot be decoded: {e}"),
+        })?;
         let allowed = |e: &Entry| limits.allow_losses.contains(&e.code);
         let mut diagnostics = imported.diagnostics;
         diagnostics.retain(|e| !(e.channel == "render-loss" && allowed(e)));
@@ -557,8 +559,10 @@ mod imported_wire_test {
             import_document(html, &ImportOptions::default()).map_err(|error| error.to_string())?;
         assert!(imported.tree.document.document.get().is_none());
         assert_eq!(imported.tree.document(), eager.document());
-        let mut opts = crate::api::Options::default();
-        opts.heading_shift = 1;
+        let opts = crate::api::Options {
+            heading_shift: 1,
+            ..crate::api::Options::default()
+        };
         assert_eq!(
             crate::api::render_tree(&imported.tree, &opts).map_err(|error| error.to_string())?,
             crate::api::render_tree(&eager, &opts).map_err(|error| error.to_string())?
