@@ -747,16 +747,16 @@ fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
     let mut rows = 0;
     let mut needs = false;
     for group in groups {
-        // C2-B-227: `header-rows`, `body-rows` and `footer-rows` spell the groups in this order;
-        // C2-B-230: `body-header-rows` spells the header rows that lead a body.
-        let header_rows = match ty(group) {
+        // C2-B-227: `header-rows`, `body-rows` and `footer-rows` spell the groups in this order.
+        // `None`: a body, whose leading header rows `body-header-rows` spells (C2-B-230).
+        let fixed = match ty(group) {
             "table_head" if body == 0 && foot == 0 => {
                 head += 1;
-                usize::MAX
+                Some(true)
             }
-            "table_body" if foot == 0 && !has(group, "attrs") && !has(group, "lang") => {
+            "table_body" if foot == 0 => {
                 body += 1;
-                leading_header_rows(group)
+                None
             }
             "table_foot"
                 if foot == 0
@@ -765,17 +765,26 @@ fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
                     && !has(group, "lang") =>
             {
                 foot += 1;
-                0
+                Some(false)
             }
             _ => return None,
         };
-        for (index, row) in children(group).iter().enumerate() {
+        let mut leading = true;
+        for row in children(group) {
             if ty(row) != "table_row" || has(row, "attrs") {
                 return None;
             }
             rows += 1;
-            for cell in children(row) {
-                if !is_plain_cell(cell, index < header_rows) {
+            let cells = children(row);
+            let header = fixed.unwrap_or_else(|| {
+                leading = leading
+                    && cells
+                        .first()
+                        .is_some_and(|c| super::node::flag(c, "header"));
+                leading
+            });
+            for cell in cells {
+                if !is_plain_cell(cell, header) {
                     return None;
                 }
                 needs |= cell_needs_delimited(cell);

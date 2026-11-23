@@ -316,6 +316,9 @@ fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: 
 /// is another key.
 fn declares_header_rows(text: &str) -> bool {
     const KEY: &str = "header-rows=";
+    if !text.contains(KEY) {
+        return false;
+    }
     let mut declared = false;
     for (at, _) in text.match_indices(KEY) {
         if text[..at]
