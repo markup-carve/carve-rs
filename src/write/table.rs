@@ -270,9 +270,9 @@ fn body_keys(table: V<'_>) -> Vec<(String, String)> {
 fn table_keys(
     mut w: Option<&mut Writer<'_>>,
     table: V<'_>,
-    first: Vec<(String, String)>,
+    header_rows: Option<usize>,
 ) -> BlockParts {
-    let mut keys = first;
+    let mut keys = Vec::new();
     let aligns = column_list(table, "align");
     let valigns = column_list(table, "valign");
     if let Some(w) = w.as_deref_mut() {
@@ -292,6 +292,9 @@ fn table_keys(
     }
     if let Some(wd) = widths {
         keys.push(("widths".into(), wd));
+    }
+    if let Some(rows) = header_rows {
+        keys.push(("header-rows".into(), rows.to_string()));
     }
     if foot > 0 {
         keys.push(("footer-rows".into(), foot.to_string()));
@@ -638,7 +641,7 @@ fn ends_with_group_comment(table: V<'_>) -> bool {
 }
 
 fn pipe_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u32) {
-    let parts = table_keys(Some(w), table, Vec::new());
+    let parts = table_keys(Some(w), table, None);
     let block = brace_block(table, &parts);
     if w.prewritten == Some(id(table)) {
         w.prewritten = None;
@@ -889,11 +892,7 @@ fn delimited_body(table: V<'_>, separator: &str) -> Vec<String> {
 }
 
 fn delimited_keys(w: Option<&mut Writer<'_>>, table: V<'_>, declared: Option<usize>) -> BlockParts {
-    let mut first = Vec::new();
-    if let Some(d) = declared {
-        first.push(("header-rows".into(), d.to_string()));
-    }
-    let mut parts = table_keys(w, table, first);
+    let mut parts = table_keys(w, table, declared);
     parts.keys.push(("table".into(), String::new()));
     parts
 }
@@ -933,7 +932,7 @@ pub fn write_table<'t>(w: &mut Writer<'t>, table: N<'t>, prefix: &str, flags: u3
 /// C2-W-122: the same table attribute line before an intervening comment as before the table itself.
 pub fn table_attribute(w: &Writer<'_>, table: V<'_>) -> String {
     if table_format(w, table) == "pipe" {
-        return brace_block(table, &table_keys(None, table, Vec::new()));
+        return brace_block(table, &table_keys(None, table, None));
     }
     brace_block(table, &delimited_keys(None, table, header_rows(w, table)))
 }
