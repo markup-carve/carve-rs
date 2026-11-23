@@ -100,6 +100,13 @@ fn typed_opener_paragraph_below_a_list() {
         written(&doc(json!([item(item(code)), para]))),
         "- - ```\n    x\n    ```\n---yaml\nk: v\n---\n"
     );
+    for source in [
+        "- > = H\n---yaml\nk: v\n---\n",
+        "- > ```\n  > x\n  > ```\n---yaml\nk: v\n---\n",
+    ] {
+        let r = formatted(source);
+        assert_eq!(r["ok"]["source"].as_str(), Some(source), "{source:?}: {r}");
+    }
     let quote = json!({"type": "block_quote", "children": [{"type": "paragraph", "children": [text("q")]}]});
     for last in [quote, json!({"type": "paragraph", "children": [text("a")]})] {
         let r = reply(&json!({"call": "write", "tree": doc(json!([item(last), para]))}));

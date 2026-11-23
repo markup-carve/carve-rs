@@ -1190,10 +1190,11 @@ pub fn blank_lines_between(
 fn takes_lazy_line(w: &Writer<'_>, node: V<'_>) -> bool {
     match ty(node) {
         "paragraph" | "definition_term" => true,
-        "block_quote" => !is_fenced(w, node),
-        _ if is_open_container(w, node) => children(node)
-            .last()
-            .is_some_and(|last| takes_lazy_line(w, last)),
+        _ if is_open_container(w, node) || (ty(node) == "block_quote" && !is_fenced(w, node)) => {
+            children(node)
+                .last()
+                .is_some_and(|last| takes_lazy_line(w, last))
+        }
         _ => false,
     }
 }
