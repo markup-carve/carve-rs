@@ -107,7 +107,10 @@ impl<'r, 'a> Renderer<'r, 'a> {
     /// C2-H-090, C2-H-091: every paragraph gets `<p>`; the backlinks join the
     /// last paragraph or stand in one of their own.
     fn note_body(&mut self, children: &'r [Node<'a>], back: &str, depth: usize) {
-        let last = children.iter().rposition(visible);
+        // C2-H-054: a raw block in another format renders nothing.
+        let renders =
+            |c: &Node| visible(c) && !matches!(c, Node::RawBlock(r) if r.format != "html");
+        let last = children.iter().rposition(renders);
         let ends_in_paragraph = last.and_then(|i| children.get(i)).is_some_and(|c| {
             matches!(c, Node::Paragraph(p) if !self.bare_image(p))
                 && crate::resolve::order::caption_of(c).is_none()
