@@ -872,6 +872,32 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
     // C2-W-088: a group whose kind rounds leave a node unread is written by
     // rounds of the reported escapes only.
     before.restore(w, reported, group);
+    let unrepaired = SavedGroup::new(w, group);
+    w.kind_escapes = false;
+    w.group_certificate = GroupCertificate::None;
+    let end = repair_rounds(w, doc, from, first, reported);
+    w.kind_escapes = true;
+    if w.sp.losses.len() == reported {
+        return end;
+    }
+    // C2-W-125: where every form loses a node, a trial that gives the tree only with a backslash behind it is kept.
+    let mut last = unrepaired;
+    for kinds in [true, false] {
+        last.restore(w, reported, group);
+        last = SavedGroup::new(w, group);
+        w.whole_trials = true;
+        w.kind_escapes = kinds;
+        w.kind_failed = false;
+        w.group_certificate = GroupCertificate::None;
+        let end = repair_rounds(w, doc, from, first, reported);
+        w.whole_trials = false;
+        w.kind_escapes = true;
+        if w.sp.losses.len() == reported && !w.kind_failed {
+            return end;
+        }
+        w.kind_failed = false;
+    }
+    last.restore(w, reported, group);
     w.kind_escapes = false;
     w.group_certificate = GroupCertificate::None;
     let end = repair_rounds(w, doc, from, first, reported);
@@ -1580,13 +1606,39 @@ fn is_asked<'t>(
         asked_outside(w, group, first, (node, at), &order, read)
     } else {
         asked_in_group(w, group, first, (node, at), (&order, own_rank), read)
-    };
+    } || (w.whole_trials && gives_tree(w, group, first, (node, at)));
     w.lines = lines;
     w.lead = lead;
     w.lead_skip = lead_skip;
     w.starts = starts.0;
     w.start_index = starts.1;
     asked
+}
+
+/// C2-W-125: once every other form lost a node, a trial that gives the tree with every placed escape is taken,
+/// though it changes nothing with the text to its right bare, as the caret of `^[a\^[b][[b]\]]` that the closer
+/// behind it needs.
+fn gives_tree<'t>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    (node, at): (V<'_>, usize),
+) -> bool {
+    let added = !w.escapes_of(node).contains(&at);
+    w.add_escape(node, at);
+    let chunk = written_chunk(w, group, first);
+    let parsed = children(chunk.parse(w));
+    if added && let Some(list) = w.sp.escapes.get_mut(&id(node)) {
+        list.retain(|&x| x != at);
+        if list.is_empty() {
+            w.sp.escapes.remove(&id(node));
+        }
+    }
+    parsed.len() == group.len()
+        && group
+            .iter()
+            .zip(parsed)
+            .all(|(expected, block)| writer_equal(expected, block))
 }
 
 /// [`is_asked`] for a node of the group: the escapes of the text behind it are set aside in place, so the

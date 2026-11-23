@@ -134,6 +134,8 @@ pub struct Writer<'t> {
     pub no_mark_text: bool,
     /// C2-W-088, C2-W-005: true while a group whose closer repairs gave no kind lost a node is written again with them.
     pub closer_kinds: bool,
+    /// C2-W-125: true while a group that every other form lost is written again keeping a trial that gives the tree.
+    pub whole_trials: bool,
     /// The bracket partners of the group in repair, by its first node and length.
     pub partners: Option<((usize, usize), super::check::Partners<'t>)>,
     /// Set when a node of the group did not read back during the kind rounds.
@@ -197,6 +199,7 @@ impl<'t> Writer<'t> {
             kind_escapes: true,
             no_mark_text: false,
             closer_kinds: false,
+            whole_trials: false,
             partners: None,
             kind_failed: false,
             parses: 0,
