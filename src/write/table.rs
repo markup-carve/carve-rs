@@ -740,59 +740,63 @@ fn is_plain_cell(cell: V<'_>, header: bool) -> bool {
 
 /// The row count and whether a delimited form is required, if the table can use one.
 fn delimited_shape(table: V<'_>) -> Option<(usize, bool)> {
-    let groups = children(table);
-    let mut head = 0;
-    let mut body = 0;
-    let mut foot = 0;
+    let mut seen = [0usize; 3];
     let mut rows = 0;
     let mut needs = false;
-    for group in groups {
-        // C2-B-227: `header-rows`, `body-rows` and `footer-rows` spell the groups in this order.
-        // `None`: a body, whose leading header rows `body-header-rows` spells (C2-B-230).
-        let fixed = match ty(group) {
-            "table_head" if body == 0 && foot == 0 => {
-                head += 1;
-                Some(true)
-            }
-            "table_body" if foot == 0 => {
-                body += 1;
-                None
-            }
-            "table_foot"
-                if foot == 0
-                    && !children(group).is_empty()
-                    && !has(group, "attrs")
-                    && !has(group, "lang") =>
-            {
-                foot += 1;
-                Some(false)
-            }
-            _ => return None,
-        };
+    for group in children(table) {
+        let fixed = delimited_group(group, &mut seen)?;
         let mut leading = true;
         for row in children(group) {
-            if ty(row) != "table_row" || has(row, "attrs") {
-                return None;
-            }
             rows += 1;
-            let cells = children(row);
-            let header = fixed.unwrap_or_else(|| {
-                leading = leading
-                    && cells
-                        .first()
-                        .is_some_and(|c| super::node::flag(c, "header"));
-                leading
-            });
-            for cell in cells {
-                if !is_plain_cell(cell, header) {
-                    return None;
-                }
-                needs |= cell_needs_delimited(cell);
-            }
+            needs |= delimited_row(row, fixed, &mut leading)?;
         }
     }
     // C2-L-036: a table without rows is delimited, whatever its bodies.
-    (rows == 0 || head <= 1).then_some((rows, needs))
+    (rows == 0 || seen[0] <= 1).then_some((rows, needs))
+}
+
+/// Whether the cells of `group` are header cells: `None` for a body, whose leading header rows
+/// `body-header-rows` spells (C2-B-230). `header-rows`, `body-rows` and `footer-rows` spell the
+/// head, the bodies and one foot in this order (C2-B-227); `seen` counts each.
+fn delimited_group(group: V<'_>, seen: &mut [usize; 3]) -> Option<Option<bool>> {
+    let (slot, fixed) = match ty(group) {
+        "table_head" if seen[1] == 0 && seen[2] == 0 => (0, Some(true)),
+        "table_body" if seen[2] == 0 => (1, None),
+        "table_foot"
+            if seen[2] == 0
+                && !children(group).is_empty()
+                && !has(group, "attrs")
+                && !has(group, "lang") =>
+        {
+            (2, Some(false))
+        }
+        _ => return None,
+    };
+    *seen.get_mut(slot)? += 1;
+    Some(fixed)
+}
+
+/// Whether a plain `row` needs the delimited form, or `None` where that form cannot hold it.
+fn delimited_row(row: V<'_>, fixed: Option<bool>, leading: &mut bool) -> Option<bool> {
+    if ty(row) != "table_row" || has(row, "attrs") {
+        return None;
+    }
+    let cells = children(row);
+    let header = fixed.unwrap_or_else(|| {
+        *leading = *leading
+            && cells
+                .first()
+                .is_some_and(|c| super::node::flag(c, "header"));
+        *leading
+    });
+    let mut needs = false;
+    for cell in cells {
+        if !is_plain_cell(cell, header) {
+            return None;
+        }
+        needs |= cell_needs_delimited(cell);
+    }
+    Some(needs)
 }
 
 fn first_value(cell: V<'_>) -> Option<&str> {
