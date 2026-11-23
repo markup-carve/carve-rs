@@ -180,7 +180,7 @@ impl Input<'_> {
 /// JSON wire form.
 #[derive(Debug, Clone)]
 pub struct Tree {
-    document: Document,
+    document: Lazy,
     /// Built on first use from `document` where the parse did not give it.
     json: std::sync::OnceLock<String>,
     /// False only for the text of a decoded tree, whose key order and
@@ -190,16 +190,73 @@ pub struct Tree {
     sources: std::collections::HashMap<String, String>,
 }
 
+/// The owned AST, or the importer's checked JSON value decoded on first use:
+/// an import whose caller reads only the source never pays the decode.
+#[derive(Debug, Clone)]
+struct Lazy {
+    document: std::sync::OnceLock<Document>,
+    value: Option<Value>,
+}
+
+impl From<Document> for Lazy {
+    fn from(document: Document) -> Self {
+        Self {
+            document: document.into(),
+            value: None,
+        }
+    }
+}
+
+impl Lazy {
+    fn imported(mut value: Value) -> Self {
+        if let Some(map) = value.as_object_mut() {
+            map.remove("type");
+        }
+        Self {
+            document: std::sync::OnceLock::new(),
+            value: Some(value),
+        }
+    }
+
+    fn decode(value: Option<&Value>) -> Document {
+        let decoded = value.map(serde::Deserialize::deserialize);
+        debug_assert!(
+            decoded.as_ref().is_none_or(Result::is_ok),
+            "an imported tree decodes"
+        );
+        decoded.and_then(Result::ok).unwrap_or_default()
+    }
+
+    fn get(&self) -> &Document {
+        self.document
+            .get_or_init(|| Self::decode(self.value.as_ref()))
+    }
+
+    fn take(&mut self) -> Document {
+        let value = self.value.take();
+        self.document
+            .take()
+            .unwrap_or_else(|| Self::decode(value.as_ref()))
+    }
+
+    fn with_mut<R>(&mut self, f: impl FnOnce(&mut Document) -> R) -> R {
+        let mut document = self.take();
+        let out = f(&mut document);
+        *self = document.into();
+        out
+    }
+}
+
 impl Tree {
     /// The owned AST of the tree.
     #[must_use]
     pub fn document(&self) -> &Document {
-        &self.document
+        self.document.get()
     }
 
     /// The JSON wire form of the tree.
     pub(crate) fn json(&self) -> &str {
-        self.json.get_or_init(|| crate::owned_json(&self.document))
+        self.json.get_or_init(|| crate::owned_json(self.document()))
     }
 
     /// The wire form as a JSON value, without a round trip through text
@@ -208,7 +265,7 @@ impl Tree {
         if let Some(json) = self.json.get() {
             return writer::tree_value(json);
         }
-        let mut value = serde_json::to_value(&self.document).map_err(|e| Error::Write {
+        let mut value = serde_json::to_value(self.document()).map_err(|e| Error::Write {
             target: "carve".into(),
             message: e.to_string(),
             diagnostics: Vec::new(),
@@ -228,7 +285,7 @@ impl Tree {
         sources: std::collections::HashMap<String, String>,
     ) -> Self {
         Self {
-            document,
+            document: document.into(),
             json: json.map_or_else(std::sync::OnceLock::new, std::sync::OnceLock::from),
             canonical: true,
             top,
@@ -245,8 +302,8 @@ impl Tree {
 
     /// Takes the owned AST.
     #[must_use]
-    pub fn into_document(self) -> Document {
-        self.document
+    pub fn into_document(mut self) -> Document {
+        self.document.take()
     }
 
     /// Reads JSON text; a bare tree keeps the text as its wire form, an
@@ -263,7 +320,7 @@ impl Tree {
             _ => (json.trim().to_string(), false),
         };
         Ok(Self {
-            document: read.into_document(),
+            document: read.into_document().into(),
             json: bare.into(),
             canonical,
             top,
@@ -281,10 +338,16 @@ impl Tree {
         Self::trusted_inner(value, top, true)
     }
 
-    /// Importer-built trees contain only schema fields. Their wire form can be
-    /// serialized from the owned tree when a caller first requests it.
-    pub(crate) fn trusted_imported(value: Value) -> Result<Self, Error> {
-        Self::trusted_inner(value, None, false)
+    /// Importer-built trees contain only schema fields. The owned tree is
+    /// decoded, and its wire form serialized, when a caller first requests it.
+    pub(crate) fn trusted_imported(value: Value) -> Self {
+        Self {
+            document: Lazy::imported(value),
+            json: std::sync::OnceLock::new(),
+            canonical: true,
+            top: None,
+            sources: std::collections::HashMap::new(),
+        }
     }
 
     fn trusted_inner(
@@ -296,14 +359,14 @@ impl Tree {
         if let Some(map) = value.as_object_mut() {
             map.remove("type");
         }
-        let document = serde_json::from_value(value).map_err(|e| {
+        let document: Document = serde_json::from_value(value).map_err(|e| {
             Error::Tree(crate::reader::TreeError::Decode {
                 path: String::new(),
                 reason: e.to_string(),
             })
         })?;
         Ok(Self {
-            document,
+            document: Lazy::from(document),
             json: json.map_or_else(std::sync::OnceLock::new, std::sync::OnceLock::from),
             canonical: true,
             top,
@@ -321,7 +384,7 @@ impl Tree {
             map.insert("type".into(), "document".into());
         }
         Ok(Self {
-            document,
+            document: document.into(),
             json: value.to_string().into(),
             canonical: true,
             top,
@@ -333,7 +396,7 @@ impl Tree {
     /// returned by a public tree call and therefore needs no wire encoding.
     fn render_view(document: Document, top: Option<String>) -> Self {
         Self {
-            document,
+            document: document.into(),
             json: String::new().into(),
             canonical: true,
             top,
@@ -569,13 +632,12 @@ impl Carve {
             },
         };
         if self.standard.is_empty() && parsed.tree.sources.is_empty() {
-            let claimed =
+            let claimed = parsed.tree.document.with_mut(|document| {
                 self.matchers
-                    .apply_owned(&mut parsed.tree.document, &opener, &|name| {
-                        self.extensions.declaration(name)
-                    })?;
+                    .apply_owned(document, &opener, &|name| self.extensions.declaration(name))
+            })?;
             let top = parsed.tree.top.take();
-            parsed.tree = Tree::from_owned(std::mem::take(&mut parsed.tree.document), top)?;
+            parsed.tree = Tree::from_owned(parsed.tree.document.take(), top)?;
             parsed.diagnostics.extend(claimed);
             return Ok(parsed);
         }
@@ -892,8 +954,9 @@ impl Carve {
         let mut shifted = None;
         if opts.heading_shift != 0 {
             // C2-H-208: the shift comes before the first document transform.
-            shifted =
-                crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
+            shifted = tree.document.with_mut(|d| {
+                crate::heading_shift::apply_owned(&mut d.children, opts.heading_shift)
+            });
             tree.json = std::sync::OnceLock::new();
             tree.canonical = true;
         }
