@@ -163,6 +163,24 @@ struct LineCommentFence {
     lines: Vec<String>,
 }
 
+impl LineCommentFence {
+    /// C2-B-113: an unclosed body drops its trailing blank lines.
+    fn unclosed(mut self) -> LineBlockEntry {
+        while self
+            .lines
+            .last()
+            .is_some_and(|l| crate::chars::is_blank_line(l))
+        {
+            self.lines.pop();
+        }
+        LineBlockEntry::BlockComment {
+            start: self.start,
+            end: self.end,
+            value: self.lines.join("\n"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct OpenLeaf {
     leaf: Leaf,
@@ -658,6 +676,21 @@ impl<'a> Parser<'a> {
         else {
             return false;
         };
+        // C2-B-137: the closer is tested before ownership. C2-B-024: only an open stanza
+        // takes a lazy line, and not after a blank line; otherwise the comment block ends
+        // with its container (C2-B-111).
+        let mut blank_held = false;
+        if !owned
+            && let Some(fence) = comment.take_if(|fence| {
+                blank_held = fence
+                    .lines
+                    .last()
+                    .is_some_and(|l| crate::chars::is_blank_line(l));
+                shapes::bare_run(&k, b'%') < fence.len && (!*stanza_open || lazy_end || blank_held)
+            })
+        {
+            entries.push(fence.unclosed());
+        }
         if comment.is_some() {
             let parent_closes = line_block_comment_line(comment, entries, *len, walk, &k, e, owned);
             *end = e;
@@ -691,7 +724,8 @@ impl<'a> Parser<'a> {
             });
             return true;
         }
-        if owned && shapes::bare_run(&k, b'%') >= 3 {
+        let run = shapes::fence_run(&k, b'%');
+        if owned && run >= 3 {
             entries.extend(held.drain(..).map(|(start, end)| LineBlockEntry::Line {
                 piece: Piece {
                     start,
@@ -700,17 +734,27 @@ impl<'a> Parser<'a> {
                 },
                 comments: Vec::new(),
             }));
+            // C2-B-108: text behind the run is the first line of the value.
+            let first = k
+                .rest()
+                .get(run..)
+                .unwrap_or("")
+                .trim_start_matches([' ', '\t']);
             *comment = Some(LineCommentFence {
-                len: shapes::bare_run(&k, b'%'),
+                len: run,
                 start: k.offset(),
                 end: e,
-                lines: Vec::new(),
+                lines: if first.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![first.to_string()]
+                },
             });
             *end = e;
             return true;
         }
         if !owned {
-            if shapes::comment_only(k.rest()) && *stanza_open {
+            if shapes::comment_only(k.rest()) && *stanza_open && !blank_held {
                 // C2-B-123: a comment block between keeps the stanza line above.
                 let (scanned, at) = *last_line;
                 let at = entries
@@ -729,7 +773,7 @@ impl<'a> Parser<'a> {
                 *end = e;
                 return true;
             }
-            if !*stanza_open || lazy_end {
+            if !*stanza_open || lazy_end || blank_held {
                 self.close_leaf();
                 return false;
             }
@@ -978,7 +1022,14 @@ impl<'a> Parser<'a> {
             message: 0,
             start,
             end: open.end,
-            values: vec![("marker", run.clone()), ("opener", run), ("ending", ending)],
+            values: if matches!(open.leaf, Leaf::LineBlock { .. }) {
+                vec![
+                    ("width", run.len().to_string()),
+                    ("kind", "line block".into()),
+                ]
+            } else {
+                vec![("marker", run.clone()), ("opener", run), ("ending", ending)]
+            },
         });
     }
 
@@ -1062,7 +1113,17 @@ impl<'a> Parser<'a> {
             Leaf::Frontmatter { format, value, .. } => {
                 (LeafKind::Frontmatter { format, value }, false)
             }
-            Leaf::LineBlock { entries, .. } => (LeafKind::LineBlock { entries }, false),
+            Leaf::LineBlock {
+                mut entries,
+                comment,
+                ..
+            } => {
+                // C2-B-111: an unclosed comment block ends with the line block.
+                if let Some(fence) = comment {
+                    entries.push(fence.unclosed());
+                }
+                (LeafKind::LineBlock { entries }, false)
+            }
             Leaf::Table { data } => {
                 let _ = start;
                 (LeafKind::Table(Box::new(data)), true)
