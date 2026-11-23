@@ -30,9 +30,18 @@ fn blocks_glued_after_cell_marks_are_attributes() {
 
 #[test]
 fn block_image_alt_skips_atoms() {
-    assert_eq!(html("![a </#x]> b](u)"), "<img src=\"u\" alt=\"a &lt;/#x]&gt; b\">");
-    assert_eq!(html("![a <http://x]> b](u)"), "<img src=\"u\" alt=\"a &lt;http://x]&gt; b\">");
-    assert_eq!(html("![a [b](c]) d](u)"), "<img src=\"u\" alt=\"a [b](c]) d\">");
+    assert_eq!(
+        html("![a </#x]> b](u)"),
+        "<img src=\"u\" alt=\"a &lt;/#x]&gt; b\">"
+    );
+    assert_eq!(
+        html("![a <http://x]> b](u)"),
+        "<img src=\"u\" alt=\"a &lt;http://x]&gt; b\">"
+    );
+    assert_eq!(
+        html("![a [b](c]) d](u)"),
+        "<img src=\"u\" alt=\"a [b](c]) d\">"
+    );
     assert_eq!(html("![`](u)"), "<img src=\"u\" alt=\"`\">");
 }
 
@@ -52,4 +61,20 @@ fn an_unclosed_line_block_ends_with_its_item() {
         "<ul>\n  <li>\n    <div class=\"line-block\">\n      <p>a</p>\n    </div>\n  </li>\n</ul>\n<p>z</p>"
     );
     assert!(html("[^f]: x\n    - ::: |\n      a\n\n[^f]").contains("<li id=\"fn1\">"));
+}
+
+#[test]
+fn blank_lines_in_an_item_fence_are_content() {
+    assert_eq!(
+        html("- ```\n  b\n\n\n  ```\n\n- d"),
+        "<ul>\n  <li>\n    <pre><code>b\n\n\n</code></pre>\n  </li>\n  <li><p>d</p></li>\n</ul>"
+    );
+    assert_eq!(
+        html("- ```\n  b\n\n\n  ```\n- d"),
+        "<ul>\n  <li>\n    <pre><code>b\n\n\n</code></pre>\n  </li>\n  <li>d</li>\n</ul>"
+    );
+    assert_eq!(
+        html("- a\n  %%%\n\n  %%%\n- d"),
+        "<ul>\n  <li>a</li>\n  <li>d</li>\n</ul>"
+    );
 }

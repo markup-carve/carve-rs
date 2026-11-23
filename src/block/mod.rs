@@ -306,6 +306,8 @@ impl<'a> Parser<'a> {
             Some(Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. })
         );
         if self.opaque_line(&walk, e) {
+            // C2-B-052, C2-B-062: blank lines in an opaque body are its content.
+            self.blank_run = 0;
             return;
         }
         if self.region_marker(&walk) {
