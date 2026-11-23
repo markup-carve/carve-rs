@@ -996,7 +996,45 @@ struct History {
     remaining: i64,
 }
 
+/// C2-W-125: once the rounds settle, the stale braced forms are taken out together with the escapes of the
+/// group, and the rounds run again from there. Where that loses a node, the settled form stands.
 fn repair_rounds<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    from: usize,
+    first: bool,
+    reported: usize,
+) -> usize {
+    let end = repair_rounds_once(w, doc, from, first, reported);
+    if w.kind_failed || w.sp.losses.len() != reported {
+        return end;
+    }
+    let group = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
+    let stale = stale_forms(w, group);
+    if stale.is_empty() {
+        return end;
+    }
+    let saved = SavedGroup::new(w, group);
+    let certificate = w.group_certificate;
+    for n in &stale {
+        w.forms.remove(n);
+        w.round_forms.remove(n);
+    }
+    for n in &saved.ids {
+        w.sp.escapes.remove(n);
+        w.sp.attempts.remove(n);
+    }
+    let again = repair_rounds_once(w, doc, from, first, reported);
+    if w.kind_failed || w.sp.losses.len() != reported || again != end {
+        w.kind_failed = false;
+        w.group_certificate = certificate;
+        saved.restore(w, reported, group);
+        return end;
+    }
+    again
+}
+
+fn repair_rounds_once<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
     from: usize,
@@ -1230,7 +1268,7 @@ fn settle<'t>(
     if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
         return true;
     }
-    apply_changes(w, &c, group)
+    apply_changes(w, &c)
 }
 
 /// The group written with `escapes`, for a parse.
@@ -1516,37 +1554,24 @@ fn refuse_leaf_lines(w: &mut Writer<'_>, n: V<'_>, depth: usize) {
 /// C2-W-069, C2-W-117: the comparison of a group stops at a loss, so the bare pairs behind it that cannot
 /// pair are braced here; true when one was.
 fn braces_unpaired<'t>(w: &mut Writer<'t>, group: Arr<'t>) -> bool {
-    let from = w.new_forms.len();
+    let forms = w.forms.len();
     reset_lines(w);
     w.strict_pairs = true;
     blocks::write_blocks(w, group, "", 0, false);
     w.strict_pairs = false;
-    let braced: AddrSet<usize> = w
-        .new_forms
-        .get(from..)
-        .unwrap_or(&[])
-        .iter()
-        .copied()
-        .collect();
-    if braced.is_empty() {
-        return false;
-    }
-    drop_forms_behind(w, &braced, group);
-    true
+    w.forms.len() > forms
 }
 
-fn apply_changes<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>) -> bool {
+fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
     if c.forms.iter().any(|n| !w.forms.contains_key(&id(n))) {
         w.sp.escapes.clear();
         w.sp.attempts.clear();
-        let fresh: AddrSet<usize> = c
-            .forms
-            .iter()
-            .filter(|n| !w.forms.contains_key(&id(**n)))
-            .map(|n| id(*n))
-            .collect();
-        drop_forms_behind(w, &fresh, group);
-        w.new_forms.extend(fresh);
+        w.new_forms.extend(
+            c.forms
+                .iter()
+                .map(|n| id(*n))
+                .filter(|n| !w.forms.contains_key(n)),
+        );
         for n in &c.forms {
             *w.forms.entry(id(n)).or_insert(0) += 1;
         }
@@ -1577,28 +1602,27 @@ fn apply_changes<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>) -> bool 
     false
 }
 
-/// C2-W-125: a pair that first takes its braced form had read on in the rounds before, so the braced
-/// forms those rounds and their probes gave the pairs behind it in its block are taken out where the bare
-/// form pairs by itself (C2-W-069).
-fn drop_forms_behind<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, group: Arr<'t>) {
-    let logged = std::mem::take(&mut w.new_forms);
-    w.round_forms.extend(logged);
+/// C2-W-125: the braced forms the rounds gave pairs behind a braced pair of their inline run while an
+/// earlier pair still read on, where the bare form pairs by itself (C2-W-069).
+fn stale_forms<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<usize> {
+    let mut stale = Vec::new();
     let mut pending: Vec<N<'t>> = group.iter().collect();
     while let Some(node) = pending.pop() {
         // A title and a caption are inline runs of their own outside `children`.
         if let Some(title) = node::title(node) {
-            drop_in_run(w, fresh, title);
+            stale_in_run(w, title, &mut stale);
         }
         pending.extend(node::caption(node));
         if node::is_inline_parent(node) {
-            drop_in_run(w, fresh, children(node));
+            stale_in_run(w, children(node), &mut stale);
         } else {
             pending.extend(children(node).iter());
         }
     }
+    stale
 }
 
-fn drop_in_run<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, run: Arr<'t>) {
+fn stale_in_run<'t>(w: &Writer<'t>, run: Arr<'t>, stale: &mut Vec<usize>) {
     let mut behind = false;
     let mut stack: Vec<(Arr<'t>, usize)> = vec![(run, 0)];
     while let Some((nodes, at)) = stack.pop() {
@@ -1606,11 +1630,11 @@ fn drop_in_run<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, run: Arr<'t>) {
             continue;
         };
         stack.push((nodes, at + 1));
-        if fresh.contains(&id(n)) {
-            behind |= matches!(ty(n), "emphasis" | "strong");
+        if !matches!(ty(n), "emphasis" | "strong") || w.form(n) == 0 {
         } else if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
-            w.round_forms.remove(&id(n));
-            w.forms.remove(&id(n));
+            stale.push(id(n));
+        } else {
+            behind = true;
         }
         stack.push((children(n), 0));
     }
