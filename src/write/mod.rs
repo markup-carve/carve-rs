@@ -378,6 +378,54 @@ mod batched_repair_test {
 }
 
 #[cfg(test)]
+mod capped_run_test {
+    use super::*;
+    use crate::api::{Carve, ImportFormat, ImportOptions, LossOptions};
+
+    /// carve#6474: `n` brackets, a link and a pipe, a line break, `| x |` and `n` brackets more.
+    fn brackets(n: usize) -> String {
+        let run = "[".repeat(n);
+        format!("{run}x [[t](/v)]|\n| x |{run}a\n")
+    }
+
+    fn import(
+        src: &str,
+        format: ImportFormat,
+    ) -> Result<(String, usize, usize), Box<dyn std::error::Error>> {
+        let before = REPAIR_PARSES.with(std::cell::Cell::get);
+        let out = Carve::new().import_from(
+            src,
+            format,
+            &ImportOptions::default(),
+            &LossOptions::default(),
+        )?;
+        let parses = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+        Ok((out.source, out.diagnostics.len(), parses))
+    }
+
+    #[test]
+    fn bracket_runs_past_the_depth_cap_take_a_few_rounds() -> Result<(), Box<dyn std::error::Error>>
+    {
+        for format in [ImportFormat::Markdown, ImportFormat::Djot] {
+            assert_eq!(import(&brackets(8), format)?.0, brackets(8));
+            for n in [400, 1600] {
+                let (source, losses, parses) = import(&brackets(n), format)?;
+                assert_eq!(losses, 0);
+                assert!(parses < 40, "{parses} read-back parses at n = {n}");
+                // The run keeps its first bracket and those from the depth cap on escaped, as one round each did.
+                let first = source.lines().next().unwrap_or("");
+                assert!(first.starts_with("\\[["));
+                assert!(first.ends_with("x \\[[t](/v)]|"));
+            }
+            let (source, losses, _) = import(&brackets(4000), format)?;
+            assert_eq!(losses, 0);
+            assert!(source.contains("[t](/v)]|"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod escape_prune_test {
     use super::*;
 
@@ -1050,6 +1098,7 @@ fn repair_rounds_once<'t>(
         remaining: i64::try_from(MAX_REPAIR_CHARS).unwrap_or(i64::MAX),
     };
     let mut first_round = None;
+    w.capped_runs.clear();
     loop {
         let end = group_end(w, nodes, from);
         let group = nodes.slice(from, end).unwrap_or_else(Arr::empty);
@@ -1081,6 +1130,7 @@ fn repair_rounds_once<'t>(
             if w.kind_failed {
                 return end;
             }
+            trim_capped_runs(w, group, f, &mut round);
             if w.sp.losses.len() == reported && !round.equal {
                 report_unread(w, group, round.last);
             }
@@ -1088,6 +1138,94 @@ fn repair_rounds_once<'t>(
             return end;
         }
     }
+}
+
+/// C2-I-118: the rounds would place the escapes behind a capped opener one per round and stop at the first
+/// round that reads back. Those placed at once are kept up to the shortest run, in their order, with which the
+/// group still reads back.
+fn trim_capped_runs<'t, 's>(
+    w: &mut Writer<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &mut Round<'s>,
+) {
+    let runs = std::mem::take(&mut w.capped_runs);
+    if runs.is_empty() || !round.equal {
+        return;
+    }
+    // A change of form clears the escapes of the group: keep only those it still holds.
+    let placed: Vec<(N<'t>, usize)> = runs
+        .into_iter()
+        .filter(|&(n, at)| w.escapes_of(n).binary_search(&at).is_ok())
+        .collect();
+    if placed.is_empty() {
+        return;
+    }
+    let reads_back =
+        |w: &mut Writer<'t>, keep: usize, restore: bool| -> Option<(&'s Chunk, V<'s>)> {
+            let dropped = placed.get(keep..).unwrap_or(&[]);
+            for &(n, at) in dropped {
+                if let Some(list) = w.sp.escapes.get_mut(&id(n))
+                    && let Ok(p) = list.binary_search(&at)
+                {
+                    list.remove(p);
+                }
+            }
+            reset_lines(w);
+            blocks::write_blocks(w, group, "", 0, false);
+            let chunk: &'s Chunk = round.chunks.alloc(Chunk::new(group_source(w, first)));
+            let parsed = chunk.parse(w);
+            let actual = children(parsed);
+            let equal = group.len() == actual.len()
+                && group
+                    .iter()
+                    .zip(actual)
+                    .all(|(expected, read_back)| node::trees_equal(expected, read_back));
+            if restore {
+                for &(n, at) in dropped {
+                    w.add_escape(n, at);
+                }
+            }
+            equal.then_some((chunk, parsed))
+        };
+    let mut reads = |w: &mut Writer<'t>, keep: usize| reads_back(w, keep, true).is_some();
+    let high = shortest_reading(w, placed.len(), &mut reads);
+    if let Some((chunk, parsed)) = reads_back(w, high, false) {
+        round.last = Some(parsed);
+        round.source = Some(chunk.text());
+        round.equal = true;
+    } else {
+        round.equal = false;
+    }
+}
+
+/// The shortest count of `len` with which `reads` holds, `len` holding. The rounds stop a few escapes short of
+/// the end of the construct at most, so the search starts there and widens.
+fn shortest_reading<'t>(
+    w: &mut Writer<'t>,
+    len: usize,
+    reads: &mut dyn FnMut(&mut Writer<'t>, usize) -> bool,
+) -> usize {
+    let (mut low, mut high) = (0, len);
+    let mut step = 1;
+    while low < high && !exhausted(w) {
+        let keep = low.max(high.saturating_sub(step));
+        if !reads(w, keep) {
+            low = keep + 1;
+            break;
+        }
+        high = keep;
+        step *= 2;
+    }
+    while low < high && !exhausted(w) {
+        let middle = usize::midpoint(low, high);
+        if reads(w, middle) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    high
 }
 
 fn refuse_repair(w: &mut Writer<'_>, node: V<'_>) {
@@ -1321,6 +1459,8 @@ fn settle<'t>(
         escape_group_partners(w, &mut c, group, round.source);
     }
     extend_chains(w, &mut c);
+    let capped = check::escape_capped_run(w, &mut c);
+    w.capped_runs.extend(capped);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
         // C2-W-005: what only line 1 reads differently is written below one blank line.
         w.blank_first = compare_group(w, doc, group, false, round).losses.is_empty();

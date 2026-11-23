@@ -155,6 +155,9 @@ pub struct Writer<'t> {
     pub strict_pairs: bool,
     /// Emptied child lists, reused by the inline writes so a nested mark allocates none.
     pub kid_lists: Vec<Vec<N<'t>>>,
+    /// C2-I-118: the escapes the comparison placed at once behind capped openers, in the order the rounds would
+    /// place them.
+    pub capped_runs: Vec<(N<'t>, usize)>,
 }
 
 impl<'t> Writer<'t> {
@@ -207,6 +210,7 @@ impl<'t> Writer<'t> {
             raw_refs: Vec::new(),
             strict_pairs: false,
             kid_lists: Vec::new(),
+            capped_runs: Vec::new(),
         }
     }
 
