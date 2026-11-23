@@ -1893,7 +1893,8 @@ fn resync<'t>(
             at.aj = 0;
             return true;
         }
-        offset += write_inlines(w, &[e], c.flags).len();
+        // The node alone, not as a list of one (C2-W-088, C2-W-090).
+        offset += super::inline::write_inline(w, e, c.flags).len();
         k += 1;
     }
     false
