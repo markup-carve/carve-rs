@@ -1280,9 +1280,8 @@ fn indent_run(w: &Writer<'_>, nodes: Arr<'_>, from: usize) -> Option<Vec<(usize,
     let mut at = from;
     loop {
         let node = nodes.get(at)?;
-        let above_at = (0..at)
-            .rev()
-            .find(|&i| nodes.get(i).is_some_and(|n| ty(n) != "comment"));
+        // A block comment closes the container above it; a comment line does not (C2-B-137).
+        let above_at = (0..at).rev().find(|&i| !is_comment_line(nodes.get(i)));
         let Some(above) = above_at
             .and_then(|i| nodes.get(i))
             .filter(|a| matches!(ty(a), "list" | "definition_list" | "footnote"))

@@ -11,7 +11,8 @@ fn formatted(source: &str) -> Value {
 }
 
 /// C2-W-155: a lazy-ending list or description list is written one space in, and so is every list or
-/// description list of the run above it, up to a block that is no open container or an attribute line.
+/// description list of the run above it, up to a block that is no open container, a block comment or an attribute
+/// line.
 #[test]
 fn lazy_ending_container_and_run_above_are_indented() {
     for source in [
@@ -24,6 +25,7 @@ fn lazy_ending_container_and_run_above_are_indented() {
         " - x\n\n :: t\n : d\n\n * b\n\n ---yaml\nk: v\n---\n",
         "a[^n]\n\n[^n]: x\n\n{#i}\n * b\n * c\n\n ---json\n",
         "- ```\n  x\n  ```\n\n{start=3}\n . b\n\n ---json\n",
+        ":: t\n: d\n\n%%%\nsecret\n%%%\n\n - b\n\n ---yaml\nk: v\n---\n",
     ] {
         let r = formatted(source);
         assert_eq!(r["ok"]["source"].as_str(), Some(source), "{source:?}: {r}");
