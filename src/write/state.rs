@@ -103,8 +103,8 @@ pub struct Writer<'t> {
     pub leading_frontmatter: Option<usize>,
     /// The document's own children, whose first line a typed opener would take (C2-W-154).
     pub top_blocks: crate::hash::AddrSet<usize>,
-    /// Typed-opener paragraphs written directly below a list that takes no lazy line (C2-W-154).
-    /// The value is false where the list ends in a block that takes a lazy line: no spelling.
+    /// Typed-opener paragraphs written directly below a list, footnote or description list that takes no lazy line (C2-W-154).
+    /// The value is false where the container ends in a block that takes a lazy line: no spelling.
     pub below_list: crate::hash::AddrMap<usize, bool>,
     /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
     pub kind_escapes: bool,
