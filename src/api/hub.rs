@@ -329,6 +329,7 @@ pub(crate) fn finish(mut tree: Value, sink: &Sink) -> Value {
         if !sink.raw.is_empty() {
             restore(children, &sink.raw);
         }
+        fill_empty_items(children);
         if let Some((format, value)) = &sink.frontmatter {
             children.insert(
                 0,
@@ -337,6 +338,22 @@ pub(crate) fn finish(mut tree: Value, sink: &Sink) -> Value {
         }
     }
     tree
+}
+
+/// An empty source item is a marker plus a comment, as a parse of `- %%`
+/// gives (C2-A-186); a childless `list_item` has no spelling (C2-W-057).
+fn fill_empty_items(nodes: &mut [Value]) {
+    for node in nodes {
+        let is_item = node.get("type").and_then(Value::as_str) == Some("list_item");
+        let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        if is_item && children.is_empty() {
+            children.push(json!({"type": "comment", "form": "line", "value": ""}));
+        } else {
+            fill_empty_items(children);
+        }
+    }
 }
 
 fn restore(nodes: &mut [Value], raw: &[(String, String)]) {
