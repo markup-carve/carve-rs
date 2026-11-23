@@ -2304,10 +2304,14 @@ fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: u
     }
 }
 
-/// Each unattached glued run once, in the inline hosts the rule names; a line block's line is none,
-/// nor is a code fence title, which is plain text (C2-B-120).
+/// A line block's line is no inline host, nor is a code fence title, which is plain text (C2-B-120).
+fn outside_inline_hosts(item: &Item<'_>) -> bool {
+    parent_kinds(item).any(|kind| kind == "line" || kind == "code_block")
+}
+
+/// Each unattached glued run once, in the inline hosts the rule names.
 fn text_inline_attr(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    if parent_kinds(item).any(|kind| kind == "line" || kind == "code_block") {
+    if outside_inline_hosts(item) {
         return;
     }
     let mut next = 0;
