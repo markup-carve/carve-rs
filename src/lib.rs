@@ -54,6 +54,7 @@ pub mod ast;
 pub mod attr;
 #[doc(hidden)]
 pub mod block;
+mod canonical_json;
 #[doc(hidden)]
 pub mod chars;
 #[doc(hidden)]
@@ -1431,7 +1432,8 @@ pub(crate) fn tree_parts_with_sources(
                 .map(|(id, text)| (id.to_string(), text.to_string()))
                 .collect()
         });
-    if files.is_none() && opts.includes.is_none() {
+    // Without an expanded include there is no file to stamp.
+    if files.is_none() {
         return Some((None, doc.owned_with(&owned_str::Texts::of(input)), sources));
     }
     let mut v = stamped_value(&doc);
@@ -1496,7 +1498,8 @@ pub fn to_json(doc: &ast::Document<'_>) -> String {
     serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
 }
 
-/// [`to_json`] of the owned copy of a tree; both families serialize alike.
+/// [`to_json`] of the owned copy of a tree with members in canonical order
+/// (C2-A-217).
 #[must_use]
 pub(crate) fn owned_json(doc: &ast::owned::Document) -> String {
     #[derive(serde::Serialize)]
@@ -1505,7 +1508,10 @@ pub(crate) fn owned_json(doc: &ast::owned::Document) -> String {
         #[serde(rename = "document")]
         Document(&'r ast::owned::Document),
     }
-    serde_json::to_string(&Root::Document(doc)).unwrap_or_default()
+    let root = Root::Document(doc);
+    canonical_json::to_string(&root)
+        .or_else(|_| serde_json::to_value(&root).map(|v| v.to_string()))
+        .unwrap_or_default()
 }
 
 /// The value [`to_json`] writes, without the text round trip.

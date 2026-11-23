@@ -183,6 +183,9 @@ pub struct Tree {
     document: Document,
     /// Built on first use from `document` where the parse did not give it.
     json: std::sync::OnceLock<String>,
+    /// False only for the text of a decoded tree, whose key order and
+    /// spacing are the caller's.
+    canonical: bool,
     top: Option<String>,
     sources: std::collections::HashMap<String, String>,
 }
@@ -227,6 +230,7 @@ impl Tree {
         Self {
             document,
             json: json.map_or_else(std::sync::OnceLock::new, std::sync::OnceLock::from),
+            canonical: true,
             top,
             sources,
         }
@@ -249,15 +253,19 @@ impl Tree {
     /// envelope keeps its `document`.
     fn read(json: &str, top: Option<String>) -> Result<Self, Error> {
         let read = crate::reader::read_tree_json(json)?;
-        let bare = match crate::api::deep_json(json) {
-            Ok(Value::Object(mut envelope)) if envelope.contains_key("document") => envelope
-                .remove("document")
-                .map_or_else(String::new, |d| d.to_string()),
-            _ => json.trim().to_string(),
+        let (bare, canonical) = match crate::api::deep_json(json) {
+            Ok(Value::Object(mut envelope)) if envelope.contains_key("document") => (
+                envelope
+                    .remove("document")
+                    .map_or_else(String::new, |d| d.to_string()),
+                true,
+            ),
+            _ => (json.trim().to_string(), false),
         };
         Ok(Self {
             document: read.into_document(),
             json: bare.into(),
+            canonical,
             top,
             sources: std::collections::HashMap::new(),
         })
@@ -297,6 +305,7 @@ impl Tree {
         Ok(Self {
             document,
             json: json.map_or_else(std::sync::OnceLock::new, std::sync::OnceLock::from),
+            canonical: true,
             top,
             sources: std::collections::HashMap::new(),
         })
@@ -314,6 +323,7 @@ impl Tree {
         Ok(Self {
             document,
             json: value.to_string().into(),
+            canonical: true,
             top,
             sources: std::collections::HashMap::new(),
         })
@@ -325,6 +335,7 @@ impl Tree {
         Self {
             document,
             json: String::new().into(),
+            canonical: true,
             top,
             sources: std::collections::HashMap::new(),
         }
@@ -884,6 +895,7 @@ impl Carve {
             shifted =
                 crate::heading_shift::apply_owned(&mut tree.document.children, opts.heading_shift);
             tree.json = std::sync::OnceLock::new();
+            tree.canonical = true;
         }
         let shift_override = crate::heading_shift::shifted_fact(
             shifted,
@@ -1411,6 +1423,9 @@ pub fn include_dependencies(tree: &Tree) -> Vec<Dependency> {
 /// `encodeTree`: the JSON text of the bare tree (C2-A-012).
 #[must_use]
 pub fn encode_tree(tree: &Tree) -> String {
+    if tree.canonical {
+        return tree.json().to_string();
+    }
     // serde_json's object map orders keys lexically without preserve_order.
     // Parsing the accepted tree removes input whitespace and insertion order.
     deep_json(tree.json()).map_or_else(|_| tree.json().to_string(), |value| value.to_string())

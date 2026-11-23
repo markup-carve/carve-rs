@@ -902,6 +902,11 @@ fn apply_fixes(bytes: &[u8], options: &LintOptions) -> Result<Vec<u8>, i32> {
     Ok(source.into_bytes())
 }
 
+fn leading_frontmatter(node: &Value) -> bool {
+    node.get("type").and_then(Value::as_str) == Some("frontmatter")
+        && node.pointer("/pos/startLine").and_then(Value::as_u64) == Some(1)
+}
+
 fn expand_include_nodes(value: &mut Value) {
     match value {
         Value::Array(items) => {
@@ -913,6 +918,11 @@ fn expand_include_nodes(value: &mut Value) {
                         .and_then(Value::as_array_mut)
                         .map(std::mem::take)
                     {
+                        let mut children = children;
+                        // C2-T-047: the included file's leading frontmatter is not written.
+                        if children.first().is_some_and(leading_frontmatter) {
+                            children.remove(0);
+                        }
                         let mut nested = Value::Array(children);
                         expand_include_nodes(&mut nested);
                         expanded.extend(
