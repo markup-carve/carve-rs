@@ -156,12 +156,24 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
         ..crate::Options::default()
     };
     let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();
-    let (mut out, diagnostics) = crate::with_lint_tree(
+    let declared = std::cell::OnceCell::new();
+    let ((mut out, opts), diagnostics) = crate::with_lint_tree(
         source,
         &crate::Options::default(),
         &parse,
         same,
-        |tree, arena| lint_core(source, opts, tree, arena),
+        |tree, arena| {
+            // The entry's declaration holds for the text it includes too (C2-B-231).
+            let opts = if !opts.upgrade && tree.is_some_and(declares_below_0_2) {
+                declared.get_or_init(|| LintOptions {
+                    upgrade: true,
+                    ..opts.clone()
+                })
+            } else {
+                opts
+            };
+            (lint_core(source, opts, tree, arena), opts)
+        },
     );
     out.extend(
         diagnostics
@@ -180,16 +192,6 @@ fn lint_core<'a>(
     tree: Option<V<'a>>,
     arena: &'a crate::Arena,
 ) -> Vec<Diagnostic> {
-    let declared;
-    let opts = if !opts.upgrade && tree.is_some_and(declares_below_0_2) {
-        declared = LintOptions {
-            upgrade: true,
-            ..opts.clone()
-        };
-        &declared
-    } else {
-        opts
-    };
     let parsed = Source::new(source);
     let walk::Walk {
         ranges,

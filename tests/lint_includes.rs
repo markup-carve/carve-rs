@@ -71,3 +71,22 @@ fn c2_n_085_no_resolver_and_missing_target_are_reported() {
             .any(|finding| finding.code.starts_with("include-"))
     );
 }
+
+/// C2-W-156, C2-B-231: the entry's line-1 declaration holds for the text it
+/// includes; a declaration in the included file is no line-1 frontmatter.
+#[test]
+fn c2_w_156_the_entry_declaration_reaches_included_text() {
+    let notices = |entry: &str, part: &'static str| {
+        lint(entry, &options(part))
+            .iter()
+            .filter(|d| d.code == "deprecated-indented-line-under-heading")
+            .map(|d| d.file.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        notices("---\ncarve: 0.1\n---\n{{ a.crv }}\n", "# a\n b\n"),
+        [Some("a.crv".to_string())]
+    );
+    assert!(notices("{{ a.crv }}\n", "# a\n b\n").is_empty());
+    assert!(notices("{{ a.crv }}\n", "---\ncarve: 0.1\n---\n# a\n b\n").is_empty());
+}
