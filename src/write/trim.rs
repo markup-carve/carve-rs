@@ -29,7 +29,7 @@ pub struct Trimmed {
 /// `delimited` says whether the table at a pointer is written in a delimited form, where a cell
 /// keeps them as data (C2-W-066) while its caption is still trimmed.
 pub fn trim(doc: &Value, delimited: &dyn Fn(&Value, &str) -> bool) -> Option<Trimmed> {
-    if !has_trim_target(doc) {
+    if !has_spaced_text(doc) || !has_trim_target(doc) {
         return None;
     }
     let mut copy = doc.clone();
@@ -55,6 +55,22 @@ fn len_at(doc: &Value, pointer: &str) -> usize {
     doc.pointer(pointer)
         .and_then(Value::as_array)
         .map_or(0, Vec::len)
+}
+
+/// Whether a text node below `value` ends in a space or tab, which every trim target does.
+fn has_spaced_text(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => items.iter().any(has_spaced_text),
+        Value::Object(map) => {
+            (ty(value) == "text"
+                && map
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| t.ends_with([' ', '\t'])))
+                || map.values().any(has_spaced_text)
+        }
+        _ => false,
+    }
 }
 
 /// Check the same line positions that `trim_list` can change before copying a tree.
