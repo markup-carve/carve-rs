@@ -836,6 +836,7 @@ struct SavedGroup<'t> {
     lost: Vec<usize>,
     lost_keys: Vec<(usize, Vec<String>)>,
     forms: Vec<(usize, u32)>,
+    round_forms: Vec<usize>,
     blank_first: bool,
 }
 
@@ -900,6 +901,11 @@ impl<'t> SavedGroup<'t> {
                 .iter()
                 .filter_map(|n| w.forms.get(n).map(|f| (take(n), *f)))
                 .collect(),
+            round_forms: ids
+                .iter()
+                .copied()
+                .filter(|n| w.round_forms.contains(n))
+                .collect(),
             blank_first: w.blank_first,
             ids,
         }
@@ -924,12 +930,14 @@ impl<'t> SavedGroup<'t> {
             w.sp.lost.remove(n);
             w.sp.lost_keys.remove(n);
             w.forms.remove(n);
+            w.round_forms.remove(n);
         }
         w.sp.escapes.extend(self.escapes);
         w.sp.attempts.extend(self.attempts);
         w.sp.lost.extend(self.lost);
         w.sp.lost_keys.extend(self.lost_keys);
         w.forms.extend(self.forms);
+        w.round_forms.extend(self.round_forms);
         w.lines = self.lines;
         w.sp.losses.truncate(losses);
         w.blank_first = self.blank_first;
@@ -1026,7 +1034,11 @@ fn repair_rounds<'t>(
             source: None,
             equal: false,
         };
-        if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
+        w.new_forms.clear();
+        let more = settle(w, doc, group, f, &mut round);
+        // C2-W-125: the forms this round asked for, in its probes too, as against those its write placed.
+        w.round_forms.extend(w.new_forms.drain(..));
+        if !more && !exhausted(w) {
             if w.kind_failed {
                 return end;
             }
@@ -1218,7 +1230,7 @@ fn settle<'t>(
     if c.changes() == 0 && !c.losses.is_empty() && braces_unpaired(w, group) {
         return true;
     }
-    apply_changes(w, &c)
+    apply_changes(w, &c, group)
 }
 
 /// The group written with `escapes`, for a parse.
@@ -1504,18 +1516,37 @@ fn refuse_leaf_lines(w: &mut Writer<'_>, n: V<'_>, depth: usize) {
 /// C2-W-069, C2-W-117: the comparison of a group stops at a loss, so the bare pairs behind it that cannot
 /// pair are braced here; true when one was.
 fn braces_unpaired<'t>(w: &mut Writer<'t>, group: Arr<'t>) -> bool {
-    let forms = w.forms.len();
+    let from = w.new_forms.len();
     reset_lines(w);
     w.strict_pairs = true;
     blocks::write_blocks(w, group, "", 0, false);
     w.strict_pairs = false;
-    w.forms.len() > forms
+    let braced: AddrSet<usize> = w
+        .new_forms
+        .get(from..)
+        .unwrap_or(&[])
+        .iter()
+        .copied()
+        .collect();
+    if braced.is_empty() {
+        return false;
+    }
+    drop_forms_behind(w, &braced, group);
+    true
 }
 
-fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
+fn apply_changes<'t>(w: &mut Writer<'t>, c: &Check<'t>, group: Arr<'t>) -> bool {
     if c.forms.iter().any(|n| !w.forms.contains_key(&id(n))) {
         w.sp.escapes.clear();
         w.sp.attempts.clear();
+        let fresh: AddrSet<usize> = c
+            .forms
+            .iter()
+            .filter(|n| !w.forms.contains_key(&id(**n)))
+            .map(|n| id(*n))
+            .collect();
+        drop_forms_behind(w, &fresh, group);
+        w.new_forms.extend(fresh);
         for n in &c.forms {
             *w.forms.entry(id(n)).or_insert(0) += 1;
         }
@@ -1544,6 +1575,80 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
         lose(w, n, field.as_deref());
     }
     false
+}
+
+/// C2-W-125: a pair that first takes its braced form had read on in the rounds before, so the braced
+/// forms those rounds gave the pairs behind it in its block are taken out where the bare form pairs
+/// by itself (C2-W-069).
+fn drop_forms_behind<'t>(w: &mut Writer<'t>, fresh: &AddrSet<usize>, group: Arr<'t>) {
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(node) = pending.pop() {
+        if !node::is_inline_parent(node) {
+            pending.extend(children(node).iter());
+            continue;
+        }
+        let mut behind = false;
+        let mut stack: Vec<(Arr<'t>, usize)> = vec![(children(node), 0)];
+        while let Some((nodes, at)) = stack.pop() {
+            let Some(n) = nodes.get(at) else {
+                continue;
+            };
+            stack.push((nodes, at + 1));
+            if fresh.contains(&id(n)) {
+                behind |= matches!(ty(n), "emphasis" | "strong");
+            } else if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
+                w.round_forms.remove(&id(n));
+                w.forms.remove(&id(n));
+            }
+            stack.push((children(n), 0));
+        }
+    }
+}
+
+/// C2-W-069: whether the bare emphasis or strong at `at` of `nodes` opens and closes at its neighbors
+/// and holds no mark of its own.
+fn pairs_bare(nodes: Arr<'_>, at: usize) -> bool {
+    let Some(n) = nodes.get(at) else {
+        return false;
+    };
+    let mark = match ty(n) {
+        "emphasis" => '/',
+        "strong" => '*',
+        _ => return false,
+    };
+    let edge = |n: Option<V<'_>>, last: bool| -> Option<char> {
+        let mut n = n?;
+        loop {
+            if ty(n) == "text" {
+                return if last {
+                    text(n).chars().last()
+                } else {
+                    text(n).chars().next()
+                };
+            }
+            let c = children(n);
+            n = if last { c.last()? } else { c.first()? };
+        }
+    };
+    let mut marks = false;
+    let mut pending: Vec<V<'_>> = children(n).iter().collect();
+    while let Some(c) = pending.pop() {
+        marks |= ty(c) == "text" && text(c).contains(mark);
+        pending.extend(children(c).iter());
+    }
+    let space = |c: Option<char>| c.is_none_or(crate::chars::is_flank_space);
+    let word = |c: Option<char>| c.is_some_and(crate::chars::is_word);
+    let (first, last) = (edge(Some(n), false), edge(Some(n), true));
+    let before = at
+        .checked_sub(1)
+        .and_then(|i| nodes.get(i))
+        .filter(|p| ty(*p) == "text");
+    let after = nodes.get(at + 1).filter(|p| ty(*p) == "text");
+    !marks
+        && !space(first)
+        && !space(last)
+        && !word(before.and_then(|p| text(p).chars().last()))
+        && !word(after.and_then(|p| text(p).chars().next()))
 }
 
 /// C2-W-002: whether `actual` is `expected` for the readback check (C2-A-193).

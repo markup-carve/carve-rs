@@ -1178,7 +1178,7 @@ fn glued_part_into<'t>(
     };
     if let (Some(m), Some(next)) = (mark, nodes.get(end)) {
         if ty(next) == "text" && text(next).starts_with(m) {
-            w.forms.insert(id(node), 1);
+            w.brace(node);
         }
     }
     let start = out.len();
@@ -1194,7 +1194,7 @@ fn glued_part_into<'t>(
         return;
     }
     out.truncate(start);
-    w.forms.insert(id(node), 1);
+    w.brace(node);
     write_part_into(w, nodes, (at, end), flags, out);
 }
 
