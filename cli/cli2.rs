@@ -710,41 +710,118 @@ fn unified(path: &str, before: &str, after: &str) -> String {
     }
     result
 }
+/// C2-T-010: the standard extensions `--extensions` names, with the renderer
+/// options `--extension-options` gives them, checked against
+/// `data/extensions.json`; every refusal is a usage error.
+struct StandardExtensions {
+    names: Vec<String>,
+    host: Carve,
+}
+impl StandardExtensions {
+    fn from_args(args: &Args) -> Result<Self, i32> {
+        let rows: Value = serde_json::from_str(include_str!("../spec-data/extensions.json"))
+            .unwrap_or(Value::Null);
+        let rows = rows["extensions"].as_array().cloned().unwrap_or_default();
+        let row = |name: &str| rows.iter().find(|r| r["name"] == name);
+        let mut names = Vec::new();
+        if let Some(list) = value(args, "extensions") {
+            let list = list.as_array().ok_or_else(|| {
+                usage("--extensions takes a JSON list of standard extension names")
+            })?;
+            for item in list {
+                let name = item.as_str().ok_or_else(|| {
+                    usage("--extensions takes a JSON list of standard extension names")
+                })?;
+                if row(name).is_none() {
+                    return Err(usage(format!("{name} is not a standard extension")));
+                }
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+        let empty = serde_json::Map::new();
+        let options = match value(args, "extension-options") {
+            Some(v) => v
+                .as_object()
+                .ok_or_else(|| usage("--extension-options takes a JSON object"))?,
+            None => &empty,
+        };
+        for (name, settings) in options {
+            let Some(declared) = row(name) else {
+                return Err(usage(format!("{name} is not a standard extension")));
+            };
+            // The text leaves open options for an extension that is not enabled.
+            if !names.iter().any(|n| n == name) {
+                return Err(usage(format!("{name} is not among --extensions")));
+            }
+            let settings = settings
+                .as_object()
+                .ok_or_else(|| usage(format!("the options of {name} are not a JSON object")))?;
+            for (option, setting) in settings {
+                let values = &declared["rendererOptions"][option]["values"];
+                if values.is_null() {
+                    return Err(usage(format!("{name} has no renderer option {option}")));
+                }
+                if !values.as_array().is_some_and(|v| v.contains(setting)) {
+                    return Err(usage(format!("bad value for the {name} option {option}")));
+                }
+            }
+        }
+        let render = args.command == "render";
+        let mut host = Carve::new();
+        for name in &names {
+            // `carve.tab` has no matcher: the matcher of its parent claims it.
+            if row(name).is_some_and(|r| r.get("matcher").is_none()) {
+                continue;
+            }
+            let mode = options
+                .get(name)
+                .and_then(|o| o.get("mode"))
+                .and_then(Value::as_str);
+            let enabled = match (name.as_str(), mode) {
+                ("carve.tabs", Some(mode)) if render => host.enable_standard_tabs_renderer(mode),
+                // An extension with no standard renderer (C2-X-058) keeps its fallback.
+                _ if render => host
+                    .enable_standard(name, true)
+                    .or_else(|_| host.enable_standard(name, false)),
+                _ => host.enable_standard(name, false),
+            };
+            enabled.map_err(|e| usage(format!("{name}: {e}")))?;
+        }
+        Ok(Self { names, host })
+    }
+    /// The names the Carve writer models claims for (`writer.md`).
+    fn writer(&self) -> Vec<String> {
+        self.names
+            .iter()
+            .filter(|n| matches!(n.as_str(), "carve.tabs" | "carve.tab"))
+            .cloned()
+            .collect()
+    }
+}
 fn one(
     args: &Args,
+    standard: &StandardExtensions,
     path: &str,
     bytes: &[u8],
     loss_reports: &mut Vec<Value>,
     include_reports: &mut Vec<Value>,
     diagnostics: &mut Vec<Value>,
 ) -> Result<i32, i32> {
-    let host = Carve::new();
+    let host = &standard.host;
     let opts = options(args, path)?;
     match args.command.as_str() {
-        "ast" => ast_file(args, path, bytes, &host, &opts, include_reports),
-        "diagnostics" => diagnostics_file(
-            args,
-            path,
-            bytes,
-            &host,
-            &opts,
-            include_reports,
-            diagnostics,
-        ),
-        "lint" | "fix" => lint_file(args, path, bytes, &opts, diagnostics),
-        "flatten" => flatten_file(args, path, bytes, &host, &opts),
-        "fmt" => fmt_file(args, path, bytes, &host),
-        "import" => import_file(args, path, bytes, &host, &opts, loss_reports),
+        "ast" => ast_file(args, path, bytes, host, &opts, include_reports),
+        "diagnostics" => {
+            diagnostics_file(args, path, bytes, host, &opts, include_reports, diagnostics)
+        }
+        "lint" | "fix" => lint_file(args, standard, path, bytes, &opts, diagnostics),
+        "flatten" => flatten_file(args, path, bytes, host, &opts),
+        "fmt" => fmt_file(args, standard, path, bytes),
+        "import" => import_file(args, path, bytes, host, &opts, loss_reports),
         "migrate-ast" => migrate_file(path, bytes),
-        _ => render_file(
-            args,
-            path,
-            bytes,
-            &host,
-            opts,
-            loss_reports,
-            include_reports,
-        ),
+        _ => render_file(args, path, bytes, host, opts, loss_reports, include_reports),
     }
 }
 
@@ -990,6 +1067,7 @@ fn flatten_file(
 
 fn lint_file(
     args: &Args,
+    standard: &StandardExtensions,
     path: &str,
     bytes: &[u8],
     opts: &Options,
@@ -999,6 +1077,7 @@ fn lint_file(
         includes: opts.includes.clone(),
         heading_ids: opts.heading_ids,
         raw_html: opts.raw_html,
+        extensions: standard.names.clone(),
         ..Default::default()
     };
     if let Some(map) = value(args, "rules").and_then(Value::as_object) {
@@ -1069,14 +1148,26 @@ fn lint_file(
     })))
 }
 
-fn fmt_file(args: &Args, path: &str, bytes: &[u8], host: &Carve) -> Result<i32, i32> {
-    let (before, after) = formatted(args, path, bytes, host)?;
+fn fmt_file(
+    args: &Args,
+    standard: &StandardExtensions,
+    path: &str,
+    bytes: &[u8],
+) -> Result<i32, i32> {
+    let (before, after) = formatted(args, path, bytes, &standard.host, &standard.writer())?;
     fmt_output(args, path, &before, &after)
 }
-fn formatted(args: &Args, path: &str, bytes: &[u8], host: &Carve) -> Result<(String, String), i32> {
+fn formatted(
+    args: &Args,
+    path: &str,
+    bytes: &[u8],
+    host: &Carve,
+    extensions: &[String],
+) -> Result<(String, String), i32> {
     let settings = WriteOptions {
         align_tables: bool_value(args, "align-tables", false),
         normalize: bool_value(args, "normalize", false),
+        extensions: extensions.to_vec(),
         ..Default::default()
     };
     let before = if bool_value(args, "from-ast", false) {
@@ -1243,7 +1334,8 @@ fn render_input(
     if bool_value(args, "from-ast", false) {
         let tree = api::decode_tree(strict_text(path, bytes)?).map_err(api_fail)?;
         Ok((
-            api::render_tree_with_diagnostics(&tree, opts).map_err(api_fail)?,
+            host.render_tree_with_diagnostics(&tree, opts)
+                .map_err(api_fail)?,
             Some(tree),
         ))
     } else {
@@ -1270,6 +1362,36 @@ fn tree_if_needed(
     }
 }
 
+/// The usage line and the flags `data/cli.json` gives the command.
+fn help(command: &str) -> String {
+    let mut out = format!("Usage: carve {command} [FLAG...] [FILE...]\n");
+    let command = if command == "fix" { "lint" } else { command };
+    for row in flag_rows() {
+        if flag_row(
+            std::slice::from_ref(&row),
+            command,
+            row["name"].as_str().unwrap_or(""),
+        )
+        .is_none()
+        {
+            continue;
+        }
+        let kind = match row["values"].as_array() {
+            Some(values) => values
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join("|"),
+            None => row["kind"].as_str().unwrap_or("").to_string(),
+        };
+        let _ = writeln!(out, "  --{} {kind}", row["name"].as_str().unwrap_or(""));
+    }
+    if command == "render" {
+        out.push_str("  --to html|carve|markdown|plain|ansi\n");
+    }
+    out
+}
+
 #[allow(clippy::cognitive_complexity)]
 pub fn run(arguments: &[String]) -> i32 {
     let args = match parse(arguments) {
@@ -1281,7 +1403,7 @@ pub fn run(arguments: &[String]) -> i32 {
         return 0;
     }
     if args.help {
-        println!("Usage: carve {} [FLAG...] [FILE...]", args.command);
+        print!("{}", help(&args.command));
         return 0;
     }
     if let Some(source) = str_value(&args, "directory") {
@@ -1294,6 +1416,11 @@ pub fn run(arguments: &[String]) -> i32 {
             Err(error) => fail("import-input-invalid", error),
         };
     }
+    // Before `-o` truncates its file.
+    let standard = match StandardExtensions::from_args(&args) {
+        Ok(standard) => standard,
+        Err(code) => return code,
+    };
     let mut staged = vec![None; args.files.len()];
     if let Some(path) = str_value(&args, "output") {
         for (index, input) in args.files.iter().enumerate() {
@@ -1322,6 +1449,7 @@ pub fn run(arguments: &[String]) -> i32 {
         };
         match one(
             &args,
+            &standard,
             path,
             &bytes,
             &mut losses,

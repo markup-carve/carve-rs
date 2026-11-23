@@ -25,6 +25,9 @@ const HELD: &[(&str, &str)] = &[
     ("CC-1283", "html"),
     ("CC-1284", "html"),
     ("CC-1286", "html"),
+    // carve#6453 (lane imp6453): an `^[` that never closes leaves what follows to read as usual.
+    ("CC-1714", "children"),
+    ("CC-1715", "children"),
 ];
 
 /// A case with extensions or a host runs through the JSON boundary in
