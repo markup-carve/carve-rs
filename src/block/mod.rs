@@ -306,6 +306,8 @@ impl<'a> Parser<'a> {
             Some(Leaf::Code { .. } | Leaf::CommentBlock { .. } | Leaf::LineBlock { .. })
         );
         if self.opaque_line(&walk, e) {
+            // C2-B-052, C2-B-062: blank lines in an opaque body are its content.
+            self.blank_run = 0;
             return;
         }
         if self.region_marker(&walk) {
@@ -554,12 +556,19 @@ impl<'a> Parser<'a> {
                 held.push(k.rest().to_string());
                 true
             }
-            Leaf::LineBlock { held, comment, .. } => {
+            Leaf::LineBlock {
+                held,
+                comment,
+                stanza_open,
+                ..
+            } => {
                 if let Some(fence) = comment {
                     fence.lines.push(String::new());
                     fence.end = e;
                     return true;
                 }
+                // C2-B-024: a blank line ends the stanza, so no lazy line follows it.
+                *stanza_open = false;
                 // Gap G-025: as in the oracle, trailing blank lines of an
                 // unclosed line block are dropped, as C2-B-113 does for a fence.
                 let _ = s;

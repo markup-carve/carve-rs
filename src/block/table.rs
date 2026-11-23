@@ -328,12 +328,25 @@ fn cell_brace(text: &str, i: usize, end: usize) -> Option<CellBrace> {
         if mark.is_none() && valign.is_none() {
             return None;
         }
-        if b.get(prefix_end) == Some(&b'}') {
-            return Some((None, mark, valign, prefix_end + 1));
-        }
-        let inner = format!("{{{}", text.get(prefix_end..end)?);
-        let (block, e) = parse_glued(&inner, 0)?;
-        return Some((Some(block), mark, valign, prefix_end + e - 1));
+        let (first, after) = if b.get(prefix_end) == Some(&b'}') {
+            (None, prefix_end + 1)
+        } else {
+            let inner = format!("{{{}", text.get(prefix_end..end)?);
+            let (block, e) = parse_glued(&inner, 0)?;
+            if !block.empty {
+                return Some((Some(block), mark, valign, prefix_end + e - 1));
+            }
+            (Some(block), prefix_end + e - 1)
+        };
+        // C2-B-182: the blocks glued after the marks are attribute blocks.
+        let glued = (b.get(after) == Some(&b'{'))
+            .then(|| parse_glued(text, after))
+            .flatten()
+            .filter(|(blk, e)| *e <= end && !blk.empty);
+        return Some(match glued {
+            Some((block, e)) => (Some(block), mark, valign, e),
+            None => (first, mark, valign, after),
+        });
     }
     let (block, e) = parse_glued(text, i)?;
     if e > end || block.empty {

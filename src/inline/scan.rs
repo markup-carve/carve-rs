@@ -12,6 +12,7 @@ use crate::ast::{
 };
 use crate::chars::{ByteSet, fold_label, is_flank_space, is_joining, is_word};
 use crate::tables;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BKind {
@@ -82,18 +83,55 @@ struct Scanner<'r, 'e, 'a> {
     /// Last `]`, for the lookahead at the depth cap; searched when first asked.
     last_close: Option<Option<usize>>,
     caption_done: bool,
+    /// C2-I-074: the images that formed in the last pass, whose alt keeps a
+    /// `%%` as source; `None` in the first pass, which keeps it in every one.
+    formed_images: Option<&'r HashSet<usize>>,
+    /// The first pass kept a `%%` inside an open image.
+    pct_in_image: bool,
+    formed_now: Vec<usize>,
     i: usize,
 }
 
-/// Runs the scan over one content.
+/// Bounds the passes that narrow the images keeping a `%%` (C2-I-074).
+const MAX_IMAGE_PASSES: usize = 8;
+
+/// Runs the scan over one content. A `%%` inside an open image is alt source
+/// only when that image forms, so a scan that met one runs again with the
+/// images that formed, until that set stops narrowing (C2-I-024, C2-I-074).
 #[must_use]
 pub fn scan<'a>(
+    c: &Content<'_, 'a>,
+    env: &Env<'_, 'a>,
+    toks: Vec<Tok<'a>>,
+    bufs: &mut Bufs,
+    known: usize,
+) -> Scanned<'a> {
+    let (mut out, pct, formed_now) = scan_pass(c, env, toks, bufs, known, None);
+    if !pct {
+        return out;
+    }
+    let mut formed: HashSet<usize> = formed_now.into_iter().collect();
+    for _ in 0..MAX_IMAGE_PASSES {
+        bufs.comments = std::mem::take(&mut out.comments);
+        let (next, _, now) = scan_pass(c, env, out.toks, bufs, known, Some(&formed));
+        out = next;
+        let before = formed.len();
+        formed.retain(|start| now.contains(start));
+        if formed.len() == before {
+            break;
+        }
+    }
+    out
+}
+
+fn scan_pass<'a>(
     c: &Content<'_, 'a>,
     env: &Env<'_, 'a>,
     mut toks: Vec<Tok<'a>>,
     bufs: &mut Bufs,
     known: usize,
-) -> Scanned<'a> {
+    formed_images: Option<&HashSet<usize>>,
+) -> (Scanned<'a>, bool, Vec<usize>) {
     let t = c.text.as_str();
     toks.clear();
     let mut brackets = std::mem::take(&mut bufs.brackets);
@@ -123,6 +161,9 @@ pub fn scan<'a>(
         last_hash: None,
         last_close: None,
         caption_done: env.kind != ContentKind::Caption,
+        formed_images,
+        pct_in_image: false,
+        formed_now: Vec::new(),
         i: 0,
     };
     // `known` bytes hold no form start: `step` would be false on each of them.
@@ -141,10 +182,14 @@ pub fn scan<'a>(
     bufs.brackets = s.brackets;
     bufs.open_delims = s.open_delims;
     bufs.barriers = s.barriers;
-    Scanned {
-        toks: s.toks,
-        comments: s.comments,
-    }
+    (
+        Scanned {
+            toks: s.toks,
+            comments: s.comments,
+        },
+        s.pct_in_image,
+        s.formed_now,
+    )
 }
 
 fn comment_only_starts(text: &str, starts: &mut Vec<usize>) {
@@ -533,11 +578,9 @@ impl<'a> Scanner<'_, '_, 'a> {
     /// opener is text. An image alt is source, so `%%` in it is text (C2-I-074).
     fn line_comment(&mut self) -> bool {
         let i = self.i;
-        let in_alt = self
-            .brackets
-            .iter()
-            .any(|b| matches!(b.kind, BKind::Image { .. }));
-        if self.env.kind == ContentKind::LineBlockLine || in_alt || !atoms::comment_start(self.t, i)
+        if self.env.kind == ContentKind::LineBlockLine
+            || !atoms::comment_start(self.t, i)
+            || self.in_image_alt()
         {
             return false;
         }
@@ -565,6 +608,25 @@ impl<'a> Scanner<'_, '_, 'a> {
         self.i = start;
         self.leaf(start, end, node, false);
         true
+    }
+
+    /// C2-I-024, C2-I-074: whether an open image keeps a `%%` as alt source.
+    fn in_image_alt(&mut self) -> bool {
+        let formed = self.formed_images;
+        for b in self.brackets.iter().rev() {
+            if !matches!(b.kind, BKind::Image { .. }) {
+                continue;
+            }
+            match formed {
+                None => {
+                    self.pct_in_image = true;
+                    return true;
+                }
+                Some(f) if f.contains(&b.inner) => return true,
+                Some(_) => {}
+            }
+        }
+        false
     }
 
     fn angle(&mut self) -> bool {
@@ -943,6 +1005,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     /// An image is one leaf; its alt is the source of the bracket content.
     fn image(&mut self, top: &Bracket, bang: usize, i: usize, end: usize, target: Target) {
         self.flush();
+        self.formed_now.push(top.inner);
         let alt = self.t.get(top.inner..i).unwrap_or("");
         let alt = if alt.contains('\\') {
             self.c.arena().str(&unescape_alt(alt))
