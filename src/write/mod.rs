@@ -148,6 +148,7 @@ thread_local! {
     static WRITTEN_BLOCKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static PROBE_SORTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static INLINE_BUFFERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static READ_CHARS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -353,6 +354,43 @@ mod batched_repair_test {
         // follow that depth, but no longer one round per escaped byte.
         assert!(rounds <= 200, "{rounds} read-back parses for one paragraph");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod escape_prune_test {
+    use super::*;
+
+    /// The characters the read-back parses of one `format` of `unit` repeated `n` times read.
+    fn read_chars(unit: &str, written: &str, n: usize) -> usize {
+        let source = unit.repeat(n);
+        let tree = parse_plain(&source).unwrap_or_default();
+        let before = READ_CHARS.with(std::cell::Cell::get);
+        let (output, losses) = format_tree(&tree, Some(&source), &Settings::default());
+        assert_eq!(output, written.repeat(n));
+        assert!(losses.is_empty());
+        READ_CHARS.with(std::cell::Cell::get) - before
+    }
+
+    fn assert_linear(unit: &str, written: &str) {
+        let (small, large) = (
+            read_chars(unit, written, 16),
+            read_chars(unit, written, 128),
+        );
+        assert!(
+            large <= small * 12,
+            "16 units read {small} characters, 128 units {large}"
+        );
+    }
+
+    #[test]
+    fn list_items_with_kept_escapes_read_linearly() {
+        assert_linear("* * * {\\{#i}\n* * * # h\n", "* * * {\\{#i}\n* * * = h\n");
+    }
+
+    #[test]
+    fn paragraph_lines_with_kept_escapes_read_linearly() {
+        assert_linear("w {\\{#i}\n", "w {\\{#i}\n");
     }
 }
 
@@ -1505,6 +1543,243 @@ fn in_raw(source: &str, at: usize, raws: &[String]) -> bool {
 fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &Round<'_>) {
     let mut source = group_source(w, first);
     let raws = std::mem::take(&mut w.raw_refs);
+    let windowed = prune_in_windows(w, group, &source, &raws, round, true)
+        .or_else(|| prune_in_windows(w, group, &source, &raws, round, false));
+    if let Some(pruned) = windowed {
+        source = pruned;
+    } else {
+        prune_whole_group(w, group, &mut source, &raws, round);
+    }
+    let body = source
+        .get(usize::from(!first)..source.len().saturating_sub(1))
+        .unwrap_or("");
+    w.lines = body.split('\n').map(str::to_string).collect();
+}
+
+/// A leaf block of a parse with its span, or with `lines` the run of its children between two soft breaks.
+#[derive(Clone, Copy)]
+struct Leaf<'p> {
+    start: usize,
+    end: usize,
+    node: V<'p>,
+    lines: Option<(usize, usize)>,
+}
+
+/// The leaf blocks below `nodes` in source order; an inline parent is not entered. With `split` a paragraph
+/// gives one leaf per run of its children between soft breaks.
+fn leaf_blocks<'p>(nodes: Arr<'p>, split: bool, out: &mut Vec<Leaf<'p>>) {
+    for n in nodes {
+        if !node::is_inline_parent(n) {
+            node::for_each_slot(n, true, &mut |kids, _, _| leaf_blocks(kids, split, out));
+            continue;
+        }
+        let Some((start, end)) = span(n) else {
+            continue;
+        };
+        if split && ty(n) == "paragraph" && line_runs(n, out) {
+            continue;
+        }
+        out.push(Leaf {
+            start,
+            end,
+            node: n,
+            lines: None,
+        });
+    }
+}
+
+/// The runs of the children of `paragraph` between soft breaks, as leaves; false, adding none, where a
+/// child has no span.
+fn line_runs<'p>(paragraph: V<'p>, out: &mut Vec<Leaf<'p>>) -> bool {
+    let kids = children(paragraph);
+    let mut runs = Vec::new();
+    let mut from = 0;
+    for at in 0..=kids.len() {
+        if at < kids.len() && kids.get(at).is_some_and(|k| ty(k) != "soft_break") {
+            continue;
+        }
+        let first = kids.get(from).and_then(span);
+        let last = at.checked_sub(1).and_then(|l| kids.get(l)).and_then(span);
+        match (first, last) {
+            (Some((start, _)), Some((_, end))) if from < at => runs.push(Leaf {
+                start,
+                end,
+                node: paragraph,
+                lines: Some((from, at)),
+            }),
+            _ => return false,
+        }
+        from = at + 1;
+    }
+    out.extend(runs);
+    true
+}
+
+/// Lines `start..end` of a source holding the leaf blocks `leaves` and the escapes `escapes` in them.
+struct Window<'p> {
+    start: usize,
+    end: usize,
+    leaves: Vec<Leaf<'p>>,
+    escapes: Vec<usize>,
+}
+
+/// [`prune_whole_group`] with each trial parsing only the lines of the leaf blocks that hold the escape
+/// (C2-W-010). A window is used only where its parse gives its leaf blocks as the group reads them, and the
+/// pruned group must read back as a whole; `None` leaves every decision to the whole-group trials.
+fn prune_in_windows(
+    w: &mut Writer<'_>,
+    group: Arr<'_>,
+    source: &str,
+    raws: &[String],
+    round: &Round<'_>,
+    split: bool,
+) -> Option<String> {
+    if !round.equal || round.source != Some(source) {
+        return None;
+    }
+    let parsed = round.last?;
+    let raw_spans: Vec<(usize, usize)> = raws
+        .iter()
+        .filter(|r| !r.is_empty())
+        .flat_map(|r| {
+            source
+                .match_indices(r.as_str())
+                .map(|(at, m)| (at, at + m.len()))
+        })
+        .collect();
+    let mut escapes = Vec::new();
+    let mut current = || Some(parsed);
+    for (p, _) in source.match_indices('\\') {
+        if prunable_opener(source, p, &mut current)
+            && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
+        {
+            escapes.push(p);
+        }
+    }
+    if escapes.is_empty() {
+        return Some(source.to_string());
+    }
+    let mut leaves = Vec::new();
+    leaf_blocks(children(parsed), split, &mut leaves);
+    let mut windows: Vec<Window<'_>> = Vec::new();
+    let mut next_leaf = leaves.iter().peekable();
+    for &p in &escapes {
+        while next_leaf.peek().is_some_and(|l| l.end <= p) {
+            next_leaf.next();
+        }
+        let &&leaf = next_leaf.peek().filter(|l| l.start <= p)?;
+        let (start, end) = (leaf.start, leaf.end);
+        let line_start = source
+            .get(..start)
+            .and_then(|s| s.rfind('\n'))
+            .map_or(0, |i| i + 1);
+        let tail = end.saturating_sub(1);
+        let line_end = source
+            .get(tail..)
+            .and_then(|s| s.find('\n'))
+            .map_or(source.len(), |i| tail + i + 1);
+        match windows.last_mut() {
+            Some(last) if line_start < last.end => {
+                last.end = last.end.max(line_end);
+                if last.leaves.last().is_none_or(|l| l.start != start) {
+                    last.leaves.push(leaf);
+                }
+                last.escapes.push(p);
+            }
+            _ => windows.push(Window {
+                start: line_start,
+                end: line_end,
+                leaves: vec![leaf],
+                escapes: vec![p],
+            }),
+        }
+    }
+    let mut accepted = Vec::new();
+    for window in &windows {
+        accepted.extend(prune_window(w, source, window)?);
+    }
+    if accepted.is_empty() {
+        return Some(source.to_string());
+    }
+    let mut pruned = String::with_capacity(source.len());
+    let mut from = 0;
+    for &p in &accepted {
+        pruned.push_str(source.get(from..p)?);
+        from = p + 1;
+    }
+    pruned.push_str(source.get(from..)?);
+    let chunk = Chunk::new(pruned);
+    let kids = children(chunk.parse(w));
+    let same =
+        kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e));
+    same.then(|| chunk.text().to_string())
+}
+
+/// The escapes of `window` that its text reads the same without, tried in source order as the whole-group
+/// trials try them; `None` where the window alone does not read its leaf blocks as the group does.
+fn prune_window(w: &mut Writer<'_>, source: &str, window: &Window<'_>) -> Option<Vec<usize>> {
+    // A window below line 1 keeps one line above, as a group below another does (C2-W-005).
+    let lead = usize::from(window.start > 0);
+    let local = |at: usize| at - window.start + lead;
+    let mut text = String::with_capacity(window.end - window.start + lead);
+    if lead == 1 {
+        text.push('\n');
+    }
+    text.push_str(source.get(window.start..window.end)?);
+    let base = Chunk::new(text);
+    let read = base.parse(w);
+    let mut found = Vec::new();
+    leaf_blocks(children(read), false, &mut found);
+    let faithful = window.leaves.iter().all(|leaf| {
+        found.iter().any(|f| {
+            f.start == local(leaf.start)
+                && f.end == local(leaf.end)
+                && match leaf.lines {
+                    None => node::trees_equal(f.node, leaf.node),
+                    Some((from, to)) => {
+                        ty(f.node) == "paragraph"
+                            && children(leaf.node)
+                                .slice(from, to)
+                                .is_some_and(|run| node::lists_equal(children(f.node), run))
+                    }
+                }
+        })
+    });
+    if !faithful || exhausted(w) {
+        return None;
+    }
+    let mut text = base.text().to_string();
+    let mut accepted = Vec::new();
+    for &p in &window.escapes {
+        let at = local(p) - accepted.len();
+        let candidate = format!("{}{}", text.get(..at)?, text.get(at + 1..)?);
+        let chunk = Chunk::new(candidate);
+        let kids = children(chunk.parse(w));
+        let base_kids = children(read);
+        if kids.len() == base_kids.len()
+            && kids
+                .iter()
+                .zip(base_kids)
+                .all(|(n, e)| node::trees_equal(n, e))
+        {
+            text = chunk.text().to_string();
+            accepted.push(p);
+        }
+        if exhausted(w) {
+            return None;
+        }
+    }
+    Some(accepted)
+}
+
+/// Each prunable escape tried by a parse of the whole group without it.
+fn prune_whole_group(
+    w: &mut Writer<'_>,
+    group: Arr<'_>,
+    source: &mut String,
+    raws: &[String],
+    round: &Round<'_>,
+) {
     let mut at = source.find('\\');
     // The parse of `source` as it stands, read again (uncounted) after a prune only where a star asks.
     let mut parsed = round.last;
@@ -1523,7 +1798,7 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &
             }
             parsed
         };
-        if prunable_opener(&source, p, &mut current) && !in_raw(&source, p, &raws) {
+        if prunable_opener(source, p, &mut current) && !in_raw(source, p, raws) {
             let candidate = format!(
                 "{}{}",
                 source.get(..p).unwrap_or(""),
@@ -1534,7 +1809,7 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &
             if kids.len() == group.len()
                 && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
             {
-                source = chunk.text().to_string();
+                *source = chunk.text().to_string();
                 parsed = None;
                 parsed_source = Some(source.clone());
                 at = source.get(p..).and_then(|r| r.find('\\')).map(|q| q + p);
@@ -1546,11 +1821,8 @@ fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &
             .and_then(|r| r.find('\\'))
             .map(|q| q + p + 1);
     }
-    let body = source
-        .get(usize::from(!first)..source.len().saturating_sub(1))
-        .unwrap_or("");
-    w.lines = body.split('\n').map(str::to_string).collect();
 }
+
 #[cfg(test)]
 mod repair_limit_test {
     use super::*;
