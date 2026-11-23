@@ -368,7 +368,7 @@ mod escape_prune_test {
         let before = READ_CHARS.with(std::cell::Cell::get);
         let (output, losses) = format_tree(&tree, Some(&source), &Settings::default());
         assert_eq!(output, written.repeat(n));
-        assert!(losses.is_empty());
+        assert_eq!(losses.len(), 0);
         READ_CHARS.with(std::cell::Cell::get) - before
     }
 
@@ -1492,8 +1492,48 @@ fn star_after_break(nodes: Arr<'_>, byte: usize, parent: Option<V<'_>>) -> bool 
     false
 }
 
+/// The offset of the next byte `b` of a source at or after `from`.
+type NextByte<'a> = dyn FnMut(u8, usize) -> Option<usize> + 'a;
+
+/// A [`NextByte`] for offsets asked in increasing order, each search starting where the last ended.
+fn next_byte_after(source: &str) -> impl FnMut(u8, usize) -> Option<usize> + '_ {
+    let mut last: [Option<(usize, Option<usize>)>; 3] = [None; 3];
+    move |b, from| {
+        let slot = match b {
+            b'}' => 0,
+            b']' => 1,
+            _ => 2,
+        };
+        if let Some(&Some((asked, found))) = last.get(slot)
+            && asked <= from
+            && found.is_none_or(|f| f >= from)
+        {
+            return found;
+        }
+        let found = memchr_from(source, b, from);
+        if let Some(cached) = last.get_mut(slot) {
+            *cached = Some((from, found));
+        }
+        found
+    }
+}
+
+fn memchr_from(source: &str, b: u8, from: usize) -> Option<usize> {
+    source
+        .as_bytes()
+        .get(from..)?
+        .iter()
+        .position(|&c| c == b)
+        .map(|i| i + from)
+}
+
 /// `parsed` is the read-back parse of `source`, asked for only before a star.
-fn prunable_opener<'p>(source: &str, at: usize, parsed: &mut dyn FnMut() -> Option<V<'p>>) -> bool {
+fn prunable_opener<'p>(
+    source: &str,
+    at: usize,
+    parsed: &mut dyn FnMut() -> Option<V<'p>>,
+    find: &mut NextByte<'_>,
+) -> bool {
     let b = source.as_bytes();
     let next = b.get(at + 1).copied();
     if next == Some(b'*') {
@@ -1507,8 +1547,8 @@ fn prunable_opener<'p>(source: &str, at: usize, parsed: &mut dyn FnMut() -> Opti
         if !rest.starts_with("----") {
             return false;
         }
-        let close = rest.find(']');
-        let line_end = rest.find('\n');
+        let close = find(b']', at + 2);
+        let line_end = find(b'\n', at + 2);
         return at.checked_sub(1).and_then(|p| b.get(p)) != Some(&b'^')
             || close.is_none()
             || matches!((line_end, close), (Some(l), Some(c)) if c > l);
@@ -1518,13 +1558,10 @@ fn prunable_opener<'p>(source: &str, at: usize, parsed: &mut dyn FnMut() -> Opti
     }
     match b.get(at + 2) {
         Some(b'/' | b'*') => true,
-        Some(b'#') => {
-            let rest = source.get(at + 3..).unwrap_or("");
-            match rest.find('}') {
-                Some(close) => rest.find("\\-").is_none_or(|d| d > close),
-                None => false,
-            }
-        }
+        // An escaped hyphen before the closing brace keeps the escape.
+        Some(b'#') => find(b'}', at + 3)
+            .and_then(|close| source.get(at + 3..close))
+            .is_some_and(|inner| !inner.contains("\\-")),
         _ => false,
     }
 }
@@ -1649,8 +1686,9 @@ fn prune_in_windows(
         .collect();
     let mut escapes = Vec::new();
     let mut current = || Some(parsed);
+    let mut next = next_byte_after(source);
     for (p, _) in source.match_indices('\\') {
-        if prunable_opener(source, p, &mut current)
+        if prunable_opener(source, p, &mut current, &mut next)
             && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
         {
             escapes.push(p);
@@ -1798,7 +1836,8 @@ fn prune_whole_group(
             }
             parsed
         };
-        if prunable_opener(source, p, &mut current) && !in_raw(source, p, raws) {
+        let mut next = |b, from| memchr_from(source, b, from);
+        if prunable_opener(source, p, &mut current, &mut next) && !in_raw(source, p, raws) {
             let candidate = format!(
                 "{}{}",
                 source.get(..p).unwrap_or(""),
