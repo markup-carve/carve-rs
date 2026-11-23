@@ -54,6 +54,8 @@ impl Chunk {
 
     /// The tree as [`Self::parse_keys`] reads it, counted toward no limit.
     pub fn read<'c>(&'c self, w: &Writer<'_>, keys: Option<&HashSet<String>>) -> V<'c> {
+        #[cfg(test)]
+        super::READ_CHARS.with(|count| count.set(count.get() + self.text.len()));
         let source = crate::source::Source::new(&self.text);
         let out = crate::block::scan(&source);
         let (doc, _) =
