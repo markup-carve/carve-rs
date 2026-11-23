@@ -79,6 +79,8 @@ struct Scanner<'r, 'e, 'a> {
     /// searched when the first opener asks.
     last_pct: Option<Option<usize>>,
     last_hash: Option<Option<usize>>,
+    /// Last `]`, for the lookahead at the depth cap; searched when first asked.
+    last_close: Option<Option<usize>>,
     caption_done: bool,
     i: usize,
 }
@@ -119,6 +121,7 @@ pub fn scan<'a>(
         barriers,
         last_pct: None,
         last_hash: None,
+        last_close: None,
         caption_done: env.kind != ContentKind::Caption,
         i: 0,
     };
@@ -1181,10 +1184,11 @@ impl<'a> Scanner<'_, '_, 'a> {
             .rev()
             .nth(1)
             .map_or(0, |b| b.delim_base);
-        if inherited >= top.delim_base || !self.simple_unformed_bracket(top.inner) {
+        let (base, inner) = (top.delim_base, top.inner);
+        let saved = (top.last_star, top.last_slash);
+        if inherited >= base || !self.simple_unformed_bracket(inner) {
             return false;
         }
-        let saved = (top.last_star, top.last_slash);
         if let Some(top) = self.brackets.last_mut() {
             top.delim_base = inherited;
         }
@@ -1194,12 +1198,12 @@ impl<'a> Scanner<'_, '_, 'a> {
     }
 
     /// A conservative lookahead used only at the depth cap.
-    fn simple_unformed_bracket(&self, inner: usize) -> bool {
-        if self
-            .b
-            .get(inner..)
-            .is_some_and(|tail| !tail.contains(&b']'))
-        {
+    fn simple_unformed_bracket(&mut self, inner: usize) -> bool {
+        let b = self.b;
+        let last = *self
+            .last_close
+            .get_or_insert_with(|| b.iter().rposition(|&c| c == b']'));
+        if inner <= b.len() && last.is_none_or(|at| at < inner) {
             return true;
         }
         let mut i = inner;

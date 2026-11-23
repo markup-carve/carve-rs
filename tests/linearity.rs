@@ -157,3 +157,12 @@ fn c2_h_201_derived_text_after_budget_stays_linear() {
         )
     });
 }
+
+/// carve#6411: past the depth cap each `*` looked for a `]` in the rest of the text.
+#[test]
+fn c2_i_118_capped_openers_before_brackets_stay_linear() {
+    check("capped openers before brackets", &|k| {
+        let n = 150 * k;
+        format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n))
+    });
+}
