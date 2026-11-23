@@ -58,7 +58,8 @@ fn a_loss_on_the_same_line_braces_the_pair() {
 #[test]
 fn a_block_without_a_loss_keeps_its_spelling() {
     let (output, losses) = write(&[text("z"), pair("strong", "  "), pair("strong", "y")]);
-    assert_eq!(output, "z{*  *}{*y*}\n");
+    // carve#6420: the sibling behind the braced pair is bare where the bare form pairs.
+    assert_eq!(output, "z{*  *}*y*\n");
     assert_eq!(losses, Vec::<String>::new());
     let (output, _) = write(&[text("z "), pair("strong", "y")]);
     assert_eq!(output, "z *y*\n");

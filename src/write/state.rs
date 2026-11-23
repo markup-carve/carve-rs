@@ -101,6 +101,8 @@ pub struct Writer<'t> {
     pub forms: AddrMap<usize, u32>,
     /// The emphasis and strong whose braced form a repair round asked for (C2-W-125).
     pub round_forms: AddrSet<usize>,
+    /// C2-W-069: the nodes braced only because their bare mark glued to the same mark before them in the last write.
+    pub glued: AddrSet<usize>,
     /// The nodes given a form since the log was last cleared.
     pub new_forms: Vec<usize>,
     pub starts: Vec<(N<'t>, usize)>,
@@ -170,6 +172,7 @@ impl<'t> Writer<'t> {
             sp: Spelling::default(),
             forms: AddrMap::default(),
             round_forms: AddrSet::default(),
+            glued: AddrSet::default(),
             new_forms: Vec::new(),
             starts: Vec::new(),
             start_index: AddrMap::default(),
@@ -220,6 +223,12 @@ impl<'t> Writer<'t> {
         if self.forms.insert(n, 1).is_none() {
             self.new_forms.push(n);
         }
+    }
+
+    /// A form a comparison asked for: the node keeps it whatever stands before it.
+    pub fn add_form(&mut self, n: usize) {
+        self.glued.remove(&n);
+        *self.forms.entry(n).or_insert(0) += 1;
     }
 
     pub fn form<'v>(&self, n: impl Into<V<'v>>) -> u32 {

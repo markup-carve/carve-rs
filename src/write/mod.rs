@@ -770,6 +770,12 @@ fn group_end(w: &mut Writer<'_>, nodes: Arr<'_>, from: usize) -> usize {
 }
 
 fn reset_lines(w: &mut Writer<'_>) {
+    // The glue depends on the form of the node before, so the next write decides it again (carve#6420).
+    for n in w.glued.drain() {
+        if w.forms.get(&n) == Some(&1) {
+            w.forms.remove(&n);
+        }
+    }
     w.lines.clear();
     w.lead = None;
     w.lead_skip = 0;
@@ -837,6 +843,7 @@ struct SavedGroup<'t> {
     lost_keys: Vec<(usize, Vec<String>)>,
     forms: Vec<(usize, u32)>,
     round_forms: Vec<usize>,
+    glued: Vec<usize>,
     blank_first: bool,
 }
 
@@ -906,6 +913,11 @@ impl<'t> SavedGroup<'t> {
                 .copied()
                 .filter(|n| w.round_forms.contains(n))
                 .collect(),
+            glued: ids
+                .iter()
+                .copied()
+                .filter(|n| w.glued.contains(n))
+                .collect(),
             blank_first: w.blank_first,
             ids,
         }
@@ -931,6 +943,7 @@ impl<'t> SavedGroup<'t> {
             w.sp.lost_keys.remove(n);
             w.forms.remove(n);
             w.round_forms.remove(n);
+            w.glued.remove(n);
         }
         w.sp.escapes.extend(self.escapes);
         w.sp.attempts.extend(self.attempts);
@@ -938,6 +951,7 @@ impl<'t> SavedGroup<'t> {
         w.sp.lost_keys.extend(self.lost_keys);
         w.forms.extend(self.forms);
         w.round_forms.extend(self.round_forms);
+        w.glued.extend(self.glued);
         w.lines = self.lines;
         w.sp.losses.truncate(losses);
         w.blank_first = self.blank_first;
@@ -1019,6 +1033,7 @@ fn repair_rounds<'t>(
     for n in &stale {
         w.forms.remove(n);
         w.round_forms.remove(n);
+        w.glued.remove(n);
     }
     for n in &saved.ids {
         w.sp.escapes.remove(n);
@@ -1692,7 +1707,7 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
                 .filter(|n| !w.forms.contains_key(n)),
         );
         for n in &c.forms {
-            *w.forms.entry(id(n)).or_insert(0) += 1;
+            w.add_form(id(n));
         }
         return true;
     }
@@ -1707,7 +1722,7 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
         w.add_escape(n, *at);
     }
     for n in &c.forms {
-        *w.forms.entry(id(n)).or_insert(0) += 1;
+        w.add_form(id(n));
     }
     if c.changes() > 0 {
         return true;
