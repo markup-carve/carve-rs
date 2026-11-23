@@ -5,7 +5,8 @@
 //! takes its other spelling (C2-W-005). What neither repairs is a loss.
 
 use super::inline::{
-    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, first_from, spelled_end, write_inlines,
+    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, escape_offsets, first_from, spelled_end,
+    write_inlines,
 };
 use super::kinds::KindBlocks;
 use super::node::{
@@ -122,6 +123,8 @@ pub struct Check<'t> {
     pub closers: HashSet<(usize, usize)>,
     /// C2-W-088: the escapes of block openers behind the marker of another block on the same line, which give no kind.
     pub own_escapes: HashSet<(usize, usize)>,
+    /// C2-W-125: a closer inside the content under comparison took a backslash because it ended the content early.
+    pub cut: bool,
 }
 
 impl Check<'_> {
@@ -1079,7 +1082,67 @@ fn is_paired_mark(n: V<'_>) -> bool {
             | "subscript"
             | "insert"
             | "delete"
+            | "link"
     ) && has(n, "children")
+}
+
+/// The terminal link of a nested chain has no markup that can expose another label opener.
+fn settled_terminal(link: V<'_>) -> bool {
+    let kids = children(link);
+    kids.iter().any(|k| ty(k) == "link")
+        || (kids.len() == 1 && kids.first().is_some_and(|k| ty(k) == "text"))
+}
+
+/// Whether bare text holds another construct opener or an unclosed bracket.
+fn text_can_cross(w: &Writer<'_>, node: V<'_>, flags: u32, brackets: &mut usize) -> bool {
+    let escaped = escape_offsets(w, node, flags);
+    let mut next = 0;
+    for (at, &b) in text(node).as_bytes().iter().enumerate() {
+        if escaped.get(next) == Some(&at) {
+            next += 1;
+            continue;
+        }
+        match b {
+            b'`' | b'<' | b'{' | b'$' | b':' => return true,
+            b'[' => *brackets += 1,
+            b']' if *brackets > 0 => *brackets -= 1,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// A link bounds its own bracket pairs only if every nested label is settled as well.
+fn can_cross_link_closer(w: &Writer<'_>, kids: Arr<'_>, flags: u32) -> bool {
+    let mut brackets = 0;
+    let mut pending: Vec<(V<'_>, u32)> = kids.iter().rev().map(|n| (n, flags)).collect();
+    while let Some((node, flags)) = pending.pop() {
+        match ty(node) {
+            "link" => {
+                if !settled_terminal(node)
+                    || can_cross_link_closer(w, children(node), flags | IN_BRACKET)
+                {
+                    return true;
+                }
+            }
+            "text" => {
+                if text_can_cross(w, node, flags, &mut brackets) {
+                    return true;
+                }
+            }
+            "strong" | "emphasis" => {
+                let inside = flags
+                    | if ty(node) == "strong" {
+                        IN_STRONG
+                    } else {
+                        IN_EMPHASIS
+                    };
+                pending.extend(children(node).iter().rev().map(|n| (n, inside)));
+            }
+            _ => return true,
+        }
+    }
+    brackets != 0
 }
 
 fn opens_across(value: &str) -> bool {
@@ -1092,10 +1155,18 @@ fn escape_across_closer<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>],
         return false;
     }
     let flags = content_flags(c, e);
+    let link = ty(e) == "link";
+    if link && !can_cross_link_closer(w, children(e), flags) {
+        return false;
+    }
     let outer = c.flags;
     let spelled = write_inlines(w, &[e], outer);
     let content = write_inlines(w, &refs(children(e)), flags);
-    let tail = (spelled.len().saturating_sub(content.len())) / 2;
+    let tail = if link {
+        spelled.len().saturating_sub(1 + content.len())
+    } else {
+        (spelled.len().saturating_sub(content.len())) / 2
+    };
     let closer_text = spelled
         .get(spelled.len().saturating_sub(tail)..)
         .unwrap_or("")
@@ -1577,7 +1648,9 @@ fn closed_early<'t>(
     let m = closing_mark(ty(owner));
     if matches!(ty(owner), "emphasis" | "strong") && has_other_form(w, c, owner) {
         change_form(c, owner);
-    } else if !m.is_some_and(|m| escape_closer(w, c, es, i, vi, m)) {
+    } else if m.is_some_and(|m| escape_closer(w, c, es, i, vi, m)) {
+        c.cut = true;
+    } else {
         // The wrapper has already read back. If a prior child changed and a
         // later construct is missing, name that construct rather than the
         // wrapper that still surrounds it (C2-W-124).
@@ -1648,6 +1721,10 @@ fn match_characters<'t>(
         if value.get(at.vi + k) == other.get(at.aj + k) {
             continue;
         }
+        // C2-W-125: behind a content that ended early the parse holds the rest of that content as text, which opens nothing.
+        if c.cut {
+            return false;
+        }
         // C2-W-124, C2-W-091: the parse drops the blanks that start a line. They are the loss of the text, and the
         // comparison goes on behind them, so that a construct there is reported in the same round.
         if is_blank(value.get(at.vi + k)) && at_line_start(e, es, at.i, at.vi + k, owner) {
@@ -1715,6 +1792,10 @@ fn parse_ends_in_text<'t>(
     at: &Cursor,
     owner: N<'t>,
 ) -> bool {
+    // C2-W-125: the node before read on into this text; once its repair closes it in place, the text reads as written.
+    if c.cut {
+        return false;
+    }
     let cur = es.get(at.i).copied();
     if let Some(t) = cur.filter(|t| ty(t) == "text" && ends_line_with_cr(text(t), at.vi)) {
         c.losses.push((t, Some("value".into())));
@@ -1882,6 +1963,10 @@ fn skip_construct<'t>(
     at: &mut Cursor,
     owner: N<'t>,
 ) -> bool {
+    // C2-W-125: behind a content that ended early, the parse can open a construct on the markup of the tree.
+    if c.cut {
+        return false;
+    }
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
     let before = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
     if comparison_behind_quote(prior, before, e, at.vi, a) {
@@ -1992,6 +2077,10 @@ fn match_node<'t>(
         return false;
     };
     if ty(a) != ty(e) || at.aj > 0 {
+        // C2-W-125: behind a content that ended early the parse reads its neighbors otherwise, which no respelling repairs.
+        if c.cut {
+            return false;
+        }
         return respell(w, c, es, at.i) && step_over(w, c, es, as_, at);
     }
     if is_lost_code(w, es.get(at.i + 1).copied()) {
@@ -2006,7 +2095,9 @@ fn match_node<'t>(
         return false;
     }
     repair_comment_closer(w, c, es, at.i, e, a);
+    let outer = std::mem::take(&mut c.cut);
     compare_inline(w, c, e, a);
+    c.cut |= outer;
     at.i += 1;
     at.j += 1;
     true
@@ -2264,7 +2355,16 @@ fn compare_inlines<'t>(
         }
     }
     if !done && at.j < as_.len() {
-        c.losses.push((owner, None));
+        // C2-W-005: the content read on past its end, as its closer paired later. The kind rounds leave it unread
+        // (CC-1633); the rounds of the reported openers take the braced form rather than lose the node.
+        if !w.kind_escapes
+            && matches!(ty(owner), "emphasis" | "strong")
+            && has_other_form(w, c, owner)
+        {
+            change_form(c, owner);
+        } else {
+            c.losses.push((owner, None));
+        }
     }
     c.owner = outer;
 }
@@ -2400,6 +2500,8 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
         c.flags |= IN_CELL;
     }
     compare_fields(w, c, e, a);
+    // A content that ended early in another block keeps nothing of this one from being compared.
+    c.cut = false;
     if is_inline_parent(e) {
         compare_inlines(w, c, &refs(children(e)), children(a), e);
     } else if ty(e) != "include" {

@@ -803,9 +803,20 @@ fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) ->
         return end;
     }
     w.kind_failed = false;
+    saved.restore(w, reported, group);
+    let before = SavedGroup::new(w, group);
+    // C2-W-005: where that loses a node, the closer repairs give their kind too, the smallest departure that keeps it.
+    w.closer_kinds = true;
+    w.group_certificate = GroupCertificate::None;
+    let end = repair_rounds(w, doc, from, first, reported);
+    w.closer_kinds = false;
+    if w.sp.losses.len() == reported && !w.kind_failed {
+        return end;
+    }
+    w.kind_failed = false;
     // C2-W-088: a group whose kind rounds leave a node unread is written by
     // rounds of the reported escapes only.
-    saved.restore(w, reported, group);
+    before.restore(w, reported, group);
     w.kind_escapes = false;
     w.group_certificate = GroupCertificate::None;
     let end = repair_rounds(w, doc, from, first, reported);
@@ -1381,10 +1392,16 @@ fn escape_group_partners<'t>(
 /// that kind in the block, so the rounds are bounded by the kinds.
 fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
     let trials: HashSet<(usize, usize)> = c.trials.iter().map(|(n, at)| (id(n), *at)).collect();
+    // CC-1568: a backslash of a C2-W-125 closer repair gives no kind.
     let reported: Vec<(N<'t>, usize)> = c
         .escapes
         .iter()
-        .filter(|(n, at)| !trials.contains(&(id(n), *at)) && !c.own_escapes.contains(&(id(n), *at)))
+        .filter(|(n, at)| {
+            let key = (id(n), *at);
+            !trials.contains(&key)
+                && !c.own_escapes.contains(&key)
+                && (w.closer_kinds || !c.closers.contains(&key))
+        })
         .copied()
         .collect();
     if reported.is_empty() {
