@@ -5,7 +5,8 @@
 //! takes its other spelling (C2-W-005). What neither repairs is a loss.
 
 use super::inline::{
-    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, first_from, spelled_end, write_inlines,
+    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, escape_offsets, first_from, spelled_end,
+    write_inlines,
 };
 use super::kinds::KindBlocks;
 use super::node::{
@@ -1081,7 +1082,67 @@ fn is_paired_mark(n: V<'_>) -> bool {
             | "subscript"
             | "insert"
             | "delete"
+            | "link"
     ) && has(n, "children")
+}
+
+/// The terminal link of a nested chain has no markup that can expose another label opener.
+fn settled_terminal(link: V<'_>) -> bool {
+    let kids = children(link);
+    kids.iter().any(|k| ty(k) == "link")
+        || (kids.len() == 1 && kids.first().is_some_and(|k| ty(k) == "text"))
+}
+
+/// Whether bare text holds another construct opener or an unclosed bracket.
+fn text_can_cross(w: &Writer<'_>, node: V<'_>, flags: u32, brackets: &mut usize) -> bool {
+    let escaped = escape_offsets(w, node, flags);
+    let mut next = 0;
+    for (at, &b) in text(node).as_bytes().iter().enumerate() {
+        if escaped.get(next) == Some(&at) {
+            next += 1;
+            continue;
+        }
+        match b {
+            b'`' | b'<' | b'{' | b'$' | b':' => return true,
+            b'[' => *brackets += 1,
+            b']' if *brackets > 0 => *brackets -= 1,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// A link bounds its own bracket pairs only if every nested label is settled as well.
+fn can_cross_link_closer(w: &Writer<'_>, kids: Arr<'_>, flags: u32) -> bool {
+    let mut brackets = 0;
+    let mut pending: Vec<(V<'_>, u32)> = kids.iter().rev().map(|n| (n, flags)).collect();
+    while let Some((node, flags)) = pending.pop() {
+        match ty(node) {
+            "link" => {
+                if !settled_terminal(node)
+                    || can_cross_link_closer(w, children(node), flags | IN_BRACKET)
+                {
+                    return true;
+                }
+            }
+            "text" => {
+                if text_can_cross(w, node, flags, &mut brackets) {
+                    return true;
+                }
+            }
+            "strong" | "emphasis" => {
+                let inside = flags
+                    | if ty(node) == "strong" {
+                        IN_STRONG
+                    } else {
+                        IN_EMPHASIS
+                    };
+                pending.extend(children(node).iter().rev().map(|n| (n, inside)));
+            }
+            _ => return true,
+        }
+    }
+    brackets != 0
 }
 
 fn opens_across(value: &str) -> bool {
@@ -1094,10 +1155,18 @@ fn escape_across_closer<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>],
         return false;
     }
     let flags = content_flags(c, e);
+    let link = ty(e) == "link";
+    if link && !can_cross_link_closer(w, children(e), flags) {
+        return false;
+    }
     let outer = c.flags;
     let spelled = write_inlines(w, &[e], outer);
     let content = write_inlines(w, &refs(children(e)), flags);
-    let tail = (spelled.len().saturating_sub(content.len())) / 2;
+    let tail = if link {
+        spelled.len().saturating_sub(1 + content.len())
+    } else {
+        (spelled.len().saturating_sub(content.len())) / 2
+    };
     let closer_text = spelled
         .get(spelled.len().saturating_sub(tail)..)
         .unwrap_or("")
@@ -2288,7 +2357,10 @@ fn compare_inlines<'t>(
     if !done && at.j < as_.len() {
         // C2-W-005: the content read on past its end, as its closer paired later. The kind rounds leave it unread
         // (CC-1633); the rounds of the reported openers take the braced form rather than lose the node.
-        if !w.kind_escapes && matches!(ty(owner), "emphasis" | "strong") && has_other_form(w, c, owner) {
+        if !w.kind_escapes
+            && matches!(ty(owner), "emphasis" | "strong")
+            && has_other_form(w, c, owner)
+        {
             change_form(c, owner);
         } else {
             c.losses.push((owner, None));

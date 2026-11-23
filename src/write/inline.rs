@@ -70,6 +70,25 @@ pub fn first_from(offsets: &[usize], from: usize) -> usize {
     offsets.partition_point(|&o| o < from)
 }
 
+/// The offsets of `node` that take a backslash: those asked for and those of C2-W-097, C2-W-098.
+pub fn escape_offsets(w: &Writer<'_>, node: V<'_>, flags: u32) -> Vec<usize> {
+    let escapes = w.escapes_of(node);
+    let bytes = text(node).as_bytes();
+    let mut out = Vec::new();
+    let mut next = 0;
+    let mut cursor = BraceQuote::default();
+    for at in 0..bytes.len() {
+        let asked = escapes.get(next) == Some(&at);
+        if asked {
+            next += 1;
+        }
+        if asked || always_escaped(bytes, at, flags, &mut cursor) {
+            out.push(at);
+        }
+    }
+    out
+}
+
 /// The text `value[from, to)` with the backslashes it needs.
 fn escaped(w: &Writer<'_>, node: V<'_>, value: &str, from: usize, to: usize, flags: u32) -> String {
     let escapes = w.escapes_of(node);
