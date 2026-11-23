@@ -1043,6 +1043,11 @@ impl<'s> AltScan<'s> {
             }
             i = match c {
                 b'^' if b.get(i + 1) == Some(&b'[') => self.note_open(i),
+                // C2-I-087: the bracket of a nested image opener is no footnote reference, `![^]` included.
+                b'!' if b.get(i + 1) == Some(&b'[') => {
+                    self.open.push(Some(i + 2));
+                    i + 2
+                }
                 b'[' => self.bracket_open(i),
                 b']' => match self.open.pop() {
                     None => return Some(i),

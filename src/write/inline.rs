@@ -203,7 +203,21 @@ pub fn kinds_below(w: &mut Writer<'_>, node: V<'_>) -> u8 {
 }
 
 pub fn braced_pair(w: &mut Writer<'_>, node: V<'_>, flags: u32, bit: u8, inside: u32) -> bool {
-    flags & inside != 0 || kinds_below(w, node) & bit != 0 || w.form(node) > 0 || edge_comment(node)
+    flags & inside != 0
+        || kinds_below(w, node) & bit != 0
+        || w.form(node) > 0
+        || edge_comment(node)
+        || edge_mark(node, if bit == 2 { '*' } else { '/' })
+}
+
+/// C2-W-069 (carve#6469): a content that starts or ends with the node's own mark would pair with the opener or
+/// closer beside it, so the node is braced, whatever stands behind it.
+fn edge_mark(node: V<'_>, mark: char) -> bool {
+    let c = children(node);
+    c.first()
+        .is_some_and(|n| ty(n) == "text" && text(n).starts_with(mark))
+        || c.last()
+            .is_some_and(|n| ty(n) == "text" && text(n).ends_with(mark))
 }
 
 fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
