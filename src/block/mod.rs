@@ -360,17 +360,30 @@ impl<'a> Parser<'a> {
         if self.continue_leaf(&walk, e) {
             return;
         }
-        if had_opaque && self.leaf.is_none() && self.comment_ends_body(&walk, e) {
-            return;
-        }
-        // C2-B-135: a line that ended an opaque body is not a skipped comment line.
-        if !had_opaque && self.comment_only(&walk, e) {
-            // C2-B-137: a skipped comment line is not blank and not content, so
-            // the blank line above it stays the one C2-B-232 reads.
-            self.prev_blank = blank_above;
+        if self.comment_line(&walk, e, had_opaque, blank_above) {
             return;
         }
         self.blank_run_reset_after(&walk, e);
+    }
+
+    fn comment_line(
+        &mut self,
+        walk: &Walk<'a>,
+        e: usize,
+        had_opaque: bool,
+        blank_above: bool,
+    ) -> bool {
+        // C2-B-135: a line that ended an opaque body is not a skipped comment line.
+        if had_opaque {
+            return self.leaf.is_none() && self.comment_ends_body(walk, e);
+        }
+        if !self.comment_only(walk, e) {
+            return false;
+        }
+        // C2-B-137: a skipped comment line is not blank and not content, so
+        // the blank line above it stays the one C2-B-232 reads.
+        self.prev_blank = blank_above;
+        true
     }
 
     /// C2-B-137: a comment-only line that ends an opaque body closes the body's
