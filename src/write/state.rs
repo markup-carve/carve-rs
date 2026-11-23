@@ -120,6 +120,8 @@ pub struct Writer<'t> {
     pub below_list: crate::hash::AddrMap<usize, Below>,
     /// C2-W-155: top-level blocks written one space in; the value is true where the attribute line stays at column 0.
     pub indented: crate::hash::AddrMap<usize, bool>,
+    /// C2-B-137: the comment lines reported because the open container above reads them in.
+    pub read_comments: crate::hash::AddrSet<usize>,
     /// C2-W-088: whether a round escapes every opener of a reported kind, or the reported openers only.
     pub kind_escapes: bool,
     /// The bracket partners of the group in repair, by its first node and length.
@@ -175,6 +177,7 @@ impl<'t> Writer<'t> {
             top_blocks: crate::hash::AddrSet::default(),
             below_list: crate::hash::AddrMap::default(),
             indented: crate::hash::AddrMap::default(),
+            read_comments: crate::hash::AddrSet::default(),
             kind_escapes: true,
             partners: None,
             kind_failed: false,

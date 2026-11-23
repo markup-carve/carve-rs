@@ -1103,7 +1103,17 @@ fn blank_lines_before_comment(w: &mut Writer<'_>, before: V<'_>, node: V<'_>) ->
             return 0;
         }
         lose(w, node, None);
+        w.read_comments.insert(id(node));
         return 1;
+    }
+    // C2-B-137: a comment line directly below one the container above read in is read into it as well.
+    if is_comment_line(Some(node))
+        && !is_region_marker(node)
+        && w.read_comments.contains(&id(before))
+        && w.is_lost(before)
+    {
+        lose(w, node, None);
+        w.read_comments.insert(id(node));
     }
     usize::from(takes_line_below(w, before) || w.form(node) > 0)
 }
@@ -1236,8 +1246,12 @@ pub fn below_list(
 ) {
     let mut out = crate::hash::AddrMap::default();
     let mut indented = crate::hash::AddrMap::default();
+    let above = top_predecessors(w, nodes);
     for at in 1..nodes.len() {
-        let (Some(before), Some(node)) = (nodes.get(at - 1), nodes.get(at)) else {
+        let (Some(before), Some(node)) = (
+            above.get(at).copied().flatten().and_then(|i| nodes.get(i)),
+            nodes.get(at),
+        ) else {
             continue;
         };
         if !matches!(ty(before), "list" | "footnote" | "definition_list")
@@ -1246,10 +1260,16 @@ pub fn below_list(
             continue;
         }
         let below = if !takes_lazy_line(w, before) {
-            Below::Direct
+            // The opener closes the container only on the line directly below it; below a comment line it opens a
+            // metadata block (C2-B-232), and indented it joins the item.
+            if above.get(at) == Some(&Some(at - 1)) {
+                Below::Direct
+            } else {
+                Below::Unspellable
+            }
         } else if ty(before) == "footnote" {
             Below::Unspellable
-        } else if let Some(run) = indent_run(w, nodes, at - 1) {
+        } else if let Some(run) = indent_run(w, nodes, &above, at) {
             indented.extend(run);
             Below::Indent
         } else {
@@ -1258,6 +1278,25 @@ pub fn below_list(
         out.insert(id(node), below);
     }
     (out, indented)
+}
+
+/// C2-B-137: per top-level block, the index of the block above it that the reader does not pass over. A comment line
+/// below an open container closes nothing, unless it is a region marker or ends the container's fence (C2-W-123).
+fn top_predecessors(w: &Writer<'_>, nodes: Arr<'_>) -> Vec<Option<usize>> {
+    let mut above = Vec::with_capacity(nodes.len());
+    let mut last: Option<usize> = None;
+    for (at, node) in nodes.iter().enumerate() {
+        above.push(last);
+        let passed = is_comment_line(Some(node))
+            && !is_region_marker(node)
+            && last
+                .and_then(|i| nodes.get(i))
+                .is_some_and(|l| is_open_container(w, l) && last_fence(w, l).is_none());
+        if !passed {
+            last = Some(at);
+        }
+    }
+    above
 }
 
 /// The smallest departure that keeps a block written one space in out of the open container directly above it
@@ -1273,16 +1312,23 @@ enum Departure {
 /// C2-W-155: the departures in the order the clause takes them.
 const DEPARTURES: [Departure; 2] = [Departure::AttributeLine, Departure::IndentAbove];
 
-/// C2-W-155: the run of top-level blocks written one space in, from the block at `from` upward, each with whether its
-/// attribute line stays at column 0. None where the run reaches a footnote, which has no indented spelling.
-fn indent_run(w: &Writer<'_>, nodes: Arr<'_>, from: usize) -> Option<Vec<(usize, bool)>> {
+/// C2-W-155: the run of top-level blocks written one space in, upward from the block above the paragraph at `at`, each
+/// with whether its attribute line stays at column 0. None where the run reaches a footnote, which has no indented
+/// spelling. A comment line the reader passes over stays at column 0 and is no part of the run (C2-B-137).
+fn indent_run(
+    w: &Writer<'_>,
+    nodes: Arr<'_>,
+    above: &[Option<usize>],
+    at: usize,
+) -> Option<Vec<(usize, bool)>> {
     let mut run = Vec::new();
-    let mut at = from;
+    let mut at = above.get(at).copied().flatten()?;
     loop {
         let node = nodes.get(at)?;
-        // A block comment closes the container above it; a comment line does not (C2-B-137).
-        let above_at = (0..at).rev().find(|&i| !is_comment_line(nodes.get(i)));
-        let Some(above) = above_at
+        let Some(over) = above
+            .get(at)
+            .copied()
+            .flatten()
             .and_then(|i| nodes.get(i))
             .filter(|a| matches!(ty(a), "list" | "definition_list" | "footnote"))
         else {
@@ -1291,17 +1337,13 @@ fn indent_run(w: &Writer<'_>, nodes: Arr<'_>, from: usize) -> Option<Vec<(usize,
         };
         let departure = DEPARTURES.into_iter().find(|d| match d {
             Departure::AttributeLine => has_attribute_line(w, node),
-            Departure::IndentAbove => ty(above) != "footnote",
+            Departure::IndentAbove => ty(over) != "footnote",
         })?;
-        // C2-B-137: a comment line closes no container, and below the blank line the container takes it too.
-        if above_at != at.checked_sub(1) {
-            return None;
-        }
         run.push((id(node), departure == Departure::AttributeLine));
         if departure == Departure::AttributeLine {
             return Some(run);
         }
-        at -= 1;
+        at = above.get(at).copied().flatten()?;
     }
 }
 
@@ -1411,9 +1453,14 @@ fn write_siblings<'t>(
         if ty(node) == "code_block" && caption(node).is_some() {
             at = captioned_code(w, nodes, at, prefix, flags);
         } else if let Some(&column_0) = w.indented.get(&id(node)) {
-            // C2-W-155: one space in; an attribute line at column 0 closes the container above.
+            // C2-W-155: one space in; an attribute line at column 0 closes the container above. C2-W-122: one written
+            // above a comment line already stands there.
+            let prewritten = w.prewritten == Some(id(node));
             write_block(w, node, &format!("{prefix} "), flags);
-            if column_0 && let Some(line) = w.lines.get_mut(written) {
+            if column_0
+                && !prewritten
+                && let Some(line) = w.lines.get_mut(written)
+            {
                 line.remove(0);
             }
         } else {

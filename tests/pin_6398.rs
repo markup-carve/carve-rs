@@ -32,8 +32,8 @@ fn lazy_ending_container_and_run_above_are_indented() {
     }
 }
 
-/// C2-W-155, C2-W-117: a run that reaches a footnote, or crosses a comment line that the container above
-/// would take, has no spelling and reports the paragraph.
+/// C2-W-155, C2-W-117: a run that reaches a footnote has no spelling and reports the paragraph. A comment line
+/// that the container above takes is reported instead, and the run is written as without it (carve#6430).
 #[test]
 fn run_into_footnote_or_across_comment_is_unspellable() {
     let comment = blocks("p\n\n%% c\n").pop().unwrap_or_default();
@@ -41,7 +41,7 @@ fn run_into_footnote_or_across_comment_is_unspellable() {
         (blocks("a[^n]\n\n[^n]: x\n\n:: t\n: d\n"), "/children/4"),
         (
             [blocks(":: t\n: d\n"), vec![comment]].concat(),
-            "/children/3",
+            "/children/1",
         ),
     ] {
         children.extend(blocks(" * b\n\n ---yaml\nk: v\n---\n"));

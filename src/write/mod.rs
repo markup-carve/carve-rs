@@ -792,8 +792,9 @@ fn group_source(w: &Writer<'_>, first: bool) -> String {
 
 fn repair_group<'t>(w: &mut Writer<'t>, doc: N<'t>, from: usize, first: bool) -> usize {
     w.group_certificate = GroupCertificate::None;
-    let reported = w.sp.losses.len();
     let end = group_end(w, children(doc), from);
+    // A loss reported while finding the boundary names a block behind the group (C2-B-137).
+    let reported = w.sp.losses.len();
     let group = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
     let saved = SavedGroup::new(w, group);
     w.kind_failed = false;

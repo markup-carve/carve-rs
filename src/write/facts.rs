@@ -538,7 +538,8 @@ fn raw_ref(node: V<'_>, src: &str, quoted: bool) -> Option<String> {
         start
     };
     let raw = src.get(start..end)?;
-    let raw = if node.get("attrs").is_some() {
+    // The brace block is written from the fields; `{:lang}` alone sets no `attrs` (C2-W-048).
+    let raw = if node.get("attrs").is_some() || node.get("lang").is_some() {
         let b = raw.as_bytes();
         let cut = (0..b.len())
             .rev()
