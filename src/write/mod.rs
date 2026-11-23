@@ -1675,6 +1675,28 @@ fn prune_in_windows(
         return None;
     }
     let parsed = round.last?;
+    let escapes = prunable_escapes(source, raws, parsed);
+    if escapes.is_empty() {
+        return Some(source.to_string());
+    }
+    let mut leaves = Vec::new();
+    leaf_blocks(children(parsed), split, &mut leaves);
+    let mut accepted = Vec::new();
+    for window in windows_of(source, &escapes, &leaves)? {
+        accepted.extend(prune_window(w, source, &window)?);
+    }
+    if accepted.is_empty() {
+        return Some(source.to_string());
+    }
+    let chunk = Chunk::new(without_bytes(source, &accepted)?);
+    let kids = children(chunk.parse(w));
+    let same =
+        kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e));
+    same.then(|| chunk.text().to_string())
+}
+
+/// The backslashes of `source` that the prune tries, in source order; `parsed` is its parse.
+fn prunable_escapes(source: &str, raws: &[String], parsed: V<'_>) -> Vec<usize> {
     let raw_spans: Vec<(usize, usize)> = raws
         .iter()
         .filter(|r| !r.is_empty())
@@ -1684,34 +1706,33 @@ fn prune_in_windows(
                 .map(|(at, m)| (at, at + m.len()))
         })
         .collect();
-    let mut escapes = Vec::new();
     let mut current = || Some(parsed);
     let mut next = next_byte_after(source);
-    for (p, _) in source.match_indices('\\') {
-        if prunable_opener(source, p, &mut current, &mut next)
-            && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
-        {
-            escapes.push(p);
-        }
-    }
-    if escapes.is_empty() {
-        return Some(source.to_string());
-    }
-    let mut leaves = Vec::new();
-    leaf_blocks(children(parsed), split, &mut leaves);
-    let mut windows: Vec<Window<'_>> = Vec::new();
+    source
+        .match_indices('\\')
+        .map(|(p, _)| p)
+        .filter(|&p| {
+            prunable_opener(source, p, &mut current, &mut next)
+                && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
+        })
+        .collect()
+}
+
+/// The windows of `escapes`, each the lines of the leaf that holds an escape, merged where they share a line;
+/// `None` where an escape lies in no leaf.
+fn windows_of<'p>(source: &str, escapes: &[usize], leaves: &[Leaf<'p>]) -> Option<Vec<Window<'p>>> {
+    let mut windows: Vec<Window<'p>> = Vec::new();
     let mut next_leaf = leaves.iter().peekable();
-    for &p in &escapes {
+    for &p in escapes {
         while next_leaf.peek().is_some_and(|l| l.end <= p) {
             next_leaf.next();
         }
         let &&leaf = next_leaf.peek().filter(|l| l.start <= p)?;
-        let (start, end) = (leaf.start, leaf.end);
         let line_start = source
-            .get(..start)
+            .get(..leaf.start)
             .and_then(|s| s.rfind('\n'))
             .map_or(0, |i| i + 1);
-        let tail = end.saturating_sub(1);
+        let tail = leaf.end.saturating_sub(1);
         let line_end = source
             .get(tail..)
             .and_then(|s| s.find('\n'))
@@ -1719,7 +1740,7 @@ fn prune_in_windows(
         match windows.last_mut() {
             Some(last) if line_start < last.end => {
                 last.end = last.end.max(line_end);
-                if last.leaves.last().is_none_or(|l| l.start != start) {
+                if last.leaves.last().is_none_or(|l| l.start != leaf.start) {
                     last.leaves.push(leaf);
                 }
                 last.escapes.push(p);
@@ -1732,25 +1753,19 @@ fn prune_in_windows(
             }),
         }
     }
-    let mut accepted = Vec::new();
-    for window in &windows {
-        accepted.extend(prune_window(w, source, window)?);
-    }
-    if accepted.is_empty() {
-        return Some(source.to_string());
-    }
-    let mut pruned = String::with_capacity(source.len());
+    Some(windows)
+}
+
+/// `source` without the bytes at the increasing offsets `at`.
+fn without_bytes(source: &str, at: &[usize]) -> Option<String> {
+    let mut out = String::with_capacity(source.len());
     let mut from = 0;
-    for &p in &accepted {
-        pruned.push_str(source.get(from..p)?);
+    for &p in at {
+        out.push_str(source.get(from..p)?);
         from = p + 1;
     }
-    pruned.push_str(source.get(from..)?);
-    let chunk = Chunk::new(pruned);
-    let kids = children(chunk.parse(w));
-    let same =
-        kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e));
-    same.then(|| chunk.text().to_string())
+    out.push_str(source.get(from..)?);
+    Some(out)
 }
 
 /// The escapes of `window` that its text reads the same without, tried in source order as the whole-group
