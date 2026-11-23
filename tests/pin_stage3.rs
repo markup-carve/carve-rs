@@ -118,3 +118,11 @@ fn typed_opener_paragraph_below_a_list() {
         assert_eq!(diagnostics[0]["path"], "/children/1", "{r}");
     }
 }
+
+/// carve-rs#4601, C2-W-099: the hyphens of a smart dash source join the run of the text behind it.
+#[test]
+fn hyphen_right_after_a_smart_dash_takes_the_run_kind() {
+    let em = json!({"type": "smart_punctuation", "kind": "em_dash", "glyph": "\u{2014}", "source": "---"});
+    let tree = doc(json!([{"type": "paragraph", "children": [em, text("--x-")]}]));
+    assert_eq!(written(&tree), "---\\-\\-x-\n");
+}
