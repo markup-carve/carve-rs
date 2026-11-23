@@ -128,6 +128,9 @@ pub struct Check<'t> {
     pub own_escapes: HashSet<(usize, usize)>,
     /// C2-W-125: a closer inside the content under comparison took a backslash because it ended the content early.
     pub cut: bool,
+    /// C2-I-118: the `[` openers this round escaped where the parse read a construct over text, each with its
+    /// text and the end of the construct there.
+    pub capped: Vec<(N<'t>, usize, usize)>,
 }
 
 impl Check<'_> {
@@ -2062,7 +2065,8 @@ fn skip_construct<'t>(
     }
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
     let before = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
-    if comparison_behind_quote(prior, before, e, at.vi, a) {
+    let quoted = comparison_behind_quote(prior, before, e, at.vi, a);
+    if quoted {
         escape_at(w, c, e, at.vi + 1);
     } else {
         escape_opener(w, c, e, es, at.i, at.vi, a);
@@ -2071,7 +2075,11 @@ fn skip_construct<'t>(
         return false;
     };
     let from = construct_start(e, es, at, a, owner);
-    let Some(stop) = spelled_end(w, e, from, end - start, c.flags) else {
+    let spelled = spelled_end(w, e, from, end - start, c.flags);
+    if !quoted {
+        record_capped(c, e, at.vi, spelled, opener_shift(a));
+    }
+    let Some(stop) = spelled else {
         return false;
     };
     at.vi = stop;
@@ -2081,6 +2089,56 @@ fn skip_construct<'t>(
         at.vi = 0;
     }
     true
+}
+
+/// C2-I-118: a `[` construct the parse read over text, recorded with the end of the construct in the text
+/// (the end of the text where it runs past it) for [`escape_capped_run`].
+fn record_capped<'t>(c: &mut Check<'t>, e: N<'t>, from: usize, end: Option<usize>, shift: usize) {
+    let b = text(e).as_bytes();
+    let mut at = from;
+    while matches!(b.get(at), Some(b' ' | b'\t')) {
+        at += 1;
+    }
+    at += shift;
+    let marked = c.marks.get(&id(e)).and_then(|m| m.get(&at)) == Some(&true);
+    if b.get(at) == Some(&b'[') && marked {
+        c.capped.push((e, at, end.unwrap_or(b.len())));
+    }
+}
+
+/// C2-I-118: past the depth cap the reader pushes no more openers and reads the brackets behind them as text, so
+/// a construct opens on the last bracket it pushed. Its escape frees one entry and the next round reads the same
+/// construct one bracket later. Where the escape of such an opener is all a round asks, the escapes of every bare
+/// `[` of the text up to the end of the construct are placed at once, returned in the order the rounds would place
+/// them; the rounds' end trims them back (`trim_capped_runs`).
+pub fn escape_capped_run<'t>(w: &Writer<'t>, c: &mut Check<'t>) -> Vec<(N<'t>, usize)> {
+    let capped = std::mem::take(&mut c.capped);
+    let Some(&(e, opener, stop)) = capped.first() else {
+        return Vec::new();
+    };
+    if c.escapes.len() != 1 || c.retracted.len() + c.forms.len() > 0 {
+        return Vec::new();
+    }
+    if c.escapes
+        .first()
+        .is_none_or(|&(n, at)| id(n) != id(e) || at != opener)
+    {
+        return Vec::new();
+    }
+    let b = text(e).as_bytes();
+    let tail = b.get(opener + 1..stop.min(b.len())).unwrap_or(&[]);
+    // Only past the depth cap: the text must hold at least as many brackets as the reader pushes.
+    if text(e).matches('[').count() < crate::tables::INLINE_DEPTH {
+        return Vec::new();
+    }
+    let mut placed = Vec::new();
+    for (k, _) in tail.iter().enumerate().filter(|(_, x)| **x == b'[') {
+        let at = opener + 1 + k;
+        if escape_at(w, c, e, at) {
+            placed.push((e, at));
+        }
+    }
+    placed
 }
 
 fn reads_on(node: V<'_>, next: V<'_>) -> bool {
