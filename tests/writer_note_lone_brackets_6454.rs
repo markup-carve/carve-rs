@@ -8,7 +8,8 @@ fn lone_brackets_in_a_note_or_span_take_the_backslash() {
         "^[[{^]\\]\\]^}]\n",
         "^[*\\[*]]\n",
         "^[[{^]\\]\\]^}]]\n",
-        "^[\\]]\\]a\n",
+        // C2-W-088, CC-1568: the closer repair in the note gives no `]` kind, so the `]` behind it stays bare.
+        "^[\\]]]a\n",
         "*x ^[\\[]a*\n",
         "- *]a^[a\\[a\\[]*\n",
         "> *x ^[aa\\[]*\n",
