@@ -360,14 +360,58 @@ impl<'a> Parser<'a> {
         if self.continue_leaf(&walk, e) {
             return;
         }
-        // C2-B-135: a line that ended an opaque body is not a skipped comment line.
-        if !had_opaque && self.comment_only(&walk, e) {
-            // C2-B-137: a skipped comment line is not blank and not content, so
-            // the blank line above it stays the one C2-B-232 reads.
-            self.prev_blank = blank_above;
+        if self.comment_line(&walk, e, had_opaque, blank_above) {
             return;
         }
         self.blank_run_reset_after(&walk, e);
+    }
+
+    fn comment_line(
+        &mut self,
+        walk: &Walk<'a>,
+        e: usize,
+        had_opaque: bool,
+        blank_above: bool,
+    ) -> bool {
+        // C2-B-135: a line that ended an opaque body is not a skipped comment line.
+        if had_opaque {
+            return self.leaf.is_none() && self.comment_ends_body(walk, e);
+        }
+        if !self.comment_only(walk, e) {
+            return false;
+        }
+        // C2-B-137: a skipped comment line is not blank and not content, so
+        // the blank line above it stays the one C2-B-232 reads.
+        self.prev_blank = blank_above;
+        true
+    }
+
+    /// C2-B-137: a comment-only line that ends an opaque body closes the body's
+    /// container, with its list, and nothing more (carve#6439).
+    fn comment_ends_body(&mut self, walk: &Walk<'a>, e: usize) -> bool {
+        if !shapes::comment_only(walk.cur.after_blanks().rest()) {
+            return false;
+        }
+        let is_body_container = |c: &Container| {
+            matches!(
+                c.kind,
+                Kind::Item { .. } | Kind::Desc { .. } | Kind::Footnote { .. } | Kind::Quote
+            )
+        };
+        let Some(index) = (walk.matched..self.stack.len())
+            .rev()
+            .find(|&i| i == walk.matched || self.stack.get(i).is_some_and(is_body_container))
+        else {
+            return false;
+        };
+        let keep = match self.stack.get(index.saturating_sub(1)).map(|c| &c.kind) {
+            Some(Kind::List { .. } | Kind::DescList { .. }) => index.saturating_sub(1),
+            _ => index,
+        };
+        self.close_to(keep);
+        self.closed = None;
+        self.blank_run = 0;
+        self.comment_only(walk, e)
     }
 
     fn region_marker(&mut self, walk: &Walk<'a>) -> bool {
