@@ -26,6 +26,8 @@ struct Run<'t> {
     after_dash: bool,
     /// Whether a smart dash node stands directly after the run.
     before_dash: bool,
+    /// The first character of the markup written directly after the run, where the tree decides it.
+    follow: Option<char>,
 }
 
 impl Run<'_> {
@@ -118,7 +120,11 @@ impl<'t> KindBlocks<'t> {
         let b = run.text.as_bytes();
         let ch = *b.get(at)?;
         if ch == b'{'
-            && let Some(mark) = run.text.get(at + 1..).and_then(|rest| rest.chars().next())
+            && let Some(mark) = run
+                .text
+                .get(at + 1..)
+                .and_then(|rest| rest.chars().next())
+                .or(run.follow.filter(|_| at + 1 == b.len()))
         {
             return Some(format!("{{{mark}"));
         }
@@ -171,6 +177,7 @@ fn collect<'t>(
                     after: Edge::Markup,
                     after_dash,
                     before_dash: false,
+                    follow: None,
                 }),
             }
             *joined = true;
@@ -184,6 +191,7 @@ fn collect<'t>(
         if *joined && let Some(run) = runs.last_mut() {
             run.after = at;
             run.before_dash = is_dash(node);
+            run.follow = opening_char(node);
         }
         *joined = false;
         *edge = at;
@@ -191,11 +199,40 @@ fn collect<'t>(
             collect(children(node), runs, edge, joined);
             if *joined && let Some(run) = runs.last_mut() {
                 run.after = Edge::Markup;
+                run.follow = closing_char(node);
             }
             *joined = false;
             *edge = Edge::Markup;
         }
     }
+}
+
+/// The first character a node is written with, where its form does not change it.
+fn opening_char(node: N<'_>) -> Option<char> {
+    match ty(node) {
+        "underline" | "strike" | "highlight" | "superscript" | "subscript" | "insert"
+        | "delete" => Some('{'),
+        "span" | "link" | "footnote_ref" => Some('['),
+        "code" => Some('`'),
+        _ => None,
+    }
+}
+
+/// The first character of the closer of a node, the same in its bare and braced forms.
+fn closing_char(node: N<'_>) -> Option<char> {
+    Some(match ty(node) {
+        "emphasis" => '/',
+        "strong" => '*',
+        "underline" => '_',
+        "strike" => '~',
+        "highlight" => '=',
+        "superscript" => '^',
+        "subscript" => ',',
+        "insert" => '+',
+        "delete" => '-',
+        "span" | "link" | "inline_footnote" => ']',
+        _ => return None,
+    })
 }
 
 fn is_dash(node: N<'_>) -> bool {
@@ -259,9 +296,12 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
     for (at, &c) in b.iter().enumerate() {
         if c != ch
             || mark.is_some_and(|mark| {
-                !value
-                    .get(at + 1..)
-                    .is_some_and(|rest| rest.starts_with(mark))
+                let rest = value.get(at + 1..).unwrap_or("");
+                !(rest.starts_with(mark)
+                    || (rest.is_empty()
+                        && run
+                            .follow
+                            .is_some_and(|f| mark.starts_with(f) && mark.len() == f.len_utf8())))
             })
         {
             continue;
