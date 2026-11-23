@@ -553,7 +553,7 @@ fn list_item<'t>(
         .get("task")
         .and_then(|t| s(t, "mark"))
         .map_or(String::new(), |m| format!("[{m}] "));
-    w.bare_dot_lead = marker == ".";
+    w.bare_dot_head = (marker == ".").then(|| format!("{head}{gap}"));
     body(
         w,
         node,

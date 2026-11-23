@@ -752,7 +752,7 @@ fn reset_lines(w: &mut Writer<'_>) {
     w.lines.clear();
     w.lead = None;
     w.lead_skip = 0;
-    w.bare_dot_lead = false;
+    w.bare_dot_head = None;
     w.prewritten = None;
     w.clear_starts();
     w.raw_refs.clear();
