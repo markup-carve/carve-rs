@@ -174,10 +174,6 @@ fn code_title(w: &mut Writer<'_>, node: V<'_>) -> Option<String> {
 
 fn code_block(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
     attribute_line(w, node, prefix, &BlockParts::default());
-    let continuation = match &w.lead {
-        Some(lead) if lead.starts_with("[^") && prefix.len() > 2 => " ".repeat(lead.len()),
-        _ => prefix.to_string(),
-    };
     let lines = value_lines(w, node);
     let run = "`".repeat(MIN_RUN.max(longest_bare_run(lines.iter().copied(), b'`') + 1));
     let mut info = fence_info(w, node);
@@ -191,10 +187,10 @@ fn code_block(w: &mut Writer<'_>, node: V<'_>, prefix: &str) {
     }
     emit(w, prefix, &(run.clone() + &info));
     for line in lines {
-        emit(w, &continuation, line);
+        emit(w, prefix, line);
     }
     if !is_left_open(w, node) {
-        emit(w, &continuation, &run);
+        emit(w, prefix, &run);
     }
 }
 
