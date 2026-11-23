@@ -183,7 +183,7 @@ mod prune_candidates_test {
         let arena = crate::Arena::for_input(src);
         let doc =
             crate::parse_resolved_in(src, &crate::Options::default(), &arena).unwrap_or_default();
-        prunable_escapes(src, &[], V::Doc(&doc))
+        prunable_escapes(src, &[], V::Doc(&doc), &mut |_| NoteCall::Open)
     }
 
     #[test]
@@ -1506,6 +1506,7 @@ fn settle<'t>(
     round: &mut Round<'_>,
 ) -> bool {
     let mut c = compare_group(w, doc, group, first, round);
+    check::drop_early_trials(&mut c);
     let read = round.source.zip(round.last);
     if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
         return true;
@@ -2160,6 +2161,139 @@ fn in_raw(source: &str, at: usize, raws: &[String]) -> bool {
     })
 }
 
+/// C2-I-089, C2-W-091: the backslash of a `\[^]` inside the brackets of a `^[` of its line stays where the
+/// first round, the parse of the text without its escapes, opens a node on that bracket: the procedure
+/// placed it for a reported bracket of a note that reads as text (CC-1716).
+/// What the note rules of the prune say about one backslash; `Open` leaves it to [`prunable_opener`].
+#[derive(Clone, Copy, PartialEq)]
+enum NoteCall {
+    Prune,
+    Keep,
+    Open,
+}
+
+/// Its caches hold for one source; a caller that changes the source starts a new one.
+#[derive(Default)]
+struct NoteEscapes {
+    /// The line start `inside` was computed for.
+    line: Option<usize>,
+    inside: HashSet<usize>,
+    bare: Option<HashSet<usize>>,
+}
+
+impl NoteEscapes {
+    fn behind_opener(&mut self, source: &str, at: usize) -> bool {
+        let line = source
+            .get(..at)
+            .and_then(|r| r.rfind('\n'))
+            .map_or(0, |n| n + 1);
+        if self.line != Some(line) {
+            self.inside = note_spans(source, line);
+            self.line = Some(line);
+        }
+        self.inside.contains(&at)
+    }
+
+    /// C2-W-125 case five: behind a text `^[` whose caret pairs are ordinary brackets, link or span text
+    /// can start with a bare caret, so the backslash before it is a prune candidate.
+    fn caret(&mut self, source: &str, at: usize) -> bool {
+        let b = source.as_bytes();
+        b.get(at + 1) == Some(&b'^')
+            && at
+                .checked_sub(1)
+                .is_some_and(|p| b.get(p) == Some(&b'[') && !is_note_bracket(b, p))
+            && self.behind_opener(source, at)
+    }
+
+    fn call(&mut self, w: &Writer<'_>, source: &str, at: usize) -> NoteCall {
+        if self.caret(source, at) {
+            NoteCall::Prune
+        } else if self.keeps(w, source, at) {
+            NoteCall::Keep
+        } else {
+            NoteCall::Open
+        }
+    }
+
+    fn keeps(&mut self, w: &Writer<'_>, source: &str, at: usize) -> bool {
+        if !source.get(at + 1..).is_some_and(|r| r.starts_with("[^]"))
+            || !self.behind_opener(source, at)
+        {
+            return false;
+        }
+        self.bare
+            .get_or_insert_with(|| bare_bracket_starts(w, source))
+            .contains(&(at + 1))
+    }
+}
+
+/// The offsets of the line at `line` that stand inside the brackets of a `^[`, its backslashes read as text.
+fn note_spans(source: &str, line: usize) -> HashSet<usize> {
+    let b = source.as_bytes();
+    let mut inside = HashSet::new();
+    let mut open = Vec::new();
+    let mut notes = 0usize;
+    for (at, &ch) in b.iter().enumerate().skip(line) {
+        if ch == b'\n' {
+            break;
+        }
+        if notes > 0 {
+            inside.insert(at);
+        }
+        if ch == b'[' {
+            let note = is_note_bracket(b, at);
+            open.push(note);
+            notes += usize::from(note);
+        } else if ch == b']'
+            && at.checked_sub(1).and_then(|p| b.get(p)) != Some(&b'\\')
+            && open.pop() == Some(true)
+        {
+            notes -= 1;
+        }
+    }
+    inside
+}
+
+/// Whether the bracket at `at` follows a caret, with or without a backslash between them.
+fn is_note_bracket(b: &[u8], at: usize) -> bool {
+    let before = |k: usize| at.checked_sub(k).and_then(|p| b.get(p)).copied();
+    before(1) == Some(b'^') || (before(1) == Some(b'\\') && before(2) == Some(b'^'))
+}
+
+/// The offsets in `source` of each `[` that opens an inline node of the parse of `source` without its escapes.
+fn bare_bracket_starts(w: &Writer<'_>, source: &str) -> HashSet<usize> {
+    let b = source.as_bytes();
+    let mut bare = String::with_capacity(source.len());
+    // Each byte of `bare` and the offset of `source` it came from.
+    let mut origin = Vec::with_capacity(source.len());
+    let mut from = 0;
+    let mut at = 0;
+    while at < b.len() {
+        if b.get(at) == Some(&b'\\') && b.get(at + 1).is_some_and(u8::is_ascii_punctuation) {
+            bare.push_str(source.get(from..at).unwrap_or(""));
+            origin.extend(from..at);
+            from = at + 1;
+            at += 2;
+            continue;
+        }
+        at += 1;
+    }
+    bare.push_str(source.get(from..).unwrap_or(""));
+    origin.extend(from..b.len());
+    let chunk = Chunk::new(bare);
+    let parsed = chunk.read(w, Some(&w.link_keys));
+    let mut nodes = Vec::new();
+    node::descendants(parsed, &mut nodes);
+    let bb = chunk.text().as_bytes();
+    nodes
+        .into_iter()
+        .filter(|&n| ty(n) != "text")
+        .filter_map(|n| span(n).map(|(start, _)| start))
+        .filter(|&start| bb.get(start) == Some(&b'['))
+        .filter_map(|start| origin.get(start).copied())
+        .collect()
+}
+
 /// C2-W-088, C2-W-089: test candidate escapes within the group that wrote them.
 /// `round.last` is the last read-back parse of the group, the parse of its source as written.
 fn prune_group_escapes(w: &mut Writer<'_>, group: Arr<'_>, first: bool, round: &Round<'_>) {
@@ -2260,7 +2394,8 @@ fn prune_in_windows(
         return None;
     }
     let parsed = round.last?;
-    let escapes = prunable_escapes(source, raws, parsed);
+    let mut notes = NoteEscapes::default();
+    let escapes = prunable_escapes(source, raws, parsed, &mut |p| notes.call(w, source, p));
     if escapes.is_empty() {
         return Some(source.to_string());
     }
@@ -2281,7 +2416,12 @@ fn prune_in_windows(
 }
 
 /// The backslashes of `source` that the prune tries, in source order; `parsed` is its parse.
-fn prunable_escapes(source: &str, raws: &[String], parsed: V<'_>) -> Vec<usize> {
+fn prunable_escapes(
+    source: &str,
+    raws: &[String],
+    parsed: V<'_>,
+    notes: &mut dyn FnMut(usize) -> NoteCall,
+) -> Vec<usize> {
     let raw_spans: Vec<(usize, usize)> = raws
         .iter()
         .filter(|r| !r.is_empty())
@@ -2304,7 +2444,11 @@ fn prunable_escapes(source: &str, raws: &[String], parsed: V<'_>) -> Vec<usize> 
                 && opens
                     .get_or_insert_with(|| bare_pair_openers(source, parsed))
                     .contains(&(p + 2)))
-                && prunable_opener(source, p, &mut current, &mut next)
+                && match notes(p) {
+                    NoteCall::Prune => true,
+                    NoteCall::Keep => false,
+                    NoteCall::Open => prunable_opener(source, p, &mut current, &mut next),
+                }
                 && !raw_spans.iter().any(|&(s, e)| s <= p && p < e)
         })
         .collect()
@@ -2448,6 +2592,7 @@ fn prune_whole_group(
     // The parse of `source` as it stands, read again (uncounted) after a prune only where a star asks.
     let mut parsed = round.last;
     let mut parsed_source: Option<String> = None;
+    let mut notes = NoteEscapes::default();
     while let Some(p) = at {
         if exhausted(w) {
             if let Some(host) = group.first() {
@@ -2463,7 +2608,11 @@ fn prune_whole_group(
             parsed
         };
         let mut next = |b, from| memchr_from(source, b, from);
-        if prunable_opener(source, p, &mut current, &mut next) && !in_raw(source, p, raws) {
+        let call = notes.call(w, source, p);
+        if (call == NoteCall::Prune
+            || (call == NoteCall::Open && prunable_opener(source, p, &mut current, &mut next)))
+            && !in_raw(source, p, raws)
+        {
             let candidate = format!(
                 "{}{}",
                 source.get(..p).unwrap_or(""),
@@ -2475,6 +2624,7 @@ fn prune_whole_group(
                 && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
             {
                 *source = chunk.text().to_string();
+                notes = NoteEscapes::default();
                 parsed = None;
                 parsed_source = Some(source.clone());
                 at = source.get(p..).and_then(|r| r.find('\\')).map(|q| q + p);

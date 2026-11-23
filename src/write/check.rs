@@ -5,8 +5,8 @@
 //! takes its other spelling (C2-W-005). What neither repairs is a loss.
 
 use super::inline::{
-    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_STRONG, escape_offsets, first_from, spelled_end,
-    write_inlines,
+    IN_BRACKET, IN_CELL, IN_EMPHASIS, IN_NOTE, IN_STRONG, escape_offsets, first_from,
+    key_is_content, spelled_end, write_inlines,
 };
 use super::kinds::KindBlocks;
 use super::node::{
@@ -131,6 +131,10 @@ pub struct Check<'t> {
     /// C2-I-118: the `[` openers this round escaped where the parse read a construct over text, each with its
     /// text and the end of the construct there.
     pub capped: Vec<(N<'t>, usize, usize)>,
+    /// C2-W-125 case eight: the text `^[` kept bare in this round while their early closers took the backslash.
+    pub early_closers: usize,
+    /// C2-W-125 case eight: the text `^[` whose early closer this round already escaped, by node and offset.
+    pub notes_done: HashSet<(usize, usize)>,
 }
 
 impl Check<'_> {
@@ -567,7 +571,7 @@ fn escape_closer_before_brace<'t>(
     escape_in_content(w, c, e)
 }
 
-const RESPELL_STEPS: usize = 15;
+const RESPELL_STEPS: usize = 17;
 
 fn respell_step<'t>(
     w: &mut Writer<'t>,
@@ -588,13 +592,14 @@ fn respell_step<'t>(
         6 => escape_closer_before_brace(w, c, es, i),
         7 => escape_after(w, c, es, i),
         8 => escape_content_line(w, c, e),
-        _ => late_respell_step(w, c, e, step, attempt),
+        _ => late_respell_step(w, c, es.get(..i).unwrap_or(&[]), e, step, attempt),
     }
 }
 
 fn late_respell_step<'t>(
     w: &mut Writer<'t>,
     c: &mut Check<'t>,
+    es: &[N<'t>],
     e: N<'t>,
     step: usize,
     attempt: &mut Attempt<'t>,
@@ -614,6 +619,8 @@ fn late_respell_step<'t>(
         }
         13 => escape_in_content(w, c, e),
         14 => escape_lone_bracket(w, c, e),
+        15 => escape_text_note(w, c, es),
+        16 => escape_key_caret(w, c, e),
         _ => false,
     }
 }
@@ -673,6 +680,43 @@ fn texts_below(node: V<'_>) -> Vec<V<'_>> {
         }
     }
     out
+}
+
+/// C2-I-089, C2-W-125: a text `^[` before the node that reads as a note closing only through a caret
+/// pair in it is text, and its caret pairs are ordinary brackets, so the node in its span does not
+/// form. Its bracket takes the backslash (C2-W-090); escaping one can make the next `^[` such a note,
+/// so each of them takes one.
+fn escape_text_note<'t>(w: &Writer<'t>, c: &mut Check<'t>, before: &[N<'t>]) -> bool {
+    let mut asked = false;
+    for &t in before {
+        if ty(t) != "text" {
+            continue;
+        }
+        let b = text(t).as_bytes();
+        for at in 0..b.len().saturating_sub(1) {
+            if b.get(at..at + 2) == Some(b"^[")
+                && !is_escaped(w, c, t, at)
+                && !is_escaped(w, c, t, at + 1)
+            {
+                asked |= escape_at(w, c, t, at + 1);
+            }
+        }
+    }
+    asked
+}
+
+/// C2-W-125 case five: the leading caret of a reference whose key is its content is written bare,
+/// and takes the backslash only where the bare caret keeps the link from forming.
+fn escape_key_caret<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
+    if ty(e) != "link" || c.flags & IN_NOTE != 0 || !key_is_content(e) {
+        return false;
+    }
+    children(e).first().is_some_and(|f| {
+        ty(f) == "text"
+            && text(f).starts_with('^')
+            && !is_escaped(w, c, f, 0)
+            && escape_at(w, c, f, 0)
+    })
 }
 
 fn escape_lone_bracket<'t>(w: &Writer<'t>, c: &mut Check<'t>, e: N<'t>) -> bool {
@@ -1415,6 +1459,9 @@ fn escape_opener<'t>(
     while matches!(b.get(start), Some(b' ' | b'\t')) {
         start += 1;
     }
+    if ty(a) == "inline_footnote" && escape_early_note_closer(w, c, es, i, start) {
+        return;
+    }
     let Some(start) = dash_run_start(w, c, e, start, a) else {
         return;
     };
@@ -1443,6 +1490,145 @@ fn escape_opener<'t>(
         }
     } else if !escape_at(w, c, e, start) {
         c.losses.push((e, Some("value".into())));
+    }
+}
+
+/// C2-W-125 case eight: a text `^[` whose span keeps a caret pair of the tree ordinary (C2-I-089) stays
+/// bare, and the bare `]` that closed it early takes the backslash. Each round reaches the next such `]`.
+fn escape_early_note_closer<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    es: &[N<'t>],
+    i: usize,
+    start: usize,
+) -> bool {
+    let Some(&e) = es.get(i) else { return false };
+    let b = text(e).as_bytes();
+    // The `[` of the opener can start the next text node of a supplied tree.
+    let split = start + 1 == b.len();
+    let bracket = if split {
+        es.get(i + 1)
+            .filter(|n| ty(**n) == "text")
+            .and_then(|n| text(*n).as_bytes().first().copied())
+    } else {
+        b.get(start + 1).copied()
+    };
+    let later = es.get(i + 1..).unwrap_or(&[]);
+    if b.get(start) != Some(&b'^')
+        || bracket != Some(b'[')
+        || !later.iter().any(|n| holds_caret_pair(*n))
+    {
+        return false;
+    }
+    if c.notes_done.contains(&(id(e), start)) {
+        return true;
+    }
+    let closer = if split {
+        early_note_closer(w, c, es, i + 1, 1)
+    } else {
+        early_note_closer(w, c, es, i, start + 2)
+    };
+    if !closer.is_some_and(|(n, at)| escape_closer_of(w, c, n, at)) {
+        return false;
+    }
+    c.early_closers += 1;
+    later_note_closers(w, c, es, i, start + 2);
+    true
+}
+
+fn escape_closer_of<'t>(w: &Writer<'t>, c: &mut Check<'t>, n: N<'t>, at: usize) -> bool {
+    if !escape_at(w, c, n, at) {
+        return false;
+    }
+    c.closers.insert((id(n), at));
+    true
+}
+
+/// C2-W-088: the round escapes for every note its parse reports, also those the comparison does not reach
+/// behind a node that did not form, so each later text `^[` before a caret pair takes its early closer.
+fn later_note_closers<'t>(w: &Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize, from: usize) {
+    for (k, &t) in es.iter().enumerate().skip(i) {
+        let behind = es.get(k + 1..).unwrap_or(&[]);
+        if ty(t) != "text" || !behind.iter().any(|n| holds_caret_pair(*n)) {
+            continue;
+        }
+        let b = text(t).as_bytes();
+        let mut at = if k == i { from } else { 0 };
+        while at + 1 < b.len() {
+            if b.get(at..at + 2) != Some(b"^[") {
+                at += 1;
+                continue;
+            }
+            if !is_escaped(w, c, t, at)
+                && !is_escaped(w, c, t, at + 1)
+                && early_note_closer(w, c, es, k, at + 2)
+                    .is_some_and(|(n, p)| escape_closer_of(w, c, n, p))
+            {
+                c.notes_done.insert((id(t), at));
+            }
+            at += 2;
+        }
+    }
+}
+
+/// The bare `]` of the text from `es[i]` at `from` on that no bare `[` there pairs with. A node of the
+/// tree between, as a strong, a code span or a link, holds no bracket of the note.
+fn early_note_closer<'t>(
+    w: &Writer<'t>,
+    c: &Check<'t>,
+    es: &[N<'t>],
+    i: usize,
+    from: usize,
+) -> Option<(N<'t>, usize)> {
+    let mut depth = 0usize;
+    for (k, &t) in es.iter().enumerate().skip(i) {
+        if ty(t) != "text" {
+            continue;
+        }
+        let b = text(t).as_bytes();
+        let start = if k == i { from } else { 0 };
+        for (at, &ch) in b.iter().enumerate().skip(start) {
+            if !matches!(ch, b'[' | b']') || is_escaped(w, c, t, at) {
+                continue;
+            }
+            if ch == b'[' {
+                depth += 1;
+            } else if depth == 0 {
+                return Some((t, at));
+            } else {
+                depth -= 1;
+            }
+        }
+    }
+    None
+}
+
+/// Whether `node` or a node below it is link or span text starting with a caret, whose bracket forms
+/// `[^`. One inside an inline footnote opens nothing there (C2-I-089).
+fn holds_caret_pair(node: V<'_>) -> bool {
+    let leading = matches!(ty(node), "link" | "span")
+        && children(node)
+            .first()
+            .is_some_and(|f| ty(f) == "text" && text(f).starts_with('^'));
+    leading || (ty(node) != "inline_footnote" && children(node).iter().any(holds_caret_pair))
+}
+
+/// C2-W-125 case eight: the trials of a round that escaped an early note closer read the note it undoes.
+pub fn drop_early_trials(c: &mut Check<'_>) {
+    if c.early_closers == 0 {
+        return;
+    }
+    for (n, at) in std::mem::take(&mut c.trials) {
+        if let Some(p) = c
+            .escapes
+            .iter()
+            .position(|(e, a)| id(e) == id(n) && *a == at)
+        {
+            c.escapes.remove(p);
+        }
+        if let Some(m) = c.marks.get_mut(&id(n)) {
+            m.remove(&at);
+        }
     }
 }
 
