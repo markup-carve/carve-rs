@@ -122,6 +122,8 @@ pub struct Check<'t> {
     pub closers: HashSet<(usize, usize)>,
     /// C2-W-088: the escapes of block openers behind the marker of another block on the same line, which give no kind.
     pub own_escapes: HashSet<(usize, usize)>,
+    /// C2-W-125: a closer inside the content under comparison took a backslash because it ended the content early.
+    pub cut: bool,
 }
 
 impl Check<'_> {
@@ -1577,7 +1579,9 @@ fn closed_early<'t>(
     let m = closing_mark(ty(owner));
     if matches!(ty(owner), "emphasis" | "strong") && has_other_form(w, c, owner) {
         change_form(c, owner);
-    } else if !m.is_some_and(|m| escape_closer(w, c, es, i, vi, m)) {
+    } else if m.is_some_and(|m| escape_closer(w, c, es, i, vi, m)) {
+        c.cut = true;
+    } else {
         // The wrapper has already read back. If a prior child changed and a
         // later construct is missing, name that construct rather than the
         // wrapper that still surrounds it (C2-W-124).
@@ -1648,6 +1652,10 @@ fn match_characters<'t>(
         if value.get(at.vi + k) == other.get(at.aj + k) {
             continue;
         }
+        // C2-W-125: behind a content that ended early the parse holds the rest of that content as text, which opens nothing.
+        if c.cut {
+            return false;
+        }
         // C2-W-124, C2-W-091: the parse drops the blanks that start a line. They are the loss of the text, and the
         // comparison goes on behind them, so that a construct there is reported in the same round.
         if is_blank(value.get(at.vi + k)) && at_line_start(e, es, at.i, at.vi + k, owner) {
@@ -1715,6 +1723,10 @@ fn parse_ends_in_text<'t>(
     at: &Cursor,
     owner: N<'t>,
 ) -> bool {
+    // C2-W-125: the node before read on into this text; once its repair closes it in place, the text reads as written.
+    if c.cut {
+        return false;
+    }
     let cur = es.get(at.i).copied();
     if let Some(t) = cur.filter(|t| ty(t) == "text" && ends_line_with_cr(text(t), at.vi)) {
         c.losses.push((t, Some("value".into())));
@@ -1882,6 +1894,10 @@ fn skip_construct<'t>(
     at: &mut Cursor,
     owner: N<'t>,
 ) -> bool {
+    // C2-W-125: behind a content that ended early, the parse can open a construct on the markup of the tree.
+    if c.cut {
+        return false;
+    }
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
     let before = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
     if comparison_behind_quote(prior, before, e, at.vi, a) {
@@ -1992,6 +2008,10 @@ fn match_node<'t>(
         return false;
     };
     if ty(a) != ty(e) || at.aj > 0 {
+        // C2-W-125: behind a content that ended early the parse reads its neighbors otherwise, which no respelling repairs.
+        if c.cut {
+            return false;
+        }
         return respell(w, c, es, at.i) && step_over(w, c, es, as_, at);
     }
     if is_lost_code(w, es.get(at.i + 1).copied()) {
@@ -2006,7 +2026,9 @@ fn match_node<'t>(
         return false;
     }
     repair_comment_closer(w, c, es, at.i, e, a);
+    let outer = std::mem::take(&mut c.cut);
     compare_inline(w, c, e, a);
+    c.cut |= outer;
     at.i += 1;
     at.j += 1;
     true
@@ -2400,6 +2422,8 @@ fn compare_block<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, e: N<'t>, a: V<'_>) 
         c.flags |= IN_CELL;
     }
     compare_fields(w, c, e, a);
+    // A content that ended early in another block keeps nothing of this one from being compared.
+    c.cut = false;
     if is_inline_parent(e) {
         compare_inlines(w, c, &refs(children(e)), children(a), e);
     } else if ty(e) != "include" {
