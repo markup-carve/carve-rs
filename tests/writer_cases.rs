@@ -219,6 +219,12 @@ fn delimited_table_body_keys_round_trip() {
     ] {
         assert_eq!(carve.format(input, &opts).unwrap(), input);
     }
+    assert_eq!(
+        carve
+            .format("{table header-rows='1'}\n```csv\na\nb\n```\n", &opts)
+            .unwrap(),
+        "{table header-rows=1}\n```csv\na\nb\n```\n"
+    );
 }
 
 #[test]

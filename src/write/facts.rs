@@ -312,33 +312,24 @@ fn table_facts(node: V<'_>, src: &str, path: &str, out: &mut Vec<Entry>, facts: 
     }
 }
 
-/// C2-B-209: whether the attribute lines give `header-rows` a valid count. `body-header-rows`
-/// is another key.
+/// C2-L-057: whether the attribute lines give `header-rows` a valid count (C2-B-210).
 fn declares_header_rows(text: &str) -> bool {
-    const KEY: &str = "header-rows=";
-    if !text.contains(KEY) {
+    if !text.contains("header-rows") {
         return false;
     }
-    let mut declared = false;
-    for (at, _) in text.match_indices(KEY) {
-        if text[..at]
-            .chars()
-            .next_back()
-            .is_some_and(|c| !c.is_whitespace() && c != '{')
+    let mut block = crate::attr::AttrBlock::default();
+    for line in text.lines() {
+        if let Some((parsed, _)) = line
+            .find('{')
+            .and_then(|at| crate::attr::parse_block(line, at))
         {
-            continue;
+            block.merge(parsed);
         }
-        let rest = &text[at + KEY.len()..];
-        let value = match rest.strip_prefix('"') {
-            Some(quoted) => quoted.split('"').next().unwrap_or(""),
-            None => rest
-                .split(|c: char| c.is_whitespace() || c == '}')
-                .next()
-                .unwrap_or(""),
-        };
-        declared = value.bytes().all(|b| b.is_ascii_digit());
     }
-    declared
+    block
+        .attrs
+        .get("header-rows")
+        .is_some_and(|v| v.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The cell fragments of a row line or a continuation line: the text between unescaped pipes.
