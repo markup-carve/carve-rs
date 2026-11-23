@@ -991,110 +991,268 @@ pub fn block_image_line(line: &str) -> bool {
     after.is_some_and(trailing_attrs)
 }
 
+/// C2-I-006, C2-I-074: the `]` closing the image bracket, paired as the inline
+/// scan pairs: atoms first, a note closes with no tail and holds `[^` and `^[`
+/// as plain brackets (C2-I-087, C2-I-089), a nested pair takes its tail.
 fn bracket_end(s: &str, start: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut depth = 0usize;
-    let mut braced: Vec<(u8, usize)> = Vec::new();
-    let mut i = start;
-    while let Some(&c) = b.get(i) {
-        if let Some(next) = bracket_opaque_end(s, i) {
-            i = next?;
-            continue;
+    AltScan::new(s).close(start)
+}
+
+/// One scan of one line. The memos keep every search linear in the line: a
+/// failed search from one offset fails from every later one too.
+struct AltScan<'s> {
+    s: &'s str,
+    /// Backtick run lengths that have no closing run further on.
+    dead_runs: Vec<usize>,
+    /// No `%}` follows this offset.
+    no_comment_close: usize,
+    /// The last label scan: (from, stop, closed); a scan from inside it stops alike.
+    label_memo: Option<(usize, usize, bool)>,
+    /// Per `(` offset, where its link destination ends.
+    parens: Option<Vec<Paren>>,
+}
+
+impl<'s> AltScan<'s> {
+    fn new(s: &'s str) -> Self {
+        Self {
+            s,
+            dead_runs: Vec::new(),
+            no_comment_close: usize::MAX,
+            label_memo: None,
+            parens: None,
         }
-        if let Some(next) = braced_step(b, i, &mut braced) {
-            i = next;
-            continue;
-        }
-        match c {
-            b'\\' => i += 1,
-            b'[' => {
-                // C2-I-087: a footnote reference opens no bracket.
-                if let Some(end) = footnote_ref_end(s, i) {
-                    i = end;
-                    continue;
+    }
+
+    fn close(&mut self, start: usize) -> Option<usize> {
+        let b = self.s.as_bytes();
+        // Inner open brackets: `None` for an inline footnote, else where the text starts.
+        let mut open: Vec<Option<usize>> = Vec::new();
+        let mut notes = 0usize;
+        let mut braced: Vec<u8> = Vec::new();
+        let mut i = start;
+        while let Some(&c) = b.get(i) {
+            match c {
+                b'\\' => i += 2,
+                b'`' => i = self.code_end(i),
+                b'<' => i = angle_end(self.s, i),
+                b'{' if b.get(i + 1) == Some(&b'%') => i = self.comment_end(i),
+                b'^' if b.get(i + 1) == Some(&b'[') => {
+                    if notes > 0 {
+                        i += 1;
+                    } else {
+                        open.push(None);
+                        notes += 1;
+                        i += 2;
+                    }
                 }
-                depth += 1;
+                b'[' => {
+                    let reference = if notes == 0 {
+                        self.footnote_ref_end(i)
+                    } else {
+                        None
+                    };
+                    if let Some(end) = reference {
+                        i = end;
+                    } else {
+                        open.push(Some(i + 1));
+                        i += 1;
+                    }
+                }
+                b']' => match open.pop() {
+                    None => return Some(i),
+                    Some(None) => {
+                        notes -= 1;
+                        i += 1;
+                    }
+                    Some(Some(text)) => i = self.nested_tail_end(text, i),
+                },
+                b'{' if braced_open_mark(b, i).is_some() => {
+                    braced.push(braced_open_mark(b, i)?);
+                    i += 2;
+                }
+                _ if braced
+                    .last()
+                    .is_some_and(|&m| c == m && b.get(i + 1) == Some(&b'}')) =>
+                {
+                    braced.pop();
+                    i += 2;
+                }
+                _ => i += 1,
             }
-            b']' if depth == 0 => return Some(i),
-            b']' => {
-                depth -= 1;
-                i = nested_tail_end(s, i)?;
-                continue;
+        }
+        None
+    }
+
+    /// C2-I-014, C2-I-119: behind the code span, or behind its run when unclosed.
+    fn code_end(&mut self, i: usize) -> usize {
+        let run = self
+            .s
+            .as_bytes()
+            .get(i..)
+            .map_or(0, |r| r.iter().take_while(|&&c| c == b'`').count());
+        if self.dead_runs.contains(&run) {
+            return i + run;
+        }
+        let span = crate::inline::code_span(self.s, i);
+        if span.closed {
+            return span.end;
+        }
+        self.dead_runs.push(run);
+        i + run
+    }
+
+    /// C2-I-025: behind the braced comment at `i`, or `i + 1` when it does not close.
+    fn comment_end(&mut self, i: usize) -> usize {
+        if i >= self.no_comment_close {
+            return i + 1;
+        }
+        if let Some(k) = self.s.get(i + 2..).and_then(|r| r.find("%}")) {
+            i + 2 + k + 2
+        } else {
+            self.no_comment_close = i;
+            i + 1
+        }
+    }
+
+    /// C2-I-076, C2-I-077: the `]` ending a label that starts at `from`, or
+    /// `None` when a line comment or the end of the line comes first.
+    fn label_close(&mut self, from: usize) -> Option<usize> {
+        if let Some((at, stop, closed)) = self.label_memo {
+            if at <= from && from <= stop {
+                return closed.then_some(stop);
+            }
+        }
+        let b = self.s.as_bytes();
+        let mut j = from;
+        let (stop, closed) = loop {
+            match b.get(j) {
+                None => break (j, false),
+                Some(b'\\') => j += 2,
+                Some(b']') => break (j, true),
+                Some(b'%') if crate::inline::comment_start(self.s, j) => break (j, false),
+                Some(_) => j += 1,
+            }
+        };
+        self.label_memo = Some((from, stop, closed));
+        closed.then_some(stop)
+    }
+
+    /// C2-I-087: behind the footnote reference at `i`, `Some(i + 1)` for a
+    /// label-less `[^` (text, no bracket), `None` when `[` opens a plain bracket.
+    fn footnote_ref_end(&mut self, i: usize) -> Option<usize> {
+        if self.s.as_bytes().get(i + 1) != Some(&b'^') {
+            return None;
+        }
+        Some(match self.label_close(i + 2) {
+            Some(close)
+                if !self
+                    .s
+                    .get(i + 2..close)
+                    .is_some_and(|k| k.bytes().all(|c| matches!(c, b' ' | b'\t' | b'\n'))) =>
+            {
+                close + 1
+            }
+            _ => i + 1,
+        })
+    }
+
+    /// C2-I-066 to C2-I-072, C2-I-078: behind what is glued to the `]` at `i`
+    /// of a nested pair whose text starts at `text`; a tail that forms nothing
+    /// leaves the scan behind the `]`, as in the inline scan.
+    fn nested_tail_end(&mut self, text: usize, i: usize) -> usize {
+        let b = self.s.as_bytes();
+        let keyed = |a: usize, z: usize| {
+            self.s
+                .get(a..z)
+                .is_some_and(|k| !crate::chars::fold_label(k).is_empty())
+        };
+        match (b.get(i + 1), b.get(i + 2)) {
+            (Some(b'('), _) => self.paren_end(i + 1).unwrap_or(i + 1),
+            (Some(b'{'), _) => attr_run_end(self.s, i + 1).unwrap_or(i + 1),
+            (Some(b'['), Some(b']')) if keyed(text, i) => i + 3,
+            (Some(b'['), Some(b']' | b'@' | b'^')) => i + 1,
+            (Some(b'['), _) => match self.label_close(i + 2) {
+                Some(close) if keyed(i + 2, close) => close + 1,
+                _ => i + 1,
+            },
+            _ => i + 1,
+        }
+    }
+
+    /// `paren_tail` from the `(` at `q`, read off the paren matches so that
+    /// repeated tails stay linear.
+    fn paren_end(&mut self, q: usize) -> Option<usize> {
+        let parens = self.parens.get_or_insert_with(|| paren_matches(self.s));
+        match parens.get(q)? {
+            Paren::Close(close) => Some(close + 1),
+            // Balanced up to a space: only a title can end the tail.
+            Paren::Space(at) => paren_title_tail(self.s, at + 1).map(|t| self.s.len() - t.len()),
+            Paren::Dead => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Paren {
+    Dead,
+    Close(usize),
+    Space(usize),
+}
+
+/// For every `(`, how `paren_tail` ends its destination: at the matching `)`,
+/// at a space with the inner parens balanced, or not at all (C2-I-013, C2-I-066).
+fn paren_matches(s: &str) -> Vec<Paren> {
+    let b = s.as_bytes();
+    let mut out = vec![Paren::Dead; b.len()];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut i = 0;
+    while let Some(&c) = b.get(i) {
+        match c {
+            b'\\' if matches!(b.get(i + 1), Some(b'(' | b')' | b'\\')) => i += 1,
+            b'(' => stack.push(i),
+            b')' => {
+                if let Some(slot) = stack.pop().and_then(|o| out.get_mut(o)) {
+                    *slot = Paren::Close(i);
+                }
+            }
+            b' ' | b'\t' => {
+                if c == b' ' {
+                    if let Some(slot) = stack.last().and_then(|&o| out.get_mut(o)) {
+                        *slot = Paren::Space(i);
+                    }
+                }
+                stack.clear();
             }
             _ => {}
         }
         i += 1;
     }
-    None
+    out
 }
 
-/// The offset behind a braced-form mark that opens or closes at `i`.
-fn braced_step(b: &[u8], i: usize, braced: &mut Vec<(u8, usize)>) -> Option<usize> {
-    if b.get(i) == Some(&b'{') {
-        if let Some(mark) = braced_open_mark(b, i) {
-            braced.push((mark, i + 2));
-            return Some(i + 2);
-        }
+/// C2-I-073, C2-I-096: behind the autolink or cross-reference, or `i + 1`.
+fn angle_end(s: &str, i: usize) -> usize {
+    match crate::inline::angle(s, i) {
+        Some(
+            crate::inline::Angle::Xref { end, .. } | crate::inline::Angle::Autolink { end, .. },
+        ) => end,
+        None => i + 1,
     }
-    braced_closes(b, i, braced).then(|| {
-        braced.pop();
-        i + 2
-    })
 }
 
-/// C2-I-076, C2-I-077: the `]` ending the label whose `[` is at `i`.
-fn label_close(s: &str, i: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut at = i + 1;
-    while let Some(&c) = b.get(at) {
-        match c {
-            b']' => return Some(at),
-            b'\\' => at += 1,
-            b'%' if b.get(at + 1) == Some(&b'%')
-                && at
-                    .checked_sub(1)
-                    .and_then(|p| b.get(p))
-                    .is_none_or(|&p| p == b' ' || p == b'\t') =>
-            {
-                return None;
+/// Behind a run of glued non-empty attribute blocks from `at`, if any.
+fn attr_run_end(s: &str, mut at: usize) -> Option<usize> {
+    let mut end = None;
+    while s.as_bytes().get(at) == Some(&b'{') {
+        match crate::attr::parse_block(s, at) {
+            Some((block, next)) if !block.empty => {
+                end = Some(next);
+                at = next;
             }
-            _ => {}
+            _ => break,
         }
-        at += 1;
     }
-    None
-}
-
-/// C2-I-087: the end of a footnote reference at `i`.
-fn footnote_ref_end(s: &str, i: usize) -> Option<usize> {
-    if s.as_bytes().get(i + 1) != Some(&b'^') {
-        return None;
-    }
-    let close = label_close(s, i + 1)?;
-    let key = s.get(i + 2..close)?;
-    (!key.chars().all(char::is_whitespace)).then_some(close + 1)
-}
-
-/// C2-I-066 to C2-I-072: the offset behind what is glued to the closing
-/// bracket at `i` of a nested pair; `None` when an open label never closes.
-fn nested_tail_end(s: &str, i: usize) -> Option<usize> {
-    let b = s.as_bytes();
-    match b.get(i + 1) {
-        Some(b'(') => Some(
-            s.get(i + 1..)
-                .and_then(paren_tail)
-                .map_or(i + 1, |rest| s.len() - rest.len()),
-        ),
-        Some(b'{') => {
-            let mut at = i + 1;
-            while let Some((_, end)) = s.get(at..).and_then(|r| crate::attr::parse_block(r, 0)) {
-                at += end;
-            }
-            Some(at)
-        }
-        Some(b'[') if b.get(i + 2) != Some(&b'^') => label_close(s, i + 1).map(|c| c + 1),
-        _ => Some(i + 1),
-    }
+    end
 }
 
 fn braced_open_mark(bytes: &[u8], i: usize) -> Option<u8> {
@@ -1102,43 +1260,6 @@ fn braced_open_mark(bytes: &[u8], i: usize) -> Option<u8> {
         .get(i + 1)
         .copied()
         .filter(|mark| crate::tables::BRACED_MARKS.as_bytes().contains(mark))
-}
-
-fn braced_closes(bytes: &[u8], i: usize, braced: &[(u8, usize)]) -> bool {
-    braced
-        .last()
-        .is_some_and(|&(mark, _)| bytes.get(i) == Some(&mark) && bytes.get(i + 1) == Some(&b'}'))
-}
-
-fn bracket_opaque_end(source: &str, i: usize) -> Option<Option<usize>> {
-    let bytes = source.as_bytes();
-    match bytes.get(i) {
-        // C2-I-014, C2-I-119: a run with no closer on the line is text.
-        Some(b'`') => {
-            let span = crate::inline::code_span(source, i);
-            let run = bytes
-                .get(i..)
-                .map_or(1, |r| r.iter().take_while(|&&c| c == b'`').count());
-            Some(Some(if span.closed { span.end } else { i + run }))
-        }
-        // C2-I-096: a cross-reference is atomic; its key holds no whitespace.
-        Some(b'<') if source.get(i + 1..).is_some_and(|r| r.starts_with("/#")) => {
-            let key = source.get(i + 3..)?;
-            let len = key.find(|c: char| c == '>' || c.is_whitespace())?;
-            (len > 0 && key.as_bytes().get(len) == Some(&b'>')).then_some(Some(i + 3 + len + 1))
-        }
-        // C2-I-073: an autolink is atomic.
-        Some(b'<') => match crate::inline::angle(source, i)? {
-            crate::inline::Angle::Autolink { end, .. } => Some(Some(end)),
-            crate::inline::Angle::Xref { .. } => None,
-        },
-        // C2-I-025: a braced comment that closes on the line.
-        Some(b'{') if bytes.get(i + 1) == Some(&b'%') => source
-            .get(i + 2..)
-            .and_then(|rest| rest.find("%}"))
-            .map(|at| Some(i + 2 + at + 2)),
-        _ => None,
-    }
 }
 
 fn label_tail(s: &str, start: usize) -> Option<&str> {
@@ -1210,11 +1331,12 @@ fn paren_title_tail(s: &str, mut i: usize) -> Option<&str> {
     (b.get(i) == Some(&b')')).then(|| s.get(i + 1..)).flatten()
 }
 
+/// Glued attribute blocks and trailing spaces; an empty `{}` here is text.
 fn trailing_attrs(mut s: &str) -> bool {
     while s.starts_with('{') {
         match crate::attr::parse_block(s, 0) {
-            Some((_, end)) => s = s.get(end..).unwrap_or(""),
-            None => return false,
+            Some((block, end)) if !block.empty => s = s.get(end..).unwrap_or(""),
+            _ => return false,
         }
     }
     crate::chars::is_blank_line(s)
