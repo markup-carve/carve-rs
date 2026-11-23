@@ -53,7 +53,6 @@ fn backlink_skips_a_dropped_raw_block() {
     );
 }
 
-
 #[test]
 fn an_unclosed_line_block_ends_with_its_item() {
     assert_eq!(
