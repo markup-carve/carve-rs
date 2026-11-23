@@ -2692,8 +2692,8 @@ fn compare_inlines<'t>(
         }
     }
     if !done && at.j < as_.len() {
-        // C2-W-005: the content read on past its end, as its closer paired later. The kind rounds leave it unread
-        // (CC-1633); the rounds of the reported openers take the braced form rather than lose the node.
+        // C2-W-005: the content read on past its end, as its closer paired later. The kind rounds leave it unread;
+        // the rounds of the reported openers take the braced form rather than lose the node.
         if !w.kind_escapes
             && matches!(ty(owner), "emphasis" | "strong")
             && has_other_form(w, c, owner)
