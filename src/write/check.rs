@@ -2742,7 +2742,8 @@ fn block_starts(node: V<'_>, len: usize, starts: &mut Vec<usize>) {
         if ty(block) != "paragraph" {
             starts.push(start);
         }
-        if !is_inline_parent(block) {
+        // C2-W-088: a row has the line kind `|`; its cells open no block of their own.
+        if !is_inline_parent(block) && ty(block) != "table" {
             block_starts(block, len, starts);
         }
     }
