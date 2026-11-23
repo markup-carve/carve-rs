@@ -291,7 +291,10 @@ fn group_names(hir: &regex_syntax::hir::Hir) -> Vec<(&'static str, usize)> {
             HirKind::Capture(capture) => {
                 if let Some(name) = &capture.name {
                     // The names live as long as the compiled model, which is never dropped.
-                    out.push((&*Box::leak(name.to_string().into_boxed_str()), capture.index as usize));
+                    out.push((
+                        &*Box::leak(name.to_string().into_boxed_str()),
+                        capture.index as usize,
+                    ));
                 }
                 walk(&capture.sub, out);
             }
@@ -2393,7 +2396,10 @@ mod tests {
     }
 
     fn owned(groups: &[(&str, usize)]) -> Vec<(String, usize)> {
-        groups.iter().map(|&(name, index)| (name.to_owned(), index)).collect()
+        groups
+            .iter()
+            .map(|&(name, index)| (name.to_owned(), index))
+            .collect()
     }
 
     #[test]

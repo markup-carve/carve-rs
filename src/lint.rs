@@ -2,7 +2,6 @@
 
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
-use serde_json::Value;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -38,11 +37,8 @@ pub struct LintOptions {
     pub includes: Option<crate::include::Includes>,
 }
 
-fn catalog() -> &'static Value {
-    static CATALOG: OnceLock<Value> = OnceLock::new();
-    CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/lint-rules.json"))).unwrap_or(Value::Null)
-    })
+mod catalog {
+    include!(concat!(env!("OUT_DIR"), "/lint_catalog_gen.rs"));
 }
 
 /// The `default` of a catalog row; `Upgrade` marks a migration notice (C2-W-156).
@@ -63,14 +59,10 @@ fn rows() -> &'static HashMap<&'static str, Row> {
     static ROWS: OnceLock<HashMap<&'static str, Row>> = OnceLock::new();
     ROWS.get_or_init(|| {
         let mut rows = HashMap::new();
-        for row in catalog()["rules"].as_array().into_iter().flatten() {
-            let Some(id) = row["id"].as_str() else {
-                continue;
-            };
+        for &(id, usable, default) in catalog::ROWS {
             rows.entry(id).or_insert_with(|| Row {
-                usable: (row["channel"] == "lint" || row["channel"].is_null())
-                    && !matches!(row["status"].as_str(), Some("obsolete" | "void")),
-                default: match row["default"].as_str().unwrap_or("on") {
+                usable,
+                default: match default {
                     "on" => RowDefault::On,
                     "upgrade" => RowDefault::Upgrade,
                     _ => RowDefault::Off,

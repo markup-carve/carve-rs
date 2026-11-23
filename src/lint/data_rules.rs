@@ -18,13 +18,15 @@ use std::hash::{BuildHasherDefault, Hasher};
 use std::rc::Rc;
 use std::sync::OnceLock;
 
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/lint_model_gen.rs"));
+}
+
+/// The lint model without its rules: the field lists and leaf sets the rules name.
 #[allow(clippy::expect_used)] // The pinned model is a checked build input.
 fn model() -> &'static Value {
     static MODEL: OnceLock<Value> = OnceLock::new();
-    MODEL.get_or_init(|| {
-        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/lint-model.json")))
-            .expect("pinned lint model")
-    })
+    MODEL.get_or_init(|| serde_json::from_str(generated::MODEL).expect("pinned lint model"))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,15 +57,42 @@ struct Each {
     base: Option<Expr>,
 }
 
+/// A rule of the model: what rule selection reads, and the rest compiled when a document first reaches
+/// it, so a call pays only for the rules its document can trigger (carve#6487).
 struct Rule {
     id: &'static str,
     over: Over,
-    types: Option<Vec<&'static str>>,
-    verbatim: Vec<&'static str>,
+    types: Option<&'static [&'static str]>,
+    verbatim: &'static [&'static str],
+    json: &'static str,
+    value: OnceLock<&'static Value>,
+    body: OnceLock<Body>,
+}
+
+impl Rule {
+    /// The rule as the model writes it, parsed once; compiled expressions borrow from it for good.
+    #[allow(clippy::expect_used)] // The pinned model is a checked build input.
+    fn value(&self) -> &'static Value {
+        self.value.get_or_init(|| {
+            Box::leak(Box::new(
+                serde_json::from_str(self.json).expect("pinned lint rule"),
+            ))
+        })
+    }
+}
+
+impl std::ops::Deref for Rule {
+    type Target = Body;
+
+    fn deref(&self) -> &Body {
+        self.body.get_or_init(|| compile_rule(self.value()))
+    }
+}
+
+struct Body {
     lets: Vec<Expr>,
     when: Option<Expr>,
     each: Option<Each>,
-    range: Option<(Expr, Expr)>,
     entries: Vec<Entry>,
     /// The quick tests of `when`, by index into its top-level `all`.
     quick: Vec<usize>,
@@ -86,7 +115,7 @@ fn names(value: &'static Value) -> Vec<&'static str> {
         .collect()
 }
 
-fn compile_rule(rule: &'static Value) -> Rule {
+fn compile_rule(rule: &'static Value) -> Body {
     let let_names: Vec<&'static str> = rule
         .get("let")
         .and_then(Value::as_object)
@@ -101,12 +130,6 @@ fn compile_rule(rule: &'static Value) -> Rule {
         .iter()
         .map(|name| scope.compile(&rule["let"][*name]))
         .collect();
-    let over = match rule["over"].as_str() {
-        Some("block") => Over::Block,
-        Some("inline") => Over::Inline,
-        Some("attribute") => Over::Attribute,
-        _ => Over::Line,
-    };
     let values = |object: &'static Value| -> Vec<(&'static str, &'static Value)> {
         object
             .as_object()
@@ -116,7 +139,7 @@ fn compile_rule(rule: &'static Value) -> Rule {
             .collect()
     };
     let shared = values(&rule["values"]);
-    let entries = rule["report"]
+    let mut entries: Vec<Entry> = rule["report"]
         .as_array()
         .into_iter()
         .flatten()
@@ -169,16 +192,20 @@ fn compile_rule(rule: &'static Value) -> Rule {
         })
     });
     let when = rule.get("when").map(|when| scope.compile(when));
-    Rule {
-        id: rule["id"].as_str().unwrap_or(""),
-        over,
-        types: rule.get("types").map(names),
-        verbatim: names(&rule["verbatim"]),
+    // An entry without its own range reads the rule's; both live as long as the rule list.
+    let range: Option<&'static (Expr, Expr)> = rule.get("range").map(|range| {
+        &*Box::leak(Box::new((
+            scope.compile(&range["start"]),
+            scope.compile(&range["end"]),
+        )))
+    });
+    for entry in &mut entries {
+        entry.start = range.map(|(start, _)| start);
+        entry.end = range.map(|(_, end)| end);
+    }
+    Body {
         lets,
         each,
-        range: rule
-            .get("range")
-            .map(|range| (scope.compile(&range["start"]), scope.compile(&range["end"]))),
         entries,
         quick: when.as_ref().map(quick_tests).unwrap_or_default(),
         when,
@@ -188,38 +215,37 @@ fn compile_rule(rule: &'static Value) -> Rule {
 fn compiled() -> &'static Compiled {
     static COMPILED: OnceLock<Compiled> = OnceLock::new();
     COMPILED.get_or_init(|| {
-        let mut rules: Vec<Rule> = model()["rules"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(compile_rule)
+        let rules: Vec<Rule> = generated::RULES
+            .iter()
+            .map(|&(id, over, types, verbatim, json)| Rule {
+                id,
+                over: match over {
+                    Some("block") => Over::Block,
+                    Some("inline") => Over::Inline,
+                    Some("attribute") => Over::Attribute,
+                    _ => Over::Line,
+                },
+                types,
+                verbatim,
+                json,
+                value: OnceLock::new(),
+                body: OnceLock::new(),
+            })
             .collect();
-        // An entry without its own range reads the rule's; both live in the static rule list.
-        for rule in &mut rules {
-            let range: Option<&'static (Expr, Expr)> =
-                rule.range.take().map(|range| &*Box::leak(Box::new(range)));
-            for entry in &mut rule.entries {
-                entry.start = range.map(|(start, _)| start);
-                entry.end = range.map(|(_, end)| end);
-            }
-        }
-        let text_rules: Vec<&Value> = model()["rules"]
-            .as_array()
-            .into_iter()
-            .flatten()
+        let text_rules: Vec<&Rule> = rules
+            .iter()
             .filter(|rule| {
-                rule["over"] == "inline"
-                    && rule["types"]
-                        .as_array()
-                        .is_some_and(|types| types.iter().any(|item| item == "text"))
+                rule.over == Over::Inline && rule.types.is_some_and(|types| types.contains(&"text"))
             })
             .collect();
         let text_needs_bracket = !text_rules.is_empty()
             && text_rules.iter().all(|rule| {
-                rule["when"]["contains"].as_array().is_some_and(|args| {
-                    args.first().is_some_and(|value| value["f"] == "text")
-                        && args.get(1).is_some_and(|value| value == "[")
-                })
+                rule.value()["when"]["contains"]
+                    .as_array()
+                    .is_some_and(|args| {
+                        args.first().is_some_and(|value| value["f"] == "text")
+                            && args.get(1).is_some_and(|value| value == "[")
+                    })
             });
         Compiled {
             ids: rules.iter().map(|rule| rule.id).collect(),

@@ -26,10 +26,80 @@ fn main() {
     write(&out.join("ast_view_gen.rs"), &view);
     write(&out.join("tables_gen.rs"), &gen_tables(&dir));
     write(&out.join("package_info_gen.rs"), &gen_package_info(&dir));
-    // The lint data without its indentation: every `carve lint` call parses it (carve#6487).
-    for name in ["lint-model.json", "lint-rules.json"] {
-        write(&out.join(name), &load(&dir, name).to_string());
+    // The lint data as Rust constants, so a `carve lint` call parses no catalog or rule it does not reach (carve#6487).
+    write(
+        &out.join("lint_catalog_gen.rs"),
+        &gen_lint_catalog(&load(&dir, "lint-rules.json")),
+    );
+    write(
+        &out.join("lint_model_gen.rs"),
+        &gen_lint_model(&load(&dir, "lint-model.json")),
+    );
+}
+
+/// What lint's rule switch reads of each catalog row, so a lint call parses no catalog (carve#6487).
+fn gen_lint_catalog(catalog: &Value) -> String {
+    let mut out = String::from(
+        "/// (id, usable, default) of each row of `lint-rules.json`, in order.\n\
+         pub(super) const ROWS: &[(&str, bool, &str)] = &[\n",
+    );
+    for row in catalog["rules"].as_array().into_iter().flatten() {
+        let Some(id) = row["id"].as_str() else {
+            continue;
+        };
+        let usable = (row["channel"] == "lint" || row["channel"].is_null())
+            && !matches!(row["status"].as_str(), Some("obsolete" | "void"));
+        let default = row["default"].as_str().unwrap_or("on");
+        let _ = writeln!(out, "    ({id:?}, {usable}, {default:?}),");
     }
+    out.push_str("];\n");
+    out
+}
+
+/// The lint model split for lazy compilation (carve#6487): what rule selection reads of each rule, the
+/// rule itself as JSON to parse when a document first needs it, and the rest of the model.
+fn gen_lint_model(model: &Value) -> String {
+    let names = |value: &Value| -> Vec<String> {
+        value
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|name| format!("{name:?}"))
+            .collect()
+    };
+    let mut out = String::from(
+        "/// (id, over, types, verbatim, the rule as JSON) of a rule of the lint model.\n\
+         pub(super) type RuleRow = (&'static str, Option<&'static str>, Option<&'static [&'static str]>, &'static [&'static str], &'static str);\n\n\
+         /// Each rule of the lint model, in order.\n\
+         pub(super) const RULES: &[RuleRow] = &[\n",
+    );
+    for rule in model["rules"].as_array().into_iter().flatten() {
+        let types = rule.get("types").map_or_else(
+            || "None".to_owned(),
+            |types| format!("Some(&[{}])", names(types).join(", ")),
+        );
+        let over = rule["over"]
+            .as_str()
+            .map_or_else(|| "None".to_owned(), |over| format!("Some({over:?})"));
+        let _ = writeln!(
+            out,
+            "    ({:?}, {over}, {types}, &[{}], {:?}),",
+            rule["id"].as_str().unwrap_or(""),
+            names(&rule["verbatim"]).join(", "),
+            rule.to_string()
+        );
+    }
+    let mut rest = model.clone();
+    if let Some(object) = rest.as_object_mut() {
+        object.remove("rules");
+    }
+    let _ = writeln!(
+        out,
+        "];\n\n/// The lint model without its rules.\npub(super) const MODEL: &str = {:?};",
+        rest.to_string()
+    );
+    out
 }
 
 /// `SPEC_COMMIT` and `NODE_TYPES` of the public library, from the pinned commit
