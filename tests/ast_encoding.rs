@@ -54,29 +54,30 @@ fn an_included_file_stamps_positions_and_the_top_file_does_not() {
     assert!(!api::encode_tree(&plain).contains(r#""file""#));
 }
 
+/// The same tree with members in reverse order and spacing.
+fn reversed(v: &Value) -> String {
+    match v {
+        Value::Object(m) => {
+            let fields: Vec<String> = m
+                .iter()
+                .rev()
+                .map(|(k, v)| format!("{} : {}", Value::from(k.as_str()), reversed(v)))
+                .collect();
+            format!("{{ {} }}", fields.join(" , "))
+        }
+        Value::Array(a) => format!(
+            "[ {} ]",
+            a.iter().map(reversed).collect::<Vec<_>>().join(" , ")
+        ),
+        other => other.to_string(),
+    }
+}
+
 #[test]
 fn a_decoded_tree_is_reencoded_in_canonical_order() {
     let tree = api::parse("a *b*\n", &Options::default()).unwrap();
     let encoded = api::encode_tree(&tree);
-    // The same tree with members in reverse order and spacing.
     let value: Value = serde_json::from_str(&encoded).unwrap();
-    fn reversed(v: &Value) -> String {
-        match v {
-            Value::Object(m) => {
-                let fields: Vec<String> = m
-                    .iter()
-                    .rev()
-                    .map(|(k, v)| format!("{} : {}", Value::from(k.as_str()), reversed(v)))
-                    .collect();
-                format!("{{ {} }}", fields.join(" , "))
-            }
-            Value::Array(a) => format!(
-                "[ {} ]",
-                a.iter().map(reversed).collect::<Vec<_>>().join(" , ")
-            ),
-            other => other.to_string(),
-        }
-    }
     let decoded = api::decode_tree(&reversed(&value)).unwrap();
     assert_eq!(api::encode_tree(&decoded), encoded);
 }
