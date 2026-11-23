@@ -99,6 +99,10 @@ pub struct Writer<'t> {
     pub bare_dot_head: Option<String>,
     pub sp: Spelling<'t>,
     pub forms: AddrMap<usize, u32>,
+    /// The emphasis and strong whose braced form a repair round asked for (C2-W-125).
+    pub round_forms: AddrSet<usize>,
+    /// The nodes given a form since the log was last cleared.
+    pub new_forms: Vec<usize>,
     pub starts: Vec<(N<'t>, usize)>,
     pub start_index: AddrMap<usize, usize>,
     pub facts: Option<AddrMap<usize, Facts>>,
@@ -165,6 +169,8 @@ impl<'t> Writer<'t> {
             bare_dot_head: None,
             sp: Spelling::default(),
             forms: AddrMap::default(),
+            round_forms: AddrSet::default(),
+            new_forms: Vec::new(),
             starts: Vec::new(),
             start_index: AddrMap::default(),
             facts: None,
@@ -206,6 +212,14 @@ impl<'t> Writer<'t> {
 
     pub fn fact<'v>(&self, n: impl Into<V<'v>>) -> Option<&Facts> {
         self.facts.as_ref()?.get(&id(n))
+    }
+
+    /// C2-W-069: gives `n` its braced form.
+    pub fn brace<'v>(&mut self, n: impl Into<V<'v>>) {
+        let n = id(n);
+        if self.forms.insert(n, 1).is_none() {
+            self.new_forms.push(n);
+        }
     }
 
     pub fn form<'v>(&self, n: impl Into<V<'v>>) -> u32 {

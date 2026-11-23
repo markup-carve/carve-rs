@@ -836,6 +836,7 @@ struct SavedGroup<'t> {
     lost: Vec<usize>,
     lost_keys: Vec<(usize, Vec<String>)>,
     forms: Vec<(usize, u32)>,
+    round_forms: Vec<usize>,
     blank_first: bool,
 }
 
@@ -900,6 +901,11 @@ impl<'t> SavedGroup<'t> {
                 .iter()
                 .filter_map(|n| w.forms.get(n).map(|f| (take(n), *f)))
                 .collect(),
+            round_forms: ids
+                .iter()
+                .copied()
+                .filter(|n| w.round_forms.contains(n))
+                .collect(),
             blank_first: w.blank_first,
             ids,
         }
@@ -924,12 +930,14 @@ impl<'t> SavedGroup<'t> {
             w.sp.lost.remove(n);
             w.sp.lost_keys.remove(n);
             w.forms.remove(n);
+            w.round_forms.remove(n);
         }
         w.sp.escapes.extend(self.escapes);
         w.sp.attempts.extend(self.attempts);
         w.sp.lost.extend(self.lost);
         w.sp.lost_keys.extend(self.lost_keys);
         w.forms.extend(self.forms);
+        w.round_forms.extend(self.round_forms);
         w.lines = self.lines;
         w.sp.losses.truncate(losses);
         w.blank_first = self.blank_first;
@@ -988,7 +996,45 @@ struct History {
     remaining: i64,
 }
 
+/// C2-W-125: once the rounds settle, the stale braced forms are taken out together with the escapes of the
+/// group, and the rounds run again from there. Where that loses a node, the settled form stands.
 fn repair_rounds<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    from: usize,
+    first: bool,
+    reported: usize,
+) -> usize {
+    let end = repair_rounds_once(w, doc, from, first, reported);
+    if w.kind_failed || w.sp.losses.len() != reported {
+        return end;
+    }
+    let group = children(doc).slice(from, end).unwrap_or_else(Arr::empty);
+    let stale = stale_forms(w, group);
+    if stale.is_empty() {
+        return end;
+    }
+    let saved = SavedGroup::new(w, group);
+    let certificate = w.group_certificate;
+    for n in &stale {
+        w.forms.remove(n);
+        w.round_forms.remove(n);
+    }
+    for n in &saved.ids {
+        w.sp.escapes.remove(n);
+        w.sp.attempts.remove(n);
+    }
+    let again = repair_rounds_once(w, doc, from, first, reported);
+    if w.kind_failed || w.sp.losses.len() != reported || again != end {
+        w.kind_failed = false;
+        w.group_certificate = certificate;
+        saved.restore(w, reported, group);
+        return end;
+    }
+    again
+}
+
+fn repair_rounds_once<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
     from: usize,
@@ -1026,7 +1072,11 @@ fn repair_rounds<'t>(
             source: None,
             equal: false,
         };
-        if !settle(w, doc, group, f, &mut round) && !exhausted(w) {
+        w.new_forms.clear();
+        let more = settle(w, doc, group, f, &mut round);
+        // C2-W-125: the forms this round asked for, in its probes too, as against those its write placed.
+        w.round_forms.extend(w.new_forms.drain(..));
+        if !more && !exhausted(w) {
             if w.kind_failed {
                 return end;
             }
@@ -1572,6 +1622,12 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
     if c.forms.iter().any(|n| !w.forms.contains_key(&id(n))) {
         w.sp.escapes.clear();
         w.sp.attempts.clear();
+        w.new_forms.extend(
+            c.forms
+                .iter()
+                .map(|n| id(*n))
+                .filter(|n| !w.forms.contains_key(n)),
+        );
         for n in &c.forms {
             *w.forms.entry(id(n)).or_insert(0) += 1;
         }
@@ -1598,6 +1654,92 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
     }
     for (n, field) in &c.losses {
         lose(w, n, field.as_deref());
+    }
+    false
+}
+
+/// C2-W-125: the braced forms the rounds gave pairs behind a braced pair of their inline run while an
+/// earlier pair still read on, where the bare form pairs by itself (C2-W-069).
+fn stale_forms<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<usize> {
+    let mut stale = Vec::new();
+    let mut pending: Vec<N<'t>> = group.iter().collect();
+    while let Some(node) = pending.pop() {
+        // A title and a caption are inline runs of their own outside `children`.
+        if let Some(title) = node::title(node) {
+            stale_in_run(w, title, &mut stale);
+        }
+        pending.extend(node::caption(node));
+        if node::is_inline_parent(node) {
+            stale_in_run(w, children(node), &mut stale);
+        } else {
+            pending.extend(children(node).iter());
+        }
+    }
+    stale
+}
+
+fn stale_in_run<'t>(w: &Writer<'t>, run: Arr<'t>, stale: &mut Vec<usize>) {
+    let mut behind = false;
+    let mut stack: Vec<(Arr<'t>, usize)> = vec![(run, 0)];
+    while let Some((nodes, at)) = stack.pop() {
+        let Some(n) = nodes.get(at) else {
+            continue;
+        };
+        stack.push((nodes, at + 1));
+        if matches!(ty(n), "emphasis" | "strong") && w.form(n) > 0 {
+            if behind && w.round_forms.contains(&id(n)) && pairs_bare(nodes, at) {
+                stale.push(id(n));
+            } else {
+                behind = true;
+            }
+        }
+        stack.push((children(n), 0));
+    }
+}
+
+/// C2-W-069: whether the bare emphasis or strong at `at` of `nodes` opens and closes at its neighbors
+/// and holds no mark of its own.
+fn pairs_bare(nodes: Arr<'_>, at: usize) -> bool {
+    let Some(n) = nodes.get(at) else {
+        return false;
+    };
+    let mark = match ty(n) {
+        "emphasis" => '/',
+        "strong" => '*',
+        _ => return false,
+    };
+    let space = |c: Option<char>| c.is_none_or(crate::chars::is_flank_space);
+    let word = |c: Option<char>| c.is_some_and(crate::chars::is_word);
+    let text_at = |i: Option<usize>| i.and_then(|i| nodes.get(i)).filter(|p| ty(*p) == "text");
+    !holds_mark(n, mark)
+        && !space(edge_char(n, false))
+        && !space(edge_char(n, true))
+        && !word(text_at(at.checked_sub(1)).and_then(|p| text(p).chars().last()))
+        && !word(text_at(Some(at + 1)).and_then(|p| text(p).chars().next()))
+}
+
+/// The first or last character of the text that starts or ends `n`, if a text does.
+fn edge_char(mut n: V<'_>, last: bool) -> Option<char> {
+    loop {
+        if ty(n) == "text" {
+            return if last {
+                text(n).chars().last()
+            } else {
+                text(n).chars().next()
+            };
+        }
+        let c = children(n);
+        n = if last { c.last()? } else { c.first()? };
+    }
+}
+
+fn holds_mark(n: V<'_>, mark: char) -> bool {
+    let mut pending: Vec<V<'_>> = children(n).iter().collect();
+    while let Some(c) = pending.pop() {
+        if ty(c) == "text" && text(c).contains(mark) {
+            return true;
+        }
+        pending.extend(children(c).iter());
     }
     false
 }
