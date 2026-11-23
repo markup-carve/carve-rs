@@ -833,12 +833,20 @@ fn run_probe<'t>(
 ) -> Option<bool> {
     let mut probe = probe_spelling(w, expected);
     let mut found = false;
+    let mut kinds = ProbeKinds {
+        blocks: None,
+        partners: if w.kind_escapes {
+            partner_closers(expected)
+        } else {
+            Vec::new()
+        },
+    };
     for round in 0..MAX_PROBE_ROUNDS {
         if exhausted(w) {
             return Some(found);
         }
         std::mem::swap(&mut w.sp, &mut probe);
-        let result = probe_round(w, e, expected, flags);
+        let result = probe_round(w, e, expected, flags, &mut kinds);
         std::mem::swap(&mut w.sp, &mut probe);
         let Some((asked, lossy)) = result else {
             return if round == 0 { None } else { Some(found) };
@@ -871,12 +879,19 @@ fn run_probe<'t>(
     Some(found)
 }
 
+/// The kind blocks and bracket partners of the probed inlines, kept across the rounds of one probe.
+struct ProbeKinds<'t> {
+    blocks: Option<KindBlocks<'t>>,
+    partners: Partners<'t>,
+}
+
 /// One round of a probe, in the spelling of the probe: the escapes it asked for and whether it found losses.
 fn probe_round<'t>(
     w: &mut Writer<'t>,
     e: N<'t>,
     expected: &[N<'t>],
     flags: u32,
+    kinds: &mut ProbeKinds<'t>,
 ) -> Option<(Vec<(N<'t>, usize)>, bool)> {
     let chunk = Chunk::new(format!("{}\n", write_inlines(w, expected, flags)));
     let parsed = chunk.parse(w);
@@ -892,8 +907,8 @@ fn probe_round<'t>(
     };
     compare_inlines(w, &mut probe, expected, children(block), e);
     if w.kind_escapes {
-        escape_probe_kinds(w, &mut probe, expected);
-        escape_partner_closers(w, &mut probe, expected);
+        escape_probe_kinds(w, &mut probe, expected, &mut kinds.blocks);
+        escape_partner_closers(w, &mut probe, &kinds.partners);
     }
     extend_chains(w, &mut probe);
     Some((probe.escapes, !probe.losses.is_empty()))
@@ -902,7 +917,12 @@ fn probe_round<'t>(
 /// C2-W-088: a probe round escapes every opener of each kind its parse reports
 /// in the probed inlines, read as one leaf block, as a round of the group does.
 /// A C2-W-125 trial or closer repair gives no kind (CC-1568).
-fn escape_probe_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, expected: &[N<'t>]) {
+fn escape_probe_kinds<'t>(
+    w: &Writer<'t>,
+    c: &mut Check<'t>,
+    expected: &[N<'t>],
+    blocks: &mut Option<KindBlocks<'t>>,
+) {
     let reported: Vec<(N<'t>, usize)> = c
         .escapes
         .iter()
@@ -915,7 +935,7 @@ fn escape_probe_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, expected: &[N<'t>])
     if reported.is_empty() {
         return;
     }
-    let blocks = KindBlocks::content(expected);
+    let blocks = blocks.get_or_insert_with(|| KindBlocks::content(expected));
     let mut done = HashSet::new();
     for (n, at) in reported {
         let line = c.line_escapes.contains(&(id(n), at));
@@ -930,22 +950,22 @@ fn escape_probe_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, expected: &[N<'t>])
     }
 }
 
-/// C2-W-125 case five: a `[` escaped in the content of a bracketed node leaves
-/// the `]` it paired with bare, which would end that node early; that `]` takes
-/// its backslash in the same round.
-pub fn escape_partner_closers<'t>(w: &Writer<'t>, c: &mut Check<'t>, nodes: &[N<'t>]) {
+/// Each `]` of a bracketed content with the `[` of that content it closes.
+pub type Partners<'t> = Vec<((N<'t>, usize), (N<'t>, usize))>;
+
+/// The bracket partners in the content of each bracketed node below `nodes`.
+pub fn partner_closers<'t>(nodes: &[N<'t>]) -> Partners<'t> {
+    let mut partners = Vec::new();
     let mut pending: Vec<N<'t>> = nodes.to_vec();
     while let Some(node) = pending.pop() {
-        let bracketed = closing_mark(ty(node)) == Some(b']');
         if !has(node, "children") {
             continue;
         }
-        if !bracketed {
+        if closing_mark(ty(node)) != Some(b']') {
             pending.extend(children(node).iter());
             continue;
         }
         let mut open: Vec<(N<'t>, usize)> = Vec::new();
-        let mut closers: Vec<(N<'t>, usize, Option<(N<'t>, usize)>)> = Vec::new();
         let mut content: Vec<N<'t>> = children(node).iter().collect();
         content.reverse();
         while let Some(n) = content.pop() {
@@ -955,7 +975,11 @@ pub fn escape_partner_closers<'t>(w: &Writer<'t>, c: &mut Check<'t>, nodes: &[N<
                 for (at, &b) in text(n).as_bytes().iter().enumerate() {
                     match b {
                         b'[' => open.push((n, at)),
-                        b']' => closers.push((n, at, open.pop())),
+                        b']' => {
+                            if let Some(partner) = open.pop() {
+                                partners.push(((n, at), partner));
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -963,10 +987,17 @@ pub fn escape_partner_closers<'t>(w: &Writer<'t>, c: &mut Check<'t>, nodes: &[N<
                 content.extend(children(n).iter().rev());
             }
         }
-        for (n, at, partner) in closers {
-            if partner.is_some_and(|(p, pat)| is_escaped(w, c, p, pat)) {
-                escape_at(w, c, n, at);
-            }
+    }
+    partners
+}
+
+/// C2-W-125 case five: a `[` escaped in the content of a bracketed node leaves
+/// the `]` it paired with bare, which would end that node early; that `]` takes
+/// its backslash in the same round.
+pub fn escape_partner_closers<'t>(w: &Writer<'t>, c: &mut Check<'t>, partners: &Partners<'t>) {
+    for &((n, at), (p, pat)) in partners {
+        if is_escaped(w, c, p, pat) {
+            escape_at(w, c, n, at);
         }
     }
 }

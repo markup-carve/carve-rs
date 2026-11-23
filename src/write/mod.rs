@@ -355,6 +355,26 @@ mod batched_repair_test {
         assert!(rounds <= 200, "{rounds} read-back parses for one paragraph");
         Ok(())
     }
+
+    #[test]
+    fn nested_links_take_a_few_repair_parses() {
+        // carve#6411: the probe rounds escape by kind (C2-W-088), not one escape per parse.
+        for n in [146, 584] {
+            let src = format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n));
+            let tree = parse_plain(&src).expect("parsed source");
+            let before = REPAIR_PARSES.with(std::cell::Cell::get);
+            let (output, losses) = format_tree(&tree, Some(&src), &Settings::default());
+            let rounds = REPAIR_PARSES.with(std::cell::Cell::get) - before;
+            assert!(losses.is_empty());
+            eprintln!("n={n} rounds={rounds}");
+            assert!(rounds < 20, "{rounds} read-back parses at n = {n}");
+            let again = parse_plain(&output).expect("parsed output");
+            assert_eq!(
+                format_tree(&again, Some(&output), &Settings::default()).0,
+                output
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1141,8 +1161,13 @@ fn settle<'t>(
             return false;
         }
         escape_kinds(w, &mut c, group);
-        let blocks: Vec<N<'t>> = group.iter().collect();
-        check::escape_partner_closers(w, &mut c, &blocks);
+        let key = (group.first().map_or(0, |n| id(n)), group.len());
+        let partners = match w.partners.take() {
+            Some((k, partners)) if k == key => partners,
+            _ => check::partner_closers(&group.iter().collect::<Vec<_>>()),
+        };
+        check::escape_partner_closers(w, &mut c, &partners);
+        w.partners = Some((key, partners));
     }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {
