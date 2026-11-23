@@ -1141,6 +1141,8 @@ fn settle<'t>(
             return false;
         }
         escape_kinds(w, &mut c, group);
+        let blocks: Vec<N<'t>> = group.iter().collect();
+        check::escape_partner_closers(w, &mut c, &blocks);
     }
     extend_chains(w, &mut c);
     if c.changes() == 0 && !c.losses.is_empty() && first && !w.blank_first {

@@ -84,8 +84,11 @@ impl<'t> KindBlocks<'t> {
     /// leaf block: markup stands on either side of it.
     pub fn content(nodes: &[N<'t>]) -> Self {
         let mut runs = Vec::new();
-        let (mut edge, mut joined) = (Edge::Markup, false);
+        let (mut edge, mut joined) = (Edge::Line, false);
         collect(nodes.iter().copied(), &mut runs, &mut edge, &mut joined);
+        if joined && let Some(last) = runs.last_mut() {
+            last.after = Edge::Line;
+        }
         let mut owners = AddrMap::default();
         for (r, run) in runs.iter().enumerate() {
             for &(n, start) in &run.nodes {
