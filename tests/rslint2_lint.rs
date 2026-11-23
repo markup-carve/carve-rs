@@ -70,9 +70,13 @@ fn cc_984_and_985_frontmatter_shape_respects_format_and_blank_first_line() {
 
 #[test]
 fn cc_986_and_987_sigil_hint_requires_a_non_ascii_predecessor() {
-    let ascii = lint("a@bob\n", &LintOptions::default());
+    let upgrade = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    let ascii = lint("a@bob\n", &upgrade);
     assert!(!ascii.iter().any(|d| d.code == "sigil-after-letter"));
-    let unicode = lint("ü#1a\n", &LintOptions::default());
+    let unicode = lint("ü#1a\n", &upgrade);
     let finding = unicode
         .iter()
         .find(|d| d.code == "sigil-after-letter")

@@ -23,6 +23,7 @@ fn options(case: &Value) -> LintOptions {
                 .insert(name.clone(), state.as_str().unwrap_or("").to_string());
         }
     }
+    options.upgrade = case["options"]["upgrade"] == true;
     if let Some(platforms) = case["options"]["platforms"].as_array() {
         options.platforms = platforms
             .iter()

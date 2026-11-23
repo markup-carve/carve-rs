@@ -1,12 +1,18 @@
 use carve::lint::{LintOptions, lint};
 
 fn spans(source: &str, rule: &str) -> Vec<(u32, u32)> {
-    lint(source, &LintOptions::default())
-        .into_iter()
-        .filter(|finding| finding.code == rule)
-        .filter_map(|finding| finding.pos)
-        .map(|pos| (pos.start_offset, pos.end_offset))
-        .collect()
+    lint(
+        source,
+        &LintOptions {
+            upgrade: true,
+            ..LintOptions::default()
+        },
+    )
+    .into_iter()
+    .filter(|finding| finding.code == rule)
+    .filter_map(|finding| finding.pos)
+    .map(|pos| (pos.start_offset, pos.end_offset))
+    .collect()
 }
 
 #[test]

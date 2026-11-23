@@ -30,6 +30,8 @@ pub struct LintOptions {
     pub rules: HashMap<String, String>,
     /// Platform names, currently `github`.
     pub platforms: Vec<String>,
+    /// Turns on the migration notices, the rules whose default is `upgrade` (C2-W-156).
+    pub upgrade: bool,
     /// Registered extensions that may contribute generated IDs.
     pub extensions: Vec<String>,
     /// Include expansion for lint of an entry document (C2-N-085).
@@ -43,10 +45,17 @@ fn catalog() -> &'static Value {
     })
 }
 
+/// The `default` of a catalog row; `Upgrade` marks a migration notice (C2-W-156).
+enum RowDefault {
+    On,
+    Off,
+    Upgrade,
+}
+
 /// What `active` reads of a catalog row, indexed by rule id once.
 struct Row {
     usable: bool,
-    default_on: bool,
+    default: RowDefault,
     modeled: bool,
 }
 
@@ -61,7 +70,11 @@ fn rows() -> &'static HashMap<&'static str, Row> {
             rows.entry(id).or_insert_with(|| Row {
                 usable: (row["channel"] == "lint" || row["channel"].is_null())
                     && !matches!(row["status"].as_str(), Some("obsolete" | "void")),
-                default_on: row["default"].as_str().unwrap_or("on") == "on",
+                default: match row["default"].as_str().unwrap_or("on") {
+                    "on" => RowDefault::On,
+                    "upgrade" => RowDefault::Upgrade,
+                    _ => RowDefault::Off,
+                },
                 modeled: data_rules::modeled_ids().contains(id),
             });
         }
@@ -89,9 +102,47 @@ fn row_active(code: &str, row: &Row, opts: &LintOptions) -> bool {
     if code.starts_with("platform-") && !opts.platforms.iter().any(|p| p == "github") {
         return false;
     }
-    opts.rules
-        .get(code)
-        .map_or(row.default_on, |setting| setting == "on")
+    opts.rules.get(code).map_or(
+        match row.default {
+            RowDefault::On => true,
+            RowDefault::Off => false,
+            RowDefault::Upgrade => opts.upgrade,
+        },
+        |setting| setting == "on",
+    )
+}
+
+/// C2-W-156, C2-B-231: the line-1 frontmatter declares with `carve` or
+/// `carve-version` a version below 0.2 (`0`, `0.0`, `0.1`, `0.1.13`).
+fn declares_below_0_2(tree: V<'_>) -> bool {
+    let Some(first) = tree
+        .at("children")
+        .as_array()
+        .and_then(crate::view::Arr::first)
+    else {
+        return false;
+    };
+    if first.at("type").as_str() != Some("frontmatter")
+        || first.field("/pos/startLine").as_i64() != Some(1)
+    {
+        return false;
+    }
+    first.at("value").as_str().is_some_and(|text| {
+        text.lines().any(|line| {
+            let line = line.trim_start_matches([' ', '\t']);
+            let Some((key, version)) = line.split_once(':') else {
+                return false;
+            };
+            let version = version.trim_matches([' ', '\t', '\r']);
+            let mut parts = version.split('.').map(|part| part.trim_start_matches('0'));
+            matches!(key, "carve" | "carve-version")
+                && version
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+                && parts.next() == Some("")
+                && parts.next().is_none_or(|minor| matches!(minor, "" | "1"))
+        })
+    })
 }
 
 /// Runs enabled lint rules and returns catalog diagnostics in source order.
@@ -129,6 +180,16 @@ fn lint_core<'a>(
     tree: Option<V<'a>>,
     arena: &'a crate::Arena,
 ) -> Vec<Diagnostic> {
+    let declared;
+    let opts = if !opts.upgrade && tree.is_some_and(declares_below_0_2) {
+        declared = LintOptions {
+            upgrade: true,
+            ..opts.clone()
+        };
+        &declared
+    } else {
+        opts
+    };
     let parsed = Source::new(source);
     let walk::Walk {
         ranges,

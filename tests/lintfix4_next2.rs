@@ -2,7 +2,11 @@ use carve::Options;
 use carve::lint::{LintOptions, lint};
 
 fn ranges(source: &str, code: &str) -> Vec<(u32, u32)> {
-    lint(source, &LintOptions::default())
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    lint(source, &options)
         .into_iter()
         .filter(|finding| finding.code == code)
         .filter_map(|finding| finding.pos)

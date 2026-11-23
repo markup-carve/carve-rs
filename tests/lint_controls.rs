@@ -124,7 +124,11 @@ fn c2_i_080_c2_i_081_unresolved_reference_message_variants() {
 
 #[test]
 fn c2_b_195_comment_fence_with_attached_attributes() {
-    let findings = lint("{.c}\n%%%\nhidden\n%%%\npara", &LintOptions::default());
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    let findings = lint("{.c}\n%%%\nhidden\n%%%\npara", &options);
     assert!(
         !findings
             .iter()
@@ -134,7 +138,11 @@ fn c2_b_195_comment_fence_with_attached_attributes() {
 
 #[test]
 fn c2_b_154_heading_continues_across_comment() {
-    let findings = lint("= Title\n%% note\n  continues", &LintOptions::default());
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    let findings = lint("= Title\n%% note\n  continues", &options);
     assert!(
         findings
             .iter()
@@ -222,4 +230,53 @@ fn c2_w_106_term_atom_crossing_lines_is_multiline() {
             .iter()
             .any(|d| d.code == "description-term-multi-line")
     );
+}
+
+/// C2-W-156, C2-B-231: a migration notice runs for a document that declares
+/// a version below 0.2 in its line-1 frontmatter, or under `upgrade`.
+#[test]
+fn c2_w_156_migration_notice_needs_a_0_1_declaration_or_upgrade() {
+    let fires = |source: &str, options: &LintOptions| {
+        lint(source, options)
+            .iter()
+            .any(|d| d.code == "deprecated-indented-line-under-heading")
+    };
+    let off = LintOptions::default();
+    let upgrade = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    assert!(!fires("# a\n b\n", &off));
+    assert!(fires("# a\n b\n", &upgrade));
+    for version in ["0", "0.0", "0.1", "0.1.13", "00.01", "0.1 "] {
+        assert!(
+            fires(&format!("---\ncarve: {version}\n---\n# a\n b\n"), &off),
+            "{version:?}"
+        );
+    }
+    for version in ["0.2", "0.10", "1", "0.1.x", "\"0.1\"", "0..1", "0.", ""] {
+        assert!(
+            !fires(
+                &format!("---\ncarve-version: {version}\n---\n# a\n b\n"),
+                &off
+            ),
+            "{version:?}"
+        );
+    }
+    assert!(fires(
+        "\u{feff}---\ncarve-version: 0.1\n---\n# a\n b\n",
+        &off
+    ));
+    assert!(!fires("# x\n\n---\ncarve: 0.1\n---\n# a\n b\n", &off));
+    assert!(!fires(
+        "---\ncarve: 0.1\n---\n# a\n b\n",
+        &LintOptions {
+            rules: [(
+                "deprecated-indented-line-under-heading".into(),
+                "off".into()
+            )]
+            .into(),
+            ..LintOptions::default()
+        }
+    ));
 }

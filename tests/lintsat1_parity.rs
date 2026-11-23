@@ -1,7 +1,15 @@
 use carve::lint::{LintOptions, lint};
 
+/// Turns on the migration notices of C2-W-156 that this table pins.
+fn upgrade() -> LintOptions {
+    LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    }
+}
+
 fn count(source: &str, rule: &str) -> usize {
-    lint(source, &LintOptions::default())
+    lint(source, &upgrade())
         .into_iter()
         .filter(|finding| finding.channel == "lint" && finding.code == rule)
         .count()

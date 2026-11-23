@@ -1093,6 +1093,7 @@ fn lint_file(
             .map(str::to_owned)
             .collect();
     }
+    lint_opts.upgrade = bool_value(args, "upgrade", false);
     let fixed = args.command == "fix" || bool_value(args, "fix", false);
     if fixed {
         for rule in serde_json::from_str::<Value>(include_str!("../spec-data/lint-rules.json"))
