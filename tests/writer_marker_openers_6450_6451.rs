@@ -40,7 +40,11 @@ fn write(tree: &Value) -> (String, Vec<String>) {
     let written = Carve::new()
         .write_with_diagnostics(&tree, &WriteOptions::default())
         .expect("a write");
-    let codes = written.diagnostics.iter().map(|e| e.code.to_string()).collect();
+    let codes = written
+        .diagnostics
+        .iter()
+        .map(|e| e.code.to_string())
+        .collect();
     (written.output, codes)
 }
 
@@ -98,19 +102,53 @@ fn a_reported_loss_takes_the_reported_openers_form() {
     let unspellable = vec!["field-unspellable".to_string()];
     for (tree, expected) in [
         // Tree A of carve#6451.
-        (paragraph(&[text("a"), soft(), text("  ` `"), soft(), text("c")]), "a\n  \\` `\nc\n"),
+        (
+            paragraph(&[text("a"), soft(), text("  ` `"), soft(), text("c")]),
+            "a\n  \\` `\nc\n",
+        ),
         // Tree B: the code span behind the lost blanks of an item line is reported, not written.
-        (bullet(&[text("  x` `"), soft(), text("c")]), "-   x\\` `\n  c\n"),
-        (quote(&[text("a"), soft(), text("  `x `"), soft(), text("c")]), "> a\n>   \\`x `\n> c\n"),
-        (paragraph(&[text("/"), soft(), text("  ` ` d")]), "/\n  \\` ` d\n"),
-        (paragraph(&[text("a"), soft(), text("  ` ` `"), soft(), text("c")]), "a\n  \\` \\` `\nc\n"),
-        (quote(&[text("  x` `"), soft(), text("c")]), ">   x\\` `\n> c\n"),
-        (paragraph(&[text("a"), soft(), text("  x` "), code("z")]), "a\n  x\\` `z`\n"),
-        (paragraph(&[text("a b"), soft(), text("  x` `")]), "a b\n  x\\` `\n"),
+        (
+            bullet(&[text("  x` `"), soft(), text("c")]),
+            "-   x\\` `\n  c\n",
+        ),
+        (
+            quote(&[text("a"), soft(), text("  `x `"), soft(), text("c")]),
+            "> a\n>   \\`x `\n> c\n",
+        ),
+        (
+            paragraph(&[text("/"), soft(), text("  ` ` d")]),
+            "/\n  \\` ` d\n",
+        ),
+        (
+            paragraph(&[text("a"), soft(), text("  ` ` `"), soft(), text("c")]),
+            "a\n  \\` \\` `\nc\n",
+        ),
+        (
+            quote(&[text("  x` `"), soft(), text("c")]),
+            ">   x\\` `\n> c\n",
+        ),
+        (
+            paragraph(&[text("a"), soft(), text("  x` "), code("z")]),
+            "a\n  x\\` `z`\n",
+        ),
+        (
+            paragraph(&[text("a b"), soft(), text("  x` `")]),
+            "a b\n  x\\` `\n",
+        ),
         // A fence behind lost blanks takes its backslash; only the blanks are lost.
-        (paragraph(&[text("/"), soft(), text("  ```")]), "/\n  \\```\n"),
-        (paragraph(&[text("  ```` d"), soft(), text("c")]), "  \\```` d\nc\n"),
+        (
+            paragraph(&[text("/"), soft(), text("  ```")]),
+            "/\n  \\```\n",
+        ),
+        (
+            paragraph(&[text("  ```` d"), soft(), text("c")]),
+            "  \\```` d\nc\n",
+        ),
     ] {
-        assert_eq!(write(&tree), (expected.to_string(), unspellable.clone()), "{expected:?}");
+        assert_eq!(
+            write(&tree),
+            (expected.to_string(), unspellable.clone()),
+            "{expected:?}"
+        );
     }
 }

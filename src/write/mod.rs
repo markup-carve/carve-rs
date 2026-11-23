@@ -1384,9 +1384,7 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
     let reported: Vec<(N<'t>, usize)> = c
         .escapes
         .iter()
-        .filter(|(n, at)| {
-            !trials.contains(&(id(n), *at)) && !c.own_escapes.contains(&(id(n), *at))
-        })
+        .filter(|(n, at)| !trials.contains(&(id(n), *at)) && !c.own_escapes.contains(&(id(n), *at)))
         .copied()
         .collect();
     if reported.is_empty() {

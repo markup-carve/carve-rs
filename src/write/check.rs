@@ -307,16 +307,22 @@ fn escape_at_opt<'t>(w: &Writer<'t>, c: &mut Check<'t>, node: N<'t>, at: Option<
 }
 
 /// The offsets at which a line that reads as a block opener can be made text, best first (C2-W-092).
+/// Behind the blanks that start the line, which the parse drops (C2-B-027).
 fn opener_offsets(value: &str) -> Vec<usize> {
+    let lead = value
+        .bytes()
+        .take_while(|&b| b == b' ' || b == b'\t')
+        .count();
+    let value = value.get(lead..).unwrap_or("");
     let mut offsets = Vec::new();
     if value.starts_with("--") {
-        offsets.push(1);
+        offsets.push(lead + 1);
     }
-    offsets.push(0);
+    offsets.push(lead);
     let b = value.as_bytes();
     let end = b.iter().take_while(|c| c.is_ascii_alphanumeric()).count();
     if end > 0 && matches!(b.get(end), Some(b'.' | b')')) {
-        offsets.push(end);
+        offsets.push(lead + end);
     }
     offsets
 }
@@ -1587,6 +1593,8 @@ fn match_characters<'t>(
     e: N<'t>,
     a: V<'_>,
     at: &mut Cursor,
+    es: &[N<'t>],
+    owner: N<'t>,
 ) -> bool {
     let value = text(e).as_bytes();
     let other = text(a).as_bytes();
@@ -1597,6 +1605,17 @@ fn match_characters<'t>(
     for k in 0..length {
         if value.get(at.vi + k) == other.get(at.aj + k) {
             continue;
+        }
+        // C2-W-124, C2-W-091: the parse drops the blanks that start a line. They are the loss of the text, and the
+        // comparison goes on behind them, so that a construct there is reported in the same round.
+        if is_blank(value.get(at.vi + k)) && at_line_start(e, es, at.i, at.vi + k, owner) {
+            c.losses.push((e, Some("value".into())));
+            at.vi += k;
+            at.aj += k;
+            while is_blank(value.get(at.vi)) {
+                at.vi += 1;
+            }
+            return match_characters(w, c, e, a, at, es, owner);
         }
         if !escape_at(w, c, e, at.vi + k) {
             c.losses.push((e, Some("value".into())));
@@ -1610,6 +1629,35 @@ fn match_characters<'t>(
         at.aj = 0;
     }
     true
+}
+
+fn is_blank(b: Option<&u8>) -> bool {
+    matches!(b, Some(b' ' | b'\t'))
+}
+
+/// Whether the offset `at` of `e`, the node `es[i]` of `owner`, starts a line of the written content.
+fn at_line_start(e: V<'_>, es: &[N<'_>], i: usize, at: usize, owner: V<'_>) -> bool {
+    if at > 0 {
+        return text(e).as_bytes().get(at - 1) == Some(&b'\n');
+    }
+    if i > 0 {
+        return is_break(es.get(i - 1).copied());
+    }
+    ty(owner) == "paragraph"
+}
+
+/// Where the construct `a` starts in `e`: past the blanks that start a line, which the parse drops (a lost value,
+/// C2-W-124), except for a comment, whose source holds them (C2-I-023).
+fn construct_start(e: V<'_>, es: &[N<'_>], at: &Cursor, a: V<'_>, owner: V<'_>) -> usize {
+    let b = text(e).as_bytes();
+    if ty(a) == "comment" || !at_line_start(e, es, at.i, at.vi, owner) {
+        return at.vi;
+    }
+    let mut start = at.vi;
+    while is_blank(b.get(start)) {
+        start += 1;
+    }
+    start
 }
 
 fn starts_with_closer(node: V<'_>, next: Option<V<'_>>) -> bool {
@@ -1689,7 +1737,7 @@ fn match_text<'t>(
         return parse_ends_in_text(w, c, es, at, owner);
     };
     if ty(a) != "text" {
-        return skip_construct(w, c, e, es, a, at);
+        return skip_construct(w, c, e, es, a, at, owner);
     }
     // A prior lost node does not license a later field to disappear silently.
     if !c.losses.is_empty() {
@@ -1703,7 +1751,7 @@ fn match_text<'t>(
             }
         }
     }
-    if !match_characters(w, c, e, a, at) {
+    if !match_characters(w, c, e, a, at, es, owner) {
         return false;
     }
     at.vi < text(e).len() || after_text_node(w, c, es, as_, at, owner)
@@ -1771,6 +1819,7 @@ fn skip_construct<'t>(
     es: &[N<'t>],
     a: V<'_>,
     at: &mut Cursor,
+    owner: N<'t>,
 ) -> bool {
     let prior = at.i.checked_sub(2).and_then(|p| es.get(p)).copied();
     let before = at.i.checked_sub(1).and_then(|p| es.get(p)).copied();
@@ -1782,7 +1831,8 @@ fn skip_construct<'t>(
     let Some((start, end)) = span(a) else {
         return false;
     };
-    let Some(stop) = spelled_end(w, e, at.vi, end - start, c.flags) else {
+    let from = construct_start(e, es, at, a, owner);
+    let Some(stop) = spelled_end(w, e, from, end - start, c.flags) else {
         return false;
     };
     at.vi = stop;
@@ -2432,14 +2482,22 @@ fn spell_on_line(n: N<'_>, out: &mut String) -> bool {
     if has(n, "attrs") {
         return false;
     }
-    let code = || n.get("value").and_then(|v| v.as_str()).map(super::inline::code_span);
+    let code = || {
+        n.get("value")
+            .and_then(V::as_str)
+            .map(super::inline::code_span)
+    };
     match ty(n) {
         "code" => code().is_some_and(|c| {
             out.push_str(&c);
             true
         }),
         "math" => code().is_some_and(|c| {
-            out.push_str(if super::node::flag(n, "display") { "$$" } else { "$" });
+            out.push_str(if super::node::flag(n, "display") {
+                "$$"
+            } else {
+                "$"
+            });
             out.push_str(&c);
             true
         }),
@@ -2449,7 +2507,9 @@ fn spell_on_line(n: N<'_>, out: &mut String) -> bool {
             true
         }),
         t if t != "link" && t != "span" && closing_mark(t).is_some_and(|m| m != b']') => {
-            let Some(m) = closing_mark(t) else { return false };
+            let Some(m) = closing_mark(t) else {
+                return false;
+            };
             out.push(char::from(m));
             let start = out.len();
             if !span_text(n, out) {
@@ -2463,10 +2523,12 @@ fn spell_on_line(n: N<'_>, out: &mut String) -> bool {
             out.push('x');
             true
         }
-        _ => !holds_tick(n) && {
-            out.push('x');
-            true
-        },
+        _ => {
+            !holds_tick(n) && {
+                out.push('x');
+                true
+            }
+        }
     }
 }
 
