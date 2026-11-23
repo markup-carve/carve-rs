@@ -401,21 +401,23 @@ impl<'r, 'a> Renderer<'r, 'a> {
 
     /// C2-H-079, C2-H-081, C2-H-083, C2-H-085, C2-H-088, C2-H-141.
     fn link(&mut self, n: &'r Node<'a>, l: &'r ast::Link<'a>, out: &mut String) {
+        let href = l.href.filter(|href| {
+            l.key.is_none_or(|key| self.links.contains_key(key)) || !self.hidden_heading(href)
+        });
+        // C2-H-085 before C2-H-081: an unresolved reference writes its ordinary text, inside link text too.
+        if let (None, Some(key)) = (href, &l.key) {
+            out.push('[');
+            self.inlines(&*l.children, out);
+            out.push(']');
+            push_label(out, l.ref_form.map(ref_suffix), key);
+            out.push_str(&attr_text(l.attrs, l.lang));
+            return;
+        }
         if self.in_link > 0 {
             self.inlines(&*l.children, out);
             return;
         }
-        let Some(href) = l.href.filter(|href| {
-            l.key.is_none_or(|key| self.links.contains_key(key)) || !self.hidden_heading(href)
-        }) else {
-            if let Some(key) = &l.key {
-                out.push('[');
-                self.inlines(&*l.children, out);
-                out.push(']');
-                push_label(out, l.ref_form.map(ref_suffix), key);
-                out.push_str(&attr_text(l.attrs, l.lang));
-                return;
-            }
+        let Some(href) = href else {
             return self.anchor(n, l, "", out);
         };
         if self.opts.profile == Profile::Comment && !url::allowed(href, &self.opts.url_policy) {
