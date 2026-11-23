@@ -237,3 +237,34 @@ fn a_leading_bom_precedes_frontmatter() {
         }
     }
 }
+
+/// The hub reads a closed frontmatter itself: a closer on the opener's next
+/// line, blanks after a fence and CR line endings (carve-rs#4633).
+#[test]
+fn frontmatter_shapes_comrak_misses() {
+    for from in ["markdown", "gfm"] {
+        for bom in ["", "\u{feff}"] {
+            for nl in ["\n", "\r\n", "\r"] {
+                for (open, fence, value) in [("---", "---", ""), ("+++", "---toml", "")] {
+                    for (body, carved) in [("", ""), ("body", "\nbody\n")] {
+                        let source = format!("{bom}{open}{nl}{open}{nl}{body}");
+                        assert_eq!(
+                            carve(from, &source),
+                            format!("{fence}\n{value}---\n{carved}"),
+                            "{from} {source:?}"
+                        );
+                    }
+                }
+                let source = format!("{bom}--- {nl}a: 1{nl}---\t{nl}{nl}z{nl}");
+                assert_eq!(
+                    carve(from, &source),
+                    "---\na: 1\n---\n\nz\n",
+                    "{from} {source:?}"
+                );
+            }
+        }
+    }
+    // A fence line with more text after it is no closer; the frontmatter
+    // stays open and the document reads as Markdown.
+    assert_eq!(carve("markdown", "---\n---x\n"), "***\n\n-\\--x\n");
+}
