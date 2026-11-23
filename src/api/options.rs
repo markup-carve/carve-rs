@@ -312,6 +312,7 @@ fn boolean_slot<'o>(out: &'o mut CallOptions, name: &str) -> Option<&'o mut bool
         "strictLosses" => &mut o.strict_losses,
         "alignTables" => &mut out.write.align_tables,
         "normalize" => &mut out.write.normalize,
+        "upgrade" => &mut out.lint.upgrade,
         _ => return None,
     })
 }

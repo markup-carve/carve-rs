@@ -389,6 +389,12 @@ fn json_boundary_calls() {
     assert_eq!(deps["ok"]["dependencies"], json!([]));
     let lint = call(&json!({"call": "lint", "source": "x", "options": {"rules": {}}}));
     assert!(lint["ok"]["diagnostics"].is_array());
+    let upgrade =
+        call(&json!({"call": "lint", "source": "# a\n b\n", "options": {"upgrade": true}}));
+    assert_eq!(
+        upgrade["ok"]["diagnostics"][0]["code"],
+        "deprecated-indented-line-under-heading"
+    );
     let rendered = call(
         &json!({"call": "renderWithDiagnostics", "source": "x", "options": {
             "headingIds": "ascii", "mode": "static", "profile": "article", "sections": false,
@@ -415,6 +421,8 @@ fn json_boundary_option_errors() {
         json!({"call": "render", "source": "x", "options": {"renderers": {"a": 1}}}),
         json!({"call": "render", "source": "x", "options": {"includes": {"root": "/no/such/dir"}}}),
         json!({"call": "lint", "source": "x", "options": {"platforms": ["gitlab"]}}),
+        json!({"call": "lint", "source": "x", "options": {"upgrade": "yes"}}),
+        json!({"call": "render", "source": "x", "options": {"upgrade": true}}),
         json!({"call": "nothing"}),
         json!({"call": "render"}),
         json!({"call": "render", "sourceBytes": [300]}),

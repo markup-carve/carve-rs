@@ -1,5 +1,13 @@
 use carve::lint::{LintOptions, lint};
 
+/// Turns on the migration notices of C2-W-156 that these cases pin.
+fn upgrade() -> LintOptions {
+    LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    }
+}
+
 #[test]
 fn catalog_line_rules_follow_parsed_ownership() {
     let cases: serde_json::Value =
@@ -13,7 +21,7 @@ fn catalog_line_rules_follow_parsed_ownership() {
         let source = case["input"].as_str().unwrap();
         let code = case["code"].as_str().unwrap();
         let expected = case["reported"].as_bool().unwrap();
-        let found = lint(source, &LintOptions::default())
+        let found = lint(source, &upgrade())
             .iter()
             .any(|finding| finding.code == code);
         assert_eq!(found, expected, "{code} on {source:?}");
@@ -33,7 +41,7 @@ fn quoted_term_and_fence_ranges_and_attribute_message() {
         ),
     ];
     for (source, code, from, to) in cases {
-        let findings = lint(source, &LintOptions::default());
+        let findings = lint(source, &upgrade());
         let finding = findings
             .iter()
             .find(|finding| finding.code == code)

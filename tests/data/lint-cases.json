@@ -89,6 +89,7 @@
   },
   {
     "id": "comment-fence-closer-with-text",
+    "options": { "upgrade": true },
     "origin": "syntax-blocks.md:2741",
     "trigger": "%%%\nx\n%%% not a closer\n%%%\nafter",
     "near": "%%%\nx\n\n%%%\nafter",
@@ -177,6 +178,7 @@
   },
   {
     "id": "deprecated-indented-line-under-heading",
+    "options": { "upgrade": true },
     "origin": "../carve/tests/corpus/415-a-floating-attribute-does-not-widen-a-list-item-s-content-column-4.crv",
     "trigger": "# H\n  cont\n",
     "near": "# H\ncont\n",
@@ -475,6 +477,7 @@
   },
   {
     "id": "sigil-after-letter",
+    "options": { "upgrade": true },
     "origin": "../carve/tests/corpus/855-an-email-autolink-takes-every-email-character-in-its-domain-4.crv",
     "trigger": "ü@bob\n",
     "near": "ü @bob\n",

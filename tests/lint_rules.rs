@@ -22,6 +22,7 @@ fn check(id: &str, data: &str) {
                 .insert(code.clone(), state.as_str().unwrap_or("").into());
         }
     }
+    options.upgrade = case["options"]["upgrade"] == true;
     if let Some(platforms) = case["options"]["platforms"].as_array() {
         options.platforms = platforms
             .iter()

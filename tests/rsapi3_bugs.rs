@@ -29,11 +29,11 @@ fn c2_b_046_a_task_box_is_no_blank_reference_label() {
         "[ ] para\n",
         "- [  ] two\n",
     ] {
-        let lint = ok(&json!({"call": "lint", "source": source}));
+        let lint = ok(&json!({"call": "lint", "source": source, "options": {"upgrade": true}}));
         assert!(codes(&lint).is_empty(), "{source:?}: {lint}");
     }
     for source in ["- [ ] task [a][ ]\n", "[ ]: u\n", "- [ ] see [^ ]\n"] {
-        let lint = ok(&json!({"call": "lint", "source": source}));
+        let lint = ok(&json!({"call": "lint", "source": source, "options": {"upgrade": true}}));
         assert_eq!(codes(&lint), ["blank-reference-label"], "{source:?}");
     }
 }
