@@ -81,7 +81,6 @@ pub(super) struct Walk<'a> {
 #[derive(Clone, Copy)]
 struct Rules<'a> {
     parents: Option<&'a nodes::Parent<'a>>,
-    ancestor: Option<&'a nodes::Ancestor<'a>>,
 }
 
 /// Whether the 0.1 walk reaches a value: as a node under its parent's key, or as an array whose
@@ -115,7 +114,6 @@ struct Place {
 struct Visit<'a, 's> {
     arena: &'a Arena,
     source: &'s str,
-    data: bool,
     full: bool,
     walk: Walk<'a>,
     /// The 0.1 nodes in walk order, with their parent's index in this list.
@@ -140,31 +138,27 @@ impl<'a> Walk<'a> {
     }
 
     /// Every record of `tree`.
-    pub(super) fn new(tree: V<'a>, arena: &'a Arena, source: &str, data: bool) -> Self {
-        Self::run(tree, arena, source, true, data)
+    pub(super) fn new(tree: V<'a>, arena: &'a Arena, source: &str) -> Self {
+        Self::run(tree, arena, source, true)
     }
 
     /// Only the node-rule items of `tree`, for the alternate heading-id tree.
     pub(super) fn items(tree: V<'a>, arena: &'a Arena) -> Vec<Item<'a>> {
-        Self::run(tree, arena, "", false, false).items
+        Self::run(tree, arena, "", false).items
     }
 
-    fn run(tree: V<'a>, arena: &'a Arena, source: &str, full: bool, data: bool) -> Self {
+    fn run(tree: V<'a>, arena: &'a Arena, source: &str, full: bool) -> Self {
         let mut visit = Visit {
             arena,
             source,
-            data,
             full,
             walk: Self::empty(),
             old: Vec::new(),
             pending: vec![Entry {
                 value: tree,
                 path: None,
-                rules: Some(Rules {
-                    parents: None,
-                    ancestor: None,
-                }),
-                old: if full && (!data || source.contains('#')) {
+                rules: Some(Rules { parents: None }),
+                old: if full && source.contains('#') {
                     Old::Node(None, legacy::Slot::Other)
                 } else {
                     Old::No
@@ -265,7 +259,7 @@ impl<'a> Visit<'a, '_> {
             let rules = entry
                 .rules
                 .zip(parents)
-                .and_then(|(rules, parents)| self.child_rules(entry, key, rules, parents));
+                .and_then(|(_, parents)| Self::child_rules(key, parents));
             let old = old.map_or(Old::No, |at| old_child(at, key, child));
             let place = self.child_place(entry, key, own);
             self.push(child, entry.path, Segment::Key(key), rules, old, place);
@@ -367,14 +361,13 @@ impl<'a> Visit<'a, '_> {
         let raw = bounds
             .and_then(|(start, end)| self.source.get(start..end))
             .unwrap_or("");
-        if !self.data || nodes::needs_hand_node(kind, raw) {
+        if !self.full || nodes::needs_hand_node(kind, raw) {
             self.walk.items.push(Item {
                 node: entry.value,
                 bounds,
                 path: OnceCell::new(),
                 path_node: entry.path,
                 parents: rules.parents,
-                ancestors: rules.ancestor,
             });
         }
         Some(&*self.arena.alloc(nodes::Parent {
@@ -384,27 +377,11 @@ impl<'a> Visit<'a, '_> {
         }))
     }
 
-    fn child_rules(
-        &self,
-        entry: &Entry<'a>,
-        key: &str,
-        rules: Rules<'a>,
-        parents: Option<&'a nodes::Parent<'a>>,
-    ) -> Option<Rules<'a>> {
+    fn child_rules(key: &str, parents: Option<&'a nodes::Parent<'a>>) -> Option<Rules<'a>> {
         if matches!(key, "data" | "props" | "pos" | "segments") {
             return None;
         }
-        let ancestor = if key == "children" {
-            Some(nodes::child_ancestor(
-                self.arena,
-                entry.value,
-                entry.path.map_or(0, |node| node.len),
-                rules.ancestor,
-            ))
-        } else {
-            rules.ancestor
-        };
-        Some(Rules { parents, ancestor })
+        Some(Rules { parents })
     }
 }
 

@@ -12,7 +12,7 @@ use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use crate::view::V;
 use serde_json::Value;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::rc::Rc;
@@ -25,32 +25,6 @@ fn model() -> &'static Value {
         serde_json::from_str(include_str!("../../spec-data/lint-model.json"))
             .expect("pinned lint model")
     })
-}
-
-thread_local! {
-    static DATA_MODE: Cell<Option<bool>> = const { Cell::new(None) };
-}
-
-fn read_mode() -> bool {
-    std::env::var("CARVE_LINT_RULES").is_ok_and(|value| value == "data")
-}
-
-/// Whether the rules of the model run from data; read once per `lint` call.
-pub(super) fn data_mode() -> bool {
-    DATA_MODE.with(Cell::get).unwrap_or_else(read_mode)
-}
-
-/// Holds the switch for one `lint` call and restores the outer value when dropped.
-pub(super) struct ModeScope(Option<bool>);
-
-pub(super) fn enter() -> ModeScope {
-    ModeScope(DATA_MODE.with(|mode| mode.replace(Some(read_mode()))))
-}
-
-impl Drop for ModeScope {
-    fn drop(&mut self) {
-        DATA_MODE.with(|mode| mode.set(self.0));
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -258,20 +232,6 @@ fn compiled() -> &'static Compiled {
 
 pub(super) fn modeled_ids() -> &'static HashSet<&'static str> {
     &compiled().ids
-}
-
-/// Whether the model states every one of these rules and runs them, so their hand-written scan is skipped;
-/// the membership is read once per call site.
-macro_rules! replaced {
-    ($($code:literal),+ $(,)?) => {{
-        static ALL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        $crate::lint::data_rules::data_mode()
-            && *ALL.get_or_init(|| {
-                [$($code),+]
-                    .iter()
-                    .all(|code| $crate::lint::data_rules::modeled_ids().contains(code))
-            })
-    }};
 }
 
 fn report(

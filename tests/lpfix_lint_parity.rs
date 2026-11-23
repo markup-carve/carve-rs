@@ -375,9 +375,10 @@ fn later_list_markers_in_quoted_and_footnote_text() {
         spans("> ::\n>   2) :: word\n", "list-marker-without-blank-line"),
         vec![(9, 19)]
     );
+    // `- x` opens a list of the footnote, so it is no line of term text (C2-B-022).
     assert_eq!(
         spans("[^f]: :: more\n   - x\n", "list-marker-without-blank-line"),
-        vec![(17, 20)]
+        Vec::<(u32, u32)>::new()
     );
 }
 
@@ -390,9 +391,10 @@ fn every_unused_definition_is_reported() {
 }
 
 #[test]
-fn item_term_continuation_has_a_multiline_diagnostic() {
+fn item_marker_line_below_a_term_is_no_term_continuation() {
+    // ` * %%#region` opens a nested item, so the term has one line (C2-B-069).
     assert_eq!(
         spans("* :: key\n * %%#region\n", "description-term-multi-line"),
-        vec![(10, 21)]
+        Vec::<(u32, u32)>::new()
     );
 }

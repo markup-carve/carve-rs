@@ -229,8 +229,13 @@ fn column_of(source: &Source<'_>, at: usize, quotes: usize) -> usize {
     column.saturating_sub(origin)
 }
 
+/// Past the attribute lines of a block and the comment-only lines between them and the opener (C2-B-137).
 fn opener_start(source: &str, mut at: usize, marks: usize) -> usize {
-    while source.get(at..).is_some_and(|s| s.starts_with('{')) {
+    let comment = |s: &str| s.starts_with("%%") && !s.starts_with("%%%");
+    while source
+        .get(at..)
+        .is_some_and(|s| s.starts_with('{') || comment(s))
+    {
         let Some(end) = source.get(at..).and_then(|s| s.find('\n')) else {
             break;
         };
@@ -1560,7 +1565,16 @@ impl<'a> Records<'a> {
             F::Text => Val::Str(Cow::Borrowed(text_at(self.source, part.start, part.end))),
             F::Index => Val::num(part.index),
             F::Owner => Val::AttrOwner(part.owner),
-            _ => attribute_fact(part, name),
+            _ => attribute_fact(part, name, self.semantic_keys()),
+        }
+    }
+
+    /// C2-H-075 keys with those a registered `semanticSpan` adds.
+    fn semantic_keys(&self) -> crate::api::extensions::SemanticKeys {
+        if self.extensions.iter().any(|e| e == "carve.semanticSpan") {
+            crate::api::extensions::SEMANTIC_SPAN_KEYS
+        } else {
+            crate::html::CORE_SEMANTIC_KEYS
         }
     }
 
@@ -2406,13 +2420,23 @@ fn footnote_marker(source: &Source<'_>, start: usize, line: usize) -> (usize, us
 }
 
 /// The facts of an attribute part that its value and the later parts of its owner give.
-fn attribute_fact(part: &super::data_attrs::Part, name: F) -> Val<'static> {
+fn attribute_fact(
+    part: &super::data_attrs::Part,
+    name: F,
+    semantic: crate::api::extensions::SemanticKeys,
+) -> Val<'static> {
     let key = part.kind == "key";
+    let entry = || {
+        semantic
+            .iter()
+            .find(|(name, _)| *name == part.key)
+            .filter(|_| key)
+    };
     match name {
         F::LastKey => Val::Bool(part.last_key),
         F::Kept => Val::Bool(part.kept),
-        F::Semantic => Val::Bool(key && matches!(part.key.as_str(), "abbr" | "time" | "kbd")),
-        F::SemanticValue => Val::Bool(key && matches!(part.key.as_str(), "abbr" | "time")),
+        F::Semantic => Val::Bool(entry().is_some()),
+        F::SemanticValue => Val::Bool(entry().is_some_and(|(_, value)| value.is_some())),
         F::Entries => Val::num(if key {
             super::data_attrs::entries(&part.value).0
         } else {
