@@ -1,7 +1,7 @@
 //! C2-W-151: spaces and tabs that would end a source line in text are insignificant. The writer
 //! writes a copy of a supplied tree without them, before a soft break and at the end of the content
-//! of a line holder, and without the text nodes that hold nothing else; a loss path of the copy is
-//! mapped back to the supplied tree.
+//! of a line holder, and without the text nodes that hold nothing else or are empty beside a nonempty
+//! text (C2-A-161); a loss path of the copy is mapped back to the supplied tree.
 
 use super::facts::Entry;
 use super::node::slot_paths;
@@ -29,7 +29,7 @@ pub struct Trimmed {
 /// `delimited` says whether the table at a pointer is written in a delimited form, where a cell
 /// keeps them as data (C2-W-066) while its caption is still trimmed.
 pub fn trim(doc: &Value, delimited: &dyn Fn(&Value, &str) -> bool) -> Option<Trimmed> {
-    if !has_spaced_text(doc) || !has_trim_target(doc) {
+    if !(has_merged_empty(doc) || has_spaced_text(doc) && has_trim_target(doc)) {
         return None;
     }
     let mut copy = doc.clone();
@@ -69,6 +69,60 @@ fn has_spaced_text(value: &Value) -> bool {
                     .is_some_and(|t| t.ends_with([' ', '\t'])))
                 || map.values().any(has_spaced_text)
         }
+        _ => false,
+    }
+}
+
+/// A text node with fields other than its value, which joins no neighbor.
+fn dressed(item: &Value) -> bool {
+    ["attrs", "data", "lang", "dir", "metadata"]
+        .iter()
+        .any(|f| item.get(f).is_some())
+}
+
+fn plain_text(item: &Value) -> Option<&str> {
+    if ty(item) != "text" || dressed(item) {
+        return None;
+    }
+    item.get("value").and_then(Value::as_str)
+}
+
+/// C2-A-040, C2-A-161: an empty plain text in a run of adjacent plain texts that holds a nonempty one is the
+/// same tree without it, so the writer writes it as nothing. A run of empty texts only keeps them.
+fn merged_empties(items: &[Value]) -> Vec<bool> {
+    let mut drop = vec![false; items.len()];
+    let mut from = 0;
+    while from < items.len() {
+        let run = items
+            .get(from..)
+            .unwrap_or(&[])
+            .iter()
+            .take_while(|item| plain_text(item).is_some())
+            .count();
+        if run == 0 {
+            from += 1;
+            continue;
+        }
+        let texts = items.get(from..from + run).unwrap_or(&[]);
+        if texts.iter().any(|item| plain_text(item) != Some("")) {
+            for (slot, item) in drop.iter_mut().skip(from).zip(texts) {
+                *slot = plain_text(item) == Some("");
+            }
+        }
+        from += run;
+    }
+    drop
+}
+
+/// Whether a list below `value` holds an empty text that [`merged_empties`] drops.
+fn has_merged_empty(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => {
+            (items.iter().any(|item| plain_text(item) == Some(""))
+                && merged_empties(items).contains(&true))
+                || items.iter().any(has_merged_empty)
+        }
+        Value::Object(map) => map.values().any(has_merged_empty),
         _ => false,
     }
 }
@@ -195,11 +249,7 @@ fn trim_path(v: &mut Value, parts: &[String], at: &str, line_end: bool, run: &mu
 fn line_end_text(items: &[Value], i: usize, line_end: bool) -> Option<usize> {
     let item = items.get(i)?;
     // The attribute block of a text follows it, so its spaces end no line; a field dropped with the node is a loss.
-    if ty(item) != "text"
-        || ["attrs", "data", "lang", "dir", "metadata"]
-            .iter()
-            .any(|f| item.get(f).is_some())
-    {
+    if ty(item) != "text" || dressed(item) {
         return None;
     }
     let ends = items
@@ -215,8 +265,13 @@ fn trim_list(list: &mut Value, at: &str, line_end: bool, run: &mut Run<'_>) {
     let Some(items) = list.as_array_mut() else {
         return;
     };
+    let merged = merged_empties(items);
     for i in (0..items.len()).rev() {
-        let kept = line_end_text(items, i, line_end);
+        let kept = if merged.get(i) == Some(&true) {
+            Some(0)
+        } else {
+            line_end_text(items, i, line_end)
+        };
         let Some(item) = items.get_mut(i) else {
             continue;
         };
@@ -317,6 +372,35 @@ mod tests {
             { "type": "emphasis", "children": [{ "type": "text", "value": "b" }] }
         ] }] });
         assert!(trim(&doc, &|_, _| false).is_none());
+    }
+
+    #[test]
+    fn an_empty_text_beside_a_nonempty_text_is_removed_and_paths_map_around_it() {
+        let doc = json!({ "type": "document", "children": [{ "type": "paragraph", "children": [
+            { "type": "text", "value": "" }, { "type": "text", "value": "a" },
+            { "type": "text", "value": "", "lang": "de" }, { "type": "text", "value": "" },
+            { "type": "code", "value": "c" }, { "type": "text", "value": "" }] }] });
+        let trimmed = trim(&doc, &|_, _| false);
+        assert!(trimmed.is_some(), "a trim");
+        let Some(trimmed) = trimmed else { return };
+        // The dressed empty text ends the run; the empty texts of a run without a nonempty one stay.
+        assert_eq!(
+            trimmed
+                .doc
+                .pointer("/children/0/children")
+                .map(ToString::to_string),
+            Some(
+                json!([{ "type": "text", "value": "a" },
+                { "type": "text", "value": "", "lang": "de" }, { "type": "text", "value": "" },
+                { "type": "code", "value": "c" }, { "type": "text", "value": "" }])
+                .to_string()
+            )
+        );
+        assert_eq!(
+            trimmed.remap("/children/0/children/3"),
+            "/children/0/children/4"
+        );
+        assert_eq!(trimmed.forward("/children/0/children/0"), None);
     }
 
     #[test]
