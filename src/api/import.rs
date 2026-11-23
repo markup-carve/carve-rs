@@ -547,4 +547,26 @@ mod imported_wire_test {
         assert!(imported.tree.json.get().is_some());
         Ok(())
     }
+
+    #[test]
+    fn imported_tree_decodes_on_first_request() -> Result<(), String> {
+        let html = "<h1>t</h1><table><tr><td><strong>a</strong></td></tr></table>";
+        let value = crate::import::import_html(html, false, true)
+            .map_err(|error| error.0)?
+            .tree;
+        let eager = crate::api::Tree::trusted(value, None).map_err(|error| error.to_string())?;
+        let imported =
+            import_document(html, &ImportOptions::default()).map_err(|error| error.to_string())?;
+        assert!(imported.tree.document.document.get().is_none());
+        assert_eq!(imported.tree.document(), eager.document());
+        let opts = crate::api::Options {
+            heading_shift: 1,
+            ..crate::api::Options::default()
+        };
+        assert_eq!(
+            crate::api::render_tree(&imported.tree, &opts).map_err(|error| error.to_string())?,
+            crate::api::render_tree(&eager, &opts).map_err(|error| error.to_string())?
+        );
+        Ok(())
+    }
 }
