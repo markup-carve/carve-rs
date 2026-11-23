@@ -164,6 +164,24 @@ struct LineCommentFence {
 }
 
 impl LineCommentFence {
+    /// C2-B-108: text behind the run is the first line of the value.
+    fn open(k: &Cursor<'_>, run: usize, end: usize) -> Self {
+        let first = k
+            .rest()
+            .get(run..)
+            .unwrap_or("")
+            .trim_start_matches([' ', '\t']);
+        Self {
+            len: run,
+            start: k.offset(),
+            end,
+            lines: (!first.is_empty())
+                .then(|| first.to_string())
+                .into_iter()
+                .collect(),
+        }
+    }
+
     /// C2-B-113: an unclosed body drops its trailing blank lines.
     fn unclosed(mut self) -> LineBlockEntry {
         while self
@@ -676,21 +694,9 @@ impl<'a> Parser<'a> {
         else {
             return false;
         };
-        // C2-B-137: the closer is tested before ownership. C2-B-024: only an open stanza
-        // takes a lazy line, and not after a blank line; otherwise the comment block ends
-        // with its container (C2-B-111).
-        let mut blank_held = false;
-        if !owned
-            && let Some(fence) = comment.take_if(|fence| {
-                blank_held = fence
-                    .lines
-                    .last()
-                    .is_some_and(|l| crate::chars::is_blank_line(l));
-                shapes::bare_run(&k, b'%') < fence.len && (!*stanza_open || lazy_end || blank_held)
-            })
-        {
-            entries.push(fence.unclosed());
-        }
+        let blank_held =
+            end_unowned_comment(comment, entries, &k, owned, !*stanza_open || lazy_end);
+        let no_stanza = !*stanza_open || blank_held;
         if comment.is_some() {
             let parent_closes = line_block_comment_line(comment, entries, *len, walk, &k, e, owned);
             *end = e;
@@ -734,46 +740,17 @@ impl<'a> Parser<'a> {
                 },
                 comments: Vec::new(),
             }));
-            // C2-B-108: text behind the run is the first line of the value.
-            let first = k
-                .rest()
-                .get(run..)
-                .unwrap_or("")
-                .trim_start_matches([' ', '\t']);
-            *comment = Some(LineCommentFence {
-                len: run,
-                start: k.offset(),
-                end: e,
-                lines: if first.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![first.to_string()]
-                },
-            });
+            *comment = Some(LineCommentFence::open(&k, run, e));
             *end = e;
             return true;
         }
         if !owned {
-            if shapes::comment_only(k.rest()) && *stanza_open && !blank_held {
-                // C2-B-123: a comment block between keeps the stanza line above.
-                let (scanned, at) = *last_line;
-                let at = entries
-                    .get(scanned..)
-                    .unwrap_or_default()
-                    .iter()
-                    .rposition(|entry| matches!(entry, LineBlockEntry::Line { .. }))
-                    .map(|i| i + scanned)
-                    .or(at);
-                *last_line = (entries.len(), at);
-                if let Some(LineBlockEntry::Line { comments, .. }) =
-                    at.and_then(|i| entries.get_mut(i))
-                {
-                    comments.push((k.offset(), e, shapes::line_comment_value(k.rest())));
-                }
+            if shapes::comment_only(k.rest()) && !no_stanza {
+                lazy_comment(entries, last_line, &k, e);
                 *end = e;
                 return true;
             }
-            if !*stanza_open || lazy_end || blank_held {
+            if no_stanza || lazy_end {
                 self.close_leaf();
                 return false;
             }
@@ -1247,6 +1224,55 @@ fn line_block_comment_line(
     fence.lines.push(walk.cur.rest().to_string());
     fence.end = end;
     false
+}
+
+/// C2-B-024: a lazy comment-only line ends the stanza line above it; a comment
+/// block between keeps that line (C2-B-123).
+fn lazy_comment(
+    entries: &mut [LineBlockEntry],
+    last_line: &mut (usize, Option<usize>),
+    k: &Cursor<'_>,
+    e: usize,
+) {
+    let (scanned, at) = *last_line;
+    let at = entries
+        .get(scanned..)
+        .unwrap_or_default()
+        .iter()
+        .rposition(|entry| matches!(entry, LineBlockEntry::Line { .. }))
+        .map(|i| i + scanned)
+        .or(at);
+    *last_line = (entries.len(), at);
+    if let Some(LineBlockEntry::Line { comments, .. }) = at.and_then(|i| entries.get_mut(i)) {
+        comments.push((k.offset(), e, shapes::line_comment_value(k.rest())));
+    }
+}
+
+/// An unowned line while a line block's comment block is open. C2-B-137: the closer
+/// is tested before ownership. C2-B-024: only an open stanza takes a lazy line, and
+/// not after a blank line; otherwise the comment block ends with its container
+/// (C2-B-111). Returns whether a blank line was held.
+fn end_unowned_comment(
+    comment: &mut Option<LineCommentFence>,
+    entries: &mut Vec<LineBlockEntry>,
+    k: &Cursor<'_>,
+    owned: bool,
+    no_stanza: bool,
+) -> bool {
+    let Some(fence) = comment.as_ref().filter(|_| !owned) else {
+        return false;
+    };
+    let blank_held = fence
+        .lines
+        .last()
+        .is_some_and(|l| crate::chars::is_blank_line(l));
+    if shapes::bare_run(k, b'%') < fence.len
+        && (no_stanza || blank_held)
+        && let Some(fence) = comment.take()
+    {
+        entries.push(fence.unclosed());
+    }
+    blank_held
 }
 
 /// Moves the blank lines held back in a fence body into it.
