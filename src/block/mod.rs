@@ -385,6 +385,11 @@ impl<'a> Parser<'a> {
             c.iter()
                 .all(|c| matches!(c.kind, Kind::List { .. } | Kind::Item { .. }))
         };
+        // An open leaf above means no separation: the line continues it or
+        // closes the lists as any column-0 line does (C2-B-232).
+        if self.leaf.is_some() {
+            return false;
+        }
         if self.stack.len() > 1 && lists(self.stack.get(1..).unwrap_or(&[])) {
             self.close_to(1);
         }
@@ -392,7 +397,7 @@ impl<'a> Parser<'a> {
             .stack
             .get(1..walk.matched.min(self.stack.len()))
             .unwrap_or(&[]);
-        if self.leaf.is_some() || !lists(matched) {
+        if !lists(matched) {
             return false;
         }
         let attrs = self.pending.as_ref().map(|p| p.depth);
