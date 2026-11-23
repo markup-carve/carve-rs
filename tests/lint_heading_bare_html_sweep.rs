@@ -13,7 +13,7 @@ fn positions(input: &str) -> Vec<(u64, u64)> {
         .collect()
 }
 
-/// The ranges carve-js reports, written by tools/heading_bare_html_golden.mjs.
+/// The ranges carve-js reports, written by `tools/heading_bare_html_golden.mjs`.
 fn golden() -> Vec<(String, Vec<(u64, u64)>)> {
     let text = include_str!("data/heading-bare-html-carve-js.json");
     let file: Value = serde_json::from_str(text).unwrap();
