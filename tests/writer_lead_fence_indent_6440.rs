@@ -16,6 +16,10 @@ fn fences_behind_a_lead_keep_their_indent() {
         "[^n]: > - [x] ```\n  >         y\n  >       ```\n",
         "- [x] ```=html\n        <b>\n      ```\n",
         "- [x] %%%\n        y\n      %%%\n",
+        // Columns count characters, not bytes.
+        "[^é]: ```\n        y\n      ```\n",
+        "[^日本]: ```\n         y\n       ```\n",
+        "[^é]: - a\n\n        b\n",
         // Without whitespace at the start of a line, the lines stand at the content column (C2-W-024).
         "- [x] ```\n  y\n  ```\n",
         // The same fence without the task box.
