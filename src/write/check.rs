@@ -1498,6 +1498,28 @@ struct Cursor {
     aj: usize,
     anchor: Option<usize>,
     anchor_byte: usize,
+    expected_lines: LineCount,
+    actual_lines: LineCount,
+}
+
+/// The line endings spelled before child `upto` of a run, counted forward so a paragraph is walked once.
+#[derive(Default)]
+struct LineCount {
+    upto: usize,
+    lines: usize,
+}
+
+impl LineCount {
+    fn before<'v>(&mut self, at: usize, node: impl Fn(usize) -> Option<V<'v>>) -> usize {
+        if at < self.upto {
+            *self = Self::default();
+        }
+        while self.upto < at {
+            self.lines += node(self.upto).map_or(0, super::node::newlines);
+            self.upto += 1;
+        }
+        self.lines
+    }
 }
 
 fn escape_mark<'t>(
@@ -2185,14 +2207,11 @@ fn resync_next_line<'t>(c: &mut Check<'t>, es: &[N<'t>], as_: Arr<'_>, at: &mut 
     let (Some(&expected), Some(actual)) = (es.get(i), as_.get(j)) else {
         return false;
     };
+    // The lines count within the run, not by `pos`: the source of the tree and the written group put the
+    // paragraph on different lines, and a supplied tree has no positions.
     if ty(expected) != ty(actual)
-        || matches!(
-            (
-                super::node::pos_field(expected, "startLine"),
-                super::node::pos_field(actual, "startLine")
-            ),
-            (Some(left), Some(right)) if left != right
-        )
+        || at.expected_lines.before(i, |k| es.get(k).copied())
+            != at.actual_lines.before(j, |k| as_.get(k))
     {
         return false;
     }
