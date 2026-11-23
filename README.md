@@ -274,6 +274,17 @@ The response is `{"ok": RESULT}` or an error with the row of C2-T-040:
 {"error": {"name": "CarveOptionError", "category": "usage", "status": 2, "message": "option nope: unknown option"}}
 ```
 
+## Standard extensions on the command line
+
+`render`, `fmt`, `lint` and `ast` take `--extensions`, a JSON list of the standard extension names of `data/extensions.json`, and `--extension-options`, a JSON object of their renderer options keyed by extension name (C2-T-010). On `render` each listed extension renders with its standard renderer:
+
+```sh
+carve render --extensions '["carve.tabs","carve.fencedRender.mermaid"]' doc.crv
+carve render --extensions '["carve.tabs"]' --extension-options '{"carve.tabs":{"mode":"aria"}}' doc.crv
+```
+
+A name that is not a standard extension, an option the extension's renderer does not declare, or options for an extension that `--extensions` does not list are usage errors. Host extensions and renderers take Rust code and stay library-only. `carve <command> --help` lists the flags of a command.
+
 ## WASI command
 
 `carve` builds for `wasm32-wasip1`:
