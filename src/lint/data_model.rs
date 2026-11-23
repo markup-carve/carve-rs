@@ -387,7 +387,6 @@ pub(super) struct LineRec<'a> {
     attached: bool,
     closes: bool,
     colons: (u32, u32),
-    pub path: &'a str,
 }
 
 impl<'a> LineRec<'a> {
@@ -472,6 +471,8 @@ pub(super) struct Records<'a> {
     extensions: Vec<String>,
     layout: OnceCell<Layout>,
     tables: OnceCell<TableLines>,
+    /// The range a finding on each line names (C2-W-157), built for the first such finding.
+    line_nodes: OnceCell<Vec<Option<u32>>>,
     /// The source format of each table read so far, by range.
     formats: RefCell<Vec<Option<&'static str>>>,
     /// The marker and content columns of each item read so far, by range.
@@ -907,11 +908,10 @@ struct Layout {
 }
 
 /// For each line, the nearest line above and below it in the source of its pipe table whose raw body does not
-/// start with `%%`, and the range of that table (C2-W-149).
+/// start with `%%` (C2-W-149).
 struct TableLines {
     above: Vec<Option<u32>>,
     below: Vec<Option<u32>>,
-    table: Vec<Option<u32>>,
 }
 
 impl<'a> Records<'a> {
@@ -959,6 +959,7 @@ impl<'a> Records<'a> {
             extensions,
             layout: OnceCell::new(),
             tables: OnceCell::new(),
+            line_nodes: OnceCell::new(),
             formats: RefCell::new(Vec::new()),
             columns: RefCell::new(Vec::new()),
             rows: RefCell::new(Vec::new()),
@@ -1006,6 +1007,12 @@ impl<'a> Records<'a> {
 
     pub fn path_of(&self, range: u32) -> String {
         self.ranges[range as usize].path.as_str().to_owned()
+    }
+
+    /// The path of the node whose children hold a range.
+    pub fn run_holder_path(&self, range: u32) -> String {
+        self.holder_range(self.ranges[range as usize].holder)
+            .map_or_else(String::new, |at| self.path_of(at))
     }
 
     /// The types of the blocks that hold a leaf, innermost first, then the document.
@@ -1234,7 +1241,6 @@ impl<'a> Records<'a> {
             let mut lines = TableLines {
                 above: vec![None; count],
                 below: vec![None; count],
-                table: vec![None; count],
             };
             let open = |index: usize| {
                 let line = &self.lines[index];
@@ -1255,7 +1261,6 @@ impl<'a> Records<'a> {
                     if open(index) {
                         seen = Some(index as u32);
                     }
-                    lines.table[index].get_or_insert(at as u32);
                 }
                 seen = None;
                 for index in (first..last).rev() {
@@ -1269,9 +1274,59 @@ impl<'a> Records<'a> {
         })
     }
 
-    /// The pipe table whose source holds a line, which names the node of a finding on it (C2-W-138).
-    pub fn line_table(&self, index: usize) -> Option<u32> {
-        self.table_lines().table.get(index).copied().flatten()
+    /// C2-W-157: the path of a finding on a line. Its leaf block, where a table row stands for its
+    /// cells and a caption for the paragraph inside it; else the innermost block that holds it.
+    pub fn line_path(&self, index: usize) -> String {
+        let nodes = self.line_nodes.get_or_init(|| {
+            let count = self.lines.len();
+            let mut best: Vec<Option<(bool, usize, u32)>> = vec![None; count];
+            for (at, range) in self.ranges.iter().enumerate() {
+                // The paragraph of a caption is held as inline content of the caption (C2-A-081).
+                if range.start_line == 0
+                    || Some(at as u32) == self.root
+                    || (self.inline_held(range) && range.kind != "paragraph")
+                    || matches!(range.kind, "table_cell" | "cell_paragraph")
+                {
+                    continue;
+                }
+                let leaf = matches!(
+                    range.kind,
+                    "paragraph"
+                        | "definition_term"
+                        | "heading"
+                        | "line"
+                        | "table_row"
+                        | "code_block"
+                        | "raw_block"
+                        | "frontmatter"
+                ) || (range.kind == "comment" && range.form_block);
+                // A joined row has no tree node, only its pointer text.
+                let depth = if range.joined {
+                    range.path.as_str().len()
+                } else {
+                    range.path.len()
+                };
+                let key = (leaf, depth);
+                let first = range.start_line - 1;
+                for place in best
+                    .get_mut(first..range.end_line.max(range.start_line).min(count))
+                    .into_iter()
+                    .flatten()
+                {
+                    if place.is_none_or(|(tier, depth, _)| (tier, depth) <= key) {
+                        *place = Some((key.0, key.1, at as u32));
+                    }
+                }
+            }
+            best.into_iter()
+                .map(|found| found.map(|(.., at)| at))
+                .collect()
+        });
+        nodes
+            .get(index)
+            .copied()
+            .flatten()
+            .map_or_else(String::new, |at| self.path_of(at))
     }
 
     fn source_format(&self, table: u32) -> &'static str {
@@ -2197,7 +2252,6 @@ impl<'a> Records<'a> {
                 attached: attached[index],
                 closes,
                 colons,
-                path: line.path.as_str(),
             });
         }
         self.lines = lines;
