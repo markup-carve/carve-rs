@@ -216,6 +216,16 @@ fn has_attributes(node: &Value) -> bool {
     })
 }
 
+// Only ASCII spaces, tabs and line feeds are trimmed: a no-break space or
+// other Unicode space is content (carve#6438).
+fn trim_line(text: &str) -> &str {
+    text.trim_matches([' ', '\t', '\n'])
+}
+
+fn trim_end_line(text: &str) -> &str {
+    text.trim_end_matches([' ', '\t', '\n'])
+}
+
 /// A delimiter run followed by whitespace does not open emphasis
 /// (`CommonMark` 6.2), so the spaces at the edges of the content move outside
 /// the delimiters. Content of spaces only has no delimiter form and takes the
@@ -1198,7 +1208,7 @@ fn link_definition(m: &mut State<'_, '_>, node: &Value) -> String {
 /// `text` on a line of its own in bold, or nothing where it is empty.
 fn strong_line(text: &str) -> String {
     let run = delimited(&text.replace('\n', " "), "**", "strong");
-    let run = run.trim();
+    let run = trim_line(&run);
     if run.is_empty() {
         String::new()
     } else {
@@ -1227,10 +1237,10 @@ fn caption_text(m: &mut State<'_, '_>, caption: &Value) -> R {
             if ty(child) == "paragraph" {
                 parts.push(inlines(m, children(child))?);
             } else {
-                parts.push(blocks(m, std::slice::from_ref(child))?.trim().to_string());
+                parts.push(trim_line(&blocks(m, std::slice::from_ref(child))?).to_string());
             }
         }
-        Ok(parts.join(" ").trim().to_string())
+        Ok(trim_line(&parts.join(" ")).to_string())
     })
 }
 
@@ -1253,7 +1263,7 @@ fn captioned(
     );
     Ok(format!(
         "{}{separator}{}\n\n",
-        written.trim_end(),
+        trim_end_line(&written),
         caption_text(m, caption)?
     ))
 }
@@ -1274,7 +1284,7 @@ fn panel(m: &mut State<'_, '_>, node: &Value) -> R {
         "Flattened a caption in Markdown",
     );
     let text = delimited(&caption_text(m, caption)?, "*", "em");
-    let text = text.trim();
+    let text = trim_line(&text);
     let held = m.uncaptioned.replace(std::ptr::from_ref(node));
     let host = block(m, node, None);
     m.uncaptioned = held;
@@ -1305,7 +1315,7 @@ fn heading(m: &mut State<'_, '_>, node: &Value) -> R {
         space = false;
         text.push(c);
     }
-    let text = text.trim().to_string();
+    let text = trim_line(&text).to_string();
     // A closing run of `#` would be read as the optional closing sequence.
     let text = match CLOSING.as_ref() {
         Some(r) => r.replace(&text, "$1\\$2").into_owned(),
@@ -1425,7 +1435,7 @@ fn with_marker(marker: &str, content: &str, pad: usize) -> String {
         .enumerate()
         .map(|(at, line)| {
             if at == 0 {
-                format!("{marker}{line}").trim_end().to_string()
+                trim_end_line(&format!("{marker}{line}")).to_string()
             } else if line.is_empty() {
                 String::new()
             } else {
@@ -1490,7 +1500,7 @@ static DELIMITER_ROW: Re = LazyLock::new(|| Regex::new(r"^\|(?:[ \t]*:?-+:?[ \t]
 
 fn last_line(text: &str) -> &str {
     text.split('\n')
-        .rfind(|l| !l.trim().is_empty())
+        .rfind(|l| !trim_line(l).is_empty())
         .unwrap_or("")
 }
 
@@ -1552,7 +1562,7 @@ fn cell_text(m: &mut State<'_, '_>, cell: &Value) -> R {
                 let written = blocks(m, std::slice::from_ref(child))?;
                 let mut folded = String::new();
                 let mut breaks = false;
-                for c in written.trim().chars() {
+                for c in trim_line(&written).chars() {
                     if c == '\n' {
                         breaks = true;
                         continue;
@@ -1568,7 +1578,7 @@ fn cell_text(m: &mut State<'_, '_>, cell: &Value) -> R {
         }
         Ok(parts.join(" "))
     })?;
-    Ok(escape_pipes(text.replace(['\r', '\n'], " ").trim()))
+    Ok(escape_pipes(trim_line(&text.replace(['\r', '\n'], " "))))
 }
 
 /// GFM splits a row on every `|` that no backslash escapes, code spans included.
@@ -1832,7 +1842,7 @@ pub fn export_markdown(x: &mut Exporter<'_>) -> R {
         footnote_section(&mut m, document)?
     );
     let body = collapse_blank_lines(&written);
-    let body = body.trim_start_matches('\n').trim_end();
+    let body = trim_end_line(body.trim_start_matches('\n'));
     let head = frontmatter(document);
     if body.is_empty() {
         return Ok(if head.is_empty() {
