@@ -284,6 +284,7 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
                 (b.get(at) == Some(&b'-')
                     && before(b, at, 1) == Some(b'-')
                     && before(b, at, 2) != Some(b'-'))
+                    || (at == 0 && run.after_dash && b.get(at) == Some(&b'-'))
                     || run.beside_dash(at)
             })
             .collect();
