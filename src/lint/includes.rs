@@ -41,7 +41,7 @@ pub(super) fn scan(source: &str, options: &LintOptions, output: &mut Vec<Diagnos
     if let Some(file) = &config.file {
         for finding in output.iter() {
             if let Some(pos) = finding.pos {
-                seen.insert((file.clone(), pos.start_line, pos.start_column, finding.code));
+                seen.insert(finding_key(file, pos.start_offset, pos.end_offset, finding));
             }
         }
     }
@@ -94,7 +94,7 @@ fn lint_include(
     path: &str,
     chain: &[IncludeSite],
     context: &Context<'_>,
-    seen: &mut HashSet<(String, u32, u32, &'static str)>,
+    seen: &mut HashSet<FindingKey>,
     output: &mut Vec<Diagnostic>,
 ) {
     let Some(file) = node["file"].as_str() else {
@@ -107,6 +107,7 @@ fn lint_include(
         return;
     };
     let (slice, start, line_shift, selected) = selected_source(node, text);
+    let places = selected.map(|_| section_paths(node, text));
     let child_options = LintOptions {
         includes: None,
         ..context.options.clone()
@@ -132,17 +133,25 @@ fn lint_include(
         if node["options"].get("code").is_some() && finding.code != "bidi-control-in-source" {
             continue;
         }
-        if !seen.insert((
-            file.to_string(),
-            pos.start_line,
-            pos.start_column,
-            finding.code,
+        if !seen.insert(finding_key(
+            file,
+            pos.start_offset,
+            pos.end_offset,
+            &finding,
         )) {
             continue;
         }
+        let own = finding.path.take().unwrap_or_default();
+        // A code include holds its payload as one child; the file was not parsed as Carve there.
+        // A finding of a section outside every selected block, such as one on the file as a whole, names the include.
+        let under = match &places {
+            _ if node["options"].get("code").is_some() => "/children/0".to_string(),
+            Some(places) => path_under(places, &own).unwrap_or_default(),
+            None => own,
+        };
         finding.file = Some(file.to_string());
         finding.pos = Some(pos);
-        finding.path = Some(path_at(node, path, file, pos.start_offset, pos.end_offset));
+        finding.path = Some(format!("{path}{under}"));
         finding.included_by = chain.to_vec();
         output.push(finding);
     }
@@ -250,26 +259,75 @@ fn selected_offsets(node: &Value, length: usize) -> Option<(usize, usize)> {
     (start <= end).then_some((start, end))
 }
 
-fn path_at(node: &Value, base: &str, file: &str, from: u32, to: u32) -> String {
-    let mut best = base.to_string();
-    let mut pending = vec![(node, base.to_string())];
-    while let Some((value, path)) = pending.pop() {
-        if field(value, "/pos/file") == file
-            && field(value, "/pos/startOffset")
-                .as_u64()
-                .is_some_and(|start| start <= u64::from(from))
-            && field(value, "/pos/endOffset")
-                .as_u64()
-                .is_some_and(|end| end >= u64::from(to))
-            && path.len() > best.len()
-        {
-            best.clone_from(&path);
-        }
-        if let Some(children) = value["children"].as_array() {
-            for (index, child) in children.iter().enumerate() {
-                pending.push((child, format!("{path}/children/{index}")));
+/// A file included twice repeats a finding with only another path; per-column findings share a range.
+type FindingKey = (String, u32, u32, &'static str, String);
+
+fn finding_key(file: &str, start: u32, end: u32, finding: &Diagnostic) -> FindingKey {
+    (
+        file.to_string(),
+        start,
+        end,
+        finding.code,
+        finding.message.clone(),
+    )
+}
+
+/// C2-N-087: a selected block keeps its place in the file, so its path in the file's own tree is found by that place.
+fn section_paths(node: &Value, text: &str) -> HashMap<String, String> {
+    let mut places = HashMap::new();
+    if let Some(tree) = crate::tree_json_value(text, &crate::Options::default()) {
+        let mut pending = vec![(&tree, String::new())];
+        while let Some((value, path)) = pending.pop() {
+            if let Some(key) = place_key(value) {
+                places.entry(key).or_insert_with(|| path.clone());
+            }
+            let Some(object) = value.as_object() else {
+                continue;
+            };
+            for (slot, child) in object {
+                if slot == "pos" || slot == "attrs" {
+                    continue;
+                }
+                if child["type"].is_string() {
+                    pending.push((child, format!("{path}/{slot}")));
+                } else if let Some(items) = child.as_array() {
+                    for (index, item) in items.iter().enumerate() {
+                        if item["type"].is_string() {
+                            pending.push((item, format!("{path}/{slot}/{index}")));
+                        }
+                    }
+                }
             }
         }
     }
-    best
+    let mut paths = HashMap::new();
+    for (index, child) in node["children"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        if let Some(path) = place_key(child).and_then(|key| places.get(&key)) {
+            paths.insert(path.clone(), format!("/children/{index}"));
+        }
+    }
+    paths
+}
+
+fn place_key(node: &Value) -> Option<String> {
+    let start = field(node, "/pos/startOffset").as_u64()?;
+    let end = field(node, "/pos/endOffset").as_u64()?;
+    Some(format!("{}\0{start}\0{end}", node["type"].as_str()?))
+}
+
+/// The path under the include of a finding at `path` in the file's own tree, by the longest selected block around it.
+fn path_under(paths: &HashMap<String, String>, path: &str) -> Option<String> {
+    let mut end = path.len();
+    while end > 0 {
+        if let Some(under) = paths.get(&path[..end]) {
+            return Some(format!("{under}{}", &path[end..]));
+        }
+        end = path[..end].rfind('/').unwrap_or(0);
+    }
+    None
 }

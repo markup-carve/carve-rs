@@ -90,3 +90,84 @@ fn c2_w_156_the_entry_declaration_reaches_included_text() {
     assert!(notices("{{ a.crv }}\n", "# a\n b\n").is_empty());
     assert!(notices("{{ a.crv }}\n", "---\ncarve: 0.1\n---\n# a\n b\n").is_empty());
 }
+
+fn paths(source: &str, text: &'static str, code: &str) -> Vec<String> {
+    lint(source, &options(text))
+        .into_iter()
+        .filter(|d| d.code == code)
+        .map(|d| d.path.unwrap_or_default())
+        .collect()
+}
+
+#[test]
+fn c2_w_138_an_included_finding_keeps_the_path_its_rule_gives() {
+    assert_eq!(
+        paths(
+            "{{ a.crv }}\n",
+            "a **b** c\n",
+            "markdown-strong-double-star"
+        ),
+        ["/children/0/children/0"]
+    );
+    assert_eq!(
+        paths(
+            "{{ a.crv }}\n",
+            "a\n# b\n",
+            "block-opener-without-blank-line"
+        ),
+        ["/children/0/children/0"]
+    );
+    assert_eq!(
+        paths("{{ a.crv }}\n", "> [a]: /u\n", "definition-in-container"),
+        ["/children/0/children/0/children/0"]
+    );
+}
+
+#[test]
+fn c2_n_087_a_section_finding_names_its_block_under_the_include() {
+    let text = "a ~~b~~ c\n\n= K\n\nd **e** f\n";
+    assert_eq!(
+        paths("{{ a.crv #K }}\n", text, "markdown-strong-double-star"),
+        ["/children/0/children/1"]
+    );
+}
+
+#[test]
+fn c2_n_087_per_column_findings_with_one_range_are_all_kept() {
+    let findings = lint(
+        "{{ a.crv }}\n",
+        &options("{aligns=left,right}\n|={<} a |={>} b |\n"),
+    );
+    let columns: Vec<_> = findings
+        .iter()
+        .filter(|d| d.code == "table-column-overlap")
+        .map(|d| d.message.split(' ').take(2).collect::<Vec<_>>().join(" "))
+        .collect();
+    assert_eq!(columns, ["Column 1", "Column 2"]);
+}
+
+#[test]
+fn c2_n_086_a_code_payload_finding_names_the_payload() {
+    let resolver = Arc::new(move |request: &Request<'_>| {
+        if request.path == "a.js" {
+            Ok((
+                "let \u{202E}a = 1\nlet \u{202E}b = 2\nlet c = 3\n"
+                    .as_bytes()
+                    .to_vec(),
+                "a.js".into(),
+            ))
+        } else {
+            Err(Cause::NotFound)
+        }
+    });
+    let opts = LintOptions {
+        includes: Some(Includes::new(resolver)),
+        ..LintOptions::default()
+    };
+    let found: Vec<_> = lint("x\n\n{{ a.js @code @lines:2-3 }}", &opts)
+        .into_iter()
+        .filter(|d| d.code == "bidi-control-in-source")
+        .map(|d| (d.pos.map(|p| p.start_offset), d.path.unwrap_or_default()))
+        .collect();
+    assert_eq!(found, [(Some(17), "/children/1/children/0".to_string())]);
+}

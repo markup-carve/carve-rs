@@ -75,9 +75,7 @@ impl Sink<'_> {
             return;
         }
         let pos = self.positions.pos(from, to);
-        if code != "table-attribute-invalid" {
-            self.replacing.push(self.output.len());
-        }
+        self.replacing.push(self.output.len());
         let mut finding = Diagnostic::nth(code, message, values, None, Some(pos));
         finding.path = Some(path.to_string());
         self.output.push(finding);
