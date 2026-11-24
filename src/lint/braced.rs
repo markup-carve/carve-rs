@@ -17,20 +17,31 @@ pub(super) const LEAVES: [&str; 6] = [
     "citation_definition",
 ];
 
-const DELIMITED_SPANS: [&str; 9] = [
-    "emphasis",
-    "strong",
-    "underline",
-    "strike",
-    "highlight",
-    "superscript",
-    "subscript",
-    "insert",
-    "delete",
-];
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Leaf,
+    /// C2-I-007: a delimiter pairs only inside its bracket.
+    Bracket,
+    /// Strong or emphasis, which can hold a removed opener.
+    Bare,
+    Span,
+    Text,
+    Smart,
+    Other,
+}
 
-/// C2-I-007: a delimiter pairs only inside its bracket.
-const BRACKETS: [&str; 4] = ["link", "span", "inline_footnote", "inline_extension"];
+fn kind_of(kind: &str) -> Kind {
+    match kind {
+        "text" => Kind::Text,
+        "strong" | "emphasis" => Kind::Bare,
+        "underline" | "strike" | "highlight" | "superscript" | "subscript" | "insert"
+        | "delete" => Kind::Span,
+        "link" | "span" | "inline_footnote" | "inline_extension" => Kind::Bracket,
+        "smart_punctuation" => Kind::Smart,
+        _ if LEAVES.contains(&kind) => Kind::Leaf,
+        _ => Kind::Other,
+    }
+}
 
 fn byte(bytes: &[u8], at: usize) -> u8 {
     bytes.get(at).copied().unwrap_or(0)
@@ -42,8 +53,10 @@ fn mark_index(mark: u8) -> Option<usize> {
 
 /// Whether `raw` holds a brace followed by a braced mark, the precondition of any finding.
 pub(super) fn may_hold_opener(raw: &str) -> bool {
-    raw.as_bytes().windows(2).any(|pair| {
-        pair.first() == Some(&b'{') && pair.get(1).is_some_and(|m| BRACED_MARKS.contains(m))
+    raw.match_indices('{').any(|(at, _)| {
+        raw.as_bytes()
+            .get(at + 1)
+            .is_some_and(|mark| BRACED_MARKS.contains(mark))
     })
 }
 
@@ -97,39 +110,46 @@ pub(super) fn openers(source: &str, leaf: V<'_>, leaf_path: &str) -> Vec<(usize,
     let mut pending: Vec<Pending<'_>> = Vec::new();
     push_children(leaf, (0, false), None, &mut steps, &mut pending);
     while let Some((node, scope, bare_parent, step)) = pending.pop() {
-        let kind = node.ty().as_str().unwrap_or("");
-        if LEAVES.contains(&kind) {
+        let kind = kind_of(node.ty().as_str().unwrap_or(""));
+        if kind == Kind::Leaf {
             continue;
         }
         let Some(range) = node.offsets() else {
             push_children(node, (scope, false), Some(step), &mut steps, &mut pending);
             continue;
         };
-        if BRACKETS.contains(&kind) {
-            scopes += 1;
-            push_children(node, (scopes, false), Some(step), &mut steps, &mut pending);
-            continue;
-        }
-        if kind == "text" && bare_parent {
-            text_openers(source, range, scope, step, &mut record);
-        }
-        let mut bare = false;
-        if DELIMITED_SPANS.contains(&kind) {
-            bare = matches!(kind, "strong" | "emphasis") && byte(bytes, range.0) != b'{';
-            span_marks(bytes, node, range, scope, &mut record);
-        } else if !record.openers.is_empty() {
-            if kind == "text" {
-                text_content(source, range, scope, &mut record);
-            } else if kind == "smart_punctuation" {
-                record.content.push((range.0, range.1, scope));
+        match kind {
+            Kind::Bracket => {
+                scopes += 1;
+                push_children(node, (scopes, false), Some(step), &mut steps, &mut pending);
+            }
+            Kind::Text => {
+                if bare_parent {
+                    text_openers(source, range, scope, step, &mut record);
+                }
+                if !record.openers.is_empty() {
+                    text_content(source, range, scope, &mut record);
+                }
+            }
+            Kind::Bare | Kind::Span => {
+                let bare = kind == Kind::Bare && byte(bytes, range.0) != b'{';
+                span_marks(bytes, node, range, scope, &mut record);
+                push_children(node, (scope, bare), Some(step), &mut steps, &mut pending);
+            }
+            Kind::Smart => {
+                if !record.openers.is_empty() {
+                    record.content.push((range.0, range.1, scope));
+                }
+            }
+            Kind::Leaf | Kind::Other => {
+                push_children(node, (scope, false), Some(step), &mut steps, &mut pending);
             }
         }
-        push_children(node, (scope, bare), Some(step), &mut steps, &mut pending);
     }
     if record.openers.is_empty() {
         return Vec::new();
     }
-    let paired = paired_openers(bytes, (start, end), scopes, &record);
+    let paired = paired_openers(source, (start, end), scopes, &record);
     record
         .openers
         .iter()
@@ -183,42 +203,45 @@ fn text_openers(
     leaf: &mut Leaf,
 ) {
     let bytes = source.as_bytes();
-    let mut at = start;
-    while at + 1 < end {
-        if byte(bytes, at) != b'{' || escaped(bytes, at) {
-            at += 1;
+    let mut skip_to = start;
+    for at in braces(source, start, end, '{') {
+        if at < skip_to || at + 1 >= end || escaped(bytes, at) {
             continue;
         }
         // C2-I-043: a valid attribute block at a brace comes before a braced opener.
         if let Some(after) = block_extent(source, at, end) {
-            at = after;
+            skip_to = after;
             continue;
         }
         if BRACED_MARKS.contains(&byte(bytes, at + 1)) {
             leaf.openers.push(Opener { at, scope, step });
         }
-        at += 1;
     }
+}
+
+/// The offsets of `brace` in `start..end`.
+fn braces(source: &str, start: usize, end: usize, brace: char) -> impl Iterator<Item = usize> + '_ {
+    source
+        .get(start..end)
+        .unwrap_or("")
+        .match_indices(brace)
+        .map(move |(at, _)| start + at)
 }
 
 /// C2-I-043: a valid attribute block left as text is still an atom, so no closer stands in it.
 fn text_content(source: &str, (start, end): (usize, usize), scope: u32, leaf: &mut Leaf) {
     let bytes = source.as_bytes();
     let mut from = start;
-    let mut at = start;
-    while at < end {
-        if byte(bytes, at) == b'{'
-            && !escaped(bytes, at)
-            && let Some(after) = block_extent(source, at, end)
-        {
+    for at in braces(source, start, end, '{') {
+        if at < from || escaped(bytes, at) {
+            continue;
+        }
+        if let Some(after) = block_extent(source, at, end) {
             if at > from {
                 leaf.content.push((from, at, scope));
             }
             from = after;
-            at = after;
-            continue;
         }
-        at += 1;
     }
     if end > from {
         leaf.content.push((from, end, scope));
@@ -321,11 +344,12 @@ fn open_before(
 
 /// Per text opener, whether a braced closer of its mark in the same content pairs with it.
 fn paired_openers(
-    bytes: &[u8],
+    source: &str,
     (start, end): (usize, usize),
     scopes: u32,
     leaf: &Leaf,
 ) -> Vec<bool> {
+    let bytes = source.as_bytes();
     let end = end.min(bytes.len());
     // Each byte of the leaf block holds its scope plus one, or zero outside the content.
     let mut inside = vec![0u32; end.saturating_sub(start) + 1];
@@ -340,10 +364,7 @@ fn paired_openers(
     let mut stacks: Vec<OpenStack> = (0..=scopes).map(|_| OpenStack::default()).collect();
     let mut paired = vec![false; leaf.openers.len()];
     let mut cursor = (0, 0);
-    for at in start + 1..end {
-        if byte(bytes, at) != b'}' {
-            continue;
-        }
+    for at in braces(source, start, end, '}').filter(|at| *at > start) {
         open_before(at - 1, &mut cursor, &mut stacks, bytes, leaf);
         let scope = scope_at(at);
         let Some(mark) = mark_index(byte(bytes, at - 1)) else {

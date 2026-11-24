@@ -259,3 +259,11 @@ fn unreferenced_and_opaque_footnote_tokens_stay_quiet() {
         assert!(reported.is_empty(), "{source:?}: {reported:?}");
     }
 }
+
+#[test]
+fn a_leaf_that_starts_with_a_multibyte_character() {
+    for source in ["é *a {/b* c /}", "日本 /ä {*ö/ ü\nd *} e"] {
+        let at = u32::try_from(source.find('{').expect("opener")).expect("offset");
+        assert_eq!(openers(source), [(at, at + 2)], "{source:?}");
+    }
+}

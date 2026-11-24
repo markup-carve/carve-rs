@@ -319,9 +319,6 @@ fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn braced_openers(item: &Item<'_>, sink: &mut Sink<'_>) {
-    if !active("braced-span-opener-as-text", sink.options) {
-        return;
-    }
     for (at, path) in braced::openers(sink.source, item.node, item.path()) {
         sink.emit_range("braced-span-opener-as-text", at, at + 2, &path, &[], 0);
     }
