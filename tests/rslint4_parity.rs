@@ -1,7 +1,12 @@
 use carve::lint::{LintOptions, lint};
 
 fn codes(source: &str) -> Vec<String> {
-    lint(source, &LintOptions::default())
+    // C2-W-156: `thematic-break-spelling` runs under `upgrade`.
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    lint(source, &options)
         .into_iter()
         .map(|diagnostic| diagnostic.code.to_string())
         .collect()

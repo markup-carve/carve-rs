@@ -198,13 +198,17 @@ fn c2_b_090_glued_valid_attributes_are_not_malformed() {
 
 #[test]
 fn c2_w_111_deprecated_bare_marks_do_not_start_inside_runs() {
-    let findings = lint("__W_", &LintOptions::default());
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    let findings = lint("__W_", &options);
     assert!(
         !findings
             .iter()
             .any(|d| d.code == "deprecated-bare-underline")
     );
-    let findings = lint("_t__", &LintOptions::default());
+    let findings = lint("_t__", &options);
     assert!(
         findings
             .iter()
@@ -224,7 +228,11 @@ fn c2_b_010_lone_carriage_return_is_not_a_line_start() {
 
 #[test]
 fn c2_w_106_term_atom_crossing_lines_is_multiline() {
-    let findings = lint(":: [^\n[]", &LintOptions::default());
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    let findings = lint(":: [^\n[]", &options);
     assert!(
         findings
             .iter()

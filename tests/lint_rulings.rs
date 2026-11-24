@@ -5,7 +5,12 @@ use carve::lint::{LintOptions, lint};
 type Case = (&'static str, &'static str, &'static [(u32, u32)]);
 
 fn found(source: &str, code: &str) -> Vec<(u32, u32)> {
-    lint(source, &LintOptions::default())
+    // C2-W-156: the migration rows this file tests run under `upgrade`.
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    lint(source, &options)
         .into_iter()
         .filter(|d| d.code == code)
         .filter_map(|d| d.pos.map(|pos| (pos.start_offset, pos.end_offset)))

@@ -50,19 +50,28 @@ fn bare_text_pairs_take_escaped_openers() {
     }
 }
 
+/// C2-W-156: the `deprecated-bare-*` rows run under `upgrade`.
+fn upgrade() -> LintOptions {
+    LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    }
+}
+
 #[test]
 fn joined_candidates_cannot_open_or_close() {
     for mark in ['~', '_', '='] {
         for join in ['\u{301}', '\u{fe0f}', '\u{200d}'] {
             let opener = format!("x {mark}{join}a{mark} y\n");
             assert!(
-                carve::api::lint(opener.as_str(), &LintOptions::default())
+                !carve::api::lint(opener.as_str(), &upgrade())
                     .unwrap()
-                    .is_empty(),
+                    .iter()
+                    .any(|e| e.code.starts_with("deprecated-bare-")),
                 "{opener}"
             );
             let closer = format!("{mark}a{mark}{join}b{mark}\n");
-            let entries = carve::api::lint(closer.as_str(), &LintOptions::default()).unwrap();
+            let entries = carve::api::lint(closer.as_str(), &upgrade()).unwrap();
             assert!(
                 entries
                     .iter()
@@ -75,7 +84,7 @@ fn joined_candidates_cannot_open_or_close() {
 
 #[test]
 fn escaped_first_mark_does_not_consume_a_later_pair() {
-    let entries = carve::api::lint("\\~foo ~bar~", &LintOptions::default()).unwrap();
+    let entries = carve::api::lint("\\~foo ~bar~", &upgrade()).unwrap();
     let pair = entries
         .iter()
         .find(|e| e.code == "deprecated-bare-strike")
@@ -86,6 +95,6 @@ fn escaped_first_mark_does_not_consume_a_later_pair() {
 
 #[test]
 fn legacy_pair_cannot_start_inside_a_longer_run() {
-    let entries = carve::api::lint("~~a~", &LintOptions::default()).unwrap();
+    let entries = carve::api::lint("~~a~", &upgrade()).unwrap();
     assert!(!entries.iter().any(|e| e.code == "deprecated-bare-strike"));
 }

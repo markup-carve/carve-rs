@@ -1,7 +1,12 @@
 use carve::lint::{LintOptions, lint};
 
 fn ranges(source: &str, code: &str) -> Vec<(u32, u32)> {
-    lint(source, &LintOptions::default())
+    // C2-W-156: the migration rows this file tests run under `upgrade`.
+    let options = LintOptions {
+        upgrade: true,
+        ..LintOptions::default()
+    };
+    lint(source, &options)
         .into_iter()
         .filter(|finding| finding.code == code)
         .filter_map(|finding| finding.pos.map(|pos| (pos.start_offset, pos.end_offset)))
