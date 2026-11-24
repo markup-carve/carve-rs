@@ -186,15 +186,9 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
         lines.push((at, line.strip_suffix('\n').unwrap_or(line)));
         at += line.len();
     }
-    let mut fences: Vec<MathFence> = lines.iter().map(|(_, line)| math_fence(line)).collect();
-    if fences.iter().all(Option::is_none) {
+    let all: Vec<MathFence> = lines.iter().map(|(_, line)| math_fence(line)).collect();
+    if all.iter().all(Option::is_none) {
         return None;
-    }
-    // A `$$` line in code or raw HTML is content; left in, its fence could close that block.
-    for line in opaque_lines(input, options) {
-        if let Some(fence) = fences.get_mut(line - 1) {
-            *fence = None;
-        }
     }
     // Only a backtick run that starts a line can pair with a fence.
     let longest = lines
@@ -206,28 +200,122 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
         .max()
         .unwrap_or(0);
     let floor = longest + 3;
-    let count = fences.iter().flatten().count();
+    let count = all.iter().flatten().count();
     // The rewrite grows the text by a fence per line; past this bound comrak's own reading stays.
     if count.saturating_mul(floor) > input.len().saturating_mul(2) + 65_536 {
         return None;
     }
-    // A fence line inside code, raw HTML or the body of a math block is content: it is
-    // put back, and the pairing read again, a bounded number of times.
-    for _ in 0..4 {
-        let text = rewrite_fences(input, &lines, &fences, longest);
-        let fence_lines = math_fence_lines(&text, options, floor);
-        let mut changed = false;
-        for (index, fence) in fences.iter_mut().enumerate() {
-            if fence.is_some() && !fence_lines.contains(&(index + 1)) {
-                *fence = None;
-                changed = true;
-            }
+    // A `$$` line in code or raw HTML is content; left in, its fence could close that block.
+    let opaque = read_blocks(input, options, usize::MAX).opaque;
+    let mut active: Vec<MathFence> = all
+        .iter()
+        .enumerate()
+        .map(|(index, fence)| fence.filter(|_| !opaque.contains(&(index + 1))))
+        .collect();
+    // The pairing is read again until it holds, a bounded number of times.
+    let mut rejected = vec![false; all.len()];
+    for _ in 0..6 {
+        let text = rewrite_fences(input, &lines, &active, longest);
+        let next = pair(
+            &all,
+            &active,
+            &mut rejected,
+            &read_blocks(&text, options, floor),
+        );
+        if next == active {
+            return active.iter().any(Option::is_some).then_some((text, floor));
         }
-        if !changed {
-            return fences.iter().any(Option::is_some).then_some((text, floor));
-        }
+        active = next;
     }
     None
+}
+
+/// The 1-based lines of the math blocks (opener, last line, closed) and of the
+/// other code and raw HTML blocks of `text`; a math block is a backtick fence of
+/// at least `floor`.
+struct Blocks {
+    math: Vec<(usize, usize, bool)>,
+    opaque: std::collections::HashSet<usize>,
+}
+
+fn read_blocks(text: &str, options: &comrak::Options<'_>, floor: usize) -> Blocks {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let root = comrak::parse_document(&arena, text, options);
+    let mut blocks = Blocks {
+        math: Vec::new(),
+        opaque: std::collections::HashSet::new(),
+    };
+    for node in root.descendants() {
+        let data = node.data.borrow();
+        let (start, end) = (data.sourcepos.start.line, data.sourcepos.end.line);
+        match &data.value {
+            NodeValue::CodeBlock(code) if code.fence_char == b'`' && code.fence_length >= floor => {
+                blocks.math.push((start, end, code.closed));
+            }
+            NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_) => blocks.opaque.extend(start..=end),
+            _ => {}
+        }
+    }
+    blocks
+}
+
+/// The fence lines of the next reading: the openers and closers of the math blocks,
+/// and every other fence line outside every block. A fence line that opened or closed
+/// nothing is rejected for good.
+fn pair(
+    all: &[MathFence],
+    active: &[MathFence],
+    rejected: &mut [bool],
+    blocks: &Blocks,
+) -> Vec<MathFence> {
+    let (mut next, inside) = paired(all, blocks);
+    for (index, fence) in all.iter().enumerate() {
+        let kept = next.get(index).is_some_and(Option::is_some);
+        let was = active.get(index).is_some_and(Option::is_some);
+        if was
+            && !kept
+            && let Some(flag) = rejected.get_mut(index)
+        {
+            *flag = true;
+        }
+        let free = !inside.get(index).copied().unwrap_or(true)
+            && !blocks.opaque.contains(&(index + 1))
+            && !rejected.get(index).copied().unwrap_or(true);
+        if free && let Some(slot) = next.get_mut(index) {
+            *slot = *fence;
+        }
+    }
+    next
+}
+
+/// Each math block keeps its opener and takes the first line of its body that can
+/// close it (no meta, a run at least as long); the second value marks the lines of
+/// the math blocks.
+fn paired(all: &[MathFence], blocks: &Blocks) -> (Vec<MathFence>, Vec<bool>) {
+    let mut next = vec![None; all.len()];
+    let mut inside = vec![false; all.len()];
+    for &(start, end, _) in &blocks.math {
+        let Some(&Some(opener)) = all.get(start - 1) else {
+            continue;
+        };
+        if let Some(slot) = next.get_mut(start - 1) {
+            *slot = Some(opener);
+        }
+        for slot in inside.iter_mut().take(end).skip(start - 1) {
+            *slot = true;
+        }
+        let closer = (start + 1..=end).find_map(|line| match all.get(line - 1) {
+            Some(&Some(fence @ (_, run, false))) if run >= opener.1 => Some((line, fence)),
+            _ => None,
+        });
+        if let Some((line, fence)) = closer
+            && let Some(slot) = next.get_mut(line - 1)
+        {
+            *slot = Some(fence);
+        }
+    }
+    (next, inside)
 }
 
 type MathFence = Option<(usize, usize, bool)>;
@@ -256,24 +344,6 @@ fn rewrite_fences(
     out
 }
 
-/// The 1-based lines of the code and raw HTML blocks of `text`.
-fn opaque_lines(text: &str, options: &comrak::Options<'_>) -> Vec<usize> {
-    use comrak::nodes::NodeValue;
-    let arena = comrak::Arena::new();
-    let root = comrak::parse_document(&arena, text, options);
-    let mut lines = Vec::new();
-    for node in root.descendants() {
-        let data = node.data.borrow();
-        if matches!(
-            data.value,
-            NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_)
-        ) {
-            lines.extend(data.sourcepos.start.line..=data.sourcepos.end.line);
-        }
-    }
-    lines
-}
-
 /// The content of `$$` math in text as micromark reads it, by the padding rule of a
 /// code span: one space or line ending is stripped from each side when both sides
 /// have one and the content is not all padding.
@@ -286,31 +356,6 @@ fn inline_math(literal: &str) -> &str {
         }
         _ => literal,
     }
-}
-
-/// The 1-based lines that open or close a code block of a rewritten math fence.
-fn math_fence_lines(
-    text: &str,
-    options: &comrak::Options<'_>,
-    floor: usize,
-) -> std::collections::HashSet<usize> {
-    use comrak::nodes::NodeValue;
-    let arena = comrak::Arena::new();
-    let root = comrak::parse_document(&arena, text, options);
-    let mut lines = std::collections::HashSet::new();
-    for node in root.descendants() {
-        let data = node.data.borrow();
-        if let NodeValue::CodeBlock(code) = &data.value
-            && code.fence_char == b'`'
-            && code.fence_length >= floor
-        {
-            lines.insert(data.sourcepos.start.line);
-            if code.closed {
-                lines.insert(data.sourcepos.end.line);
-            }
-        }
-    }
-    lines
 }
 
 /// `CommonMark` reads CR and CRLF as line endings, so no node keeps a CR (carve-rs#4640).

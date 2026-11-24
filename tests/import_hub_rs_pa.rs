@@ -139,3 +139,10 @@ fn inline_math_strips_one_padding_character_from_each_side() {
     assert_eq!(carve("x $$\nx $$\n"), "x $`x`\n");
     assert_eq!(carve("a $$ b\nc $$ d\n"), "a $`b\nc` d\n");
 }
+
+#[test]
+fn a_fence_line_inside_a_math_body_does_not_hide_its_closer() {
+    assert_eq!(carve("$$\n```\n$$\nz\n"), "$$` ``` `\n\nz\n");
+    assert_eq!(carve("$$\n<div>\n$$\nz\n"), "$$`<div>`\n\nz\n");
+    assert_eq!(carve("> $$\n> ```\n> $$\nz\n"), "> $$` ``` `\n\nz\n");
+}
