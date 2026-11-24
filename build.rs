@@ -926,6 +926,7 @@ struct Arms {
     attrs_mut: String,
     dir: String,
     data: String,
+    json: String,
     children: String,
     children_mut: String,
     children_slot: String,
@@ -1010,6 +1011,14 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         }}
     }}
 
+    /// Whether a field of the node holds a free JSON value.
+    #[must_use]
+    pub fn has_json(&self) -> bool {{
+        match self {{
+{}            _ => false,
+        }}
+    }}
+
     /// The attribute slot of the node type, when it has one.
     pub fn attrs_slot(&mut self) -> {} {{
         match self {{
@@ -1056,6 +1065,7 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         a.attrs,
         a.dir,
         a.data,
+        a.json,
         s.attrs_slot,
         a.attrs_mut,
         s.children,
@@ -1121,6 +1131,34 @@ fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
     if props.contains_key("data") {
         let get = if arena { "n.data" } else { "n.data.as_deref()" };
         let _ = writeln!(a.data, "            Self::{ty}(n) => {get},");
+    }
+    let required_set = string_set(def.get("required"));
+    let json: Vec<String> = props
+        .iter()
+        .filter(|(name, p)| {
+            let common = COMMON.contains(&name.as_str());
+            let kind = if common {
+                common_kind(name)
+            } else {
+                field_kind(name, p)
+            };
+            matches!(kind, FieldKind::Json)
+                && !(common && matches!(name.as_str(), "type" | "attrs" | "pos" | "segments"))
+        })
+        .map(|(name, _)| {
+            if required_set.contains(name) {
+                "true".to_string()
+            } else {
+                format!("n.{}.is_some()", rust_ident(name))
+            }
+        })
+        .collect();
+    if !json.is_empty() {
+        let _ = writeln!(
+            a.json,
+            "            Self::{ty}(n) => {},",
+            json.join(" || ")
+        );
     }
     if props.get("children").is_some_and(is_node_list) {
         // C2-N-017: an include has `children` only once it is expanded.
