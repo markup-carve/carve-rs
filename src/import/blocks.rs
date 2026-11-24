@@ -1466,13 +1466,14 @@ impl Cx {
                 continue;
             }
             let style = self.dom.attr(col, "style").map(str::to_string);
-            let width = style.as_deref().and_then(percent_width);
-            // C2-M-041: another style of a `<col>` gives no width.
-            if style.is_some() && width.is_none() {
+            let (width, only) = style.as_deref().map_or((None, true), col_style_width);
+            // C2-M-041: a col style is no key; one that gives no width or holds
+            // another declaration is reported.
+            if style.is_some() && (width.is_none() || !only) {
                 self.report(
                     col,
                     Code::AttributeDropped,
-                    "A col style that gives no width dropped",
+                    "A col style that gives no width or holds another declaration dropped",
                 );
             }
             out.push(width);
@@ -1691,8 +1692,30 @@ fn declaration(text: &str, property: &str, set: &[&'static str]) -> Option<&'sta
 }
 
 /// C2-M-041, C2-B-212: `width: N%;` with N above 0 and at most 100.
-fn percent_width(style: &str) -> Option<f64> {
-    let text = style.strip_prefix("width: ")?.strip_suffix("%;")?;
+/// C2-M-041: the width of the last `width` declaration with a valid `N%`, and
+/// whether the style holds that one declaration and no other.
+fn col_style_width(style: &str) -> (Option<f64>, bool) {
+    fn trim(s: &str) -> &str {
+        s.trim_matches(|c: char| c.is_ascii_whitespace())
+    }
+    let mut width = None;
+    let mut count = 0usize;
+    for piece in style.split(';').map(trim).filter(|p| !p.is_empty()) {
+        count += 1;
+        let Some((name, value)) = piece.split_once(':') else {
+            continue;
+        };
+        if trim(name).eq_ignore_ascii_case("width")
+            && let Some(w) = percent_width(trim(value))
+        {
+            width = Some(w);
+        }
+    }
+    (width, count == 1)
+}
+
+fn percent_width(value: &str) -> Option<f64> {
+    let text = value.strip_suffix('%')?;
     let (int, frac) = match text.split_once('.') {
         Some((i, f)) => (i, Some(f)),
         None => (text, None),
