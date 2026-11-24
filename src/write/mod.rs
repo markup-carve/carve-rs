@@ -2484,6 +2484,50 @@ fn report_unread(w: &mut Writer<'_>, group: Arr<'_>, parsed: Option<V<'_>>) {
     }
 }
 
+fn star_after_break(nodes: Arr<'_>, byte: usize, parent: Option<V<'_>>) -> bool {
+    // Siblings lie in source order, so the search starts at the first that ends after `byte`: a scan from
+    // the front made each prune trial linear in the length of the paragraph.
+    let before = |i| {
+        nodes
+            .get(i)
+            .is_some_and(|n| span(n).is_none_or(|(_, end)| end <= byte))
+    };
+    let (mut low, mut high) = (0, nodes.len());
+    while low < high {
+        let mid = low + (high - low) / 2;
+        if before(mid) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    for index in low..nodes.len() {
+        let Some(n) = nodes.get(index) else {
+            continue;
+        };
+        let Some((start, end)) = span(n) else {
+            continue;
+        };
+        if byte < start {
+            break;
+        }
+        if byte >= end {
+            continue;
+        }
+        if ty(n) == "text" {
+            return parent.is_some_and(|p| matches!(ty(p), "emphasis" | "strong"))
+                && index
+                    .checked_sub(1)
+                    .and_then(|i| nodes.get(i))
+                    .is_some_and(|b| ty(b) == "soft_break");
+        }
+        if star_after_break(children(n), byte, Some(n)) {
+            return true;
+        }
+    }
+    false
+}
+
 /// The offset of the next byte `b` of a source at or after `from`.
 type NextByte<'a> = dyn FnMut(u8, usize) -> Option<usize> + 'a;
 
@@ -2523,7 +2567,7 @@ fn memchr_from(source: &str, b: u8, from: usize) -> Option<usize> {
 fn prunable_opener<'p>(
     source: &str,
     at: usize,
-    _parsed: &mut dyn FnMut() -> Option<V<'p>>,
+    parsed: &mut dyn FnMut() -> Option<V<'p>>,
     find: &mut NextByte<'_>,
 ) -> bool {
     let b = source.as_bytes();
@@ -2531,8 +2575,11 @@ fn prunable_opener<'p>(
     // A repaired inline mark may no longer open anything in the complete
     // group. The read-back trial below, rather than the probe that placed
     // the escape, decides whether its backslash remains necessary.
-    if matches!(next, Some(b'`' | b'*')) {
+    if matches!(next, Some(b'`' | b'*')) && at > 0 && b.get(at - 1) == Some(&b'}') {
         return true;
+    }
+    if next == Some(b'*') {
+        return parsed().is_some_and(|p| star_after_break(children(p), at, None));
     }
     if next == Some(b'[') {
         let rest = source.get(at + 2..).unwrap_or("");
