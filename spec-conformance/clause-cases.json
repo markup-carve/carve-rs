@@ -81668,24 +81668,19 @@
    "id": "CC-2026",
    "clauses": [
     "C2-W-106",
-    "C2-B-109"
+    "C2-B-027"
    ],
-   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-109: The closer of a code fence or a div has the opener's character and at least its length, on a line owned by the same container, with no further column test.",
-   "summary": "a code fence closer in a footnote indented under the opener's backticks is reported on its own line",
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. Catalog fence-closer-indented: where the opener stands on the marker line of an item, a description or a footnote body, the closer's column is counted inside that container's content as C2-B-027 strips it, so a closer at or left of its content column stands where the opener does and is not reported C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "a code fence closer in a footnote at the indent of the body, below a fence opened on the marker line, is not reported (U-250)",
    "kind": "lint",
    "input": "x[^1]\n\n[^1]: ```\n  code\n\n  ```\n\nafter\n",
    "options": {},
    "expected": {
-    "diagnostics": [
-     {
-      "code": "fence-closer-indented",
-      "line": 6,
-      "column": 3,
-      "channel": "lint",
-      "severity": "hint"
-     }
+    "notReported": [
+     "fence-closer-indented"
     ]
    },
+   "corrected": "expected fence-closer-indented at 6:3 before the ruling on #6585 (A2)",
    "from": []
   },
   {
@@ -81723,6 +81718,768 @@
     ]
    },
    "from": []
-  }
+  },
+  {
+   "id": "CC-2029",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: So is a caption line directly below a caption that the same container holds.",
+   "summary": "a second caret line below a table caption is written below a blank line with its caret escaped",
+   "kind": "format",
+   "input": "| a | b |\n^ first\n^ second\n",
+   "options": {},
+   "expected": {
+    "carve": "| a | b |\n^ first\n\n\\^ second\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2030",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: After a blank line or below any other block a caption line is text, and `unattached-caption` reports it.",
+   "summary": "a caret line after a blank line below a captioned table keeps no bare caret",
+   "kind": "format",
+   "input": "| a | b |\n^ first\n\n^ second\n",
+   "options": {},
+   "expected": {
+    "carve": "| a | b |\n^ first\n\n\\^ second\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2031",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: After a blank line or below any other block a caption line is text, and `unattached-caption` reports it.",
+   "summary": "a caret line that carries the quote's mark inside a quote paragraph takes a backslash",
+   "kind": "format",
+   "input": "> a\n> ^ cap\n",
+   "options": {},
+   "expected": {
+    "carve": "> a\n> \\^ cap\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2032",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: After a blank line or below any other block a caption line is text, and `unattached-caption` reports it.",
+   "summary": "an escaped caret on a lazy line of a quote paragraph keeps its backslash when the line takes the quote's mark",
+   "kind": "format",
+   "input": "> a\n\\^ cap\n",
+   "options": {},
+   "expected": {
+    "carve": "> a\n> \\^ cap\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2033",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: After a blank line or below any other block a caption line is text, and `unattached-caption` reports it.",
+   "summary": "a paragraph that starts with a caret after a blank line below a paragraph takes a backslash",
+   "kind": "format",
+   "input": "text\n\n^ x\n",
+   "options": {},
+   "expected": {
+    "carve": "text\n\n\\^ x\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2034",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: After a blank line or below any other block a caption line is text, and `unattached-caption` reports it.",
+   "summary": "a caret line inside a paragraph takes a backslash",
+   "kind": "format",
+   "input": "a\n^ b\n",
+   "options": {},
+   "expected": {
+    "carve": "a\n\\^ b\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2035",
+   "clauses": [
+    "C2-W-146",
+    "C2-B-149"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash C2-B-149: So is a caption line directly below a caption that the same container holds.",
+   "summary": "a second caret line below an image caption is written below a blank line with its caret escaped",
+   "kind": "format",
+   "input": "![i](u)\n^ c\n^ d\n",
+   "options": {},
+   "expected": {
+    "carve": "![i](u)\n^ c\n\n\\^ d\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2036",
+   "clauses": [
+    "C2-W-146"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash",
+   "summary": "near miss: a caption directly below its table is no text and keeps its caret bare",
+   "kind": "format",
+   "input": "| a |\n^ cap\n",
+   "options": {},
+   "expected": {
+    "carve": "| a |\n^ cap\n",
+    "diagnosticsComplete": true,
+    "diagnostics": []
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2037",
+   "clauses": [
+    "C2-W-146"
+   ],
+   "why": "C2-W-146: where `unattached-caption` reports a line whose caret is text the procedure wrote, the caret takes a backslash",
+   "summary": "a paragraph of a supplied tree whose text starts with a caret and a space is written with the caret escaped",
+   "kind": "write",
+   "tree": {
+    "type": "document",
+    "astVersion": "2.0",
+    "children": [
+     {
+      "type": "paragraph",
+      "children": [
+       {
+        "type": "text",
+        "value": "^ x"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {},
+   "expected": {
+    "carve": "\\^ x\n",
+    "diagnostics": [],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2038",
+   "clauses": [
+    "C2-W-107",
+    "C2-B-149"
+   ],
+   "why": "C2-W-107: A mark that C2-I-010 reads as an escaped character is not the start or end of a source shape that any catalog row reports. C2-B-149: After a blank line or below any other block a caption line is text, and `unattached-caption` reports it.",
+   "summary": "the escaped caret line that canonical output writes is not reported",
+   "kind": "lint",
+   "input": "| a | b |\n^ first\n\n\\^ second\n",
+   "options": {},
+   "expected": {
+    "notReported": [
+     "unattached-caption"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2039",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-027"
+   ],
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. Catalog fence-closer-indented: where the opener stands on the marker line of an item, a description or a footnote body, the closer's column is counted inside that container's content as C2-B-027 strips it, so a closer at or left of its content column stands where the opener does and is not reported C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "a closer below a fence opened on a footnote marker line, at the indent of the footnote body, is not reported",
+   "kind": "lint",
+   "input": "[^1]: ```\n  code\n  ```\n",
+   "options": {},
+   "expected": {
+    "notReported": [
+     "fence-closer-indented"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2040",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-027"
+   ],
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. Catalog fence-closer-indented: where the opener stands on the marker line of an item, a description or a footnote body, the closer's column is counted inside that container's content as C2-B-027 strips it, so a closer at or left of its content column stands where the opener does and is not reported C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "a closer left of the content column of the item whose marker line opens the fence is not reported",
+   "kind": "lint",
+   "input": "- ```\n  a\n ```\n",
+   "options": {},
+   "expected": {
+    "notReported": [
+     "fence-closer-indented"
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2041",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-027"
+   ],
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. Catalog fence-closer-indented: where the opener stands on the marker line of an item, a description or a footnote body, the closer's column is counted inside that container's content as C2-B-027 strips it, so a closer at or left of its content column stands where the opener does and is not reported C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "a closer past the content column of the footnote whose marker line opens the fence is reported",
+   "kind": "lint",
+   "input": "[^1]: ```\n  code\n        ```\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "fence-closer-indented",
+      "line": 3,
+      "column": 9,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2042",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-109"
+   ],
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-109: The closer of a code fence or a div has the opener's character and at least its length, on a line owned by the same container, with no further column test.",
+   "summary": "a fence opened on a later line of a footnote body counts no content column, so its indented closer is reported",
+   "kind": "lint",
+   "input": "[^1]: x\n\n  ```\n  b\n   ```\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "fence-closer-indented",
+      "line": 5,
+      "column": 4,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2043",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-027"
+   ],
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. Catalog fence-closer-indented: where the opener stands on the marker line of an item, a description or a footnote body, the closer's column is counted inside that container's content as C2-B-027 strips it, so a closer at or left of its content column stands where the opener does and is not reported C2-B-027: The content of an item, a description or a footnote body is stripped by at most its content column.",
+   "summary": "a closer past the content column of the item whose marker line opens the fence is reported",
+   "kind": "lint",
+   "input": "- ```\n  a\n   ```\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "fence-closer-indented",
+      "line": 3,
+      "column": 4,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2044",
+   "clauses": [
+    "C2-W-106",
+    "C2-B-109"
+   ],
+   "why": "C2-W-106: Every code is an entry of one catalog, `data/lint-rules.json`. C2-B-109: The closer of a code fence or a div has the opener's character and at least its length, on a line owned by the same container, with no further column test.",
+   "summary": "a quote mark is no marker, so an indented closer in a quote is reported",
+   "kind": "lint",
+   "input": "> ```\n> a\n>  ```\n",
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "fence-closer-indented",
+      "line": 3,
+      "column": 4,
+      "channel": "lint",
+      "severity": "hint"
+     }
+    ]
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2045",
+   "clauses": [
+    "C2-W-158",
+    "C2-W-103"
+   ],
+   "why": "C2-W-158: The writer lists its entries on a supplied tree in document order of their paths, as C2-L-011 orders the entries of the sidecar: each index compares as a number, and at one node its own fields come before the nodes in its slots. A clause case with several such entries compares them position by position. C2-W-103: a finding of the writer on a supplied tree has the path alone.",
+   "summary": "write diagnostics on a table stand in document order of their paths",
+   "kind": "write",
+   "tree": {
+    "type": "document",
+    "astVersion": "2.0",
+    "children": [
+     {
+      "type": "table",
+      "columns": [
+       {
+        "type": "table_column",
+        "width": 0.4
+       },
+       {
+        "type": "table_column",
+        "width": 0.6
+       }
+      ],
+      "caption": {
+       "type": "caption",
+       "children": [
+        {
+         "type": "paragraph",
+         "children": [
+          {
+           "type": "text",
+           "value": "A "
+          },
+          {
+           "type": "strong",
+           "children": [
+            {
+             "type": "text",
+             "value": "rich"
+            }
+           ]
+          },
+          {
+           "type": "text",
+           "value": " table"
+          }
+         ]
+        }
+       ]
+      },
+      "children": [
+       {
+        "type": "table_head",
+        "children": [
+         {
+          "type": "table_row",
+          "children": [
+           {
+            "type": "table_cell",
+            "header": true,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "A"
+               }
+              ]
+             }
+            ]
+           },
+           {
+            "type": "table_cell",
+            "header": true,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "B"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ],
+        "attrs": {
+         "id": "head"
+        }
+       },
+       {
+        "type": "table_body",
+        "children": [
+         {
+          "type": "table_row",
+          "children": [
+           {
+            "type": "table_cell",
+            "header": false,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "Merged"
+               }
+              ]
+             }
+            ],
+            "rowspan": 2,
+            "attrs": {
+             "id": "value",
+             "classes": [
+              "token"
+             ]
+            }
+           },
+           {
+            "type": "table_cell",
+            "header": false,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "one"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "type": "table_row",
+          "children": [
+           {
+            "type": "table_cell",
+            "header": false,
+            "span": "rowspan",
+            "children": []
+           },
+           {
+            "type": "table_cell",
+            "header": false,
+            "children": [
+             {
+              "type": "paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "Two paragraphs."
+               }
+              ]
+             },
+             {
+              "type": "paragraph",
+              "children": [
+               {
+                "type": "emphasis",
+                "children": [
+                 {
+                  "type": "text",
+                  "value": "Second"
+                 }
+                ]
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ],
+        "attrs": {
+         "classes": [
+          "measurements"
+         ],
+         "keyValues": [
+          [
+           "foo",
+           "bar"
+          ]
+         ]
+        }
+       },
+       {
+        "type": "table_foot",
+        "children": [
+         {
+          "type": "table_row",
+          "children": [
+           {
+            "type": "table_cell",
+            "header": false,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "total"
+               }
+              ]
+             }
+            ]
+           },
+           {
+            "type": "table_cell",
+            "header": false,
+            "children": [
+             {
+              "type": "cell_paragraph",
+              "children": [
+               {
+                "type": "text",
+                "value": "3"
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ],
+        "attrs": {
+         "id": "foot"
+        }
+       }
+      ],
+      "attrs": {
+       "id": "data"
+      }
+     }
+    ]
+   },
+   "options": {},
+   "expected": {
+    "diagnostics": [
+     {
+      "code": "field-unspellable",
+      "channel": "render-loss",
+      "severity": "warning",
+      "path": "/children/0/children/0/attrs"
+     },
+     {
+      "code": "field-unspellable",
+      "channel": "render-loss",
+      "severity": "warning",
+      "path": "/children/0/children/1/attrs"
+     },
+     {
+      "code": "structure-unspellable",
+      "channel": "render-loss",
+      "severity": "warning",
+      "path": "/children/0/children/1/children/1/children/1"
+     },
+     {
+      "code": "field-unspellable",
+      "channel": "render-loss",
+      "severity": "warning",
+      "path": "/children/0/children/2/attrs"
+     }
+    ],
+    "diagnosticsComplete": true,
+    "diagnosticsOrdered": true
+   },
+   "from": []
+  },
+ {
+  "id": "CC-2046",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` of the first `<colgroup>` is read as CSS declarations: it is split at each `;`, an empty piece is skipped, and each declaration is a property name, a `:` and a value, each without leading and trailing ASCII whitespace, the name compared without ASCII case. The last `width` declaration whose value is `N%`, with N a decimal number greater than 0 and at most 100 (C2-B-212), gives the column the width N/100 (C2-H-152).",
+  "summary": "a col style without spaces and without the closing semicolon gives the column its width",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"width:40%\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{widths=40 body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2047",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` of the first `<colgroup>` is read as CSS declarations: it is split at each `;`, an empty piece is skipped, and each declaration is a property name, a `:` and a value, each without leading and trailing ASCII whitespace, the name compared without ASCII case. The last `width` declaration whose value is `N%`, with N a decimal number greater than 0 and at most 100 (C2-B-212), gives the column the width N/100 (C2-H-152).",
+  "summary": "a col style property name in upper case gives the column its width",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"WIDTH:40%\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{widths=40 body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2048",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` of the first `<colgroup>` is read as CSS declarations: it is split at each `;`, an empty piece is skipped, and each declaration is a property name, a `:` and a value, each without leading and trailing ASCII whitespace, the name compared without ASCII case. The last `width` declaration whose value is `N%`, with N a decimal number greater than 0 and at most 100 (C2-B-212), gives the column the width N/100 (C2-H-152).",
+  "summary": "a col style with spaces around the colon and before the semicolon gives the column its width",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"width : 40% ;\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{widths=40 body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2049",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` of the first `<colgroup>` is read as CSS declarations: it is split at each `;`, an empty piece is skipped, and each declaration is a property name, a `:` and a value, each without leading and trailing ASCII whitespace, the name compared without ASCII case. The last `width` declaration whose value is `N%`, with N a decimal number greater than 0 and at most 100 (C2-B-212), gives the column the width N/100 (C2-H-152). ... The `style` of a `<col>` is no key: one that gives no width, or that holds any other declaration, is dropped and reported with `import-attribute-dropped`.",
+  "summary": "a col style with a width and another declaration gives the width and reports the other",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"width: 40%; color: red\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{widths=40 body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [
+    {
+     "code": "import-attribute-dropped",
+     "severity": "warning",
+     "channel": "render-loss",
+     "line": 1,
+     "column": 18
+    }
+   ],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2050",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` of the first `<colgroup>` is read as CSS declarations: it is split at each `;`, an empty piece is skipped, and each declaration is a property name, a `:` and a value, each without leading and trailing ASCII whitespace, the name compared without ASCII case. The last `width` declaration whose value is `N%`, with N a decimal number greater than 0 and at most 100 (C2-B-212), gives the column the width N/100 (C2-H-152). ... The `style` of a `<col>` is no key: one that gives no width, or that holds any other declaration, is dropped and reported with `import-attribute-dropped`.",
+  "summary": "the last percentage width declaration of a col style gives the width",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"width: 30%; width: 50%\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{widths=50 body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [
+    {
+     "code": "import-attribute-dropped",
+     "severity": "warning",
+     "channel": "render-loss",
+     "line": 1,
+     "column": 18
+    }
+   ],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2051",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` is no key: one that gives no width, or that holds any other declaration, is dropped and reported with `import-attribute-dropped`.",
+  "summary": "a col width that is no percentage gives no width and is reported",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"width: 40px\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [
+    {
+     "code": "import-attribute-dropped",
+     "severity": "warning",
+     "channel": "render-loss",
+     "line": 1,
+     "column": 18
+    }
+   ],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2052",
+  "clauses": [
+   "C2-M-041"
+  ],
+  "why": "C2-M-041: The `style` of a `<col>` of the first `<colgroup>` is read as CSS declarations: it is split at each `;`, an empty piece is skipped, and each declaration is a property name, a `:` and a value, each without leading and trailing ASCII whitespace, the name compared without ASCII case. The last `width` declaration whose value is `N%`, with N a decimal number greater than 0 and at most 100 (C2-B-212), gives the column the width N/100 (C2-H-152).",
+  "summary": "the render spelling of a col width still gives the column its width",
+  "kind": "import",
+  "html": "<table><colgroup><col style=\"width: 40%;\"><col></colgroup><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "{widths=40 body-rows=1 body-header-rows=1}\n| a | b |\n| 1 | 2 |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ },
+ {
+  "id": "CC-2053",
+  "clauses": [
+   "C2-M-040",
+   "C2-M-055"
+  ],
+  "why": "C2-M-040: these spellings are compared exactly, not read as declarations as C2-M-041 reads a `<col>`. C2-M-055: A `style` is a key with its value as written, except the exact declarations of C2-M-040 and C2-M-075 and the `style` of a `<col>`, whose declarations C2-M-041 reads.",
+  "summary": "a cell style that is no exact alignment spelling stays a style key and gives no alignment",
+  "kind": "import",
+  "html": "<table><tr><td style=\"text-align:right\">a</td></tr></table>",
+  "options": {},
+  "expected": {
+   "carve": "|{style=text-align:right} a |\n",
+   "diagnostics": [],
+   "diagnosticsComplete": true
+  },
+  "from": []
+ }
  ]
 }
