@@ -351,3 +351,19 @@ fn heading_numbers_skip_headings_in_containers() {
         "{out}"
     );
 }
+
+#[test]
+fn table_of_contents_nests_by_depth_not_level() {
+    // carve#6531, carve-rs#4701: a heading that closes deeper headings continues at its depth.
+    let toc = || extensions::table_of_contents(extensions::TableOfContentsOptions::default());
+    let nav = |out: &str| out[..out.find("</nav>").unwrap() + 6].to_owned();
+    assert_eq!(
+        nav(&html("= A\n\n=== C\n\n== B\n", toc())),
+        "<nav class=\"toc\" aria-label=\"Table of contents\">\n  <ul>\n    <li><a href=\"#A\">A</a>\n      <ul>\n        <li><a href=\"#C\">C</a></li>\n        <li><a href=\"#B\">B</a></li>\n      </ul>\n    </li>\n  </ul>\n</nav>"
+    );
+    // A heading above the first one joins the outer list instead of being dropped.
+    assert_eq!(
+        nav(&html("=== C\n\n= A\n", toc())),
+        "<nav class=\"toc\" aria-label=\"Table of contents\">\n  <ul>\n    <li><a href=\"#C\">C</a></li>\n    <li><a href=\"#A\">A</a></li>\n  </ul>\n</nav>"
+    );
+}
