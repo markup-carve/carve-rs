@@ -2905,6 +2905,17 @@ fn prune_in_windows(
     if escapes.is_empty() {
         return Some(source.to_string());
     }
+    // Most escapes placed by one repair kind are all redundant after the
+    // complete group settles. Test that common case in one readback, then
+    // fall back to the per-window trials when only some may be removed.
+    if escapes.len() > 1 {
+        let candidate = Chunk::new(without_bytes(source, &escapes)?);
+        let kids = children(candidate.parse(w));
+        if kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
+        {
+            return Some(candidate.text().to_string());
+        }
+    }
     let mut leaves = Vec::new();
     leaf_blocks(children(parsed), split, &mut leaves);
     let mut accepted = Vec::new();
