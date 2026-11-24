@@ -20,19 +20,31 @@
 //! assert_eq!(out, r#"{"ok":{"html":"<p>Hi <strong>there</strong></p>"}}"#);
 //! ```
 
-use super::{Carve, EncodeOptions, Entry, Error, Input, Tree, options::CallOptions};
+use super::{Carve, EncodeOptions, Entry, Error, Includes, Input, Tree, options::CallOptions};
 use serde_json::{Map, Value, json};
 
 /// Runs one request and returns the response JSON text.
 #[must_use]
 pub fn call(request: &str) -> String {
+    call_in(request, None)
+}
+
+/// Runs one request as [`call`] does, with `includes` as the value of the
+/// `includes` option (C2-N-003): a host resolver, which JSON text has no form
+/// for. A request whose options also name `includes` is refused.
+#[must_use]
+pub fn call_with_includes(request: &str, includes: Includes) -> String {
+    call_in(request, Some(includes))
+}
+
+fn call_in(request: &str, includes: Option<Includes>) -> String {
     let mut de = serde_json::Deserializer::from_str(request);
     // A tree in a request nests past serde_json's default limit of 128.
     de.disable_recursion_limit();
     let parsed =
         <Value as serde::Deserialize>::deserialize(&mut de).and_then(|v| de.end().map(|()| v));
     let response = match parsed {
-        Ok(req) => host(&req).and_then(|h| dispatch(&h, &req)),
+        Ok(req) => host(&req).and_then(|h| dispatch(&h, &req, includes)),
         Err(e) => Err(Error::option("request", format!("invalid JSON: {e}"))),
     };
     match response {
@@ -93,12 +105,26 @@ fn with_tree(fields: Map<String, Value>, tree: &str) -> String {
     out
 }
 
-fn dispatch(host: &Carve, req: &Value) -> Result<Reply, Error> {
+fn dispatch(host: &Carve, req: &Value, includes: Option<Includes>) -> Result<Reply, Error> {
     let name = req
         .get("call")
         .and_then(Value::as_str)
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
-    let opts = call_options(name, req)?;
+    let mut opts = call_options(name, req)?;
+    if let Some(includes) = includes {
+        if req.pointer("/options/includes").is_some() {
+            return Err(Error::option(
+                "includes",
+                "the request names includes and the host passes a resolver",
+            ));
+        }
+        opts.options.includes = Some(includes);
+        opts.lint.includes.clone_from(&opts.options.includes);
+        opts.write
+            .render
+            .includes
+            .clone_from(&opts.options.includes);
+    }
     let enabled;
     let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
         host
