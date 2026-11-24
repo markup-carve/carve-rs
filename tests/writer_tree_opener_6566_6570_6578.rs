@@ -74,3 +74,14 @@ fn underline_read_as_attribute_block_escapes_equals() {
         ("{_a\\=b_}\n", "{_a\\=b_}\n"),
     ]);
 }
+
+// carve#6578, C2-W-125: the brace before the tag forms the dash behind it, so the closing brace stays bare, and the
+// case-six backslash behind the tag gives no kind.
+#[test]
+fn closing_brace_behind_tag_underscore_and_dash_stays_bare() {
+    check_writes(&[
+        ("x{#a\\_--}\n", "x{#a\\_--}\n"),
+        ("_{#a\\_--}\n", "_{#a\\_--}\n"),
+        ("> x{#a\\_--}\n", "> x{#a\\_--}\n"),
+    ]);
+}

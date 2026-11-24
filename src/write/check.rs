@@ -2608,7 +2608,12 @@ fn reads_neighbor<'t>(
             return escape_at(w, c, n, 0);
         }
         if reads_on(e, n) && differing_field(w, c, e, a).is_some() {
-            return escape_at(w, c, n, 0);
+            // C2-W-125 case six: the backslash of a character that lengthens the node gives no kind (C2-W-088).
+            if escape_at(w, c, n, 0) {
+                c.own_escapes.insert((id(n), 0));
+                return true;
+            }
+            return false;
         }
     }
     if ty(e) != "smart_punctuation"
