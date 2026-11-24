@@ -381,11 +381,9 @@ impl Registry {
             let Some(transform) = &ext.transform else {
                 continue;
             };
+            // An unchanged view has the same duplicate count, so counting
+            // every result keeps the outcome without comparing wire forms.
             let failure = match transform.transform(view.clone()) {
-                Ok(next) if next.json() == view.json() => {
-                    view = next;
-                    None
-                }
                 Ok(next) => {
                     let before = *held.get_or_insert_with(|| duplicate_ids(&view));
                     let after = duplicate_ids(&next);

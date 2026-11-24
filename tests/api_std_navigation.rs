@@ -367,3 +367,39 @@ fn table_of_contents_nests_by_depth_not_level() {
         "<nav class=\"toc\" aria-label=\"Table of contents\">\n  <ul>\n    <li><a href=\"#C\">C</a></li>\n    <li><a href=\"#A\">A</a></li>\n  </ul>\n</nav>"
     );
 }
+
+#[test]
+fn heading_numbers_end_on_a_title_that_references_its_heading() {
+    // The numbered link copies the title, which holds the same reference again.
+    for source in [
+        "{#a}\n= Ref </#a>\n",
+        "{#a}\n= A </#b>\n\n{#b}\n= B </#a>\n",
+    ] {
+        let out = html(
+            source,
+            extensions::heading_numbers(extensions::HeadingNumbersOptions::default()),
+        );
+        assert!(
+            out.contains("<span class=\"section-number\">1</span>"),
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn toc_placement_with_heading_numbers_places_a_toc_in_a_toc_body() {
+    let mut host = Carve::new();
+    host.register(extensions::heading_numbers(
+        extensions::HeadingNumbersOptions::default(),
+    ))
+    .unwrap();
+    host.register(extensions::toc_placement()).unwrap();
+    let out = host
+        .render(
+            "{depth=1}\n::: toc \"Contents\"\n::: toc\n:::\n:::\n\n= A\n\n== B\n",
+            &Options::default(),
+        )
+        .unwrap();
+    assert_eq!(out.matches("<nav").count(), 2, "{out}");
+    assert!(out.contains("1.1"), "{out}");
+}

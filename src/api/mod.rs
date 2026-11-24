@@ -353,6 +353,12 @@ impl Tree {
         Self::trusted_inner(value, top, true)
     }
 
+    /// [`Tree::trusted`] for a view only the next transform or the renderer
+    /// reads: the wire form is encoded from the owned tree if a caller asks.
+    pub(crate) fn trusted_view(value: Value, top: Option<String>) -> Result<Self, Error> {
+        Self::trusted_inner(value, top, false)
+    }
+
     /// Importer-built trees contain only schema fields. The owned tree is
     /// decoded, and its wire form serialized, when a caller first requests it.
     pub(crate) fn trusted_imported(mut value: Value) -> Result<Self, Error> {
@@ -411,6 +417,18 @@ impl Tree {
             top,
             sources: std::collections::HashMap::new(),
         })
+    }
+
+    /// A view of an engine-built owned tree whose wire form is encoded only
+    /// if a transform asks for it.
+    pub(crate) fn lazy_view(document: Document, top: Option<String>) -> Self {
+        Self {
+            document: document.into(),
+            json: std::sync::OnceLock::new(),
+            canonical: true,
+            top,
+            sources: std::collections::HashMap::new(),
+        }
     }
 
     /// An internal render view. Only the renderer reads this tree; it is not
@@ -992,8 +1010,7 @@ impl Carve {
             self.extensions.transform_owned(&mut resolved);
             (Tree::render_view(resolved, tree.top), Vec::new())
         } else if self.extensions.has_transforms() {
-            let mut view = Tree::from_owned(crate::resolved_owned(tree.document(), opts), None)?;
-            view.top = tree.top;
+            let view = Tree::lazy_view(crate::resolved_owned(tree.document(), opts), tree.top);
             self.extensions.transform(view)
         } else {
             (tree, Vec::new())
