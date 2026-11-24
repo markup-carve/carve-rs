@@ -57,10 +57,10 @@
   },
   {
     "id": "braced-span-opener-as-text",
-    "origin": "../carve/tests/corpus/471-braced-emphasis-can-nest-its-own-kind-10.crv",
-    "trigger": "{*a {**} b*}\n",
-    "near": "{*a *} b*}\n",
-    "fragment": "{*",
+    "origin": "clause cases CC-707 and CC-708",
+    "trigger": "*a {/b*/}\n",
+    "near": "*a {/b\\*/}\n",
+    "fragment": "{/",
     "message": "This braced span did not open: the delimiter inside it closed a span that started before it. Escape that delimiter."
   },
   {

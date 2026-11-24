@@ -1,11 +1,13 @@
 //! Checks tied to parsed nodes and their source positions (C2-W-107).
 
+use super::braced;
 use super::walk::{PathNode, Walk, path_text};
 use super::{LintOptions, active, drop_replaced};
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
 use crate::view::V;
 use std::cell::OnceCell;
+use std::collections::HashSet;
 
 fn field<'a>(value: V<'a>, path: &str) -> V<'a> {
     value.field(path)
@@ -28,6 +30,8 @@ impl Item<'_> {
 
 pub(super) struct Parent<'a> {
     pub(super) kind: &'a str,
+    /// The key of a footnote definition.
+    pub(super) key: Option<&'a str>,
     pub(super) depth: usize,
     pub(super) previous: Option<&'a Parent<'a>>,
 }
@@ -46,6 +50,8 @@ struct Sink<'a> {
     options: &'a LintOptions,
     output: &'a mut Vec<Diagnostic>,
     replacing: Vec<usize>,
+    /// The footnote keys a `footnote_ref` names.
+    references: &'a HashSet<&'a str>,
 }
 
 impl Sink<'_> {
@@ -96,13 +102,14 @@ pub(super) fn scan(
     source: &str,
     options: &LintOptions,
     base_items: Vec<Item<'_>>,
+    references: &HashSet<&str>,
     output: &mut Vec<Diagnostic>,
 ) {
     if base_items.is_empty() {
         return;
     }
     if options.heading_ids == crate::options::HeadingIds::default() {
-        scan_tree(source, options, base_items, output);
+        scan_tree(source, options, base_items, references, output);
         return;
     }
     let opts = crate::Options {
@@ -112,11 +119,19 @@ pub(super) fn scan(
     };
     let (scanned, _) = crate::with_lint_tree(source, &opts, &opts, true, |alternate, arena| {
         alternate
-            .map(|tree| scan_tree(source, options, Walk::items(tree, arena), output))
+            .map(|tree| {
+                scan_tree(
+                    source,
+                    options,
+                    Walk::items(tree, arena),
+                    references,
+                    output,
+                );
+            })
             .is_some()
     });
     if !scanned {
-        scan_tree(source, options, base_items, output);
+        scan_tree(source, options, base_items, references, output);
     }
 }
 
@@ -127,7 +142,6 @@ pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
     match kind {
         "text" => !raw.is_ascii() || raw.bytes().any(|byte| matches!(byte, b'{' | b'#')),
         "code" | "math" => !raw.is_ascii(),
-        "strong" | "emphasis" => raw.contains('{'),
         "strike" => raw.contains("~>"),
         "link" => {
             // Both hand-only link labels, "here" and "read more", contain an r.
@@ -135,11 +149,10 @@ pub(super) fn needs_hand_node(kind: &str, raw: &str) -> bool {
             let label = raw.split(']').next().unwrap_or("");
             label.bytes().any(|byte| matches!(byte, b'r' | b'R'))
         }
-        // A refused braced closer can be literal text inside a paragraph.
-        "paragraph" => raw.contains("{/"),
-        "document" | "heading" | "frontmatter" | "list" | "list_item" | "table" | "table_head"
+        _ if braced::LEAVES.contains(&kind) => braced::may_hold_opener(raw),
+        "document" | "frontmatter" | "list" | "list_item" | "table" | "table_head"
         | "table_body" | "table_foot" | "table_row" | "table_cell" | "table_column"
-        | "cell_paragraph" | "soft_break" | "hard_break" | "line_break" => false,
+        | "soft_break" | "hard_break" | "line_break" | "strong" | "emphasis" => false,
         _ => true,
     }
 }
@@ -148,6 +161,7 @@ fn scan_tree(
     source: &str,
     options: &LintOptions,
     mut items: Vec<Item<'_>>,
+    references: &HashSet<&str>,
     output: &mut Vec<Diagnostic>,
 ) {
     items.sort_by_cached_key(|item| item.bounds.map_or(0, |(start, _)| start));
@@ -157,6 +171,7 @@ fn scan_tree(
         options,
         output,
         replacing: Vec::new(),
+        references,
     };
     for item in &items {
         check_node(item, &mut sink);
@@ -197,8 +212,7 @@ fn check_block_node(item: &Item<'_>, sink: &mut Sink<'_>) {
 fn check_inline_node(item: &Item<'_>, sink: &mut Sink<'_>) {
     match item.node.ty().as_str().unwrap_or("") {
         "text" => text_node(item, sink),
-        "paragraph" => paragraph_braced_opener(item, sink),
-        "strong" => strong(item, sink),
+        kind if braced::LEAVES.contains(&kind) => braced_openers(item, sink),
         "strike" => strike(item, sink),
         "comment" => comment(item, sink),
         "mention" => mention(item, sink),
@@ -252,33 +266,11 @@ fn text_node(item: &Item<'_>, sink: &mut Sink<'_>) {
         return;
     };
     text_platform_refs(item, sink, &value, from);
-    let parent = item.parents.map_or("", |parent| parent.kind);
-    let delimiter = if parent == "strong" {
-        "{*"
-    } else if parent == "emphasis" {
-        "{/"
-    } else {
-        ""
-    };
-    if !delimiter.is_empty()
-        && let Some(at) = value.find(delimiter)
-    {
-        sink.emit_range(
-            "braced-span-opener-as-text",
-            from + at,
-            from + at + 2,
-            item.path(),
-            &[],
-            0,
-        );
-    }
     bidi(item, sink);
 }
 
 fn text_platform_refs(item: &Item<'_>, sink: &mut Sink<'_>, value: &str, from: usize) {
-    if sink.options.platforms.iter().any(|p| p == "github")
-        && !parent_kinds(item).any(|kind| kind == "footnote")
-    {
+    if sink.options.platforms.iter().any(|p| p == "github") && !unreferenced_footnote(item, sink) {
         for (at, _) in value.match_indices('#') {
             let digits = value
                 .get(at + 1..)
@@ -326,31 +318,22 @@ fn bidi(item: &Item<'_>, sink: &mut Sink<'_>) {
     }
 }
 
-fn paragraph_braced_opener(item: &Item<'_>, sink: &mut Sink<'_>) {
-    let raw = sink.raw(item).to_string();
-    if let Some((from, _)) = item.bounds
-        && let Some(start) = raw.find("{/")
-        && raw
-            .get(start + 2..)
-            .and_then(|tail| tail.find("*/}"))
-            .is_some_and(|end| !escaped(raw.as_bytes(), start + 2 + end))
-        && raw.get(..start).is_some_and(|head| head.contains('*'))
-    {
-        sink.emit_range(
-            "braced-span-opener-as-text",
-            from + start,
-            from + start + 2,
-            item.path(),
-            &[],
-            0,
-        );
+fn braced_openers(item: &Item<'_>, sink: &mut Sink<'_>) {
+    for (at, path) in braced::openers(sink.source, item.node, item.path()) {
+        sink.emit_range("braced-span-opener-as-text", at, at + 2, &path, &[], 0);
     }
 }
 
-fn strong(item: &Item<'_>, sink: &mut Sink<'_>) {
-    if sink.raw(item).starts_with("{*") && sink.raw(item).contains("{**}") {
-        sink.emit("braced-span-opener-as-text", item, &[], 0);
-    }
+/// A platform token in a footnote nothing references is not published, so it is not reported.
+fn unreferenced_footnote(item: &Item<'_>, sink: &Sink<'_>) -> bool {
+    parent_nodes(item)
+        .filter(|parent| parent.kind == "footnote")
+        .last()
+        .is_some_and(|footnote| {
+            !footnote
+                .key
+                .is_some_and(|key| sink.references.contains(key))
+        })
 }
 
 fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {
@@ -370,7 +353,7 @@ fn strike(item: &Item<'_>, sink: &mut Sink<'_>) {
 }
 
 fn mention(item: &Item<'_>, sink: &mut Sink<'_>) {
-    if parent_kinds(item).any(|kind| kind == "footnote") {
+    if unreferenced_footnote(item, sink) {
         return;
     }
     let raw = sink.raw(item).to_string();

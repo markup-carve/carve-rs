@@ -95,6 +95,11 @@ fn read_block(s: &str, at: usize, end: usize, out: &mut impl Parts) -> Option<us
     None
 }
 
+/// The offset behind a valid attribute block at `at` that ends before `end`.
+pub(super) fn block_extent(s: &str, at: usize, end: usize) -> Option<usize> {
+    read_block(s, at, end, &mut Extent)
+}
+
 /// Where a reading puts the parts it takes.
 trait Parts {
     fn take(&mut self, make: impl FnOnce() -> Part);
