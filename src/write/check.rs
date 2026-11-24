@@ -2299,6 +2299,15 @@ fn escape_reading_brace<'t>(w: &Writer<'t>, c: &mut Check<'t>, owner: N<'t>) -> 
     true
 }
 
+/// C2-W-125 case one, C2-W-088: the brace ending the content of `owner` reads with its closing mark as a braced
+/// opener, so `owner` reads on. That repairs the tree's own node and gives no kind.
+fn reads_into_closer(owner: V<'_>, n: V<'_>, at: usize) -> bool {
+    text(n).as_bytes().get(at) == Some(&b'{')
+        && at + 1 == text(n).len()
+        && last_text(Some(owner)).is_some_and(|t| id(t) == id(n))
+        && closing_mark(ty(owner)).is_some_and(|m| m != b']')
+}
+
 /// A note or extension that a lone bracket of its content keeps from forming reads as text.
 fn reads_as_text(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> bool {
     matches!(ty(node), "span" | "inline_footnote" | "inline_extension")
@@ -2429,7 +2438,19 @@ fn skip_construct<'t>(
     if quoted {
         escape_at(w, c, e, at.vi + 1);
     } else {
+        let placed = c.escapes.len();
         escape_opener(w, c, e, es, at.i, at.vi, a);
+        let read_on: Vec<(usize, usize)> = c
+            .escapes
+            .get(placed..)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|&&(n, k)| reads_into_closer(owner, n, k))
+            .map(|&(n, k)| (id(n), k))
+            .collect();
+        // As in `escape_reading_brace`, the parse behind the read-on content is not compared.
+        c.cut |= !read_on.is_empty();
+        c.closers.extend(read_on);
     }
     let Some((start, end)) = span(a) else {
         return false;
