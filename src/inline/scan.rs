@@ -1212,6 +1212,10 @@ impl<'a> Scanner<'_, '_, 'a> {
 
     /// C2-I-072, C2-I-101: a pair whose folded text is a defined key.
     fn shortcut(&mut self, top: &Bracket, i: usize) -> bool {
+        // Without a definition no label resolves; folding every one made nested brackets quadratic.
+        if self.env.link_keys.is_empty() {
+            return false;
+        }
         let raw = self.t.get(top.inner..i).unwrap_or("");
         if raw.starts_with('@') {
             return false;
