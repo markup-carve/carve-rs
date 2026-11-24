@@ -3,8 +3,10 @@
 use super::{Bundle, declaration};
 use crate::api::{Channel, DocumentTransform, Error, Extension, RenderContext, Renderer, Tree};
 use serde_json::{Map, Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
+
+mod tree;
 
 fn bundle(name: &str, transform: impl DocumentTransform + 'static) -> Bundle {
     Bundle {
@@ -133,33 +135,41 @@ fn derived(nodes: &[Value]) -> Vec<Value> {
 
 fn freeze_xrefs(doc: &mut Value) {
     let mut by_id = BTreeMap::new();
-    visit_read(doc, &mut |node| {
-        if node.get("type").and_then(Value::as_str) == Some("heading") {
-            if let Some(id) = heading_id(node) {
-                by_id.entry(id).or_insert_with(|| {
-                    node.get("children")
-                        .and_then(Value::as_array)
-                        .map_or_else(Vec::new, |nodes| derived(nodes))
-                });
-            }
-        }
-    });
+    visit_read(doc, &mut |node| heading_title(node, &mut by_id));
     rewrite(doc, &mut Vec::new(), &mut |node, _| {
-        if node.get("type").and_then(Value::as_str) != Some("xref")
-            || node.get("namespace").and_then(Value::as_str) != Some("heading")
-            || node
-                .get("display")
-                .and_then(Value::as_str)
-                .is_some_and(|v| v != "title")
-        {
-            return None;
-        }
-        let key = node.get("key").and_then(Value::as_str)?;
-        let children = by_id.get(key)?;
-        Some(vec![
-            json!({"type":"link","href":format!("#{key}"),"children":children}),
-        ])
+        title_link(node, &by_id)
     });
+}
+
+/// Records the title of the first heading with an id.
+fn heading_title(node: &Map<String, Value>, by_id: &mut BTreeMap<String, Vec<Value>>) {
+    if node.get("type").and_then(Value::as_str) == Some("heading") {
+        if let Some(id) = heading_id(node) {
+            by_id.entry(id).or_insert_with(|| {
+                node.get("children")
+                    .and_then(Value::as_array)
+                    .map_or_else(Vec::new, |nodes| derived(nodes))
+            });
+        }
+    }
+}
+
+/// A title cross-reference to a heading as a link holding the heading's title.
+fn title_link(node: &Value, by_id: &BTreeMap<String, Vec<Value>>) -> Option<Vec<Value>> {
+    if node.get("type").and_then(Value::as_str) != Some("xref")
+        || node.get("namespace").and_then(Value::as_str) != Some("heading")
+        || node
+            .get("display")
+            .and_then(Value::as_str)
+            .is_some_and(|v| v != "title")
+    {
+        return None;
+    }
+    let key = node.get("key").and_then(Value::as_str)?;
+    let children = by_id.get(key)?;
+    Some(vec![
+        json!({"type":"link","href":format!("#{key}"),"children":children}),
+    ])
 }
 
 fn heading_id(map: &Map<String, Value>) -> Option<String> {
@@ -349,50 +359,57 @@ impl Default for HeadingNumbersOptions {
 }
 struct HeadingNumbers(HeadingNumbersOptions);
 
-fn freeze_heading_links(doc: &mut Value) {
-    let mut heading_ids = Vec::new();
-    let mut definitions = Vec::new();
-    visit_read(
-        doc,
-        &mut |node| match node.get("type").and_then(Value::as_str) {
-            Some("heading") => {
-                if let Some(id) = heading_id(node) {
-                    heading_ids.push(id);
-                }
+/// Collects the heading ids and link definition keys a heading reference is checked against.
+fn heading_link_targets(
+    node: &Map<String, Value>,
+    heading_ids: &mut HashSet<String>,
+    definitions: &mut HashSet<String>,
+) {
+    match node.get("type").and_then(Value::as_str) {
+        Some("heading") => {
+            if let Some(id) = heading_id(node) {
+                heading_ids.insert(id);
             }
-            Some("link_reference_definition") => {
-                if let Some(key) = node.get("key").and_then(Value::as_str) {
-                    definitions.push(key.trim().to_lowercase());
-                }
+        }
+        Some("link_reference_definition") => {
+            if let Some(key) = node.get("key").and_then(Value::as_str) {
+                definitions.insert(key.trim().to_lowercase());
             }
-            _ => {}
-        },
+        }
+        _ => {}
+    }
+}
+
+/// A reference link that resolved to a heading, with no definition of its own, becomes a heading reference.
+fn freeze_heading_link(
+    node: &mut Map<String, Value>,
+    heading_ids: &HashSet<String>,
+    definitions: &HashSet<String>,
+) {
+    if node.get("type").and_then(Value::as_str) != Some("link")
+        || node.get("namespace").and_then(Value::as_str) != Some("link")
+    {
+        return;
+    }
+    let Some(key) = node.get("key").and_then(Value::as_str) else {
+        return;
+    };
+    if definitions.contains(&key.trim().to_lowercase())
+        || !node
+            .get("href")
+            .and_then(Value::as_str)
+            .and_then(|h| h.strip_prefix('#'))
+            .is_some_and(|id| heading_ids.contains(id))
+    {
+        return;
+    }
+    node.remove("key");
+    node.remove("namespace");
+    node.remove("refForm");
+    node.insert(
+        "data".into(),
+        json!({"carve.headingNumbers":"heading-reference"}),
     );
-    visit(doc, &mut |node| {
-        if node.get("type").and_then(Value::as_str) != Some("link")
-            || node.get("namespace").and_then(Value::as_str) != Some("link")
-        {
-            return;
-        }
-        let Some(key) = node.get("key").and_then(Value::as_str) else {
-            return;
-        };
-        if definitions.contains(&key.trim().to_lowercase())
-            || !node
-                .get("href")
-                .and_then(Value::as_str)
-                .is_some_and(|h| heading_ids.iter().any(|id| h == format!("#{id}")))
-        {
-            return;
-        }
-        node.remove("key");
-        node.remove("namespace");
-        node.remove("refForm");
-        node.insert(
-            "data".into(),
-            json!({"carve.headingNumbers":"heading-reference"}),
-        );
-    });
 }
 
 /// Advances the depth counter for a heading at `level`; closing deeper headings continues their counter.
@@ -417,108 +434,99 @@ fn count_heading(levels: &mut Vec<usize>, counts: &mut Vec<usize>, level: usize)
         .join(".")
 }
 
-fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, Vec<Value>)> {
-    let mut levels: Vec<usize> = Vec::new();
-    let mut counts: Vec<usize> = Vec::new();
-    let mut labels = BTreeMap::new();
-    // carve#6531: only top-level headings, the ones a section wraps (C2-H-026), and a number counts depth, not level.
-    let Some(children) = doc.get_mut("children").and_then(Value::as_array_mut) else {
-        return labels;
-    };
-    for node in children.iter_mut() {
-        let Some(node) = node.as_object_mut() else {
-            continue;
-        };
-        if node.get("type").and_then(Value::as_str) != Some("heading") {
-            continue;
-        }
-        let level = node
-            .get("level")
-            .and_then(Value::as_u64)
-            .and_then(|v| usize::try_from(v).ok())
-            .unwrap_or(0);
-        if level < usize::from(min_level.max(1)) || level > 6 {
-            continue;
-        }
-        if node
-            .get("attrs")
-            .and_then(|a| a.get("classes"))
-            .and_then(Value::as_array)
-            .is_some_and(|cs| cs.iter().any(|c| c.as_str() == Some("unnumbered")))
-        {
-            continue;
-        }
-        let number = count_heading(&mut levels, &mut counts, level);
-        let title = node
-            .get("children")
-            .and_then(Value::as_array)
-            .map_or_else(Vec::new, |n| derived(n));
-        if let Some(id) = heading_id(node) {
-            labels.insert(id.clone(), (number.clone(), title));
-            if node.get("attrs").and_then(|a| a.get("id")).is_none()
-                && let Some(a) = attrs(node)
-            {
-                a.insert("id".into(), id.into());
-            }
-        }
-        if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
-            children.insert(
-                0,
-                json!({"type":"text","value":" ","data":{"carve.headingNumbers":"chrome"}}),
-            );
-            children.insert(0, json!({"type":"span","data":{"carve.headingNumbers":"chrome"},
-                "attrs":{"classes":["section-number"]},"children":[{"type":"text","value":number}]}));
-        }
-    }
-    labels
-}
-
-fn number_xrefs(
-    doc: &mut Value,
+/// A heading cross-reference as a link carrying the heading's number; the
+/// key of the reference when it changed. `expanding` holds the keys whose
+/// title copies are being walked: a reference in its own title stays.
+fn number_xref(
+    node: &mut Map<String, Value>,
     labels: &BTreeMap<String, (String, Vec<Value>)>,
     options: &HeadingNumbersOptions,
-) {
-    visit(doc, &mut |node| {
-        if node.get("type").and_then(Value::as_str) != Some("xref")
-            || node.get("namespace").and_then(Value::as_str) != Some("heading")
-            || node
-                .get("display")
-                .and_then(Value::as_str)
-                .is_some_and(|d| d != "title")
-        {
-            return;
+    expanding: &[String],
+) -> Option<String> {
+    if node.get("type").and_then(Value::as_str) != Some("xref")
+        || node.get("namespace").and_then(Value::as_str) != Some("heading")
+        || node
+            .get("display")
+            .and_then(Value::as_str)
+            .is_some_and(|d| d != "title")
+    {
+        return None;
+    }
+    let id = node.get("key").and_then(Value::as_str)?.to_string();
+    if expanding.contains(&id) {
+        return None;
+    }
+    let (number, title) = labels.get(&id)?;
+    let children = match options.crossref {
+        CrossrefStyle::Number => {
+            vec![json!({"type":"text","value":format!("{} {number}", options.label)})]
         }
-        let Some(id) = node.get("key").and_then(Value::as_str) else {
-            return;
-        };
-        let Some((number, title)) = labels.get(id) else {
-            return;
-        };
-        let children = match options.crossref {
-            CrossrefStyle::Number => {
-                vec![json!({"type":"text","value":format!("{} {number}", options.label)})]
+        CrossrefStyle::NumberTitle => {
+            let lead = json!({"type":"text","value":format!("{} {number} - ", options.label)});
+            std::iter::once(lead).chain(title.iter().cloned()).collect()
+        }
+        CrossrefStyle::Title => return None,
+    };
+    node.insert("type".into(), "link".into());
+    node.insert("children".into(), Value::Array(children));
+    node.remove("namespace");
+    node.remove("key");
+    Some(id)
+}
+
+/// [`number_xref`] over a JSON slot, visiting what [`visit`] visits.
+fn number_xrefs_json(
+    value: &mut Value,
+    labels: &BTreeMap<String, (String, Vec<Value>)>,
+    options: &HeadingNumbersOptions,
+    expanding: &mut Vec<String>,
+) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                number_xrefs_json(item, labels, options, expanding);
             }
-            CrossrefStyle::NumberTitle => {
-                let lead = json!({"type":"text","value":format!("{} {number} - ", options.label)});
-                std::iter::once(lead).chain(title.iter().cloned()).collect()
+        }
+        Value::Object(map) => {
+            let changed = map
+                .contains_key("type")
+                .then(|| number_xref(map, labels, options, expanding))
+                .flatten();
+            let pushed = changed.is_some();
+            expanding.extend(changed);
+            for (key, child) in map.iter_mut() {
+                if !matches!(
+                    key.as_str(),
+                    "fallback" | "source" | "payload" | "props" | "pos" | "attrs"
+                ) {
+                    number_xrefs_json(child, labels, options, expanding);
+                }
             }
-            CrossrefStyle::Title => return,
-        };
-        node.insert("type".into(), "link".into());
-        node.insert("children".into(), Value::Array(children));
-        node.remove("namespace");
-        node.remove("key");
-    });
+            if pushed {
+                expanding.pop();
+            }
+        }
+        _ => {}
+    }
 }
 
 impl DocumentTransform for HeadingNumbers {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        edit(&view, |doc| {
-            freeze_heading_links(doc);
-            let labels = number_headings(doc, self.0.min_level);
-            number_xrefs(doc, &labels, &self.0);
-            freeze_xrefs(doc);
-        })
+        let top = view.top.clone();
+        let mut doc = view.into_document();
+        self.transform_owned(&mut doc);
+        Ok(Tree::lazy_view(doc, top))
+    }
+
+    fn supports_owned(&self) -> bool {
+        true
+    }
+
+    fn transform_owned(&self, doc: &mut crate::ast::owned::Document) {
+        tree::freeze_heading_links(doc);
+        let labels = tree::number_headings(doc, self.0.min_level);
+        tree::number_xrefs(doc, &labels, &self.0);
+        tree::freeze_xrefs(doc);
     }
 }
 #[must_use]
@@ -564,63 +572,81 @@ impl Default for TableOfContentsOptions {
     }
 }
 // carve#6531: nest by depth like carve-js `entryList`; a heading that closes deeper ones continues at its depth.
-fn list_node(entries: &[(u8, String, Vec<Value>)], ordered: bool) -> Option<Value> {
-    fn finish(items: Vec<Value>, ordered: bool) -> Value {
-        let marker = if ordered {
-            json!({"kind":"ordered","style":"1","delimiter":"."})
-        } else {
-            json!({"kind":"bullet","char":"-"})
-        };
-        let mut list = Map::new();
-        list.insert("type".into(), "list".into());
-        list.insert("marker".into(), marker);
-        list.insert("spacing".into(), "tight".into());
-        list.insert("children".into(), Value::Array(items));
-        Value::Object(list)
-    }
-    fn close(stack: &mut Vec<(u8, Vec<Value>)>, ordered: bool) {
+fn nest<T>(
+    entries: impl IntoIterator<Item = (u8, T)>,
+    finish: &dyn Fn(Vec<T>) -> T,
+    attach: &dyn Fn(&mut T, T),
+) -> Option<T> {
+    let mut entries = entries.into_iter().peekable();
+    let mut stack: Vec<(u8, Vec<T>)> = vec![(entries.peek()?.0, Vec::new())];
+    let close = |stack: &mut Vec<(u8, Vec<T>)>| {
         if let Some((_, items)) = stack.pop()
-            && let Some(Value::Array(children)) = stack
-                .last_mut()
-                .and_then(|(_, parent)| parent.last_mut())
-                .and_then(|item| item.get_mut("children"))
+            && let Some(item) = stack.last_mut().and_then(|(_, parent)| parent.last_mut())
         {
-            children.push(finish(items, ordered));
+            attach(item, finish(items));
         }
-    }
-    let parent_level = |stack: &[(u8, Vec<Value>)]| {
+    };
+    let parent_level = |stack: &[(u8, Vec<T>)]| {
         stack
             .len()
             .checked_sub(2)
             .and_then(|i| stack.get(i))
             .map(|(level, _)| *level)
     };
-    let mut stack: Vec<(u8, Vec<Value>)> = vec![(entries.first()?.0, Vec::new())];
-    for (level, id, title) in entries {
+    for (level, item) in entries {
         if let Some((top_level, top_items)) = stack.last()
             && !top_items.is_empty()
         {
-            if level > top_level {
-                stack.push((*level, Vec::new()));
+            if level > *top_level {
+                stack.push((level, Vec::new()));
             } else {
-                while parent_level(&stack).is_some_and(|parent| *level <= parent) {
-                    close(&mut stack, ordered);
+                while parent_level(&stack).is_some_and(|parent| level <= parent) {
+                    close(&mut stack);
                 }
                 if let Some(top) = stack.last_mut() {
-                    top.0 = *level;
+                    top.0 = level;
                 }
             }
         }
         if let Some((_, items)) = stack.last_mut() {
-            items.push(json!({"type":"list_item","children":[
-                {"type":"paragraph","children":[{"type":"link","href":format!("#{id}"),"children":title}]}
-            ]}));
+            items.push(item);
         }
     }
     while stack.len() > 1 {
-        close(&mut stack, ordered);
+        close(&mut stack);
     }
-    stack.pop().map(|(_, items)| finish(items, ordered))
+    stack.pop().map(|(_, items)| finish(items))
+}
+
+fn list_node(entries: &[(u8, String, Vec<Value>)], ordered: bool) -> Option<Value> {
+    let marker = if ordered {
+        json!({"kind":"ordered","style":"1","delimiter":"."})
+    } else {
+        json!({"kind":"bullet","char":"-"})
+    };
+    nest(
+        entries.iter().map(|(level, id, title)| {
+            (
+                *level,
+                json!({"type":"list_item","children":[
+                    {"type":"paragraph","children":[{"type":"link","href":format!("#{id}"),"children":title}]}
+                ]}),
+            )
+        }),
+        &|items| {
+            let mut list = Map::new();
+            list.insert("type".into(), "list".into());
+            list.insert("marker".into(), marker.clone());
+            list.insert("spacing".into(), "tight".into());
+            list.insert("children".into(), Value::Array(items));
+            Value::Object(list)
+        },
+        &|item, list| {
+            if let Some(Value::Array(children)) = item.get_mut("children") {
+                children.push(list);
+            }
+        },
+    )
 }
 
 fn toc_entries(doc: &Value) -> Vec<(u8, String, Vec<Value>)> {
@@ -714,88 +740,100 @@ pub fn table_of_contents(options: TableOfContentsOptions) -> Bundle {
 struct TocPlacement;
 impl DocumentTransform for TocPlacement {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
-        edit(&view, |doc| {
-            // carve#6531: the placed table lists the top-level headings, as tableOfContents does.
-            let entries = toc_entries(doc);
-            visit(doc, &mut |node| {
-                if node.get("type").and_then(Value::as_str) == Some("directive")
-                    && node.get("kind").and_then(Value::as_str) == Some("toc")
-                {
-                    let body = node
-                        .get("children")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let title = node
-                        .get("title")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let mut attrs = node.get("attrs").cloned().unwrap_or_else(|| json!({}));
-                    let pairs = attrs
-                        .get("keyValues")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let value = |key: &str| {
-                        pairs
-                            .iter()
-                            .find(|v| v.get(0).and_then(Value::as_str) == Some(key))
-                            .and_then(|v| v.get(1))
-                            .and_then(Value::as_str)
-                            .and_then(|s| s.parse::<u8>().ok())
-                            .map(|n| n.clamp(1, 6))
-                    };
-                    let (low, high) = if value("from").is_some() || value("to").is_some() {
-                        let a = value("from").unwrap_or(1);
-                        let b = value("to").unwrap_or(6);
-                        (a.min(b), a.max(b))
-                    } else {
-                        (1, value("depth").unwrap_or(6))
-                    };
-                    let selected: Vec<_> = entries
-                        .iter()
-                        .filter(|(level, _, _)| *level >= low && *level <= high)
-                        .cloned()
-                        .collect();
-                    let list = list_node(&selected, false).map_or_else(Vec::new, |v| vec![v]);
-                    if let Some(map) = attrs.as_object_mut() {
-                        if let Some(classes) = map
-                            .entry("classes")
-                            .or_insert_with(|| json!([]))
-                            .as_array_mut()
-                        {
-                            classes.retain(|v| v.as_str() != Some("toc"));
-                            classes.insert(0, "toc".into());
-                        }
-                        if let Some(pairs) = map.get_mut("keyValues").and_then(Value::as_array_mut)
-                        {
-                            pairs.retain(|v| {
-                                !v.get(0)
-                                    .and_then(Value::as_str)
-                                    .is_some_and(|k| matches!(k, "from" | "to" | "depth"))
-                            });
-                        }
-                    }
-                    let mut fallback = Vec::new();
-                    if !title.is_empty() {
-                        fallback.push(json!({"type":"paragraph","children":[{"type":"strong","children":title.clone()}]}));
-                    }
-                    fallback.extend(body.clone());
-                    fallback.extend(list.clone());
-                    let label = node.get("groupLabel").cloned();
-                    if let Value::Object(next) = json!({"type":"block_extension","name":"carve.tocPlacement",
-                        "version":"1","children":[],"attrs":attrs,"slots":{"title":title,"body":body,"list":list},
-                        "fallback":fallback})
-                    {
-                        *node = next;
-                    }
-                    if let Some(label) = label {
-                        node.insert("props".into(), json!({"label":label}));
-                    }
-                }
-            });
-        })
+        let top = view.top.clone();
+        let mut doc = view.into_document();
+        self.transform_owned(&mut doc);
+        Ok(Tree::lazy_view(doc, top))
+    }
+
+    fn supports_owned(&self) -> bool {
+        true
+    }
+
+    fn transform_owned(&self, doc: &mut crate::ast::owned::Document) {
+        // carve#6531: the placed table lists the top-level headings, as tableOfContents does.
+        tree::place_tocs(doc);
+    }
+}
+
+/// A `toc` directive as the placed table of contents listing `entries`.
+fn place_toc(node: &mut Map<String, Value>, entries: &[(u8, String, Vec<Value>)]) {
+    if node.get("type").and_then(Value::as_str) == Some("directive")
+        && node.get("kind").and_then(Value::as_str) == Some("toc")
+    {
+        let body = node
+            .get("children")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let title = node
+            .get("title")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut attrs = node.get("attrs").cloned().unwrap_or_else(|| json!({}));
+        let pairs = attrs
+            .get("keyValues")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let value = |key: &str| {
+            pairs
+                .iter()
+                .find(|v| v.get(0).and_then(Value::as_str) == Some(key))
+                .and_then(|v| v.get(1))
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<u8>().ok())
+                .map(|n| n.clamp(1, 6))
+        };
+        let (low, high) = if value("from").is_some() || value("to").is_some() {
+            let a = value("from").unwrap_or(1);
+            let b = value("to").unwrap_or(6);
+            (a.min(b), a.max(b))
+        } else {
+            (1, value("depth").unwrap_or(6))
+        };
+        let selected: Vec<_> = entries
+            .iter()
+            .filter(|(level, _, _)| *level >= low && *level <= high)
+            .cloned()
+            .collect();
+        let list = list_node(&selected, false).map_or_else(Vec::new, |v| vec![v]);
+        if let Some(map) = attrs.as_object_mut() {
+            if let Some(classes) = map
+                .entry("classes")
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+            {
+                classes.retain(|v| v.as_str() != Some("toc"));
+                classes.insert(0, "toc".into());
+            }
+            if let Some(pairs) = map.get_mut("keyValues").and_then(Value::as_array_mut) {
+                pairs.retain(|v| {
+                    !v.get(0)
+                        .and_then(Value::as_str)
+                        .is_some_and(|k| matches!(k, "from" | "to" | "depth"))
+                });
+            }
+        }
+        let mut fallback = Vec::new();
+        if !title.is_empty() {
+            fallback.push(
+                json!({"type":"paragraph","children":[{"type":"strong","children":title.clone()}]}),
+            );
+        }
+        fallback.extend(body.clone());
+        fallback.extend(list.clone());
+        let label = node.get("groupLabel").cloned();
+        if let Value::Object(next) = json!({"type":"block_extension","name":"carve.tocPlacement",
+            "version":"1","children":[],"attrs":attrs,"slots":{"title":title,"body":body,"list":list},
+            "fallback":fallback})
+        {
+            *node = next;
+        }
+        if let Some(label) = label {
+            node.insert("props".into(), json!({"label":label}));
+        }
     }
 }
 #[must_use]
@@ -837,15 +875,51 @@ fn toc_nav_name(node: &Value, cx: &RenderContext<'_>) -> String {
 }
 impl Renderer for TocRenderer {
     fn render(&self, node: &Value, cx: &RenderContext<'_>) -> Result<String, Error> {
-        let list = cx.render_blocks(node.pointer("/slots/list").unwrap_or(&Value::Null))?;
+        self.render_parts(node, node.get("slots"), cx)
+    }
+
+    // The slots are read in place: the node's JSON value would copy the
+    // slots and the fallback, each holding the whole list.
+    fn render_typed(
+        &self,
+        node: &crate::ast::Node<'_>,
+        cx: &RenderContext<'_>,
+    ) -> Option<Result<String, Error>> {
+        let crate::ast::Node::BlockExtension(e) = node else {
+            return None;
+        };
+        let mut head = Map::new();
+        if let Some(attrs) = e.attrs {
+            head.insert("attrs".into(), serde_json::to_value(attrs).ok()?);
+        }
+        if let Some(pos) = &e.pos {
+            head.insert("pos".into(), serde_json::to_value(pos).ok()?);
+        }
+        if let Some(props) = e.props {
+            head.insert("props".into(), props.clone());
+        }
+        Some(self.render_parts(&Value::Object(head), e.slots, cx))
+    }
+}
+
+impl TocRenderer {
+    /// `node` gives the attributes, position and props; `slots` the slots.
+    fn render_parts(
+        &self,
+        node: &Value,
+        slots: Option<&Value>,
+        cx: &RenderContext<'_>,
+    ) -> Result<String, Error> {
+        let slot = |name: &str| slots.and_then(|s| s.get(name));
+        let list = cx.render_blocks(slot("list").unwrap_or(&Value::Null))?;
         let depth = cx.block_depth();
         let lead = "  ".repeat(depth);
         let list = indent_html(&list, depth + 1);
         let attrs = cx.attributes(node);
         if self.placed {
-            let body = cx.render_blocks(node.pointer("/slots/body").unwrap_or(&Value::Null))?;
+            let body = cx.render_blocks(slot("body").unwrap_or(&Value::Null))?;
             let mut name = toc_nav_name(node, cx);
-            let title = node.pointer("/slots/title").and_then(Value::as_array);
+            let title = slot("title").and_then(Value::as_array);
             let mut head = String::new();
             if title.is_some_and(|items| !items.is_empty()) {
                 let id = if name.is_empty() {
@@ -856,8 +930,7 @@ impl Renderer for TocRenderer {
                 if !id.is_empty() {
                     name = format!(" aria-labelledby=\"{}\"", cx.escape_attribute(&id));
                 }
-                let title_html =
-                    cx.render_inlines(node.pointer("/slots/title").unwrap_or(&Value::Null))?;
+                let title_html = cx.render_inlines(slot("title").unwrap_or(&Value::Null))?;
                 let _ = writeln!(
                     head,
                     "{}<p class=\"admonition-title\"{}>{title_html}</p>",

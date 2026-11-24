@@ -1,0 +1,521 @@
+//! heading_numbers and toc_placement on the owned render view (carve-rs#4700).
+//! The walks visit what the JSON `visit` and `rewrite` of the parent module
+//! visit; extension slots stay JSON there and take the JSON forms.
+
+use super::{
+    CrossrefStyle, HeadingNumbersOptions, count_heading, freeze_heading_link, heading_link_targets,
+    heading_title, nest, number_xrefs_json, place_toc, rewrite, title_link, visit, visit_read,
+};
+use crate::ast::owned::{self, Attrs, Node};
+use crate::ast::{DirectiveKind, XrefDisplay, XrefNamespace};
+use serde_json::{Map, Value, json};
+use std::collections::{BTreeMap, HashSet};
+
+enum At<'x> {
+    Node(&'x mut Node),
+    Slots(&'x mut Value),
+}
+
+/// Each node before what it holds, then its extension slots. `f` returns
+/// false to leave what a node holds unvisited; `fallback` enters fallbacks.
+fn walk(nodes: &mut [Node], fallback: bool, f: &mut dyn FnMut(At<'_>) -> bool) {
+    for node in nodes {
+        walk_node(node, fallback, f);
+    }
+}
+
+fn walk_node(node: &mut Node, fallback: bool, f: &mut dyn FnMut(At<'_>) -> bool) {
+    if !f(At::Node(node)) {
+        return;
+    }
+    match node {
+        Node::BlockExtension(e) if !fallback => walk(&mut e.children, fallback, f),
+        Node::InlineExtension(e) if !fallback => walk(&mut e.children, fallback, f),
+        _ => node.for_each_child_mut(&mut |child| walk_node(child, fallback, f)),
+    }
+    let slots = match node {
+        Node::BlockExtension(e) => e.slots.as_mut(),
+        Node::InlineExtension(e) => e.slots.as_mut(),
+        _ => None,
+    };
+    if let Some(slots) = slots {
+        f(At::Slots(slots));
+    }
+}
+
+fn heading_id(h: &owned::Heading) -> Option<String> {
+    h.attrs
+        .as_ref()
+        .and_then(|a| a.id.clone())
+        .or_else(|| h.generated_id.as_deref().map(str::to_string))
+}
+
+/// The title nodes a copy of a heading keeps: no chrome, no footnotes.
+fn derived(nodes: &[Node]) -> Vec<Node> {
+    nodes
+        .iter()
+        .filter(|node| {
+            !node
+                .data()
+                .and_then(Value::as_object)
+                .is_some_and(|data| data.values().any(|v| v.as_str() == Some("chrome")))
+                && !matches!(node, Node::FootnoteRef(_) | Node::InlineFootnote(_))
+        })
+        .cloned()
+        .collect()
+}
+
+fn text(value: String, data: Option<Value>) -> Node {
+    Node::Text(Box::new(owned::Text {
+        value: value.into(),
+        data: data.map(Box::new),
+        ..Default::default()
+    }))
+}
+
+fn to_json(nodes: &[Node]) -> Vec<Value> {
+    nodes
+        .iter()
+        .filter_map(|n| serde_json::to_value(n).ok())
+        .collect()
+}
+
+pub(super) fn freeze_heading_links(doc: &mut owned::Document) {
+    let mut ids = HashSet::new();
+    let mut definitions = HashSet::new();
+    walk(&mut doc.children, false, &mut |at| {
+        match at {
+            At::Node(Node::Heading(h)) => {
+                if let Some(id) = heading_id(h) {
+                    ids.insert(id);
+                }
+            }
+            At::Node(Node::LinkReferenceDefinition(d)) => {
+                definitions.insert(d.key.trim().to_lowercase());
+            }
+            At::Node(_) => {}
+            At::Slots(slots) => visit_read(slots, &mut |node| {
+                heading_link_targets(node, &mut ids, &mut definitions);
+            }),
+        }
+        true
+    });
+    if ids.is_empty() {
+        return;
+    }
+    walk(&mut doc.children, false, &mut |at| {
+        match at {
+            At::Node(Node::Link(link)) => {
+                if link.namespace.as_deref() != Some("link") {
+                    return true;
+                }
+                let Some(key) = link.key.as_deref() else {
+                    return true;
+                };
+                if definitions.contains(&key.trim().to_lowercase())
+                    || !link
+                        .href
+                        .as_deref()
+                        .and_then(|h| h.strip_prefix('#'))
+                        .is_some_and(|id| ids.contains(id))
+                {
+                    return true;
+                }
+                link.key = None;
+                link.namespace = None;
+                link.ref_form = None;
+                link.data = Some(Box::new(
+                    json!({"carve.headingNumbers":"heading-reference"}),
+                ));
+            }
+            At::Node(_) => {}
+            At::Slots(slots) => visit(slots, &mut |node| {
+                freeze_heading_link(node, &ids, &definitions);
+            }),
+        }
+        true
+    });
+}
+
+pub(super) fn number_headings(
+    doc: &mut owned::Document,
+    min_level: u8,
+) -> BTreeMap<String, (String, Vec<Node>)> {
+    let mut levels: Vec<usize> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
+    let mut labels = BTreeMap::new();
+    // carve#6531: only top-level headings, the ones a section wraps (C2-H-026), and a number counts depth, not level.
+    for node in &mut doc.children {
+        let Node::Heading(h) = node else {
+            continue;
+        };
+        let level = usize::try_from(h.level).unwrap_or(0);
+        if level < usize::from(min_level.max(1)) || level > 6 {
+            continue;
+        }
+        if h.attrs
+            .as_ref()
+            .is_some_and(|a| a.classes.iter().any(|c| c == "unnumbered"))
+        {
+            continue;
+        }
+        let number = count_heading(&mut levels, &mut counts, level);
+        if let Some(id) = heading_id(h) {
+            labels.insert(id.clone(), (number.clone(), derived(&h.children)));
+            if h.attrs.as_ref().and_then(|a| a.id.as_ref()).is_none() {
+                h.attrs.get_or_insert_with(Box::default).id = Some(id);
+            }
+        }
+        let chrome = || Some(json!({"carve.headingNumbers":"chrome"}));
+        h.children.insert(0, text(" ".into(), chrome()));
+        h.children.insert(
+            0,
+            Node::Span(Box::new(owned::Span {
+                data: chrome().map(Box::new),
+                attrs: Some(Box::new(Attrs {
+                    classes: vec!["section-number".into()],
+                    ..Attrs::default()
+                })),
+                children: vec![text(number, None)],
+                ..Default::default()
+            })),
+        );
+    }
+    labels
+}
+
+fn is_title_xref(x: &owned::Xref) -> bool {
+    x.namespace == XrefNamespace::Heading && x.display.is_none_or(|d| d == XrefDisplay::Title)
+}
+
+pub(super) fn number_xrefs(
+    doc: &mut owned::Document,
+    labels: &BTreeMap<String, (String, Vec<Node>)>,
+    options: &HeadingNumbersOptions,
+) {
+    if matches!(options.crossref, CrossrefStyle::Title) || labels.is_empty() {
+        return;
+    }
+    let mut cx = Numbering {
+        labels,
+        json_labels: None,
+        options,
+        expanding: Vec::new(),
+    };
+    for node in &mut doc.children {
+        cx.node(node);
+    }
+}
+
+/// The numbering walk: [`walk`] without fallbacks, keeping the keys whose
+/// title copies it is inside, so a heading that references itself in its
+/// title ends instead of copying forever.
+struct Numbering<'x> {
+    labels: &'x BTreeMap<String, (String, Vec<Node>)>,
+    json_labels: Option<BTreeMap<String, (String, Vec<Value>)>>,
+    options: &'x HeadingNumbersOptions,
+    expanding: Vec<String>,
+}
+
+impl Numbering<'_> {
+    fn node(&mut self, node: &mut Node) {
+        let mut pushed = false;
+        if let Node::Xref(x) = &mut *node
+            && is_title_xref(x)
+            && !self.expanding.iter().any(|k| k == x.key.as_str())
+        {
+            let key = x.key.to_string();
+            if let Some(link) = numbered(x, self.labels, self.options) {
+                *node = link;
+                self.expanding.push(key);
+                pushed = true;
+            }
+        }
+        match node {
+            Node::BlockExtension(e) => e.children.iter_mut().for_each(|c| self.node(c)),
+            Node::InlineExtension(e) => e.children.iter_mut().for_each(|c| self.node(c)),
+            _ => node.for_each_child_mut(&mut |c| self.node(c)),
+        }
+        let slots = match node {
+            Node::BlockExtension(e) => e.slots.as_mut(),
+            Node::InlineExtension(e) => e.slots.as_mut(),
+            _ => None,
+        };
+        if let Some(slots) = slots {
+            let labels = self.labels;
+            let labels = self.json_labels.get_or_insert_with(|| {
+                labels
+                    .iter()
+                    .map(|(id, (n, title))| (id.clone(), (n.clone(), to_json(title))))
+                    .collect()
+            });
+            number_xrefs_json(slots, labels, self.options, &mut self.expanding);
+        }
+        if pushed {
+            self.expanding.pop();
+        }
+    }
+}
+
+/// The link a numbered cross-reference becomes; it keeps the xref's other fields.
+fn numbered(
+    x: &mut owned::Xref,
+    labels: &BTreeMap<String, (String, Vec<Node>)>,
+    options: &HeadingNumbersOptions,
+) -> Option<Node> {
+    let (number, title) = labels.get(x.key.as_str())?;
+    let children = match options.crossref {
+        CrossrefStyle::Number => vec![text(format!("{} {number}", options.label), None)],
+        CrossrefStyle::NumberTitle => {
+            std::iter::once(text(format!("{} {number} - ", options.label), None))
+                .chain(title.iter().cloned())
+                .collect()
+        }
+        CrossrefStyle::Title => return None,
+    };
+    Some(Node::Link(Box::new(owned::Link {
+        attrs: x.attrs.take(),
+        data: x.data.take(),
+        dir: x.dir.take(),
+        href: x.href.take(),
+        lang: x.lang.take(),
+        metadata: x.metadata.take(),
+        pos: x.pos.take(),
+        segments: x.segments.take(),
+        children,
+        ..Default::default()
+    })))
+}
+
+pub(super) fn freeze_xrefs(doc: &mut owned::Document) {
+    let mut by_id: BTreeMap<String, Vec<Node>> = BTreeMap::new();
+    walk(&mut doc.children, false, &mut |at| {
+        match at {
+            At::Node(Node::Heading(h)) => {
+                if let Some(id) = heading_id(h) {
+                    by_id.entry(id).or_insert_with(|| derived(&h.children));
+                }
+            }
+            At::Node(_) => {}
+            At::Slots(slots) => {
+                let mut found = BTreeMap::new();
+                visit_read(slots, &mut |node| heading_title(node, &mut found));
+                for (id, title) in found {
+                    by_id.entry(id).or_insert_with(|| {
+                        serde_json::from_value(Value::Array(title)).unwrap_or_default()
+                    });
+                }
+            }
+        }
+        true
+    });
+    if by_id.is_empty() {
+        return;
+    }
+    let mut json_by_id = None;
+    walk(&mut doc.children, true, &mut |at| match at {
+        At::Node(node) => {
+            let link = match &*node {
+                Node::Xref(x) if is_title_xref(x) => by_id.get(x.key.as_str()).map(|title| {
+                    Node::Link(Box::new(owned::Link {
+                        href: Some(format!("#{}", x.key.as_str()).into()),
+                        children: title.clone(),
+                        ..Default::default()
+                    }))
+                }),
+                _ => None,
+            };
+            let Some(link) = link else {
+                return true;
+            };
+            *node = link;
+            false
+        }
+        At::Slots(slots) => {
+            let by_id = json_by_id.get_or_insert_with(|| {
+                by_id
+                    .iter()
+                    .map(|(id, title)| (id.clone(), to_json(title)))
+                    .collect::<BTreeMap<_, _>>()
+            });
+            rewrite(slots, &mut Vec::new(), &mut |node, _| {
+                title_link(node, by_id)
+            });
+            true
+        }
+    });
+}
+
+pub(super) fn place_tocs(doc: &mut owned::Document) {
+    let entries: Vec<(u8, String, Vec<Node>)> = doc
+        .children
+        .iter()
+        .filter_map(|node| {
+            let Node::Heading(h) = node else {
+                return None;
+            };
+            let level = u8::try_from(h.level).unwrap_or(0);
+            Some((level, heading_id(h)?, derived(&h.children)))
+        })
+        .collect();
+    let mut json_entries = None;
+    let mut entries_json = || {
+        json_entries
+            .get_or_insert_with(|| {
+                entries
+                    .iter()
+                    .map(|(level, id, title)| (*level, id.clone(), to_json(title)))
+                    .collect::<Vec<_>>()
+            })
+            .clone()
+    };
+    walk(&mut doc.children, false, &mut |at| match at {
+        At::Node(node) => {
+            if !matches!(&*node, Node::Directive(d) if d.kind == DirectiveKind::Toc) {
+                return true;
+            }
+            if let Node::Directive(d) = &mut *node
+                && !needs_json(&d.children)
+                && !d.title.as_deref().is_some_and(needs_json)
+            {
+                *node = placed(d, &entries);
+                return false;
+            }
+            let entries = entries_json();
+            if let Ok(mut value) = serde_json::to_value(&*node) {
+                // The JSON walk also places a toc directive inside the new slots.
+                visit(&mut value, &mut |n| place_toc(n, &entries));
+                if let Ok(next) = serde_json::from_value(value) {
+                    *node = next;
+                }
+            }
+            false
+        }
+        At::Slots(slots) => {
+            let entries = entries_json();
+            visit(slots, &mut |n| place_toc(n, &entries));
+            true
+        }
+    });
+}
+
+/// Whether a toc directive body needs the JSON walk: it holds another toc
+/// directive or extension slots that the walk would enter.
+fn needs_json(nodes: &[Node]) -> bool {
+    nodes.iter().any(|node| {
+        matches!(node, Node::Directive(d) if d.kind == DirectiveKind::Toc)
+            || matches!(node, Node::BlockExtension(e) if e.slots.is_some())
+            || matches!(node, Node::InlineExtension(e) if e.slots.is_some())
+            || {
+                let mut found = false;
+                node.for_each_child(&mut |c| found = found || needs_json(std::slice::from_ref(c)));
+                found
+            }
+    })
+}
+
+/// [`super::list_node`] of owned entries, unordered.
+fn list(entries: &[&(u8, String, Vec<Node>)]) -> Option<Node> {
+    nest(
+        entries.iter().map(|(level, id, title)| {
+            let link = Node::Link(Box::new(owned::Link {
+                href: Some(format!("#{id}").into()),
+                children: title.clone(),
+                ..Default::default()
+            }));
+            let paragraph = Node::Paragraph(Box::new(owned::Paragraph {
+                children: vec![link],
+                ..Default::default()
+            }));
+            let item = Node::ListItem(Box::new(owned::ListItem {
+                children: vec![paragraph],
+                ..Default::default()
+            }));
+            (*level, item)
+        }),
+        &|items| {
+            Node::List(Box::new(owned::List {
+                marker: owned::Marker {
+                    kind: "bullet".into(),
+                    bullet: Some("-".into()),
+                    ..Default::default()
+                },
+                spacing: crate::ast::ListSpacing::Tight,
+                children: items,
+                ..Default::default()
+            }))
+        },
+        &|item, list| {
+            if let Some(children) = item.children_mut() {
+                children.push(list);
+            }
+        },
+    )
+}
+
+/// [`place_toc`] on an owned directive whose body needs no JSON walk.
+fn placed(d: &mut owned::Directive, entries: &[(u8, String, Vec<Node>)]) -> Node {
+    let mut attrs = d.attrs.take().map(|a| *a).unwrap_or_default();
+    let value = |key: &str| {
+        attrs
+            .key_values
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.parse::<u8>().ok())
+            .map(|n| n.clamp(1, 6))
+    };
+    let (low, high) = if value("from").is_some() || value("to").is_some() {
+        let a = value("from").unwrap_or(1);
+        let b = value("to").unwrap_or(6);
+        (a.min(b), a.max(b))
+    } else {
+        (1, value("depth").unwrap_or(6))
+    };
+    let selected: Vec<_> = entries
+        .iter()
+        .filter(|(level, _, _)| *level >= low && *level <= high)
+        .collect();
+    let list = list(&selected);
+    attrs.classes.retain(|c| c != "toc");
+    attrs.classes.insert(0, "toc".into());
+    attrs
+        .key_values
+        .retain(|(k, _)| !matches!(k.as_str(), "from" | "to" | "depth"));
+    let title = d.title.take().unwrap_or_default();
+    let body = std::mem::take(&mut d.children);
+    let mut slots = Map::new();
+    slots.insert("title".into(), Value::Array(to_json(&title)));
+    slots.insert("body".into(), Value::Array(to_json(&body)));
+    slots.insert(
+        "list".into(),
+        Value::Array(
+            list.iter()
+                .filter_map(|l| serde_json::to_value(l).ok())
+                .collect(),
+        ),
+    );
+    let mut fallback = Vec::new();
+    if !title.is_empty() {
+        fallback.push(Node::Paragraph(Box::new(owned::Paragraph {
+            children: vec![Node::Strong(Box::new(owned::Strong {
+                children: title,
+                ..Default::default()
+            }))],
+            ..Default::default()
+        })));
+    }
+    fallback.extend(body);
+    fallback.extend(list);
+    Node::BlockExtension(Box::new(owned::BlockExtension {
+        name: "carve.tocPlacement".into(),
+        version: "1".into(),
+        attrs: Some(Box::new(attrs)),
+        slots: Some(Value::Object(slots)),
+        fallback,
+        props: d
+            .group_label
+            .take()
+            .map(|label| json!({"label": label.as_str()})),
+        ..Default::default()
+    }))
+}

@@ -925,6 +925,7 @@ struct Arms {
     attrs: String,
     attrs_mut: String,
     dir: String,
+    data: String,
     children: String,
     children_mut: String,
     children_slot: String,
@@ -1001,6 +1002,14 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         }}
     }}
 
+    /// The extension data of the node, when present.
+    #[must_use]
+    pub fn data(&self) -> Option<&serde_json::Value> {{
+        match self {{
+{}            _ => None,
+        }}
+    }}
+
     /// The attribute slot of the node type, when it has one.
     pub fn attrs_slot(&mut self) -> {} {{
         match self {{
@@ -1046,6 +1055,7 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         s.attrs,
         a.attrs,
         a.dir,
+        a.data,
         s.attrs_slot,
         a.attrs_mut,
         s.children,
@@ -1107,6 +1117,10 @@ fn slot_arms(a: &mut Arms, ty: &str, def: &Value, fam: Fam) {
             "n.dir.as_deref().map(crate::ast::owned::Str::as_str)"
         };
         let _ = writeln!(a.dir, "            Self::{ty}(n) => {get},");
+    }
+    if props.contains_key("data") {
+        let get = if arena { "n.data" } else { "n.data.as_deref()" };
+        let _ = writeln!(a.data, "            Self::{ty}(n) => {get},");
     }
     if props.get("children").is_some_and(is_node_list) {
         // C2-N-017: an include has `children` only once it is expanded.
