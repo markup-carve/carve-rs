@@ -139,9 +139,15 @@ fn pinned_lint_clause_cases_survive_candidate_filtering() {
 #[test]
 fn quote_and_term_markers_follow_their_parsed_owner() {
     assert_eq!(spans(">: > [!NOTE]\n", "github-alert-marker"), Vec::new());
-    for source in [":: t\n> ---\n", ":: t\n  - ----\n"] {
-        assert_eq!(spans(source, "thematic-break-spelling"), Vec::new());
-    }
+    assert_eq!(
+        spans(":: t\n  - ----\n", "thematic-break-spelling"),
+        Vec::new()
+    );
+    // C2-B-234: an unindented quote below a term closes the list.
+    assert_eq!(
+        spans(":: t\n> ---\n", "thematic-break-spelling"),
+        vec![(7, 10)]
+    );
     for source in ["> :::\n> * ^\n", "> :::: \n> - [x]\n", "> ::::\n> - [x]\n"] {
         assert_eq!(spans(source, "list-marker-without-blank-line"), Vec::new());
     }
@@ -313,12 +319,21 @@ fn item_body_column_accounts_for_quotes_and_tabs() {
 
 #[test]
 fn description_column_requires_an_open_term_above() {
-    for source in ["    [^f]: :: term\n:\n", ":: t\n- [ ] :: t\n:\n"] {
-        assert!(
-            spans(source, "description-separator-below-content-column").is_empty(),
-            "{source:?}"
-        );
-    }
+    assert_eq!(
+        spans(
+            "    [^f]: :: term\n:\n",
+            "description-separator-below-content-column"
+        ),
+        Vec::new()
+    );
+    // C2-B-234: the item line closes the first list, so its own term is open above.
+    assert_eq!(
+        spans(
+            ":: t\n- [ ] :: t\n:\n",
+            "description-separator-below-content-column"
+        ),
+        vec![(16, 17)]
+    );
 }
 
 #[test]

@@ -31,7 +31,7 @@ fn catalog_line_rules_follow_parsed_ownership() {
 #[test]
 fn quoted_term_and_fence_ranges_and_attribute_message() {
     let cases = [
-        ("> :: w\n> w\n", "description-term-multi-line", 9, 10),
+        ("> :: w\n>  : w\n", "description-term-multi-line", 10, 13),
         ("> ```\n>   ```\n", "fence-closer-indented", 10, 13),
         (
             "> %%%%\n> %%%% x\n",

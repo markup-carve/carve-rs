@@ -7,7 +7,7 @@ use carve::lint::{LintOptions, lint};
 #[test]
 fn list_marker_between_item_and_description_columns_opens_a_nested_list() {
     let html = carve::render(
-        "a. :: key [link](u)\n:term\n  a. $$x$$\n",
+        "a. :: key [link](u)\n      :term\n  a. $$x$$\n",
         &carve::Options::default(),
     );
     assert_eq!(

@@ -7,11 +7,16 @@ fn tree(input: &str) -> Value {
 }
 
 #[test]
-fn c2_b_190_description_past_the_cap_is_term_text() {
+fn c2_b_190_description_past_the_cap_is_text() {
+    // C2-B-234: as text the line closes the list.
     let input = format!("{}:: [\n{}: {{", "> ".repeat(199), "> ".repeat(199));
     let html = carve::render(&input, &Options::default());
-    assert!(html.contains("<dt>[\n: {</dt>"), "{html}");
+    assert!(html.contains("<dt>[</dt>"), "{html}");
+    assert!(html.contains("<p>: {</p>"), "{html}");
     assert!(!html.contains("<dd>"), "{html}");
+    let input = format!("{}:: [\n{} : {{", "> ".repeat(199), "> ".repeat(199));
+    let html = carve::render(&input, &Options::default());
+    assert!(html.contains("<dt>[\n: {</dt>"), "{html}");
 }
 
 #[test]

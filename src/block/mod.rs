@@ -116,9 +116,11 @@ enum Leaf {
         pieces: Pieces,
     },
     Term {
+        marker_col: usize,
         pieces: Pieces,
     },
     Caption {
+        marker_col: usize,
         pieces: Pieces,
     },
     Code {
@@ -374,7 +376,12 @@ impl<'a> Parser<'a> {
         }
         if matches!(
             self.leaf.as_ref().map(|l| &l.leaf),
-            Some(Leaf::Heading { .. } | Leaf::Table { .. })
+            Some(
+                Leaf::Heading { .. }
+                    | Leaf::Term { .. }
+                    | Leaf::Caption { .. }
+                    | Leaf::Table { .. }
+            )
         ) && self.comment_only(&walk, e)
         {
             return;
@@ -910,14 +917,17 @@ impl<'a> Parser<'a> {
             .is_some_and(|open| open.depth <= walk.matched)
     }
 
-    /// Continues the open paragraph-like leaf with a lazy line, or a heading
-    /// with an indented line, unless the line interrupts (C2-B-012, C2-B-154).
+    /// Continues the open paragraph with a lazy line, or a label (heading,
+    /// term, caption) with an indented line, unless the line interrupts
+    /// (C2-B-012, C2-B-234).
     fn continue_leaf(&mut self, walk: &Walk<'a>, e: usize) -> bool {
         let Some(open) = &self.leaf else { return false };
         let k = walk.cur.after_blanks();
         let lazy = match &open.leaf {
-            Leaf::Para { .. } | Leaf::Term { .. } | Leaf::Caption { .. } => true,
-            Leaf::Heading { marker_col, .. } => {
+            Leaf::Para { .. } => true,
+            Leaf::Heading { marker_col, .. }
+            | Leaf::Term { marker_col, .. }
+            | Leaf::Caption { marker_col, .. } => {
                 walk.matched == self.stack.len()
                     && walk.missing_quote.is_none()
                     && k.col - walk.qbase > *marker_col
@@ -936,8 +946,8 @@ impl<'a> Parser<'a> {
         if let Some(OpenLeaf {
             leaf:
                 Leaf::Para { pieces }
-                | Leaf::Term { pieces }
-                | Leaf::Caption { pieces }
+                | Leaf::Term { pieces, .. }
+                | Leaf::Caption { pieces, .. }
                 | Leaf::Heading { pieces, .. },
             end,
             ..
@@ -961,7 +971,8 @@ impl<'a> Parser<'a> {
         let start = k.offset();
         let end = start + k.rest().len();
         if let Some(OpenLeaf {
-            leaf: Leaf::Heading { pieces, .. },
+            leaf:
+                Leaf::Heading { pieces, .. } | Leaf::Term { pieces, .. } | Leaf::Caption { pieces, .. },
             end: hend,
             ..
         }) = &mut self.leaf
@@ -1184,8 +1195,8 @@ impl<'a> Parser<'a> {
                 (LeafKind::Paragraph { pieces, role }, target)
             }
             Leaf::Heading { level, pieces, .. } => (LeafKind::Heading { level, pieces }, false),
-            Leaf::Term { pieces } => (LeafKind::Term { pieces }, false),
-            Leaf::Caption { pieces } => (LeafKind::Caption { pieces }, false),
+            Leaf::Term { pieces, .. } => (LeafKind::Term { pieces }, false),
+            Leaf::Caption { pieces, .. } => (LeafKind::Caption { pieces }, false),
             Leaf::Code { info, value, .. } => {
                 let target = info.raw.is_none();
                 (
