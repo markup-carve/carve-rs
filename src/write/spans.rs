@@ -23,6 +23,14 @@ struct Pending {
 }
 
 fn count(cell: V<'_>, field: &str) -> i64 {
+    if let V::Node(crate::ast::Node::TableCell(cell)) = cell {
+        let count = match field {
+            "colspan" => cell.colspan,
+            "rowspan" => cell.rowspan,
+            _ => None,
+        };
+        return count.unwrap_or(1);
+    }
     cell.get(field).and_then(V::as_i64).unwrap_or(1)
 }
 
@@ -235,30 +243,38 @@ fn mark_tables(
 /// decides, read off the tree without copying it. A parsed tree holds its marks, so its copy would
 /// change nothing (carve#6485).
 fn needs_marks(node: V<'_>) -> bool {
-    if !node.may_hold_nodes() {
-        return false;
-    }
-    if node.get("type").and_then(V::as_str) == Some("table") && has_counts(node) {
-        let mut unspelled = Vec::new();
-        for (_, group) in groups(node) {
-            let mut marks = GroupMarks::default();
-            for (_, row) in rows(group) {
-                if marks.row(row, "", &mut unspelled).is_some() {
-                    return true;
-                }
-            }
-            marks.finish(&mut unspelled);
-        }
-        if !unspelled.is_empty() {
-            return true;
-        }
+    if node.ty().as_str() == Some("table") && has_counts(node) && table_needs_marks(node) {
+        return true;
     }
     if let Some(items) = node.as_array() {
         return items.iter().any(needs_marks);
     }
+    if !node.is_object() {
+        return false;
+    }
+    // A typed node's other views (positions, attrs, markers, scalars) hold no node.
+    let typed = matches!(node, V::Node(_));
     let mut found = false;
-    node.each(&mut |_, value| found = found || needs_marks(value));
+    node.each(&mut |_, value| {
+        found = found
+            || ((!typed || matches!(value, V::Node(_) | V::Nodes(_) | V::Json(_)))
+                && needs_marks(value));
+    });
     found
+}
+
+fn table_needs_marks(table: V<'_>) -> bool {
+    let mut unspelled = Vec::new();
+    for (_, group) in groups(table) {
+        let mut marks = GroupMarks::default();
+        for (_, row) in rows(group) {
+            if marks.row(row, "", &mut unspelled).is_some() {
+                return true;
+            }
+        }
+        marks.finish(&mut unspelled);
+    }
+    !unspelled.is_empty()
 }
 
 /// The tree with the marks of C2-W-145, or `None` where no count lacks them.
