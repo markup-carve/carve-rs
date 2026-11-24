@@ -564,37 +564,64 @@ impl Default for TableOfContentsOptions {
         }
     }
 }
-fn build_list(
-    entries: &[(u8, String, Vec<Value>)],
-    at: &mut usize,
-    ordered: bool,
-) -> Option<Value> {
-    let level = entries.get(*at)?.0;
-    let mut items = Vec::new();
-    while let Some((entry_level, id, title)) = entries.get(*at) {
-        if *entry_level < level {
-            break;
-        }
-        let mut children = vec![
-            json!({"type":"paragraph","children":[{"type":"link","href":format!("#{id}"),"children":title}]}),
-        ];
-        *at += 1;
-        if entries.get(*at).is_some_and(|next| next.0 > level)
-            && let Some(nested) = build_list(entries, at, ordered)
-        {
-            children.push(nested);
-        }
-        items.push(json!({"type":"list_item","children":children}));
-    }
-    let marker = if ordered {
-        json!({"kind":"ordered","style":"1","delimiter":"."})
-    } else {
-        json!({"kind":"bullet","char":"-"})
-    };
-    Some(json!({"type":"list","marker":marker,"spacing":"tight","children":items}))
-}
+// carve#6531: nest by depth like carve-js `entryList`; a heading that closes deeper ones continues at its depth.
 fn list_node(entries: &[(u8, String, Vec<Value>)], ordered: bool) -> Option<Value> {
-    build_list(entries, &mut 0, ordered)
+    fn finish(items: Vec<Value>, ordered: bool) -> Value {
+        let marker = if ordered {
+            json!({"kind":"ordered","style":"1","delimiter":"."})
+        } else {
+            json!({"kind":"bullet","char":"-"})
+        };
+        let mut list = Map::new();
+        list.insert("type".into(), "list".into());
+        list.insert("marker".into(), marker);
+        list.insert("spacing".into(), "tight".into());
+        list.insert("children".into(), Value::Array(items));
+        Value::Object(list)
+    }
+    fn close(stack: &mut Vec<(u8, Vec<Value>)>, ordered: bool) {
+        if let Some((_, items)) = stack.pop()
+            && let Some(Value::Array(children)) = stack
+                .last_mut()
+                .and_then(|(_, parent)| parent.last_mut())
+                .and_then(|item| item.get_mut("children"))
+        {
+            children.push(finish(items, ordered));
+        }
+    }
+    let parent_level = |stack: &[(u8, Vec<Value>)]| {
+        stack
+            .len()
+            .checked_sub(2)
+            .and_then(|i| stack.get(i))
+            .map(|(level, _)| *level)
+    };
+    let mut stack: Vec<(u8, Vec<Value>)> = vec![(entries.first()?.0, Vec::new())];
+    for (level, id, title) in entries {
+        if let Some((top_level, top_items)) = stack.last()
+            && !top_items.is_empty()
+        {
+            if level > top_level {
+                stack.push((*level, Vec::new()));
+            } else {
+                while parent_level(&stack).is_some_and(|parent| *level <= parent) {
+                    close(&mut stack, ordered);
+                }
+                if let Some(top) = stack.last_mut() {
+                    top.0 = *level;
+                }
+            }
+        }
+        if let Some((_, items)) = stack.last_mut() {
+            items.push(json!({"type":"list_item","children":[
+                {"type":"paragraph","children":[{"type":"link","href":format!("#{id}"),"children":title}]}
+            ]}));
+        }
+    }
+    while stack.len() > 1 {
+        close(&mut stack, ordered);
+    }
+    stack.pop().map(|(_, items)| finish(items, ordered))
 }
 
 fn toc_entries(doc: &Value) -> Vec<(u8, String, Vec<Value>)> {
