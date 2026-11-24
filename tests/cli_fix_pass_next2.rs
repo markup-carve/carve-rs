@@ -3,7 +3,8 @@ use std::process::{Command, Stdio};
 
 fn fix(source: &str) -> (i32, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_carve"))
-        .args(["fix", "-"])
+        // C2-T-049: the caret fix is a migration notice, on under `--upgrade`.
+        .args(["fix", "--upgrade", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

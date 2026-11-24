@@ -1094,24 +1094,8 @@ fn lint_file(
             .collect();
     }
     lint_opts.upgrade = bool_value(args, "upgrade", false);
+    // C2-T-049: under `--fix` every rule keeps the state it has under `lint`.
     let fixed = args.command == "fix" || bool_value(args, "fix", false);
-    if fixed {
-        for rule in serde_json::from_str::<Value>(include_str!("../spec-data/lint-rules.json"))
-            .unwrap()["rules"]
-            .as_array()
-            .unwrap()
-        {
-            if rule.get("fix").is_some()
-                && !lint_opts
-                    .rules
-                    .contains_key(rule["id"].as_str().unwrap_or(""))
-            {
-                lint_opts
-                    .rules
-                    .insert(rule["id"].as_str().unwrap().into(), "on".into());
-            }
-        }
-    }
     let source = if fixed {
         apply_fixes(bytes, &lint_opts)?
     } else {
