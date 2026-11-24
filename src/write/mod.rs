@@ -807,9 +807,9 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
             entry.path = coalesced.forward(&entry.path);
             if let Some(wraps) = &mut entry.facts.wraps {
                 for wrap in wraps {
-                    wrap.offset = wrap.offset.saturating_add(
-                        coalesced.offsets.get(&wrap.path).copied().unwrap_or(0),
-                    );
+                    wrap.offset = wrap
+                        .offset
+                        .saturating_add(coalesced.offsets.get(&wrap.path).copied().unwrap_or(0));
                     wrap.path = coalesced.forward(&wrap.path);
                 }
             }
