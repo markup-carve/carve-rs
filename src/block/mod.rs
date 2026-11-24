@@ -850,12 +850,19 @@ impl<'a> Parser<'a> {
         else {
             return false;
         };
-        let blank_held =
+        let (blank_held, unclosed) =
             end_unowned_comment(comment, entries, &k, owned, !*stanza_open || lazy_end);
         let no_stanza = !*stanza_open || blank_held;
+        if let Some(f) = unclosed {
+            self.findings.push(unclosed_comment(self.src, &f));
+        }
         if comment.is_some() {
-            let parent_closes = line_block_comment_line(comment, entries, *len, walk, &k, e, owned);
+            let (parent_closes, cut) =
+                line_block_comment_line(comment, entries, *len, walk, &k, e, owned);
             *end = e;
+            if let Some(f) = cut {
+                self.findings.push(unclosed_comment(self.src, &f));
+            }
             if parent_closes {
                 self.fence_closes = true;
                 self.close_leaf();
@@ -1106,6 +1113,13 @@ impl<'a> Parser<'a> {
         if !self.fence_closes {
             self.unclosed(&open);
         }
+        // C2-B-111: a comment block still open in a line block ends with it.
+        if let Leaf::LineBlock {
+            comment: Some(f), ..
+        } = &open.leaf
+        {
+            self.findings.push(unclosed_comment(self.src, f));
+        }
         let (kind, target) = self.finish_leaf(open.leaf, open.start);
         let end = if let LeafKind::Paragraph { pieces, .. }
         | LeafKind::Term { pieces }
@@ -1135,41 +1149,13 @@ impl<'a> Parser<'a> {
             Leaf::LineBlock { .. } => ("unclosed-container-fence", b':'),
             _ => return,
         };
-        let text = self.src.text();
         let start = match open.leaf {
             Leaf::Frontmatter { opener, .. } => opener,
             _ => open.start,
         };
-        let run: String = text
-            .get(start..)
-            .unwrap_or("")
-            .bytes()
-            .take_while(|&b| b == ch)
-            .map(char::from)
-            .collect();
-        let to_end = text.get(open.end..).is_none_or(|r| r.trim().is_empty());
-        let ending = if to_end {
-            "it runs to the end of the document".to_string()
-        } else {
-            format!(
-                "it ends at the end of its container on line {}",
-                self.src.pos(open.end, open.end).end_line
-            )
-        };
-        self.findings.push(Finding {
-            code,
-            message: 0,
-            start,
-            end: open.end,
-            values: if matches!(open.leaf, Leaf::LineBlock { .. }) {
-                vec![
-                    ("width", run.len().to_string()),
-                    ("kind", "line block".into()),
-                ]
-            } else {
-                vec![("marker", run.clone()), ("opener", run), ("ending", ending)]
-            },
-        });
+        let line_block = matches!(open.leaf, Leaf::LineBlock { .. });
+        let f = fence_finding(self.src, (code, ch), start, open.end, line_block);
+        self.findings.push(f);
     }
 
     /// C2-B-122: further words after an opener's parts are not read.
@@ -1360,6 +1346,52 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// The finding of a fence that ends without its closing fence (C2-B-113).
+fn fence_finding(
+    src: &Source,
+    (code, ch): (&'static str, u8),
+    start: usize,
+    end: usize,
+    line_block: bool,
+) -> Finding {
+    let text = src.text();
+    let run: String = text
+        .get(start..)
+        .unwrap_or("")
+        .bytes()
+        .take_while(|&b| b == ch)
+        .map(char::from)
+        .collect();
+    let to_end = text.get(end..).is_none_or(|r| r.trim().is_empty());
+    let ending = if to_end {
+        "it runs to the end of the document".to_string()
+    } else {
+        format!(
+            "it ends at the end of its container on line {}",
+            src.pos(end, end).end_line
+        )
+    };
+    Finding {
+        code,
+        message: 0,
+        start,
+        end,
+        values: if line_block {
+            vec![
+                ("width", run.len().to_string()),
+                ("kind", "line block".into()),
+            ]
+        } else {
+            vec![("marker", run.clone()), ("opener", run), ("ending", ending)]
+        },
+    }
+}
+
+/// C2-B-111: a comment block in a line block that its container ends.
+fn unclosed_comment(src: &Source, f: &LineCommentFence) -> Finding {
+    fence_finding(src, ("unclosed-comment-fence", b'%'), f.start, f.end, false)
+}
+
 /// C2-B-123: a comment block hides its body but does not end the stanza.
 fn line_block_comment_line(
     comment: &mut Option<LineCommentFence>,
@@ -1369,9 +1401,9 @@ fn line_block_comment_line(
     k: &Cursor<'_>,
     end: usize,
     owned: bool,
-) -> bool {
+) -> (bool, Option<LineCommentFence>) {
     let Some(fence) = comment.as_mut() else {
-        return false;
+        return (false, None);
     };
     let inner_closes = shapes::bare_run(k, b'%') >= fence.len;
     let parent_closes = owned && shapes::bare_run(k, b':') >= opener_len;
@@ -1381,13 +1413,13 @@ fn line_block_comment_line(
             end: if inner_closes { end } else { fence.end },
             value: fence.lines.join("\n"),
         });
-        *comment = None;
-        return parent_closes;
+        let fence = comment.take();
+        return (parent_closes, fence.filter(|_| !inner_closes));
     }
     // C2-B-123, C2-B-130: the body is stripped by the container only, and a straddling tab is kept (C2-B-007).
     fence.lines.push(walk.cur.rest().to_string());
     fence.end = end;
-    false
+    (false, None)
 }
 
 /// C2-B-024: a lazy comment-only line ends the stanza line above it; a comment
@@ -1422,9 +1454,9 @@ fn end_unowned_comment(
     k: &Cursor<'_>,
     owned: bool,
     no_stanza: bool,
-) -> bool {
+) -> (bool, Option<LineCommentFence>) {
     let Some(fence) = comment.as_ref().filter(|_| !owned) else {
-        return false;
+        return (false, None);
     };
     let blank_held = fence
         .lines
@@ -1434,9 +1466,10 @@ fn end_unowned_comment(
         && (no_stanza || blank_held)
         && let Some(fence) = comment.take()
     {
-        entries.push(fence.unclosed());
+        entries.push(fence.clone().unclosed());
+        return (blank_held, Some(fence));
     }
-    blank_held
+    (blank_held, None)
 }
 
 /// Moves the blank lines held back in a fence body into it.
