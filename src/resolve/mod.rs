@@ -490,12 +490,7 @@ fn lookups<'a>(
 
 /// The ids of the panels of a numbered figure group as targets.
 fn panel_targets<'a>(group: &crate::ast::FigureGroup<'a>, targets: &mut HashMap<String, &'a str>) {
-    for panel in group.children.iter().filter(|node| {
-        matches!(
-            node,
-            Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) | Node::Table(_)
-        )
-    }) {
+    for panel in group.children.iter().filter(|node| order::is_panel(node)) {
         if let Some(id) = panel.attrs().and_then(|attrs| attrs.id) {
             targets.entry(nfc(id)).or_insert(id);
         }

@@ -227,14 +227,7 @@ impl<'r, 'a> Order<'r, 'a> {
             ) && caption_marked(n));
         for part in slot_lists(n) {
             for c in part {
-                let panel = group
-                    && matches!(
-                        c,
-                        Node::Paragraph(_)
-                            | Node::CodeBlock(_)
-                            | Node::BlockQuote(_)
-                            | Node::Table(_)
-                    );
+                let panel = group && is_panel(c);
                 self.walk(
                     c,
                     defs,
@@ -306,6 +299,17 @@ struct Ctx {
 #[must_use]
 pub fn caption_marked(n: &Node<'_>) -> bool {
     caption_of(n).is_some_and(|c| mark_of(c).is_some())
+}
+
+/// A panel of a figure group: a table, or an image paragraph, code block,
+/// quote or math block with a caption (C2-A-084).
+#[must_use]
+pub fn is_panel(n: &Node<'_>) -> bool {
+    match n {
+        Node::Table(_) => true,
+        Node::Paragraph(_) | Node::CodeBlock(_) | Node::BlockQuote(_) => caption_of(n).is_some(),
+        _ => false,
+    }
 }
 
 /// The caption slot of a node.
