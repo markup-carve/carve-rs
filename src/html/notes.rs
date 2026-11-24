@@ -91,9 +91,20 @@ impl<'r, 'a> Renderer<'r, 'a> {
         match def {
             Node::Footnote(f) => self.note_body(&*f.children, &back, depth + 1),
             Node::InlineFootnote(f) => {
+                // C2-H-019, C2-H-090: content of only comments and breaks writes
+                // nothing, a leading hard break included.
+                let empty = f.children.iter().any(|n| matches!(n, Node::Comment(_)))
+                    && f.children.iter().all(|n| {
+                        matches!(
+                            n,
+                            Node::Comment(_) | Node::SoftBreak(_) | Node::HardBreak(_)
+                        )
+                    });
                 self.line_with(depth + 1, |r, out| {
                     out.push_str("<p>");
-                    r.leaf_into(f.children, out);
+                    if !empty {
+                        r.leaf_into(f.children, out);
+                    }
                     out.push_str(&back);
                     out.push_str("</p>");
                     true
