@@ -1554,26 +1554,6 @@ fn span_closing_bracket(w: &mut Writer<'_>, node: V<'_>, before: Option<V<'_>>) 
     }
 }
 
-fn brace_beside_pair(
-    w: &mut Writer<'_>,
-    node: V<'_>,
-    next: Option<V<'_>>,
-    at_end: bool,
-    flags: u32,
-) {
-    let paired_next = match next.map(ty) {
-        Some("strong") => next.is_some_and(|n| !braced_pair(w, n, flags, 2, IN_STRONG)),
-        Some("emphasis") => next.is_some_and(|n| !braced_pair(w, n, flags, 1, IN_EMPHASIS)),
-        _ => false,
-    };
-    let paired_end = at_end && flags & (IN_STRONG | IN_EMPHASIS) != 0;
-    let value = text(node);
-    if !value.ends_with('{') || (!paired_next && !paired_end) {
-        return;
-    }
-    w.add_escape(node, value.len() - 1);
-}
-
 /// C2-W-097: a backslash that ends a text is written as two where what follows
 /// it is ASCII punctuation, a space or the end of a line.
 fn double_last_backslash<'t>(
@@ -1647,7 +1627,7 @@ fn place_escapes<'t>(
             node,
             at.checked_sub(1).and_then(|i| nodes.get(i)).copied(),
         );
-        brace_beside_pair(w, node, nodes.get(end).copied(), end == nodes.len(), flags);
+        // The readback rounds decide whether this brace actually opens a pair.
     }
     // Behind an unescaped `!` the bracket reads as span text whatever the caret starts.
     if ty(node) == "span" && !after_bang {
