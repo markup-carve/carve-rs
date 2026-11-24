@@ -322,6 +322,7 @@ fn inline_kind(kind: &str) -> bool {
             | "strong"
             | "highlight"
             | "strike"
+            | "underline"
             | "link"
             | "raw_inline"
             | "code"
@@ -334,6 +335,9 @@ fn inline_kind(kind: &str) -> bool {
             | "citation"
             | "wikilink"
             | "xref"
+            | "smart_punctuation"
+            | "mention"
+            | "tag"
     )
 }
 fn opener_rule_kind(kind: &str) -> bool {
