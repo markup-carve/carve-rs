@@ -4,12 +4,12 @@
 
 use super::{
     CrossrefStyle, HeadingNumbersOptions, count_heading, freeze_heading_link, heading_link_targets,
-    heading_title, nest, number_xrefs_json, place_toc, rewrite, title_link, visit, visit_read,
+    heading_title, nest, number_xrefs_json, place_toc, rewrite, title_xref_key, visit, visit_read,
 };
 use crate::ast::owned::{self, Attrs, Node};
 use crate::ast::{DirectiveKind, XrefDisplay, XrefNamespace};
 use serde_json::{Map, Value, json};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 enum At<'x> {
     Node(&'x mut Node),
@@ -191,6 +191,7 @@ fn is_title_xref(x: &owned::Xref) -> bool {
 pub(super) fn number_xrefs(
     doc: &mut owned::Document,
     labels: &BTreeMap<String, (String, Vec<Node>)>,
+    titles: &mut Titles,
     options: &HeadingNumbersOptions,
 ) {
     if matches!(options.crossref, CrossrefStyle::Title) || labels.is_empty() {
@@ -198,38 +199,47 @@ pub(super) fn number_xrefs(
     }
     let mut cx = Numbering {
         labels,
+        copies: HashMap::new(),
         json_labels: None,
+        titles,
         options,
-        expanding: Vec::new(),
     };
     for node in &mut doc.children {
         cx.node(node);
     }
 }
 
-/// The numbering walk: [`walk`] without fallbacks, keeping the keys whose
-/// title copies it is inside, so a heading that references itself in its
-/// title ends instead of copying forever.
+/// The numbering walk: [`walk`] without fallbacks. It does not enter the
+/// link a reference becomes, and the title it copies holds no reference
+/// (carve#6540), so the output stays linear in the input.
 struct Numbering<'x> {
     labels: &'x BTreeMap<String, (String, Vec<Node>)>,
+    copies: HashMap<String, Vec<Node>>,
     json_labels: Option<BTreeMap<String, (String, Vec<Value>)>>,
+    titles: &'x mut Titles,
     options: &'x HeadingNumbersOptions,
-    expanding: Vec<String>,
 }
 
 impl Numbering<'_> {
     fn node(&mut self, node: &mut Node) {
-        let mut pushed = false;
         if let Node::Xref(x) = &mut *node
             && is_title_xref(x)
-            && !self.expanding.iter().any(|k| k == x.key.as_str())
+            && let Some((number, title)) = self.labels.get(x.key.as_str())
         {
-            let key = x.key.to_string();
-            if let Some(link) = numbered(x, self.labels, self.options) {
+            let title = match self.options.crossref {
+                CrossrefStyle::NumberTitle => {
+                    let titles = &mut *self.titles;
+                    self.copies
+                        .entry(x.key.to_string())
+                        .or_insert_with(|| titles.copy(title))
+                        .as_slice()
+                }
+                _ => &[],
+            };
+            if let Some(link) = numbered(x, number, title, self.options) {
                 *node = link;
-                self.expanding.push(key);
-                pushed = true;
             }
+            return;
         }
         match node {
             Node::BlockExtension(e) => e.children.iter_mut().for_each(|c| self.node(c)),
@@ -242,17 +252,14 @@ impl Numbering<'_> {
             _ => None,
         };
         if let Some(slots) = slots {
-            let labels = self.labels;
+            let (labels, titles) = (self.labels, &mut *self.titles);
             let labels = self.json_labels.get_or_insert_with(|| {
                 labels
                     .iter()
-                    .map(|(id, (n, title))| (id.clone(), (n.clone(), to_json(title))))
+                    .map(|(id, (n, title))| (id.clone(), (n.clone(), to_json(&titles.copy(title)))))
                     .collect()
             });
-            number_xrefs_json(slots, labels, self.options, &mut self.expanding);
-        }
-        if pushed {
-            self.expanding.pop();
+            number_xrefs_json(slots, labels, self.options);
         }
     }
 }
@@ -260,10 +267,10 @@ impl Numbering<'_> {
 /// The link a numbered cross-reference becomes; it keeps the xref's other fields.
 fn numbered(
     x: &mut owned::Xref,
-    labels: &BTreeMap<String, (String, Vec<Node>)>,
+    number: &str,
+    title: &[Node],
     options: &HeadingNumbersOptions,
 ) -> Option<Node> {
-    let (number, title) = labels.get(x.key.as_str())?;
     let children = match options.crossref {
         CrossrefStyle::Number => vec![text(format!("{} {number}", options.label), None)],
         CrossrefStyle::NumberTitle => {
@@ -287,7 +294,9 @@ fn numbered(
     })))
 }
 
-pub(super) fn freeze_xrefs(doc: &mut owned::Document) {
+/// The derived title of the first heading with each id, read before any
+/// transform edits a title (C2-I-096), slots included.
+pub(super) fn heading_texts(doc: &mut owned::Document) -> Titles {
     let mut by_id: BTreeMap<String, Vec<Node>> = BTreeMap::new();
     walk(&mut doc.children, false, &mut |at| {
         match at {
@@ -309,37 +318,188 @@ pub(super) fn freeze_xrefs(doc: &mut owned::Document) {
         }
         true
     });
-    if by_id.is_empty() {
+    Titles::new(by_id)
+}
+
+/// Heading titles by id and the copies a cross-reference writes of them.
+pub(super) struct Titles {
+    texts: BTreeMap<String, Vec<Node>>,
+    plain: HashMap<String, String>,
+    frozen: HashMap<String, Vec<Node>>,
+    frozen_json: HashMap<String, Vec<Value>>,
+}
+
+impl Titles {
+    pub(super) fn new(texts: BTreeMap<String, Vec<Node>>) -> Self {
+        Self {
+            texts,
+            plain: HashMap::new(),
+            frozen: HashMap::new(),
+            frozen_json: HashMap::new(),
+        }
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.texts.is_empty()
+    }
+
+    fn plain(&mut self, key: &str) -> Option<String> {
+        if let Some(text) = self.plain.get(key) {
+            return Some(text.clone());
+        }
+        let mut text = String::new();
+        plain_text(self.texts.get(key)?, &mut text, 0);
+        self.plain.insert(key.to_string(), text.clone());
+        Some(text)
+    }
+
+    /// carve#6540: a copy of `title` in which a cross-reference to a heading
+    /// is a link holding that heading's plain title, so nothing is copied again.
+    pub(super) fn copy(&mut self, title: &[Node]) -> Vec<Node> {
+        let mut nodes = title.to_vec();
+        walk(&mut nodes, true, &mut |at| match at {
+            At::Node(node) => {
+                let Node::Xref(x) = &*node else {
+                    return true;
+                };
+                if !is_title_xref(x) {
+                    return true;
+                }
+                let Some(plain) = self.plain(x.key.as_str()) else {
+                    return true;
+                };
+                *node = Node::Link(Box::new(owned::Link {
+                    href: Some(format!("#{}", x.key.as_str()).into()),
+                    attrs: x.attrs.clone(),
+                    children: vec![text(plain, None)],
+                    ..Default::default()
+                }));
+                false
+            }
+            At::Slots(slots) => {
+                rewrite(slots, &mut Vec::new(), &mut |node, _| {
+                    let key = title_xref_key(node)?;
+                    let plain = self.plain(key)?;
+                    Some(vec![json!({
+                        "type": "link",
+                        "href": format!("#{key}"),
+                        "children": [{"type": "text", "value": plain}],
+                    })])
+                });
+                true
+            }
+        });
+        nodes
+    }
+
+    /// The children of the link a title cross-reference to `key` becomes.
+    pub(super) fn frozen(&mut self, key: &str) -> Option<&[Node]> {
+        if !self.frozen.contains_key(key) {
+            let title = self.texts.get(key)?.clone();
+            let copy = self.copy(&title);
+            self.frozen.insert(key.to_string(), copy);
+        }
+        self.frozen.get(key).map(Vec::as_slice)
+    }
+
+    pub(super) fn frozen_json(&mut self, key: &str) -> Option<&[Value]> {
+        if !self.frozen_json.contains_key(key) {
+            let json = to_json(self.frozen(key)?);
+            self.frozen_json.insert(key.to_string(), json);
+        }
+        self.frozen_json.get(key).map(Vec::as_slice)
+    }
+}
+
+/// The plain text of owned inline nodes (C2-H-143), as [`crate::resolve::plain`]
+/// reads borrowed ones.
+fn plain_text(nodes: &[Node], out: &mut String, depth: usize) {
+    if depth > crate::resolve::WALK_CAP {
         return;
     }
-    let mut json_by_id = None;
+    for node in nodes {
+        match node {
+            Node::Text(t) => out.push_str(&t.value),
+            Node::Code(t) => out.push_str(&t.value),
+            Node::LiteralInline(t) => out.push_str(&t.value),
+            Node::Math(t) => out.push_str(&t.value),
+            Node::NonBreakingSpace(_) => out.push('\u{a0}'),
+            Node::SoftBreak(_) | Node::HardBreak(_) => out.push(' '),
+            Node::SmartPunctuation(s) => out.push_str(&s.glyph),
+            Node::Image(i) => out.push_str(i.alt.as_deref().unwrap_or("")),
+            Node::Autolink(a) => out.push_str(a.text.as_deref().unwrap_or(&a.href)),
+            Node::Abbreviation(a) => out.push_str(&a.key),
+            Node::Mention(m) => {
+                out.push('@');
+                out.push_str(&m.target);
+            }
+            Node::Tag(t) => {
+                out.push('#');
+                out.push_str(&t.name);
+            }
+            Node::CaptionNumber(c) => {
+                if let Some(n) = c.n {
+                    out.push_str(&n.to_string());
+                }
+            }
+            Node::Ruby(r) => {
+                for pair in &r.pairs {
+                    if let Node::RubyPair(p) = pair {
+                        plain_text(&p.base, out, depth + 1);
+                        out.push('(');
+                        plain_text(&p.annotation, out, depth + 1);
+                        out.push(')');
+                    }
+                }
+            }
+            Node::InlineExtension(e) if e.name.as_str() == "index" => {}
+            Node::FootnoteRef(_)
+            | Node::InlineFootnote(_)
+            | Node::Xref(_)
+            | Node::RawInline(_)
+            | Node::CriticComment(_)
+            | Node::Comment(_)
+            | Node::CitationGroup(_)
+            | Node::Symbol(_) => {}
+            other => {
+                if let Some(children) = other.children() {
+                    plain_text(children, out, depth + 1);
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn freeze_xrefs(doc: &mut owned::Document, titles: &mut Titles) {
+    if titles.is_empty() {
+        return;
+    }
     walk(&mut doc.children, true, &mut |at| match at {
         At::Node(node) => {
-            let link = match &*node {
-                Node::Xref(x) if is_title_xref(x) => by_id.get(x.key.as_str()).map(|title| {
-                    Node::Link(Box::new(owned::Link {
-                        href: Some(format!("#{}", x.key.as_str()).into()),
-                        children: title.clone(),
-                        ..Default::default()
-                    }))
-                }),
-                _ => None,
-            };
-            let Some(link) = link else {
+            let Node::Xref(x) = &*node else {
                 return true;
             };
-            *node = link;
+            if !is_title_xref(x) {
+                return true;
+            }
+            let key = x.key.to_string();
+            let Some(children) = titles.frozen(&key) else {
+                return true;
+            };
+            *node = Node::Link(Box::new(owned::Link {
+                href: Some(format!("#{key}").into()),
+                children: children.to_vec(),
+                ..Default::default()
+            }));
             false
         }
         At::Slots(slots) => {
-            let by_id = json_by_id.get_or_insert_with(|| {
-                by_id
-                    .iter()
-                    .map(|(id, title)| (id.clone(), to_json(title)))
-                    .collect::<BTreeMap<_, _>>()
-            });
             rewrite(slots, &mut Vec::new(), &mut |node, _| {
-                title_link(node, by_id)
+                let key = title_xref_key(node)?;
+                let children = titles.frozen_json(key)?.to_vec();
+                Some(vec![
+                    json!({"type":"link","href":format!("#{key}"),"children":children}),
+                ])
             });
             true
         }

@@ -1,4 +1,5 @@
 use carve::api::{self, Carve, Options, extensions};
+use std::fmt::Write as _;
 
 fn html(source: &str, bundle: extensions::Bundle) -> String {
     let mut host = Carve::new();
@@ -402,4 +403,86 @@ fn toc_placement_with_heading_numbers_places_a_toc_in_a_toc_body() {
         .unwrap();
     assert_eq!(out.matches("<nav").count(), 2, "{out}");
     assert!(out.contains("1.1"), "{out}");
+}
+
+#[test]
+fn heading_number_xref_in_a_title_copy_stays_a_reference() {
+    // carve#6540 ruling A: in a copied title a reference links its heading with the plain title.
+    let src = "{#a}\n= A </#b>\n\n{#b}\n= B </#c>\n\n{#c}\n= C *x*\n\nSee </#a>.\n";
+    let numbers = |crossref| {
+        extensions::heading_numbers(extensions::HeadingNumbersOptions {
+            crossref,
+            ..Default::default()
+        })
+    };
+    let out = html(src, numbers(extensions::CrossrefStyle::NumberTitle));
+    assert!(
+        out.contains(r##"<h1><span class="section-number">1</span> A <a href="#b">Section 2 - B C x</a></h1>"##),
+        "{out}"
+    );
+    assert!(
+        out.contains(r##"<p>See <a href="#a">Section 1 - A B </a>.</p>"##),
+        "{out}"
+    );
+    let out = html(src, numbers(extensions::CrossrefStyle::Title));
+    assert!(
+        out.contains(r##"<p>See <a href="#a">A B </a>.</p>"##),
+        "{out}"
+    );
+    let out = html(
+        "{#a}\n= Ref </#a>\n\nSee </#a>.\n",
+        numbers(extensions::CrossrefStyle::NumberTitle),
+    );
+    assert!(
+        out.contains(r##"<h1><span class="section-number">1</span> Ref <a href="#a">Section 1 - Ref Ref </a></h1>"##),
+        "{out}"
+    );
+}
+
+#[test]
+fn heading_number_xrefs_in_titles_grow_linearly() {
+    // carve#6540: each title cites the next two headings; the copies grew 1.6x per heading.
+    let size = |k: usize| {
+        let mut source = String::new();
+        for i in 0..k {
+            writeln!(source, "{{#h{i}}}\n= T{i} </#h{}> </#h{}>\n", i + 1, i + 2).unwrap();
+        }
+        html(
+            &source,
+            extensions::heading_numbers(extensions::HeadingNumbersOptions::default()),
+        )
+        .len()
+    };
+    let (small, large) = (size(20), size(80));
+    assert!(large < small * 5, "{small} -> {large}");
+}
+
+#[test]
+fn heading_number_copied_title_rows_of_the_spec() {
+    // EXT-104 to EXT-106 of carve next2 5df1fb07 (carve#6554).
+    let numbers = || extensions::heading_numbers(extensions::HeadingNumbersOptions::default());
+    assert_eq!(
+        html(
+            "{#a}\n= A </#b>\n\n{#b}\n== B </#c>\n\n{#c}\n== C\n",
+            numbers()
+        ),
+        "<section id=\"a\">\n  <h1><span class=\"section-number\">1</span> A <a href=\"#b\">Section 1.1 - B C</a></h1>\n  <section id=\"b\">\n    <h2><span class=\"section-number\">1.1</span> B <a href=\"#c\">Section 1.2 - C</a></h2>\n  </section>\n  <section id=\"c\">\n    <h2><span class=\"section-number\">1.2</span> C</h2>\n  </section>\n</section>"
+    );
+    let out = html(
+        "{#h0}\n= T0 </#h1> </#h2>\n\n{#h1}\n= T1 </#h2> </#h3>\n\n{#h2}\n= T2 </#h3> </#h4>\n",
+        numbers(),
+    );
+    assert!(
+        out.contains(
+            "<h1><span class=\"section-number\">1</span> T0 <a href=\"#h1\">Section 2 - T1 T2"
+        ),
+        "{out}"
+    );
+    let out = html("{#a}\n= Ref </#a>\n", numbers());
+    assert!(
+        out.contains(
+            "<h1><span class=\"section-number\">1</span> Ref <a href=\"#a\">Section 1 - Ref Ref"
+        ),
+        "{out}"
+    );
 }
