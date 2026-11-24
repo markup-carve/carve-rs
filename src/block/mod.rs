@@ -1172,16 +1172,18 @@ impl<'a> Parser<'a> {
     }
 
     /// C2-B-122: further words after an opener's parts are not read.
-    pub(super) fn further_words(&mut self, start: usize, end: usize) {
-        let before = self.src.text().get(..start).unwrap_or("");
-        let line_start = before.rfind('\n').map_or(0, |at| at + 1);
-        let line = self
-            .src
-            .text()
-            .get(line_start..end)
-            .unwrap_or("")
-            .trim_start();
-        let opener = before.get(line_start..).unwrap_or("").trim_end();
+    /// `fence` is where the fence run starts, after any container prefix and list marker;
+    /// `anonymous` marks a div opener with no name (C2-B-119).
+    pub(super) fn further_words(
+        &mut self,
+        fence: usize,
+        start: usize,
+        end: usize,
+        anonymous: bool,
+    ) {
+        let text = self.src.text();
+        let line = text.get(fence..end).unwrap_or("").trim_start();
+        let opener = text.get(fence..start).unwrap_or("").trim();
         let respaced = line.split_whitespace().collect::<Vec<_>>().join(" ");
         let (message, values) = if line.starts_with("```") {
             let run = line.bytes().take_while(|&b| b == b'`').count();
@@ -1197,7 +1199,7 @@ impl<'a> Parser<'a> {
             } else {
                 (4, vec![("correctedOpener", opener.to_string())])
             }
-        } else if line.starts_with(":::") && opener.trim_end_matches([' ', '\t']) == ":::" {
+        } else if anonymous {
             (0, Vec::new())
         } else {
             (4, vec![("correctedOpener", opener.to_string())])
