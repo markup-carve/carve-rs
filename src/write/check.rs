@@ -278,6 +278,10 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<
     if !(e.is_object() && a.is_object()) {
         return None;
     }
+    if ty(e) == "smart_punctuation" && ty(a) == "smart_punctuation" && s(e, "kind") != s(a, "kind")
+    {
+        return Some("kind".to_string());
+    }
     if let Some(name) = differing_node_field(w, c, e, a) {
         return name.map(str::to_string);
     }
