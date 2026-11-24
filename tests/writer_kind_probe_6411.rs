@@ -4,8 +4,8 @@ fn nested_links(n: usize) -> String {
     format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n))
 }
 
-// carve#6411: the probe rounds escape by kind and partner bracket (C2-W-088,
-// C2-W-125). The expected bytes are carve-js next2's.
+// carve#6544 supersedes the #6411 derived escapes here: each bare source
+// reads back to its parsed tree, so C2-W-088 places no backslash.
 #[test]
 fn nested_links_write_the_reference_bytes() {
     let carve = Carve::new();

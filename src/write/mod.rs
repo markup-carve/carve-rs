@@ -513,11 +513,85 @@ mod escape_prune_test {
     }
 }
 
+/// C2-W-050: a key value cannot carry a line feed in its one-line brace block.
+fn has_attribute_lines(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            if map
+                .get("attrs")
+                .and_then(|a| a.get("keyValues"))
+                .and_then(Value::as_array)
+                .is_some_and(|pairs| {
+                    pairs.iter().any(|pair| {
+                        pair.get(1)
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| v.contains('\n'))
+                    })
+                })
+            {
+                return true;
+            }
+            map.values().any(has_attribute_lines)
+        }
+        Value::Array(items) => items.iter().any(has_attribute_lines),
+        _ => false,
+    }
+}
+
+fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(pairs) = map
+                .get_mut("attrs")
+                .and_then(|a| a.get_mut("keyValues"))
+                .and_then(Value::as_array_mut)
+            {
+                for (index, pair) in pairs.iter_mut().enumerate() {
+                    if let Some(Value::String(text)) = pair.get_mut(1)
+                        && text.contains('\n')
+                    {
+                        *text = text.replace('\n', " ");
+                        losses.push(loss_entry(
+                            "field-unspellable",
+                            "Carve source cannot spell a line feed in an attribute value".into(),
+                            format!("{path}/attrs/keyValues/{index}/1"),
+                            None,
+                        ));
+                    }
+                }
+            }
+            for (key, child) in map.iter_mut() {
+                if key != "attrs" {
+                    replace_attribute_lines(
+                        child,
+                        &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                        losses,
+                    );
+                }
+            }
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter_mut().enumerate() {
+                replace_attribute_lines(item, &format!("{path}/{index}"), losses);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let pool = Pool::new();
-    write_view(V::Json(doc), &pool, settings)
+    if !has_attribute_lines(doc) {
+        return write_view(V::Json(doc), &pool, settings);
+    }
+    let mut normalized = doc.clone();
+    let mut losses = Vec::new();
+    replace_attribute_lines(&mut normalized, "", &mut losses);
+    let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, settings);
+    written_losses.extend(losses);
+    (source, written_losses)
 }
 
 /// [`write_value`] of a view; `pool` outlives the tree.
@@ -1187,6 +1261,8 @@ fn repair_rounds_once<'t>(
     reported: usize,
 ) -> usize {
     let nodes = children(doc);
+    w.link_bracket_fallback = false;
+    w.saw_link = false;
     let mut history = History {
         ids: AddrMap::default(),
         recent: std::collections::VecDeque::new(),
@@ -1220,7 +1296,7 @@ fn repair_rounds_once<'t>(
             equal: false,
         };
         w.new_forms.clear();
-        let more = settle(w, doc, group, f, &mut round);
+        let more = settle(w, doc, group, f, history.rounds == 1, &mut round);
         // C2-W-125: the forms this round asked for, in its probes too, as against those its write placed.
         w.round_forms.extend(w.new_forms.drain(..));
         if !more && !exhausted(w) {
@@ -1533,15 +1609,56 @@ fn compare_group<'t, 's>(
     c
 }
 
+/// A repair belongs to a link when the changed node is the link or one of its descendants.
+fn link_repair_requested(group: Arr<'_>, c: &Check<'_>) -> bool {
+    fn visit(node: N<'_>, inside: bool, c: &Check<'_>) -> bool {
+        let inside = inside || node::ty(node) == "link";
+        let changed = c
+            .escapes
+            .iter()
+            .any(|(n, _)| node::id(*n) == node::id(node))
+            || c.losses.iter().any(|(n, _)| node::id(*n) == node::id(node))
+            || c.forms.iter().any(|n| node::id(*n) == node::id(node));
+        (inside && changed) || node::children(node).iter().any(|n| visit(n, inside, c))
+    }
+    group.iter().any(|n| visit(n, false, c))
+}
+
+/// A bare link-label group is already the C2-W-088 result if it reads back.
+/// Only a changed parse asks for the bounded unmatched-bracket fallback.
+fn compare_with_link_fallback<'t>(
+    w: &mut Writer<'t>,
+    doc: N<'t>,
+    group: Arr<'t>,
+    first: bool,
+    initial: bool,
+    round: &mut Round<'_>,
+) -> Check<'t> {
+    let mut c = compare_group(w, doc, group, first, round);
+    if initial
+        && !round.equal
+        && w.saw_link
+        && !w.link_bracket_fallback
+        && link_repair_requested(group, &c)
+    {
+        w.link_bracket_fallback = true;
+        reset_lines(w);
+        blocks::write_blocks(w, group, "", 0, false);
+        c = compare_group(w, doc, group, first, round);
+    }
+    c
+}
+
 /// One round of the test of C2-W-089. False when the group reads back as its blocks.
 fn settle<'t>(
     w: &mut Writer<'t>,
     doc: N<'t>,
     group: Arr<'t>,
     first: bool,
+    initial: bool,
     round: &mut Round<'_>,
 ) -> bool {
-    let mut c = compare_group(w, doc, group, first, round);
+    let mut c = compare_with_link_fallback(w, doc, group, first, initial, round);
     check::drop_early_trials(&mut c);
     let read = round.source.zip(round.last);
     if drop_asked_trials(w, &mut c, group, first, read) && c.changes() == 0 {
