@@ -815,6 +815,13 @@ pub fn link_def(r: &str) -> Option<LinkDef> {
 }
 
 fn unescape_destination(raw: &str) -> String {
+    if !raw
+        .as_bytes()
+        .windows(2)
+        .any(|pair| matches!(pair, [b'\\', b'(' | b')' | b'\\']))
+    {
+        return raw.to_string();
+    }
     let mut out = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
     while let Some(ch) = chars.next() {
