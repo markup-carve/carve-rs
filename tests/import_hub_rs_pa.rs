@@ -100,3 +100,27 @@ fn a_raw_block_after_text_in_a_tight_item_is_inline_raw() {
         "- x\n  `<div>\n  a\n  </div>`{=html}\n- y\n"
     );
 }
+
+#[test]
+fn a_comment_of_the_input_is_never_taken_for_a_raw_placeholder() {
+    let (written, _) = import("markdown", "x <!--carve-hub-raw-0-->\n\n<div>y</div>\n");
+    assert_eq!(
+        written,
+        "x `<!--carve-hub-raw-0-->`{=html}\n\n```=html\n<div>y</div>\n```\n"
+    );
+}
+
+#[test]
+fn a_long_backtick_fence_and_many_math_fences_stay_linear() {
+    let source = format!(
+        "{}\n\n{}",
+        "`".repeat(20_000),
+        "$$\na\n$$\n\n".repeat(5_000)
+    );
+    let (written, _) = import("markdown", &source);
+    assert!(written.len() < source.len() * 2, "{}", written.len());
+    assert!(
+        !written.contains("`````"),
+        "a rewritten fence reached the output"
+    );
+}

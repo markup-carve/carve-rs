@@ -38,6 +38,9 @@ impl ImportFormat {
 pub(crate) struct Sink {
     frontmatter: Option<(&'static str, String)>,
     raw: Vec<(String, String)>,
+    /// The placeholder prefix, made longer until the input does not hold it, so a
+    /// comment of the input is never taken for a placeholder.
+    marker: String,
 }
 
 const PLACEHOLDER: &str = "carve-hub-raw-";
@@ -52,7 +55,7 @@ fn escape(value: &str) -> String {
 
 fn placeholder(sink: &mut Sink, format: &str, value: &str) -> String {
     sink.raw.push((format.to_string(), value.to_string()));
-    format!("<!--{PLACEHOLDER}{}-->", sink.raw.len() - 1)
+    format!("<!--{}{}-->", sink.marker, sink.raw.len() - 1)
 }
 
 /// The library HTML of `input`.
@@ -61,6 +64,18 @@ fn placeholder(sink: &mut Sink, format: &str, value: &str) -> String {
 ///
 /// [`Error::ImportInput`] when the library fails.
 pub(crate) fn to_html(input: &str, format: ImportFormat, sink: &mut Sink) -> Result<String, Error> {
+    let taken = input
+        .match_indices(PLACEHOLDER)
+        .map(|(at, _)| {
+            input[at + PLACEHOLDER.len()..]
+                .bytes()
+                .take_while(|&b| b == b'x')
+                .count()
+                + 1
+        })
+        .max()
+        .unwrap_or(0);
+    sink.marker = format!("{PLACEHOLDER}{}", "x".repeat(taken));
     match format {
         ImportFormat::Html => Ok(input.to_string()),
         ImportFormat::Markdown | ImportFormat::Gfm => {
@@ -175,8 +190,21 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
     if fences.iter().all(Option::is_none) {
         return None;
     }
-    let longest = input.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    // Only a backtick run that starts a line can pair with a fence.
+    let longest = lines
+        .iter()
+        .map(|(_, line)| {
+            let rest = line.get(content_start(line)..).unwrap_or_default();
+            rest.bytes().take_while(|&b| b == b'`').count()
+        })
+        .max()
+        .unwrap_or(0);
     let floor = longest + 3;
+    let count = fences.iter().flatten().count();
+    // The rewrite grows the text by a fence per line; past this bound comrak's own reading stays.
+    if count.saturating_mul(floor) > input.len().saturating_mul(2) + 65_536 {
+        return None;
+    }
     // A fence line inside code, raw HTML or the body of a math block is content: it is
     // put back, and the pairing read again, a bounded number of times.
     for _ in 0..4 {
@@ -286,6 +314,15 @@ fn display_math<'a>(
 /// The offset and length of the `$` run of a line that can be a math fence
 /// behind its container markers, and whether a meta follows it.
 fn math_fence(line: &str) -> MathFence {
+    let at = content_start(line);
+    let rest = line.get(at..)?;
+    let run = rest.bytes().take_while(|&b| b == b'$').count();
+    let meta = rest.get(run..)?;
+    (run >= 2 && !meta.contains('$')).then(|| (at, run, !meta.trim_matches([' ', '\t']).is_empty()))
+}
+
+/// Where a line's content starts behind its quote marks, list markers and blanks.
+fn content_start(line: &str) -> usize {
     let bytes = line.as_bytes();
     let mut at = 0;
     loop {
@@ -306,17 +343,13 @@ fn math_fence(line: &str) -> MathFence {
             _ if (1..=9).contains(&digits) && matches!(rest.get(digits), Some(b'.' | b')')) => {
                 digits + 1
             }
-            _ => break,
+            _ => return at,
         };
         if !matches!(rest.get(marker), Some(b' ' | b'\t')) {
-            break;
+            return at;
         }
         at += marker;
     }
-    let rest = line.get(at..)?;
-    let run = rest.bytes().take_while(|&b| b == b'$').count();
-    let meta = rest.get(run..)?;
-    (run >= 2 && !meta.contains('$')).then(|| (at, run, !meta.trim_matches([' ', '\t']).is_empty()))
 }
 
 /// A closed frontmatter at the start, after at most one U+FEFF: the format,
@@ -514,7 +547,7 @@ fn djot_html(input: &str, sink: &mut Sink) -> String {
 pub(crate) fn finish(mut tree: Value, sink: &Sink) -> Value {
     if let Some(children) = tree.get_mut("children").and_then(Value::as_array_mut) {
         if !sink.raw.is_empty() {
-            restore(children, &sink.raw);
+            restore(children, sink);
         }
         fill_empty_items(children);
         if let Some((format, value)) = &sink.frontmatter {
@@ -543,7 +576,7 @@ fn fill_empty_items(nodes: &mut [Value]) {
     }
 }
 
-fn restore(nodes: &mut [Value], raw: &[(String, String)]) {
+fn restore(nodes: &mut [Value], sink: &Sink) {
     for node in nodes {
         // A block after text in a tight list item reaches the tree in inline position.
         let block = node.get("type").and_then(Value::as_str) == Some("raw_block");
@@ -551,7 +584,7 @@ fn restore(nodes: &mut [Value], raw: &[(String, String)]) {
         let kept = (block || inline)
             .then(|| node.get("value").and_then(Value::as_str))
             .flatten()
-            .and_then(|v| v.strip_prefix("<!--")?.strip_prefix(PLACEHOLDER))
+            .and_then(|v| v.strip_prefix("<!--")?.strip_prefix(sink.marker.as_str()))
             .and_then(|v| {
                 v.strip_suffix('\n')
                     .unwrap_or(v)
@@ -559,7 +592,7 @@ fn restore(nodes: &mut [Value], raw: &[(String, String)]) {
                     .parse::<usize>()
                     .ok()
             })
-            .and_then(|i| raw.get(i));
+            .and_then(|i| sink.raw.get(i));
         if let (Some((format, value)), Some(map)) = (kept, node.as_object_mut()) {
             let value = if inline {
                 value.strip_suffix('\n').unwrap_or(value).to_string()
@@ -573,7 +606,7 @@ fn restore(nodes: &mut [Value], raw: &[(String, String)]) {
             continue;
         }
         if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
-            restore(children, raw);
+            restore(children, sink);
         }
     }
 }
