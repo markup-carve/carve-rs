@@ -19,6 +19,10 @@ const HELD: &[(&str, &str)] = &[
     ("CC-2034", CARET_6585),
     ("CC-2035", CARET_6585),
     ("CC-2037", CARET_6585),
+    (
+        "CC-2045",
+        "C2-W-158 record order, ruling of carve#6619 (carve-rs line), not ported yet",
+    ),
 ];
 
 const CARET_6585: &str =
@@ -131,6 +135,14 @@ fn record(expected: &Value, got: &[Entry], out: &mut Vec<String>) {
                 "expected {wanted} entries; reported {:?}",
                 codes(got)
             ));
+        }
+    }
+    if expected["diagnosticsOrdered"] == true {
+        let wanted = expected["diagnostics"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
+        if wanted.len() != got.len() || !wanted.iter().zip(got).all(|(d, g)| entry_agrees(d, g)) {
+            out.push(format!("entries out of order; reported {:?}", codes(got)));
         }
     }
 }
