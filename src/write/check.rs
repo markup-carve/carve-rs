@@ -891,6 +891,8 @@ enum Takes<'t> {
         word: usize,
         own: AddrSet<usize>,
         mark: Option<u8>,
+        /// The probe reads note content without its sigil, where a caret pair opens a note (C2-I-089).
+        note: bool,
     },
     #[allow(dead_code)]
     Never(std::marker::PhantomData<&'t ()>),
@@ -905,15 +907,24 @@ impl Takes<'_> {
                 word,
                 own,
                 mark,
+                note,
             } => {
                 id(node) != *closer
                     && id(node) != *word
                     && !(own.contains(&id(node))
                         && mark.is_some_and(|m| text(node).as_bytes().get(at) == Some(&m)))
+                    && !(*note
+                        && own.contains(&id(node))
+                        && in_caret_pair(text(node).as_bytes(), at))
             }
             Self::Never(_) => false,
         }
     }
+}
+
+fn in_caret_pair(b: &[u8], at: usize) -> bool {
+    let pair = |i: usize| matches!(b.get(i..i + 2), Some(b"^[" | b"[^"));
+    pair(at) || at.checked_sub(1).is_some_and(pair)
 }
 
 fn node_state(w: &Writer<'_>, c: &Check<'_>, node: V<'_>) -> Option<String> {
@@ -1410,10 +1421,13 @@ fn opens_across(value: &str) -> bool {
 
 fn escape_across_closer<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) -> bool {
     let Some(&e) = es.get(i) else { return false };
-    if !is_paired_mark(e) || !texts_below(e).iter().any(|t| opens_across(text(t))) {
+    // A span and a note close with a bracket as a link does (C2-W-088).
+    let bracketed = matches!(ty(e), "span" | "inline_footnote") && has(e, "children");
+    if !(is_paired_mark(e) || bracketed) || !texts_below(e).iter().any(|t| opens_across(text(t))) {
         return false;
     }
-    let flags = content_flags(c, e);
+    let note = ty(e) == "inline_footnote";
+    let flags = content_flags(c, e) | if note { IN_NOTE } else { 0 };
     let link = ty(e) == "link";
     if link && !can_cross_link_closer(w, children(e), flags) {
         return false;
@@ -1421,10 +1435,10 @@ fn escape_across_closer<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>],
     let outer = c.flags;
     let spelled = write_inlines(w, &[e], outer);
     let content = write_inlines(w, &refs(children(e)), flags);
-    let tail = if link {
-        spelled.len().saturating_sub(1 + content.len())
-    } else {
-        (spelled.len().saturating_sub(content.len())) / 2
+    let tail = match ty(e) {
+        "link" | "span" => spelled.len().saturating_sub(1 + content.len()),
+        "inline_footnote" => spelled.len().saturating_sub(2 + content.len()),
+        _ => (spelled.len().saturating_sub(content.len())) / 2,
     };
     let closer_text = spelled
         .get(spelled.len().saturating_sub(tail)..)
@@ -1441,6 +1455,7 @@ fn escape_across_closer<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>],
         word: id(word),
         own: texts_below(e).into_iter().map(id).collect(),
         mark: closing_mark(ty(e)),
+        note,
     };
     if probe_escapes(w, c, e, &inlines, flags, Site::Across, &takes) == Some(true) {
         return true;
