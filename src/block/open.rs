@@ -67,7 +67,10 @@ impl Parser<'_> {
             .take(walk.matched)
             .rposition(|c| matches!(c.kind, Kind::Quote))
             .map_or(1, |q| q + 1);
-        let lo = self.stack[..walk.matched]
+        let lo = self
+            .stack
+            .get(..walk.matched)
+            .unwrap_or(&[])
             .iter()
             .rposition(|c| matches!(c.kind, Kind::Div { .. }))
             .map_or(quote_lo, |d| quote_lo.max(d + 1));
