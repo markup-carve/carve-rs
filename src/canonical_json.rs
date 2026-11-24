@@ -91,18 +91,33 @@ impl Encoder {
     }
 
     fn close_object(&mut self, mark: usize) -> Result<Piece, Error> {
-        let mut entries: Vec<Entry> = self.open.drain(mark..).collect();
-        entries.sort_by(|a, b| self.key_bytes(a.key).cmp(self.key_bytes(b.key)));
+        let buf = &self.buf;
+        let entries = self.open.get_mut(mark..).ok_or(Error)?;
+        // The open range belongs to this object, so sorting it needs no
+        // intermediate collection for each AST node.
+        entries.sort_by(|a, b| {
+            buf.get(a.key.0 as usize..a.key.1 as usize)
+                .unwrap_or_default()
+                .cmp(
+                    buf.get(b.key.0 as usize..b.key.1 as usize)
+                        .unwrap_or_default(),
+                )
+        });
         let start = at(self.done.len())?;
         for (i, e) in entries.iter().enumerate() {
             // A map keeps the last value of a repeated key.
-            let repeated = entries
-                .get(i + 1)
-                .is_some_and(|next| self.key_bytes(next.key) == self.key_bytes(e.key));
+            let repeated = entries.get(i + 1).is_some_and(|next| {
+                buf.get(next.key.0 as usize..next.key.1 as usize)
+                    .unwrap_or_default()
+                    == buf
+                        .get(e.key.0 as usize..e.key.1 as usize)
+                        .unwrap_or_default()
+            });
             if !repeated {
                 self.done.push(*e);
             }
         }
+        self.open.truncate(mark);
         Ok(Piece::Object(start, at(self.done.len())?))
     }
 
