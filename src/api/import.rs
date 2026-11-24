@@ -379,14 +379,20 @@ fn run(
     adapter: ImportAdapter,
 ) -> Result<crate::import::Imported, Error> {
     let refused = |r: crate::import::Refused| Error::ImportInput { message: r.0 };
-    let parsed = crate::import::parse_html(html).map_err(refused)?;
+    // A panic is an error, on the caller as from the thread's join.
+    let failed = |_| Error::ImportInput {
+        message: "the import failed".into(),
+    };
+    let parsed = std::panic::catch_unwind(|| crate::import::parse_html(html))
+        .map_err(failed)?
+        .map_err(refused)?;
     // A shallow tree builds on the caller's stack: the thread costs a fresh
     // stack mapping per call. wasm32 targets have no threads at all.
     let inline = parsed.depth <= INLINE_DEPTH || cfg!(target_family = "wasm");
     let import =
         || crate::import::build(html, parsed, raw_html, adapter.runs_note_pass()).map_err(refused);
     if inline {
-        return import();
+        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(import)).map_err(failed)?;
     }
     std::thread::scope(|scope| {
         std::thread::Builder::new()
@@ -396,9 +402,7 @@ fn run(
                 message: e.to_string(),
             })?
             .join()
-            .map_err(|_| Error::ImportInput {
-                message: "the import failed".into(),
-            })?
+            .map_err(failed)?
     })
 }
 

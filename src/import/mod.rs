@@ -223,7 +223,7 @@ pub(crate) struct Parsed {
     pub depth: usize,
 }
 
-/// The parse half of [`import_html`].
+/// The parse half of an import.
 pub(crate) fn parse_html(input: &str) -> Result<Parsed, Refused> {
     let full = is_full_document(input);
     let dom = if full {
@@ -240,7 +240,7 @@ pub(crate) fn parse_html(input: &str) -> Result<Parsed, Refused> {
     Ok(Parsed { dom, full, depth })
 }
 
-/// The tree half of [`import_html`], recursing once per level of `parsed`.
+/// The tree half of an import, recursing once per level of `parsed`.
 pub(crate) fn build(
     input: &str,
     parsed: Parsed,
