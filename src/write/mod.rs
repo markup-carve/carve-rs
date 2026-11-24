@@ -513,11 +513,85 @@ mod escape_prune_test {
     }
 }
 
+/// C2-W-050: a key value cannot carry a line feed in its one-line brace block.
+fn has_attribute_lines(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            if map
+                .get("attrs")
+                .and_then(|a| a.get("keyValues"))
+                .and_then(Value::as_array)
+                .is_some_and(|pairs| {
+                    pairs.iter().any(|pair| {
+                        pair.get(1)
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| v.contains('\n'))
+                    })
+                })
+            {
+                return true;
+            }
+            map.values().any(has_attribute_lines)
+        }
+        Value::Array(items) => items.iter().any(has_attribute_lines),
+        _ => false,
+    }
+}
+
+fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(pairs) = map
+                .get_mut("attrs")
+                .and_then(|a| a.get_mut("keyValues"))
+                .and_then(Value::as_array_mut)
+            {
+                for (index, pair) in pairs.iter_mut().enumerate() {
+                    if let Some(Value::String(text)) = pair.get_mut(1)
+                        && text.contains('\n')
+                    {
+                        *text = text.replace('\n', " ");
+                        losses.push(loss_entry(
+                            "field-unspellable",
+                            "Carve source cannot spell a line feed in an attribute value".into(),
+                            format!("{path}/attrs/keyValues/{index}/1"),
+                            None,
+                        ));
+                    }
+                }
+            }
+            for (key, child) in map.iter_mut() {
+                if key != "attrs" {
+                    replace_attribute_lines(
+                        child,
+                        &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                        losses,
+                    );
+                }
+            }
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter_mut().enumerate() {
+                replace_attribute_lines(item, &format!("{path}/{index}"), losses);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let pool = Pool::new();
-    write_view(V::Json(doc), &pool, settings)
+    if !has_attribute_lines(doc) {
+        return write_view(V::Json(doc), &pool, settings);
+    }
+    let mut normalized = doc.clone();
+    let mut losses = Vec::new();
+    replace_attribute_lines(&mut normalized, "", &mut losses);
+    let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, settings);
+    written_losses.extend(losses);
+    (source, written_losses)
 }
 
 /// [`write_value`] of a view; `pool` outlives the tree.
