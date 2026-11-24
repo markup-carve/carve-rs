@@ -357,6 +357,7 @@ mod tests {
                 kind,
                 hard_breaks: false,
                 abbreviation_remaining: None,
+                depth_cap: crate::tables::INLINE_DEPTH,
             };
             let pieces = [Piece {
                 start: 0,

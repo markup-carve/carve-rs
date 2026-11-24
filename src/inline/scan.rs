@@ -172,6 +172,7 @@ struct OwnReads {
     on: bool,
     /// Open entries below the demoting note.
     base: usize,
+    cap: usize,
     /// `(count - shift, first, last)` of each group; members are linked in `next`.
     groups: VecDeque<(isize, usize, usize)>,
     shift: isize,
@@ -180,9 +181,10 @@ struct OwnReads {
 }
 
 impl OwnReads {
-    fn start(&mut self, base: usize) {
+    fn start(&mut self, base: usize, cap: usize) {
         self.on = true;
         self.base = base;
+        self.cap = cap;
         self.drop_groups();
     }
 
@@ -195,7 +197,7 @@ impl OwnReads {
 
     /// The most brackets above a note's `[` before an opener is text.
     fn ceiling(&self) -> isize {
-        isize::try_from(tables::INLINE_DEPTH.saturating_sub(self.base + 1)).unwrap_or(0)
+        isize::try_from(self.cap.saturating_sub(self.base + 1)).unwrap_or(0)
     }
 
     /// Links member `id` behind the last member of a group ending at `last`.
@@ -1020,7 +1022,7 @@ impl<'a> Scanner<'_, '_, 'a> {
                 self.own.add(at);
             }
         }
-        if open >= tables::INLINE_DEPTH {
+        if open >= self.env.depth_cap {
             self.flush();
             self.text_from = Some(v0);
             self.i = v1;
@@ -1029,7 +1031,7 @@ impl<'a> Scanner<'_, '_, 'a> {
         let tok = self.push(v0, v1, K::Pending);
         let demotes = kind == BKind::Footnote && self.notes.demote.contains_key(&v0);
         if demotes && self.demoting_open == 0 {
-            self.own.start(open);
+            self.own.start(open, self.env.depth_cap);
         }
         self.demoting_open += usize::from(demotes);
         self.probes_open += usize::from(probes.is_some());
@@ -1400,7 +1402,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     }
 
     fn depth_room(&self) -> bool {
-        self.brackets.len() + self.open_delims.len() < tables::INLINE_DEPTH
+        self.brackets.len() + self.open_delims.len() < self.env.depth_cap
     }
 
     fn depth_open(&mut self, mark: char, at: usize) -> bool {
@@ -1499,6 +1501,7 @@ impl<'a> Scanner<'_, '_, 'a> {
             return super::delim::Ctx {
                 t: self.t,
                 comments: &self.comments,
+                cap: self.env.depth_cap,
             }
             .after(i);
         }

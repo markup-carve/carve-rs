@@ -14,7 +14,6 @@ use crate::ast::{
     NonBreakingSpace, Pos, SmartPunctuation, SoftBreak, Span, Text,
 };
 use crate::attr::AttrBlock;
-use crate::tables;
 
 pub(super) struct Frame<'a> {
     kind: Kind,
@@ -431,7 +430,7 @@ impl<'r, 'a> Builder<'r, '_, 'a> {
 
     fn enter(&mut self, kind: Kind, v0: usize, v1: usize) {
         let open = self.frames.iter().filter(|f| !f.dead).count();
-        let dead = open >= tables::INLINE_DEPTH;
+        let dead = open >= self.env.depth_cap;
         if kind == Kind::InlineFootnote {
             // GAP INL-013: an inline footnote's edges bound abbreviations.
             self.flow_prev = None;

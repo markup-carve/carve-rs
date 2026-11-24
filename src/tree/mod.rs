@@ -78,6 +78,19 @@ pub fn build_layered<'a>(
     outer_keys: Option<&HashSet<String>>,
     outer_abbreviations: &[(String, String)],
 ) -> (ast::Document<'a>, Scope) {
+    build_nested(src, arena, events, (outer_keys, outer_abbreviations), 0)
+}
+
+/// `build_layered` of content read as if `open_above` constructs were open
+/// around each inline content, so it nests as far as it would in place (C2-I-118).
+#[allow(clippy::implicit_hasher)]
+pub fn build_nested<'a>(
+    src: &Source<'a>,
+    arena: &'a Arena,
+    events: Vec<Event>,
+    (outer_keys, outer_abbreviations): (Option<&HashSet<String>>, &[(String, String)]),
+    open_above: usize,
+) -> (ast::Document<'a>, Scope) {
     let (link_keys, abbreviations) = definitions(&events);
     let mut b = Builder {
         src,
@@ -98,6 +111,7 @@ pub fn build_layered<'a>(
                     .saturating_mul(crate::tables::DERIVED_TEXT_FACTOR),
             ),
         ),
+        inline_cap: crate::tables::INLINE_DEPTH.saturating_sub(open_above),
     };
     for ev in events {
         b.event(ev);
@@ -168,6 +182,8 @@ struct Builder<'s, 'a> {
     findings: std::cell::RefCell<Vec<crate::block::Finding>>,
     /// C2-I-098: one budget for copied expansions in document order.
     abbreviation_remaining: std::cell::Cell<usize>,
+    /// C2-I-118: the constructs each inline content may nest.
+    inline_cap: usize,
 }
 
 impl<'a> Builder<'_, 'a> {
@@ -216,6 +232,7 @@ impl<'a> Builder<'_, 'a> {
             kind,
             hard_breaks: self.hard > 0,
             abbreviation_remaining: Some(&self.abbreviation_remaining),
+            depth_cap: self.inline_cap,
         };
         #[cfg(feature = "profile")]
         crate::profile::inline(true);

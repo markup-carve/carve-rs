@@ -79,6 +79,9 @@ pub(crate) struct Env<'e, 'a> {
     pub kind: ContentKind,
     pub hard_breaks: bool,
     pub abbreviation_remaining: Option<&'e std::cell::Cell<usize>>,
+    /// C2-I-118: the constructs the content may nest; fewer than the cap when
+    /// the content is read apart from the constructs open around it.
+    pub depth_cap: usize,
 }
 
 /// The link keys of a document and of the documents around it, read in
@@ -282,6 +285,7 @@ pub fn parse<'a>(
         kind: env.kind,
         hard_breaks: env.hard_breaks,
         abbreviation_remaining: None,
+        depth_cap: crate::tables::INLINE_DEPTH,
     };
     parse_env(&env, pieces, s)
 }
@@ -360,6 +364,7 @@ fn full<'a>(
     let ctx = delim::Ctx {
         t: &content.text,
         comments: &comments,
+        cap: env.depth_cap,
     };
     delim::resolve(&mut toks, &ctx, env.arena, &mut s.stacks);
     let out = if env.abbreviations.is_empty() && comments.is_empty() {
