@@ -1,6 +1,6 @@
 //! Lint of accepted include sources (C2-N-085 to C2-N-088).
 
-use super::{LintOptions, lint_core};
+use super::{LintOptions, declares_below_0_2, lint_core};
 use crate::diagnostic::{Diagnostic, IncludeSite};
 use crate::include::Resolver;
 use serde_json::Value;
@@ -108,16 +108,15 @@ fn lint_include(
     };
     let (slice, start, line_shift, selected) = selected_source(node, text);
     let places = selected.map(|_| section_paths(node, text));
-    let child_options = LintOptions {
-        includes: None,
-        ..context.options.clone()
-    };
     let (findings, _) = crate::with_lint_tree(
         slice,
         &crate::Options::default(),
         &crate::Options::default(),
         true,
-        |tree, arena| lint_core(slice, &child_options, tree, arena),
+        |tree, arena| {
+            let child_options = included_options(context.options, start, tree);
+            lint_core(slice, &child_options, tree, arena)
+        },
     );
     for mut finding in findings {
         let Some(mut pos) = finding.pos else { continue };
@@ -154,6 +153,18 @@ fn lint_include(
         finding.path = Some(format!("{path}{under}"));
         finding.included_by = chain.to_vec();
         output.push(finding);
+    }
+}
+
+fn included_options(
+    options: &LintOptions,
+    start: usize,
+    tree: Option<crate::view::V<'_>>,
+) -> LintOptions {
+    LintOptions {
+        includes: None,
+        upgrade: options.upgrade || (start == 0 && tree.is_some_and(declares_below_0_2)),
+        ..options.clone()
     }
 }
 

@@ -72,10 +72,9 @@ fn c2_n_085_no_resolver_and_missing_target_are_reported() {
     );
 }
 
-/// C2-W-156, C2-B-231: the entry's line-1 declaration holds for the text it
-/// includes; a declaration in the included file is no line-1 frontmatter.
+/// C2-W-156, C2-B-231: each source's line-1 declaration controls its own notices.
 #[test]
-fn c2_w_156_the_entry_declaration_reaches_included_text() {
+fn c2_w_156_each_source_reads_its_own_declaration() {
     let notices = |entry: &str, part: &'static str| {
         lint(entry, &options(part))
             .iter()
@@ -83,12 +82,75 @@ fn c2_w_156_the_entry_declaration_reaches_included_text() {
             .map(|d| d.file.clone())
             .collect::<Vec<_>>()
     };
+    assert!(notices("---\ncarve: 0.1\n---\n{{ a.crv }}\n", "# a\n b\n").is_empty());
+    assert!(notices("{{ a.crv }}\n", "# a\n b\n").is_empty());
     assert_eq!(
-        notices("---\ncarve: 0.1\n---\n{{ a.crv }}\n", "# a\n b\n"),
+        notices("{{ a.crv }}\n", "---\ncarve: 0.1\n---\n# a\n b\n"),
         [Some("a.crv".to_string())]
     );
-    assert!(notices("{{ a.crv }}\n", "# a\n b\n").is_empty());
-    assert!(notices("{{ a.crv }}\n", "---\ncarve: 0.1\n---\n# a\n b\n").is_empty());
+}
+
+#[test]
+fn c2_w_156_nested_includes_read_their_own_declarations() {
+    let resolver = Arc::new(|request: &Request<'_>| match request.path {
+        "a.crv" => Ok((
+            b"---\ncarve: 0.1\n---\n{{ b.crv }}\n# a\n b\n".to_vec(),
+            "a.crv".into(),
+        )),
+        "b.crv" => Ok((b"# b\n c\n".to_vec(), "b.crv".into())),
+        _ => Err(Cause::NotFound),
+    });
+    let opts = LintOptions {
+        includes: Some(Includes::new(resolver)),
+        ..LintOptions::default()
+    };
+    let files: Vec<_> = lint("{{ a.crv }}\n", &opts)
+        .into_iter()
+        .filter(|d| d.code == "deprecated-indented-line-under-heading")
+        .map(|d| d.file)
+        .collect();
+    assert_eq!(files, [Some("a.crv".into())]);
+}
+
+#[test]
+fn c2_w_156_declarations_across_include_shapes() {
+    let mut checked = 0;
+    for entry_version in [None, Some("0.1"), Some("0.2")] {
+        for include_version in [None, Some("0.1"), Some("0.2")] {
+            for depth in 0..3 {
+                for padding in 0..20 {
+                    let declaration = |version: Option<&str>| {
+                        version.map_or(String::new(), |version| {
+                            format!("---\ncarve: {version}\n---\n")
+                        })
+                    };
+                    let mut included = declaration(include_version);
+                    included.push_str(&"safe\n".repeat(padding));
+                    if padding > 0 {
+                        included.push('\n');
+                    }
+                    included.push_str("# a\n b\n");
+                    let entry = format!(
+                        "{}{}{{{{ a.crv }}}}\n",
+                        declaration(entry_version),
+                        "> ".repeat(depth)
+                    );
+                    let findings = lint(&entry, &options(Box::leak(included.into_boxed_str())));
+                    let notices = findings
+                        .iter()
+                        .filter(|d| d.code == "deprecated-indented-line-under-heading")
+                        .count();
+                    assert_eq!(
+                        notices,
+                        usize::from(include_version == Some("0.1")),
+                        "{entry:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 540);
 }
 
 fn paths(source: &str, text: &'static str, code: &str) -> Vec<String> {
