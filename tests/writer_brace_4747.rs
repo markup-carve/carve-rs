@@ -9,4 +9,3 @@ fn braced_pair_after_a_literal_brace_needs_no_eager_escape() {
         assert_eq!(carve.write(&tree, &options).unwrap(), source);
     }
 }
-
