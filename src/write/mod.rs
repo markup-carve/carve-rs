@@ -8,6 +8,7 @@
 
 mod attrs;
 mod blocks;
+mod carets;
 mod check;
 mod controls;
 mod extension;
@@ -624,7 +625,7 @@ impl JsonFacts {
             Some("text") => {
                 if let Some(text) = map.get("value").and_then(Value::as_str) {
                     self.spaced_text |= text.ends_with([' ', '\t']);
-                    self.mark_text |= text.bytes().any(pairs::is_mark_byte);
+                    self.mark_text |= text.bytes().any(pairs::is_asked_byte);
                 }
             }
             Some("table_cell") => {
@@ -1194,7 +1195,7 @@ fn write_document<'t>(w: &mut Writer<'t>, doc: N<'t>) -> String {
     while at < nodes.len() {
         let from = at;
         at = repair_group(w, doc, from, out.is_empty());
-        // C2-W-146: test the written text with the five pair rules and reparse each escape round.
+        // C2-W-146: test the written text with the five pair rules and `unattached-caption`, and reparse each escape round.
         for _ in 0..16 {
             if w.group_certificate == GroupCertificate::PlainRows {
                 break;
