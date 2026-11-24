@@ -2908,13 +2908,8 @@ fn prune_in_windows(
     // Most escapes placed by one repair kind are all redundant after the
     // complete group settles. Test that common case in one readback, then
     // fall back to the per-window trials when only some may be removed.
-    if escapes.len() > 1 {
-        let candidate = Chunk::new(without_bytes(source, &escapes)?);
-        let kids = children(candidate.parse(w));
-        if kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e))
-        {
-            return Some(candidate.text().to_string());
-        }
+    if let Some(pruned) = try_prune_all(w, group, source, &escapes) {
+        return Some(pruned);
     }
     let mut leaves = Vec::new();
     leaf_blocks(children(parsed), split, &mut leaves);
@@ -2930,6 +2925,21 @@ fn prune_in_windows(
     let same =
         kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e));
     same.then(|| chunk.text().to_string())
+}
+
+fn try_prune_all(
+    w: &mut Writer<'_>,
+    group: Arr<'_>,
+    source: &str,
+    escapes: &[usize],
+) -> Option<String> {
+    if escapes.len() < 2 {
+        return None;
+    }
+    let candidate = Chunk::new(without_bytes(source, escapes)?);
+    let kids = children(candidate.parse(w));
+    (kids.len() == group.len() && kids.iter().zip(group).all(|(n, e)| node::trees_equal(n, e)))
+        .then(|| candidate.text().to_string())
 }
 
 /// The backslashes of `source` that the prune tries, in source order; `parsed` is its parse.
