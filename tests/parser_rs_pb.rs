@@ -1,6 +1,8 @@
-//! The fence-title-syntax message for a code fence (carve-rs#4725).
+//! The fence-title-syntax message for a code fence (carve-rs#4725) and the blank
+//! lines an opaque body held above a comment line that ends it (carve-rs#4726).
 
 use carve::lint::{LintOptions, lint};
+use carve::{Options, render};
 
 fn title_message(opener: &str) -> String {
     let source = format!("{opener}\ncode\n```\n");
@@ -81,5 +83,29 @@ fn c2_b_122_other_further_words_keep_their_messages() {
     assert_eq!(
         title_message("``` js x\ty"),
         "Text after \"js\" must be a quoted title or a [label]; it is not read as a title. Write ``` js \"x\ty\"."
+    );
+}
+
+const LOOSE_AFTER_QUOTE: &str = "<ul>\n  <li>\n    <blockquote>\n      <div class=\"line-block\">\n        <p>a</p>\n      </div>\n    </blockquote>\n  </li>\n  <li><p>y</p></li>\n</ul>";
+
+#[test]
+fn c2_b_137_a_comment_line_ending_a_body_keeps_the_blank_lines_it_held() {
+    let opts = Options::default();
+    assert_eq!(
+        render("- > ::: |\n  > a\n  >\n%% c\n- y\n", &opts),
+        LOOSE_AFTER_QUOTE
+    );
+    assert_eq!(
+        render("- > ::: |\n  > a\n  >\n  %% c\n- y\n", &opts),
+        LOOSE_AFTER_QUOTE
+    );
+    assert_eq!(
+        render("- > ```\n  > a\n  >\n%% c\n- y\n", &opts),
+        "<ul>\n  <li>\n    <blockquote>\n      <pre><code>a\n</code></pre>\n    </blockquote>\n  </li>\n  <li><p>y</p></li>\n</ul>"
+    );
+    // No blank line held: the list stays tight.
+    assert_eq!(
+        render("- > ::: |\n  > a\n%% c\n- y\n", &opts),
+        "<ul>\n  <li>\n    <blockquote>\n      <div class=\"line-block\">\n        <p>a</p>\n      </div>\n    </blockquote>\n  </li>\n  <li>y</li>\n</ul>"
     );
 }

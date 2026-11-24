@@ -487,7 +487,12 @@ impl<'a> Parser<'a> {
     ) -> bool {
         // C2-B-135: a line that ended an opaque body is not a skipped comment line.
         if had_opaque {
-            return self.leaf.is_none() && self.comment_ends_body(walk, e);
+            if !(self.leaf.is_none() && self.comment_ends_body(walk, e)) {
+                return false;
+            }
+            // C2-B-113, C2-B-137: the blank lines the body held stand above the next block.
+            self.prev_blank = blank_above;
+            return true;
         }
         if !self.comment_only(walk, e) {
             return false;
@@ -522,7 +527,6 @@ impl<'a> Parser<'a> {
         };
         self.close_to(keep);
         self.closed = None;
-        self.blank_run = 0;
         self.comment_only(walk, e)
     }
 
