@@ -18,10 +18,9 @@ fn bundle(name: &str, transform: impl DocumentTransform + 'static) -> Bundle {
 }
 
 fn edit(view: &Tree, f: impl FnOnce(&mut Value)) -> Result<Tree, Error> {
-    let mut doc = crate::api::deep_json(&crate::api::encode_tree(view))
-        .map_err(|e| Error::option("documentTransforms", e.to_string()))?;
+    let mut doc = view.value()?;
     f(&mut doc);
-    Tree::trusted(doc, view.top.clone())
+    Tree::trusted_view(doc, view.top.clone())
 }
 
 fn visit(value: &mut Value, f: &mut impl FnMut(&mut Map<String, Value>)) {

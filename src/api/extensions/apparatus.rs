@@ -179,12 +179,11 @@ pub(super) fn inline_attrs(
 }
 
 pub(super) fn view(view: &Tree) -> Result<Value, Error> {
-    crate::api::deep_json(&crate::api::encode_tree(view))
-        .map_err(|e| Error::option("documentTransforms", e.to_string()))
+    view.value()
 }
 
 pub(super) fn finish(view: &Tree, doc: Value) -> Result<Tree, Error> {
-    Tree::trusted(doc, view.top.clone())
+    Tree::trusted_view(doc, view.top.clone())
 }
 
 pub(super) struct Body;
