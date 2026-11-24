@@ -945,6 +945,9 @@ struct SavedGroup<'t> {
 fn node_ids(v: V<'_>, out: &mut Vec<usize>) {
     if let V::Json(value) = v {
         json_node_ids(value, out);
+    } else if let V::Pos(_) | V::Attrs(_) | V::Marker(_) | V::Task(_) = v {
+        // Only scalars and arrays of strings below.
+        out.push(id(v));
     } else if let Some(items) = v.as_array() {
         for item in items {
             node_ids(item, out);
@@ -980,35 +983,37 @@ impl<'t> SavedGroup<'t> {
             .collect();
         ids.extend(stand_ins);
         let take = |n: &usize| *n;
+        // An empty map holds no entry of the group: skip its lookups.
+        let some = |empty: bool| if empty { &[][..] } else { ids.as_slice() };
         Self {
             lines: w.lines.clone(),
-            escapes: ids
+            escapes: some(w.sp.escapes.is_empty())
                 .iter()
                 .filter_map(|n| w.sp.escapes.get(n).map(|e| (take(n), e.clone())))
                 .collect(),
-            attempts: ids
+            attempts: some(w.sp.attempts.is_empty())
                 .iter()
                 .filter_map(|n| w.sp.attempts.get(n).map(|a| (take(n), a.clone())))
                 .collect(),
-            lost: ids
+            lost: some(w.sp.lost.is_empty())
                 .iter()
                 .copied()
                 .filter(|n| w.sp.lost.contains(n))
                 .collect(),
-            lost_keys: ids
+            lost_keys: some(w.sp.lost_keys.is_empty())
                 .iter()
                 .filter_map(|n| w.sp.lost_keys.get(n).map(|k| (take(n), k.clone())))
                 .collect(),
-            forms: ids
+            forms: some(w.forms.is_empty())
                 .iter()
                 .filter_map(|n| w.forms.get(n).map(|f| (take(n), *f)))
                 .collect(),
-            round_forms: ids
+            round_forms: some(w.round_forms.is_empty())
                 .iter()
                 .copied()
                 .filter(|n| w.round_forms.contains(n))
                 .collect(),
-            glued: ids
+            glued: some(w.glued.is_empty())
                 .iter()
                 .copied()
                 .filter(|n| w.glued.contains(n))
@@ -1954,6 +1959,10 @@ fn apply_changes(w: &mut Writer<'_>, c: &Check<'_>) -> bool {
 /// earlier pair still read on, where the bare form pairs by itself (C2-W-069).
 fn stale_forms<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<usize> {
     let mut stale = Vec::new();
+    // Only a form of `round_forms` is stale.
+    if w.round_forms.is_empty() {
+        return stale;
+    }
     let mut pending: Vec<N<'t>> = group.iter().collect();
     while let Some(node) = pending.pop() {
         // A title and a caption are inline runs of their own outside `children`.
