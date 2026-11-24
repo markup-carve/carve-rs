@@ -112,6 +112,47 @@ fn c2_w_156_nested_includes_read_their_own_declarations() {
     assert_eq!(files, [Some("a.crv".into())]);
 }
 
+#[test]
+fn c2_w_156_declarations_across_include_shapes() {
+    let mut checked = 0;
+    for entry_version in [None, Some("0.1"), Some("0.2")] {
+        for include_version in [None, Some("0.1"), Some("0.2")] {
+            for depth in 0..3 {
+                for padding in 0..20 {
+                    let declaration = |version: Option<&str>| {
+                        version.map_or(String::new(), |version| {
+                            format!("---\ncarve: {version}\n---\n")
+                        })
+                    };
+                    let mut included = declaration(include_version);
+                    included.push_str(&"safe\n".repeat(padding));
+                    if padding > 0 {
+                        included.push('\n');
+                    }
+                    included.push_str("# a\n b\n");
+                    let entry = format!(
+                        "{}{}{{{{ a.crv }}}}\n",
+                        declaration(entry_version),
+                        "> ".repeat(depth)
+                    );
+                    let findings = lint(&entry, &options(Box::leak(included.into_boxed_str())));
+                    let notices = findings
+                        .iter()
+                        .filter(|d| d.code == "deprecated-indented-line-under-heading")
+                        .count();
+                    assert_eq!(
+                        notices,
+                        usize::from(include_version == Some("0.1")),
+                        "{entry:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 540);
+}
+
 fn paths(source: &str, text: &'static str, code: &str) -> Vec<String> {
     lint(source, &options(text))
         .into_iter()
