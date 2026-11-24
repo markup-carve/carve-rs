@@ -6,6 +6,7 @@ use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+mod braced;
 mod controls;
 mod data_attrs;
 mod data_interpreter;
@@ -206,13 +207,20 @@ fn lint_core<'a>(
     } = tree.map_or_else(walk::Walk::empty, |tree| {
         walk::Walk::new(tree, arena, source)
     });
-    let positions = Ranges::new(source, ranges, holders);
+    let positions = Ranges {
+        all: ranges,
+        holders,
+    };
     let mut out = Vec::new();
     let line_model = lines::lines(source, &positions.all);
     if tree.is_some() {
-        nodes::scan(source, opts, items, &mut out);
+        let references: HashSet<&str> = positions
+            .all
+            .iter()
+            .filter_map(|range| range.footnote_key)
+            .collect();
+        nodes::scan(source, opts, items, &references, &mut out);
     }
-    referenced_footnote_platform_tokens(source, opts, &positions, &mut out);
     if let Some(tree) = tree {
         out.retain(|finding| !data_rules::modeled_ids().contains(finding.code));
         let mut positions = positions;
@@ -237,71 +245,6 @@ fn lint_core<'a>(
     }
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
     controls::filter(source, out, &comments)
-}
-
-fn referenced_footnote_platform_tokens(
-    source: &str,
-    opts: &LintOptions,
-    ranges: &Ranges<'_>,
-    output: &mut Vec<Diagnostic>,
-) {
-    if !opts.platforms.iter().any(|platform| platform == "github") {
-        return;
-    }
-    let positions = Source::new(source);
-    let references: HashSet<&str> = ranges
-        .all
-        .iter()
-        .filter_map(|range| range.footnote_key)
-        .collect();
-    let mut offset = 0;
-    for piece in source.split_inclusive('\n') {
-        let line = piece.trim_end_matches('\n');
-        if let Some(rest) = line.strip_prefix("[^")
-            && let Some((label, body)) = rest.split_once("]:")
-            && references.contains(label)
-            && !opaque_definition(ranges, offset)
-        {
-            let body_start = offset + 2 + label.len() + 2;
-            let trimmed = body.trim_start();
-            let start = body_start + body.len() - trimmed.len();
-            let (code, token) = if let Some(after_hash) = trimmed.strip_prefix('#') {
-                (
-                    "platform-issue-reference",
-                    trimmed
-                        .get(..1 + after_hash.bytes().take_while(u8::is_ascii_digit).count())
-                        .unwrap_or(""),
-                )
-            } else if trimmed.starts_with('@') {
-                (
-                    "platform-mention-token",
-                    trimmed.split_whitespace().next().unwrap_or(""),
-                )
-            } else {
-                offset += piece.len();
-                continue;
-            };
-            if token.len() > 1 && active(code, opts) {
-                let mut diagnostic = Diagnostic::new(
-                    code,
-                    &[("host", "GitHub"), ("text", token), ("what", "a mention")],
-                    None,
-                    Some(positions.pos(start, start + token.len())),
-                );
-                diagnostic.path = Some(String::new());
-                output.push(diagnostic);
-            }
-        }
-        offset += piece.len();
-    }
-}
-
-fn opaque_definition(ranges: &Ranges<'_>, offset: usize) -> bool {
-    ranges.around(offset).any(|range| {
-        ["code_block", "raw_block", "frontmatter", "comment"].contains(&range.kind)
-            && range.start <= offset
-            && offset < range.end
-    })
 }
 
 /// Drops every finding that a later finding of the same code at `replacing`
@@ -362,63 +305,10 @@ fn drop_replaced(output: &mut Vec<Diagnostic>, replacing: &[usize]) {
     output.retain(|_| !flags.next().unwrap_or(false));
 }
 
-/// The node ranges, with the ranges that touch each source line, so a lookup
-/// at one offset reads the ranges around it instead of all of them.
+/// The node ranges and the holders their `children` lists belong to.
 struct Ranges<'a> {
     all: Vec<Range<'a>>,
     holders: Vec<Holder>,
-    source: &'a str,
-    index: OnceCell<RangeIndex>,
-}
-
-struct RangeIndex {
-    line_starts: Vec<usize>,
-    by_line: Vec<Vec<usize>>,
-}
-
-impl<'a> Ranges<'a> {
-    const fn new(source: &'a str, all: Vec<Range<'a>>, holders: Vec<Holder>) -> Self {
-        Self {
-            all,
-            holders,
-            source,
-            index: OnceCell::new(),
-        }
-    }
-
-    fn index(&self) -> &RangeIndex {
-        self.index.get_or_init(|| {
-            let mut line_starts = vec![0];
-            line_starts.extend(self.source.match_indices('\n').map(|(at, _)| at + 1));
-            let line_of = |at: usize| line_starts.partition_point(|s| *s <= at).saturating_sub(1);
-            let mut by_line = vec![Vec::new(); line_starts.len()];
-            for (at, range) in self.all.iter().enumerate() {
-                let lines = line_of(range.start)..=line_of(range.end.max(range.start));
-                for line in by_line.get_mut(lines).into_iter().flatten() {
-                    line.push(at);
-                }
-            }
-            RangeIndex {
-                line_starts,
-                by_line,
-            }
-        })
-    }
-
-    /// The ranges on the line of `at`, in tree order: every range that holds `at` is among them.
-    fn around(&self, at: usize) -> impl Iterator<Item = &Range<'a>> {
-        let index = self.index();
-        let line = index
-            .line_starts
-            .partition_point(|s| *s <= at)
-            .saturating_sub(1);
-        index
-            .by_line
-            .get(line)
-            .into_iter()
-            .flatten()
-            .filter_map(|at| self.all.get(*at))
-    }
 }
 
 #[allow(clippy::struct_excessive_bools)] // Independent facts of a node, read by separate rules.

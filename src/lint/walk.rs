@@ -318,11 +318,16 @@ impl<'a> Visit<'a, '_> {
                 parents: rules.parents,
             });
         }
-        Some(&*self.arena.alloc(nodes::Parent {
-            kind,
-            depth: rules.parents.map_or(0, |parent| parent.depth + 1),
-            previous: rules.parents,
-        }))
+        Some(
+            &*self.arena.alloc(nodes::Parent {
+                kind,
+                key: (kind == "footnote")
+                    .then(|| entry.value.at("key").as_str())
+                    .flatten(),
+                depth: rules.parents.map_or(0, |parent| parent.depth + 1),
+                previous: rules.parents,
+            }),
+        )
     }
 
     fn child_rules(key: &str, parents: Option<&'a nodes::Parent<'a>>) -> Option<Rules<'a>> {
