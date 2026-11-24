@@ -99,4 +99,14 @@ fn adjacent_table_text_coalesces_when_the_table_form_stays_pipe() {
     let output = invoke(&json!({"call":"writeWithDiagnostics","tree":tree}));
     assert_eq!(output["ok"]["output"], "| ab | c |\n", "{output}");
     assert_eq!(output["ok"]["diagnostics"], json!([]), "{output}");
+
+    let spaced = json!({"type":"document","astVersion":"2.0","children":[{"type":"table",
+    "columns":[{"type":"table_column"},{"type":"table_column"}],
+    "children":[{"type":"table_body","children":[{"type":"table_row","children":[
+        cell(json!([{"type":"text","value":"a"},{"type":"text","value":" "}])),
+        cell(json!([{"type":"text","value":"c"}]))
+    ]}]}]}]});
+    let output = invoke(&json!({"call":"writeWithDiagnostics","tree":spaced}));
+    assert_eq!(output["ok"]["output"], "| a | c |\n", "{output}");
+    assert_eq!(output["ok"]["diagnostics"], json!([]), "{output}");
 }
