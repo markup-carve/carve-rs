@@ -46,12 +46,7 @@ fn candidate18_cli_clause_cases() {
             .unwrap();
         let out = child.wait_with_output().unwrap();
         let want = &case["expected"];
-        // C2-T-050: carve#6533 corrects CC-1354 to status 1 after this pin; drop at the next one.
-        let status = if id == "CC-1354" {
-            Some(1)
-        } else {
-            want["status"].as_i64()
-        };
+        let status = want["status"].as_i64();
         assert_eq!(
             out.status.code(),
             status.map(|n| i32::try_from(n).unwrap()),
