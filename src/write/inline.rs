@@ -254,9 +254,8 @@ fn text_holds_mark(t: &str, mark: char, words: bool) -> bool {
 fn holds_pairing_mark(nodes: Arr<'_>, mark: char, words: bool) -> bool {
     nodes.iter().any(|n| match ty(n) {
         "text" => text_holds_mark(text(n), mark, words),
-        "link" | "image" | "span" | "inline_footnote" | "inline_extension" | "citation_group" => {
-            false
-        }
+        "link" | "image" | "span" | "inline_footnote" | "inline_extension" | "citation_group"
+        | "emphasis" | "strong" => false,
         t => {
             has(n, "children")
                 && holds_pairing_mark(
