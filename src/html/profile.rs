@@ -294,15 +294,12 @@ fn code_spelling(value: &str, out: &mut String) {
         tick_count += 1;
     }
     let ticks = "`".repeat(tick_count);
-    let padded = value.starts_with('`')
-        || value.ends_with('`')
-        || (value.starts_with(' ') && value.ends_with(' ') && value.bytes().any(|b| b != b' '));
     out.push_str(&ticks);
-    if padded {
+    if value.starts_with('`') {
         out.push(' ');
     }
     out.push_str(value);
-    if padded {
+    if value.ends_with('`') {
         out.push(' ');
     }
     out.push_str(&ticks);

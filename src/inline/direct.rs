@@ -231,16 +231,8 @@ fn code(b: &[u8], i: usize, at: usize, segs: &mut Vec<Seg>, from: usize) -> Opti
         if b.get(j) == Some(&b'`') {
             let m = run(j);
             if m == n {
-                let (mut v0, mut v1) = (i + n, j);
-                let inner = b.get(v0..v1)?;
-                if inner.len() >= 2
-                    && inner.first() == Some(&b' ')
-                    && inner.last() == Some(&b' ')
-                    && inner.iter().any(|&x| x != b' ')
-                {
-                    v0 += 1;
-                    v1 -= 1;
-                }
+                let (lead, tail) = super::atoms::code_padding(b.get(i + n..j)?);
+                let (v0, v1) = (i + n + lead, i + n + tail);
                 flush(segs, at, from, i);
                 segs.push(Seg::Code(at + i, at + j + m, at + v0, at + v1));
                 return Some(j + m);
