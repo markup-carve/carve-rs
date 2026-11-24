@@ -115,19 +115,6 @@ fn key(attrs: &mut Map<String, Value>, name: &str, value: &str) {
     keys.push(json!([name, value]));
 }
 
-fn plain(nodes: &[Value]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        if let Some(s) = node.get("value").and_then(Value::as_str) {
-            out.push_str(s);
-        }
-        if let Some(children) = node.get("children").and_then(Value::as_array) {
-            out.push_str(&plain(children));
-        }
-    }
-    out
-}
-
 fn derived(nodes: &[Value]) -> Vec<Value> {
     nodes
         .iter()
@@ -409,7 +396,7 @@ fn freeze_heading_links(doc: &mut Value) {
     });
 }
 
-fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, String)> {
+fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, Vec<Value>)> {
     let mut levels: Vec<usize> = Vec::new();
     let mut counts: Vec<usize> = Vec::new();
     let mut labels = BTreeMap::new();
@@ -458,7 +445,7 @@ fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, 
         let title = node
             .get("children")
             .and_then(Value::as_array)
-            .map_or(String::new(), |n| plain(&derived(n)));
+            .map_or_else(Vec::new, |n| derived(n));
         if let Some(id) = heading_id(&node) {
             labels.insert(id.clone(), (number.clone(), title));
             if node.get("attrs").and_then(|a| a.get("id")).is_none()
@@ -482,7 +469,7 @@ fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, 
 
 fn number_xrefs(
     doc: &mut Value,
-    labels: &BTreeMap<String, (String, String)>,
+    labels: &BTreeMap<String, (String, Vec<Value>)>,
     options: &HeadingNumbersOptions,
 ) {
     visit(doc, &mut |node| {
@@ -501,13 +488,18 @@ fn number_xrefs(
         let Some((number, title)) = labels.get(id) else {
             return;
         };
-        let label = match options.crossref {
-            CrossrefStyle::Number => format!("{} {number}", options.label),
-            CrossrefStyle::NumberTitle => format!("{} {number} - {title}", options.label),
+        let children = match options.crossref {
+            CrossrefStyle::Number => {
+                vec![json!({"type":"text","value":format!("{} {number}", options.label)})]
+            }
+            CrossrefStyle::NumberTitle => {
+                let lead = json!({"type":"text","value":format!("{} {number} - ", options.label)});
+                std::iter::once(lead).chain(title.iter().cloned()).collect()
+            }
             CrossrefStyle::Title => return,
         };
         node.insert("type".into(), "link".into());
-        node.insert("children".into(), json!([{"type":"text","value":label}]));
+        node.insert("children".into(), Value::Array(children));
         node.remove("namespace");
         node.remove("key");
     });

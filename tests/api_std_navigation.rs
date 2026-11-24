@@ -269,3 +269,27 @@ fn link_policy_reads_bracketed_ipv6_host() {
         "<p>local <a href=\"https://[2001:db8::1]/\">public</a></p>"
     );
 }
+
+#[test]
+fn heading_number_xref_keeps_the_title_markup() {
+    let out = html(
+        "{#sub}\n== Sub *bold*\n\nSee </#sub>.\n",
+        extensions::heading_numbers(extensions::HeadingNumbersOptions::default()),
+    );
+    assert!(
+        out.contains(r##"<a href="#sub">Section 1 - Sub <strong>bold</strong></a>"##),
+        "{out}"
+    );
+}
+
+#[test]
+fn heading_number_xref_to_a_linked_title_does_not_nest_links() {
+    let out = html(
+        "{#g}\n= See [guide](/guide) *now*\n\nGo to </#g>.\n",
+        extensions::heading_numbers(extensions::HeadingNumbersOptions::default()),
+    );
+    assert!(
+        out.contains(r##"<a href="#g">Section 1 - See guide <strong>now</strong></a>"##),
+        "{out}"
+    );
+}
