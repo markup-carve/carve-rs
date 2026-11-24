@@ -2,6 +2,8 @@
 //! with the facts of its owner.
 
 use crate::view::V;
+use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
 
 /// The node an attribute block attaches to, with the facts of `attribute_owner_fields`.
 pub(super) struct Owner {
@@ -75,7 +77,7 @@ fn unescape(text: &str) -> String {
 
 /// The parts of one block at `at`, ending before `end`; the offset behind its `}`, or `None` when it
 /// is no valid block (C2-I-028 to C2-I-034).
-fn read_block(s: &str, at: usize, end: usize, out: &mut Vec<Part>) -> Option<usize> {
+fn read_block(s: &str, at: usize, end: usize, out: &mut impl Parts) -> Option<usize> {
     let b = s.as_bytes();
     let mut p = skip_spaces(b, at + 1, end);
     let mut parts = 0;
@@ -93,6 +95,24 @@ fn read_block(s: &str, at: usize, end: usize, out: &mut Vec<Part>) -> Option<usi
     None
 }
 
+/// Where a reading puts the parts it takes.
+trait Parts {
+    fn take(&mut self, make: impl FnOnce() -> Part);
+}
+
+impl Parts for Vec<Part> {
+    fn take(&mut self, make: impl FnOnce() -> Part) {
+        self.push(make());
+    }
+}
+
+/// A reading that wants only where a block ends, so it builds no part (carve#6488).
+struct Extent;
+
+impl Parts for Extent {
+    fn take(&mut self, _: impl FnOnce() -> Part) {}
+}
+
 fn part(kind: &'static str, key: &str, value: String, span: (usize, usize, usize)) -> Part {
     Part {
         owner: 0,
@@ -108,7 +128,7 @@ fn part(kind: &'static str, key: &str, value: String, span: (usize, usize, usize
     }
 }
 
-fn read_part(s: &str, p: usize, end: usize, out: &mut Vec<Part>) -> Option<usize> {
+fn read_part(s: &str, p: usize, end: usize, out: &mut impl Parts) -> Option<usize> {
     let b = s.as_bytes();
     match byte(b, p) {
         mark @ (b'#' | b'.') => {
@@ -117,8 +137,14 @@ fn read_part(s: &str, p: usize, end: usize, out: &mut Vec<Part>) -> Option<usize
                 return None;
             }
             let kind = if mark == b'#' { "id" } else { "class" };
-            let name = slice(s, p + 1, after).to_owned();
-            out.push(part(kind, "", name, (p, after, after)));
+            out.take(|| {
+                part(
+                    kind,
+                    "",
+                    slice(s, p + 1, after).to_owned(),
+                    (p, after, after),
+                )
+            });
             Some(after)
         }
         b':' => read_language(s, p, end, out),
@@ -131,12 +157,14 @@ fn read_part(s: &str, p: usize, end: usize, out: &mut Vec<Part>) -> Option<usize
             if first == b'_' {
                 return None;
             }
-            out.push(part(
-                "key",
-                slice(s, p, key_end),
-                String::new(),
-                (p, key_end, key_end),
-            ));
+            out.take(|| {
+                part(
+                    "key",
+                    slice(s, p, key_end),
+                    String::new(),
+                    (p, key_end, key_end),
+                )
+            });
             Some(key_end)
         }
         _ => None,
@@ -144,7 +172,7 @@ fn read_part(s: &str, p: usize, end: usize, out: &mut Vec<Part>) -> Option<usize
 }
 
 /// C2-I-030: a language tag is empty or runs of letters and digits joined by single hyphens.
-fn read_language(s: &str, p: usize, end: usize, out: &mut Vec<Part>) -> Option<usize> {
+fn read_language(s: &str, p: usize, end: usize, out: &mut impl Parts) -> Option<usize> {
     let b = s.as_bytes();
     let word = |c: u8| c.is_ascii_alphanumeric();
     let mut q = run(b, p + 1, end, word);
@@ -155,11 +183,11 @@ fn read_language(s: &str, p: usize, end: usize, out: &mut Vec<Part>) -> Option<u
         }
         q = after;
     }
-    out.push(part("lang", "", slice(s, p + 1, q).to_owned(), (p, q, q)));
+    out.take(|| part("lang", "", slice(s, p + 1, q).to_owned(), (p, q, q)));
     Some(q)
 }
 
-fn read_value(s: &str, p: usize, equals: usize, end: usize, out: &mut Vec<Part>) -> Option<usize> {
+fn read_value(s: &str, p: usize, equals: usize, end: usize, out: &mut impl Parts) -> Option<usize> {
     let b = s.as_bytes();
     let key = slice(s, p, equals);
     if equals + 1 >= end {
@@ -171,8 +199,10 @@ fn read_value(s: &str, p: usize, equals: usize, end: usize, out: &mut Vec<Part>)
         while q < end {
             match byte(b, q) {
                 c if c == first => {
-                    let value = unescape(slice(s, equals + 2, q));
-                    out.push(part("key", key, value, (p, equals, q + 1)));
+                    out.take(|| {
+                        let value = unescape(slice(s, equals + 2, q));
+                        part("key", key, value, (p, equals, q + 1))
+                    });
                     return Some(q + 1);
                 }
                 b'\n' => return None,
@@ -182,14 +212,38 @@ fn read_value(s: &str, p: usize, equals: usize, end: usize, out: &mut Vec<Part>)
         }
         return None;
     }
-    let after = run(b, equals + 1, end, |c| {
-        !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
-    });
+    let after = value_stop(b, equals + 1).min(end);
     let next = (after < end).then(|| byte(b, after));
     (after > equals + 1 && matches!(next, Some(b' ' | b'}'))).then(|| {
-        let value = slice(s, equals + 1, after).to_owned();
-        out.push(part("key", key, value, (p, equals, after)));
+        out.take(|| {
+            let value = slice(s, equals + 1, after).to_owned();
+            part("key", key, value, (p, equals, after))
+        });
         after
+    })
+}
+
+thread_local! {
+    /// The source (address and length), start and stop of the last unquoted value run read, for
+    /// [`value_stop`].
+    static VALUE_RUN: Cell<((usize, usize), usize, usize)> = const { Cell::new(((0, 0), usize::MAX, 0)) };
+}
+
+/// Where an unquoted value from `from` stops. A value takes `{`, so on a line of glued openers
+/// every opener's value runs to the same stop: it is found once, keeping the line linear
+/// (carve#6488). It is keyed by the source and cleared by [`build`].
+fn value_stop(b: &[u8], from: usize) -> usize {
+    let source = (b.as_ptr() as usize, b.len());
+    VALUE_RUN.with(|known| {
+        let (read, start, stop) = known.get();
+        if read == source && start <= from && from <= stop {
+            return stop;
+        }
+        let stop = run(b, from, b.len(), |c| {
+            !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
+        });
+        known.set((source, from, stop));
+        stop
     })
 }
 
@@ -227,15 +281,26 @@ fn read_run(s: &str, from: usize, end: usize, cell: bool, out: &mut Vec<Part>) -
     let b = s.as_bytes();
     let mut at = from;
     while byte(b, at) == b'{' {
-        let Some(stop) = block_end(b, at, end) else {
-            return at;
-        };
         let marks = if cell && at == from {
             cell_marks(b, at)
         } else {
             0
         };
         let kept = out.len();
+        if marks == 0 {
+            // Parsed without looking for the `}` first, which scans to the line end for every brace
+            // of a brace-dense line (carve#6488). A parse that succeeds ends at the `}` `block_end`
+            // finds: no part takes a newline or an unquoted `}`, and quotes open after `=` in both.
+            if let Some(stop) = read_block(s, at, end, out) {
+                at = stop;
+                continue;
+            }
+            out.truncate(kept);
+            return at;
+        }
+        let Some(stop) = block_end(b, at, end) else {
+            return at;
+        };
         let marks_only = marks > 0 && skip_spaces(b, at + 1 + marks, stop) == stop - 1;
         if !marks_only && read_block(s, at + marks, stop, out) != Some(stop) {
             out.truncate(kept);
@@ -296,10 +361,11 @@ fn overlaps(node: V<'_>) -> (String, String) {
     (align.join(" "), valign.join(" "))
 }
 
-/// C2-I-039, C2-A-035: whether two keys of one owner have the name the tree merges by.
-fn same_name(a: &str, b: &str, span: bool) -> bool {
-    let semantic = |k: &str| matches!(k, "abbr" | "time" | "kbd");
-    a == b || (a.eq_ignore_ascii_case(b) && (!span || semantic(a) == semantic(b)))
+/// C2-I-039, C2-A-035: the name the tree merges a key of one owner by: two keys merge when they
+/// match ignoring ASCII case and, on a span, are both semantic keys or both not.
+fn merge_name(key: &str, span: bool) -> (String, bool) {
+    let semantic = matches!(key, "abbr" | "time" | "kbd");
+    (key.to_ascii_lowercase(), span && semantic)
 }
 
 /// What the table builder needs of one node.
@@ -315,20 +381,83 @@ pub(super) struct Node<'k, 'v> {
     pub quotes: usize,
 }
 
-/// C2-I-036: the run of glued blocks that ends at the end of an inline node.
-fn inline_parts(source: &str, node: &Node<'_, '_>, out: &mut Vec<Part>) {
-    let first = out.len();
+/// The valid blocks of the inline nodes, each read once for all the nodes that hold it, so nested
+/// nodes do not each try every brace inside them (carve#6488).
+#[derive(Default)]
+struct Blocks {
+    /// The first position at or after an index that is not read yet, path-compressed.
+    unread: Vec<usize>,
+    /// The openers of the valid blocks that end at a position, by that position.
+    ending: HashMap<usize, Vec<usize>>,
+}
+
+impl Blocks {
+    fn unread(&mut self, mut i: usize) -> usize {
+        while let Some(&up) = self.unread.get(i).filter(|&&up| up != i) {
+            let skip = self.unread.get(up).copied().unwrap_or(up);
+            if let Some(slot) = self.unread.get_mut(i) {
+                *slot = skip;
+            }
+            i = skip;
+        }
+        i
+    }
+
+    /// Reads the blocks that open in `from..end` and were not read yet. A block reads the same up to
+    /// the line end as up to any end behind its `}`, so one reading serves every node.
+    fn read(&mut self, source: &str, from: usize, end: usize) {
+        let b = source.as_bytes();
+        if self.unread.is_empty() {
+            self.unread = (0..=b.len()).collect();
+        }
+        let mut at = self.unread(from);
+        while at < end {
+            if byte(b, at) == b'{' {
+                if let Some(stop) = read_block(source, at, b.len(), &mut Extent) {
+                    self.ending.entry(stop).or_default().push(at);
+                }
+            }
+            if let Some(slot) = self.unread.get_mut(at) {
+                *slot = at + 1;
+            }
+            at = self.unread(at + 1);
+        }
+    }
+}
+
+/// C2-I-036: the run of glued blocks that ends at the end of an inline node, from its leftmost brace
+/// whose run reaches that end.
+fn inline_parts(source: &str, node: &Node<'_, '_>, blocks: &mut Blocks, out: &mut Vec<Part>) {
     if node.end <= node.start || byte(source.as_bytes(), node.end - 1) != b'}' {
         return;
     }
-    let mut at = node.start + 1;
-    while let Some(found) = source.get(at..node.end).and_then(|rest| rest.find('{')) {
-        let from = at + found;
+    let first = out.len();
+    // Mostly the node's first brace opens the run.
+    if let Some(from) = source
+        .get(node.start + 1..node.end)
+        .and_then(|rest| rest.find('{'))
+        .map(|found| node.start + 1 + found)
+    {
         if read_run(source, from, node.end, false, out) == node.end {
             return;
         }
         out.truncate(first);
-        at = from + 1;
+    }
+    blocks.read(source, node.start + 1, node.end);
+    let mut leftmost = None;
+    let mut ends = vec![node.end];
+    while let Some(end) = ends.pop() {
+        for &at in blocks.ending.get(&end).into_iter().flatten() {
+            if at > node.start {
+                leftmost = Some(leftmost.map_or(at, |left: usize| left.min(at)));
+                ends.push(at);
+            }
+        }
+    }
+    if let Some(from) = leftmost {
+        if read_run(source, from, node.end, false, out) != node.end {
+            out.truncate(first);
+        }
     }
 }
 
@@ -426,7 +555,7 @@ fn owner_of(source: &str, node: &Node<'_, '_>, opener: usize) -> Owner {
 
 /// The fields a part takes from its owner and from the later parts of that owner.
 fn finish(parts: &mut [Part], owner: u32, node: &Node<'_, '_>) {
-    let keys: Vec<&str> = node
+    let keys: HashSet<&str> = node
         .value
         .get("attrs")
         .and_then(|attrs| attrs.get("keyValues"))
@@ -440,30 +569,28 @@ fn finish(parts: &mut [Part], owner: u32, node: &Node<'_, '_>) {
         })
         .collect();
     let span = node.kind == "span";
-    for at in 0..parts.len() {
-        let (head, later) = parts.split_at_mut(at + 1);
-        let Some(this) = head.last_mut() else {
-            continue;
-        };
+    // Read from the end, so a key is the last of its name when no later key had that name.
+    let mut later = HashSet::new();
+    for (at, this) in parts.iter_mut().enumerate().rev() {
         this.owner = owner;
         this.index = at;
         if this.kind == "key" {
-            this.kept = keys.contains(&this.key.as_str());
-            this.last_key = !later
-                .iter()
-                .any(|other| other.kind == "key" && same_name(&this.key, &other.key, span));
+            this.kept = keys.contains(this.key.as_str());
+            this.last_key = later.insert(merge_name(&this.key, span));
         }
     }
 }
 
 /// The attribute records of the nodes, in source order within each owner.
 pub(super) fn build<'k, 'v>(source: &str, nodes: impl Iterator<Item = Node<'k, 'v>>) -> Table {
+    VALUE_RUN.with(|known| known.set(((0, 0), usize::MAX, 0)));
     let mut table = Table::default();
+    let mut blocks = Blocks::default();
     for node in nodes {
         let first = table.parts.len();
         let mut opener = node.start;
         if node.inline {
-            inline_parts(source, &node, &mut table.parts);
+            inline_parts(source, &node, &mut blocks, &mut table.parts);
         } else if matches!(node.kind, "list_item" | "table_cell") {
             marker_parts(source, &node, &mut table.parts);
         } else {

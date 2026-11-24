@@ -2,7 +2,6 @@
 
 use crate::diagnostic::Diagnostic;
 use crate::source::Source;
-use serde_json::Value;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -38,11 +37,8 @@ pub struct LintOptions {
     pub includes: Option<crate::include::Includes>,
 }
 
-fn catalog() -> &'static Value {
-    static CATALOG: OnceLock<Value> = OnceLock::new();
-    CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../spec-data/lint-rules.json")).unwrap_or(Value::Null)
-    })
+mod catalog {
+    include!(concat!(env!("OUT_DIR"), "/lint_catalog_gen.rs"));
 }
 
 /// The `default` of a catalog row; `Upgrade` marks a migration notice (C2-W-156).
@@ -63,14 +59,10 @@ fn rows() -> &'static HashMap<&'static str, Row> {
     static ROWS: OnceLock<HashMap<&'static str, Row>> = OnceLock::new();
     ROWS.get_or_init(|| {
         let mut rows = HashMap::new();
-        for row in catalog()["rules"].as_array().into_iter().flatten() {
-            let Some(id) = row["id"].as_str() else {
-                continue;
-            };
+        for &(id, usable, default) in catalog::ROWS {
             rows.entry(id).or_insert_with(|| Row {
-                usable: (row["channel"] == "lint" || row["channel"].is_null())
-                    && !matches!(row["status"].as_str(), Some("obsolete" | "void")),
-                default: match row["default"].as_str().unwrap_or("on") {
+                usable,
+                default: match default {
                     "on" => RowDefault::On,
                     "upgrade" => RowDefault::Upgrade,
                     _ => RowDefault::Off,
@@ -556,6 +548,9 @@ impl data_model::NodeTree for TreeNodes<'_, '_> {
     }
 }
 
+/// The span of each continuation row of a table, by group and row index.
+type RowSpans = HashMap<(usize, usize), (usize, usize)>;
+
 /// C2-W-150: a table row that a continuation row joined omits `pos` (C2-A-158) and still has a block
 /// record, placed where its source layout entry is.
 fn joined_rows<'t>(
@@ -569,22 +564,27 @@ fn joined_rows<'t>(
     if rows.is_empty() {
         return;
     }
-    let entries = crate::api::layout::entries(source, &tree.to_value());
-    let spans: HashMap<&str, (usize, usize)> = entries
-        .iter()
-        .filter_map(|entry| {
-            let byte = |key: &str| {
-                entry
-                    .get(key)
-                    .and_then(serde_json::Value::as_u64)
-                    .and_then(|at| usize::try_from(at).ok())
-            };
-            Some((
-                entry.get("path")?.as_str()?,
-                (byte("startByte")?, byte("endByte")?),
-            ))
-        })
-        .collect();
+    // Only a row with continuation lines of a table the layout walk reaches has a span.
+    let scanned = crate::api::layout::ScannedTables::new(source);
+    let mut spans: HashMap<usize, RowSpans> = HashMap::new();
+    for &(table, ..) in &rows {
+        spans
+            .entry(table)
+            .or_insert_with(|| match (positions.all.get(table), values.get(table)) {
+                (Some(range), Some(&value)) if layout_reaches(tree, range.path.node) => {
+                    crate::api::layout::continuation_rows(
+                        source,
+                        &scanned,
+                        value,
+                        range.start,
+                        range.end,
+                    )
+                    .into_iter()
+                    .collect()
+                }
+                _ => HashMap::new(),
+            });
+    }
     let breaks: Vec<usize> = memchr_lines(source);
     let line_of = |at: usize| breaks.partition_point(|&brk| brk < at) + 1;
     let mut index = JoinIndex::new(positions);
@@ -599,7 +599,9 @@ fn joined_rows<'t>(
         let group_path = format!("{table_path}/children/{group}");
         let path = format!("{group_path}/children/{row_at}");
         let (Some(&(start, end)), Some(&parent), Ok(at), Ok(made)) = (
-            spans.get(path.as_str()),
+            spans
+                .get(&table)
+                .and_then(|rows| rows.get(&(group, row_at))),
             index.groups.get(group_path.as_str()),
             u32::try_from(row_at),
             u32::try_from(positions.all.len()),
@@ -642,6 +644,49 @@ fn joined_rows<'t>(
             next.prev = Some(made);
         }
     }
+}
+
+/// Whether the layout walk (`api::layout`) reaches the node at `path`: it descends only through
+/// the `title`, `children` and `caption` slots of typed nodes, and not into an include's children.
+fn layout_reaches(tree: V<'_>, path: Option<&walk::PathNode<'_>>) -> bool {
+    let mut segments = Vec::new();
+    let mut at = path;
+    while let Some(node) = at {
+        segments.push(&node.segment);
+        at = node.previous;
+    }
+    let mut node = tree;
+    let mut steps = segments.into_iter().rev();
+    while let Some(segment) = steps.next() {
+        let Some(ty) = node.ty().as_str() else {
+            return false;
+        };
+        let walk::Segment::Key(slot) = segment else {
+            return false;
+        };
+        if !matches!(*slot, "title" | "children" | "caption")
+            || ty == "include" && *slot == "children"
+        {
+            return false;
+        }
+        let Some(value) = node.get(slot) else {
+            return false;
+        };
+        node = if let Some(items) = value.as_array() {
+            let Some(walk::Segment::Index(index)) = steps.next() else {
+                return false;
+            };
+            let Some(item) = items.get(*index) else {
+                return false;
+            };
+            item
+        } else if value.is_object() {
+            value
+        } else {
+            return false;
+        };
+    }
+    node.ty().as_str().is_some()
 }
 
 /// The offsets of the line breaks of a source.

@@ -31,7 +31,7 @@ pub(super) fn build_from(source: &str, document: &Value, input: Input<'_>) -> Va
             }
             _ => None,
         },
-        tables: tables(source),
+        tables: ScannedTables::new(source),
     };
     walk.visit(document, "", Frame::document(source));
     json!({
@@ -47,7 +47,7 @@ pub(crate) fn entries(source: &str, document: &Value) -> Vec<Value> {
         source,
         nodes: Vec::new(),
         offsets: None,
-        tables: tables(source),
+        tables: ScannedTables::new(source),
     };
     walk.visit(document, "", Frame::document(source));
     walk.nodes
@@ -147,10 +147,94 @@ pub(crate) fn blank_lines_after(source: &str, end: usize, limit: usize, quotes: 
     let walk = Walk {
         source,
         nodes: Vec::new(),
-        tables: Vec::new(),
+        tables: ScannedTables::default(),
         offsets: None,
     };
     walk.blank_after(end.min(source.len()), limit, quotes, false)
+}
+
+/// The tables of a source as the block scan reads them, with the first row start of each that has
+/// rows, so a table node finds its scanned table by binary search instead of a scan (carve#6489).
+#[derive(Default)]
+pub(crate) struct ScannedTables {
+    tables: Vec<(usize, TableData)>,
+    /// (first row start, index) of the tables with rows, in scan order.
+    firsts: Vec<(usize, usize)>,
+    sorted: bool,
+}
+
+impl ScannedTables {
+    pub(crate) fn new(source: &str) -> Self {
+        let tables = tables(source);
+        let firsts: Vec<(usize, usize)> = tables
+            .iter()
+            .enumerate()
+            .filter_map(|(at, (_, data))| Some((data.rows.first()?.start, at)))
+            .collect();
+        let sorted = firsts.windows(2).all(|pair| pair[0].0 <= pair[1].0);
+        Self {
+            tables,
+            firsts,
+            sorted,
+        }
+    }
+
+    /// The first scanned table whose rows lie in the table node that spans `start..end`.
+    fn find(&self, start: usize, end: usize) -> Option<&TableData> {
+        let fits = |&(first, at): &(usize, usize)| {
+            let data = &self.tables[at].1;
+            (first >= start && first < end && data.rows.last().is_some_and(|r| r.end <= end))
+                .then_some(data)
+        };
+        if !self.sorted {
+            return self.firsts.iter().find_map(fits);
+        }
+        let from = self.firsts.partition_point(|&(first, _)| first < start);
+        self.firsts[from..]
+            .iter()
+            .take_while(|&&(first, _)| first < end)
+            .find_map(fits)
+    }
+}
+
+/// The span of each row with continuation lines of the table node that spans `start..end`, by its
+/// group and row index: the row entries [`entries`] gives that table, without building and walking
+/// the whole tree (carve#6489).
+pub(crate) fn continuation_rows(
+    source: &str,
+    tables: &ScannedTables,
+    table: crate::view::V<'_>,
+    start: usize,
+    end: usize,
+) -> Vec<((usize, usize), (usize, usize))> {
+    let mut spans = Vec::new();
+    let Some(data) = tables.find(start, end) else {
+        return spans;
+    };
+    let mut row_index = 0;
+    let groups = table.get("children").and_then(crate::view::V::as_array);
+    for (group_index, group) in groups
+        .into_iter()
+        .flat_map(crate::view::Arr::iter)
+        .enumerate()
+    {
+        let Some(rows) = group.get("children").and_then(crate::view::V::as_array) else {
+            continue;
+        };
+        for (index, node) in rows.iter().enumerate() {
+            if node.ty().as_str() != Some("table_row") {
+                continue;
+            }
+            let Some(row) = data.rows.get(row_index) else {
+                return spans;
+            };
+            row_index += 1;
+            if continuation_lines(source, row.start, row.end) > 0 {
+                spans.push(((group_index, index), (row.start, row.end)));
+            }
+        }
+    }
+    spans
 }
 
 fn tables(source: &str) -> Vec<(usize, TableData)> {
@@ -276,7 +360,7 @@ impl Frame {
 struct Walk<'a> {
     source: &'a str,
     nodes: Vec<Value>,
-    tables: Vec<(usize, TableData)>,
+    tables: ScannedTables,
     offsets: Option<Vec<usize>>,
 }
 
@@ -714,17 +798,7 @@ impl Walk<'_> {
     }
 
     fn table_rows(&mut self, table: &Value, path: &str, start: usize, end: usize) {
-        let Some((_, data)) = self
-            .tables
-            .iter()
-            .find(|(_, data)| {
-                data.rows
-                    .first()
-                    .is_some_and(|r| r.start >= start && r.start < end)
-                    && data.rows.last().is_some_and(|r| r.end <= end)
-            })
-            .cloned()
-        else {
+        let Some(data) = self.tables.find(start, end).cloned() else {
             return;
         };
         let mut row_index = 0;

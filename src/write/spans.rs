@@ -3,7 +3,7 @@
 //! The writer writes a copy of the tree with the marks added; a loss path is mapped back to the
 //! supplied tree, and an added mark reports at its covering cell.
 
-use crate::view::V;
+use crate::view::{Arr, V};
 use serde_json::{Value, json};
 
 /// The copy of the tree with the marks, and how its rows map back to the supplied ones.
@@ -22,19 +22,27 @@ struct Pending {
     width: usize,
 }
 
-fn count(cell: &Value, field: &str) -> i64 {
-    cell.get(field).and_then(Value::as_i64).unwrap_or(1)
+fn count(cell: V<'_>, field: &str) -> i64 {
+    if let V::Node(crate::ast::Node::TableCell(cell)) = cell {
+        let count = match field {
+            "colspan" => cell.colspan,
+            "rowspan" => cell.rowspan,
+            _ => None,
+        };
+        return count.unwrap_or(1);
+    }
+    cell.get(field).and_then(V::as_i64).unwrap_or(1)
 }
 
-fn span_of(cell: Option<&Value>) -> Option<&str> {
-    cell.and_then(|c| c.get("span")).and_then(Value::as_str)
+fn span_of(cell: Option<V<'_>>) -> Option<&str> {
+    cell.and_then(|c| c.get("span")).and_then(V::as_str)
 }
 
 fn mark(span: &str) -> Value {
     json!({ "type": "table_cell", "header": false, "span": span, "children": [] })
 }
 
-fn has_counts(table: &Value) -> bool {
+fn has_counts(table: V<'_>) -> bool {
     groups(table).any(|(_, group)| {
         rows(group).any(|(_, row)| {
             cells(row)
@@ -44,27 +52,27 @@ fn has_counts(table: &Value) -> bool {
     })
 }
 
-fn list(node: &Value) -> &[Value] {
+fn list(node: V<'_>) -> Arr<'_> {
     node.get("children")
-        .and_then(Value::as_array)
-        .map_or(&[], Vec::as_slice)
+        .and_then(V::as_array)
+        .unwrap_or_else(Arr::empty)
 }
 
-fn groups(table: &Value) -> impl Iterator<Item = (usize, &Value)> {
+fn groups(table: V<'_>) -> impl Iterator<Item = (usize, V<'_>)> {
     list(table)
         .iter()
         .enumerate()
-        .filter(|(_, g)| g.get("type").and_then(Value::as_str) != Some("comment"))
+        .filter(|(_, g)| g.get("type").and_then(V::as_str) != Some("comment"))
 }
 
-fn rows(group: &Value) -> impl Iterator<Item = (usize, &Value)> {
+fn rows(group: V<'_>) -> impl Iterator<Item = (usize, V<'_>)> {
     list(group)
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.get("type").and_then(Value::as_str) == Some("table_row"))
+        .filter(|(_, r)| r.get("type").and_then(V::as_str) == Some("table_row"))
 }
 
-fn cells(row: &Value) -> &[Value] {
+fn cells(row: V<'_>) -> Arr<'_> {
     list(row)
 }
 
@@ -73,8 +81,14 @@ struct GroupMarks {
     pending: Vec<Option<Pending>>,
 }
 
+/// A cell of a row with its marks: a cell of the supplied row by index, or an added mark.
+enum Slot {
+    Given(usize),
+    Mark(&'static str),
+}
+
 struct RowOut {
-    cells: Vec<Value>,
+    cells: Vec<Slot>,
     from: Vec<String>,
     column: usize,
     added: bool,
@@ -84,10 +98,10 @@ impl GroupMarks {
     /// The cells of `row` with the marks of its counts, by the column counting of C2-B-172.
     fn row(
         &mut self,
-        row: &Value,
+        row: V<'_>,
         path: &str,
         unspelled: &mut Vec<String>,
-    ) -> Option<(Vec<Value>, Vec<String>)> {
+    ) -> Option<(Vec<Slot>, Vec<String>)> {
         let given = cells(row);
         let mut out = RowOut {
             cells: Vec::new(),
@@ -98,7 +112,7 @@ impl GroupMarks {
         for (k, cell) in given.iter().enumerate() {
             self.take(&mut out, Some(cell), unspelled);
             let at = format!("{path}/children/{k}");
-            out.cells.push(cell.clone());
+            out.cells.push(Slot::Given(k));
             out.from.push(at.clone());
             if span_of(Some(cell)) == Some("rowspan")
                 && let Some(Some(held)) = self.pending.get_mut(out.column)
@@ -116,7 +130,7 @@ impl GroupMarks {
             };
             let missing = colspan - 1 - held;
             for _ in 0..missing {
-                out.cells.push(mark("colspan"));
+                out.cells.push(Slot::Mark("colspan"));
                 out.from.push(at.clone());
             }
             out.added |= missing > 0;
@@ -149,14 +163,14 @@ impl GroupMarks {
 
     /// The marks of the row spans from above at the column, before the cell `next` of the row.
     /// A `^` that the tree holds there is the mark of its row, so none is added.
-    fn take(&mut self, out: &mut RowOut, next: Option<&Value>, unspelled: &mut Vec<String>) {
+    fn take(&mut self, out: &mut RowOut, next: Option<V<'_>>, unspelled: &mut Vec<String>) {
         while let Some(Some(held)) = self.pending.get_mut(out.column) {
             if held.rows <= 0 || span_of(next) == Some("rowspan") {
                 break;
             }
             // A `^` below a cell of more than one column joins nothing, so that row span stays unspelled.
             if held.width == 1 {
-                out.cells.push(mark("rowspan"));
+                out.cells.push(Slot::Mark("rowspan"));
                 out.from.push(held.at.clone());
                 out.added = true;
             } else if !unspelled.contains(&held.at) {
@@ -183,13 +197,21 @@ fn mark_tables(
     rows_out: &mut Vec<(String, Vec<String>)>,
     unspelled: &mut Vec<String>,
 ) {
-    if node.get("type").and_then(Value::as_str) == Some("table") && has_counts(node) {
+    if node.get("type").and_then(Value::as_str) == Some("table") && has_counts(V::Json(node)) {
         let mut changes = Vec::new();
-        for (g, group) in groups(node) {
+        for (g, group) in groups(V::Json(node)) {
             let mut marks = GroupMarks::default();
             for (r, row) in rows(group) {
                 let row_path = format!("{path}/children/{g}/children/{r}");
-                if let Some((cells, from)) = marks.row(row, &row_path, unspelled) {
+                if let Some((slots, from)) = marks.row(row, &row_path, unspelled) {
+                    let given = cells(row);
+                    let cells: Vec<Value> = slots
+                        .iter()
+                        .map(|slot| match slot {
+                            Slot::Given(k) => given.get(*k).map_or(Value::Null, V::to_value),
+                            Slot::Mark(span) => mark(span),
+                        })
+                        .collect();
                     changes.push((g, r, cells, row_path, from));
                 }
             }
@@ -217,9 +239,47 @@ fn mark_tables(
     }
 }
 
+/// Whether a table of the tree gets a mark or has a row span without one: what [`mark_tables`]
+/// decides, read off the tree without copying it. A parsed tree holds its marks, so its copy would
+/// change nothing (carve#6485).
+fn needs_marks(node: V<'_>) -> bool {
+    if node.ty().as_str() == Some("table") && has_counts(node) && table_needs_marks(node) {
+        return true;
+    }
+    if let Some(items) = node.as_array() {
+        return items.iter().any(needs_marks);
+    }
+    if !node.is_object() {
+        return false;
+    }
+    // A typed node's other views (positions, attrs, markers, scalars) hold no node.
+    let typed = matches!(node, V::Node(_));
+    let mut found = false;
+    node.each(&mut |_, value| {
+        found = found
+            || ((!typed || matches!(value, V::Node(_) | V::Nodes(_) | V::Json(_)))
+                && needs_marks(value));
+    });
+    found
+}
+
+fn table_needs_marks(table: V<'_>) -> bool {
+    let mut unspelled = Vec::new();
+    for (_, group) in groups(table) {
+        let mut marks = GroupMarks::default();
+        for (_, row) in rows(group) {
+            if marks.row(row, "", &mut unspelled).is_some() {
+                return true;
+            }
+        }
+        marks.finish(&mut unspelled);
+    }
+    !unspelled.is_empty()
+}
+
 /// The tree with the marks of C2-W-145, or `None` where no count lacks them.
 pub fn add(doc: V<'_>) -> Option<Spans> {
-    if !has_any_counts(doc) {
+    if !has_any_counts(doc) || !needs_marks(doc) {
         return None;
     }
     let mut copy = doc.to_value();
