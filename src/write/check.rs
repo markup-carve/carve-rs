@@ -651,13 +651,21 @@ fn late_respell_step<'t>(
     }
 }
 
+fn take_attempt<'t>(w: &mut Writer<'t>, n: usize) -> Attempt<'t> {
+    let prior = w.sp.attempts.remove(&n);
+    if let Some(journal) = w.attempts_journal.as_mut() {
+        journal.push((n, prior.clone()));
+    }
+    prior.unwrap_or_default()
+}
+
 /// The node `es[i]` did not read back: the ways to make it form are tried one per round.
 fn respell<'t>(w: &mut Writer<'t>, c: &mut Check<'t>, es: &[N<'t>], i: usize) -> bool {
     let Some(&e) = es.get(i) else { return false };
     if w.is_lost(e) {
         return false;
     }
-    let mut attempt = w.sp.attempts.remove(&id(e)).unwrap_or_default();
+    let mut attempt = take_attempt(w, id(e));
     let before = c.escapes.len();
     while attempt.step < RESPELL_STEPS {
         let step = attempt.step;
@@ -1148,6 +1156,20 @@ pub fn count_open_above<'t>(w: &mut Writer<'t>, group: Arr<'t>) {
 /// One round of a probe, in the spelling of the probe: the escapes it asked for, whether it found losses,
 /// and the escapes a brace of case one may take out.
 fn probe_round<'t>(
+    w: &mut Writer<'t>,
+    e: N<'t>,
+    expected: &[N<'t>],
+    flags: u32,
+    kinds: &mut ProbeKinds<'t>,
+) -> Option<ProbeRound<'t>> {
+    // A probe respells in its own spelling, which the journal of the round does not cover.
+    let journal = w.attempts_journal.take();
+    let result = probe_round_in(w, e, expected, flags, kinds);
+    w.attempts_journal = journal;
+    result
+}
+
+fn probe_round_in<'t>(
     w: &mut Writer<'t>,
     e: N<'t>,
     expected: &[N<'t>],

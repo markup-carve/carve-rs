@@ -2008,7 +2008,12 @@ fn compare_with_link_fallback<'t>(
     initial: bool,
     round: &mut Round<'_>,
 ) -> Check<'t> {
+    // The fallback compares this round again, so the respell steps of the first comparison do not count.
+    if initial && w.saw_link && !w.link_bracket_fallback {
+        w.attempts_journal = Some(Vec::new());
+    }
     let mut c = compare_group(w, doc, group, first, round);
+    let journal = w.attempts_journal.take();
     if initial
         && !round.equal
         && w.saw_link
@@ -2016,6 +2021,12 @@ fn compare_with_link_fallback<'t>(
         && link_repair_requested(group, &c)
     {
         w.link_bracket_fallback = true;
+        for (n, prior) in journal.into_iter().flatten().rev() {
+            match prior {
+                Some(attempt) => w.sp.attempts.insert(n, attempt),
+                None => w.sp.attempts.remove(&n),
+            };
+        }
         reset_lines(w);
         blocks::write_blocks(w, group, "", 0, false);
         c = compare_group(w, doc, group, first, round);
