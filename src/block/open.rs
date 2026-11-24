@@ -61,12 +61,19 @@ impl Parser<'_> {
     }
 
     fn frame(&self, walk: &Walk<'_>, m: usize) -> Frame<'_> {
-        let lo = self
+        let quote_lo = self
             .stack
             .iter()
             .take(walk.matched)
             .rposition(|c| matches!(c.kind, Kind::Quote))
             .map_or(1, |q| q + 1);
+        let lo = self
+            .stack
+            .get(..walk.matched)
+            .unwrap_or(&[])
+            .iter()
+            .rposition(|c| matches!(c.kind, Kind::Div { .. }))
+            .map_or(quote_lo, |d| quote_lo.max(d + 1));
         let hi = self
             .stack
             .iter()
@@ -76,8 +83,8 @@ impl Parser<'_> {
             .map_or(self.stack.len(), |(i, _)| i);
         let reach = self.stack.get(lo..hi).unwrap_or(&[]);
         // C2-B-015: a nested list opens below a paragraph only past the marker of
-        // the item, description or footnote body that holds the paragraph; inside
-        // a div the marker is a lazy line (C2-B-024).
+        // the item, description or footnote body that holds the paragraph. A
+        // div bounds the marker owners reachable by its paragraph (C2-B-024).
         let lazy = walk.missing_quote.is_some();
         let in_div = !lazy && matches!(self.stack.last().map(|c| &c.kind), Some(Kind::Div { .. }));
         let owner = !in_div

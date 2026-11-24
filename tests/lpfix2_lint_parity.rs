@@ -179,6 +179,19 @@ fn marker_in_nested_div_is_a_paragraph_line() {
 }
 
 #[test]
+fn div_bounds_list_interruption_below_description() {
+    for source in ["- ::::\n  x\n - y\n", "- ::::\n  :: t\n  : x\n - y\n"] {
+        let len = u32::try_from(source.len()).expect("short fixture");
+        assert_eq!(
+            spans(source, "list-marker-without-blank-line"),
+            vec![(len - 4, len - 1)]
+        );
+    }
+    let html = carve::render("- ::::\n  :: t\n  : x\n - y\n", &carve::Options::default());
+    assert!(html.contains("<dd>x\n- y</dd>"), "{html}");
+}
+
+#[test]
 fn sibling_item_interrupts_a_term() {
     assert_eq!(
         spans("2) :: a\n10. -\n", "description-term-multi-line"),
