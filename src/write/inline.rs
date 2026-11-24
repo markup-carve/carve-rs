@@ -233,7 +233,7 @@ fn text_holds_mark(t: &str, mark: char, words: bool) -> bool {
         }
         let before = i.checked_sub(1).and_then(|j| chars.get(j)).copied();
         let run = chars.iter().skip(i).take_while(|&&c| c == mark).count();
-        if run > 1 && before != Some('{') && chars.get(i + run) != Some(&'}') {
+        if run > 1 && before != Some('{') {
             i += run;
             continue;
         }
