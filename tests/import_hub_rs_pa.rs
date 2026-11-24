@@ -156,3 +156,15 @@ fn a_math_block_after_one_with_raw_html_inside_still_opens() {
         "$$`<div>`\n\n$$`x`\n"
     );
 }
+
+#[test]
+fn one_math_fence_among_many_lines_and_a_long_fence_stays_small() {
+    let source = format!(
+        "{}\nx\n{}\n{}$$\na\n$$\n",
+        "`".repeat(5_000),
+        "`".repeat(5_000),
+        "\n".repeat(50_000)
+    );
+    let (written, _) = import("markdown", &source);
+    assert_eq!(written.matches("$$`a`").count(), 1);
+}

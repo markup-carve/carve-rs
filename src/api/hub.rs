@@ -375,7 +375,8 @@ fn rewrite_fences(
     fences: &[MathFence],
     longest: usize,
 ) -> String {
-    let mut out = String::with_capacity(input.len() + fences.len() * (longest + 3));
+    let mut out =
+        String::with_capacity(input.len() + fences.iter().flatten().count() * (longest + 3));
     let mut done = 0;
     for ((start, line), fence) in lines.iter().zip(fences) {
         if let Some((at, run, meta)) = fence {
