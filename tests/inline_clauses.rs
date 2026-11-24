@@ -385,6 +385,18 @@ fn c2_i_063_editorial_comment() {
 }
 
 #[test]
+fn c2_b_138_editorial_comment_ends_at_comment_only_line() {
+    assert_eq!(
+        p("{#a\n%% b#}"),
+        "\"{\" tag(name=a) soft_break comment(form=line value=b#})"
+    );
+    assert_eq!(
+        p("x {#a\nb %% c#}"),
+        "\"x \" critic_comment(value=a\nb %% c)"
+    );
+}
+
+#[test]
 fn c2_i_066_to_c2_i_069_link_tails() {
     assert_eq!(
         p("[a](/u \"T\") [a]()"),

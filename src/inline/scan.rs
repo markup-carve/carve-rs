@@ -741,6 +741,7 @@ impl<'a> Scanner<'_, '_, 'a> {
     fn editorial(&mut self) -> bool {
         let i = self.i;
         let t = self.t;
+        let limit = self.atom_limit(i);
         if self
             .last_hash
             .get_or_insert_with(|| t.rfind("#}"))
@@ -750,7 +751,7 @@ impl<'a> Scanner<'_, '_, 'a> {
         }
         let Some(k) = self
             .t
-            .get(i + 2..)
+            .get(i + 2..limit)
             .and_then(|s| s.find("#}"))
             .map(|k| k + i + 2)
         else {
