@@ -79,3 +79,13 @@ fn glued_openers_in_one_value_are_linear() {
         glued_values(count, '}')
     });
 }
+
+#[test]
+fn many_keys_in_one_block_are_linear() {
+    // Each key used to look through every later key of its owner for one of the same name.
+    let keys = |count: usize| {
+        let keys: Vec<String> = (0..count).map(|at| format!("k{at}")).collect();
+        format!("{{{}}}\nfoo\n", keys.join(" "))
+    };
+    assert_linear("keys", [2000, 4000, 8000], keys);
+}

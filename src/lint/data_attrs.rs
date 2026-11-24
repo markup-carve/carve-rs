@@ -3,7 +3,7 @@
 
 use crate::view::V;
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The node an attribute block attaches to, with the facts of `attribute_owner_fields`.
 pub(super) struct Owner {
@@ -224,23 +224,24 @@ fn read_value(s: &str, p: usize, equals: usize, end: usize, out: &mut impl Parts
 }
 
 thread_local! {
-    /// The start and stop of the last unquoted value run read, for [`value_stop`].
-    static VALUE_RUN: Cell<(usize, usize)> = const { Cell::new((usize::MAX, 0)) };
+    /// The source, start and stop of the last unquoted value run read, for [`value_stop`].
+    static VALUE_RUN: Cell<(usize, usize, usize)> = const { Cell::new((0, usize::MAX, 0)) };
 }
 
 /// Where an unquoted value from `from` stops. A value takes `{`, so on a line of glued openers
 /// every opener's value runs to the same stop: it is found once, keeping the line linear
-/// (carve#6488). [`build`] clears it for each source.
+/// (carve#6488). It is keyed by the source and cleared by [`build`].
 fn value_stop(b: &[u8], from: usize) -> usize {
+    let source = b.as_ptr() as usize;
     VALUE_RUN.with(|known| {
-        let (start, stop) = known.get();
-        if start <= from && from <= stop {
+        let (read, start, stop) = known.get();
+        if read == source && start <= from && from <= stop {
             return stop;
         }
         let stop = run(b, from, b.len(), |c| {
             !matches!(c, b' ' | b'\t' | b'"' | b'\'' | b'\\' | b'|' | b'}' | b'\n')
         });
-        known.set((from, stop));
+        known.set((source, from, stop));
         stop
     })
 }
@@ -359,10 +360,11 @@ fn overlaps(node: V<'_>) -> (String, String) {
     (align.join(" "), valign.join(" "))
 }
 
-/// C2-I-039, C2-A-035: whether two keys of one owner have the name the tree merges by.
-fn same_name(a: &str, b: &str, span: bool) -> bool {
-    let semantic = |k: &str| matches!(k, "abbr" | "time" | "kbd");
-    a == b || (a.eq_ignore_ascii_case(b) && (!span || semantic(a) == semantic(b)))
+/// C2-I-039, C2-A-035: the name the tree merges a key of one owner by: two keys merge when they
+/// match ignoring ASCII case and, on a span, are both semantic keys or both not.
+fn merge_name(key: &str, span: bool) -> (String, bool) {
+    let semantic = matches!(key, "abbr" | "time" | "kbd");
+    (key.to_ascii_lowercase(), span && semantic)
 }
 
 /// What the table builder needs of one node.
@@ -552,7 +554,7 @@ fn owner_of(source: &str, node: &Node<'_, '_>, opener: usize) -> Owner {
 
 /// The fields a part takes from its owner and from the later parts of that owner.
 fn finish(parts: &mut [Part], owner: u32, node: &Node<'_, '_>) {
-    let keys: Vec<&str> = node
+    let keys: HashSet<&str> = node
         .value
         .get("attrs")
         .and_then(|attrs| attrs.get("keyValues"))
@@ -566,25 +568,21 @@ fn finish(parts: &mut [Part], owner: u32, node: &Node<'_, '_>) {
         })
         .collect();
     let span = node.kind == "span";
-    for at in 0..parts.len() {
-        let (head, later) = parts.split_at_mut(at + 1);
-        let Some(this) = head.last_mut() else {
-            continue;
-        };
+    // Read from the end, so a key is the last of its name when no later key had that name.
+    let mut later = HashSet::new();
+    for (at, this) in parts.iter_mut().enumerate().rev() {
         this.owner = owner;
         this.index = at;
         if this.kind == "key" {
-            this.kept = keys.contains(&this.key.as_str());
-            this.last_key = !later
-                .iter()
-                .any(|other| other.kind == "key" && same_name(&this.key, &other.key, span));
+            this.kept = keys.contains(this.key.as_str());
+            this.last_key = later.insert(merge_name(&this.key, span));
         }
     }
 }
 
 /// The attribute records of the nodes, in source order within each owner.
 pub(super) fn build<'k, 'v>(source: &str, nodes: impl Iterator<Item = Node<'k, 'v>>) -> Table {
-    VALUE_RUN.with(|known| known.set((usize::MAX, 0)));
+    VALUE_RUN.with(|known| known.set((0, usize::MAX, 0)));
     let mut table = Table::default();
     let mut blocks = Blocks::default();
     for node in nodes {
