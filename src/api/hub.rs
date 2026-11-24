@@ -145,7 +145,7 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
             NodeValue::Math(math) => {
                 let span = format!(
                     r#"<span class="math inline">\({}\)</span>"#,
-                    escape(&math.literal)
+                    escape(inline_math(&math.literal))
                 );
                 node.insert_before(html(span));
                 node.detach();
@@ -189,6 +189,12 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
     let mut fences: Vec<MathFence> = lines.iter().map(|(_, line)| math_fence(line)).collect();
     if fences.iter().all(Option::is_none) {
         return None;
+    }
+    // A `$$` line in code or raw HTML is content; left in, its fence could close that block.
+    for line in opaque_lines(input, options) {
+        if let Some(fence) = fences.get_mut(line - 1) {
+            *fence = None;
+        }
     }
     // Only a backtick run that starts a line can pair with a fence.
     let longest = lines
@@ -248,6 +254,38 @@ fn rewrite_fences(
     }
     out.push_str(input.get(done..).unwrap_or_default());
     out
+}
+
+/// The 1-based lines of the code and raw HTML blocks of `text`.
+fn opaque_lines(text: &str, options: &comrak::Options<'_>) -> Vec<usize> {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let root = comrak::parse_document(&arena, text, options);
+    let mut lines = Vec::new();
+    for node in root.descendants() {
+        let data = node.data.borrow();
+        if matches!(
+            data.value,
+            NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_)
+        ) {
+            lines.extend(data.sourcepos.start.line..=data.sourcepos.end.line);
+        }
+    }
+    lines
+}
+
+/// The content of `$$` math in text as micromark reads it, by the padding rule of a
+/// code span: one space or line ending is stripped from each side when both sides
+/// have one and the content is not all padding.
+fn inline_math(literal: &str) -> &str {
+    let pad = |c: char| matches!(c, ' ' | '\n');
+    let mut chars = literal.chars();
+    match (chars.next(), chars.next_back()) {
+        (Some(first), Some(last)) if pad(first) && pad(last) && !literal.chars().all(pad) => {
+            &literal[1..literal.len() - 1]
+        }
+        _ => literal,
+    }
 }
 
 /// The 1-based lines that open or close a code block of a rewritten math fence.

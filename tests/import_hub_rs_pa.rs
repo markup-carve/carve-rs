@@ -124,3 +124,18 @@ fn a_long_backtick_fence_and_many_math_fences_stay_linear() {
         "a rewritten fence reached the output"
     );
 }
+
+#[test]
+fn a_dollar_line_in_code_does_not_change_a_later_math_fence() {
+    assert_eq!(carve("```\n$$\n```\n$$\na\n"), "```\n$$\n```\n\n$$`a`\n");
+    assert_eq!(
+        carve("<div>\n$$\n</div>\n\n$$\na\n$$\n"),
+        "```=html\n<div>\n$$\n</div>\n```\n\n$$`a`\n"
+    );
+}
+
+#[test]
+fn inline_math_strips_one_padding_character_from_each_side() {
+    assert_eq!(carve("x $$\nx $$\n"), "x $`x`\n");
+    assert_eq!(carve("a $$ b\nc $$ d\n"), "a $`b\nc` d\n");
+}
