@@ -36,6 +36,27 @@ fn a_block_line_ends_an_abbreviation() {
 }
 
 #[test]
+fn a_comment_line_ends_a_definition_whatever_its_indent() {
+    let cases = [
+        (
+            "*[A]: x\n  %% c\n  y\n\nA\n",
+            "<p>y</p>\n<p><abbr title=\"x\">A</abbr></p>",
+        ),
+        (
+            "[a]: /u\n  \"T\"\n%% c\n  {.c}\nP\n\n[a]\n",
+            "<p class=\"c\">P</p>\n<p><a href=\"/u\" title=\"T\">a</a></p>",
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(html(input), expected, "{input:?}");
+    }
+    assert_eq!(
+        fmt("*[A]: x\n  %% c\n  y\n\nA\n"),
+        "*[A]: x\n%% c\n\ny\n\nA\n"
+    );
+}
+
+#[test]
 fn a_link_tail_takes_a_title_line_then_an_attribute_line() {
     let cases = [
         (

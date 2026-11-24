@@ -8,10 +8,10 @@ fn html(input: &str) -> String {
 #[test]
 fn a_link_definition_takes_one_tail_line() {
     let cases = [
-        // C2-B-137: a comment-only line between them is not seen.
+        // carve#6514 A: a comment-only line ends the definition.
         (
             "[a]: /u\n%% c\n  \"T\"\n\nSee [a].\n",
-            "<p>See <a href=\"/u\" title=\"T\">a</a>.</p>",
+            "<p>“T”</p>\n<p>See <a href=\"/u\">a</a>.</p>",
         ),
         // C2-B-106: the attribute line above merges before the tail's block.
         (
@@ -59,7 +59,7 @@ fn every_indented_line_continues_an_abbreviation() {
         ),
         (
             "*[H]: a\n%% c\n  b\n\nH\n",
-            "<p><abbr title=\"a b\">H</abbr></p>",
+            "<p>b</p>\n<p><abbr title=\"a\">H</abbr></p>",
         ),
         (
             "*[H]: a\n\n  b\n\nH\n",

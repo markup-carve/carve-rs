@@ -396,14 +396,14 @@ impl<'a> Parser<'a> {
     }
 
     /// A line indented past column 0 below a definition continues it
-    /// (C2-B-083, C2-B-084). A comment-only line is not seen (C2-B-137).
+    /// (C2-B-083, C2-B-084). A comment-only line ends it (C2-B-137).
     fn definition_tail(&mut self, t: DefTail, walk: &Walk<'a>, e: usize) -> bool {
         let k = walk.cur.after_blanks();
-        if shapes::comment_only(k.rest()) {
-            self.def_tail = Some(t);
-            return false;
-        }
-        if self.stack.len() != 1 || self.leaf.is_some() || k.col == 0 {
+        if self.stack.len() != 1
+            || self.leaf.is_some()
+            || k.col == 0
+            || shapes::comment_only(k.rest())
+        {
             return false;
         }
         // C2-B-084: a line that ends a heading continuation starts its block.
