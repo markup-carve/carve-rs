@@ -623,6 +623,7 @@ fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry
 /// Keep one empty node where the whole run is empty, so its loss remains visible.
 struct Coalesced {
     kept: std::collections::HashMap<String, Vec<usize>>,
+    offsets: std::collections::HashMap<String, usize>,
 }
 
 impl Coalesced {
@@ -679,6 +680,7 @@ fn coalesce_plain_text(
     value: &mut Value,
     path: &str,
     kept: &mut std::collections::HashMap<String, Vec<usize>>,
+    offsets: &mut std::collections::HashMap<String, usize>,
 ) {
     fn plain_text(node: &Value) -> Option<&str> {
         let map = node.as_object()?;
@@ -693,38 +695,38 @@ fn coalesce_plain_text(
                     child,
                     &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
                     kept,
+                    offsets,
                 );
             }
         }
         Value::Array(nodes) => {
             for (index, child) in nodes.iter_mut().enumerate() {
-                coalesce_plain_text(child, &format!("{path}/{index}"), kept);
+                coalesce_plain_text(child, &format!("{path}/{index}"), kept, offsets);
             }
             let original_len = nodes.len();
-            let mut retained: Vec<usize> = (0..original_len).collect();
-            let mut at = 0;
-            while at < nodes.len() {
-                if nodes.get(at).and_then(plain_text).is_none() {
-                    at += 1;
-                    continue;
-                }
-                let start = at;
-                let mut pieces = Vec::new();
-                while at < nodes.len() {
-                    let Some(piece) = nodes.get(at).and_then(plain_text) else {
-                        break;
-                    };
-                    pieces.push(piece.to_string());
-                    at += 1;
-                }
-                if pieces.len() > 1 {
-                    if let Some(first) = nodes.get_mut(start).and_then(|n| n.get_mut("value")) {
-                        *first = Value::String(pieces.concat());
+            let mut retained = Vec::with_capacity(original_len);
+            let mut source = std::mem::take(nodes).into_iter().enumerate().peekable();
+            while let Some((index, mut node)) = source.next() {
+                if let Some(first) = plain_text(&node) {
+                    let mut joined = first.to_string();
+                    while source
+                        .peek()
+                        .and_then(|(_, next)| plain_text(next))
+                        .is_some()
+                    {
+                        if let Some((next_index, next)) = source.next()
+                            && let Some(piece) = plain_text(&next)
+                        {
+                            offsets.insert(format!("{path}/{next_index}"), joined.len());
+                            joined.push_str(piece);
+                        }
                     }
-                    nodes.drain(start + 1..at);
-                    retained.drain(start + 1..at);
-                    at = start + 1;
+                    if let Some(value) = node.get_mut("value") {
+                        *value = Value::String(joined);
+                    }
                 }
+                retained.push(index);
+                nodes.push(node);
             }
             if retained.len() != original_len
                 || retained.iter().enumerate().any(|(i, old)| i != *old)
@@ -748,13 +750,16 @@ mod coalesced_path_tests {
             {"children": [{"type":"text","value":"c"}, {"type":"text","value":"d"}, {"type":"strong"}]}
         ]});
         let mut kept = std::collections::HashMap::new();
-        coalesce_plain_text(&mut tree, "", &mut kept);
-        let paths = Coalesced { kept };
+        let mut offsets = std::collections::HashMap::new();
+        coalesce_plain_text(&mut tree, "", &mut kept, &mut offsets);
+        let paths = Coalesced { kept, offsets };
         assert_eq!(paths.forward("/children/1"), "/children/0");
+        assert_eq!(paths.offsets.get("/children/1"), Some(&1));
         assert_eq!(
             paths.forward("/children/2/children/2"),
             "/children/1/children/1"
         );
+        assert_eq!(paths.offsets.get("/children/2/children/1"), Some(&1));
         assert_eq!(
             paths.remap("/children/1/children/1/type"),
             "/children/2/children/2/type"
@@ -792,8 +797,9 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let mut normalized = doc.clone();
     let mut losses = Vec::new();
     let mut kept = std::collections::HashMap::new();
-    coalesce_plain_text(&mut normalized, "", &mut kept);
-    let coalesced = Coalesced { kept };
+    let mut offsets = std::collections::HashMap::new();
+    coalesce_plain_text(&mut normalized, "", &mut kept, &mut offsets);
+    let coalesced = Coalesced { kept, offsets };
     replace_attribute_lines(&mut normalized, "", &mut losses);
     let mut moved = settings.clone();
     if let Some(layout) = &mut moved.layout {
@@ -801,6 +807,9 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
             entry.path = coalesced.forward(&entry.path);
             if let Some(wraps) = &mut entry.facts.wraps {
                 for wrap in wraps {
+                    wrap.offset = wrap.offset.saturating_add(
+                        coalesced.offsets.get(&wrap.path).copied().unwrap_or(0),
+                    );
                     wrap.path = coalesced.forward(&wrap.path);
                 }
             }

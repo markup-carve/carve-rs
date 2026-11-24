@@ -1,4 +1,5 @@
-use carve::api::json::call;
+use carve::Options;
+use carve::api::{self, Carve, WriteOptions, json::call};
 use serde_json::{Value, json};
 
 fn invoke(request: &Value) -> Value {
@@ -50,4 +51,38 @@ fn loss_paths_follow_the_supplied_tree_after_a_text_run() {
         paths.contains(&"/children/0/children/2/attrs/keyValues/0/1".to_string()),
         "{output}"
     );
+}
+
+#[test]
+fn wrap_offset_moves_with_the_second_text_fragment() {
+    let source = "| a |\n+ b |\n";
+    let parsed = api::parse_with_layout(source, &Options::default()).unwrap();
+    let mut tree: Value = serde_json::from_str(&api::encode_tree(&parsed.tree)).unwrap();
+    let mut layout = parsed.layout;
+    let wrap = layout["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find_map(|entry| entry.get_mut("wraps")?.as_array_mut()?.first_mut())
+        .unwrap();
+    let path = wrap["path"].as_str().unwrap().to_string();
+    let (parent, _) = path.rsplit_once('/').unwrap();
+    let children = tree.pointer_mut(parent).unwrap().as_array_mut().unwrap();
+    assert_eq!(children[0]["value"], "a b");
+    children[0]["value"] = json!("a");
+    children.insert(1, json!({"type":"text","value":" b"}));
+    wrap["path"] = json!(format!("{parent}/1"));
+    wrap["offset"] = json!(1);
+    let tree = api::decode_tree(&tree.to_string()).unwrap();
+    let written = Carve::new()
+        .write_with_diagnostics(
+            &tree,
+            &WriteOptions {
+                layout: Some(layout),
+                ..WriteOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(written.output, source);
+    assert!(written.diagnostics.is_empty(), "{:?}", written.diagnostics);
 }
