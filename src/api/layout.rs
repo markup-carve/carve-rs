@@ -153,6 +153,68 @@ pub(crate) fn blank_lines_after(source: &str, end: usize, limit: usize, quotes: 
     walk.blank_after(end.min(source.len()), limit, quotes, false)
 }
 
+/// The scanned table whose rows lie in the table node that spans `start..end`.
+fn table_data(tables: &[(usize, TableData)], start: usize, end: usize) -> Option<&TableData> {
+    tables
+        .iter()
+        .find(|(_, data)| {
+            data.rows
+                .first()
+                .is_some_and(|r| r.start >= start && r.start < end)
+                && data.rows.last().is_some_and(|r| r.end <= end)
+        })
+        .map(|(_, data)| data)
+}
+
+/// The tables of a source as the block scan reads them, for [`continuation_rows`].
+pub(crate) struct ScannedTables(Vec<(usize, TableData)>);
+
+impl ScannedTables {
+    pub(crate) fn new(source: &str) -> Self {
+        Self(tables(source))
+    }
+}
+
+/// The span of each row with continuation lines of the table node that spans `start..end`, by its
+/// group and row index: the row entries [`entries`] gives that table, without building and walking
+/// the whole tree (carve#6489).
+pub(crate) fn continuation_rows(
+    source: &str,
+    tables: &ScannedTables,
+    table: crate::view::V<'_>,
+    start: usize,
+    end: usize,
+) -> Vec<((usize, usize), (usize, usize))> {
+    let mut spans = Vec::new();
+    let Some(data) = table_data(&tables.0, start, end) else {
+        return spans;
+    };
+    let mut row_index = 0;
+    let groups = table.get("children").and_then(crate::view::V::as_array);
+    for (group_index, group) in groups
+        .into_iter()
+        .flat_map(crate::view::Arr::iter)
+        .enumerate()
+    {
+        let Some(rows) = group.get("children").and_then(crate::view::V::as_array) else {
+            continue;
+        };
+        for (index, node) in rows.iter().enumerate() {
+            if node.ty().as_str() != Some("table_row") {
+                continue;
+            }
+            let Some(row) = data.rows.get(row_index) else {
+                return spans;
+            };
+            row_index += 1;
+            if continuation_lines(source, row.start, row.end) > 0 {
+                spans.push(((group_index, index), (row.start, row.end)));
+            }
+        }
+    }
+    spans
+}
+
 fn tables(source: &str) -> Vec<(usize, TableData)> {
     if !source.contains('|') {
         return Vec::new();
@@ -714,17 +776,7 @@ impl Walk<'_> {
     }
 
     fn table_rows(&mut self, table: &Value, path: &str, start: usize, end: usize) {
-        let Some((_, data)) = self
-            .tables
-            .iter()
-            .find(|(_, data)| {
-                data.rows
-                    .first()
-                    .is_some_and(|r| r.start >= start && r.start < end)
-                    && data.rows.last().is_some_and(|r| r.end <= end)
-            })
-            .cloned()
-        else {
+        let Some(data) = table_data(&self.tables, start, end).cloned() else {
             return;
         };
         let mut row_index = 0;
