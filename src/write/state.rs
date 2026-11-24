@@ -151,6 +151,9 @@ pub struct Writer<'t> {
     /// C2-W-125: unmatched bracket counts and escape positions of link labels.
     pub link_brackets: AddrMap<usize, (usize, usize)>,
     pub link_escapes: AddrMap<usize, Vec<(N<'t>, usize)>>,
+    /// The first write of a group tests its link labels bare.
+    pub link_bracket_fallback: bool,
+    pub saw_link: bool,
     pub node_ids: AddrMap<usize, usize>,
     pub stand_ins: AddrMap<usize, HashMap<String, N<'t>>>,
     pub line_opens: HashMap<String, bool>,
@@ -214,6 +217,8 @@ impl<'t> Writer<'t> {
             open_above_of: None,
             link_brackets: AddrMap::default(),
             link_escapes: AddrMap::default(),
+            link_bracket_fallback: false,
+            saw_link: false,
             node_ids: AddrMap::default(),
             stand_ins: AddrMap::default(),
             line_opens: HashMap::new(),

@@ -42,12 +42,9 @@ fn a_strong_that_reads_on_takes_its_braced_form() {
 }
 
 #[test]
-fn a_construct_across_a_link_closer_escapes_its_opener() {
-    // Written from the tree without the sidecar, carve-js gives this form as well.
-    check_paths(
-        "[*[[[^][]]]()*\n",
-        "[\\*\\[[[^][]\\]]()*\n",
-        "[*\\[[[^][]\\]]()\\*\n",
-    );
-    check("[[*{^[ [^]]]()*\n", "[\\[\\*\\{^\\[ \\[^\\]\\]]()*\n");
+fn a_bare_tree_around_a_link_closer_places_no_escape() {
+    // carve#6544, C2-W-088: the bare text reads back to the parsed tree,
+    // so neither path places an escape for this input.
+    check_paths("[*[[[^][]]]()*\n", "[*[[[^][]]]()*\n", "[*[[[^][]]]()*\n");
+    check("[[*{^[ [^]]]()*\n", "[[*{^[ [^]]]()*\n");
 }

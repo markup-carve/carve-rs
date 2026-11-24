@@ -67138,13 +67138,13 @@
     "C2-W-088",
     "C2-W-091"
    ],
-   "why": "C2-W-088: For each kind reported in a block, the round escapes every potential opener of that kind in that block, not only the reported ones, and the text is then parsed again.",
-   "summary": "nested strong and link openers escape every bracket of the paragraph text from one read-back parse",
+   "why": "C2-W-088: Every construct that the parse holds but the tree does not hold is reported ... In text written by this procedure, a backslash it does not place is a defect, and so is a missing one; C2-W-125 and C2-W-146 name the few it adds. C2-W-091: For a tree from a parse the procedure keeps the tree.",
+   "summary": "text brackets around nested links stay bare when the bare text reads back",
    "kind": "format",
    "input": "^*[*[[*^*[*[[*^*[*[[*^*[*x](u)^]]](u)^]]](u)^]]](u)\n",
    "options": {},
    "expected": {
-    "carve": "^*[*\\[\\[*^*[*\\[\\[*^*[*\\[\\[*^*[*x](u)^\\]\\]](u)^\\]\\]](u)^\\]\\]](u)\n"
+    "carve": "^*[*[[*^*[*[[*^*[*[[*^*[*x](u)^]]](u)^]]](u)^]]](u)\n"
    },
    "from": []
   },
@@ -81071,6 +81071,111 @@
       "endLine": 1,
       "endColumn": 29,
       "channel": "lint",
+      "severity": "warning"
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2010",
+   "clauses": [
+    "C2-W-050",
+    "C2-W-117"
+   ],
+   "why": "C2-W-050: A value of a supplied tree that holds a line feed has no spelling, since an attribute block is one line (C2-I-028): its nearest form writes one space in place of each line feed, in double quotes, and the writer reports `field-unspellable` at the path of that value (C2-W-117). The node and its other attributes are kept",
+   "summary": "an imported span attribute value with a line break is written with a space and reported",
+   "kind": "import",
+   "html": "<p><span title=\"a\nb\">[ x</span></p>",
+   "options": {},
+   "expected": {
+    "carve": "[\\[ x]{title=\"a b\"}\n",
+    "diagnostics": [
+     {
+      "code": "field-unspellable",
+      "path": "/children/0/children/0/attrs/keyValues/0/1",
+      "channel": "render-loss",
+      "severity": "warning"
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2011",
+   "clauses": [
+    "C2-W-050",
+    "C2-W-117"
+   ],
+   "why": "C2-W-050: A value of a supplied tree that holds a line feed has no spelling, since an attribute block is one line (C2-I-028): its nearest form writes one space in place of each line feed, in double quotes, and the writer reports `field-unspellable` at the path of that value (C2-W-117). The node and its other attributes are kept",
+   "summary": "an imported block attribute value with a line break is written with a space on the attribute line",
+   "kind": "import",
+   "html": "<p title=\"a\nb\">x</p>",
+   "options": {},
+   "expected": {
+    "carve": "{title=\"a b\"}\nx\n",
+    "diagnostics": [
+     {
+      "code": "field-unspellable",
+      "path": "/children/0/attrs/keyValues/0/1",
+      "channel": "render-loss",
+      "severity": "warning"
+     }
+    ],
+    "diagnosticsComplete": true
+   },
+   "from": []
+  },
+  {
+   "id": "CC-2012",
+   "clauses": [
+    "C2-W-050",
+    "C2-W-117"
+   ],
+   "why": "C2-W-050: A value of a supplied tree that holds a line feed has no spelling, since an attribute block is one line (C2-I-028): its nearest form writes one space in place of each line feed, in double quotes, and the writer reports `field-unspellable` at the path of that value (C2-W-117). The node and its other attributes are kept",
+   "summary": "a supplied value with two line feeds keeps one space for each and the other attributes",
+   "kind": "write",
+   "tree": {
+    "type": "document",
+    "astVersion": "2.0",
+    "children": [
+     {
+      "type": "paragraph",
+      "children": [
+       {
+        "type": "span",
+        "attrs": {
+         "classes": [
+          "c"
+         ],
+         "keyValues": [
+          [
+           "data-k",
+           "x\n\ny"
+          ]
+         ]
+        },
+        "children": [
+         {
+          "type": "text",
+          "value": "t"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {},
+   "expected": {
+    "carve": "[t]{.c data-k=\"x  y\"}\n",
+    "diagnostics": [
+     {
+      "code": "field-unspellable",
+      "path": "/children/0/children/0/attrs/keyValues/0/1",
+      "channel": "render-loss",
       "severity": "warning"
      }
     ],

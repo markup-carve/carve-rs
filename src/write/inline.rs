@@ -679,7 +679,10 @@ fn link_node<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32) -> String {
     if !key_is_content(node) {
         escape_leading_caret(w, children(node), flags);
     }
-    escape_lone_link_brackets(w, node);
+    w.saw_link = true;
+    if w.link_bracket_fallback {
+        escape_lone_link_brackets(w, node);
+    }
     let content = write_inlines(w, &refs(children(node)), flags | IN_BRACKET);
     let content = collapsed_content(w, node, content, flags);
     format!(
