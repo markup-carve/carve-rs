@@ -28,6 +28,11 @@ fn nested(depth: usize) -> String {
     format!("> {}x{}\n", "{^".repeat(depth), "^}".repeat(depth))
 }
 
+/// Openers glued inside one unquoted value, which takes `{`: each opener reads the same value.
+fn glued_values(count: usize, close: char) -> String {
+    format!("{{^{}{close}^}}\n", "{a=x".repeat(count))
+}
+
 fn time_of(source: &str) -> Duration {
     (0..5)
         .map(|_| {
@@ -39,13 +44,11 @@ fn time_of(source: &str) -> Duration {
         .unwrap_or_default()
 }
 
-#[test]
-fn nesting_depth_is_linear() {
-    // Each node used to try every brace inside it: doubling the depth took about four times as long.
+fn assert_linear(name: &str, sizes: [usize; 3], shape: impl Fn(usize) -> String) {
     let ratios = || -> Vec<f64> {
-        let times: Vec<f64> = [400, 800, 1600]
+        let times: Vec<f64> = sizes
             .iter()
-            .map(|&depth| time_of(&nested(depth)).as_secs_f64())
+            .map(|&size| time_of(&shape(size)).as_secs_f64())
             .collect();
         times.windows(2).map(|w| w[1] / w[0]).collect()
     };
@@ -56,6 +59,23 @@ fn nesting_depth_is_linear() {
     let second = ratios();
     assert!(
         second.iter().all(|&r| r < 3.0),
-        "time ratios per depth doubling {first:.2?} and {second:.2?}, limit 3.0"
+        "{name}: time ratios per doubling {first:.2?} and {second:.2?}, limit 3.0"
     );
+}
+
+#[test]
+fn nesting_depth_is_linear() {
+    // Each node used to try every brace inside it: doubling the depth took about four times as long.
+    assert_linear("nested", [400, 800, 1600], nested);
+}
+
+#[test]
+fn glued_openers_in_one_value_are_linear() {
+    // Each opener used to scan the shared value to its end, and copy it when the block closed.
+    assert_linear("failing", [2000, 4000, 8000], |count| {
+        glued_values(count, '|')
+    });
+    assert_linear("closing", [2000, 4000, 8000], |count| {
+        glued_values(count, '}')
+    });
 }
