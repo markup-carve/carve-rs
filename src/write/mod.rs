@@ -2359,11 +2359,20 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
         return;
     }
     let blocks = kinds::KindBlocks::new(group);
+    // A comment closer may be reported while the same round repairs its
+    // opener. Once the opening brace is escaped, the closer is ordinary text;
+    // it does not report an independent `#` or `%` kind (C2-W-088).
+    let comment_openers = reported_comment_openers(&blocks, &reported);
     let mut done = HashSet::new();
     for (node, at) in reported {
         let Some(block) = blocks.block_of(node) else {
             continue;
         };
+        if reported_comment_closer(&comment_openers, block, node, at) {
+            c.escapes
+                .retain(|&(n, offset)| id(n) != id(node) || offset != at);
+            continue;
+        }
         let line = c.line_escapes.contains(&(id(node), at));
         let Some(key) = blocks.key(node, at, line) else {
             continue;
@@ -2373,6 +2382,62 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
         }
         for (n, offset) in blocks.openers(block, &key) {
             escape_at(w, c, n, offset);
+        }
+    }
+}
+
+fn reported_comment_openers<'t>(
+    blocks: &kinds::KindBlocks<'t>,
+    reported: &[(N<'t>, usize)],
+) -> HashSet<(usize, u8)> {
+    reported
+        .iter()
+        .filter_map(|(node, at)| {
+            let mark = match blocks.key(*node, *at, false)?.as_str() {
+                "{#" => b'#',
+                "{%" => b'%',
+                _ => return None,
+            };
+            Some((blocks.block_of(*node)?, mark))
+        })
+        .collect()
+}
+
+fn reported_comment_closer(
+    openers: &HashSet<(usize, u8)>,
+    block: usize,
+    node: N<'_>,
+    at: usize,
+) -> bool {
+    let value = text(node).as_bytes();
+    value.get(at).is_some_and(|&mark| {
+        matches!(mark, b'#' | b'%')
+            && value.get(at + 1) == Some(&b'}')
+            && openers.contains(&(block, mark))
+    })
+}
+
+#[cfg(test)]
+mod comment_kind_test {
+    use super::*;
+
+    #[test]
+    fn comment_opener_split_across_text_nodes_keeps_one_kind() {
+        for mark in ["#", "%"] {
+            let values = [
+                serde_json::json!({"type": "text", "value": "{"}),
+                serde_json::json!({"type": "text", "value": mark}),
+                serde_json::json!({"type": "soft_break"}),
+                serde_json::json!({"type": "text", "value": format!("{mark}}}")}),
+            ];
+            let nodes: Vec<_> = values.iter().map(V::Json).collect();
+            let blocks = kinds::KindBlocks::content(&nodes);
+            let [opener_value, _, _, closer_value] = &values;
+            let opener = V::Json(opener_value);
+            let closer = V::Json(closer_value);
+            let reported = [(opener, 0), (closer, 0)];
+            let openers = reported_comment_openers(&blocks, &reported);
+            assert!(reported_comment_closer(&openers, 0, closer, 0));
         }
     }
 }
