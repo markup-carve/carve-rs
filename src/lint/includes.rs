@@ -1,6 +1,6 @@
 //! Lint of accepted include sources (C2-N-085 to C2-N-088).
 
-use super::{LintOptions, lint_core};
+use super::{LintOptions, declares_below_0_2, lint_core};
 use crate::diagnostic::{Diagnostic, IncludeSite};
 use crate::include::Resolver;
 use serde_json::Value;
@@ -108,8 +108,9 @@ fn lint_include(
     };
     let (slice, start, line_shift, selected) = selected_source(node, text);
     let places = selected.map(|_| section_paths(node, text));
-    let child_options = LintOptions {
+    let mut child_options = LintOptions {
         includes: None,
+        upgrade: false,
         ..context.options.clone()
     };
     let (findings, _) = crate::with_lint_tree(
@@ -117,7 +118,11 @@ fn lint_include(
         &crate::Options::default(),
         &crate::Options::default(),
         true,
-        |tree, arena| lint_core(slice, &child_options, tree, arena),
+        |tree, arena| {
+            child_options.upgrade =
+                context.options.upgrade || (start == 0 && tree.is_some_and(declares_below_0_2));
+            lint_core(slice, &child_options, tree, arena)
+        },
     );
     for mut finding in findings {
         let Some(mut pos) = finding.pos else { continue };

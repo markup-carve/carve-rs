@@ -150,13 +150,13 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
     };
     let same = !includes && opts.heading_ids == crate::options::HeadingIds::default();
     let declared = std::cell::OnceCell::new();
-    let ((mut out, opts), diagnostics) = crate::with_lint_tree(
+    let (mut out, diagnostics) = crate::with_lint_tree(
         source,
         &crate::Options::default(),
         &parse,
         same,
         |tree, arena| {
-            // The entry's declaration holds for the text it includes too (C2-B-231).
+            // The entry's declaration controls notices in the entry source.
             let opts = if !opts.upgrade && tree.is_some_and(declares_below_0_2) {
                 declared.get_or_init(|| LintOptions {
                     upgrade: true,
@@ -165,7 +165,7 @@ pub fn lint(source: &str, opts: &LintOptions) -> Vec<Diagnostic> {
             } else {
                 opts
             };
-            (lint_core(source, opts, tree, arena), opts)
+            lint_core(source, opts, tree, arena)
         },
     );
     out.extend(

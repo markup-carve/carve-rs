@@ -72,10 +72,9 @@ fn c2_n_085_no_resolver_and_missing_target_are_reported() {
     );
 }
 
-/// C2-W-156, C2-B-231: the entry's line-1 declaration holds for the text it
-/// includes; a declaration in the included file is no line-1 frontmatter.
+/// C2-W-156, C2-B-231: each source's line-1 declaration controls its own notices.
 #[test]
-fn c2_w_156_the_entry_declaration_reaches_included_text() {
+fn c2_w_156_each_source_reads_its_own_declaration() {
     let notices = |entry: &str, part: &'static str| {
         lint(entry, &options(part))
             .iter()
@@ -83,12 +82,34 @@ fn c2_w_156_the_entry_declaration_reaches_included_text() {
             .map(|d| d.file.clone())
             .collect::<Vec<_>>()
     };
+    assert!(notices("---\ncarve: 0.1\n---\n{{ a.crv }}\n", "# a\n b\n").is_empty());
+    assert!(notices("{{ a.crv }}\n", "# a\n b\n").is_empty());
     assert_eq!(
-        notices("---\ncarve: 0.1\n---\n{{ a.crv }}\n", "# a\n b\n"),
+        notices("{{ a.crv }}\n", "---\ncarve: 0.1\n---\n# a\n b\n"),
         [Some("a.crv".to_string())]
     );
-    assert!(notices("{{ a.crv }}\n", "# a\n b\n").is_empty());
-    assert!(notices("{{ a.crv }}\n", "---\ncarve: 0.1\n---\n# a\n b\n").is_empty());
+}
+
+#[test]
+fn c2_w_156_nested_includes_read_their_own_declarations() {
+    let resolver = Arc::new(|request: &Request<'_>| match request.path {
+        "a.crv" => Ok((
+            b"---\ncarve: 0.1\n---\n{{ b.crv }}\n# a\n b\n".to_vec(),
+            "a.crv".into(),
+        )),
+        "b.crv" => Ok((b"# b\n c\n".to_vec(), "b.crv".into())),
+        _ => Err(Cause::NotFound),
+    });
+    let opts = LintOptions {
+        includes: Some(Includes::new(resolver)),
+        ..LintOptions::default()
+    };
+    let files: Vec<_> = lint("{{ a.crv }}\n", &opts)
+        .into_iter()
+        .filter(|d| d.code == "deprecated-indented-line-under-heading")
+        .map(|d| d.file)
+        .collect();
+    assert_eq!(files, [Some("a.crv".into())]);
 }
 
 fn paths(source: &str, text: &'static str, code: &str) -> Vec<String> {
