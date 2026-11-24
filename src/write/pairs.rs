@@ -48,6 +48,11 @@ pub(super) fn is_mark_byte(b: u8) -> bool {
     matches!(b, b'_' | b'~' | b'=' | b'*')
 }
 
+/// Whether a byte can start a run that one of the rules of C2-W-146 tests, the caret of `unattached-caption` too.
+pub(super) fn is_asked_byte(b: u8) -> bool {
+    is_mark_byte(b) || b == b'^'
+}
+
 #[derive(Default)]
 struct Run<'t> {
     source: Vec<u8>,
@@ -85,9 +90,9 @@ fn walk<'t>(w: &Writer<'t>, node: N<'t>, run: &mut Run<'t>, found: &mut Vec<(N<'
     });
 }
 
-/// Whether a text node below `value` holds a mark byte; a JSON tree without one holds no pair.
+/// Whether a text node below `value` holds a byte of [`is_asked_byte`]; a JSON tree without one asks for no escape.
 pub(super) fn json_has_mark_text(value: &serde_json::Value) -> bool {
-    crate::view::json_any_text(value, &|t| t.bytes().any(is_mark_byte))
+    crate::view::json_any_text(value, &|t| t.bytes().any(is_asked_byte))
 }
 
 pub(super) fn asked<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<(N<'t>, usize)> {
@@ -99,6 +104,9 @@ pub(super) fn asked<'t>(w: &Writer<'t>, group: Arr<'t>) -> Vec<(N<'t>, usize)> {
     for node in group {
         walk(w, node, &mut run, &mut found);
     }
+    let mut carets = Vec::new();
+    super::carets::caret_lines(group, &mut carets);
+    found.extend(carets.into_iter().map(|node| (node, 0)));
     found.retain(|(node, at)| w.escapes_of(node).binary_search(at).is_err());
     found.sort_unstable_by_key(|(node, at)| (id(node), *at));
     found.dedup_by_key(|(node, at)| (id(*node), *at));
