@@ -406,6 +406,14 @@ impl<'a> Parser<'a> {
         if self.stack.len() != 1 || self.leaf.is_some() || k.col == 0 {
             return false;
         }
+        // C2-B-084: a line that ends a heading continuation starts its block.
+        if t.link.is_none()
+            && (self.fence_interrupts(&k)
+                || shapes::table_row_shape(&k).is_some()
+                || shapes::thematic_break(&k))
+        {
+            return false;
+        }
         let Some(Event::Leaf {
             kind, end, attrs, ..
         }) = self.events.get_mut(t.event)
@@ -420,6 +428,8 @@ impl<'a> Parser<'a> {
                 if parts.title && more_title.is_some() {
                     return false;
                 }
+                // A title line may leave the attribute block to the next line.
+                let rest = (more_attrs.is_none()).then_some(TailParts { title: true });
                 if more_title.is_some() {
                     *title = more_title;
                 }
@@ -430,6 +440,10 @@ impl<'a> Parser<'a> {
                     }
                 }
                 *end = e;
+                self.def_tail = rest.map(|parts| DefTail {
+                    event: t.event,
+                    link: Some(parts),
+                });
             }
             (LeafKind::AbbrDef { expansion, .. }, None) => {
                 expansion.push(' ');

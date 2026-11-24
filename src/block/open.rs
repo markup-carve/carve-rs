@@ -39,7 +39,7 @@ impl Frame<'_> {
 impl Parser<'_> {
     /// A refused div opener is text at the depth cap (C2-B-190), so it cannot
     /// end the paragraph above it. A bare run that closes an open div can.
-    fn fence_interrupts(&self, k: &Cursor<'_>) -> bool {
+    pub(super) fn fence_interrupts(&self, k: &Cursor<'_>) -> bool {
         if shapes::code_fence_opener(k).is_some() || shapes::fence_run(k, b'%') >= 3 {
             return true;
         }

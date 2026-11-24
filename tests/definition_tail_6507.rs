@@ -18,10 +18,10 @@ fn a_link_definition_takes_one_tail_line() {
             "{#i}\n[a]: /u\n  {.c}\n\nSee [a].\n",
             "<p>See <a href=\"/u\" id=\"i\" class=\"c\">a</a>.</p>",
         ),
-        // Only the line directly below continues; the next one is an attribute line.
+        // A title line may leave the attribute block to the next line.
         (
             "[a]: /u\n  \"T\"\n  {.c}\nPara\n\nSee [a].\n",
-            "<p class=\"c\">Para</p>\n<p>See <a href=\"/u\" title=\"T\">a</a>.</p>",
+            "<p>Para</p>\n<p>See <a href=\"/u\" title=\"T\" class=\"c\">a</a>.</p>",
         ),
         (
             "[a]: /u\n  \"T\"\n  more\n\nSee [a].\n",
