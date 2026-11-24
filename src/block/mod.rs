@@ -261,6 +261,21 @@ pub struct Parser<'a> {
     fence_closes: bool,
     /// Whether the line above was blank, for a typed metadata opener (C2-B-232).
     prev_blank: bool,
+    /// The definition the next indented line may continue (C2-B-083, C2-B-084).
+    def_tail: Option<DefTail>,
+}
+
+/// An open definition: its event and, for a link, the tail parts its first
+/// line left out (C2-B-001).
+#[derive(Debug, Clone, Copy)]
+struct DefTail {
+    event: usize,
+    link: Option<TailParts>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TailParts {
+    title: bool,
 }
 
 /// Runs the block pass over a source.
@@ -288,6 +303,7 @@ pub(crate) fn scan_with_frontmatter(src: &Source, allow_frontmatter: bool) -> Bl
         findings: Vec::new(),
         fence_closes: false,
         prev_blank: false,
+        def_tail: None,
     };
     let n = src.line_count();
     for i in 0..n {
@@ -316,6 +332,7 @@ impl<'a> Parser<'a> {
         let text = self.src.slice(s, e);
         let cur = Cursor::new(text, s);
         let blank_above = std::mem::replace(&mut self.prev_blank, false);
+        let def_tail = self.def_tail.take();
         if self.frontmatter(text, s, e, allow_frontmatter) {
             return;
         }
@@ -350,6 +367,11 @@ impl<'a> Parser<'a> {
         if self.region_marker(&walk) {
             return;
         }
+        if let Some(t) = def_tail
+            && self.definition_tail(t, &walk, e)
+        {
+            return;
+        }
         if matches!(
             self.leaf.as_ref().map(|l| &l.leaf),
             Some(Leaf::Heading { .. } | Leaf::Table { .. })
@@ -364,6 +386,56 @@ impl<'a> Parser<'a> {
             return;
         }
         self.blank_run_reset_after(&walk, e);
+    }
+
+    /// A line indented past column 0 below a definition continues it
+    /// (C2-B-083, C2-B-084). A comment-only line is not seen (C2-B-137).
+    fn definition_tail(&mut self, t: DefTail, walk: &Walk<'a>, e: usize) -> bool {
+        let k = walk.cur.after_blanks();
+        if shapes::comment_only(k.rest()) {
+            self.def_tail = Some(t);
+            return false;
+        }
+        if self.stack.len() != 1 || self.leaf.is_some() || k.col == 0 {
+            return false;
+        }
+        let Some(Event::Leaf {
+            kind, end, attrs, ..
+        }) = self.events.get_mut(t.event)
+        else {
+            return false;
+        };
+        match (kind, t.link) {
+            (LeafKind::LinkDef { title, .. }, Some(parts)) => {
+                let Some((more_title, more_attrs)) = shapes::link_def_tail(k.rest()) else {
+                    return false;
+                };
+                if parts.title && more_title.is_some() {
+                    return false;
+                }
+                if more_title.is_some() {
+                    *title = more_title;
+                }
+                if let Some(a) = more_attrs {
+                    match attrs {
+                        Some(own) => own.merge(a),
+                        None => *attrs = Some(Box::new(a)),
+                    }
+                }
+                *end = e;
+            }
+            (LeafKind::AbbrDef { expansion, .. }, None) => {
+                expansion.push(' ');
+                expansion.push_str(k.rest().trim_end_matches([' ', '\t']));
+                *end = e;
+                self.def_tail = Some(t);
+            }
+            _ => return false,
+        }
+        if let Some(top) = self.stack.last_mut() {
+            top.end = top.end.max(e);
+        }
+        true
     }
 
     fn comment_line(
