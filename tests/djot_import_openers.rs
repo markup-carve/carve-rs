@@ -71,5 +71,7 @@ fn unclosed_openers_are_linear() {
 #[test]
 fn refused_closers_below_unclosed_openers_are_linear() {
     // A closer after whitespace finds the bottom `_` and is refused, once per token.
-    assert_linear("refused", |n| format!("_a {} {}\n", "[".repeat(n), " _".repeat(n)));
+    assert_linear("refused", |n| {
+        format!("_a {} {}\n", "[".repeat(n), " _".repeat(n))
+    });
 }
