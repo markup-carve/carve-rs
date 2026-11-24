@@ -86,3 +86,17 @@ fn wrap_offset_moves_with_the_second_text_fragment() {
     assert_eq!(written.output, source);
     assert!(written.diagnostics.is_empty(), "{:?}", written.diagnostics);
 }
+
+#[test]
+fn adjacent_table_text_coalesces_when_the_table_form_stays_pipe() {
+    let cell = |children: Value| json!({"type":"table_cell","header":false,"children":[{"type":"cell_paragraph","children":children}]});
+    let tree = json!({"type":"document","astVersion":"2.0","children":[{"type":"table",
+    "columns":[{"type":"table_column"},{"type":"table_column"}],
+    "children":[{"type":"table_body","children":[{"type":"table_row","children":[
+        cell(json!([{"type":"text","value":"a"},{"type":"text","value":"b"}])),
+        cell(json!([{"type":"text","value":"c"}]))
+    ]}]}]}]});
+    let output = invoke(&json!({"call":"writeWithDiagnostics","tree":tree}));
+    assert_eq!(output["ok"]["output"], "| ab | c |\n", "{output}");
+    assert_eq!(output["ok"]["diagnostics"], json!([]), "{output}");
+}

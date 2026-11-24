@@ -688,6 +688,9 @@ fn coalesce_plain_text(
             .then(|| map.get("value").and_then(Value::as_str))
             .flatten()
     }
+    let original_table = (value.get("type").and_then(Value::as_str) == Some("table")
+        && has_adjacent_plain_text(value))
+    .then(|| value.clone());
     match value {
         Value::Object(fields) => {
             for (key, child) in fields.iter_mut() {
@@ -697,6 +700,15 @@ fn coalesce_plain_text(
                     kept,
                     offsets,
                 );
+            }
+            if let Some(original) = original_table
+                && table::writes_delimited(V::Json(&original), None)
+                    != table::writes_delimited(V::Json(value), None)
+            {
+                *value = original;
+                let prefix = format!("{path}/");
+                kept.retain(|at, _| at != path && !at.starts_with(&prefix));
+                offsets.retain(|at, _| at != path && !at.starts_with(&prefix));
             }
         }
         Value::Array(nodes) => {
