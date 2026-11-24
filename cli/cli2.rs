@@ -788,6 +788,12 @@ struct StandardExtensions {
 }
 impl StandardExtensions {
     fn from_args(args: &Args) -> Result<Self, i32> {
+        if value(args, "extensions").is_none() && value(args, "extension-options").is_none() {
+            return Ok(Self {
+                names: Vec::new(),
+                host: Carve::new(),
+            });
+        }
         let rows: Value = serde_json::from_str(include_str!("../spec-data/extensions.json"))
             .unwrap_or(Value::Null);
         let rows = rows["extensions"].as_array().cloned().unwrap_or_default();
