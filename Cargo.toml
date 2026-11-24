@@ -40,6 +40,8 @@ serde_json = { version = "1", features = ["unbounded_depth"] }
 regex = "1"
 # Already in the tree through regex; data lint reads pattern structure from it (C2-W-142).
 regex-syntax = "0.8"
+# Already in the tree through regex; the writer finds every verbatim reference in one pass.
+aho-corasick = "1"
 typed-arena = "2"
 unicode-normalization = "0.1"
 
