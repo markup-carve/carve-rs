@@ -965,6 +965,22 @@ fn sigs(fam: Fam) -> Sigs {
     }
 }
 
+fn emit_has_json(out: &mut String, a: &Arms) {
+    let _ = write!(
+        out,
+        "
+    /// Whether a field of the node holds a free JSON value.
+    #[must_use]
+    pub fn has_json(&self) -> bool {{
+        match self {{
+{}            _ => false,
+        }}
+    }}
+",
+        a.json
+    );
+}
+
 fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
     let s = sigs(fam);
     let (head, node) = (s.head, s.node);
@@ -1008,14 +1024,6 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
     pub fn data(&self) -> Option<&serde_json::Value> {{
         match self {{
 {}            _ => None,
-        }}
-    }}
-
-    /// Whether a field of the node holds a free JSON value.
-    #[must_use]
-    pub fn has_json(&self) -> bool {{
-        match self {{
-{}            _ => false,
         }}
     }}
 
@@ -1065,7 +1073,6 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         a.attrs,
         a.dir,
         a.data,
-        a.json,
         s.attrs_slot,
         a.attrs_mut,
         s.children,
@@ -1075,6 +1082,7 @@ fn emit_slots(out: &mut String, a: &Arms, fam: Fam) {
         a.walk,
         a.walk_mut,
     );
+    emit_has_json(out, a);
     if fam == Fam::Arena {
         let _ = write!(
             out,

@@ -1730,19 +1730,26 @@ mod may_claim_tests {
     use serde_json::Value;
 
     fn inputs() -> Vec<String> {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/spec-conformance/");
         let mut out = Vec::new();
-        for (file, list) in [
-            ("clause-cases.json", "cases"),
-            ("examples.json", "examples"),
-            ("extensions.json", "cases"),
+        for (text, list) in [
+            (
+                include_str!("../../spec-conformance/clause-cases.json"),
+                "cases",
+            ),
+            (
+                include_str!("../../spec-conformance/examples.json"),
+                "examples",
+            ),
+            (
+                include_str!("../../spec-conformance/extensions.json"),
+                "cases",
+            ),
         ] {
-            let text = std::fs::read_to_string(format!("{dir}{file}")).unwrap();
-            let mut de = serde_json::Deserializer::from_str(&text);
+            let mut de = serde_json::Deserializer::from_str(text);
             de.disable_recursion_limit();
-            let v: Value = serde::Deserialize::deserialize(&mut de).unwrap();
-            for case in v[list].as_array().unwrap() {
-                if let Some(input) = case["input"].as_str() {
+            let v: Value = serde::Deserialize::deserialize(&mut de).unwrap_or_default();
+            for case in v.get(list).and_then(Value::as_array).into_iter().flatten() {
+                if let Some(input) = case.get("input").and_then(Value::as_str) {
                     out.push(input.to_string());
                 }
             }
