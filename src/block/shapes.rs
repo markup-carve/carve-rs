@@ -813,6 +813,21 @@ fn def_tail(tail: &str) -> Option<(Option<String>, Option<AttrBlock>)> {
     if tail.starts_with(' ') || tail.starts_with('\t') {
         return None;
     }
+    tail_parts(tail)
+}
+
+/// A tail line below a link definition (C2-B-083): after its indent, a
+/// title, an attribute block, or both, then only spaces and tabs.
+#[must_use]
+pub fn link_def_tail(r: &str) -> Option<(Option<String>, Option<AttrBlock>)> {
+    let tail = r.trim_start_matches([' ', '\t']);
+    if crate::chars::is_blank_line(tail) {
+        return None;
+    }
+    tail_parts(tail)
+}
+
+fn tail_parts(tail: &str) -> Option<(Option<String>, Option<AttrBlock>)> {
     let (title, rest) = if matches!(tail.as_bytes().first(), Some(b'\'' | b'"')) {
         let (title, end) = def_title(tail)?;
         (Some(title), tail.get(end..)?)

@@ -857,6 +857,10 @@ impl Parser<'_> {
     /// Link and abbreviation definitions at column 0 (C2-B-081 to C2-B-084).
     fn open_definition(&mut self, r: &str, start: usize, e: usize) -> bool {
         if let Some(d) = shapes::link_def(r) {
+            // C2-B-083: a line-end attribute block leaves no tail to take.
+            let tail = d.attrs.is_none().then_some(super::TailParts {
+                title: d.title.is_some(),
+            });
             let (s, attrs) = self.take_pending(start, d.attrs);
             let end = start + r.len();
             let _ = e;
@@ -870,6 +874,10 @@ impl Parser<'_> {
                 end,
                 attrs,
             );
+            self.def_tail = tail.map(|parts| super::DefTail {
+                event: self.events.len() - 1,
+                link: Some(parts),
+            });
             self.closed = None;
             return true;
         }
@@ -877,6 +885,10 @@ impl Parser<'_> {
             let (s, attrs) = self.take_pending(start, None);
             let end = start + r.len();
             self.push_leaf_event(LeafKind::AbbrDef { key, expansion }, s, end, attrs);
+            self.def_tail = Some(super::DefTail {
+                event: self.events.len() - 1,
+                link: None,
+            });
             self.closed = None;
             return true;
         }
