@@ -142,8 +142,10 @@ fn lint_include(
             continue;
         }
         let own = finding.path.take().unwrap_or_default();
+        // A code include holds its payload as one child; the file was not parsed as Carve there.
         // A finding of a section outside every selected block, such as one on the file as a whole, names the include.
         let under = match &places {
+            _ if node["options"].get("code").is_some() => "/children/0".to_string(),
             Some(places) => path_under(places, &own).unwrap_or_default(),
             None => own,
         };

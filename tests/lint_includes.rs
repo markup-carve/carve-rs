@@ -145,3 +145,29 @@ fn c2_n_087_per_column_findings_with_one_range_are_all_kept() {
         .collect();
     assert_eq!(columns, ["Column 1", "Column 2"]);
 }
+
+#[test]
+fn c2_n_086_a_code_payload_finding_names_the_payload() {
+    let resolver = Arc::new(move |request: &Request<'_>| {
+        if request.path == "a.js" {
+            Ok((
+                "let \u{202E}a = 1\nlet \u{202E}b = 2\nlet c = 3\n"
+                    .as_bytes()
+                    .to_vec(),
+                "a.js".into(),
+            ))
+        } else {
+            Err(Cause::NotFound)
+        }
+    });
+    let opts = LintOptions {
+        includes: Some(Includes::new(resolver)),
+        ..LintOptions::default()
+    };
+    let found: Vec<_> = lint("x\n\n{{ a.js @code @lines:2-3 }}", &opts)
+        .into_iter()
+        .filter(|d| d.code == "bidi-control-in-source")
+        .map(|d| (d.pos.map(|p| p.start_offset), d.path.unwrap_or_default()))
+        .collect();
+    assert_eq!(found, [(Some(17), "/children/1/children/0".to_string())]);
+}
