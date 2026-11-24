@@ -9,11 +9,18 @@ import lizard
 LIMIT = 15
 # Exceptions: "path:function": reason with the benchmark number that justifies it.
 EXCEPTIONS: dict[str, str] = {}
+# Third-party code kept in its upstream shape (jotdown 0.10.0, see src/jotdown/mod.rs).
+VENDORED = [Path("src/jotdown")]
 
 
 def main() -> int:
     roots = [Path(arg) for arg in sys.argv[1:]] or [Path("src"), Path("build.rs")]
-    files = sorted(path for root in roots for path in (root.rglob("*.rs") if root.is_dir() else [root]))
+    files = sorted(
+        path
+        for root in roots
+        for path in (root.rglob("*.rs") if root.is_dir() else [root])
+        if not any(path.is_relative_to(vendored) for vendored in VENDORED)
+    )
     violations = [
         (function.cyclomatic_complexity, path, function.start_line, function.name)
         for path in files
