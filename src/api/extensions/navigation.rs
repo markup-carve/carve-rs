@@ -396,26 +396,50 @@ fn freeze_heading_links(doc: &mut Value) {
     });
 }
 
+/// Advances the depth counter for a heading at `level`; closing deeper headings continues their counter.
+fn count_heading(levels: &mut Vec<usize>, counts: &mut Vec<usize>, level: usize) -> String {
+    let mut closed = None;
+    while levels.last().is_some_and(|last| *last > level) {
+        levels.pop();
+        closed = counts.pop();
+    }
+    if levels.last() == Some(&level) {
+        if let Some(last) = counts.last_mut() {
+            *last += 1;
+        }
+    } else {
+        levels.push(level);
+        counts.push(closed.map_or(1, |n| n + 1));
+    }
+    counts
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
 fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, Vec<Value>)> {
     let mut levels: Vec<usize> = Vec::new();
     let mut counts: Vec<usize> = Vec::new();
     let mut labels = BTreeMap::new();
-    rewrite(doc, &mut Vec::new(), &mut |value, parents| {
-        if value.get("type").and_then(Value::as_str) != Some("heading")
-            || parents
-                .iter()
-                .any(|p| matches!(p.as_str(), "block_quote" | "footnote"))
-        {
-            return None;
+    // carve#6531: only top-level headings, the ones a section wraps (C2-H-026), and a number counts depth, not level.
+    let Some(children) = doc.get_mut("children").and_then(Value::as_array_mut) else {
+        return labels;
+    };
+    for node in children.iter_mut() {
+        let Some(node) = node.as_object_mut() else {
+            continue;
+        };
+        if node.get("type").and_then(Value::as_str) != Some("heading") {
+            continue;
         }
-        let mut node = value.as_object().cloned().unwrap_or_default();
         let level = node
             .get("level")
             .and_then(Value::as_u64)
             .and_then(|v| usize::try_from(v).ok())
             .unwrap_or(0);
         if level < usize::from(min_level.max(1)) || level > 6 {
-            return None;
+            continue;
         }
         if node
             .get("attrs")
@@ -423,33 +447,17 @@ fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, 
             .and_then(Value::as_array)
             .is_some_and(|cs| cs.iter().any(|c| c.as_str() == Some("unnumbered")))
         {
-            return None;
+            continue;
         }
-        while levels.last().is_some_and(|last| *last > level) {
-            levels.pop();
-            counts.pop();
-        }
-        if levels.last() == Some(&level) {
-            if let Some(last) = counts.last_mut() {
-                *last += 1;
-            }
-        } else {
-            levels.push(level);
-            counts.push(1);
-        }
-        let number = counts
-            .iter()
-            .map(usize::to_string)
-            .collect::<Vec<_>>()
-            .join(".");
+        let number = count_heading(&mut levels, &mut counts, level);
         let title = node
             .get("children")
             .and_then(Value::as_array)
             .map_or_else(Vec::new, |n| derived(n));
-        if let Some(id) = heading_id(&node) {
+        if let Some(id) = heading_id(node) {
             labels.insert(id.clone(), (number.clone(), title));
             if node.get("attrs").and_then(|a| a.get("id")).is_none()
-                && let Some(a) = attrs(&mut node)
+                && let Some(a) = attrs(node)
             {
                 a.insert("id".into(), id.into());
             }
@@ -462,8 +470,7 @@ fn number_headings(doc: &mut Value, min_level: u8) -> BTreeMap<String, (String, 
             children.insert(0, json!({"type":"span","data":{"carve.headingNumbers":"chrome"},
                 "attrs":{"classes":["section-number"]},"children":[{"type":"text","value":number}]}));
         }
-        Some(vec![Value::Object(node)])
-    });
+    }
     labels
 }
 
@@ -590,7 +597,7 @@ fn list_node(entries: &[(u8, String, Vec<Value>)], ordered: bool) -> Option<Valu
     build_list(entries, &mut 0, ordered)
 }
 
-fn toc_entries(doc: &Value, top_level: bool) -> Vec<(u8, String, Vec<Value>)> {
+fn toc_entries(doc: &Value) -> Vec<(u8, String, Vec<Value>)> {
     let mut entries = Vec::new();
     let mut add = |node: &Map<String, Value>| {
         if node.get("type").and_then(Value::as_str) != Some("heading") {
@@ -609,16 +616,12 @@ fn toc_entries(doc: &Value, top_level: bool) -> Vec<(u8, String, Vec<Value>)> {
             entries.push((level, id, title));
         }
     };
-    if top_level {
-        if let Some(children) = doc.get("children").and_then(Value::as_array) {
-            for node in children {
-                if let Some(map) = node.as_object() {
-                    add(map);
-                }
+    if let Some(children) = doc.get("children").and_then(Value::as_array) {
+        for node in children {
+            if let Some(map) = node.as_object() {
+                add(map);
             }
         }
-    } else {
-        visit_read(doc, &mut add);
     }
     entries
 }
@@ -649,7 +652,7 @@ struct TableOfContents(TableOfContentsOptions);
 impl DocumentTransform for TableOfContents {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
         edit(&view, |doc| {
-            let entries: Vec<_> = toc_entries(doc, true)
+            let entries: Vec<_> = toc_entries(doc)
                 .into_iter()
                 .filter(|(level, _, _)| *level >= self.0.min_level && *level <= self.0.max_level)
                 .collect();
@@ -686,7 +689,8 @@ struct TocPlacement;
 impl DocumentTransform for TocPlacement {
     fn transform(&self, view: Tree) -> Result<Tree, Error> {
         edit(&view, |doc| {
-            let entries = toc_entries(doc, false);
+            // carve#6531: the placed table lists the top-level headings, as tableOfContents does.
+            let entries = toc_entries(doc);
             visit(doc, &mut |node| {
                 if node.get("type").and_then(Value::as_str) == Some("directive")
                     && node.get("kind").and_then(Value::as_str) == Some("toc")
