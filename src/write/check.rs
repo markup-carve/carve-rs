@@ -2280,24 +2280,8 @@ fn match_text<'t>(
     let Some(a) = as_.get(at.j) else {
         return parse_ends_in_text(w, c, es, at, owner);
     };
-    if ty(a) != "text" {
-        return skip_construct(w, c, e, es, a, at, owner);
-    }
-    // A prior lost node does not license a later field to disappear silently.
-    if !c.losses.is_empty() {
-        for name in ["lang", "dir", "metadata", "attrs", "data"] {
-            if is_compared(c, e, result_fields(e), name)
-                && e.get(name).is_some()
-                && a.get(name).is_none()
-            {
-                c.losses.push((e, Some(String::new())));
-                break;
-            }
-        }
-    }
-    // A bracketed node repaired inside this round may change where its
-    // content ends. Compare the following text after that repair is parsed;
-    // its position in this parse supplies no opener.
+    // A repair inside the preceding bracketed node can change the parse of
+    // this follower, including whether it appears to open a construct.
     if at.vi == 0
         && at.aj == 0
         && at
@@ -2312,6 +2296,21 @@ fn match_text<'t>(
             })
     {
         return false;
+    }
+    if ty(a) != "text" {
+        return skip_construct(w, c, e, es, a, at, owner);
+    }
+    // A prior lost node does not license a later field to disappear silently.
+    if !c.losses.is_empty() {
+        for name in ["lang", "dir", "metadata", "attrs", "data"] {
+            if is_compared(c, e, result_fields(e), name)
+                && e.get(name).is_some()
+                && a.get(name).is_none()
+            {
+                c.losses.push((e, Some(String::new())));
+                break;
+            }
+        }
     }
     if !match_characters(w, c, e, a, at, es, owner) {
         return false;
