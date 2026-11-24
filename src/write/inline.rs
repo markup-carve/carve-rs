@@ -232,13 +232,20 @@ fn text_holds_mark(t: &str, mark: char, words: bool) -> bool {
             continue;
         }
         let before = i.checked_sub(1).and_then(|j| chars.get(j)).copied();
+        // C2-I-055: behind a `{` the mark is a braced opener, which pairs only with a closer of its mark glued before a `}`.
+        if before == Some('{') {
+            i += 1;
+            continue;
+        }
         let run = chars.iter().skip(i).take_while(|&&c| c == mark).count();
-        if run > 1 && before != Some('{') && chars.get(i + run) != Some(&'}') {
+        if run > 1 {
             i += run;
             continue;
         }
         let after = chars.get(i + 1).copied();
-        let counts = if before.is_some_and(is_word) && after.is_some_and(is_word) {
+        let counts = if before == Some(mark) && after == Some('}') {
+            false
+        } else if before.is_some_and(is_word) && after.is_some_and(is_word) {
             words
         } else {
             !(before.is_some_and(is_flank_space) && after.is_some_and(is_flank_space))
@@ -307,8 +314,11 @@ fn edge_mark(node: V<'_>, mark: char) -> bool {
     let c = children(node);
     c.first()
         .is_some_and(|n| ty(n) == "text" && text(n).starts_with(mark))
-        || c.last()
-            .is_some_and(|n| ty(n) == "text" && text(n).ends_with(mark))
+        || c.last().is_some_and(|n| {
+            let t = text(n);
+            // C2-I-055: a mark behind a `{` is a braced opener, not a closer.
+            ty(n) == "text" && t.ends_with(mark) && !t[..t.len() - mark.len_utf8()].ends_with('{')
+        })
 }
 
 fn refs(nodes: Arr<'_>) -> Vec<V<'_>> {
