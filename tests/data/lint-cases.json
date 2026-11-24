@@ -281,7 +281,7 @@
     "trigger": "- ```\n x\n ```\n",
     "near": "- ```\n x\n \n",
     "fragment": "```",
-    "message": "This line closes the block opened on line (n) although it is indented differently. If it is content, make the outer fence longer."
+    "message": "This line closes the block opened on line 1 although it is indented differently. If it is content, make the outer fence longer."
   },
   {
     "id": "figure-group-empty",
@@ -496,9 +496,9 @@
   {
     "id": "table-row-attribute-as-cell",
     "origin": "../carve/tests/corpus/92-superscript-in-a-table-cell.crv",
-    "trigger": "| Value |\n| {^2^} |\n",
-    "near": "| Value |\n\n",
-    "fragment": "| {^2^} |",
+    "trigger": "| Value |\n| {.x} |\n",
+    "near": "| Value |\n| {^2^} |\n",
+    "fragment": "| {.x} |",
     "message": "A row attribute is the brace block glued after the closing pipe. Here it is cell content."
   },
   {
