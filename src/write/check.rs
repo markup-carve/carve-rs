@@ -2608,12 +2608,7 @@ fn reads_neighbor<'t>(
             return escape_at(w, c, n, 0);
         }
         if reads_on(e, n) && differing_field(w, c, e, a).is_some() {
-            // C2-W-125 case six: the backslash of a character that lengthens the node gives no kind (C2-W-088).
-            if escape_at(w, c, n, 0) {
-                c.own_escapes.insert((id(n), 0));
-                return true;
-            }
-            return false;
+            return escape_lengthener(w, c, n);
         }
     }
     if ty(e) != "smart_punctuation"
@@ -2629,6 +2624,15 @@ fn reads_neighbor<'t>(
     }
     let before = i.checked_sub(1).and_then(|p| text_at(es, p));
     before.is_some_and(|b| escape_at(w, c, b, text(b).len().saturating_sub(1)))
+}
+
+/// C2-W-125 case six: the backslash of a character that lengthens the node before it gives no kind (C2-W-088).
+fn escape_lengthener<'t>(w: &Writer<'t>, c: &mut Check<'t>, n: N<'t>) -> bool {
+    let placed = escape_at(w, c, n, 0);
+    if placed {
+        c.own_escapes.insert((id(n), 0));
+    }
+    placed
 }
 
 fn is_lost_code(w: &Writer<'_>, node: Option<V<'_>>) -> bool {

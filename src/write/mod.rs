@@ -2075,9 +2075,7 @@ fn settle<'t>(
 ) -> bool {
     let mut c = compare_with_link_fallback(w, doc, group, first, initial, round);
     check::drop_early_trials(&mut c);
-    let read = round.source.zip(round.last);
-    let dropped = drop_asked_trials(w, &mut c, group, first, read);
-    if (drop_idle_trials(w, &mut c, group, first, round.last) || dropped) && c.changes() == 0 {
+    if drop_trials(w, &mut c, group, first, round) && c.changes() == 0 {
         return true;
     }
     if w.kind_escapes {
@@ -2342,6 +2340,19 @@ fn drop_asked_trials<'t>(
         dropped = true;
     }
     dropped
+}
+
+/// The trials of a round that take no escape: a lone one the test does not ask for, and one a sibling covers.
+fn drop_trials<'t>(
+    w: &mut Writer<'t>,
+    c: &mut Check<'t>,
+    group: Arr<'t>,
+    first: bool,
+    round: &Round<'_>,
+) -> bool {
+    let read = round.source.zip(round.last);
+    let asked = drop_asked_trials(w, c, group, first, read);
+    drop_idle_trials(w, c, group, first, round.last) || asked
 }
 
 const MAX_RETESTED_TRIALS: usize = 8;
