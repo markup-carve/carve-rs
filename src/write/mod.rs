@@ -2016,7 +2016,7 @@ fn escape_kinds<'t>(w: &Writer<'t>, c: &mut Check<'t>, group: Arr<'t>) {
         .iter()
         .filter(|(n, at)| {
             let key = (id(n), *at);
-            !trials.contains(&key)
+            (!trials.contains(&key) || text(*n).as_bytes().get(*at) == Some(&b'`'))
                 && !c.own_escapes.contains(&key)
                 && (w.closer_kinds || !c.closers.contains(&key))
         })
