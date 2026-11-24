@@ -676,18 +676,73 @@ impl Coalesced {
     }
 }
 
+fn plain_text_value(node: &Value) -> Option<&str> {
+    let map = node.as_object()?;
+    (map.len() == 2 && map.get("type")?.as_str()? == "text")
+        .then(|| map.get("value").and_then(Value::as_str))
+        .flatten()
+}
+
+fn coalesce_text_list(
+    nodes: &mut Vec<Value>,
+    path: &str,
+    kept: &mut std::collections::HashMap<String, Vec<usize>>,
+    offsets: &mut std::collections::HashMap<String, usize>,
+) {
+    let original_len = nodes.len();
+    let mut retained = Vec::with_capacity(original_len);
+    let mut source = std::mem::take(nodes).into_iter().enumerate().peekable();
+    while let Some((index, mut node)) = source.next() {
+        if let Some(first) = plain_text_value(&node) {
+            let mut joined = first.to_string();
+            while source
+                .peek()
+                .and_then(|(_, next)| plain_text_value(next))
+                .is_some()
+            {
+                if let Some((next_index, next)) = source.next()
+                    && let Some(piece) = plain_text_value(&next)
+                {
+                    offsets.insert(format!("{path}/{next_index}"), joined.len());
+                    joined.push_str(piece);
+                }
+            }
+            if let Some(value) = node.get_mut("value") {
+                *value = Value::String(joined);
+            }
+        }
+        retained.push(index);
+        nodes.push(node);
+    }
+    if retained.len() != original_len || retained.iter().enumerate().any(|(i, old)| i != *old) {
+        kept.insert(path.to_string(), retained);
+    }
+}
+
+fn restore_table_form(
+    value: &mut Value,
+    original_table: Option<Value>,
+    path: &str,
+    kept: &mut std::collections::HashMap<String, Vec<usize>>,
+    offsets: &mut std::collections::HashMap<String, usize>,
+) {
+    if let Some(original) = original_table
+        && table::writes_delimited(V::Json(&original), None)
+            != table::writes_delimited(V::Json(value), None)
+    {
+        *value = original;
+        let prefix = format!("{path}/");
+        kept.retain(|at, _| at != path && !at.starts_with(&prefix));
+        offsets.retain(|at, _| at != path && !at.starts_with(&prefix));
+    }
+}
+
 fn coalesce_plain_text(
     value: &mut Value,
     path: &str,
     kept: &mut std::collections::HashMap<String, Vec<usize>>,
     offsets: &mut std::collections::HashMap<String, usize>,
 ) {
-    fn plain_text(node: &Value) -> Option<&str> {
-        let map = node.as_object()?;
-        (map.len() == 2 && map.get("type")?.as_str()? == "text")
-            .then(|| map.get("value").and_then(Value::as_str))
-            .flatten()
-    }
     let original_table = (value.get("type").and_then(Value::as_str) == Some("table")
         && has_adjacent_plain_text(value))
     .then(|| value.clone());
@@ -701,50 +756,13 @@ fn coalesce_plain_text(
                     offsets,
                 );
             }
-            if let Some(original) = original_table
-                && table::writes_delimited(V::Json(&original), None)
-                    != table::writes_delimited(V::Json(value), None)
-            {
-                *value = original;
-                let prefix = format!("{path}/");
-                kept.retain(|at, _| at != path && !at.starts_with(&prefix));
-                offsets.retain(|at, _| at != path && !at.starts_with(&prefix));
-            }
+            restore_table_form(value, original_table, path, kept, offsets);
         }
         Value::Array(nodes) => {
             for (index, child) in nodes.iter_mut().enumerate() {
                 coalesce_plain_text(child, &format!("{path}/{index}"), kept, offsets);
             }
-            let original_len = nodes.len();
-            let mut retained = Vec::with_capacity(original_len);
-            let mut source = std::mem::take(nodes).into_iter().enumerate().peekable();
-            while let Some((index, mut node)) = source.next() {
-                if let Some(first) = plain_text(&node) {
-                    let mut joined = first.to_string();
-                    while source
-                        .peek()
-                        .and_then(|(_, next)| plain_text(next))
-                        .is_some()
-                    {
-                        if let Some((next_index, next)) = source.next()
-                            && let Some(piece) = plain_text(&next)
-                        {
-                            offsets.insert(format!("{path}/{next_index}"), joined.len());
-                            joined.push_str(piece);
-                        }
-                    }
-                    if let Some(value) = node.get_mut("value") {
-                        *value = Value::String(joined);
-                    }
-                }
-                retained.push(index);
-                nodes.push(node);
-            }
-            if retained.len() != original_len
-                || retained.iter().enumerate().any(|(i, old)| i != *old)
-            {
-                kept.insert(path.to_string(), retained);
-            }
+            coalesce_text_list(nodes, path, kept, offsets);
         }
         _ => {}
     }
