@@ -223,23 +223,6 @@ fn lint_core<'a>(
             opts,
         ));
     }
-    let invalid_tables: Vec<_> = out
-        .iter()
-        .filter(|finding| finding.code == "table-attribute-invalid")
-        .filter_map(|finding| finding.path.as_deref())
-        .map(str::to_string)
-        .collect();
-    out.retain(|finding| {
-        !matches!(
-            finding.code,
-            "table-column-arity" | "table-column-overlap" | "table-width-total"
-        ) || !invalid_tables.iter().any(|path| {
-            finding
-                .path
-                .as_deref()
-                .is_some_and(|actual| actual.starts_with(path))
-        })
-    });
     out.sort_by_key(|d| d.pos.map_or(0, |p| p.start_offset));
     controls::filter(source, out, &comments)
 }
