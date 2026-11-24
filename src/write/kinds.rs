@@ -120,14 +120,7 @@ impl<'t> KindBlocks<'t> {
         let b = run.text.as_bytes();
         let ch = *b.get(at)?;
         if ch == b'{' {
-            // carve-js#5550: a brace opens a braced kind only before a braced
-            // mark; a brace that ends its text takes the mark behind it.
-            let mark = match b.get(at + 1) {
-                Some(&m) if braced_mark(m) => Some(char::from(m)),
-                Some(_) => None,
-                None => run.follow,
-            };
-            return Some(mark.map_or_else(|| "{".into(), |mark| format!("{{{mark}")));
+            return Some(brace_key(run, at));
         }
         if ch == b'-'
             && (before(b, at, 1) == Some(b'-')
@@ -258,6 +251,17 @@ fn line_shape(value: &str) -> String {
 }
 
 /// The byte `k` places before `at`.
+/// carve-js#5550: a brace opens a braced kind only before a braced mark; a
+/// brace that ends its text takes the mark behind it.
+fn brace_key(run: &Run<'_>, at: usize) -> String {
+    let mark = match run.text.as_bytes().get(at + 1) {
+        Some(&m) if braced_mark(m) => Some(char::from(m)),
+        Some(_) => None,
+        None => run.follow,
+    };
+    mark.map_or_else(|| "{".into(), |mark| format!("{{{mark}"))
+}
+
 fn braced_mark(m: u8) -> bool {
     m == b'#' || m == b'%' || crate::tables::BRACED_MARKS.as_bytes().contains(&m)
 }
