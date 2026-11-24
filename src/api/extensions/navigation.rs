@@ -136,8 +136,24 @@ fn derived(nodes: &[Value]) -> Vec<Value> {
 fn freeze_xrefs(doc: &mut Value) {
     let mut by_id = BTreeMap::new();
     visit_read(doc, &mut |node| heading_title(node, &mut by_id));
+    if by_id.is_empty() {
+        return;
+    }
+    let mut titles = tree::Titles::new(
+        by_id
+            .into_iter()
+            .map(|(id, title)| {
+                let title = serde_json::from_value(Value::Array(title)).unwrap_or_default();
+                (id, title)
+            })
+            .collect(),
+    );
     rewrite(doc, &mut Vec::new(), &mut |node, _| {
-        title_link(node, &by_id)
+        let key = title_xref_key(node)?;
+        let children = titles.frozen_json(key)?.to_vec();
+        Some(vec![
+            json!({"type":"link","href":format!("#{key}"),"children":children}),
+        ])
     });
 }
 
@@ -154,8 +170,8 @@ fn heading_title(node: &Map<String, Value>, by_id: &mut BTreeMap<String, Vec<Val
     }
 }
 
-/// A title cross-reference to a heading as a link holding the heading's title.
-fn title_link(node: &Value, by_id: &BTreeMap<String, Vec<Value>>) -> Option<Vec<Value>> {
+/// The key of a title cross-reference to a heading.
+fn title_xref_key(node: &Value) -> Option<&str> {
     if node.get("type").and_then(Value::as_str) != Some("xref")
         || node.get("namespace").and_then(Value::as_str) != Some("heading")
         || node
@@ -165,11 +181,7 @@ fn title_link(node: &Value, by_id: &BTreeMap<String, Vec<Value>>) -> Option<Vec<
     {
         return None;
     }
-    let key = node.get("key").and_then(Value::as_str)?;
-    let children = by_id.get(key)?;
-    Some(vec![
-        json!({"type":"link","href":format!("#{key}"),"children":children}),
-    ])
+    node.get("key").and_then(Value::as_str)
 }
 
 fn heading_id(map: &Map<String, Value>) -> Option<String> {
@@ -434,15 +446,13 @@ fn count_heading(levels: &mut Vec<usize>, counts: &mut Vec<usize>, level: usize)
         .join(".")
 }
 
-/// A heading cross-reference as a link carrying the heading's number; the
-/// key of the reference when it changed. `expanding` holds the keys whose
-/// title copies are being walked: a reference in its own title stays.
+/// A heading cross-reference as a link carrying the heading's number; true
+/// when it changed.
 fn number_xref(
     node: &mut Map<String, Value>,
     labels: &BTreeMap<String, (String, Vec<Value>)>,
     options: &HeadingNumbersOptions,
-    expanding: &[String],
-) -> Option<String> {
+) -> bool {
     if node.get("type").and_then(Value::as_str) != Some("xref")
         || node.get("namespace").and_then(Value::as_str) != Some("heading")
         || node
@@ -450,13 +460,15 @@ fn number_xref(
             .and_then(Value::as_str)
             .is_some_and(|d| d != "title")
     {
-        return None;
+        return false;
     }
-    let id = node.get("key").and_then(Value::as_str)?.to_string();
-    if expanding.contains(&id) {
-        return None;
-    }
-    let (number, title) = labels.get(&id)?;
+    let Some((number, title)) = node
+        .get("key")
+        .and_then(Value::as_str)
+        .and_then(|id| labels.get(id))
+    else {
+        return false;
+    };
     let children = match options.crossref {
         CrossrefStyle::Number => {
             vec![json!({"type":"text","value":format!("{} {number}", options.label)})]
@@ -465,45 +477,39 @@ fn number_xref(
             let lead = json!({"type":"text","value":format!("{} {number} - ", options.label)});
             std::iter::once(lead).chain(title.iter().cloned()).collect()
         }
-        CrossrefStyle::Title => return None,
+        CrossrefStyle::Title => return false,
     };
     node.insert("type".into(), "link".into());
     node.insert("children".into(), Value::Array(children));
     node.remove("namespace");
     node.remove("key");
-    Some(id)
+    true
 }
 
-/// [`number_xref`] over a JSON slot, visiting what [`visit`] visits.
+/// [`number_xref`] over a JSON slot, visiting what [`visit`] visits except
+/// the link a reference becomes (carve#6540).
 fn number_xrefs_json(
     value: &mut Value,
     labels: &BTreeMap<String, (String, Vec<Value>)>,
     options: &HeadingNumbersOptions,
-    expanding: &mut Vec<String>,
 ) {
     match value {
         Value::Array(items) => {
             for item in items {
-                number_xrefs_json(item, labels, options, expanding);
+                number_xrefs_json(item, labels, options);
             }
         }
         Value::Object(map) => {
-            let changed = map
-                .contains_key("type")
-                .then(|| number_xref(map, labels, options, expanding))
-                .flatten();
-            let pushed = changed.is_some();
-            expanding.extend(changed);
+            if map.contains_key("type") && number_xref(map, labels, options) {
+                return;
+            }
             for (key, child) in map.iter_mut() {
                 if !matches!(
                     key.as_str(),
                     "fallback" | "source" | "payload" | "props" | "pos" | "attrs"
                 ) {
-                    number_xrefs_json(child, labels, options, expanding);
+                    number_xrefs_json(child, labels, options);
                 }
-            }
-            if pushed {
-                expanding.pop();
             }
         }
         _ => {}
@@ -524,9 +530,10 @@ impl DocumentTransform for HeadingNumbers {
 
     fn transform_owned(&self, doc: &mut crate::ast::owned::Document) {
         tree::freeze_heading_links(doc);
+        let mut titles = tree::heading_texts(doc);
         let labels = tree::number_headings(doc, self.0.min_level);
-        tree::number_xrefs(doc, &labels, &self.0);
-        tree::freeze_xrefs(doc);
+        tree::number_xrefs(doc, &labels, &mut titles, &self.0);
+        tree::freeze_xrefs(doc, &mut titles);
     }
 }
 #[must_use]
