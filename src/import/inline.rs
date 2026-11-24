@@ -42,7 +42,12 @@ pub(crate) fn with_role(kind: &str, role: &str, children: Vec<Value>) -> Value {
 
 pub(crate) fn text(value: &str) -> Value {
     let mut m = node("text");
-    m.insert("value".into(), value.replace('\0', "\u{fffd}").into());
+    let value = if value.contains('\0') {
+        value.replace('\0', "\u{fffd}")
+    } else {
+        value.to_string()
+    };
+    m.insert("value".into(), value.into());
     Value::Object(m)
 }
 
@@ -90,8 +95,11 @@ pub(crate) fn coalesce(children: Vec<Value>) -> Vec<Value> {
             && let Some(prev) = out.last_mut()
             && ty(prev) == "text"
         {
-            let joined = format!("{}{}", str_of(prev), str_of(&child));
-            set_str(prev, joined);
+            if let Some(Value::String(s)) = prev.get_mut("value") {
+                s.push_str(str_of(&child));
+            } else {
+                set_str(prev, str_of(&child).to_string());
+            }
             continue;
         }
         out.push(child);
@@ -283,24 +291,24 @@ impl Cx {
     /// C2-M-057: an element of the treatment `drop` is reported, but `rp`.
     pub(crate) fn drop_element(&mut self, id: Id) {
         if !self.dom.is(id, "rp") {
-            let tag = self.dom.tag(id).unwrap_or("").to_string();
+            let tag = self.dom.tag_name(id);
             self.report(id, Code::ElementDropped, format!("HTML {tag} dropped"));
         }
     }
 
     fn treated(&mut self, id: Id) -> Option<Vec<Value>> {
         let kind = attrs::treatment(&self.dom, id);
-        let tag = self.dom.tag(id).unwrap_or("").to_string();
+        let tag = self.dom.tag_name(id);
         if kind == Treatment::Drop {
             self.drop_element(id);
             return Some(Vec::new());
         }
         // C2-M-066: an `<input>` that is no task box is raw.
-        if kind == Treatment::Raw || tag == "input" {
+        if kind == Treatment::Raw || &*tag == "input" {
             return Some(self.raw_inline(id));
         }
         if kind == Treatment::Unwrap || attrs::is_orphan(&self.dom, id) {
-            if tag != "html" && tag != "body" {
+            if &*tag != "html" && &*tag != "body" {
                 self.report(id, Code::ElementMapped, format!("HTML {tag} unwrapped"));
             }
             return Some(self.inline_children(id));
@@ -330,12 +338,12 @@ impl Cx {
             return leaf;
         }
         let children = self.inline_children(id);
-        let tag = self.dom.tag(id).unwrap_or("").to_string();
+        let tag = self.dom.tag_name(id);
         if let Some(kind) = format_kind(&tag) {
             let mapped = self.plain_attrs(id);
             return self.non_empty(vec![with(kind, children, &mapped)], id);
         }
-        match tag.as_str() {
+        match &*tag {
             "a" => {
                 let link = self.html_link(id, children);
                 self.non_empty(link, id)
@@ -385,7 +393,7 @@ impl Cx {
                 continue;
             }
             if kept {
-                let tag = self.dom.tag(id).unwrap_or("").to_string();
+                let tag = self.dom.tag_name(id);
                 self.report(
                     id,
                     Code::StructureRepaired,
@@ -734,8 +742,8 @@ impl Cx {
 
     /// C2-H-075: the span whose key named the element.
     fn semantic_span(&mut self, id: Id, children: Vec<Value>) -> Value {
-        let tag = self.dom.tag(id).unwrap_or("").to_string();
-        let target = match tag.as_str() {
+        let tag = self.dom.tag_name(id);
+        let target = match &*tag {
             "abbr" => Some("title"),
             "time" => Some("datetime"),
             _ => None,
@@ -753,11 +761,11 @@ impl Cx {
             );
         }
         let omit: Vec<&str> = match target {
-            Some(t) => vec![t, tag.as_str()],
-            None => vec![tag.as_str()],
+            Some(t) => vec![t, &*tag],
+            None => vec![&*tag],
         };
         let mut mapped = self.attrs(id, &omit, false);
-        mapped.attrs.key_values.insert(0, (tag.clone(), value));
+        mapped.attrs.key_values.insert(0, (tag.to_string(), value));
         with("span", children, &mapped)
     }
 
@@ -906,7 +914,7 @@ impl Cx {
         if crate::html::url::allowed(url, &crate::options::UrlPolicy::default()) {
             return Some(url.to_string());
         }
-        let tag = self.dom.tag(id).unwrap_or("").to_string();
+        let tag = self.dom.tag_name(id);
         self.report(
             id,
             Code::DestinationDenied,

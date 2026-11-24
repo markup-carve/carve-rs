@@ -191,7 +191,7 @@ impl Cx {
 
     /// C2-M-004: of `<html>` and `<body>` only `lang` and `dir` reach the document.
     fn wrapper_attributes(&mut self, id: Id) {
-        let tag = self.dom.tag(id).unwrap_or("").to_string();
+        let tag = self.dom.tag_name(id);
         for (name, value) in self.dom.attrs(id).to_vec() {
             if name != "lang" && name != "dir" && dropped_attribute(&name, &value).is_none() {
                 self.report(
@@ -238,9 +238,9 @@ impl Cx {
 
     fn treated_block(&mut self, id: Id) -> Option<Vec<Value>> {
         let kind = attrs::treatment(&self.dom, id);
-        let tag = self.dom.tag(id).unwrap_or("").to_string();
+        let tag = self.dom.tag_name(id);
         if kind == Treatment::Drop {
-            if tag == "head" {
+            if &*tag == "head" {
                 return Some(self.head(id));
             }
             self.drop_element(id);
@@ -250,7 +250,7 @@ impl Cx {
             return Some(self.raw_element(id));
         }
         if kind == Treatment::Unwrap || attrs::is_orphan(&self.dom, id) {
-            if tag != "html" && tag != "body" {
+            if &*tag != "html" && &*tag != "body" {
                 self.report(id, Code::ElementMapped, format!("HTML {tag} unwrapped"));
             }
             return Some(self.block_children(id));
@@ -397,8 +397,8 @@ impl Cx {
     }
 
     fn simple_block_element(&mut self, id: Id) -> Option<Vec<Value>> {
-        let tag = self.dom.tag(id)?.to_string();
-        Some(match tag.as_str() {
+        let tag = self.dom.is_element(id).then(|| self.dom.tag_name(id))?;
+        Some(match &*tag {
             "p" => {
                 let p = self.paragraph_element(id);
                 self.with_content(p, id)
@@ -436,7 +436,7 @@ impl Cx {
             return vec![v];
         }
         if v.get("attrs").is_some() || v.get("lang").is_some() || v.get("dir").is_some() {
-            let tag = self.dom.tag(element).unwrap_or("").to_string();
+            let tag = self.dom.tag_name(element);
             self.report(
                 element,
                 Code::StructureRepaired,
@@ -1423,7 +1423,7 @@ impl Cx {
                 continue;
             }
             if !self.dom.is(g, "tbody") {
-                let tag = self.dom.tag(g).unwrap_or("").to_string();
+                let tag = self.dom.tag_name(g);
                 self.report(
                     g,
                     Code::StructureRepaired,
@@ -1522,9 +1522,9 @@ impl Cx {
             );
         }
         for child in self.dom.elements(id) {
-            let tag = self.dom.tag(child).unwrap_or("").to_string();
+            let tag = self.dom.tag_name(child);
             if !matches!(
-                tag.as_str(),
+                &*tag,
                 "caption" | "thead" | "tbody" | "tfoot" | "tr" | "colgroup"
             ) {
                 self.report(

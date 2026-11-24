@@ -204,7 +204,7 @@ impl Edits {
 fn element(dom: &mut Dom, name: &str, attrs: Vec<(String, String)>, children: Vec<Id>) -> Id {
     let id = dom.push(NodeData {
         kind: Kind::Element {
-            name: name.to_string(),
+            name: html5ever::LocalName::from(name),
             html: true,
             attrs,
         },

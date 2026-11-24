@@ -59,18 +59,7 @@ fn len_at(doc: &Value, pointer: &str) -> usize {
 
 /// Whether a text node below `value` ends in a space or tab, which every trim target does.
 fn has_spaced_text(value: &Value) -> bool {
-    match value {
-        Value::Array(items) => items.iter().any(has_spaced_text),
-        Value::Object(map) => {
-            (ty(value) == "text"
-                && map
-                    .get("value")
-                    .and_then(Value::as_str)
-                    .is_some_and(|t| t.ends_with([' ', '\t'])))
-                || map.values().any(has_spaced_text)
-        }
-        _ => false,
-    }
+    crate::view::json_any_text(value, &|t| t.ends_with([' ', '\t']))
 }
 
 /// Check the same line positions that `trim_list` can change before copying a tree.

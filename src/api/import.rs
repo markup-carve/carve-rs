@@ -369,18 +369,30 @@ fn collect_destinations(value: &Value, out: &mut std::collections::HashMap<Strin
     }
 }
 
+/// The parsed depth up to which [`run`] builds without its own thread. Up to
+/// it the build needs no more stack than the writer that runs on the caller anyway.
+const INLINE_DEPTH: usize = 64;
+
 fn run(
     html: &str,
     raw_html: bool,
     adapter: ImportAdapter,
 ) -> Result<crate::import::Imported, Error> {
-    let import = || {
-        crate::import::import_html(html, raw_html, adapter.runs_note_pass())
-            .map_err(|r| Error::ImportInput { message: r.0 })
+    let refused = |r: crate::import::Refused| Error::ImportInput { message: r.0 };
+    // A panic is an error, on the caller as from the thread's join.
+    let failed = |_| Error::ImportInput {
+        message: "the import failed".into(),
     };
-    // wasm32 targets have no threads; the default stack of the host applies.
-    if cfg!(target_family = "wasm") {
-        return import();
+    let parsed = std::panic::catch_unwind(|| crate::import::parse_html(html))
+        .map_err(failed)?
+        .map_err(refused)?;
+    // A shallow tree builds on the caller's stack: the thread costs a fresh
+    // stack mapping per call. wasm32 targets have no threads at all.
+    let inline = parsed.depth <= INLINE_DEPTH || cfg!(target_family = "wasm");
+    let import =
+        || crate::import::build(html, parsed, raw_html, adapter.runs_note_pass()).map_err(refused);
+    if inline {
+        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(import)).map_err(failed)?;
     }
     std::thread::scope(|scope| {
         std::thread::Builder::new()
@@ -390,9 +402,7 @@ fn run(
                 message: e.to_string(),
             })?
             .join()
-            .map_err(|_| Error::ImportInput {
-                message: "the import failed".into(),
-            })?
+            .map_err(failed)?
     })
 }
 
@@ -567,6 +577,26 @@ mod imported_wire_test {
             crate::api::render_tree(&imported.tree, &opts).map_err(|error| error.to_string())?,
             crate::api::render_tree(&eager, &opts).map_err(|error| error.to_string())?
         );
+        Ok(())
+    }
+
+    /// Trees up to `INLINE_DEPTH` build on the caller, deeper ones on their own thread; both read alike.
+    #[test]
+    fn trees_on_both_sides_of_the_inline_depth_import_alike() -> Result<(), String> {
+        for n in super::INLINE_DEPTH - 4..super::INLINE_DEPTH + 4 {
+            let html = format!(
+                "{}<p>a <em>b</em></p>{}",
+                "<blockquote>".repeat(n),
+                "</blockquote>".repeat(n)
+            );
+            let imported = import_document(&html, &ImportOptions::default())
+                .map_err(|error| error.to_string())?;
+            assert_eq!(
+                imported.source.trim_end(),
+                format!("{}a /b/", "> ".repeat(n)),
+                "{n}"
+            );
+        }
         Ok(())
     }
 }
