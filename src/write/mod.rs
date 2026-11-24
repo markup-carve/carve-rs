@@ -619,15 +619,83 @@ fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry
     }
 }
 
+/// C2-A-040: a run of unadorned text nodes has one value for writing.
+/// Keep one empty node where the whole run is empty, so its loss remains visible.
+fn coalesce_plain_text(value: &mut Value) {
+    fn plain_text(node: &Value) -> Option<&str> {
+        let map = node.as_object()?;
+        (map.len() == 2 && map.get("type")?.as_str()? == "text")
+            .then(|| map.get("value").and_then(Value::as_str))
+            .flatten()
+    }
+    match value {
+        Value::Object(fields) => {
+            for child in fields.values_mut() {
+                coalesce_plain_text(child);
+            }
+        }
+        Value::Array(nodes) => {
+            for child in nodes.iter_mut() {
+                coalesce_plain_text(child);
+            }
+            let mut at = 0;
+            while at < nodes.len() {
+                if nodes.get(at).and_then(plain_text).is_none() {
+                    at += 1;
+                    continue;
+                }
+                let start = at;
+                let mut pieces = Vec::new();
+                while at < nodes.len() {
+                    let Some(piece) = nodes.get(at).and_then(plain_text) else {
+                        break;
+                    };
+                    pieces.push(piece.to_string());
+                    at += 1;
+                }
+                if pieces.len() > 1 {
+                    if let Some(first) = nodes.get_mut(start).and_then(|n| n.get_mut("value")) {
+                        *first = Value::String(pieces.concat());
+                    }
+                    nodes.drain(start + 1..at);
+                    at = start + 1;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn has_adjacent_plain_text(value: &Value) -> bool {
+    fn plain(node: &Value) -> bool {
+        node.as_object().is_some_and(|m| {
+            m.len() == 2
+                && m.get("type").and_then(Value::as_str) == Some("text")
+                && m.get("value").and_then(Value::as_str).is_some()
+        })
+    }
+    match value {
+        Value::Object(fields) => fields.values().any(has_adjacent_plain_text),
+        Value::Array(nodes) => {
+            nodes
+                .windows(2)
+                .any(|pair| pair.first().is_some_and(plain) && pair.get(1).is_some_and(plain))
+                || nodes.iter().any(has_adjacent_plain_text)
+        }
+        _ => false,
+    }
+}
+
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let pool = Pool::new();
-    if !has_attribute_lines(doc) {
+    if !has_attribute_lines(doc) && !has_adjacent_plain_text(doc) {
         return write_view(V::Json(doc), &pool, settings);
     }
     let mut normalized = doc.clone();
     let mut losses = Vec::new();
+    coalesce_plain_text(&mut normalized);
     replace_attribute_lines(&mut normalized, "", &mut losses);
     let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, settings);
     written_losses.extend(losses);
