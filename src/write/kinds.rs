@@ -119,14 +119,8 @@ impl<'t> KindBlocks<'t> {
         let at = start + at;
         let b = run.text.as_bytes();
         let ch = *b.get(at)?;
-        if ch == b'{'
-            && let Some(mark) = run
-                .text
-                .get(at + 1..)
-                .and_then(|rest| rest.chars().next())
-                .or(run.follow.filter(|_| at + 1 == b.len()))
-        {
-            return Some(format!("{{{mark}"));
+        if ch == b'{' {
+            return Some(brace_key(run, at));
         }
         if ch == b'-'
             && (before(b, at, 1) == Some(b'-')
@@ -257,6 +251,21 @@ fn line_shape(value: &str) -> String {
 }
 
 /// The byte `k` places before `at`.
+/// carve-js#5550: a brace opens a braced kind only before a braced mark; a
+/// brace that ends its text takes the mark behind it.
+fn brace_key(run: &Run<'_>, at: usize) -> String {
+    let mark = match run.text.as_bytes().get(at + 1) {
+        Some(&m) if braced_mark(m) => Some(char::from(m)),
+        Some(_) => None,
+        None => run.follow,
+    };
+    mark.map_or_else(|| "{".into(), |mark| format!("{{{mark}"))
+}
+
+fn braced_mark(m: u8) -> bool {
+    m == b'#' || m == b'%' || crate::tables::BRACED_MARKS.as_bytes().contains(&m)
+}
+
 fn before(b: &[u8], at: usize, k: usize) -> Option<u8> {
     at.checked_sub(k).and_then(|i| b.get(i)).copied()
 }
@@ -309,6 +318,9 @@ fn run_offsets(key: &str, run: &Run<'_>) -> Vec<usize> {
         }
         let opens = if ch == b'/' || ch == b'*' {
             can_open(run, at)
+        } else if ch == b'{' && mark.is_some() {
+            // Every brace before the mark is a potential opener, one after a brace included.
+            true
         } else {
             before(b, at, 1) != Some(ch)
         };
