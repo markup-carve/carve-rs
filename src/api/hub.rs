@@ -100,9 +100,17 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
         }
         None => (input, markdown_options(input, gfm)),
     };
+    let input = lf_endings(input);
+    let flow = math_flow(&input, &options);
+    let (input, math_fence) = flow
+        .as_ref()
+        .map_or((input.as_ref(), usize::MAX), |(text, floor)| {
+            (text.as_str(), *floor)
+        });
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, input, &options);
     let mut tight = Vec::new();
+    let mut loose = std::collections::HashSet::new();
     let nodes: Vec<_> = root.descendants().collect();
     for node in nodes {
         let value = node.data.borrow().value.clone();
@@ -118,34 +126,21 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
                 node.insert_before(html(span));
                 node.detach();
             }
+            // micromark reads `$$` in text as inline math; display math is the flow block only.
             NodeValue::Math(math) => {
-                let (class, open, close) = if math.display_math {
-                    ("display", "\\[", "\\]")
-                } else {
-                    ("inline", "\\(", "\\)")
-                };
-                // A `$$` block holds the line endings after its opener and
-                // before its closer; they are no part of the formula.
-                let literal = if math.display_math {
-                    let l = math.literal.as_str();
-                    let l = l
-                        .strip_prefix("\r\n")
-                        .or_else(|| l.strip_prefix('\n'))
-                        .unwrap_or(l);
-                    l.strip_suffix("\r\n")
-                        .or_else(|| l.strip_suffix('\n'))
-                        .unwrap_or(l)
-                } else {
-                    math.literal.as_str()
-                };
                 let span = format!(
-                    r#"<span class="math {class}">{open}{}{close}</span>"#,
-                    escape(literal)
+                    r#"<span class="math inline">\({}\)</span>"#,
+                    escape(&math.literal)
                 );
                 node.insert_before(html(span));
                 node.detach();
             }
-            NodeValue::List(list) => tight.push(list.tight),
+            NodeValue::CodeBlock(code)
+                if code.fence_char == b'`' && code.fence_length >= math_fence =>
+            {
+                display_math(node, &code.literal, &mut loose);
+            }
+            NodeValue::List(list) => tight.push((std::ptr::from_ref(node), list.tight)),
             NodeValue::BlockQuote if gfm => alert(&arena, node),
             _ => {}
         }
@@ -154,7 +149,174 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
     comrak::format_html(root, &options, &mut out).map_err(|e| Error::ImportInput {
         message: e.to_string(),
     })?;
+    let tight: Vec<bool> = tight
+        .into_iter()
+        .map(|(list, tight)| tight && !loose.contains(&list))
+        .collect();
     Ok(mark_tight(&out, &tight))
+}
+
+/// micromark's math flow, which comrak lacks (carve-rs#4639): each `$$` fence
+/// line becomes a backtick fence longer than any backtick run of the input, so
+/// comrak pairs them as micromark pairs math flow and an unclosed one runs to
+/// the end of its container. The text and the shortest such fence; `None` when
+/// no line is a math fence.
+fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usize)> {
+    if !input.contains("$$") {
+        return None;
+    }
+    let mut lines: Vec<(usize, &str)> = Vec::new();
+    let mut at = 0;
+    for line in input.split_inclusive('\n') {
+        lines.push((at, line.strip_suffix('\n').unwrap_or(line)));
+        at += line.len();
+    }
+    let mut fences: Vec<MathFence> = lines.iter().map(|(_, line)| math_fence(line)).collect();
+    if fences.iter().all(Option::is_none) {
+        return None;
+    }
+    let longest = input.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let floor = longest + 3;
+    // A fence line inside code, raw HTML or the body of a math block is content: it is
+    // put back, and the pairing read again, a bounded number of times.
+    for _ in 0..4 {
+        let text = rewrite_fences(input, &lines, &fences, longest);
+        let fence_lines = math_fence_lines(&text, options, floor);
+        let mut changed = false;
+        for (index, fence) in fences.iter_mut().enumerate() {
+            if fence.is_some() && !fence_lines.contains(&(index + 1)) {
+                *fence = None;
+                changed = true;
+            }
+        }
+        if !changed {
+            return fences.iter().any(Option::is_some).then_some((text, floor));
+        }
+    }
+    None
+}
+
+type MathFence = Option<(usize, usize, bool)>;
+
+/// `input` with each math fence line written as a backtick fence: `longest` plus one
+/// backticks more than its `$` run, and a meta kept as a word so it cannot close.
+fn rewrite_fences(
+    input: &str,
+    lines: &[(usize, &str)],
+    fences: &[MathFence],
+    longest: usize,
+) -> String {
+    let mut out = String::with_capacity(input.len() + fences.len() * (longest + 3));
+    let mut done = 0;
+    for ((start, line), fence) in lines.iter().zip(fences) {
+        if let Some((at, run, meta)) = fence {
+            out.push_str(input.get(done..start + at).unwrap_or_default());
+            out.push_str(&"`".repeat(longest + 1 + run));
+            if *meta {
+                out.push_str(" m");
+            }
+            done = start + line.len();
+        }
+    }
+    out.push_str(input.get(done..).unwrap_or_default());
+    out
+}
+
+/// The 1-based lines that open or close a code block of a rewritten math fence.
+fn math_fence_lines(
+    text: &str,
+    options: &comrak::Options<'_>,
+    floor: usize,
+) -> std::collections::HashSet<usize> {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let root = comrak::parse_document(&arena, text, options);
+    let mut lines = std::collections::HashSet::new();
+    for node in root.descendants() {
+        let data = node.data.borrow();
+        if let NodeValue::CodeBlock(code) = &data.value
+            && code.fence_char == b'`'
+            && code.fence_length >= floor
+        {
+            lines.insert(data.sourcepos.start.line);
+            if code.closed {
+                lines.insert(data.sourcepos.end.line);
+            }
+        }
+    }
+    lines
+}
+
+/// `CommonMark` reads CR and CRLF as line endings, so no node keeps a CR (carve-rs#4640).
+fn lf_endings(input: &str) -> std::borrow::Cow<'_, str> {
+    if input.contains('\r') {
+        std::borrow::Cow::Owned(input.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(input)
+    }
+}
+
+/// A math fence code block as display math: a paragraph of its own also in a tight
+/// list, which renders no `<p>`, so its list is loose, as the HTML of an item with a
+/// paragraph reads (C2-M-033).
+fn display_math<'a>(
+    node: &'a comrak::nodes::AstNode<'a>,
+    literal: &str,
+    loose: &mut std::collections::HashSet<*const comrak::nodes::AstNode<'a>>,
+) {
+    use comrak::nodes::{NodeHtmlBlock, NodeValue};
+    let literal = literal.strip_suffix('\n').unwrap_or(literal);
+    let span = format!(
+        r#"<span class="math display">\[{}\]</span>"#,
+        escape(literal)
+    );
+    node.data.borrow_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
+        literal: format!("<p>{span}</p>\n"),
+        ..NodeHtmlBlock::default()
+    });
+    if let Some(list) = node
+        .parent()
+        .filter(|item| matches!(item.data.borrow().value, NodeValue::Item(_)))
+        .and_then(comrak::arena_tree::Node::parent)
+    {
+        loose.insert(std::ptr::from_ref(list));
+    }
+}
+
+/// The offset and length of the `$` run of a line that can be a math fence
+/// behind its container markers, and whether a meta follows it.
+fn math_fence(line: &str) -> MathFence {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    loop {
+        let rest = bytes.get(at..).unwrap_or_default();
+        let blanks = rest
+            .iter()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .count();
+        at += blanks;
+        let rest = rest.get(blanks..).unwrap_or_default();
+        if rest.first() == Some(&b'>') {
+            at += 1;
+            continue;
+        }
+        let digits = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+        let marker = match rest.first() {
+            Some(b'-' | b'+' | b'*') => 1,
+            _ if (1..=9).contains(&digits) && matches!(rest.get(digits), Some(b'.' | b')')) => {
+                digits + 1
+            }
+            _ => break,
+        };
+        if !matches!(rest.get(marker), Some(b' ' | b'\t')) {
+            break;
+        }
+        at += marker;
+    }
+    let rest = line.get(at..)?;
+    let run = rest.bytes().take_while(|&b| b == b'$').count();
+    let meta = rest.get(run..)?;
+    (run >= 2 && !meta.contains('$')).then(|| (at, run, !meta.trim_matches([' ', '\t']).is_empty()))
 }
 
 /// A closed frontmatter at the start, after at most one U+FEFF: the format,
@@ -383,14 +545,25 @@ fn fill_empty_items(nodes: &mut [Value]) {
 
 fn restore(nodes: &mut [Value], raw: &[(String, String)]) {
     for node in nodes {
-        let kept = (node.get("type").and_then(Value::as_str) == Some("raw_block"))
+        // A block after text in a tight list item reaches the tree in inline position.
+        let block = node.get("type").and_then(Value::as_str) == Some("raw_block");
+        let inline = node.get("type").and_then(Value::as_str) == Some("raw_inline");
+        let kept = (block || inline)
             .then(|| node.get("value").and_then(Value::as_str))
             .flatten()
             .and_then(|v| v.strip_prefix("<!--")?.strip_prefix(PLACEHOLDER))
-            .and_then(|v| v.strip_suffix("-->\n")?.parse::<usize>().ok())
+            .and_then(|v| {
+                v.strip_suffix('\n')
+                    .unwrap_or(v)
+                    .strip_suffix("-->")?
+                    .parse::<usize>()
+                    .ok()
+            })
             .and_then(|i| raw.get(i));
         if let (Some((format, value)), Some(map)) = (kept, node.as_object_mut()) {
-            let value = if value.ends_with('\n') {
+            let value = if inline {
+                value.strip_suffix('\n').unwrap_or(value).to_string()
+            } else if value.ends_with('\n') {
                 value.clone()
             } else {
                 format!("{value}\n")
