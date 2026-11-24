@@ -621,7 +621,65 @@ fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry
 
 /// C2-A-040: a run of unadorned text nodes has one value for writing.
 /// Keep one empty node where the whole run is empty, so its loss remains visible.
-fn coalesce_plain_text(value: &mut Value) {
+struct Coalesced {
+    kept: std::collections::HashMap<String, Vec<usize>>,
+}
+
+impl Coalesced {
+    fn remap(&self, path: &str) -> String {
+        let mut original = String::new();
+        let mut result = String::new();
+        for step in path.split('/').skip(1) {
+            let old = self.kept.get(&original).and_then(|indices| {
+                step.parse::<usize>()
+                    .ok()
+                    .and_then(|index| indices.get(index))
+            });
+            original.push('/');
+            if let Some(index) = old {
+                original.push_str(&index.to_string());
+            } else {
+                original.push_str(step);
+            }
+            result.push('/');
+            if let Some(index) = old {
+                result.push_str(&index.to_string());
+            } else {
+                result.push_str(step);
+            }
+        }
+        result
+    }
+
+    fn forward(&self, path: &str) -> String {
+        let mut original = String::new();
+        let mut result = String::new();
+        for step in path.split('/').skip(1) {
+            let mapped = self.kept.get(&original).and_then(|indices| {
+                step.parse::<usize>().ok().map(|index| {
+                    indices
+                        .partition_point(|kept| *kept <= index)
+                        .saturating_sub(1)
+                })
+            });
+            original.push('/');
+            original.push_str(step);
+            result.push('/');
+            if let Some(index) = mapped {
+                result.push_str(&index.to_string());
+            } else {
+                result.push_str(step);
+            }
+        }
+        result
+    }
+}
+
+fn coalesce_plain_text(
+    value: &mut Value,
+    path: &str,
+    kept: &mut std::collections::HashMap<String, Vec<usize>>,
+) {
     fn plain_text(node: &Value) -> Option<&str> {
         let map = node.as_object()?;
         (map.len() == 2 && map.get("type")?.as_str()? == "text")
@@ -630,14 +688,20 @@ fn coalesce_plain_text(value: &mut Value) {
     }
     match value {
         Value::Object(fields) => {
-            for child in fields.values_mut() {
-                coalesce_plain_text(child);
+            for (key, child) in fields.iter_mut() {
+                coalesce_plain_text(
+                    child,
+                    &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                    kept,
+                );
             }
         }
         Value::Array(nodes) => {
-            for child in nodes.iter_mut() {
-                coalesce_plain_text(child);
+            for (index, child) in nodes.iter_mut().enumerate() {
+                coalesce_plain_text(child, &format!("{path}/{index}"), kept);
             }
+            let original_len = nodes.len();
+            let mut retained: Vec<usize> = (0..original_len).collect();
             let mut at = 0;
             while at < nodes.len() {
                 if nodes.get(at).and_then(plain_text).is_none() {
@@ -658,11 +722,43 @@ fn coalesce_plain_text(value: &mut Value) {
                         *first = Value::String(pieces.concat());
                     }
                     nodes.drain(start + 1..at);
+                    retained.drain(start + 1..at);
                     at = start + 1;
                 }
             }
+            if retained.len() != original_len
+                || retained.iter().enumerate().any(|(i, old)| i != *old)
+            {
+                kept.insert(path.to_string(), retained);
+            }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod coalesced_path_tests {
+    use super::{Coalesced, coalesce_plain_text};
+    use serde_json::json;
+
+    #[test]
+    fn paths_of_following_and_nested_nodes_survive_text_coalescing() {
+        let mut tree = json!({"children": [
+            {"type":"text","value":"a"}, {"type":"text","value":"b"},
+            {"children": [{"type":"text","value":"c"}, {"type":"text","value":"d"}, {"type":"strong"}]}
+        ]});
+        let mut kept = std::collections::HashMap::new();
+        coalesce_plain_text(&mut tree, "", &mut kept);
+        let paths = Coalesced { kept };
+        assert_eq!(paths.forward("/children/1"), "/children/0");
+        assert_eq!(
+            paths.forward("/children/2/children/2"),
+            "/children/1/children/1"
+        );
+        assert_eq!(
+            paths.remap("/children/1/children/1/type"),
+            "/children/2/children/2/type"
+        );
     }
 }
 
@@ -695,9 +791,32 @@ pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     }
     let mut normalized = doc.clone();
     let mut losses = Vec::new();
-    coalesce_plain_text(&mut normalized);
+    let mut kept = std::collections::HashMap::new();
+    coalesce_plain_text(&mut normalized, "", &mut kept);
+    let coalesced = Coalesced { kept };
     replace_attribute_lines(&mut normalized, "", &mut losses);
-    let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, settings);
+    let mut moved = settings.clone();
+    if let Some(layout) = &mut moved.layout {
+        for entry in layout {
+            entry.path = coalesced.forward(&entry.path);
+            if let Some(wraps) = &mut entry.facts.wraps {
+                for wrap in wraps {
+                    wrap.path = coalesced.forward(&wrap.path);
+                }
+            }
+        }
+    }
+    let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, &moved);
+    for entry in &mut written_losses {
+        if let Some(path) = &entry.path {
+            entry.path = Some(coalesced.remap(path));
+        }
+    }
+    for entry in &mut losses {
+        if let Some(path) = &entry.path {
+            entry.path = Some(coalesced.remap(path));
+        }
+    }
     written_losses.extend(losses);
     (source, written_losses)
 }

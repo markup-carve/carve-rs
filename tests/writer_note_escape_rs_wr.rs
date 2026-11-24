@@ -1,7 +1,7 @@
 use carve::api::json::call;
 use serde_json::{Value, json};
 
-fn invoke(request: Value) -> Value {
+fn invoke(request: &Value) -> Value {
     serde_json::from_str(&call(&request.to_string())).unwrap()
 }
 
@@ -13,7 +13,7 @@ fn bracket_and_note_escape_rounds() {
         ("a/b ^[\\]]} z\n", "a/b ^[\\]]} z\n"),
         ("- ^[\\]\\]*\\]a*]a\\[\n", "- ^[\\]\\]*\\]a*]a[\n"),
     ] {
-        let output = invoke(json!({"call":"format","source":source}));
+        let output = invoke(&json!({"call":"format","source":source}));
         assert_eq!(output["ok"]["source"], expected, "{source:?}: {output}");
     }
 }
