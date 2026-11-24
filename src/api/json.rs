@@ -112,18 +112,7 @@ fn dispatch(host: &Carve, req: &Value, includes: Option<Includes>) -> Result<Rep
         .ok_or_else(|| Error::option("call", "the request names no call"))?;
     let mut opts = call_options(name, req)?;
     if let Some(includes) = includes {
-        if req.pointer("/options/includes").is_some() {
-            return Err(Error::option(
-                "includes",
-                "the request names includes and the host passes a resolver",
-            ));
-        }
-        opts.options.includes = Some(includes);
-        opts.lint.includes.clone_from(&opts.options.includes);
-        opts.write
-            .render
-            .includes
-            .clone_from(&opts.options.includes);
+        host_includes(&mut opts, req, includes)?;
     }
     let enabled;
     let host = if opts.extensions.is_empty() && opts.renderers.is_empty() {
@@ -145,6 +134,23 @@ fn dispatch(host: &Carve, req: &Value, includes: Option<Includes>) -> Result<Rep
         _ => helper_call(name, req, &opts),
     }
     .map(Reply::Value)
+}
+
+/// The host resolver of [`call_with_includes`] as the `includes` option of every stage.
+fn host_includes(opts: &mut CallOptions, req: &Value, includes: Includes) -> Result<(), Error> {
+    if req.pointer("/options/includes").is_some() {
+        return Err(Error::option(
+            "includes",
+            "the request names includes and the host passes a resolver",
+        ));
+    }
+    opts.options.includes = Some(includes);
+    opts.lint.includes.clone_from(&opts.options.includes);
+    opts.write
+        .render
+        .includes
+        .clone_from(&opts.options.includes);
+    Ok(())
 }
 
 /// The calls that read no source as a document: the tree calls, the patch
