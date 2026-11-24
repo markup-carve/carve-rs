@@ -213,13 +213,16 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
         .map(|(index, fence)| fence.filter(|_| !opaque.contains(&(index + 1))))
         .collect();
     // The pairing is read again until it holds, a bounded number of times.
-    let mut rejected = vec![false; all.len()];
-    for _ in 0..6 {
+    let mut barred = Barred {
+        open: vec![false; all.len()],
+        close: vec![false; all.len()],
+    };
+    for _ in 0..8 {
         let text = rewrite_fences(input, &lines, &active, longest);
         let next = pair(
             &all,
             &active,
-            &mut rejected,
+            &mut barred,
             &read_blocks(&text, options, floor),
         );
         if next == active {
@@ -261,12 +264,13 @@ fn read_blocks(text: &str, options: &comrak::Options<'_>, floor: usize) -> Block
 }
 
 /// The fence lines of the next reading: the openers and closers of the math blocks,
-/// and every other fence line outside every block. A fence line that opened or closed
-/// nothing, as comrak read it, is rejected for good.
+/// and every other fence line outside every block. A fence line that comrak read as
+/// neither opener nor closing fence is barred for good: as an opener when it stood
+/// outside every math block, as a closer when it stood in a math body.
 fn pair(
     all: &[MathFence],
     active: &[MathFence],
-    rejected: &mut [bool],
+    barred: &mut Barred,
     blocks: &Blocks,
 ) -> Vec<MathFence> {
     let read: std::collections::HashSet<usize> = blocks
@@ -275,16 +279,30 @@ fn pair(
         .flat_map(|&(start, end, closed)| [Some(start), closed.then_some(end)])
         .flatten()
         .collect();
-    for (index, (fence, flag)) in active.iter().zip(rejected.iter_mut()).enumerate() {
-        if fence.is_some() && !read.contains(&(index + 1)) {
+    let mut inside = vec![false; all.len()];
+    for &(start, end, _) in &blocks.math {
+        for slot in inside.iter_mut().take(end).skip(start - 1) {
+            *slot = true;
+        }
+    }
+    for (index, fence) in active.iter().enumerate() {
+        if fence.is_none() || read.contains(&(index + 1)) {
+            continue;
+        }
+        let flags = if inside.get(index).copied().unwrap_or(false) {
+            &mut barred.close
+        } else {
+            &mut barred.open
+        };
+        if let Some(flag) = flags.get_mut(index) {
             *flag = true;
         }
     }
-    let (mut next, inside) = paired(all, rejected, blocks);
+    let mut next = paired(all, &barred.close, blocks);
     for (index, fence) in all.iter().enumerate() {
         let free = !inside.get(index).copied().unwrap_or(true)
             && !blocks.opaque.contains(&(index + 1))
-            && !rejected.get(index).copied().unwrap_or(true);
+            && !barred.open.get(index).copied().unwrap_or(true);
         if free && let Some(slot) = next.get_mut(index) {
             *slot = *fence;
         }
@@ -292,12 +310,15 @@ fn pair(
     next
 }
 
+struct Barred {
+    open: Vec<bool>,
+    close: Vec<bool>,
+}
+
 /// Each math block keeps its opener and takes the first line of its body that can
-/// close it (no meta, a run at least as long); the second value marks the lines of
-/// the math blocks.
-fn paired(all: &[MathFence], rejected: &[bool], blocks: &Blocks) -> (Vec<MathFence>, Vec<bool>) {
+/// close it (no meta, a run at least as long).
+fn paired(all: &[MathFence], barred: &[bool], blocks: &Blocks) -> Vec<MathFence> {
     let mut next = vec![None; all.len()];
-    let mut inside = vec![false; all.len()];
     for &(start, end, _) in &blocks.math {
         let Some(&Some(opener)) = all.get(start - 1) else {
             continue;
@@ -305,11 +326,8 @@ fn paired(all: &[MathFence], rejected: &[bool], blocks: &Blocks) -> (Vec<MathFen
         if let Some(slot) = next.get_mut(start - 1) {
             *slot = Some(opener);
         }
-        for slot in inside.iter_mut().take(end).skip(start - 1) {
-            *slot = true;
-        }
         let closer = (start + 1..=end)
-            .filter(|&line| !rejected.get(line - 1).copied().unwrap_or(true))
+            .filter(|&line| !barred.get(line - 1).copied().unwrap_or(true))
             .find_map(|line| match all.get(line - 1) {
                 Some(&Some(fence @ (_, run, false))) if run >= opener.1 => Some((line, fence)),
                 _ => None,
@@ -320,7 +338,7 @@ fn paired(all: &[MathFence], rejected: &[bool], blocks: &Blocks) -> (Vec<MathFen
             *slot = Some(fence);
         }
     }
-    (next, inside)
+    next
 }
 
 type MathFence = Option<(usize, usize, bool)>;

@@ -152,3 +152,11 @@ fn a_dollar_line_that_cannot_close_stays_math_content() {
     assert_eq!(carve("$$\n- $$\nx\n"), "$$`- $$\nx`\n");
     assert_eq!(carve("$$\n    $$\nx\n$$\n"), "$$`    $$\nx`\n");
 }
+
+#[test]
+fn a_math_block_after_one_with_raw_html_inside_still_opens() {
+    assert_eq!(
+        carve("$$\n<div>\n$$\n\n$$ meta\nx\n"),
+        "$$`<div>`\n\n$$`x`\n"
+    );
+}
