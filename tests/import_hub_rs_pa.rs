@@ -111,18 +111,14 @@ fn a_comment_of_the_input_is_never_taken_for_a_raw_placeholder() {
 }
 
 #[test]
-fn a_long_backtick_fence_and_many_math_fences_stay_linear() {
-    let source = format!(
-        "{}\n\n{}",
-        "`".repeat(20_000),
-        "$$\na\n$$\n\n".repeat(5_000)
-    );
-    let (written, _) = import("markdown", &source);
-    assert!(written.len() < source.len() * 2, "{}", written.len());
-    assert!(
-        !written.contains("`````"),
-        "a rewritten fence reached the output"
-    );
+fn a_long_backtick_fence_and_many_math_fences_stay_linear_and_display() {
+    let fence = "`".repeat(20_000);
+    for blocks in [5, 5_000] {
+        let source = format!("{fence}\nx\n{fence}\n\n{}", "$$\na\n$$\n\n".repeat(blocks));
+        let (written, _) = import("markdown", &source);
+        assert!(written.len() < source.len() * 2, "{}", written.len());
+        assert_eq!(written.matches("$$`a`").count(), blocks, "{blocks}");
+    }
 }
 
 #[test]

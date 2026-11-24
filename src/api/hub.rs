@@ -117,11 +117,11 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
     };
     let input = lf_endings(input);
     let flow = math_flow(&input, &options);
-    let (input, math_fence) = flow
-        .as_ref()
-        .map_or((input.as_ref(), usize::MAX), |(text, floor)| {
-            (text.as_str(), *floor)
-        });
+    let (input, math_fence) = match &flow {
+        Flow::Rewritten(text, floor) => (text.as_str(), *floor),
+        _ => (input.as_ref(), usize::MAX),
+    };
+    let comrak_display = matches!(flow, Flow::Comrak);
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, input, &options);
     let mut tight = Vec::new();
@@ -141,13 +141,8 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
                 node.insert_before(html(span));
                 node.detach();
             }
-            // micromark reads `$$` in text as inline math; display math is the flow block only.
             NodeValue::Math(math) => {
-                let span = format!(
-                    r#"<span class="math inline">\({}\)</span>"#,
-                    escape(inline_math(&math.literal))
-                );
-                node.insert_before(html(span));
+                node.insert_before(html(math_span(&math, comrak_display)));
                 node.detach();
             }
             NodeValue::CodeBlock(code)
@@ -171,14 +166,39 @@ fn markdown_html(input: &str, gfm: bool, sink: &mut Sink) -> Result<String, Erro
     Ok(mark_tight(&out, &tight))
 }
 
+/// How the hub reads `$$`.
+enum Flow {
+    /// No line is a math fence.
+    Plain,
+    /// The text with its math fences rewritten, and the shortest such fence.
+    Rewritten(String, usize),
+    /// The rewrite was skipped, past its size bound or unsettled: comrak's own
+    /// reading stays, display math included.
+    Comrak,
+}
+
+/// micromark reads `$$` in text as inline math; display math is the flow block
+/// only, unless the rewrite was skipped and comrak's display reading stays.
+fn math_span(math: &comrak::nodes::NodeMath, comrak_display: bool) -> String {
+    if math.display_math && comrak_display {
+        let l = math.literal.as_str();
+        let l = l.strip_prefix('\n').unwrap_or(l);
+        let l = l.strip_suffix('\n').unwrap_or(l);
+        return format!(r#"<span class="math display">\[{}\]</span>"#, escape(l));
+    }
+    format!(
+        r#"<span class="math inline">\({}\)</span>"#,
+        escape(inline_math(&math.literal))
+    )
+}
+
 /// micromark's math flow, which comrak lacks (carve-rs#4639): each `$$` fence
 /// line becomes a backtick fence longer than any backtick run of the input, so
 /// comrak pairs them as micromark pairs math flow and an unclosed one runs to
-/// the end of its container. The text and the shortest such fence; `None` when
-/// no line is a math fence.
-fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usize)> {
+/// the end of its container.
+fn math_flow(input: &str, options: &comrak::Options<'_>) -> Flow {
     if !input.contains("$$") {
-        return None;
+        return Flow::Plain;
     }
     let mut lines: Vec<(usize, &str)> = Vec::new();
     let mut at = 0;
@@ -188,7 +208,7 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
     }
     let all: Vec<MathFence> = lines.iter().map(|(_, line)| math_fence(line)).collect();
     if all.iter().all(Option::is_none) {
-        return None;
+        return Flow::Plain;
     }
     // Only a backtick run that starts a line can pair with a fence.
     let longest = lines
@@ -202,8 +222,8 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
     let floor = longest + 3;
     let count = all.iter().flatten().count();
     // The rewrite grows the text by a fence per line; past this bound comrak's own reading stays.
-    if count.saturating_mul(floor) > input.len().saturating_mul(2) + 65_536 {
-        return None;
+    if count.saturating_mul(floor) > input.len().saturating_mul(4) + (1 << 20) {
+        return Flow::Comrak;
     }
     // A `$$` line in code or raw HTML is content; left in, its fence could close that block.
     let opaque = read_blocks(input, options, usize::MAX).opaque;
@@ -226,11 +246,15 @@ fn math_flow(input: &str, options: &comrak::Options<'_>) -> Option<(String, usiz
             &read_blocks(&text, options, floor),
         );
         if next == active {
-            return active.iter().any(Option::is_some).then_some((text, floor));
+            return if active.iter().any(Option::is_some) {
+                Flow::Rewritten(text, floor)
+            } else {
+                Flow::Plain
+            };
         }
         active = next;
     }
-    None
+    Flow::Comrak
 }
 
 /// The 1-based lines of the math blocks (opener, last line, closed) and of the
