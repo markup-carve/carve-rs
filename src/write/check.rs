@@ -278,6 +278,10 @@ fn differing_field(w: &Writer<'_>, c: &Check<'_>, e: V<'_>, a: V<'_>) -> Option<
     if !(e.is_object() && a.is_object()) {
         return None;
     }
+    if ty(e) == "smart_punctuation" && ty(a) == "smart_punctuation" && s(e, "kind") != s(a, "kind")
+    {
+        return Some("kind".to_string());
+    }
     if let Some(name) = differing_node_field(w, c, e, a) {
         return name.map(str::to_string);
     }
@@ -608,7 +612,11 @@ fn respell_step<'t>(
         5 => escape_across_closer(w, c, es, i),
         6 | 13 => escape_inside(w, c, es, i),
         7 => escape_closer_before_brace(w, c, es, i),
-        8 => escape_after(w, c, es, i),
+        8 => {
+            (text_at(es, i + 1).is_some_and(|n| text(n).starts_with(']'))
+                && escape_text_note(w, c, es.get(..i).unwrap_or(&[])))
+                || escape_after(w, c, es, i)
+        }
         9 => escape_content_line(w, c, e),
         _ => late_respell_step(w, c, es.get(..i).unwrap_or(&[]), e, step, attempt),
     }
@@ -2286,6 +2294,24 @@ fn match_text<'t>(
                 break;
             }
         }
+    }
+    // A bracketed node repaired inside this round may change where its
+    // content ends. Compare the following text after that repair is parsed;
+    // its position in this parse supplies no opener.
+    if at.vi == 0
+        && at.aj == 0
+        && at
+            .i
+            .checked_sub(1)
+            .and_then(|i| es.get(i))
+            .is_some_and(|prev| {
+                matches!(
+                    ty(*prev),
+                    "inline_footnote" | "inline_extension" | "span" | "link"
+                ) && repairs_inside(c, *prev)
+            })
+    {
+        return false;
     }
     if !match_characters(w, c, e, a, at, es, owner) {
         return false;

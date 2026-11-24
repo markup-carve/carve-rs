@@ -619,17 +619,243 @@ fn replace_attribute_lines(value: &mut Value, path: &str, losses: &mut Vec<Entry
     }
 }
 
+/// C2-A-040: a run of unadorned text nodes has one value for writing.
+/// Keep one empty node where the whole run is empty, so its loss remains visible.
+struct Coalesced {
+    kept: std::collections::HashMap<String, Vec<usize>>,
+    offsets: std::collections::HashMap<String, usize>,
+}
+
+impl Coalesced {
+    fn remap(&self, path: &str) -> String {
+        let mut original = String::new();
+        let mut result = String::new();
+        for step in path.split('/').skip(1) {
+            let old = self.kept.get(&original).and_then(|indices| {
+                step.parse::<usize>()
+                    .ok()
+                    .and_then(|index| indices.get(index))
+            });
+            original.push('/');
+            if let Some(index) = old {
+                original.push_str(&index.to_string());
+            } else {
+                original.push_str(step);
+            }
+            result.push('/');
+            if let Some(index) = old {
+                result.push_str(&index.to_string());
+            } else {
+                result.push_str(step);
+            }
+        }
+        result
+    }
+
+    fn forward(&self, path: &str) -> String {
+        let mut original = String::new();
+        let mut result = String::new();
+        for step in path.split('/').skip(1) {
+            let mapped = self.kept.get(&original).and_then(|indices| {
+                step.parse::<usize>().ok().map(|index| {
+                    indices
+                        .partition_point(|kept| *kept <= index)
+                        .saturating_sub(1)
+                })
+            });
+            original.push('/');
+            original.push_str(step);
+            result.push('/');
+            if let Some(index) = mapped {
+                result.push_str(&index.to_string());
+            } else {
+                result.push_str(step);
+            }
+        }
+        result
+    }
+}
+
+fn plain_text_value(node: &Value) -> Option<&str> {
+    let map = node.as_object()?;
+    (map.len() == 2 && map.get("type")?.as_str()? == "text")
+        .then(|| map.get("value").and_then(Value::as_str))
+        .flatten()
+}
+
+fn coalesce_text_list(
+    nodes: &mut Vec<Value>,
+    path: &str,
+    kept: &mut std::collections::HashMap<String, Vec<usize>>,
+    offsets: &mut std::collections::HashMap<String, usize>,
+) {
+    let original_len = nodes.len();
+    let mut retained = Vec::with_capacity(original_len);
+    let mut source = std::mem::take(nodes).into_iter().enumerate().peekable();
+    while let Some((index, mut node)) = source.next() {
+        if let Some(first) = plain_text_value(&node) {
+            let mut joined = first.to_string();
+            while source
+                .peek()
+                .and_then(|(_, next)| plain_text_value(next))
+                .is_some()
+            {
+                if let Some((next_index, next)) = source.next()
+                    && let Some(piece) = plain_text_value(&next)
+                {
+                    offsets.insert(format!("{path}/{next_index}"), joined.len());
+                    joined.push_str(piece);
+                }
+            }
+            if let Some(value) = node.get_mut("value") {
+                *value = Value::String(joined);
+            }
+        }
+        retained.push(index);
+        nodes.push(node);
+    }
+    if retained.len() != original_len || retained.iter().enumerate().any(|(i, old)| i != *old) {
+        kept.insert(path.to_string(), retained);
+    }
+}
+
+fn restore_table_form(
+    value: &mut Value,
+    original_table: Option<Value>,
+    path: &str,
+    kept: &mut std::collections::HashMap<String, Vec<usize>>,
+    offsets: &mut std::collections::HashMap<String, usize>,
+) {
+    if let Some(original) = original_table
+        && table::writes_delimited(V::Json(&original), None)
+            != table::writes_delimited(V::Json(value), None)
+    {
+        *value = original;
+        let prefix = format!("{path}/");
+        kept.retain(|at, _| at != path && !at.starts_with(&prefix));
+        offsets.retain(|at, _| at != path && !at.starts_with(&prefix));
+    }
+}
+
+fn coalesce_plain_text(
+    value: &mut Value,
+    path: &str,
+    kept: &mut std::collections::HashMap<String, Vec<usize>>,
+    offsets: &mut std::collections::HashMap<String, usize>,
+) {
+    let original_table = (value.get("type").and_then(Value::as_str) == Some("table")
+        && has_adjacent_plain_text(value))
+    .then(|| value.clone());
+    match value {
+        Value::Object(fields) => {
+            for (key, child) in fields.iter_mut() {
+                coalesce_plain_text(
+                    child,
+                    &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                    kept,
+                    offsets,
+                );
+            }
+            restore_table_form(value, original_table, path, kept, offsets);
+        }
+        Value::Array(nodes) => {
+            for (index, child) in nodes.iter_mut().enumerate() {
+                coalesce_plain_text(child, &format!("{path}/{index}"), kept, offsets);
+            }
+            coalesce_text_list(nodes, path, kept, offsets);
+        }
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod coalesced_path_tests {
+    use super::{Coalesced, coalesce_plain_text};
+    use serde_json::json;
+
+    #[test]
+    fn paths_of_following_and_nested_nodes_survive_text_coalescing() {
+        let mut tree = json!({"children": [
+            {"type":"text","value":"a"}, {"type":"text","value":"b"},
+            {"children": [{"type":"text","value":"c"}, {"type":"text","value":"d"}, {"type":"strong"}]}
+        ]});
+        let mut kept = std::collections::HashMap::new();
+        let mut offsets = std::collections::HashMap::new();
+        coalesce_plain_text(&mut tree, "", &mut kept, &mut offsets);
+        let paths = Coalesced { kept, offsets };
+        assert_eq!(paths.forward("/children/1"), "/children/0");
+        assert_eq!(paths.offsets.get("/children/1"), Some(&1));
+        assert_eq!(
+            paths.forward("/children/2/children/2"),
+            "/children/1/children/1"
+        );
+        assert_eq!(paths.offsets.get("/children/2/children/1"), Some(&1));
+        assert_eq!(
+            paths.remap("/children/1/children/1/type"),
+            "/children/2/children/2/type"
+        );
+    }
+}
+
+fn has_adjacent_plain_text(value: &Value) -> bool {
+    fn plain(node: &Value) -> bool {
+        node.as_object().is_some_and(|m| {
+            m.len() == 2
+                && m.get("type").and_then(Value::as_str) == Some("text")
+                && m.get("value").and_then(Value::as_str).is_some()
+        })
+    }
+    match value {
+        Value::Object(fields) => fields.values().any(has_adjacent_plain_text),
+        Value::Array(nodes) => {
+            nodes
+                .windows(2)
+                .any(|pair| pair.first().is_some_and(plain) && pair.get(1).is_some_and(plain))
+                || nodes.iter().any(has_adjacent_plain_text)
+        }
+        _ => false,
+    }
+}
+
 /// Writes the tree `doc` (its JSON value, read and checked).
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let pool = Pool::new();
-    if !has_attribute_lines(doc) {
+    if !has_attribute_lines(doc) && !has_adjacent_plain_text(doc) {
         return write_view(V::Json(doc), &pool, settings);
     }
     let mut normalized = doc.clone();
     let mut losses = Vec::new();
+    let mut kept = std::collections::HashMap::new();
+    let mut offsets = std::collections::HashMap::new();
+    coalesce_plain_text(&mut normalized, "", &mut kept, &mut offsets);
+    let coalesced = Coalesced { kept, offsets };
     replace_attribute_lines(&mut normalized, "", &mut losses);
-    let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, settings);
+    let mut moved = settings.clone();
+    if let Some(layout) = &mut moved.layout {
+        for entry in layout {
+            entry.path = coalesced.forward(&entry.path);
+            if let Some(wraps) = &mut entry.facts.wraps {
+                for wrap in wraps {
+                    wrap.offset = wrap
+                        .offset
+                        .saturating_add(coalesced.offsets.get(&wrap.path).copied().unwrap_or(0));
+                    wrap.path = coalesced.forward(&wrap.path);
+                }
+            }
+        }
+    }
+    let (source, mut written_losses) = write_view(V::Json(&normalized), &pool, &moved);
+    for entry in &mut written_losses {
+        if let Some(path) = &entry.path {
+            entry.path = Some(coalesced.remap(path));
+        }
+    }
+    for entry in &mut losses {
+        if let Some(path) = &entry.path {
+            entry.path = Some(coalesced.remap(path));
+        }
+    }
     written_losses.extend(losses);
     (source, written_losses)
 }
