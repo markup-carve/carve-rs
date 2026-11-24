@@ -178,3 +178,13 @@ fn c2_i_118_capped_openers_before_brackets_stay_linear() {
         format!("{}^*[*x](u){}\n", "^*[*[[*".repeat(n), "^]]](u)".repeat(n))
     });
 }
+
+/// carve#6543: each `]` folded its whole content as a label, though no definition could match it.
+#[test]
+fn c2_i_072_nested_brackets_without_definitions_stay_linear() {
+    check("nested brackets without definitions", &|k| {
+        let depth = 24 * k.min(8);
+        let pair = format!("{}b{}", "[a ".repeat(depth), "]".repeat(depth));
+        vec![pair; 400].join("\n\n")
+    });
+}

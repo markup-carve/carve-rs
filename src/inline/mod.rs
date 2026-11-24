@@ -91,6 +91,11 @@ pub(crate) struct Keys<'e> {
 
 impl Keys<'_> {
     #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.own.is_empty() && self.outer.is_none_or(HashSet::is_empty)
+    }
+
+    #[must_use]
     pub(crate) fn contains(&self, key: &str) -> bool {
         self.own.contains(key) || self.outer.is_some_and(|o| o.contains(key))
     }
