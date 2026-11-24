@@ -44,7 +44,7 @@ fn check<'t>(source: &[u8], places: &[Place<'t>], found: &mut Vec<(N<'t>, usize)
 }
 
 /// Whether a byte can start one of the marks of [`RULES`]; a run without one holds no pair.
-fn is_mark_byte(b: u8) -> bool {
+pub(super) fn is_mark_byte(b: u8) -> bool {
     matches!(b, b'_' | b'~' | b'=' | b'*')
 }
 

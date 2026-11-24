@@ -109,7 +109,7 @@ pub(crate) fn format_view<'t>(
     if let Some(src) = src {
         settings.layout = Some(facts::from_source(doc, src));
     }
-    write_trimmed(doc, pool, &settings, src.map(str::len))
+    write_trimmed(doc, pool, &settings, src.map(str::len), None)
 }
 
 /// The nodes the writer makes while it writes a tree (C2-W-089 stand-ins).
@@ -553,7 +553,91 @@ mod escape_prune_test {
     }
 }
 
+/// The whole-tree checks the writer makes on a supplied JSON tree, read in one walk: each tree
+/// walk of a large import misses the cache throughout.
+#[allow(clippy::struct_excessive_bools)] // one flag per check
+struct JsonFacts {
+    /// [`has_attribute_lines`]
+    attribute_lines: bool,
+    /// [`has_adjacent_plain_text`]
+    adjacent_plain_text: bool,
+    /// A text value ends in a space or tab, as in `trim::has_spaced_text`.
+    spaced_text: bool,
+    /// [`pairs::json_has_mark_text`]
+    mark_text: bool,
+    /// A table cell spans more than one row or column, as in `spans::json_has_counts`.
+    counts: bool,
+    /// [`json_estimate`]
+    estimate: usize,
+}
+
+impl JsonFacts {
+    fn of(doc: &Value) -> Self {
+        let mut facts = Self {
+            attribute_lines: false,
+            adjacent_plain_text: false,
+            spaced_text: false,
+            mark_text: false,
+            counts: false,
+            estimate: 0,
+        };
+        facts.estimate = facts.visit(doc);
+        facts
+    }
+
+    fn visit(&mut self, value: &Value) -> usize {
+        match value {
+            Value::String(s) => s.len().saturating_mul(2).saturating_add(2),
+            Value::Array(items) => {
+                if !self.adjacent_plain_text {
+                    self.adjacent_plain_text =
+                        items.windows(2).any(|pair| pair.iter().all(is_plain_text));
+                }
+                items
+                    .iter()
+                    .fold(2, |sum: usize, item| sum.saturating_add(self.visit(item)))
+            }
+            Value::Object(map) => {
+                self.read(map);
+                map.values()
+                    .fold(2, |sum: usize, item| sum.saturating_add(self.visit(item)))
+            }
+            _ => 2,
+        }
+    }
+
+    fn read(&mut self, map: &serde_json::Map<String, Value>) {
+        if !self.attribute_lines {
+            self.attribute_lines = map
+                .get("attrs")
+                .and_then(|a| a.get("keyValues"))
+                .and_then(Value::as_array)
+                .is_some_and(|pairs| {
+                    pairs.iter().any(|pair| {
+                        pair.get(1)
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| v.contains('\n'))
+                    })
+                });
+        }
+        match map.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                if let Some(text) = map.get("value").and_then(Value::as_str) {
+                    self.spaced_text |= text.ends_with([' ', '\t']);
+                    self.mark_text |= text.bytes().any(pairs::is_mark_byte);
+                }
+            }
+            Some("table_cell") => {
+                let counted = |field| map.get(field).and_then(Value::as_i64).unwrap_or(1) > 1;
+                self.counts |= counted("colspan") || counted("rowspan");
+            }
+            _ => {}
+        }
+    }
+}
+
 /// C2-W-050: a key value cannot carry a line feed in its one-line brace block.
+#[cfg(test)]
 fn has_attribute_lines(value: &Value) -> bool {
     match value {
         Value::Object(map) => {
@@ -797,21 +881,22 @@ mod coalesced_path_tests {
     }
 }
 
+/// A text node with no field but its value.
+fn is_plain_text(node: &Value) -> bool {
+    node.as_object().is_some_and(|m| {
+        m.len() == 2
+            && m.get("type").and_then(Value::as_str) == Some("text")
+            && m.get("value").and_then(Value::as_str).is_some()
+    })
+}
+
 fn has_adjacent_plain_text(value: &Value) -> bool {
-    fn plain(node: &Value) -> bool {
-        node.as_object().is_some_and(|m| {
-            m.len() == 2
-                && m.get("type").and_then(Value::as_str) == Some("text")
-                && m.get("value").and_then(Value::as_str).is_some()
-        })
-    }
     match value {
         Value::Object(fields) => fields.values().any(has_adjacent_plain_text),
         Value::Array(nodes) => {
-            nodes
-                .windows(2)
-                .any(|pair| pair.first().is_some_and(plain) && pair.get(1).is_some_and(plain))
-                || nodes.iter().any(has_adjacent_plain_text)
+            nodes.windows(2).any(|pair| {
+                pair.first().is_some_and(is_plain_text) && pair.get(1).is_some_and(is_plain_text)
+            }) || nodes.iter().any(has_adjacent_plain_text)
         }
         _ => false,
     }
@@ -821,8 +906,9 @@ fn has_adjacent_plain_text(value: &Value) -> bool {
 #[must_use]
 pub fn write_value(doc: &Value, settings: &Settings) -> (String, Vec<Entry>) {
     let pool = Pool::new();
-    if !has_attribute_lines(doc) && !has_adjacent_plain_text(doc) {
-        return write_view(V::Json(doc), &pool, settings);
+    let facts = JsonFacts::of(doc);
+    if !facts.attribute_lines && !facts.adjacent_plain_text {
+        return write_trimmed(V::Json(doc), &pool, settings, None, Some(&facts));
     }
     let mut normalized = doc.clone();
     let mut losses = Vec::new();
@@ -866,15 +952,17 @@ pub(crate) fn write_view<'t>(
     pool: &'t Pool,
     settings: &Settings,
 ) -> (String, Vec<Entry>) {
-    write_trimmed(doc, pool, settings, None)
+    write_trimmed(doc, pool, settings, None, None)
 }
 
 /// [`write_view`] with the length of the source the tree was read from, which sizes the repair budget.
+/// `facts` are those of `doc` where it is a JSON value.
 fn write_trimmed<'t>(
     doc: V<'t>,
     pool: &'t Pool,
     settings: &Settings,
     source_len: Option<usize>,
+    facts: Option<&JsonFacts>,
 ) -> (String, Vec<Entry>) {
     // A parse gives no such spaces, so only a supplied JSON tree is trimmed.
     let recorded = |at: &str| {
@@ -887,7 +975,7 @@ fn write_trimmed<'t>(
     };
     let delimited = |table: &Value, at: &str| table::writes_delimited(V::Json(table), recorded(at));
     if let V::Json(value) = doc
-        && let Some(trimmed) = trim::trim(value, &delimited)
+        && let Some(trimmed) = trim::trim_with(value, &delimited, facts.map(|f| f.spaced_text))
     {
         let pool = Pool::new();
         let moved;
@@ -900,7 +988,8 @@ fn write_trimmed<'t>(
         } else {
             settings
         };
-        let (source, mut entries) = write_sized(V::Json(&trimmed.doc), &pool, settings, source_len);
+        let (source, mut entries) =
+            write_sized(V::Json(&trimmed.doc), &pool, settings, source_len, None);
         for entry in &mut entries {
             if let Some(path) = &entry.path {
                 entry.path = Some(trimmed.remap(path));
@@ -908,7 +997,7 @@ fn write_trimmed<'t>(
         }
         return (source, entries);
     }
-    write_sized(doc, pool, settings, source_len)
+    write_sized(doc, pool, settings, source_len, facts)
 }
 
 /// [`write_trimmed`] after the trim.
@@ -917,12 +1006,14 @@ fn write_sized<'t>(
     pool: &'t Pool,
     settings: &Settings,
     source_len: Option<usize>,
+    facts: Option<&JsonFacts>,
 ) -> (String, Vec<Entry>) {
-    let budget = repair_budget(source_len.unwrap_or_else(|| written_estimate(doc)));
-    let Some(marks) = spans::add(doc) else {
-        return write_tree(doc, pool, settings, budget);
+    let estimate = || facts.map_or_else(|| written_estimate(doc), |f| f.estimate);
+    let budget = repair_budget(source_len.unwrap_or_else(estimate));
+    let Some(marks) = spans::add(doc, facts.map(|f| f.counts)) else {
+        return write_tree(doc, pool, settings, budget, facts);
     };
-    let (source, mut entries) = write_tree(V::Json(&marks.doc), pool, settings, budget);
+    let (source, mut entries) = write_tree(V::Json(&marks.doc), pool, settings, budget, None);
     for entry in &mut entries {
         if let Some(path) = &entry.path {
             entry.path = Some(marks.remap(path));
@@ -947,10 +1038,14 @@ fn write_tree<'t>(
     pool: &'t Pool,
     settings: &Settings,
     budget: usize,
+    facts: Option<&JsonFacts>,
 ) -> (String, Vec<Entry>) {
     let mut w = Writer::new(pool, settings.align_tables);
     w.work_limit = budget;
-    w.no_mark_text = matches!(doc, V::Json(value) if !pairs::json_has_mark_text(value));
+    w.no_mark_text = match facts {
+        Some(f) => !f.mark_text,
+        None => matches!(doc, V::Json(value) if !pairs::json_has_mark_text(value)),
+    };
     w.extensions.clone_from(&settings.extensions);
     if settings.extensions.iter().any(|e| e == "carve.tabs") {
         w.matchers.push(state::Matcher {
@@ -3219,5 +3314,67 @@ mod repair_limit_test {
             &mut history
         ));
         assert_eq!(writer.work_limit, 40_004 * WORK_FACTOR);
+    }
+}
+
+#[cfg(test)]
+mod json_facts_tests {
+    use super::{
+        JsonFacts, has_adjacent_plain_text, has_attribute_lines, json_estimate, pairs, spans, trim,
+    };
+    use serde_json::{Value, json};
+
+    fn trees() -> Vec<Value> {
+        let text = include_str!("../../spec-conformance/clause-cases.json");
+        let mut de = serde_json::Deserializer::from_str(text);
+        de.disable_recursion_limit();
+        let cases: Value = serde::Deserialize::deserialize(&mut de).unwrap_or_default();
+        let mut out = vec![
+            json!({"type": "document", "children": [{"type": "paragraph", "attrs":
+                {"keyValues": [["k", "a\nb"]]}, "children": [{"type": "text", "value": "x *y "}]}]}),
+            json!({"type": "table_cell", "colspan": 2, "children": []}),
+            json!({"type": "paragraph", "children": [{"type": "text", "value": "a"},
+                {"type": "text", "value": "b"}]}),
+            json!({"type": "table_cell", "rowspan": "3", "data": {"type": "text", "value": "\t"}}),
+        ];
+        let opts = crate::api::Options::default();
+        for case in cases
+            .get("cases")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(input) = case.get("input").and_then(Value::as_str)
+                && let Ok(tree) = crate::api::parse(input, &opts)
+                && let Ok(value) = tree.value()
+            {
+                out.push(value);
+            }
+            if let Some(html) = case.pointer("/expected/html").and_then(Value::as_str)
+                && let Ok(imported) = crate::import::import_html(html, false, true)
+            {
+                out.push(imported.tree);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn one_walk_reads_what_each_check_reads() {
+        let trees = trees();
+        assert!(trees.len() > 1000, "{}", trees.len());
+        for tree in &trees {
+            let facts = JsonFacts::of(tree);
+            assert_eq!(facts.attribute_lines, has_attribute_lines(tree), "{tree}");
+            assert_eq!(
+                facts.adjacent_plain_text,
+                has_adjacent_plain_text(tree),
+                "{tree}"
+            );
+            assert_eq!(facts.spaced_text, trim::has_spaced_text(tree), "{tree}");
+            assert_eq!(facts.mark_text, pairs::json_has_mark_text(tree), "{tree}");
+            assert_eq!(facts.counts, spans::json_has_counts(tree), "{tree}");
+            assert_eq!(facts.estimate, json_estimate(tree), "{tree}");
+        }
     }
 }
