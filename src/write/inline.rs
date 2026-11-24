@@ -356,11 +356,6 @@ fn braced<'t>(w: &mut Writer<'t>, node: N<'t>, flags: u32, open: char, close: ch
         .map_or_else(String::new, |c| enclosed(&['{', open], &c, &[close, '}']))
 }
 
-/// C2-I-016: whether a reader would take one space from each end of `value`.
-fn loses_padding(value: &str) -> bool {
-    value.starts_with(' ') && value.ends_with(' ') && value.bytes().any(|b| b != b' ')
-}
-
 /// C2-W-059: a braced comment, written `{%%}` when its value is empty.
 pub fn braced_comment(value: &str) -> String {
     if value.is_empty() {
@@ -388,17 +383,27 @@ pub fn code_span(value: &str) -> String {
     while taken.contains(&length) {
         length += 1;
     }
-    let ticks = "`".repeat(length);
-    if value.starts_with('`') || value.ends_with('`') || loses_padding(value) {
-        format!("{ticks} {value} {ticks}")
-    } else {
-        format!("{ticks}{value}{ticks}")
+    let mut out = String::with_capacity(value.len() + 2 * length + 2);
+    out.extend(std::iter::repeat_n('`', length));
+    if value.starts_with('`') {
+        out.push(' ');
     }
+    out.push_str(value);
+    if value.ends_with('`') {
+        out.push(' ');
+    }
+    out.extend(std::iter::repeat_n('`', length));
+    out
+}
+
+/// C2-W-077: a space and a backtick at either end lose that space on read-back (C2-I-016).
+fn unspellable_code(value: &str) -> bool {
+    value.starts_with(" `") || value.ends_with("` ")
 }
 
 fn span_value(w: &mut Writer<'_>, node: V<'_>, flags: u32) -> String {
     let spelled = cell_value(w, node, text(node), flags);
-    if spelled.starts_with('\n') && spelled.ends_with('`') {
+    if unspellable_code(&spelled) {
         lose(w, node, Some("value"));
     }
     code_span(&spelled)

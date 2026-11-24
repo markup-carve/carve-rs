@@ -178,8 +178,9 @@ fn c2_i_013_no_escapes_in_code_and_destination_reads_parens() {
 fn c2_i_014_to_c2_i_016_code_spans() {
     assert_eq!(
         p("`` a ` b `` ` x `"),
-        "code(value=a ` b) \" \" code(value=x)"
+        "code(value= a ` b ) \" \" code(value= x )"
     );
+    assert_eq!(p("`` `x` ``"), "code(value=`x`)");
     assert_eq!(p("`  `"), "code(value=  )");
 }
 

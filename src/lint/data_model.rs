@@ -326,6 +326,8 @@ fn inline_kind(kind: &str) -> bool {
             | "link"
             | "raw_inline"
             | "code"
+            | "literal_inline"
+            | "math"
             | "span"
             | "subscript"
             | "superscript"

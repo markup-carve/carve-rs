@@ -48,13 +48,25 @@ pub fn code_span(t: &str, i: usize) -> CodeSpan<'_> {
     }
 }
 
-/// C2-I-016: one space off each end when both are spaces and not all is space.
+/// C2-I-016: the bounds of the value, without a space that stands between a backtick and the run.
+#[inline]
+#[must_use]
+pub fn code_padding(b: &[u8]) -> (usize, usize) {
+    (
+        usize::from(b.starts_with(b" `")),
+        b.len() - usize::from(b.ends_with(b"` ")),
+    )
+}
+
 fn trim_code(s: &str) -> &str {
-    if s.len() >= 2 && s.starts_with(' ') && s.ends_with(' ') && s.bytes().any(|c| c != b' ') {
-        s.get(1..s.len() - 1).unwrap_or(s)
-    } else {
-        s
+    let b = s.as_bytes();
+    let lead = b.first() == Some(&b' ') && b.get(1) == Some(&b'`');
+    let tail = b.last() == Some(&b' ') && b.len() >= 2 && b.get(b.len() - 2) == Some(&b'`');
+    if !lead && !tail {
+        return s;
     }
+    s.get(usize::from(lead)..b.len() - usize::from(tail))
+        .unwrap_or(s)
 }
 
 /// A raw marker `{=name}` at `i` (C2-I-021). Returns the name and the end.
