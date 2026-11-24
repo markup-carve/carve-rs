@@ -146,3 +146,9 @@ fn a_fence_line_inside_a_math_body_does_not_hide_its_closer() {
     assert_eq!(carve("$$\n<div>\n$$\nz\n"), "$$`<div>`\n\nz\n");
     assert_eq!(carve("> $$\n> ```\n> $$\nz\n"), "> $$` ``` `\n\nz\n");
 }
+
+#[test]
+fn a_dollar_line_that_cannot_close_stays_math_content() {
+    assert_eq!(carve("$$\n- $$\nx\n"), "$$`- $$\nx`\n");
+    assert_eq!(carve("$$\n    $$\nx\n$$\n"), "$$`    $$\nx`\n");
+}

@@ -262,23 +262,26 @@ fn read_blocks(text: &str, options: &comrak::Options<'_>, floor: usize) -> Block
 
 /// The fence lines of the next reading: the openers and closers of the math blocks,
 /// and every other fence line outside every block. A fence line that opened or closed
-/// nothing is rejected for good.
+/// nothing, as comrak read it, is rejected for good.
 fn pair(
     all: &[MathFence],
     active: &[MathFence],
     rejected: &mut [bool],
     blocks: &Blocks,
 ) -> Vec<MathFence> {
-    let (mut next, inside) = paired(all, blocks);
-    for (index, fence) in all.iter().enumerate() {
-        let kept = next.get(index).is_some_and(Option::is_some);
-        let was = active.get(index).is_some_and(Option::is_some);
-        if was
-            && !kept
-            && let Some(flag) = rejected.get_mut(index)
-        {
+    let read: std::collections::HashSet<usize> = blocks
+        .math
+        .iter()
+        .flat_map(|&(start, end, closed)| [Some(start), closed.then_some(end)])
+        .flatten()
+        .collect();
+    for (index, (fence, flag)) in active.iter().zip(rejected.iter_mut()).enumerate() {
+        if fence.is_some() && !read.contains(&(index + 1)) {
             *flag = true;
         }
+    }
+    let (mut next, inside) = paired(all, rejected, blocks);
+    for (index, fence) in all.iter().enumerate() {
         let free = !inside.get(index).copied().unwrap_or(true)
             && !blocks.opaque.contains(&(index + 1))
             && !rejected.get(index).copied().unwrap_or(true);
@@ -292,7 +295,7 @@ fn pair(
 /// Each math block keeps its opener and takes the first line of its body that can
 /// close it (no meta, a run at least as long); the second value marks the lines of
 /// the math blocks.
-fn paired(all: &[MathFence], blocks: &Blocks) -> (Vec<MathFence>, Vec<bool>) {
+fn paired(all: &[MathFence], rejected: &[bool], blocks: &Blocks) -> (Vec<MathFence>, Vec<bool>) {
     let mut next = vec![None; all.len()];
     let mut inside = vec![false; all.len()];
     for &(start, end, _) in &blocks.math {
@@ -305,10 +308,12 @@ fn paired(all: &[MathFence], blocks: &Blocks) -> (Vec<MathFence>, Vec<bool>) {
         for slot in inside.iter_mut().take(end).skip(start - 1) {
             *slot = true;
         }
-        let closer = (start + 1..=end).find_map(|line| match all.get(line - 1) {
-            Some(&Some(fence @ (_, run, false))) if run >= opener.1 => Some((line, fence)),
-            _ => None,
-        });
+        let closer = (start + 1..=end)
+            .filter(|&line| !rejected.get(line - 1).copied().unwrap_or(true))
+            .find_map(|line| match all.get(line - 1) {
+                Some(&Some(fence @ (_, run, false))) if run >= opener.1 => Some((line, fence)),
+                _ => None,
+            });
         if let Some((line, fence)) = closer
             && let Some(slot) = next.get_mut(line - 1)
         {
